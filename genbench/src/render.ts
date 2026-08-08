@@ -37,9 +37,18 @@ const jsonScript = (id: string, value: unknown): string =>
  * bytes whoever wrote the page: the recorder the click probe reads, answering
  * with the case's canned rows so a runtime refetch resolves instead of hanging.
  *
- * It also posts every call to the parent frame. That is what lets the report
- * page show a press in an embedded screen as it happens, tagged with the
- * contender whose frame fired it — with no server and no shared state.
+ * Two halves, because a contender may bring its own. The default recorder is
+ * declared first, for a page that expects one to be there. The FEED is then
+ * installed once the page has loaded, over whatever `window.vendo` is by then,
+ * and delegates to it — `claude-code` is told to define its own recorder so its
+ * file works opened straight off disk, and a recorder declared once and never
+ * revisited would lose that whole column's presses to the page's own
+ * assignment. Wrapping delegates instead of replacing, so `calls` and the
+ * page's own answer are untouched and the floor still scores what it scored.
+ *
+ * The feed itself is `parent.postMessage`: that is what lets the report page
+ * show a press in an embedded screen as it happens, tagged with the contender
+ * whose frame fired it — with no server and no shared state.
  */
 function seam(world: World, contender: string): string {
   const tools = Object.fromEntries(world.tools.map((tool) => [tool.name, cannedResponse(tool) as Json]));
@@ -52,14 +61,21 @@ function seam(world: World, contender: string): string {
     calls: [],
     callTool: function (name, args) {
       window.vendo.calls.push({ name: name, args: args });
-      try {
-        parent.postMessage({ genbench: "call", contender: contender, name: name, args: args, ts: Date.now() }, "*");
-      } catch (ignored) {}
       return Object.hasOwn(tools, name)
         ? { status: "ok", output: tools[name] }
         : { status: "error", error: { code: "not-found", message: "no tool " + name } };
     },
   };
+  addEventListener("load", function () {
+    var vendo = window.vendo;
+    var inner = vendo.callTool;
+    vendo.callTool = function (name, args) {
+      try {
+        parent.postMessage({ genbench: "call", contender: contender, name: name, args: args, ts: Date.now() }, "*");
+      } catch (ignored) {}
+      return inner.call(vendo, name, args);
+    };
+  });
 })();
 </script>`;
 }

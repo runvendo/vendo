@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { FloorResult } from "./floor.js";
+import { JudgeContract, type JudgeResult } from "./judge.js";
 import { writePreview } from "./report.js";
 import type { CaseResult } from "./run.js";
 import { loadCases, loadWorld, worldForCase, type World } from "./world.js";
@@ -24,7 +25,19 @@ const PASSING: FloorResult = {
   pass: true,
 };
 
-const resultFor = (contender: string, testCase: string, prompt: string): CaseResult => ({
+/** One of each verdict, so a row that only handles two of them shows up. Two
+ *  case lines with one pass, two style lines with one pass and one `na`. */
+const JUDGED: JudgeResult = {
+  lines: [
+    { line: "shows every pending transfer the tool returned", source: "case", verdict: "pass", note: "three rows are listed" },
+    { line: "each transfer names who it is going to", source: "case", verdict: "fail", note: "the rows show amounts and no recipient" },
+    { line: "money always shows 2 decimals with a currency symbol", source: "style", verdict: "pass", note: "amounts render as $1,250.00" },
+    { line: "destructive actions ask for confirmation", source: "style", verdict: "na", note: "nothing on this screen is destructive" },
+  ],
+  degraded: false,
+};
+
+const resultFor = (contender: string, testCase: string, prompt: string, judged: JudgeResult = JUDGED): CaseResult => ({
   run: "run-1",
   contender,
   model: "claude-sonnet-5",
@@ -39,6 +52,8 @@ const resultFor = (contender: string, testCase: string, prompt: string): CaseRes
   trace: [],
   consoleErrors: [],
   world: "hash",
+  judged,
+  judgeContract: JudgeContract,
 });
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -100,6 +115,55 @@ describe("the preview page", () => {
     expect(html).not.toContain("Alex Rivera");
     // A write tool answers with its acknowledgement, the same one the page gives.
     expect(html).toContain(onPage({ ok: true }));
+  });
+
+  it("prints every rubric line with its verdict and the evidence the judge named", async () => {
+    const html = await preview([resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers.")], {
+      "pending-transfers": world,
+    });
+
+    for (const line of JUDGED.lines) {
+      expect(html).toContain(line.line);
+      // The note is on the page, not behind a hover: the founder reads this
+      // every day and a verdict with no evidence beside it is unarguable.
+      expect(html).toContain(line.note);
+      expect(html).toContain(`<li class="${line.verdict}">`);
+    }
+    // Case lines are the correctness half, style lines the design half, and the
+    // case lines come first.
+    expect(html.indexOf("shows every pending transfer the tool returned")).toBeLessThan(
+      html.indexOf("money always shows 2 decimals with a currency symbol"),
+    );
+  });
+
+  it("tallies each half and leaves an `na` line out of the denominator", async () => {
+    const html = await preview([resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers.")], {
+      "pending-transfers": world,
+    });
+
+    // Two case lines, one passed. Two style lines, one passed and one whose
+    // subject is not on this screen at all — that one is neither earned nor
+    // missed, so counting it would grade the screen for what it does not have.
+    expect(html).toContain(`<span>correctness</span><b>1/2</b>`);
+    expect(html).toContain(`<span>design</span><b>1/1</b>`);
+  });
+
+  it("says a degraded judgement out loud, and prints no tally that would read as a score", async () => {
+    const degraded: JudgeResult = {
+      lines: JUDGED.lines.map((line) => ({ ...line, verdict: "fail", note: "the judge did not grade this screen" })),
+      degraded: true,
+      error: "529 overloaded",
+    };
+    const html = await preview([resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers.", degraded)], {
+      "pending-transfers": world,
+    });
+
+    expect(html).toContain("judge degraded");
+    expect(html).toContain("529 overloaded");
+    // Every line reads `fail`, so a literal tally would print 0/2 — which is a
+    // sentence about the contender, and it would be false.
+    expect(html).not.toContain(`<b>0/2</b>`);
+    expect(html).toContain(`<span>correctness</span><b>—</b>`);
   });
 
   it("carries the listener that turns a press in an embedded page into a feed row", async () => {

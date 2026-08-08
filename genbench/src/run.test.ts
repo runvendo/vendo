@@ -7,7 +7,9 @@
  */
 import { describe, expect, it } from "vitest";
 import { WALL_CLOCK_MS } from "./claude-code.js";
-import { attempt, CASE_TIMEOUT_MS, contenders, parseArgs } from "./run.js";
+import type { FloorResult } from "./floor.js";
+import { JudgeContract, type JudgeResult } from "./judge.js";
+import { attempt, CASE_TIMEOUT_MS, contenders, exitCode, parseArgs, ungraded, type CaseResult } from "./run.js";
 
 describe("attempt", () => {
   it("hands back what the work returned", async () => {
@@ -60,6 +62,87 @@ describe("the case budget", () => {
   it("leaves the one-call columns on the tighter bound they never needed more than", () => {
     expect(CASE_TIMEOUT_MS.vendo).toBe(5 * 60_000);
     expect(CASE_TIMEOUT_MS.diy).toBe(5 * 60_000);
+  });
+});
+
+// ---------------------------------------------------------------- the verdict
+
+const floorAt = (pass: boolean): FloorResult => ({
+  delivered: pass,
+  renders: pass,
+  valid: pass,
+  blocking: [],
+  honestData: { pass, offenders: [] },
+  wiredActions: { pass, bindings: [] },
+  pass,
+});
+
+const LINE = "shows every pending transfer the tool returned";
+
+const scored = (floor: FloorResult, judged: JudgeResult): CaseResult => ({
+  run: "run-1",
+  contender: "vendo-sonnet",
+  model: "claude-sonnet-5",
+  case: "pending-transfers",
+  prompt: "Show my pending transfers.",
+  lane: "screen",
+  floor,
+  timing: { settledMs: 1 },
+  cost: { usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 }, usd: 0 },
+  islands: 0,
+  clientOnly: 0,
+  trace: [],
+  consoleErrors: [],
+  world: "hash",
+  judged,
+  judgeContract: JudgeContract,
+});
+
+/**
+ * The founder runs this in a live loop, and the judge is a third party that can
+ * be having a bad afternoon. So the floor — which is mechanical, local and
+ * cannot be unwell — is the only thing the exit code reads. A degraded
+ * judgement is loud in `result.json` and in the preview instead.
+ */
+describe("the exit code", () => {
+  it("survives a judge that went down, because a judge outage is not the contender's failure", () => {
+    const degraded: JudgeResult = {
+      lines: [{ line: LINE, source: "case", verdict: "fail", note: "the judge did not grade this screen" }],
+      degraded: true,
+      error: "529 overloaded",
+    };
+
+    expect(exitCode([scored(floorAt(true), degraded)])).toBe(0);
+  });
+
+  it("survives a screen the judge graded down, because a failed rubric line is the benchmark's finding", () => {
+    const failed: JudgeResult = {
+      lines: [{ line: LINE, source: "case", verdict: "fail", note: "no transfers are listed" }],
+      degraded: false,
+    };
+
+    expect(exitCode([scored(floorAt(true), failed)])).toBe(0);
+  });
+
+  it("still fails a run whose floor failed", () => {
+    const passed: JudgeResult = {
+      lines: [{ line: LINE, source: "case", verdict: "pass", note: "six rows are listed" }],
+      degraded: false,
+    };
+
+    expect(exitCode([scored(floorAt(false), passed)])).toBe(1);
+  });
+});
+
+describe("a column with no screen", () => {
+  it("fails every rubric line without spending a judge call, and does not call that the judge's failure", () => {
+    expect(ungraded(["shows every pending transfer"], ["money always shows 2 decimals"])).toEqual({
+      lines: [
+        { line: "shows every pending transfer", source: "case", verdict: "fail", note: "no screen was delivered to grade" },
+        { line: "money always shows 2 decimals", source: "style", verdict: "fail", note: "no screen was delivered to grade" },
+      ],
+      degraded: false,
+    });
   });
 });
 

@@ -7,10 +7,11 @@ import { fileURLToPath } from "node:url";
 import { claudeCodeDriver, WALL_CLOCK_MS } from "./claude-code.js";
 import { diyDriver } from "./diy.js";
 import { checks, runFloor, type FloorResult } from "./floor.js";
+import { judge, JudgeContract, type JudgeResult } from "./judge.js";
 import { meteredModel, MODEL_IDS, type Meter, type ModelAlias, type UsageTotals } from "./meter.js";
 import { probe, type Probed } from "./probe.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shot } from "./render.js";
-import { writePreview } from "./report.js";
+import { tally, writePreview } from "./report.js";
 import { vendoDriver } from "./vendo.js";
 import { loadCases, loadWorld, worldForCase, type Case, type Lane, type World } from "./world.js";
 
@@ -83,6 +84,12 @@ export interface CaseResult {
   /** What the browser complained about while painting this screen. */
   readonly consoleErrors: readonly string[];
   readonly world: string;
+  /** The other half of the score: one verdict per rubric line, from a judge that
+   *  saw the screenshot, the trace and the source and not whose they were. */
+  readonly judged: JudgeResult;
+  /** The grader those verdicts came from. Two runs' verdicts only compare if
+   *  this matches — a different model, rubric or prompt is a different exam. */
+  readonly judgeContract: typeof JudgeContract;
   readonly failure?: string;
 }
 
@@ -181,6 +188,35 @@ export async function attempt<T>(work: () => Promise<T>, budgetMs: number): Prom
   ]);
 }
 
+/**
+ * The rubric for a column that produced no screen.
+ *
+ * Nothing was delivered, so no line is satisfied — but that is the CONTENDER
+ * failing, not the judge, so it is not degraded and no judge call is spent on a
+ * screenshot that does not exist. Graded rather than skipped, because a column
+ * that quietly drops out of the rubric is a benchmark that flatters whoever
+ * crashed.
+ */
+export const ungraded = (caseLines: readonly string[], styleLines: readonly string[]): JudgeResult => ({
+  lines: [
+    ...caseLines.map((line) => ({ line, source: "case" as const })),
+    ...styleLines.map((line) => ({ line, source: "style" as const })),
+  ].map((entry) => ({ ...entry, verdict: "fail" as const, note: "no screen was delivered to grade" })),
+  degraded: false,
+});
+
+/**
+ * The floor decides the run's exit code, and nothing else does.
+ *
+ * The judge is a third party on someone else's infrastructure; the floor is
+ * mechanical, local and cannot be unwell. A judge outage must not turn the
+ * founder's live loop red, and a rubric line the judge failed is this
+ * benchmark's finding rather than its malfunction — both are said loudly in
+ * `result.json` and in the preview instead.
+ */
+export const exitCode = (results: readonly CaseResult[]): number =>
+  results.every((result) => result.floor.pass) ? 0 : 1;
+
 const nodesOf = (payload: UIPayload | undefined): ReadonlyArray<{ source?: string; component?: string }> =>
   (payload as { nodes?: Array<{ source?: string; component?: string }> } | undefined)?.nodes ?? [];
 
@@ -255,13 +291,23 @@ async function main(argv: readonly string[]): Promise<number> {
     const trace = done?.trace ?? [];
     // Whatever the contender actually delivered: a document for vendo, the page
     // itself for a contender that writes HTML.
-    const floor = runFloor({
-      world: scoped,
-      artifact: outcome?.artifact ?? outcome?.page,
-      blocking: outcome?.blocking ?? [],
-      trace,
-      shot,
-    });
+    const artifact = outcome?.artifact ?? outcome?.page;
+    const floor = runFloor({ world: scoped, artifact, blocking: outcome?.blocking ?? [], trace, shot });
+
+    // Outside the contender's budget: the wait is the grader's, and charging it
+    // to the column would report a timeout the contender never had. `judge`
+    // owns its own retries and never throws, so a judge having a bad afternoon
+    // lands as a degraded verdict rather than a lost case.
+    const judged =
+      shot === undefined
+        ? ungraded(testCase.pass, scoped.style)
+        : await judge({
+            screenshot: shot.png,
+            artifact: artifact ?? "",
+            trace,
+            caseLines: testCase.pass,
+            styleLines: scoped.style,
+          });
 
     const caseDir = join(runDir, contender.slug, testCase.id);
     await mkdir(caseDir, { recursive: true });
@@ -295,12 +341,16 @@ async function main(argv: readonly string[]): Promise<number> {
       trace,
       consoleErrors: shot?.consoleErrors ?? [],
       world: world.hash,
+      judged,
+      judgeContract: JudgeContract,
       ...(failure === undefined ? {} : { failure }),
     };
     await writeFile(join(caseDir, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
     console.log(
       `· ${contender.slug} / ${testCase.id} · floor ${checks(floor).filter((check) => check.pass).length}/5` +
-        ` · ${result.timing.settledMs}ms · $${result.cost.usd.toFixed(4)}`,
+        ` · judged ${judged.degraded ? "—" : tally(judged.lines)}` +
+        ` · ${result.timing.settledMs}ms · $${result.cost.usd.toFixed(4)}` +
+        (judged.degraded ? ` · JUDGE DEGRADED: ${judged.error ?? ""}` : ""),
     );
     return result;
   };
@@ -324,7 +374,7 @@ async function main(argv: readonly string[]): Promise<number> {
   const preview = await writePreview({ runDir, runId, results, worlds });
   console.log(preview);
   if (process.platform === "darwin") spawn("open", [preview], { detached: true, stdio: "ignore" }).unref();
-  return results.every((result) => result.floor.pass) ? 0 : 1;
+  return exitCode(results);
 }
 
 // Only when run as the command — importing this module from a test must not

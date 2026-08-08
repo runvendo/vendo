@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { checks, type Binding, type Offender } from "./floor.js";
+import type { JudgeResult, LineVerdict, Verdict } from "./judge.js";
 import type { CaseResult } from "./run.js";
 import { cannedResponse, type World } from "./world.js";
 
@@ -40,6 +41,62 @@ const consoleNote = (errors: readonly string[]): string =>
 const metric = (label: string, value: string): string =>
   `<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`;
 
+/** Never colour alone: the mark says which verdict this is in grayscale, to a
+ *  screen reader, and to anyone who does not see red and green apart. */
+const MARK: Readonly<Record<Verdict, string>> = { pass: "✓", fail: "✕", na: "–" };
+
+/** `na` means the line's subject is not on this screen at all, so it was
+ *  neither earned nor missed. Counting it would grade a screen for lacking
+ *  something it was never asked to have.
+ *
+ *  One definition, exported, because the run prints this on the terminal too —
+ *  two denominators for one score is a benchmark arguing with itself. */
+export const tally = (lines: readonly LineVerdict[]): string => {
+  const graded = lines.filter((line) => line.verdict !== "na");
+  return `${graded.filter((line) => line.verdict === "pass").length}/${graded.length}`;
+};
+
+/** One half of the rubric, its lines in the order they were asked, each under
+ *  the evidence the judge named — on the page, not behind a hover, because an
+ *  unarguable verdict is one you cannot check. */
+const rubricHalf = (label: string, lines: readonly LineVerdict[], degraded: boolean): string =>
+  lines.length === 0
+    ? ""
+    : `<div class="half">
+    <p class="half-head"><span>${label}</span><b>${degraded ? "—" : tally(lines)}</b></p>
+    <ul class="lines">${lines
+      .map(
+        (line) =>
+          `<li class="${line.verdict}"><i aria-hidden="true">${MARK[line.verdict]}</i><span class="what">` +
+          `<span class="line">${escape(line.line)}</span>` +
+          `<span class="note">${escape(line.verdict)} — ${escape(line.note)}</span></span></li>`,
+      )
+      .join("")}</ul>
+  </div>`;
+
+/**
+ * The judge's half of the score. The case's `pass` lines are correctness, the
+ * world's `style` lines are design, and each verdict carries the evidence it
+ * was reached on.
+ *
+ * A degraded judgement is the GRADER having a bad afternoon, not the contender
+ * failing, so it says so at the top and prints no tally: every line reads
+ * `fail` in that state, and "0/2" beside a column is a sentence about the
+ * contender that would not be true.
+ */
+const rubric = (judged: JudgeResult): string =>
+  judged.lines.length === 0
+    ? ""
+    : `<section class="rubric">
+  ${
+    judged.degraded
+      ? `<p class="degraded">judge degraded — this screen was not graded${judged.error === undefined ? "" : `: ${escape(judged.error)}`}</p>`
+      : ""
+  }
+  ${rubricHalf("correctness", judged.lines.filter((line) => line.source === "case"), judged.degraded)}
+  ${rubricHalf("design", judged.lines.filter((line) => line.source === "style"), judged.degraded)}
+</section>`;
+
 async function column(runDir: string, result: CaseResult): Promise<string> {
   const caseDir = join(result.contender, result.case);
   const shot = await readFile(join(runDir, caseDir, "screenshot.png")).catch(() => undefined);
@@ -75,6 +132,7 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
   }
   ${result.floor.honestData.pass ? "" : offenderList(result.floor.honestData.offenders)}
   ${bindingList(result.floor.wiredActions.bindings)}
+  ${rubric(result.judged)}
   <dl class="metrics">
     ${metric("first render", result.timing.firstRenderMs === undefined ? "—" : `${result.timing.firstRenderMs} ms`)}
     ${metric("settled", `${result.timing.settledMs} ms`)}
@@ -165,6 +223,30 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
 .metrics>div{display:block}
 .metrics dt{font:450 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ter)}
 .metrics dd{margin:6px 0 0;font:450 15px/1 ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+
+/* ---- the judge's half: one row per rubric line, its evidence underneath ---- */
+.rubric{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.half+.half{margin-top:16px}
+.half-head{display:flex;align-items:baseline;justify-content:space-between;margin:0 0 4px;
+  font:450 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ter)}
+.half-head b{font-weight:600;color:var(--sec);font-variant-numeric:tabular-nums}
+.lines{margin:0;padding:0;list-style:none}
+.lines li{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.lines li:last-child{border-bottom:0}
+.lines i{flex:none;width:11px;text-align:center;font:600 13px/1.45 ui-monospace,Menlo,monospace;font-style:normal}
+.lines .what{min-width:0}
+.lines .line{display:block;font-size:13px;line-height:1.45;color:var(--ink)}
+.lines .note{display:block;margin-top:2px;font-size:12px;line-height:1.45;color:var(--ter)}
+.lines .pass i{color:var(--ok)}
+.lines .fail i{color:var(--no)}
+/* na: the line's subject is not on this screen at all, so the row stays — a
+   rubric with holes in it is not a rubric — and recedes. */
+.lines .na i{color:var(--ter)}
+.lines .na .line{color:var(--ter)}
+/* The one red block on the page, and it is about the GRADER. */
+.degraded{margin:0 0 12px;padding:9px 12px;border-left:3px solid var(--no);border-radius:0 6px 6px 0;
+  background:#fbeceb;font-size:12px;font-weight:600;color:var(--no)}
 
 /* ---- the world panel: closed by default, because it is the reference you
        reach for, not the thing you came to look at ---- */

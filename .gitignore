@@ -102,7 +102,11 @@ packages/apps/box/claude-turn.mjs
 
 # Agent working notes and factory process exhaust — useful locally, not shipped.
 # Lane contracts, raw proof logs, and eval run dumps stay on their branches.
-.claude/
+# Skills are the exception: they are shared project tooling, so they are tracked.
+# `.claude/*` and not `.claude/`, because git never descends into an excluded
+# directory and the negation below would never be reached.
+.claude/*
+!.claude/skills/
 docs/verification/
 docs/eval/runs/
 

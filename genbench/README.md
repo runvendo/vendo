@@ -30,7 +30,12 @@ Every page then carries the SAME injected recorder (`seam` in `src/render.ts`)
 and the SAME `@font-face` (`fontFace`, below), so `window.vendo.callTool` means
 one thing whoever wrote the page, every column is shot in the world's own face,
 and the same screenshot, the same click probe and the same floor code run after
-that point.
+that point. A contender told to write its own `window.vendo` — `claude-code` is,
+so its file works opened straight off disk — has it **wrapped** rather than
+overwritten: the feed half of the recorder is installed once the page has
+loaded and delegates to whatever it finds, so every column's presses reach the
+preview's live feed and the calls the floor scores are the contender's own
+either way (`src/seam.test.ts`).
 
 Every contender for a case runs **at once**. They share the browser and nothing
 else — a page each, a meter each, a clock each — and one contender's crash or
@@ -57,7 +62,7 @@ Each case writes `runs/<run>/<contender>/<case>/`:
 | `artifact.vendo` | the document the contender actually saved (vendo only — a contender whose outcome says `format: "html"` has already delivered a document, and it lands once, as `page.html`) |
 | `page.html` | the real screen: for vendo a root, the payload and the product's own renderer bundled in; for `diy` and `claude-code` the document each wrote. This is the only way pixels are made |
 | `screenshot.png` | that page, shot once it has settled |
-| `result.json` | the five floor verdicts, the click trace, console errors, timings, tokens and dollars |
+| `result.json` | the five floor verdicts, the judge's verdict for every rubric line and the contract it graded under, the click trace, console errors, timings, tokens and dollars |
 
 and one `runs/<run>/preview.html`, which is where a person actually looks:
 
@@ -65,6 +70,11 @@ and one `runs/<run>/preview.html`, which is where a person actually looks:
 - **a column per contender**, in a fixed order, each live and scrollable under
   its own verdicts and numbers, with the judge's screenshot demoted to a
   thumbnail
+- **the rubric, line by line**, under each column: every correctness line then
+  every design line, its verdict and the evidence the judge named, with a
+  tally per half. A line the screen has no subject for is `na` and sits out of
+  the denominator; a judge that could not grade says so instead of printing a
+  tally that would read as the contender's score
 - **the world-data panel** — collapsed: every tool the case's screens could
   call, what it does, and the exact response it answers with, overrides
   applied. It is what makes any number on any screen checkable by eye
@@ -103,7 +113,7 @@ regression test in `src/floor.test.ts` pins down.
 
 `cases.json` holds the prompts. A case may override any tool's data — that is
 how the empty state is tested — and its `pass` lines are the correctness rubric
-a pinned judge will grade in a later slice.
+the judge grades.
 
 ### The face
 
@@ -144,6 +154,34 @@ Five deterministic checks, no model involved:
   nothing fails: naming a tool in a document is not being wired to it, which is
   the difference `src/probe.test.ts` exists to keep honest
 
+## The judge
+
+What the floor cannot settle: one verdict per rubric line — the case's `pass`
+lines (did it do what was asked) and the world's `style` lines (does it look
+like the product it claims to be) — from a pinned `claude-opus-5` that is shown
+the screenshot, the click trace and the source.
+
+It grades **blind**. Nothing it is sent names the contender, its model or its
+run folder, and the lines arrive shuffled and are mapped back after. Every
+verdict is `pass`, `fail` or `na`, and carries one clause naming the evidence it
+was reached on. `na` means the line's subject is not on this screen at all, so
+it is neither earned nor missed and sits out of the tally.
+
+The grader is pinned separately from the contenders (`JudgeContract` in
+`src/judge.ts`: model, `rubricVersion`, and a hash of the system prompt) and
+stamped into every `result.json`. Two runs' verdicts only compare if that stamp
+matches — **any** edit to the prompt bumps `rubricVersion` and starts the
+numbers again.
+
+**A degraded judgement never fails the run.** The judge is a third party on
+someone else's infrastructure; the floor is mechanical, local and cannot be
+unwell, so the floor alone decides the exit code (`exitCode` in `src/run.ts`).
+When the judge cannot be trusted it fails every line rather than guessing, says
+so on the terminal, in `result.json` and at the top of its column in the
+preview, and the run still exits on what the floor found. A column that
+delivered no screen at all is failed on every line too, but that is the
+contender's failure and is not marked degraded.
+
 ## What honestData does not read
 
 Two things are cut out of the text the fabrication check grades, both of them
@@ -178,10 +216,3 @@ start again here.
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads. Multi-step flows are only followed one step past a
 `[role=dialog]` confirmation.
-
-The `claude-code` page contract tells that contender to define
-`window.vendo` itself, so its file works when opened straight off disk. The
-harness's own recorder is injected first and is therefore replaced by the
-page's: the probe and the floor are unaffected (both read `window.vendo.calls`),
-but a press in the `claude-code` frame does not reach the preview's live
-tool-call feed.

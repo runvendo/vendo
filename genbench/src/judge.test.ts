@@ -390,7 +390,7 @@ button{background:#2563EB;color:#fff;border:0;border-radius:2px;padding:10px 14p
 
 describe.runIf(LIVE)("live smoke", () => {
   it("grades a real screenshot and a real click trace", { timeout: 180_000 }, async () => {
-    const world = await loadWorld(join(dirname(dirname(fileURLToPath(import.meta.url))), "world.json"));
+    const world = await loadWorld(join(dirname(dirname(fileURLToPath(import.meta.url))), "worlds", "maple"));
     const shooter = await openBrowser();
     try {
       const visit = await shooter.visit(authoredPage(FIXTURE, world, "fixture"));
