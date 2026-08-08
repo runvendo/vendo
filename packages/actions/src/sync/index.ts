@@ -215,10 +215,9 @@ async function sourceHash(root: string, srcPath: string, cache: Map<string, stri
 }
 
 /** Read for ONE reason: to report standing judgments this extraction stranded.
- *  Fail-soft, unlike `readOverrides` — a malformed judgments file is the
- *  judgment pass's own loud failure (the same call sync's runtime and doctor
- *  copies make), and sync must not refuse to extract because the AI layer's
- *  cache is unreadable. */
+ *  Fail-soft, unlike `readOverrides` — a malformed judgments file is the judgment
+ *  pass's own loud failure, the same call the runtime and doctor readers make, and
+ *  sync must not refuse to extract because the AI layer's cache is unreadable. */
 async function readJudgments(file: string): Promise<JudgmentsFile | null> {
   let raw: string;
   try {
@@ -277,9 +276,11 @@ async function loadVendoDir(out: string, warnings: string[]): Promise<VendoDirSt
 function strandedJudgments(tools: readonly ExtractedTool[], judgments: JudgmentsFile | null): string[] {
   if (judgments === null) return [];
   const stranded: Array<{ name: string; was: string; now: string }> = [];
+  let judged = 0;
   for (const tool of [...tools].sort((a, b) => a.name.localeCompare(b.name))) {
     const judgment = judgments.tools[tool.name];
     if (judgment === undefined) continue;
+    judged += 1;
     const now = bindingIdentity(tool.binding);
     if (judgment.binding === now) continue;
     stranded.push({ name: tool.name, was: judgment.binding, now });
@@ -288,8 +289,10 @@ function strandedJudgments(tools: readonly ExtractedTool[], judgments: Judgments
   if (first === undefined) return [];
   const names = stranded.map(({ name }) => name);
   const shown = names.slice(0, 6).join(", ");
+  // Out of the tools that CARRY a judgment, not the whole catalog: "3/30" would
+  // read as thirty judgments and understate a total break.
   return [
-    `${stranded.length}/${tools.length} standing judgments no longer match their tool, so those tools are ungraded`
+    `${stranded.length}/${judged} standing judgments no longer match their tool, so those tools are ungraded`
     + ` and ask on every call — ${first.name} was graded against "${first.was}", now "${first.now}".`
     + ` Re-run \`vendo sync\` with a model key to re-grade: ${shown}${names.length > 6 ? ` +${names.length - 6} more` : ""}`,
   ];
