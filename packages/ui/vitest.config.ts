@@ -12,8 +12,11 @@ export default defineConfig({
       // against the whole suite's merged coverage rather than any single shard.
       // RATCHET — this number only ever rises: when it goes red, add coverage,
       // never lower the floor.
-      // Last set 2026-08-07 to 90, against a measured 91.05% on main. Branches
-      // are not floored (88.69% when this was set).
+      // Last set 2026-08-08 to 90, against a measured 91.65% lines (11509/12557)
+      // on main — re-measured through the merge path after the undo/rollback
+      // deletion and four ui fixes landed. The 1.65 points of slack are
+      // deliberate: a floor with no room is a floor everyone learns to bypass.
+      // Branches are not floored (88.86% when this was set).
       thresholds: { lines: 90 },
     },
     environment: "jsdom",
