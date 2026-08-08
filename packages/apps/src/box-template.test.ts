@@ -77,9 +77,11 @@ describe("box app template (the served-app warm start)", () => {
     const port = await freePort();
     base = `http://127.0.0.1:${port}`;
     child = spawn("node", ["server.js"], { cwd: appDir, env: { ...process.env, PORT: String(port) }, stdio: "ignore" });
-    // The boot poll's budget stays well inside this test's own timeout: the
-    // timeout is the hang detector, a tighter inner budget is a second one.
-    const deadline = Date.now() + 60_000;
+    // The poll's budget matches this test's own timeout, never undercuts it:
+    // the timeout is the hang detector, and a TIGHTER inner budget is a second,
+    // invisible speed limit — it would expire first on a busy machine and fail
+    // the assertion below, reporting a product bug where there is only load.
+    const deadline = Date.now() + 300_000;
     let up = false;
     while (!up && Date.now() < deadline) {
       up = await fetch(`${base}/`).then((response) => response.ok, () => false);
@@ -213,7 +215,8 @@ describe("box app template (a cold provision, no snapshot)", () => {
       env: { ...process.env, PORT: String(port), npm_config_registry: "http://127.0.0.1:1", npm_config_offline: "true" },
       stdio: "ignore",
     });
-    const deadline = Date.now() + 120_000;
+    // Matches this test's own timeout — never tighter (see the note above).
+    const deadline = Date.now() + 300_000;
     let up = false;
     while (!up && Date.now() < deadline) {
       up = await fetch(`${base}/`).then((response) => response.ok, () => false);
@@ -296,9 +299,9 @@ describe("the dev port is declared by the host, and the template binds it", () =
       detached: true,
     });
 
-    // Inner budget stays well inside this test's own timeout: the timeout is the
-    // hang detector, a tighter inner budget is a second, invisible speed limit.
-    const deadline = Date.now() + 120_000;
+    // Matches this test's own timeout, never tighter: the timeout is the hang
+    // detector, and a tighter inner budget is a second, invisible speed limit.
+    const deadline = Date.now() + 300_000;
     let served = false;
     while (!served && Date.now() < deadline) {
       served = await fetch(`http://127.0.0.1:${declared}/`).then((r) => r.ok, () => false);

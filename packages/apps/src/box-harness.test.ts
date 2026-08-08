@@ -21,6 +21,18 @@ function boxDir(prefix: string): string {
   return dir;
 }
 
+/**
+ * Poll until `ready()`. The test's OWN timeout is the only bound, deliberately:
+ * `bash -lc` startup varies wildly under turbo-parallel load, and an inner
+ * wall-clock deadline is a second, invisible speed limit — when it expires
+ * first the case fails on the trailing assertion ("expected 'ran'"), which
+ * reads as a product bug on a machine that was merely busy. A timeout is the
+ * hang detector; there is only ever one of them.
+ */
+const pollUntil = async (ready: () => boolean): Promise<void> => {
+  while (!ready()) await new Promise((resolve) => setTimeout(resolve, 100));
+};
+
 /** Drive one harness on an ephemeral port against a scripted agent engine. */
 const withHarness = async (
   runAgentTask: (input: { prompt: string; context?: string; env: Record<string, string> }) => Promise<unknown>,
@@ -153,19 +165,15 @@ describe("box control-port protocol", () => {
     cleanups.push(() => harness.stop());
     writeFileSync(path.join(appDir, ".vendo", "run"), `printf ran > ${JSON.stringify(marker)}; sleep 30`);
     await harness.start();
-    // The supervisor spawns the entry on start; poll for the marker with a
-    // generous deadline (bash -lc login-shell startup varies wildly under
-    // turbo-parallel load — a bounded ~6s poll flaked there). The happy path
-    // still exits on the first sighting.
-    const deadline = Date.now() + 25_000;
-    while (Date.now() < deadline) {
+    // The supervisor spawns the entry on start; the happy path exits on the
+    // first sighting.
+    await pollUntil(() => {
       try {
-        if (readFileSync(marker, "utf8") === "ran") break;
+        return readFileSync(marker, "utf8") === "ran";
       } catch {
-        // Not written yet.
+        return false; // Not written yet.
       }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+    });
     expect(readFileSync(marker, "utf8")).toBe("ran");
   }, 30_000);
 
@@ -191,10 +199,7 @@ describe("box control-port protocol", () => {
     cleanups.push(() => harness.stop());
     writeFileSync(path.join(appDir, ".vendo", "run"), `printf %s "$VENDO_PROFILE_LEAK" > ${JSON.stringify(marker)}; sleep 30`);
     await harness.start();
-    const deadline = Date.now() + 25_000;
-    while (Date.now() < deadline && !existsSync(marker)) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+    await pollUntil(() => existsSync(marker));
     // The entry ran with NO profile sourced: no leaked env, no profile side
     // effects — and none of the profile's latency on the spawn path.
     expect(readFileSync(marker, "utf8")).toBe("");
