@@ -703,6 +703,49 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     },
   );
 
+  /**
+   * Greptile P1 on #1051, and it was right. `blocked` began as ONE panel-wide
+   * notice while `busy` beside it was already per-key — and the chips disable
+   * per key, so two connects genuinely run at once. Two refused windows then had
+   * one notice between them: the second connect's link replaced the first's
+   * while the first was still polling and still finishable, and whichever
+   * settled first cleared the other's link outright. An affordance vanishing
+   * while it is still the only way through is the very defect this PR exists to
+   * remove, so it is keyed the same way `busy` is.
+   *
+   * (The clear-on-settle half cannot be built against this fixture — every
+   * `initiate` answers with the same `ca_new`, so two concurrent connects share
+   * one broker account and always settle together. Keying the state closes both
+   * halves by construction.)
+   */
+  it("two refused windows keep their own links — neither connect erases the other's", async () => {
+    vi.stubGlobal("open", vi.fn(() => null));
+    wire.state.connections = [];
+    // Both connects poll the same `ca_new`, so they burn these two at a time —
+    // enough entries that neither can settle inside the assertion window, or the
+    // notices clear again before the count can ever be two.
+    for (let index = 0; index < 40; index += 1) {
+      wire.state.failures.push({
+        method: "GET", path: "/connections/ca_new", code: "unavailable", message: "broker busy", status: 503,
+      });
+    }
+    render(
+      <VendoProvider
+        client={client}
+        connectors={[{ toolkit: "slack", connector: "composio" }, { toolkit: "gmail", connector: "composio" }]}
+      >
+        <ConnectedAccountsPanel />
+      </VendoProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Connect Slack" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Connect Gmail" }));
+
+    await waitFor(() => expect(screen.getAllByRole("link", { name: "Open sign-in in a new tab" })).toHaveLength(2));
+    const notices = screen.getAllByRole("status").filter(node => node.className.includes("fl-connect-blocked"));
+    expect(notices.map(node => node.textContent).join(" ")).toContain("blocked the Slack sign-in window");
+    expect(notices.map(node => node.textContent).join(" ")).toContain("blocked the Gmail sign-in window");
+  });
+
   it("active rows keep Disconnect as the only control — no Reconnect", async () => {
     render(<VendoProvider client={client}><ConnectedAccountsPanel /></VendoProvider>);
     await screen.findByText("Gmail");
