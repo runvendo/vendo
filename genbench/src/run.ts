@@ -57,8 +57,9 @@ export interface RunOutcome {
   readonly failure?: string;
 }
 
+/** A driver does not name itself: its key in `DRIVERS` is its identity, and
+ *  that is what the run reads. */
 export interface Contender {
-  readonly harness: HarnessId;
   run(request: RunRequest): Promise<RunOutcome>;
 }
 

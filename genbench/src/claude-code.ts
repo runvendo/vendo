@@ -126,7 +126,7 @@ export interface ClaudeCodeContender extends Contender {
 }
 
 export function claudeCodeDriver(options: ClaudeCodeOptions = {}): ClaudeCodeContender {
-  return { harness: "claude-code", run: async (request) => await run(request, options) };
+  return { run: async (request) => await run(request, options) };
 }
 
 async function run(request: RunRequest, options: ClaudeCodeOptions): Promise<ClaudeCodeOutcome> {

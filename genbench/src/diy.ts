@@ -33,7 +33,7 @@ inline CSS and inline JS, no build step and no network requests.`;
 const unfence = (text: string): string => /```(?:html)?\n?([\s\S]*?)```/.exec(text)?.[1]?.trim() ?? text.trim();
 
 export function diyDriver(): Contender {
-  return { harness: "diy", run };
+  return { run };
 }
 
 async function run({ world, testCase, meter }: RunRequest): Promise<RunOutcome> {

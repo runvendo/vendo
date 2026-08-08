@@ -64,7 +64,7 @@ ${tools}`;
 }
 
 export function vendoDriver(): Contender {
-  return { harness: "vendo", run };
+  return { run };
 }
 
 /** The product's own verdict on the bytes that landed — the render seam's three
