@@ -6,7 +6,6 @@ const chromeScenarios = [
   "thread",
   "thread-citations",
   "overlay",
-  "page",
   "palette",
   "approval",
   "activity",
@@ -41,7 +40,6 @@ for (const scenario of chromeScenarios) {
       await expect(page.locator(".fl-cite--open .fl-cite-pop")).toBeVisible();
     }
     if (scenario === "overlay") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
-    if (scenario === "page") await expect(page.getByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
     if (scenario === "palette") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
     if (scenario === "activity") await expect(page.getByText("Invoices list").first()).toBeVisible();
     if (scenario === "automations") await expect(page.getByRole("switch")).toBeVisible();

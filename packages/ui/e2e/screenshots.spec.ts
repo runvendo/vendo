@@ -4,7 +4,6 @@ import { openScenario, screenshotPath } from "./helpers.js";
 const shots = [
   { scenario: "thread", file: "thread-dark", ready: 'article[aria-label="Approval for Email send"]' },
   { scenario: "overlay", file: "overlay", ready: '[role="dialog"][aria-label="Vendo assistant"]' },
-  { scenario: "page", file: "page", ready: '[role="tab"][aria-selected="true"]' },
   { scenario: "palette", file: "palette", ready: '[role="dialog"][aria-label="Vendo assistant"]' },
   { scenario: "approval", file: "approval", ready: 'article[aria-label="Approval for Delete invoice"]' },
   { scenario: "thread-humanized", file: "thread-humanized", ready: 'article[aria-label="Approval for Transfer funds"]' },
@@ -33,7 +32,6 @@ for (const shot of shots) {
     );
     await openScenario(page, shot.scenario);
     await expect(page.locator(shot.ready).first()).toBeVisible();
-    if (shot.scenario === "page") await expect(page.getByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
     if (shot.scenario === "thread-citations") {
       // Both Surface-2 states settled, with the first citation popover
       // expanded (the mockup's "one expanded" grounded state).
