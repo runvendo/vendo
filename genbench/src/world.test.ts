@@ -1,3 +1,5 @@
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -7,6 +9,14 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const worldDir = join(root, "worlds", "maple");
 const casesPath = join(worldDir, "cases.json");
 
+/** A world folder holding maple's authored file and whatever face the caller
+ *  puts beside it — the two-file minimum `loadWorld` reads. */
+async function worldFolder(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "genbench-world-"));
+  await writeFile(join(dir, "world.json"), await readFile(join(worldDir, "world.json")));
+  return dir;
+}
+
 describe("loadWorld", () => {
   it("names the worlds that exist when asked for one that does not", async () => {
     // A typo deserves the list of real names, in the product's own voice — not
@@ -14,6 +24,26 @@ describe("loadWorld", () => {
     await expect(loadWorld(join(root, "worlds", "nosuch"))).rejects.toThrow(
       'genbench: unknown world "nosuch" (available: maple)',
     );
+  });
+
+  it("loads a world that ships no face, because the face is genuinely optional", async () => {
+    const world = await loadWorld(await worldFolder());
+    expect(world.font).toBeUndefined();
+  });
+
+  /**
+   * The face is optional only when it is ABSENT.
+   *
+   * A face that is there and unreadable renders as a fallback, and reporting
+   * that as "ships none" hands it the hash of a world that ships none — so two
+   * runs painted in different type compare as the same world, which is the one
+   * thing the hash exists to prevent.
+   */
+  it("refuses a face it cannot read, rather than hashing as a world that ships none", async () => {
+    const dir = await worldFolder();
+    await mkdir(join(dir, "font.woff2"));
+
+    await expect(loadWorld(dir)).rejects.toThrow(/EISDIR/);
   });
 });
 

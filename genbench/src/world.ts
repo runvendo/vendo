@@ -135,7 +135,14 @@ export async function loadWorld(dir: string): Promise<World> {
     throw new Error(`genbench: unknown world "${basename(dir)}" (available: ${await worldsBeside(dir)})`);
   }
   const file = JSON.parse(source) as WorldFile;
-  const font = await readFile(join(dir, "font.woff2")).catch(() => undefined);
+  // The face is optional only when it is ABSENT. A face that is there and
+  // unreadable renders as a fallback, and calling that "ships none" would hand
+  // it the hash of a world that ships none — so two runs painted in different
+  // type would compare as the same world.
+  const font = await readFile(join(dir, "font.woff2")).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
   const digest = createHash("sha256").update(JSON.stringify(file));
   if (font !== undefined) digest.update(font);
   return {
