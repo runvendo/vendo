@@ -245,6 +245,28 @@ describe("degrade", () => {
     await expect(judge(input(), { model, delayMs: () => 0 })).resolves.toMatchObject({ degraded: true });
   });
 
+  /**
+   * A provider request that never answers is the one failure that is not a
+   * degraded verdict but a lost case: `runOne` writes the case only AFTER this
+   * returns, so a judge that never settles takes the screenshot, the page and
+   * `result.json` down with it, and the row never completes.
+   *
+   * The double never settles and never honours the signal, which is exactly
+   * what an abort-only deadline cannot save us from.
+   */
+  it("gives up on a request that never answers, so the case is still written", async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: () => new Promise(() => undefined),
+    });
+
+    const result = await judge(input(), { model, delayMs: () => 0, timeoutMs: 20 });
+
+    expect(result.degraded).toBe(true);
+    expect(result.error).toContain("did not answer");
+    expect(result.lines).toHaveLength(allLines.length);
+    expect(result.lines.every((line) => line.verdict === "fail")).toBe(true);
+  });
+
   it("rejects a verdict outside the rubric rather than scoring it", async () => {
     // `jsonSchema` does no runtime validation and no provider enforces an enum,
     // so an off-rubric verdict reaches us as a plain string.

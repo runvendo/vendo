@@ -54,6 +54,9 @@ export interface JudgeOptions {
    *  run never does, which is what keeps the judge model off the contender. */
   readonly model?: LanguageModel;
   readonly delayMs?: (attempt: number) => number;
+  /** One attempt's deadline, defaulting to `ATTEMPT_TIMEOUT_MS`. Tests shorten
+   *  it; the run never does. */
+  readonly timeoutMs?: number;
 }
 
 /**
@@ -110,6 +113,18 @@ const answerSchema = jsonSchema<{ verdicts: Answer[] }>({
  *  retried immediately, because a judge can also just flake once. */
 const TRANSIENT = /\b(429|500|502|503|504|529)\b|overload|rate.?limit|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|fetch failed|network|timed? ?out/i;
 const MAX_ATTEMPTS = 3;
+
+/**
+ * One attempt's deadline — the difference between a degraded verdict and a lost
+ * case.
+ *
+ * `runOne` writes the case only after `judge` returns, so a provider request
+ * that never settles takes that case's screenshot, page and `result.json` with
+ * it and the row never completes. Generous enough that a judge merely thinking
+ * hard is never cut off; the retry loop above bounds the total at three of
+ * these.
+ */
+const ATTEMPT_TIMEOUT_MS = 90_000;
 
 /**
  * Identity, struck out of every piece of text evidence.
@@ -193,33 +208,44 @@ async function ask(
   options: JudgeOptions,
 ): Promise<({ ok: true; verdicts: Answer[] } | { ok: false; error: string }) & { usage: UsageTotals }> {
   const delayMs = options.delayMs ?? ((attempt: number) => 1500 * (attempt + 1));
+  const timeoutMs = options.timeoutMs ?? ATTEMPT_TIMEOUT_MS;
   let error = "the judge returned nothing";
   let usage = NO_USAGE;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    // The signal stops the provider's own request; the race is what stops US
+    // waiting on one that never answers and never honours it.
+    const expiry = AbortSignal.timeout(timeoutMs);
+    const expired = new Promise<never>((_, fail) => {
+      expiry.addEventListener("abort", () => fail(new Error(`the judge did not answer within ${timeoutMs}ms`)));
+    });
     try {
-      const result = await generateObject({
-        model: options.model ?? pinnedModel(),
-        schema: answerSchema,
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "image", image: input.screenshot, mediaType: "image/png" },
-              { type: "text", text: `SOURCE — what this screen was built from:\n\n${blind(input.artifact)}` },
-              {
-                type: "text",
-                text: `INTERACTION TRACE — every control was pressed once:\n\n${blind(traceText(input.trace))}`,
-              },
-              { type: "text", text: `CHECKLIST — return one verdict per line, in this order:\n\n${checklist}` },
-            ],
-          },
-        ],
-        // The SDK's retries are off so the loop above owns every attempt, and
-        // the attempt count in a degraded result means what it says.
-        maxRetries: 0,
-      });
+      const result = await Promise.race([
+        expired,
+        generateObject({
+          model: options.model ?? pinnedModel(),
+          schema: answerSchema,
+          system: SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "image", image: input.screenshot, mediaType: "image/png" },
+                { type: "text", text: `SOURCE — what this screen was built from:\n\n${blind(input.artifact)}` },
+                {
+                  type: "text",
+                  text: `INTERACTION TRACE — every control was pressed once:\n\n${blind(traceText(input.trace))}`,
+                },
+                { type: "text", text: `CHECKLIST — return one verdict per line, in this order:\n\n${checklist}` },
+              ],
+            },
+          ],
+          // The SDK's retries are off so the loop above owns every attempt, and
+          // the attempt count in a degraded result means what it says.
+          maxRetries: 0,
+          abortSignal: expiry,
+        }),
+      ]);
       usage = spent(usage, result.usage);
       const { verdicts } = result.object;
       if (!wellFormed(verdicts, expected)) {
