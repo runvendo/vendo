@@ -30,6 +30,7 @@ const VALUE_EXPORTS = [
   "VendoOverlay",
   "VendoPalette",
   "VendoSlot",
+  "VendoSurface",
   // Existing-agents Lane B — the three BYO-chat embeds.
   "VendoAppEmbed",
   "VendoApprovalEmbed",
@@ -91,6 +92,7 @@ const VALUE_EXPORTS = [
   // the ejected thread's app cards read the context via useSplitView.
   "SplitViewContext",
   "useSplitView",
+  "useVendoSurface",
   "ChromeRoot",
   "useCopyFeedback",
   "ConnectDockButton",
@@ -150,6 +152,7 @@ const TYPE_EXPORTS = [
   // Discoverability (ui-usage-dx §6) — the dial + greeting config shapes.
   "VendoDiscoverability",
   "VendoGreeting",
+  "VendoSurfaceValue",
 ];
 
 // vitest's jsdom environment rewrites import.meta.url to a non-file scheme,
