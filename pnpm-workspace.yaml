@@ -5,6 +5,7 @@ packages:
   - "corpus/harness"
   - "corpus/hosts/*"
   - "bench"
+  - "genbench"
 
 # pnpm 9 ran every dependency build script; pnpm 11 (strictDepBuilds) requires
 # an explicit allowlist. These five are the deps with build scripts in the

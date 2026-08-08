@@ -1,0 +1,4 @@
+[
+  { "id": "same", "lane": "screen", "prompt": "one", "pass": [] },
+  { "id": "same", "lane": "screen", "prompt": "two", "pass": [] }
+]
