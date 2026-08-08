@@ -77,6 +77,16 @@ const answering = (): MockLanguageModelV3 =>
       replied(asked(call).map((line) => ({ verdict: owed(line), note: `saw ${line}` }))),
   });
 
+/** The same model, reporting what the call cost — so the judge's own spend has
+ *  something real to fold rather than a row of zeroes. */
+const spending = (usage: typeof ZERO_USAGE): MockLanguageModelV3 =>
+  new MockLanguageModelV3({
+    doGenerate: async (call) => ({
+      ...replied(asked(call).map((line) => ({ verdict: owed(line), note: `saw ${line}` }))),
+      usage,
+    }),
+  });
+
 // ----------------------------------------------------------------- blindness
 
 describe("blindness", () => {
@@ -345,6 +355,49 @@ describe("JudgeContract", () => {
 
 });
 
+// -------------------------------------------------------------- what it cost
+
+/**
+ * Grading is not free, and what it costs belongs to the BENCHMARK, never to a
+ * contender. This is the number that keeps the two apart.
+ */
+describe("what grading costs", () => {
+  it("reports the judge's own tokens, priced through the judge's own model", async () => {
+    const model = spending({
+      inputTokens: { total: 1_000_000, noCache: 1_000_000, cacheRead: 0, cacheWrite: 0 },
+      outputTokens: { total: 1_000_000, text: 1_000_000, reasoning: 0 },
+    });
+
+    const result = await judge(input(), { model });
+
+    expect(result.cost?.usage).toMatchObject({ inputTokens: 1_000_000, outputTokens: 1_000_000, calls: 1 });
+    // The contract pins the grader at claude-opus-5 — $5 in and $25 out per
+    // MTok — through the same table every contender is priced through.
+    expect(result.cost?.usd).toBeCloseTo(30, 6);
+  });
+
+  it("counts a retry the judge fumbled, because those tokens were spent either way", async () => {
+    const usage = {
+      inputTokens: { total: 100, noCache: 100, cacheRead: 0, cacheWrite: 0 },
+      outputTokens: { total: 10, text: 10, reasoning: 0 },
+    };
+    let call = 0;
+    const model = new MockLanguageModelV3({
+      doGenerate: async (request) => {
+        call += 1;
+        // The first answer arrives and is paid for, then fails `wellFormed`.
+        if (call === 1) return { ...replied([{ verdict: "pass", note: "too few" }]), usage };
+        return { ...replied(asked(request).map((line) => ({ verdict: owed(line), note: `saw ${line}` }))), usage };
+      },
+    });
+
+    const result = await judge(input(), { model, delayMs: () => 0 });
+
+    expect(result.degraded).toBe(false);
+    expect(result.cost?.usage.calls).toBe(2);
+  });
+});
+
 // ------------------------------------------------------------- empty rubric
 
 describe("no lines", () => {
@@ -352,6 +405,8 @@ describe("no lines", () => {
     const model = answering();
     const result = await judge(input({ caseLines: [], styleLines: [] }), { model });
 
+    // No call, so no cost — a cost of $0.0000 would read as a call that was
+    // free rather than a call that never happened.
     expect(result).toEqual({ lines: [], degraded: false });
     expect(model.doGenerateCalls).toHaveLength(0);
   });

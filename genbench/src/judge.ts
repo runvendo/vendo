@@ -1,6 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateObject, jsonSchema, type LanguageModel } from "ai";
+import { generateObject, jsonSchema, type LanguageModel, type LanguageModelUsage } from "ai";
 import { createHash } from "node:crypto";
+import { usdFor, type UsageTotals } from "./meter.js";
 import type { Probed } from "./probe.js";
 
 /**
@@ -32,6 +33,12 @@ export interface JudgeResult {
   /** The judge could not be trusted, so every line was failed rather than guessed. */
   readonly degraded: boolean;
   readonly error?: string;
+  /** What GRADING this screen spent, priced through the same table the
+   *  contenders are priced through. It is reported beside them and never added
+   *  into one: a contender's `cost` is what that contender spent to build a
+   *  screen, and folding the benchmark's own overhead into it would make the
+   *  columns incomparable. Absent when no judge call was made at all. */
+  readonly cost?: { usage: UsageTotals; usd: number };
 }
 
 export interface JudgeInput {
@@ -153,16 +160,41 @@ const wellFormed = (verdicts: readonly Answer[] | undefined, expected: number): 
  *  inside the retry loop, so a keyless run degrades instead of throwing. */
 const pinnedModel = (): LanguageModel => createAnthropic()(JudgeContract.model);
 
+const NO_USAGE: UsageTotals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 };
+
+/** The `ai` layer reports usage in its own shape — flat totals beside a details
+ *  object — which is not the provider shape `meter.ts` reads off the wire. Two
+ *  wire shapes, two readers; pretending they agree is how a token count starts
+ *  meaning something different depending on who counted it. */
+function spent(totals: UsageTotals, usage: LanguageModelUsage): UsageTotals {
+  const cacheRead = usage.inputTokenDetails.cacheReadTokens ?? 0;
+  const cacheWrite = usage.inputTokenDetails.cacheWriteTokens ?? 0;
+  const uncached =
+    usage.inputTokenDetails.noCacheTokens ?? Math.max(0, (usage.inputTokens ?? 0) - cacheRead - cacheWrite);
+  return {
+    inputTokens: totals.inputTokens + uncached,
+    outputTokens: totals.outputTokens + (usage.outputTokens ?? 0),
+    cacheReadTokens: totals.cacheReadTokens + cacheRead,
+    cacheWriteTokens: totals.cacheWriteTokens + cacheWrite,
+    calls: totals.calls + 1,
+  };
+}
+
 /** One schema-constrained judgement with owned retries. Never throws: an
- *  unusable judge is a degraded result, never a half-graded screen. */
+ *  unusable judge is a degraded result, never a half-graded screen.
+ *
+ *  `usage` counts every attempt that came back, including one whose answer was
+ *  then rejected as malformed — those tokens were spent whether or not they
+ *  bought a verdict, and a spend report that hides a retry is a lie. */
 async function ask(
   input: JudgeInput,
   checklist: string,
   expected: number,
   options: JudgeOptions,
-): Promise<{ ok: true; verdicts: Answer[] } | { ok: false; error: string }> {
+): Promise<({ ok: true; verdicts: Answer[] } | { ok: false; error: string }) & { usage: UsageTotals }> {
   const delayMs = options.delayMs ?? ((attempt: number) => 1500 * (attempt + 1));
   let error = "the judge returned nothing";
+  let usage = NO_USAGE;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     try {
@@ -188,11 +220,12 @@ async function ask(
         // the attempt count in a degraded result means what it says.
         maxRetries: 0,
       });
+      usage = spent(usage, result.usage);
       const { verdicts } = result.object;
       if (!wellFormed(verdicts, expected)) {
         throw new Error(`the judge usably answered ${verdicts?.length ?? 0} of ${expected} lines`);
       }
-      return { ok: true, verdicts };
+      return { ok: true, verdicts, usage };
     } catch (thrown) {
       error = thrown instanceof Error ? thrown.message : String(thrown);
       if (TRANSIENT.test(error) && attempt < MAX_ATTEMPTS - 1) {
@@ -200,7 +233,7 @@ async function ask(
       }
     }
   }
-  return { ok: false, error };
+  return { ok: false, error, usage };
 }
 
 /** The rubric in the one order everything downstream reads it by: the case's
@@ -222,11 +255,19 @@ export async function judge(input: JudgeInput, options: JudgeOptions = {}): Prom
   const checklist = order.map((line, position) => `${position + 1}. ${lines[line]!.line}`).join("\n");
 
   const answered = await ask(input, checklist, lines.length, options);
+  // A judge that never got a reply spent nothing, and reporting $0.0000 for it
+  // would read as a call that was free rather than a call that never happened.
+  const cost =
+    answered.usage.calls === 0
+      ? {}
+      : { cost: { usage: answered.usage, usd: usdFor(answered.usage, JudgeContract.model) } };
+
   if (!answered.ok) {
     return {
       lines: lines.map((entry) => ({ ...entry, verdict: "fail", note: "the judge did not grade this screen" })),
       degraded: true,
       error: answered.error,
+      ...cost,
     };
   }
 
@@ -241,5 +282,6 @@ export async function judge(input: JudgeInput, options: JudgeOptions = {}): Prom
       return { line: entry.line, source: entry.source, verdict: answer.verdict, note: answer.note };
     }),
     degraded: false,
+    ...cost,
   };
 }
