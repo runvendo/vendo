@@ -16,9 +16,14 @@ interface ModelPrice {
   readonly outputPerMTok: number;
 }
 
+/** Effective $/MTok as of 2026-08-08. Sonnet 5 is on introductory pricing —
+ *  $2/$10 rather than its $3/$15 list rate — through 2026-08-31, after which
+ *  this row goes back up and two runs' dollars stop comparing. The token counts
+ *  beside every dollar figure are the durable number; the dollars are a reading
+ *  of this table on the day the run happened. */
 const PRICING: Readonly<Record<string, ModelPrice>> = {
   "claude-opus-5": { inputPerMTok: 5, outputPerMTok: 25 },
-  "claude-sonnet-5": { inputPerMTok: 3, outputPerMTok: 15 },
+  "claude-sonnet-5": { inputPerMTok: 2, outputPerMTok: 10 },
   "claude-haiku-4-5-20251001": { inputPerMTok: 1, outputPerMTok: 5 },
 };
 
