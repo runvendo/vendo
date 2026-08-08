@@ -1,5 +1,13 @@
 # @vendoai/harnesses
 
+## 0.8.2
+
+### Patch Changes
+
+- @vendoai/core@0.8.2
+- @vendoai/guard@0.8.2
+- @vendoai/apps@0.8.2
+
 ## 0.8.1
 
 ### Patch Changes
