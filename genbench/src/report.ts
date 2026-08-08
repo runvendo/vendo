@@ -142,6 +142,28 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
 </section>`;
 }
 
+/**
+ * What GRADING this run cost, on its own line and in nobody's column.
+ *
+ * The judge is the benchmark's overhead, not a contender's bill: folding it into
+ * a `cost` figure would quietly make every column more expensive than the thing
+ * it measures, and two runs graded a different number of times would stop
+ * comparing. So it is said here, once, and left out of every column.
+ */
+const judgeSpend = (results: readonly CaseResult[]): string => {
+  const priced = results.flatMap((result) => (result.judged.cost === undefined ? [] : [result.judged.cost]));
+  if (priced.length === 0) return "";
+  const tokens = priced.reduce(
+    (total, { usage }) =>
+      total + usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens,
+    0,
+  );
+  const usd = priced.reduce((total, cost) => total + cost.usd, 0);
+  return `<p class="meta spend"><span>judge · ${priced.length} screen${priced.length === 1 ? "" : "s"} graded</span>` +
+    `<span>${tokens.toLocaleString("en-US")} tokens</span><span>$${usd.toFixed(4)}</span>` +
+    `<span>not counted in any contender's cost</span></p>`;
+};
+
 /** The case's own truth, collapsed: every tool the screens could call, what it
  *  does, and the exact response it answers with — case overrides applied. It is
  *  what makes any number on any screen above checkable by eye. */
@@ -177,28 +199,45 @@ const CSS = `
 body{margin:0;background:var(--page);color:var(--ink);
   font:450 15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
   -webkit-font-smoothing:antialiased;border-top:3px solid var(--ink);}
-/* Room for the fixed call feed, so the last column is never hidden under it. */
-.wrap{max-width:1240px;margin:0 auto;padding:32px 24px calc(var(--feed) + 32px)}
+/* Room for the fixed call feed, so the last column is never hidden under it.
+   The cap lives here rather than on the grid track: it is what stops a column
+   from stretching past the width its screen was designed at, and it is the one
+   number to move if a world ever ships more than three contenders. */
+.wrap{max-width:1560px;margin:0 auto;padding:32px 24px calc(var(--feed) + 32px)}
 h1{margin:0;font-size:28px;font-weight:600;letter-spacing:-.02em}
 .meta{margin:16px 0 0;font:450 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
   letter-spacing:.08em;text-transform:uppercase;color:var(--ter)}
 .meta span+span::before{content:"·";margin:0 8px;color:var(--line)}
+/* The run's own overhead, tucked under the run line it belongs to rather than
+   given a panel: it is a fact about the benchmark, not a result. */
+.meta.spend{margin-top:6px}
 /* The prompt is the heading a person reads; the case id is a filename. */
 .case{margin-top:48px}
 .case-id{margin:0;font:450 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
   letter-spacing:.08em;text-transform:uppercase;color:var(--ter)}
 .prompt{margin:10px 0 0;font-size:20px;font-weight:500;line-height:1.35;letter-spacing:-.01em;max-width:62ch}
-/* Capped, not fluid: the screenshots are shot at a fixed 480px, so letting a
-   single column stretch to the full page would upscale and blur the one
-   artifact the whole page exists to show. */
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,540px));gap:24px;margin-top:24px;justify-content:center}
+/* Every contender in ONE row, because the whole page is a comparison and a
+   column you have to scroll to find is a column you never compare.
+
+   The max track sizing function must stay FLEXIBLE. auto-fit counts its
+   repetitions off the max when that max is a definite length, so the previous
+   minmax(360px,540px) asked "how many 540px columns fit?" and answered two at
+   every viewport — the third wrapped a full row down, where lazy loading then
+   kept it blank. With 1fr the count comes off the 360px min instead: three
+   columns from ~1176px up, two below that, one on a phone. */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px;margin-top:24px}
 .col{background:var(--card);border-radius:10px;padding:20px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.05)}
 .col>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 h2{margin:0;font-size:15px;font-weight:600}
 .col>header p{margin:2px 0 0;font-size:12px;color:var(--ter)}
 .score{font:600 13px/1 ui-monospace,Menlo,monospace;padding:5px 8px;border-radius:6px}
 .score.ok{color:var(--ok);background:#e8f3ed}.score.no{color:var(--no);background:#fbeceb}
-figure{margin:16px 0 0;background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+/* Full-bleed to the card's edges: the card's own padding was costing the
+   embedded screen 40px of width, which is the difference between a contender's
+   page fitting and its right-hand controls being clipped. The frame is the one
+   thing on this page that must be as close as possible to the 480px the
+   screenshots are shot at, so it gets the whole card. */
+figure{margin:16px -20px 0;background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden}
 iframe{display:block;width:100%;height:660px;border:0;background:#fff}
 .blank{padding:48px 16px;text-align:center;font-size:13px;color:var(--ter)}
 /* The judge's evidence, not the artifact: small, captioned, and inlined so it
@@ -352,6 +391,7 @@ export async function writePreview(input: {
 <style>${CSS}</style></head><body><div class="wrap">
 <h1>genbench</h1>
 <p class="meta"><span>${escape(input.runId)}</span><span>world ${escape(first?.world ?? "")}</span><span>${escape(first?.lane ?? "screen")} lane</span></p>
+${judgeSpend(input.results)}
 ${sections.join("")}
 </div>
 <aside class="feed"><p class="feed-label">tool calls</p><ol id="feed"></ol></aside>

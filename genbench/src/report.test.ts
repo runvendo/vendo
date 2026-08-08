@@ -166,6 +166,39 @@ describe("the preview page", () => {
     expect(html).toContain(`<span>correctness</span><b>—</b>`);
   });
 
+  it("shows what grading cost on its own line, and leaves it out of every column", async () => {
+    const graded = resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers.");
+    const html = await preview(
+      [
+        {
+          ...graded,
+          judged: {
+            ...graded.judged,
+            cost: {
+              usage: { inputTokens: 3_000, outputTokens: 400, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 1 },
+              usd: 0.025,
+            },
+          },
+        },
+      ],
+      { "pending-transfers": world },
+    );
+
+    expect(html).toContain("judge · 1 screen graded");
+    expect(html).toContain("3,400 tokens");
+    expect(html).toContain("$0.0250");
+    // The contender's own cost is untouched — the two numbers must never merge.
+    expect(html).toContain(`<dd>$0.0100</dd>`);
+  });
+
+  it("says nothing about judge spend when no screen was graded", async () => {
+    const html = await preview([resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers.")], {
+      "pending-transfers": world,
+    });
+
+    expect(html).not.toContain("judge ·");
+  });
+
   it("carries the listener that turns a press in an embedded page into a feed row", async () => {
     const html = await preview([resultFor("vendo-sonnet", "spend-overview", "Show me where my money went.")], {
       "spend-overview": world,
