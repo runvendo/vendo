@@ -110,8 +110,10 @@ function harness(options: {
   /** Force every commit to answer `conflict`, so nothing lands. */
   conflict?: boolean;
   authoredApp?: boolean;
+  /** Guard verdicts by tool name, so a test can take a verb away from the loop. */
+  guardPolicy?: Record<string, "run" | "ask" | "block">;
 }): Harness {
-  const guard = testGuard();
+  const guard = testGuard(options.guardPolicy);
   const descriptors = options.tools ?? [spendSummary, sendMoney, validate, searchComponents, vendoMake];
   const registry = boundRegistry(
     Object.fromEntries(descriptors.map((descriptor) => [
@@ -251,6 +253,23 @@ describe("assembly writes through the real path and the seam paints it", () => {
     expect(screen.authoredCalls).toHaveLength(0);
     // The front door is what turns this into a fall-through: it finds no ROW.
     expect(result.kind).toBe("assembled");
+  });
+
+  /** The gate is FAIL-OPEN by design (`validate-gate.ts`): a validate that could
+   *  not run is not a finding. But "could not run" and "ran and found nothing" are
+   *  different facts, and this hand reported the second for both — so a loop whose
+   *  gate never executed was told its document had been checked and cleared. */
+  it("never claims validate cleared a document when the gate could not run at all", async () => {
+    const screen = harness({
+      turns: [saveApp(BROKEN_APP), textTurn("done")],
+      guardPolicy: { validate: "block" },
+    });
+    await screen.assemble("show me my spending");
+
+    // The note rides back as the save_app tool result, so it is in the next prompt.
+    const note = JSON.stringify(screen.model.prompts[1] ?? "");
+    expect(note).toContain("did not reach the person's screen");
+    expect(note).not.toContain("validate found nothing to fix");
   });
 
   it("a commit that did not land is told to the model, not swallowed", async () => {

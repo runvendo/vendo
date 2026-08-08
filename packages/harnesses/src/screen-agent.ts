@@ -396,11 +396,16 @@ export async function assembleScreen(
           workspace: turn.workspace,
           paths: [`${directory}/${APP_FILE}`],
         }));
+        // No instruction covers BOTH "validate cleared it" and every way the gate
+        // could not reach a verdict — a denied call, an unreadable answer, a
+        // workspace that closed under it — each of which the gate reports to the
+        // operator and returns empty for, its fail-open being deliberate. So this
+        // hand cannot say which happened, and claiming the first told the loop its
+        // document had been checked when nothing had checked it. The failed paint
+        // is the fact this hand does have, and it is enough to act on.
         return {
           saved: true,
-          note: instruction
-            ?? "That save landed but did not reach the person's screen, and validate found nothing to fix."
-            + " Save a simpler document.",
+          note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.",
         };
       }
       return { saved: true, note: "Run validate on it now." };

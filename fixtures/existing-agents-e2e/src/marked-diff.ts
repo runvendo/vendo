@@ -92,11 +92,18 @@ export function starterPackageJson(source: string): string {
   for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
     const section = pkg[field];
     if (typeof section !== "object" || section === null) continue;
-    for (const name of Object.keys(section)) {
+    for (const [name, version] of Object.entries(section as Record<string, unknown>)) {
       // Every `@vendoai`-scoped name, not just `@vendoai/*`: the workspace's
       // test rigs live under `@vendoai-fixtures/*` and are no more part of a
       // framework starter than vitest is.
-      if (name === "vendoai" || name.startsWith("@vendoai") || name === "vitest") {
+      //
+      // …and every `workspace:` spec whatever its name, because that is the
+      // property the journey actually needs: it runs `npm install` on the
+      // starter in a temp dir OUTSIDE this monorepo, where the protocol does
+      // not resolve. Scope matching alone still misses the workspace packages
+      // that are not `@vendoai`-scoped — `demo-bank` is one — and #1001 showed
+      // the scope list is the part that drifts.
+      if (name === "vendoai" || name.startsWith("@vendoai") || String(version).startsWith("workspace:") || name === "vitest") {
         delete (section as Record<string, unknown>)[name];
       }
     }

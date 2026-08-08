@@ -176,15 +176,28 @@ export async function checkLiveStatus(run: DoctorRun, e2bResolvable: ((root: str
 /** Render gate (0.4.1 E2E cert M3): a live wire proves nothing about the
  *  PAGES — the certified invoify install had every page 500ing (registry
  *  passed across the Server Component boundary) while doctor exited 0. One
- *  cheap GET of the app root catches a site that is down for users. */
+ *  cheap GET of the app root catches a site that is down for users.
+ *
+ *  It catches THAT and nothing more, so it claims nothing more. A status line
+ *  is the whole observation: doctor never parses the body, so even a 200 is
+ *  "the server answered", not "the page is right" — and a 4xx is the server
+ *  answering that there is no page here at all, which is the same fact the
+ *  catch below already declines to judge. Reporting either as `ok: the app's
+ *  root page renders` made 404 the blessing every healthy run printed and left
+ *  the check unable to fail on anything but 5xx. */
 export async function checkRootRender(run: DoctorRun): Promise<void> {
   const { statusUrl, fetchImpl } = run;
   try {
     const response = await fetchImpl(`${new URL(statusUrl).origin}/`, { headers: { accept: "text/html" } });
     if (response.status >= 500) {
       run.fail("live/render", "E-LIVE-006", `the app's root page returned ${response.status} — the site is crashing for users even though the wire answers (typical cause: the component registry declared in a Server Component layout; move it into your own "use client" file with the provider). Check the dev server log.`);
+    } else if (response.status >= 400) {
+      // Not a pass and not a failure: a host that serves nothing at `/` — every
+      // page under a basePath, an auth layer in front — is healthy, and doctor
+      // cannot tell that apart from a route you meant to have.
+      run.note(`  the app's root page answered HTTP ${response.status}, so this run did not reach a page to check. If you expected a page at ${new URL(statusUrl).origin}/, check your routes; a host that serves nothing there is fine.`);
     } else {
-      run.pass("live/render", `the app's root page renders (HTTP ${response.status})`);
+      run.pass("live/render", `the app's root page answered HTTP ${response.status}`);
     }
   } catch {
     // The wire answered but the origin root didn't resolve at all — hosts
