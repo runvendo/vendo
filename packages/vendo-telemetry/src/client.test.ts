@@ -128,6 +128,39 @@ describe("createTelemetry.track", () => {
     expect(String(deps.fetchImpl.mock.calls[0]![0])).toContain("us.i.posthog.com");
   });
 
+  it("still posts when cwd resolution fails", async () => {
+    // The real shape: a dev server whose working directory was deleted under
+    // it, so getcwd() fails. deps.cwd is unset, so projectProps resolves the
+    // default itself and throws inside the client's constructor. The spy is
+    // released before the await so nothing else in the run sees a broken cwd.
+    const deps = makeDeps();
+    const cwdSpy = vi.spyOn(process, "cwd").mockImplementation(() => {
+      throw new Error("ENOENT: no such file or directory, uv_cwd");
+    });
+    let t;
+    try {
+      t = createTelemetry(deps);
+    } finally {
+      cwdSpy.mockRestore();
+    }
+    await t.track("init_started", { framework: "next" });
+    expect(deps.fetchImpl).toHaveBeenCalledOnce();
+    const body = JSON.parse((deps.fetchImpl.mock.calls[0]![1] as { body: string }).body);
+    // Project props are simply absent; the event still carries the base props.
+    expect(body.properties.projectIdHash).toBeUndefined();
+    expect(body.properties.vendoVersion).toBe("9.9.9");
+  });
+
+  it("swallows an event name outside the allowlist instead of throwing at the caller", async () => {
+    // An untyped JS caller can name an event the allowlist has never heard of.
+    // Looking up its prop allowlist yields undefined and filtering throws —
+    // which must never reach the build or dev server that called track().
+    const deps = makeDeps();
+    const t = createTelemetry(deps);
+    await expect(t.track("not_a_real_event" as never, { framework: "next" })).resolves.toBeUndefined();
+    expect(deps.fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("returns after the telemetry timeout when fetch never settles", async () => {
     vi.useFakeTimers();
     try {

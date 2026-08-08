@@ -91,6 +91,23 @@ describe("httpKnowledge — posture-shaped surface", () => {
     expect((thrown as VendoError).code).toBe("not-implemented");
   });
 
+  it("names the route when the endpoint answers 200 with a body that is not the wire", async () => {
+    // The BYO implementor's most likely mistake: a live endpoint that answers
+    // successfully in its own shape. It must be told which route disagreed and
+    // which contract it failed, not handed a generic parse error.
+    const ownShape: typeof fetch = async () =>
+      new Response(JSON.stringify({ status: "ok", results: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    const adapter = httpKnowledge({ url: "https://byo.example/kb", fetch: ownShape });
+    const thrown = await adapter.status().catch((error: unknown) => error);
+    expect(thrown).toBeInstanceOf(VendoError);
+    expect((thrown as VendoError).code).toBe("not-implemented");
+    expect((thrown as Error).message).toContain("https://byo.example/kb/status");
+    expect((thrown as Error).message).toContain("vendo/knowledge-wire@1");
+  });
+
   it("names the endpoint when it is unreachable", async () => {
     const down: typeof fetch = async () => { throw new TypeError("fetch failed"); };
     const adapter = httpKnowledge({ url: "https://byo.example/kb", fetch: down });

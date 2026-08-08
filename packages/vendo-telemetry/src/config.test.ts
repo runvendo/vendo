@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, saveConfig, configPath, configDir } from "./config.js";
+import { loadConfig, saveConfig, configPath, configDir, type TelemetryConfig } from "./config.js";
 
 let home: string;
 beforeEach(() => {
@@ -43,6 +43,18 @@ describe("config store", () => {
     writeFileSync(configPath(home), JSON.stringify({ optedOut: true }), "utf8");
     const c = loadConfig(home, {});
     expect(c.optedOut).toBe(true);
+  });
+
+  it("regenerates and rewrites the config when the file on disk is corrupt", () => {
+    mkdirSync(configDir(home), { recursive: true });
+    writeFileSync(configPath(home), "{ truncated wri", "utf8");
+    const c = loadConfig(home, {});
+    expect(c.anonymousId).toMatch(/[0-9a-f-]{36}/);
+    expect(c.optedOut).toBe(false);
+    // A corrupt file is replaced, not just worked around in memory: the next
+    // process must read the same id back instead of minting another one.
+    expect((JSON.parse(readFileSync(configPath(home), "utf8")) as TelemetryConfig).anonymousId).toBe(c.anonymousId);
+    expect(loadConfig(home, {}).anonymousId).toBe(c.anonymousId);
   });
 
   it("does not mint or persist a tracking id when an env opt-out is set", () => {

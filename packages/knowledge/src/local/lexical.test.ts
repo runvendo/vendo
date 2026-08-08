@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { KnowledgeContext, KnowledgeDoc } from "@vendoai/core";
 import { knowledgeAdapterConformance, memoryStoreAdapter, runConformance } from "@vendoai/core/conformance";
 import { KNOWLEDGE_CHUNKS_COLLECTION, KNOWLEDGE_DOCS_COLLECTION } from "../collections.js";
-import { vendoKnowledge } from "./lexical.js";
+import { bindKnowledgeStore, vendoKnowledge } from "./lexical.js";
 
 const ctx: KnowledgeContext = { principal: { kind: "user", subject: "user_lexical_test" } };
 
@@ -189,5 +189,28 @@ describe("vendoKnowledge — fetch, store rows, and lifecycle", () => {
   it("fails loudly when no store is bound instead of reading as an empty corpus", async () => {
     const unbound = vendoKnowledge();
     await expect(unbound.search({ text: "anything" }, ctx)).rejects.toThrow(/no store bound/);
+  });
+});
+
+/** The composition seam vendo's `selectKnowledge` drives (compose-selection.ts):
+    a store-less `vendoKnowledge()` is handed the store createVendo composed,
+    and everything else passes through. Both halves were only ever pinned from
+    `packages/vendo` through the package barrel, so this package — which owns
+    the code — measured neither. */
+describe("bindKnowledgeStore — the composition seam", () => {
+  it("hands a store-less vendoKnowledge() the composed store so it can actually serve", async () => {
+    const store = memoryStoreAdapter();
+    const bound = bindKnowledgeStore(vendoKnowledge(), store);
+    await bound.upsert!(CORPUS);
+    const result = await bound.search({ text: "How long do refunds take?" }, ctx);
+    expect(result.hits[0]!.ref.docId).toBe("docs#refunds.md");
+    // The store it was handed is the one it wrote through — not a private one.
+    const rows = (await store.records(KNOWLEDGE_DOCS_COLLECTION).list({ limit: 1000 })).records;
+    expect(rows).toHaveLength(CORPUS.length);
+  });
+
+  it("passes an adapter that already owns a store through untouched", () => {
+    const own = vendoKnowledge({ store: memoryStoreAdapter() });
+    expect(bindKnowledgeStore(own, memoryStoreAdapter())).toBe(own);
   });
 });

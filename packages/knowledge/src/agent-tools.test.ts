@@ -136,6 +136,67 @@ async function envelopeOf(outcome: Awaited<ReturnType<ToolRegistry["execute"]>>)
 const search = (registry: ToolRegistry, args: Json, id = "call_t2") =>
   registry.execute({ id, tool: VENDO_KNOWLEDGE_SEARCH_TOOL, args }, ctx);
 
+/** Every parseInput rejection. This tool's arguments are MODEL-generated, so
+    a shape the schema forbids is a routine event, not a programming error:
+    each one must come back as a structured validation outcome the agent can
+    read and retry from, never a throw out of execute(). */
+describe("vendo_knowledge_search input validation", () => {
+  const rejectionFor = async (args: Json): Promise<{ code: string; message: string }> => {
+    const outcome = await search(createKnowledgeTools(memoryKnowledgeAdapter({ docs })), args);
+    expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") throw new Error("expected an error outcome");
+    return outcome.error;
+  };
+
+  it("rejects input that is not an object", async () => {
+    // An array is typeof "object": the Array.isArray half of the guard is the
+    // only thing standing between it and a query read off index-less input.
+    for (const args of ["wire transfers", 7, null, [{ query: "wire transfers" }]] as Json[]) {
+      expect(await rejectionFor(args)).toMatchObject({
+        code: "validation",
+        message: "tool input must be an object",
+      });
+    }
+  });
+
+  it("rejects a non-boolean lookup", async () => {
+    expect(await rejectionFor({ query: "wire transfers", lookup: "true" })).toMatchObject({
+      code: "validation",
+      message: "lookup must be a boolean",
+    });
+  });
+
+  it("rejects a readMore that is not an object", async () => {
+    for (const readMore of ["doc-transfers", ["doc-transfers"]] as Json[]) {
+      expect(await rejectionFor({ query: "wire transfers", readMore })).toMatchObject({
+        code: "validation",
+        message: "readMore must be an object",
+      });
+    }
+  });
+
+  it("rejects a readMore without a usable docId", async () => {
+    for (const readMore of [{}, { docId: "" }, { docId: "   " }, { docId: 7 }] as Json[]) {
+      expect(await rejectionFor({ query: "wire transfers", readMore })).toMatchObject({
+        code: "validation",
+        message: "readMore.docId must be a non-empty string",
+      });
+    }
+  });
+
+  it("rejects a present-but-blank readMore.chunkId", async () => {
+    for (const chunkId of ["", "   ", 7] as Json[]) {
+      expect(await rejectionFor({
+        query: "wire transfers",
+        readMore: { docId: "doc-transfers", chunkId },
+      })).toMatchObject({
+        code: "validation",
+        message: "readMore.chunkId must be a non-empty string",
+      });
+    }
+  });
+});
+
 describe("tool policy: intent + escalation + refusal (T2)", () => {
   it("passes only { principal } as knowledge context — includeInternal is never set", async () => {
     const adapter = spyAdapter(memoryKnowledgeAdapter({ docs }));
