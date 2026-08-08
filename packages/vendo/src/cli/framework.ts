@@ -16,6 +16,7 @@ export interface VendoWiring {
       VendoRoot (Maple's is), so this is the import from @vendoai, or the tag
       with no <VendoProvider> anywhere in the source. */
   legacyRoot: boolean;
+  provider: boolean;
 }
 
 /** What counts as a visible surface: the shipped chrome (<VendoOverlay> and
@@ -103,5 +104,6 @@ export async function detectVendoWiring(root: string): Promise<VendoWiring> {
     client: provider || legacyTag,
     surface,
     legacyRoot: legacyImport || (legacyTag && !provider),
+    provider,
   };
 }

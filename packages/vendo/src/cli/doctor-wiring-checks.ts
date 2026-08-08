@@ -26,15 +26,21 @@ async function hasDependency(root: string): Promise<boolean> {
 function checkGenericWiring(run: DoctorRun, wiring: VendoWiring): void {
   if (wiring.server) run.pass("wiring/server", "createVendo server wiring found");
   else run.fail("wiring/server", "E-WIRE-007", "no createVendo server wiring found — import createVendo from @vendoai/vendo/server and mount vendo.handler on your runtime's request entry");
-  if (wiring.client) run.pass("wiring/client", "<VendoProvider> wraps the client");
-  else run.warn("wiring/client", "E-WIRE-008", "no <VendoProvider> found in the host source — the @vendoai/ui hooks and embeds need it; ignore this if the host renders a fully custom surface");
+  if (wiring.client) {
+    run.pass("wiring/client", (wiring.legacyRoot && !wiring.provider) ? "<VendoRoot> wraps the client (legacy)" : "<VendoProvider> wraps the client");
+  } else {
+    run.warn("wiring/client", "E-WIRE-008", "no <VendoProvider> found in the host source — the @vendoai/ui hooks and embeds need it; ignore this if the host renders a fully custom surface");
+  }
 }
 
 function checkExpressWiring(run: DoctorRun, wiring: VendoWiring): void {
   if (wiring.server) run.pass("wiring/express-server", "Express server is wired");
   else run.fail("wiring/express-server", "E-WIRE-001", "Express server is not wired with createVendo from @vendoai/vendo/server");
-  if (wiring.client) run.pass("wiring/express-client", "<VendoProvider> wraps the client");
-  else run.fail("wiring/express-client", "E-WIRE-002", "Express client is not wrapped in <VendoProvider>");
+  if (wiring.client) {
+    run.pass("wiring/express-client", (wiring.legacyRoot && !wiring.provider) ? "<VendoRoot> wraps the client (legacy)" : "<VendoProvider> wraps the client");
+  } else {
+    run.fail("wiring/express-client", "E-WIRE-002", "Express client is not wrapped in <VendoProvider>");
+  }
 }
 
 async function nextRoutePath(root: string): Promise<string | null> {
@@ -93,24 +99,10 @@ async function checkServerActionsWiring(run: DoctorRun, routePath: string): Prom
 /** The mount may live in ANY layout, not just the root one (i18n/route-group
  *  hosts mount in e.g. app/[locale]/layout.tsx — the literal root-layout grep
  *  fought exactly that correct wiring in the 0.4.1 E2E cert). */
-async function checkProviderMount(run: DoctorRun): Promise<void> {
+async function checkProviderMount(run: DoctorRun, wiring: VendoWiring): Promise<void> {
   const { root } = run;
-  let rootWired = false;
-  const mountCandidates = [
-    ...await walk(join(root, "app"), (rel) => /(^|[\\/])layout\.(?:tsx|jsx|js)$/.test(rel)),
-    ...await walk(join(root, "src", "app"), (rel) => /(^|[\\/])layout\.(?:tsx|jsx|js)$/.test(rel)),
-    // A pages-only host has no layout to wrap: init hands it pages/_app, so
-    // that is where the mount lives. Without this the check can never pass on
-    // a router shape init explicitly supports.
-    ...["pages", join("src", "pages")].flatMap((pages) =>
-      ["_app.tsx", "_app.jsx", "_app.js"].map((file) => join(root, pages, file))),
-  ];
-  for (const path of mountCandidates) {
-    const source = await readFile(path, "utf8").catch(() => "");
-    if (source.includes("<VendoProvider")) rootWired = true;
-  }
-  if (rootWired) {
-    run.pass("wiring/next-root", "<VendoProvider> wraps the app");
+  if (wiring.client) {
+    run.pass("wiring/next-root", (wiring.legacyRoot && !wiring.provider) ? "<VendoRoot> wraps the app (legacy)" : "<VendoProvider> wraps the app");
   } else {
     // The exact paste, not a description of it: init never edits user source,
     // so this is the one step a by-the-book install still owes, and doctor is
@@ -125,12 +117,12 @@ async function checkProviderMount(run: DoctorRun): Promise<void> {
   }
 }
 
-async function checkNextWiring(run: DoctorRun): Promise<void> {
+async function checkNextWiring(run: DoctorRun, wiring: VendoWiring): Promise<void> {
   const routePath = await nextRoutePath(run.root);
   if (routePath !== null) run.pass("wiring/next-route", "catch-all handler is wired");
   else run.fail("wiring/next-route", "E-WIRE-003", "missing app/api/vendo/[...vendo]/route.ts");
   if (routePath !== null) await checkServerActionsWiring(run, routePath);
-  await checkProviderMount(run);
+  await checkProviderMount(run, wiring);
 }
 
 /** VendoRoot is gone in this release (spec 2026-08-06 §B2). A host that still
@@ -158,7 +150,7 @@ export async function checkWiring(run: DoctorRun): Promise<void> {
   const wiring = await detectVendoWiring(root);
   if (framework === "unknown") checkGenericWiring(run, wiring);
   else if (framework === "express") checkExpressWiring(run, wiring);
-  else await checkNextWiring(run);
+  else await checkNextWiring(run, wiring);
 
   // Visible surface (0.4.1 E2E cert B3): <VendoProvider> is a context provider
   // that renders NOTHING — two certified stacks ended doctor-green with no
