@@ -3392,10 +3392,10 @@ describe("10-mcp §5 — wellKnownVendoHandler (the Next.js app/.well-known/[...
         async principal(subject) { return { kind: "user", subject }; },
       },
     });
-    // See the identical comment on the door describe block above: a test
-    // whose requests all resolve before `await ready` would otherwise close
-    // the store mid-schema-creation (the known PGlite close-race hang).
-    await store.ensureSchema();
+    // No ensureSchema(), same as the door block above: these cases only read
+    // well-known metadata, so nothing here ever queries the store — forcing a
+    // boot would pay a full initdb purely to satisfy a close-race that no
+    // longer exists (construction is pure; the `ready()` latch is awaited).
     return vendo;
   }
   const root = (path: string): Request => new Request(`https://host.test${path}`);
