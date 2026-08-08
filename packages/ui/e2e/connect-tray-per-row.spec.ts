@@ -43,8 +43,13 @@ test("one connect in flight leaves every other connector clickable", async ({ pa
 
   // Still live, not merely styled as such: a second connect starts and keeps its
   // own dots beside the first.
-  await tray.getByRole("button", { name: "Connect Gmail" }).click();
-  await expect(tray.getByRole("status", { name: "Connecting Gmail" })).toBeVisible();
+  await tray.getByRole("button", { name: "Connect QuickBooks" }).click();
+  await expect(tray.getByRole("status", { name: "Connecting QuickBooks" })).toBeVisible();
   await expect(tray.getByRole("status", { name: "Connecting Slack" })).toBeVisible();
+  // The only VISIBLE difference this fix makes. A tray with one shared
+  // `connecting` looked identical to a working one — the 55 inert buttons carried
+  // no disabled styling at all — so two rows connecting at once is the state a
+  // screenshot can actually tell apart from the old behaviour.
+  await page.screenshot({ path: screenshotPath("connect-tray-two-in-flight"), animations: "disabled" });
   release();
 });

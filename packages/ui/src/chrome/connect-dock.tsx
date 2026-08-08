@@ -204,14 +204,20 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
   const { options: connectors, resolved, failed, retry } = useConnectorCatalog();
   const { connections, refresh } = useConnections();
   const [query, setQuery] = useState("");
-  const [connecting, setConnecting] = useState<string>();
   const [justConnected, setJustConnected] = useState<string>();
-  const [error, setError] = useState<string>();
-  // The broker's redirect URL, once initiate lands, for a connect whose sign-in
-  // window the browser refused. The tray opened the window in the click, but
-  // offered nothing when it was refused anyway — the row sat on its dots for the
-  // whole poll with nowhere to sign in.
-  const [blockedUrl, setBlockedUrl] = useState<string>();
+  // All three keyed by toolkit, the way #1051 keyed the panel's `busy` and
+  // `blocked`: a connect is a per-ROW flow, and one connect's state standing in
+  // for the surface is what made a single connect disable every other connector
+  // for the whole 120s poll — silently, since nothing rendered as disabled.
+  const [connecting, setConnecting] = useState<Record<string, boolean>>({});
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
+  // Connects whose sign-in window the browser refused. The tray opened the
+  // window in the click, but offered nothing when it was refused anyway — the
+  // row sat on its dots for the whole poll with nowhere to sign in. One notice
+  // per waiting connect: a shared one let the second connect erase a link the
+  // first still needed. `url` is the broker's own redirect, known only once
+  // initiate lands, so the notice explains itself before the link can exist.
+  const [blocked, setBlocked] = useState<Record<string, { name: string; url?: string } | undefined>>({});
   // 3-A′ — toolkits whose brand mark failed to load fall back to the monogram.
   const [failedLogos, setFailedLogos] = useState<ReadonlySet<string>>(new Set());
   const trayRef = useRef<HTMLDivElement>(null);
@@ -303,9 +309,13 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
   const connect = async (row: TrayRow) => {
     // Before the first await, or the browser blocks it (openConnectPopup).
     const popup = openConnectPopup();
-    setConnecting(row.toolkit);
-    setError(undefined);
-    setBlockedUrl(undefined);
+    const key = row.toolkit;
+    const clearBlocked = () => setBlocked(current => ({ ...current, [key]: undefined }));
+    setConnecting(current => ({ ...current, [key]: true }));
+    // Only THIS row's leftovers clear: a sibling connect may still be failing
+    // in place, or still waiting on a sign-in link that is its only way through.
+    setErrors(current => ({ ...current, [key]: undefined }));
+    setBlocked(current => ({ ...current, [key]: popup === null ? { name: row.name } : undefined }));
     try {
       await completeConnection(
         client,
@@ -315,26 +325,28 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
         // Refused anyway: the connect is initiated and the poll is running, so
         // the same URL in a tab still finishes it.
         url => {
-          if (popup === null && !cancelledRef.current) setBlockedUrl(url);
+          if (popup === null && !cancelledRef.current) setBlocked(current => ({ ...current, [key]: { name: row.name, url } }));
         },
       );
       if (cancelledRef.current) return;
-      setBlockedUrl(undefined);
+      clearBlocked();
       await refresh();
       setJustConnected(row.toolkit);
     } catch (reason) {
       if (!cancelledRef.current) {
-        setBlockedUrl(undefined);
-        setError(connectRefusalCopy(reason, row.name));
+        // This connect is over, so its link is stale — a retry needs a fresh
+        // initiate, and the refusal copy says so.
+        clearBlocked();
+        setErrors(current => ({ ...current, [key]: connectRefusalCopy(reason, row.name) }));
       }
     } finally {
-      if (!cancelledRef.current) setConnecting(undefined);
+      if (!cancelledRef.current) setConnecting(current => ({ ...current, [key]: false }));
     }
   };
 
   const item = (row: TrayRow) => {
     const isConnected = row.account !== undefined;
-    const isConnecting = connecting === row.toolkit;
+    const isConnecting = connecting[row.toolkit] === true;
     // Lane pick 3-A′ — real brand marks in the tray rows; the two-letter
     // monogram stays as the fallback for toolkits without a mapped domain or
     // whose mark failed to load.
@@ -367,11 +379,13 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
               <span className="fl-typing" aria-hidden="true"><span /><span /><span /></span>
             </span>
           ) : (
+            // No `disabled`: the row that IS connecting renders its dots above
+            // instead of this button, so a second click on the same row is
+            // already impossible — and every other row stays a live "+".
             <button
               type="button"
               className="fl-picker-add"
               aria-label={`Connect ${row.name}`}
-              disabled={connecting !== undefined}
               onClick={() => void connect(row)}
             >+</button>
           )}
@@ -399,15 +413,23 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
             </svg>
           </button>
         </div>
-        {error !== undefined ? <div role="alert" className="fl-att-error">{error}</div> : null}
-        {blockedUrl === undefined ? null : (
-          <div role="status" className="fl-connect-blocked">
-            <span>Your browser blocked the sign-in window. Open it yourself — we’ll pick it up from here.</span>
-            <a className="fl-btn fl-btn-primary" href={blockedUrl} target="_blank" rel="noreferrer">
-              Open sign-in in a new tab
-            </a>
+        {Object.entries(errors).map(([key, message]) => message === undefined ? null : (
+          <div key={key} role="alert" className="fl-att-error">{message}</div>
+        ))}
+        {Object.entries(blocked).map(([key, entry]) => entry === undefined ? null : (
+          // The window never opened, but the connect did: the poll is running on
+          // that account, so the same URL in a tab finishes it. One notice per
+          // connect still waiting — each names its own service, since the tray
+          // has many.
+          <div key={key} role="status" className="fl-connect-blocked">
+            <span>Your browser blocked the {entry.name} sign-in window. Open it yourself — we’ll pick it up from here.</span>
+            {entry.url === undefined ? null : (
+              <a className="fl-btn fl-btn-primary" href={entry.url} target="_blank" rel="noreferrer">
+                Open sign-in in a new tab
+              </a>
+            )}
           </div>
-        )}
+        ))}
         {rows.connected.length > 0 ? (
           <>
             <div className="fl-picker-group">Connected</div>
