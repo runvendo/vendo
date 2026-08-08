@@ -218,6 +218,7 @@ const forkPin = async (
   input: PinForkInput,
   ctx: RunContext,
 ): Promise<PinForkResult> => {
+  const now = new Date().toISOString();
   const { config, history, requireOwned, persistEdit, reportLifecycle, rungFor, runtime } = deps;
   const baseline = (config.pinBaselines ?? []).find(({ slot }) => slot === input.slot);
   if (baseline === undefined) {
@@ -249,7 +250,7 @@ const forkPin = async (
     return {
       app: existing,
       version: {
-        at: recorded?.at ?? new Date().toISOString(),
+        at: recorded?.at ?? now,
         intent: recorded?.intent ?? `Remix the host component "${input.slot}"`,
         rung: rungFor(existing),
       },
@@ -279,7 +280,7 @@ const forkPin = async (
   }
   const working = forkOnto(previous);
   const version: VersionEntry = {
-    at: new Date().toISOString(),
+    at: now,
     intent: `Remix the host component "${input.slot}"`,
     rung: rungFor(working),
   };
