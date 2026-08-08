@@ -1,23 +1,14 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Binding, FloorResult, Offender } from "./floor.js";
+import { checks, type Binding, type Offender } from "./floor.js";
 import type { CaseResult } from "./run.js";
+import { cannedResponse, type World } from "./world.js";
 
 const escape = (value: string): string =>
   value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
 
 const verdict = (ok: boolean): string =>
   `<span class="v ${ok ? "ok" : "no"}">${ok ? "✓" : "✕"} ${ok ? "pass" : "fail"}</span>`;
-
-const CHECKS = ["delivered", "renders", "valid", "honestData", "wiredActions"] as const;
-
-const passes = (floor: FloorResult): boolean[] => [
-  floor.delivered,
-  floor.renders,
-  floor.valid,
-  floor.honestData.pass,
-  floor.wiredActions.pass,
-];
 
 const offenderList = (offenders: readonly Offender[]): string =>
   offenders.length === 0
@@ -32,9 +23,10 @@ const bindingList = (bindings: readonly Binding[]): string =>
     : `<ul class="notes">${bindings
         .map(
           (b) =>
-            `<li><code>${escape(b.where)}</code> <span>${escape(b.tool ?? "—")}${
-              b.why === undefined ? "" : ` — ${escape(b.why)}`
-            }</span> ${b.known && b.argsValid ? '<i class="ok">✓</i>' : '<i class="no">✕</i>'}</li>`,
+            `<li><code>${escape(b.where)}</code> <span>${[b.tool, b.why]
+              .filter((part) => part !== undefined)
+              .map(escape)
+              .join(" — ")}</span> ${b.known && b.argsValid ? '<i class="ok">✓</i>' : '<i class="no">✕</i>'}</li>`,
         )
         .join("")}</ul>`;
 
@@ -52,15 +44,15 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
   const caseDir = join(result.contender, result.case);
   const shot = await readFile(join(runDir, caseDir, "screenshot.png")).catch(() => undefined);
   const page = await readFile(join(runDir, caseDir, "page.html"), "utf8").catch(() => undefined);
-  const scored = passes(result.floor);
-  const total = scored.filter(Boolean).length;
+  const scored = checks(result.floor);
+  const total = scored.filter((check) => check.pass).length;
   const { usage } = result.cost;
   const tokens = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
 
   return `<section class="col">
   <header>
     <div><h2>${escape(result.contender)}</h2><p>${escape(result.model)}</p></div>
-    <span class="score ${total === 5 ? "ok" : "no"}">${total}/5</span>
+    <span class="score ${total === scored.length ? "ok" : "no"}">${total}/${scored.length}</span>
   </header>
   <figure>${
     page === undefined
@@ -75,7 +67,7 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
   }
   ${result.failure === undefined ? "" : `<p class="failure">${escape(result.failure)}</p>`}
   ${consoleNote(result.consoleErrors)}
-  <dl class="floor">${CHECKS.map((name, index) => `<div><dt>${name}</dt><dd>${verdict(scored[index]!)}</dd></div>`).join("")}</dl>
+  <dl class="floor">${scored.map((check) => `<div><dt>${check.name}</dt><dd>${verdict(check.pass)}</dd></div>`).join("")}</dl>
   ${
     result.floor.blocking.length === 0
       ? ""
@@ -92,22 +84,56 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
 </section>`;
 }
 
+/** The case's own truth, collapsed: every tool the screens could call, what it
+ *  does, and the exact response it answers with — case overrides applied. It is
+ *  what makes any number on any screen above checkable by eye. */
+function worldPanel(world: World | undefined): string {
+  if (world === undefined) return "";
+  const tools = world.tools
+    .map(
+      (tool) => `<div class="tool">
+      <p><code>${escape(tool.name)}</code> ${escape(tool.descriptor.description ?? "")}</p>
+      <pre>${escape(JSON.stringify(cannedResponse(tool), null, 2))}</pre>
+    </div>`,
+    )
+    .join("");
+  return `<details class="world">
+  <summary><span class="chev">▸</span>World data · ${world.tools.length} tools · the only numbers these screens may show</summary>
+  <div class="tools">${tools}</div>
+</details>`;
+}
+
+async function caseSection(runDir: string, testCase: string, results: readonly CaseResult[], world: World | undefined): Promise<string> {
+  const columns = await Promise.all(results.map(async (result) => await column(runDir, result)));
+  return `<section class="case">
+  <p class="case-id">${escape(testCase)}</p>
+  <h2 class="prompt">${escape(results[0]?.prompt ?? "")}</h2>
+  ${worldPanel(world)}
+  <div class="grid">${columns.join("")}</div>
+</section>`;
+}
+
 const CSS = `
-:root{--ink:#17171a;--sec:#5c5c66;--ter:#8e8e99;--page:#f6f5f3;--card:#fff;--line:#e6e4e0;--ok:#1d7a4f;--no:#b4342a;}
+:root{--ink:#17171a;--sec:#5c5c66;--ter:#8e8e99;--page:#f6f5f3;--card:#fff;--line:#e6e4e0;--ok:#1d7a4f;--no:#b4342a;--feed:136px;}
 *{box-sizing:border-box}
 body{margin:0;background:var(--page);color:var(--ink);
   font:450 15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
   -webkit-font-smoothing:antialiased;border-top:3px solid var(--ink);}
-.wrap{max-width:1240px;margin:0 auto;padding:32px 24px 64px}
+/* Room for the fixed call feed, so the last column is never hidden under it. */
+.wrap{max-width:1240px;margin:0 auto;padding:32px 24px calc(var(--feed) + 32px)}
 h1{margin:0;font-size:28px;font-weight:600;letter-spacing:-.02em}
-.prompt{margin:8px 0 0;font-size:15px;color:var(--sec);max-width:62ch}
 .meta{margin:16px 0 0;font:450 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
   letter-spacing:.08em;text-transform:uppercase;color:var(--ter)}
 .meta span+span::before{content:"·";margin:0 8px;color:var(--line)}
+/* The prompt is the heading a person reads; the case id is a filename. */
+.case{margin-top:48px}
+.case-id{margin:0;font:450 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ter)}
+.prompt{margin:10px 0 0;font-size:20px;font-weight:500;line-height:1.35;letter-spacing:-.01em;max-width:62ch}
 /* Capped, not fluid: the screenshots are shot at a fixed 480px, so letting a
    single column stretch to the full page would upscale and blur the one
    artifact the whole page exists to show. */
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,540px));gap:24px;margin-top:32px;justify-content:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,540px));gap:24px;margin-top:24px;justify-content:center}
 .col{background:var(--card);border-radius:10px;padding:20px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.05)}
 .col>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 h2{margin:0;font-size:15px;font-weight:600}
@@ -139,27 +165,116 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
 .metrics>div{display:block}
 .metrics dt{font:450 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ter)}
 .metrics dd{margin:6px 0 0;font:450 15px/1 ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+
+/* ---- the world panel: closed by default, because it is the reference you
+       reach for, not the thing you came to look at ---- */
+.world{margin:20px 0 0;background:var(--card);border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.world>summary{display:flex;align-items:center;gap:8px;padding:13px 16px;cursor:pointer;list-style:none;
+  font:450 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--sec)}
+.world>summary::-webkit-details-marker{display:none}
+.chev{display:inline-block;color:var(--ter);transition:transform 150ms ease-out}
+.world[open] .chev{transform:rotate(90deg)}
+.tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;padding:4px 16px 18px}
+.tool p{margin:0;font-size:13px;line-height:1.5;color:var(--sec);max-width:58ch}
+.tool code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
+/* Uncapped on purpose: this panel exists so a person can check a number against
+   the truth, and a scroll box that clips at row two reads as the whole answer. */
+.tool pre{margin:8px 0 0;padding:10px 12px;background:var(--page);border-radius:6px;
+  font:450 11px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--sec)}
+
+/* ---- the call feed: every press in every embedded screen, as it happens ---- */
+.feed{position:fixed;inset:auto 0 0 0;z-index:2;height:var(--feed);display:flex;flex-direction:column;
+  background:var(--card);border-top:1px solid var(--line);box-shadow:0 -6px 24px rgba(0,0,0,.06)}
+.feed-label{flex:none;margin:0;padding:12px 24px 8px;
+  font:450 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ter)}
+#feed{flex:1;min-height:0;overflow-y:auto;margin:0;padding:0 24px 12px;list-style:none}
+#feed:empty::after{display:block;font-size:13px;color:var(--ter);
+  content:"press a control in any screen above — every call it makes lands here"}
+#feed li{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-top:1px solid var(--line);
+  font:450 12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+  transition:opacity 150ms ease-out,transform 150ms ease-out}
+#feed li:first-child{border-top:0}
+#feed time{color:var(--ter);font-variant-numeric:tabular-nums}
+#feed .who{font-weight:600;color:var(--sec)}
+#feed code{color:var(--ink);background:var(--page);padding:1px 5px;border-radius:4px}
+#feed .args{color:var(--ter);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@starting-style{#feed li{opacity:0;transform:translateY(-4px)}}
+@media (prefers-reduced-motion:reduce){#feed li{transition:opacity 150ms ease-out}}
 `;
 
-/** One page per run: every contender's REAL screen side by side, live and
- *  scrollable, each under its own floor verdicts and numbers. It stays a single
- *  static file you can `open` — the live frames are relative links into the run
- *  folder beside it, and the judge's screenshots are inlined. */
+/**
+ * The feed's whole mechanism: every embedded page's `vendo.callTool` posts to
+ * its parent (see `seam` in `render.ts`), and this is the parent. Text goes in
+ * through `textContent`, never markup — a tool name in this feed came out of a
+ * model, and the report must not let one write HTML into itself.
+ *
+ * No server, no shared state: the file works from disk, offline, forever.
+ */
+const FEED_SCRIPT = `
+addEventListener("message", function (event) {
+  var call = event.data;
+  if (call === null || typeof call !== "object" || call.genbench !== "call") return;
+  var row = document.createElement("li");
+  var when = document.createElement("time");
+  when.textContent = new Date(call.ts).toLocaleTimeString("en-US", { hour12: false });
+  var who = document.createElement("span");
+  who.className = "who";
+  who.textContent = call.contender;
+  var tool = document.createElement("code");
+  tool.textContent = call.name;
+  var args = document.createElement("span");
+  args.className = "args";
+  args.textContent = "{" + Object.keys(call.args || {}).map(function (key) {
+    var value = call.args[key];
+    return key + ": " + (typeof value === "string" ? value : JSON.stringify(value));
+  }).join(", ") + "}";
+  row.append(when, who, tool, args);
+  document.getElementById("feed").prepend(row);
+});
+`;
+
+/**
+ * One page per run: every contender's REAL screen side by side under its own
+ * verdicts and numbers, each case with the data those screens were graded
+ * against, and one live feed of what pressing anything actually calls.
+ *
+ * It stays a single static file you can `open` — the live frames are relative
+ * links into the run folder beside it, and the judge's screenshots are inlined.
+ */
 export async function writePreview(input: {
   runDir: string;
   runId: string;
   results: readonly CaseResult[];
+  worlds: Readonly<Record<string, World>>;
 }): Promise<string> {
   const first = input.results[0];
-  const columns = await Promise.all(input.results.map(async (result) => await column(input.runDir, result)));
+  // Grouped in first-seen order, and each group in the order the row was run:
+  // which contender finished first never moves a column.
+  const order = [...new Set(input.results.map((result) => result.case))];
+  const sections = await Promise.all(
+    order.map(
+      async (testCase) =>
+        await caseSection(
+          input.runDir,
+          testCase,
+          input.results.filter((result) => result.case === testCase),
+          input.worlds[testCase],
+        ),
+    ),
+  );
+
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>genbench · ${escape(first?.case ?? input.runId)}</title>
 <style>${CSS}</style></head><body><div class="wrap">
-<h1>${escape(first?.case ?? "run")}</h1>
-<p class="prompt">${escape(first?.prompt ?? "")}</p>
+<h1>genbench</h1>
 <p class="meta"><span>${escape(input.runId)}</span><span>world ${escape(first?.world ?? "")}</span><span>${escape(first?.lane ?? "screen")} lane</span></p>
-<div class="grid">${columns.join("")}</div>
-</div></body></html>`;
+${sections.join("")}
+</div>
+<aside class="feed"><p class="feed-label">tool calls</p><ol id="feed"></ol></aside>
+<script>${FEED_SCRIPT}</script>
+</body></html>`;
   const path = join(input.runDir, "preview.html");
   await writeFile(path, html);
   return path;

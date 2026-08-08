@@ -19,10 +19,9 @@ import { createRoot } from "react-dom/client";
 
 declare global {
   interface Window {
-    /** The one seam every contender's page answers through — the renderer's own
-     *  action dispatch is wired to it below, and a hand-written page calls it
-     *  directly. It answers with the case's canned rows, so a runtime refetch
-     *  resolves instead of hanging. */
+    /** The one seam every contender's page answers through, injected by
+     *  `render.ts` into hand-written and product-rendered pages alike. The
+     *  renderer's action dispatch is wired to it below. */
     vendo: {
       calls: Array<{ name: string; args: Json }>;
       callTool(name: string, args: Json): ToolOutcome;
@@ -33,17 +32,6 @@ declare global {
 }
 
 const read = <T,>(id: string): T => JSON.parse(document.getElementById(id)!.textContent!) as T;
-
-const tools = read<Record<string, Json>>("tools");
-window.vendo = {
-  calls: [],
-  callTool(name, args) {
-    window.vendo.calls.push({ name, args });
-    return Object.hasOwn(tools, name)
-      ? { status: "ok", output: tools[name]! }
-      : { status: "error", error: { code: "not-found", message: `no tool ${name}` } };
-  },
-};
 
 applyThemeVars(themeCssVariables(resolveTheme(defaultVendoTheme, read<VendoTheme>("theme"))));
 const payload = read<UIPayload>("payload");
