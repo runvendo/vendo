@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { acceptsSamplingParams, UNKNOWN_MODEL_MAX_OUTPUT_TOKENS } from "@vendoai/apps";
 import { meterExhaustedFromError, VendoError } from "@vendoai/core";
-import type { LanguageModel } from "ai";
+import { wrapLanguageModel, type LanguageModel, type LanguageModelMiddleware } from "ai";
 import { resolveCloudBaseUrl } from "../cli/cloud/client.js";
 import {
   describeDevCredential,
@@ -83,6 +83,11 @@ interface ProviderSpec {
   /** DEPRECATED agent-slot pin, kept working as a fallback under VENDO_MODEL. */
   modelEnv: string;
   install: string;
+  /** Options this rung sends on every call, keyed by ai-SDK
+   *  `providerOptions` namespace. NOT a construction setting: the ai-SDK reads
+   *  `providerOptions` per request, so passing these to the provider factory
+   *  never reaches the wire. */
+  callDefaults?: { namespace: string; options: Record<string, unknown> };
 }
 
 const DEFAULT_MODELS: Record<string, ProviderSpec> = {
@@ -101,6 +106,12 @@ const DEFAULT_MODELS: Record<string, ProviderSpec> = {
     fast: "gpt-5-mini",
     modelEnv: "VENDO_DEV_OPENAI_MODEL",
     install: "npm install ai@^6 @ai-sdk/openai@^3",
+    // Responses is the only stateful wire in this table. Its default sends
+    // prior turns as `item_reference` ids for OpenAI to resolve, so any org
+    // that does not retain items (Zero Data Retention) loses every tool-using
+    // turn at step two. Unconditional, not a flag: OpenAI cannot be asked
+    // whether an org retains data before the call that needs the answer.
+    callDefaults: { namespace: "openai", options: { store: false } },
   },
   google: {
     module: "@ai-sdk/google",
@@ -321,6 +332,27 @@ export class DevModelController {
     return FAST_SLOTS.has(this.slot) ? spec.fast : spec.model;
   }
 
+  /** Applies a rung's {@link ProviderSpec.callDefaults} to every request. */
+  private withCallDefaults(model: LanguageModelV3Like, spec: ProviderSpec): LanguageModelV3Like {
+    const defaults = spec.callDefaults;
+    if (defaults === undefined) return model;
+    const middleware: LanguageModelMiddleware = {
+      specificationVersion: "v3",
+      transformParams: async ({ params }) => {
+        const existing = params.providerOptions ?? {};
+        return {
+          ...params,
+          providerOptions: {
+            ...existing,
+            // Caller last: an explicit per-call value overrides the default.
+            [defaults.namespace]: { ...defaults.options, ...existing[defaults.namespace] },
+          },
+        } as typeof params;
+      },
+    };
+    return wrapLanguageModel({ model: model as never, middleware }) as unknown as LanguageModelV3Like;
+  }
+
   /** The shared delegate rung: load the provider module (an install failure
    *  resolves unavailable with the exact install command), pick the model id
    *  (per-slot precedence above), and hand the factory-built model back. */
@@ -343,7 +375,7 @@ export class DevModelController {
       config: { apiKey: string; baseURL?: string },
     ) => (model: string) => LanguageModelV3Like;
     const modelId = this.modelId(spec);
-    const model = factory(config)(modelId);
+    const model = this.withCallDefaults(factory(config)(modelId), spec);
     this.announce(`${describeDevCredential(credential)} → ${modelId}${announceSuffix}`);
     return { mode: "delegate", model, credential };
   }
