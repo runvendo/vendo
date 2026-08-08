@@ -36,15 +36,22 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-/** Temp-dir PGlite store with registered teardown. Teardown awaits schema
- * readiness first: createVendo fires ensureSchema() without awaiting it, and
- * closing PGlite mid-query hangs the process (bites tests that compose and
- * assert without ever touching the wire). */
+/** Temp-dir PGlite store with registered teardown.
+ *
+ * Teardown does NOT call ensureSchema(). It used to, to dodge a close-race back
+ * when createVendo kicked schema readiness off without awaiting it — but
+ * construction is pure now (`composeReady`: "Construction stays PURE — no I/O,
+ * no timers"), the `ready()` latch fires on the first handler touch, and every
+ * caller of it awaits. So there is nothing in flight to wait for.
+ *
+ * That call was not free. `createStore` is lazy, so a store a test never
+ * touches costs 2.3ms; the teardown ensureSchema() forced a full initdb +
+ * migration on it, measured at 4354.9ms — ~1900x, to prepare a database
+ * moments before deleting it. */
 async function tempStore(prefix: string): Promise<VendoStore> {
   const dataDir = await mkdtemp(join(tmpdir(), prefix));
   const store = createStore({ dataDir });
   cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
   });
@@ -3074,10 +3081,10 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
         async principal(subject) { return { kind: "user", subject }; },
       },
     });
-    // createVendo kicks off ensureSchema() without blocking; a test whose
-    // requests all 404 before `await ready` would otherwise close the store
-    // mid-schema-creation (the known PGlite close-race hang).
-    await store.ensureSchema();
+    // No ensureSchema() here: its only stated purpose was dodging the PGlite
+    // close-race, and that race is gone — construction is pure, so nothing is
+    // in flight to be closed mid-creation. This store's requests all 404, so
+    // forcing a boot would pay a full initdb for a schema no case reads.
     return vendo;
   }
   const root = (path: string): Request => new Request(`https://host.test${path}`);

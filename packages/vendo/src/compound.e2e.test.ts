@@ -441,7 +441,9 @@ describe("the real createVendo composition wires the seam", () => {
     process.chdir(root);
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); });
-    // createVendo kicks off ensureSchema() without blocking; approvals need it done.
+    // Kept deliberately: the approval rows below are read directly, so this
+    // case needs the schema present. (Not for the old close-race reason —
+    // construction is pure now, so nothing kicks schema off on its own.)
     await store.ensureSchema();
     const vendo = createVendo({
       model: {} as LanguageModel,

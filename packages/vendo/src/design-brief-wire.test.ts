@@ -66,7 +66,6 @@ async function briefFor(overrides: Record<string, unknown>): Promise<string> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-design-brief-"));
   const store = createStore({ dataDir });
   cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
   });

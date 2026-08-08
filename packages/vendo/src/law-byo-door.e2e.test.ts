@@ -67,7 +67,6 @@ async function compose(): Promise<Vendo> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-byo-law-"));
   const store: VendoStore = createStore({ dataDir });
   cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
   });

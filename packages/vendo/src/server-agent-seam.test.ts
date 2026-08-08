@@ -31,7 +31,6 @@ async function tempStore(): Promise<VendoStore> {
   // cases below reach the audit table by booting a box directly.
   await store.ensureSchema();
   cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
   });

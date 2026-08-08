@@ -50,7 +50,6 @@ async function tempStore(): Promise<VendoStore> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-default-composition-"));
   const store = createStore({ dataDir });
   cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
   });
