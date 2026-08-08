@@ -6,6 +6,7 @@ import { useVendoThread } from "../../hooks/use-vendo-thread.js";
 import { ChromeRoot } from "../chrome-root.js";
 import { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "../discoverability.js";
 import { MorphToast, type MorphToastProps } from "../morph-toast.js";
+import type { VendoSurfaceValue } from "../vendo-surface.js";
 import { Composer, dragHasFiles, useComposer } from "./composer.js";
 import { MessageList } from "./message-list.js";
 import { useMessageWindow, useStickToBottom } from "./scrolling.js";
@@ -47,6 +48,8 @@ export interface VendoThreadProps {
    * provider's `greeting`. Distinct from `greeting` above (the returning-user
    * landing headline) — this one renders once per user, ever. */
   firstRunGreeting?: VendoGreeting;
+  /** Host-owned UI-only discovery copy supplied by VendoOverlay. */
+  surface?: VendoSurfaceValue;
   /** Rendered directly above the composer in both landing and conversation
    * layouts — the seam VendoOverlay uses for its command chip strip (the
    * one-surface ⌘K design). Presentation-only; the thread never reads it. */
@@ -63,6 +66,7 @@ export function VendoThread({
   onThreadId,
   discoverability,
   firstRunGreeting,
+  surface,
   composerAccessory,
 }: VendoThreadProps) {
   const thread = useVendoThread(threadId);
@@ -75,6 +79,7 @@ export function VendoThread({
   const dial = discoverability ?? providerDial;
   const contextGreeting = useVendoGreeting();
   const tutorial = firstRunGreeting ?? contextGreeting ?? defaultVendoGreeting;
+  const surfaceStarters = surface?.starters ?? [];
   const [tutorialActive, setTutorialActive] = useState(false);
   // Arming is REACTIVE, not mount-only: surfaces that don't remount their
   // thread (a host flipping threadId props on one instance) become eligible
@@ -173,10 +178,9 @@ export function VendoThread({
   const composerApi = useComposer({
     busy,
     sendMessage: message => thread.sendMessage(message),
-    // A message typed mid-turn is offered to that turn before it queues.
     ...(thread.steer === undefined ? {} : { steer: thread.steer }),
   });
-  const { setDraft, setQueued, textareaRef, send } = composerApi;
+  const { prefillDraft, setQueued, send } = composerApi;
   const risks = useMemo(() => riskByCall(thread.messages), [thread.messages]);
   const guardApprovals = useMemo(() => approvalByCall(thread.messages), [thread.messages]);
   // Grant SETS (demo-live-readiness): a parked call claimed by a
@@ -268,8 +272,7 @@ export function VendoThread({
     if (!message) return;
     thread.setMessages(thread.messages.slice(0, lastUserIndex));
     setQueued(null);
-    setDraft(userText(message));
-    requestAnimationFrame(() => textareaRef.current?.focus());
+    prefillDraft(userText(message));
   };
 
   // Regenerate the last assistant turn (re-issues from the preserved
@@ -448,15 +451,15 @@ export function VendoThread({
               // behaviors would read as one). Chips PREFILL, never send.
               <div className="fl-greeting" role="group" aria-label="Getting started">
                 <p className="fl-greeting-intro">{tutorial.intro}</p>
+                {surface?.label ? <p className="fl-intro">{surface.label}</p> : null}
                 <div className="fl-chips fl-greeting-chips">
-                  {tutorial.prompts.slice(0, 3).map((text, i) => (
+                  {(surfaceStarters.length > 0 ? surfaceStarters : tutorial.prompts).slice(0, 3).map((text, i) => (
                     <button
                       type="button"
                       className="fl-chip"
                       key={`${i}-${text}`}
                       onClick={() => {
-                        setDraft(text);
-                        requestAnimationFrame(() => textareaRef.current?.focus());
+                        prefillDraft(text);
                       }}
                     >
                       {text}
@@ -468,6 +471,23 @@ export function VendoThread({
               <>
                 <h1 className="fl-greet">{greeting}</h1>
                 {intro ? <p className="fl-intro">{intro}</p> : null}
+                {surface?.label ? <p className="fl-intro">{surface.label}</p> : null}
+                {surfaceStarters.length > 0 ? (
+                  <div className="fl-chips fl-greeting-chips">
+                    {surfaceStarters.slice(0, 3).map((text, i) => (
+                      <button
+                        type="button"
+                        className="fl-chip"
+                        key={`${i}-${text}`}
+                        onClick={() => {
+                          prefillDraft(text);
+                        }}
+                      >
+                        {text}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </>
             )}
             {!tutorialActive && suggestions.length > 0 ? (

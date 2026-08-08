@@ -214,6 +214,18 @@ export function useComposer({ busy, sendMessage, steer }: {
     dispatch(text, pending, context);
   };
 
+  /** A prefill is an invitation to continue writing, so focus it with the
+   * caret after the supplied text rather than selecting or prepending to it. */
+  const prefillDraft = (text: string) => {
+    setDraft(text);
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(text.length, text.length);
+    });
+  };
+
   // The enclosing overlay's prefill scope (null for embedded threads/pages):
   // registry-delivered prompts are directed at one overlay's composer.
   const prefillScope = useContext(PrefillScopeContext);
@@ -231,11 +243,10 @@ export function useComposer({ busy, sendMessage, steer }: {
   // fresh conversation).
   useEffect(() => {
     const prefill = (prompt: string, sendNow: boolean, context?: string) => {
-      // An empty hand-off must not wipe a draft in progress.
-      if (prompt.length > 0) setDraft(prompt);
       // Never into the textarea: the grounding is for the model only.
       if (context !== undefined && context.length > 0) contextRef.current = context;
       if (sendNow) queueMicrotask(() => sendRef.current(prompt));
+      else if (prompt.length > 0) prefillDraft(prompt);
     };
     const onPrefill = (event: Event) => {
       const detail = (event as CustomEvent<{ prompt?: string; send?: boolean; context?: string }>).detail;
@@ -284,7 +295,7 @@ export function useComposer({ busy, sendMessage, steer }: {
     draft, setDraft, files, setFiles, dragDepth, setDragDepth,
     attachmentPreviews, attachmentReads, retryRead: startRead,
     dockOpen, setDockOpen, dockButtonRef,
-    queued, setQueued, attachError, fileRef, textareaRef, send,
+    queued, setQueued, attachError, fileRef, textareaRef, prefillDraft, send,
   };
 }
 
