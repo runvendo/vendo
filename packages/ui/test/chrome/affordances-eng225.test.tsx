@@ -463,4 +463,99 @@ describe("connect dock + tray (ENG-225)", () => {
     const link = await within(tray).findByRole("link", { name: "Open sign-in in a new tab" });
     expect(link.getAttribute("href")).toBe("https://connect.test/oauth/1");
   });
+
+  /* --- per-ROW connect state (the #1051 treatment, second caller) --------- */
+
+  // The fixture already has gmail connected (`ca_1`), so a tray that must offer
+  // TWO connectable rows needs a third toolkit listed.
+  const TWO_AVAILABLE = [...CONNECTORS, { toolkit: "notion", label: "Notion" }];
+
+  /** Hold every `ca_new` status read open so a started connect stays in flight
+   *  for the whole test — the fixture's initiate otherwise mints an account
+   *  that is already `active` and the poll ends on its first read. */
+  const holdThePoll = () => {
+    for (let index = 0; index < 16; index += 1) {
+      wire.state.failures.push({
+        method: "GET", path: "/connections/ca_new", code: "unavailable", message: "broker busy", status: 503,
+      });
+    }
+  };
+
+  const openTray = async (): Promise<HTMLElement> => {
+    render(
+      <VendoProvider client={client} connectors={TWO_AVAILABLE}><VendoThread threadId="thr_1" /></VendoProvider>,
+    );
+    await screen.findByText("Existing thread");
+    fireEvent.click(await screen.findByRole("button", { name: "Connect tools" }));
+    return screen.findByRole("dialog", { name: "Connect tools" });
+  };
+
+  // The tray tracked `connecting` as ONE toolkit for the whole panel and
+  // disabled every add button off it, so the first connect made every OTHER
+  // connector inert for the full 120s poll — with no cancel, and no disabled
+  // styling to say why. Measured in a real browser as
+  // `{spinners: 1, disabledAdds: 55, totalAdds: 55}`. The row that is actually
+  // connecting shows its dots INSTEAD of a button, so no add button needs to
+  // disable at all.
+  it("leaves every other connector clickable while one connect is in flight", async () => {
+    const popup = { location: { replace: vi.fn() }, close: vi.fn() };
+    vi.stubGlobal("open", vi.fn(() => popup));
+    holdThePoll();
+    const tray = await openTray();
+
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+    await within(tray).findByRole("status", { name: "Connecting Slack" });
+
+    const adds = within(tray).getAllByRole("button", { name: /^Connect / });
+    expect(adds.map(button => (button as HTMLButtonElement).disabled)).toEqual(adds.map(() => false));
+    expect(within(tray).getByRole("button", { name: "Connect Notion" })).toBeTruthy();
+  });
+
+  it("keeps a spinner per connect when two run at once", async () => {
+    const popup = { location: { replace: vi.fn() }, close: vi.fn() };
+    vi.stubGlobal("open", vi.fn(() => popup));
+    holdThePoll();
+    const tray = await openTray();
+
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Notion" }));
+
+    // One `connecting` string could only ever name the last row clicked, so the
+    // first row's dots vanished the moment the second connect started.
+    await waitFor(() => expect(within(tray).getAllByRole("status", { name: /^Connecting / })).toHaveLength(2));
+  });
+
+  // The blocked half, exactly as #1051 keyed it on the panel: two refused
+  // windows shared one notice, so the second connect overwrote a link the first
+  // still needed to get through.
+  it("offers a sign-in link per blocked connect, not one shared notice", async () => {
+    vi.stubGlobal("open", vi.fn(() => null));
+    holdThePoll();
+    const tray = await openTray();
+
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+    await within(tray).findByRole("link", { name: "Open sign-in in a new tab" });
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Notion" }));
+
+    await waitFor(() => expect(within(tray).getAllByRole("link", { name: "Open sign-in in a new tab" })).toHaveLength(2));
+  });
+
+  it("keeps each failed connect's reason, rather than the last one only", async () => {
+    vi.stubGlobal("open", vi.fn(() => ({ location: { replace: vi.fn() }, close: vi.fn() })));
+    for (let index = 0; index < 2; index += 1) {
+      wire.state.failures.push({
+        method: "POST", path: "/connections/initiate", code: "unavailable", message: "broker down", status: 503,
+      });
+    }
+    const tray = await openTray();
+
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+    await within(tray).findByText(/Slack/, { selector: ".fl-att-error" });
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Notion" }));
+
+    // A shared `error` string is also cleared by the NEXT connect's start, so
+    // Slack's reason disappeared off a click that said nothing about Slack.
+    await within(tray).findByText(/Notion/, { selector: ".fl-att-error" });
+    expect(within(tray).getByText(/Slack/, { selector: ".fl-att-error" })).toBeTruthy();
+  });
 });
