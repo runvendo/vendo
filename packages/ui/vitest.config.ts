@@ -1,8 +1,10 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import { workerCaps } from "../../vitest.shared.js";
 
 export default defineConfig({
   test: {
+    ...workerCaps,
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],

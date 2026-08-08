@@ -1,8 +1,9 @@
 import { defineConfig } from "vitest/config"
+import { workerCaps } from "../../vitest.shared.js";
 import path from "node:path"
 
 export default defineConfig({
-  test: { environment: "node", include: ["src/**/*.test.ts", "src/**/*.test.tsx"] },
+  test: { ...workerCaps, environment: "node", include: ["src/**/*.test.ts", "src/**/*.test.tsx"] },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),

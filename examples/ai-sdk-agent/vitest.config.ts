@@ -1,7 +1,9 @@
 import { defineConfig } from "vitest/config";
+import { workerCaps } from "../../vitest.shared.js";
 
 export default defineConfig({
   test: {
+    ...workerCaps,
     include: ["e2e/**/*.test.ts"],
     environment: "node",
     // Live model turns: 30s flaked twice in one day on model latency alone

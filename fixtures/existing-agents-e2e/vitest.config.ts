@@ -1,7 +1,9 @@
 import { defineConfig } from "vitest/config";
+import { workerCaps } from "../../vitest.shared.js";
 
 export default defineConfig({
   test: {
+    ...workerCaps,
     include: ["src/**/*.e2e.test.ts", "src/**/*.test.ts"],
     // Journeys pack the workspace once and boot real Next dev servers on fixed
     // ports: parallel files would race the pack cache and the ports.

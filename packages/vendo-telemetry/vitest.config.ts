@@ -1,7 +1,9 @@
 import { defineConfig } from "vitest/config";
+import { workerCaps } from "../../vitest.shared.js";
 
 export default defineConfig({
   test: {
+    ...workerCaps,
     environment: "node",
     coverage: {
       provider: "v8",

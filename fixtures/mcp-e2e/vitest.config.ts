@@ -1,7 +1,9 @@
 import { defineConfig } from "vitest/config";
+import { workerCaps } from "../../vitest.shared.js";
 
 export default defineConfig({
   test: {
+    ...workerCaps,
     include: ["src/**/*.e2e.test.ts", "src/**/*.test.ts"],
     globalSetup: ["./src/global-setup.ts"],
     // One shared fixture server + suites that reset its seed data: parallel
