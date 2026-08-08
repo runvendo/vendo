@@ -40,6 +40,26 @@ describe("lane-cards picks", () => {
     await wire?.close();
   });
 
+  // A recurring Slack post used to be described as "It runs as you, and you can
+  // pause it anytime." Pausing needs a management surface, and `@vendoai/ui`
+  // cannot know whether the host mounted one — Maple mounts none, so the library
+  // was promising, in the host's voice, something the host could not honour. The
+  // sentence keeps every claim that is true on EVERY host and drops the one that
+  // depends on a screen (#1014 deleted the only surface that ever backed it).
+  it("describes a recurring Slack post without promising a place to pause it", () => {
+    const recurring = toolPresentation("slack_SLACK_SEND_MESSAGE", {
+      channel: "#renewals",
+      text: "Morning digest",
+      trigger: "every weekday at 8am",
+    });
+    expect(recurring.description).toBe(
+      "Vendo will post to #renewals on your behalf, every weekday at 8am. It runs as you.",
+    );
+    // The one-off sibling never carried the promise, and still doesn't.
+    expect(toolPresentation("slack_SLACK_SEND_MESSAGE", { channel: "#renewals", text: "Hi" }).description)
+      .toBe("Vendo will post to #renewals on your behalf, running as you.");
+  });
+
   it("1-A: synthesizes a structured consequence from the real Slack inputs", () => {
     const presentation = toolPresentation("slack_SLACK_SEND_MESSAGE", slackApproval.call.args);
     expect(presentation.consequence).toEqual({

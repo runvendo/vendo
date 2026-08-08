@@ -155,7 +155,11 @@ function ApprovalToasts({ pollMs }: { pollMs: number }) {
       const dismiss = vendoToast({
         kind: "approval-required",
         text: `Waiting on you: ${toolTitle(approval.call.tool, tools[approval.call.tool])}`,
-        hint: "recorded in Activity",
+        // Not a destination: the library cannot know whether this host mounts
+        // a surface that shows the record. What IS true on every host is what
+        // approving MEANS — the same "Runs as you" the approval card and the
+        // morph toast say.
+        hint: "Runs as you once approved",
         actions: [{
           label: "Approve",
           primary: true,

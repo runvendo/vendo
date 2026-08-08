@@ -818,7 +818,7 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
                     onMorph({
                       startRect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
                       title: `${presentation.title} — approved`,
-                      sub: presentation.sub ?? "Runs as you · recorded in Activity",
+                      sub: presentation.sub ?? "Runs as you",
                       logoUrl: presentation.logoUrl,
                       theme,
                     });

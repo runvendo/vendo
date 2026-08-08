@@ -261,7 +261,7 @@ export function toolPresentation(
   let consequence: ToolConsequence | undefined;
   if (toolkit === "slack" && typeof flat.channel === "string") {
     description ??= trigger
-      ? `Vendo will post to ${flat.channel} on your behalf, ${trigger}. It runs as you, and you can pause it anytime.`
+      ? `Vendo will post to ${flat.channel} on your behalf, ${trigger}. It runs as you.`
       : `Vendo will post to ${flat.channel} on your behalf, running as you.`;
     sub = trigger ? `Posts to ${flat.channel} ${trigger}` : `Posts to ${flat.channel} as you`;
     if (typeof flat.message === "string" && flat.message.trim().length > 0) {

@@ -1967,7 +1967,7 @@ function ToastsScenario() {
   useEffect(() => {
     vendoToast({ text: "Invoice watcher ran: 3 reminders drafted and queued for review.", durationMs: 0, actions: [{ label: "View", onAction: () => undefined }] });
     vendoToast({ text: "Morning digest failed to send — the connected inbox returned an error.", state: "error", durationMs: 0 });
-    vendoToast({ kind: "approval-required", text: "Waiting on you: Send email to finance@example.com", hint: "recorded in Activity", actions: [{ label: "Approve", primary: true, onAction: () => undefined }] });
+    vendoToast({ kind: "approval-required", text: "Waiting on you: Send email to finance@example.com", hint: "Runs as you once approved", actions: [{ label: "Approve", primary: true, onAction: () => undefined }] });
   }, []);
   return (
     <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
