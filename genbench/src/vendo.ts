@@ -37,8 +37,10 @@ export function vendoDriver(): Contender {
   return { harness: "vendo", run };
 }
 
-/** The product's own verdict on the bytes that landed: `block` findings are
- *  exactly what the render seam refuses to paint on. */
+/** The product's own verdict on the bytes that landed — the render seam's three
+ *  paint gates (`render-seam.ts`), in its order: it compiles, it has something
+ *  to draw, and it passes the checks floor. Anything here is a reason the seam
+ *  would have painted nothing. */
 async function blockingFindings(
   apps: ReturnType<typeof createApps>,
   appId: AppId,
@@ -50,6 +52,10 @@ async function blockingFindings(
   if (compiled.issues.some((issue) => issue.code === "compile-failed" || issue.code === "missing-app")) {
     return compiled.issues.map((issue) => `${issue.code}: ${issue.message}`);
   }
+  // The compiler is total, so clean issues are not a screen: a childless root is
+  // its degraded floor, and those bytes land without drawing anything.
+  const root = compiled.tree.nodes.find((node) => node.id === compiled.tree.root);
+  if ((root?.children?.length ?? 0) === 0) return ["nothing to render: the document compiled to an empty root"];
   const findings = await floor.check({ appId, compiled });
   return findings.filter((finding) => finding.severity === "block").map((finding) => finding.message);
 }
@@ -171,18 +177,27 @@ async function run(request: RunRequest): Promise<RunOutcome> {
     // older screen. Re-checking the saved bytes through the product's OWN floor
     // is the only way to tell a finished screen from a stale one.
     const blocking = artifact === undefined ? [] : await blockingFindings(apps, appId, artifact, ctx);
+    // `blocking` is the seam's own paint gate re-run on the bytes that landed, so
+    // a non-empty list means THIS revision never reached a screen and the last
+    // view belongs to an earlier save. Reporting that view here would grade a
+    // screenshot against an artifact it does not describe.
+    const painted = blocking.length === 0 ? snapshots.at(-1) : undefined;
+    let failure = outcome.kind === "assembled" ? undefined : outcome.why;
+    if (outcome.kind === "assembled" && blocking.length > 0) {
+      failure = "the delivered document does not render, so no screen is reported for it";
+    }
     return {
       ...(artifact === undefined ? {} : { artifact }),
       blocking,
       // The seam emits a skeleton first and the settled view last; the last one
       // is the screen a person is left looking at.
-      ...(snapshots.at(-1) === undefined ? {} : { payload: snapshots.at(-1)!.payload }),
+      ...(painted === undefined ? {} : { payload: painted.payload }),
       snapshots,
       // The seam only emits once a payload actually renders, so the first
       // snapshot IS first render.
       ...(snapshots[0] === undefined ? {} : { firstRenderMs: snapshots[0].atMs }),
       settledMs,
-      ...(outcome.kind === "assembled" ? {} : { failure: outcome.why }),
+      ...(failure === undefined ? {} : { failure }),
     };
   } finally {
     await store.close();
