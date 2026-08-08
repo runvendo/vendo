@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, readFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import type { JsonSchema, ToolDescriptor, VendoTheme } from "@vendoai/core";
 
 /** The world file, as authored. `theme` is a VendoTheme verbatim and is handed
@@ -115,10 +115,25 @@ function derive(name: string, tool: WorldTool, data: unknown): DerivedTool {
   };
 }
 
+/** The world folders that ARE there, for the one sentence a typo deserves. */
+async function worldsBeside(dir: string): Promise<string> {
+  const entries = await readdir(dirname(dir), { withFileTypes: true }).catch(() => []);
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+    .join(", ");
+}
+
 /** A world is a FOLDER: `world.json`, the `cases.json` beside it, and the
  *  optional `font.woff2` the theme's `fontFamily` names. */
 export async function loadWorld(dir: string): Promise<World> {
-  const source = await readFile(join(dir, "world.json"), "utf8");
+  // A world nobody has is a typo, and a typo deserves the list of real names —
+  // not a raw ENOENT naming a path the person never typed.
+  const source = await readFile(join(dir, "world.json"), "utf8").catch(() => undefined);
+  if (source === undefined) {
+    throw new Error(`genbench: unknown world "${basename(dir)}" (available: ${await worldsBeside(dir)})`);
+  }
   const file = JSON.parse(source) as WorldFile;
   const font = await readFile(join(dir, "font.woff2")).catch(() => undefined);
   const digest = createHash("sha256").update(JSON.stringify(file));

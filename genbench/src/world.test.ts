@@ -7,6 +7,16 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const worldDir = join(root, "worlds", "maple");
 const casesPath = join(worldDir, "cases.json");
 
+describe("loadWorld", () => {
+  it("names the worlds that exist when asked for one that does not", async () => {
+    // A typo deserves the list of real names, in the product's own voice — not
+    // a raw ENOENT naming a path the person never typed.
+    await expect(loadWorld(join(root, "worlds", "nosuch"))).rejects.toThrow(
+      'genbench: unknown world "nosuch" (available: maple)',
+    );
+  });
+});
+
 describe("jsonSchemaFromExample", () => {
   it("describes a row array by its first row, with every field required", () => {
     expect(jsonSchemaFromExample([{ id: "tr_1", amount: 250, ok: true }])).toEqual({
