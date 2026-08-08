@@ -2,7 +2,7 @@
   "format": "vendo/judgments@1",
   "tools": {
     "host_auth_create": {
-      "binding": "POST /maple/api/auth/{}",
+      "binding": "POST /api/auth/{}",
       "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec",
       "fields": {
         "title": "Sign in or sign out",
@@ -11,7 +11,7 @@
       "evidence": "      authorize: async (credentials) => {\n        const user = await authenticateMapleUser(\n          typeof credentials?.email === \"string\" ? credentials.email : \"\",\n          typeof credentials?.password === \"string\" ? credentials.password : \"\",\n        );\n        return user ? { id: user.subject, name: user.display, email: user.email } : null;\n      },"
     },
     "host_auth_get": {
-      "binding": "GET /maple/api/auth/{}",
+      "binding": "GET /api/auth/{}",
       "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec",
       "fields": {
         "title": "Run an Auth.js sign-in endpoint",
@@ -20,7 +20,7 @@
       "evidence": "import { handlers } from \"@/auth\";\n\nexport const runtime = \"nodejs\";\nexport const { GET, POST } = handlers;"
     },
     "host_createOrder": {
-      "binding": "POST /maple/api/orders",
+      "binding": "POST /api/orders",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "Appends one posted card transaction (defaults: DoorDash, 3184 cents, late-night Pacific timestamp, dining) to the shared demo store and returns it. Despite the \"charges the card\" summary it never debits a balance and places no real order.",
@@ -65,7 +65,7 @@
       "evidence": "    amount: -(input.amountCents ?? 3184),\n    timestamp: lateNightPacificISO(input.hour ?? 1, minute),\n    category: \"dining\",\n    status: \"posted\",\n    statusTimeline: [{ state: \"posted\", at: new Date().toISOString() }],\n    method: \"Maple Debit ·· 4471\",\n    location: \"San Francisco, CA\",\n    notes: input.items ?? \"Taco Bell · late-night delivery\",\n  }\n\n  store.transactions.unshift(txn)"
     },
     "host_demo_reset_create": {
-      "binding": "POST /maple/api/demo/reset",
+      "binding": "POST /api/demo/reset",
       "srcHash": "sha256:3f7f5ad1b2866abc1333c37150ad0798424ca4708b223c4e700ef0f9cf05cf0e",
       "fields": {
         "description": "Wipes and rebuilds the whole demo: re-seeds the in-memory bank store, runs the store's erase cascade for EVERY seeded demo user (threads, generated apps, pins, grants), disconnects their broker-side connected accounts, then re-seeds demo-script fixtures. No undo.",
@@ -77,7 +77,7 @@
       "evidence": "  __reseed(new Date());\n  // Demo-refresh 2026-07-23: reset also erases the demo subjects' Vendo state\n  // (threads, generated apps, pins, grants) through the store's sanctioned\n  // erase cascade, so slots and conversations return to out-of-the-box.\n  const erase = eraseDoor();\n  for (const user of mapleDemoUsers()) {\n    await erase.bySubject(user.subject);\n  }"
     },
     "host_getAccount": {
-      "binding": "GET /maple/api/accounts/{}",
+      "binding": "GET /api/accounts/{}",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "Fetch one account by id. The real seeded ids are acc_checking, acc_savings, acc_credit, acc_investing (NOT acct_*). Returns balance in cents (credit is negative), mask, masked accountNumber, optional routingNumber/apy and a sparkline; 404 when unknown.",
@@ -113,7 +113,7 @@
       "evidence": "export function getAccount(id: string): Account | undefined {\n  return getStore().accounts.find(a => a.id === id)\n}"
     },
     "host_getBudgets": {
-      "binding": "GET /maple/api/insights/budgets",
+      "binding": "GET /api/insights/budgets",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "Budgets for the six categories that have a hardcoded limit (dining, groceries, coffee, transport, shopping, subscriptions). limit and spent are integer cents; spent is this month's debits for that category and is 0 when nothing was spent. No remaining/percent field.",
@@ -148,7 +148,7 @@
       "evidence": "const BUDGET_LIMITS: Partial<Record<Category, number>> = {\n  dining: 60000, groceries: 50000, coffee: 12000, transport: 30000,\n  shopping: 60000, subscriptions: 12000,\n}\nexport function budgets(): Budget[] {\n  const spend = new Map(spendingByCategory().map(s => [s.category, s.amount]))\n  return Object.entries(BUDGET_LIMITS).map(([category, limit]) => ({\n    category: category as Category, limit: limit!, spent: spend.get(category as Category) ?? 0,\n  }))\n}"
     },
     "host_getCashflowInsights": {
-      "binding": "GET /maple/api/insights/cashflow",
+      "binding": "GET /api/insights/cashflow",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "Money in vs out per calendar month across the ~90-day seed, oldest month first. label is a \"YYYY-MM\" key; `in` and `out` are BOTH positive integer cents (out is absolute, not negative). Internal transfers are excluded from both sides.",
@@ -171,7 +171,7 @@
       "evidence": "export function cashflow(): CashflowPoint[] {\n  const byMonth = new Map<string, { in: number; out: number }>()\n  for (const t of getStore().transactions) {\n    if (t.category === \"transfer\") continue\n    const d = new Date(t.timestamp)\n    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, \"0\")}`\n    const cur = byMonth.get(key) ?? { in: 0, out: 0 }\n    if (t.amount >= 0) cur.in += t.amount; else cur.out += Math.abs(t.amount)\n    byMonth.set(key, cur)\n  }"
     },
     "host_getProfile": {
-      "binding": "GET /maple/api/profile",
+      "binding": "GET /api/profile",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "The signed-in user's profile: name/email from the real Auth.js session when present (else the seeded Yousef Helal), plus avatarInitials, accountCount, and netWorth = the sum of ALL account balances in integer cents, including the negative credit balance.",
@@ -193,7 +193,7 @@
       "evidence": "  const user = await resolveMapleSession(req)\n  const profile = getProfile()\n  // Undefined for credential logins (and dropped from the JSON): only an\n  // auto-minted session (DEMO_AUTOLOGIN) shows the \"Live demo\" chip.\n  const demoAutologin = (await isAutologinSession(req)) || undefined"
     },
     "host_getRecurringInsights": {
-      "binding": "GET /maple/api/insights/recurring",
+      "binding": "GET /api/insights/recurring",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "Recurring debits derived from transactions tagged with a recurringId (rent, Equinox, Spotify, Netflix, iCloud+, ChatGPT), most expensive first. amount is negative integer cents; cadence is always \"monthly\" and nextDate is a projection of last charge + 1 month.",
@@ -239,7 +239,7 @@
       "evidence": "  for (const t of getStore().transactions) {\n    if (!t.recurringId || t.amount >= 0) continue\n    if (!seen.has(t.recurringId)) {\n      const next = new Date(t.timestamp); next.setMonth(next.getMonth() + 1)\n      seen.set(t.recurringId, { id: t.recurringId, merchant: t.merchant, amount: t.amount,\n        cadence: \"monthly\", category: t.category, nextDate: next.toISOString() })\n    }\n  }"
     },
     "host_getSpendingInsights": {
-      "binding": "GET /maple/api/insights/spending",
+      "binding": "GET /api/insights/spending",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "Spending by category for the current month only, anchored to the newest transaction. Debits only; income and transfers excluded; amounts are absolute integer cents, largest first. Categories with no spend are omitted, so the list is often shorter than the enum.",
@@ -269,7 +269,7 @@
       "evidence": "export function spendingByCategory(): SpendingSlice[] {\n  const now = monthAnchor()\n  const sums = new Map<Category, number>()\n  for (const t of getStore().transactions) {\n    if (t.amount >= 0) continue\n    if (!thisMonth(t, now)) continue\n    if (t.category === \"transfer\") continue\n    sums.set(t.category, (sums.get(t.category) ?? 0) + Math.abs(t.amount))\n  }\n  return [...sums.entries()].map(([category, amount]) => ({ category, amount }))\n    .sort((a, b) => b.amount - a.amount)\n}"
     },
     "host_getTransaction": {
-      "binding": "GET /maple/api/transactions/{}",
+      "binding": "GET /api/transactions/{}",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "Fetch one transaction by id (e.g. txn_0001, txn_doordash_87). Includes merchant, descriptor, method, optional location/notes/recurringId, amount in cents (negative = debit) and a statusTimeline of {state, at} steps; 404 when unknown.",
@@ -327,7 +327,7 @@
       "evidence": "export function getTransaction(id: string): Transaction | undefined {\n  return getStore().transactions.find(t => t.id === id)\n}"
     },
     "host_listAccountTransactions": {
-      "binding": "GET /maple/api/accounts/{}/transactions",
+      "binding": "GET /api/accounts/{}/transactions",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "Newest-first page of one account's transactions — the shared transaction search pinned to accountId with limit 50 and no other filters. Returns { data, nextCursor, total }; amounts are integer cents, negative = debit.",
@@ -392,7 +392,7 @@
       "evidence": "export function getAccountTransactions(id: string, limit = 50) {\n  return listTransactions({ accountId: id, limit })\n}"
     },
     "host_listAccounts": {
-      "binding": "GET /maple/api/accounts",
+      "binding": "GET /api/accounts",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "List all four seeded Maple accounts (checking, savings, credit, investing). Each carries balance in integer cents (credit is negative), mask, masked accountNumber, optional routingNumber and apy, and a 25-point balance sparkline. No filters, no pagination.",
@@ -428,7 +428,7 @@
       "evidence": "export function listAccounts(): Account[] { return getStore().accounts }"
     },
     "host_listCardTransactions": {
-      "binding": "GET /maple/api/cards/{}/transactions",
+      "binding": "GET /api/cards/{}/transactions",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "Newest-first page of charges on one card (card_physical or card_virtual) — the shared search pinned to cardId with limit 25. Returns { data, nextCursor, total }; amounts are integer cents, negative = debit. The only route that filters by card.",
@@ -489,7 +489,7 @@
       "evidence": "export function getCardTransactions(id: string, limit = 25) {\n  return listTransactions({ cardId: id, limit })\n}"
     },
     "host_listCards": {
-      "binding": "GET /maple/api/cards",
+      "binding": "GET /api/cards",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "List the two seeded cards: card_physical (Visa, tied to checking) and card_virtual (Visa, tied to credit). Each has type, network, mask, expMonth, two-digit expYear, frozen flag, spendLimit in cents and a design key. Read-only — no freeze/unfreeze here.",
@@ -535,7 +535,7 @@
       "evidence": "export function listCards(): Card[] { return getStore().cards }"
     },
     "host_listGoals": {
-      "binding": "GET /maple/api/goals",
+      "binding": "GET /api/goals",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "List the three seeded savings goals (Japan trip, Emergency fund, New MacBook) with target and saved amounts in integer cents plus an icon key. Progress must be computed by the caller — no percentage field is returned.",
@@ -558,7 +558,7 @@
       "evidence": "export function listGoals(): Goal[] { return getStore().goals }"
     },
     "host_listNotifications": {
-      "binding": "GET /maple/api/notifications",
+      "binding": "GET /api/notifications",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "The four seeded notifications, newest first: id, kind (card/deposit/alert/security/transfer), title, body (amounts pre-formatted as text), ISO `at` and a `read` flag. Read-only — there is no way to mark one read.",
@@ -591,7 +591,7 @@
       "evidence": "export function listNotifications(): Notification[] {\n  return [...getStore().notifications].sort((a, b) => +new Date(b.at) - +new Date(a.at))\n}"
     },
     "host_listPayees": {
-      "binding": "GET /maple/api/payees",
+      "binding": "GET /api/payees",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "List the four seeded payees (Jordan Avery, Mission St Property, PG&E, Mom) with id, name, kind (person or biller) and an optional rail hint in `mask` such as venmo, ACH or utility. No create/edit here.",
@@ -613,7 +613,7 @@
       "evidence": "export function listPayees(): Payee[] { return getStore().payees }"
     },
     "host_listScheduledPayments": {
-      "binding": "GET /maple/api/payments/scheduled",
+      "binding": "GET /api/payments/scheduled",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "List the seeded upcoming scheduled payments (rent on the 1st, PG&E on the 15th) with payeeId, payeeName, amount in cents (negative = outgoing), ISO nextDate and cadence. Purely informational — it does not schedule or send anything.",
@@ -648,7 +648,7 @@
       "evidence": "export function listScheduled(): ScheduledPayment[] { return getStore().scheduled }"
     },
     "host_listTransactions": {
-      "binding": "GET /maple/api/transactions",
+      "binding": "GET /api/transactions",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "Newest-first search across all seeded transactions. Filters: search, category, accountId, status, from, to, min, max (absolute cents). sort accepts only newest|oldest|amount (default newest); limit defaults to 25; cursor is a transaction id. No cardId filter on this route.",
@@ -713,7 +713,7 @@
       "evidence": "  if (q.sort === \"oldest\") rows.sort((a, b) => +new Date(a.timestamp) - +new Date(b.timestamp))\n  else if (q.sort === \"amount\") rows.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))\n  else rows.sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp))\n\n  const total = rows.length\n  const limit = q.limit ?? 25"
     },
     "host_transferMoney": {
-      "binding": "POST /maple/api/transfers",
+      "binding": "POST /api/transfers",
       "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e",
       "fields": {
         "description": "Sends demo money: validates a positive whole-cent amount against the balance (400 on bad amount or overdraft), debits the checking account (or the first account if none), appends a posted transfer transaction, and returns it with the acting user. No undo.",
@@ -755,7 +755,7 @@
       "evidence": "  // Debit the account (the demo's \"money actually left\" moment).\n  if (account) account.balance -= amount\n\n  const txn: Transaction = {\n    id: `txn_transfer_${Date.now()}`,\n    accountId,\n    merchant: recipient,\n    descriptor: `MAPLE TRANSFER TO ${recipient.toUpperCase()} REF ${ref}`,\n    amount: -amount,\n    timestamp: new Date().toISOString(),\n    category: \"transfer\",\n    status: \"posted\","
     },
     "host_voice_create": {
-      "binding": "POST /maple/api/voice",
+      "binding": "POST /api/voice",
       "srcHash": "sha256:3aaabc0c7dcfc4f4b4c835307f88a4c6660a2ce5ff3665dd457b1d701b55dfeb",
       "fields": {
         "description": "Mints a short-lived OpenAI Realtime client secret on the host's OPENAI_API_KEY and returns { clientSecret, model } for the in-page WebRTC voice driver. Stores nothing; 403 off the demo's own origin, 503 with no key.",
