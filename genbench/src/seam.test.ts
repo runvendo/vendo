@@ -15,11 +15,18 @@
  *
  * A real browser, because the claim is about which assignment won.
  */
+import { chromium } from "@playwright/test";
 import type { UIPayload } from "@vendoai/core";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter } from "./render.js";
+import type { FloorResult } from "./floor.js";
+import { JudgeContract, type JudgeResult } from "./judge.js";
+import { writePreview } from "./report.js";
+import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "./render.js";
+import { writeCase, type CaseResult } from "./run.js";
 import { loadWorld, type World } from "./world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -141,5 +148,128 @@ describe("scoring", () => {
 
     expect(calls).toEqual([{ name: "cancel_transfer", args: { id: "tr_1" } }]);
     expect(posted).toContainEqual(expect.objectContaining({ genbench: "call", contender: "vendo-sonnet" }));
+  }, 120_000);
+});
+
+// ------------------------------------------------------- the reader's half
+
+/**
+ * The seam's OTHER half, and the half nothing crossed until now.
+ *
+ * `seam` writes these posts; `FEED_SCRIPT` in `report.ts` reads them — and each
+ * side has only ever been checked against a stub of the other: the writer
+ * against a listener this file installs, the reader against a string assertion
+ * in `report.test.ts`. Neither could ever disagree with the other, so the
+ * reader trusting a payload field the writer cannot vouch for went unseen.
+ *
+ * So this drives both REAL sides over one real report page: the real writer
+ * puts two contenders' pages on disk, the real reporter renders them, and a
+ * real browser presses inside a real frame.
+ */
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+const PASSING: FloorResult = {
+  delivered: true,
+  renders: true,
+  valid: true,
+  blocking: [],
+  honestData: { pass: true, offenders: [] },
+  wiredActions: { pass: true, bindings: [] },
+  pass: true,
+};
+
+const GRADED: JudgeResult = { lines: [], degraded: false };
+
+const resultFor = (contender: string): CaseResult => ({
+  run: "run-1",
+  contender,
+  model: "claude-sonnet-5",
+  case: "pending-transfers",
+  prompt: "Show my pending transfers.",
+  lane: "screen",
+  floor: PASSING,
+  timing: { settledMs: 1 },
+  cost: { usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 0 }, usd: 0 },
+  islands: 0,
+  clientOnly: 0,
+  trace: [],
+  consoleErrors: [],
+  world: "hash",
+  judged: GRADED,
+  judgeContract: JudgeContract,
+});
+
+const SHOT: Shot = { png: PNG, visibleText: "", renders: true, consoleErrors: [] };
+
+/** Every identity the feed is showing, top row first. */
+type Rows = Array<{ who: string; tool: string }>;
+
+describe("the feed's identity", () => {
+  it("reads a call's contender off the frame that sent it, never off what the frame said", async () => {
+    const contenders = ["vendo-sonnet", "diy-sonnet"];
+    const runDir = await mkdtemp(join(tmpdir(), "genbench-feed-"));
+    const results = contenders.map(resultFor);
+    for (const result of results) {
+      await writeCase(runDir, {
+        outcome: { artifact: NO_RECORDER, blocking: [], format: "html", snapshots: [], settledMs: 1 },
+        html: authoredPage(NO_RECORDER, world, result.contender),
+        shot: SHOT,
+        result,
+      });
+    }
+    const preview = await writePreview({ runDir, runId: "run-1", results, worlds: {} });
+
+    // A viewport wide and tall enough that both columns sit in one row above the
+    // fold, because the report's frames load lazily.
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1400, height: 1200 } });
+    try {
+      await page.goto(pathToFileURL(preview).href);
+      const frame = page.frames().find((candidate) => candidate.url().includes("diy-sonnet"));
+      expect(frame).toBeDefined();
+
+      const rows = async (): Promise<Rows> =>
+        await page.evaluate(() =>
+          [...document.querySelectorAll("#feed li")].map((row) => ({
+            who: row.querySelector(".who")?.textContent ?? "",
+            tool: row.querySelector("code")?.textContent ?? "",
+          })),
+        );
+
+      // The honest press, through the real recorder, from the real frame.
+      await frame!.evaluate(() => window.vendo.callTool("cancel_transfer", { id: "tr_1" }));
+      await expect.poll(rows, { timeout: 10_000 }).toEqual([{ who: "diy-sonnet", tool: "cancel_transfer" }]);
+
+      // The same frame, now claiming to be the column beside it. A document a
+      // contender wrote can name any contender; only the frame it arrived in
+      // says who it really is.
+      await frame!.evaluate(() =>
+        parent.postMessage(
+          { genbench: "call", contender: "vendo-sonnet", name: "transfer_money", args: { usd: 900 }, ts: Date.now() },
+          "*",
+        ),
+      );
+      await expect.poll(rows, { timeout: 10_000 }).toEqual([
+        { who: "diy-sonnet", tool: "transfer_money" },
+        { who: "diy-sonnet", tool: "cancel_transfer" },
+      ]);
+
+      // And a frame the report never embedded — a child a contender's own page
+      // added — is not a contender at all, whatever it calls itself.
+      await frame!.evaluate(async () => {
+        const child = document.createElement("iframe");
+        child.srcdoc = `<script>top.postMessage({ genbench: "call", contender: "vendo-sonnet", name: "wire_funds", args: {}, ts: Date.now() }, "*")<\/script>`;
+        document.body.append(child);
+        await new Promise((settle) => child.addEventListener("load", settle));
+      });
+      await page.waitForTimeout(250);
+      expect((await rows()).some((row) => row.tool === "wire_funds")).toBe(false);
+      expect((await rows()).some((row) => row.who === "vendo-sonnet")).toBe(false);
+    } finally {
+      await browser.close();
+    }
   }, 120_000);
 });

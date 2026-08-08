@@ -117,7 +117,7 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
   </header>
   <figure>${
     hasPage
-      ? `<iframe title="${escape(result.case)} as ${escape(result.contender)} built it" src="${escape(caseDir)}/page.html" loading="lazy"></iframe>`
+      ? `<iframe data-contender="${escape(result.contender)}" title="${escape(result.case)} as ${escape(result.contender)} built it" src="${escape(caseDir)}/page.html" loading="lazy"></iframe>`
       : `<div class="blank">nothing rendered</div>`
   }</figure>
   ${
@@ -331,18 +331,31 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
  * through `textContent`, never markup — a tool name in this feed came out of a
  * model, and the report must not let one write HTML into itself.
  *
+ * WHO made the call is read off the frame the message arrived in, never off the
+ * message. Every embedded page is a document a contender wrote, so the
+ * `contender` field in the payload is only that page's word for itself: a
+ * column could put a rival's name on its own calls, and anything the page
+ * embedded — a child frame of its own — could post as a column entirely. A
+ * sender that is not one of this report's own frames is not a contender.
+ *
  * No server, no shared state: the file works from disk, offline, forever.
  */
 const FEED_SCRIPT = `
 addEventListener("message", function (event) {
   var call = event.data;
   if (call === null || typeof call !== "object" || call.genbench !== "call") return;
+  var frames = document.querySelectorAll("iframe[data-contender]");
+  var sender = null;
+  for (var i = 0; i < frames.length; i += 1) {
+    if (frames[i].contentWindow === event.source) sender = frames[i].getAttribute("data-contender");
+  }
+  if (sender === null) return;
   var row = document.createElement("li");
   var when = document.createElement("time");
   when.textContent = new Date(call.ts).toLocaleTimeString("en-US", { hour12: false });
   var who = document.createElement("span");
   who.className = "who";
-  who.textContent = call.contender;
+  who.textContent = sender;
   var tool = document.createElement("code");
   tool.textContent = call.name;
   var args = document.createElement("span");
