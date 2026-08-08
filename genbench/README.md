@@ -55,7 +55,9 @@ pnpm build                                  # genbench reads the built @vendoai/
 ANTHROPIC_API_KEY=… pnpm genbench run --prompt spend-overview
 ```
 
-Each case writes `runs/<run>/<contender>/<case>/`:
+Each case writes `runs/<run>/<contender>/<case>/`, where `<contender>` is the
+column's slug — `<harness>-<model>`, e.g. `vendo-sonnet`, `diy-opus`,
+`claude-code-haiku`:
 
 | file | what it is |
 | --- | --- |
@@ -84,12 +86,44 @@ and one `runs/<run>/preview.html`, which is where a person actually looks:
   control that fires nothing writes nothing, which is the same verdict the floor
   reaches
 
-It opens automatically on macOS and stays one static file — no server, offline,
-forever. A contender that outruns its budget is recorded `failure: "timeout"`;
-its siblings finish normally.
+It stays one static file — no server, offline, forever. A contender that
+outruns its budget is recorded `failure: "timeout"`; its siblings finish
+normally.
 
 Flags: `--prompt <id>` for one case, `--models sonnet,opus,haiku`,
 `--world <name>` (default `maple`), `--lane build` (deferred).
+
+A `--prompt` run opens the preview on macOS when it finishes — that is one
+person watching one case, and a window is the point of it. A full run prints the
+path instead, and `CI` or `GENBENCH_NO_OPEN=1` suppresses the window entirely.
+The path is always printed either way.
+
+### Exit code
+
+The floor alone decides it: **any floor failure in any column exits 1**, and
+nothing else does — a judge outage and a rubric line the judge failed both exit
+0, loudly, in `result.json` and in the preview. The last line of every run says
+which it was, in words:
+
+    floor failures: 2 (exit 1)
+
+Run through `pnpm`, a non-zero exit adds pnpm's own `ELIFECYCLE  Command failed
+with exit code 1` after that line. That is pnpm reporting genbench's exit, not a
+second failure.
+
+### Time and money, in orders of magnitude
+
+One case is roughly **1-4 minutes and $0.30-$0.50** of contender spend, plus the
+judge. The full five-case screen run is 3-15x that. `--models` multiplies the
+whole thing by the number of models, because the matrix is every harness in
+every model.
+
+Every dollar comes from the price table in `src/meter.ts`, **priced as of
+2026-08-08**: Opus 5 at $5/$25 per MTok, Sonnet 5 at its introductory $2/$10
+(through 2026-08-31, after which it returns to $3/$15), Haiku 4.5 at $1/$5. The
+token counts beside every dollar are the durable number — the dollars are a
+reading of that table on the day the run happened, so two runs' dollars only
+compare if the table did not move between them.
 
 ## The world
 
@@ -146,9 +180,15 @@ Five deterministic checks, no model involved:
   step has nothing to block, so for `diy` and `claude-code` this check collapses
   onto `delivered` — the checks that do the work on a hand-written page are `renders`,
   `honestData` and `wiredActions`, and all three are the same code
-- **honestData** — every number and date on screen is a value a tool returned,
-  or a sum, count, min, max or mean of one numeric field across one tool's rows.
-  Nothing else is allowed
+- **honestData** — every number and date on screen traces back to the tools.
+  The closed set, in full — a contender may show any literal number or date a
+  tool returned; the **row count** of one tool; the **sum, mean, min or max** of
+  one numeric field across one tool's rows; and the **count of one tool's rows
+  filtered to one field equalling one value** ("2 pending transfers" — two of
+  `list_transfers`' four rows carry `status: "pending"`). Money is matched at
+  either scale, because the same amount may be authored in cents and shown in
+  dollars; a count is matched at its own magnitude only, since two transfers is
+  never $0.02 or 200 of anything. Nothing else is allowed
 - **wiredActions** — the probe pressed every control on the page and every call
   that fired names a real tool with schema-valid arguments. A control that fires
   nothing fails: naming a tool in a document is not being wired to it, which is
@@ -166,6 +206,14 @@ run folder, and the lines arrive shuffled and are mapped back after. Every
 verdict is `pass`, `fail` or `na`, and carries one clause naming the evidence it
 was reached on. `na` means the line's subject is not on this screen at all, so
 it is neither earned nor missed and sits out of the tally.
+
+Grading is not free, and what it cost is reported **separately**: `judged.cost`
+in each `result.json` (`{ usage, usd }`, priced through the same table as the
+contenders) and one line under the run header in the preview. It is never added
+into a contender's `cost`. A column's `cost` is what THAT contender spent to
+build a screen — through the run's own meter, or for `claude-code` what its own
+session reported — and folding the benchmark's overhead into it would make every
+column look more expensive than the thing it measures.
 
 The grader is pinned separately from the contenders (`JudgeContract` in
 `src/judge.ts`: model, `rubricVersion`, and a hash of the system prompt) and
@@ -205,6 +253,17 @@ before. `src/axis.test.ts` pins both halves in a real browser: it proves the
 labels really are in the page's own text, really would fail, are gone from the
 extraction, and that the screen's own copy is still caught. It fails loudly if
 recharts ever moves that text.
+
+## Tests
+
+`pnpm --filter @vendoai/genbench test`. `vitest.config.ts` caps the pool at 1-2
+workers and drops the five browser suites when `CI` is set, because CI installs
+no Playwright browsers.
+
+Two tests spend real money, and both are gated twice — they need
+`GENBENCH_LIVE=1` **and** `ANTHROPIC_API_KEY`, so neither CI nor a stray
+`vitest` run can trigger them: the judge's live smoke test (`src/judge.test.ts`)
+and the Claude Code driver's (`src/claude-code.test.ts`).
 
 ## Known limits
 
