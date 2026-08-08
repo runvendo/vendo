@@ -10,6 +10,7 @@
   "scripts": {
     "genbench": "node --import tsx src/run.ts",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

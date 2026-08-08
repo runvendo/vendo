@@ -217,6 +217,34 @@ export const exitCode = (results: readonly CaseResult[]): number =>
 const nodesOf = (payload: UIPayload | undefined): ReadonlyArray<{ source?: string; component?: string }> =>
   (payload as { nodes?: Array<{ source?: string; component?: string }> } | undefined)?.nodes ?? [];
 
+/**
+ * One column's evidence on disk — the run folder's whole layout, in one place.
+ *
+ * The nesting and the filenames are a seam: `report.ts` spells them again, on its
+ * own, to read this folder back. `run-folder.test.ts` drives this writer and that
+ * reader over one real directory, which is the only thing keeping the two
+ * spellings honest.
+ */
+export async function writeCase(
+  runDir: string,
+  wrote: {
+    readonly outcome: RunOutcome | undefined;
+    readonly html: string | undefined;
+    readonly shot: Shot | undefined;
+    readonly result: CaseResult;
+  },
+): Promise<void> {
+  const caseDir = join(runDir, wrote.result.contender, wrote.result.case);
+  await mkdir(caseDir, { recursive: true });
+  // Only a compiled artifact gets its own file.
+  if (wrote.outcome?.artifact !== undefined && wrote.outcome.format !== "html") {
+    await writeFile(join(caseDir, "artifact.vendo"), wrote.outcome.artifact);
+  }
+  if (wrote.html !== undefined) await writeFile(join(caseDir, "page.html"), wrote.html);
+  if (wrote.shot !== undefined) await writeFile(join(caseDir, "screenshot.png"), wrote.shot.png);
+  await writeFile(join(caseDir, "result.json"), `${JSON.stringify(wrote.result, null, 2)}\n`);
+}
+
 async function main(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv);
   if (args.lane === "build") {
@@ -297,15 +325,6 @@ async function main(argv: readonly string[]): Promise<number> {
             styleLines: scoped.style,
           });
 
-    const caseDir = join(runDir, contender.slug, testCase.id);
-    await mkdir(caseDir, { recursive: true });
-    // Only a compiled artifact gets its own file.
-    if (outcome?.artifact !== undefined && outcome.format !== "html") {
-      await writeFile(join(caseDir, "artifact.vendo"), outcome.artifact);
-    }
-    if (done?.html !== undefined) await writeFile(join(caseDir, "page.html"), done.html);
-    if (shot !== undefined) await writeFile(join(caseDir, "screenshot.png"), shot.png);
-
     const failure = broke ?? outcome?.failure;
     const nodes = nodesOf(outcome?.payload);
     const result: CaseResult = {
@@ -333,7 +352,7 @@ async function main(argv: readonly string[]): Promise<number> {
       judgeContract: JudgeContract,
       ...(failure === undefined ? {} : { failure }),
     };
-    await writeFile(join(caseDir, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
+    await writeCase(runDir, { outcome, html: done?.html, shot, result });
     const scored = checks(floor);
     console.log(
       `· ${contender.slug} / ${testCase.id} · floor ${scored.filter((check) => check.pass).length}/${scored.length}` +
