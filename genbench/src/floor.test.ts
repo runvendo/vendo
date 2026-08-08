@@ -1,8 +1,8 @@
-import type { UIPayload } from "@vendoai/core";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { bindingsFromPayload, buildIndex, honestData, wiredActions, type DataIndex } from "./floor.js";
+import { buildIndex, honestData, wiredActions, type DataIndex } from "./floor.js";
+import type { Probed } from "./probe.js";
 import { loadWorld, type World } from "./world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -89,64 +89,44 @@ describe("honestData — the negative control", () => {
   });
 });
 
-describe("bindingsFromPayload", () => {
-  const payload = {
-    formatVersion: "vendo-genui/v2",
-    root: "a",
-    queries: [{ name: "transfers", tool: "list_transfers", input: { limit: 10 } }],
-    nodes: [
-      { id: "a", component: "Stack", children: ["b"] },
-      { id: "b", component: "Button", props: { onPress: { action: "cancel_transfer", payload: { id: "tr_1" } } } },
-    ],
-  } as unknown as UIPayload;
-
-  it("finds both the tree's queries and the nodes' action props", () => {
-    expect(bindingsFromPayload(payload)).toEqual([
-      { tool: "list_transfers", args: { limit: 10 }, where: "query transfers" },
-      { tool: "cancel_transfer", args: { id: "tr_1" }, where: "node b" },
-    ]);
-  });
-
-  it("ignores a host component's own fn reference, which names no tool", () => {
-    const withFn = {
-      formatVersion: "vendo-genui/v2",
-      root: "a",
-      nodes: [{ id: "a", component: "Card", props: { onPress: { action: "fn:refresh" } } }],
-    } as unknown as UIPayload;
-    expect(bindingsFromPayload(withFn)).toEqual([]);
-  });
-});
-
 describe("wiredActions", () => {
-  const at = (tool: string, args: unknown) => [{ tool, args, where: "node b" }];
+  const pressed = (name: string, args: unknown): Probed[] => [
+    { label: "Cancel", confirmed: false, calls: [{ name, args }] },
+  ];
 
   it("passes a real tool called with the arguments it declares", () => {
-    expect(wiredActions(at("cancel_transfer", { id: "tr_1" }), world).pass).toBe(true);
+    expect(wiredActions(pressed("cancel_transfer", { id: "tr_1" }), world).pass).toBe(true);
+  });
+
+  it("fails a control that was pressed and called nothing", () => {
+    const result = wiredActions([{ label: "Cancel", confirmed: false, calls: [] }], world);
+    expect(result.pass).toBe(false);
+    expect(result.bindings[0]).toMatchObject({ where: "Cancel", known: false, why: "pressing it called nothing" });
   });
 
   it("fails a tool the world does not have", () => {
-    const result = wiredActions(at("delete_account", { id: "x" }), world);
+    const result = wiredActions(pressed("delete_account", { id: "x" }), world);
     expect(result.pass).toBe(false);
     expect(result.bindings[0]).toMatchObject({ known: false, why: 'no tool named "delete_account"' });
   });
 
   it("fails a missing required argument", () => {
-    const result = wiredActions(at("cancel_transfer", {}), world);
+    const result = wiredActions(pressed("cancel_transfer", {}), world);
     expect(result.pass).toBe(false);
     expect(result.bindings[0]).toMatchObject({ known: true, argsValid: false, why: 'missing required argument "id"' });
   });
 
   it("fails an argument the tool does not declare", () => {
-    const result = wiredActions(at("cancel_transfer", { id: "tr_1", force: true }), world);
+    const result = wiredActions(pressed("cancel_transfer", { id: "tr_1", force: true }), world);
     expect(result.bindings[0]).toMatchObject({ argsValid: false, why: 'unknown argument "force"' });
   });
 
   it("fails an argument of the wrong type", () => {
-    const result = wiredActions(at("list_transfers", { limit: "10" }), world);
+    const result = wiredActions(pressed("list_transfers", { limit: "10" }), world);
     expect(result.bindings[0]).toMatchObject({ argsValid: false, why: 'argument "limit" should be a number' });
   });
 
-  it("passes vacuously when a screen binds nothing", () => {
+  it("passes vacuously when a screen has nothing to press", () => {
     expect(wiredActions([], world)).toEqual({ pass: true, bindings: [] });
   });
 });

@@ -20,11 +20,14 @@ Each case writes `runs/<run>/<contender>/<case>/`:
 | file | what it is |
 | --- | --- |
 | `artifact.vendo` | the document the contender actually saved |
-| `screenshot.png` | that document rendered through the product's own compile + the Kit |
-| `result.json` | the five floor verdicts, timings, tokens and dollars |
+| `page.html` | the real screen: a root, the payload, and the product's own renderer bundled in. This is the only way pixels are made — for the DIY and claude-code contenders it IS the artifact |
+| `screenshot.png` | that page, shot once it has settled |
+| `result.json` | the five floor verdicts, the click trace, console errors, timings, tokens and dollars |
 
-and one `runs/<run>/preview.html` — the screenshots side by side under their
-verdicts and numbers. It opens automatically on macOS.
+and one `runs/<run>/preview.html` — every contender's live page side by side,
+scrollable, under its verdicts and numbers, with the judge's screenshot demoted
+to a thumbnail. It opens automatically on macOS. A case that outruns its
+five-minute budget is recorded `failure: "timeout"` and the run moves on.
 
 Flags: `--prompt <id>` for one case, `--models sonnet,opus,haiku`,
 `--lane build` (deferred).
@@ -51,19 +54,25 @@ a pinned judge will grade in a later slice.
 Five deterministic checks, no model involved:
 
 - **delivered** — an artifact came back at all
-- **renders** — the compiled screen painted at least one element
+- **renders** — the page mounted and took up space, with nothing on the console
 - **valid** — the product's *own* checks floor blocks nothing in the saved bytes.
   Not the same as "something painted": the agent can save again after its last
   good view, and the seam keeps the older screen
 - **honestData** — every number and date on screen is a value a tool returned,
   or a sum, count, min, max or mean of one numeric field across one tool's rows.
   Nothing else is allowed
-- **wiredActions** — every tool the tree names exists, and its arguments fit the
-  derived input schema
+- **wiredActions** — the probe pressed every control on the page and every call
+  that fired names a real tool with schema-valid arguments. A control that fires
+  nothing fails: naming a tool in a document is not being wired to it, which is
+  the difference `src/probe.test.ts` exists to keep honest
 
 ## Known limits
 
-Charts and generated islands are client-only, so they leave an empty band in a
-server-rendered screenshot. Every result counts them (`clientOnly`, `islands`)
-and the preview says so out loud, so the gap is never silent — but a shot with a
-chart in it does understate what the product built.
+The page loads no webfont — a shot must not depend on what a CDN felt like
+serving — so `world.json`'s `Inter` resolves to the system sans stack. Every
+contender is shot in the same face, which is what comparability needs; the
+brand's own typeface is not what is being measured.
+
+The probe presses one control per fresh page, so a screen with many controls
+costs many reloads. Multi-step flows are only followed one step past a
+`[role=dialog]` confirmation.

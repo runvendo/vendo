@@ -28,34 +28,30 @@ const offenderList = (offenders: readonly Offender[]): string =>
 
 const bindingList = (bindings: readonly Binding[]): string =>
   bindings.length === 0
-    ? `<ul class="notes"><li><span>no tool bindings on this screen</span></li></ul>`
+    ? `<ul class="notes"><li><span>nothing on this screen to press</span></li></ul>`
     : `<ul class="notes">${bindings
         .map(
           (b) =>
-            `<li><code>${escape(b.tool)}</code> <span>${escape(b.where)}${
+            `<li><code>${escape(b.where)}</code> <span>${escape(b.tool ?? "—")}${
               b.why === undefined ? "" : ` — ${escape(b.why)}`
             }</span> ${b.known && b.argsValid ? '<i class="ok">✓</i>' : '<i class="no">✕</i>'}</li>`,
         )
         .join("")}</ul>`;
 
-/** Islands and Kit charts both need the browser, so both leave a gap in a
- *  server-rendered shot. Says so in as many words, and counts them. */
-function clientOnlyNote(islands: number, charts: number): string {
-  const parts = [
-    islands > 0 ? `${islands} generated island${islands === 1 ? "" : "s"}` : "",
-    charts > 0 ? `${charts} chart${charts === 1 ? "" : "s"}` : "",
-  ].filter(Boolean);
-  if (parts.length === 0) return "";
-  const subject = parts.join(" and ");
-  const verb = islands + charts === 1 ? "is" : "are";
-  return `<p class="warn">${subject} on this screen ${verb} client-only — leaving an empty band in this server-rendered shot</p>`;
-}
+/** `renders` can fail for a reason no screenshot shows, so the reason is on the
+ *  page next to the verdict. */
+const consoleNote = (errors: readonly string[]): string =>
+  errors.length === 0
+    ? ""
+    : `<p class="warn">${errors.length} console error${errors.length === 1 ? "" : "s"} while painting: ${escape(errors[0]!)}</p>`;
 
 const metric = (label: string, value: string): string =>
   `<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`;
 
 async function column(runDir: string, result: CaseResult): Promise<string> {
-  const shot = await readFile(join(runDir, result.contender, result.case, "screenshot.png")).catch(() => undefined);
+  const caseDir = join(result.contender, result.case);
+  const shot = await readFile(join(runDir, caseDir, "screenshot.png")).catch(() => undefined);
+  const page = await readFile(join(runDir, caseDir, "page.html"), "utf8").catch(() => undefined);
   const scored = passes(result.floor);
   const total = scored.filter(Boolean).length;
   const { usage } = result.cost;
@@ -67,12 +63,18 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
     <span class="score ${total === 5 ? "ok" : "no"}">${total}/5</span>
   </header>
   <figure>${
-    shot === undefined
+    page === undefined
       ? `<div class="blank">nothing rendered</div>`
-      : `<img alt="${escape(result.case)} rendered by ${escape(result.contender)}" src="data:image/png;base64,${shot.toString("base64")}">`
+      : `<iframe title="${escape(result.case)} as ${escape(result.contender)} built it" src="${escape(caseDir)}/page.html" loading="lazy"></iframe>`
   }</figure>
+  ${
+    shot === undefined
+      ? ""
+      : `<div class="judge"><img alt="the screenshot ${escape(result.case)} was scored from"
+        src="data:image/png;base64,${shot.toString("base64")}"><p>what the judge saw</p></div>`
+  }
   ${result.failure === undefined ? "" : `<p class="failure">${escape(result.failure)}</p>`}
-  ${clientOnlyNote(result.islands, result.clientOnly)}
+  ${consoleNote(result.consoleErrors)}
   <dl class="floor">${CHECKS.map((name, index) => `<div><dt>${name}</dt><dd>${verdict(scored[index]!)}</dd></div>`).join("")}</dl>
   ${
     result.floor.blocking.length === 0
@@ -112,9 +114,16 @@ h2{margin:0;font-size:15px;font-weight:600}
 .col>header p{margin:2px 0 0;font-size:12px;color:var(--ter)}
 .score{font:600 13px/1 ui-monospace,Menlo,monospace;padding:5px 8px;border-radius:6px}
 .score.ok{color:var(--ok);background:#e8f3ed}.score.no{color:var(--no);background:#fbeceb}
-figure{margin:16px 0 0;background:var(--page);border:1px solid var(--line);border-radius:8px;overflow:hidden}
-img{display:block;width:100%}
+figure{margin:16px 0 0;background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+iframe{display:block;width:100%;height:660px;border:0;background:#fff}
 .blank{padding:48px 16px;text-align:center;font-size:13px;color:var(--ter)}
+/* The judge's evidence, not the artifact: small, captioned, and inlined so it
+   survives the file being moved. The live page above it does not. */
+.judge{display:flex;align-items:center;gap:10px;margin-top:10px}
+.judge img{display:block;width:72px;max-height:88px;object-fit:cover;object-position:top;
+  border:1px solid var(--line);border-radius:4px;background:var(--page)}
+.judge p{margin:0;font:450 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ter)}
 .failure{margin:12px 0 0;font-size:13px;color:var(--no)}
 .warn{margin:12px 0 0;padding:8px 10px;border-radius:6px;background:#fdf6e7;font-size:12px;color:#7a5a12}
 dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-between}
@@ -132,9 +141,10 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
 .metrics dd{margin:6px 0 0;font:450 15px/1 ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
 `;
 
-/** One self-contained page per run: the screenshots side by side, each under its
- *  own floor verdicts and numbers. Images are inlined, so the file can be moved
- *  or attached anywhere and still render. */
+/** One page per run: every contender's REAL screen side by side, live and
+ *  scrollable, each under its own floor verdicts and numbers. It stays a single
+ *  static file you can `open` — the live frames are relative links into the run
+ *  folder beside it, and the judge's screenshots are inlined. */
 export async function writePreview(input: {
   runDir: string;
   runId: string;

@@ -867,6 +867,9 @@ importers:
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@4.4.3)
+      esbuild:
+        specifier: ^0.25.12
+        version: 0.25.12
       react:
         specifier: 19.2.7
         version: 19.2.7
