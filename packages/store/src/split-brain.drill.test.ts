@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { createStore, grantStore, threadStore } from "./index.js";
 
@@ -50,7 +51,7 @@ describe("pglite", () => {
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-split-brain-"));
     dirs.push(dataDir);
     const fixture = new URL("./__fixtures__/drill-writer.mjs", import.meta.url);
-    const writer = spawn(process.execPath, [fixture.pathname, dataDir], { stdio: ["ignore", "pipe", "pipe"] });
+    const writer = spawn(process.execPath, [fileURLToPath(fixture), dataDir], { stdio: ["ignore", "pipe", "pipe"] });
     await waitForMarker(writer);
 
     // Second opener (this process) on the same dir: it must NOT start a second
