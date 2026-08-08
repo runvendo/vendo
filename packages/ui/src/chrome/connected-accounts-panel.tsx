@@ -97,11 +97,12 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
   const [severing, setSevering] = useState<Record<string, Severing | undefined>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string>();
-  // The browser refused the sign-in window for the connect in flight. `url` is
-  // the broker's own redirect, known only once initiate lands — the fallback
-  // link needs it WHILE the poll runs. One shared notice, the same altitude as
-  // `error`, because it names the service it belongs to.
-  const [blocked, setBlocked] = useState<{ name: string; url?: string }>();
+  // Connects whose sign-in window the browser refused, keyed like `busy` — the
+  // buttons disable per key, so two can run at once, and a shared notice would
+  // let the second connect erase a link the first still needs. `url` is the
+  // broker's own redirect, known only once initiate lands: the fallback link
+  // needs it WHILE the poll runs.
+  const [blocked, setBlocked] = useState<Record<string, { name: string; url?: string } | undefined>>({});
   // Accounts the WIRE has confirmed gone. The list read that follows a sever is
   // not what proves it: `useResource` keeps its last good page when a refresh
   // fails, which would put the row back wearing a Connected chip.
@@ -228,21 +229,23 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
    */
   const connect = async (key: string, name: string, input: { toolkit: string; connector?: string }) => {
     const popup = openConnectPopup();
+    const clearBlocked = () => setBlocked(current => ({ ...current, [key]: undefined }));
     setError(undefined);
-    setBlocked(popup === null ? { name } : undefined);
+    setBlocked(current => ({ ...current, [key]: popup === null ? { name } : undefined }));
     setBusy(current => ({ ...current, [key]: true }));
     try {
       await completeConnection(client, input, () => cancelled.current, popup, url => {
-        if (popup === null && !cancelled.current) setBlocked({ name, url });
+        if (popup === null && !cancelled.current) setBlocked(current => ({ ...current, [key]: { name, url } }));
       });
       if (cancelled.current) return;
-      setBlocked(undefined);
+      clearBlocked();
       await refresh();
     } catch (reason) {
       if (!cancelled.current) {
-        // The flow is over, so the link is stale — a fresh initiate is what a
-        // retry needs, and the refusal copy says so.
-        setBlocked(undefined);
+        // This connect is over, so its link is stale — a fresh initiate is what a
+        // retry needs, and the refusal copy says so. Only THIS key clears: a
+        // sibling connect may still be waiting on its own sign-in.
+        clearBlocked();
         setError(connectRefusalCopy(reason, name));
       }
     } finally {
@@ -273,18 +276,19 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
       <section aria-labelledby="vendo-accounts-heading" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <h2 id="vendo-accounts-heading" className="fl-auto-title" style={{ margin: 0 }}>Connected accounts</h2>
         {error ? <div role="alert" className="fl-error">{error}</div> : null}
-        {blocked ? (
+        {Object.entries(blocked).map(([key, entry]) => entry === undefined ? null : (
           // The window never opened, but the connect did: the poll is running on
-          // the same account, so the same URL in a tab finishes it.
-          <div role="status" className="fl-connect-blocked">
-            <span>Your browser blocked the {blocked.name} sign-in window. Open it yourself — we’ll pick it up from here.</span>
-            {blocked.url === undefined ? null : (
-              <a className="fl-btn fl-btn-primary" href={blocked.url} target="_blank" rel="noreferrer">
+          // that account, so the same URL in a tab finishes it. One notice per
+          // connect still waiting — each names its own service.
+          <div key={key} role="status" className="fl-connect-blocked">
+            <span>Your browser blocked the {entry.name} sign-in window. Open it yourself — we’ll pick it up from here.</span>
+            {entry.url === undefined ? null : (
+              <a className="fl-btn fl-btn-primary" href={entry.url} target="_blank" rel="noreferrer">
                 Open sign-in in a new tab
               </a>
             )}
           </div>
-        ) : null}
+        ))}
         {rows.length === 0 ? (
           <div className="fl-acct-ghost">
             <span className="fl-acct-ghost-title">No connected accounts yet</span>
