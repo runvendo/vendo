@@ -11,13 +11,13 @@
       "danger": "#C43E2F",
       "border": "#E5E7EB"
     },
-    "typography": { "fontFamily": "Inter, sans-serif", "baseSize": "14px" },
+    "typography": { "fontFamily": "Onest, sans-serif", "baseSize": "14px" },
     "radius": { "small": "8px", "medium": "8px", "large": "8px" },
     "density": "comfortable",
     "motion": "full"
   },
   "style": [
-    "uses the theme exactly: brand green, Inter, 8px corners — no invented colors or fonts",
+    "uses the theme exactly: brand green, Onest, 8px corners — no invented colors or fonts",
     "money always shows 2 decimals with currency symbol",
     "destructive actions ask for confirmation",
     "dates shown as 'Aug 1' style, never ISO"

@@ -210,6 +210,16 @@ export function wiredActions(trace: readonly Probed[], world: World): WiredActio
 
 // ---------------------------------------------------------------------- floor
 
+/** The five checks in report order, each under the name the report prints. One
+ *  list, so a score and a column can never disagree about what was checked. */
+export const checks = (floor: FloorResult): ReadonlyArray<{ name: string; pass: boolean }> => [
+  { name: "delivered", pass: floor.delivered },
+  { name: "renders", pass: floor.renders },
+  { name: "valid", pass: floor.valid },
+  { name: "honestData", pass: floor.honestData.pass },
+  { name: "wiredActions", pass: floor.wiredActions.pass },
+];
+
 export function runFloor(input: {
   world: World;
   artifact: string | undefined;

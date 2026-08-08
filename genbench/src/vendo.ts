@@ -5,7 +5,7 @@ import { screenAssembler } from "@vendoai/harnesses";
 import { createStore, workspaceStore } from "@vendoai/store";
 import { vendoVerbsRegistry } from "@vendoai/vendo";
 import type { Contender, RunOutcome, RunRequest } from "./run.js";
-import type { World } from "./world.js";
+import { cannedResponse, type World } from "./world.js";
 
 const PRINCIPAL: Principal = { kind: "user", subject: "genbench" };
 
@@ -22,7 +22,7 @@ export function worldRegistry(world: World): ToolRegistry {
       if (tool === undefined) {
         return { status: "error", error: { code: "not-found", message: `no tool ${call.tool}` } };
       }
-      return { status: "ok", output: (tool.data ?? { ok: true }) as never };
+      return { status: "ok", output: cannedResponse(tool) as never };
     },
   };
 }

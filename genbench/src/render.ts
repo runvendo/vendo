@@ -3,7 +3,7 @@ import type { Json, UIPayload } from "@vendoai/core";
 import { build } from "esbuild";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { World } from "./world.js";
+import { cannedResponse, type World } from "./world.js";
 
 /** A banking app's column. Every contender is shot at the same size, so the
  *  screenshots stack side by side in the report. */
@@ -33,32 +33,95 @@ const jsonScript = (id: string, value: unknown): string =>
   `<script type="application/json" id="${id}">${JSON.stringify(value).replaceAll("<", "\\u003c")}</script>`;
 
 /**
+ * The one seam every contender's page answers through, injected as the SAME
+ * bytes whoever wrote the page: the recorder the click probe reads, answering
+ * with the case's canned rows so a runtime refetch resolves instead of hanging.
+ *
+ * It also posts every call to the parent frame. That is what lets the report
+ * page show a press in an embedded screen as it happens, tagged with the
+ * contender whose frame fired it — with no server and no shared state.
+ */
+function seam(world: World, contender: string): string {
+  const tools = Object.fromEntries(world.tools.map((tool) => [tool.name, cannedResponse(tool) as Json]));
+  return `${jsonScript("tools", tools)}
+<script>
+(function () {
+  var tools = JSON.parse(document.getElementById("tools").textContent);
+  var contender = ${JSON.stringify(contender)};
+  window.vendo = {
+    calls: [],
+    callTool: function (name, args) {
+      window.vendo.calls.push({ name: name, args: args });
+      try {
+        parent.postMessage({ genbench: "call", contender: contender, name: name, args: args, ts: Date.now() }, "*");
+      } catch (ignored) {}
+      return Object.hasOwn(tools, name)
+        ? { status: "ok", output: tools[name] }
+        : { status: "error", error: { code: "not-found", message: "no tool " + name } };
+    },
+  };
+})();
+</script>`;
+}
+
+/**
  * The page a contender is judged on: a root to mount into, the case's data, and
  * the script that paints it. The theme rides as JSON and is applied through the
  * product's own `applyThemeVars`, so nothing here re-implements theming.
- *
- * The later DIY and claude-code contenders write this file themselves — the page
- * IS their artifact, and they bypass the compile entirely. Everything a page can
- * rely on is therefore in the markup below and nowhere else.
  */
-export function pageHtml(payload: UIPayload, world: World, bundle: string): string {
-  const tools = Object.fromEntries(world.tools.map((tool) => [tool.name, (tool.data ?? { ok: true }) as Json]));
+export function pageHtml(payload: UIPayload, world: World, bundle: string, contender: string): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>genbench</title><style>
 html,body{margin:0;padding:0;background:var(--vendo-color-background,#fff);}
 #root{padding:20px;}
-</style></head><body><div id="root"></div>
+</style>
+${seam(world, contender)}
+</head><body><div id="root"></div>
 ${jsonScript("payload", payload)}
 ${jsonScript("theme", world.theme)}
-${jsonScript("tools", tools)}
 <script>${bundle.replaceAll("</script", "<\\/script")}</script>
 </body></html>`;
 }
 
+/** Where the harness gets to speak in a document it did not write. */
+const ENTRY = /<head[^>]*>|<body[^>]*>/i;
+
+/**
+ * A contender that wrote its own document gets the seam and the settle signal
+ * injected, and nothing else: the page it wrote is the page that mounts, is shot
+ * and is probed. The settle belongs to the harness because a hand-written page
+ * has no reason to know the shooter is waiting for it.
+ */
+export function authoredPage(html: string, world: World, contender: string): string {
+  const injected = `${seam(world, contender)}
+<script>addEventListener("load", function () {
+  requestAnimationFrame(function () { requestAnimationFrame(function () { window.__settled = true; }); });
+});</script>`;
+  const entry = ENTRY.exec(html);
+  return entry === null ? injected + html : html.replace(entry[0], () => entry[0] + injected);
+}
+
+/**
+ * What a chart writes to measure with, rather than to say.
+ *
+ * The tick layer — NOT `.recharts-cartesian-axis`, which holds the line and no
+ * text — carries a scale recharts computed: "$750.00 / $1,500.00 / $2,250.00" is
+ * arithmetic no tool returned. The measurement span is worse: an offscreen
+ * scratch pad at `top:-20000px` holding the last string recharts sized, which no
+ * human has ever seen and which `innerText` reports anyway.
+ *
+ * Both are hidden for the extraction and restored before the shot. Nothing else
+ * is, so a fabricated number in the screen's own copy still lands in
+ * `visibleText` and still fails. `axis.test.ts` pins both halves in a real
+ * browser, and fails loudly if recharts ever moves the text.
+ */
+const CHART_SCAFFOLDING = ".recharts-cartesian-axis-tick-labels, #recharts_measurement_span";
+
 export interface Shot {
   readonly png: Buffer;
-  /** `document.body.innerText` — the same extraction for every contender, which
-   *  is what makes the fabrication check comparable across artifact formats. */
+  /** The page's visible text minus chart axis ticks — the same extraction for
+   *  every contender, which is what makes the fabrication check comparable
+   *  across artifact formats. */
   readonly visibleText: string;
   /** Something took up space AND the browser reported no errors doing it. */
   readonly renders: boolean;
@@ -104,13 +167,25 @@ export async function openBrowser(): Promise<Shooter> {
       return {
         page,
         async shot() {
-          const { visibleText, mounted } = await page.evaluate(() => ({
-            visibleText: document.body.innerText,
-            mounted: [...document.querySelectorAll("#root *")].some((element) => {
-              const box = element.getBoundingClientRect();
-              return box.width > 0 && box.height > 0;
-            }),
-          }));
+          const { visibleText, mounted } = await page.evaluate((selector: string) => {
+            // `visibility`, not `display`: Chrome's `innerText` reports SVG text
+            // in a `display:none` subtree, and reports it correctly hidden here.
+            const scaffolding = [...document.querySelectorAll<SVGElement | HTMLElement>(selector)];
+            const was = scaffolding.map((element) => element.style.visibility);
+            for (const element of scaffolding) element.style.visibility = "hidden";
+            const visibleText = document.body.innerText;
+            scaffolding.forEach((element, index) => (element.style.visibility = was[index]!));
+            return {
+              visibleText,
+              // Anywhere in the body, not just under `#root`: a contender that
+              // wrote its own document has no root to mount into, and grading it
+              // as blank for that would be measuring the harness.
+              mounted: [...document.querySelectorAll("body *")].some((element) => {
+                const box = element.getBoundingClientRect();
+                return box.width > 0 && box.height > 0;
+              }),
+            };
+          }, CHART_SCAFFOLDING);
           return {
             png: await page.screenshot({ fullPage: true }),
             visibleText,

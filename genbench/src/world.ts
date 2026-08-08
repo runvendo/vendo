@@ -35,6 +35,12 @@ export interface World {
   readonly hash: string;
 }
 
+/** What a tool answers with, wherever it is asked: the registry the vendo run
+ *  binds, the recorder every benchmark page carries, and the diy prompt. One
+ *  definition, so a read's rows and a write's bare acknowledgement cannot mean
+ *  one thing to one contender and another to the next. */
+export const cannedResponse = (tool: DerivedTool): unknown => tool.data ?? { ok: true };
+
 export type Lane = "screen" | "build";
 
 export interface Case {

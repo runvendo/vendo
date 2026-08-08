@@ -4,10 +4,11 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runFloor, type FloorResult } from "./floor.js";
+import { diyDriver } from "./diy.js";
+import { checks, runFloor, type FloorResult } from "./floor.js";
 import { meteredModel, MODEL_IDS, type Meter, type ModelAlias, type UsageTotals } from "./meter.js";
 import { probe, type Probed } from "./probe.js";
-import { bundleMount, openBrowser, pageHtml } from "./render.js";
+import { authoredPage, bundleMount, openBrowser, pageHtml, type Shot } from "./render.js";
 import { writePreview } from "./report.js";
 import { vendoDriver } from "./vendo.js";
 import { loadCases, loadWorld, worldForCase, type Case, type Lane, type World } from "./world.js";
@@ -36,7 +37,12 @@ export interface RunOutcome {
   readonly blocking: readonly string[];
   /** The settled screen, as the product itself compiled it. */
   readonly payload?: UIPayload;
-  readonly snapshots: ReadonlyArray<{ atMs: number; payload: UIPayload }>;
+  /** A contender that writes its own document returns it here instead of a
+   *  payload: these bytes ARE the artifact, and they mount unchanged. */
+  readonly page?: string;
+  /** When the contender had something new to show. Only the clock is shared —
+   *  what each snapshot holds is the driver's own business. */
+  readonly snapshots: ReadonlyArray<{ atMs: number }>;
   readonly firstRenderMs?: number;
   readonly settledMs: number;
   /** The contender's own failure sentence, when it has one. */
@@ -71,7 +77,9 @@ export interface CaseResult {
   readonly failure?: string;
 }
 
-const DRIVERS: Partial<Record<HarnessId, () => Contender>> = { vendo: vendoDriver };
+/** Declaration order is column order — the report never sorts by who finished
+ *  first. The claude-code column joins here the day its driver lands. */
+const DRIVERS: Partial<Record<HarnessId, () => Contender>> = { vendo: vendoDriver, diy: diyDriver };
 
 interface Args {
   readonly only?: string;
@@ -108,8 +116,7 @@ function asAlias(value: string): ModelAlias {
   return value as ModelAlias;
 }
 
-/** Every contender that has a driver today, in every requested model. The diy
- *  and claude-code columns join here the day their drivers land. */
+/** Every contender that has a driver today, in every requested model. */
 export function contenders(models: readonly ModelAlias[]): readonly ContenderId[] {
   return Object.keys(DRIVERS).flatMap((harness) =>
     models.map((model) => ({ harness: harness as HarnessId, model, slug: `${harness}-${model}` })),
@@ -119,10 +126,27 @@ export function contenders(models: readonly ModelAlias[]): readonly ContenderId[
 /** The recharts-backed Kit components (packages/ui/src/kit/charts/). */
 const CHARTS = new Set(["LineChart", "BarChart", "DonutChart", "Sparkline"]);
 
-/** One case's whole budget — generation, paint and probe. A contender that hangs
- *  costs the run this much and no more; the case is recorded failed and the next
- *  one starts. */
+/** One contender's whole budget for one case — generation, paint and probe. A
+ *  contender that hangs costs the run this much and no more; its column is
+ *  recorded failed and its siblings keep their own clocks. */
 const CASE_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * One contender's whole attempt as a settled value.
+ *
+ * Its own crash and its own silence become results here, never exceptions, so
+ * the row can be gathered with `Promise.all`: a column that dies takes down
+ * nothing but itself, and every column keeps its place.
+ */
+export async function attempt<T>(work: () => Promise<T>, budgetMs: number): Promise<{ done?: T; failure?: string }> {
+  return await Promise.race([
+    work().then(
+      (done) => ({ done }),
+      (error: unknown) => ({ failure: error instanceof Error ? error.message : String(error) }),
+    ),
+    new Promise<{ failure: string }>((settle) => setTimeout(() => settle({ failure: "timeout" }), budgetMs).unref()),
+  ]);
+}
 
 const nodesOf = (payload: UIPayload | undefined): ReadonlyArray<{ source?: string; component?: string }> =>
   (payload as { nodes?: Array<{ source?: string; component?: string }> } | undefined)?.nodes ?? [];
@@ -157,84 +181,103 @@ async function main(argv: readonly string[]): Promise<number> {
   const bundle = await bundleMount();
   const shooter = await openBrowser();
   const results: CaseResult[] = [];
+  /** The world each case was actually graded against — what the report's data
+   *  panel shows, so a person can check any number on any screen against it. */
+  const worlds: Record<string, World> = {};
+
+  /** One column of one case, start to finish, reporting rather than throwing. */
+  const runOne = async (contender: ContenderId, testCase: Case, scoped: World): Promise<CaseResult> => {
+    const modelId = MODEL_IDS[contender.model];
+    // Its own meter, so a sibling's tokens and a sibling's clock are never
+    // charged to this column.
+    const meter = meteredModel(anthropic(modelId), modelId);
+
+    // Raced against the clock as one unit: generation, paint and probe all spend
+    // the person's wait, so one budget covers all three.
+    const { done, failure: broke } = await attempt(async () => {
+      const outcome = await DRIVERS[contender.harness]!().run({ world: scoped, testCase, meter });
+      // Either the product compiled a payload into a page, or the contender
+      // wrote the page itself. From here on both are just a page.
+      const html =
+        outcome.page !== undefined
+          ? authoredPage(outcome.page, scoped, contender.slug)
+          : outcome.payload === undefined
+            ? undefined
+            : pageHtml(outcome.payload, scoped, bundle, contender.slug);
+      if (html === undefined) return { outcome, trace: [] as Probed[] };
+      const visit = await shooter.visit(html);
+      try {
+        return { outcome, html, shot: await visit.shot(), trace: await probe(visit) };
+      } finally {
+        await visit.close();
+      }
+    }, CASE_TIMEOUT_MS);
+
+    const outcome = done?.outcome;
+    const shot: Shot | undefined = done?.shot;
+    const trace = done?.trace ?? [];
+    // Whatever the contender actually delivered: a document for vendo, the page
+    // itself for a contender that writes HTML.
+    const floor = runFloor({
+      world: scoped,
+      artifact: outcome?.artifact ?? outcome?.page,
+      blocking: outcome?.blocking ?? [],
+      trace,
+      shot,
+    });
+
+    const caseDir = join(runDir, contender.slug, testCase.id);
+    await mkdir(caseDir, { recursive: true });
+    if (outcome?.artifact !== undefined) await writeFile(join(caseDir, "artifact.vendo"), outcome.artifact);
+    if (done?.html !== undefined) await writeFile(join(caseDir, "page.html"), done.html);
+    if (shot !== undefined) await writeFile(join(caseDir, "screenshot.png"), shot.png);
+
+    const failure = broke ?? outcome?.failure;
+    const result: CaseResult = {
+      run: runId,
+      contender: contender.slug,
+      model: modelId,
+      case: testCase.id,
+      prompt: testCase.prompt,
+      lane: testCase.lane,
+      floor,
+      timing: {
+        ...(outcome?.firstRenderMs === undefined ? {} : { firstRenderMs: outcome.firstRenderMs }),
+        settledMs: outcome?.settledMs ?? meter.elapsedMs(),
+      },
+      cost: { usage: meter.totals(), usd: meter.usd() },
+      islands: countIslands(outcome?.payload),
+      clientOnly: countClientOnly(outcome?.payload),
+      trace,
+      consoleErrors: shot?.consoleErrors ?? [],
+      world: world.hash,
+      ...(failure === undefined ? {} : { failure }),
+    };
+    await writeFile(join(caseDir, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
+    console.log(
+      `· ${contender.slug} / ${testCase.id} · floor ${checks(floor).filter((check) => check.pass).length}/5` +
+        ` · ${result.timing.settledMs}ms · $${result.cost.usd.toFixed(4)}`,
+    );
+    return result;
+  };
 
   try {
-    for (const contender of contenders(args.models)) {
-      const driver = DRIVERS[contender.harness]!();
-      for (const testCase of cases) {
-        const modelId = MODEL_IDS[contender.model];
-        const meter = meteredModel(anthropic(modelId), modelId);
-        const scoped = worldForCase(world, testCase);
-        console.log(`· ${contender.slug} / ${testCase.id}`);
-
-        // Raced against the clock as one unit: generation, paint and probe all
-        // spend the person's wait, so one budget covers all three.
-        const done = await Promise.race([
-          (async () => {
-            const outcome = await driver.run({ world: scoped, testCase, meter });
-            if (outcome.payload === undefined) return { outcome, trace: [] as Probed[] };
-            const html = pageHtml(outcome.payload, scoped, bundle);
-            const visit = await shooter.visit(html);
-            try {
-              return { outcome, html, shot: await visit.shot(), trace: await probe(visit) };
-            } finally {
-              await visit.close();
-            }
-          })(),
-          new Promise<undefined>((settle) => setTimeout(() => settle(undefined), CASE_TIMEOUT_MS).unref()),
-        ]);
-
-        const outcome = done?.outcome;
-        const shot = done?.shot;
-        const trace = done?.trace ?? [];
-        const floor = runFloor({
-          world: scoped,
-          artifact: outcome?.artifact,
-          blocking: outcome?.blocking ?? [],
-          trace,
-          shot,
-        });
-
-        const caseDir = join(runDir, contender.slug, testCase.id);
-        await mkdir(caseDir, { recursive: true });
-        if (outcome?.artifact !== undefined) await writeFile(join(caseDir, "artifact.vendo"), outcome.artifact);
-        if (done?.html !== undefined) await writeFile(join(caseDir, "page.html"), done.html);
-        if (shot !== undefined) await writeFile(join(caseDir, "screenshot.png"), shot.png);
-
-        const failure = done === undefined ? "timeout" : outcome?.failure;
-        const result: CaseResult = {
-          run: runId,
-          contender: contender.slug,
-          model: modelId,
-          case: testCase.id,
-          prompt: testCase.prompt,
-          lane: testCase.lane,
-          floor,
-          timing: {
-            ...(outcome?.firstRenderMs === undefined ? {} : { firstRenderMs: outcome.firstRenderMs }),
-            settledMs: outcome?.settledMs ?? meter.elapsedMs(),
-          },
-          cost: { usage: meter.totals(), usd: meter.usd() },
-          islands: countIslands(outcome?.payload),
-          clientOnly: countClientOnly(outcome?.payload),
-          trace,
-          consoleErrors: shot?.consoleErrors ?? [],
-          world: world.hash,
-          ...(failure === undefined ? {} : { failure }),
-        };
-        await writeFile(join(caseDir, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
-        results.push(result);
-        console.log(
-          `  floor ${[floor.delivered, floor.renders, floor.valid, floor.honestData.pass, floor.wiredActions.pass].filter(Boolean).length}/5` +
-            ` · ${result.timing.settledMs}ms · $${result.cost.usd.toFixed(4)}`,
-        );
-      }
+    for (const testCase of cases) {
+      const scoped = worldForCase(world, testCase);
+      worlds[testCase.id] = scoped;
+      // The whole row at once. The contenders share only the browser, and each
+      // gets its own page in it; the order of `results` is the order of
+      // `contenders`, whatever order they finish in.
+      const row = await Promise.all(
+        contenders(args.models).map(async (contender) => await runOne(contender, testCase, scoped)),
+      );
+      results.push(...row);
     }
   } finally {
     await shooter.close();
   }
 
-  const preview = await writePreview({ runDir, runId, results });
+  const preview = await writePreview({ runDir, runId, results, worlds });
   console.log(preview);
   if (process.platform === "darwin") spawn("open", [preview], { detached: true, stdio: "ignore" }).unref();
   return results.every((result) => result.floor.pass) ? 0 : 1;
