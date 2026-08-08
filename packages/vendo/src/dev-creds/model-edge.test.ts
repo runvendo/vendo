@@ -5,7 +5,7 @@ import { bindVendoModelSlots, devModel, vendoModel } from "./model-edge.js";
 describe("dev-creds model, edge entry", () => {
   it("fails a model call with wiring guidance instead of reaching for Node resolution", async () => {
     const model = devModel();
-    const call = (model as { doStream: (options: unknown) => Promise<unknown> }).doStream({});
+    const call = (model as unknown as { doStream: (options: unknown) => Promise<unknown> }).doStream({});
     await expect(call).rejects.toThrow(/pass `model:`/);
     await expect(call).rejects.toThrow(/VENDO_API_KEY/);
   });
@@ -15,7 +15,7 @@ describe("dev-creds model, edge entry", () => {
     // "#dev-creds/model", so the edge condition must resolve them too.
     expect(() => bindVendoModelSlots(vendoModel("vendo"), { judge: "vendo-judge" })).not.toThrow();
     const model = vendoModel("vendo");
-    const call = (model as { doGenerate: (options: unknown) => Promise<unknown> }).doGenerate({});
+    const call = (model as unknown as { doGenerate: (options: unknown) => Promise<unknown> }).doGenerate({});
     await expect(call).rejects.toThrow(/pass `model:`/);
   });
 

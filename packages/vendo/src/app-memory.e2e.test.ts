@@ -36,7 +36,7 @@ afterEach(async () => {
 });
 
 const principal: Principal = { kind: "user", subject: "user_memory" };
-const ctx = { principal, venue: "chat" as const, presence: "present" as const };
+const ctx = { principal, venue: "chat" as const, presence: "present" as const, sessionId: "ses_memory" };
 
 /** The smallest document the compiler renders and the seam paints. */
 const SPENDING = `<App name="Spending">

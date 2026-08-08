@@ -27,6 +27,7 @@ import {
   type Principal,
   type RunContext,
 } from "@vendoai/core";
+import type { SandboxAdapter } from "@vendoai/apps";
 import { createSessionRoutes } from "@vendoai/apps/box-door";
 import { claudeCode } from "@vendoai/harnesses/claude-code";
 import { appAccess, createStore, type VendoStore } from "@vendoai/store";
@@ -150,7 +151,7 @@ async function boot(store: VendoStore, sandbox: ReturnType<typeof fakeSandbox>):
     // Never reached: the thinker is the scripted box, not a provider.
     model: {} as LanguageModel,
     store,
-    sandbox,
+    sandbox: sandbox as unknown as SandboxAdapter,
     harness: claudeCode(),
     mcp: { baseUrl: "https://host.test" },
     // One preset, four seams (09-vendo §2.1) — `memberships` is the one this
@@ -163,7 +164,7 @@ async function boot(store: VendoStore, sandbox: ReturnType<typeof fakeSandbox>):
         async principal(subject: string) { return { kind: "user" as const, subject }; },
       },
     },
-  } as Parameters<typeof createVendo>[0]);
+  });
   return vendo;
 }
 

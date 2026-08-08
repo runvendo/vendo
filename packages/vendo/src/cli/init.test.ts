@@ -1018,7 +1018,8 @@ describe("vendo init (zero-question)", () => {
       tools: Record<string, { disabled: boolean }>;
     };
     const { tools } = await extractServerActions(root);
-    for (const tool of tools.filter((entry) => entry.binding.module.endsWith("internal.ts"))) {
+    for (const tool of tools.filter((entry) =>
+      entry.binding.kind === "server-action" && entry.binding.module.endsWith("internal.ts"))) {
       overrides.tools[tool.name] = { disabled: true };
     }
     await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify(overrides, null, 2));

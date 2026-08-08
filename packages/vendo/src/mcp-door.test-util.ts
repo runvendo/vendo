@@ -447,7 +447,7 @@ export async function bearer(vendo: Vendo): Promise<string> {
 }
 
 export interface DoorSession {
-  listTools(): Promise<Array<{ name: string; description?: string; annotations?: unknown; outputSchema?: unknown }>>;
+  listTools(): Promise<Array<{ name: string; description?: string; annotations?: unknown; inputSchema?: unknown; outputSchema?: unknown }>>;
   callTool(name: string, args: Record<string, unknown>): Promise<{ isError?: boolean; text: string }>;
 }
 

@@ -7,6 +7,7 @@
  * a real turn, the real `/status` venue, the real Cloud adapter's HTTP call.
  */
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
+import { inMemoryBoxFiles } from "@vendoai/apps/testing";
 import { agent } from "@vendoai/agents";
 import { defineHarness, harnessAdapters } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
@@ -55,6 +56,9 @@ const fakeSandbox = (): SandboxAdapter & { created: unknown[] } => {
     snapshot: async () => "fake:snap",
     stop: async () => {},
     destroy: async () => {},
+    // The seam's ONE in-memory implementation (@vendoai/apps/testing), so no
+    // two fakes can drift over what reading a box file means.
+    files: inMemoryBoxFiles(new Map()),
   } satisfies SandboxMachine;
   return {
     created,

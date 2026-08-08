@@ -187,7 +187,7 @@ describe("the turn id (contract §3.5)", () => {
         risk: "write",
       }],
       execute: async () => ({ status: "ok", output: { sent: true } }),
-      toolkitOf: (tool) => (tool.startsWith("gmail_") ? "gmail" : undefined),
+      toolkitOf: (tool: string) => (tool.startsWith("gmail_") ? "gmail" : undefined),
       connections: {
         list: async () => [],
         initiate: async () => ({ id: "conn_1", status: "pending", redirectUrl: "https://example.test" }),

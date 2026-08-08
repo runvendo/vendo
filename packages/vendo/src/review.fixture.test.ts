@@ -151,6 +151,7 @@ export default function Page() {
         principal: { kind: "user", subject: user },
         venue: "app",
         presence: "present",
+        sessionId: "ses_review_fixture",
       });
       if (app === null) throw new Error("no app row to rewrite");
       return printWire(

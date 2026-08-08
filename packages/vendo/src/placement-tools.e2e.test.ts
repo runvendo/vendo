@@ -28,7 +28,7 @@ import {
   VENDO_MAKE_TOOL,
   makeReceiptSchema,
   type ToolListing,
-  type ToolOutcome,
+  type ToolResult,
 } from "@vendoai/core";
 import { defineHarness } from "@vendoai/harnesses";
 import type { VendoStore } from "@vendoai/store";
@@ -82,7 +82,7 @@ interface Host {
 
 /** What a turn does after it has listed, so a test can drive a real CALL
  *  through the same guard-bound registry the listing came from. */
-type OnTurn = (tools: { call(name: string, args: unknown): Promise<ToolOutcome> }) => Promise<void>;
+type OnTurn = (tools: { call(name: string, args: unknown): Promise<ToolResult> }) => Promise<void>;
 
 /** One firing of a scheduled automation. `runUnattendedTurn` carries no app,
  *  and 05 §6 binds an away run's captured authority to the app it runs for, so
@@ -258,7 +258,7 @@ describe("THE LAW, for a tool whose whole effect is on a person's screen", () =>
    * placement" half is read straight out of the store's rows.
    */
   it("builds a slot-bearing make on an unattended run and takes no slot", async () => {
-    const outcomes: ToolOutcome[] = [];
+    const outcomes: ToolResult[] = [];
     const { vendo, store } = await host(async (tools) => {
       outcomes.push(await tools.call(VENDO_MAKE_TOOL, {
         request: "my spending this month",

@@ -153,7 +153,7 @@ async function compose(): Promise<Composed> {
 
 /** The prompt of the call that carried `marker`, as sent to the provider. */
 function promptCarrying(model: MockLanguageModelV3, marker: string): string {
-  const call = model.doStreamCalls.findLast((entry) => JSON.stringify(entry.prompt).includes(marker));
+  const call = [...model.doStreamCalls].reverse().find((entry) => JSON.stringify(entry.prompt).includes(marker));
   expect(call, `no provider call carried ${marker}`).toBeDefined();
   return JSON.stringify(call?.prompt);
 }

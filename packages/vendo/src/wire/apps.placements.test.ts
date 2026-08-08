@@ -58,6 +58,8 @@ const wireFor = (url: string, init?: RequestInit): { wire: WireContext; calls: C
       segments: routeSegments(path),
       params: {},
       context: async () => ctx,
+      // Only `/tick` sweeps (wire/misc.ts); no route under test calls it.
+      sweep: async () => {},
       deps,
     },
   };

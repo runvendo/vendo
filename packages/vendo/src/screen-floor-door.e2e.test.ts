@@ -248,7 +248,7 @@ describe("the assembly loop always hears the floor's verdict on what it saved", 
     expect(walked.prompts[1] ?? "").not.toContain("does not pass");
     // The screen reached the surface and the row reached the store.
     expect(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view").length).toBeGreaterThan(0);
-    const stored = await walked.vendo.apps.get(receipt.id, { principal, venue: "chat", presence: "present" });
+    const stored = await walked.vendo.apps.get(receipt.id, { principal, venue: "chat", presence: "present", sessionId: "ses_floor_door" });
     expect(stored?.name).toBe("Spending");
   }, 120_000);
 });

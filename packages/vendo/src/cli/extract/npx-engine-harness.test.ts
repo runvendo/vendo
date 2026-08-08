@@ -206,7 +206,7 @@ describe("npxEngineHarness", () => {
       expect(order[0]).toMatch(/^progress:/);
       expect(order[0]).toMatch(/250MB/);
       expect(order[0]).toMatch(/cach/i);
-      expect(order.indexOf("exec-called")).toBeGreaterThan(order.indexOf(order[0]));
+      expect(order.indexOf("exec-called")).toBeGreaterThan(order.indexOf(order[0]!));
       expect(order.indexOf("exec-called")).toBe(1);
     });
 

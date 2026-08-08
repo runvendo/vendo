@@ -7,6 +7,7 @@ import {
   type Principal,
 } from "@vendoai/core";
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
+import { inMemoryBoxFiles } from "@vendoai/apps/testing";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -46,7 +47,7 @@ const ADA: Principal = { kind: "user", subject: "user_ada" };
 function servingSandbox(): SandboxAdapter {
   const machine: SandboxMachine = {
     id: "served_box",
-    async request(request) {
+    async request(request): Promise<Awaited<ReturnType<SandboxMachine["request"]>>> {
       if (request.method === "GET" && request.path === "/") {
         return {
           status: 200,
@@ -60,6 +61,9 @@ function servingSandbox(): SandboxAdapter {
     async snapshot() { return "fake:served-snap"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },
+    // The seam's ONE in-memory implementation (@vendoai/apps/testing), so no
+    // two fakes can drift over what reading a box file means.
+    files: inMemoryBoxFiles(new Map()),
   };
   return {
     async create() { return machine; },

@@ -72,7 +72,7 @@ describe("doctor names an install that is behind npm latest", () => {
 
 describe("the npm latest lookup fails soft", () => {
   it("reads the dist-tag document", async () => {
-    const fetchImpl = vi.fn(async () => Response.json({ latest: "1.2.3", next: "2.0.0-rc.1" }));
+    const fetchImpl = vi.fn<typeof fetch>(async () => Response.json({ latest: "1.2.3", next: "2.0.0-rc.1" }));
     expect(await npmLatestVersion("@vendoai/vendo", fetchImpl as unknown as typeof fetch)).toBe("1.2.3");
     expect(String(fetchImpl.mock.calls[0]?.[0])).toBe("https://registry.npmjs.org/-/package/@vendoai/vendo/dist-tags");
   });

@@ -122,6 +122,7 @@ describe("stream resume (blueprint §4.1 item 5)", () => {
       messages: [userTurn()],
       trigger: "submit-message",
       messageId: "m1",
+      abortSignal: undefined,
     }));
     expect(textOf(uninterrupted)).toBe("One. Two. Three. Four.");
 
@@ -136,6 +137,7 @@ describe("stream resume (blueprint §4.1 item 5)", () => {
       messages: [userTurn()],
       trigger: "submit-message",
       messageId: "m1",
+      abortSignal: undefined,
     });
     // Read a bit of it, then vanish — the socket dies, the fetch is NEVER
     // aborted (a recycled isolate, a dropped connection, a closed tab on a

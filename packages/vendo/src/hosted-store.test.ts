@@ -20,7 +20,7 @@ import {
 } from "@vendoai/core";
 import { storeAdapterConformance } from "@vendoai/core/conformance";
 import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
-import { hostedStore, hostedStoreOps } from "./hosted-store.js";
+import { hostedStore, hostedStoreOps, type HostedStore } from "./hosted-store.js";
 import { fakeConsole } from "./hosted-store.test-util.js";
 
 const encoder = new TextEncoder();
@@ -203,8 +203,8 @@ describe("hostedStore wire", () => {
   });
 
   it("defaults the base URL to the Vendo console", async () => {
-    const cloudFetch = vi.fn(async () => Response.json({ record: null }));
-    const store = hostedStore({ apiKey: "vnd_secret", fetch: cloudFetch as unknown as typeof fetch });
+    const cloudFetch = vi.fn<typeof fetch>(async () => Response.json({ record: null }));
+    const store = hostedStore({ apiKey: "vnd_secret", fetch: cloudFetch });
     await store.records("invoices").get("x");
     expect(cloudFetch.mock.calls[0]![0]).toBe("https://console.vendo.run/api/v1/store/records/invoices/get");
   });
@@ -221,7 +221,7 @@ describe("hostedStore wire", () => {
 });
 
 describe("hostedStore error mapping", () => {
-  const adapterFor = (fetchImpl: unknown): VendoStore =>
+  const adapterFor = (fetchImpl: unknown): HostedStore =>
     hostedStore({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: fetchImpl as typeof fetch });
   const respond = (code: string, message: string, status: number, extra: Record<string, unknown> = {}) =>
     vi.fn(async () => Response.json({ error: { code, message, ...extra } }, { status }));

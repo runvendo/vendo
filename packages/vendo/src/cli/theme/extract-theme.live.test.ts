@@ -125,7 +125,7 @@ describe.skipIf(!live || cliAvailability === null)("extractTheme live accuracy (
         const value = validateSlotValue(slot, String(raw));
         if (value === null) continue;
         // Accepted values overwrite ONLY needed slots — exact reads always win.
-        (slots as Record<string, unknown>)[slot] = value;
+        (slots as unknown as Record<string, unknown>)[slot] = value;
         filled.add(slot);
       }
 

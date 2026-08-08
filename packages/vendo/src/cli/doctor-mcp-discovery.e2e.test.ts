@@ -84,6 +84,7 @@ describe("vendo doctor MCP discovery live", () => {
       sandbox: {
         create: async () => { throw new Error("not used by doctor"); },
         resume: async () => { throw new Error("not used by doctor"); },
+        destroy: async () => { throw new Error("not used by doctor"); },
       },
     });
     cleanup.push(async () => {

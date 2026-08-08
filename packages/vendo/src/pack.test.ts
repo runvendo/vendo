@@ -1,5 +1,6 @@
 import {
   VENDO_MAKE_TOOL,
+  VENDO_TREE_FORMAT,
   VENDO_VIEW_STREAM,
   parseVendoToolEnvelope,
   vendoAppRefSchema,
@@ -75,7 +76,7 @@ function makeTool(options: {
       if (options.stream !== false) {
         stream?.({
           id: `vendo-view-${options.appId}`,
-          part: { type: "data-vendo-view", appId: options.appId, payload: { kind: "tree" } },
+          part: { type: "data-vendo-view", appId: options.appId, payload: { kind: "tree", formatVersion: VENDO_TREE_FORMAT } },
         });
       }
       if (options.gate !== undefined) await options.gate;

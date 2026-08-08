@@ -36,6 +36,7 @@ import {
   type Principal,
   type RunContext,
 } from "@vendoai/core";
+import type { SandboxAdapter } from "@vendoai/apps";
 import { e2bSandbox } from "@vendoai/apps/e2b";
 import { claudeCode } from "@vendoai/harnesses/claude-code";
 import { appAccess, createStore, type VendoStore } from "@vendoai/store";
@@ -160,13 +161,13 @@ live("a real box reaches a real team's app", () => {
     const vendo = createVendo({
       model: {} as LanguageModel,
       store,
-      sandbox: reapingSandbox(),
+      sandbox: reapingSandbox() as unknown as SandboxAdapter,
       harness: claudeCode({ model: MODEL, maxTurns: 14 }),
       auth: {
         principal: async () => acting,
         memberships: async (principal: Principal) => memberships[principal.subject] ?? [],
       },
-    } as Parameters<typeof createVendo>[0]);
+    });
 
     // Dana, the org admin, owns the team's app and shares it with Kim.
     await store.records("vendo_apps").put({

@@ -241,7 +241,7 @@ const wireOf = (console_: ReturnType<typeof fakeConsole>): string[] =>
 /** The conformance app contract, in-process behind the mock relay: env from
  * the box ctx, egress simulated with the provider-faithful allowlist rule
  * (same rule as the fake sandbox harness). */
-const conformanceApp: BoxApp = (request, ctx) => {
+const conformanceApp: BoxApp = (request, ctx): Awaited<ReturnType<BoxApp>> => {
   const env = /^\/conformance\/env\/([A-Za-z_][A-Za-z0-9_]*)$/.exec(request.path);
   if (env?.[1] !== undefined) {
     return { status: 200, headers: {}, body: ctx.env[env[1]] ?? "" };
@@ -517,9 +517,9 @@ describe("cloudSandbox", () => {
   });
 
   it("defaults the base URL to the Vendo console", async () => {
-    const cloudFetch = vi.fn(async () =>
+    const cloudFetch = vi.fn<typeof fetch>(async () =>
       Response.json({ id: `m_${"0".repeat(24)}`, url: "https://m.test" }, { status: 201 }));
-    const adapter = cloudSandbox({ apiKey: "vnd_secret", fetch: cloudFetch as unknown as typeof fetch });
+    const adapter = cloudSandbox({ apiKey: "vnd_secret", fetch: cloudFetch });
     await adapter.create({ env: {} });
     expect(cloudFetch.mock.calls[0]![0]).toBe(`https://console.vendo.run${CLOUD_SANDBOX_PATH}`);
   });

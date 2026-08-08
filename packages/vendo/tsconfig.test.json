@@ -1,0 +1,22 @@
+{
+  // The test estate. `tsconfig.json` excludes it so `dist` stays free of test
+  // scaffolding, which also meant nothing ever typechecked it. Its own program,
+  // never built — same shape as `apps`, `guard`, `knowledge`, `automations` and
+  // `vendo-telemetry`.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Two tests import `@vendoai/apps/box-door`, whose export map points at the
+    // zero-dependency `box/turn-routes.mjs` control-port runtime and carries no
+    // `types`. Reading the JS gives them the real inferred signature instead of
+    // an ambient re-declaration that could drift from it. There is no `.js`
+    // under `src`, so this widens nothing else.
+    "allowJs": true
+  },
+  "include": ["src", "vitest.setup.ts"],
+  // The playground fixtures stay out, for the same reason `tsconfig.json` keeps
+  // them out: `dirty/` and `typeonly/` are deliberately broken inputs that
+  // `closure-guard.test.ts` feeds to a real `tsc` and asserts fail. Compiling
+  // them here would report their planted errors as ours.
+  "exclude": ["src/**/__fixtures__/**"]
+}

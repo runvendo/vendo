@@ -115,7 +115,10 @@ async function knowledgeCallingModel(): Promise<{ model: LanguageModel; prompts:
       call += 1;
       return {
         stream: simulateReadableStream({
-          chunks: searching
+          // Spread so the chunk element type is inferred from BOTH branches:
+          // handed the conditional directly, `simulateReadableStream<T>` resolves
+          // `T` from the first arm alone and then rejects the second.
+          chunks: [...(searching
             ? [
               { type: "tool-call" as const, toolCallId: "call_kb", toolName: "vendo_knowledge_search", input: JSON.stringify({ query: "escalation" }) },
               { type: "finish" as const, usage, finishReason: { unified: "tool-calls" as const, raw: undefined } },
@@ -125,7 +128,7 @@ async function knowledgeCallingModel(): Promise<{ model: LanguageModel; prompts:
               { type: "text-delta" as const, id: "t1", delta: "Done." },
               { type: "text-end" as const, id: "t1" },
               { type: "finish" as const, usage, finishReason: { unified: "stop" as const, raw: undefined } },
-            ],
+            ])],
         }),
       };
     },

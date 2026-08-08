@@ -361,7 +361,7 @@ describe("the mandatory reviewer pass on a finished screen", () => {
     expect(walked.writerPrompts).toHaveLength(2);
     // The screen reached the person and the row reached the store.
     expect(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view").length).toBeGreaterThan(0);
-    const stored = await walked.vendo.apps.get(receipt.id, { principal, venue: "chat", presence: "present" });
+    const stored = await walked.vendo.apps.get(receipt.id, { principal, venue: "chat", presence: "present", sessionId: "ses_reviewer" });
     expect(stored?.name).toBe("Upcoming bills");
   }, 120_000);
 

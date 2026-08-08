@@ -69,7 +69,7 @@ const modelsRow = (page: string): string | undefined =>
 const documentedSeats = (row: string | undefined): string[] | undefined =>
   row
     ?.match(/\{([^}]*)\}/)?.[1]
-    .split(",")
+    ?.split(",")
     .map((seat) => seat.trim().replace(/[`?]/g, ""))
     .filter((seat) => seat.length > 0);
 

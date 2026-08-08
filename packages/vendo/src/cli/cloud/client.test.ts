@@ -44,12 +44,12 @@ describe("cloud client", () => {
       auth: "key",
       apiKey: "vnd_test",
       fetchImpl,
-    })).rejects.toMatchObject<Partial<CloudError>>({
+    })).rejects.toMatchObject({
       name: "CloudError",
       code: "cloud-required",
       message: "Upgrade required",
       status: 402,
-    });
+    } satisfies Partial<CloudError>);
     expect(fetchImpl).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
       headers: expect.objectContaining({ "user-agent": `vendo-cli/${CLI_VERSION}` }),
     }));
@@ -72,7 +72,7 @@ describe("cloud client", () => {
       auth: "key",
       apiKey: "vnd_test",
       fetchImpl,
-    })).rejects.toMatchObject<Partial<CloudError>>({
+    })).rejects.toMatchObject({
       name: "CloudError",
       code: "meter-exhausted",
       message: "Vendo Cloud paused usage — the $100.00 included this billing period is used up "
@@ -80,7 +80,7 @@ describe("cloud client", () => {
         + "Upgrade your plan (https://console.vendo.run/billing) "
         + "or bring your own infrastructure (https://docs.vendo.run/byo).",
       status: 402,
-    });
+    } satisfies Partial<CloudError>);
   });
 
   it("attaches the deployment-identity headers to every key-authed request", async () => {

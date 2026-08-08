@@ -216,10 +216,10 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     expect(painted.at(-1)?.payload["streaming"]).toBe(false);
 
     // ── the row: `authored` made a written file into an APP ───────────────────
-    const stored = await walked.vendo.apps.get(receipt.id, { principal, venue: "chat", presence: "present" });
+    const stored = await walked.vendo.apps.get(receipt.id, { principal, venue: "chat", presence: "present", sessionId: "ses_screen_route" });
     expect(stored?.name).toBe("Spending");
     // And it lists, which is the half that was silently missing before `authored`.
-    const listed = await walked.vendo.apps.list({ principal, venue: "chat", presence: "present" });
+    const listed = await walked.vendo.apps.list({ principal, venue: "chat", presence: "present", sessionId: "ses_screen_route" });
     expect(listed.map((app) => app.id)).toContain(receipt.id);
 
     // ── and nothing ran behind it ─────────────────────────────────────────────

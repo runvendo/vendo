@@ -37,7 +37,7 @@ const LIVE_TIMEOUT_MS = 60_000;
 
 const run = globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 const org = `org_cas_${run}`;
-const memberships: Membership[] = [{ org, role: "member" }] as Membership[];
+const memberships: Membership[] = [{ org }];
 const alice: Principal = { kind: "user", subject: `user_cas_a_${run}` };
 const bob: Principal = { kind: "user", subject: `user_cas_b_${run}` };
 const PATH = `/orgs/${org}/shared/plan.md`;

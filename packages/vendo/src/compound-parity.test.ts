@@ -247,7 +247,7 @@ async function runAutomations(fixture: Fixture): Promise<{ trace: Trace; finalSt
   });
 
   const engine = createAutomations({
-    apps: { call: async () => ({ status: "ok", output: {} }) } as AppsRuntime,
+    apps: { call: async () => ({ status: "ok", output: {} }) } as unknown as AppsRuntime,
     guard,
     store,
     tools: {

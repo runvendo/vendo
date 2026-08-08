@@ -46,6 +46,8 @@ const wireFor = (url: string, method = "GET", seen: Seen[] = []): {
         presence: "present",
         sessionId: "s_kim",
       }),
+      // Only `/tick` sweeps (wire/misc.ts); no route under test calls it.
+      sweep: async () => {},
       deps,
     },
   };

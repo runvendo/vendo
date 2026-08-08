@@ -83,11 +83,11 @@ describe("runDeviceLogin", () => {
 
     expect(exit).toBe(0);
     // Claim request carries NO identity hint — the human chooses the account.
-    expect(requests[0].url).toBe("https://console.test/api/v1/agent/claim");
-    expect(JSON.parse(requests[0].body)).toEqual({});
+    expect(requests[0]!.url).toBe("https://console.test/api/v1/agent/claim");
+    expect(JSON.parse(requests[0]!.body)).toEqual({});
     // Polls are form-encoded with the auth.md grant type + claim token.
-    expect(requests[1].contentType).toContain("application/x-www-form-urlencoded");
-    const poll = new URLSearchParams(requests[1].body);
+    expect(requests[1]!.contentType).toContain("application/x-www-form-urlencoded");
+    const poll = new URLSearchParams(requests[1]!.body);
     expect(poll.get("grant_type")).toBe("urn:workos:agent-auth:grant-type:claim");
     expect(poll.get("claim_token")).toBe(CEREMONY.claim_token);
     // slow_down added 5s to the 5s interval (RFC 8628 §3.5).
@@ -488,7 +488,7 @@ describe("pending claim persistence", () => {
     expect(exit).toBe(0);
     // No new claim was opened — the first request already polls the token endpoint.
     expect(requests.some((request) => request.url.endsWith("/api/v1/agent/claim"))).toBe(false);
-    expect(new URLSearchParams(requests[0].body).get("claim_token")).toBe(`vct_${"c".repeat(64)}`);
+    expect(new URLSearchParams(requests[0]!.body).get("claim_token")).toBe(`vct_${"c".repeat(64)}`);
     // The human is told the old code is still the one to approve.
     expect(messages.logs.join("\n")).toContain(
       "Resuming pending approval — code WXYZ-PQRS, approve at https://console.test/claim?code=WXYZ-PQRS",
@@ -517,7 +517,7 @@ describe("pending claim persistence", () => {
     });
     expect(exit).toBe(0);
     // A fresh ceremony was opened for THIS project…
-    expect(requests[0].url).toBe("https://console.test/api/v1/agent/claim");
+    expect(requests[0]!.url).toBe("https://console.test/api/v1/agent/claim");
     // …the key lands here, not in the other project…
     expect(await readFile(join(thisProject, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${KEY}`);
     await expect(readFile(join(otherProject, ".env.local"), "utf8")).rejects.toThrow();
@@ -576,8 +576,8 @@ describe("pending claim persistence", () => {
     });
     expect(exit).toBe(0);
     // The stale claim is ignored: a fresh ceremony opens and its token is polled.
-    expect(requests[0].url).toBe("https://console.test/api/v1/agent/claim");
-    expect(new URLSearchParams(requests[1].body).get("claim_token")).toBe(CEREMONY.claim_token);
+    expect(requests[0]!.url).toBe("https://console.test/api/v1/agent/claim");
+    expect(new URLSearchParams(requests[1]!.body).get("claim_token")).toBe(CEREMONY.claim_token);
   });
 
   it("removes the pending claim when the human denies the request", async () => {
@@ -684,7 +684,7 @@ describe("bounded --wait budget (#479)", () => {
     expect(exit).toBe(0);
     // No new claim opened — it polls the persisted claim_token directly.
     expect(requests.some((request) => request.url.endsWith("/api/v1/agent/claim"))).toBe(false);
-    expect(new URLSearchParams(requests[0].body).get("claim_token")).toBe(`vct_${"c".repeat(64)}`);
+    expect(new URLSearchParams(requests[0]!.body).get("claim_token")).toBe(`vct_${"c".repeat(64)}`);
     // The key landed and the pending file is gone.
     const envLocal = await readFile(join(projectCwd, ".env.local"), "utf8");
     expect(envLocal).toContain(`VENDO_API_KEY=${KEY}`);

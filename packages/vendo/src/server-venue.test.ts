@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { LanguageModel } from "ai";
-import type { Principal, SandboxAdapter } from "@vendoai/core";
+import type { SandboxAdapter } from "@vendoai/apps";
+import type { Principal } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

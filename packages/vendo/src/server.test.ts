@@ -20,7 +20,7 @@ import { appStore, createStore, secretStore, storeSecrets, type VendoStore } fro
 import { createHmac, randomBytes } from "node:crypto";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import type { LanguageModel } from "ai";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 // authJs now ships on its own subpath (@vendoai/vendo/auth/auth-js), not
 // "./server.js" — corpus-triage Task 9.
 import { authJs } from "./auth-presets/auth-js.js";
@@ -133,7 +133,11 @@ async function screenModel(turns: ScreenTurn[], prompts?: string[]): Promise<Lan
 }
 
 async function setup(
-  resolver = vi.fn(async () => principal),
+  // `null` is a real answer from this seam — it is how an anonymous session is
+  // expressed (`CreateVendoConfig["principal"]` is `=> Promise<Principal | null>`),
+  // and a dozen cases below pass exactly that. Inferring the parameter from the
+  // default would pin it to the non-null half.
+  resolver: Mock<() => Promise<Principal | null>> = vi.fn(async () => principal),
   options: Pick<Partial<CreateVendoConfig>, "guard" | "development"> = {},
 ): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
   const store = await tempStore("vendo-wire-");
@@ -223,7 +227,7 @@ function stubRouteBlocks(vendo: Vendo): void {
   vi.spyOn(vendo.automations, "dryRun").mockResolvedValue({ steps: [], grantsMissing: [] });
   vi.spyOn(vendo.automations.runs, "list").mockResolvedValue({ runs: [] });
   vi.spyOn(vendo.automations.runs, "get").mockResolvedValue({
-    id: "run_x", appId: "app_wire", trigger: { kind: "schedule" }, status: "ok",
+    id: "run_x", appId: "app_wire", triggerId: "trg_wire", trigger: { kind: "schedule" }, status: "ok",
     startedAt: new Date().toISOString(), steps: [],
   });
   vi.spyOn(vendo.automations.runs, "stop").mockResolvedValue();
@@ -659,6 +663,7 @@ describe("09 §3 public wire", () => {
     const custom: SandboxAdapter = {
       create: vi.fn(async () => { throw new Error("not called"); }),
       resume: vi.fn(async () => { throw new Error("not called"); }),
+      destroy: vi.fn(async () => { throw new Error("not called"); }),
     };
     const store = await tempStore("vendo-wire-custom-");
     const statusFor = async (
@@ -2751,7 +2756,10 @@ describe("surfaces.agent through createVendo", () => {
           };
           return {
             stream: simulateReadableStream({
-              chunks: step === "search"
+              // Spread so the chunk element type is inferred from BOTH branches:
+              // handed the conditional directly, `simulateReadableStream<T>`
+              // resolves `T` from the first arm alone and then rejects the second.
+              chunks: [...(step === "search"
                 ? [
                   {
                     type: "tool-call" as const,
@@ -2766,7 +2774,7 @@ describe("surfaces.agent through createVendo", () => {
                   { type: "text-delta" as const, id: "t1", delta: "Done." },
                   { type: "text-end" as const, id: "t1" },
                   finish,
-                ],
+                ])],
             }),
           };
         },

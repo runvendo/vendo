@@ -57,6 +57,8 @@ const resolveWire = (options: {
       segments: routeSegments(path),
       params: { appId: "app_1" },
       context: async () => ctxFor(options.memberships ?? IN_ONE_ORG),
+      // Only `/tick` sweeps (wire/misc.ts); no route under test calls it.
+      sweep: async () => {},
       deps,
     },
   };

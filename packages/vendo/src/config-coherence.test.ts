@@ -28,7 +28,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "./server.js";
 
 const principal: Principal = { kind: "user", subject: "user_coherence" };
-const ctx: RunContext = { principal, venue: "chat", presence: "present", runId: "run_coherence" };
+const ctx: RunContext = { principal, venue: "chat", presence: "present", sessionId: "ses_coherence" };
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {

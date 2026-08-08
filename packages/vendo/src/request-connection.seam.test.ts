@@ -147,7 +147,7 @@ async function mount(element: ReactElement): Promise<void> {
 }
 
 const thread = (threadId: string, client: ReturnType<typeof createVendoClient>) =>
-  createElement(VendoProvider, { client }, createElement(VendoThread, { threadId }));
+  createElement(VendoProvider, { client, children: createElement(VendoThread, { threadId }) });
 
 /** Poll the painted DOM. The budget is the test's own — a tighter inner clock
  *  would report a product bug whenever the machine is merely busy. */

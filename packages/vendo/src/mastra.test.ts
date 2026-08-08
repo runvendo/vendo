@@ -252,7 +252,7 @@ describe("@vendoai/vendo/mastra — open-schema args bridge", () => {
       async doStream() {
         throw new Error("doStream not scripted");
       },
-    } as unknown as LanguageModel;
+    } as unknown as ConstructorParameters<typeof Agent>[0]["model"];
     const agent = new Agent({
       id: "bridge-agent",
       name: "Bridge Agent",

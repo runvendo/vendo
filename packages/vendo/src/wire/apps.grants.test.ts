@@ -47,6 +47,8 @@ const wireFor = (list: () => Promise<Array<{ id: string }>>): {
       segments: routeSegments(path),
       params: {},
       context: async () => ctx,
+      // Only `/tick` sweeps (wire/misc.ts); no route under test calls it.
+      sweep: async () => {},
       deps,
     },
   };
@@ -136,6 +138,8 @@ const openWire = (options: {
     segments: routeSegments(path),
     params: { appId: options.appId },
     context: async () => ctx,
+    // Only `/tick` sweeps (wire/misc.ts); no route under test calls it.
+    sweep: async () => {},
     deps,
   };
 };

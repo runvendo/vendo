@@ -47,7 +47,7 @@ describe("createVendo construction purity (Workers global scope)", () => {
     expect(ensureSchema).not.toHaveBeenCalled();
     await vendo.guardedTools.execute(
       { id: "call_lazy", tool: "vendo_apps_list", args: {} },
-      { principal, venue: "byo", presence: "absent", sessionId: "session_lazy" },
+      { principal, venue: "chat", presence: "present", sessionId: "session_lazy" },
     ).catch(() => undefined);
     expect(ensureSchema).toHaveBeenCalledTimes(1);
   });

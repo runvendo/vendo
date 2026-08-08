@@ -32,6 +32,7 @@ import {
   type SandboxAdapter,
   type SandboxMachine,
 } from "@vendoai/apps";
+import { inMemoryBoxFiles } from "@vendoai/apps/testing";
 import {
   DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
@@ -42,12 +43,11 @@ import {
   type FilesAdapter,
   type Principal,
   type RunContext,
-  type VendoStore,
   type WorkspaceFs,
 } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
 import { wrapWorkspaceForRender } from "@vendoai/harnesses";
-import { appAccess, createStore, workspaceStore } from "@vendoai/store";
+import { appAccess, createStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -140,6 +140,9 @@ function snapshotHoldingSandbox(): SandboxAdapter & { snapshots: Set<string> } {
       },
       async stop() { /* sleep */ },
       async destroy() { /* gone; taken refs stay valid */ },
+      // The seam's ONE in-memory implementation (@vendoai/apps/testing), so no
+      // two fakes can drift over what reading a box file means.
+      files: inMemoryBoxFiles(new Map()),
     };
   };
   return {

@@ -14,7 +14,8 @@ afterEach(() => {
 const report = (
   breaking: Array<{ tool: string; change: "removed" }> = [],
   changed: string[] = [],
-  toolSchemas = { total: 0, inputs: { known: 0, unknown: [] }, outputs: { known: 0, unknown: [] } },
+  toolSchemas: { total: number; inputs: { known: number; unknown: string[] }; outputs: { known: number; unknown: string[] } }
+    = { total: 0, inputs: { known: 0, unknown: [] }, outputs: { known: 0, unknown: [] } },
 ) => ({
   tools: { added: [], removed: [], changed },
   breaking,
@@ -138,7 +139,7 @@ describe("vendo sync", () => {
   });
 
   it("pushes --report to the Cloud API with key auth", async () => {
-    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 })) as typeof fetch;
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
 
     await expect(runSync({
       targetDir: ".",

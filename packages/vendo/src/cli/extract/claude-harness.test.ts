@@ -2,7 +2,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { claudeHarness } from "./claude-harness.js";
+import { claudeHarness, type ClaudeHarnessOptions } from "./claude-harness.js";
 
 const SDK = (messages: Array<Record<string, unknown>>) => ({
   query: () => (async function* () {
@@ -55,7 +55,7 @@ describe("claudeHarness", () => {
           captured = input.options;
           return (async function* () { yield { type: "result", result: "ok" }; })();
         },
-      }) as unknown as Awaited<ReturnType<NonNullable<Parameters<typeof claudeHarness>[0]["loadSdk"]>>>,
+      }) as unknown as Awaited<ReturnType<NonNullable<ClaudeHarnessOptions["loadSdk"]>>>,
     });
     await harness.run({
       root: "/x",
@@ -77,7 +77,7 @@ describe("claudeHarness", () => {
           captured = input.options;
           return (async function* () { yield { type: "result", result: "ok" }; })();
         },
-      }) as unknown as Awaited<ReturnType<NonNullable<Parameters<typeof claudeHarness>[0]["loadSdk"]>>>,
+      }) as unknown as Awaited<ReturnType<NonNullable<ClaudeHarnessOptions["loadSdk"]>>>,
     });
     const root = realpathSync(mkdtempSync(join(tmpdir(), "vendo-claude-harness-")));
     const outside = realpathSync(mkdtempSync(join(tmpdir(), "vendo-claude-outside-")));

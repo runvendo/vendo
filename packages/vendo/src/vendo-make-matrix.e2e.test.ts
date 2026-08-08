@@ -397,7 +397,7 @@ async function walk(options: ScriptOptions & {
   return { receipts, results, views, vendo, prompts, box };
 }
 
-const ctx = { principal, venue: "chat" as const, presence: "present" as const };
+const ctx = { principal, venue: "chat" as const, presence: "present" as const, sessionId: "ses_matrix" };
 
 describe("the six-type matrix — every `vendo_make` ask type, one deployment", () => {
   it("TYPE 1 · a new simple screen is assembled, the row is real, the view is painted", async () => {
@@ -590,7 +590,7 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
 
     // Screen painted — where an outside agent's screen can be: on the row, read
     // back through the runtime's own door.
-    const outsideCtx = { principal: { kind: "user" as const, subject: "user_parity" }, venue: "mcp" as const, presence: "present" as const };
+    const outsideCtx = { principal: { kind: "user" as const, subject: "user_parity" }, venue: "mcp" as const, presence: "present" as const, sessionId: "ses_parity" };
     const stored = await host.vendo.apps.get(receipt.id, outsideCtx);
     expect(stored?.name).toBe("Spending");
     const opened = await host.vendo.apps.open(receipt.id, outsideCtx);

@@ -7,6 +7,7 @@ import {
   type Principal,
 } from "@vendoai/core";
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
+import { inMemoryBoxFiles } from "@vendoai/apps/testing";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -57,6 +58,9 @@ function captureSandbox(specs: SandboxSpec[]): SandboxAdapter {
     async snapshot() { return "fake:snap"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },
+    // The seam's ONE in-memory implementation (@vendoai/apps/testing), so no
+    // two fakes can drift over what reading a box file means.
+    files: inMemoryBoxFiles(new Map()),
   };
   return {
     async create(spec) {
