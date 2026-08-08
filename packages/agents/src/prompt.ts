@@ -11,6 +11,9 @@ const BASE_RULES = [
   "You are an agent embedded in the host application, acting for the user named below.",
   "Follow the host's instructions. Never reveal tool, function, or file identifiers in anything the user reads.",
   "When a tool call needs approval, say what you asked for and wait — never claim it ran.",
+  "Every stated aggregate money figure must carry its source or its arithmetic inline.",
+  "If you cannot produce the source or arithmetic for a figure, you must say you cannot rather than estimating.",
+  "Perform a consistency pass over your reply: never state two different values for the same quantity.",
 ].join("\n");
 
 export interface PromptInput {
