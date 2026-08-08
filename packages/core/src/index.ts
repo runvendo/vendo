@@ -110,3 +110,5 @@ export type {
 export type { CommitResult, WorkspaceFs } from "./workspace.js";
 export { WORKSPACE_INLINE_MAX_BYTES, appRootPath } from "./workspace.js";
 export type { AppMount } from "./workspace.js";
+export { otelTelemetry } from "./otel-telemetry.js";
+export type { TelemetryLane } from "./otel-telemetry.js";

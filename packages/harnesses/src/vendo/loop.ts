@@ -18,6 +18,7 @@ import {
   VendoError,
   VENDO_MAKE_TOOL,
   VENDO_APP_BUILD_FAILED_PREFIX,
+  otelTelemetry,
   type TurnId,
   type VendoStepLimitPart,
 } from "@vendoai/core";
@@ -569,6 +570,10 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     maxOutputTokens: options.context?.maxOutputTokens,
     // Stated rather than inherited — see DEFAULT_MAX_RETRIES.
     maxRetries: options.context?.maxRetries ?? DEFAULT_MAX_RETRIES,
+    // Opt-in OTel GenAI spans (VENDO_OTEL_TRACING=1) — the turn is the root
+    // span every tool call and generation hangs off, so a host reading its own
+    // dashboard sees one tree per turn.
+    ...otelTelemetry("vendo.agent.turn"),
     // ENG-252 loadout: restrict what the model may pick to the current loadout.
     // `prepareStep` re-reads it each step so a tool loaded via
     // `vendo_tools_search` becomes callable on the very next step. This gates the

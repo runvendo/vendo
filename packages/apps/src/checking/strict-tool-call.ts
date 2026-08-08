@@ -13,6 +13,7 @@
  * It lives beside its caller rather than in `generation/`: the floor must not
  * import a pipeline that is on its way to quarantine (§7.3).
  */
+import { otelTelemetry } from "@vendoai/core";
 import { modelCallParams } from "../model-params.js";
 import type { FloorDependencies } from "./deps.js";
 
@@ -34,6 +35,8 @@ export const strictToolCall = async (
     const { generateText, jsonSchema } = await import("ai");
     const result = await generateText({
       model: deps.model,
+      // Opt-in OTel GenAI spans (VENDO_OTEL_TRACING=1).
+      ...otelTelemetry("vendo.apps.check"),
       system,
       prompt,
       tools: {

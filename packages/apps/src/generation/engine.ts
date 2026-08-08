@@ -10,6 +10,7 @@
  */
 import {
   type AppDocument,
+  otelTelemetry,
   type ToolSemantics,
   type Tree,
   type TreeNode,
@@ -122,6 +123,9 @@ export const askModel = async (
       ...modelCallParams(model),
       maxRetries: 0,
       onError: ({ error }) => { streamError = error; },
+      // Opt-in OTel GenAI spans (VENDO_OTEL_TRACING=1). App generation is the
+      // most expensive lane in a turn and the one a host most needs to see.
+      ...otelTelemetry("vendo.apps.generate"),
     });
     let text = "";
     for await (const delta of result.textStream) {
