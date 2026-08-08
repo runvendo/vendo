@@ -187,6 +187,44 @@ describe("validation and route classification", () => {
     expect(report.warnings.some((warning) => warning.includes("connector_missing"))).toBe(false);
   });
 
+  /** #1056: a standing judgment whose binding moved is held INERT by
+   *  `applyJudgment`, so its tool silently falls back to `ungraded` and asks on
+   *  every call. Nothing said so on the keyless path — the only path that cannot
+   *  re-grade — because `pruneJudgments` runs solely inside the keyed judge pass.
+   *  Sync is where a host finds out. */
+  it("warns when a standing judgment's binding no longer matches its tool", async () => {
+    const { root, out } = await temporaryHost();
+    await writeSpec(root, { "/api/items": { get: operation("listItems") } });
+    await writeFile(out, "judgments.json", JSON.stringify({
+      format: "vendo/judgments@1",
+      tools: {
+        host_listItems: { binding: "GET /mount/api/items", fields: { risk: "read" }, evidence: "return items;" },
+        host_departed: { binding: "GET /api/departed", fields: { risk: "read" }, evidence: "return gone;" },
+      },
+    }));
+
+    const report = await vendoSync({ root, out });
+    const stranded = report.warnings.filter((warning) => warning.includes("standing judgment"));
+    expect(stranded).toHaveLength(1);
+    expect(stranded[0]).toContain("1/1 standing judgments no longer match their tool");
+    expect(stranded[0]).toContain(`host_listItems was graded against "GET /mount/api/items", now "GET /api/items"`);
+    // A judgment for a tool the catalog no longer carries is ordinary churn the
+    // next keyed sync prunes — not a stranded grade, so not this host's problem.
+    expect(stranded[0]).not.toContain("host_departed");
+  });
+
+  it("stays silent when every standing judgment still binds to its tool", async () => {
+    const { root, out } = await temporaryHost();
+    await writeSpec(root, { "/api/items": { get: operation("listItems") } });
+    await writeFile(out, "judgments.json", JSON.stringify({
+      format: "vendo/judgments@1",
+      tools: { host_listItems: { binding: "GET /api/items", fields: { risk: "read" }, evidence: "return items;" } },
+    }));
+
+    const report = await vendoSync({ root, out });
+    expect(report.warnings.filter((warning) => warning.includes("standing judgment"))).toEqual([]);
+  });
+
   it("reports loud wrapper errors and honors the per-slot ignore list", async () => {
     const inlineHost = await temporaryHost();
     await writeFile(

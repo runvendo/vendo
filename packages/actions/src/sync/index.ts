@@ -4,11 +4,13 @@ import path from "node:path";
 import { canonicalJson, descriptorHash, VendoError, type JsonSchema, type ToolSemantics } from "@vendoai/core";
 import {
   VENDO_TOOLS_FORMAT,
+  judgmentsFileSchema,
   overridesFileSchema,
   schemaIsBlind,
   toolsFileSchema,
   type BreakingChange,
   type ExtractedTool,
+  type JudgmentsFile,
   type OverridesFile,
   type SyncReport,
   type ToolOverride,
@@ -212,16 +214,85 @@ async function sourceHash(root: string, srcPath: string, cache: Map<string, stri
   return cache.get(srcPath);
 }
 
+/** Read for ONE reason: to report standing judgments this extraction stranded.
+ *  Fail-soft, unlike `readOverrides` — a malformed judgments file is the
+ *  judgment pass's own loud failure (the same call sync's runtime and doctor
+ *  copies make), and sync must not refuse to extract because the AI layer's
+ *  cache is unreadable. */
+async function readJudgments(file: string): Promise<JudgmentsFile | null> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(file, "utf8");
+  } catch {
+    return null;
+  }
+  try {
+    return judgmentsFileSchema.parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
 /** The previous machine layer + the authored layer of `.vendo/`. */
 interface VendoDirState {
   previousTools: ExtractedTool[];
   overrides: OverridesFile | null;
+  judgments: JudgmentsFile | null;
 }
 
 async function loadVendoDir(out: string, warnings: string[]): Promise<VendoDirState> {
   const previous = await readPrevious(path.join(out, "tools.json"), warnings);
   const overrides = await readOverrides(path.join(out, "overrides.json"));
-  return { previousTools: previous?.tools ?? [], overrides };
+  const judgments = await readJudgments(path.join(out, "judgments.json"));
+  return { previousTools: previous?.tools ?? [], overrides, judgments };
+}
+
+/**
+ * Standing judgments this extraction stranded — the grades a host still has on
+ * disk and no longer gets.
+ *
+ * `applyJudgment` holds a judgment INERT when its recorded binding no longer
+ * matches the tool's, so a handler that moved never inherits a grade meant for
+ * whatever used to answer there. Correct, and silent: the tool quietly falls
+ * back to `ungraded`, which the guard withholds exactly like `destructive`, so
+ * every call asks. #1056 was 22 of 22 stranded that way — Maple moved its
+ * `/maple` prefix out of the OpenAPI paths into the spec's `servers` url, and
+ * nothing said so. `vendo doctor` counted the ungraded tools but cannot fail,
+ * and `pruneJudgments` would have deleted the entries loudly except it only
+ * runs inside the KEYED judge pass. On the keyless path — `vendo sync --no-ai`,
+ * the documented BYO posture, which cannot grade at all — a stranded judgment
+ * was therefore never applied, never pruned, and never mentioned.
+ *
+ * Only tools the catalog still carries. A judgment for a tool that is simply
+ * GONE is ordinary churn the next keyed sync prunes; naming it here would be
+ * noise, and unlike a hand-authored override (whose miss is a typo worth
+ * reporting) this file is machine-written.
+ *
+ * ONE line, not one per tool: the failure mode is systematic — a mount point or
+ * a path convention moves and stalls the whole catalog at once — so 22 warnings
+ * would be a wall saying one thing. The count carries the scale, one worked
+ * before/after carries the diagnosis (it is what makes a prefix change obvious),
+ * and the name list caps like the `blind:` line's does.
+ */
+function strandedJudgments(tools: readonly ExtractedTool[], judgments: JudgmentsFile | null): string[] {
+  if (judgments === null) return [];
+  const stranded: Array<{ name: string; was: string; now: string }> = [];
+  for (const tool of [...tools].sort((a, b) => a.name.localeCompare(b.name))) {
+    const judgment = judgments.tools[tool.name];
+    if (judgment === undefined) continue;
+    const now = bindingIdentity(tool.binding);
+    if (judgment.binding === now) continue;
+    stranded.push({ name: tool.name, was: judgment.binding, now });
+  }
+  const first = stranded[0];
+  if (first === undefined) return [];
+  const names = stranded.map(({ name }) => name);
+  const shown = names.slice(0, 6).join(", ");
+  return [
+    `${stranded.length}/${tools.length} standing judgments no longer match their tool, so those tools are ungraded`
+    + ` and ask on every call — ${first.name} was graded against "${first.was}", now "${first.now}".`
+    + ` Re-run \`vendo sync\` with a model key to re-grade: ${shown}${names.length > 6 ? ` +${names.length - 6} more` : ""}`,
+  ];
 }
 
 /** What survives a wholesale regeneration of the machine layer, keyed by tool
@@ -257,7 +328,7 @@ export async function vendoSync(options: {
   clearAliasCache(); // same-process re-runs (watch mode) must see tsconfig edits
   const warnings: string[] = [];
   const toolsPath = path.join(out, "tools.json");
-  const { previousTools, overrides } = await loadVendoDir(out, warnings);
+  const { previousTools, overrides, judgments } = await loadVendoDir(out, warnings);
 
   const extraction = await runExtractors(root);
   warnings.push(...extraction.warnings);
@@ -311,6 +382,9 @@ export async function vendoSync(options: {
       }
     }
   }
+  // The same courtesy the authored layer above has always had, for the machine
+  // layer that silently loses a grade instead of a label.
+  warnings.push(...strandedJudgments(extracted.tools, judgments));
 
   const mergedPrevious = mergeOverrides(previousTools, overrides);
   const mergedNext = mergeOverrides(extracted.tools, overrides);
