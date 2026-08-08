@@ -1,4 +1,4 @@
-import type { Json, UIPayload } from "@vendoai/core";
+import type { Probed } from "./probe.js";
 import type { Shot } from "./render.js";
 import type { World } from "./world.js";
 
@@ -14,10 +14,12 @@ export interface HonestDataResult {
 }
 
 export interface Binding {
-  readonly tool: string;
+  /** The control that was pressed. */
+  readonly where: string;
+  /** Absent when the press fired nothing at all. */
+  readonly tool?: string;
   readonly known: boolean;
   readonly argsValid: boolean;
-  readonly where: string;
   readonly why?: string;
 }
 
@@ -160,40 +162,6 @@ export function honestData(visibleText: string, index: DataIndex): HonestDataRes
 
 // -------------------------------------------------------------- wired actions
 
-interface RawBinding {
-  readonly tool: string;
-  readonly args: unknown;
-  readonly where: string;
-}
-
-/** Walk the compiled payload for everything that names a tool: the tree's
- *  queries, and every `{ action, payload }` prop on any node, at any depth. */
-export function bindingsFromPayload(payload: UIPayload): readonly RawBinding[] {
-  const found: RawBinding[] = [];
-  const queries = (payload as { queries?: Array<{ name: string; tool: string; input?: Json }> }).queries ?? [];
-  for (const query of queries) {
-    found.push({ tool: query.tool, args: query.input ?? {}, where: `query ${query.name}` });
-  }
-
-  const collect = (value: unknown, where: string): void => {
-    if (Array.isArray(value)) {
-      for (const item of value) collect(item, where);
-      return;
-    }
-    if (typeof value !== "object" || value === null) return;
-    const record = value as Record<string, unknown>;
-    // `fn:` names a host component's own function, never a tool, so it is not a
-    // tool binding to grade. No host components are registered in this bench.
-    if (typeof record.action === "string" && !record.action.startsWith("fn:")) {
-      found.push({ tool: record.action, args: record.payload ?? {}, where });
-    }
-    for (const item of Object.values(record)) collect(item, where);
-  };
-  const nodes = (payload as { nodes?: Array<{ id: string; props?: unknown }> }).nodes ?? [];
-  for (const node of nodes) collect(node.props, `node ${node.id}`);
-  return found;
-}
-
 /** The derived input schemas are all `{type:"object", properties, required,
  *  additionalProperties:false}`, so validating them takes four rules, not a
  *  schema library. */
@@ -213,16 +181,31 @@ function checkArgs(args: unknown, schema: Record<string, unknown>): string | und
   return undefined;
 }
 
-export function wiredActions(bindings: readonly RawBinding[], world: World): WiredActionsResult {
-  const graded = bindings.map((binding): Binding => {
-    const tool = world.tools.find((candidate) => candidate.name === binding.tool);
-    if (tool === undefined) {
-      return { ...binding, known: false, argsValid: false, why: `no tool named "${binding.tool}"` };
+/** What the probe actually saw fire, graded against the world. A control that was
+ *  pressed and asked for nothing is the failure this replaced a static scan to
+ *  catch: a screen can name a tool in its document and still be dead in a
+ *  browser. A screen with nothing to press passes vacuously. */
+export function wiredActions(trace: readonly Probed[], world: World): WiredActionsResult {
+  const bindings = trace.flatMap((candidate): Binding[] => {
+    if (candidate.calls.length === 0) {
+      return [{ where: candidate.label, known: false, argsValid: false, why: "pressing it called nothing" }];
     }
-    const why = checkArgs(binding.args, tool.descriptor.inputSchema as Record<string, unknown>);
-    return { tool: binding.tool, where: binding.where, known: true, argsValid: why === undefined, ...(why === undefined ? {} : { why }) };
+    return candidate.calls.map((call): Binding => {
+      const tool = world.tools.find((known) => known.name === call.name);
+      if (tool === undefined) {
+        return { where: candidate.label, tool: call.name, known: false, argsValid: false, why: `no tool named "${call.name}"` };
+      }
+      const why = checkArgs(call.args, tool.descriptor.inputSchema as Record<string, unknown>);
+      return {
+        where: candidate.label,
+        tool: call.name,
+        known: true,
+        argsValid: why === undefined,
+        ...(why === undefined ? {} : { why }),
+      };
+    });
   });
-  return { pass: graded.every((binding) => binding.known && binding.argsValid), bindings: graded };
+  return { pass: bindings.every((binding) => binding.known && binding.argsValid), bindings };
 }
 
 // ---------------------------------------------------------------------- floor
@@ -232,17 +215,14 @@ export function runFloor(input: {
   artifact: string | undefined;
   /** What the product's own checks floor blocks in the delivered artifact. */
   blocking: readonly string[];
-  payload: UIPayload | undefined;
+  trace: readonly Probed[];
   shot: Shot | undefined;
 }): FloorResult {
   const delivered = input.artifact !== undefined && input.artifact.trim() !== "";
   const renders = input.shot?.renders === true;
   const valid = delivered && input.blocking.length === 0;
   const data = honestData(input.shot?.visibleText ?? "", buildIndex(input.world));
-  const actions =
-    input.payload === undefined
-      ? { pass: false, bindings: [] }
-      : wiredActions(bindingsFromPayload(input.payload), input.world);
+  const actions = wiredActions(input.trace, input.world);
   return {
     delivered,
     renders,

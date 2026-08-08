@@ -6,7 +6,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runFloor, type FloorResult } from "./floor.js";
 import { meteredModel, MODEL_IDS, type Meter, type ModelAlias, type UsageTotals } from "./meter.js";
-import { openBrowser, treeHtml } from "./render.js";
+import { probe, type Probed } from "./probe.js";
+import { bundleMount, openBrowser, pageHtml } from "./render.js";
 import { writePreview } from "./report.js";
 import { vendoDriver } from "./vendo.js";
 import { loadCases, loadWorld, worldForCase, type Case, type Lane, type World } from "./world.js";
@@ -57,14 +58,15 @@ export interface CaseResult {
   readonly floor: FloorResult;
   readonly timing: { firstRenderMs?: number; settledMs: number };
   readonly cost: { usage: UsageTotals; usd: number };
-  /** Nodes the writer generated as islands. They are client-only, so they are
-   *  blank in a server-rendered screenshot — a non-zero count means the shot
-   *  understates what the product actually built. */
+  /** Nodes the writer generated as islands rather than assembling from the Kit. */
   readonly islands: number;
-  /** Kit charts on the screen. They are recharts-backed and measure their
-   *  container in the browser, so they leave an empty band in a server-rendered
-   *  shot for the same reason islands do. Counted so the gap is never silent. */
+  /** Kit charts on the screen — the parts that only exist once a browser has
+   *  measured them, and so the reason the page is mounted for real. */
   readonly clientOnly: number;
+  /** Every control the probe pressed and what each one asked the host to do. */
+  readonly trace: readonly Probed[];
+  /** What the browser complained about while painting this screen. */
+  readonly consoleErrors: readonly string[];
   readonly world: string;
   readonly failure?: string;
 }
@@ -117,6 +119,11 @@ export function contenders(models: readonly ModelAlias[]): readonly ContenderId[
 /** The recharts-backed Kit components (packages/ui/src/kit/charts/). */
 const CHARTS = new Set(["LineChart", "BarChart", "DonutChart", "Sparkline"]);
 
+/** One case's whole budget — generation, paint and probe. A contender that hangs
+ *  costs the run this much and no more; the case is recorded failed and the next
+ *  one starts. */
+const CASE_TIMEOUT_MS = 5 * 60_000;
+
 const nodesOf = (payload: UIPayload | undefined): ReadonlyArray<{ source?: string; component?: string }> =>
   (payload as { nodes?: Array<{ source?: string; component?: string }> } | undefined)?.nodes ?? [];
 
@@ -147,6 +154,7 @@ async function main(argv: readonly string[]): Promise<number> {
   const runId = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const runDir = join(root, "runs", runId);
   const anthropic = createAnthropic({ apiKey });
+  const bundle = await bundleMount();
   const shooter = await openBrowser();
   const results: CaseResult[] = [];
 
@@ -159,22 +167,41 @@ async function main(argv: readonly string[]): Promise<number> {
         const scoped = worldForCase(world, testCase);
         console.log(`· ${contender.slug} / ${testCase.id}`);
 
-        const outcome = await driver.run({ world: scoped, testCase, meter });
-        const html = outcome.payload === undefined ? undefined : treeHtml(outcome.payload, world.theme);
-        const shot = html === undefined ? undefined : await shooter.shot(html);
+        // Raced against the clock as one unit: generation, paint and probe all
+        // spend the person's wait, so one budget covers all three.
+        const done = await Promise.race([
+          (async () => {
+            const outcome = await driver.run({ world: scoped, testCase, meter });
+            if (outcome.payload === undefined) return { outcome, trace: [] as Probed[] };
+            const html = pageHtml(outcome.payload, scoped, bundle);
+            const visit = await shooter.visit(html);
+            try {
+              return { outcome, html, shot: await visit.shot(), trace: await probe(visit) };
+            } finally {
+              await visit.close();
+            }
+          })(),
+          new Promise<undefined>((settle) => setTimeout(() => settle(undefined), CASE_TIMEOUT_MS).unref()),
+        ]);
+
+        const outcome = done?.outcome;
+        const shot = done?.shot;
+        const trace = done?.trace ?? [];
         const floor = runFloor({
           world: scoped,
-          artifact: outcome.artifact,
-          blocking: outcome.blocking,
-          payload: outcome.payload,
+          artifact: outcome?.artifact,
+          blocking: outcome?.blocking ?? [],
+          trace,
           shot,
         });
 
         const caseDir = join(runDir, contender.slug, testCase.id);
         await mkdir(caseDir, { recursive: true });
-        if (outcome.artifact !== undefined) await writeFile(join(caseDir, "artifact.vendo"), outcome.artifact);
+        if (outcome?.artifact !== undefined) await writeFile(join(caseDir, "artifact.vendo"), outcome.artifact);
+        if (done?.html !== undefined) await writeFile(join(caseDir, "page.html"), done.html);
         if (shot !== undefined) await writeFile(join(caseDir, "screenshot.png"), shot.png);
 
+        const failure = done === undefined ? "timeout" : outcome?.failure;
         const result: CaseResult = {
           run: runId,
           contender: contender.slug,
@@ -184,14 +211,16 @@ async function main(argv: readonly string[]): Promise<number> {
           lane: testCase.lane,
           floor,
           timing: {
-            ...(outcome.firstRenderMs === undefined ? {} : { firstRenderMs: outcome.firstRenderMs }),
-            settledMs: outcome.settledMs,
+            ...(outcome?.firstRenderMs === undefined ? {} : { firstRenderMs: outcome.firstRenderMs }),
+            settledMs: outcome?.settledMs ?? meter.elapsedMs(),
           },
           cost: { usage: meter.totals(), usd: meter.usd() },
-          islands: countIslands(outcome.payload),
-          clientOnly: countClientOnly(outcome.payload),
+          islands: countIslands(outcome?.payload),
+          clientOnly: countClientOnly(outcome?.payload),
+          trace,
+          consoleErrors: shot?.consoleErrors ?? [],
           world: world.hash,
-          ...(outcome.failure === undefined ? {} : { failure: outcome.failure }),
+          ...(failure === undefined ? {} : { failure }),
         };
         await writeFile(join(caseDir, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
         results.push(result);
