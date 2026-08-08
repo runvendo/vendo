@@ -5,7 +5,7 @@
  * what lets the row be gathered with `Promise.all` — and so what keeps the
  * report's column order the contender order, whatever order they finish in.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WALL_CLOCK_MS } from "./claude-code.js";
 import type { FloorResult } from "./floor.js";
 import { JudgeContract, type JudgeResult } from "./judge.js";
@@ -36,6 +36,36 @@ describe("attempt", () => {
     ]);
 
     expect(row).toEqual([{ done: "vendo" }, { failure: "diy exploded" }, { failure: "timeout" }]);
+  });
+
+  /**
+   * Losing the race does not stop the work — nothing here can reach inside a
+   * driver mid-generation — so the work has to be able to ASK.
+   *
+   * Without that, a column whose budget expired still walks on to open a page on
+   * the browser every other column is being shot on, one or two cases later,
+   * with nobody waiting for the result. `runOne` checks this before it visits.
+   */
+  it("tells the work it lost, so a timed-out case can stop reaching for the shared browser", async () => {
+    let toldItLost: boolean | undefined;
+    const result = await attempt(async (lost) => {
+      await new Promise((settle) => setTimeout(settle, 30));
+      toldItLost = lost.aborted;
+      return "a screen nobody is waiting for";
+    }, 5);
+
+    expect(result).toEqual({ failure: "timeout" });
+    await vi.waitFor(() => expect(toldItLost).toBe(true));
+  });
+
+  it("never tells work that won that it lost", async () => {
+    let toldItLost: boolean | undefined;
+    await attempt(async (lost) => {
+      toldItLost = lost.aborted;
+      return "a screen";
+    }, 1_000);
+
+    expect(toldItLost).toBe(false);
   });
 });
 

@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildIndex, honestData } from "./floor.js";
-import { bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "./render.js";
+import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "./render.js";
 import { loadWorld, type World } from "./world.js";
 
 /** The spending case's own rows, plotted. `format="money"` is what turns the
@@ -102,5 +102,33 @@ describe("chart axis ticks are measuring marks, not data", () => {
     expect(shot.visibleText).toContain("$4,243.12");
     expect(result.pass).toBe(false);
     expect(result.offenders).toEqual([expect.objectContaining({ kind: "number", text: "$4,243.12" })]);
+  }, 120_000);
+
+  /**
+   * The exclusion is the KIT's, and so is the only page that gets it.
+   *
+   * A contender that wrote its own document never loaded the Kit and cannot
+   * draw a recharts axis; those class names in ITS markup are not a chart, they
+   * are a container that keeps a fabricated number out of the text the floor
+   * reads while leaving it in the screenshot a person sees. Both halves of the
+   * selector, because either one alone is a hiding place.
+   */
+  it("gives a contender's own document nothing to hide a fabricated number behind", async () => {
+    const forged = `<!doctype html><html lang="en"><body>
+  <div class="recharts-cartesian-axis-tick-labels">Total spent $9,999.99</div>
+  <span id="recharts_measurement_span">Settles 2031-01-01</span>
+</body></html>`;
+    const visit = await shooter.visit(authoredPage(forged, world, "diy-sonnet"), { authored: true });
+    try {
+      const shot = await visit.shot();
+      const result = honestData(shot.visibleText, buildIndex(world));
+
+      expect(shot.visibleText).toContain("$9,999.99");
+      expect(shot.visibleText).toContain("2031-01-01");
+      expect(result.pass).toBe(false);
+      expect(result.offenders.map((offender) => offender.text).sort()).toEqual(["$9,999.99", "2031-01-01"]);
+    } finally {
+      await visit.close();
+    }
   }, 120_000);
 });

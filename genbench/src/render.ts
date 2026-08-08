@@ -144,6 +144,12 @@ ${seam(world, contender)}
  * is, so a fabricated number in the screen's own copy still fails.
  * `axis.test.ts` pins both halves in a real browser, and fails loudly if
  * recharts ever moves the text.
+ *
+ * It is the KIT's scaffolding, so only a page the HARNESS compiled gets the
+ * exclusion. A contender that wrote its own document never loaded the Kit and
+ * cannot draw a recharts axis: those class names in its markup would not be a
+ * chart, they would be a container that keeps a fabricated number out of the
+ * text the floor reads while leaving it in the screenshot a person sees.
  */
 const CHART_SCAFFOLDING = ".recharts-cartesian-axis-tick-labels, #recharts_measurement_span";
 
@@ -168,7 +174,9 @@ export interface Visit {
 }
 
 export interface Shooter {
-  visit(html: string): Promise<Visit>;
+  /** `authored` marks a document the CONTENDER wrote — the one page that gets
+   *  no chart-scaffolding exclusion, because it never loaded the Kit. */
+  visit(html: string, page?: { readonly authored?: boolean }): Promise<Visit>;
   close(): Promise<void>;
 }
 
@@ -176,7 +184,8 @@ export interface Shooter {
 export async function openBrowser(): Promise<Shooter> {
   const browser: Browser = await chromium.launch();
   return {
-    async visit(html) {
+    async visit(html, options) {
+      const scaffolding = options?.authored === true ? "" : CHART_SCAFFOLDING;
       const page = await browser.newPage({ viewport: { ...VIEWPORT } });
       const consoleErrors: string[] = [];
       page.on("console", (message) => {
@@ -200,7 +209,8 @@ export async function openBrowser(): Promise<Shooter> {
           const { visibleText, mounted } = await page.evaluate((selector: string) => {
             // `visibility`, not `display`: Chrome's `innerText` reports SVG text
             // in a `display:none` subtree, and reports it correctly hidden here.
-            const scaffolding = [...document.querySelectorAll<SVGElement | HTMLElement>(selector)];
+            const scaffolding =
+              selector === "" ? [] : [...document.querySelectorAll<SVGElement | HTMLElement>(selector)];
             const was = scaffolding.map((element) => element.style.visibility);
             for (const element of scaffolding) element.style.visibility = "hidden";
             const visibleText = document.body.innerText;
@@ -215,7 +225,7 @@ export async function openBrowser(): Promise<Shooter> {
                 return box.width > 0 && box.height > 0;
               }),
             };
-          }, CHART_SCAFFOLDING);
+          }, scaffolding);
           return {
             png: await page.screenshot({ fullPage: true }),
             visibleText,

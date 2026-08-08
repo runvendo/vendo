@@ -174,14 +174,29 @@ export const CASE_TIMEOUT_MS: Readonly<Record<HarnessId, number>> = {
  * Its own crash and its own silence become results here, never exceptions, so
  * the row can be gathered with `Promise.all`: a column that dies takes down
  * nothing but itself, and every column keeps its place.
+ *
+ * Losing the race does not STOP the work — nothing here can reach inside a
+ * driver mid-generation — so the work is handed a signal and can ask. It
+ * matters because the browser is shared: a column that walks on after its
+ * budget would otherwise open a page on it a case or two later, with nobody
+ * waiting for what that page shows.
  */
-export async function attempt<T>(work: () => Promise<T>, budgetMs: number): Promise<{ done?: T; failure?: string }> {
+export async function attempt<T>(
+  work: (lost: AbortSignal) => Promise<T>,
+  budgetMs: number,
+): Promise<{ done?: T; failure?: string }> {
+  const lost = new AbortController();
   return await Promise.race([
-    work().then(
+    work(lost.signal).then(
       (done) => ({ done }),
       (error: unknown) => ({ failure: error instanceof Error ? error.message : String(error) }),
     ),
-    new Promise<{ failure: string }>((settle) => setTimeout(() => settle({ failure: "timeout" }), budgetMs).unref()),
+    new Promise<{ failure: string }>((settle) =>
+      setTimeout(() => {
+        lost.abort();
+        settle({ failure: "timeout" });
+      }, budgetMs).unref(),
+    ),
   ]);
 }
 
@@ -294,7 +309,7 @@ async function main(argv: readonly string[]): Promise<number> {
 
     // Raced against the clock as one unit: generation, paint and probe all spend
     // the person's wait, so one budget covers all three.
-    const { done, failure: broke } = await attempt(async () => {
+    const { done, failure: broke } = await attempt(async (lost) => {
       const outcome = await DRIVERS[contender.harness](contender.model).run({ world: scoped, testCase, meter });
       // Either the product compiled a payload into a page, or the contender
       // handed over an artifact that already IS a document. From here on both
@@ -306,8 +321,11 @@ async function main(argv: readonly string[]): Promise<number> {
           : outcome.payload === undefined
             ? undefined
             : pageHtml(outcome.payload, scoped, bundle, contender.slug);
-      if (html === undefined) return { outcome, trace: [] as Probed[] };
-      const visit = await shooter.visit(html);
+      // This case has already been recorded as a timeout and the row has moved
+      // on. Painting it now would spend the shared browser on a screen nobody
+      // is waiting for, while the case that IS being graded is shot beside it.
+      if (html === undefined || lost.aborted) return { outcome, trace: [] as Probed[] };
+      const visit = await shooter.visit(html, { authored: authored !== undefined });
       try {
         return { outcome, html, shot: await visit.shot(), trace: await probe(visit) };
       } finally {
