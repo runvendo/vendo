@@ -1,5 +1,5 @@
 ---
-"@vendoai/core": minor
+"@vendoai/core": patch
 "@vendoai/ui": patch
 "@vendoai/mcp": patch
 "@vendoai/apps": patch

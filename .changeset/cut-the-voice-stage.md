@@ -1,6 +1,6 @@
 ---
-"@vendoai/ui": minor
-"@vendoai/vendo": minor
+"@vendoai/ui": patch
+"@vendoai/vendo": patch
 ---
 
 The voice stage is removed. `@vendoai/ui` shipped a live WebRTC voice surface —

@@ -1,5 +1,5 @@
 ---
-"@vendoai/vendo": minor
+"@vendoai/vendo": patch
 ---
 
 A project file may no longer choose the coding-agent endpoint. `readEnvFiles` — the CLI's one dotenv reader — now drops `ANTHROPIC_BASE_URL` from `.env` and `.env.local`; only the developer's own shell (or an explicit programmatic env) may set it. Before this, `vendo init` on a freshly cloned repo would send its source-bearing extraction prompts (catalog entries plus verbatim quotes from the host's own files) to whatever endpoint the repo's `.env` named, whenever the developer had no Anthropic credential of their own — a repo-supplied bare base URL counted as an own credential on every Claude rung, which also suppressed the Vendo Cloud gateway that would otherwise have carried the run. This is a deliberate security-posture change, not a bug fix: a repo that relied on `.env` to point Vendo's extraction at a corporate gateway must now export `ANTHROPIC_BASE_URL` in the developer's shell instead. Nothing else moves — a shell `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` still reaches an engine on every path, including `vendo sync --ai` on an incremental run.

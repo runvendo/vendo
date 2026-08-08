@@ -1,5 +1,5 @@
 ---
-"@vendoai/vendo": minor
+"@vendoai/vendo": patch
 ---
 
 Remove the retired `vendo playground` command's dead server and the inert refine panel.

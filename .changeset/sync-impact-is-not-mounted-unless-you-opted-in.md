@@ -1,5 +1,5 @@
 ---
-"@vendoai/vendo": minor
+"@vendoai/vendo": patch
 ---
 
 `POST /sync/impact` is now mounted only in a development composition, and is not in the route table at all anywhere else. It used to be mounted on every deployment and refuse per-request on `environment("NODE_ENV") === "production"` — a check that answers "not production" for an unset `NODE_ENV` and on every runtime without a `process` global (edge, Workers). Either of those served the route to an anonymous caller, and the route takes no principal: for up to 200 tool names per request it reads the deployment's entire `vendo_apps` and `vendo_grants` collections and returns the id and title of every enabled app and automation referencing each tool, across every subject, plus the count of live standing grants on it. Absence of configuration now means closed. What arms it is `createVendo({ development })`, which `NODE_ENV=development` already sets — the dev server `vendo sync` talks to is unchanged, so a normal `predev`/`prebuild` sync still prints its blast radius. A deployment that ran `vendo sync --url` against something that is not a development composition now gets `impact unknown` instead of an answer; set `development: true` on that composition if the probe is wanted there.

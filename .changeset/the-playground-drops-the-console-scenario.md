@@ -1,5 +1,5 @@
 ---
-"@vendoai/vendo": minor
+"@vendoai/vendo": patch
 ---
 
 The playground's `page` scenario is replaced by the two panels a host still mounts itself.

@@ -1,5 +1,5 @@
 ---
-"@vendoai/agents": minor
+"@vendoai/agents": patch
 ---
 
 `vendoKnowledge` is no longer re-exported from `@vendoai/agents`.

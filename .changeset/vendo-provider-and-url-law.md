@@ -1,10 +1,10 @@
 ---
-"@vendoai/core": minor
-"@vendoai/actions": minor
-"@vendoai/ui": minor
+"@vendoai/core": patch
+"@vendoai/actions": patch
+"@vendoai/ui": patch
 "@vendoai/mcp": patch
-"@vendoai/vendo": minor
-"vendoai": minor
+"@vendoai/vendo": patch
+"vendoai": patch
 ---
 
 The setup surface: declared URLs, one join law, a VendoProvider-only surface, and `init` = install + the shared sync flow.

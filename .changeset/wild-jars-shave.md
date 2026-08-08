@@ -1,5 +1,5 @@
 ---
-"@vendoai/vendo": minor
+"@vendoai/vendo": patch
 ---
 
 Delete `@vendoai/engine`; init's `--engine npx` rung now fetches Anthropic's

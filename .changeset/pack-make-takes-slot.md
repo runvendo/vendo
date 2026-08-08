@@ -1,5 +1,5 @@
 ---
-"@vendoai/vendo": minor
+"@vendoai/vendo": patch
 ---
 
 The in-process tool pack's `vendo_make` takes `slot`, like the MCP door's.

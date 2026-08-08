@@ -1,7 +1,7 @@
 ---
-"@vendoai/vendo": minor
-"@vendoai/core": minor
-"@vendoai/ui": minor
+"@vendoai/vendo": patch
+"@vendoai/core": patch
+"@vendoai/ui": patch
 ---
 
 Connect asks first: a `request_connection` tool and a connect card that owns the whole answer.

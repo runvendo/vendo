@@ -1,5 +1,5 @@
 ---
-"@vendoai/ui": minor
+"@vendoai/ui": patch
 ---
 
 The code-land runtime folds into `@vendoai/ui/kit`. `@vendoai/kit` is gone: its

@@ -1,9 +1,9 @@
 ---
-"@vendoai/actions": minor
-"@vendoai/apps": minor
-"@vendoai/core": minor
-"@vendoai/harnesses": minor
-"@vendoai/vendo": minor
+"@vendoai/actions": patch
+"@vendoai/apps": patch
+"@vendoai/core": patch
+"@vendoai/harnesses": patch
+"@vendoai/vendo": patch
 ---
 
 `.vendo/tools.json` is the one source of truth for every tool's request and

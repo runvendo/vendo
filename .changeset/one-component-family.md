@@ -1,7 +1,7 @@
 ---
-"@vendoai/ui": minor
-"@vendoai/core": minor
-"@vendoai/apps": minor
+"@vendoai/ui": patch
+"@vendoai/core": patch
+"@vendoai/apps": patch
 ---
 
 One component family: the legacy prewired set is retired, and the Kit is the

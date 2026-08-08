@@ -1,5 +1,5 @@
 ---
-"@vendoai/ui": minor
+"@vendoai/ui": patch
 ---
 
 Two real defects in the tree renderer, and one dead extension point removed.

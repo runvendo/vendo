@@ -1,5 +1,5 @@
 ---
-"@vendoai/automations": minor
+"@vendoai/automations": patch
 ---
 
 Engine-owned generic rows carry their app ref, so app erase collects them.

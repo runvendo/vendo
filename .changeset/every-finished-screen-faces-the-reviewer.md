@@ -1,6 +1,6 @@
 ---
-"@vendoai/apps": minor
-"@vendoai/harnesses": minor
+"@vendoai/apps": patch
+"@vendoai/harnesses": patch
 ---
 
 Every finished screen faces the AI reviewer, with the data it renders.

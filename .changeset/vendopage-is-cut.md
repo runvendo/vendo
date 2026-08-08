@@ -1,5 +1,5 @@
 ---
-"@vendoai/ui": minor
+"@vendoai/ui": patch
 ---
 
 `VendoPage` is removed

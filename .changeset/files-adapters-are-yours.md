@@ -1,6 +1,6 @@
 ---
-"@vendoai/store": minor
-"@vendoai/agents": minor
+"@vendoai/store": patch
+"@vendoai/agents": patch
 ---
 
 `s3()` is gone from `@vendoai/store` and from the `@vendoai/agents` root, along

@@ -1,6 +1,6 @@
 ---
-"@vendoai/mcp": minor
-"@vendoai/vendo": minor
+"@vendoai/mcp": patch
+"@vendoai/vendo": patch
 "@vendoai/core": patch
 ---
 

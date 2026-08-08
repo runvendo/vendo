@@ -1,5 +1,5 @@
 ---
-"@vendoai/actions": minor
+"@vendoai/actions": patch
 ---
 
 GraphQL extraction is gone. The advertised extraction tier is four stacks: OpenAPI, route-scan, tRPC, Next.js server actions.

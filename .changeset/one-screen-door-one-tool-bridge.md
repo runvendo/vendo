@@ -1,5 +1,5 @@
 ---
-"@vendoai/harnesses": minor
+"@vendoai/harnesses": patch
 ---
 
 The screen agent ships one door, and the tool bridge stops currying for a caller

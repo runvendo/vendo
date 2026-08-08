@@ -1,5 +1,5 @@
 ---
-"@vendoai/ui": minor
+"@vendoai/ui": patch
 ---
 
 Remove five options and one recorder that nothing in the repo could reach: the

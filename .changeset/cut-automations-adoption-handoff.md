@@ -1,8 +1,8 @@
 ---
-"@vendoai/automations": minor
-"@vendoai/core": minor
-"@vendoai/ui": minor
-"@vendoai/vendo": minor
+"@vendoai/automations": patch
+"@vendoai/core": patch
+"@vendoai/ui": patch
+"@vendoai/vendo": patch
 ---
 
 The automations adoption handoff is removed. When an automation's sponsorship

@@ -1,5 +1,5 @@
 ---
-"@vendoai/knowledge": minor
+"@vendoai/knowledge": patch
 ---
 
 Knowledge citations keep their provenance on the main search path, and both
