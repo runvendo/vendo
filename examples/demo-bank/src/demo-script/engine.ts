@@ -11,8 +11,9 @@
  *   the same chunk vocabulary (text deltas, dynamic-tool parts,
  *   `data-vendo-view` / `data-vendo-approval` / `data-vendo-connect` wire
  *   parts), so the thread chrome renders it exactly like a live turn;
- * - host tools execute FOR REAL through `vendo.guardedTools` (guard-audited →
- *   the Activity panel fills; the transfer parks a genuine approval the
+ * - host tools execute FOR REAL through `vendo.guardedTools` (guard-audited, so
+ *   the audit trail is real even though Maple mounts no surface that reads it;
+ *   the transfer parks a genuine approval the
  *   in-thread ApprovalCard resumes through the BYO parked-call machinery);
  * - the turn persists to the same `vendo_threads` row a live turn would, so
  *   history survives reopen and the resume upsert works over the plain wire.
@@ -353,7 +354,7 @@ async function confirmTransfer(
   }
   await streamText(
     writer,
-    `Done — $200.00 moved to savings.${balanceLine} The posted transfer is in your transactions, and the approval is recorded in Activity.`,
+    `Done — $200.00 moved to savings.${balanceLine} The posted transfer is in your transactions.`,
     signal,
   );
 }
@@ -392,7 +393,7 @@ async function enableAutomation(
 }
 
 /** The WHOLE automation card, in-thread: the `data-vendo-automation` part the
- *  chrome renders with the same card vocabulary as Workspace → Automations.
+ *  chrome renders with the same card vocabulary as the AutomationsPanel.
  *  Streamed under a stable reconciliation id, so the approval resume's
  *  re-emission flips the SAME card from "waiting on N permissions" to live. */
 async function automationCardPart(writer: Writer, ctx: RunContext, key: AutomationKey): Promise<void> {
@@ -507,7 +508,7 @@ async function automationArmedConfirmation(context: BeatContext, key: Automation
   if (key === "weekly") {
     await streamText(
       writer,
-      "Set. Every Friday at 5:00 PM I'll put together that week's spending by category and have the digest drafted for you — sending is always yours, one tap. It's live under Workspace → Automations — you can pause it anytime.",
+      "Set. Every Friday at 5:00 PM I'll put together that week's spending by category and have the digest drafted for you — sending is always yours, one tap. It never sends on its own.",
       signal,
     );
     await gmailDeliveryMoment(
@@ -519,7 +520,7 @@ async function automationArmedConfirmation(context: BeatContext, key: Automation
   }
   await streamText(
     writer,
-    "Armed — if checking dips below $2,000, an alert will be drafted for you that same morning. It's live under Workspace → Automations.",
+    "Armed — if checking dips below $2,000, an alert will be drafted for you that same morning.",
     signal,
   );
   await gmailDeliveryMoment(
@@ -529,8 +530,8 @@ async function automationArmedConfirmation(context: BeatContext, key: Automation
   );
 }
 
-/** The approval-resume leg for a grant-SET decision (weekly/low-balance). The deciding
- *  surface (the in-thread set card or the workspace panel) already settled
+/** The approval-resume leg for a grant-SET decision (weekly/low-balance). The
+ *  deciding surface — in Maple, the in-thread set card — already settled
  *  the WHOLE set over the wire with ONE decision — the automations engine's
  *  subscriber minted (or discarded) every grant; nothing is bulk-approved
  *  silently here. This leg settles the parked tool part, re-emits the
@@ -553,7 +554,7 @@ async function automationGrantResume(
     await automationCardPart(writer, ctx, key);
     await streamText(
       writer,
-      "No problem — I've switched the automation off. Nothing will run, and the declined request is recorded in Activity.",
+      "No problem — I've switched the automation off. Nothing will run.",
       signal,
     );
     return;
@@ -638,7 +639,7 @@ async function lowBalanceBeat(context: BeatContext): Promise<void> {
 async function gmailConnectedBeat({ writer, signal }: BeatContext): Promise<void> {
   await streamText(
     writer,
-    "Gmail is connected — anything I draft for you lands there, ready to send with one tap. Your automations are fully live; they're under Workspace → Automations whenever you want to pause them.",
+    "Gmail is connected — anything I draft for you lands there, ready to send with one tap. Your automations are fully live, and every one of them drafts rather than sends — nothing leaves without you.",
     signal,
   );
 }
@@ -736,7 +737,7 @@ type ApprovalToolPart = {
  *  tool_use with NO tool_result, and the first real-agent prompt in the same
  *  thread 400s on replay. Settling the dangling part as denied yields the
  *  matched tool-approval-response + tool-result pair. Server-side the guard
- *  asks simply stay pending — the workspace panel can still decide them. */
+ *  asks simply stay pending; Maple mounts no surface that decides them. */
 function settleAbandonedScriptedApprovals(messages: UIMessage[]): void {
   for (const message of messages) {
     if (message.role !== "assistant") continue;
@@ -829,7 +830,7 @@ export async function scriptedThreadsResponse(request: Request): Promise<Respons
         await automationGrantResume({ writer, ctx, signal }, grantKey, responded.toolCallId, approved);
       } else if (!approved) {
         write(writer, { type: "tool-output-denied", toolCallId: responded.toolCallId });
-        await streamText(writer, "No problem — I've cancelled it. Nothing moved, and the declined request is recorded in Activity.", signal);
+        await streamText(writer, "No problem — I've cancelled it. Nothing moved.", signal);
       } else {
         const resolution = approvalId === undefined ? null : await parkedOutcome(approvalId, principal.subject);
         if (resolution?.state === "executed" && resolution.outcome !== undefined) {
@@ -837,7 +838,7 @@ export async function scriptedThreadsResponse(request: Request): Promise<Respons
           await confirmTransfer(writer, ctx, resolution.outcome, signal);
         } else {
           write(writer, { type: "tool-output-error", toolCallId: responded.toolCallId, errorText: "The approved call did not resume." });
-          await streamText(writer, "Something interrupted the transfer — your accounts are untouched. Check Activity for the record.", signal);
+          await streamText(writer, "Something interrupted the transfer — your accounts are untouched. You can try again.", signal);
         }
       }
       write(writer, { type: "finish-step" });
