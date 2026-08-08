@@ -92,7 +92,8 @@ function walkNumbers(value: unknown, onNumber: (n: number) => void, onDate: (iso
 
 /** Every literal number and date the case's tools return, plus the closed set of
  *  values a contender is allowed to compute: sum, count, min, max and mean of one
- *  numeric field across one tool's rows. Anything else on screen is invented. */
+ *  numeric field across one tool's rows, and the size of one tool's rows filtered
+ *  to one field equalling one value. Anything else on screen is invented. */
 export function buildIndex(world: World): DataIndex {
   const numbers = new Set<string>();
   const dates = new Set<string>();
@@ -109,15 +110,28 @@ export function buildIndex(world: World): DataIndex {
     const rows = rowsOf(tool.data);
     add(rows.length);
     const columns = new Map<string, number[]>();
+    /** `field=value` -> how many rows carry it. "2 pending transfers" is a fact
+     *  these rows hold, not a number a screen invented. */
+    const matching = new Map<string, number>();
     for (const row of rows) {
       if (typeof row !== "object" || row === null) continue;
       for (const [field, value] of Object.entries(row as Record<string, unknown>)) {
+        // Equality on a scalar field only: "same object" is not a filter a
+        // person writes, and deep equality would open the rule up.
+        if (typeof value !== "object" || value === null) {
+          const key = `${field}=${JSON.stringify(value)}`;
+          matching.set(key, (matching.get(key) ?? 0) + 1);
+        }
         if (typeof value !== "number") continue;
         const seen = columns.get(field) ?? [];
         seen.push(value);
         columns.set(field, seen);
       }
     }
+    // A count is its own magnitude and nothing else — two transfers is never
+    // $0.02 or 200 of anything — so it is added exactly, never rescaled the way
+    // an authored money amount is.
+    for (const count of matching.values()) numbers.add(numberKey(count));
     for (const values of columns.values()) {
       const sum = values.reduce((total, value) => total + value, 0);
       add(sum);
@@ -154,7 +168,7 @@ export function honestData(visibleText: string, index: DataIndex): HonestDataRes
     offenders.push({
       kind: "number",
       text,
-      why: "not a value any tool returned, and not a sum, count, min, max or mean of one",
+      why: "not a value any tool returned, and not a sum, count, min, max, mean or filtered count of one",
     });
   }
   return { pass: offenders.length === 0, offenders };

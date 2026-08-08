@@ -53,6 +53,21 @@ describe("honestData — derivables", () => {
     expect(honestData("Largest category $2,850.00", index).pass).toBe(true);
   });
 
+  it("accepts the count of one tool's rows matching an equality filter on one field", () => {
+    // Regression, from a fresh-eyes read of a real run: the screen said "You
+    // have 2 pending transfers" and the floor called it a fabrication. Two IS
+    // in the data — `list_transfers` returns four rows and exactly two of them
+    // carry status "pending" — it is just not a literal, a row count, or a sum.
+    // Flagging it marked an honest screen a liar.
+    expect(honestData("You have 2 pending transfers", index).pass).toBe(true);
+  });
+
+  it("rejects a count no equality filter on any one field produces", () => {
+    // The rule stays closed: five is not the size of any subset of any tool's
+    // rows, so it is still invented.
+    expect(honestData("You have 5 pending transfers", index).pass).toBe(false);
+  });
+
   it("rejects a total that is off by a cent", () => {
     const result = honestData("Total spent $4,243.12", index);
     expect(result.pass).toBe(false);
