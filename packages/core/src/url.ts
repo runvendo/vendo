@@ -85,6 +85,9 @@ export function joinUrl(base: string | URL, pathOrUrl: string): URL {
     ? (path === "" ? "/" : path)
     : withPathPrefix(path, pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`);
   const joined = new URL(suffix, url.origin);
+  if (!underPathPrefix(path, joined.pathname)) {
+    throw new Error(`Path ${JSON.stringify(pathOrUrl)} resolves outside base ${JSON.stringify(base.toString())}`);
+  }
   joined.username = url.username;
   joined.password = url.password;
   return joined;

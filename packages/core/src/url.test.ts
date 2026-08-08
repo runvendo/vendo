@@ -93,6 +93,12 @@ describe("joinUrl", () => {
     expect(joinUrl("https://svc:pw@api.site.com/maple", "/api/x").href)
       .toBe("https://svc:pw@api.site.com/maple/api/x");
   });
+
+  it("refuses a path that climbs above the base", () => {
+    expect(() => joinUrl("https://site.com/maple", "/../../admin")).toThrow(/resolves outside base/);
+    expect(() => joinUrl("https://site.com/maple", "../admin")).toThrow(/resolves outside base/);
+    expect(() => joinUrl("https://site.com/maple", "%2e%2e/admin")).toThrow(/resolves outside base/);
+  });
 });
 
 describe("joinPath", () => {
