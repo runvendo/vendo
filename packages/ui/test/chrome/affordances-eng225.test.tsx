@@ -540,6 +540,27 @@ describe("connect dock + tray (ENG-225)", () => {
     await waitFor(() => expect(within(tray).getAllByRole("link", { name: "Open sign-in in a new tab" })).toHaveLength(2));
   });
 
+  // Keying the tray's state let two connects run at once, which exposed that
+  // `openConnectPopup` named every window the same thing — and a NAME is what
+  // makes `window.open` hand back an EXISTING window. So the second connect
+  // took over the first's sign-in page, and the first settle closed it under
+  // the other. Pre-existing in the panel post-#1051; the tray's old
+  // surface-wide `disabled` was hiding it here.
+  it("gives each concurrent connect its own sign-in window", async () => {
+    const open = vi.fn(() => ({ location: { replace: vi.fn() }, close: vi.fn() }));
+    vi.stubGlobal("open", open);
+    holdThePoll();
+    const tray = await openTray();
+
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Notion" }));
+
+    expect(open.mock.calls.map(call => call[1])).toEqual([
+      "vendo-connect-slack",
+      "vendo-connect-notion",
+    ]);
+  });
+
   it("keeps each failed connect's reason, rather than the last one only", async () => {
     vi.stubGlobal("open", vi.fn(() => ({ location: { replace: vi.fn() }, close: vi.fn() })));
     for (let index = 0; index < 2; index += 1) {

@@ -580,6 +580,35 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     ));
   });
 
+  // Two connect-ahead chips are meant to run at once — #1051 keyed `busy` and
+  // `blocked` per row precisely so they can. But `openConnectPopup` opened a
+  // window under one fixed NAME, and a name is what makes `window.open` reuse an
+  // existing window: the second chip took over the first's window, the first's
+  // sign-in page was replaced mid-flow, and whichever settled first closed the
+  // window the other was still using. The window has to be keyed the same way
+  // the state around it is.
+  it("gives each concurrent connect-ahead its own sign-in window", async () => {
+    const { open } = allowPopups();
+    wire.state.connections = [];
+    render(
+      <VendoProvider
+        client={client}
+        connectors={[{ toolkit: "slack", connector: "composio" }, { toolkit: "hubspot", label: "HubSpot CRM" }]}
+      >
+        <ConnectedAccountsPanel />
+      </VendoProvider>,
+    );
+    expect(await screen.findByText(/No connected accounts yet/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Connect Slack" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connect HubSpot CRM" }));
+
+    // The window NAME is the whole mechanism — same name, same window.
+    expect(open.mock.calls.map(call => call[1])).toEqual([
+      "vendo-connect-connect-slack",
+      "vendo-connect-connect-hubspot",
+    ]);
+  });
+
   it("hides connect-ahead entirely when the host configured no connectors", async () => {
     wire.state.connections = [];
     // The AUTO catalog is what feeds connect-ahead, and the fixture's is
