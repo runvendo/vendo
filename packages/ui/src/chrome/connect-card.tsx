@@ -129,7 +129,7 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
     // FIRST, before any await: a popup opened after one is blocked outright in
     // Safari and Firefox (openConnectPopup). A blocked window is not a dead end
     // — the same poll runs and the card offers the URL as a link instead.
-    const popup = openConnectPopup();
+    const popup = openConnectPopup(toolkit);
     setPhase(popup === null ? "popup-blocked" : "connecting");
     setError(undefined);
     setRedirectUrl(undefined);

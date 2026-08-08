@@ -36,15 +36,22 @@ const POPUP_HEIGHT = 680;
  *
  * Returns `null` when the browser blocked it anyway — the caller keeps going and
  * offers the same URL as a plain link.
+ *
+ * @param key Identifies THIS connect, and must be the same key the caller keys
+ * its own per-row connect state by. It becomes the window's name, and a name is
+ * what makes `window.open` return a window that is ALREADY OPEN: every connect
+ * surface here permits concurrent connects, so one shared name meant the second
+ * connect inherited the first's window, replaced a sign-in page still in flight,
+ * and had it closed underneath by whichever connect settled first.
  */
-export function openConnectPopup(): Window | null {
+export function openConnectPopup(key: string): Window | null {
   // Centered on the screen the browser is on, so the consent page lands where
   // the eye already is rather than in a corner behind the app.
   const left = Math.max(0, Math.round((window.screen.width - POPUP_WIDTH) / 2));
   const top = Math.max(0, Math.round((window.screen.height - POPUP_HEIGHT) / 2));
   return window.open(
     "about:blank",
-    "vendo-connect",
+    `vendo-connect-${key}`,
     `popup=yes,width=${POPUP_WIDTH},height=${POPUP_HEIGHT},left=${left},top=${top}`,
   ) ?? null;
 }
@@ -308,8 +315,8 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
 
   const connect = async (row: TrayRow) => {
     // Before the first await, or the browser blocks it (openConnectPopup).
-    const popup = openConnectPopup();
     const key = row.toolkit;
+    const popup = openConnectPopup(key);
     const clearBlocked = () => setBlocked(current => ({ ...current, [key]: undefined }));
     setConnecting(current => ({ ...current, [key]: true }));
     // Only THIS row's leftovers clear: a sibling connect may still be failing

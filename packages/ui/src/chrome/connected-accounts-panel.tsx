@@ -228,7 +228,7 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
    * plain link and finishing there settles the row as normal.
    */
   const connect = async (key: string, name: string, input: { toolkit: string; connector?: string }) => {
-    const popup = openConnectPopup();
+    const popup = openConnectPopup(key);
     const clearBlocked = () => setBlocked(current => ({ ...current, [key]: undefined }));
     setError(undefined);
     setBlocked(current => ({ ...current, [key]: popup === null ? { name } : undefined }));
