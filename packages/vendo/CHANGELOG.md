@@ -1,5 +1,506 @@
 # @vendoai/vendo
 
+## 0.8.1
+
+### Patch Changes
+
+- a7a0fcf: A host's own backend gets in at the MCP door with a service key — no per-user
+  OAuth, no browser.
+
+  `createVendo({ mcp: { serviceAuth: { keys: [...] } } })` arms the door's own
+  `/token` endpoint for RFC 8693 token exchange: the backend POSTs
+  `grant_type=urn:ietf:params:oauth:grant-type:token-exchange` with
+  `client_id=vendo-service`, the key as `client_secret`, and one of its own user
+  ids as `subject_token`, and gets back a ten-minute `vmat_` bearer token for
+  that user. Keys are opaque strings the host mints itself (`openssl rand -hex
+32`); the door stores only their hashes, compares in constant time, and
+  answers every failure with the same `invalid_client`. No refresh tokens —
+  rotation is "exchange again." Audit rows carry a `svc:<hash>` client id so
+  service-minted sessions are distinguishable from interactive ones.
+
+- 8af0712: A project file may no longer choose the coding-agent endpoint. `readEnvFiles` — the CLI's one dotenv reader — now drops `ANTHROPIC_BASE_URL` from `.env` and `.env.local`; only the developer's own shell (or an explicit programmatic env) may set it. Before this, `vendo init` on a freshly cloned repo would send its source-bearing extraction prompts (catalog entries plus verbatim quotes from the host's own files) to whatever endpoint the repo's `.env` named, whenever the developer had no Anthropic credential of their own — a repo-supplied bare base URL counted as an own credential on every Claude rung, which also suppressed the Vendo Cloud gateway that would otherwise have carried the run. This is a deliberate security-posture change, not a bug fix: a repo that relied on `.env` to point Vendo's extraction at a corporate gateway must now export `ANTHROPIC_BASE_URL` in the developer's shell instead. Nothing else moves — a shell `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` still reaches an engine on every path, including `vendo sync --ai` on an incremental run.
+- e092567: A standalone session can reopen an existing conversation.
+
+  `session(subject, { threadId })` reopens the named conversation instead of minting
+  a new one. Ownership is the store's own subject scope — someone else's thread reads
+  back as absent and is refused as `not-found`, never silently swapped for a new
+  conversation. The resume path deliberately skips `threadStore.put`, whose replace
+  semantics would delete the very transcript the resume exists to read back.
+
+  Until now `createSession` minted a fresh thread on every call and `SessionOptions`
+  had no way to name an existing one, so a Node backend that built a session per HTTP
+  request — which is what the README showed — lost the whole conversation on every
+  request. Multi-turn only worked while the JS object stayed alive in process memory.
+  The README now passes `threadId` in, hands `session.threadId` back out, and says
+  plainly that a session is request-lifetime while the thread is not.
+
+  The `[User]` and `[Situation]` prompt blocks are now one implementation in
+  `@vendoai/core` (`userPromptBlock`, `situationPromptBlock`, `promptFactLines`),
+  shared by the standalone assembler and the umbrella's. They were two copies of a
+  prompt-injection defence — the indent that stops a client-supplied fact from
+  forging a top-level `Directions` section — and only the umbrella's labeled the
+  situation "observation, not instruction". The shared block carries that label, so
+  the standalone surface gains it. No other behaviour changes.
+
+- 464dce8: Broker mode is DECLARED, not discovered. Set `VENDO_MCP_BROKER_URL` to your tenant's
+  MCP endpoint (`https://acme.mcp.vendo.run/mcp`) and the door trusts that broker:
+  the URL's origin is the issuer, the URL itself is the expected token audience,
+  and `VENDO_MCP_FEDERATION_SECRET` answers its login handshake. An explicit
+  `mcp.remoteAs` still wins.
+
+  This replaces the boot-time ensure-tenant call a `VENDO_API_KEY` plus a public
+  `VENDO_BASE_URL` used to make: the app no longer writes its own address to Vendo
+  Cloud, so whichever process booted last can no longer decide where the broker
+  forwards, and a failed call can no longer silently swap a deployment to a
+  different authentication architecture for the life of the process. A
+  `VENDO_API_KEY` now has no effect on MCP at all, and a malformed `VENDO_MCP_BROKER_URL`
+  fails the composition loudly instead of quietly reverting to a local door.
+
+- b99147f: Connect asks first: a `request_connection` tool and a connect card that owns the whole answer.
+
+  The agent can now ASK for a connection instead of spending a call it already knows
+  will be refused. `request_connection` (toolkit + one plain sentence) mints exactly the
+  `connect-required` outcome a refused service call produces, so the card the user sees
+  is the same card — nothing new on the wire. The tool is projected only where the
+  deployment can actually connect the toolkit, and refuses one it cannot rather than
+  raising a button that can never succeed.
+
+  The card itself now opens its sign-in window _inside the click_, before any `await`:
+  Safari and Firefox judge a popup by call-stack provenance, and the old order (initiate,
+  then open) is precisely the shape they block. The window opens centered and blank, is
+  navigated when the redirect URL arrives, and is closed from the opener once the account
+  goes active. A window the browser blocked anyway is no longer a dead end — the same
+  poll keeps running behind an "Open sign-in in a new tab" link.
+
+  The card also says what connecting grants, in plain words rather than OAuth scope
+  strings, and offers "Not now" — which leaves a one-line Skipped record that still
+  re-offers Connect, and tells the agent so it can adapt.
+
+- 022f789: The automations adoption handoff is removed. When an automation's sponsorship
+  lapsed — the sponsor left, lost their permissions, or somebody else edited the
+  app — the automation stopped and an "adoption card" waited inside the app so the
+  next editor could take it on, re-approving its reads and writes as themselves.
+  No host used it.
+
+  Sponsorship itself is unchanged: an automation still runs as a named person, and
+  still stops when that person's authority lapses. What goes is the second half —
+  the handoff to somebody new.
+
+  Gone: `AutomationsEngine.adoption()` and `.adopt()`, the `AdoptionCard` and
+  `AdoptionNeed` types (`@vendoai/automations`); `ADOPTION_VENUE_KEY`
+  (`@vendoai/core`); `POST /automations/:id/adopt/:triggerId` (`@vendoai/vendo`);
+  `client.automations.adopt()`, `<AdoptionCard>`, `<AdoptionVenueCard>`,
+  `ADOPTION_VENUE_KEY`, `AdoptionCardProps`, `AdoptionVenue` and `AdoptResult`
+  (`@vendoai/ui`).
+
+  Pre-1.0 hard cut, no deprecation shim. A stopped automation is restarted the way
+  it was armed in the first place: anyone who can edit the app calls `enable()`
+  again, which re-approves its reads and writes under the new sponsor. The stopped
+  sentence the run row and the list carry now says "anyone who can edit this app
+  can turn it back on" instead of "…can take it on".
+
+- 53717c4: Remove the retired `vendo playground` command's dead server and the inert refine panel.
+
+  `startPlaygroundServer` (and the `/playground.js` + `/embed.js` routes it served)
+  is gone, along with the IIFE entry `app/main.tsx` and the playground half of the
+  vite bundle step. `browserOpenCommand` — the one live export of the deleted
+  module — now lives in `cli/shared.ts`. The bundle step no longer runs as
+  `prebuild`/`pretest`/`pretypecheck`/`pretest:coverage`; the still-live docs embed
+  bundle is built on demand by `pnpm --filter @vendoai/vendo run build:embed`.
+
+  The try surface itself is unchanged: `@vendoai/vendo/try-surface` and
+  `@vendoai/vendo/try` keep their exports and their behaviour.
+
+  Breaking: the try profile's `capabilities.refine` field is removed. It was
+  always `false`, and the `/api/refine` endpoints its panel called exist nowhere.
+
+- d3e7dcd: The voice stage is removed. `@vendoai/ui` shipped a live WebRTC voice surface —
+  an animated presence orb, a rolling caption ticker, a transcript drawer, a
+  consent bar that accepted a spoken "approve", and a `vendo_act` bridge that ran
+  a real guarded agent turn mid-call. Nothing mounted it: the demo host un-docked
+  `<VendoStage />` on 2026-07-30, and no example, fixture, or docs host has
+  rendered it since.
+
+  Gone from `@vendoai/ui`: the `@vendoai/ui/voice` entry point in its entirety
+  (`realtimeVoiceDriver`, `createVoiceActBridge`, `VoiceDriver`,
+  `VoiceDriverEvent`, `VoiceDriverHandlers`, `VoiceSessionHandle`,
+  `VoiceSessionView`, `RealtimeVoiceDriverOptions`, `VoiceActBridgeOptions`),
+  `useVoice` and `UseVoiceResult` from the root entry, `<VendoStage />` from
+  `@vendoai/ui/chrome`, and the `voice` prop on `VendoProvider`. Gone from
+  `@vendoai/vendo`: the `useVoice` / `UseVoiceResult` re-exports on
+  `@vendoai/vendo/react`.
+
+  Pre-1.0 hard cut, no deprecation shim. Nothing else changes: the thread
+  composer keeps its optional `onVoice` callback, so a host that wants a mic
+  button still gets one and wires it to its own surface.
+
+- 9b72f48: Remove tour mode.
+
+  Tour mode had no consumer: not the demo host, not the framework examples, not
+  the docs beyond its own page — only its own tests. The demos that need a
+  scripted walkthrough each hand-write one against their own host, which is the
+  shape that actually shipped. Pre-1.0, so this is a hard cut with no shim.
+
+  Removed from `@vendoai/vendo/server`:
+
+  - the `tours` config option on `CreateVendoConfig` (`tours?: readonly TourEntry[]`)
+  - the `TourEntry`, `TourResponse`, `TourPart` and `TourApp` type re-exports
+  - `ScriptedTurn` and the `scripted` seam on `HarnessTurnsConfig`, whose only
+    producer was tour mode
+
+  A host that passed `tours` gets a type error naming the removed key; there is
+  no replacement, and no other configuration changes.
+
+- 354f231: Remove undo and rollback entirely.
+
+  **BREAKING, despite the patch version.** This release ships as a patch off the
+  0.8 line (pre-1.0 convention), so the version number does NOT signal the removal
+  below. If you call any export in the lists that follow, this release breaks your
+  build — read them before upgrading. A `0.8.x` range accepts this version, so the
+  version number alone will not hold it back.
+
+  Two separate features, both cut: rolling an app back to a previous version, and
+  walking a workspace file back to the version before its newest commit. **Users
+  lose the ability to roll an app back.** That is deliberate. Pre-1.0, so this is
+  a hard cut with no deprecation shim.
+
+  Version history LISTING stays, everywhere: the app's capped 50-entry version log
+  and the workspace's per-path revision trail are unchanged, and so is everything
+  built on the recorded history — the review venue's newest-approved-version serve
+  (`review.serveDocFor`), the pin-rebase replay trail (`history.pinIntents`), and
+  the edit journal's append/discard/prune.
+
+  Removed from `@vendoai/apps`:
+
+  - `AppsRuntime.history(appId, ctx).undo()` — the surface now returns
+    `{ list(): Promise<VersionEntry[]> }` only
+  - `AppHistoryAccess.surface(appId).undo()` (the `createAppHistory` internal)
+
+  Removed from `@vendoai/core`:
+
+  - `StoreOps.workspace.undo(target, opts)`
+  - `storeWireWorkspaceUndoRequestSchema`
+  - the `"workspace.undo"` key from `STORE_WIRE_PATHS`, so the store wire is
+    **31 doors, not 32** — `StoreWireStatus.ops` is now `31`, and the workspace
+    family is 4 (index · read · commit · history)
+  - the `workspace.undo` cases from the `storeOpsConformance` suite, and the
+    `undo` implementation from `memoryStoreOps`
+
+  Removed from `@vendoai/store`:
+
+  - `workspaceStore(store).undo(caller, path)`
+  - `WorkspaceRows.undo` and the `UndoOutcome` type (internal — never exported
+    from the package index)
+  - `createStoreOps(store).workspace.undo`, with its `pathsMovedOn`,
+    `newestCommitTouching` and `commitCreated` helpers and the `created` array
+    the commit ledger wrote for them
+  - the `recordHistory` option on the internal write path, whose only `false`
+    caller was undo — every landed write now records its superseded revision
+
+  Removed from `@vendoai/ui`:
+
+  - `VendoClient["apps"].undo(id)`
+  - `useApp().history.undo()` — the hook's `history` is now `{ list() }`
+
+  Removed from `@vendoai/vendo`:
+
+  - the `POST /apps/:id/history` route (the `{ op: "undo" }` body). `GET
+/apps/:id/history` is unchanged; the path now serves GET only
+  - the `workspace.undo` leg of the hosted (Cloud) store adapter, which called
+    the console's `POST /workspace/undo`
+
+  **Existing data is left exactly where it is — no migration, no cleanup.**
+  Existing `vendo_workspace_history` rows and `vendo:app-history:*` records stay
+  readable by listing, but the content they hold becomes unrestorable: nothing
+  reads it now. Those rows self-trim at `WORKSPACE_HISTORY_LIMIT` per path, except
+  for a deleted path that is never written again, which holds its blob forever.
+  That is a real consequence of removing the feature, and it is not repaired here.
+
+- d599d23: `.vendo/tools.json` is the one source of truth for every tool's request and
+  response schema, and the runtime sampler is gone.
+
+  Sync fills both slots through a trust ladder and records which rung filled each
+  one: the host's own spec (`declared`), its TypeScript types (`types`), the AI
+  judge reading the handler (`inferred`), or nothing (`unknown`). The judge may
+  only fill a slot nothing else could read — refused in code, not by prompt — and
+  its fills survive the next sync through the same carry-over `semantics` uses.
+  Coverage is reported plainly by `vendo sync`.
+
+  Every prompt that lists tools now lists all of them: a tool with a declared
+  schema shows its shape, and a tool with a blind slot says so in words. A blind
+  input never prints as `{}`, which reads as "takes no arguments" — and a
+  declared no-argument tool still prints the empty schema it really has.
+
+  **Breaking, both pre-1.0:**
+
+  - `AppsConfig.connectedToolkits` is removed from `@vendoai/apps`. Its only
+    reader was the create-time shape sampler, which is deleted: nothing calls the
+    host to learn a shape anymore. Drop the option; there is no replacement and
+    nothing to migrate.
+  - `deriveShapeCard`, `deriveShape`, `mergeShapes`, `ShapeCard` and
+    `shapeCardSchema` are removed from `@vendoai/core`. Shapes come from declared
+    JSON Schema now — use `shapeFromJsonSchema(schema)`, which additionally keeps
+    `enum` values a sample always erased.
+
+  A host that declares its response schemas gets strictly better checking and one
+  fewer live call per create. A host that declares nothing keeps working: blind
+  tools run permissively, and the report says which ones they are.
+
+- 38e36a0: `vendo doctor` stops asserting a cause for a `404` from the doctor probes and reports what it actually observed instead. Since the probe surface became development-only, a composition that never declared itself development answers `404` on `POST /doctor/present` and `POST /doctor/act-as` — and doctor read that `404` as a credential failure, telling the reader to "set `VENDO_BASE_URL` to the running host origin" (`auth/present`) or to "check `createVendo({ actAs })`, its verifier middleware, and the host principal resolver" (`auth/act-as`). Both were false: the credentials and the actAs wiring were fine, the route simply was not in the table.
+
+  But a bare `404` does not prove the opposite either, and nothing doctor can observe does. `GET /doctor/base-url` is the best evidence available — every composition mounts it in every environment, while the probes beside it are development-only — so doctor now asks it, and only a Vendo-shaped `{ ok }` body counts as an answer from the wire (an HTML catch-all, an auth layer and a proxy error page all reply `200`, `401` and `500` at any path on an origin without a Vendo route table behind them). Even then it is evidence, not proof: a real Vendo deployment that is simply not the one you meant — a stale base URL aimed at staging — answers `/status` and `/doctor/base-url` exactly like your own dev server with the gate closed.
+
+  So both messages name the candidate causes in likelihood order and give the step that separates them. When base-url answers like a wire: most likely the composition never declared itself development — pass `createVendo({ development: true })`, or run it with `NODE_ENV=development`, which `next dev` sets for you and a plain `node`/`tsx` server does not, then restart and re-run doctor; if the probes still `404`, the URL is a real deployment but not the dev server you meant. When it does not: most likely this is not the app's Vendo wire base, with the observed status quoted, pointing at the origin, the full mount path, and any proxy, auth layer or catch-all in front of it. The extra request is made only when a probe actually `404`s. Every other failure path keeps its existing message, and no route becomes reachable that was not reachable before: this is diagnosis only.
+
+- c3b7589: The `vendo doctor` probe routes are now mounted only in a development composition, and are not in the route table at all anywhere else. They used to be mounted on every deployment behind a per-request `environment("NODE_ENV") === "production"` refusal — a check that answers "not production" for an unset `NODE_ENV` and on every runtime without a `process` global (edge, Workers). Either of those served the whole probe surface to an anonymous caller, and none of these routes requires a principal: `GET /doctor/machines` enumerates every machine-bearing app in the deployment across every subject (id, name, provisioned-at, whether its sandbox is awake right now, and each declared cron plus the function it fires) and reports whether `VENDO_TICK_SECRET` guards the `/tick` surface; `GET /doctor/mcp` reports the composition's broker selection; `POST /doctor/act-as` makes the composition mint host `actAs` material for a synthetic principal and call the host API with it, on demand, from an unauthenticated request; `POST /doctor/present` forwards the caller's own credentials to the host API. Absence of configuration now means closed. What arms them is `createVendo({ development })`, which `NODE_ENV=development` already sets — the dev server `vendo doctor` talks to is unchanged. `GET /doctor/base-url` is untouched and still answers in every environment: it reports a static composition fact and exists to catch a production misconfiguration. A `vendo doctor --url` run against something that is not a development composition now reports the auth probes as failing and skips the machine/broker sections, instead of answering; set `development: true` on that composition if the probes are wanted there.
+- 0d8f419: Internal refactor: the CLI's longest functions are split into the steps their
+  own section comments already named. `runDoctor` becomes an itinerary over
+  per-section check modules, `runJudgmentPass` a pipeline of named stages,
+  `runInit`/`buildPlan` their labelled steps, `runSyncFlow` its five stages, and
+  `main` a flat command table. Behaviour, output text and exit codes are
+  unchanged, and no public surface changed: every exported name, signature and
+  module path is identical.
+- 5f643c7: The in-process tool pack's `vendo_make` takes `slot`, like the MCP door's.
+
+  A host whose own agent runs in process could not say where a screen should land:
+  `slot` was on the door's `vendo_make` and missing from the pack's. It is now on
+  both, with the door's own wording, and reaches the same handler — the placement
+  claim rides `vendo_make`'s mint whichever door called it, so there is no second
+  path to keep honest. The pin tools stay door-only; on Path A you still move an
+  existing view from your own code with the app id.
+
+- c05d1da: An explicit `mcp.serviceAuth` keeps the door's own token endpoint. Setting it is a
+  choice of LOCAL authorization server — the RFC 8693 exchange it opens exists only
+  at the door's own `{mount}/token`, which a broker-fronted door does not serve — so
+  a declared `VENDO_MCP_BROKER_URL` no longer displaces it. That variable is a
+  default, and a default never overrides what the composition passed.
+
+  A deployment that set both used to compose a broker-fronted door and log a warning,
+  which is the whole failure: the host's configured service-key exchange 404'd at
+  runtime with nothing but a boot-time line explaining why, and the backend calling it
+  saw only `not-found`. The broker URL is still parsed either way, so a malformed one
+  keeps failing loudly rather than dropping to a local door by accident. An explicit
+  `mcp.remoteAs` alongside `mcp.serviceAuth` is unchanged: `remoteAs` wins and the
+  warning now names it as the one thing to drop.
+
+- 8792ab9: Decompose `createVendo` into one module per composition phase. Pure refactor:
+  the public surface of `@vendoai/vendo` and `@vendoai/vendo/server` is unchanged
+  — every type and value the entry exported is still exported from it, and no
+  importer outside the package changes.
+- d31d2bf: `POST /sync/impact` is now mounted only in a development composition, and is not in the route table at all anywhere else. It used to be mounted on every deployment and refuse per-request on `environment("NODE_ENV") === "production"` — a check that answers "not production" for an unset `NODE_ENV` and on every runtime without a `process` global (edge, Workers). Either of those served the route to an anonymous caller, and the route takes no principal: for up to 200 tool names per request it reads the deployment's entire `vendo_apps` and `vendo_grants` collections and returns the id and title of every enabled app and automation referencing each tool, across every subject, plus the count of live standing grants on it. Absence of configuration now means closed. What arms it is `createVendo({ development })`, which `NODE_ENV=development` already sets — the dev server `vendo sync` talks to is unchanged, so a normal `predev`/`prebuild` sync still prints its blast radius. A deployment that ran `vendo sync --url` against something that is not a development composition now gets `impact unknown` instead of an answer; set `development: true` on that composition if the probe is wanted there.
+- d24162c: Fourteen correctness fixes on the umbrella — the package hosts actually install.
+
+  Two of them touch what leaves a machine. Pinning `VENDO_DEV_CREDENTIAL=vendo-cloud`
+  without a `VENDO_API_KEY` used to return the cloud rung anyway, and the gateway call
+  was then made with `apiKey: undefined` — `@ai-sdk/anthropic` falls back to
+  `process.env.ANTHROPIC_API_KEY`, so the host's own provider key was sent to
+  console.vendo.run. The pin now degrades to `none`, which is what the docs already
+  promised. And composing a Vendo minted a persistent, opted-in telemetry id into
+  `~/.vendo/telemetry.json` on first boot, whether or not telemetry was ever enabled and
+  whether or not anything could ever be uploaded; that identity is now read only when the
+  Cloud slot is filled, and local-only capability misses carry no identity at all.
+
+  The served-app proxy rebuilt its forwarded path from percent-decoded segments, so an
+  encoded `/` or `?` in a URL turned into a real separator inside the box's request. A
+  host pointing `profileDir` at its own `.vendo` directory silently lost theme, brief,
+  catalog, knowledge and its pin baselines. `vendo sync` answered "no saved references"
+  for tools that live generated app code calls, because it never read the compiler's
+  `componentTools` manifest. A repeated tool name from the console took down the host's
+  entire tool registry. The vendo verbs flattened their own written-for-the-model refusals
+  ("this app has no schedule to change — ask for the automation first") into "could not
+  complete, try again".
+
+  On the CLI: `vendo doctor` failed every Pages-Router host forever and told it to edit a
+  file that does not exist — it and `vendo init` now share one answer for where the mount
+  belongs. Doctor also hung for up to two minutes after printing its verdict when the dev
+  server failed to spawn. Theme extraction let an `@import`ed stylesheet override the
+  sheet that imported it, reporting the wrong brand colour as an exact read. The judge
+  discarded its best-evidenced grades as "no evidence" when the quote ran long, and could
+  not repair the commonest truncation of all. `vendo init` ran a package install on
+  workspaces that already had the dependency hoisted, and pointed users at a docs path
+  that only exists inside this repo. Auth0 tenants configured with a trailing slash could
+  not log in at all.
+
+- 66d7db5: The playground's `page` scenario is replaced by the two panels a host still mounts itself.
+
+  `VendoPage` is being cut, so the scenario that mounted it (`#page`, "Workspace
+  console") goes with it. What it uniquely showed that no other scenario did was
+  the automations list and the connected-accounts settings, so those become
+  scenarios of their own against the same fake wire client: `#automations-panel`
+  (`AutomationsPanel`) joins the Automations group, and `#accounts`
+  (`ConnectedAccountsPanel`) opens a new Accounts group. The `Page` group is gone.
+
+  Breaking for `mountScenario`/`VendoDocsEmbed.mount` callers: `scenario: "page"`
+  now throws `unknown scenario`. The console shell itself — the conversation-history
+  rail, the app shelf, and the Apps door — is no longer demonstrated anywhere,
+  because it is no longer shipped.
+
+- 18d35bd: `vendo sync --ai` on an incremental run now reaches an engine on Claude Code's own-credential env vars (`ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, a custom `ANTHROPIC_BASE_URL`), which both Claude harnesses already accept. That one flag combination is the only path that falls back to the runtime credential resolver instead of sweeping the harness ladder, so it alone reported "no model credential" while `vendo init` and an interactive `vendo sync` ran fine on the same login. The runtime resolver itself is unchanged — product turns still require a real API key.
+- a621123: Two checks stop reporting a verdict they never reached.
+
+  `vendo doctor`'s render probe GETs the app origin's `/` and never reads the body, so a
+  status line is the whole observation. It failed on 5xx and blessed everything else as
+  "the app's root page renders" — which made `ok: the app's root page renders (HTTP 404)`
+  the line every healthy run printed, on the one status that means the server is saying
+  there is no page here.
+
+  A 5xx still fails `E-LIVE-006` unchanged; that is the crashing-site case the gate exists
+  for. A 4xx is now a note that names the status and says no page was reached, because a
+  host serving nothing at `/` — every page under a basePath, an auth layer in front — is
+  healthy, and doctor cannot tell that from a route you meant to have. That is the same
+  judgement the probe's own unreachable-origin branch already declines to make. A 2xx
+  passes as "answered HTTP 200": true, and the most this probe can know.
+
+  In the screen agent, a save that landed bytes the render seam would not paint was told
+  "validate found nothing to fix". `validateWrittenApps` is fail-open by design and returns
+  no failures both when validate passed and for every way it could not reach a verdict — a
+  guard that denied the call, an answer it cannot parse, a workspace that closed under it,
+  each reported to the operator only. The hand cannot tell those apart, so it no longer
+  claims to: it states the failed paint, which is the fact it has. When the gate did produce
+  findings, the note is still the repair instruction verbatim.
+
+- 2357b22: The setup surface: declared URLs, one join law, a VendoProvider-only surface, and `init` = install + the shared sync flow.
+
+  **Breaking: `VendoRoot` is removed. Use `VendoProvider`.**
+
+  ```diff
+  -import { VendoRoot } from "@vendoai/vendo/react";
+  -<VendoRoot components={registry}>{children}</VendoRoot>
+  +import { VendoProvider } from "@vendoai/vendo/react";
+  +<VendoProvider baseUrl="/api/vendo" components={registry}>{children}</VendoProvider>
+  ```
+
+  That is the whole migration: the props are identical, and `baseUrl` is the wire
+  mount with your deployment's path prefix included (default `/api/vendo`).
+  `npx vendo doctor` names the swap and the file if you miss one (`E-WIRE-010`).
+
+  **Breaking: `VENDO_BASE_URL` is the app's FULL public URL, path prefix included.**
+
+  Set it to `https://site.com/maple`, not `https://site.com`. Nothing strips its path
+  any more: host tool calls, login redirects and box callbacks all hang off it, each
+  attaching the prefix exactly once through one helper in `@vendoai/core`. Two new
+  optional overrides: `VENDO_HOST_API_URL` (the host API on another origin) and
+  `VENDO_LOGIN_URL` (the login page, which may be on another domain).
+
+  Stored tool paths in `.vendo/tools.json` are now **prefix-free** — run `vendo sync`
+  once to regenerate them. This closes #866 (login redirect drops the base path),
+  #867 (returnTo double-prefix) and #914 (host tools 404 under a path prefix). When the
+  client and the server disagree about where the wire is mounted, the browser now gets
+  one loud named error instead of a mysterious 404, and `vendo doctor` catches an
+  OpenAPI server mount that disagrees with `VENDO_BASE_URL` (`E-CFG-003`).
+
+  **`vendo init` no longer generates `vendo/registry.tsx` or `vendo/vendo-root.tsx`.**
+
+  It scaffolds the server route handler and prints one paste: `<VendoProvider>` around
+  your client root. If you have host components, you write one small `"use client"`
+  file yourself — see the quickstart. Existing generated files are untouched; they are
+  yours now.
+
+  **`vendo init` ends in the same flow `vendo sync` runs.** One extraction, one theme
+  path, one consent question, one report — `init` in full mode (a fresh install has
+  judged nothing), `sync` incremental. `init` now reads `.env` as well as `.env.local`,
+  so a model key that lives in `.env` is no longer invisible.
+
+- 9e14651: Delete `@vendoai/engine`; init's `--engine npx` rung now fetches Anthropic's
+  published `@anthropic-ai/claude-code` instead.
+
+  The rung's user-facing behaviour is unchanged — last resort, one-time ~250MB
+  `npm exec` fetch disclosed before it starts, read-only Read/Glob/Grep over the
+  host root, own credential or the Vendo Cloud gateway — but it now spawns the
+  same binary as the PATH rung rather than a Vendo-published wrapper around the
+  Agent SDK. The credential label reads "via npm-fetched Claude Code" instead of
+  "via the Vendo engine".
+
+  The engine's path-confinement guard moves up to the ladder level
+  (`cli/extract/confine-to-root.ts`) and now covers every Claude rung, in the two
+  forms those rungs can enforce:
+
+  - The Agent SDK rung wires `confineToolToRoot` as its `canUseTool` callback, so
+    a prompt-injected `Read ~/.aws/credentials` is denied there too. It passes
+    `tools` rather than `allowedTools`, because a blanket allowlist auto-allows
+    and never consults the callback.
+  - The two CLI rungs — the `claude` binary on PATH and the npm-fetched one —
+    have no callback to hand a subprocess, so they now pass root-scoped
+    permission rules (`Read(//<root>/**)` and friends) instead of the bare tool
+    names they used to. A bare `Read` on `--allowedTools` is the CLI's own
+    version of the blanket auto-allow: it permits Read on ANY path. Both rungs
+    previously let a repo-derived prompt ("the config lives at
+    `../outside/secret.txt`") read outside the extraction root and hand the
+    contents to the model provider; the CLI matches these rules against both the
+    path the model supplied and the path it resolves to, so a `..` climb and an
+    in-root symlink pointing outside are each denied.
+
+- Updated dependencies [a7a0fcf]
+- Updated dependencies [4772c49]
+- Updated dependencies [1e27609]
+- Updated dependencies [1ad9c74]
+- Updated dependencies [2ab4a39]
+- Updated dependencies [f411174]
+- Updated dependencies [38b32a3]
+- Updated dependencies [f896726]
+- Updated dependencies [e092567]
+- Updated dependencies [dd441cb]
+- Updated dependencies [2fd14aa]
+- Updated dependencies [898eb8f]
+- Updated dependencies [15f4759]
+- Updated dependencies [464dce8]
+- Updated dependencies [b99147f]
+- Updated dependencies [46923cc]
+- Updated dependencies [b50a766]
+- Updated dependencies [f25138f]
+- Updated dependencies [022f789]
+- Updated dependencies [d3e7dcd]
+- Updated dependencies [354f231]
+- Updated dependencies [ee92750]
+- Updated dependencies [d599d23]
+- Updated dependencies [a69aa5c]
+- Updated dependencies [89660d1]
+- Updated dependencies [4ec9c17]
+- Updated dependencies [7163a25]
+- Updated dependencies [f1b30a1]
+- Updated dependencies [3e2b35e]
+- Updated dependencies [c41de74]
+- Updated dependencies [5724311]
+- Updated dependencies [1022b2f]
+- Updated dependencies [2b6d60f]
+- Updated dependencies [fed58ab]
+- Updated dependencies [13e2452]
+- Updated dependencies [b99147f]
+- Updated dependencies [7f35f23]
+- Updated dependencies [ca3a9dc]
+- Updated dependencies [12a344c]
+- Updated dependencies [b99147f]
+- Updated dependencies [d4a2d4c]
+- Updated dependencies [5e8a141]
+- Updated dependencies [0f6455a]
+- Updated dependencies [dd441cb]
+- Updated dependencies [8f3d23a]
+- Updated dependencies [5e584c8]
+- Updated dependencies [5724311]
+- Updated dependencies [be9f3e9]
+- Updated dependencies [0039efe]
+- Updated dependencies [2b49b64]
+- Updated dependencies [2b49b64]
+- Updated dependencies [6fb568a]
+- Updated dependencies [f260c10]
+- Updated dependencies [a621123]
+- Updated dependencies [7288546]
+- Updated dependencies [2357b22]
+- Updated dependencies [bd4248d]
+- Updated dependencies [65de3c6]
+  - @vendoai/mcp@0.8.1
+  - @vendoai/core@0.8.1
+  - @vendoai/actions@0.8.1
+  - @vendoai/ui@0.8.1
+  - @vendoai/guard@0.8.1
+  - @vendoai/apps@0.8.1
+  - @vendoai/automations@0.8.1
+  - @vendoai/agents@0.8.1
+  - @vendoai/store@0.8.1
+  - @vendoai/harnesses@0.8.1
+  - @vendoai/knowledge@0.8.1
+  - @vendoai/telemetry@0.4.1
+
 ## 0.8.0
 
 ### Minor Changes

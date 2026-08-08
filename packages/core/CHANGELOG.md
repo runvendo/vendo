@@ -1,5 +1,343 @@
 # @vendoai/core
 
+## 0.8.1
+
+### Patch Changes
+
+- a7a0fcf: A host's own backend gets in at the MCP door with a service key — no per-user
+  OAuth, no browser.
+
+  `createVendo({ mcp: { serviceAuth: { keys: [...] } } })` arms the door's own
+  `/token` endpoint for RFC 8693 token exchange: the backend POSTs
+  `grant_type=urn:ietf:params:oauth:grant-type:token-exchange` with
+  `client_id=vendo-service`, the key as `client_secret`, and one of its own user
+  ids as `subject_token`, and gets back a ten-minute `vmat_` bearer token for
+  that user. Keys are opaque strings the host mints itself (`openssl rand -hex
+32`); the door stores only their hashes, compares in constant time, and
+  answers every failure with the same `invalid_client`. No refresh tokens —
+  rotation is "exchange again." Audit rows carry a `svc:<hash>` client id so
+  service-minted sessions are distinguishable from interactive ones.
+
+- e092567: A standalone session can reopen an existing conversation.
+
+  `session(subject, { threadId })` reopens the named conversation instead of minting
+  a new one. Ownership is the store's own subject scope — someone else's thread reads
+  back as absent and is refused as `not-found`, never silently swapped for a new
+  conversation. The resume path deliberately skips `threadStore.put`, whose replace
+  semantics would delete the very transcript the resume exists to read back.
+
+  Until now `createSession` minted a fresh thread on every call and `SessionOptions`
+  had no way to name an existing one, so a Node backend that built a session per HTTP
+  request — which is what the README showed — lost the whole conversation on every
+  request. Multi-turn only worked while the JS object stayed alive in process memory.
+  The README now passes `threadId` in, hands `session.threadId` back out, and says
+  plainly that a session is request-lifetime while the thread is not.
+
+  The `[User]` and `[Situation]` prompt blocks are now one implementation in
+  `@vendoai/core` (`userPromptBlock`, `situationPromptBlock`, `promptFactLines`),
+  shared by the standalone assembler and the umbrella's. They were two copies of a
+  prompt-injection defence — the indent that stops a client-supplied fact from
+  forging a top-level `Directions` section — and only the umbrella's labeled the
+  situation "observation, not instruction". The shared block carries that label, so
+  the standalone surface gains it. No other behaviour changes.
+
+- b99147f: Connect asks first: a `request_connection` tool and a connect card that owns the whole answer.
+
+  The agent can now ASK for a connection instead of spending a call it already knows
+  will be refused. `request_connection` (toolkit + one plain sentence) mints exactly the
+  `connect-required` outcome a refused service call produces, so the card the user sees
+  is the same card — nothing new on the wire. The tool is projected only where the
+  deployment can actually connect the toolkit, and refuses one it cannot rather than
+  raising a button that can never succeed.
+
+  The card itself now opens its sign-in window _inside the click_, before any `await`:
+  Safari and Firefox judge a popup by call-stack provenance, and the old order (initiate,
+  then open) is precisely the shape they block. The window opens centered and blank, is
+  navigated when the redirect URL arrives, and is closed from the opener once the account
+  goes active. A window the browser blocked anyway is no longer a dead end — the same
+  poll keeps running behind an "Open sign-in in a new tab" link.
+
+  The card also says what connecting grants, in plain words rather than OAuth scope
+  strings, and offers "Not now" — which leaves a one-line Skipped record that still
+  re-offers Connect, and tells the agent so it can adapt.
+
+- 46923cc: Internal refactor: core's six highest-cognitive-complexity functions are decomposed into named helpers. `applyStep` and `reshapeShape` (reshape.ts) each split one branch per reshape op; `validateAppDocumentUnsafe` (app-document.ts) splits one function per cross-field rule; `validateTreeUnsafe` (genui/tree.ts) splits the query block and the node walk; `parseAttributes` (genui/wire/attributes.ts) splits the `=`-value forms and the duplicate-attribute message; `prescanDeclarations` (genui/wire/compile.ts) splits the `<Query>` and `<Island>` pre-scan branches. Every extracted helper is module-private and every message, order of checks and return value is unchanged. **No public surface changed** — not one exported symbol, signature or type moved, and no test file was touched.
+- b50a766: Core drops nine exports nothing calls. `inferFieldSemantic`, `humanizeEnumValue`, `semanticAtPointer`, `semanticFormatToken` and `describeSemantic` were orphaned when the dev-server inference pass was deleted — the semantics that reach generation come from the judge and the host's `overrides.json`, and no consumer in the monorepo or the console has called these since. `startSseKeepalive` was justified by "the `vendo try` dev server writes to a Node `ServerResponse`", a surface that does not exist; `withSseKeepalive` is the live keepalive and is untouched. `VendoApprovalWirePart`, `VendoConnectWirePart` and `requestNumberValues` had zero references. `declaredMoneyUnit`, `describeShapeWithSemantics`, `fieldSemanticSchema`, `toolSemanticsSchema` and the money-name regexes behind them are unchanged, and `declaredMoneyUnit`'s test now also pins the "a bare total is a count, not money" rule the deleted inference test carried.
+- 022f789: The automations adoption handoff is removed. When an automation's sponsorship
+  lapsed — the sponsor left, lost their permissions, or somebody else edited the
+  app — the automation stopped and an "adoption card" waited inside the app so the
+  next editor could take it on, re-approving its reads and writes as themselves.
+  No host used it.
+
+  Sponsorship itself is unchanged: an automation still runs as a named person, and
+  still stops when that person's authority lapses. What goes is the second half —
+  the handoff to somebody new.
+
+  Gone: `AutomationsEngine.adoption()` and `.adopt()`, the `AdoptionCard` and
+  `AdoptionNeed` types (`@vendoai/automations`); `ADOPTION_VENUE_KEY`
+  (`@vendoai/core`); `POST /automations/:id/adopt/:triggerId` (`@vendoai/vendo`);
+  `client.automations.adopt()`, `<AdoptionCard>`, `<AdoptionVenueCard>`,
+  `ADOPTION_VENUE_KEY`, `AdoptionCardProps`, `AdoptionVenue` and `AdoptResult`
+  (`@vendoai/ui`).
+
+  Pre-1.0 hard cut, no deprecation shim. A stopped automation is restarted the way
+  it was armed in the first place: anyone who can edit the app calls `enable()`
+  again, which re-approves its reads and writes under the new sponsor. The stopped
+  sentence the run row and the list carry now says "anyone who can edit this app
+  can turn it back on" instead of "…can take it on".
+
+- 354f231: Remove undo and rollback entirely.
+
+  **BREAKING, despite the patch version.** This release ships as a patch off the
+  0.8 line (pre-1.0 convention), so the version number does NOT signal the removal
+  below. If you call any export in the lists that follow, this release breaks your
+  build — read them before upgrading. A `0.8.x` range accepts this version, so the
+  version number alone will not hold it back.
+
+  Two separate features, both cut: rolling an app back to a previous version, and
+  walking a workspace file back to the version before its newest commit. **Users
+  lose the ability to roll an app back.** That is deliberate. Pre-1.0, so this is
+  a hard cut with no deprecation shim.
+
+  Version history LISTING stays, everywhere: the app's capped 50-entry version log
+  and the workspace's per-path revision trail are unchanged, and so is everything
+  built on the recorded history — the review venue's newest-approved-version serve
+  (`review.serveDocFor`), the pin-rebase replay trail (`history.pinIntents`), and
+  the edit journal's append/discard/prune.
+
+  Removed from `@vendoai/apps`:
+
+  - `AppsRuntime.history(appId, ctx).undo()` — the surface now returns
+    `{ list(): Promise<VersionEntry[]> }` only
+  - `AppHistoryAccess.surface(appId).undo()` (the `createAppHistory` internal)
+
+  Removed from `@vendoai/core`:
+
+  - `StoreOps.workspace.undo(target, opts)`
+  - `storeWireWorkspaceUndoRequestSchema`
+  - the `"workspace.undo"` key from `STORE_WIRE_PATHS`, so the store wire is
+    **31 doors, not 32** — `StoreWireStatus.ops` is now `31`, and the workspace
+    family is 4 (index · read · commit · history)
+  - the `workspace.undo` cases from the `storeOpsConformance` suite, and the
+    `undo` implementation from `memoryStoreOps`
+
+  Removed from `@vendoai/store`:
+
+  - `workspaceStore(store).undo(caller, path)`
+  - `WorkspaceRows.undo` and the `UndoOutcome` type (internal — never exported
+    from the package index)
+  - `createStoreOps(store).workspace.undo`, with its `pathsMovedOn`,
+    `newestCommitTouching` and `commitCreated` helpers and the `created` array
+    the commit ledger wrote for them
+  - the `recordHistory` option on the internal write path, whose only `false`
+    caller was undo — every landed write now records its superseded revision
+
+  Removed from `@vendoai/ui`:
+
+  - `VendoClient["apps"].undo(id)`
+  - `useApp().history.undo()` — the hook's `history` is now `{ list() }`
+
+  Removed from `@vendoai/vendo`:
+
+  - the `POST /apps/:id/history` route (the `{ op: "undo" }` body). `GET
+/apps/:id/history` is unchanged; the path now serves GET only
+  - the `workspace.undo` leg of the hosted (Cloud) store adapter, which called
+    the console's `POST /workspace/undo`
+
+  **Existing data is left exactly where it is — no migration, no cleanup.**
+  Existing `vendo_workspace_history` rows and `vendo:app-history:*` records stay
+  readable by listing, but the content they hold becomes unrestorable: nothing
+  reads it now. Those rows self-trim at `WORKSPACE_HISTORY_LIMIT` per path, except
+  for a deleted path that is never written again, which holds its blob forever.
+  That is a real consequence of removing the feature, and it is not repaired here.
+
+- ee92750: The `$expr` fact check and the evaluator agree about `days_until`.
+
+  `days_until(invoices.due_date)` reads the `due_date` COLUMN off every row, and the
+  evaluator has always refused it — "days_until() reads one date, but
+  invoices.due_date is a list of 3". The static check looked past the column at its
+  items, saw strings, and passed. So a generated app shipped through the fact check
+  clean and then rendered the contained data-shape notice instead of the number the
+  model was asked for. `days_until` is now checked as the scalar slot it is, with
+  the evaluator's own repair sentence. The check/evaluator agreement table that
+  landed with the two-level column paths grows the three rows that cover it.
+
+  Two smaller compiler corrections ride along. A duplicate attribute whose LAST value
+  was dropped (single-quoted, ill-formed UTF-16, an invalid action) was still reported
+  as "the last one wins", which sent a retry back to re-write the value that never
+  landed; the message now names the outcome — including the case where EVERY value
+  was dropped and no attribute survives at all — and two compiler-owned `id`
+  attributes no longer claim a winner where both are ignored. And `compilePlan`'s
+  issue list — which is verbatim the model's retry prompt — is capped at 64 with a
+  final count, the way the wire compiler already caps its own; a broken document
+  previously minted one sentence per stray token with no bound. That count reads
+  "1 further problem was not listed" when exactly one is omitted.
+
+  Internal only, no public surface change: the wire attribute layer's dead `patch`
+  element mode, its action-attribute regex duplicated into the printer, and
+  `state.ts`'s pass-through re-export of `isWellFormedUtf16` are gone.
+
+- d599d23: `.vendo/tools.json` is the one source of truth for every tool's request and
+  response schema, and the runtime sampler is gone.
+
+  Sync fills both slots through a trust ladder and records which rung filled each
+  one: the host's own spec (`declared`), its TypeScript types (`types`), the AI
+  judge reading the handler (`inferred`), or nothing (`unknown`). The judge may
+  only fill a slot nothing else could read — refused in code, not by prompt — and
+  its fills survive the next sync through the same carry-over `semantics` uses.
+  Coverage is reported plainly by `vendo sync`.
+
+  Every prompt that lists tools now lists all of them: a tool with a declared
+  schema shows its shape, and a tool with a blind slot says so in words. A blind
+  input never prints as `{}`, which reads as "takes no arguments" — and a
+  declared no-argument tool still prints the empty schema it really has.
+
+  **Breaking, both pre-1.0:**
+
+  - `AppsConfig.connectedToolkits` is removed from `@vendoai/apps`. Its only
+    reader was the create-time shape sampler, which is deleted: nothing calls the
+    host to learn a shape anymore. Drop the option; there is no replacement and
+    nothing to migrate.
+  - `deriveShapeCard`, `deriveShape`, `mergeShapes`, `ShapeCard` and
+    `shapeCardSchema` are removed from `@vendoai/core`. Shapes come from declared
+    JSON Schema now — use `shapeFromJsonSchema(schema)`, which additionally keeps
+    `enum` values a sample always erased.
+
+  A host that declares its response schemas gets strictly better checking and one
+  fewer live call per create. A host that declares nothing keeps working: blind
+  tools run permissively, and the report says which ones they are.
+
+- 89660d1: Three compiler correctness fixes: the inline-ref pre-pass no longer rewrites text children or quoted attribute values (only attribute expressions are scanned for inline tool calls), a stray close tag inside a `<Group>` no longer ends the group and drops the leaves after it, and `checkExpr` now resolves a column exactly as the evaluator does — one array level per hop, so `sum(orders, "lines.cents")` passes the check as it has always evaluated, while a list the field's own type declares, and any list in `difference()`'s two scalar slots, are rejected by both halves.
+- 2b6d60f: Remove the orphan wire text-edit surface and the inert reshape deprecation walker.
+
+  `applyTextEdits`, `recompileWithIdentity`, `TextEdit` and `TextEditResult` are
+  gone from `@vendoai/core`: the consumer was deleted when the conductor replaced
+  the generation engine, and nothing has called them since. The four `<Edit>`
+  patch issue codes they fed (`missing-edit`, `unknown-target`, `invalid-patch-op`,
+  `patch-invalid`) go with them, and the two generation prompts stop teaching an
+  `<Edit><Old><New>` dialect no parser reads — the "edit the text, never rewrite
+  the file" rule stays.
+
+  `findDeprecatedReshapeUsage` and its two orphaned constants
+  (`DEPRECATED_RESHAPE_OPS`, `DEPRECATED_FORMAT_KINDS`) are also gone. The notices
+  were never surfaced to anyone. The deprecated ops themselves keep compiling and
+  rendering for stored apps exactly as before.
+
+- b99147f: One component family: the legacy prewired set is retired, and the Kit is the
+  only built-in vocabulary.
+
+  Vendo shipped two component families that shadowed each other by name. The
+  legacy prewired/branded set (`packages/ui/src/tree/{primitives,branded}.tsx`)
+  won every name collision, so the Kit's `Stat` could never format a value, its
+  `Text` was masked by a permissive one, and `DataTable`'s smart table sat behind
+  a plain `Table`. That set is gone. One family now, declared once by
+  `KIT_SPECS`, taught by `kitPrompt()`, resolved by the compiler, rendered by
+  `KIT_COMPONENTS`, and validated from the same schemas.
+
+  **Breaking — `@vendoai/ui/tree`.** These exports are removed: `Stack`, `Row`,
+  `Grid`, `Text`, `Skeleton`, `Surface`, `Divider`, `Card`, `Button`, `Input`,
+  `Select`, `Table`, `Badge`, `Stat`, `Tabs`, `PREWIRED_COMPONENTS`,
+  `BRANDED_COMPONENTS`, and their prop types. Import the components from
+  `@vendoai/ui/kit` instead — every name above except `Table` and `Skeleton`
+  exists there with theme-token styling and real prop schemas.
+
+  - **`Table` → `DataTable`.** The Kit table sorts, filters, searches,
+    paginates, resolves dot-path column keys, and formats each cell. Its
+    `columns` take `{key, label?, format?, align?}` objects rather than bare
+    strings, `rows` is required, and `emptyLabel`/`rowKey` are `emptyState` and
+    automatic respectively.
+  - **`Skeleton` is no longer a component.** A loading placeholder is renderer
+    chrome, not something a tree names, so it moved inside
+    `tree/forming-skeleton.tsx` and off the public surface. It marks itself with
+    `data-skeleton` (it was `data-primitive="Skeleton"`).
+  - **`Tabs` keeps its tree contract.** The Kit `Tabs` now accepts the wire
+    shape — string or `{value,label}` items, an initial `value`, and panels as
+    CHILDREN in tab order — alongside its code-only `{label, content}` items.
+    Tabbed apps are unaffected.
+  - **`data-primitive` is gone.** Every built-in marks itself with `data-kit`;
+    tests and styles selecting on `data-primitive` must be retargeted.
+
+  **Reserved names now follow the Kit.** `RESERVED_COMPONENT_NAMES`,
+  `BRANDED_COMPONENT_NAMES`, and `PREWIRED_COMPONENT_NAMES` are removed from
+  `@vendoai/core`; `KIT_COMPONENT_NAMES` and `KIT_WIRE_COMPONENT_NAMES` replace
+  them, so a generated component may not shadow any Kit name.
+
+  Two schemas were widened where the retired family had been quietly absorbing
+  real usage: `Text.text` takes `string | number` (matching its `ReactNode`
+  implementation), and a single-segment `$state` read binds into any prop again
+  while `state.key.deeper` stays a compile error.
+
+  Stored apps naming `Table` or `Skeleton` render the contained
+  "Unknown component" notice on that node while every sibling still renders.
+
+- b99147f: One theme→CSS-variable mapping, owned by `@vendoai/core`.
+
+  The same `VendoTheme` was flattened into `--vendo-*` custom properties in three
+  places — the ui chrome, the MCP door's connect/consent pages, and the MCP Apps
+  shim's `:root{}` block — each a hand-kept copy of the others, and they had
+  drifted: the door emitted 16 of the 32 variables the chrome does, so a themed
+  MCP page never saw `--vendo-color-scheme`, `--vendo-base-size`, the density
+  sizing scale, or the motion timings. `defaultVendoTheme`, `resolveTheme`,
+  `colorSchemeForBackground` and `themeCssVariables` now live in
+  `@vendoai/core` (and are exported from it); `@vendoai/ui` re-exports them
+  unchanged, and both MCP paths are a one-line serialization of the same call.
+  `VENDO_THEME_VARIABLE_NAMES` is read off that mapping, so the generation
+  prompt's brand-token line and the shim's reverse read cannot fall behind a
+  rename.
+
+  Two brand bugs fell out of the merge. The Kit's token fallbacks had `surface`
+  and `background` swapped, so an unthemed Kit painted a white page with
+  off-white cards inverted; its `fontFamily` fallback had also lost the Onest
+  brand stack. Both now derive from `defaultVendoTheme` instead of being retyped.
+
+  The phantom `--vendo-space-*` variables are gone. Nothing ever emitted them, so
+  every reference rendered its fallback; the door pages, the Kit's `Stack`/`Row`
+  gap, and the tree's notice and open-in-product card now use the real
+  `--vendo-density-*` variables where the scale matches, and the literal
+  elsewhere. Rendered output is unchanged.
+
+- 2357b22: The setup surface: declared URLs, one join law, a VendoProvider-only surface, and `init` = install + the shared sync flow.
+
+  **Breaking: `VendoRoot` is removed. Use `VendoProvider`.**
+
+  ```diff
+  -import { VendoRoot } from "@vendoai/vendo/react";
+  -<VendoRoot components={registry}>{children}</VendoRoot>
+  +import { VendoProvider } from "@vendoai/vendo/react";
+  +<VendoProvider baseUrl="/api/vendo" components={registry}>{children}</VendoProvider>
+  ```
+
+  That is the whole migration: the props are identical, and `baseUrl` is the wire
+  mount with your deployment's path prefix included (default `/api/vendo`).
+  `npx vendo doctor` names the swap and the file if you miss one (`E-WIRE-010`).
+
+  **Breaking: `VENDO_BASE_URL` is the app's FULL public URL, path prefix included.**
+
+  Set it to `https://site.com/maple`, not `https://site.com`. Nothing strips its path
+  any more: host tool calls, login redirects and box callbacks all hang off it, each
+  attaching the prefix exactly once through one helper in `@vendoai/core`. Two new
+  optional overrides: `VENDO_HOST_API_URL` (the host API on another origin) and
+  `VENDO_LOGIN_URL` (the login page, which may be on another domain).
+
+  Stored tool paths in `.vendo/tools.json` are now **prefix-free** — run `vendo sync`
+  once to regenerate them. This closes #866 (login redirect drops the base path),
+  #867 (returnTo double-prefix) and #914 (host tools 404 under a path prefix). When the
+  client and the server disagree about where the wire is mounted, the browser now gets
+  one loud named error instead of a mysterious 404, and `vendo doctor` catches an
+  OpenAPI server mount that disagrees with `VENDO_BASE_URL` (`E-CFG-003`).
+
+  **`vendo init` no longer generates `vendo/registry.tsx` or `vendo/vendo-root.tsx`.**
+
+  It scaffolds the server route handler and prints one paste: `<VendoProvider>` around
+  your client root. If you have host components, you write one small `"use client"`
+  file yourself — see the quickstart. Existing generated files are untouched; they are
+  yours now.
+
+  **`vendo init` ends in the same flow `vendo sync` runs.** One extraction, one theme
+  path, one consent question, one report — `init` in full mode (a fresh install has
+  judged nothing), `sync` incremental. `init` now reads `.env` as well as `.env.local`,
+  so a model key that lives in `.env` is no longer invisible.
+
 ## 0.8.0
 
 ### Minor Changes

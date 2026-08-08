@@ -1,5 +1,148 @@
 # @vendoai/actions
 
+## 0.8.1
+
+### Patch Changes
+
+- 4772c49: Two actions fixes and a public-surface trim. A failed MCP handshake is no longer cached for the process lifetime: `mcpConnector` clears the memoized `initialize` promise (and the session id) when it rejects, so one transient blip no longer permanently kills every tool that connector serves. The registry's documented evict-on-rejection retry re-entered the same rejected promise and silently never recovered. Component capture now checks the closure byte budget before it walks imports as well as during: an entry file with no capturable host-local import used to be written at any size, so an oversized single-file component reached `.vendo/components/` in violation of the one-total-budget guarantee. Finally, `validateCapabilities`, `CapabilityIssue` and `PrimitiveStepTarget` are no longer re-exported from the package root — they are internal to the compound walker and had no consumer outside it.
+- d599d23: `.vendo/tools.json` is the one source of truth for every tool's request and
+  response schema, and the runtime sampler is gone.
+
+  Sync fills both slots through a trust ladder and records which rung filled each
+  one: the host's own spec (`declared`), its TypeScript types (`types`), the AI
+  judge reading the handler (`inferred`), or nothing (`unknown`). The judge may
+  only fill a slot nothing else could read — refused in code, not by prompt — and
+  its fills survive the next sync through the same carry-over `semantics` uses.
+  Coverage is reported plainly by `vendo sync`.
+
+  Every prompt that lists tools now lists all of them: a tool with a declared
+  schema shows its shape, and a tool with a blind slot says so in words. A blind
+  input never prints as `{}`, which reads as "takes no arguments" — and a
+  declared no-argument tool still prints the empty schema it really has.
+
+  **Breaking, both pre-1.0:**
+
+  - `AppsConfig.connectedToolkits` is removed from `@vendoai/apps`. Its only
+    reader was the create-time shape sampler, which is deleted: nothing calls the
+    host to learn a shape anymore. Drop the option; there is no replacement and
+    nothing to migrate.
+  - `deriveShapeCard`, `deriveShape`, `mergeShapes`, `ShapeCard` and
+    `shapeCardSchema` are removed from `@vendoai/core`. Shapes come from declared
+    JSON Schema now — use `shapeFromJsonSchema(schema)`, which additionally keeps
+    `enum` values a sample always erased.
+
+  A host that declares its response schemas gets strictly better checking and one
+  fewer live call per create. A host that declares nothing keeps working: blind
+  tools run permissively, and the report says which ones they are.
+
+- 4ec9c17: Decompose the ten highest cognitive-complexity functions in `@vendoai/actions`
+  into named helpers alongside them. Internal restructuring only — no public
+  surface changed, no behaviour changed, and no test file was touched.
+- 3e2b35e: GraphQL extraction is gone. The advertised extraction tier is four stacks: OpenAPI, route-scan, tRPC, Next.js server actions.
+
+  The GraphQL extractor was ~2.2k lines — SDL parsing, `@nestjs/graphql` and
+  `type-graphql` code-first resolver walking, endpoint discovery, document
+  generation — and its only real-world corpus host emitted _every_ operation
+  `disabled` by design, because static analysis cannot attribute an operation to
+  one of several schema endpoints. A stack we could detect but never usefully
+  extract is worse than one we never mention, so the detection went with it.
+
+  Removed with it: the `graphql` binding kind in `vendo/tools@3` (`GraphqlBinding`,
+  `graphqlBindingSchema`), its slot in the tool-identity rule, and the GraphQL HTTP
+  transport in the runtime registry. This is breaking for a host whose committed
+  `.vendo/tools.json` already carries a `graphql` binding — that file no longer
+  parses. Pre-1.0, no deprecation shim ships; re-run `vendo sync` to regenerate.
+
+  Route-scan skips a GraphQL endpoint instead of falling back to it. A Next.js
+  GraphQL handler exports `POST` like any other route, so generic scanning would
+  mint an enabled tool that posts the model's arguments as the JSON body — which
+  every GraphQL server rejects, since it wants a `{ query, variables }` envelope.
+  The endpoint now yields no tool and a warning naming it. Cut means gone, not
+  gone-and-quietly-worse. Detection reads every module the verb scan already
+  resolves — the route file plus the local re-exports it follows — so a handler
+  kept in a separate file is skipped too. A route that merely _imports_ a GraphQL
+  server and wraps it in its own exported handler is still scanned generically;
+  disable that tool through `overrides.json`.
+
+  Behaviour for the four surviving stacks is unchanged.
+
+- d4a2d4c: Sync's scanners stop inventing a delete and stop discarding a props schema.
+
+  A `pages/api` handler that switches on a body discriminant —
+  `switch (req.body.action) { case "delete": ... }` — had every string case clause
+  counted as an HTTP method, and the verb is upper-cased before it is checked. The
+  scan handed the agent an ENABLED, `destructive`-graded DELETE tool bound to the
+  route's real URL for a delete the handler never implements, and because any verb
+  evidence short-circuits the `req.body` inference below it, that phantom verb
+  _replaced_ the POST the route actually serves. Only an uppercase verb literal
+  counts now.
+
+  Separately, the component catalog scanner failed a whole props object as soon as
+  one property could not be converted, so a component with a single callback,
+  `ReactNode`, or npm-typed prop published `propsSchema: {}` for every prop — and
+  the console then told the host it had declared no props schema at all. One
+  unrepresentable property now degrades to a permissive `{}` and drops out of
+  `required`, the same rule the route input converter already applies, so every
+  prop that converted fine reaches the catalog and previews can draw from them.
+
+- 2357b22: The setup surface: declared URLs, one join law, a VendoProvider-only surface, and `init` = install + the shared sync flow.
+
+  **Breaking: `VendoRoot` is removed. Use `VendoProvider`.**
+
+  ```diff
+  -import { VendoRoot } from "@vendoai/vendo/react";
+  -<VendoRoot components={registry}>{children}</VendoRoot>
+  +import { VendoProvider } from "@vendoai/vendo/react";
+  +<VendoProvider baseUrl="/api/vendo" components={registry}>{children}</VendoProvider>
+  ```
+
+  That is the whole migration: the props are identical, and `baseUrl` is the wire
+  mount with your deployment's path prefix included (default `/api/vendo`).
+  `npx vendo doctor` names the swap and the file if you miss one (`E-WIRE-010`).
+
+  **Breaking: `VENDO_BASE_URL` is the app's FULL public URL, path prefix included.**
+
+  Set it to `https://site.com/maple`, not `https://site.com`. Nothing strips its path
+  any more: host tool calls, login redirects and box callbacks all hang off it, each
+  attaching the prefix exactly once through one helper in `@vendoai/core`. Two new
+  optional overrides: `VENDO_HOST_API_URL` (the host API on another origin) and
+  `VENDO_LOGIN_URL` (the login page, which may be on another domain).
+
+  Stored tool paths in `.vendo/tools.json` are now **prefix-free** — run `vendo sync`
+  once to regenerate them. This closes #866 (login redirect drops the base path),
+  #867 (returnTo double-prefix) and #914 (host tools 404 under a path prefix). When the
+  client and the server disagree about where the wire is mounted, the browser now gets
+  one loud named error instead of a mysterious 404, and `vendo doctor` catches an
+  OpenAPI server mount that disagrees with `VENDO_BASE_URL` (`E-CFG-003`).
+
+  **`vendo init` no longer generates `vendo/registry.tsx` or `vendo/vendo-root.tsx`.**
+
+  It scaffolds the server route handler and prints one paste: `<VendoProvider>` around
+  your client root. If you have host components, you write one small `"use client"`
+  file yourself — see the quickstart. Existing generated files are untouched; they are
+  yours now.
+
+  **`vendo init` ends in the same flow `vendo sync` runs.** One extraction, one theme
+  path, one consent question, one report — `init` in full mode (a fresh install has
+  judged nothing), `sync` incremental. `init` now reads `.env` as well as `.env.local`,
+  so a model key that lives in `.env` is no longer invisible.
+
+- Updated dependencies [a7a0fcf]
+- Updated dependencies [e092567]
+- Updated dependencies [b99147f]
+- Updated dependencies [46923cc]
+- Updated dependencies [b50a766]
+- Updated dependencies [022f789]
+- Updated dependencies [354f231]
+- Updated dependencies [ee92750]
+- Updated dependencies [d599d23]
+- Updated dependencies [89660d1]
+- Updated dependencies [2b6d60f]
+- Updated dependencies [b99147f]
+- Updated dependencies [b99147f]
+- Updated dependencies [2357b22]
+  - @vendoai/core@0.8.1
+
 ## 0.8.0
 
 ### Minor Changes

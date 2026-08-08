@@ -1,5 +1,27 @@
 # @vendoai/guard
 
+## 0.8.1
+
+### Patch Changes
+
+- 2ab4a39: Two guard fixes. `previewCheck` no longer spends the single-use approval it was only inspecting: the pipeline now knows whether the caller is committing, so a preview reports that an approved replay exists without claiming its `consumed:<id>` receipt, and the real dispatching check that follows claims it — once, atomically, exactly as before. Previously a previewed call with a stable id answered "run", burned the human's tap, and then parked a fresh approval when the real call arrived, so the call never executed. And `sweepExpiredApprovals` now queries the pending set instead of paging every approval ever decided and filtering in JS — that read ran every 60 seconds per process and grew without bound.
+- 2b49b64: `bind().execute` keeps the decisions and hands the dispatch to a `#runOnce` private method: the grant the call runs under, the effect key, the in-flight share and the receipt write all sit together now, and the door above them reads as the four things it decides. No public surface changed, no behaviour changed, and no test changed.
+- Updated dependencies [a7a0fcf]
+- Updated dependencies [e092567]
+- Updated dependencies [b99147f]
+- Updated dependencies [46923cc]
+- Updated dependencies [b50a766]
+- Updated dependencies [022f789]
+- Updated dependencies [354f231]
+- Updated dependencies [ee92750]
+- Updated dependencies [d599d23]
+- Updated dependencies [89660d1]
+- Updated dependencies [2b6d60f]
+- Updated dependencies [b99147f]
+- Updated dependencies [b99147f]
+- Updated dependencies [2357b22]
+  - @vendoai/core@0.8.1
+
 ## 0.8.0
 
 ### Minor Changes

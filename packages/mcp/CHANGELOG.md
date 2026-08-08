@@ -1,5 +1,153 @@
 # @vendoai/mcp
 
+## 0.8.1
+
+### Patch Changes
+
+- a7a0fcf: A host's own backend gets in at the MCP door with a service key — no per-user
+  OAuth, no browser.
+
+  `createVendo({ mcp: { serviceAuth: { keys: [...] } } })` arms the door's own
+  `/token` endpoint for RFC 8693 token exchange: the backend POSTs
+  `grant_type=urn:ietf:params:oauth:grant-type:token-exchange` with
+  `client_id=vendo-service`, the key as `client_secret`, and one of its own user
+  ids as `subject_token`, and gets back a ten-minute `vmat_` bearer token for
+  that user. Keys are opaque strings the host mints itself (`openssl rand -hex
+32`); the door stores only their hashes, compares in constant time, and
+  answers every failure with the same `invalid_client`. No refresh tokens —
+  rotation is "exchange again." Audit rows carry a `svc:<hash>` client id so
+  service-minted sessions are distinguishable from interactive ones.
+
+- 464dce8: Broker mode is DECLARED, not discovered. Set `VENDO_MCP_BROKER_URL` to your tenant's
+  MCP endpoint (`https://acme.mcp.vendo.run/mcp`) and the door trusts that broker:
+  the URL's origin is the issuer, the URL itself is the expected token audience,
+  and `VENDO_MCP_FEDERATION_SECRET` answers its login handshake. An explicit
+  `mcp.remoteAs` still wins.
+
+  This replaces the boot-time ensure-tenant call a `VENDO_API_KEY` plus a public
+  `VENDO_BASE_URL` used to make: the app no longer writes its own address to Vendo
+  Cloud, so whichever process booted last can no longer decide where the broker
+  forwards, and a failed call can no longer silently swap a deployment to a
+  different authentication architecture for the life of the process. A
+  `VENDO_API_KEY` now has no effect on MCP at all, and a malformed `VENDO_MCP_BROKER_URL`
+  fails the composition loudly instead of quietly reverting to a local door.
+
+- ca3a9dc: Four fixes on the MCP door: expired turn credentials, RS256 tokens, blank
+  `remoteAs` bindings, and MCP Apps on the turn-credential leg.
+
+  **An expired turn credential no longer comes back to life.** `publish()` refreshed
+  the idle expiry of every credential minted for the thread without checking whether
+  it had already lapsed, and expiry was only ever evaluated lazily inside `resolve()`.
+  A token whose conversation went quiet past the idle budget was therefore dead only
+  if someone happened to resolve it; if the conversation took another turn first, the
+  expiry was pushed forward and the token worked again. Lapsed entries are now dropped
+  in that same loop, across the whole registry rather than only the thread being
+  published, which also bounds it in a long-running host process — a token minted for
+  a conversation that never takes another turn previously had nothing to remove it.
+
+  **`remoteAs` accepts the algorithms real authorization servers use.** Verification
+  was pinned to ES256 alone, so a door pointed at Auth0, Okta, Entra ID or Cognito —
+  all of which issue RS256 by default — returned 401 on every request with no local
+  `/authorize`, `/token` or `/register` to fall back to. The allowlist is now
+  `RS256/384/512`, `PS256/384/512` and `ES256/384/512`; symmetric algorithms and
+  `none` stay rejected. Separately, a blank `remoteAs.issuer` or `audience` now fails
+  at `createMcpDoor` instead of silently disabling the claim check it names.
+
+  **Opening a saved app over a turn credential renders.** One door composed with both
+  `apps` and `turnCredentials` — which is every `createVendo({ mcp: true })` — made
+  apps render on the OAuth leg only. The turn leg advertised no shim resource on its
+  `vendo_apps_*` listings and returned the registry's raw `OpenSurface` envelope with
+  the already-resolved query declarations still in it. Both legs now run the same two
+  steps.
+
+  Revoking a client no longer scans every outstanding authorization code in the
+  deployment. That scan looked for codes carrying no grant family, which the only
+  code-minting path cannot produce.
+
+- b99147f: One theme→CSS-variable mapping, owned by `@vendoai/core`.
+
+  The same `VendoTheme` was flattened into `--vendo-*` custom properties in three
+  places — the ui chrome, the MCP door's connect/consent pages, and the MCP Apps
+  shim's `:root{}` block — each a hand-kept copy of the others, and they had
+  drifted: the door emitted 16 of the 32 variables the chrome does, so a themed
+  MCP page never saw `--vendo-color-scheme`, `--vendo-base-size`, the density
+  sizing scale, or the motion timings. `defaultVendoTheme`, `resolveTheme`,
+  `colorSchemeForBackground` and `themeCssVariables` now live in
+  `@vendoai/core` (and are exported from it); `@vendoai/ui` re-exports them
+  unchanged, and both MCP paths are a one-line serialization of the same call.
+  `VENDO_THEME_VARIABLE_NAMES` is read off that mapping, so the generation
+  prompt's brand-token line and the shim's reverse read cannot fall behind a
+  rename.
+
+  Two brand bugs fell out of the merge. The Kit's token fallbacks had `surface`
+  and `background` swapped, so an unthemed Kit painted a white page with
+  off-white cards inverted; its `fontFamily` fallback had also lost the Onest
+  brand stack. Both now derive from `defaultVendoTheme` instead of being retyped.
+
+  The phantom `--vendo-space-*` variables are gone. Nothing ever emitted them, so
+  every reference rendered its fallback; the door pages, the Kit's `Stack`/`Row`
+  gap, and the tree's notice and open-in-product card now use the real
+  `--vendo-density-*` variables where the scale matches, and the literal
+  elsewhere. Rendered output is unchanged.
+
+- 2357b22: The setup surface: declared URLs, one join law, a VendoProvider-only surface, and `init` = install + the shared sync flow.
+
+  **Breaking: `VendoRoot` is removed. Use `VendoProvider`.**
+
+  ```diff
+  -import { VendoRoot } from "@vendoai/vendo/react";
+  -<VendoRoot components={registry}>{children}</VendoRoot>
+  +import { VendoProvider } from "@vendoai/vendo/react";
+  +<VendoProvider baseUrl="/api/vendo" components={registry}>{children}</VendoProvider>
+  ```
+
+  That is the whole migration: the props are identical, and `baseUrl` is the wire
+  mount with your deployment's path prefix included (default `/api/vendo`).
+  `npx vendo doctor` names the swap and the file if you miss one (`E-WIRE-010`).
+
+  **Breaking: `VENDO_BASE_URL` is the app's FULL public URL, path prefix included.**
+
+  Set it to `https://site.com/maple`, not `https://site.com`. Nothing strips its path
+  any more: host tool calls, login redirects and box callbacks all hang off it, each
+  attaching the prefix exactly once through one helper in `@vendoai/core`. Two new
+  optional overrides: `VENDO_HOST_API_URL` (the host API on another origin) and
+  `VENDO_LOGIN_URL` (the login page, which may be on another domain).
+
+  Stored tool paths in `.vendo/tools.json` are now **prefix-free** — run `vendo sync`
+  once to regenerate them. This closes #866 (login redirect drops the base path),
+  #867 (returnTo double-prefix) and #914 (host tools 404 under a path prefix). When the
+  client and the server disagree about where the wire is mounted, the browser now gets
+  one loud named error instead of a mysterious 404, and `vendo doctor` catches an
+  OpenAPI server mount that disagrees with `VENDO_BASE_URL` (`E-CFG-003`).
+
+  **`vendo init` no longer generates `vendo/registry.tsx` or `vendo/vendo-root.tsx`.**
+
+  It scaffolds the server route handler and prints one paste: `<VendoProvider>` around
+  your client root. If you have host components, you write one small `"use client"`
+  file yourself — see the quickstart. Existing generated files are untouched; they are
+  yours now.
+
+  **`vendo init` ends in the same flow `vendo sync` runs.** One extraction, one theme
+  path, one consent question, one report — `init` in full mode (a fresh install has
+  judged nothing), `sync` incremental. `init` now reads `.env` as well as `.env.local`,
+  so a model key that lives in `.env` is no longer invisible.
+
+- Updated dependencies [a7a0fcf]
+- Updated dependencies [e092567]
+- Updated dependencies [b99147f]
+- Updated dependencies [46923cc]
+- Updated dependencies [b50a766]
+- Updated dependencies [022f789]
+- Updated dependencies [354f231]
+- Updated dependencies [ee92750]
+- Updated dependencies [d599d23]
+- Updated dependencies [89660d1]
+- Updated dependencies [2b6d60f]
+- Updated dependencies [b99147f]
+- Updated dependencies [b99147f]
+- Updated dependencies [2357b22]
+  - @vendoai/core@0.8.1
+
 ## 0.8.0
 
 ### Minor Changes

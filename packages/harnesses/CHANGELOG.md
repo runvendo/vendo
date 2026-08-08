@@ -1,5 +1,170 @@
 # @vendoai/harnesses
 
+## 0.8.1
+
+### Patch Changes
+
+- d599d23: `.vendo/tools.json` is the one source of truth for every tool's request and
+  response schema, and the runtime sampler is gone.
+
+  Sync fills both slots through a trust ladder and records which rung filled each
+  one: the host's own spec (`declared`), its TypeScript types (`types`), the AI
+  judge reading the handler (`inferred`), or nothing (`unknown`). The judge may
+  only fill a slot nothing else could read — refused in code, not by prompt — and
+  its fills survive the next sync through the same carry-over `semantics` uses.
+  Coverage is reported plainly by `vendo sync`.
+
+  Every prompt that lists tools now lists all of them: a tool with a declared
+  schema shows its shape, and a tool with a blind slot says so in words. A blind
+  input never prints as `{}`, which reads as "takes no arguments" — and a
+  declared no-argument tool still prints the empty schema it really has.
+
+  **Breaking, both pre-1.0:**
+
+  - `AppsConfig.connectedToolkits` is removed from `@vendoai/apps`. Its only
+    reader was the create-time shape sampler, which is deleted: nothing calls the
+    host to learn a shape anymore. Drop the option; there is no replacement and
+    nothing to migrate.
+  - `deriveShapeCard`, `deriveShape`, `mergeShapes`, `ShapeCard` and
+    `shapeCardSchema` are removed from `@vendoai/core`. Shapes come from declared
+    JSON Schema now — use `shapeFromJsonSchema(schema)`, which additionally keeps
+    `enum` values a sample always erased.
+
+  A host that declares its response schemas gets strictly better checking and one
+  fewer live call per create. A host that declares nothing keeps working: blind
+  tools run permissively, and the report says which ones they are.
+
+- 7163a25: Every finished screen faces the AI reviewer, with the data it renders.
+
+  A bills dashboard summed two overlapping query results into one headline: $11,216
+  on screen over ~$6,276 of real bills (demo-bank, 2026-08-06). Every mechanical
+  check passed, because a double count is not a shape error — the binding was well
+  typed, the field existed, the tool was real. The reviewer is the only check that
+  can see it, and it never ran: it fired only when the writing model volunteered to
+  call `validate({appId})`, and that run did not.
+
+  Two things change.
+
+  **The reviewer is no longer optional.** It runs at both places a screen is
+  finished — when the screen agent's assembly completes with a stored, painted app,
+  and at the built path's turn boundary where the validate gate already runs. Its
+  findings join the existing single repair round; there are no loops, and the
+  reviewer's own fail-open posture is untouched — silence, a refusal and a failed
+  request still all mean no findings, so a reviewer that could not judge never costs
+  a person their screen. It is deliberately still absent from the paint seam, which
+  runs on every save, and it is never spent on a document that did not pass the
+  mechanical floor or never reached the screen.
+
+  **The reviewer now sees the rows.** `validate({appId})` runs the app's own
+  `<Query>` tools — read risk only, through the same guard-bound registry the screen
+  itself reads from — and hands the results to the reviewer beside the printed
+  markup. Its rubric gained one rule: check every total, count and average against
+  those rows, including the overlap case where two queries return the same records
+  and both get summed.
+
+  The cost is exactly one reviewer model call per finished screen.
+
+- 12a344c: The screen agent ships one door, and the tool bridge stops currying for a caller
+  that no longer exists.
+
+  `screenAgent()` is removed from `@vendoai/harnesses`. The file shipped two doors
+  into one assembly loop, and only `screenAssembler()` — the `vendo_make` route
+  composition fills — was ever wired. The unused door had already drifted from the
+  live one: it never passed `design`, so a screen assembled through it lost the
+  host's theme brief, and it passed `turn.system` straight through, the
+  conversational prompt the live door deliberately withholds from a writer loop. A
+  door that nothing calls cannot be found wrong by anything, so it silently became
+  the wrong door. `assembleScreen`, `screenAssembler`, `escalatedPlanPath`,
+  `ScreenSurface`, `ScreenInput`, `ScreenResult` and the three tool-name constants
+  are unchanged and still exported.
+
+  Inside the package, `buildAgentTools` and `addAgentTool` are gone with it. They
+  built an ai-SDK `ToolSet` for a path this repo stopped taking — the harness
+  runtime calls the bridge directly, and `find_tools` builds its own tool — and
+  their existence was the entire reason `guardedCall` and `previewApproval` were
+  curried factories rather than plain functions. Both now take the call arguments
+  directly (`guardedCall(descriptor, options, input, { toolCallId })`,
+  `previewApproval(descriptor, options, input, { toolCallId }, onAsk?)`); both live
+  callers invoked the returned closure on the very next expression, so this is
+  behaviour-neutral. `onAsk` is unchanged, and neither function was ever on the
+  barrel.
+
+- 0f6455a: Stop reaches a sandboxed session immediately, not up to ten seconds later.
+
+  The box driver only noticed `turn.signal` between polls, and the box door holds a
+  poll open for ten seconds when the session has nothing to say. So Stop pressed
+  during a long tool call — the moment a user actually reaches for it — sat behind
+  that parked poll before the interrupt was sent. The driver now interrupts from an
+  `abort` listener the instant the signal fires, matching the local (non-sandboxed)
+  path, which has always done it this way.
+
+- 5e584c8: `claudeCode({ machine: "local" })` now bounds a message the way the sandbox path
+  always has. A live session's turn ends on a `result`, and a `result` that never
+  arrives — an interrupted session, or a mid-build steer the model folded into the
+  turn already running — used to leave `send()` pending forever. Because
+  `ClaudeSession` answers pushed messages strictly in order, that took the whole
+  thread with it: the user's next message waited behind a turn that had already
+  silently lost, for the life of the process.
+
+  Both rungs now share one `MESSAGE_BUDGET_MS`. On the local rung a breach
+  interrupts the turn, drops the session, and throws — the disk stays warm, so the
+  next message opens a fresh session that resumes rather than a cold start.
+
+- a621123: Two checks stop reporting a verdict they never reached.
+
+  `vendo doctor`'s render probe GETs the app origin's `/` and never reads the body, so a
+  status line is the whole observation. It failed on 5xx and blessed everything else as
+  "the app's root page renders" — which made `ok: the app's root page renders (HTTP 404)`
+  the line every healthy run printed, on the one status that means the server is saying
+  there is no page here.
+
+  A 5xx still fails `E-LIVE-006` unchanged; that is the crashing-site case the gate exists
+  for. A 4xx is now a note that names the status and says no page was reached, because a
+  host serving nothing at `/` — every page under a basePath, an auth layer in front — is
+  healthy, and doctor cannot tell that from a route you meant to have. That is the same
+  judgement the probe's own unreachable-origin branch already declines to make. A 2xx
+  passes as "answered HTTP 200": true, and the most this probe can know.
+
+  In the screen agent, a save that landed bytes the render seam would not paint was told
+  "validate found nothing to fix". `validateWrittenApps` is fail-open by design and returns
+  no failures both when validate passed and for every way it could not reach a verdict — a
+  guard that denied the call, an answer it cannot parse, a workspace that closed under it,
+  each reported to the operator only. The hand cannot tell those apart, so it no longer
+  claims to: it states the failed paint, which is the fact it has. When the gate did produce
+  findings, the note is still the repair instruction verbatim.
+
+- Updated dependencies [a7a0fcf]
+- Updated dependencies [2ab4a39]
+- Updated dependencies [38b32a3]
+- Updated dependencies [e092567]
+- Updated dependencies [2fd14aa]
+- Updated dependencies [898eb8f]
+- Updated dependencies [b99147f]
+- Updated dependencies [46923cc]
+- Updated dependencies [b50a766]
+- Updated dependencies [f25138f]
+- Updated dependencies [022f789]
+- Updated dependencies [354f231]
+- Updated dependencies [ee92750]
+- Updated dependencies [d599d23]
+- Updated dependencies [a69aa5c]
+- Updated dependencies [89660d1]
+- Updated dependencies [7163a25]
+- Updated dependencies [1022b2f]
+- Updated dependencies [2b6d60f]
+- Updated dependencies [b99147f]
+- Updated dependencies [b99147f]
+- Updated dependencies [5e8a141]
+- Updated dependencies [8f3d23a]
+- Updated dependencies [be9f3e9]
+- Updated dependencies [2b49b64]
+- Updated dependencies [2b49b64]
+- Updated dependencies [6fb568a]
+- Updated dependencies [2357b22]
+  - @vendoai/core@0.8.1
+  - @vendoai/guard@0.8.1
+  - @vendoai/apps@0.8.1
+
 ## 0.8.0
 
 ### Minor Changes

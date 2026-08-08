@@ -1,5 +1,148 @@
 # @vendoai/store
 
+## 0.8.1
+
+### Patch Changes
+
+- 354f231: Remove undo and rollback entirely.
+
+  **BREAKING, despite the patch version.** This release ships as a patch off the
+  0.8 line (pre-1.0 convention), so the version number does NOT signal the removal
+  below. If you call any export in the lists that follow, this release breaks your
+  build — read them before upgrading. A `0.8.x` range accepts this version, so the
+  version number alone will not hold it back.
+
+  Two separate features, both cut: rolling an app back to a previous version, and
+  walking a workspace file back to the version before its newest commit. **Users
+  lose the ability to roll an app back.** That is deliberate. Pre-1.0, so this is
+  a hard cut with no deprecation shim.
+
+  Version history LISTING stays, everywhere: the app's capped 50-entry version log
+  and the workspace's per-path revision trail are unchanged, and so is everything
+  built on the recorded history — the review venue's newest-approved-version serve
+  (`review.serveDocFor`), the pin-rebase replay trail (`history.pinIntents`), and
+  the edit journal's append/discard/prune.
+
+  Removed from `@vendoai/apps`:
+
+  - `AppsRuntime.history(appId, ctx).undo()` — the surface now returns
+    `{ list(): Promise<VersionEntry[]> }` only
+  - `AppHistoryAccess.surface(appId).undo()` (the `createAppHistory` internal)
+
+  Removed from `@vendoai/core`:
+
+  - `StoreOps.workspace.undo(target, opts)`
+  - `storeWireWorkspaceUndoRequestSchema`
+  - the `"workspace.undo"` key from `STORE_WIRE_PATHS`, so the store wire is
+    **31 doors, not 32** — `StoreWireStatus.ops` is now `31`, and the workspace
+    family is 4 (index · read · commit · history)
+  - the `workspace.undo` cases from the `storeOpsConformance` suite, and the
+    `undo` implementation from `memoryStoreOps`
+
+  Removed from `@vendoai/store`:
+
+  - `workspaceStore(store).undo(caller, path)`
+  - `WorkspaceRows.undo` and the `UndoOutcome` type (internal — never exported
+    from the package index)
+  - `createStoreOps(store).workspace.undo`, with its `pathsMovedOn`,
+    `newestCommitTouching` and `commitCreated` helpers and the `created` array
+    the commit ledger wrote for them
+  - the `recordHistory` option on the internal write path, whose only `false`
+    caller was undo — every landed write now records its superseded revision
+
+  Removed from `@vendoai/ui`:
+
+  - `VendoClient["apps"].undo(id)`
+  - `useApp().history.undo()` — the hook's `history` is now `{ list() }`
+
+  Removed from `@vendoai/vendo`:
+
+  - the `POST /apps/:id/history` route (the `{ op: "undo" }` body). `GET
+/apps/:id/history` is unchanged; the path now serves GET only
+  - the `workspace.undo` leg of the hosted (Cloud) store adapter, which called
+    the console's `POST /workspace/undo`
+
+  **Existing data is left exactly where it is — no migration, no cleanup.**
+  Existing `vendo_workspace_history` rows and `vendo:app-history:*` records stay
+  readable by listing, but the content they hold becomes unrestorable: nothing
+  reads it now. Those rows self-trim at `WORKSPACE_HISTORY_LIMIT` per path, except
+  for a deleted path that is never written again, which holds its blob forever.
+  That is a real consequence of removing the feature, and it is not repaired here.
+
+- f1b30a1: `s3()` is gone from `@vendoai/store` and from the `@vendoai/agents` root, along
+  with the `S3FilesOptions` type. The `files:` seam is unchanged: it takes a
+  `FilesAdapter` — three methods, `{ put, get, delete }` — exported from
+  `@vendoai/core` and the umbrella, and a host object in that slot has always won
+  over anything shipped.
+
+  Pre-1.0 hard cut, no shim. If you wired `files: s3({ … })` (or
+  `postgres(url, { blobs: s3({ … }) })`), pass your own `FilesAdapter` pointed at
+  the same bucket and prefix. Blobs already written are untouched: the keys are
+  minted by the store, never by the adapter, so the same objects read back with no
+  migration. The `aws4fetch` dependency drops with it, and the over-cap
+  store-backed file error now names `files:` and `FilesAdapter` instead of `s3()`.
+
+- dd441cb: Five correctness fixes. No public surface changes, no stored shape changes, no migration.
+
+  **One rule for a transcript row's id.** `threadMessageRowIds` (TypeScript) and
+  `replaceThreadMessages`'s `COALESCE(elem->>'id', …)` (SQL, twice) expressed the
+  same rule in two dialects that disagree: `elem->>'id'` yields `''` for
+  `{"id":""}` rather than NULL, and `'5'` for `{"id":5}`. The duplicate-id guard
+  runs on the TypeScript rule, so those inputs cleared it and then collided inside
+  the INSERT, failing with the bare Postgres 21000 the guard exists to prevent and
+  losing the whole write. The ids are now derived once and passed in as a
+  `text[]`; both `COALESCE` expressions are gone.
+
+  **`threadStore.delete` takes the transcript with it.** It dropped the thread row
+  and the harness-state row but never `vendo_thread_messages`, which has no
+  foreign key. A message row carries no subject of its own, so those rows became
+  permanently unreachable — `erase.bySubject` reaches them only through
+  `thread_id IN (SELECT id FROM vendo_threads WHERE subject = $1)`, which is empty
+  once the thread is gone. It is now the same cascade
+  `ops.transcripts.deleteThread` already ran, in one transaction, still guarded on
+  the RETURNING row so a foreign principal's delete sweeps nothing.
+
+  **One grant row per (app, principal), on every records adapter.** `appAccess`
+  minted a fresh `ag_<uuid>` per `grant`; uniqueness came only from
+  `ON CONFLICT (app_id, principal)` in the local Postgres routing door, which no
+  hosted or BYO adapter has. A second row made downgrades silently fold back to
+  the stronger level and left `revoke` deleting only the first match. `grant` now
+  reuses the existing row's id, and `revoke` deletes every matching row.
+
+  **A grant no longer races itself.** Reading the grants and only then minting an
+  id is a read-then-write window: two overlapping grants both read "no row for
+  this principal", both mint a different random id, and the duplicate pair — with
+  its dead downgrade — is back. A principal with no row yet now gets a DERIVED id,
+  `ag_<appId>_<principal>`, the same id core's reference adapter derives, so the
+  write is one put on one key and the overlap collapses to last-write-wins on a
+  single row. An id already on disk still wins, so nothing stored is re-keyed.
+
+  **A concurrent transcript write can no longer escape the delete cascade.** The
+  cascade is one transaction, but a writer that only READS the thread row takes no
+  lock on it, so under READ COMMITTED its snapshot still shows a row the cascade
+  has removed and not yet committed — the message lands after the sweep and
+  outlives its own thread, unreachable for the same reason the cascade exists.
+  `recordAnswer` and `threadMessageStore.upsert` both did this while reporting
+  success; their ownership reads now end in `FOR KEY SHARE OF t`, the same lock a
+  foreign key takes. `putThreadRow` and `ops.transcripts.putMessage` were already
+  safe and are unchanged.
+
+- Updated dependencies [a7a0fcf]
+- Updated dependencies [e092567]
+- Updated dependencies [b99147f]
+- Updated dependencies [46923cc]
+- Updated dependencies [b50a766]
+- Updated dependencies [022f789]
+- Updated dependencies [354f231]
+- Updated dependencies [ee92750]
+- Updated dependencies [d599d23]
+- Updated dependencies [89660d1]
+- Updated dependencies [2b6d60f]
+- Updated dependencies [b99147f]
+- Updated dependencies [b99147f]
+- Updated dependencies [2357b22]
+  - @vendoai/core@0.8.1
+
 ## 0.8.0
 
 ### Minor Changes

@@ -1,5 +1,93 @@
 # @vendoai/automations
 
+## 0.8.1
+
+### Patch Changes
+
+- f896726: A run row that names no trigger reads back under the default trigger.
+
+  Making an app's triggers a LIST added a required `triggerId` to the persisted
+  run record with no read fallback, so every row written before that made
+  `runs.list` throw `validation` for the whole app — the surface asking for one
+  automation's history got a 400 instead of a gap, and one legacy row took the
+  app's entire fire record down with it. The field now defaults to
+  `DEFAULT_TRIGGER_ID` on read, exactly as the capture row's `triggerId` beside
+  it already did: a row written when an app had one trigger fired that trigger.
+
+  Nothing changes for rows written since. Nothing is rewritten on disk; the
+  default applies on read.
+
+- 15f4759: Engine-owned generic rows carry their app ref, so app erase collects them.
+
+  The schedule cursor, the webhook signing secret and the delivery ledger were
+  written with no refs at all. The 02-store §5 app-erase cascade collects generic
+  rows by `refs @> {app_id}`, so all three outlived the app they belong to — a
+  live HMAC secret kept authenticating for an app that no longer existed, and
+  `automations:deliveries`, which has no sweep or TTL anywhere, grew one permanent
+  row per webhook delivery. Five write sites now carry the ref, including the
+  tick's compare-and-swap replacement and the pre-rekey cursor migration.
+
+  Rows already on disk are unaffected in behavior: every read is by row id, so
+  nothing that works today stops working. The ref is stamped forward — a live
+  schedule cursor gains it on its next tick; a webhook secret gains it on its next
+  mint or rotation.
+
+  The package root drops `appIntentOf`, `SPONSORSHIPS` and the `Sponsorship` type.
+  Nothing outside this package imported them. `triggerKey` stays exported.
+
+- 022f789: The automations adoption handoff is removed. When an automation's sponsorship
+  lapsed — the sponsor left, lost their permissions, or somebody else edited the
+  app — the automation stopped and an "adoption card" waited inside the app so the
+  next editor could take it on, re-approving its reads and writes as themselves.
+  No host used it.
+
+  Sponsorship itself is unchanged: an automation still runs as a named person, and
+  still stops when that person's authority lapses. What goes is the second half —
+  the handoff to somebody new.
+
+  Gone: `AutomationsEngine.adoption()` and `.adopt()`, the `AdoptionCard` and
+  `AdoptionNeed` types (`@vendoai/automations`); `ADOPTION_VENUE_KEY`
+  (`@vendoai/core`); `POST /automations/:id/adopt/:triggerId` (`@vendoai/vendo`);
+  `client.automations.adopt()`, `<AdoptionCard>`, `<AdoptionVenueCard>`,
+  `ADOPTION_VENUE_KEY`, `AdoptionCardProps`, `AdoptionVenue` and `AdoptResult`
+  (`@vendoai/ui`).
+
+  Pre-1.0 hard cut, no deprecation shim. A stopped automation is restarted the way
+  it was armed in the first place: anyone who can edit the app calls `enable()`
+  again, which re-approves its reads and writes under the new sponsor. The stopped
+  sentence the run row and the list carry now says "anyone who can edit this app
+  can turn it back on" instead of "…can take it on".
+
+- 0039efe: Internal restructuring only — **the public surface is unchanged**. `createAutomationsEngine` was one 1,980-line closure inside a 2,499-line file; it is now a 13-line assembler over 18 modules, each holding one concern (app rows, arming, grants, run rows, the §9.9 sponsorship gate, grant capture, run execution, and the five public-door surfaces). Every helper moved verbatim; the row shapes it persists, the queries it issues and the sentences it writes are byte-identical, and 07 §1's exported `createAutomations`/`AutomationsConfig`/`AutomationsEngine` are untouched. No test file changed.
+- Updated dependencies [a7a0fcf]
+- Updated dependencies [38b32a3]
+- Updated dependencies [e092567]
+- Updated dependencies [2fd14aa]
+- Updated dependencies [898eb8f]
+- Updated dependencies [b99147f]
+- Updated dependencies [46923cc]
+- Updated dependencies [b50a766]
+- Updated dependencies [f25138f]
+- Updated dependencies [022f789]
+- Updated dependencies [354f231]
+- Updated dependencies [ee92750]
+- Updated dependencies [d599d23]
+- Updated dependencies [a69aa5c]
+- Updated dependencies [89660d1]
+- Updated dependencies [7163a25]
+- Updated dependencies [1022b2f]
+- Updated dependencies [2b6d60f]
+- Updated dependencies [b99147f]
+- Updated dependencies [b99147f]
+- Updated dependencies [5e8a141]
+- Updated dependencies [8f3d23a]
+- Updated dependencies [be9f3e9]
+- Updated dependencies [2b49b64]
+- Updated dependencies [6fb568a]
+- Updated dependencies [2357b22]
+  - @vendoai/core@0.8.1
+  - @vendoai/apps@0.8.1
+
 ## 0.8.0
 
 ### Minor Changes

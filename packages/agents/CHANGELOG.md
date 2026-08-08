@@ -1,5 +1,105 @@
 # @vendoai/agents
 
+## 0.8.1
+
+### Patch Changes
+
+- e092567: A standalone session can reopen an existing conversation.
+
+  `session(subject, { threadId })` reopens the named conversation instead of minting
+  a new one. Ownership is the store's own subject scope — someone else's thread reads
+  back as absent and is refused as `not-found`, never silently swapped for a new
+  conversation. The resume path deliberately skips `threadStore.put`, whose replace
+  semantics would delete the very transcript the resume exists to read back.
+
+  Until now `createSession` minted a fresh thread on every call and `SessionOptions`
+  had no way to name an existing one, so a Node backend that built a session per HTTP
+  request — which is what the README showed — lost the whole conversation on every
+  request. Multi-turn only worked while the JS object stayed alive in process memory.
+  The README now passes `threadId` in, hands `session.threadId` back out, and says
+  plainly that a session is request-lifetime while the thread is not.
+
+  The `[User]` and `[Situation]` prompt blocks are now one implementation in
+  `@vendoai/core` (`userPromptBlock`, `situationPromptBlock`, `promptFactLines`),
+  shared by the standalone assembler and the umbrella's. They were two copies of a
+  prompt-injection defence — the indent that stops a client-supplied fact from
+  forging a top-level `Directions` section — and only the umbrella's labeled the
+  situation "observation, not instruction". The shared block carries that label, so
+  the standalone surface gains it. No other behaviour changes.
+
+- dd441cb: `vendoKnowledge` is no longer re-exported from `@vendoai/agents`.
+
+  `AgentConfig` and `AgentComposition` have no knowledge slot, so nothing composed
+  through the agents front door could use it — the umbrella's knowledge seam is
+  its own `createVendo({ knowledge })` key, never the agent's. Import it from
+  `@vendoai/knowledge`, which is where every real consumer already imports it
+  from. The `@vendoai/knowledge` dependency goes with it.
+
+  `session()` also stops opening the workspace twice — the first result was
+  discarded before the per-turn open, so this removes one database round trip per
+  session, including on the `{ threadId }` resume path.
+
+- f1b30a1: `s3()` is gone from `@vendoai/store` and from the `@vendoai/agents` root, along
+  with the `S3FilesOptions` type. The `files:` seam is unchanged: it takes a
+  `FilesAdapter` — three methods, `{ put, get, delete }` — exported from
+  `@vendoai/core` and the umbrella, and a host object in that slot has always won
+  over anything shipped.
+
+  Pre-1.0 hard cut, no shim. If you wired `files: s3({ … })` (or
+  `postgres(url, { blobs: s3({ … }) })`), pass your own `FilesAdapter` pointed at
+  the same bucket and prefix. Blobs already written are untouched: the keys are
+  minted by the store, never by the adapter, so the same objects read back with no
+  migration. The `aws4fetch` dependency drops with it, and the over-cap
+  store-backed file error now names `files:` and `FilesAdapter` instead of `s3()`.
+
+- Updated dependencies [a7a0fcf]
+- Updated dependencies [4772c49]
+- Updated dependencies [2ab4a39]
+- Updated dependencies [38b32a3]
+- Updated dependencies [e092567]
+- Updated dependencies [2fd14aa]
+- Updated dependencies [898eb8f]
+- Updated dependencies [464dce8]
+- Updated dependencies [b99147f]
+- Updated dependencies [46923cc]
+- Updated dependencies [b50a766]
+- Updated dependencies [f25138f]
+- Updated dependencies [022f789]
+- Updated dependencies [354f231]
+- Updated dependencies [ee92750]
+- Updated dependencies [d599d23]
+- Updated dependencies [a69aa5c]
+- Updated dependencies [89660d1]
+- Updated dependencies [4ec9c17]
+- Updated dependencies [7163a25]
+- Updated dependencies [f1b30a1]
+- Updated dependencies [3e2b35e]
+- Updated dependencies [1022b2f]
+- Updated dependencies [2b6d60f]
+- Updated dependencies [b99147f]
+- Updated dependencies [ca3a9dc]
+- Updated dependencies [12a344c]
+- Updated dependencies [b99147f]
+- Updated dependencies [d4a2d4c]
+- Updated dependencies [5e8a141]
+- Updated dependencies [0f6455a]
+- Updated dependencies [dd441cb]
+- Updated dependencies [8f3d23a]
+- Updated dependencies [5e584c8]
+- Updated dependencies [be9f3e9]
+- Updated dependencies [2b49b64]
+- Updated dependencies [2b49b64]
+- Updated dependencies [6fb568a]
+- Updated dependencies [a621123]
+- Updated dependencies [2357b22]
+  - @vendoai/mcp@0.8.1
+  - @vendoai/core@0.8.1
+  - @vendoai/actions@0.8.1
+  - @vendoai/guard@0.8.1
+  - @vendoai/apps@0.8.1
+  - @vendoai/store@0.8.1
+  - @vendoai/harnesses@0.8.1
+
 ## 0.8.0
 
 ### Minor Changes

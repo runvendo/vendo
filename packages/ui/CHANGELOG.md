@@ -1,5 +1,432 @@
 # @vendoai/ui
 
+## 0.8.1
+
+### Patch Changes
+
+- 1e27609: The connected-accounts panel's own two connects work again. `Reconnect` on a broken row and the connect-ahead chips called the shared `completeConnection` with no sign-in window, which left it opening one _after_ the initiate await — the post-await shape Safari, Firefox and any Chromium with a popup blocker refuse by call-stack provenance, so the buttons did nothing at all when clicked. Both now open the window synchronously inside the click, as `ConnectCard` always has. And a window the browser refuses anyway is no longer a dead end on any connect surface: the panel and the connect tray both offer the broker's sign-in URL as a plain link while the poll keeps running, so finishing it in a tab still settles the account. Previously a refused window left a spinner and, two minutes later, "nothing changed" — with nothing the person could do about it.
+- 1ad9c74: Two real defects in the tree renderer, and one dead extension point removed.
+
+  - The node error boundary cleared its own latched error on every re-render
+    while a payload was streaming, so a node that kept throwing re-rendered
+    itself until React's nested-update guard crashed the whole surface the
+    boundary exists to contain. It now retries only when an input actually
+    changes — a new prefix, a new node, or the flip to the final payload.
+  - The jail's zod shim answered `then` with another chainable node, which made
+    every schema (and the module object itself) a thenable whose callback never
+    fires: one `await` inside a generated component hung the island forever.
+    `then` is absent now, and `in` agrees. Only `then` — it is the whole thenable
+    protocol, and `.catch(fallback)` is a real zod method the shim still answers.
+  - `registerTreeRenderer` is removed from `@vendoai/ui/tree`. The payload
+    renderer registry served exactly one format and had no caller anywhere;
+    `PayloadView` checks the format tag directly. `InClientVenue` and `PinDrift`
+    are no longer re-exported from the tree subpath — import them from
+    `@vendoai/ui`, which is where they are declared.
+
+- f411174: A refused disconnect in the connected-accounts panel says what to do about it.
+
+  `ConnectedAccountsPanel` caught the wire's refusal and threw the reason away, so every
+  failed disconnect read the same: "it is still connected. Try again in a moment." The panel
+  reads the code now, and that retry sentence is reserved for the faults that actually clear
+  on their own (broker 5xx, timeouts, a dropped request):
+
+  - `blocked` → "Sign in first, then disconnect Gmail."
+  - `forbidden` → "You don't have access to disconnect Gmail here."
+  - `not-implemented` / `cloud-required` → "Disconnecting Gmail isn't set up here — there's
+    nothing you can do from this screen."
+  - `not-found` → **not an error at all.** The broker answers not-found for any id outside
+    the caller's own scope, so the account is already gone and the person's intent is a fact.
+
+  The wire's own message still never reaches the person.
+
+  A severed row also stops depending on the list read that follows it. `useResource` keeps
+  its last good page when a refresh fails, so a 503 on that read used to put the row straight
+  back wearing a Connected chip, with nothing said — a disconnect that looked like a button
+  doing nothing. That was true of every successful sever, not just the already-gone case.
+  The panel now drops the row on the wire's word — and never permanently: a list read the
+  server actually answers that still carries the account overrules the sever and brings the
+  row back, since `not-found` also covers a missing _connector_ rather than a missing account
+  and the client cannot tell those apart. A failed read still changes nothing.
+
+- b99147f: Connect asks first: a `request_connection` tool and a connect card that owns the whole answer.
+
+  The agent can now ASK for a connection instead of spending a call it already knows
+  will be refused. `request_connection` (toolkit + one plain sentence) mints exactly the
+  `connect-required` outcome a refused service call produces, so the card the user sees
+  is the same card — nothing new on the wire. The tool is projected only where the
+  deployment can actually connect the toolkit, and refuses one it cannot rather than
+  raising a button that can never succeed.
+
+  The card itself now opens its sign-in window _inside the click_, before any `await`:
+  Safari and Firefox judge a popup by call-stack provenance, and the old order (initiate,
+  then open) is precisely the shape they block. The window opens centered and blank, is
+  navigated when the redirect URL arrives, and is closed from the opener once the account
+  goes active. A window the browser blocked anyway is no longer a dead end — the same
+  poll keeps running behind an "Open sign-in in a new tab" link.
+
+  The card also says what connecting grants, in plain words rather than OAuth scope
+  strings, and offers "Not now" — which leaves a one-line Skipped record that still
+  re-offers Connect, and tells the agent so it can adapt.
+
+- 022f789: The automations adoption handoff is removed. When an automation's sponsorship
+  lapsed — the sponsor left, lost their permissions, or somebody else edited the
+  app — the automation stopped and an "adoption card" waited inside the app so the
+  next editor could take it on, re-approving its reads and writes as themselves.
+  No host used it.
+
+  Sponsorship itself is unchanged: an automation still runs as a named person, and
+  still stops when that person's authority lapses. What goes is the second half —
+  the handoff to somebody new.
+
+  Gone: `AutomationsEngine.adoption()` and `.adopt()`, the `AdoptionCard` and
+  `AdoptionNeed` types (`@vendoai/automations`); `ADOPTION_VENUE_KEY`
+  (`@vendoai/core`); `POST /automations/:id/adopt/:triggerId` (`@vendoai/vendo`);
+  `client.automations.adopt()`, `<AdoptionCard>`, `<AdoptionVenueCard>`,
+  `ADOPTION_VENUE_KEY`, `AdoptionCardProps`, `AdoptionVenue` and `AdoptResult`
+  (`@vendoai/ui`).
+
+  Pre-1.0 hard cut, no deprecation shim. A stopped automation is restarted the way
+  it was armed in the first place: anyone who can edit the app calls `enable()`
+  again, which re-approves its reads and writes under the new sponsor. The stopped
+  sentence the run row and the list carry now says "anyone who can edit this app
+  can turn it back on" instead of "…can take it on".
+
+- d3e7dcd: The voice stage is removed. `@vendoai/ui` shipped a live WebRTC voice surface —
+  an animated presence orb, a rolling caption ticker, a transcript drawer, a
+  consent bar that accepted a spoken "approve", and a `vendo_act` bridge that ran
+  a real guarded agent turn mid-call. Nothing mounted it: the demo host un-docked
+  `<VendoStage />` on 2026-07-30, and no example, fixture, or docs host has
+  rendered it since.
+
+  Gone from `@vendoai/ui`: the `@vendoai/ui/voice` entry point in its entirety
+  (`realtimeVoiceDriver`, `createVoiceActBridge`, `VoiceDriver`,
+  `VoiceDriverEvent`, `VoiceDriverHandlers`, `VoiceSessionHandle`,
+  `VoiceSessionView`, `RealtimeVoiceDriverOptions`, `VoiceActBridgeOptions`),
+  `useVoice` and `UseVoiceResult` from the root entry, `<VendoStage />` from
+  `@vendoai/ui/chrome`, and the `voice` prop on `VendoProvider`. Gone from
+  `@vendoai/vendo`: the `useVoice` / `UseVoiceResult` re-exports on
+  `@vendoai/vendo/react`.
+
+  Pre-1.0 hard cut, no deprecation shim. Nothing else changes: the thread
+  composer keeps its optional `onVoice` callback, so a host that wants a mic
+  button still gets one and wires it to its own surface.
+
+- 354f231: Remove undo and rollback entirely.
+
+  **BREAKING, despite the patch version.** This release ships as a patch off the
+  0.8 line (pre-1.0 convention), so the version number does NOT signal the removal
+  below. If you call any export in the lists that follow, this release breaks your
+  build — read them before upgrading. A `0.8.x` range accepts this version, so the
+  version number alone will not hold it back.
+
+  Two separate features, both cut: rolling an app back to a previous version, and
+  walking a workspace file back to the version before its newest commit. **Users
+  lose the ability to roll an app back.** That is deliberate. Pre-1.0, so this is
+  a hard cut with no deprecation shim.
+
+  Version history LISTING stays, everywhere: the app's capped 50-entry version log
+  and the workspace's per-path revision trail are unchanged, and so is everything
+  built on the recorded history — the review venue's newest-approved-version serve
+  (`review.serveDocFor`), the pin-rebase replay trail (`history.pinIntents`), and
+  the edit journal's append/discard/prune.
+
+  Removed from `@vendoai/apps`:
+
+  - `AppsRuntime.history(appId, ctx).undo()` — the surface now returns
+    `{ list(): Promise<VersionEntry[]> }` only
+  - `AppHistoryAccess.surface(appId).undo()` (the `createAppHistory` internal)
+
+  Removed from `@vendoai/core`:
+
+  - `StoreOps.workspace.undo(target, opts)`
+  - `storeWireWorkspaceUndoRequestSchema`
+  - the `"workspace.undo"` key from `STORE_WIRE_PATHS`, so the store wire is
+    **31 doors, not 32** — `StoreWireStatus.ops` is now `31`, and the workspace
+    family is 4 (index · read · commit · history)
+  - the `workspace.undo` cases from the `storeOpsConformance` suite, and the
+    `undo` implementation from `memoryStoreOps`
+
+  Removed from `@vendoai/store`:
+
+  - `workspaceStore(store).undo(caller, path)`
+  - `WorkspaceRows.undo` and the `UndoOutcome` type (internal — never exported
+    from the package index)
+  - `createStoreOps(store).workspace.undo`, with its `pathsMovedOn`,
+    `newestCommitTouching` and `commitCreated` helpers and the `created` array
+    the commit ledger wrote for them
+  - the `recordHistory` option on the internal write path, whose only `false`
+    caller was undo — every landed write now records its superseded revision
+
+  Removed from `@vendoai/ui`:
+
+  - `VendoClient["apps"].undo(id)`
+  - `useApp().history.undo()` — the hook's `history` is now `{ list() }`
+
+  Removed from `@vendoai/vendo`:
+
+  - the `POST /apps/:id/history` route (the `{ op: "undo" }` body). `GET
+/apps/:id/history` is unchanged; the path now serves GET only
+  - the `workspace.undo` leg of the hosted (Cloud) store adapter, which called
+    the console's `POST /workspace/undo`
+
+  **Existing data is left exactly where it is — no migration, no cleanup.**
+  Existing `vendo_workspace_history` rows and `vendo:app-history:*` records stay
+  readable by listing, but the content they hold becomes unrestorable: nothing
+  reads it now. Those rows self-trim at `WORKSPACE_HISTORY_LIMIT` per path, except
+  for a deleted path that is never written again, which holds its blob forever.
+  That is a real consequence of removing the feature, and it is not repaired here.
+
+- c41de74: The code-land runtime folds into `@vendoai/ui/kit`. `@vendoai/kit` is gone: its
+  seven modules — the provider, the guarded query/action hooks, the `$state`
+  binding, and the reshape + aggregate vocabulary — now ship from the `./kit`
+  subpath they already re-exported, so a generated app loads one bundle instead of
+  two and the `$state` store has one owner rather than a wrapper around one.
+
+  Pre-1.0 hard cut, no alias package. Change `@vendoai/kit` imports to
+  `@vendoai/ui/kit`; every export name is unchanged.
+
+- fed58ab: Three promises the chrome was not keeping.
+
+  - `theme.motion: "reduced"` is now honoured by the pin ceremony and the morph
+    toast, not just the OS media query. The pin flight reads `data-vendo-motion`
+    off the chrome boundary the card sits in — the stylesheet rule that kills
+    animations inside a reduced-motion root could never have stopped it, because
+    the flight is a Web Animations animation. The morph toast folds the same
+    setting into the flag that picks its timings and its exit, so it stops writing
+    "reduced" onto the DOM while running the full travel budget and docking.
+  - A new approval is brought into view even when the transcript re-renders inside
+    the 80ms before the scroll. The scroll target lives in a ref now: previously
+    the approval was marked "seen" up front and one re-render in that window
+    cancelled the scroll permanently rather than deferring it — and a settling
+    stream re-renders several times right when an approval arrives, so consent that
+    landed below a tall generated view was never scrolled to.
+  - A polled collection hook skips its read while the document is hidden, and
+    re-reads the moment the tab comes back. A workspace left open in a background
+    tab was spending a request every few seconds for a view nobody could see; the
+    shared approvals feed has followed this rule since ENG-219 and now every
+    resource does.
+
+- 13e2452: An app's `$state` no longer leaks into the next app rendered in its place. `TreeView` keyed its stateful body on `tree.root`, but the compiler roots every compiled app at the same synthetic `root` node, so the key never changed between two different apps: React reused the instance and app B rendered app A's `$state` (and outcomes). `TreeView`, `PayloadView` and `AppFrame` now take an optional `appId` — the identity the surrounding code already had — and key on it. Omit it and the key falls back to `tree.root` exactly as before, so no existing caller changes behavior.
+- b99147f: One component family: the legacy prewired set is retired, and the Kit is the
+  only built-in vocabulary.
+
+  Vendo shipped two component families that shadowed each other by name. The
+  legacy prewired/branded set (`packages/ui/src/tree/{primitives,branded}.tsx`)
+  won every name collision, so the Kit's `Stat` could never format a value, its
+  `Text` was masked by a permissive one, and `DataTable`'s smart table sat behind
+  a plain `Table`. That set is gone. One family now, declared once by
+  `KIT_SPECS`, taught by `kitPrompt()`, resolved by the compiler, rendered by
+  `KIT_COMPONENTS`, and validated from the same schemas.
+
+  **Breaking — `@vendoai/ui/tree`.** These exports are removed: `Stack`, `Row`,
+  `Grid`, `Text`, `Skeleton`, `Surface`, `Divider`, `Card`, `Button`, `Input`,
+  `Select`, `Table`, `Badge`, `Stat`, `Tabs`, `PREWIRED_COMPONENTS`,
+  `BRANDED_COMPONENTS`, and their prop types. Import the components from
+  `@vendoai/ui/kit` instead — every name above except `Table` and `Skeleton`
+  exists there with theme-token styling and real prop schemas.
+
+  - **`Table` → `DataTable`.** The Kit table sorts, filters, searches,
+    paginates, resolves dot-path column keys, and formats each cell. Its
+    `columns` take `{key, label?, format?, align?}` objects rather than bare
+    strings, `rows` is required, and `emptyLabel`/`rowKey` are `emptyState` and
+    automatic respectively.
+  - **`Skeleton` is no longer a component.** A loading placeholder is renderer
+    chrome, not something a tree names, so it moved inside
+    `tree/forming-skeleton.tsx` and off the public surface. It marks itself with
+    `data-skeleton` (it was `data-primitive="Skeleton"`).
+  - **`Tabs` keeps its tree contract.** The Kit `Tabs` now accepts the wire
+    shape — string or `{value,label}` items, an initial `value`, and panels as
+    CHILDREN in tab order — alongside its code-only `{label, content}` items.
+    Tabbed apps are unaffected.
+  - **`data-primitive` is gone.** Every built-in marks itself with `data-kit`;
+    tests and styles selecting on `data-primitive` must be retargeted.
+
+  **Reserved names now follow the Kit.** `RESERVED_COMPONENT_NAMES`,
+  `BRANDED_COMPONENT_NAMES`, and `PREWIRED_COMPONENT_NAMES` are removed from
+  `@vendoai/core`; `KIT_COMPONENT_NAMES` and `KIT_WIRE_COMPONENT_NAMES` replace
+  them, so a generated component may not shadow any Kit name.
+
+  Two schemas were widened where the retired family had been quietly absorbing
+  real usage: `Text.text` takes `string | number` (matching its `ReactNode`
+  implementation), and a single-segment `$state` read binds into any prop again
+  while `state.key.deeper` stays a compile error.
+
+  Stored apps naming `Table` or `Skeleton` render the contained
+  "Unknown component" notice on that node while every sibling still renders.
+
+- 7f35f23: Starting one connect in the connect tray no longer makes every other connector inert. The tray tracked the connect in flight as a single toolkit for the whole surface and disabled every add button off it, so on a host with a full catalog the first click froze all 55 remaining connectors for the length of the 120s poll — with no cancel, and no disabled styling anywhere to say why, so the tray looked interactive and simply ignored every click. Connect state is now keyed per row, the way `ConnectedAccountsPanel` already keyed it: several connects can run at once, each row keeps its own spinner, its own failure reason and its own "your browser blocked the sign-in window" link, and no add button disables at all — the row that is connecting shows its progress dots instead of a button, so there is nothing left to grey out.
+- b99147f: One theme→CSS-variable mapping, owned by `@vendoai/core`.
+
+  The same `VendoTheme` was flattened into `--vendo-*` custom properties in three
+  places — the ui chrome, the MCP door's connect/consent pages, and the MCP Apps
+  shim's `:root{}` block — each a hand-kept copy of the others, and they had
+  drifted: the door emitted 16 of the 32 variables the chrome does, so a themed
+  MCP page never saw `--vendo-color-scheme`, `--vendo-base-size`, the density
+  sizing scale, or the motion timings. `defaultVendoTheme`, `resolveTheme`,
+  `colorSchemeForBackground` and `themeCssVariables` now live in
+  `@vendoai/core` (and are exported from it); `@vendoai/ui` re-exports them
+  unchanged, and both MCP paths are a one-line serialization of the same call.
+  `VENDO_THEME_VARIABLE_NAMES` is read off that mapping, so the generation
+  prompt's brand-token line and the shim's reverse read cannot fall behind a
+  rename.
+
+  Two brand bugs fell out of the merge. The Kit's token fallbacks had `surface`
+  and `background` swapped, so an unthemed Kit painted a white page with
+  off-white cards inverted; its `fontFamily` fallback had also lost the Onest
+  brand stack. Both now derive from `defaultVendoTheme` instead of being retyped.
+
+  The phantom `--vendo-space-*` variables are gone. Nothing ever emitted them, so
+  every reference rendered its fallback; the door pages, the Kit's `Stack`/`Row`
+  gap, and the tree's notice and open-in-product card now use the real
+  `--vendo-density-*` variables where the scale matches, and the literal
+  elsewhere. Rendered output is unchanged.
+
+- f260c10: Two surfaces that answered a click by doing nothing, silently.
+
+  - The connect tray's cancel latch was only ever SET, by an unmount cleanup, so
+    React's dev StrictMode remount latched it for the tray's whole life: every
+    connect exited its status poll on the first check, which means the row sat on
+    "Connecting…" forever with no error and no end while the person finished
+    signing in elsewhere. The mount effect clears the latch now, the way
+    `ConnectCard` and `ConnectedAccountsPanel` already did.
+  - The automations panel's run-health strip discarded its own `/runs` response
+    whenever its effect restarted — which is every refresh, since a refresh is a
+    new `automations` array. The restarted effect had already skipped the row as
+    "fetched", and the discarded response then unmarked it, so no retry was ever
+    issued. With the poll on, the run sweep covered for this a tick later; with
+    the cadence off (`pollMs={0}`, a host driving its own refreshes) the strip
+    was simply gone for the session. The fetch is row-keyed and lands
+    idempotently, so it is no longer cancelled at all.
+  - The same panel's `/runs` reads now carry a per-row generation, compared before
+    the write. Several reads of one row are in flight whenever `/runs` is slower
+    than the cadence (the sweep fires on a timer without waiting for its previous
+    tick), and the row used to believe whichever answered last rather than
+    whichever was asked last — so a slow answer overwrote a fresh one and the
+    health strip went backwards on screen: a run the person had just watched
+    succeed reverted to Failed until the next tick.
+
+- 7288546: Two surfaces that stated something untrue, and were believed.
+
+  - `DataTable` compared every filter against the RAW field while its cells show
+    the formatted value. Picking "paid" from a filter dropdown also listed the
+    "unpaid" rows (each column carried `filterFn: "includesString"`, and a
+    dropdown is an exact-value control); searching for "$2,500" or "Mar 14" — the
+    text on screen — matched nothing; and the dropdown offered "2026-03-14" as an
+    option for a column reading "Mar 14, 2026". One helper, `displayText`, is now
+    what the options, the dropdown match (exact) and the search all compare
+    against. Sorting still keys off the raw value.
+  - The Share dialog never read the `error` its own hook exposes, so a failed
+    app-access read rendered the empty initial data as fact — twice, and
+    self-contradicting: "You don’t have access to this app." next to "Nobody else
+    yet — it’s just you." It now says it cannot confirm who the app is shared with,
+    offers a retry, and withholds every control a level authorises — including
+    after a later read fails, where the dialog used to keep the previous owner
+    level and go on offering the picker, Share and each row's Remove on the
+    strength of an answer it no longer had. The grant rows themselves stay: a
+    failure to read is not evidence that access was revoked.
+
+- 2357b22: The setup surface: declared URLs, one join law, a VendoProvider-only surface, and `init` = install + the shared sync flow.
+
+  **Breaking: `VendoRoot` is removed. Use `VendoProvider`.**
+
+  ```diff
+  -import { VendoRoot } from "@vendoai/vendo/react";
+  -<VendoRoot components={registry}>{children}</VendoRoot>
+  +import { VendoProvider } from "@vendoai/vendo/react";
+  +<VendoProvider baseUrl="/api/vendo" components={registry}>{children}</VendoProvider>
+  ```
+
+  That is the whole migration: the props are identical, and `baseUrl` is the wire
+  mount with your deployment's path prefix included (default `/api/vendo`).
+  `npx vendo doctor` names the swap and the file if you miss one (`E-WIRE-010`).
+
+  **Breaking: `VENDO_BASE_URL` is the app's FULL public URL, path prefix included.**
+
+  Set it to `https://site.com/maple`, not `https://site.com`. Nothing strips its path
+  any more: host tool calls, login redirects and box callbacks all hang off it, each
+  attaching the prefix exactly once through one helper in `@vendoai/core`. Two new
+  optional overrides: `VENDO_HOST_API_URL` (the host API on another origin) and
+  `VENDO_LOGIN_URL` (the login page, which may be on another domain).
+
+  Stored tool paths in `.vendo/tools.json` are now **prefix-free** — run `vendo sync`
+  once to regenerate them. This closes #866 (login redirect drops the base path),
+  #867 (returnTo double-prefix) and #914 (host tools 404 under a path prefix). When the
+  client and the server disagree about where the wire is mounted, the browser now gets
+  one loud named error instead of a mysterious 404, and `vendo doctor` catches an
+  OpenAPI server mount that disagrees with `VENDO_BASE_URL` (`E-CFG-003`).
+
+  **`vendo init` no longer generates `vendo/registry.tsx` or `vendo/vendo-root.tsx`.**
+
+  It scaffolds the server route handler and prints one paste: `<VendoProvider>` around
+  your client root. If you have host components, you write one small `"use client"`
+  file yourself — see the quickstart. Existing generated files are untouched; they are
+  yours now.
+
+  **`vendo init` ends in the same flow `vendo sync` runs.** One extraction, one theme
+  path, one consent question, one report — `init` in full mode (a fresh install has
+  judged nothing), `sync` incremental. `init` now reads `.env` as well as `.env.local`,
+  so a model key that lives in `.env` is no longer invisible.
+
+- bd4248d: `VendoPage` is removed
+
+  The full-page workspace surface is cut. Two public exports go with it:
+
+  - `VendoPage` (component)
+  - `VendoPageProps` (type)
+
+  Nothing else is removed. `AutomationsPanel`, `ActivityPanel` and
+  `ConnectedAccountsPanel` — the three panels `VendoPage` used to mount behind
+  its tabs — stay exported and are individually mountable, and `WaitingQueue`,
+  `VendoOverlay`, `VendoThread`, `VendoPalette` and `VendoSlot` are untouched.
+
+  **If you rendered `<VendoPage />`,** mount the panels you actually want
+  instead. Each carries its own theme and stylesheet, so a `VendoProvider`
+  ancestor is the only requirement:
+
+  ```tsx
+  <VendoProvider client={client}>
+    <div style={{ maxWidth: 780, margin: "0 auto" }}>
+      <AutomationsPanel />
+      <ConnectedAccountsPanel />
+      <ActivityPanel />
+    </div>
+  </VendoProvider>
+  ```
+
+  Keep them in a ~780px container. `VendoPage` used to cap their measure and the
+  activity ledger rows stretch badly at full bleed.
+
+  The `surface="page"` mode of `VendoEmbed` and the `.fl-page*`, `.fl-center*`
+  and `.fl-rail*` chrome CSS are removed along with it.
+
+  One behaviour change outside the page: the pin ceremony now skips its flight
+  animation when the page has no landing target (no host slot and no Apps
+  shelf). Pinning still works; it just does not animate. Previously the ghost
+  lifted and then vanished mid-air, because the Apps shelf it aimed at only ever
+  existed inside `VendoPage`.
+
+- 65de3c6: Remove five options and one recorder that nothing in the repo could reach: the
+  director stream recorder in `useVendoThread` (its two globals were never set by
+  anything), `subscribeConversationCommands`, `MorphToast`'s `dockTo` and
+  `holdMs` props, `VendoSlot`'s `emptyState.mark` and `emptyState.layout` props,
+  and `isConsumerSafe`. The thread surface's comments no longer ship internal
+  ticket, lane and ruling labels into ejected customer code.
+- Updated dependencies [a7a0fcf]
+- Updated dependencies [e092567]
+- Updated dependencies [b99147f]
+- Updated dependencies [46923cc]
+- Updated dependencies [b50a766]
+- Updated dependencies [022f789]
+- Updated dependencies [354f231]
+- Updated dependencies [ee92750]
+- Updated dependencies [d599d23]
+- Updated dependencies [89660d1]
+- Updated dependencies [2b6d60f]
+- Updated dependencies [b99147f]
+- Updated dependencies [b99147f]
+- Updated dependencies [2357b22]
+  - @vendoai/core@0.8.1
+
 ## 0.8.0
 
 ### Minor Changes
