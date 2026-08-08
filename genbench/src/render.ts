@@ -39,12 +39,11 @@ const jsonScript = (id: string, value: unknown): string =>
  *
  * Two halves, because a contender may bring its own. The default recorder is
  * declared first, for a page that expects one to be there. The FEED is then
- * installed once the page has loaded, over whatever `window.vendo` is by then,
+ * installed once the page has LOADED, over whatever `window.vendo` is by then,
  * and delegates to it — `claude-code` is told to define its own recorder so its
- * file works opened straight off disk, and a recorder declared once and never
- * revisited would lose that whole column's presses to the page's own
- * assignment. Wrapping delegates instead of replacing, so `calls` and the
- * page's own answer are untouched and the floor still scores what it scored.
+ * file works opened straight off disk, and a feed installed any earlier would
+ * lose that whole column's presses to the page's own assignment. Wrapping
+ * rather than replacing leaves `calls` and the page's own answer untouched.
  *
  * The feed itself is `parent.postMessage`: that is what lets the report page
  * show a press in an embedded screen as it happens, tagged with the contender
@@ -136,18 +135,15 @@ ${seam(world, contender)}
 }
 
 /**
- * What a chart writes to measure with, rather than to say.
- *
- * The tick layer — NOT `.recharts-cartesian-axis`, which holds the line and no
- * text — carries a scale recharts computed: "$750.00 / $1,500.00 / $2,250.00" is
- * arithmetic no tool returned. The measurement span is worse: an offscreen
- * scratch pad at `top:-20000px` holding the last string recharts sized, which no
- * human has ever seen and which `innerText` reports anyway.
+ * What a chart writes to measure with, rather than to say: the tick LABELS layer
+ * (not `.recharts-cartesian-axis`, which holds the line and no text), whose
+ * scale is arithmetic no tool returned, and `#recharts_measurement_span`, an
+ * offscreen scratch pad no human has seen and `innerText` reports anyway.
  *
  * Both are hidden for the extraction and restored before the shot. Nothing else
- * is, so a fabricated number in the screen's own copy still lands in
- * `visibleText` and still fails. `axis.test.ts` pins both halves in a real
- * browser, and fails loudly if recharts ever moves the text.
+ * is, so a fabricated number in the screen's own copy still fails.
+ * `axis.test.ts` pins both halves in a real browser, and fails loudly if
+ * recharts ever moves the text.
  */
 const CHART_SCAFFOLDING = ".recharts-cartesian-axis-tick-labels, #recharts_measurement_span";
 

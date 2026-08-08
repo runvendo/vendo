@@ -31,7 +31,7 @@ Case ids in `maple`: `spend-overview`, `spend-chart`, `pending-transfers`,
   screens, world-data panel, live tool-call feed). `runs/` is gitignored.
 - Floor checks are deterministic (delivered / renders / valid / honestData /
   wiredActions via click-probe). The `pass` lines are the rubric a pinned judge
-  (versioned rubric contract) grades once integrated — any edit to its prompt
+  (versioned rubric contract) grades on every run — any edit to its prompt
   bumps `rubricVersion` and resets comparability.
 - Budgets are per contender: five minutes for `vendo` and `diy`, twelve for
   `claude-code`, which runs its own ten-minute wall clock inside the driver.

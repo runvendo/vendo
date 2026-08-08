@@ -1,5 +1,5 @@
 import { createApps, hostDesignBrief } from "@vendoai/apps";
-import type { AppId, Principal, RunContext, ToolRegistry, UIPayload, WorkspaceFs } from "@vendoai/core";
+import type { AppId, Principal, RunContext, ToolRegistry, UIPayload } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
 import { screenAssembler } from "@vendoai/harnesses";
 import { createStore, workspaceStore } from "@vendoai/store";
@@ -125,15 +125,13 @@ async function run(request: RunRequest): Promise<RunOutcome> {
   const boundTools = guard.bind(combined);
 
   const workspaces = workspaceStore(store);
-  const screenWorkspace = async (screenCtx: RunContext): Promise<WorkspaceFs> =>
-    await workspaces.open(screenCtx.principal);
 
   const snapshots: Array<{ atMs: number; payload: UIPayload }> = [];
   let appsRef: ReturnType<typeof createApps> | undefined;
   const assembler = screenAssembler({
     models: { default: meter.model },
     tools: boundTools,
-    workspace: screenWorkspace,
+    workspace: async (screenCtx) => await workspaces.open(screenCtx.principal),
     // Wiring all three halves is what makes the emitted payload carry REAL
     // resolved query data; unwired, the seam falls back to a bare compile and
     // paints blank values.

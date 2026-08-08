@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { claudeCodeDriver, WALL_CLOCK_MS } from "./claude-code.js";
 import { diyDriver } from "./diy.js";
 import { checks, runFloor, type FloorResult } from "./floor.js";
-import { judge, JudgeContract, type JudgeResult } from "./judge.js";
+import { judge, JudgeContract, rubricLines, type JudgeResult } from "./judge.js";
 import { meteredModel, MODEL_IDS, type Meter, type ModelAlias, type UsageTotals } from "./meter.js";
 import { probe, type Probed } from "./probe.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shot } from "./render.js";
@@ -39,12 +39,10 @@ export interface RunOutcome {
   readonly blocking: readonly string[];
   /** The settled screen, as the product itself compiled it. */
   readonly payload?: UIPayload;
-  /** A contender that writes its own document returns it here instead of a
-   *  payload: these bytes ARE the artifact, and they mount unchanged. */
-  readonly page?: string;
-  /** Said by a contender whose `artifact` is ALREADY a document: there is no
-   *  compile between the bytes it saved and the page that mounts, so the
-   *  artifact is written as `page.html` and never as `artifact.vendo`. */
+  /** Said by a contender whose `artifact` is ALREADY a document — the one way a
+   *  contender reports a page it wrote itself. There is no compile between the
+   *  bytes it saved and the page that mounts, so the artifact lands once, as
+   *  `page.html`, and never as `artifact.vendo`. */
   readonly format?: "html";
   /** A contender billed by its own engine reports its spend here — the run's
    *  meter never saw those tokens. Priced through the same table all the same. */
@@ -155,15 +153,13 @@ export function contenders(models: readonly ModelAlias[]): readonly ContenderId[
 const CHARTS = new Set(["LineChart", "BarChart", "DonutChart", "Sparkline"]);
 
 /**
- * One contender's whole budget for one case — generation, paint and probe. A
- * contender that hangs costs the run this much and no more; its column is
- * recorded failed and its siblings keep their own clocks.
+ * One contender's whole budget for one case — generation, paint and probe.
  *
- * Per harness rather than one number for the row, because the columns do not
- * take the same shape of time: an agentic build runs its own ten-minute wall
- * clock (`WALL_CLOCK_MS`) before it has delivered anything, so a five-minute
- * case would end it early and record a timeout the contender never had. The
- * one-call columns keep the tighter bound they have never needed more than.
+ * Per harness rather than one number for the row: an agentic build runs its own
+ * ten-minute wall clock (`WALL_CLOCK_MS`) before it has delivered anything, so a
+ * five-minute case would end it early and record a timeout the contender never
+ * had. The one-call columns keep the tighter bound they have never needed more
+ * than.
  */
 export const CASE_TIMEOUT_MS: Readonly<Record<HarnessId, number>> = {
   vendo: 5 * 60_000,
@@ -189,19 +185,19 @@ export async function attempt<T>(work: () => Promise<T>, budgetMs: number): Prom
 }
 
 /**
- * The rubric for a column that produced no screen.
+ * The rubric for a column that produced no screen: every line failed.
  *
- * Nothing was delivered, so no line is satisfied — but that is the CONTENDER
- * failing, not the judge, so it is not degraded and no judge call is spent on a
- * screenshot that does not exist. Graded rather than skipped, because a column
- * that quietly drops out of the rubric is a benchmark that flatters whoever
- * crashed.
+ * That is the CONTENDER failing, not the judge, so it is not degraded and no
+ * judge call is spent on a screenshot that does not exist. Graded rather than
+ * skipped, because a column that quietly drops out of the rubric is a benchmark
+ * that flatters whoever crashed.
  */
 export const ungraded = (caseLines: readonly string[], styleLines: readonly string[]): JudgeResult => ({
-  lines: [
-    ...caseLines.map((line) => ({ line, source: "case" as const })),
-    ...styleLines.map((line) => ({ line, source: "style" as const })),
-  ].map((entry) => ({ ...entry, verdict: "fail" as const, note: "no screen was delivered to grade" })),
+  lines: rubricLines(caseLines, styleLines).map((entry) => ({
+    ...entry,
+    verdict: "fail" as const,
+    note: "no screen was delivered to grade",
+  })),
   degraded: false,
 });
 
@@ -220,12 +216,6 @@ export const exitCode = (results: readonly CaseResult[]): number =>
 const nodesOf = (payload: UIPayload | undefined): ReadonlyArray<{ source?: string; component?: string }> =>
   (payload as { nodes?: Array<{ source?: string; component?: string }> } | undefined)?.nodes ?? [];
 
-const countIslands = (payload: UIPayload | undefined): number =>
-  nodesOf(payload).filter((node) => node.source === "generated").length;
-
-const countClientOnly = (payload: UIPayload | undefined): number =>
-  nodesOf(payload).filter((node) => node.component !== undefined && CHARTS.has(node.component)).length;
-
 async function main(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv);
   if (args.lane === "build") {
@@ -239,7 +229,6 @@ async function main(argv: readonly string[]): Promise<number> {
   }
 
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
-  // A world is a folder: its JSON, its cases and any face it ships.
   const worldDir = join(root, "worlds", args.world);
   const world = await loadWorld(worldDir);
   const all = await loadCases(join(worldDir, "cases.json"));
@@ -268,9 +257,9 @@ async function main(argv: readonly string[]): Promise<number> {
     const { done, failure: broke } = await attempt(async () => {
       const outcome = await DRIVERS[contender.harness](contender.model).run({ world: scoped, testCase, meter });
       // Either the product compiled a payload into a page, or the contender
-      // wrote the page itself — handing it over as `page`, or as an `artifact`
-      // that already IS a document. From here on all three are just a page.
-      const authored = outcome.format === "html" ? outcome.artifact : outcome.page;
+      // handed over an artifact that already IS a document. From here on both
+      // are just a page.
+      const authored = outcome.format === "html" ? outcome.artifact : undefined;
       const html =
         authored !== undefined
           ? authoredPage(authored, scoped, contender.slug)
@@ -289,9 +278,7 @@ async function main(argv: readonly string[]): Promise<number> {
     const outcome = done?.outcome;
     const shot: Shot | undefined = done?.shot;
     const trace = done?.trace ?? [];
-    // Whatever the contender actually delivered: a document for vendo, the page
-    // itself for a contender that writes HTML.
-    const artifact = outcome?.artifact ?? outcome?.page;
+    const artifact = outcome?.artifact;
     const floor = runFloor({ world: scoped, artifact, blocking: outcome?.blocking ?? [], trace, shot });
 
     // Outside the contender's budget: the wait is the grader's, and charging it
@@ -311,8 +298,7 @@ async function main(argv: readonly string[]): Promise<number> {
 
     const caseDir = join(runDir, contender.slug, testCase.id);
     await mkdir(caseDir, { recursive: true });
-    // Only a compiled artifact gets its own file. A contender whose artifact is
-    // already a document has it on disk once, as `page.html`.
+    // Only a compiled artifact gets its own file.
     if (outcome?.artifact !== undefined && outcome.format !== "html") {
       await writeFile(join(caseDir, "artifact.vendo"), outcome.artifact);
     }
@@ -320,6 +306,7 @@ async function main(argv: readonly string[]): Promise<number> {
     if (shot !== undefined) await writeFile(join(caseDir, "screenshot.png"), shot.png);
 
     const failure = broke ?? outcome?.failure;
+    const nodes = nodesOf(outcome?.payload);
     const result: CaseResult = {
       run: runId,
       contender: contender.slug,
@@ -336,8 +323,8 @@ async function main(argv: readonly string[]): Promise<number> {
       // contender that spawns its own engine reports what that session spent,
       // priced through the same table (`usdFor`).
       cost: { usage: outcome?.usage ?? meter.totals(), usd: outcome?.usd ?? meter.usd() },
-      islands: countIslands(outcome?.payload),
-      clientOnly: countClientOnly(outcome?.payload),
+      islands: nodes.filter((node) => node.source === "generated").length,
+      clientOnly: nodes.filter((node) => node.component !== undefined && CHARTS.has(node.component)).length,
       trace,
       consoleErrors: shot?.consoleErrors ?? [],
       world: world.hash,
@@ -346,8 +333,9 @@ async function main(argv: readonly string[]): Promise<number> {
       ...(failure === undefined ? {} : { failure }),
     };
     await writeFile(join(caseDir, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
+    const scored = checks(floor);
     console.log(
-      `· ${contender.slug} / ${testCase.id} · floor ${checks(floor).filter((check) => check.pass).length}/5` +
+      `· ${contender.slug} / ${testCase.id} · floor ${scored.filter((check) => check.pass).length}/${scored.length}` +
         ` · judged ${judged.degraded ? "—" : tally(judged.lines)}` +
         ` · ${result.timing.settledMs}ms · $${result.cost.usd.toFixed(4)}` +
         (judged.degraded ? ` · JUDGE DEGRADED: ${judged.error ?? ""}` : ""),
@@ -359,9 +347,8 @@ async function main(argv: readonly string[]): Promise<number> {
     for (const testCase of cases) {
       const scoped = worldForCase(world, testCase);
       worlds[testCase.id] = scoped;
-      // The whole row at once. The contenders share only the browser, and each
-      // gets its own page in it; the order of `results` is the order of
-      // `contenders`, whatever order they finish in.
+      // The whole row at once: they share only the browser, a page each, and the
+      // order of `results` is the order of `contenders` whoever finishes first.
       const row = await Promise.all(
         contenders(args.models).map(async (contender) => await runOne(contender, testCase, scoped)),
       );

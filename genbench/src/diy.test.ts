@@ -236,7 +236,7 @@ describe("the diy driver", () => {
     const { meter } = replying(PAGE);
     const outcome = await diyDriver().run({ world, testCase: cases[0]!, meter });
 
-    expect(outcome.page).toBe(PAGE);
+    expect(outcome.artifact).toBe(PAGE);
     expect(outcome.failure).toBeUndefined();
   });
 
@@ -244,7 +244,7 @@ describe("the diy driver", () => {
     const { meter } = replying(`Here you go:\n\n\`\`\`html\n${PAGE}\n\`\`\`\n`);
     const outcome = await diyDriver().run({ world, testCase: cases[0]!, meter });
 
-    expect(outcome.page).toBe(PAGE);
+    expect(outcome.artifact).toBe(PAGE);
   });
 
   it("reports first paint at the settle, because a whole document is the unit", async () => {
@@ -261,7 +261,7 @@ describe("the diy driver", () => {
     const { meter } = replying("I can't help with that.");
     const outcome = await diyDriver().run({ world, testCase: cases[0]!, meter });
 
-    expect(outcome.page).toBeUndefined();
+    expect(outcome.artifact).toBeUndefined();
     expect(outcome.failure).toBeDefined();
   });
 });

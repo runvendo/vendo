@@ -50,7 +50,10 @@ async function run({ world, testCase, meter }: RunRequest): Promise<RunOutcome> 
   const page = unfence(answer);
   const delivered = /<html[\s>]|<!doctype html/i.test(page);
   return {
-    ...(delivered ? { page } : {}),
+    // The document IS the artifact: nothing compiles between these bytes and the
+    // browser, so it lands once, as `page.html`.
+    format: "html",
+    ...(delivered ? { artifact: page } : {}),
     blocking: [],
     snapshots,
     // A one-shot document paints nothing until it is whole, so first paint IS

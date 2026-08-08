@@ -1,16 +1,14 @@
 /**
- * The claude-code contender — the strong in-house baseline.
- *
- * Not a single generation call: a coding agent with hands, working in a scratch
- * directory, writing and rewriting one page until it is happy. It is handed the
- * SAME world every other column gets — `hostDesignBrief` for the theme and the
- * host's rules, the derived tool schemas, the rows each read answers with — and
- * the page contract the Vendo column gets for free from the renderer.
+ * The claude-code contender — the strong in-house baseline: a coding agent with
+ * hands, working in a scratch directory, writing and rewriting one page. It is
+ * handed the SAME world every other column gets — `hostDesignBrief` for the
+ * theme and the host's rules, the derived tool schemas, the rows each read
+ * answers with — and the page contract the Vendo column gets from the renderer.
  *
  * It is billed by its OWN session, not by genbench's metered model: the SDK
  * spawns its own engine and never touches `meter.model`. So the tokens ride the
- * outcome instead, priced through the same `usdFor` table as every other column
- * (`ClaudeCodeOutcome`). The meter is still the run's clock, and the only one.
+ * outcome instead, priced through the same `usdFor` table as every other
+ * column. The meter is still the run's clock, and the only one.
  */
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

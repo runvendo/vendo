@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { checks, type Binding, type Offender } from "./floor.js";
@@ -11,25 +12,27 @@ const escape = (value: string): string =>
 const verdict = (ok: boolean): string =>
   `<span class="v ${ok ? "ok" : "no"}">${ok ? "✓" : "✕"} ${ok ? "pass" : "fail"}</span>`;
 
+/** Every small list under a verdict — offenders, bindings, blocking findings —
+ *  is this list. */
+const notes = (rows: readonly string[]): string => `<ul class="notes">${rows.join("")}</ul>`;
+
 const offenderList = (offenders: readonly Offender[]): string =>
   offenders.length === 0
     ? ""
-    : `<ul class="notes">${offenders
-        .map((o) => `<li><code>${escape(o.text)}</code> <span>${escape(o.why)}</span></li>`)
-        .join("")}</ul>`;
+    : notes(offenders.map((o) => `<li><code>${escape(o.text)}</code> <span>${escape(o.why)}</span></li>`));
 
 const bindingList = (bindings: readonly Binding[]): string =>
-  bindings.length === 0
-    ? `<ul class="notes"><li><span>nothing on this screen to press</span></li></ul>`
-    : `<ul class="notes">${bindings
-        .map(
+  notes(
+    bindings.length === 0
+      ? ["<li><span>nothing on this screen to press</span></li>"]
+      : bindings.map(
           (b) =>
             `<li><code>${escape(b.where)}</code> <span>${[b.tool, b.why]
               .filter((part) => part !== undefined)
               .map(escape)
               .join(" — ")}</span> ${b.known && b.argsValid ? '<i class="ok">✓</i>' : '<i class="no">✕</i>'}</li>`,
-        )
-        .join("")}</ul>`;
+        ),
+  );
 
 /** `renders` can fail for a reason no screenshot shows, so the reason is on the
  *  page next to the verdict. */
@@ -100,7 +103,8 @@ const rubric = (judged: JudgeResult): string =>
 async function column(runDir: string, result: CaseResult): Promise<string> {
   const caseDir = join(result.contender, result.case);
   const shot = await readFile(join(runDir, caseDir, "screenshot.png")).catch(() => undefined);
-  const page = await readFile(join(runDir, caseDir, "page.html"), "utf8").catch(() => undefined);
+  // Only whether it is there: the frame below loads it from disk itself.
+  const hasPage = existsSync(join(runDir, caseDir, "page.html"));
   const scored = checks(result.floor);
   const total = scored.filter((check) => check.pass).length;
   const { usage } = result.cost;
@@ -112,9 +116,9 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
     <span class="score ${total === scored.length ? "ok" : "no"}">${total}/${scored.length}</span>
   </header>
   <figure>${
-    page === undefined
-      ? `<div class="blank">nothing rendered</div>`
-      : `<iframe title="${escape(result.case)} as ${escape(result.contender)} built it" src="${escape(caseDir)}/page.html" loading="lazy"></iframe>`
+    hasPage
+      ? `<iframe title="${escape(result.case)} as ${escape(result.contender)} built it" src="${escape(caseDir)}/page.html" loading="lazy"></iframe>`
+      : `<div class="blank">nothing rendered</div>`
   }</figure>
   ${
     shot === undefined
@@ -125,11 +129,7 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
   ${result.failure === undefined ? "" : `<p class="failure">${escape(result.failure)}</p>`}
   ${consoleNote(result.consoleErrors)}
   <dl class="floor">${scored.map((check) => `<div><dt>${check.name}</dt><dd>${verdict(check.pass)}</dd></div>`).join("")}</dl>
-  ${
-    result.floor.blocking.length === 0
-      ? ""
-      : `<ul class="notes">${result.floor.blocking.map((why) => `<li><span>${escape(why)}</span></li>`).join("")}</ul>`
-  }
+  ${result.floor.blocking.length === 0 ? "" : notes(result.floor.blocking.map((why) => `<li><span>${escape(why)}</span></li>`))}
   ${result.floor.honestData.pass ? "" : offenderList(result.floor.honestData.offenders)}
   ${bindingList(result.floor.wiredActions.bindings)}
   ${rubric(result.judged)}

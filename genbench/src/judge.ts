@@ -4,18 +4,14 @@ import { createHash } from "node:crypto";
 import type { Probed } from "./probe.js";
 
 /**
- * The non-mechanical half of the score.
+ * The non-mechanical half of the score: one verdict per rubric line — the case's
+ * `pass` lines (did it do what was asked) and the world's `style` lines (does it
+ * look like the product it claims to be).
  *
- * The floor answers what a machine can settle alone — did it render, are the
- * numbers real, do the buttons fire. This answers the rest, one rubric line at
- * a time: the case's `pass` lines (did it do what was asked) and the world's
- * `style` lines (does it look like the product it claims to be).
- *
- * It grades blind. Nothing it is sent names the contender, its model or its
- * run folder, and the lines arrive shuffled, so a judge cannot learn an order
- * or reward a name. The one leak left is the artifact's own format — a tree
- * and a hand-written document do not look alike — and it is disclosed rather
- * than papered over, because stripping it would destroy the evidence.
+ * It grades blind. Nothing it is sent names the contender, its model or its run
+ * folder, and the lines arrive shuffled, so a judge cannot learn an order or
+ * reward a name. The one leak left is the artifact's own format, disclosed
+ * rather than papered over: stripping it would destroy the evidence.
  */
 
 export const VERDICTS = ["pass", "fail", "na"] as const;
@@ -111,16 +107,11 @@ const MAX_ATTEMPTS = 3;
 /**
  * Identity, struck out of every piece of text evidence.
  *
- * Both columns name the product in their own source, in opposite ways: the
- * in-house baseline because its prompt tells it to call `vendo.callTool`, and
- * the product because its document is stamped `vendo/app@1`. Left alone, the
- * artifact hands the judge the answer in the channel it reads most closely —
- * and hands it BACKWARDS half the time, since the baseline's document is the
- * one that says the name out loud.
- *
- * The artifact's FORMAT is deliberately untouched: a tree still reads as a
- * tree and a document still reads as a document. That tell is disclosed, not
- * hidden — only the name goes.
+ * Both columns name the product in their own source — the baseline because its
+ * prompt tells it to call `vendo.callTool`, the product because its document is
+ * stamped `vendo/app@1` — so left alone the artifact hands the judge the answer,
+ * and hands it BACKWARDS half the time. The artifact's FORMAT is deliberately
+ * untouched: that tell is disclosed, not hidden. Only the name goes.
  */
 const IDENTITY = /\bvendo\b|\bdiy\b|\bclaude[\w-]*/gi;
 const blind = (text: string): string => text.replace(IDENTITY, "host");
@@ -212,11 +203,19 @@ async function ask(
   return { ok: false, error };
 }
 
+/** The rubric in the one order everything downstream reads it by: the case's
+ *  lines, then the world's. `ungraded` in `run.ts` grades the same list without
+ *  a judge, so the order lives here rather than in both. */
+export const rubricLines = (
+  caseLines: readonly string[],
+  styleLines: readonly string[],
+): ReadonlyArray<{ line: string; source: LineSource }> => [
+  ...caseLines.map((line) => ({ line, source: "case" as const })),
+  ...styleLines.map((line) => ({ line, source: "style" as const })),
+];
+
 export async function judge(input: JudgeInput, options: JudgeOptions = {}): Promise<JudgeResult> {
-  const lines: ReadonlyArray<{ line: string; source: LineSource }> = [
-    ...input.caseLines.map((line) => ({ line, source: "case" as const })),
-    ...input.styleLines.map((line) => ({ line, source: "style" as const })),
-  ];
+  const lines = rubricLines(input.caseLines, input.styleLines);
   if (lines.length === 0) return { lines: [], degraded: false };
 
   const order = shuffle(lines.length);
