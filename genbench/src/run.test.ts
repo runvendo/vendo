@@ -9,7 +9,17 @@ import { describe, expect, it } from "vitest";
 import { WALL_CLOCK_MS } from "./claude-code.js";
 import type { FloorResult } from "./floor.js";
 import { JudgeContract, type JudgeResult } from "./judge.js";
-import { attempt, CASE_TIMEOUT_MS, contenders, exitCode, parseArgs, ungraded, type CaseResult } from "./run.js";
+import {
+  attempt,
+  CASE_TIMEOUT_MS,
+  contenders,
+  exitCode,
+  parseArgs,
+  shouldOpen,
+  ungraded,
+  type Args,
+  type CaseResult,
+} from "./run.js";
 
 describe("attempt", () => {
   it("hands back what the work returned", async () => {
@@ -143,6 +153,36 @@ describe("a column with no screen", () => {
       ],
       degraded: false,
     });
+  });
+});
+
+/**
+ * A window is a thing a person asked for, not something a run does to whoever
+ * started it. `--prompt` is one case under one pair of eyes; a full run, a build
+ * agent, and anyone who opted out get the path on stdout instead.
+ */
+describe("opening the preview", () => {
+  const args = (only?: string): Args => ({
+    ...(only === undefined ? {} : { only }),
+    lane: "screen",
+    models: ["sonnet"],
+    world: "maple",
+  });
+
+  it("opens for the single case a person is sitting and watching", () => {
+    expect(shouldOpen(args("pending-transfers"), {})).toBe(true);
+  });
+
+  it("leaves a full run to the path it prints, rather than stealing focus mid-row", () => {
+    expect(shouldOpen(args(), {})).toBe(false);
+  });
+
+  it("never opens under CI, where a window is a hang and not a preview", () => {
+    expect(shouldOpen(args("pending-transfers"), { CI: "true" })).toBe(false);
+  });
+
+  it("never opens when the environment says not to", () => {
+    expect(shouldOpen(args("pending-transfers"), { GENBENCH_NO_OPEN: "1" })).toBe(false);
   });
 });
 

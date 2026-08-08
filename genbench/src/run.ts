@@ -104,7 +104,7 @@ const DRIVERS: Record<HarnessId, (model: ModelAlias) => Contender> = {
 /** The only world folder there is today. */
 const DEFAULT_WORLD = "maple";
 
-interface Args {
+export interface Args {
   readonly only?: string;
   readonly lane: Lane;
   readonly models: readonly ModelAlias[];
@@ -201,6 +201,17 @@ export const ungraded = (caseLines: readonly string[], styleLines: readonly stri
   })),
   degraded: false,
 });
+
+/**
+ * A window is opened only for the run it was asked for.
+ *
+ * `--prompt` is one person watching one case, and a window is the point of it.
+ * A full run, anything under `CI`, and anyone who says `GENBENCH_NO_OPEN=1` get
+ * the path on stdout instead — a browser stealing focus part-way through a
+ * five-case run is a bug, and on a build agent it is a hang.
+ */
+export const shouldOpen = (args: Args, env: NodeJS.ProcessEnv): boolean =>
+  args.only !== undefined && env["CI"] === undefined && env["GENBENCH_NO_OPEN"] !== "1";
 
 /**
  * The floor decides the run's exit code, and nothing else does.
@@ -380,8 +391,15 @@ async function main(argv: readonly string[]): Promise<number> {
 
   const preview = await writePreview({ runDir, runId, results, worlds });
   console.log(preview);
-  if (process.platform === "darwin") spawn("open", [preview], { detached: true, stdio: "ignore" }).unref();
-  return exitCode(results);
+  if (process.platform === "darwin" && shouldOpen(args, process.env)) {
+    spawn("open", [preview], { detached: true, stdio: "ignore" }).unref();
+  }
+  const code = exitCode(results);
+  // The verdict in words, last. `pnpm` prints its own ELIFECYCLE noise over a
+  // non-zero exit, and the number that decided the run should not have to be
+  // inferred from that.
+  console.log(`floor failures: ${results.filter((result) => !result.floor.pass).length} (exit ${code})`);
+  return code;
 }
 
 // Only when run as the command — importing this module from a test must not
