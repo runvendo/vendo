@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoOverlay, VendoThread } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
@@ -73,6 +73,42 @@ describe("VendoThread and VendoOverlay exports", () => {
       threadId: "thr_1",
       message: { role: "user", parts: [{ type: "text", text: "Send the email" }] },
     });
+  });
+
+  it("brings a new approval into view even while the transcript keeps re-rendering", { timeout: 20_000 }, async () => {
+    // A build's approval lands below a tall generated view, off-screen, so the
+    // thread scrolls it into view 80ms after it appears. That effect marked the
+    // approval "seen" up front and only THEN armed the timer — and it re-runs on
+    // every render, because the scroll hook hands back a fresh object each time.
+    // So any re-render inside the 80ms cleared the timer, and the re-run found
+    // nothing fresh left to scroll to: killed for good. A settling stream
+    // re-renders several times in that window, which is exactly when an approval
+    // appears, so the consent this exists to surface was never brought into view.
+    //
+    // jsdom ships no scrollIntoView; a spy is both the stand-in and the assertion.
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    await screen.findByText("Existing thread");
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(composer, { target: { value: "Send the email" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+
+    // Re-render right across the approval's arrival, rather than racing it: the
+    // window is 80ms and this lands inside every one of them.
+    const churn = setInterval(() => {
+      fireEvent.change(composer, { target: { value: `typing ${Date.now()}` } });
+    }, 15);
+    try {
+      await screen.findByLabelText("Approval for Send the report");
+      await new Promise(resolve => setTimeout(resolve, 200));
+    } finally {
+      clearInterval(churn);
+    }
+
+    // The churn has stopped; the card must still be brought into view.
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    expect(scrollIntoView.mock.calls.at(-1)?.[0]).toEqual({ behavior: "smooth", block: "end" });
   });
 
   // Demo-latency lane — the observed dead-air class: the agent streams a

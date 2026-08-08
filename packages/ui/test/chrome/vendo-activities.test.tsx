@@ -151,4 +151,33 @@ describe("VendoActivities", () => {
     expect(await screen.findByLabelText("Approval for Email send")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Needs your approval" })).toBeTruthy();
   });
+
+  it("stops reading the activity feed while the tab is hidden", async () => {
+    // The shared approvals feed has always stopped itself when the document is
+    // hidden; the resource behind every OTHER collection hook (activity here)
+    // kept its cadence, so a workspace left open in a background tab went on
+    // spending a request every few seconds, on battery and against quota, for a
+    // view nobody could see.
+    const activityReads = () => wire.requests.filter(entry => entry.path.startsWith("/activity")).length;
+    const quiet = () => new Promise(resolve => setTimeout(resolve, 200));
+    mount({ pollMs: 30 });
+    await waitFor(() => expect(screen.getAllByText("Invoices list").length).toBeGreaterThan(0));
+    // Proof the poll runs at all, so the assertion below cannot pass by default.
+    await waitFor(() => expect(activityReads()).toBeGreaterThan(1));
+
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await quiet();
+    const settled = activityReads();
+    await quiet();
+    try {
+      expect(activityReads()).toBe(settled);
+    } finally {
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }
+    // Coming back is not a wait: the view catches up on the spot rather than
+    // sitting on stale rows for another cadence.
+    await waitFor(() => expect(activityReads()).toBeGreaterThan(settled));
+  });
 });

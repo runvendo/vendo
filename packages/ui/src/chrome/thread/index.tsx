@@ -111,6 +111,14 @@ export function VendoThread({
   // bring it into view (and re-stick), so consent is never something you have
   // to go hunting for.
   const seenApprovalsRef = useRef<Set<string>>(new Set());
+  // The target OUTLIVES the delay. This effect re-runs on every render (the
+  // scroll hook returns a fresh object each time), and marking the approval
+  // "seen" is what tells the next run there is nothing to do — so arming the
+  // timer against the freshness check alone meant one re-render inside 80ms
+  // killed the scroll for good rather than deferring it. A settling stream
+  // re-renders several times in that window, which is exactly when an approval
+  // arrives.
+  const pendingScrollRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     const pending = thread.messages
       .flatMap(message => message.parts)
@@ -119,9 +127,16 @@ export function VendoThread({
       .filter((id): id is string => typeof id === "string");
     const fresh = pending.find(id => !seenApprovalsRef.current.has(id));
     seenApprovalsRef.current = new Set(pending);
-    if (fresh === undefined) return;
+    if (fresh !== undefined) pendingScrollRef.current = fresh;
+    const target = pendingScrollRef.current;
+    // An ask decided before the delay elapsed is no longer an ask to reach.
+    if (target === undefined || !pending.includes(target)) {
+      pendingScrollRef.current = undefined;
+      return;
+    }
     const timer = setTimeout(() => {
-      const card = approvalCardRefs.current.get(fresh)?.querySelector<HTMLElement>(".fl-approval");
+      pendingScrollRef.current = undefined;
+      const card = approvalCardRefs.current.get(target)?.querySelector<HTMLElement>(".fl-approval");
       // block: "end", not "center": a sibling surface sharing this pane's
       // flex column can leave the list shorter than the card itself at a
       // short viewport
@@ -130,8 +145,11 @@ export function VendoThread({
       // with no way to reach it. Bottom-aligning always leaves the action
       // row — the part the reader actually needs — as the last thing in
       // view, consistent with the list's own stick-to-bottom behavior.
-      if (card) card.scrollIntoView({ behavior: "smooth", block: "end" });
-      else scroll.jumpToLatest();
+      // (jsdom leaves scrollIntoView undefined; browsers always have it. Same
+      // guard the two other scrollIntoView call sites in the chrome keep.)
+      if (card && typeof card.scrollIntoView === "function") {
+        card.scrollIntoView({ behavior: "smooth", block: "end" });
+      } else scroll.jumpToLatest();
     }, 80);
     return () => clearTimeout(timer);
   }, [thread.messages, scroll]);

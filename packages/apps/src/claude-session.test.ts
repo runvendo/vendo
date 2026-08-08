@@ -39,14 +39,48 @@ interface SessionRecord {
 }
 
 /**
+ * What the SDK yields once it has answered a message — the shape this double used
+ * to have no way of varying.
+ *
+ * It hard-coded exactly ONE `result` per message read, which IS the assumption the
+ * session's steer bookkeeping made, so no test here could ever disagree with the
+ * session about it. The engine's own contract is looser, and READ FROM THE SHIPPED
+ * ENGINE (0.3.214, `sdk.d.ts` + the CLI's own message schemas):
+ *
+ *   - ZERO: a message the engine folds into the turn already running produces no
+ *     boundary of its own. Its `still_queued` docs say a dequeued batch is
+ *     "coalesced into one turn", and a `shouldQuery: false` message is "merged
+ *     into the next user message that does query" — one turn, one result, two
+ *     messages. This is the shape steering is DOCUMENTED to have ("the SDK hands
+ *     the message to the model at its next step boundary").
+ *   - ONE: the shape this double used to be able to produce, and the only one.
+ *   - SEVERAL: results are held back while background work finishes and then
+ *     flushed together, so more than one can land back to back.
+ *
+ * `idle` is the engine's own answer to the question a count can only guess at: a
+ * `session_state_changed` event whose schema calls `idle` the "authoritative
+ * turn-over signal".
+ */
+interface MessageBoundary {
+  /** How many `result` messages this message's turn yields. */
+  results?: number;
+  /** Whether the session then announces it has nothing left to do. */
+  idle?: boolean;
+}
+
+/**
  * A faithful stand-in for a STREAMING-INPUT session: it drains the async iterable
  * the caller hands `query()`, and for each user message it plays that message's
- * scripted turn and then yields a `result` — which is how the real SDK says "this
- * turn is done" while the input stream stays open.
+ * scripted turn and then yields that message's {@link MessageBoundary} — which is
+ * how the real SDK says "this turn is done" while the input stream stays open.
  */
 function fakeSessionSdk(
   script: (prompt: string, index: number) => ScriptedTurn[],
   record: SessionRecord,
+  /** Per-message, by index. One result and no idle announcement is the default
+   *  because it is the shape the engine has been SEEN to have; the point of the
+   *  knob is that the session must not require it. */
+  boundary: (index: number) => MessageBoundary = () => ({ results: 1 }),
   sessionId = "sess_live",
 ) {
   return {
@@ -84,13 +118,19 @@ function fakeSessionSdk(
               // by the ENGINE over HTTP to the host's door — out of this process.
               record.used.push(step.use.name);
             }
+            const { results = 1, idle = false } = boundary(index);
             index += 1;
-            yield {
-              type: "result",
-              subtype: "success",
-              session_id: sessionId,
-              usage: { input_tokens: 10, output_tokens: 4 },
-            };
+            for (let n = 0; n < results; n += 1) {
+              yield {
+                type: "result",
+                subtype: "success",
+                session_id: sessionId,
+                usage: { input_tokens: 10, output_tokens: 4 },
+              };
+            }
+            if (idle) {
+              yield { type: "system", subtype: "session_state_changed", state: "idle", session_id: sessionId };
+            }
           }
         },
       };
@@ -101,6 +141,7 @@ function fakeSessionSdk(
 function openSession(
   script: (prompt: string, index: number) => ScriptedTurn[],
   extra: Record<string, unknown> = {},
+  boundary?: (index: number) => MessageBoundary,
 ) {
   const events: ClaudeTurnEvent[] = [];
   const record: SessionRecord = { queries: 0, prompts: [], options: {}, used: [] };
@@ -108,7 +149,7 @@ function openSession(
     cwd: "/workspace",
     env: {},
     emit: (event: ClaudeTurnEvent) => events.push(event),
-    sdk: fakeSessionSdk(script, record) as never,
+    sdk: fakeSessionSdk(script, record, boundary) as never,
     ...extra,
   } as never);
   return { session, events, record };
@@ -281,6 +322,19 @@ describe("the four channels the live session opens", () => {
     await session.end();
   });
 
+  test("the engine is asked to announce when it goes idle — the signal a steered turn ends on", async () => {
+    const { session, record } = openSession(() => [{ say: "ok" }], { env: { PATH: "/usr/bin" } });
+    await session.send("hi");
+    await session.end();
+    // The engine emits `session_state_changed` only when asked to. Unasked, a
+    // steered turn is back to guessing how many results to expect, so this is
+    // part of the loop's protocol rather than the operator's preference.
+    expect(record.options["env"]).toEqual({
+      PATH: "/usr/bin",
+      CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
+    });
+  });
+
   test("partial messages are requested, so text streams as tokens rather than in one block", async () => {
     const { session, record } = openSession(() => [{ say: "ok" }]);
     await session.send("hi");
@@ -421,7 +475,10 @@ describe("steering the turn in flight", () => {
     await session.end();
   });
 
-  test("N steers swallow exactly N extra results — the turn ends when the LAST one does", async () => {
+  test("one result per steered message: the turn ends when the LAST one does", async () => {
+    // The count-shaped case, now ONE case among three rather than the shape the
+    // double could only produce. The boundary is stated here, so a reader can see
+    // which engine behaviour this test speaks for.
     const record: SessionRecord = { queries: 0, prompts: [], options: {}, used: [] };
     let session: ClaudeSession | undefined;
     session = createClaudeSession({
@@ -432,11 +489,114 @@ describe("steering the turn in flight", () => {
         if (event.delta === "one") session!.steer("second thought");
         if (event.delta === "two") session!.steer("third thought");
       },
-      sdk: fakeSessionSdk((_prompt, index) => [{ say: ["one", "two", "three"][index] ?? "done" }], record) as never,
+      sdk: fakeSessionSdk(
+        (_prompt, index) => [{ say: ["one", "two", "three"][index] ?? "done" }],
+        record,
+        () => ({ results: 1 }),
+      ) as never,
     } as never);
 
     await session.send("start");
     expect(record.prompts).toEqual(["start", "second thought", "third thought"]);
+    await session.end();
+  });
+
+  test("a steer the engine FOLDS into the running turn still ends the caller's send()", async () => {
+    // THE HANG, and the reason a count cannot be the authority. The turn used to
+    // require one extra `result` per steer — a prediction about the engine, not a
+    // fact about it. A message coalesced into the turn already running yields no
+    // boundary of its own, so the count outlived the work: the FINAL result was
+    // swallowed too, `send()` never settled, and the caller waited out the whole
+    // message budget for a turn that had already finished.
+    const record: SessionRecord = { queries: 0, prompts: [], options: {}, used: [] };
+    let session: ClaudeSession | undefined;
+    session = createClaudeSession({
+      cwd: "/workspace",
+      env: {},
+      emit: (event: ClaudeTurnEvent) => {
+        if (event.type === "text" && event.delta === "building it") session!.steer("group by client instead");
+      },
+      sdk: fakeSessionSdk(
+        (_prompt, index) => [{ say: index === 0 ? "building it" : "regrouping" }],
+        record,
+        // The steer's words ride the turn already running: ONE boundary for both
+        // messages, and then the engine says it has nothing left to do.
+        (index) => (index === 0 ? { results: 0 } : { results: 1, idle: true }),
+      ) as never,
+    } as never);
+
+    let settled = false;
+    const sending = session.send("build me a reconciliation workbench");
+    void sending.then(() => { settled = true; });
+    // One macrotask drains the whole scripted session — the fake holds no timers.
+    // Both messages read, one result, then idle: nothing is left that could ever
+    // settle this caller, so a still-pending send here is a permanent hang.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(record.prompts).toEqual(["build me a reconciliation workbench", "group by client instead"]);
+    expect(settled).toBe(true);
+
+    await sending;
+    await session.end();
+  });
+
+  test("two steers and ONE result: idle clears the whole wait, not one steer of it", async () => {
+    const record: SessionRecord = { queries: 0, prompts: [], options: {}, used: [] };
+    let session: ClaudeSession | undefined;
+    session = createClaudeSession({
+      cwd: "/workspace",
+      env: {},
+      emit: (event: ClaudeTurnEvent) => {
+        if (event.type !== "text") return;
+        if (event.delta === "one") session!.steer("second thought");
+        if (event.delta === "two") session!.steer("third thought");
+      },
+      sdk: fakeSessionSdk(
+        (_prompt, index) => (index === 0 ? [{ say: "one" }, { say: "two" }] : [{ say: "regrouping" }]),
+        record,
+        // Both steers fold into the first turn, so the session sees ONE result and
+        // two steers. A wait that unwound one steer per signal would still be
+        // short by one when the engine went quiet.
+        (index) => (index === 0 ? { results: 1 } : { results: 0, idle: index === 2 }),
+      ) as never,
+    } as never);
+
+    let settled = false;
+    const sending = session.send("start");
+    void sending.then(() => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(record.prompts).toEqual(["start", "second thought", "third thought"]);
+    expect(settled).toBe(true);
+
+    await sending;
+    await session.end();
+  });
+
+  test("several results back to back never outlast the steers that were pushed", async () => {
+    // The other end of the same unknown: results are held back while background
+    // work finishes and then flushed together, so one message's answer can arrive
+    // as several boundaries. The wait is a CAP — it ends at the steers actually
+    // pushed — and the surplus is dropped where it lands rather than banked for
+    // whoever sends next.
+    const record: SessionRecord = { queries: 0, prompts: [], options: {}, used: [] };
+    let session: ClaudeSession | undefined;
+    session = createClaudeSession({
+      cwd: "/workspace",
+      env: {},
+      emit: (event: ClaudeTurnEvent) => {
+        if (event.type === "text" && event.delta === "one") session!.steer("second thought");
+      },
+      sdk: fakeSessionSdk(
+        (_prompt, index) => [{ say: ["one", "two", "three"][index] ?? "done" }],
+        record,
+        (index) => (index === 0 ? { results: 3 } : { results: 1 }),
+      ) as never,
+    } as never);
+
+    await session.send("start");
+    // The next caller's turn is its OWN: it settles on a boundary that arrives
+    // after the engine has read its message, never on a leftover.
+    await session.send("and now this");
+    expect(record.prompts).toEqual(["start", "second thought", "and now this"]);
     await session.end();
   });
 

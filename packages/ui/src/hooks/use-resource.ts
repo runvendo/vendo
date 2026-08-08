@@ -25,6 +25,12 @@ function asError(reason: unknown): Error {
   return reason instanceof Error ? reason : new Error(String(reason));
 }
 
+/** A tab nobody is looking at costs the deployment nothing — the rule the shared
+    approvals feed has always followed, and now every polled resource does. */
+function hidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
 /** Drive one async source into a `{ data, error, isLoading, refresh }` view.
  *
  * `fetcher` must be memoised by the caller (stable across renders while its
@@ -70,18 +76,27 @@ export function useResource<T>(fetcher: () => Promise<T>, initial: T, { pollMs }
   // the current refresh settles, so a slow request (pollMs < latency) can never
   // stack overlapping fetches that stale each other out (and leave the first
   // load stuck loading).
+  //
+  // A hidden tab is skipped, not stopped: the cadence keeps ticking so there is
+  // no restart to get wrong, and coming back re-reads on the spot rather than
+  // leaving stale rows up for another whole interval.
   useEffect(() => {
     if (pollMs === undefined || pollMs <= 0) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
-      await refresh();
+      if (!hidden()) await refresh();
       if (!cancelled) timer = setTimeout(() => void tick(), pollMs);
     };
     timer = setTimeout(() => void tick(), pollMs);
+    const onVisible = () => {
+      if (!hidden() && !cancelled) void refresh();
+    };
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisible);
     };
   }, [pollMs, refresh]);
 

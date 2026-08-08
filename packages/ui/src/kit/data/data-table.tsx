@@ -61,6 +61,17 @@ function resolvePath(row: Record<string, unknown>, path: string): unknown {
 const alignCss = (a: DataTableColumn["align"]): CSSProperties["textAlign"] =>
   a === "end" ? "right" : a === "center" ? "center" : "left";
 
+/**
+ * The text a cell actually SHOWS, which is the only thing a filter may compare
+ * against: the person filters on what is in front of them. Filtering the raw
+ * field instead meant "$2,500.00" and "Mar 14, 2026" were unsearchable, while
+ * the dropdown offered "2026-03-14" as an option for a column reading
+ * "Mar 14, 2026". Unrenderable cells (the "—" placeholder) filter as empty.
+ */
+function displayText(row: Record<string, unknown>, column: DataTableColumn): string {
+  return applyFormat(resolvePath(row, column.key), column.format ?? "text") ?? "";
+}
+
 const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
 
 export function DataTable(props: DataTableProps) {
@@ -112,7 +123,10 @@ export function DataTable(props: DataTableProps) {
           if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
           return formatted;
         },
-        filterFn: "includesString",
+        // A dropdown lists the values that exist, so picking one means THIS
+        // value — "includesString" here let a pick of "paid" list the "unpaid"
+        // rows too.
+        filterFn: (row, _columnId, value) => displayText(row.original, col) === String(value),
       })),
     [columns],
   );
@@ -128,7 +142,15 @@ export function DataTable(props: DataTableProps) {
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
     onColumnFiltersChange: setColumnFilters as never,
-    globalFilterFn: "includesString",
+    globalFilterFn: (row, columnId, value) => {
+      const col = columns.find((entry) => entry.key === columnId);
+      if (!col) return false;
+      return displayText(row.original, col).toLowerCase().includes(String(value).toLowerCase());
+    },
+    // Every column renders text, so every column is searchable on that text.
+    // The default excludes any column whose raw value is not a string or number
+    // — a formatted date column being exactly that.
+    getColumnCanGlobalFilter: () => true,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -140,15 +162,16 @@ export function DataTable(props: DataTableProps) {
   const distinctValues = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const key of filterableBy ?? []) {
+      const col = columns.find((entry) => entry.key === key) ?? { key };
       const set = new Set<string>();
       for (const row of data) {
-        const v = resolvePath(row, key);
-        if (v !== null && v !== undefined && v !== "") set.add(String(v));
+        const text = displayText(row, col);
+        if (text !== "") set.add(text);
       }
       map.set(key, [...set].sort());
     }
     return map;
-  }, [filterableBy, data]);
+  }, [filterableBy, data, columns]);
 
   const columnLabel = (key: string) =>
     columns.find((c) => c.key === key)?.label ?? humanizeEnum(key.split(".").pop() ?? key);

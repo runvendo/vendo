@@ -193,6 +193,27 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
   const [justEnabled, setJustEnabled] = useState<Record<string, boolean>>({});
   const enableTimers = useRef(new Map<string, number>());
   const stripFetched = useRef(new Set<string>());
+  // Per-row read generation. Several `/runs` reads of ONE row can be in flight
+  // at once — the eager strip read, plus a sweep that fires on a timer and never
+  // waits for the previous tick — and the one that LANDS last is not the one
+  // that was ISSUED last. Without this the row believed whichever answered last,
+  // so a slow read overwrote a fresh one and the strip went BACKWARDS on screen:
+  // a run the person had just watched succeed reverted to Failed, and stayed
+  // there until the next tick (five seconds, at the shipped cadence). The
+  // collection hooks have had this guard all along — `useResource`'s
+  // `generationRef` — and these reads are the ones that bypass it, since they go
+  // to `client.runs.list` directly, per row.
+  const runsRead = useRef(new Map<string, number>());
+  /** Take the next generation for this row; the caller may write only while it
+      is still the newest read issued (a newer one supersedes it, and a fresher
+      answer is by definition on its way). */
+  const issueRunsRead = (key: string): number => {
+    const generation = (runsRead.current.get(key) ?? 0) + 1;
+    runsRead.current.set(key, generation);
+    return generation;
+  };
+  const isNewestRunsRead = (key: string, generation: number): boolean =>
+    runsRead.current.get(key) === generation;
   // 7-A — the countdown re-renders on a slow clock; minute precision needs no
   // faster tick, and an unmounted panel stops it.
   const [now, setNow] = useState(() => Date.now());
@@ -224,34 +245,35 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
   // automation healthy" without opening Run history. Once per appId; a strip
   // fetch failure stays silent-but-visible — the strip simply doesn't render,
   // and Run history still surfaces errors through the shared alert.
+  //
+  // NOTHING here is cancelled on an effect restart. This effect restarts every
+  // time `automations` is a new array, which is every poll tick and every
+  // refresh — and a response discarded on restart also unmarked its row, which
+  // the already-restarted effect had skipped, so no retry was ever issued and
+  // the strip stayed empty. The rows are keyed and the landing is idempotent,
+  // so a late response is simply the answer arriving.
   const listRuns = automations.runs;
   useEffect(() => {
-    let cancelled = false;
     for (const entry of automations.automations) {
       const appId = entry.app.id;
       for (const { trigger } of entry.triggers) {
         const key = rowKey(appId, trigger.id);
         if (stripFetched.current.has(key)) continue;
         stripFetched.current.add(key);
+        const generation = issueRunsRead(key);
         void (async () => {
           try {
             const result = await listRuns({ appId, triggerId: trigger.id });
-            // A discarded (cancelled) response must also unmark the row, or an
-            // effect restart would skip its only retry and the strip never renders.
-            if (cancelled) {
-              stripFetched.current.delete(key);
-              return;
-            }
+            if (!isNewestRunsRead(key, generation)) return;
             setRecent(current => ({ ...current, [key]: result.runs.slice(0, RUN_STRIP_LIMIT) }));
           } catch {
-            if (!cancelled) stripFetched.current.delete(key);
+            // Unmark so this row's next render retries it — unless a newer read
+            // already owns the row, in which case there is nothing to retry.
+            if (isNewestRunsRead(key, generation)) stripFetched.current.delete(key);
           }
         })();
       }
     }
-    return () => {
-      cancelled = true;
-    };
   }, [automations.automations, listRuns]);
 
   // The row states above ride the hooks' own poll; RUNS are fetched per row, so
@@ -269,9 +291,14 @@ export function AutomationsPanel({ pollMs = AUTOMATIONS_POLL_MS }: AutomationsPa
       for (const { trigger } of entry.triggers) {
         const key = rowKey(appId, trigger.id);
         const open = runs[key] !== undefined;
+        const generation = issueRunsRead(key);
         void (async () => {
           try {
             const result = await listRuns({ appId, triggerId: trigger.id });
+            // A tick's answer counts only while it is the newest read issued for
+            // this row: two ticks overlap whenever /runs is slower than the
+            // cadence, and the older one must not have the last word.
+            if (!isNewestRunsRead(key, generation)) return;
             setRecent(current => ({ ...current, [key]: result.runs.slice(0, RUN_STRIP_LIMIT) }));
             // Never REOPEN a history the person collapsed while this was in
             // flight — `undefined` is what "collapsed" means to the row below.

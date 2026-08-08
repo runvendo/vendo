@@ -58,6 +58,22 @@ export interface PinCeremonyOptions {
   dismiss?(): void;
 }
 
+/**
+ * Reduced motion, from BOTH places it can be asked for: the OS, and the host's
+ * own `theme.motion` — read off the chrome boundary the card sits in, since
+ * `ChromeRoot` writes `data-vendo-motion` on every one and this module already
+ * reads that boundary for the ghost's theme.
+ *
+ * Only the media query counted here before, so a host that set
+ * `theme.motion: "reduced"` still got the full flight. The chrome stylesheet's
+ * `[data-vendo-motion="reduced"] * { animation: none }` cannot cover for that:
+ * the flight is a Web Animations animation, which that rule does not reach.
+ */
+function prefersReducedMotion(source: Element | null): boolean {
+  if (source?.closest('[data-vendo-motion="reduced"]')) return true;
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 /** Rect of an element that is actually laid out — an unmounted or hidden
  *  destination measures 0 and is treated as absent. */
 function boxOf(element: Element | null): DOMRect | null {
@@ -238,7 +254,7 @@ export function playPinCeremony({ appId, slot, dismiss = () => {} }: PinCeremony
   const source = [...document.querySelectorAll("[data-vendo-app-embed]")]
     .find(element => element.getAttribute("data-vendo-app-embed") === appId) ?? null;
   const from = boxOf(source);
-  const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reduced = prefersReducedMotion(source);
   // Nothing on the page to land in — no host slot and no Apps shelf. The
   // check below at measure time catches this too, but only AFTER the ghost has
   // lifted, so the pin read as a flight into thin air. Skip the ceremony
