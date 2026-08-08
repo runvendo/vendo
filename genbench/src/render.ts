@@ -65,6 +65,22 @@ function seam(world: World, contender: string): string {
 }
 
 /**
+ * The face the world ships, declared as a data URL because the page has no
+ * network. Injected into EVERY contender's page as these same bytes: a family
+ * the theme names and no page can resolve is a style rule nobody can check by
+ * looking, and one contender resolving it while another does not would grade
+ * the harness.
+ *
+ * `font-display:block` so a shot can never catch the fallback mid-swap. A world
+ * that ships no face says nothing at all, and every column falls back together.
+ */
+export function fontFace(world: World): string {
+  if (world.font === undefined) return "";
+  const family = world.theme.typography.fontFamily.split(",")[0]!.trim().replace(/^['"]|['"]$/g, "");
+  return `<style>@font-face{font-family:${JSON.stringify(family)};font-style:normal;font-weight:100 900;font-display:block;src:url(data:font/woff2;base64,${world.font}) format("woff2")}</style>`;
+}
+
+/**
  * The page a contender is judged on: a root to mount into, the case's data, and
  * the script that paints it. The theme rides as JSON and is applied through the
  * product's own `applyThemeVars`, so nothing here re-implements theming.
@@ -75,6 +91,7 @@ export function pageHtml(payload: UIPayload, world: World, bundle: string, conte
 html,body{margin:0;padding:0;background:var(--vendo-color-background,#fff);}
 #root{padding:20px;}
 </style>
+${fontFace(world)}
 ${seam(world, contender)}
 </head><body><div id="root"></div>
 ${jsonScript("payload", payload)}
@@ -87,13 +104,14 @@ ${jsonScript("theme", world.theme)}
 const ENTRY = /<head[^>]*>|<body[^>]*>/i;
 
 /**
- * A contender that wrote its own document gets the seam and the settle signal
- * injected, and nothing else: the page it wrote is the page that mounts, is shot
- * and is probed. The settle belongs to the harness because a hand-written page
- * has no reason to know the shooter is waiting for it.
+ * A contender that wrote its own document gets the world's face, the seam and
+ * the settle signal injected, and nothing else: the page it wrote is the page
+ * that mounts, is shot and is probed. The settle belongs to the harness because
+ * a hand-written page has no reason to know the shooter is waiting for it.
  */
 export function authoredPage(html: string, world: World, contender: string): string {
-  const injected = `${seam(world, contender)}
+  const injected = `${fontFace(world)}
+${seam(world, contender)}
 <script>addEventListener("load", function () {
   requestAnimationFrame(function () { requestAnimationFrame(function () { window.__settled = true; }); });
 });</script>`;

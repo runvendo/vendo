@@ -40,7 +40,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;
 let shooter: Shooter;
 beforeAll(async () => {
-  world = await loadWorld(join(root, "world.json"));
+  world = await loadWorld(join(root, "worlds", "maple"));
   shooter = await openBrowser();
 }, 60_000);
 afterAll(async () => await shooter.close());

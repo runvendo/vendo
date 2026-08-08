@@ -45,8 +45,8 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;
 let emptyWorld: World;
 beforeAll(async () => {
-  world = await loadWorld(join(root, "world.json"));
-  const cases = await loadCases(join(root, "cases.json"));
+  world = await loadWorld(join(root, "worlds", "maple"));
+  const cases = await loadCases(join(root, "worlds", "maple", "cases.json"));
   emptyWorld = worldForCase(world, cases.find((entry) => entry.id === "no-pending-transfers")!);
 });
 

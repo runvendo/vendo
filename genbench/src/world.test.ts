@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { jsonSchemaFromExample, loadCases, loadWorld, riskOf, worldForCase } from "./world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const worldPath = join(root, "world.json");
-const casesPath = join(root, "cases.json");
+const worldDir = join(root, "worlds", "maple");
+const casesPath = join(worldDir, "cases.json");
 
 describe("jsonSchemaFromExample", () => {
   it("describes a row array by its first row, with every field required", () => {
@@ -48,7 +48,7 @@ describe("riskOf", () => {
 
 describe("the authored world", () => {
   it("derives an input schema from the takes map, not from example values", async () => {
-    const world = await loadWorld(worldPath);
+    const world = await loadWorld(worldDir);
     const cancel = world.tools.find((tool) => tool.name === "cancel_transfer");
     expect(cancel?.descriptor.inputSchema).toEqual({
       type: "object",
@@ -59,7 +59,7 @@ describe("the authored world", () => {
   });
 
   it("keeps every write tool off the read grade, so the loadout filter can drop it", async () => {
-    const world = await loadWorld(worldPath);
+    const world = await loadWorld(worldDir);
     expect(world.tools.find((tool) => tool.name === "cancel_transfer")?.descriptor.risk).toBe("write");
     expect(world.tools.find((tool) => tool.name === "list_transfers")?.descriptor.risk).toBe("read");
   });
@@ -67,7 +67,7 @@ describe("the authored world", () => {
 
 describe("worldForCase", () => {
   it("replaces only the named tool's data and re-derives its output schema", async () => {
-    const world = await loadWorld(worldPath);
+    const world = await loadWorld(worldDir);
     const cases = await loadCases(casesPath);
     const empty = cases.find((entry) => entry.id === "no-pending-transfers")!;
     const scoped = worldForCase(world, empty);
@@ -86,7 +86,7 @@ describe("worldForCase", () => {
   });
 
   it("returns the world untouched when the case overrides nothing", async () => {
-    const world = await loadWorld(worldPath);
+    const world = await loadWorld(worldDir);
     const cases = await loadCases(casesPath);
     const plain = cases.find((entry) => entry.id === "spend-overview")!;
     expect(worldForCase(world, plain)).toBe(world);

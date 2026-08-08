@@ -12,13 +12,12 @@
  * outcome instead, priced through the same `usdFor` table as every other column
  * (`ClaudeCodeOutcome`). The meter is still the run's clock, and the only one.
  */
-import { hostDesignBrief } from "@vendoai/apps";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MODEL_IDS, usdFor, type ModelAlias, type UsageTotals } from "./meter.js";
 import type { Contender, RunOutcome, RunRequest } from "./run.js";
-import { designRules } from "./vendo.js";
+import { worldBlock } from "./vendo.js";
 import type { Case, World } from "./world.js";
 
 /** The bits of the Agent SDK this driver uses. Narrow on purpose, exactly as
@@ -52,29 +51,13 @@ export interface ClaudeCodeOutcome extends RunOutcome {
   readonly usd: number;
 }
 
-/** Agentic builds are slower than one generation call, so the bound is wider
- *  than the case budget in `run.ts` — a wall clock, not a step count. */
-const WALL_CLOCK_MS = 10 * 60_000;
+/** Agentic builds are slower than one generation call — a wall clock, not a
+ *  step count. Exported because this column's case budget in `run.ts` has to
+ *  outlast it: a case that ends first would report a timeout the contender
+ *  never had. */
+export const WALL_CLOCK_MS = 10 * 60_000;
 
 const PAGE = "index.html";
-
-/** Every contender is handed the same world in the same words: the product's own
- *  design brief (theme tokens + the host's rules), then the derived tool schemas
- *  and the rows each read answers with. Both halves come from the functions the
- *  Vendo column itself is built on, so the two can never be told different
- *  things about one world. */
-export function worldBlock(world: World): string {
-  return [
-    hostDesignBrief({ theme: world.theme, designRules: designRules(world) }),
-    "",
-    "HOST TOOLS — `returns` is exactly what calling that tool answers with, and the only data allowed on the screen:",
-    JSON.stringify(
-      world.tools.map((tool) => ({ tool: tool.descriptor, returns: tool.data })),
-      null,
-      2,
-    ),
-  ].join("\n");
-}
 
 /** What the benchmark page IS for a contender that writes the file itself. The
  *  Vendo column gets all of this from the product — `window.vendo.callTool` and

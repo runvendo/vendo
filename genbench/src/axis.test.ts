@@ -47,7 +47,7 @@ let world: World;
 let bundle: string;
 let shooter: Shooter;
 beforeAll(async () => {
-  world = await loadWorld(join(root, "world.json"));
+  world = await loadWorld(join(root, "worlds", "maple"));
   bundle = await bundleMount();
   shooter = await openBrowser();
 }, 120_000);

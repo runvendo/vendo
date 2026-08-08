@@ -33,6 +33,36 @@ export function designRules(world: World): string {
   return [`${world.app}.`, "", ...world.style.map((line) => `- ${line}`)].join("\n");
 }
 
+/**
+ * The world in the words every contender is handed: the product's own design
+ * brief — the theme tokens and host rules the screen assembler thinks with —
+ * then each derived tool schema and the response that tool really answers with.
+ *
+ * ONE serializer for both baselines, because two drifted: the same world was
+ * described in two formats, and only one of them said what a write tool
+ * answers with. `diy.test.ts` compares this against `hostDesignBrief`,
+ * `worldRegistry`'s descriptors and `worldRegistry`'s real outputs, for every
+ * baseline that sends it. Each tool sits at top-level indentation on purpose —
+ * nesting them in one array re-indents the schemas and there is nothing left to
+ * compare byte for byte.
+ */
+export function worldBlock(world: World): string {
+  const tools = world.tools
+    .map(
+      (tool) =>
+        `${JSON.stringify(tool.descriptor, null, 2)}\nreturns: ${JSON.stringify(cannedResponse(tool), null, 2)}`,
+    )
+    .join("\n\n");
+  return `${hostDesignBrief({ theme: world.theme, designRules: designRules(world) })}
+
+HOST TOOLS — a control on the page calls one as \`window.vendo.callTool(name, args)\`, which answers
+with { status: "ok", output: <the value shown under \`returns\`> } or { status: "error", error: {
+code, message } }. \`returns\` is exactly what that call answers with, and the only data allowed on
+the screen.
+
+${tools}`;
+}
+
 export function vendoDriver(): Contender {
   return { harness: "vendo", run };
 }

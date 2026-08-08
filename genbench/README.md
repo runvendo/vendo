@@ -2,36 +2,46 @@
 
 Answers "why not build this in-house?" with numbers.
 
-It runs hand-written prompts through contenders — the real Vendo pipeline and a
-raw-Claude baseline today, `claude-code` next — against one fictional banking
-product defined entirely in JSON, scores what comes back with deterministic
-checks, and measures time and money. Every contender gets the same model, the
-same tools, the same schemas and the same design brief, because that equivalence
-is the whole claim.
+It runs hand-written prompts through three contenders — the real Vendo pipeline
+and two raw-Claude baselines — against one fictional banking product defined
+entirely in JSON, scores what comes back with deterministic checks, and measures
+time and money. Every contender gets the same model, the same tools, the same
+schemas and the same design brief, because that equivalence is the whole claim.
 
 ## The contenders
 
 | contender | what it is |
 | --- | --- |
 | `vendo` | the real product: the screen assembler, the guard, the apps runtime, the compiler and the Kit. Its artifact is a `.vendo` document, and the page is that document mounted through the product's own renderer |
-| `diy` | the in-house build: ONE `streamText` call, one HTML document, no product. Its artifact IS the page — no compile, no Kit, no mount |
+| `diy` | the cheap in-house build: ONE `streamText` call, one HTML document, no product. Its artifact IS the page — no compile, no Kit, no mount |
+| `claude-code` | the strong in-house build: the stock Claude Agent SDK with hands, writing and rewriting one `index.html` in a scratch directory. Its artifact IS the page too, and it is billed by its own session rather than by the run's meter |
 
-Both are handed the same thing, and that is asserted rather than asserted-to-be:
-`src/diy.test.ts` compares the prompt the diy driver really put on the wire
-against the design brief the vendo driver composes (`hostDesignBrief`), the
-descriptors its registry serves, and the responses that registry really returns
-— byte for byte. If either side drifts, the test fails and the comparison is
-void. It is the benchmark's credibility, so it is the first test to read.
+All three are handed the same thing, and that is asserted rather than
+asserted-to-be. There is exactly **one world serializer** — `worldBlock` in
+`src/vendo.ts` — and both baselines send it. `src/diy.test.ts` then compares the
+prompt each baseline really put on the wire (the model `diy` streamed through,
+the session `claude-code` opened) against the design brief the vendo driver
+composes (`hostDesignBrief`), the descriptors its registry serves, and the
+responses that registry really returns — byte for byte, for every baseline. If
+any side drifts, the test fails and the comparison is void. It is the
+benchmark's credibility, so it is the first test to read.
 
-Both pages then carry the SAME injected recorder (`seam` in `src/render.ts`), so
-`window.vendo.callTool` means one thing whoever wrote the page, and the same
-screenshot, the same click probe and the same floor code run after that point.
+Every page then carries the SAME injected recorder (`seam` in `src/render.ts`)
+and the SAME `@font-face` (`fontFace`, below), so `window.vendo.callTool` means
+one thing whoever wrote the page, every column is shot in the world's own face,
+and the same screenshot, the same click probe and the same floor code run after
+that point.
 
 Every contender for a case runs **at once**. They share the browser and nothing
 else — a page each, a meter each, a clock each — and one contender's crash or
-five-minute timeout is recorded as its own failure without touching its
-siblings. Column order is the declaration order in `DRIVERS`, never the order
-they finished.
+timeout is recorded as its own failure without touching its siblings. Column
+order is the declaration order in `DRIVERS`, never the order they finished.
+
+The case budget is **per contender** (`CASE_TIMEOUT_MS`), not one number for the
+row: `vendo` and `diy` answer in one call and keep a five-minute bound, while
+`claude-code` runs its own ten-minute wall clock inside the driver before it has
+delivered anything, so its case gets twelve. A shared five-minute bound would
+have ended that column early and reported a timeout the contender never had.
 
 ## Run it
 
@@ -44,8 +54,8 @@ Each case writes `runs/<run>/<contender>/<case>/`:
 
 | file | what it is |
 | --- | --- |
-| `artifact.vendo` | the document the contender actually saved (vendo only — for a contender that writes HTML, `page.html` IS the artifact) |
-| `page.html` | the real screen: for vendo a root, the payload and the product's own renderer bundled in; for diy the document it wrote. This is the only way pixels are made |
+| `artifact.vendo` | the document the contender actually saved (vendo only — a contender whose outcome says `format: "html"` has already delivered a document, and it lands once, as `page.html`) |
+| `page.html` | the real screen: for vendo a root, the payload and the product's own renderer bundled in; for `diy` and `claude-code` the document each wrote. This is the only way pixels are made |
 | `screenshot.png` | that page, shot once it has settled |
 | `result.json` | the five floor verdicts, the click trace, console errors, timings, tokens and dollars |
 
@@ -65,16 +75,23 @@ and one `runs/<run>/preview.html`, which is where a person actually looks:
   reaches
 
 It opens automatically on macOS and stays one static file — no server, offline,
-forever. A contender that outruns its five-minute budget is recorded
-`failure: "timeout"`; its siblings finish normally.
+forever. A contender that outruns its budget is recorded `failure: "timeout"`;
+its siblings finish normally.
 
 Flags: `--prompt <id>` for one case, `--models sonnet,opus,haiku`,
-`--lane build` (deferred).
+`--world <name>` (default `maple`), `--lane build` (deferred).
 
 ## The world
 
-`world.json` is the entire product: identity, a `VendoTheme`, a plain-English
-style rubric, and ~4 tools. A tool that declares `data` returns rows and is
+A world is a **folder**, `worlds/<name>/`:
+
+| file | what it is |
+| --- | --- |
+| `world.json` | the entire product: identity, a `VendoTheme`, a plain-English style rubric, and ~4 tools |
+| `cases.json` | the prompts |
+| `font.woff2` | optional. The face the theme's `fontFamily` names, injected into every contender's page |
+
+`maple` is the only world today. A tool that declares `data` returns rows and is
 graded `read`; one that only declares `takes` mutates and is graded `write`.
 Input schemas are derived from `takes` (a name → type map), output schemas from
 the example rows.
@@ -88,6 +105,25 @@ regression test in `src/floor.test.ts` pins down.
 how the empty state is tested — and its `pass` lines are the correctness rubric
 a pinned judge will grade in a later slice.
 
+### The face
+
+A world folder may ship `font.woff2`, and the harness declares it as an
+`@font-face` under the family the theme names — the same `<style>` block, the
+same bytes, in **every** contender's page (`fontFace` in `src/render.ts`, called
+by both `pageHtml` and `authoredPage`). It rides as a data URL because the page
+has no network, and `font-display: block` so a shot can never catch the fallback
+mid-swap.
+
+That is what makes the typography line of the style rubric gradeable from
+pixels: a contender that asks for the theme's family now visibly gets it, and
+one that invents its own visibly does not. The face is part of the world, so it
+is hashed with `world.json` into `world.hash` — a run with a different face does
+not compare with a run without it.
+
+`maple` ships **Onest** (SIL OFL 1.1), the latin subset decoded out of the face
+the product itself vendors in `packages/ui/src/chrome/onest-font.gen.ts`; the
+license text is `packages/ui/ONEST-OFL.txt`.
+
 ## The floor
 
 Five deterministic checks, no model involved:
@@ -97,8 +133,8 @@ Five deterministic checks, no model involved:
 - **valid** — the product's *own* checks floor blocks nothing in the saved bytes.
   Not the same as "something painted": the agent can save again after its last
   good view, and the seam keeps the older screen. A contender with no compile
-  step has nothing to block, so for `diy` this check collapses onto `delivered`
-  — the checks that do the work on a hand-written page are `renders`,
+  step has nothing to block, so for `diy` and `claude-code` this check collapses
+  onto `delivered` — the checks that do the work on a hand-written page are `renders`,
   `honestData` and `wiredActions`, and all three are the same code
 - **honestData** — every number and date on screen is a value a tool returned,
   or a sum, count, min, max or mean of one numeric field across one tool's rows.
@@ -134,19 +170,18 @@ recharts ever moves that text.
 
 ## Known limits
 
-`world.json` names **Onest**, the face the product itself vendors
-(`packages/ui/src/chrome/onest-font.gen.ts`), so the style rubric asks for the
-brand's real typeface rather than a font this repo has nothing to do with. The
-page still loads no webfont — a shot must not depend on what a CDN felt like
-serving — and `ONEST_FONT_CSS` is not on any public entry of `@vendoai/ui`, so
-Onest resolves to the system sans stack, exactly as `Inter` did. **The
-typography line of the style rubric is therefore still not gradeable from
-pixels.** Every contender is shot in the same face, which is what comparability
-needs.
-
-Changing the font changed `world.hash`, so runs from before this slice do not
-compare with runs after it.
+Shipping the face changed `world.hash`, so runs from before this slice do not
+compare with runs after it. Unifying the two baselines onto one serializer
+changed the `diy` prompt's wording too, which is the same story: the numbers
+start again here.
 
 The probe presses one control per fresh page, so a screen with many controls
 costs many reloads. Multi-step flows are only followed one step past a
 `[role=dialog]` confirmation.
+
+The `claude-code` page contract tells that contender to define
+`window.vendo` itself, so its file works when opened straight off disk. The
+harness's own recorder is injected first and is therefore replaced by the
+page's: the probe and the floor are unaffected (both read `window.vendo.calls`),
+but a press in the `claude-code` frame does not reach the preview's live
+tool-call feed.

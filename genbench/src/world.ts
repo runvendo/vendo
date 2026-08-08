@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { JsonSchema, ToolDescriptor, VendoTheme } from "@vendoai/core";
 
 /** The world file, as authored. `theme` is a VendoTheme verbatim and is handed
@@ -31,7 +32,12 @@ export interface World {
   readonly theme: VendoTheme;
   readonly style: readonly string[];
   readonly tools: readonly DerivedTool[];
-  /** sha256 of the authored file — two runs only compare if these match. */
+  /** The face the folder ships, base64 woff2, when it ships one. `render.ts`
+   *  injects it into every contender's page as the same bytes, which is what
+   *  makes the style rubric's typography line gradeable from pixels. */
+  readonly font?: string;
+  /** sha256 of the authored file and the face beside it — two runs only compare
+   *  if these match, and a different face is a different set of pixels. */
   readonly hash: string;
 }
 
@@ -109,15 +115,21 @@ function derive(name: string, tool: WorldTool, data: unknown): DerivedTool {
   };
 }
 
-export async function loadWorld(path: string): Promise<World> {
-  const source = await readFile(path, "utf8");
+/** A world is a FOLDER: `world.json`, the `cases.json` beside it, and the
+ *  optional `font.woff2` the theme's `fontFamily` names. */
+export async function loadWorld(dir: string): Promise<World> {
+  const source = await readFile(join(dir, "world.json"), "utf8");
   const file = JSON.parse(source) as WorldFile;
+  const font = await readFile(join(dir, "font.woff2")).catch(() => undefined);
+  const digest = createHash("sha256").update(JSON.stringify(file));
+  if (font !== undefined) digest.update(font);
   return {
     app: file.app,
     theme: file.theme,
     style: file.style,
     tools: Object.entries(file.tools).map(([name, tool]) => derive(name, tool, tool.data)),
-    hash: createHash("sha256").update(JSON.stringify(file)).digest("hex").slice(0, 16),
+    ...(font === undefined ? {} : { font: font.toString("base64") }),
+    hash: digest.digest("hex").slice(0, 16),
   };
 }
 

@@ -12,15 +12,15 @@ import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { claudeCodeDriver, worldBlock, type AgentSdk } from "./claude-code.js";
+import { claudeCodeDriver, type AgentSdk } from "./claude-code.js";
 import { meteredModel, MODEL_IDS, usdFor, type Meter } from "./meter.js";
-import { designRules } from "./vendo.js";
-import { loadCases, loadWorld, worldForCase, type Case, type World } from "./world.js";
+import { designRules, worldBlock } from "./vendo.js";
+import { cannedResponse, loadCases, loadWorld, worldForCase, type Case, type World } from "./world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;
 beforeAll(async () => {
-  world = await loadWorld(join(root, "world.json"));
+  world = await loadWorld(join(root, "worlds", "maple"));
 });
 
 const caseFor = (id: string): Case => ({ id, lane: "screen", prompt: "Show my pending transfers", pass: [] });
@@ -98,11 +98,17 @@ describe("the world block", () => {
     expect(worldBlock(world)).toContain(brief);
   });
 
-  it("carries every derived tool schema and the rows it returns", () => {
+  it("carries every derived tool schema and the response it answers with", () => {
     const block = worldBlock(world);
-    const tools: unknown = JSON.parse(block.slice(block.indexOf("[")));
 
-    expect(tools).toEqual(world.tools.map((tool) => ({ tool: tool.descriptor, returns: tool.data })));
+    expect(world.tools.length).toBeGreaterThan(0);
+    for (const tool of world.tools) {
+      // `cannedResponse`, not `tool.data`: a write returns a bare
+      // acknowledgement, and the session must be told the same thing the
+      // registry and the injected recorder actually answer with.
+      expect(block).toContain(JSON.stringify(tool.descriptor, null, 2));
+      expect(block).toContain(`returns: ${JSON.stringify(cannedResponse(tool), null, 2)}`);
+    }
   });
 });
 
@@ -191,7 +197,9 @@ describe.skipIf(!LIVE)("one live session", () => {
   it(
     "builds a real page for a real case, and says what it cost",
     async () => {
-      const testCase = (await loadCases(join(root, "cases.json"))).find((entry) => entry.id === "pending-transfers")!;
+      const testCase = (await loadCases(join(root, "worlds", "maple", "cases.json"))).find(
+        (entry) => entry.id === "pending-transfers",
+      )!;
       const modelId = MODEL_IDS.sonnet;
       const meter = meteredModel(createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })(modelId), modelId);
 

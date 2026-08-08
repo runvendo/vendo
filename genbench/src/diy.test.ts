@@ -1,23 +1,28 @@
 /**
- * The fairness assertion.
+ * The fairness assertion, for every contender.
  *
- * Every number this benchmark reports rests on one claim: the in-house
+ * Every number this benchmark reports rests on one claim: each in-house
  * contender was handed EXACTLY what the product's own pipeline was handed. So
  * the bytes are compared. The design brief the vendo driver composes, the
  * descriptors its registry serves, and the responses that registry really
- * returns must all appear verbatim in the prompt the diy driver sends. If
- * either side ever drifts — a reformatted brief, a hand-rolled schema dump, a
+ * returns must all appear verbatim in the prompt EACH baseline sends. If any
+ * side ever drifts — a reformatted brief, a hand-rolled schema dump, a
  * different canned response — this test fails and the comparison is void.
  *
- * Only the MODEL is a double: the prompt under test is the one the driver
- * actually put on the wire, not a string a helper was asked for.
+ * The two baselines share one serializer (`worldBlock`) precisely so they
+ * cannot drift apart, but a shared helper is not the assertion: the prompt
+ * under test is the one each driver actually put on the wire, read off the
+ * model `diy` streamed through and off the session `claude-code` opened. Only
+ * the model and the SDK are doubles.
  */
 import { hostDesignBrief } from "@vendoai/apps";
 import type { RunContext } from "@vendoai/core";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
+import { claudeCodeDriver, type AgentSdk } from "./claude-code.js";
 import { diyDriver, diySystemPrompt } from "./diy.js";
 import type { Meter } from "./meter.js";
 import { authoredPage, openBrowser } from "./render.js";
@@ -90,58 +95,99 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;
 let cases: readonly Case[];
 beforeAll(async () => {
-  world = await loadWorld(join(root, "world.json"));
-  cases = await loadCases(join(root, "cases.json"));
+  world = await loadWorld(join(root, "worlds", "maple"));
+  cases = await loadCases(join(root, "worlds", "maple", "cases.json"));
 });
 
-/** The prompt the driver really sent for this case's world. */
+/** The prompt the diy driver really sent for this case's world. */
 async function promptFor(scoped: World, testCase: Case): Promise<{ system: string; user: string }> {
   const { meter, sent } = replying(PAGE);
   await diyDriver().run({ world: scoped, testCase, meter });
   return { system: systemOf(sent()), user: userOf(sent()) };
 }
 
-describe("diy is handed exactly what vendo is handed", () => {
+/** The brief the claude-code driver really opened its session with. The double
+ *  writes a page, because a session that delivers nothing is a different test. */
+async function sessionBriefFor(scoped: World, testCase: Case): Promise<string> {
+  let brief = "";
+  const sdk: AgentSdk = {
+    query({ prompt, options }) {
+      brief = prompt;
+      return {
+        async *[Symbol.asyncIterator]() {
+          await writeFile(join(options["cwd"] as string, "index.html"), PAGE);
+          yield { type: "result", subtype: "success", usage: {}, total_cost_usd: 0 };
+        },
+      };
+    },
+  };
+  await claudeCodeDriver({ sdk }).run({ world: scoped, testCase, meter: replying(PAGE).meter });
+  return brief;
+}
+
+/** Every contender that is NOT the product, and the real prompt each one sent.
+ *  The vendo column is the other side of every comparison below — it is what
+ *  they are checked against, so it needs no row of its own. */
+const BASELINES: ReadonlyArray<{ name: string; briefFor(scoped: World, testCase: Case): Promise<string> }> = [
+  {
+    name: "diy",
+    // System and user together: what the contender was handed is the whole
+    // call, and diy is the one that splits it in two.
+    briefFor: async (scoped, testCase) => {
+      const { system, user } = await promptFor(scoped, testCase);
+      return `${system}\n${user}`;
+    },
+  },
+  { name: "claude-code", briefFor: sessionBriefFor },
+];
+
+describe.each(BASELINES)("$name is handed exactly what vendo is handed", ({ briefFor }) => {
   it("carries the product's own design brief verbatim — identity, theme JSON and style lines", async () => {
-    const { system } = await promptFor(world, cases[0]!);
+    const sent = await briefFor(world, cases[0]!);
     const brief = hostDesignBrief({ theme: world.theme, designRules: designRules(world) });
 
     // Not a substring of a substring: the whole block, exactly as the vendo
     // driver hands it to the screen assembler.
     expect(brief).toContain(JSON.stringify(world.theme, null, 2));
     expect(brief).toContain(world.style[0]!);
-    expect(system).toContain(brief);
+    expect(sent).toContain(brief);
   });
 
   it("carries every descriptor the vendo registry serves, byte for byte", async () => {
-    const { system } = await promptFor(world, cases[0]!);
+    const sent = await briefFor(world, cases[0]!);
     const descriptors = await worldRegistry(world).descriptors();
 
     expect(descriptors.length).toBe(world.tools.length);
     for (const descriptor of descriptors) {
-      expect(system).toContain(JSON.stringify(descriptor, null, 2));
+      expect(sent).toContain(JSON.stringify(descriptor, null, 2));
     }
   });
 
   it("carries the response that registry actually returns for each tool", async () => {
-    const { system } = await promptFor(world, cases[0]!);
+    const sent = await briefFor(world, cases[0]!);
     const registry = worldRegistry(world);
 
     for (const descriptor of await registry.descriptors()) {
       const outcome = await registry.execute({ id: "c1", tool: descriptor.name, args: {} }, CTX);
       expect(outcome.status).toBe("ok");
-      expect(system).toContain(JSON.stringify((outcome as { output: unknown }).output, null, 2));
+      expect(sent).toContain(JSON.stringify((outcome as { output: unknown }).output, null, 2));
     }
   });
 
-  it("is scoped to the case, so an overridden world reaches diy and the authored one does not", async () => {
+  it("is scoped to the case, so an overridden world reaches it and the authored one does not", async () => {
     const empty = cases.find((entry) => entry.id === "no-pending-transfers")!;
-    const { system } = await promptFor(worldForCase(world, empty), empty);
+    const sent = await briefFor(worldForCase(world, empty), empty);
 
-    expect(system).toContain(JSON.stringify({ data: [] }, null, 2));
-    expect(system).not.toContain("Alex Rivera");
+    expect(sent).toContain(JSON.stringify({ data: [] }, null, 2));
+    expect(sent).not.toContain("Alex Rivera");
   });
 
+  it("carries the case's prompt, unchanged", async () => {
+    expect(await briefFor(world, cases[0]!)).toContain(cases[0]!.prompt);
+  });
+});
+
+describe("the diy prompt", () => {
   it("sends the case prompt as the user message, unchanged", async () => {
     const { user } = await promptFor(world, cases[0]!);
     expect(user).toBe(cases[0]!.prompt);

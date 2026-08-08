@@ -7,29 +7,23 @@
  * document it writes IS the page that is shot and probed, and every floor check
  * after that point is the same code the vendo column faces.
  */
-import { hostDesignBrief } from "@vendoai/apps";
 import { streamText } from "ai";
 import type { Contender, RunOutcome, RunRequest } from "./run.js";
-import { designRules } from "./vendo.js";
-import { cannedResponse, type World } from "./world.js";
+import { worldBlock } from "./vendo.js";
+import type { World } from "./world.js";
 
-/** Exactly what the vendo contender receives, as one prompt: the same design
- *  brief the screen assembler is given, and the same descriptors and responses
- *  its tool registry serves. `diy.test.ts` pins that equality byte for byte —
- *  it is the only reason the two columns may be compared at all. */
+/** Exactly what the vendo contender receives, as one prompt: the shared world
+ *  block — the same design brief the screen assembler is given, and the same
+ *  descriptors and responses its tool registry serves — and nothing about this
+ *  column's own shape that the others do not also get. `diy.test.ts` pins that
+ *  equality byte for byte for every baseline; it is the only reason the columns
+ *  may be compared at all. */
 export function diySystemPrompt(world: World): string {
-  const tools = world.tools
-    .map((tool) => `${JSON.stringify(tool.descriptor, null, 2)}\nreturns: ${JSON.stringify(cannedResponse(tool), null, 2)}`)
-    .join("\n\n");
   return `Write the screen the user asks for.
 
-${hostDesignBrief({ theme: world.theme, designRules: designRules(world) })}
+${worldBlock(world)}
 
-HOST TOOLS — call one from the page with \`vendo.callTool(name, args)\`. It is
-already on \`window\`, and it answers with { status: "ok", output: <the value
-shown under \`returns\`> } or { status: "error", error: { code, message } }.
-
-${tools}
+\`window.vendo\` is already on the page — use it, do not define it.
 
 Return ONE complete working HTML document and nothing else: self-contained,
 inline CSS and inline JS, no build step and no network requests.`;

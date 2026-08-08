@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { claudeCodeDriver, WALL_CLOCK_MS } from "./claude-code.js";
 import { diyDriver } from "./diy.js";
 import { checks, runFloor, type FloorResult } from "./floor.js";
 import { meteredModel, MODEL_IDS, type Meter, type ModelAlias, type UsageTotals } from "./meter.js";
@@ -40,6 +41,14 @@ export interface RunOutcome {
   /** A contender that writes its own document returns it here instead of a
    *  payload: these bytes ARE the artifact, and they mount unchanged. */
   readonly page?: string;
+  /** Said by a contender whose `artifact` is ALREADY a document: there is no
+   *  compile between the bytes it saved and the page that mounts, so the
+   *  artifact is written as `page.html` and never as `artifact.vendo`. */
+  readonly format?: "html";
+  /** A contender billed by its own engine reports its spend here — the run's
+   *  meter never saw those tokens. Priced through the same table all the same. */
+  readonly usage?: UsageTotals;
+  readonly usd?: number;
   /** When the contender had something new to show. Only the clock is shared —
    *  what each snapshot holds is the driver's own business. */
   readonly snapshots: ReadonlyArray<{ atMs: number }>;
@@ -78,13 +87,23 @@ export interface CaseResult {
 }
 
 /** Declaration order is column order — the report never sorts by who finished
- *  first. The claude-code column joins here the day its driver lands. */
-const DRIVERS: Partial<Record<HarnessId, () => Contender>> = { vendo: vendoDriver, diy: diyDriver };
+ *  first. Every driver takes the model its column was asked for; the two that
+ *  are metered by the run read it off `meter.model` instead and ignore it. */
+const DRIVERS: Record<HarnessId, (model: ModelAlias) => Contender> = {
+  vendo: vendoDriver,
+  diy: diyDriver,
+  "claude-code": (model) => claudeCodeDriver({ model }),
+};
+
+/** The only world folder there is today. */
+const DEFAULT_WORLD = "maple";
 
 interface Args {
   readonly only?: string;
   readonly lane: Lane;
   readonly models: readonly ModelAlias[];
+  /** A folder under `worlds/`, holding `world.json`, `cases.json` and any face. */
+  readonly world: string;
 }
 
 export function parseArgs(argv: readonly string[]): Args {
@@ -92,6 +111,7 @@ export function parseArgs(argv: readonly string[]): Args {
   let only: string | undefined;
   let lane: Lane = "screen";
   let models: readonly ModelAlias[] = ["sonnet"];
+  let world = DEFAULT_WORLD;
   let index = 0;
   while (index < rest.length) {
     const flag = rest[index];
@@ -100,10 +120,11 @@ export function parseArgs(argv: readonly string[]): Args {
     if (flag === "--prompt") only = value;
     else if (flag === "--lane") lane = asLane(value);
     else if (flag === "--models") models = value.split(",").map(asAlias);
+    else if (flag === "--world") world = value;
     else throw new Error(`genbench: unexpected argument "${flag}"`);
     index += 2;
   }
-  return { ...(only === undefined ? {} : { only }), lane, models };
+  return { ...(only === undefined ? {} : { only }), lane, models, world };
 }
 
 function asLane(value: string): Lane {
@@ -126,10 +147,22 @@ export function contenders(models: readonly ModelAlias[]): readonly ContenderId[
 /** The recharts-backed Kit components (packages/ui/src/kit/charts/). */
 const CHARTS = new Set(["LineChart", "BarChart", "DonutChart", "Sparkline"]);
 
-/** One contender's whole budget for one case — generation, paint and probe. A
- *  contender that hangs costs the run this much and no more; its column is
- *  recorded failed and its siblings keep their own clocks. */
-const CASE_TIMEOUT_MS = 5 * 60_000;
+/**
+ * One contender's whole budget for one case — generation, paint and probe. A
+ * contender that hangs costs the run this much and no more; its column is
+ * recorded failed and its siblings keep their own clocks.
+ *
+ * Per harness rather than one number for the row, because the columns do not
+ * take the same shape of time: an agentic build runs its own ten-minute wall
+ * clock (`WALL_CLOCK_MS`) before it has delivered anything, so a five-minute
+ * case would end it early and record a timeout the contender never had. The
+ * one-call columns keep the tighter bound they have never needed more than.
+ */
+export const CASE_TIMEOUT_MS: Readonly<Record<HarnessId, number>> = {
+  vendo: 5 * 60_000,
+  diy: 5 * 60_000,
+  "claude-code": WALL_CLOCK_MS + 2 * 60_000,
+};
 
 /**
  * One contender's whole attempt as a settled value.
@@ -170,8 +203,10 @@ async function main(argv: readonly string[]): Promise<number> {
   }
 
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
-  const world = await loadWorld(join(root, "world.json"));
-  const all = await loadCases(join(root, "cases.json"));
+  // A world is a folder: its JSON, its cases and any face it ships.
+  const worldDir = join(root, "worlds", args.world);
+  const world = await loadWorld(worldDir);
+  const all = await loadCases(join(worldDir, "cases.json"));
   const cases = all.filter((entry) => entry.lane === args.lane && (args.only === undefined || entry.id === args.only));
   if (cases.length === 0) throw new Error(`genbench: no case matches --prompt "${args.only ?? ""}"`);
 
@@ -195,12 +230,14 @@ async function main(argv: readonly string[]): Promise<number> {
     // Raced against the clock as one unit: generation, paint and probe all spend
     // the person's wait, so one budget covers all three.
     const { done, failure: broke } = await attempt(async () => {
-      const outcome = await DRIVERS[contender.harness]!().run({ world: scoped, testCase, meter });
+      const outcome = await DRIVERS[contender.harness](contender.model).run({ world: scoped, testCase, meter });
       // Either the product compiled a payload into a page, or the contender
-      // wrote the page itself. From here on both are just a page.
+      // wrote the page itself — handing it over as `page`, or as an `artifact`
+      // that already IS a document. From here on all three are just a page.
+      const authored = outcome.format === "html" ? outcome.artifact : outcome.page;
       const html =
-        outcome.page !== undefined
-          ? authoredPage(outcome.page, scoped, contender.slug)
+        authored !== undefined
+          ? authoredPage(authored, scoped, contender.slug)
           : outcome.payload === undefined
             ? undefined
             : pageHtml(outcome.payload, scoped, bundle, contender.slug);
@@ -211,7 +248,7 @@ async function main(argv: readonly string[]): Promise<number> {
       } finally {
         await visit.close();
       }
-    }, CASE_TIMEOUT_MS);
+    }, CASE_TIMEOUT_MS[contender.harness]);
 
     const outcome = done?.outcome;
     const shot: Shot | undefined = done?.shot;
@@ -228,7 +265,11 @@ async function main(argv: readonly string[]): Promise<number> {
 
     const caseDir = join(runDir, contender.slug, testCase.id);
     await mkdir(caseDir, { recursive: true });
-    if (outcome?.artifact !== undefined) await writeFile(join(caseDir, "artifact.vendo"), outcome.artifact);
+    // Only a compiled artifact gets its own file. A contender whose artifact is
+    // already a document has it on disk once, as `page.html`.
+    if (outcome?.artifact !== undefined && outcome.format !== "html") {
+      await writeFile(join(caseDir, "artifact.vendo"), outcome.artifact);
+    }
     if (done?.html !== undefined) await writeFile(join(caseDir, "page.html"), done.html);
     if (shot !== undefined) await writeFile(join(caseDir, "screenshot.png"), shot.png);
 
@@ -245,7 +286,10 @@ async function main(argv: readonly string[]): Promise<number> {
         ...(outcome?.firstRenderMs === undefined ? {} : { firstRenderMs: outcome.firstRenderMs }),
         settledMs: outcome?.settledMs ?? meter.elapsedMs(),
       },
-      cost: { usage: meter.totals(), usd: meter.usd() },
+      // The meter is every column's clock, but not every column's bill: a
+      // contender that spawns its own engine reports what that session spent,
+      // priced through the same table (`usdFor`).
+      cost: { usage: outcome?.usage ?? meter.totals(), usd: outcome?.usd ?? meter.usd() },
       islands: countIslands(outcome?.payload),
       clientOnly: countClientOnly(outcome?.payload),
       trace,

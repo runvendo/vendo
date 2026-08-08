@@ -71,7 +71,7 @@ const LANDS_UNPAINTED = `<App name="Spending">
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;
 beforeAll(async () => {
-  world = await loadWorld(join(root, "world.json"));
+  world = await loadWorld(join(root, "worlds", "maple"));
 });
 
 const caseFor = (id: string): Case => ({ id, lane: "screen", prompt: "Show this month's spending", pass: [] });
