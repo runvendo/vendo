@@ -57,8 +57,9 @@ export function worldBlock(world: World): string {
 
 HOST TOOLS — a control on the page calls one as \`window.vendo.callTool(name, args)\`, which answers
 with { status: "ok", output: <the value shown under \`returns\`> } or { status: "error", error: {
-code, message } }. \`returns\` is exactly what that call answers with, and the only data allowed on
-the screen.
+code, message } }. The call RETURNS that object synchronously — it is not a Promise, so do not
+\`await\` it and do not call \`.then\` on it. \`returns\` is exactly what that call answers with, and
+the only data allowed on the screen.
 
 ${tools}`;
 }

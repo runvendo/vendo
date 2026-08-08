@@ -204,24 +204,33 @@ describe("the page answers the way the prompt promised", () => {
    *  the prompt, read `res.data`, got `undefined`, and rendered "No pending
    *  transfers right now" over a tool holding two of them. A prompt that lies
    *  about the seam does not measure the contender — it measures the lie. */
-  it("wraps the canned response in the envelope the prompt describes", async () => {
+  it("wraps the canned response in the envelope the prompt describes, and answers synchronously", async () => {
     const shooter = await openBrowser();
     try {
       const visit = await shooter.visit(
         authoredPage(`<!doctype html><html lang="en"><head><title>t</title></head><body><p>x</p></body></html>`, world, "diy-sonnet"),
       );
       try {
-        const answered = await visit.page.evaluate(() =>
-          (window as unknown as { vendo: { callTool(name: string, args: unknown): unknown } }).vendo.callTool(
-            "list_transfers",
-            { limit: 20 },
-          ),
-        );
+        const answered = await visit.page.evaluate(() => {
+          const returned = (
+            window as unknown as { vendo: { callTool(name: string, args: unknown): unknown } }
+          ).vendo.callTool("list_transfers", { limit: 20 });
+          return {
+            value: returned,
+            // Decided INSIDE the page: `evaluate` unwraps a thenable before it
+            // could ever reach an assertion out here, so asking the browser is
+            // the only way to know whether a Promise was returned.
+            thenable: typeof (returned as { then?: unknown } | null)?.then === "function",
+          };
+        });
         const transfers = world.tools.find((tool) => tool.name === "list_transfers")!;
 
-        expect(answered).toEqual({ status: "ok", output: cannedResponse(transfers) });
-        // …and the prompt says exactly that, so the model is not guessing.
+        expect(answered.value).toEqual({ status: "ok", output: cannedResponse(transfers) });
+        expect(answered.thenable).toBe(false);
+        // …and the prompt says exactly that, so the model is not guessing at
+        // either the envelope or whether it has to await the call.
         expect(diySystemPrompt(world)).toContain(`{ status: "ok", output:`);
+        expect(diySystemPrompt(world)).toContain("RETURNS that object synchronously — it is not a Promise");
       } finally {
         await visit.close();
       }
