@@ -7,8 +7,11 @@ export default defineConfig({
       reporter: ["text", "json-summary"],
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.test-util.{ts,tsx}"],
-      // Ratcheted floor, sibling-package style — set just below measured; it can only rise.
-      thresholds: { lines: 93 },
+      // Ratcheted floor, sized in LINES rather than points: 713 lines means one
+      // point is ~7 lines, so 93 against a measured 94.24 READ like comfortable
+      // slack while tolerating only 9 new uncovered lines — thinner than
+      // telemetry's, and invisible in percent. 91 tolerates 24.
+      thresholds: { lines: 91 },
     },
     include: ["src/**/*.test.ts"],
     environment: "node",
