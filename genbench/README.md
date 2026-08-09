@@ -218,8 +218,10 @@ Values tier 1 could not clear go to a pinned auditor (`AUDITOR_CONTRACT` in
 `src/audit.ts` — model, `auditVersion`, and a hash of its prompt, stamped the
 same way the judge's is) along with the screen text around each value and the
 case's tool data. It may **see** the data, and it may answer with only one thing:
-a **check program**, the body of a JavaScript function over one variable per
-tool. The harness runs that program in a `node:vm` sandbox — no imports, no
+a **check program**, the body of a JavaScript function over a `data` object
+holding one entry per tool under exactly that tool's name — keyed rather than
+one variable each, because `TOOL_NAME_PATTERN` permits names JavaScript cannot
+bind (`report-total`). The harness runs that program in a `node:vm` sandbox — no imports, no
 `require`, no I/O, no globals beyond the tools' own data, code generation off,
 250 ms deadline — and compares what it returned against the number on screen
 through the same normalisation tier 1 uses.

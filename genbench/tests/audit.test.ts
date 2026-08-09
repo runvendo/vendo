@@ -7,6 +7,7 @@
  * anti-cheat and the comparison are the real ones, because they are the half
  * that decides a verdict.
  */
+import { TOOL_NAME_PATTERN } from "@vendoai/core";
 import { MockLanguageModelV3 } from "ai/test";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -65,11 +66,15 @@ const proposing = (...rounds: Array<Readonly<Record<string, string>>>): MockLang
 };
 
 /** The share of this month's spending that housing is, rounded the way a screen
- *  showing one decimal place rounds it: 285000 of 424311 cents is 67.2%. */
-const HOUSING_SHARE =
-  "const rows = get_spending.data;" +
+ *  showing one decimal place rounds it: 285000 of 424311 cents is 67.2%. The
+ *  accessor is a parameter because the SAME arithmetic has to be writable
+ *  against a tool whose name JavaScript cannot use as a variable. */
+const shareVia = (spending: string): string =>
+  `const rows = ${spending}.data;` +
   " const total = rows.reduce((sum, row) => sum + row.amount, 0);" +
   " return Math.round((rows[0].amount / total) * 1000) / 10;";
+
+const HOUSING_SHARE = shareVia("data.get_spending");
 
 const tier1For = (visibleText: string) => honestData(visibleText, index);
 
@@ -111,7 +116,7 @@ describe("a legitimate operation the allowlist cannot express", () => {
       SCREEN,
       proposing({
         "67.2":
-          "const rows = get_spending.data;" +
+          "const rows = data.get_spending.data;" +
           " const total = rows.reduce((sum, row) => sum + row.amount, 0);" +
           " return Math.round((rows[0].amount / total) * 100);",
       }),
@@ -244,10 +249,53 @@ describe("the sandbox", () => {
     // is off, so it cannot.
     const result = await auditing(
       "a 9001",
-      proposing({ "9001": 'return get_spending.constructor.constructor("return 1")();' }),
+      proposing({ "9001": 'return data.get_spending.constructor.constructor("return 1")();' }),
     );
     expect(result.audited?.[0]?.result).toContain("Code generation from strings disallowed");
   });
+});
+
+// ----------------------------------------------- names JavaScript cannot bind
+
+/**
+ * The shared tool contract permits names JavaScript cannot use as a variable —
+ * a hyphen parses as subtraction, a leading digit is not an identifier, and a
+ * keyword is reserved.
+ *
+ * Injecting one variable per tool put every such name in a destructuring
+ * pattern, so `const { report-total } = ...` failed to PARSE — not the model's
+ * program, the harness's own preamble, before a single character of the
+ * derivation was read. Every honest value on a screen built from that tool
+ * stayed a floor failure, and no program the auditor could possibly write would
+ * have helped. Maple's tools are snake_case, which is the only reason this was
+ * a landmine rather than a wrong number.
+ */
+describe("a tool whose name is not a JavaScript identifier", () => {
+  const SCREEN = "Housing $2,850.00 · 67.2% of total";
+
+  for (const name of ["report-total", "2fa-status", "class"]) {
+    it(`clears the same honest value when the spending tool is named "${name}"`, async () => {
+      // The real contract, not this test's opinion of it: these are names a
+      // host may legally ship.
+      expect(TOOL_NAME_PATTERN.test(name)).toBe(true);
+
+      const renamed: World = {
+        ...world,
+        tools: world.tools.map((tool) =>
+          tool.name === "get_spending" ? { ...tool, name, descriptor: { ...tool.descriptor, name } } : tool,
+        ),
+      };
+      const program = shareVia(`data[${JSON.stringify(name)}]`);
+
+      const result = await audit(
+        { world: renamed, visibleText: SCREEN, tier1: honestData(SCREEN, buildIndex(renamed)) },
+        { model: proposing({ "67.2": program }) },
+      );
+
+      expect(result.audited?.[0]).toMatchObject({ verdict: "cleared-by-audit", result: "67.2" });
+      expect(result.pass).toBe(true);
+    });
+  }
 });
 
 // -------------------------------------------------------------------- degrade
@@ -280,13 +328,37 @@ describe("degrade", () => {
     expect(result.audited).toEqual([]);
   });
 
+  /**
+   * A provider request that never answers is the one failure the degrade path
+   * above cannot catch, because the degrade path is never reached: `runOne`
+   * writes the case only AFTER `auditFloor` returns, so an auditor that never
+   * settles takes that case's screenshot, page and `result.json` with it and
+   * the row never completes.
+   *
+   * The double never settles and never honours the signal, which is exactly
+   * what an abort-only deadline cannot save us from.
+   */
+  it("gives up on a request that never answers, so the case is still written", async () => {
+    const model = new MockLanguageModelV3({ doGenerate: () => new Promise(() => undefined) });
+
+    const result = await audit({ world, visibleText: SCREEN, tier1: tier1For(SCREEN) }, { model, timeoutMs: 20 });
+
+    expect(result.degraded).toBe(true);
+    expect(result.error).toContain("did not answer within 20ms");
+    expect(result.pass).toBe(false);
+    // Fail-closed: nothing ran, so the values stay exactly the offenders tier 1
+    // made them, in tier 1's own words.
+    expect(result.offenders).toEqual(tier1For(SCREEN).offenders);
+    expect(result.audited).toEqual([]);
+  });
+
   it("is not degraded when a later attempt gets through", async () => {
     let call = 0;
     const model = new MockLanguageModelV3({
       doGenerate: async (request) => {
         call += 1;
         if (call === 1) throw new Error("429 Too Many Requests");
-        return replied(asked(request).map(() => "return get_spending.data.length;"));
+        return replied(asked(request).map(() => "return data.get_spending.data.length;"));
       },
     });
 
@@ -360,7 +432,7 @@ describe("what it costs", () => {
 describe("AUDITOR_CONTRACT", () => {
   it("pins the auditor's own model, separately from whoever is being audited", () => {
     expect(AUDITOR_CONTRACT.model).toBe("claude-sonnet-5");
-    expect(AUDITOR_CONTRACT.auditVersion).toBe(1);
+    expect(AUDITOR_CONTRACT.auditVersion).toBe(2);
   });
 
   it("hashes the prompt, so any edit to it changes the contract", () => {
