@@ -14,9 +14,9 @@ const RETRY_BASE_MS = 300;
 
 export interface AppOptions {
   /** H16 — `false` means DON'T boot: no `apps.get`, no `apps.open`, no iframe.
-   *  A grid of live app tiles pairs this with `useInViewport` so the thirty
-   *  apps below the fold cost nothing until they are scrolled to. Defaults on,
-   *  so every existing caller is unchanged. */
+   *  A grid of live app tiles gates this on visibility so the thirty apps below
+   *  the fold cost nothing until they are scrolled to. Defaults on, so every
+   *  existing caller is unchanged. */
   enabled?: boolean;
 }
 
