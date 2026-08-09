@@ -2,47 +2,40 @@
  * "Add to…" — the placement write from a surface that is not the host's page.
  *
  * A BYO chat page renders a generated app inline; the app belongs on the
- * dashboard. The destinations come from slot-notes (a mounted `VendoSlot` is the
- * only thing that knows a slot exists — a slot id is host markup, not a Vendo
- * document), and the write is `apps.place`, AWAITED here: "Added to Hero" is a
- * fact, not a hope. With nothing noted there is nowhere to add to, and the
- * affordance renders nothing at all rather than an empty menu.
+ * dashboard. The destinations come from the slot registry (a mounted
+ * `VendoSlot` is the only thing that knows a slot exists — a slot id is host
+ * markup, not a Vendo document), and the write is `apps.place`, AWAITED here:
+ * "Added to Hero" is a fact, not a hope. With nothing reported there is nowhere
+ * to add to, and the affordance renders nothing at all rather than an empty menu.
  *
  * The same `.fl-barpin` affordance the thread card's pin uses — no new button
  * language on the app-card bar. The thread card swaps ITS pin for this picker
- * once the origin knows more than one destination (thread/parts.tsx), which is
- * what makes the choice reachable from a conversation in a real host and not
+ * once the deployment knows more than one destination (thread/parts.tsx), which
+ * is what makes the choice reachable from a conversation in a real host and not
  * only from a BYO page that mounts `VendoAppEmbed` itself.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useVendoProvider } from "../context.js";
+import { useSlots } from "../hooks/use-slots.js";
 import { announcePin } from "../pin-events.js";
-import { knownSlots, type SlotNote } from "../slot-notes.js";
-
-/** The slots this origin has seen, plus a re-read. Storage is unreadable during
- *  render (SSR) and a slot may mount after the reader did, so the list is read
- *  on mount and again whenever the caller asks. */
-export function useKnownSlots(): [SlotNote[], () => void] {
-  const [slots, setSlots] = useState<SlotNote[]>([]);
-  const reread = useCallback(() => { setSlots(knownSlots()); }, []);
-  useEffect(() => { reread(); }, [reread]);
-  return [slots, reread];
-}
+import type { SlotEntry } from "../wire-types.js";
 
 export function AddToPicker({ appId }: { appId: string }) {
   const { client } = useVendoProvider();
-  const [slots, rereadSlots] = useKnownSlots();
+  // A slot may mount (and report) after this picker first read, so opening the
+  // menu re-reads: the destinations offered are the ones that exist NOW.
+  const { slots, refresh } = useSlots();
   const [open, setOpen] = useState(false);
   const [placedIn, setPlacedIn] = useState<string>();
   const [failed, setFailed] = useState(false);
 
   const toggle = () => {
-    rereadSlots();
+    void refresh();
     setFailed(false);
     setOpen(current => !current);
   };
 
-  const choose = async (slot: SlotNote) => {
+  const choose = async (slot: SlotEntry) => {
     try {
       await client.apps.place(appId, slot.id);
       // Every mounted slot re-reads on the announcement instead of waiting out

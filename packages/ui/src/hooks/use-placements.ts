@@ -11,6 +11,9 @@
  * slots sharing a poller share no React tree, and the client IS the identity
  * of a deployment's wire. Nothing polls until a slot registers, and the loop
  * stops with the last one — SSR renders start nothing.
+ *
+ * The same per-client scope carries the OUTBOUND half (`report`): a page of
+ * slots telling the registry they exist, deduped and batched into one write.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { VendoClient } from "../client.js";
@@ -42,6 +45,7 @@ interface Poller {
   error(): Error | undefined;
   loading(): boolean;
   refresh(): Promise<void>;
+  report(slot: string, label: string): void;
 }
 
 const pollers = new WeakMap<VendoClient, Poller>();
@@ -56,6 +60,12 @@ function createPoller(client: VendoClient): Poller {
   let generation = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopPin: (() => void) | undefined;
+
+  /** Every (id, label) pair already sent to the registry — once per session, so
+   *  a page of slots re-rendering all day writes nothing after the first tick. */
+  const reported = new Set<string>();
+  let queued: Array<{ id: string; label: string }> = [];
+  let flushing = false;
 
   const announce = (): void => {
     for (const set of [...listeners.values()]) for (const listener of [...set]) listener();
@@ -139,6 +149,26 @@ function createPoller(client: VendoClient): Poller {
     error: () => error,
     loading: () => !loaded,
     refresh: read,
+    report(slot, label) {
+      const key = `${slot} ${label}`;
+      if (reported.has(key)) return;
+      reported.add(key);
+      queued.push({ id: slot, label });
+      if (flushing) return;
+      flushing = true;
+      // The same deferral the first placements read uses: every slot mounting in
+      // one React commit lands in ONE POST instead of one request per slot.
+      queueMicrotask(() => {
+        flushing = false;
+        const batch = queued;
+        queued = [];
+        void client.slots.report(batch).catch(() => {
+          // The picker keeps whatever the registry already knows. Nothing on
+          // this page is waiting on the answer, and a slot that failed to
+          // report gets another chance from the next page that mounts it.
+        });
+      });
+    },
   };
 }
 
@@ -171,4 +201,15 @@ export function usePlacements(slotId: string, enabled = true): SlotPlacement {
     isLoading: poller === undefined ? false : poller.loading(),
     refresh,
   };
+}
+
+/** Tell the registry this slot exists, so a surface that is NOT on this page
+ *  (the "Add to…" picker) can offer it as a destination. Effect-time only, so
+ *  an SSR render reports nothing; deduped and batched by the shared poller. */
+export function useReportSlot(slotId: string, label: string, enabled: boolean): void {
+  const { client } = useVendoProvider();
+  useEffect(() => {
+    if (!enabled) return;
+    pollerFor(client).report(slotId, label);
+  }, [client, enabled, label, slotId]);
 }

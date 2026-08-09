@@ -5,7 +5,8 @@ import { useVendoProvider } from "../../context.js";
 import { useSplitView } from "../split-view.js";
 import { useApprovalSheetPresentation } from "../../hooks/use-mobile-takeover.js";
 import { PayloadView } from "../../tree/renderer.js";
-import { AddToPicker, useKnownSlots } from "../add-to-picker.js";
+import { useSlots } from "../../hooks/use-slots.js";
+import { AddToPicker } from "../add-to-picker.js";
 import { ApprovalCard } from "../approval-card.js";
 import { ApprovalSheet } from "../approval-sheet.js";
 import { AutomationCard } from "../automation-card.js";
@@ -523,10 +524,10 @@ function AppCardBody({ compact, shellRef, canvasRef, previewHeight, previewScale
 function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; payload: UIPayload; restored: boolean; buildKey: string }) {
   const { client, components } = useVendoProvider();
   const pin = usePinAction();
-  // The destinations this origin knows — a mounted VendoSlot is the only thing
-  // that can say a slot exists (slot-notes.ts). More than one, and the bar's
-  // placement affordance is a picker rather than a single fixed pin.
-  const [slots] = useKnownSlots();
+  // The destinations the registry knows — a mounted VendoSlot is the only thing
+  // that can say a slot exists (hooks/use-slots.ts). More than one, and the
+  // bar's placement affordance is a picker rather than a single fixed pin.
+  const { slots } = useSlots();
   const split = useSplitView();
   const streaming = (payload as { streaming?: boolean }).streaming === true;
   // The nudge belongs to the build that just LANDED (§10.1: the user pins, the

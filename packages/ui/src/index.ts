@@ -15,6 +15,5 @@ export type { VendoAppEmbedProps, VendoApprovalEmbedProps, VendoApprovalEmbedSta
 export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./chrome/embeds.js";
 export * from "./hooks/index.js";
 export { announcePin, onPinAnnounced } from "./pin-events.js";
-export { knownSlots, noteSlot, type SlotNote } from "./slot-notes.js";
 export { defaultVendoTheme, resolveTheme, themeCssVariables } from "./theme.js";
 export * from "./wire-types.js";

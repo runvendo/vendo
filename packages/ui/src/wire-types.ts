@@ -53,6 +53,20 @@ export interface PlacementEntry {
   status: "ready" | "building" | "failed";
 }
 
+/** One row of `GET /slots` — a destination a mounted `VendoSlot` reported on
+ *  this deployment. A slot id is the HOST's markup, not a Vendo document, so
+ *  nothing knows a slot exists until a slot says so; the registry is what
+ *  carries that to a surface (the "Add to…" picker) on another page. Newest
+ *  first, and already filtered to what the caller may place into. */
+export interface SlotEntry {
+  /** The slot's `id` — the value that goes over the wire as a placement. */
+  id: string;
+  /** What a person choosing a destination reads. */
+  label: string;
+  /** When a mounted slot last reported itself. */
+  lastSeen: string;
+}
+
 /**
  * Remix final shape (2026-08-02) — where the CURRENT version of a review-kind
  * remix stands with the host reviewer, riding the venue verdict: "pending"

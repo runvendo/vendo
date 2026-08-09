@@ -94,6 +94,9 @@ describe("createVendoClient", () => {
     await client.runs.stop("run_1");
     // ⚠️ FIXTURE WIDENED (CR-2): one more audit row behind the cursor.
     expect(await client.activity.list({ cursor: "aud_2", limit: 10 })).toHaveLength(3);
+    // The slot registry: a mounted slot reports, a picker elsewhere reads back.
+    await client.slots.report([{ id: "hero", label: "Hero" }]);
+    expect(await client.slots.list()).toEqual([{ id: "hero", label: "Hero", lastSeen: expect.any(String) }]);
     expect((await client.status()).posture).toBe("rules");
     await client.threads.delete("thr_1");
 
@@ -135,6 +138,8 @@ describe("createVendoClient", () => {
     exact("GET", "/runs/run_1", undefined);
     exact("POST", "/runs/run_1/stop", {});
     exact("GET", "/activity?cursor=aud_2&limit=10", undefined);
+    exact("POST", "/slots", { slots: [{ id: "hero", label: "Hero" }] });
+    exact("GET", "/slots", undefined);
     exact("GET", "/status", undefined);
 
     expect(wire.state.importBytes).toEqual(new Uint8Array([4, 5, 6]));

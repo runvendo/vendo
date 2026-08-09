@@ -12,6 +12,7 @@ import {
   useAutomations,
   useConnections,
   useGrants,
+  useSlots,
   useThreads,
   useVendoContext,
   useVendoStatus,
@@ -256,6 +257,31 @@ describe("headless hooks", () => {
     await act(() => result.current.loadMore());
     await waitFor(() => expect(result.current.hasMore).toBe(false));
     expect(result.current.events).toHaveLength(4);
+  });
+
+  it("loads the slot registry and re-reads it on refresh", async () => {
+    const { result } = renderHook(() => useSlots(), { wrapper });
+    expect(result.current.slots).toEqual([]);
+    expect(result.current.isLoading).toBe(true);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.slots).toEqual([]);
+    expect(result.current.error).toBeUndefined();
+
+    // A slot reported itself from some other page — the picker's destinations
+    // only change under it, so refresh is the whole affordance.
+    await client.slots.report([{ id: "home-hero", label: "Home hero" }]);
+    await act(() => result.current.refresh());
+    expect(result.current.slots).toEqual([
+      { id: "home-hero", label: "Home hero", lastSeen: expect.any(String) },
+    ]);
+  });
+
+  it("surfaces a failed registry read instead of an empty menu", async () => {
+    wire.state.failures.push({ method: "GET", path: "/slots", code: "validation", message: "no", status: 400 });
+    const { result } = renderHook(() => useSlots(), { wrapper });
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
+    expect(result.current.slots).toEqual([]);
+    expect(result.current.isLoading).toBe(false);
   });
 
   it("loads posture and transitions to disconnected after the server is killed", async () => {
