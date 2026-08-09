@@ -2,17 +2,16 @@
 //
 // The registry is written by ANY page render, so this route is the widest
 // unprivileged write surface the apps block has: one request, one row per
-// entry, no ceiling. Every sibling on this wire bounds its input —
-// `readBoundedJson(request, ROW_MAX_BYTES)` at 256 KiB plus a 1–256 character
-// id on the /box rows surface (wire/box.ts:29,146,219), at most 200 tool names
-// on /doctor (wire/misc.ts:153) — and this route bounds nothing: `requestJson`
-// reads the whole body, `descriptor` checks each entry's SHAPE and never its
-// size, and the array's length is never looked at (wire/slots.ts:16-34).
+// entry. It used to bound nothing — `descriptor` checked each entry's SHAPE
+// and never its size, and the array's length was never looked at — while every
+// sibling on this wire bounds its input: `readBoundedJson(request,
+// ROW_MAX_BYTES)` at 256 KiB plus a 1–256 character id on the /box rows
+// surface (wire/box.ts:29,146,219), at most 200 tool names on /sync/impact
+// (wire/misc.ts:153).
 //
-// The cases below are written against that house discipline, not against a
-// number this round invented: what they pin is that SOME ceiling exists and
-// answers `validation`, the way every neighbouring write surface does. The
-// exact cap is a spec decision.
+// It now carries the same house discipline: at most 200 entries per report,
+// each id and label 1–256 characters (wire/slots.ts). The cases below pin that
+// a ceiling exists and answers `validation`, not the particular numbers.
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -99,20 +98,14 @@ describe("POST /slots bounds its input like every other write on this wire", () 
   }, 120_000);
 });
 
-describe("the slot registry's decay collects the row, not just the answer", () => {
-  it("leaves no row behind for a slot nobody has rendered in months", async () => {
-    // slots.ts:6-9 — "a slot that stopped rendering ages out of the registry on
-    // its own after SLOT_DECAY_MS". The READ ages out (the `lastSeen` filter in
-    // `list`); the ROW never does. Nothing in the composition collects it: the
-    // TTL sweep has exactly two legs, parked BYO calls and stranded approvals
-    // (compose-sweep.ts:15,22), and neither reaches `vendo_records`.
-    //
-    // So every subject that ever rendered a page keeps its slot rows forever,
-    // including the throwaway subjects a signed-out host resolves per visitor,
-    // and the only thing that ever removes one is a full `erase.bySubject`.
-    // WHERE the collection belongs — a sweep leg, a write-time compaction, or a
-    // decision that rows are kept on purpose — is a spec decision; this case
-    // only pins that the registry does not grow without bound.
+describe("the slot registry's decay is a read filter, and the row is kept", () => {
+  it("stops answering with an aged-out slot while its row stays put", async () => {
+    // Spec decision: the ROW is kept on purpose. Decay is the `lastSeen` filter
+    // in `list` and nothing else — no sweep leg reaches `vendo_records`
+    // (compose-sweep.ts has exactly two, parked BYO calls and stranded
+    // approvals). The registry is one row per (subject, slot), refreshed in
+    // place rather than appended, so a subject's rows are bounded by the slots
+    // it has actually rendered; `erase.bySubject` is what removes them (below).
     const store = await tempStore();
     const vendo = createVendo({ principal: async () => principal, store });
 
@@ -129,14 +122,17 @@ describe("the slot registry's decay collects the row, not just the answer", () =
       refs: { subject: principal.subject },
     });
 
-    // The read already agrees the slot is gone.
+    // The read no longer offers it as a destination...
     expect(await (await vendo.handler(request("GET", "/slots"))).json()).toEqual([]);
 
-    // Give the composition every chance to collect it: the authenticated tick
-    // drives the sweep, and an ordinary request runs the amortized pass.
+    // ...and a further request — which runs the amortized sweep pass — leaves
+    // the row exactly where it was, so the slot revives the day a page mounts
+    // it again instead of being silently forgotten.
     await vendo.handler(request("GET", "/slots"));
 
-    expect((await rows.list({ refs: { subject: principal.subject } })).records).toEqual([]);
+    const kept = (await rows.list({ refs: { subject: principal.subject } })).records;
+    expect(kept).toHaveLength(1);
+    expect(kept[0]!.data).toMatchObject({ id: "retired", lastSeen: "2020-01-01T00:00:00.000Z" });
   }, 60_000);
 });
 
