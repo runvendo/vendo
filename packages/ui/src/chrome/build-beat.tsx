@@ -141,7 +141,6 @@ export interface ConsentWords {
  * "clean" descriptor sentence through a regex vocabulary; ruling 14 reversed
  * that — a regex set admitted raw JSON and exceptions while deleting good host
  * copy, so it cannot be the runtime authority for what a person may read.
- * `consumer-voice.ts` survives as the LAW's test oracle only.
  */
 export function consentWords(
   name: string,

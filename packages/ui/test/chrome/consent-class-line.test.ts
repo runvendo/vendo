@@ -66,7 +66,7 @@ const NAMES = [
 
 /** demo-bank's real catalog — the host every live proof in this wave ran on. */
 function demoBankTools(): Array<{ name: string; risk: string }> {
-  // cwd is packages/ui under vitest (see the consumer-voice law's source sweep).
+  // cwd is packages/ui under vitest.
   const catalog = JSON.parse(
     readFileSync("../../examples/demo-bank/.vendo/tools.json", "utf8"),
   ) as { tools?: Array<{ name: string; risk: string }> } | Array<{ name: string; risk: string }>;

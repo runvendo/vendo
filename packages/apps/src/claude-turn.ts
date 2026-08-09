@@ -316,8 +316,8 @@ const WRITING_TOOL_NAMES = new Set(WRITING_TOOLS.split("|"));
  * as "the present continuous form shown during execution" and is a beat in all
  * but name — and it is also the model's own untrusted text, free to say
  * "Creating app/src/InvoiceTable.tsx". Admitting it would need a regex gate over
- * model prose, which ruling 14 (`ui/src/consumer-voice.ts`) already tried and
- * reversed: a regex set cannot be the authority for what a person may read. So
+ * model prose, which ruling 14 already tried and reversed: a regex set cannot be
+ * the authority for what a person may read. So
  * the beats below are OUR fixed copy, and this loop holds no filename it could
  * leak.
  *

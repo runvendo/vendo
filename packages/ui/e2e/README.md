@@ -25,7 +25,7 @@ Anything else says so.
 | C1 | a conversation grows no policy banner of its own | **yes** (two-sided: absent on `/composer`, present on `/notice`) | `smoke.spec.ts` |
 | C2 | an activity row reads in the owner's words, not the guard's JSON | **no browser test** | jsdom only: `test/chrome/activity-semantics.test.ts`; plus the `postcheck-a/a2` screenshot (a one-shot record, not a gate) |
 | C5 | a two-money ask shows both amounts and no wrong money sentence | **no browser test** | jsdom only: `test/chrome/approval-money.test.tsx`, `nested-money.test.ts`; plus `postcheck-a/a3` |
-| H6 | the card and its queue row read from ONE ladder | **yes** | `pass3-consumer-voice.spec.ts` (b) |
+| H6 | the card and its queue row read from ONE ladder | **no browser test** | jsdom only: `test/chrome/card-shell.test.tsx` |
 | H9 | collapsing the workspace is final; the stage cannot re-open it | **yes** | `smoke.spec.ts` |
 | H17 | a navigation carries focus with it | **no browser test in CI** | proven once by the wave E2E (`integration-v2`, frame 25) against the real host; not a gate |
 | §8 | a build animates exactly ONE thing | **yes**, sampled across the whole build window | `smoke.spec.ts` |

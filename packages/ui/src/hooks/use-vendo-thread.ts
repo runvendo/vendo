@@ -53,8 +53,8 @@ const BEAT_PHASES: Record<BeatPhase, true> = {
  * carried none, would make the receiver the author of a fact the harness never
  * sent.
  *
- * The label itself is NOT rewritten. Ruling 14 (consumer-voice.ts) settled that
- * a regex set may not be the runtime authority for what a person may read — as
+ * The label itself is NOT rewritten. Ruling 14 settled that a regex set may not
+ * be the runtime authority for what a person may read — as
  * a gate it deleted good host copy while admitting raw JSON. The beat text rules
  * bind the PRODUCER; here the label is passed through as sent.
  */

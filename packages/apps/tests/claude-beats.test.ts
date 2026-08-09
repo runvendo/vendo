@@ -177,8 +177,8 @@ describe("the loop narrates itself — one beat per real step (§3.4)", () => {
  * literally documented by the CLI as "the present continuous form shown during
  * execution", which is a beat in all but name. It is also untrusted: it can say
  * "Creating app/src/InvoiceTable.tsx", and admitting it would need a regex gate
- * over model-authored prose. Ruling 14 (`ui/src/consumer-voice.ts`) already tried
- * that and reversed it — "a regex set cannot be the authority for what a person
+ * over model-authored prose. Ruling 14 already tried that and reversed it —
+ * "a regex set cannot be the authority for what a person
  * may read", because it admitted raw JSON and exceptions while deleting good
  * copy. Its replacement is a precedence ladder of trusted sources ending in OUR
  * OWN fixed sentence (`consentWords`), and beats have no rung above that one: no
