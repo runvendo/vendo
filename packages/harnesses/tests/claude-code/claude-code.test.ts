@@ -125,7 +125,7 @@ function makeBox(
     messages: 0,
     steers: [],
     interrupted: false,
-  } as FakeBox;
+  } as unknown as FakeBox;
   /** Is the doubled session inside a `send()` right now? */
   let inFlight = false;
 

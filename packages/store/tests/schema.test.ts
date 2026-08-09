@@ -1,4 +1,3 @@
-import { VendoError } from "@vendoai/core";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -192,7 +191,7 @@ for (const backend of backends()) {
       await made.store.close();
       const reopened = createStore({ url: made.url, dataDir: made.dataDir });
       try {
-        await expect(reopened.ensureSchema()).rejects.toMatchObject<VendoError>({ code: "conflict" });
+        await expect(reopened.ensureSchema()).rejects.toMatchObject({ code: "conflict" });
       } finally {
         await reopened.close();
       }

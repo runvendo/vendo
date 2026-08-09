@@ -10,7 +10,7 @@
  * `CommitResult.changed` names exactly what reached the store. So every case here
  * writes AND commits, which is what the runtime makes happen for the harness.
  */
-import { vendoViewPartSchema, vendoViewStreamId, type Json, type VendoViewPart } from "@vendoai/core";
+import { vendoViewPartSchema, vendoViewStreamId, type Json, type UIPayload, type VendoViewPart } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { HOT_PATH_FILES, HOT_PATH_WATCH, hotPathAppId, wrapWorkspaceForRender } from "../src/render-seam.js";
 import { testWorkspace } from "../src/test-doubles.test-util.js";
@@ -134,7 +134,7 @@ describe("a parsing save to app.vendo", () => {
     await save(APP_VENDO, GOOD_APP);
     const parsed = vendoViewPartSchema.safeParse(emitted[0]!.part);
     expect(parsed.success).toBe(true);
-    const payload = emitted[0]!.part.payload as { root: string; nodes: unknown[] };
+    const payload = emitted[0]!.part.payload as UIPayload & { root: string; nodes: unknown[] };
     expect(payload.root).toBe("root");
     expect(payload.nodes.length).toBeGreaterThan(0);
   });
@@ -214,7 +214,7 @@ describe("a save to plan.vendo", () => {
     await save(PLAN_VENDO, GOOD_PLAN);
     expect(emitted).toHaveLength(1);
     expect(emitted[0]!.id).toBe(vendoViewStreamId(APP));
-    const payload = emitted[0]!.part.payload as { nodes: unknown[] };
+    const payload = emitted[0]!.part.payload as UIPayload & { nodes: unknown[] };
     expect(payload.nodes.length).toBeGreaterThan(0);
     // A plan IS the mid-build state: this one stays streaming, which is what
     // holds the forming skeleton instead of judging a tree still being written.
@@ -473,7 +473,7 @@ describe("the app half of an app.vendo commit (§1.6)", () => {
         expect(calls).toEqual([]);
         expect(emitted).toHaveLength(1);
         expect(emitted[0]!.id).toBe(vendoViewStreamId(APP));
-        expect((emitted[0]!.part.payload as { nodes: unknown[] }).nodes.length).toBeGreaterThan(0);
+        expect((emitted[0]!.part.payload as UIPayload & { nodes: unknown[] }).nodes.length).toBeGreaterThan(0);
         expect((emitted[0]!.part.payload as { streaming?: boolean }).streaming).toBe(true);
       }
     }

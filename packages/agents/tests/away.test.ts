@@ -48,7 +48,7 @@ function taskRegistry(over: Partial<ToolRegistry> = {}): ToolRegistry & { calls:
     calls,
     ctxs,
     async descriptors(ctx) {
-      ctxs.push(ctx);
+      ctxs.push(ctx as RunContext | undefined);
       return [readDescriptor];
     },
     async execute(call) {

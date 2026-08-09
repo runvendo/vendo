@@ -1,4 +1,4 @@
-import type { SandboxAdapter } from "@vendoai/apps";
+import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
 import type { AuditEvent, ToolRegistry } from "@vendoai/core";
 import type { VendoGuard } from "@vendoai/guard";
 import { defineHarness, harnessAdapters } from "@vendoai/harnesses";
@@ -32,7 +32,7 @@ const fakeSandbox = (): SandboxAdapter & { created: unknown[] } => {
     snapshot: async () => "fake:snap",
     stop: async () => {},
     destroy: async () => {},
-  };
+  } as Omit<SandboxMachine, "files"> as SandboxMachine;
   return {
     created,
     async create(spec) {
@@ -61,7 +61,7 @@ const fakeGuard = (): VendoGuard & { reports: AuditEvent[]; bound: ToolRegistry[
       bound.push(tools);
       return tools;
     },
-    approvals: { pending: async () => [], decide: async () => {}, revoke: async () => {} },
+    approvals: { pending: async () => [], decide: async () => {}, revoke: async () => {} } as Omit<VendoGuard["approvals"], "parkedCallTtlMs"> as VendoGuard["approvals"],
     freeze: async () => {},
     unfreeze: async () => {},
     frozen: async () => false,

@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 import { compactContext, summaryMessage } from "../../src/vendo/compaction.js";
 import { contextWindowTokens } from "../../src/vendo/model-windows.js";
 import { isContextOverflow } from "../../src/vendo/overflow.js";
-import { vendo } from "../../src/vendo/vendo.js";
+import { vendo, type VendoHarnessOptions } from "../../src/vendo/vendo.js";
 import { createTurnState } from "../../src/harness-state.js";
 import { createTurnTools } from "../../src/turn-tools.js";
 import {
@@ -123,16 +123,18 @@ async function driveThread(options: {
   /** A thread's messages as of each turn, with the per-turn options that turn
    *  carried — a host may forward a knob to its end users, so two turns of one
    *  thread do not have to agree about one. */
-  turns: readonly (Turn["messages"] | { messages: Turn["messages"]; options: Turn["options"] })[];
+  turns: readonly (Turn["messages"] | { messages: Turn["messages"]; options: VendoHarnessOptions })[];
   /** A slot the thread arrives ALREADY carrying, as a thread mid-life does. */
   slot?: string;
 }): Promise<Array<string | undefined>> {
   const slots: Array<string | undefined> = [];
   let slot: string | undefined = options.slot;
   for (const turnSpec of options.turns) {
-    const { messages, options: turnOptions } = Array.isArray(turnSpec)
+    // `Array.isArray` cannot narrow a `readonly` array out of the union, so the
+    // false branch keeps both constituents; the shape is stated instead.
+    const { messages, options: turnOptions } = (Array.isArray(turnSpec)
       ? { messages: turnSpec, options: {} }
-      : turnSpec;
+      : turnSpec) as { messages: Turn["messages"]; options: VendoHarnessOptions };
     const turnTools = createTurnTools({
       registry: NO_TOOLS,
       guard: testGuard(),
@@ -141,7 +143,9 @@ async function driveThread(options: {
       mirror: () => {},
     });
     const state = createTurnState(slot);
-    const turn: Turn = {
+    const turn: Turn<VendoHarnessOptions> = {
+      threadId: "thr_context_risk",
+      turnId: "trn_context_risk",
       messages,
       tools: turnTools,
       skills: testSkills(),

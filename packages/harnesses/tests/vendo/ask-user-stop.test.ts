@@ -17,7 +17,7 @@
  */
 import { ASK_USER_TOOL, type Json, type ToolOutcome, type ToolRegistry, type Turn } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { vendo } from "../../src/vendo/vendo.js";
+import { vendo, type VendoHarnessOptions } from "../../src/vendo/vendo.js";
 import { createTurnState } from "../../src/harness-state.js";
 import { createTurnTools } from "../../src/turn-tools.js";
 import {
@@ -47,7 +47,9 @@ async function askAndCount(outcome: ToolOutcome): Promise<number> {
     toolCallTurn(ASK_USER_TOOL, { question: "Which account?" }),
     textTurn("I went ahead without waiting."),
   ]);
-  const turn: Turn = {
+  const turn: Turn<VendoHarnessOptions> = {
+    threadId: "thr_ask_user",
+    turnId: "trn_ask_user",
     messages: [userMessage("m1", "move some money")],
     tools: turnTools,
     skills: testSkills(),

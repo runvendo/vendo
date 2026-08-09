@@ -47,7 +47,7 @@ describe("session", () => {
     const session = await support.session("u_42");
     const response = await session.stream("hello from the user");
     expect(await response.text()).toContain("hello from the harness");
-    const messages = await threadMessageStore(store).list(principal, session.threadId as never);
+    const messages = await threadMessageStore<{ id: string; role: string }>(store).list(principal, session.threadId as never);
     expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
   });
 
@@ -88,7 +88,7 @@ describe("session", () => {
     expect(resumed.threadId).toBe(first.threadId);
     await (await resumed.stream("second")).text();
     expect(seen).toHaveLength(3); // user, assistant, user
-    const messages = await threadMessageStore(store).list(principal, first.threadId as never);
+    const messages = await threadMessageStore<{ id: string; role: string }>(store).list(principal, first.threadId as never);
     expect(messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
   });
 
@@ -193,7 +193,7 @@ describe("session", () => {
           decisions.push([ids, decision, by]);
         },
         revoke: async () => {},
-      },
+      } as Omit<VendoGuard["approvals"], "parkedCallTtlMs"> as VendoGuard["approvals"],
       freeze: async () => {},
       unfreeze: async () => {},
       frozen: async () => false,

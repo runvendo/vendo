@@ -15,7 +15,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { SandboxAdapter } from "@vendoai/apps";
+import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
 // The REAL box door and the REAL in-box session opener, over a fake transport:
 // what the box does with `toolDoor` is the other half of this seam.
 import { createSessionRoutes } from "@vendoai/apps/box-door";
@@ -99,7 +99,7 @@ function fakeSandbox(script: (box: BoxRun) => Promise<void>) {
         snapshot: async () => "fake:snap",
         stop: async () => {},
         destroy: async () => {},
-      };
+      } as SandboxMachine;
     },
     resume: async () => {
       throw new Error("a conversation box is destroyed, never resumed");

@@ -60,7 +60,7 @@ const packOnce = (): PackedPackage => {
   packedCache = {
     dir,
     manifest,
-    resolve: (subpath) => join(dir, exportsMap[subpath].default),
+    resolve: (subpath) => join(dir, exportsMap[subpath]!.default),
   };
   return packedCache;
 };
@@ -76,7 +76,7 @@ describe("packaging e2e — the artifact blocks will install", () => {
     for (const subpath of [".", "./conformance"] as const) {
       expect(exportsMap[subpath]).toBeDefined();
       expect(existsSync(packed.resolve(subpath))).toBe(true);
-      expect(existsSync(join(packed.dir, exportsMap[subpath].types))).toBe(true);
+      expect(existsSync(join(packed.dir, exportsMap[subpath]!.types))).toBe(true);
     }
     // dist-only artifact: no sources, no tests, no vectors in the tarball
     expect(existsSync(join(packed.dir, "src"))).toBe(false);

@@ -48,7 +48,7 @@ const liveTurn = (subject: string, marker: string, presence?: RunContext["presen
 const probeRegistry = <T>(make: () => T) => {
   const built: Map<string, unknown>[] = [];
   const RealMap = globalThis.Map;
-  globalThis.Map = class extends RealMap {
+  globalThis.Map = class extends (RealMap as new (...args: ConstructorParameters<typeof Map>) => Map<unknown, unknown>) {
     constructor(...args: ConstructorParameters<typeof Map>) {
       super(...args);
       built.push(this as Map<string, unknown>);

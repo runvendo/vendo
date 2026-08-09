@@ -23,7 +23,7 @@ import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
 import { isContextOverflow } from "../../src/vendo/overflow.js";
-import { vendo } from "../../src/vendo/vendo.js";
+import { vendo, type VendoHarnessOptions } from "../../src/vendo/vendo.js";
 import { createTurnState } from "../../src/harness-state.js";
 import { createTurnTools } from "../../src/turn-tools.js";
 import {
@@ -186,7 +186,9 @@ async function driveTurn(options: {
     interactive: true,
     mirror: () => {},
   });
-  const turn: Turn = {
+  const turn: Turn<VendoHarnessOptions> = {
+    threadId: "thr_overflow",
+    turnId: "trn_overflow",
     messages: options.messages ?? [userMessage("m1", "move the money")],
     tools: turnTools,
     skills: testSkills(),

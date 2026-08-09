@@ -39,7 +39,7 @@ describe("withTurnHeartbeat (ENG-353)", () => {
     vi.useFakeTimers();
     beats = [];
     beatResult = { active: true };
-    fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    fetchImpl = vi.fn(async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
       beats.push({ url: String(url), init });
       return Response.json(beatResult);
     }) as unknown as typeof fetch;

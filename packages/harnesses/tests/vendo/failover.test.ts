@@ -16,13 +16,13 @@ import { APICallError } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_MAX_RETRIES, startTurn, type TurnLoopOptions } from "../../src/vendo/loop.js";
-import { ZERO_USAGE } from "../../src/test-doubles.test-util.js";
+import { ZERO_USAGE, type StreamPart } from "../../src/test-doubles.test-util.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-type Chunks = Parameters<typeof simulateReadableStream>[0]["chunks"];
+type Chunks = StreamPart[];
 
 /** A provider failure the SDK is willing to retry — the shape that makes the
  *  retry budget observable at all. */

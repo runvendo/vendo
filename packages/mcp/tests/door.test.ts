@@ -11,6 +11,7 @@ import {
   type RecordStore,
   type StoreAdapter,
   type ToolCall,
+  type ToolListing,
   type ToolOutcome,
   type ToolRegistry,
   type VendoTheme,
@@ -19,7 +20,7 @@ import {
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
-import { exportJWK, generateKeyPair, jwtVerify, SignJWT, type KeyLike } from "jose";
+import { exportJWK, generateKeyPair, jwtVerify, SignJWT, type CryptoKey } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMcpDoorWithState } from "../src/door.js";
 import {
@@ -468,7 +469,7 @@ describe("createMcpDoor routing and OAuth", () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("");
-    expect(harness.audits.filter((event) => event.detail?.event === "revoke")).toEqual([]);
+    expect(harness.audits.filter((event) => (event.detail as { event?: string } | undefined)?.event === "revoke")).toEqual([]);
   });
 
   it("refuses a valid public client trying to revoke another client's token", async () => {
@@ -520,8 +521,8 @@ describe("createMcpDoor routing and OAuth", () => {
     expect((await harness.door.handler(mcpRequest(independent.access_token))).status).toBe(200);
 
     const families = harness.store.rows("vendo_mcp_grants")
-      .filter((row) => row.data.kind === "family")
-      .map((row) => row.data.status)
+      .filter((row) => (row.data as { kind?: string }).kind === "family")
+      .map((row) => (row.data as { status?: string }).status)
       .sort();
     expect(families).toEqual(["active", "revoked"]);
   });
@@ -669,7 +670,7 @@ describe("createMcpDoor routing and OAuth", () => {
           if (!subject) {
             const login = new URL("https://product.example/login");
             login.searchParams.set("returnTo", returnTo);
-            return Response.redirect(login);
+            return Response.redirect(login, 302);
           }
           return { subject };
         },
@@ -733,7 +734,7 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(location.origin + location.pathname).toBe(REDIRECT);
     expect(location.searchParams.get("error")).toBe("access_denied");
     expect(location.searchParams.get("state")).toBe("deny-state");
-    expect(harness.store.rows("vendo_mcp_grants").some((row) => row.data.kind === "code")).toBe(false);
+    expect(harness.store.rows("vendo_mcp_grants").some((row) => (row.data as { kind?: string }).kind === "code")).toBe(false);
   });
 
   it("consumes an approved consent interaction once and rejects a replay", async () => {
@@ -2689,7 +2690,7 @@ describe("createMcpDoor turn-credential results", () => {
 
   function liveTurn(output: Json, onList: () => void) {
     return {
-      ctx: { principal: { kind: "user" as const, subject: "user_1" }, venue: "chat" as const, presence: "present" as const },
+      ctx: { principal: { kind: "user" as const, subject: "user_1" }, venue: "chat" as const, presence: "present" as const, sessionId: "turn_session_1" },
       tools: {
         async call() {
           return { status: "ok" as const, output };
@@ -2757,7 +2758,7 @@ describe("createMcpDoor turn-credential results", () => {
                 { name: "host_lookup", description: "Look something up", risk: "read" as const, inputSchema: { type: "object", properties: {} } },
                 { name: "host_wipe", description: "Delete everything", risk: "destructive" as const, inputSchema: { type: "object", properties: {} } },
                 { name: "host_maybe", description: "Nobody graded this", risk: "ungraded" as const, inputSchema: { type: "object", properties: {} } },
-              ],
+              ] as Omit<ToolListing, "title">[] as ToolListing[],
             },
           };
         },
@@ -2823,6 +2824,7 @@ describe("createMcpDoor withholdTools on a turn-bearing session", () => {
               principal: { kind: "user" as const, subject: "user_1" },
               venue: "chat" as const,
               presence: "present" as const,
+              sessionId: "turn_session_1",
             },
             tools: {
               async call(name: string) {
@@ -2833,7 +2835,7 @@ describe("createMcpDoor withholdTools on a turn-bearing session", () => {
                 return [
                   { name: "host_lookup", description: "Look something up", risk: "read" as const, inputSchema: { type: "object", properties: {} } },
                   { name: WITHHELD, description: "Pin an app", risk: "write" as const, inputSchema: { type: "object", properties: {} } },
-                ];
+                ] as Omit<ToolListing, "title">[] as ToolListing[];
               },
             },
           };
@@ -2892,6 +2894,7 @@ describe("createMcpDoor MCP Apps on a turn-bearing session", () => {
               principal: { kind: "user" as const, subject: "user_1" },
               venue: "chat" as const,
               presence: "present" as const,
+              sessionId: "turn_session_1",
             },
             tools: {
               async call() {
@@ -2901,7 +2904,7 @@ describe("createMcpDoor MCP Apps on a turn-bearing session", () => {
                 return [
                   { name: "host_lookup", description: "Look something up", risk: "read" as const, inputSchema: { type: "object", properties: {} } },
                   { name: "vendo_apps_open", description: "Open a saved app", risk: "read" as const, inputSchema: { type: "object", properties: {} } },
-                ];
+                ] as Omit<ToolListing, "title">[] as ToolListing[];
               },
             },
           };
@@ -3433,7 +3436,7 @@ async function generateSigningKey(kid: string, alg = "ES256") {
 }
 
 async function mintRemoteToken(
-  privateKey: KeyLike,
+  privateKey: CryptoKey,
   kid: string,
   options: { issuer: string; audience: string; alg?: string } & RemoteTokenOverrides,
 ): Promise<string> {

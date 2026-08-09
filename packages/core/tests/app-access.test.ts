@@ -27,6 +27,7 @@ const ctx = (subject: string, memberships?: Membership[]): RunContext => ({
   principal: { kind: "user", subject },
   venue: "app",
   presence: "present",
+  sessionId: "session_app_access",
   ...(memberships === undefined ? {} : { memberships }),
 });
 

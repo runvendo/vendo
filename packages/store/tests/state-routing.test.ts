@@ -1,4 +1,4 @@
-import { VendoError, type Principal } from "@vendoai/core";
+import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { appFixture, persistentPrincipal } from "../src/fixtures.test-util.js";
@@ -202,9 +202,9 @@ for (const backend of backends()) {
       // (app_x, y:z)). The write door refuses any non-app_ leading segment, so no
       // doctored id can ever target a row it does not own.
       await expect(made.store.records("vendo_state").put({ id: "notanapp:user", data: {} }))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
       await expect(made.store.records("vendo_state").delete("notanapp:user"))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
       // Nothing was written under the doctored id.
       expect(Number((await made.sql(
         "SELECT COUNT(*)::int AS count FROM vendo_state WHERE subject = 'user'",
@@ -217,9 +217,9 @@ for (const backend of backends()) {
       // the apps runtime never mints). Both are refused at the door.
       const state = made.store.records("vendo_state");
       await expect(state.put({ id: "app_demo:", data: { orphan: true } }))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
       await expect(state.put({ id: "app_:x", data: { degenerate: true } }))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
       // Nothing landed for either doctored id.
       expect(Number((await made.sql(
         "SELECT COUNT(*)::int AS count FROM vendo_state WHERE app_id IN ('app_demo', 'app_')",

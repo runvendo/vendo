@@ -46,7 +46,7 @@
     "build": "tsc -p tsconfig.json",
     "conformance": "tsc -p tsconfig.json && vitest run tests/conformance.test.ts tests/contract-routing.conformance.test.ts tests/security/audit-append-only.conformance.test.ts tests/security/secrets-aad.conformance.test.ts tests/flip-guards.conformance.test.ts tests/erase.conformance.test.ts tests/workspace.erase.test.ts tests/postgres-gate.test.ts",
     "test": "tsc -p tsconfig.json && vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test:coverage": "tsc -p tsconfig.json && vitest run --coverage"
   },
   "dependencies": {

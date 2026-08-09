@@ -1,4 +1,4 @@
-import { VendoError, auditEventSchema, permissionGrantSchema, type Principal } from "@vendoai/core";
+import { auditEventSchema, permissionGrantSchema, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { approvalFixture, at, auditFixture, grantFixture } from "../src/fixtures.test-util.js";
@@ -66,11 +66,11 @@ for (const backend of backends()) {
 
     it("rejects malformed routed data, unknown refs, and embedded-id mismatches", async () => {
       await expect(made.store.records("vendo_grants").put({ id: "grt_bad", data: { id: "grt_bad" } }))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
       await expect(made.store.records("vendo_grants").list({ refs: { made_up: "x" } }))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
       await expect(made.store.records("vendo_grants").put({ id: "grt_outer", data: grantFixture("grt_inner") }))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
     });
 
     it("keeps routed rows and typed helpers in one shared world", async () => {

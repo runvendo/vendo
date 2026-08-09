@@ -261,7 +261,7 @@ export function unusedModels(): SeatModels<LanguageModel> {
   return {};
 }
 
-type StreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<
+export type StreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<
   infer Part
 >
   ? Part
@@ -272,7 +272,11 @@ export const ZERO_USAGE = {
   outputTokens: { total: 0, text: 0, reasoning: 0 },
 } as const;
 
-export function textTurn(text: string, usage: typeof ZERO_USAGE = ZERO_USAGE): StreamPart[] {
+/** What a `finish` part carries. Named off the part rather than off
+ *  `ZERO_USAGE`, whose `as const` would pin every caller to zeros. */
+type StreamUsage = Extract<StreamPart, { type: "finish" }>["usage"];
+
+export function textTurn(text: string, usage: StreamUsage = ZERO_USAGE): StreamPart[] {
   return [
     { type: "text-start", id: "t1" },
     { type: "text-delta", id: "t1", delta: text },

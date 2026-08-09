@@ -24,7 +24,7 @@ import {
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it } from "vitest";
-import { vendo } from "../../src/vendo/vendo.js";
+import { vendo, type VendoHarnessOptions } from "../../src/vendo/vendo.js";
 import { createTurnTools } from "../../src/turn-tools.js";
 import type { HireRecord } from "../../src/runtime.js";
 import {
@@ -39,6 +39,7 @@ import {
   toolCallTurn,
   userMessage,
   ZERO_USAGE,
+  type StreamPart,
 } from "../../src/test-doubles.test-util.js";
 
 const HIRE_SUBAGENT = "hire_subagent";
@@ -68,7 +69,9 @@ async function driveTurn(options: {
     interactive: true,
     mirror: () => {},
   });
-  const turn: Turn = {
+  const turn: Turn<VendoHarnessOptions> = {
+    threadId: "thr_subagent",
+    turnId: "trn_subagent",
     messages: [userMessage("m1", "get the big job done")],
     tools: turnTools,
     skills: testSkills(),
@@ -203,7 +206,7 @@ function overlappingHires(): { model: LanguageModel; order: string[] } {
   const bothStarted = new Promise<void>((resolve) => {
     bothIn = resolve;
   });
-  const resident = [
+  const resident: StreamPart[][] = [
     // ONE step, TWO hires. D5: full parallelism, writes included.
     [
       {
@@ -269,8 +272,8 @@ describe("two hires in one step, and one ledger between them", () => {
     // ...and each hire is its own audit row, in full. Summing the rows prices the
     // turn exactly once.
     expect(hires).toHaveLength(2);
-    expect(hires.map((record) => record.usage.inputTokens)).toEqual([45_000, 45_000]);
-    expect(hires.map((record) => record.usage.outputTokens)).toEqual([2_000, 2_000]);
+    expect(hires.map((record) => record.usage!.inputTokens)).toEqual([45_000, 45_000]);
+    expect(hires.map((record) => record.usage!.outputTokens)).toEqual([2_000, 2_000]);
     expect(hires.map((record) => record.purpose).sort()).toEqual(["job one", "job two"]);
   });
 

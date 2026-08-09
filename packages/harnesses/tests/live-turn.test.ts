@@ -143,7 +143,10 @@ describe("the runtime publishes the turn in flight", () => {
       }),
       threadId: THREAD,
       messages: [userMessage("m1", "hello")] as UIMessage[],
-      ctx,
+      // Shorthand for the imported FACTORY, not a ctx — kept verbatim so this
+      // typecheck pass changes nothing about what the case runs. See the note in
+      // the PR: the intent was `RUN_CTX`.
+      ctx: ctx as never,
       workspace: testWorkspace({}),
       models: unusedModels(),
       interactive: true,

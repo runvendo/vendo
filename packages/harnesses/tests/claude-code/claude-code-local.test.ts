@@ -35,6 +35,10 @@ vi.mock("../../src/claude-code/local.js", () => ({
     // ⚠️ TEST EDIT — the widened `SessionMachine` requires it. Same loopback
     // answer the real local machine gives.
     async url(port: number) { return `http://127.0.0.1:${port}`; },
+    // ⚠️ TEST EDIT — the widened `SessionMachine` requires it. Nothing is ever in
+    // flight here (this turn registers no `onSteer`), which is exactly the case
+    // the real session answers `false` for.
+    async steer() { return false; },
     async materialize() {},
     async collect() { return []; },
     async send(message: SessionMessage) { sent.push(message); },

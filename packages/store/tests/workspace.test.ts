@@ -266,7 +266,7 @@ for (const backend of backends()) {
 
         // Rejected up front, naming the file that cannot be stored...
         await expect(fs.commit({ message: "tried both" }))
-          .rejects.toMatchObject<Partial<VendoError>>({ code: "validation" });
+          .rejects.toMatchObject({ code: "validation" });
         await expect(fs.commit()).rejects.toThrow(new RegExp(upload));
         // ...and no row landed for EITHER path, in either order.
         expect(await rowsFor(app)).toEqual([]);
@@ -337,7 +337,7 @@ for (const backend of backends()) {
       };
       const fs = await workspaceStore(made.store, { files: refusing }).open(user);
       await fs.writeFile("/user/files/big.bin", new Uint8Array(WORKSPACE_INLINE_MAX_BYTES + 1));
-      await expect(fs.commit()).rejects.toMatchObject<Partial<VendoError>>({ code: "blocked" });
+      await expect(fs.commit()).rejects.toMatchObject({ code: "blocked" });
 
       const unavailable = {
         async put() { throw new VendoError("not-found", "no such bucket"); },
@@ -346,7 +346,7 @@ for (const backend of backends()) {
       };
       const other = await workspaceStore(made.store, { files: unavailable }).open(user);
       await other.writeFile("/user/files/big.bin", new Uint8Array(WORKSPACE_INLINE_MAX_BYTES + 1));
-      await expect(other.commit()).rejects.toMatchObject<Partial<VendoError>>({ code: "not-found" });
+      await expect(other.commit()).rejects.toMatchObject({ code: "not-found" });
     });
 
     // F6 (verifier): an explicitly mkdir'ed directory was reported as a file, so
@@ -356,7 +356,7 @@ for (const backend of backends()) {
       await fs.mkdir("/user/files/reports", { recursive: true });
       await fs.writeFile("/user/files/summary.txt", "a file");
 
-      const entries = await fs.readdirWithFileTypes("/user/files");
+      const entries = await fs.readdirWithFileTypes!("/user/files");
       expect(entries.find((entry) => entry.name === "reports"))
         .toMatchObject({ isDirectory: true, isFile: false });
       expect(entries.find((entry) => entry.name === "summary.txt"))
@@ -379,7 +379,7 @@ for (const backend of backends()) {
 
       const names = (await fs.readdir("/user/files")).filter((name) => name === "report");
       expect(names).toEqual(["report"]);
-      const entries = (await fs.readdirWithFileTypes("/user/files"))
+      const entries = (await fs.readdirWithFileTypes!("/user/files"))
         .filter((entry) => entry.name === "report");
       expect(entries).toEqual([
         { name: "report", isFile: true, isDirectory: false, isSymbolicLink: false },
@@ -398,7 +398,7 @@ for (const backend of backends()) {
       });
 
       expect(await fs.readdir("/host/skills")).toEqual(["charting"]);
-      expect((await fs.readdirWithFileTypes("/host/skills")).map((entry) => entry.name))
+      expect((await fs.readdirWithFileTypes!("/host/skills")).map((entry) => entry.name))
         .toEqual(["charting"]);
     });
 
@@ -513,7 +513,7 @@ for (const backend of backends()) {
     it("names the fix when a file passes the store-backed cap with no files adapter wired", async () => {
       const fs = await workspaceStore(made.store).open(user);
       await fs.writeFile("/user/files/huge.bin", new Uint8Array(FILES_STORE_MAX_BYTES + 1));
-      await expect(fs.commit()).rejects.toMatchObject<Partial<VendoError>>({ code: "validation" });
+      await expect(fs.commit()).rejects.toMatchObject({ code: "validation" });
       await expect(fs.commit()).rejects.toThrow(/Wire `files:`/);
     });
   });

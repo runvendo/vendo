@@ -1,4 +1,4 @@
-import { VendoError, type Principal } from "@vendoai/core";
+import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { threadStore } from "../src/index.js";
@@ -36,7 +36,7 @@ for (const backend of backends()) {
           questionId: "q_1",
           answer: { text: "injected" },
         }),
-      ).rejects.toMatchObject<VendoError>({ code: "conflict" });
+      ).rejects.toMatchObject({ code: "conflict" });
 
       // Alice's transcript is untouched — not even an empty row appeared.
       const after = await threads.get(alice, "thr_ask_alice");
@@ -52,7 +52,7 @@ for (const backend of backends()) {
           questionId: "q_1",
           answer: { text: "hello" },
         }),
-      ).rejects.toMatchObject<VendoError>({ code: "conflict" });
+      ).rejects.toMatchObject({ code: "conflict" });
     });
 
     it("records the owner's own answer, appended after the existing transcript", async () => {
@@ -148,7 +148,7 @@ for (const backend of backends()) {
       await threads.recordAnswer(alice, { threadId: "thr_ask_twice", questionId: "q_7", answer: { text: "yes" } });
       await expect(
         threads.recordAnswer(alice, { threadId: "thr_ask_twice", questionId: "q_7", answer: { text: "no" } }),
-      ).rejects.toMatchObject<VendoError>({ code: "conflict" });
+      ).rejects.toMatchObject({ code: "conflict" });
 
       const after = await threads.get(alice, "thr_ask_twice");
       expect(after?.messages).toHaveLength(1);

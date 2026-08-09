@@ -121,7 +121,7 @@ describe("mcpConnector per-principal headers", () => {
       scope: { kind: "tool" },
       duration: "task",
       contextKey: "session_ada",
-      source: "approval",
+      source: "approval" as unknown as PermissionGrant["source"],
       grantedAt: "2026-07-15T00:00:00Z",
     };
     const outcome = await connector.execute(

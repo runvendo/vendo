@@ -1,5 +1,5 @@
 import { storeFiles } from "../../src/files-store.js";
-import { VendoError, type Principal } from "@vendoai/core";
+import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../../src/backends.test-util.js";
 import { appFixture, approvalFixture, grantFixture } from "../../src/fixtures.test-util.js";
@@ -89,9 +89,9 @@ for (const backend of backends()) {
       // write doors refuse the cross-subject flip outright (02 §2).
       await registerEphemeralSubject(store, MALLORY.subject);
       await expect(apps.put(MALLORY, appFixture("app_bobs_own", "EVIL")))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
       await expect(threads.put(MALLORY, { id: "thr_bobs_own", messages: [{ role: "user", text: "evil" }] }))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
       // State is keyed (app_id, subject): her copy lands under HER subject only.
       await stateStore(store).put(MALLORY, "app_bobs_own", { bobs: false });
 

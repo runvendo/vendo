@@ -92,7 +92,7 @@ for (const backend of backends()) {
       });
       try {
         await wrong.ensureSchema();
-        await expect(storeSecrets(wrong).get("API_TOKEN")).rejects.toMatchObject<VendoError>({ code: "validation" });
+        await expect(storeSecrets(wrong).get("API_TOKEN")).rejects.toMatchObject({ code: "validation" });
       } finally {
         await wrong.close();
       }
@@ -102,13 +102,13 @@ for (const backend of backends()) {
 
     it("rejects malformed encryption keys at createStore time", () => {
       expect(() => createStore({ encryption: { key: Buffer.from("too short").toString("base64") } }))
-        .toThrow(expect.objectContaining<VendoError>({ code: "validation" }));
+        .toThrow(expect.objectContaining<Partial<VendoError>>({ code: "validation" }));
     });
 
     it("reports stored secrets as unavailable without encryption", async () => {
       const plain = createStore();
       try {
-        await expect(storeSecrets(plain).get("ANY")).rejects.toMatchObject<VendoError>({ code: "not-implemented" });
+        await expect(storeSecrets(plain).get("ANY")).rejects.toMatchObject({ code: "not-implemented" });
       } finally {
         await plain.close();
       }

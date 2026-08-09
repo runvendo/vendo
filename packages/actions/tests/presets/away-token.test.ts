@@ -1,6 +1,6 @@
 import type { PermissionGrant, Principal } from "@vendoai/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { auth0Preset, clerkPreset, type AwayTokenPreset } from "../../src/presets/index.js";
+import { auth0Preset, clerkPreset, type AwayTokenClaims, type AwayTokenPreset } from "../../src/presets/index.js";
 
 const principal: Principal = { kind: "user", subject: "provider-user" };
 const grant: PermissionGrant = {
@@ -15,7 +15,7 @@ const grant: PermissionGrant = {
 };
 const secret = "vendo-away-token-secret-at-least-32-bytes";
 
-type ExpressRequest = { headers: Record<string, string | undefined>; vendoAwayToken?: unknown };
+type ExpressRequest = { headers: Record<string, string | undefined>; vendoAwayToken?: AwayTokenClaims };
 
 describe.each([
   ["Clerk", "clerk", clerkPreset],

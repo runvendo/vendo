@@ -8,7 +8,6 @@
  * capability shape as vendo_threads (ENG-310): a revision counter, one insert
  * winner, revision-guarded swaps, and the cross-subject refusal on every verb.
  */
-import { VendoError } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { appFixture, persistentPrincipal } from "../src/fixtures.test-util.js";
@@ -62,7 +61,7 @@ for (const backend of backends()) {
       await expect(seam.atomic!.compareAndSwap(
         { id: "app_cas", data: appData("app_cas", "user_one", "junk token") },
         "not-a-revision",
-      )).rejects.toMatchObject<VendoError>({ code: "validation" });
+      )).rejects.toMatchObject({ code: "validation" });
       // Plain put still bumps the counter, so a pre-put token can no longer swap.
       const bumped = await seam.put({ id: "app_cas", data: appData("app_cas", "user_one", "via put") });
       expect(BigInt(bumped.revision!)).toBeGreaterThan(BigInt(revision));

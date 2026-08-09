@@ -14,7 +14,7 @@
  */
 import { providerHistory, turnModelMessages } from "../src/vendo/loop.js";
 import type { ApprovalId, ThreadId } from "@vendoai/core";
-import { convertToModelMessages, type UIMessage } from "ai";
+import { convertToModelMessages, type ModelMessage, type UIMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { defineHarness } from "../src/define.js";
 import { createHarnessRuntime } from "../src/runtime.js";
@@ -33,6 +33,10 @@ import {
 
 const THREAD = "thr_stale" as ThreadId;
 const PRINCIPAL = { kind: "user" as const, subject: "u1" };
+
+/** Every part a `ModelMessage` can carry. `flatMap` cannot pick one element type
+ *  out of the per-role content union on its own. */
+type ContentPart = Exclude<ModelMessage["content"], string>[number];
 
 /** A transcript exactly as a `createAgent` turn left it: an undecided approval. */
 function staleApprovalHistory(): UIMessage[] {
@@ -244,8 +248,8 @@ describe("1 — a stale approval-requested part is flipped at the start of a har
       ],
       system: "system",
     });
-    const calls = paired.flatMap((m) => (Array.isArray(m.content) ? m.content : [])).filter((p) => p.type === "tool-call");
-    const results = paired.flatMap((m) => (Array.isArray(m.content) ? m.content : [])).filter((p) => p.type === "tool-result");
+    const calls = paired.flatMap((m): readonly ContentPart[] => (Array.isArray(m.content) ? m.content : [])).filter((p) => p.type === "tool-call");
+    const results = paired.flatMap((m): readonly ContentPart[] => (Array.isArray(m.content) ? m.content : [])).filter((p) => p.type === "tool-result");
     expect([calls.length, results.length]).toEqual([1, 1]);
   });
 });

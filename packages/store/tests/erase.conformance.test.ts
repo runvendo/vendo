@@ -1,5 +1,5 @@
 import { storeFiles } from "../src/files-store.js";
-import { VendoError, type Principal } from "@vendoai/core";
+import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { ERASE_TABLES, eraseStore } from "../src/erase.js";
@@ -47,7 +47,7 @@ for (const backend of backends()) {
 
     it("rejects an empty subject", async () => {
       await expect(eraseStore(made.store, { files: storeFiles(made.store) }).bySubject(""))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
     });
 
     it("cascades one subject's data across the tables and spares everyone else", async () => {
@@ -232,7 +232,7 @@ for (const backend of backends()) {
 
     it("rejects an empty appId", async () => {
       await expect(eraseStore(made.store, { files: storeFiles(made.store) }).byApp(""))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
     });
 
     it("erases one app's data and spares the subject's other app", async () => {

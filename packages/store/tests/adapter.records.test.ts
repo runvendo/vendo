@@ -1,4 +1,4 @@
-import { VendoError, isoDateTimeSchema } from "@vendoai/core";
+import { isoDateTimeSchema } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { appStore } from "../src/index.js";
@@ -202,7 +202,7 @@ for (const backend of backends()) {
         encode({ c: "2026-01-02T03:04:05.000Z", i: "record_1", extra: true }),
       ];
       for (const cursor of malformed) {
-        await expect(records.list({ cursor })).rejects.toMatchObject<VendoError>({
+        await expect(records.list({ cursor })).rejects.toMatchObject({
           code: "validation",
           message: "malformed cursor",
         });

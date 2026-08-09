@@ -6,7 +6,7 @@
  * and ephemeral subjects alike (kill-list B3). Same-subject re-puts still
  * update in place.
  */
-import { VendoError, type Principal } from "@vendoai/core";
+import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { threadStore } from "../src/index.js";
@@ -30,7 +30,7 @@ for (const backend of backends()) {
       // u2 trying to write the same id is a conflict — the guarded upsert's WHERE
       // fails, RETURNING is empty, and nothing is written.
       await expect(threads.put(u2, { id: "thr_sql", messages: [{ role: "user", text: "steal" }] }))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
 
       // u1's row is byte-for-byte intact.
       expect(await made.sql("SELECT t.id, t.subject, (SELECT jsonb_agg(m.message ORDER BY m.seq) FROM vendo_thread_messages m WHERE m.thread_id = t.id) AS messages FROM vendo_threads t WHERE t.id = 'thr_sql'"))
@@ -46,7 +46,7 @@ for (const backend of backends()) {
       const seam = made.store.records("vendo_threads");
       await seam.put({ id: "thr_seam", data: { subject: u1.subject, messages: [{ role: "user", text: "mine" }] } });
       await expect(seam.put({ id: "thr_seam", data: { subject: u2.subject, messages: [] } }))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
       expect(await made.sql("SELECT subject FROM vendo_threads WHERE id = 'thr_seam'"))
         .toEqual([{ subject: "user_one" }]);
     });
@@ -57,7 +57,7 @@ for (const backend of backends()) {
       const threads = threadStore(made.store);
       await threads.put(e1, { id: "thr_anon_flip", messages: [{ role: "user", text: "mine" }] });
       await expect(threads.put(e2, { id: "thr_anon_flip", messages: [] }))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
       // The ephemeral thread is an ordinary disk row, and e1 still owns it.
       expect(await made.sql(
         "SELECT subject FROM vendo_threads WHERE id = 'thr_anon_flip'",
@@ -113,7 +113,7 @@ for (const backend of backends()) {
       await expect(seam.atomic!.compareAndSwap(
         { id: "thr_cas", data: threadData(u1.subject, "junk token") },
         "not-a-revision",
-      )).rejects.toMatchObject<VendoError>({ code: "validation" });
+      )).rejects.toMatchObject({ code: "validation" });
       // Plain put still bumps the counter, so a pre-put token can no longer swap.
       const bumped = await seam.put({ id: "thr_cas", data: threadData(u1.subject, "via put") });
       expect(BigInt(bumped.revision!)).toBeGreaterThan(BigInt(revision));

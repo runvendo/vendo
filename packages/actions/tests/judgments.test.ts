@@ -215,6 +215,6 @@ describe("pruneJudgments", () => {
       [tool()],
     );
     expect(pruned.format).toBe(VENDO_JUDGMENTS_FORMAT);
-    expect((pruned as Record<string, unknown>).generatedAt).toBe("2026-07-28");
+    expect((pruned as JudgmentsFile & Record<string, unknown>).generatedAt).toBe("2026-07-28");
   });
 });

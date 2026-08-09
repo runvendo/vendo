@@ -42,7 +42,11 @@ import {
   userMessage,
 } from "../../src/test-doubles.test-util.js";
 import { BEAT_PHASES, claudeCode } from "../../src/claude-code/index.js";
-import { disposeSessionMachines, type SandboxAdapterLike } from "../../src/claude-code/box.js";
+import {
+  disposeSessionMachines,
+  type SandboxAdapterLike,
+  type SandboxMachineLike,
+} from "../../src/claude-code/box.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -136,7 +140,9 @@ function boxRunningTheRealLoop(script: Used[]): SandboxAdapterLike {
           );
           return { status: answer.status, headers: {}, body: encoder.encode(JSON.stringify(answer.body)) };
         },
-      };
+        // `files` and `url` are the parts of the port this chain never reaches —
+        // the door speaks over `request()` alone.
+      } as SandboxMachineLike;
     },
     async destroy() { /* teardown by ref */ },
   };

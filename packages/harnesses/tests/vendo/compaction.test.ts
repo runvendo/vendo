@@ -87,6 +87,10 @@ const threadWithDanglingCall = (): UIMessage[] => [
 
 const wire = (messages: ModelMessage[]): string => JSON.stringify(messages);
 
+/** Every part a `ModelMessage` can carry. `flatMap` cannot pick one element type
+ *  out of the per-role content union on its own. */
+type ContentPart = Exclude<ModelMessage["content"], string>[number];
+
 /**
  * The two prompts every provider rejects outright: a tool-call whose result is
  * missing (or a result whose call is), and a prompt whose first non-system
@@ -94,7 +98,7 @@ const wire = (messages: ModelMessage[]): string => JSON.stringify(messages);
  * its last band drops from the FRONT.
  */
 function expectWellFormed(messages: ModelMessage[], where: string): void {
-  const parts = messages.flatMap((message) =>
+  const parts = messages.flatMap((message): readonly ContentPart[] =>
     typeof message.content === "string" ? [] : message.content);
   const called = parts.filter((part) => part.type === "tool-call").map((part) => part.toolCallId);
   const answered = parts.filter((part) => part.type === "tool-result").map((part) => part.toolCallId);

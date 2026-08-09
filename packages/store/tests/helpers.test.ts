@@ -1,5 +1,4 @@
 import {
-  VendoError,
   appDocumentSchema,
   approvalRequestSchema,
   auditEventSchema,
@@ -195,32 +194,32 @@ for (const backend of backends()) {
     it("rejects malformed typed-helper writes before storing anything", async () => {
       const invalidApp = { ...appFixture("app_invalid", "Invalid"), name: 42 } as never;
       await expect(appStore(made.store).put(persistentPrincipal, invalidApp))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
       expect(await appStore(made.store).get("app_invalid")).toBeNull();
 
       await expect(stateStore(made.store).put(persistentPrincipal, "app_invalid_state", undefined as never))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
       expect(await stateStore(made.store).get(persistentPrincipal, "app_invalid_state")).toBeNull();
 
       await expect(threadStore(made.store).put(persistentPrincipal, {
         id: "thr_invalid",
         messages: [undefined] as never,
-      })).rejects.toMatchObject<VendoError>({ code: "validation" });
+      })).rejects.toMatchObject({ code: "validation" });
       expect(await threadStore(made.store).get(persistentPrincipal, "thr_invalid")).toBeNull();
 
       const invalidGrant = { ...grantFixture("grt_invalid"), grantedAt: "not-a-date" } as never;
       await expect(grantStore(made.store).create(persistentPrincipal, invalidGrant))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
       expect(await grantStore(made.store).get("grt_invalid")).toBeNull();
 
       const invalidApproval = { ...approvalFixture("apr_invalid"), createdAt: "not-a-date" } as never;
       await expect(approvalStore(made.store).create(invalidApproval))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
       expect(await approvalStore(made.store).get("apr_invalid")).toBeNull();
 
       const invalidAudit = { ...auditFixture("aud_invalid"), at: "not-a-date" } as never;
       await expect(auditStore(made.store).append(invalidAudit))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
       expect((await auditStore(made.store).query({ principal: persistentPrincipal })).events)
         .not.toContainEqual(expect.objectContaining({ id: "aud_invalid" }));
 
@@ -231,7 +230,7 @@ for (const backend of backends()) {
         status: "running",
         record: {},
         startedAt: "not-a-date",
-      })).rejects.toMatchObject<VendoError>({ code: "validation" });
+      })).rejects.toMatchObject({ code: "validation" });
       expect(await runStore(made.store).get("run_invalid")).toBeNull();
     });
   });

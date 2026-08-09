@@ -1,4 +1,4 @@
-import { VendoError, type Principal } from "@vendoai/core";
+import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../../src/backends.test-util.js";
 import { at, auditFixture, persistentPrincipal } from "../../src/fixtures.test-util.js";
@@ -170,16 +170,16 @@ for (const backend of backends()) {
     it("rejects a malformed audit event and never stores it, for persistent or ephemeral principals", async () => {
       const audit = auditStore(made.store);
       const badKind = { ...auditFixture("aud_bad_kind"), kind: "not-a-real-kind" } as never;
-      await expect(audit.append(badKind)).rejects.toMatchObject<VendoError>({ code: "validation" });
+      await expect(audit.append(badKind)).rejects.toMatchObject({ code: "validation" });
       expect((await audit.query({ principal: persistentPrincipal })).events)
         .not.toContainEqual(expect.objectContaining({ id: "aud_bad_kind" }));
 
       const badId = { ...auditFixture("aud_bad_id_placeholder"), id: "not-prefixed-correctly" } as never;
-      await expect(audit.append(badId)).rejects.toMatchObject<VendoError>({ code: "validation" });
+      await expect(audit.append(badId)).rejects.toMatchObject({ code: "validation" });
 
       const ephemeral: Principal = { kind: "user", subject: "sess_audit_invalid", ephemeral: true };
       const badEphemeral = { ...auditFixture("aud_bad_ephemeral", { principal: ephemeral }), at: "not-a-date" } as never;
-      await expect(audit.append(badEphemeral)).rejects.toMatchObject<VendoError>({ code: "validation" });
+      await expect(audit.append(badEphemeral)).rejects.toMatchObject({ code: "validation" });
       expect((await audit.query({ principal: ephemeral })).events)
         .not.toContainEqual(expect.objectContaining({ id: "aud_bad_ephemeral" }));
     });

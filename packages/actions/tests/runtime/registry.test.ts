@@ -604,7 +604,7 @@ describe("host HTTP execution", () => {
   });
 
   it("expands array path arguments as individually encoded catch-all segments", async () => {
-    const request = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+    const request = vi.fn<(input: URL, init?: RequestInit) => Promise<Response>>(async () => new Response(JSON.stringify({ ok: true }), {
       headers: { "content-type": "application/json" },
     }));
     const actions = createActions({
@@ -918,7 +918,7 @@ describe("host HTTP execution — trpc bindings (04 §1 tRPC HTTP envelope)", ()
     description: "tRPC query polls.list",
     inputSchema: { type: "object", properties: {} },
     risk: "read",
-    binding: { kind: "trpc", procedure: "polls.list", type: "query", mount: "/api/trpc", ...extras },
+    binding: { kind: "trpc", procedure: "polls.list", type: "query", mount: "/api/trpc", ...extras } as ExtractedTool["binding"],
   });
 
   function capturingFetch(status: number, payload: unknown): { fetch: typeof fetch; seen: Array<{ url: string; method?: string; body?: unknown }> } {

@@ -21,7 +21,7 @@ const envelopeParts = (value: string): { version: string; iv: string; tag: strin
 // Flip the first byte of a base64 segment, returning a same-length base64 segment.
 const tamperBase64 = (segment: string): string => {
   const bytes = Buffer.from(segment, "base64");
-  bytes[0] = bytes[0] ^ 0xff;
+  bytes[0] = bytes[0]! ^ 0xff;
   return bytes.toString("base64");
 };
 
@@ -117,7 +117,7 @@ describe("validateEncryptionKey", () => {
   it("rejects keys that decode to the wrong length", () => {
     for (const size of [16, 24, 31, 33, 64]) {
       expect(() => validateEncryptionKey(randomBytes(size).toString("base64")))
-        .toThrow(expect.objectContaining<VendoError>({ code: "validation" }));
+        .toThrow(expect.objectContaining<Partial<VendoError>>({ code: "validation" }));
     }
   });
 

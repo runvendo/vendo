@@ -1,4 +1,4 @@
-import { VendoError, type Principal } from "@vendoai/core";
+import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../../src/backends.test-util.js";
 import { appFixture, at } from "../../src/fixtures.test-util.js";
@@ -160,7 +160,7 @@ for (const backend of backends()) {
         status: "running",
         record: {},
         startedAt: at(60),
-      })).rejects.toMatchObject<VendoError>({ code: "validation" });
+      })).rejects.toMatchObject({ code: "validation" });
       expect(await runs.get("run_bad_trigger")).toBeNull();
 
       await expect(runs.put({
@@ -170,7 +170,7 @@ for (const backend of backends()) {
         status: "not-a-real-status" as never,
         record: {},
         startedAt: at(61),
-      })).rejects.toMatchObject<VendoError>({ code: "validation" });
+      })).rejects.toMatchObject({ code: "validation" });
       expect(await runs.get("run_bad_status")).toBeNull();
 
       await expect(runs.put({
@@ -180,7 +180,7 @@ for (const backend of backends()) {
         status: "running",
         record: {},
         startedAt: at(62),
-      })).rejects.toMatchObject<VendoError>({ code: "validation" });
+      })).rejects.toMatchObject({ code: "validation" });
 
       await expect(runs.put({
         id: "run_bad_started_at",
@@ -189,7 +189,7 @@ for (const backend of backends()) {
         status: "running",
         record: {},
         startedAt: "not-a-date",
-      })).rejects.toMatchObject<VendoError>({ code: "validation" });
+      })).rejects.toMatchObject({ code: "validation" });
       expect(await runs.get("run_bad_started_at")).toBeNull();
     });
   });

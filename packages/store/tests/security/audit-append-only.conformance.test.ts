@@ -1,5 +1,5 @@
 import { storeFiles } from "../../src/files-store.js";
-import { VendoError, type Principal } from "@vendoai/core";
+import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../../src/backends.test-util.js";
 import { eraseStore } from "../../src/erase.js";
@@ -30,7 +30,7 @@ for (const backend of backends()) {
 
       const replacement = auditFixture("aud_append_put", { detail: { count: 999 } });
       await expect(audit.put({ id: replacement.id, data: replacement }))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
       // History is intact: the original event survives untouched.
       expect((await audit.get(original.id))?.data).toEqual(original);
     });
@@ -41,7 +41,7 @@ for (const backend of backends()) {
       await audit.put({ id: event.id, data: event });
 
       await expect(audit.delete(event.id))
-        .rejects.toMatchObject<VendoError>({ code: "blocked" });
+        .rejects.toMatchObject({ code: "blocked" });
       expect((await audit.get(event.id))?.data).toEqual(event);
     });
 
@@ -52,9 +52,9 @@ for (const backend of backends()) {
 
       const replacement = auditFixture("aud_append_overlay", { principal: anon, detail: { count: 999 } });
       await expect(audit.put({ id: replacement.id, data: replacement }))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
       await expect(audit.delete(event.id))
-        .rejects.toMatchObject<VendoError>({ code: "blocked" });
+        .rejects.toMatchObject({ code: "blocked" });
       expect((await audit.get(event.id))?.data).toEqual(event);
     });
 
@@ -63,12 +63,12 @@ for (const backend of backends()) {
       const durable = auditFixture("aud_append_helper");
       await helper.append(durable);
       await expect(helper.append(auditFixture("aud_append_helper", { detail: { count: 999 } })))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
 
       const overlayEvent = auditFixture("aud_append_helper_anon", { principal: anon });
       await helper.append(overlayEvent);
       await expect(helper.append(auditFixture("aud_append_helper_anon", { principal: anon, detail: { count: 999 } })))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
       expect((await made.store.records("vendo_audit").get(overlayEvent.id))?.data).toEqual(overlayEvent);
     });
 

@@ -170,7 +170,7 @@ describe("formatMeterExhausted in dollars", () => {
 
   it("ignores a unit it does not understand", () => {
     expect(
-      parseMeterExhausted({ code: "meter-exhausted", meter: "usage", unit: "quatloos" })
+      parseMeterExhausted({ code: "meter-exhausted", meter: "usage", unit: "quatloos" })!
         .unit,
     ).toBeUndefined();
   });

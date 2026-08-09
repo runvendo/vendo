@@ -21,6 +21,7 @@ import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { startTurn } from "../../src/vendo/loop.js";
+import type { StreamPart } from "../../src/test-doubles.test-util.js";
 
 const ZERO_USAGE = {
   inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
@@ -56,7 +57,7 @@ function threeStepModel(): MockLanguageModelV3 {
   return new MockLanguageModelV3({
     doStream: async () => {
       step += 1;
-      const chunks = step < 3
+      const chunks: StreamPart[] = step < 3
         ? [
             {
               type: "tool-call" as const,

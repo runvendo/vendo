@@ -26,11 +26,12 @@
  * assertion is that the counter stays at zero.
  */
 import { createAnthropic } from "@ai-sdk/anthropic";
-import type { HarnessEvent, Json, RunContext, ToolDescriptor, Turn, UIMessage } from "@vendoai/core";
+import type { HarnessEvent, Json, RunContext, ToolDescriptor, Turn } from "@vendoai/core";
+import type { UIMessage } from "ai";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { readCompactionState } from "../../src/vendo/compaction.js";
-import { vendo } from "../../src/vendo/vendo.js";
+import { vendo, type VendoHarnessOptions } from "../../src/vendo/vendo.js";
 import { createTurnState } from "../../src/harness-state.js";
 import { createTurnTools } from "../../src/turn-tools.js";
 import {
@@ -117,7 +118,9 @@ async function runTurn(options: {
     mirror: () => undefined,
   });
   const state = createTurnState(options.slot);
-  const turn: Turn = {
+  const turn: Turn<VendoHarnessOptions> = {
+    threadId: "thr_compaction_eval",
+    turnId: "trn_compaction_eval",
     messages: options.messages,
     tools: turnTools,
     skills: testSkills(),
@@ -128,7 +131,7 @@ async function runTurn(options: {
     options: { contextWindowTokens: CONTEXT_WINDOW_TOKENS },
     signal: new AbortController().signal,
     interactive: true,
-  } as Turn;
+  };
   const events: HarnessEvent[] = [];
   for await (const event of vendo().run(turn)) events.push(event);
   turnTools.dispose();

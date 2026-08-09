@@ -17,7 +17,7 @@ describe("02-store §4 — secret-name AAD binding (envelope level)", () => {
     const sealed = encryptSecret("value-for-a", key, "SECRET_A");
     expect(decryptSecret(sealed, key, "SECRET_A")).toBe("value-for-a");
     expect(() => decryptSecret(sealed, key, "SECRET_B"))
-      .toThrow(expect.objectContaining<VendoError>({ code: "validation" }));
+      .toThrow(expect.objectContaining<Partial<VendoError>>({ code: "validation" }));
   });
 });
 
@@ -52,7 +52,7 @@ for (const backend of backends()) {
       // as AAD the auth tag fails.
       await made.sql("UPDATE vendo_secrets SET ciphertext = $1 WHERE name = 'AAD_SWAP_B'", [cipherA]);
       await expect(storeSecrets(made.store).get("AAD_SWAP_B"))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
       // The untouched row keeps decrypting.
       expect(await storeSecrets(made.store).get("AAD_SWAP_A")).toBe("value-a");
     });
@@ -70,7 +70,7 @@ for (const backend of backends()) {
         [`${version}:${iv}:${tag}:${bytes.toString("base64")}`],
       );
       await expect(storeSecrets(made.store).get("AAD_TAMPER"))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+        .rejects.toMatchObject({ code: "validation" });
     });
   });
 }

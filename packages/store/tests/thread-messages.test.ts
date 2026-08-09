@@ -1,10 +1,18 @@
 import { VendoError, type Json, type Principal } from "@vendoai/core";
-import type { UIMessage } from "ai";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { harnessStateKey } from "../src/harness-state.js";
-import { createStore, eraseStore, storeFiles, threadMessageStore, threadStore } from "../src/index.js";
+// The store deliberately does not depend on `ai` (src/helpers/thread-messages.ts),
+// so its own generic stand-in plays the runtime's `UIMessage` here.
+import {
+  createStore,
+  eraseStore,
+  storeFiles,
+  threadMessageStore,
+  threadStore,
+  type ThreadMessageLike as UIMessage,
+} from "../src/index.js";
 import type { VendoStore } from "../src/store.js";
 
 const alice: Principal = { kind: "user", subject: "user_alice" };

@@ -159,16 +159,16 @@ describe("StoreAdapter conformance", () => {
       refs: { owner: "user_1" },
     };
 
-    const inserted = await records.atomic.insertIfAbsent(input);
+    const inserted = await records.atomic!.insertIfAbsent(input);
     expect(inserted).toMatchObject({
       id: input.id,
       data: input.data,
       refs: input.refs,
       revision: "1",
     });
-    expect(await records.atomic.insertIfAbsent({ ...input, data: { status: "duplicate" } })).toBeNull();
-    expect(await records.atomic.compareAndSwap({ id: "missing", data: {} }, "1")).toBeNull();
-    expect(await records.atomic.compareAndSwap({ ...input, data: { status: "wrong revision" } }, "0")).toBeNull();
+    expect(await records.atomic!.insertIfAbsent({ ...input, data: { status: "duplicate" } })).toBeNull();
+    expect(await records.atomic!.compareAndSwap({ id: "missing", data: {} }, "1")).toBeNull();
+    expect(await records.atomic!.compareAndSwap({ ...input, data: { status: "wrong revision" } }, "0")).toBeNull();
 
     input.data.nested.count = 2;
     input.refs.owner = "mutated";
@@ -177,7 +177,7 @@ describe("StoreAdapter conformance", () => {
       refs: { owner: "user_1" },
     });
 
-    const swapped = await records.atomic.compareAndSwap({
+    const swapped = await records.atomic!.compareAndSwap({
       id: input.id,
       data: { status: "published" },
       refs: { owner: "user_2" },
@@ -567,7 +567,7 @@ describe("memoryStoreAdapter reserved routing", () => {
   it("honors the injected clock and reserved projection on atomic writes", async () => {
     const fixed = "2026-07-11T16:04:00.000Z";
     const threads = memoryStoreAdapter({ timestamp: () => fixed }).records("vendo_threads");
-    const inserted = await threads.atomic.insertIfAbsent({
+    const inserted = await threads.atomic!.insertIfAbsent({
       id: "thr_atomic",
       data: { subject: principal.subject, messages: [], title: "Atomic", ignored: true },
       refs: { forged: "caller refs must be ignored" },
@@ -580,7 +580,7 @@ describe("memoryStoreAdapter reserved routing", () => {
       revision: "1",
     });
     expect((inserted?.data as Record<string, unknown>)["ignored"]).toBeUndefined();
-    const swapped = await threads.atomic.compareAndSwap({
+    const swapped = await threads.atomic!.compareAndSwap({
       id: "thr_atomic",
       data: { subject: principal.subject, messages: [{ role: "user", content: "hi" }] },
       refs: { forged: "still ignored" },
@@ -595,9 +595,9 @@ describe("memoryStoreAdapter reserved routing", () => {
 
   it("mirrors the routed door's validation on atomic writes", async () => {
     const adapter = memoryStoreAdapter();
-    await expect(adapter.records("vendo_audit").atomic.insertIfAbsent({ id: "aud_invalid", data: {} }))
+    await expect(adapter.records("vendo_audit").atomic!.insertIfAbsent({ id: "aud_invalid", data: {} }))
       .rejects.toMatchObject({ code: "validation" });
-    await expect(adapter.records("vendo_threads").atomic.insertIfAbsent({
+    await expect(adapter.records("vendo_threads").atomic!.insertIfAbsent({
       id: "thr_invalid_atomic",
       data: { subject: 5, messages: [] },
     })).rejects.toMatchObject({ code: "validation" });

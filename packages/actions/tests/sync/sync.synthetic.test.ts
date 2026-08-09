@@ -75,7 +75,7 @@ describe("sync public helpers", () => {
         host_items_list: { risk: "destructive", disabled: true, description: "new" },
         host_typo_target: { confirmEach: true },
       },
-    });
+    } as Parameters<typeof mergeOverrides>[1]);
     expect(merged[0]).toMatchObject({ risk: "destructive", disabled: true, description: "new" });
     expect(descriptorHash(merged[0]!)).not.toBe(before);
     expect(merged).toHaveLength(1);

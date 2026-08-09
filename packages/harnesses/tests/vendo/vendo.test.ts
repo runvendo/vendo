@@ -12,7 +12,7 @@ import type { HarnessEvent, Json, ToolDescriptor, Turn } from "@vendoai/core";
 import { APICallError } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it } from "vitest";
-import { vendo, type HarnessHand } from "../../src/vendo/vendo.js";
+import { vendo, type HarnessHand, type VendoHarnessDeps, type VendoHarnessOptions } from "../../src/vendo/vendo.js";
 import { createTurnState } from "../../src/harness-state.js";
 import { createTurnTools } from "../../src/turn-tools.js";
 import type { HireRecord } from "../../src/runtime.js";
@@ -44,7 +44,7 @@ async function drive(options: {
   messages?: Turn["messages"];
   /** The per-turn options a caller sent — `Turn.options`, as `runtime.run`
    *  delivers them: typed by `VendoHarnessOptions`, never schema-parsed. */
-  options?: Record<string, unknown>;
+  options?: VendoHarnessOptions;
 }) {
   const guard = options.guard ?? testGuard();
   const registry = boundRegistry(
@@ -63,7 +63,9 @@ async function drive(options: {
    *  only observable, and what a closed loadout must not do more than once. */
   const listCalls = { count: 0 };
   const workspace = testWorkspace();
-  const turn: Turn = {
+  const turn: Turn<VendoHarnessOptions> = {
+    threadId: "thr_vendo",
+    turnId: "trn_vendo",
     messages: options.messages ?? [userMessage("m1", "hello")],
     tools: {
       call: (name, args) => turnTools.call(name, args),
@@ -137,7 +139,9 @@ describe("vendo() — the loop", () => {
       interactive: true,
       mirror: () => undefined,
     });
-    const turn: Turn<{ model?: unknown }> = {
+    const turn: Turn<VendoHarnessOptions> = {
+      threadId: "thr_vendo_seat",
+      turnId: "trn_vendo_seat",
       messages: [userMessage("m1", "hello")],
       tools: turnTools,
       skills: testSkills(),
@@ -149,7 +153,7 @@ describe("vendo() — the loop", () => {
       interactive: true,
     };
     const events: HarnessEvent[] = [];
-    for await (const event of vendo().run(turn as Turn)) events.push(event);
+    for await (const event of vendo().run(turn)) events.push(event);
     expect(texts(events)).toBe("from the override");
     expect(seat.calls).toBe(0);
   });
@@ -166,7 +170,7 @@ describe("vendo() — tools go through turn.tools, never a private path", () => 
       textTurn("You have 2."),
     ]);
     const { events, registry, mirrored } = await drive({
-      harness: vendo({ descriptors: async () => [readTool("maple_invoices_list")] }),
+      harness: vendo({ descriptors: async () => [readTool("maple_invoices_list")] } as VendoHarnessDeps),
       tools,
       models: seats(model),
     });
@@ -179,7 +183,7 @@ describe("vendo() — tools go through turn.tools, never a private path", () => 
   it("offers the model the equipped tools with their real argument schemas", async () => {
     const model = scriptedModel([textTurn("nothing to do")]);
     await drive({
-      harness: vendo({ descriptors: async () => [readTool("maple_invoices_list")] }),
+      harness: vendo({ descriptors: async () => [readTool("maple_invoices_list")] } as VendoHarnessDeps),
       tools,
       models: seats(model),
     });
@@ -192,7 +196,7 @@ describe("vendo() — tools go through turn.tools, never a private path", () => 
       textTurn("I'm not allowed to look at those."),
     ]);
     const { events, registry } = await drive({
-      harness: vendo({ descriptors: async () => [readTool("maple_invoices_list")] }),
+      harness: vendo({ descriptors: async () => [readTool("maple_invoices_list")] } as VendoHarnessDeps),
       guard: testGuard({ maple_invoices_list: "block" }),
       tools,
       models: seats(model),
@@ -207,7 +211,7 @@ describe("vendo() — tools go through turn.tools, never a private path", () => 
       textTurn("That didn't work — want me to try again?"),
     ]);
     const { events } = await drive({
-      harness: vendo({ descriptors: async () => [readTool("boom")] }),
+      harness: vendo({ descriptors: async () => [readTool("boom")] } as VendoHarnessDeps),
       tools: {
         boom: {
           descriptor: readTool("boom"),
@@ -231,7 +235,7 @@ describe("vendo() — bounded by construction", () => {
       toolCallTurn("maple_invoices_list", {}, "c3"),
     ]);
     const { events } = await drive({
-      harness: vendo({ descriptors: async () => [readTool("maple_invoices_list")], maxSteps: 2 }),
+      harness: vendo({ descriptors: async () => [readTool("maple_invoices_list")], maxSteps: 2 } as VendoHarnessDeps),
       tools: {
         maple_invoices_list: { descriptor: readTool("maple_invoices_list"), execute: () => ({ count: 2 }) },
       },
@@ -322,7 +326,7 @@ describe("vendo() — subagent hiring (build-list item 4)", () => {
       textTurn("You have 2."),
     ]);
     const { registry, mirrored } = await drive({
-      harness: vendo({ descriptors: async () => [readTool("maple_invoices_list")] }),
+      harness: vendo({ descriptors: async () => [readTool("maple_invoices_list")] } as VendoHarnessDeps),
       tools: {
         maple_invoices_list: { descriptor: readTool("maple_invoices_list"), execute: () => ({ count: 2 }) },
       },

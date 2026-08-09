@@ -1,4 +1,4 @@
-import { VendoError, type Principal } from "@vendoai/core";
+import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { appFixture, at, grantFixture } from "../src/fixtures.test-util.js";
@@ -29,7 +29,7 @@ for (const backend of backends()) {
       await apps.put({ id: doc.id, data: { subject: userA, enabled: true, doc } });
 
       await expect(apps.put({ id: doc.id, data: { subject: userB, enabled: true, doc } }))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
       expect((await apps.get(doc.id))?.refs?.["subject"]).toBe(userA);
     });
 
@@ -47,7 +47,7 @@ for (const backend of backends()) {
       await store.put({ kind: "user", subject: userA }, doc);
 
       await expect(store.put({ kind: "user", subject: userB }, doc))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
       expect((await store.get(doc.id))?.subject).toBe(userA);
     });
 
@@ -59,12 +59,12 @@ for (const backend of backends()) {
       await store.put(anonA, doc);
 
       await expect(store.put(anonB, doc))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
 
       // The routed door refuses the same flip on the same disk row.
       const apps = made.store.records("vendo_apps");
       await expect(apps.put({ id: doc.id, data: { subject: anonB.subject, enabled: true, doc } }))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
       expect((await store.get(doc.id))?.subject).toBe(anonA.subject);
     });
   });
@@ -85,7 +85,7 @@ for (const backend of backends()) {
 
       const forged = grantFixture("grt_flip_routed", { subject: userB });
       await expect(grants.put({ id: forged.id, data: forged }))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
       expect((await grants.get(grant.id))?.refs?.["subject"]).toBe(userA);
     });
 
@@ -106,13 +106,13 @@ for (const backend of backends()) {
       await store.create(anonA, grantFixture("grt_flip_anon", { subject: anonA.subject }));
 
       await expect(store.create(anonB, grantFixture("grt_flip_anon", { subject: anonB.subject })))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
 
       // The routed door refuses the same flip on the same disk row.
       const grants = made.store.records("vendo_grants");
       const forged = grantFixture("grt_flip_anon", { subject: anonB.subject });
       await expect(grants.put({ id: forged.id, data: forged }))
-        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+        .rejects.toMatchObject({ code: "conflict" });
       expect((await store.get("grt_flip_anon"))?.subject).toBe(anonA.subject);
     });
   });
