@@ -52,6 +52,7 @@ const resultFor = (contender: string, testCase: string, prompt: string, judged: 
   trace: [],
   consoleErrors: [],
   world: "hash",
+  caseHash: "case-hash",
   judged,
   judgeContract: JudgeContract,
 });

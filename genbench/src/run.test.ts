@@ -134,6 +134,7 @@ const scored = (floor: FloorResult, judged: JudgeResult): CaseResult => ({
   trace: [],
   consoleErrors: [],
   world: "hash",
+  caseHash: "case-hash",
   judged,
   judgeContract: JudgeContract,
 });

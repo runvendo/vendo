@@ -59,6 +59,25 @@ export interface Case {
   readonly data?: Readonly<Record<string, unknown>>;
 }
 
+/**
+ * The case's half of a result's comparability stamp.
+ *
+ * `world.hash` says what product a screen was built against and moves for
+ * nothing else, so before this an edit to a case's prompt, its pass lines or its
+ * data override moved no stamp at all — and two results that answered different
+ * questions compared as though they had answered the same one. Per case rather
+ * than folded into the world's digest, because editing one case must not declare
+ * every other case's recorded runs incomparable.
+ *
+ * The fields are listed rather than the case stringified whole, so the digest is
+ * the case and not whatever else someone leaves in the file beside it.
+ */
+export const caseHash = (testCase: Case): string =>
+  createHash("sha256")
+    .update(JSON.stringify([testCase.id, testCase.lane, testCase.prompt, testCase.pass, testCase.data ?? null]))
+    .digest("hex")
+    .slice(0, 16);
+
 /** A tool that returns rows is a read; one that only takes arguments mutates.
  *  This decides the assembly loadout — the screen agent admits host tools only
  *  when `risk === "read"` (screen-agent.ts:449) — while every tool, read or not,

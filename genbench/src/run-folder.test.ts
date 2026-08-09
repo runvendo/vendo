@@ -76,6 +76,7 @@ const RESULT: CaseResult = {
   trace: [],
   consoleErrors: [],
   world: "hash",
+  caseHash: "case-hash",
   judged: JUDGED,
   judgeContract: JudgeContract,
 };

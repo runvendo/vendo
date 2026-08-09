@@ -198,6 +198,7 @@ const resultFor = (contender: string): CaseResult => ({
   trace: [],
   consoleErrors: [],
   world: "hash",
+  caseHash: "case-hash",
   judged: GRADED,
   judgeContract: JudgeContract,
 });

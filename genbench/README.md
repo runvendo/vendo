@@ -149,6 +149,13 @@ regression test in `src/floor.test.ts` pins down.
 how the empty state is tested — and its `pass` lines are the correctness rubric
 the judge grades.
 
+Every `result.json` carries two comparability stamps and only compares with
+another result when **both** match: `world` is the world folder's content hash,
+and `caseHash` (`caseHash` in `src/world.ts`) is a digest of the case as
+authored — its `prompt`, its `pass` lines and its `data` override. The case
+stamp is per case on purpose, so editing one case declares that case's recorded
+runs incomparable and leaves every other case's alone.
+
 ### The face
 
 A world folder may ship `font.woff2`, and the harness declares it as an

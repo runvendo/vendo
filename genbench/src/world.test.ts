@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { jsonSchemaFromExample, loadCases, loadWorld, riskOf, worldForCase } from "./world.js";
+import { caseHash, jsonSchemaFromExample, loadCases, loadWorld, riskOf, worldForCase, type Case } from "./world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const worldDir = join(root, "worlds", "maple");
@@ -136,5 +136,66 @@ describe("worldForCase", () => {
 describe("loadCases", () => {
   it("rejects a duplicate case id", async () => {
     await expect(loadCases(join(root, "src", "fixtures", "duplicate-cases.json"))).rejects.toThrow(/duplicate case id/);
+  });
+});
+
+/**
+ * The other half of a result's comparability stamp.
+ *
+ * `world` says what product the screen was built against; without this, editing
+ * a case's prompt, its pass lines or its data override moved no stamp at all,
+ * so a result from before the edit and one from after looked comparable when
+ * they were answers to different questions.
+ */
+describe("caseHash", () => {
+  /** An authored case, as the file holds it — plain JSON, because plain JSON is
+   *  what an author edits. */
+  type Authored = Record<string, unknown>;
+
+  /** maple's cases with one of them rewritten, read back through the real read
+   *  path: the authored file is the only place a case can change, so an edit is
+   *  tested by editing it. */
+  async function casesEditedBy(edit: (cases: Authored[]) => void): Promise<readonly Case[]> {
+    const cases = JSON.parse(await readFile(casesPath, "utf8")) as Authored[];
+    edit(cases);
+    const path = join(await mkdtemp(join(tmpdir(), "genbench-cases-")), "cases.json");
+    await writeFile(path, JSON.stringify(cases, null, 2));
+    return await loadCases(path);
+  }
+
+  const authored = (cases: Authored[], id: string): Authored => cases.find((entry) => entry["id"] === id)!;
+  const stampOf = (cases: readonly Case[], id: string): string => caseHash(cases.find((entry) => entry.id === id)!);
+
+  it("moves when the case's own data override changes", async () => {
+    const before = await loadCases(casesPath);
+    // The empty state stops being empty: same prompt, same pass lines, a
+    // different world underneath. This is the edit that used to move nothing.
+    const after = await casesEditedBy((cases) => {
+      authored(cases, "no-pending-transfers")["data"] = { list_transfers: { data: [{ id: "tr_9", amount: 1_000 }] } };
+    });
+
+    expect(stampOf(after, "no-pending-transfers")).not.toBe(stampOf(before, "no-pending-transfers"));
+  });
+
+  it("stays put when an unrelated case changes", async () => {
+    const before = await loadCases(casesPath);
+    const after = await casesEditedBy((cases) => {
+      const other = authored(cases, "spend-overview");
+      other["prompt"] = "Something else entirely.";
+      other["pass"] = ["shows something else"];
+    });
+
+    expect(stampOf(after, "no-pending-transfers")).toBe(stampOf(before, "no-pending-transfers"));
+    // The case that DID change must move, or "stays put" is proving nothing.
+    expect(stampOf(after, "spend-overview")).not.toBe(stampOf(before, "spend-overview"));
+  });
+
+  it("is decided by the case, not by how the file was typed", async () => {
+    const before = await loadCases(casesPath);
+    // Same cases, re-serialized at a different indent. A stamp that moved here
+    // would call two identical runs incomparable over whitespace.
+    const reformatted = await casesEditedBy(() => undefined);
+
+    for (const entry of before) expect(stampOf(reformatted, entry.id)).toBe(caseHash(entry));
   });
 });

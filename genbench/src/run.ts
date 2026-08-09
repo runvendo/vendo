@@ -13,7 +13,7 @@ import { probe, type Probed } from "./probe.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shot } from "./render.js";
 import { tally, writePreview } from "./report.js";
 import { vendoDriver } from "./vendo.js";
-import { loadCases, loadWorld, worldForCase, type Case, type Lane, type World } from "./world.js";
+import { caseHash, loadCases, loadWorld, worldForCase, type Case, type Lane, type World } from "./world.js";
 
 export type HarnessId = "vendo" | "diy" | "claude-code";
 
@@ -83,6 +83,11 @@ export interface CaseResult {
   /** What the browser complained about while painting this screen. */
   readonly consoleErrors: readonly string[];
   readonly world: string;
+  /** This case as it was authored — prompt, pass lines and data override. Two
+   *  results compare only if BOTH stamps match: `world` says what product the
+   *  screen was built against, this says what was asked of it. It cannot be
+   *  called `case` — that key already carries the id. */
+  readonly caseHash: string;
   /** The other half of the score: one verdict per rubric line, from a judge that
    *  saw the screenshot, the trace and the source and not whose they were. */
   readonly judged: JudgeResult;
@@ -377,6 +382,7 @@ async function main(argv: readonly string[]): Promise<number> {
       trace,
       consoleErrors: shot?.consoleErrors ?? [],
       world: world.hash,
+      caseHash: caseHash(testCase),
       judged,
       judgeContract: JudgeContract,
       ...(failure === undefined ? {} : { failure }),
