@@ -1,38 +1,88 @@
 /** There is exactly ONE scheduling system: doc triggers fired by the automations
  * engine. A machine app's `vendo.json` schedules are no longer a second
  * scheduler with its own tick and its own last-fired cache — they are CONVERTED
- * into ordinary doc triggers at manifest-sync time, armed through the arming
- * seam, and fired by the same tick every other automation rides. Which means a
- * manifest fire now gets what only doc triggers used to get: a run record, a
- * trigger id, the kill switch, and a row in the panel.
+ * into ordinary doc triggers, armed through the arming seam, and fired by the
+ * same tick every other automation rides. Which means a manifest fire now gets
+ * what only doc triggers used to get: a run record, a trigger id, the kill
+ * switch, and a row in the panel.
  *
- * The box here is an in-test v2 sandbox adapter serving the real box door
- * (`GET /vendo.json`, `POST /fn/<name>`), which is the pattern every non-live
- * box test in this repo uses (`packages/apps/src/schedules.test.ts`,
- * `packages/vendo/src/schedule-wire.test.ts`); real e2b appears only in the
- * opt-in `*.live.test.ts` suites.
+ * WHEN that conversion happens is nobody's decision: a box edit folds the
+ * manifest in on its way out — `editServerViaBox`
+ * (`packages/apps/src/box-lane.ts`) calls the converter the moment the in-box
+ * agent reports success, while the box is still awake and before its egress
+ * declaration lands on the doc. There is no other door onto the converter, so
+ * every case below provokes it the way production does: by editing the app's
+ * server through `apps.edit`, which on a served app hands the whole instruction
+ * to the in-box agent.
+ *
+ * The box here is an in-test v2 sandbox adapter serving the REAL box doors on
+ * both of a box's listeners — the harness control port (the in-box agent's task
+ * protocol an edit rides) and the app's own port (`GET /vendo.json`,
+ * `POST /fn/<name>`). That is the pattern every non-live box test in this repo
+ * uses; real e2b appears only in the opt-in `*.live.test.ts` suites.
  */
-import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
-import type { AppDocument } from "@vendoai/core";
+import {
+  createApps,
+  type AppsRuntime,
+  type SandboxAdapter,
+  type SandboxMachine,
+} from "@vendoai/apps";
+import type { AppDocument, AppId, RunContext } from "@vendoai/core";
+import type { LanguageModel } from "ai";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createStack, ownerCtx, resetFixture, type Stack } from "../src/harness.js";
 import { ADA } from "../src/support.js";
 
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+/** The harness's control port, as `packages/apps/src/box-agent.ts` fixes it.
+ *  Spelled out rather than imported for the reason a real provider would: a
+ *  sandbox adapter is on the other side of the seam and does not import our
+ *  constants. */
+const BOX_CONTROL_PORT = 8811;
 
 /** A box declaring `schedules` in its manifest, counting each fn fire. The
  *  manifest is mutable so a suite can edit it the way an in-box agent would. */
 function manifestBox(initial: Array<{ cron: string; fn: string }>) {
   const fires: string[] = [];
+  /** Every instruction the in-box agent was handed, in order. */
+  const edits: string[] = [];
   const state = { schedules: initial };
+  const tasks = new Map<string, { status: "done"; result: unknown }>();
+  const respond = (status: number, payload: unknown) => ({
+    status,
+    headers: { "content-type": "application/json" },
+    body: encoder.encode(JSON.stringify(payload)),
+  });
   const machine: SandboxMachine = {
     id: "fake_manifest_box",
     async request(request) {
-      const respond = (status: number, payload: unknown) => ({
-        status,
-        headers: { "content-type": "application/json" },
-        body: encoder.encode(JSON.stringify(payload)),
-      });
+      const body = request.body === undefined
+        ? ""
+        : typeof request.body === "string" ? request.body : decoder.decode(request.body);
+      // ── the harness control port: the in-box agent an edit talks to ────────
+      if (request.port === BOX_CONTROL_PORT) {
+        if (request.method === "POST" && request.path === "/agent/env") return respond(200, { ok: true });
+        if (request.method === "POST" && request.path === "/agent/task") {
+          edits.push((JSON.parse(body) as { prompt: string }).prompt);
+          const taskId = `boxtask_${tasks.size}`;
+          // The agent's whole output here IS the manifest: `state.schedules` is
+          // what it just wrote to vendo.json, and the host reads it back over
+          // the app port below.
+          tasks.set(taskId, {
+            status: "done",
+            result: { ok: true, summary: "wrote vendo.json", filesChanged: ["/app/vendo.json"], testsRun: 0 },
+          });
+          return respond(202, { taskId });
+        }
+        if (request.method === "GET" && request.path.startsWith("/agent/task/")) {
+          const entry = tasks.get(request.path.slice("/agent/task/".length));
+          return entry === undefined ? respond(404, { error: "unknown task" }) : respond(200, entry);
+        }
+        return respond(404, { error: `unknown control route: ${request.method} ${request.path}` });
+      }
+      // ── the app's own port ────────────────────────────────────────────────
       if (request.method === "GET" && request.path === "/vendo.json") {
         return respond(200, { schedules: state.schedules });
       }
@@ -61,15 +111,60 @@ function manifestBox(initial: Array<{ cron: string; fn: string }>) {
     async resume() { return machine; },
     async destroy() { /* released */ },
   };
-  return { adapter, fires, state };
+  return { adapter, fires, edits, state };
 }
 
+/** A GRADUATED, box-served app: `ui: "http"` is what sends an edit straight to
+ *  the in-box agent (`write-surface.ts`), which is the path that folds the
+ *  manifest in. The snapshot ref is the one this suite's box really hands back
+ *  from `snapshot()`, so every wake resumes something the provider produced. */
 const machineDoc = (id: string): AppDocument => ({
   format: "vendo/app@1",
   id,
   name: "Chaser box",
+  ui: "http",
   machine: { snapshotRef: "fake:manifest-snap", provisionedAt: "2026-07-12T00:00:00.000Z" },
 });
+
+/**
+ * The runtime that owns the box EDIT, over the stack's own store, guard, tools
+ * and arming seam — the umbrella's wiring, not a stand-in for it.
+ *
+ * It exists beside `stack.apps` for one reason: the harness composes its runtime
+ * without a model (its suites never generate), and the edit door refuses without
+ * one — a permission-and-capability check that runs before the served branch,
+ * which never calls a model at all. A served app has no tree for a brain to
+ * rewrite; the whole instruction goes to the in-box agent.
+ */
+const boxEditor = (stack: Stack, sandbox: SandboxAdapter): AppsRuntime => createApps({
+  store: stack.store,
+  guard: stack.guard,
+  tools: stack.bound,
+  catalog: [],
+  model: {} as LanguageModel,
+  machine: {
+    sandbox,
+    // Idle auto-sleep is irrelevant here; a no-op clock keeps boxes awake.
+    clock: { setTimeout: () => 0, clearTimeout: () => undefined },
+    // This in-box agent answers immediately — no live box's long-poll to wait out.
+    boxEditPollMs: 1,
+  },
+  armAutomation: (appId, triggerId, ctx) => stack.automations.enable(appId, triggerId, ctx),
+});
+
+/** ONE box edit through the production write path — and with it, one manifest
+ *  fold-in. The edit has to SUCCEED for the fold-in to have happened: the sync
+ *  runs only after the in-box agent reports ok. */
+const editServer = async (
+  apps: AppsRuntime,
+  appId: AppId,
+  instruction: string,
+  ctx: RunContext,
+): Promise<void> => {
+  const result = await apps.edit(appId, instruction, ctx);
+  expect(result.failure).toBeUndefined();
+  expect(result.box?.ok).toBe(true);
+};
 
 const triggerRows = async (stack: Stack, appId: string) =>
   (await stack.automations.list(ownerCtx(ADA.subject)))
@@ -91,17 +186,18 @@ describe("vendo.json schedules fold into doc triggers", () => {
     try {
       const appId = "app_manifest_cron";
       const ctx = ownerCtx(ADA.subject, appId);
+      const apps = boxEditor(stack, adapter);
       await stack.putApp(ADA.subject, machineDoc(appId));
 
       // Nothing is declared on the document yet — the cron lives only in the
       // box, so the app is not an automation at all and the panel has no row.
       expect(await triggerRows(stack, appId)).toBeUndefined();
 
-      const synced = await stack.apps.machine.syncManifest(appId, ctx);
-      expect(synced.triggers.map(({ id, arming }) => ({ id, arming })))
-        .toEqual([{ id: "manifest_chase", arming: "armed" }]);
+      await editServer(apps, appId, "chase overdue invoices every minute", ctx);
 
-      // The manifest schedule is now an ordinary trigger of the app, armed.
+      // The manifest schedule is now an ordinary trigger of the app, ARMED —
+      // which is the whole of what the converter reported as `arming: "armed"`,
+      // read where it is true: the automations engine's own row.
       expect(await triggerRows(stack, appId)).toEqual([{
         id: "manifest_chase",
         on: { kind: "schedule", cron: "* * * * *" },
@@ -139,13 +235,14 @@ describe("vendo.json schedules fold into doc triggers", () => {
       expect(await stack.automations.tick(clock)).toEqual([]);
       expect(fires).toEqual(["chase"]);
 
-      // And a re-sync of the UNCHANGED manifest does not undo that decision: it
-      // reports the trigger as untouched rather than re-arming it (and rather
-      // than claiming an arm state it cannot see — the armed row is the
-      // automations engine's, not this converter's).
-      const resynced = await stack.apps.machine.syncManifest(appId, ctx);
-      expect(resynced.triggers.map(({ id, arming }) => ({ id, arming })))
-        .toEqual([{ id: "manifest_chase", arming: "unchanged" }]);
+      // And the NEXT edit does not undo that decision: its fold-in re-reads a
+      // manifest that did not change, so the converter leaves the trigger's arm
+      // state exactly as the person last set it (rather than re-arming it, or
+      // claiming an arm state it cannot see — the armed row is the automations
+      // engine's, not this converter's).
+      await editServer(apps, appId, "tidy the chase copy, leave the schedule alone", ctx);
+      expect((await triggerRows(stack, appId))?.map(({ id, on, enabled }) => ({ id, on, enabled })))
+        .toEqual([{ id: "manifest_chase", on: { kind: "schedule", cron: "* * * * *" }, enabled: false }]);
       clock = new Date("2026-07-12T09:04:00.000Z");
       expect(await stack.automations.tick(clock)).toEqual([]);
       expect(fires).toEqual(["chase"]);
@@ -161,6 +258,7 @@ describe("vendo.json schedules fold into doc triggers", () => {
     try {
       const appId = "app_manifest_churn";
       const ctx = ownerCtx(ADA.subject, appId);
+      const apps = boxEditor(stack, box.adapter);
       await stack.putApp(ADA.subject, {
         ...machineDoc(appId),
         // A hand-authored trigger sitting beside the converted ones. Nothing the
@@ -172,13 +270,13 @@ describe("vendo.json schedules fold into doc triggers", () => {
         }],
       });
 
-      await stack.apps.machine.syncManifest(appId, ctx);
+      await editServer(apps, appId, "chase hourly and send a morning digest", ctx);
       expect((await triggerRows(stack, appId))?.map(({ id }) => id))
         .toEqual(["mine", "manifest_chase", "manifest_digest"]);
 
       // The manifest changes inside the box: chase's cron moves, digest is gone.
       box.state.schedules = [{ cron: "30 * * * *", fn: "chase" }];
-      await stack.apps.machine.syncManifest(appId, ctx);
+      await editServer(apps, appId, "move chase to half past and drop the digest", ctx);
 
       const after = await triggerRows(stack, appId);
       expect(after?.map(({ id, on }) => ({ id, on }))).toEqual([
@@ -204,13 +302,15 @@ describe("vendo.json schedules fold into doc triggers", () => {
     // the OCCURRENCE the old engine already fired; `since` is far older. Seeding
     // the new per-trigger cursor from `since` (or from nothing) would re-fire a
     // window that already ran; seeding it from `now` would silently skip a
-    // window the old engine had not reached yet. Both are proven here.
+    // window the old engine had not reached yet. Both are proven here — and the
+    // carry happens where every fold-in happens, on the app's next box edit.
     let clock = new Date("2026-07-12T10:30:00.000Z");
     const { adapter, fires } = manifestBox([{ cron: "0 * * * *", fn: "chase" }]);
     const stack = await createStack({ now: () => clock, sandbox: adapter });
     try {
       const alreadyFired = "app_legacy_fired";
       const missedWindow = "app_legacy_missed";
+      const apps = boxEditor(stack, adapter);
       await stack.putApp(ADA.subject, machineDoc(alreadyFired));
       await stack.putApp(ADA.subject, machineDoc(missedWindow));
 
@@ -242,8 +342,8 @@ describe("vendo.json schedules fold into doc triggers", () => {
         },
       });
 
-      await stack.apps.machine.syncManifest(alreadyFired, ownerCtx(ADA.subject, alreadyFired));
-      await stack.apps.machine.syncManifest(missedWindow, ownerCtx(ADA.subject, missedWindow));
+      await editServer(apps, alreadyFired, "keep chasing hourly", ownerCtx(ADA.subject, alreadyFired));
+      await editServer(apps, missedWindow, "keep chasing hourly", ownerCtx(ADA.subject, missedWindow));
 
       const ids = await stack.automations.tick(clock);
       const runs = await Promise.all(ids.map(async (id) =>

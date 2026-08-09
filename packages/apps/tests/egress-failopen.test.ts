@@ -13,7 +13,7 @@
 import type { AppDocument } from "@vendoai/core";
 import { VENDO_APP_FORMAT } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { createApps } from "../src/index.js";
+import { createMachineLane } from "../src/box-lane.js";
 import { createMachineLifecycle } from "../src/machine-lifecycle.js";
 import type { SandboxAdapter } from "../src/sandbox.js";
 import { fakeStatefulSandbox, guardFixture, memoryStore, seedAppRow } from "../src/testing/index.js";
@@ -53,7 +53,10 @@ describe("the served-app machine's egress policy fails CLOSED", () => {
     const store = memoryStore();
     const sandbox = watched();
     await seedAppRow(store, doc(), ada.principal.subject);
-    const runtime = createApps({
+    // `createMachineLane` is what `createApps` composes its lifecycle with
+    // (runtime-context.ts), so the policy under test is the DEPLOYMENT's own,
+    // not a mirror of it.
+    const { lifecycle } = createMachineLane({
       store,
       guard: guardFixture(),
       tools: { async descriptors() { return []; }, async execute() { return { status: "error", error: { code: "not-found", message: "none" } }; } },
@@ -62,7 +65,7 @@ describe("the served-app machine's egress policy fails CLOSED", () => {
       machine: { sandbox, buildEnv: () => ({ PORT: "8080" }) },
     });
 
-    await runtime.machine.provision(doc().id, ada);
+    await lifecycle.provision(doc());
 
     expect(sandbox.specs).toHaveLength(1);
     // `[]` asks for everything to be filtered; `undefined` would ask for nothing to be.

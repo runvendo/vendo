@@ -132,7 +132,7 @@ export interface AppsRuntimeContext {
   reportShare(appId: AppId, ctx: RunContext, detail: Record<string, Json>): Promise<void>;
   /** The `app-lifecycle` audit kind, under the calling principal. */
   reportLifecycle(
-    operation: "create" | "delete" | "fork" | "promote" | "in-client-approve" | "pin-fork" | "pin-rebase" | "machine-provision" | "machine-destroy" | "place" | "unplace",
+    operation: "create" | "delete" | "fork" | "promote" | "in-client-approve" | "pin-fork" | "pin-rebase" | "machine-provision" | "place" | "unplace",
     appId: AppId,
     ctx: RunContext,
     extra?: Record<string, Json>,

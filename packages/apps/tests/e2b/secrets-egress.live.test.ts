@@ -158,8 +158,10 @@ describe.skipIf(!LIVE)("Lane E live gate: secrets + egress allowlist on real E2B
     let seeded: SandboxMachine | undefined;
     let seededRef: string | undefined;
     try {
-      // 1. The egress grant flow: provision refuses, the card is approved.
-      await expect(runtime.machine.provision(doc.id, ada)).rejects.toMatchObject({
+      // 1. The egress grant flow: the box door refuses, the card is approved.
+      await expect(
+        runtime.box.request(doc.id, { method: "POST", path: "/fn/echo" }, ada),
+      ).rejects.toMatchObject({
         code: "blocked",
         detail: expect.objectContaining({ unapprovedDomains: [ALLOWED_DOMAIN] }),
       });
@@ -235,8 +237,9 @@ describe.skipIf(!LIVE)("Lane E live gate: secrets + egress allowlist on real E2B
       log("host artifacts → app document, store rows, audit events all clean");
     } finally {
       await seeded?.destroy().catch(() => undefined);
-      // destroyMachine reaps the live resume AND the stored snapshot ref.
-      await runtime.machine.destroy(doc.id, ada).catch(() => undefined);
+      // delete reaps the app's provider resources through the runtime's OWN
+      // lifecycle: the live resume above AND the stored snapshot ref.
+      await runtime.delete(doc.id, ada).catch(() => undefined);
       if (seededRef !== undefined) await adapter.destroy(seededRef).catch(() => undefined);
       log("destroy → machines and snapshots gone");
       console.log(`[lane-e-gate] TRANSCRIPT\n${transcript.join("\n")}`);

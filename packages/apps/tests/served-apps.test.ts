@@ -352,7 +352,7 @@ describe("serving through the door + the keepalive ride", () => {
      switch any more — the sandbox adapter's presence is the whole gate — so
      "off" now means there is no sandbox to wake the app's existing machine
      with, and the case the test described cannot be composed. The rule it
-     guarded still holds and is still enforced in `machine.provision`: an
+     guarded still holds and is still enforced in `lifecycle.provision`: an
      already-provisioned app is never refused, only NEW provisioning is. */
 
   it("keeps version history at its 50 cap — the box path prunes like every other write", async () => {

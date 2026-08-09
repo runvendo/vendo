@@ -13,10 +13,11 @@
  *           PENDING outcome relays; nothing bypasses the guard)
  *     → a second tree-side fn call reads the row back through the box.
  *
- * Provisioning runs through Lane B's real machine lifecycle
- * (apps.machine.provision → the composed env assembler → snapshot); the
- * journey then pins its own bearer + env so the fake box acts on a KNOWN
- * provision-time environment.
+ * Graduation's machine step (Lane B) is SETUP here, not the subject: it is
+ * seeded as the row it leaves behind (a document pointing at the fake box's own
+ * snapshot ref), because the journey pins its own bearer + env anyway so the
+ * fake box acts on a KNOWN provision-time environment. The env assembler itself
+ * is exercised below, directly, through the real `buildEnv`.
  *
  * Presence model: box callbacks run AWAY (the box acts for the owner without
  * the owner in the loop — the automations model), so the guard's 05 §6 rule
@@ -143,19 +144,30 @@ describe("machine skin: fn proxy, buildEnv, and the callback surface through the
     // Import the app through the public wire as ADA.
     const app = await importAutomation(stack, seedDoc, ADA);
 
-    // --- Provision: graduation's machine step (Lane B) — creates the box
-    // from the fake adapter, composes env through the umbrella's assembler
-    // (buildEnv + token mint), snapshots, and stores the machine ref.
-    await stack.vendo.apps.machine.provision(app.id, {
-      principal: ADA,
-      venue: "app",
-      presence: "present",
-      sessionId: "session_machine_skin",
+    // --- Graduation's machine step (Lane B), as the ROW it leaves behind: the
+    // box exists and the document points at its snapshot. Provisioning is the
+    // internal lifecycle graduation drives (`lifecycle.provision`, box-lane.ts)
+    // and there is no manual door onto it; its env is not what this journey
+    // acts on either — the bearer and env below are pinned deliberately. The
+    // ref is the one this fake sandbox's own snapshot() hands back, so every
+    // wake resumes something the provider really produced.
+    const row = await stack.vendo.store.records("vendo_apps").get(app.id);
+    const stored = row?.data as { subject: string; enabled: boolean; doc: AppDocument };
+    await stack.vendo.store.records("vendo_apps").put({
+      id: app.id,
+      data: {
+        ...stored,
+        doc: {
+          ...stored.doc,
+          machine: { snapshotRef: "fake:machine-skin", provisionedAt: new Date().toISOString() },
+        },
+      },
+      refs: { subject: ADA.subject },
     });
 
-    // The journey pins its own bearer + env (rotating provision's mint) so the
-    // fake box can act on a KNOWN provision-time environment; the granted-
-    // secrets half of the composed assembler is the Wave-2 secrets lane.
+    // The journey pins its own bearer + env so the fake box can act on a KNOWN
+    // provision-time environment; the granted-secrets half of the composed
+    // assembler is the Wave-2 secrets lane.
     const token = await createAppTokens(stack.vendo.store).mint(app.id, ADA.subject);
     const built = await buildEnv(app, {
       granted: new Set(["STRIPE_KEY"]),

@@ -73,10 +73,16 @@ function boxSandbox(handler: BoxHandler): SandboxAdapter {
   };
 }
 
+/** An app that already GRADUATED: the fn and /box doors wake a machine, they
+ *  never build one — graduation does that, through the internal lifecycle
+ *  (`lifecycle.provision`, box-lane.ts). The ref is the one this suite's fake
+ *  sandbox hands back from `snapshot()`, so `resume()` is given a ref it really
+ *  produced. */
 const doc = (id = "app_skin"): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id,
   name: "Skin app",
+  machine: { snapshotRef: "fake:snap", provisionedAt: "2026-07-12T00:00:00.000Z" },
 });
 
 interface Skin {
@@ -87,7 +93,7 @@ interface Skin {
 
 async function setup(handler: BoxHandler = () => ({ status: 200 })): Promise<Skin> {
   // The machine-env assembler composes the box's callback doors from the
-  // operator-set public origin, so provisioning requires it.
+  // operator-set public origin, so the composition requires it.
   vi.stubEnv("VENDO_BASE_URL", "http://wire.test");
   const store = await tempStore("vendo-box-wire-");
   await store.ensureSchema();
@@ -105,14 +111,8 @@ async function setup(handler: BoxHandler = () => ({ status: 200 })): Promise<Ski
     store,
     sandbox: boxSandbox(handler),
   });
-  // Provision (Lane B's graduation step) so the fn door has a machine to wake;
-  // it mints the app's bearer, which the test rotates to hold a known one.
-  await vendo.apps.machine.provision("app_skin", {
-    principal: ADA,
-    venue: "app",
-    presence: "present",
-    sessionId: "session_box_wire",
-  });
+  // The bearer graduation minted lives in the token store, not in the row; the
+  // test holds a KNOWN one by rotating it through the same door.
   const token = await createAppTokens(store).mint("app_skin", ADA.subject);
   return { vendo, store, token };
 }
@@ -289,12 +289,6 @@ describe("the Lane E redaction guard on the box seams", () => {
       sandbox: boxSandbox(handler),
       secrets: { get: async (name) => (name === "STRIPE_KEY" ? STRIPE_VALUE : undefined) },
       });
-    await vendo.apps.machine.provision("app_skin", {
-      principal: ADA,
-      venue: "app",
-      presence: "present",
-      sessionId: "session_box_redact",
-    });
     const token = await createAppTokens(store).mint("app_skin", ADA.subject);
     return { vendo, store, token };
   }

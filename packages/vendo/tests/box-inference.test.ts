@@ -39,20 +39,43 @@ async function tempStore(prefix: string): Promise<VendoStore> {
 
 const ADA: Principal = { kind: "user", subject: "user_ada" };
 
+/** The harness's control port, as `apps/src/box-agent.ts` fixes it. Spelled out
+ *  rather than imported for the reason a real provider would: a sandbox adapter
+ *  is on the other side of the seam and does not import our constants. */
+const BOX_CONTROL_PORT = 8811;
+
+const decoder = new TextDecoder();
+
+/** An already-graduated app whose boundary env is STALE — a secret grant moved
+ *  while the box slept. The next wake rebuilds the env through the composition's
+ *  own assembler (the same seam provisioning calls) and pushes it into the box,
+ *  which is where this suite reads it. */
 const doc = (id = "app_box"): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id,
   name: "Box app",
+  machine: {
+    snapshotRef: "fake:snap",
+    provisionedAt: "2026-07-12T00:00:00.000Z",
+    envStaleAt: "2026-07-12T01:00:00.000Z",
+  },
 });
 
-type SandboxSpec = Parameters<SandboxAdapter["create"]>[0];
-
-/** A capture sandbox: records every create() spec so the test can assert the
- * machine env the composition assembled. */
-function captureSandbox(specs: SandboxSpec[]): SandboxAdapter {
+/** A capture sandbox: records every boundary env pushed across the box's
+ * control port, so the test can assert the machine env the composition
+ * assembled. */
+function captureSandbox(pushed: Array<Record<string, string>>): SandboxAdapter {
   const machine: SandboxMachine = {
     id: "fake_box",
-    async request() { return { status: 200, headers: {}, body: new Uint8Array() }; },
+    async request(request) {
+      if (request.port === BOX_CONTROL_PORT && request.path === "/agent/env") {
+        const body = typeof request.body === "string"
+          ? request.body
+          : decoder.decode(request.body ?? new Uint8Array());
+        pushed.push((JSON.parse(body) as { env: Record<string, string> }).env);
+      }
+      return { status: 200, headers: {}, body: new Uint8Array() };
+    },
     async url() { return "https://fake_box.capture.test"; },
     async snapshot() { return "fake:snap"; },
     async stop() { /* sleep */ },
@@ -62,19 +85,17 @@ function captureSandbox(specs: SandboxSpec[]): SandboxAdapter {
     files: inMemoryBoxFiles(new Map()),
   };
   return {
-    async create(spec) {
-      specs.push(spec);
-      return machine;
-    },
+    async create() { return machine; },
     async resume() { return machine; },
     async destroy() { /* released */ },
   };
 }
 
-/** Compose, provision, and hand back the env the sandbox saw at create.
- * Every ladder rung starts cleared ("" reads as unset) so a key in the
- * runner's own environment can never leak into a rung assertion. */
-async function provisionedEnv(rungs: Record<string, string> = {}): Promise<Record<string, string>> {
+/** Compose, wake the app's box through a real runtime door, and hand back the
+ * boundary env the composition assembled for it. Every ladder rung starts
+ * cleared ("" reads as unset) so a key in the runner's own environment can
+ * never leak into a rung assertion. */
+async function boxEnv(rungs: Record<string, string> = {}): Promise<Record<string, string>> {
   vi.stubEnv("VENDO_BASE_URL", "http://box-inference.test");
   for (const name of ["VENDO_INFERENCE_URL", "VENDO_INFERENCE_KEY", "VENDO_INFERENCE_MODEL", "ANTHROPIC_API_KEY", "VENDO_API_KEY", "VENDO_CLOUD_URL"]) {
     vi.stubEnv(name, rungs[name] ?? "");
@@ -86,26 +107,26 @@ async function provisionedEnv(rungs: Record<string, string> = {}): Promise<Recor
     data: { subject: ADA.subject, enabled: false, doc: doc() },
     refs: { subject: ADA.subject },
   });
-  const specs: SandboxSpec[] = [];
+  const pushed: Array<Record<string, string>> = [];
   const vendo = createVendo({
     model: {} as LanguageModel,
     principal: async () => ADA,
     store,
-    sandbox: captureSandbox(specs),
+    sandbox: captureSandbox(pushed),
   });
-  await vendo.apps.machine.provision("app_box", {
+  await vendo.apps.machine.ping("app_box", {
     principal: ADA,
     venue: "app",
     presence: "present",
     sessionId: "session_box_inference",
   });
-  expect(specs).toHaveLength(1);
-  return specs[0]!.env;
+  expect(pushed).toHaveLength(1);
+  return pushed[0]!;
 }
 
 describe("boxInference ladder (the in-box agent's model door)", () => {
   it("VENDO_API_KEY alone points the box at the Cloud model gateway", async () => {
-    const env = await provisionedEnv({ VENDO_API_KEY: "vnd_cloud_key" });
+    const env = await boxEnv({ VENDO_API_KEY: "vnd_cloud_key" });
     expect(env["VENDO_INFERENCE_URL"]).toBe("https://console.vendo.run/api/v1");
     expect(env["VENDO_INFERENCE_KEY"]).toBe("vnd_cloud_key");
     // The gateway serves the vendo model family; the box harness's raw
@@ -115,7 +136,7 @@ describe("boxInference ladder (the in-box agent's model door)", () => {
   });
 
   it("VENDO_INFERENCE_MODEL still picks the Cloud alias on the Cloud rung", async () => {
-    const env = await provisionedEnv({
+    const env = await boxEnv({
       VENDO_API_KEY: "vnd_cloud_key",
       VENDO_INFERENCE_MODEL: "vendo-strong",
     });
@@ -124,7 +145,7 @@ describe("boxInference ladder (the in-box agent's model door)", () => {
   });
 
   it("respects VENDO_CLOUD_URL as the gateway base for the Cloud rung", async () => {
-    const env = await provisionedEnv({
+    const env = await boxEnv({
       VENDO_API_KEY: "vnd_cloud_key",
       VENDO_CLOUD_URL: "https://cloud-gateway.test/",
     });
@@ -133,7 +154,7 @@ describe("boxInference ladder (the in-box agent's model door)", () => {
   });
 
   it("explicit VENDO_INFERENCE_URL/KEY beat every lower rung", async () => {
-    const env = await provisionedEnv({
+    const env = await boxEnv({
       VENDO_INFERENCE_URL: "https://own-gateway.test",
       VENDO_INFERENCE_KEY: "own_key",
       ANTHROPIC_API_KEY: "sk-ant-byo",
@@ -144,7 +165,7 @@ describe("boxInference ladder (the in-box agent's model door)", () => {
   });
 
   it("a BYO ANTHROPIC_API_KEY beats the Cloud rung", async () => {
-    const env = await provisionedEnv({
+    const env = await boxEnv({
       ANTHROPIC_API_KEY: "sk-ant-byo",
       VENDO_API_KEY: "vnd_cloud_key",
     });
@@ -155,7 +176,7 @@ describe("boxInference ladder (the in-box agent's model door)", () => {
   });
 
   it("no key on any rung leaves the box without an inference door", async () => {
-    const env = await provisionedEnv();
+    const env = await boxEnv();
     expect(env["VENDO_INFERENCE_URL"]).toBeUndefined();
     expect(env["VENDO_INFERENCE_KEY"]).toBeUndefined();
   });

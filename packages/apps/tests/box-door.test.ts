@@ -1,7 +1,8 @@
 import { VENDO_APP_FORMAT, type AppDocument, type RunContext, type ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { inMemoryBoxFiles } from "../src/testing/box-files.js";
-import { createApps } from "../src/index.js";
+import { createMachineLane } from "../src/box-lane.js";
+import { createApps, type AppsConfig } from "../src/index.js";
 import type { SandboxAdapter, SandboxMachine } from "../src/sandbox.js";
 import { basicLanguageModel, guardFixture, memoryStore, seedAppRow } from "../src/testing/index.js";
 
@@ -59,11 +60,17 @@ function handlerSandbox(handler: BoxHandler): SandboxAdapter {
   };
 }
 
+/** Graduation's own provision (box-lane.ts) over the SAME deployment config
+ *  `createApps` composes its lifecycle from: the snapshot ref lands on the app
+ *  row, so the runtime's own lifecycle wakes from it below. */
+const provisionMachine = (config: AppsConfig): Promise<AppDocument> =>
+  createMachineLane(config).lifecycle.provision(doc);
+
 describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecycle)", () => {
   it("wakes the provisioned machine and proxies one request to its $PORT", async () => {
     const store = memoryStore();
     const seen: Array<{ method: string; path: string; body?: Uint8Array | string }> = [];
-    const runtime = createApps({
+    const config: AppsConfig = {
       store,
       guard: guardFixture(),
       tools: emptyTools,
@@ -75,9 +82,10 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
           return { status: 201, headers: { "content-type": "application/json" }, body: JSON.stringify({ ok: true }) };
         }),
       },
-    });
+    };
+    const runtime = createApps(config);
     await seedAppRow(store, doc, "user_ada");
-    await runtime.machine.provision(doc.id, ctx());
+    await provisionMachine(config);
 
     const response = await runtime.box.request(doc.id, {
       method: "POST",
@@ -92,16 +100,17 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
 
   it("is owner-scoped: another subject sees not-found", async () => {
     const store = memoryStore();
-    const runtime = createApps({
+    const config: AppsConfig = {
       store,
       guard: guardFixture(),
       tools: emptyTools,
       catalog: [],
       model,
       machine: { sandbox: handlerSandbox(() => ({ status: 200 })) },
-    });
+    };
+    const runtime = createApps(config);
     await seedAppRow(store, doc, "user_ada");
-    await runtime.machine.provision(doc.id, ctx());
+    await provisionMachine(config);
     await expect(runtime.box.request(doc.id, { method: "POST", path: "/fn/x" }, ctx("user_bob")))
       .rejects.toMatchObject({ code: "not-found" });
   });
@@ -124,8 +133,13 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
   it("fails honestly without a sandbox adapter", async () => {
     const store = memoryStore();
     const runtime = createApps({ store, guard: guardFixture(), tools: emptyTools, catalog: [], model });
-    await seedAppRow(store, doc, "user_ada");
-    await expect(runtime.machine.provision(doc.id, ctx()))
+    // A graduated app opened on a deployment that configures no sandbox: the
+    // ref is on the row and there is nothing to resume it with.
+    await seedAppRow(store, {
+      ...doc,
+      machine: { snapshotRef: "fake:box-door", provisionedAt: "2026-07-19T00:00:00.000Z" },
+    }, "user_ada");
+    await expect(runtime.box.request(doc.id, { method: "POST", path: "/fn/x" }, ctx()))
       .rejects.toMatchObject({ code: "sandbox-unavailable" });
   });
 });

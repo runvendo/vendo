@@ -91,18 +91,22 @@ async function setup(): Promise<Vendo> {
     store,
     sandbox: servingSandbox(),
   });
-  // Seed a tree app, provision its machine (graduation's Lane B step), then
-  // flip the stored surface — the wire test targets serving, not generation.
+  // Seed a tree app that already GRADUATED — the row graduation leaves behind,
+  // its machine asleep behind the snapshot ref this suite's fake sandbox really
+  // produces — then flip the stored surface: the wire test targets serving, not
+  // generation, and building the box is graduation's own internal lifecycle.
   await store.records("vendo_apps").put({
     id: "app_served",
-    data: { subject: ADA.subject, enabled: false, doc: { ...servedDoc(), ui: "tree" } },
+    data: {
+      subject: ADA.subject,
+      enabled: false,
+      doc: {
+        ...servedDoc(),
+        ui: "tree",
+        machine: { snapshotRef: "fake:served-snap", provisionedAt: "2026-07-12T00:00:00.000Z" },
+      },
+    },
     refs: { subject: ADA.subject },
-  });
-  await vendo.apps.machine.provision("app_served", {
-    principal: ADA,
-    venue: "app",
-    presence: "present",
-    sessionId: "session_served_wire",
   });
   const record = await store.records("vendo_apps").get("app_served");
   const data = record?.data as { subject: string; enabled: boolean; doc: AppDocument };

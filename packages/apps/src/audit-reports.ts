@@ -24,7 +24,7 @@ export const createAuditReporters = (config: AppsConfig) => {
   };
 
   const reportLifecycle = async (
-    operation: "create" | "delete" | "fork" | "promote" | "in-client-approve" | "pin-fork" | "pin-rebase" | "machine-provision" | "machine-destroy" | "place" | "unplace",
+    operation: "create" | "delete" | "fork" | "promote" | "in-client-approve" | "pin-fork" | "pin-rebase" | "machine-provision" | "place" | "unplace",
     appId: AppId,
     ctx: RunContext,
     extra: Record<string, Json> = {},

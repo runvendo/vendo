@@ -42,10 +42,10 @@ import type { Check, Finding } from "./checking/types.js";
 import type { CloudAppsClient, PublishRecord, ShareSnapshot } from "./cloud.js";
 import type { GenerationDependencies } from "./generation/engine.js";
 import type { BuildMachineEnv, LifecycleClock } from "./machine-lifecycle.js";
-import type { AppMachineStatus, ManifestTriggerSync } from "./manifest-triggers.js";
+import type { AppMachineStatus } from "./manifest-triggers.js";
 import type { InClientApproval, PinBaseline, PinDrift } from "./pins.js";
 import type { RemixRejection, ReviewQueueEntry } from "./review.js";
-import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
+import type { SandboxAdapter } from "./sandbox.js";
 import type { ShipDiff } from "./ship-diff.js";
 
 /** 06-apps §1 plus block-plan decisions 3–4. */
@@ -746,7 +746,7 @@ export interface AppsRuntime {
   };
   /**
    * execution-v2 — additive machine lifecycle surface (same additive precedent
-   * as `inClient`/`pins`/`secrets`). An app with no `machine` on its document
+   * as `inClient`/`pins`). An app with no `machine` on its document
    * is a layer-1 tree app; presence of `machine` means layer 2+ — the layer is
    * always derived from presence, never stored. Wake single-flight and idle
    * auto-sleep live in-process; a multi-instance host can wake one app twice
@@ -766,14 +766,6 @@ export interface AppsRuntime {
      * decision still fails loudly on its own (`sandbox-unavailable`).
      */
     available(): boolean;
-    /** Create the machine from the base template, snapshot it, store the ref. Idempotent. */
-    provision(appId: AppId, ctx: RunContext): Promise<AppDocument>;
-    /** Resume the stored snapshot; concurrent wakes coalesce to one machine. */
-    wake(appId: AppId, ctx: RunContext): Promise<SandboxMachine>;
-    /** Snapshot the live machine, store the new ref, stop it. No-op when not awake. */
-    sleep(appId: AppId, ctx: RunContext): Promise<AppDocument>;
-    /** Destroy the sandbox and clear the document's machine field (de-graduation). */
-    destroy(appId: AppId, ctx: RunContext): Promise<AppDocument>;
     /**
      * Wave 7 H2 — the embed surface's keepalive: one cheap HEAD through the
      * idle-tracked machine wrapper, so user activity on an embedded served
@@ -784,16 +776,6 @@ export interface AppsRuntime {
      * shared is theirs to send, and it grants no more than seeing the app does.
      */
     ping(appId: AppId, ctx: RunContext): Promise<{ state: "awake" | "woke" }>;
-    /**
-     * Re-read the box's `vendo.json` and fold its `schedules` into the app's
-     * doc triggers (manifest-triggers.ts): each declaration becomes a schedule
-     * trigger running `fn:<name>`, armed through the arming seam and fired by
-     * the automations tick — the ONE scheduler. Editor-scoped, like every other
-     * edit: re-reading a shared app's manifest is part of editing it. Called
-     * automatically after a box server-edit; exposed because a manifest edited
-     * inside the box (an agent session, a layer-3 app) has no other way in.
-     */
-    syncManifest(appId: AppId, ctx: RunContext): Promise<ManifestTriggerSync>;
     /** Dev-only reporting for the doctor: which apps carry a machine, whether
      *  they are awake, and what their manifests schedule. */
     report(): Promise<AppMachineStatus[]>;

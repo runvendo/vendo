@@ -1,7 +1,8 @@
 import type { AppDocument, RunContext, SecretsProvider, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { createApps } from "../src/index.js";
+import { createMachineLane } from "../src/box-lane.js";
+import { createApps, type AppsConfig } from "../src/index.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "../src/redaction.js";
 import {
   fakeStatefulSandbox,
@@ -75,15 +76,19 @@ describe("the box door scrubs responses (integration)", () => {
       secrets: ["STRIPE_KEY"],
     };
     await seedAppRow(store, doc, "user_ada");
-    const runtime = createApps({
+    const config: AppsConfig = {
       store,
       guard: guardFixture(),
       tools,
       catalog: [],
       secrets,
       machine: { sandbox: fakeStatefulSandbox(), buildEnv: () => ({ PORT: "8080" }) },
-    });
-    await runtime.machine.provision(doc.id, ada);
+    };
+    const runtime = createApps(config);
+    // Graduation's own provision (box-lane.ts) over the SAME deployment config
+    // `createApps` composes its lifecycle from — the ref lands on the app row,
+    // so the box door below wakes the machine through the runtime itself.
+    await createMachineLane(config).lifecycle.provision(doc);
     return { runtime, doc };
   };
 
@@ -156,15 +161,31 @@ describe("issue #566 — injected secret values redact without a refetch", () =>
     return env;
   };
 
-  const runtimeWith = (store: ReturnType<typeof memoryStore>, secretsProvider: SecretsProvider, inject: boolean) =>
-    createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-      secrets: secretsProvider,
-      machine: { sandbox: fakeStatefulSandbox(), buildEnv: injectingEnv(inject) },
-    });
+  const configWith = (
+    store: ReturnType<typeof memoryStore>,
+    secretsProvider: SecretsProvider,
+    inject: boolean,
+  ): AppsConfig => ({
+    store,
+    guard: guardFixture(),
+    tools,
+    catalog: [],
+    secrets: secretsProvider,
+    machine: { sandbox: fakeStatefulSandbox(), buildEnv: injectingEnv(inject) },
+  });
+
+  /** Graduation's own provision (box-lane.ts), then the host's grant-flip
+   *  marker. The injected-value cache belongs to whichever lifecycle assembled
+   *  the env, and in production that is the serving process — so the marker
+   *  makes the RUNTIME's own next wake rebuild the boundary env (Wave 7) and
+   *  cache what entered the box, exactly as its own provision would have. */
+  const provisionStale = async (config: AppsConfig, doc: AppDocument): Promise<void> => {
+    const provisioned = await createMachineLane(config).lifecycle.provision(doc);
+    await seedAppRow(config.store, {
+      ...provisioned,
+      machine: { ...provisioned.machine!, envStaleAt: new Date().toISOString() },
+    }, "user_ada");
+  };
 
   const seed = async (store: ReturnType<typeof memoryStore>, id: string) => {
     const doc: AppDocument = {
@@ -180,10 +201,12 @@ describe("issue #566 — injected secret values redact without a refetch", () =>
   it("an injected value stays redacted even when the redaction refetch throws", async () => {
     const store = memoryStore();
     const { provider, break: breakRefetch } = mutableSecrets();
-    const runtime = runtimeWith(store, provider, true);
+    const config = configWith(store, provider, true);
+    const runtime = createApps(config);
     const doc = await seed(store, "app_injected");
-    // Provision resolves + injects the value; the lifecycle caches it for the box.
-    await runtime.machine.provision(doc.id, ada);
+    // The env assembly injects the value; the runtime's lifecycle caches it for
+    // the box (the wake below rebuilds it through that lifecycle).
+    await provisionStale(config, doc);
     // Now the vault goes offline — the pre-fix refetch in collectSecretValues fails.
     breakRefetch();
 
@@ -200,9 +223,10 @@ describe("issue #566 — injected secret values redact without a refetch", () =>
     const store = memoryStore();
     const { provider, break: breakRefetch } = mutableSecrets();
     // inject=false: STRIPE_KEY is declared but NOT granted, so nothing enters the box.
-    const runtime = runtimeWith(store, provider, false);
+    const config = configWith(store, provider, false);
+    const runtime = createApps(config);
     const doc = await seed(store, "app_not_injected");
-    await runtime.machine.provision(doc.id, ada);
+    await provisionStale(config, doc);
     breakRefetch();
 
     await runtime.box.request(doc.id, { method: "POST", path: "/state/leak", body: `key=${STRIPE_VALUE}` }, ada);
@@ -215,12 +239,14 @@ describe("issue #566 — injected secret values redact without a refetch", () =>
     const store = memoryStore();
     const { provider, break: breakRefetch } = mutableSecrets();
     // App A injects the value; App B declares the same name but never gets it granted.
-    const runtimeA = runtimeWith(store, provider, true);
-    const runtimeB = runtimeWith(store, provider, false);
+    const configA = configWith(store, provider, true);
+    const configB = configWith(store, provider, false);
+    const runtimeA = createApps(configA);
+    const runtimeB = createApps(configB);
     const docA = await seed(store, "app_box_a");
     const docB = await seed(store, "app_box_b");
-    await runtimeA.machine.provision(docA.id, ada);
-    await runtimeB.machine.provision(docB.id, ada);
+    await provisionStale(configA, docA);
+    await provisionStale(configB, docB);
     breakRefetch();
 
     // A's box redacts from its own cache.

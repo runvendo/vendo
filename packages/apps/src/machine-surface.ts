@@ -13,48 +13,19 @@ import type { AppsRuntime } from "./types.js";
 /** The machine slice of `AppsRuntime`. */
 export const createMachineSurface = (
   deps: Pick<AppsRuntimeContext,
-    "lifecycle" | "manifestTriggers" | "requireOwned" | "ensureEgressApproved"
-    | "reportLifecycle">,
+    "lifecycle" | "manifestTriggers" | "requireOwned" | "ensureEgressApproved">,
 ): AppsRuntime["machine"] => {
-  const { lifecycle, manifestTriggers, requireOwned, ensureEgressApproved, reportLifecycle } = deps;
+  const { lifecycle, manifestTriggers, requireOwned, ensureEgressApproved } = deps;
   return {
     available: () => lifecycle.available(),
-    async provision(appId, ctx) {
-      const app = await requireOwned(appId, ctx);
-      const alreadyProvisioned = app.machine !== undefined;
-      // `experimentalMachines` used to gate NEW provisioning here with a second
-      // error explaining the flag. The flag is gone, and so is that error: with
-      // the sandbox adapter as the whole gate, "there is nothing to provision
-      // in" is exactly what the lifecycle's own `sandbox-unavailable` already
-      // says, and the escalation ladder never reaches this line — `laneGates`
-      // states the missing lane to the brain BEFORE it plans. An
-      // already-provisioned app stays idempotent, so it is never stranded.
-      // Lane E — first provision is the "approve once" moment: unapproved
-      // declared egress parks the approval card and refuses loudly here.
-      await ensureEgressApproved(app, ctx);
-      const provisioned = await lifecycle.provision(app);
-      if (!alreadyProvisioned) await reportLifecycle("machine-provision", appId, ctx);
-      return provisioned;
-    },
-    async wake(appId, ctx) {
-      const app = await requireOwned(appId, ctx);
-      // Lane E — a manifest change adding domains re-prompts at the next
-      // wake: the new declaration parks a fresh card for the delta only.
-      await ensureEgressApproved(app, ctx);
-      return lifecycle.wake(app);
-    },
-    async sleep(appId, ctx) {
-      const app = await requireOwned(appId, ctx);
-      return lifecycle.sleep(app);
-    },
     async ping(appId, ctx) {
       const app = await requireOwned(appId, ctx, "viewer");
       if (app.machine === undefined) {
         throw new VendoError("validation", `app ${appId} has no machine to ping`);
       }
       const wasAwake = lifecycle.peek(appId) !== undefined;
-      // A ping that has to WAKE rides the same egress gate as machine.wake:
-      // an unapproved declared domain must never reach the provider.
+      // A ping that has to WAKE rides the same egress gate every other wake
+      // does: an unapproved declared domain must never reach the provider.
       if (!wasAwake) await ensureEgressApproved(app, ctx);
       const machine = await lifecycle.wake(app);
       // The activity signal itself: one cheap HEAD through the idle-tracked
@@ -62,18 +33,6 @@ export const createMachineSurface = (
       // (the wake above already proved the machine is reachable).
       await machine.request({ method: "HEAD", path: "/" }).catch(() => undefined);
       return { state: wasAwake ? "awake" as const : "woke" as const };
-    },
-    async destroy(appId, ctx) {
-      const app = await requireOwned(appId, ctx, "owner");
-      const cleared = await lifecycle.destroyMachine(app);
-      // De-graduation retires the old scheduler's leftover row with the machine.
-      await manifestTriggers.clearLegacyState(appId);
-      if (app.machine !== undefined) await reportLifecycle("machine-destroy", appId, ctx);
-      return cleared;
-    },
-    async syncManifest(appId, ctx) {
-      const app = await requireOwned(appId, ctx);
-      return manifestTriggers.sync(app, ctx);
     },
     report: () => manifestTriggers.report(),
   };
