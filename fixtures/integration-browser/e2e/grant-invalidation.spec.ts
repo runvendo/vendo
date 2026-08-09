@@ -1,14 +1,15 @@
 /** ENG-261 — a real Chromium journey over the composed umbrella proves that
- * descriptor drift both explains the replacement approval and appears in the
- * user-visible Activity panel. Set ENG261_SCREENSHOT_DIR to retain evidence. */
+ * descriptor drift both explains the replacement approval and lands in the
+ * audit trail a host reads back through `useActivity`. Set
+ * ENG261_SCREENSHOT_DIR to retain evidence. */
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Locator } from "@playwright/test";
 
 const TOOL = "host_invoices_delete";
 // ENG-216 — the approval card aria-label is the humanized title
-// (humanizeToolName("host_invoices_delete")); the Activity panel still shows the
-// raw slug, so `TOOL` stays for the wire script and the Activity-row filter.
+// (humanizeToolName("host_invoices_delete")); the audit row carries the raw
+// slug, so `TOOL` stays for the wire script and the audit-row filter.
 const TOOL_LABEL = "Invoices delete";
 const FIRST = "inv_0006";
 const SECOND = "inv_0005";
@@ -38,7 +39,7 @@ async function retain(locator: Locator, name: string): Promise<void> {
   await locator.screenshot({ path: resolve(absolute, name) });
 }
 
-test("descriptor drift explains the replacement approval and Activity event", async ({ page, request }) => {
+test("descriptor drift explains the replacement approval and the audit event", async ({ page, request }) => {
   await script(request);
   // Keep the standing grant scoped to Bob so this persistent browser backend
   // cannot authorize Ada's independent journey later in the same suite.
@@ -71,8 +72,8 @@ test("descriptor drift explains the replacement approval and Activity event", as
     "This tool changed since you approved it on",
   );
 
-  // Reload proves both surfaces are backed by committed wire/store state: the
-  // thread rehydrates its approval payload and Activity fetches persisted audit.
+  // Reload proves the thread is backed by committed wire/store state: it
+  // rehydrates its approval payload from the server, not from memory.
   // ENG-211 (08-ui amendment 2026-07-14): a supplied thread id unknown to the
   // server is discarded by the hook and the server mints the effective id — so
   // recover the id the server actually bound from the summaries listing (the
@@ -96,14 +97,19 @@ test("descriptor drift explains the replacement approval and Activity event", as
   await expect(committedApproval.getByRole("note", { name: "Previous permission invalidated" })).toBeVisible();
   await retain(committedApproval, "approval-card-invalidated-grant.png");
 
-  const activity = page.getByRole("region", { name: "Activity" });
-  // The icon-ledger activity panel (ENG-224 + ui-lane-panels pick B) speaks in
-  // humanized labels: rows are list items, the kind is the glyph disc's
-  // accessible name ("Policy"), the action names the humanized tool, and the
-  // outcome reads "Awaiting approval" rather than the raw wire enums.
-  const event = activity.getByRole("listitem")
-    .filter({ has: page.getByRole("img", { name: "Policy" }) })
-    .filter({ hasText: TOOL_LABEL }).filter({ hasText: "Awaiting approval" });
-  await expect(event).toBeVisible();
-  await retain(activity, "activity-grant-invalidated-event.png");
+  // The other half of ENG-261: the invalidated grant is not only explained on
+  // the card, it is written to the audit trail and readable back through the
+  // SAME wire route `useActivity` serves a host from. Read it through the real
+  // route — no stub on either side of the seam.
+  await expect(async () => {
+    const listed = await request.get("/api/vendo/activity", {
+      headers: { "x-vendo-test-user": "user_bob" },
+    });
+    expect(listed.ok()).toBeTruthy();
+    const events = await listed.json() as { kind: string; tool?: string; outcome?: string }[];
+    expect(events.some((event) =>
+      event.kind === "policy-decision"
+      && event.tool === TOOL
+      && event.outcome === "pending-approval")).toBe(true);
+  }).toPass({ timeout: 10_000 });
 });
