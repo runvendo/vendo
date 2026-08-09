@@ -34,6 +34,7 @@
  * and the trigger sits at 81% so the margin is not the only thing standing
  * between a thread and a 400.
  */
+import { otelTelemetry } from "@vendoai/core";
 import {
   asSchema,
   generateText,
@@ -486,6 +487,9 @@ export async function compactContext(request: CompactionRequest): Promise<Compac
 
   const result = await generateText({
     model: request.model,
+    // Opt-in OTel GenAI spans (VENDO_OTEL_TRACING=1) — compaction is invisible
+    // spend otherwise: it costs tokens no user asked for.
+    ...otelTelemetry("vendo.agent.compaction"),
     system: SUMMARIZER_SYSTEM,
     messages: [{
       role: "user",
