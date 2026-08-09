@@ -21,6 +21,7 @@ import {
   type ThreadId,
   type ToolRegistry,
 } from "@vendoai/core";
+import { wrapWorkspaceForRender } from "@vendoai/apps";
 import type { VendoGuard } from "@vendoai/guard";
 import { createHarnessRuntime, type HarnessRuntimeDeps } from "@vendoai/harnesses";
 import {
@@ -140,6 +141,16 @@ export async function createSession(
       skills: createTurnSkills(workspace),
       transcript,
       harnessState: harnessStateStore(deps.store),
+      // §1.6 — the render seam, on the runtime's generic `wrapWorkspace` slot:
+      // a commit that lands `app.vendo`/`plan.vendo` paints, whichever hands
+      // wrote it (`claudeCode()` commits mid-turn through `turn.workspace`).
+      // BARE — no floor, no app half — because this standalone runtime composes
+      // no apps runtime to fill them; the umbrella's composition does
+      // (`packages/vendo/src/harness-turn.ts`).
+      wrapWorkspace: (turnWorkspace, opts) => wrapWorkspaceForRender(turnWorkspace, {
+        turnId: opts.turnId,
+        emit: opts.emit,
+      }),
       ...(deps.liveTurn === undefined ? {} : { liveTurn: deps.liveTurn }),
     });
 

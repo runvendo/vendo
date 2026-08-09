@@ -51,6 +51,30 @@ describe("session", () => {
     expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
   });
 
+  it("a hot-path commit paints — plan.vendo through turn.workspace emits data-vendo-view (§1.6)", async () => {
+    // Regression pin: the runtime's render seam rides an injected
+    // `wrapWorkspace` slot now, and THIS package has to fill it — unfilled, a
+    // harness that writes app files (`claudeCode()` does, mid-turn) paints
+    // nothing, silently. Found by review on the harnesses de-apps refactor.
+    const store = memoryStore();
+    const builder = defineHarness({
+      name: "builder",
+      async *run(turn) {
+        await turn.workspace.writeFile(
+          "/user/apps/app_pin/plan.vendo",
+          `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="DataTable" /></Group></Plan>`,
+        );
+        yield { type: "text" as const, delta: "sketched" };
+      },
+    });
+    const support = agent({ name: "support", harness: builder, store });
+    const session = await support.session("u_42");
+    const text = await (await session.stream("make me an invoices screen")).text();
+    expect(text).toContain('"data-vendo-view"');
+    // The stable per-app stream id, so successive paints reconcile in place.
+    expect(text).toContain("vendo-view:app_pin");
+  });
+
   it("a second turn hands the harness the whole prior conversation", async () => {
     const store = memoryStore();
     let seen: readonly unknown[] = [];

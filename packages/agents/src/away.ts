@@ -34,6 +34,7 @@ import {
   type ToolOutcome,
   type Turn,
 } from "@vendoai/core";
+import { wrapWorkspaceForRender } from "@vendoai/apps";
 import { createHarnessRuntime, type HarnessRuntimeDeps } from "@vendoai/harnesses";
 import { storeFiles, threadMessageStore, threadStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
@@ -248,6 +249,15 @@ export function awayRunner(deps: AwayRunnerDeps): AgentRunner {
       // `harnessState` is left unset on purpose — the runtime's per-run memory is
       // the whole truth for a fresh thread, so there is nothing to carry and
       // nothing to write.
+      // §1.6 — the render seam, on the runtime's generic `wrapWorkspace` slot:
+      // an away run's hot-path commit paints too (the part persists, so the
+      // sponsor's thread shows the screen the run built). BARE — no floor, no
+      // app half — because this standalone runtime composes no apps runtime to
+      // fill them; the umbrella's composition does.
+      wrapWorkspace: (turnWorkspace, opts) => wrapWorkspaceForRender(turnWorkspace, {
+        turnId: opts.turnId,
+        emit: opts.emit,
+      }),
       bridge: {
         // Every call the harness ATTEMPTS, before the guard sees it. It is only an
         // observer (it never rules a call out), and it is here because a call the

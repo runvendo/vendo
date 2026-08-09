@@ -14,7 +14,7 @@ import {
 } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
 import { defineHarness } from "@vendoai/harnesses";
-import { createStore, type VendoStore } from "@vendoai/store";
+import { createStore, threadMessageStore, threadStore, type VendoStore } from "@vendoai/store";
 import { describe, expect, it } from "vitest";
 import { awayRunner } from "../src/away.js";
 
@@ -106,6 +106,40 @@ describe("awayRunner", () => {
     expect(agentRunReportSchema.parse(report)).toBeTruthy();
     expect(report.status).toBe("ok");
     expect(report.summary).toBe("Two invoices are outstanding.");
+  });
+
+  it("a hot-path commit paints in an away run too, and the part persists to the run's thread (§1.6)", async () => {
+    // Regression pin, same as the session suite's: the render seam rides the
+    // runtime's injected `wrapWorkspace` slot, and the away entry has to fill
+    // it — unfilled, an unattended build's screen never paints and the run's
+    // thread holds no view for the sponsor to open.
+    const store = memoryStore();
+    const run = awayRunner(deps(store, defineHarness({
+      name: "builder",
+      async *run(turn) {
+        await turn.workspace.writeFile(
+          "/user/apps/app_digest/plan.vendo",
+          `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="DataTable" /></Group></Plan>`,
+        );
+        yield { type: "text" as const, delta: "**Summary:** sketched the digest screen." };
+      },
+    })));
+
+    const report = await run({ prompt: "Build the digest screen.", tools: taskRegistry() }, fireCtx());
+    expect(report.status).toBe("ok");
+
+    const principal = fireCtx().principal;
+    const [thread] = await threadStore(store).list(principal);
+    const messages = await threadMessageStore<{
+      id: string;
+      role: string;
+      parts: Array<{ type: string; data?: { appId?: string } }>;
+    }>(store).list(principal, thread!.id);
+    const view = messages
+      .find((message) => message.role === "assistant")
+      ?.parts.find((part) => part.type === "data-vendo-view");
+    expect(view).toBeDefined();
+    expect(view?.data?.appId).toBe("app_digest");
   });
 
   // The run record's `summary` is contracted as a SUMMARY (07 §5 — "agentic:
