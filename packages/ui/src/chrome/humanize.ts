@@ -59,8 +59,8 @@ export function humanizeToolName(raw: string): string {
  * That third step exists because most surfaces have NO descriptor: the wire tool
  * part carries only a name, so a progress chip or an activity row prettified
  * `vendo_apps_open` into "Vendo apps open" — our namespace read out as words, the
- * §3 leak wave-1 proof E1-5 caught. The table is core's, the same one the
- * descriptors author from, so the two can never disagree.
+ * §3 leak. The table is core's, the same one the descriptors author from, so
+ * the two can never disagree.
  */
 export function toolTitle(name: string, meta?: ToolMeta, descriptorTitle?: string): string {
   const label = meta?.label?.trim();
@@ -89,7 +89,7 @@ const TOOLKIT_DISPLAY: Record<string, string> = {
 /** Display name for a toolkit slug: the known-brand table first (separator-less
     slugs like "googlecalendar" can't be recovered by splitting), then a
     separator-splitting proper-caser ("google_calendar" → "Google Calendar").
-    The brand-forward connect surfaces (lane pick 2-A) never show the raw slug. */
+    The brand-forward connect surfaces never show the raw slug. */
 export function toolkitDisplayName(toolkit: string): string {
   const known = TOOLKIT_DISPLAY[toolkit.toLowerCase().replace(/[-_\s]+/g, "")];
   if (known) return known;
@@ -147,9 +147,9 @@ export const yesNo = (value: boolean): string => (value ? "Yes" : "No");
  * One argument value, as a person must read it — the consent surfaces' rule.
  *
  * Money is the only value whose raw form reads as a DIFFERENT number: a $47.50
- * payment arrives as `4750` and reads as $4,750 (wave-1 live proof E2c, on the
- * one surface that gates irreversible money movement). The unit comes from the
- * HOST'S DECLARATION over the tool's own input schema, never from the value's
+ * payment arrives as `4750` and reads as $4,750, on the one surface that gates
+ * irreversible money movement. The unit comes from the HOST'S DECLARATION over
+ * the tool's own input schema, never from the value's
  * magnitude — dressing a non-money integer as currency would be the same defect
  * pointing the other way. Undeclared money says so out loud rather than looking
  * like dollars.

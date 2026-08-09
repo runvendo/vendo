@@ -8,7 +8,7 @@ import { ChromeRoot } from "./chrome-root.js";
 import { completeConnection, connectRefusalCopy, openConnectPopup } from "./connect-dock.js";
 import { toolkitDisplayName } from "./humanize.js";
 
-/** ui-lane-panels picks A + D + F — identity-forward rows, a two-step
+/** Identity-forward rows, a two-step
  * disconnect with an undo window, and a connect-ahead empty state. */
 
 function connectorDisplayName(connector: string): string {

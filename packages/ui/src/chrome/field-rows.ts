@@ -68,9 +68,9 @@ export function memberSchema(schema: JsonSchema | undefined, key: string): JsonS
     through it too.
 
     Nested values used to flatten with a raw `leaf()`, so a declared-cents amount
-    inside an object printed as `Amount cents: 1850` — wave-1's live proof E2c
-    one level down (Maple's `host_createOrder` card). Formatting has to travel
-    with the value, not stop at the first indentation. */
+    inside an object printed as `Amount cents: 1850`, one level down (Maple's
+    `host_createOrder` card). Formatting has to travel with the value, not stop
+    at the first indentation. */
 function display(key: string, value: unknown, schema: JsonSchema | undefined, meta?: ToolMeta): string {
   if (value !== null && typeof value === "object") {
     if (Array.isArray(value)) {

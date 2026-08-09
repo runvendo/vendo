@@ -1,9 +1,8 @@
 /**
- * ONE pending-approvals poller per client (post-check H15).
+ * ONE pending-approvals poller per client.
  *
  * Every surface that shows the attention count reads the same asks: the
- * launcher badge, the waiting strip, the center's "Needs you" rail, the toast
- * feed. Each of those used to hold its OWN `useResource`, so a host mounting
+ * launcher badge, the center's "Needs you" rail, the toast feed. Each of those used to hold its OWN `useResource`, so a host mounting
  * both the overlay and the center ran three or four independent `GET /approvals`
  * intervals forever — 36 requests a minute with nothing waiting.
  *

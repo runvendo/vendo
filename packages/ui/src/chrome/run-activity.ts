@@ -1,5 +1,5 @@
 /**
- * LANE D (spec §2 G1, §3 H1) — the run-activity store: what a surface OUTSIDE
+ * The run-activity store: what a surface OUTSIDE
  * the conversation may know about a turn that is running inside it.
  *
  * Closing the panel is leaving, never stopping: the overlay hides its portal

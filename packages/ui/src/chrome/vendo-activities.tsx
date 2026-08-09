@@ -52,7 +52,7 @@ function queueItems(pending: ApprovalRequest[]): QueueItem[] {
 /**
  * The shelf's drop-in feed of what the agent did + what it is waiting on
  * (ui-usage-dx §2) — placeable in any host page. Pending approvals render as
- * ONE card with a "1 of N" pager (ui-lane-panels pick B): deciding slides the
+ * ONE card with a "1 of N" pager: deciding slides the
  * next approval into place instead of stacking a wall of cards. An
  * automation's standing-grant SET is one pager entry (the grant-set card):
  * one Approve grants every permission atomically. Recent activity renders as

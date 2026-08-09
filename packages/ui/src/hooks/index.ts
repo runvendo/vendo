@@ -4,14 +4,14 @@ export { useApp } from "./use-app.js";
 export { useApps } from "./use-apps.js";
 export { useAppGrants } from "./use-app-grants.js";
 export { useApprovals, useAttention } from "./use-approvals.js";
-// LANE D §2/§3 — the shapes useAttention hands back (the finished-run headline
-// the launcher toast and any host notification hook read).
+// The shapes useAttention hands back (the finished-run headline the launcher
+// toast and any host notification hook read).
 export type { RunActivity, RunResult } from "../chrome/run-activity.js";
 export { useAutomations } from "./use-automations.js";
 export { useConnections } from "./use-connections.js";
 export { useConnectorCatalog } from "./use-connector-catalog.js";
 export { useGrants } from "./use-grants.js";
-// Deliberately public (lane pick 1-H): the ejected thread surface imports it,
+// Deliberately public: the ejected thread surface imports it,
 // and hosts placing their own approval chrome need the same breakpoint truth.
 export { useApprovalSheetPresentation, useMobileTakeover, type MobileTakeover } from "./use-mobile-takeover.js";
 export { type PollOptions } from "./use-resource.js";

@@ -6,7 +6,7 @@ import { ActivityLedger } from "./activity-ledger.js";
 
 /** 08-ui §4 — self-scoped, user-facing audit transparency. Every row is a
     concrete action taken as the user (a tool call, an approval, a connection…)
-    rendered as one icon-ledger line (ui-lane-panels pick B): kind glyph,
+    rendered as one icon-ledger line: kind glyph,
     humanized action with the input preview folded in, plain-language result,
     relative timestamp. Pagination ends in an explicit end-of-list marker. */
 export function ActivityPanel() {

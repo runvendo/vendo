@@ -12,7 +12,7 @@
  *     ceremony button (`.fl-btn-ceremony`).
  *  3. The plain-words line is mandatory: a card always says what it DOES.
  *
- *  Geometry lives in the `.fl-card-*` CSS Lane A shipped. Some elements also
+ *  Geometry lives in the `.fl-card-*` CSS. Some elements also
  *  carry their legacy `.fl-approval*` / `.fl-grant` class: three suites, the
  *  corpus harness and the thread's morph start-rect lookup select on those
  *  names. They are markers only — the `.fl-card-*` rules are declared later in
@@ -152,7 +152,7 @@ export function CardList({ label, className, children }: {
  * surface: on a consent card that put raw JSON, `true`, `4750` and the
  * developer's literals one hover from a bank customer — and the law's sweep
  * could not see any of it, because `readable()` excluded `title` by
- * construction. RULING (post-check): the honesty contract is satisfied by the
+ * construction. RULING: the honesty contract is satisfied by the
  * ROWS (every real input is displayed, always); the raw literal is a developer's
  * aid and rides the tooltip in dev mode only. `CardFieldRow.raw` still exists —
  * it is what dev mode shows, and what tests assert on.

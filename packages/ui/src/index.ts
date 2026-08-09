@@ -10,8 +10,8 @@ export { VendoProvider, hostComponentMap, useVendoProvider, useVendoDiscoverabil
 export { defaultVendoGreeting, type VendoDiscoverability, type VendoGreeting } from "./chrome/discoverability.js";
 export type { ToolMeta, ToolMetaMap } from "./chrome/humanize.js";
 export type { VendoAppEmbedProps, VendoApprovalEmbedProps, VendoApprovalEmbedState, VendoToolResultProps } from "./embeds.js";
-// Existing-agents Lane B — the components behind the frozen prop contracts,
-// exported from the root so a BYO chat page needs only `@vendoai/ui`.
+// The components behind the frozen prop contracts, exported from the root so
+// a BYO chat page needs only `@vendoai/ui`.
 export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./chrome/embeds.js";
 export * from "./hooks/index.js";
 export { announcePin, onPinAnnounced } from "./pin-events.js";

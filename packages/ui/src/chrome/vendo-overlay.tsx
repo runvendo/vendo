@@ -39,7 +39,7 @@ export interface VendoOverlayProps {
   /**
    * Built-in launcher placement and content. The default is a fixed pill in
    * the given viewport corner carrying the morphing accent blob and a
-   * WHITE-LABEL text — "AI agent", never a product name (ui-lane-entry). Pass
+   * WHITE-LABEL text — "AI agent", never a product name. Pass
    * `"none"` to hide it and drive the overlay programmatically (via
    * `open`/`onOpenChange` or the `useVendoOverlay` hook), or the object form
    * to customize: `label` accepts any host string (`null` collapses the pill
@@ -648,7 +648,7 @@ export function VendoOverlay({
     }
   }), [setOpen]);
 
-  // LANE D (spec §2, §3, §4) — what the pill says while the user is elsewhere:
+  // What the pill says while the user is elsewhere:
   // the live beat of a run that kept going after they left, the result toast
   // that leads back into the record, the badge of asks and the dot of unseen
   // results. The panel's own thread id scopes the toast to runs this panel can

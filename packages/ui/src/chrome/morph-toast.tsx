@@ -11,7 +11,7 @@ import { ToolkitLogo } from "./card-shell.js";
  * surface is the same solid glass as the overlay (not a translucent liquid
  * blob), and it's inset from the corner so it's never clipped.
  *
- * Lane pick 4-C — the morph teaches the record: when an Activity anchor is
+ * The morph teaches the record: when an Activity anchor is
  * mounted (an element carrying `data-vendo-activity-anchor`, e.g. the
  * the Activity panel), the settled pill holds briefly and then shrinks
  * and docks INTO the anchor instead of fading in place, dispatching a

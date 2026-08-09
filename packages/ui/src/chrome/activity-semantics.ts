@@ -50,7 +50,7 @@ export function formatRelativeAuditTime(iso: string, now: Date): string {
   return formatAuditTime(iso);
 }
 
-/** The glyph disc an activity row leads with (ui-lane-panels pick B). */
+/** The glyph disc an activity row leads with. */
 export type ActivityGlyph = "wrench" | "zap" | "shield" | "box";
 
 const KIND_GLYPH: Record<AuditEvent["kind"], ActivityGlyph> = {

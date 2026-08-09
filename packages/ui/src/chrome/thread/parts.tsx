@@ -48,7 +48,7 @@ function UserText({ text: rawText, restored }: { text: string; restored?: boolea
   const collapsible = restored === true && text.length > LONG_TEXT_CAP;
   const shown = collapsible && !expanded ? truncateHead(text) : text;
   if (!collapsible) return <div className="fl-usertext">{text}</div>;
-  // Lane pick 3D — the collapsed head sits under a gradient fade with a
+  // The collapsed head sits under a gradient fade with a
   // centered pill (GitHub-fold style) instead of a hard cut + inline link:
   // the fade shows the content continues, and the control sits where the
   // eye stops. Expanded keeps the pill below for symmetry.
@@ -149,9 +149,8 @@ function ThreadErrorBlock({ marker, headline, detail }: {
     when the call ended `connect-required`, otherwise its build beat.
 
     Spec §1 — THE TRANSCRIPT SHOWS THE WORK: every tool call leaves a beat at
-    its position in the conversation (this reverses lane pick C1, which sent
-    progress to a status ribbon above the composer and kept the transcript
-    beat-free). Two exceptions:
+    its position in the conversation (progress used to ride a status ribbon
+    above the composer, leaving the transcript beat-free). Two exceptions:
       · the settled turn folds its beats into one summary row (hideBeats) —
         but a failed or declined call is content, not progress, so its ✕ beat
         stays visible either way (spec §15: the ✕ stays in the record);
@@ -660,9 +659,9 @@ function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; 
       {...(featured ? { "data-vendo-featured": "" } : {})}
       {...(featureOnClick ? { onClick: featureOnClick, "data-vendo-featurable": "" } : {})}
     >
-      {/* Pick C (ui-lane-renderer): the bar narrates forming → live. The
-          data-state contract ("building" | "ready") is shared with the
-          thread lane; the label pair stays mounted so the swap crossfades. */}
+      {/* The bar narrates forming → live. The data-state contract
+          ("building" | "ready") is shared with the renderer; the label pair
+          stays mounted so the swap crossfades. */}
       <div className="fl-appcard-bar" data-state={streaming ? "building" : "ready"}>
         <span className="fl-appcard-dot" aria-hidden="true" />
         <span className="fl-boot-labels fl-appcard-name">
@@ -689,10 +688,10 @@ function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; 
             Feature
           </button>
         ) : null}
-        {/* Lane pick C5 (5A+5D) — the placement affordance lives ON the bar
-            (visible only once the view is ready), replacing the old full-width
-            footer row. The renderer lane's data-state/label/hairline markup
-            above is the shared contract and stays untouched.
+        {/* The placement affordance lives ON the bar (visible only once the
+            view is ready), replacing the old full-width footer row. The
+            data-state/label/hairline markup above is the shared contract and
+            stays untouched.
 
             ONE destination is a verb ("Pin to dashboard") — naming the only
             place it could go would be a menu of one. Several, and the same
@@ -753,7 +752,7 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
   onMorph: (morph: Omit<MorphToastProps, "onDone">) => void;
 }) {
   const { client, theme, tools } = useVendoProvider();
-  // Lane pick 1-H — below the mobile breakpoint the NEWEST parked approval
+  // Below the mobile breakpoint the NEWEST parked approval
   // presents as a bottom sheet (thumb-zone consent); older parked ones stay
   // in-list behind it so the thread record is complete when the sheet closes.
   // Sheet presentation also needs viewport HEIGHT (voice-approval-overlap

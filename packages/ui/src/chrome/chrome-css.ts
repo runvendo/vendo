@@ -1,10 +1,10 @@
 import { ONEST_FONT_CSS } from "./onest-font.gen.js";
 
-/** The ported Vendo shell stylesheet (design system). Generated from the
- *  wave-2 shell; tokens bridged to the VendoTheme contract. Onest (the brand
- *  font, defaultVendoTheme's first family) rides along as inlined @font-face
- *  data so the unthemed default look renders it with zero host setup — hosts
- *  that set their own fontFamily simply never reference it. */
+/** The ported Vendo shell stylesheet (design system); tokens bridged to the
+ *  VendoTheme contract. Onest (the brand font, defaultVendoTheme's first
+ *  family) rides along as inlined @font-face data so the unthemed default
+ *  look renders it with zero host setup — hosts that set their own
+ *  fontFamily simply never reference it. */
 export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 design language (2026-08-03), a RECIPE over the
    frozen VendoTheme contract. Every aesthetic token below is DERIVED from the
    contract brand tokens (--vendo-color-*, --vendo-radius-*, --vendo-font-*)
@@ -89,7 +89,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   --vendo-warn: light-dark(#7a5000, #d9a94e);
   --vendo-warn-text: light-dark(#8a6a2e, #d9a94e);
   --vendo-warn-edge: #b3822f;
-  /* DEAD as of Lane B: the .fl-btn-critical alias it existed for is gone
+  /* DEAD: the .fl-btn-critical alias it existed for is gone
      (critical IS ceremony now) and nothing reads this token. It survives only
      because test/theme-tokens.test.tsx pins its amber literal to exactly one
      definition — retire that pin and this token together. */
@@ -322,7 +322,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   0%   { opacity: 1; transform: none; }
   100% { opacity: 0; transform: scale(1.015); } }
 
-/* Fill reveal (pick A, ui-lane-renderer 2026-07-19): a shape-derived
+/* Fill reveal: a shape-derived
    silhouette already holds the incoming view's approximate geometry, so its
    arrival crossfades in place — no rise, no settle. Placed AFTER the .fl-reveal
    rules so the equal-specificity override wins by order. */
@@ -944,7 +944,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    treatment (it shares .fl-overlay-close), only the horizontal offset differs.
    Offsets = close's right + close's width + a 6px gap, per pointer density. */
 .fl-overlay-new { right: 46px; }
-/* Compact when empty (ui-lane-entry pick P-C): while the thread shows its
+/* Compact when empty: while the thread shows its
    landing (no conversation yet), the panel is a smaller box — greeting,
    starter cards, the bottom-pinned composer, no dead glass — and animates to
    full height the moment the first turn lands (the landing swaps to the
@@ -1151,7 +1151,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-launcher[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
 .fl-launcher[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
 
-/* The launcher mark (ui-lane-entry pick L-B): an accent-colored blob that
+/* The launcher mark: an accent-colored blob that
    continuously morphs shape — the recognition cue, in place of any glyph or
    product name. Quickens on hover; a static circle under reduced motion. */
 .fl-launcher-blob { width: 20px; height: 20px; flex: none; background: var(--vendo-accent);
@@ -1219,7 +1219,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-slot-cta svg { margin-bottom: 2px; opacity: .85; }
 .fl-slot-cta small { font-weight: 400; font-size: 11.5px; color: var(--vendo-fg-muted); }
 
-/* ---- empty-state invitation (ui-lane-entry pick S-A\u00d7S-D) ----
+/* ---- empty-state invitation ----
    Accent-washed surface carrying real copy, up to three concrete suggestion
    chips, and a primary CTA. The skeleton stays faintly behind (a view goes
    here); no icon by default. */
@@ -1373,9 +1373,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   color: var(--vendo-warn-on-fill); }
 .fl-btn-ceremony:hover { opacity: .92; background: var(--vendo-warn); }
 
-/* ==================== ui-lane-panels lane block ====================
-   Converged picks (the lane report they came from was worktree scratch, never
-   part of the repo — the picks themselves are recorded here):
+/* ==================== panel surfaces ====================
+   The converged picks, recorded here:
    activity B (icon ledger) · vendo-activities B (approval queue pager) ·
    automations B (run-dot strip) · connected-accounts A+D+F (identity rows,
    two-step disconnect + undo, connect-ahead empty state).
@@ -1476,7 +1475,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-acct-connect-chip:disabled { opacity: .6; cursor: default; }
 .fl-acct-connect-chip .fl-acct-logo { width: 24px; height: 24px; border-radius: 999px; }
 
-/* ---- wave-3 share dialog + fork offer (build contract §9.2-§9.6) ---- */
+/* ---- share dialog + fork offer (build contract §9.2-§9.6) ---- */
 .fl-share { display: flex; flex-direction: column; gap: 12px; padding: 16px;
   border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
   background: var(--vendo-surface); font: 400 13px/1.5 var(--vendo-font); color: var(--vendo-fg); }
@@ -1509,10 +1508,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-share-fork-copy { margin: 0; }
 .fl-share-fork-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* ================== end ui-lane-panels lane block ================== */
+/* ================== end panel surfaces ================== */
 
 /* ====================================================================
-   ui-lane-thread block — the converged thread-surface picks (C5 bar pin,
+   thread surfaces — the converged picks (C5 bar pin,
    2B/2C/2E/2F composer, 3A/3D list, 4B landing cards, 6B mobile jump,
    8A-8E markdown). Derived from existing tokens only.
    ==================================================================== */
@@ -1709,7 +1708,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-tr-forming td { padding: var(--vendo-density-table-padding); }
 .fl-tr-forming .fl-skeleton-bar { display: block; height: 9px; width: 62%; border-radius: 5px; }
 
-/* ================= ui-lane-cards converged picks ================= */
+/* ================= card surfaces ================= */
 /* 1-A · consequence-first approval. Distinct from .fl-approval-consequence
    (the amber voice-register line) — this is the neutral leading sentence. */
 .fl-approval-consequence-line { margin: 10px 0 0; font: 500 13px/1.5 var(--vendo-font);
@@ -1782,7 +1781,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   .fl-approval-sheet { animation: fl-fade-in .18s ease both; }
 }
 
-/* Cross-lane reduced-motion sweep (review finding): entrance/pulse animations
+/* Reduced-motion sweep: entrance/pulse animations
    that were neither wrapped in a no-preference block nor listed in an explicit
    reduce kill — settle instantly at their end state for vestibular-sensitive
    users. (The data-vendo-motion="reduced" root rule already covers theme-level
@@ -1840,7 +1839,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    The ONE geometry every consent/status card wears — approval, connect,
    standing-access, automation, resolved — on every surface (thread,
    queue, activities, sheet, voice, embeds, center). Contents differ; geometry
-   never does. Components land in Lane B (chrome/card-shell.tsx).
+   never does. Components live in chrome/card-shell.tsx.
 
    Law 1: ancestors may set width/max-width on .fl-cardshell, nothing else.
    Law 2: ONE icon well size (28px), ONE primary button (.fl-btn-primary),
@@ -1898,7 +1897,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 /* The byline: who/what is asking, or when it settled. Always last, always quiet. */
 .fl-card-byline { margin-top: 10px; font-size: 11.5px; color: var(--vendo-fg-muted); }
 
-/* ============================ LANE C ============================
+/* ======================= transcript beats =======================
    The transcript shows the work (spec §1 + §8 D1 + §15). The beat vocabulary
    itself lives above (.fl-beat*); this section adds the two pieces the settled
    transcript needed: the result a beat earned, and the row a finished turn
@@ -1943,7 +1942,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 }
 @keyframes fl-beat-pip { 50% { opacity: .35; transform: scale(.82); } }
 
-/* ================== LANE B — card-shell surfaces (spec §16, §4) ==================
+/* ================== card-shell surfaces (spec §16, §4) ==================
    Nothing here dresses or undresses a card: it sizes the shell inside each
    ancestor (law 1) and styles the two containers the shell lives in. */
 
@@ -1972,7 +1971,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    onError fallback), so its size rides the CSS instead of img attributes. */
 .fl-morph-logo img, .fl-morph-logo svg { display: block; width: 18px; height: 18px; object-fit: contain; }
 
-/* ---------- LANE D — background attention (spec §2 G1, §3 H1, §4 N1) ---------- */
+/* ---------- background attention (spec §2 G1, §3 H1, §4 N1) ---------- */
 /* The pill while a run keeps going without the user: the morph blob gives way
    to a progress ring and the label to the live beat. Nothing here opens or
    folds a surface — the pill only tells the truth about what is happening. */

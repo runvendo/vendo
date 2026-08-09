@@ -56,7 +56,7 @@ type Phase = "idle" | "connecting" | "popup-blocked" | "timed-out" | "connected"
  * The initiate → OAuth window → poll-to-active loop is `completeConnection`,
  * shared with the connect dock (ENG-225).
  *
- * Lane pick 2-A — brand-forward: the proper-case toolkit name (never the raw
+ * Brand-forward: the proper-case toolkit name (never the raw
  * slug), the toolkit's real mark in the icon well (link glyph fallback), and
  * an OAuth chip. The ask reads as the product, not the plumbing.
  *

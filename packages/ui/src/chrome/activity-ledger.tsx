@@ -1,4 +1,4 @@
-/** ui-lane-panels pick B — the icon-ledger activity rows, shared by
+/** The icon-ledger activity rows, shared by
     ActivityPanel (full audit) and VendoActivities (shelf feed) so the two
     surfaces can't drift. One scannable line per action: kind glyph disc,
     humanized action with the input preview folded in, outcome with decider,

@@ -53,7 +53,7 @@ export interface ToolPresentation {
   sub?: string;
   toolkit?: string;
   logoUrl?: string;
-  /** Lane pick 1-A — the consequence-first sentence, structured so the card
+  /** The consequence-first sentence, structured so the card
       can emphasize the artifact and target. Synthesized ONLY from the real
       inputs (same honesty rule as `description`); absent when the inputs
       don't support a truthful sentence, in which case the card keeps its

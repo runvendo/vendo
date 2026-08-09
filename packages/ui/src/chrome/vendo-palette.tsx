@@ -12,7 +12,7 @@ import { isEditableTarget, registerPaletteHotkey, registerPaletteOpener, resolve
 // (the overlay renders the commands now), but hosts import it from here.
 export type { VendoCommand } from "./overlay-registry.js";
 
-/** 08-ui §4 — the ⌘K entry point, one-surface edition (ui-lane-entry pick P-C).
+/** 08-ui §4 — the ⌘K entry point, one-surface edition.
  *
  * The palette no longer renders a dialog of its own: ⌘K opens the SAME
  * conversation overlay the launcher opens (toggling it closed on a second

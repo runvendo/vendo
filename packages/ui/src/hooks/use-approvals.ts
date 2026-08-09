@@ -45,17 +45,17 @@ export function useApprovals(options?: PollOptions): {
 const NO_RESULT = (): RunResult | undefined => undefined;
 
 /**
- * LANE D §4 (N1) — the ONE attention source. Everything that asks for the
- * user's attention counts from here: the launcher's numbered badge, the
- * "Waiting on you · N" strip above the composer, and the quiet dot for a run
- * that finished while they were elsewhere. Two surfaces reading two counts
+ * The ONE attention source. Everything that asks for the user's attention
+ * counts from here: the launcher's numbered badge, the approvals queue, and the
+ * quiet dot for a run that finished while they were elsewhere. Two surfaces
+ * reading two counts
  * could disagree in front of the user; this is the same hook, so they can't.
  *
  * Everything `useApprovals` returns (rows, `decide`, `refresh`) comes through
  * unchanged, so a surface that shows the count AND the cards needs one hook.
  */
 export function useAttention(options?: PollOptions): ReturnType<typeof useApprovals> & {
-  /** Asks waiting on the user right now (the badge number, the strip count). */
+  /** Asks waiting on the user right now (the badge number, the queue count). */
   askCount: number;
   /** Alias for the rows behind that count, in the strip's own words. */
   asks: ApprovalRequest[];

@@ -6,7 +6,7 @@ import { themeCssVariables } from "../theme.js";
 import { ensureChromeStyles } from "./chrome-root.js";
 
 /**
- * Lane pick 1-H — below the mobile breakpoint the newest pending approval
+ * Below the mobile breakpoint the newest pending approval
  * presents as a bottom sheet instead of an in-list card: grabber, scrim,
  * safe-area + keyboard-inset padding, slide-up entrance (fade under reduced
  * motion).

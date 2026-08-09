@@ -34,7 +34,7 @@ import { fieldRows } from "./field-rows.js";
 import { BUILD_FAILURE_COPY } from "./thread/message-data.js";
 
 /**
- * Existing-agents Lane B — the three embeds a BYO chat surface renders from
+ * The three embeds a BYO chat surface renders from
  * `vendo_*` tool outputs (frozen prop contracts in ../embeds.ts). All three
  * live inside the host's `VendoProvider` pointed at the wire: auth rides the
  * host session cookie, theme rides the `--vendo-*` tokens, and they take no

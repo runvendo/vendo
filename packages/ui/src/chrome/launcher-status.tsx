@@ -1,6 +1,5 @@
 /**
- * LANE D (spec §2 G1, §3 H1, §4 N1) — what the launcher pill says while the
- * user is somewhere else.
+ * What the launcher pill says while the user is somewhere else.
  *
  * Closing the panel is leaving, not stopping. So the pill has three jobs
  * beyond opening the panel: narrate a run that is still going (humanized beat

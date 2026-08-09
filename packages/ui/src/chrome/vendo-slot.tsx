@@ -167,7 +167,7 @@ function SlotBuildFailed({ appId, slotId, onChanged }: {
 function MountedApp({ appId }: { appId: string }) {
   const { client, components } = useVendoProvider();
   const { surface, error, isLoading, refresh } = useApp(appId);
-  // Wave 7 H2 — the served-surface keepalive: an on-screen embed pings the
+  // The served-surface keepalive: an on-screen embed pings the
   // machine (host-proxied) so a served app doesn't idle out under the user.
   const keepalive = useMemo(
     () => ({ ping: () => client.apps.pingMachine(appId) }),
@@ -219,7 +219,7 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
    *  prop — for hosts that resolve the pin themselves (e.g. via useSlotApp
    *  for a layout decision) and must not start a second poll. */
   discover?: boolean;
-  /** Empty-state invitation config (ui-lane-entry pick S-A×S-D). Every string
+  /** Empty-state invitation config. Every string
    *  is host-customizable with white-label defaults; suggestions are 3
    *  host-aware prompts (generic fallbacks otherwise) whose tap PREFILLS the
    *  conversation composer — never sends. */

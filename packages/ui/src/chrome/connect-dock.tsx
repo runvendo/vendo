@@ -354,7 +354,7 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
   const item = (row: TrayRow) => {
     const isConnected = row.account !== undefined;
     const isConnecting = connecting[row.toolkit] === true;
-    // Lane pick 3-A′ — real brand marks in the tray rows; the two-letter
+    // Real brand marks in the tray rows; the two-letter
     // monogram stays as the fallback for toolkits without a mapped domain or
     // whose mark failed to load.
     const logoUrl = failedLogos.has(row.toolkit) ? undefined : toolkitLogoUrl(row.toolkit);
