@@ -213,7 +213,40 @@ export async function openBrowser(): Promise<Shooter> {
               selector === "" ? [] : [...document.querySelectorAll<SVGElement | HTMLElement>(selector)];
             const was = scaffolding.map((element) => element.style.visibility);
             for (const element of scaffolding) element.style.visibility = "hidden";
-            const visibleText = document.body.innerText;
+            // `innerText` writes nothing between two inline boxes, so a row's
+            // "Housing $2850.00" beside its "67%" came back as $2850.0067 — a
+            // token no screen printed, reported as fabrication, while the honest
+            // percentage never became a token at all. Siblings escaped that only
+            // by rounding luck.
+            //
+            // So the boundary is written in: a space between text from DIFFERENT
+            // elements, nothing between text from the same one. Different
+            // element, different value; one element, one run of text handed over
+            // as written, which is what keeps "$4,243.11" whole even when React
+            // splits a line into several nodes. Element-wise rather than
+            // box-wise, so an SVG chart's labels separate on the same rule as a
+            // div's — the extraction has to be identical whatever a contender
+            // drew with. `checkVisibility` is what `innerText` was giving for
+            // free, and it answers for ancestors, so the scaffolding hidden just
+            // above and anything the page hid itself stay out of the reading.
+            //
+            // Nothing here may be a NAMED function: tsx compiles this file with
+            // esbuild's keepNames, which wraps one in a `__name` helper that
+            // exists in node and not in the page. Vitest's transform adds no
+            // such helper, so the suite cannot catch it — a real run is where it
+            // surfaces, as `__name is not defined`, on every column at once.
+            const parts: string[] = [];
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let previous: Element | null = null;
+            while (walker.nextNode() !== null) {
+              const text = walker.currentNode as Text;
+              const parent = text.parentElement;
+              if (parent === null || !parent.checkVisibility({ visibilityProperty: true })) continue;
+              if (previous !== null && previous !== parent) parts.push(" ");
+              parts.push(text.data);
+              previous = parent;
+            }
+            const visibleText = parts.join("");
             scaffolding.forEach((element, index) => (element.style.visibility = was[index]!));
             return {
               visibleText,
