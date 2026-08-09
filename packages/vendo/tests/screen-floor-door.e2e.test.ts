@@ -22,7 +22,7 @@
  * scripted, because what is measured is the doors, not a provider's mood.
  *
  * The one that must be able to fail: drop the gate from `save_app`
- * (`packages/harnesses/src/screen-agent.ts`) and the first case goes red — the
+ * (`packages/vendo/src/screen-agent.ts`) and the first case goes red — the
  * hand answers "Run validate on it now." over a document that never reached the
  * screen, which is the bypass.
  */

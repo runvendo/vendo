@@ -11,7 +11,7 @@ import {
   type AppsConfig,
 } from "@vendoai/apps";
 import { unattendedIrreversibilityCheck } from "@vendoai/automations";
-import { escalatedPlanPath, screenAssembler } from "@vendoai/harnesses";
+import { escalatedPlanPath, screenAssembler } from "./screen-agent.js";
 import {
   joinUrl,
   VendoError,
@@ -224,10 +224,12 @@ const appsHostSeams = (composition: VendoComposition, seams: AppsSeams): Partial
         joinUrl(urls.publicUrl, `${BASE_PATH}/apps/${encodeURIComponent(appId)}/serve/`).href,
     }),
     // THE SEAM (blueprint §1 point 2) — the screen agent in front of the
-    // conductor. Filled HERE and nowhere else: the agent is a lean loop in
-    // @vendoai/harnesses, the front door is in @vendoai/apps, and apps depends on
-    // core alone — so composition, the one place that already holds the seats, the
-    // guard-bound registry, the store and the seam, is what joins them.
+    // conductor. Filled HERE and nowhere else: the agent is a lean loop in this
+    // package (screen-agent.ts — it needs `vendo()` from harnesses AND the seam
+    // from apps, so only the umbrella can hold it), the front door is in
+    // @vendoai/apps, and apps depends on core alone — so composition, the one
+    // place that already holds the seats, the guard-bound registry, the store
+    // and the seam, is what joins them.
     escalatedPlan: async (appId, planCtx) => {
       // §4.5's receiving end reads the plan back through the SAME workspace the
       // escalating agent wrote it to — no second copy, no cache, no store column

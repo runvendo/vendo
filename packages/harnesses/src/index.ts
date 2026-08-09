@@ -38,18 +38,6 @@ export { vendo, type HarnessHand, type VendoHarnessDeps, type VendoHarnessOption
 // Public because the ceiling belongs to whoever is being metered.
 export { tokenBudgetStop } from "./vendo/loop.js";
 export {
-  assembleScreen,
-  escalatedPlanPath,
-  screenAssembler,
-  ESCALATE_TOOL,
-  SAVE_APP_TOOL,
-  SCREEN_STEPS,
-  type ScreenAssemblerDeps,
-  type ScreenInput,
-  type ScreenResult,
-  type ScreenSurface,
-} from "./screen-agent.js";
-export {
   createDiscoveryRails,
   type DiscoveryOptions,
   type DiscoveryRails,
@@ -70,23 +58,6 @@ export {
   type HarnessStateStore,
   type HistoryChange,
 } from "./harness-state.js";
-export {
-  HOT_PATH_FILES,
-  hotPathAppId,
-  viewForWrite,
-  wrapWorkspaceForRender,
-  type RenderSeamOptions,
-} from "./render-seam.js";
-// The builder's validate gate (§7.1 item 4) — "validate must pass before done",
-// as a function any harness's loop can call. Public because the loop that needs it
-// is not always ours: a host's own harness driving the same workspace wants the
-// same gate, and the alternative is every driver reimplementing the verb call.
-export {
-  repairInstruction,
-  validateWrittenApps,
-  VALIDATE_TOOL,
-  type AppValidationFailure,
-} from "./validate-gate.js";
 export { THREAD_ID_HEADER, VENDO_STATUS_PART } from "./wire.js";
 // The engine the doors share. These used to live in `@vendoai/agent`; they are
 // here because the runtime above is their only long-term caller, and a rail can

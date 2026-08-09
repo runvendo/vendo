@@ -46,7 +46,7 @@ import {
   type WorkspaceFs,
 } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
-import { wrapWorkspaceForRender } from "@vendoai/harnesses";
+import { wrapWorkspaceForRender } from "@vendoai/apps";
 import { appAccess, createStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

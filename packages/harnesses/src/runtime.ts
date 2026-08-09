@@ -3,8 +3,9 @@
  *
  * It builds the `Turn`, runs any `Harness`, converts the closed `HarnessEvent`
  * vocabulary plus mirrored tool calls into the EXISTING ai-SDK UIMessage stream,
- * persists the transcript one row per message, enforces the frozen routing table,
- * and puts hot-path views on screen.
+ * persists the transcript one row per message, and enforces the frozen routing
+ * table. Hot-path views ride the injected `wrapWorkspace` slot — the runtime
+ * carries no app knowledge of its own.
  *
  * It decides nothing. Orchestration is thinking, and thinking is the harness's.
  */
@@ -25,6 +26,7 @@ import {
   type ThreadId,
   type ToolRegistry,
   type Turn,
+  type TurnId,
   type TurnSkills,
   type TurnTools,
   type WorkspaceFs,
@@ -52,7 +54,6 @@ import {
   type HarnessStateStore,
 } from "./harness-state.js";
 import type { DiscoveryRails } from "./discovery.js";
-import { wrapWorkspaceForRender, type RenderSeamOptions } from "./render-seam.js";
 import { createTurnTools, type MirrorEvent } from "./turn-tools.js";
 import { specificWireErrorMessage } from "./wire-error.js";
 import { TextChannel, writeError, writeMirror, writeStatus, writeTurnError, writeView } from "./wire.js";
@@ -129,9 +130,18 @@ export interface HarnessRuntimeDeps {
   transcript: TranscriptStore;
   /** Defaults to process-lifetime memory: a session id is disposable by contract. */
   harnessState?: HarnessStateStore;
-  /** The render seam's optional halves — plan facts and the progressive
-   *  query-resolver fill. The seam emits with or without them. */
-  render?: Omit<RenderSeamOptions, "emit">;
+  /**
+   * Wrap the turn's workspace before the harness sees it — the one injection
+   * point for a commit-intercepting façade (the render seam is composition's
+   * implementation; see `wrapWorkspaceForRender` in `@vendoai/apps`). `emit`
+   * writes a data part on the wire's view channel for this turn; `turnId` is
+   * the turn being wrapped. Unset, the harness runs on the workspace as given —
+   * the runtime itself knows nothing about apps.
+   */
+  wrapWorkspace?: (
+    workspace: WorkspaceFs,
+    opts: { emit: (streamId: string, part: unknown) => void; turnId: TurnId },
+  ) => WorkspaceFs;
   /** The shipped tool-bridge rails composition owns: `toolOutputCap`, the
    *  `preflight` connect gate, and the capability-miss `onCall` hook. The writer
    *  and the per-turn connect-card set are the runtime's to supply. */
@@ -418,13 +428,14 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             ...(deps.approvalWaitMs === undefined ? {} : { approvalWaitMs: deps.approvalWaitMs }),
           });
 
-          // Every commit that lands a hot-path file goes on screen (§1.6),
-          // whichever hands wrote it.
-          const workspace = wrapWorkspaceForRender(input.workspace, {
-            ...deps.render,
+          // The injected workspace wrap — composition wires the render seam in
+          // here, so every commit that lands a hot-path file goes on screen
+          // (§1.6), whichever hands wrote it. Unwired, the workspace passes
+          // through untouched.
+          const workspace = deps.wrapWorkspace?.(input.workspace, {
+            emit: (_streamId, part) => writeView(writer, part as never),
             turnId,
-            emit: (_streamId, part) => writeView(writer, part),
-          });
+          }) ?? input.workspace;
 
           /** For in-process hands, write IS commit: the façade stages writes, so
            *  nothing is durable — or on screen — until this runs. `/user` is

@@ -17,7 +17,7 @@
  *
  * The ones that must be able to fail:
  * - drop `review: true` from the gate call in `assembleScreen`
- *   (`packages/harnesses/src/screen-agent.ts`) and case 1 goes red — the reviewer
+ *   (`packages/vendo/src/screen-agent.ts`) and case 1 goes red — the reviewer
  *   is never called and the double count ships, which is the incident.
  * - stop passing `samples` to `reviewerCheck` (`packages/apps/src/runtime.ts`) and
  *   case 1 goes red at the evidence assertion — the reviewer double cannot see the

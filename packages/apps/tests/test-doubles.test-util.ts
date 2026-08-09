@@ -1,10 +1,14 @@
 /**
- * The doubles the tool-pack suites need: a test guard and a guard-bound registry.
+ * The doubles the render-seam and validate-gate suites arrived with when they
+ * moved home from `@vendoai/harnesses` (the seam lives here now).
  *
  * A copy, deliberately: `@vendoai/harnesses` keeps its own equivalent
- * (`test-doubles.test-util.ts`) rather than either package publishing a
- * test-only subpath, which is surface nobody asked for. The alternative — a
- * shared doubles package — would be a package for two callers.
+ * (`test-doubles.test-util.ts`) and the umbrella keeps another
+ * (`agent-doubles.test-util.ts`) rather than any package publishing a
+ * test-only subpath — a doubles surface on a published package is surface
+ * nobody asked for. The `testing/` fixtures beside `src` are a different
+ * vocabulary (store-backed, scripted-response models); these tests were
+ * written against the harness doubles and move verbatim.
  */
 import type {
   ApprovalId,
@@ -13,84 +17,59 @@ import type {
   CommitResult,
   Guard,
   GuardDecision,
-  Json,
-  ResolvedModels,
   RunContext,
-  ToolCall,
-  ToolDescriptor,
-  ToolOutcome,
-  ToolRegistry,
   WorkspaceFs,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { InMemoryFs } from "just-bash";
+
+export function ctx(overrides: Partial<RunContext> = {}): RunContext {
+  return {
+    principal: { kind: "user", subject: "u1" },
+    venue: "chat",
+    presence: "present",
+    sessionId: "s1",
+    ...overrides,
+  };
+}
+
 export type TestGuard = Guard & {
   events: AuditEvent[];
-  directionValues: string[];
-  /** AGENT-6: approval ids resolved through abandonApprovals, in call order. */
-  abandoned: ApprovalId[];
+  /** Resolve a pending approval and notify subscribers, as the real guard does. */
   decide(approvalId: ApprovalId, approved: boolean): void;
   pending(): ApprovalRequest[];
 };
 
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object") {
-    for (const child of Object.values(value)) deepFreeze(child);
-    Object.freeze(value);
-  }
-  return value;
-}
-
-export function testGuard(
-  policy: Record<string, "run" | "ask" | "block"> = {},
-  directions: string[] = [],
-): TestGuard {
+/** `policy` maps a tool name to the guard's verdict; unlisted tools run. */
+export function testGuard(policy: Record<string, "run" | "ask" | "block"> = {}): TestGuard {
   const approvalsByCall = new Map<string, ApprovalRequest>();
   const decisions = new Map<ApprovalId, boolean>();
   const subscribers = new Set<(id: ApprovalId, approved: boolean) => void>();
   const events: AuditEvent[] = [];
-  const directionValues = [...directions];
 
   const guard: TestGuard = {
     events,
-    directionValues,
-    abandoned: [],
-    // AGENT-6: mirror the real guard — abandoning denies each still-pending
-    // approval (idempotent; unknown/decided ids are no-ops) and notifies
-    // decision subscribers.
-    async abandonApprovals(ids) {
-      for (const id of ids) {
-        const known = [...approvalsByCall.values()].some((approval) => approval.id === id);
-        if (!known || decisions.has(id)) continue;
-        guard.abandoned.push(id);
-        guard.decide(id, false);
-      }
-    },
     async check(call, descriptor, runCtx): Promise<GuardDecision> {
       const action = policy[call.tool] ?? "run";
       if (action === "run") return { action: "run", decidedBy: "default" };
       if (action === "block") return { action: "block", reason: "blocked", decidedBy: "rule" };
-
       let approval = approvalsByCall.get(call.id);
       if (approval === undefined) {
         approval = {
           id: `apr_${call.id}`,
           call: structuredClone(call),
-          descriptor: deepFreeze(structuredClone(descriptor)),
+          descriptor: structuredClone(descriptor),
           inputPreview: JSON.stringify(call.args),
           ctx: {
             principal: structuredClone(runCtx.principal),
             venue: runCtx.venue,
             presence: runCtx.presence,
-            ...(runCtx.appId === undefined ? {} : { appId: runCtx.appId }),
-            ...(runCtx.trigger === undefined ? {} : { trigger: structuredClone(runCtx.trigger) }),
           },
           createdAt: new Date().toISOString(),
         };
         approvalsByCall.set(call.id, approval);
       }
-
       const approved = decisions.get(approval.id);
       if (approved === true) return { action: "run", decidedBy: "default" };
       if (approved === false) return { action: "block", reason: "denied", decidedBy: "rule" };
@@ -100,7 +79,7 @@ export function testGuard(
       events.push(structuredClone(event));
     },
     async directions() {
-      return [...directionValues];
+      return [];
     },
     onApprovalDecision(callback) {
       subscribers.add(callback);
@@ -114,100 +93,7 @@ export function testGuard(
       return [...approvalsByCall.values()].filter((approval) => !decisions.has(approval.id));
     },
   };
-
   return guard;
-}
-
-export interface TestToolImplementation {
-  descriptor: ToolDescriptor;
-  execute(args: Json, ctx: RunContext, call: ToolCall): Json | Promise<Json>;
-}
-
-export type BoundRegistry = ToolRegistry & {
-  invocations: Record<string, number>;
-};
-
-export function boundRegistry(
-  implementations: Record<string, TestToolImplementation>,
-  guard: Guard,
-): BoundRegistry {
-  const invocations = Object.fromEntries(
-    Object.keys(implementations).map((name) => [name, 0]),
-  ) as Record<string, number>;
-
-  return {
-    invocations,
-    async descriptors() {
-      return Object.values(implementations).map(({ descriptor }) => structuredClone(descriptor));
-    },
-    async execute(call, runCtx) {
-      const implementation = implementations[call.tool];
-      if (implementation === undefined) {
-        return { status: "error", error: { code: "not-found", message: `Unknown tool: ${call.tool}` } };
-      }
-
-      const decision = await guard.check(call, implementation.descriptor, runCtx);
-      let outcome: ToolOutcome;
-      if (decision.action === "block") {
-        outcome = { status: "blocked", reason: decision.reason };
-      } else if (decision.action === "ask") {
-        outcome = { status: "pending-approval", approvalId: decision.approval.id };
-      } else {
-        invocations[call.tool] = (invocations[call.tool] ?? 0) + 1;
-        try {
-          outcome = { status: "ok", output: await implementation.execute(call.args, runCtx, call) };
-        } catch (error) {
-          outcome = {
-            status: "error",
-            error: {
-              code: "execution",
-              message: error instanceof Error ? error.message : String(error),
-            },
-          };
-        }
-      }
-
-      await guard.report({
-        id: `aud_${call.id}`,
-        at: new Date().toISOString(),
-        kind: "tool-call",
-        principal: structuredClone(runCtx.principal),
-        venue: runCtx.venue,
-        presence: runCtx.presence,
-        ...(runCtx.appId === undefined ? {} : { appId: runCtx.appId }),
-        ...(runCtx.trigger === undefined ? {} : { trigger: structuredClone(runCtx.trigger) }),
-        tool: call.tool,
-        inputPreview: JSON.stringify(call.args),
-        outcome: outcome.status,
-        decidedBy: decision.decidedBy,
-      });
-      return outcome;
-    },
-  };
-}
-
-// The core conformance kit ships the reference in-memory StoreAdapter; tests
-// exercise the same double every other block will use.
-export function ctx(overrides: Partial<RunContext> = {}): RunContext {
-  return {
-    principal: { kind: "user", subject: "u1" },
-    venue: "chat",
-    presence: "present",
-    sessionId: "s1",
-    ...overrides,
-  };
-}
-
-// ── The doubles the screen-agent suites arrived with (the agent moved home
-// here from `@vendoai/harnesses`, whose test-doubles file keeps the same set).
-
-export function readTool(name: string, risk: ToolDescriptor["risk"] = "read"): ToolDescriptor {
-  return {
-    name,
-    description: `the ${name} tool`,
-    inputSchema: { type: "object", properties: {}, additionalProperties: true },
-    risk,
-  };
 }
 
 /**
@@ -222,7 +108,9 @@ export type TestWorkspace = WorkspaceFs & {
   /** Force the next commit to answer `conflict` for these paths (a stale base). */
   conflictOn?: string[];
   /** Paths the caller may READ but not write — the shape a viewer-level grant on
-   *  an org app produces. */
+   *  an org app produces. The real façade answers this from `can()` against live
+   *  rows; here it is stated, so a suite can pin the per-file behaviour without
+   *  a store. */
   readOnlyPaths?: string[];
 };
 
@@ -266,31 +154,6 @@ export type StreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["s
   ? Part
   : never;
 
-export const ZERO_USAGE = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 0, text: 0, reasoning: 0 },
-} as const;
-
-/** What a `finish` part carries. Named off the part rather than off
- *  `ZERO_USAGE`, whose `as const` would pin every caller to zeros. */
-type StreamUsage = Extract<StreamPart, { type: "finish" }>["usage"];
-
-export function textTurn(text: string, usage: StreamUsage = ZERO_USAGE): StreamPart[] {
-  return [
-    { type: "text-start", id: "t1" },
-    { type: "text-delta", id: "t1", delta: text },
-    { type: "text-end", id: "t1" },
-    { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
-  ];
-}
-
-export function toolCallTurn(toolName: string, input: unknown, toolCallId = "call_1"): StreamPart[] {
-  return [
-    { type: "tool-call", toolCallId, toolName, input: JSON.stringify(input) },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
-  ];
-}
-
 export type ScriptedModel = LanguageModel & {
   toolNamesPerCall: string[][];
   /** What each call actually SENT — the only place a suite can prove what the
@@ -302,8 +165,8 @@ export type ScriptedModel = LanguageModel & {
   calls: number;
 };
 
-/** A model that replays scripted provider chunks — so the loop under test, not
- *  a real model, is what the suite measures. */
+/** A model that replays scripted provider chunks — so the caller's loop, not a
+ *  real model, is what the suite measures. */
 export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
   const remaining = turns.map((turn) => [...turn]);
   const toolNamesPerCall: string[][] = [];
@@ -326,9 +189,4 @@ export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
   model.systemPrompts = systemPrompts;
   model.calls = 0;
   return model;
-}
-
-/** `ResolvedModels` whose every seat is one scripted model. */
-export function seats(model: LanguageModel): ResolvedModels<LanguageModel> {
-  return { default: model, reviewer: model, judge: model, fill: model };
 }

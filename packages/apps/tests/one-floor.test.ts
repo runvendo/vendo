@@ -16,7 +16,7 @@
  * validator sat callerless and is deleted, and with it its carried-issue filter
  * — an edit excused for a stale node the previous version already carried —
  * which production has never had on this architecture: a block is a block, from
- * every author, on every commit (`harnesses/render-seam.ts`).
+ * every author, on every commit (`../src/render-seam.ts`).
  *
  * These drive one deliberately-broken island through all three doors, each
  * through its own real entry point, and assert the SAME refusal at every one.

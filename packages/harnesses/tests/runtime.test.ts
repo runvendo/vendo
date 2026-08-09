@@ -4,6 +4,7 @@
  * EXISTING ai-SDK UIMessage stream, persists the transcript, and enforces the
  * frozen routing table. Harness adapters contain no persistence and no wire code.
  */
+import { wrapWorkspaceForRender } from "@vendoai/apps";
 import { defineHarness } from "../src/define.js";
 import { SSE_KEEPALIVE_FRAME, type Harness, type HarnessEvent, type ThreadId, type Turn } from "@vendoai/core";
 import type { UIMessage } from "ai";
@@ -45,6 +46,10 @@ function fixture(options: {
   /** Composition's publish hook — how the process's own doors (and the steer
    *  route) reach the turn in flight. */
   liveTurn?: Parameters<typeof createHarnessRuntime>[0]["liveTurn"];
+  /** Fill the runtime's generic `wrapWorkspace` slot with the REAL render seam,
+   *  exactly as composition does (harness-turn.ts) — the runtime itself no
+   *  longer wraps anything on its own. */
+  seam?: boolean;
 } = {}) {
   const guard = options.guard ?? testGuard();
   const registry = boundRegistry(
@@ -67,6 +72,12 @@ function fixture(options: {
     transcript: countingTranscript,
     harnessState: options.harnessState ?? memoryHarnessStateStore(),
     ...(options.liveTurn === undefined ? {} : { liveTurn: options.liveTurn }),
+    ...(options.seam === true ? {
+      wrapWorkspace: (workspace, opts) => wrapWorkspaceForRender(workspace, {
+        turnId: opts.turnId,
+        emit: opts.emit,
+      }),
+    } : {}),
   });
   /** Run a turn AND drain the response, exactly as a host route does. The
    *  stream's onFinish (persistence, state, audit) only fires on consumption —
@@ -533,9 +544,13 @@ describe("turn.state across turns (§1.3)", () => {
   });
 });
 
-describe("the render seam is wired into the turn's workspace (§1.6)", () => {
+describe("the render seam rides the wrapWorkspace slot (§1.6)", () => {
+  // The runtime no longer imports the seam: composition injects it through the
+  // generic `wrapWorkspace` slot, which `seam: true` reproduces here. What these
+  // pin is the SLOT — the wrap sees every commit, and its `emit` reaches the
+  // wire's view channel.
   it("a harness writing plan.vendo puts the skeleton on screen", async () => {
-    const f = fixture();
+    const f = fixture({ seam: true });
     const harness = defineHarness({
       name: "builder",
       async *run(turn) {
@@ -553,7 +568,7 @@ describe("the render seam is wired into the turn's workspace (§1.6)", () => {
   });
 
   it("an unparseable write puts nothing on screen", async () => {
-    const f = fixture();
+    const f = fixture({ seam: true });
     const harness = defineHarness({
       name: "builder",
       async *run(turn) {
@@ -572,6 +587,7 @@ describe("write = commit for in-process hands (§3.5 + the commit-cadence seam)"
     const workspace = testWorkspace();
     // Stands in for lane D's workspace_write: the tool stages, the runtime lands it.
     const f = fixture({
+      seam: true,
       tools: {
         workspace_write: {
           descriptor: readTool("workspace_write", "write"),

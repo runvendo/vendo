@@ -57,6 +57,12 @@ export type { CreateVendoConfig, Vendo } from "./types.js";
 // value is called `vendo` (`import { vendo as vendoHarness }`).
 export { vendo, type VendoHarnessDeps, type VendoHarnessOptions } from "@vendoai/harnesses";
 
+// The screen assembler moved home to this package (it needs `vendo()` from
+// harnesses AND the render seam from apps, so only the umbrella can hold it).
+// Re-exported because it was public on `@vendoai/harnesses` before the move and
+// has an outside reader (genbench drives it against a bare registry).
+export { screenAssembler, type ScreenAssemblerDeps } from "./screen-agent.js";
+
 // Both types already sit in the PUBLIC signatures below — `apps:` is typed off
 // `AppsConfig`, `Vendo.harness` is a `HarnessTurns` — so a host reads them
 // today and simply cannot name them. Exported so it can (and so the quickstart

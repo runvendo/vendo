@@ -3,7 +3,7 @@
  *
  * A plan is not a preview — it IS the app's layout. The moment a `plan.vendo`
  * file lands, the render seam turns it into the real tree with this
- * (`harnesses/render-seam.ts`): tab chrome derived from the group labels, one
+ * (`../render-seam.ts`): tab chrome derived from the group labels, one
  * titled surface per group, and one placeholder per leaf that shimmers until
  * the build fills it in. Nothing here calls a model; the same plan always
  * yields the same tree.

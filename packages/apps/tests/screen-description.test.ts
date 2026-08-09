@@ -13,7 +13,7 @@
 import { screenDescriptionSchema, VENDO_SCREEN_FORMAT, type VendoViewPart } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { wrapWorkspaceForRender } from "../src/render-seam.js";
-import { testWorkspace } from "../src/test-doubles.test-util.js";
+import { testWorkspace } from "./test-doubles.test-util.js";
 
 const APP = "app_screen";
 const APP_VENDO = `/user/apps/${APP}/app.vendo`;

@@ -22,12 +22,12 @@
  * its first caller; `codex()` is its second.
  *
  * Landing bytes and calling `commit()` is the WHOLE mid-turn render story — the
- * render seam (`render-seam.ts`) wraps `commit` and emits the view, so this file
- * never speaks about views.
+ * render seam (`@vendoai/apps` render-seam.ts) wraps `commit` and emits the
+ * view, so this file never speaks about views.
  */
 import { createHash } from "node:crypto";
+import { hotPathAppId } from "@vendoai/apps";
 import type { WorkspaceFs } from "@vendoai/core";
-import { hotPathAppId } from "./render-seam.js";
 
 /** §3.1's frozen mounts: `/host`, `/user`, and one `/orgs/<org>` per asserted
  *  membership. A path outside them is not the workspace and never reaches a

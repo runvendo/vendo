@@ -1,9 +1,9 @@
 import { createApps, hostDesignBrief } from "@vendoai/apps";
 import type { AppId, Principal, RunContext, ToolRegistry, UIPayload } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
-import { screenAssembler } from "@vendoai/harnesses";
 import { createStore, workspaceStore } from "@vendoai/store";
 import { vendoVerbsRegistry } from "@vendoai/vendo";
+import { screenAssembler } from "@vendoai/vendo/server";
 import type { Contender, RunOutcome, RunRequest } from "./run.js";
 import { cannedResponse, type World } from "./world.js";
 

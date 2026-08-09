@@ -23,7 +23,7 @@ import {
   testGuard,
   testWorkspace,
   textTurn,
-} from "../src/test-doubles.test-util.js";
+} from "../src/agent-doubles.test-util.js";
 
 const APP = "app_design" as AppId;
 

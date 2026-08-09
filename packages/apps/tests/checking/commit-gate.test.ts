@@ -16,7 +16,7 @@
  * WHERE THE GATE LIVES NOW. There is one engine, and it commits through the
  * paint seam — so the floor is `AppsRuntime.floor(ctx)`, handed to whoever writes
  * `app.vendo` (`checking/floor.ts`; the seam's own refusal is proven end to end in
- * `@vendoai/harnesses`' render-seam-floor suite). This file pins the two halves
+ * the render-seam-floor suite beside this one). This file pins the two halves
  * this block still owns: the floor's own verdict (what blocks, what only warns,
  * and that a HOST's rule is enforceable through it), and what create and edit do
  * when a commit is refused — nothing written, and the reason said in the person's

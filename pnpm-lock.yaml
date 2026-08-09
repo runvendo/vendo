@@ -778,9 +778,6 @@ importers:
       '@vendoai/guard':
         specifier: workspace:*
         version: link:../packages/guard
-      '@vendoai/harnesses':
-        specifier: workspace:*
-        version: link:../packages/harnesses
       '@vendoai/store':
         specifier: workspace:*
         version: link:../packages/store
@@ -953,6 +950,9 @@ importers:
       e2b:
         specifier: ^2.32.0
         version: 2.32.0
+      just-bash:
+        specifier: ^3.1.0
+        version: 3.2.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -1362,6 +1362,9 @@ importers:
       jose:
         specifier: ^6.2.3
         version: 6.2.3
+      just-bash:
+        specifier: ^3.1.0
+        version: 3.2.0
       react:
         specifier: ^19.0.0
         version: 19.2.7

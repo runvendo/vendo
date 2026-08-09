@@ -12,7 +12,7 @@ import {
   type ToolRegistry,
   type WorkspaceFs,
 } from "@vendoai/core";
-import { escalatedPlanPath, screenAssembler } from "@vendoai/harnesses";
+import { escalatedPlanPath, screenAssembler } from "../src/screen-agent.js";
 import { createGuard } from "@vendoai/guard";
 import { createStore, workspaceStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";

@@ -40,7 +40,7 @@ import {
   toolCallTurn,
   type ScriptedModel,
   type TestWorkspace,
-} from "../src/test-doubles.test-util.js";
+} from "../src/agent-doubles.test-util.js";
 
 const APP = "app_screen" as AppId;
 

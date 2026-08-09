@@ -54,11 +54,16 @@ import {
   UNKNOWN_INPUT_SCHEMA_NOTE,
   UNKNOWN_OUTPUT_SHAPE_NOTE,
 } from "@vendoai/core";
-import { buildingAppsSkill } from "@vendoai/apps";
+import {
+  buildingAppsSkill,
+  paintedIn,
+  repairInstruction,
+  validateWrittenApps,
+  wrapWorkspaceForRender,
+  type RenderSeamOptions,
+} from "@vendoai/apps";
 import type { LanguageModel } from "ai";
-import { vendo, type HarnessHand, type VendoHarnessOptions } from "./vendo/vendo.js";
-import { paintedIn, wrapWorkspaceForRender, type RenderSeamOptions } from "./render-seam.js";
-import { repairInstruction, validateWrittenApps } from "./validate-gate.js";
+import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
 
 /**
  * The whole budget for assembling one screen.
@@ -586,9 +591,8 @@ export interface ScreenAssemblerDeps {
   design?: () => string | undefined;
   /**
    * Where a run's `decisions` land: the runtime's one memory door
-   * (`AppsRuntime.remember`), which is on the other side of the layering — this
-   * package holds no store — so composition fills the slot exactly as it does
-   * `render` above.
+   * (`AppsRuntime.remember`), which this file deliberately does not reach for
+   * itself — composition fills the slot exactly as it does `render` above.
    *
    * Called only for an `assembled` run, because that is the only answer whose
    * row exists by the time this returns. Unfilled, or throwing, and the run's
@@ -601,13 +605,13 @@ export interface ScreenAssemblerDeps {
 /**
  * The `ScreenAssembler` the front door routes into.
  *
- * The layering is why this door exists at all. `@vendoai/apps` depends on `core`
- * alone, so the `vendo_make` handler cannot reach a harness; and a harness cannot
- * reach the conductor either (`instant.ts:19-24` — that would be a second,
- * unguarded door into generation and a pipeline body in the wrong package). So
- * the two meet on core's `ScreenAssembler` and composition — the one place that
- * already holds the store, the guard-bound registry, the seats and the seam — is
- * what fills the slot. Unfilled, `vendo_make` behaves exactly as it did.
+ * The layering is why this door exists at all — and why this file lives in the
+ * umbrella. `@vendoai/apps` depends on `core` alone, so the `vendo_make` handler
+ * cannot reach a harness; and `@vendoai/harnesses` no longer reaches apps, so
+ * the loop that needs `vendo()` AND the render seam can only live here. The two
+ * meet on core's `ScreenAssembler` and composition — the one place that already
+ * holds the store, the guard-bound registry, the seats and the seam — is what
+ * fills the slot. Unfilled, `vendo_make` behaves exactly as it did.
  *
  * The tool surface here is projected off the registry rather than off a `Turn`,
  * for the same reason the conductor's `queryRunner` is: this call is INSIDE a

@@ -22,12 +22,12 @@
  * with a green suite and a dead feature because the producer and the consumer
  * each mocked the other, so they could never disagree."
  */
-import { createAppFloor } from "@vendoai/apps/internal";
+import { createAppFloor } from "../src/checking/floor.js";
 import type { AppFloor, NormalizedCatalog, ShapeType, VendoViewPart } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { wrapWorkspaceForRender } from "../src/render-seam.js";
-import { testWorkspace } from "../src/test-doubles.test-util.js";
+import { testWorkspace } from "./test-doubles.test-util.js";
 
 const APP = "app_1";
 const APP_VENDO = `/user/apps/${APP}/app.vendo`;

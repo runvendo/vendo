@@ -150,6 +150,7 @@
     "@types/react-dom": "^19.2.0",
     "ai": "6.0.28",
     "jose": "^6.2.3",
+    "just-bash": "^3.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.6.0",

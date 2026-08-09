@@ -19,7 +19,6 @@ import { wireErrorMessage } from "../src/wire-error.js";
 import { describe, expect, it, vi } from "vitest";
 import { defineHarness } from "../src/define.js";
 import { createHarnessRuntime } from "../src/runtime.js";
-import { wrapWorkspaceForRender, viewForWrite } from "../src/render-seam.js";
 import {
   boundRegistry,
   ctx,
@@ -345,68 +344,10 @@ describe("H2 — turn.messages is genuinely ours", () => {
   });
 });
 
-describe("H3 — the seam's payload streams, then settles", () => {
-  const APP_VENDO = "/user/apps/app_5/app.vendo";
-  const PLAN_VENDO = "/user/apps/app_5/plan.vendo";
-  const GOOD = `<App name="X"><Stack><Text value="Hi" /></Stack></App>`;
-  const PLAN = `<Plan name="X"><Group title="G"><Leaf component="DataTable" /></Group></Plan>`;
-
-  it("stamps streaming:true on the skeleton, so a mid-build tree is not read as a finished one", async () => {
-    const plan = await viewForWrite(PLAN_VENDO, PLAN, { emit: () => undefined });
-    expect((plan?.part.payload as { streaming?: boolean }).streaming).toBe(true);
-    const skeletons: boolean[] = [];
-    await viewForWrite(APP_VENDO, GOOD, {
-      emit: (_id, part) => skeletons.push((part.payload as { streaming?: boolean }).streaming === true),
-      authoredApp: async () => undefined,
-    });
-    expect(skeletons).toEqual([true]);
-  });
-
-  it("settles the finished paint, so the app leaves \"building\" and can reach a verdict", async () => {
-    const view = await viewForWrite(APP_VENDO, GOOD, { emit: () => undefined });
-    expect((view?.part.payload as { streaming?: boolean }).streaming).toBe(false);
-  });
-
-  it("awaits the async app half, so the real resolver can wire in", async () => {
-    const view = await viewForWrite(APP_VENDO, GOOD, {
-      emit: () => undefined,
-      authoredApp: async () => ({ data: { rows: [{ id: 1 }] } }),
-    });
-    expect((view?.part.payload as { data?: unknown }).data).toEqual({ rows: [{ id: 1 }] });
-  });
-});
-
-describe("H4 — the seam wrapper survives a real façade", () => {
-  it("does not break a class that uses private fields", async () => {
-    class PrivateFieldFs {
-      #files = new Map<string, string>();
-      #staged = new Set<string>();
-      async writeFile(path: string, content: string): Promise<void> {
-        this.#files.set(path, content);
-        this.#staged.add(path);
-      }
-      async readFile(path: string): Promise<string> {
-        const found = this.#files.get(path);
-        if (found === undefined) throw new Error("ENOENT");
-        return found;
-      }
-      async commit(): Promise<{ status: "ok"; changed: string[] }> {
-        const changed = [...this.#staged];
-        this.#staged.clear();
-        return { status: "ok", changed };
-      }
-    }
-    const emitted: string[] = [];
-    const workspace = wrapWorkspaceForRender(new PrivateFieldFs() as never, {
-      emit: (id) => emitted.push(id),
-    });
-    // `this` must be the real object, or every one of these throws
-    // "Cannot read private member from an object whose class did not declare it".
-    await workspace.writeFile("/user/apps/app_5/app.vendo", `<App name="X"><Stack><Text value="Hi" /></Stack></App>`);
-    await expect(workspace.commit()).resolves.toMatchObject({ status: "ok" });
-    expect(emitted).toEqual([vendoViewStreamId("app_5")]);
-  });
-});
+// H3 ("the seam's payload streams, then settles") and H4 ("the seam wrapper
+// survives a real façade") moved with the render seam to
+// packages/apps/tests/render-seam.test.ts — they exercise the seam alone,
+// which no longer lives in this package.
 
 describe("C5 — the two consent surfaces a harness turn must still render", () => {
   // Both are wire parity with `createAgent` (§1.6: "a harness turn produces the

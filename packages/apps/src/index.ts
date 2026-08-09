@@ -139,3 +139,30 @@ export {
   commitApp,
   type AppSourceSeam,
 } from "./app-source.js";
+// The hot-path render seam (§1.6) — the commit-intercepting wrap that paints a
+// landing `app.vendo`/`plan.vendo`. Public because the workspace it wraps lives
+// outside this package: composition fills the harness runtime's `wrapWorkspace`
+// slot with it, and a host driving a `WorkspaceFs` with its own harness wraps
+// the same way. The hot-path vocabulary (`HOT_PATH_*`, `hotPathAppId`) rides
+// along because the sync seams that honor it — mid-turn machine collects,
+// diff sync-back — live with the drivers, not here.
+export {
+  HOT_PATH_FILES,
+  HOT_PATH_WATCH,
+  hotPathAppId,
+  paintedIn,
+  viewForWrite,
+  wrapWorkspaceForRender,
+  type RenderSeamOptions,
+} from "./render-seam.js";
+// The builder's validate gate (§7.1 item 4) — "validate must pass before done",
+// as a function any harness's loop can call. Public because the loop that needs
+// it is not always ours: a host's own harness driving the same workspace wants
+// the same gate, and the alternative is every driver reimplementing the verb
+// call.
+export {
+  repairInstruction,
+  validateWrittenApps,
+  VALIDATE_TOOL,
+  type AppValidationFailure,
+} from "./validate-gate.js";

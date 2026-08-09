@@ -2,7 +2,8 @@
  * The composition seam that turns a `Harness` into a served turn.
  *
  * `@vendoai/harnesses` owns the runtime — building the `Turn`, mirroring tool
- * calls, persisting, emitting hot-path views. What it deliberately does NOT own
+ * calls, persisting, running the injected workspace wrap that emits hot-path
+ * views. What it deliberately does NOT own
  * is anything that needs a `RunContext`, because a harness is permission-blind by
  * contract (§1). That leaves exactly this file's job: resolve the per-turn things
  * from the request's principal — the thread, the workspace, the `/host`
@@ -31,6 +32,7 @@ import {
   type WorkspaceFs,
 } from "@vendoai/core";
 import { ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
+import { wrapWorkspaceForRender, type RenderSeamOptions } from "@vendoai/apps";
 import type { VendoGuard } from "@vendoai/guard";
 import { harnessStateStore, threadMessageStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import {
@@ -107,8 +109,10 @@ export interface HarnessTurnsConfig {
   connectorDiscovery?: boolean;
   /** The render seam's halves composition owns, per turn — like `bridge` below,
    *  and for the same reason: the app half (`authoredApp`) stores the app row and
-   *  runs the tree's queries as the CALLER, so it needs this turn's ctx. */
-  render?: (ctx: RunContext) => HarnessRuntimeDeps["render"];
+   *  runs the tree's queries as the CALLER, so it needs this turn's ctx. Wired
+   *  into the runtime's generic `wrapWorkspace` slot below — the runtime itself
+   *  no longer knows the seam. */
+  render?: (ctx: RunContext) => Omit<RenderSeamOptions, "emit">;
   /** The shipped tool-bridge rails composition owns, per turn (`toolOutputCap`,
    *  the connect `preflight`, the capability-miss `onCall`). */
   bridge?: (ctx: RunContext, threadId: ThreadId) => HarnessRuntimeDeps["bridge"];
@@ -397,6 +401,10 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         host: hostProjection(),
         ...(input.ctx.memberships === undefined ? {} : { memberships: input.ctx.memberships }),
       });
+      // §1.6 — the render seam, built for THIS turn's ctx and handed to the
+      // runtime's generic `wrapWorkspace` slot: the runtime owns WHERE the wrap
+      // happens and what `emit` writes to; composition owns WHAT wraps.
+      const render = config.render === undefined ? undefined : config.render(input.ctx);
       const runtime = createHarnessRuntime({
         tools: config.tools,
         guard: config.guard,
@@ -405,7 +413,13 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         skills: createTurnSkills(workspace),
         transcript,
         harnessState,
-        ...(config.render === undefined ? {} : { render: config.render(input.ctx) }),
+        ...(render === undefined ? {} : {
+          wrapWorkspace: (turnWorkspace, opts) => wrapWorkspaceForRender(turnWorkspace, {
+            ...render,
+            turnId: opts.turnId,
+            emit: opts.emit,
+          }),
+        }),
         ...(config.bridge === undefined
           ? {}
           : { bridge: config.bridge(input.ctx, thread.id) as ToolBridgeOptions | undefined }),
