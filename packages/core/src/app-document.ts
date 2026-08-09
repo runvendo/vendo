@@ -189,7 +189,6 @@ export interface AppDocument {
    * recover source.
    */
   source?: Record<string, AppSourceFile>;
-  server?: string;
   machine?: AppMachine;
   /** An automation is an app with a LIST of triggers, each keyed by its own
    *  `id`. Documents stored before the list existed carry a single `trigger`
@@ -237,7 +236,7 @@ export interface AppDocument {
 /**
  * 01-core §9 — structural shape only. Like every core schema, this parses the
  * SHAPE (passthrough for forward compatibility); the cross-field business
- * rules (component limits, fn:-requires-server, reserved `state` collection,
+ * rules (component limits, fn:-requires-machine, reserved `state` collection,
  * ref/pin formats, non-empty names) live in {@link validateAppDocument}, which
  * is the normative gate. A `parse()` alone can accept a semantically invalid
  * document.
@@ -253,7 +252,6 @@ const appDocumentShapeSchema = z.object({
   componentTools: z.record(z.array(z.string())).optional(),
   storage: z.record(storageDeclSchema).optional(),
   source: z.record(appSourceFileSchema).optional(),
-  server: z.string().optional(),
   machine: appMachineSchema.optional(),
   triggers: z.array(triggerSchema).optional(),
   egress: z.array(z.string()).optional(),
@@ -406,10 +404,9 @@ const fnReferencesError = (app: AppDocument, fnReferences: readonly string[]): A
     }
   }
   // execution-v2 machine-presence rule: an fn: ref is only meaningful when the
-  // document carries a box to answer it — the v2 `machine` (Lane B), or the
-  // dying v1 `server` snapshot until its execution path is fully removed.
-  if (fnReferences.length > 0 && app.server === undefined && app.machine === undefined) {
-    return fail("validation", "fn: references require a machine (or legacy app server)");
+  // document carries a box to answer it — the v2 `machine` (Lane B).
+  if (fnReferences.length > 0 && app.machine === undefined) {
+    return fail("validation", "fn: references require a machine");
   }
   return null;
 };
@@ -453,9 +450,6 @@ const storageError = (app: AppDocument): AppDocumentValidation | null => {
 /** The reference-shaped fields: the box the app runs on, its fork provenance,
  *  and its slot placements. */
 const referenceFieldsError = (app: AppDocument): AppDocumentValidation | null => {
-  if (app.server !== undefined && !SERVER_REFERENCE_PATTERN.test(app.server)) {
-    return fail("validation", `invalid server reference "${app.server}"`);
-  }
   if (app.machine !== undefined && !SERVER_REFERENCE_PATTERN.test(app.machine.snapshotRef)) {
     return fail("validation", `invalid machine snapshot reference "${app.machine.snapshotRef}"`);
   }

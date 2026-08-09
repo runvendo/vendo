@@ -49,7 +49,7 @@ const invoiceChaser = () => ({
     },
     attachments: { about: "Supporting documents", kind: "files" as const },
   },
-  server: "e2b:snap_x91",
+  machine: { snapshotRef: "e2b:v2:snap_x91", provisionedAt: "2026-07-19T12:00:00.000Z" },
   triggers: [{
     id: "chase",
     on: { kind: "schedule" as const, cron: "0 9 * * 1" },
@@ -150,7 +150,7 @@ describe("appDocumentSchema and validateAppDocument", () => {
     expectValidation({ ...minimal(), storage: { state: { about: "Reserved" } } });
   });
 
-  it("requires a server for fn: query, prop action, and step references", () => {
+  it("requires a machine for fn: query, prop action, and step references", () => {
     const query = {
       ...minimal(),
       tree: { ...minimal().tree, queries: [{ name: "load", tool: "fn:load" }] },
@@ -172,9 +172,8 @@ describe("appDocumentSchema and validateAppDocument", () => {
     for (const document of [query, action, step]) expectValidation(document);
   });
 
-  it("rejects bad pin bases, server refs, and host refs", () => {
+  it("rejects bad pin bases and host refs", () => {
     expectValidation({ ...minimal(), pins: [{ slot: "card", base: "md5:abc" }] });
-    expectValidation({ ...minimal(), server: "SnapshotWithoutProvider" });
     expectValidation({
       ...minimal(),
       storage: { invoices: { about: "Invoices", refs: { invoice: "stripe.invoice" } } },
@@ -221,7 +220,7 @@ describe("appDocumentSchema and validateAppDocument", () => {
   it("rejects step tools that are neither valid tool names nor fn: references", () => {
     const withStep = (tool: string) => ({
       ...minimal(),
-      server: "e2b:snap_ok",
+      machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
       trigger: {
         on: { kind: "host-event", event: "e" },
         run: { kind: "steps", steps: [{ id: "s", tool }] },
@@ -333,14 +332,13 @@ describe("validateAppDocument walks a vendo-genui tree", () => {
     expectValidation({ ...minimal(), components: { "not-pascal": "x" } });
   });
 
-  it("requires a machine (or legacy server) for fn: v2 query tools and prop actions", () => {
+  it("requires a machine for fn: v2 query tools and prop actions", () => {
     const withQuery = {
       ...minimal(),
       tree: { ...minimal().tree, queries: [{ name: "load", tool: "fn:load" }] },
     };
-    expectValidation(withQuery, "fn: references require a machine (or legacy app server)");
-    expect(validateAppDocument({ ...withQuery, server: "e2b:snap_ok" }).ok).toBe(true);
-    // execution-v2: the machine satisfies the presence rule the same way.
+    expectValidation(withQuery, "fn: references require a machine");
+    // execution-v2: the machine satisfies the presence rule.
     expect(validateAppDocument({
       ...withQuery,
       machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
@@ -353,14 +351,14 @@ describe("validateAppDocument walks a vendo-genui tree", () => {
           nodes: [{ id: "root", component: "Button", props: { nested: [{ action: "fn:click" }] } }],
         },
       },
-      "fn: references require a machine (or legacy app server)",
+      "fn: references require a machine",
     );
   });
 
-  it("rejects malformed fn: prop actions in v2 nodes even when a server exists", () => {
+  it("rejects malformed fn: prop actions in v2 nodes even when a machine exists", () => {
     expectValidation({
       ...minimal(),
-      server: "e2b:snap_ok",
+      machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
       tree: {
         ...minimal().tree,
         nodes: [{ id: "root", component: "Button", props: { onClick: { action: "fn:bad name" } } }],
@@ -368,10 +366,10 @@ describe("validateAppDocument walks a vendo-genui tree", () => {
     });
   });
 
-  it("rejects malformed fn: v2 query tools even when a server exists", () => {
+  it("rejects malformed fn: v2 query tools even when a machine exists", () => {
     expectValidation({
       ...minimal(),
-      server: "e2b:snap_ok",
+      machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
       tree: { ...minimal().tree, queries: [{ name: "load", tool: "fn:bad name" }] },
     });
   });

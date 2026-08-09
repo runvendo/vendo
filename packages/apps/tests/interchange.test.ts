@@ -88,16 +88,20 @@ describe(".vendoapp interchange through createApps", () => {
     const store = memoryStore();
     const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [] });
     const ctx = context("user_ada");
-    // A persisted pre-v2 document may still carry a retired v1 server ref;
-    // export is document-only and never writes it (or any app/ directory).
-    const legacy = document({ id: "app_legacy", forkedFrom: "app_template", server: "fake:snap_legacy" });
+    // Export is document-only: it never writes identity, lineage, machine state
+    // (or any app/ directory).
+    const legacy = document({
+      id: "app_legacy",
+      forkedFrom: "app_template",
+      machine: { snapshotRef: "fake:snap_legacy", provisionedAt: "2026-07-19T00:00:00.000Z" },
+    });
     await seedAppRow(store, legacy, "user_ada");
 
     const archive = unzipSync(await runtime.exportApp("app_legacy", ctx));
     expect(Object.keys(archive)).toEqual(["app.json"]);
     const exported = JSON.parse(decoder.decode(archive["app.json"])) as Record<string, unknown>;
     expect(exported).not.toHaveProperty("id");
-    expect(exported).not.toHaveProperty("server");
+    expect(exported).not.toHaveProperty("machine");
     expect(exported).not.toHaveProperty("forkedFrom");
     expect(exported.storage).toEqual(legacy.storage);
   });
@@ -238,7 +242,6 @@ describe(".vendoapp interchange through createApps", () => {
 
     const imported = await runtime.importApp(archive, context("user_ada"));
 
-    expect(imported.server).toBeUndefined();
     expect(imported.machine).toBeUndefined();
     expect(guard.audit.at(-1)?.detail).toMatchObject({
       operation: "import",
@@ -259,9 +262,9 @@ describe(".vendoapp interchange through createApps", () => {
           props: { onClick: { action: "fn:send_invoice" } },
         }],
       },
-      server: "fake:source_snapshot",
+      machine: { snapshotRef: "fake:source_snapshot", provisionedAt: "2026-07-19T00:00:00.000Z" },
     });
-    const { id: _id, server: _server, ...exported } = artifact;
+    const { id: _id, machine: _machine, ...exported } = artifact;
     const archive = zipSync({
       "app.json": encoder.encode(JSON.stringify(exported)),
       "app/server.js": encoder.encode("export const ready = true;"),

@@ -202,7 +202,7 @@ describe("app data persistence", () => {
       storage: {
         notes: { about: "comments pinned to invoices", refs: { invoice_id: "host.invoice" } },
       },
-      server: "e2b:snap_x91",
+      machine: { snapshotRef: "e2b:v2:snap_x91", provisionedAt: "2026-07-19T00:00:00.000Z" },
       // The format spec's {schedule: "mon 9:00"} is illustrative; core's {on, run} Trigger wins.
       triggers: [{
         id: "main",

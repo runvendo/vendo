@@ -129,13 +129,12 @@ const createAppCopyDoors = (
         id: `app_${globalThis.crypto.randomUUID()}`,
         forkedFrom: source.id,
       };
-      // execution-v2 — a fork never carries the machine (or the retired v1
-      // server snapshot); the copy re-graduates on its own.
+      // execution-v2 — a fork never carries the machine; the copy re-graduates
+      // on its own.
       delete fork.machine;
       // Lane E grant hygiene — egress approval never travels with a copy; the
       // fork re-approves its declaration.
       delete fork.egressApproved;
-      delete fork.server;
       // The conversation belongs to the owner who had it, not to the copy: the
       // persist already drops it (appRecordInput takes no session here), and the
       // RETURNED document must not hand it back either.

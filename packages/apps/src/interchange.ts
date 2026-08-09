@@ -27,7 +27,6 @@ const APP_DOCUMENT_FIELDS = [
   "tree",
   "components",
   "storage",
-  "server",
   "machine",
   "triggers",
   "egress",
@@ -67,15 +66,15 @@ const allowedDocumentFields = (
   return copy;
 };
 
-// execution-v2 — interchange is document-only, a copy boundary: a machine (or
-// retired v1 server) ref never crosses it. Export never writes one, import
-// strips one a document tries to smuggle in, and the box's disk is scratch by
-// the data rule — an imported app re-graduates on its own.
+// execution-v2 — interchange is document-only, a copy boundary: a machine ref
+// never crosses it. Export never writes one, import strips one a document tries
+// to smuggle in, and the box's disk is scratch by the data rule — an imported
+// app re-graduates on its own.
 const withoutExportIdentity = (app: AppDocument): Omit<AppDocument, "id"> =>
-  allowedDocumentFields(app, new Set(["id", "server", "machine", "forkedFrom"])) as Omit<AppDocument, "id">;
+  allowedDocumentFields(app, new Set(["id", "machine", "forkedFrom"])) as Omit<AppDocument, "id">;
 
 const withFreshIdentity = (input: unknown, id: AppId): Record<string, unknown> => {
-  const copy = allowedDocumentFields(input, new Set(["id", "server", "machine", "forkedFrom"]));
+  const copy = allowedDocumentFields(input, new Set(["id", "machine", "forkedFrom"]));
   // An archive written before triggers were a LIST carries the singular
   // `trigger`, which core's read normalization migrates — but only if it
   // survives this copy. The field list above is the new spelling only, so

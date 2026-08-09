@@ -109,7 +109,7 @@ describe("artifacts carry no authority", () => {
       expect(imported.id).not.toBe(originalId);
       expect(imported.id.startsWith("app_")).toBe(true);
       expect(imported.forkedFrom).toBeUndefined();
-      expect(imported.server).toBeUndefined();
+      expect(asRecord.server).toBeUndefined();
       expect(asRecord.grants).toBeUndefined();
       expect(asRecord.grant).toBeUndefined();
       expect(asRecord.authority).toBeUndefined();

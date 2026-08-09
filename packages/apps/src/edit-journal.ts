@@ -34,11 +34,12 @@ export const rungFor = (
   declared?: VersionEntry["rung"],
 ): VersionEntry["rung"] => {
   // execution-v2 Wave 4 — a machine-served surface is layer 3 (the layer ladder);
-  // rung 4 remains only for the retired v1 `server`-backed http shape.
+  // rung 4 is a served document with no machine (a de-graduated doc), which has
+  // no surface anywhere — see `open`'s http branch.
   if (app.ui === "http") return app.machine !== undefined ? 3 : 4;
-  // execution-v2 — a machine (Wave 1 Lane B) is layer 2, exactly like the
-  // retired v1 `server`; presence, never a stored rung, is the source of truth.
-  if (app.machine !== undefined || app.server !== undefined) return declared === 3 ? 3 : 2;
+  // execution-v2 — a machine (Wave 1 Lane B) is layer 2; presence, never a
+  // stored rung, is the source of truth.
+  if (app.machine !== undefined) return declared === 3 ? 3 : 2;
   return 1;
 };
 

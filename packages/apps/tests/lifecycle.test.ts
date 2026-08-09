@@ -159,21 +159,19 @@ describe("apps lifecycle", () => {
     expect(await runtime.history(fork.id, ctx).list()).toEqual([]);
   });
 
-  it("a fork never carries a machine or a retired v1 server ref", async () => {
+  it("a fork never carries a machine", async () => {
     const store = memoryStore();
     const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [] });
-    // A persisted pre-v2 document may still carry a retired v1 server ref.
     const source: AppDocument = {
       format: VENDO_APP_FORMAT,
-      id: "app_server_source",
-      name: "Server source",
-      server: "fake:snap_legacy",
+      id: "app_machine_source",
+      name: "Machine source",
+      machine: { snapshotRef: "fake:snap_legacy", provisionedAt: "2026-07-19T00:00:00.000Z" },
     };
     await seedAppRow(store, source, "user_ada");
 
     const fork = await runtime.fork(source.id, context("user_ada"));
 
-    expect(fork).not.toHaveProperty("server");
     expect(fork).not.toHaveProperty("machine");
     expect(fork.forkedFrom).toBe(source.id);
   });

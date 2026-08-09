@@ -61,10 +61,10 @@ describe("validateTree resource caps", () => {
 });
 
 describe("validateAppDocument fn:-requires-a-machine", () => {
-  it("rejects an fn: query reference when the app document has no server", () => {
+  it("rejects an fn: query reference when the app document has no machine", () => {
     const doc = {
       format: VENDO_APP_FORMAT,
-      id: "app_fn_no_server",
+      id: "app_fn_no_machine",
       name: "Needs a machine",
       ui: "tree" as const,
       tree: {
@@ -78,9 +78,12 @@ describe("validateAppDocument fn:-requires-a-machine", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("validation");
 
-    // Same document, now with a server reference, validates — proving the failure
+    // Same document, now with a machine reference, validates — proving the failure
     // above is specifically the fn:-without-machine rule, not a shape defect.
-    expect(validateAppDocument({ ...doc, server: "e2b:snap_ok" }).ok).toBe(true);
+    expect(validateAppDocument({
+      ...doc,
+      machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
+    }).ok).toBe(true);
   });
 });
 

@@ -105,7 +105,6 @@ const httpFixtureApp: AppDocument = {
   name: "MCP hosted dashboard",
   description: "A rung-4 fixture projected as an MCP open-in-product card.",
   ui: "http",
-  server: "fixture:http",
 };
 
 export type OAuthMode = "auto" | "interactive" | "prebuilt";

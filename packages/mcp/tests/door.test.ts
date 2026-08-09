@@ -1648,7 +1648,6 @@ describe("createMcpDoor MCP protocol", () => {
       id: "app_http",
       name: "Revenue dashboard",
       ui: "http",
-      server: "fixture:http",
     };
     const apps: AppsPort = {
       async list() { return [app]; },

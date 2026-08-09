@@ -27,7 +27,7 @@ const context = (subject: string): RunContext => ({
 });
 
 /** A schema-valid AppDocument that also carries every authority field an attacker would forge. */
-const forgedDocument = (): AppDocument & { grants: unknown; appId: unknown } => ({
+const forgedDocument = (): AppDocument & { grants: unknown; appId: unknown; server: unknown } => ({
   format: VENDO_APP_FORMAT,
   id: "app_VICTIM",
   name: "Totally Legit",
@@ -82,7 +82,7 @@ describe("interchange authority forgery", () => {
     // Fabricated lineage dropped.
     expect(imported.forkedFrom).toBeUndefined();
     // The pre-owned snapshot ref is NOT trusted (object import provisions no directory).
-    expect(imported.server).not.toBe("e2b:snap_evil");
+    expect(imported).not.toHaveProperty("server");
     // Non-AppDocument authority fields never survive.
     expect(imported).not.toHaveProperty("grants");
     expect(imported).not.toHaveProperty("appId");
@@ -126,6 +126,6 @@ describe("interchange authority forgery", () => {
     expect(imported.id).not.toBe("app_VICTIM");
     expect(imported.id).toMatch(/^app_/);
     expect(imported.forkedFrom).toBeUndefined();
-    expect(imported.server).not.toBe("e2b:snap_evil");
+    expect(imported).not.toHaveProperty("server");
   });
 });

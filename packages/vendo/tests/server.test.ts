@@ -703,11 +703,10 @@ describe("09 §3 public wire", () => {
     expect(custom.resume).not.toHaveBeenCalled();
   });
 
-  it("fork never touches the Cloud sandbox: the copy drops the retired server ref", async () => {
+  it("fork never touches the Cloud sandbox: the copy carries no machine", async () => {
     // execution-v2 Wave 1.5 — the v1 fork path (resume → snapshot → stop
-    // through config.sandbox) is deleted: a fork carries no machine and no
-    // retired v1 server ref, so even with the Cloud sandbox selected the
-    // console sees no traffic.
+    // through config.sandbox) is deleted: a fork carries no machine, so even
+    // with the Cloud sandbox selected the console sees no traffic.
     vi.stubEnv("E2B_API_KEY", "");
     vi.stubEnv("MODAL_TOKEN_ID", "");
     vi.stubEnv("MODAL_TOKEN_SECRET", "");
@@ -739,13 +738,12 @@ describe("09 §3 public wire", () => {
       data: {
         subject: principal.subject,
         enabled: true,
-        doc: { ...app("app_cloud"), ui: "http", server: `vendo:snap_${"c".repeat(40)}` },
+        doc: { ...app("app_cloud"), ui: "http" },
       },
       refs: { subject: principal.subject },
     });
 
     const fork = await vendo.apps.fork("app_cloud", ctx);
-    expect(fork).not.toHaveProperty("server");
     expect(fork).not.toHaveProperty("machine");
     expect(consoleCalls.filter((call) => call.url.includes("/api/v1/sandboxes"))).toEqual([]);
   });
@@ -1543,7 +1541,7 @@ describe("09 §2 composition", () => {
       data: {
         subject: principal.subject,
         enabled: true,
-        doc: { ...app("app_http"), ui: "http", server: "fake:snap_http" },
+        doc: { ...app("app_http"), ui: "http" },
       },
       refs: { subject: principal.subject },
     });

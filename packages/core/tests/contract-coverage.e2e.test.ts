@@ -352,11 +352,11 @@ describe("§8 — tree/node/query schemas parse the structural shape", () => {
 });
 
 describe("§8 — validateTree validates fn: GRAMMAR only; machine-presence is an app-document rule", () => {
-  // The tree shape carries no server/machine field, so validateTree structurally
+  // The tree shape carries no machine field, so validateTree structurally
   // cannot enforce "trees without a machine must not contain fn: references." It
-  // validates fn: grammar; validateAppDocument (which knows `server`) enforces the
-  // machine-presence rule. See ESCALATION in the lane report.
-  it("accepts a well-formed fn: reference with no server in sight", () => {
+  // validates fn: grammar; validateAppDocument (which knows `machine`) enforces
+  // the machine-presence rule. See ESCALATION in the lane report.
+  it("accepts a well-formed fn: reference with no machine in sight", () => {
     expect(validateTree({
       formatVersion: "vendo-genui/v2", root: "r",
       nodes: [{ id: "r", component: "Text" }],
@@ -392,7 +392,7 @@ describe("§8 — validateTree validates fn: GRAMMAR only; machine-presence is a
   });
 
   it("validateAppDocument is where a machine-less fn: reference becomes an error", () => {
-    const withFnNoServer = {
+    const withFnNoMachine = {
       format: "vendo/app@1", id: "app_x", name: "X", ui: "tree" as const,
       tree: {
         formatVersion: "vendo-genui/v2", root: "r",
@@ -400,8 +400,11 @@ describe("§8 — validateTree validates fn: GRAMMAR only; machine-presence is a
         queries: [{ name: "refresh", tool: "fn:refresh" }],
       },
     };
-    expect(validateAppDocument(withFnNoServer).ok).toBe(false);
-    expect(validateAppDocument({ ...withFnNoServer, server: "e2b:snap_1" }).ok).toBe(true);
+    expect(validateAppDocument(withFnNoMachine).ok).toBe(false);
+    expect(validateAppDocument({
+      ...withFnNoMachine,
+      machine: { snapshotRef: "e2b:v2:snap_1", provisionedAt: "2026-07-19T00:00:00.000Z" },
+    }).ok).toBe(true);
   });
 });
 
@@ -409,7 +412,6 @@ describe("§9 — app document plane values and sub-schemas", () => {
   it("accepts the http plane (keeps the last payload as a cover)", () => {
     const httpApp = {
       format: "vendo/app@1", id: "app_http", name: "Server App", ui: "http" as const,
-      server: "e2b:snap_1",
     };
     expect(appDocumentSchema.safeParse(httpApp).success).toBe(true);
     expect(validateAppDocument(httpApp).ok).toBe(true);
