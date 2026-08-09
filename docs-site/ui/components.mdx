@@ -1,7 +1,7 @@
 ---
 title: "UI surfaces"
 sidebarTitle: "UI surfaces"
-description: "Every chrome surface Vendo's agent renders, playable inline: overlay, palette, thread, generated views, approvals, activities, and slot."
+description: "Every chrome surface Vendo's agent renders, playable inline: overlay, palette, thread, generated views, approvals, and slot."
 ---
 
 import { VendoEmbed, VendoLauncher } from "/snippets/vendo-embed.jsx"
@@ -185,23 +185,6 @@ export function ToolLabel({ name }: { name: string }) {
 }
 ```
 
-## Activities
-
-The approvals queue and humanized activity feed as a host-placeable piece:
-pending approvals render as actionable cards on top, recent agent activity
-below. Drop it into your own settings or admin pages.
-
-<VendoEmbed
-  surface="activities"
-  poster="/images/ui/hero-activities.png"
-  alt="Vendo activities surface with an approval card and activity feed"
-  height={520}
-  caption="VendoActivities: the waiting-on-you queue above the humanized activity feed"
-/>
-
-The same data is available headless via `useApprovals()` and `useActivity()`;
-see [Headless hooks](/reference/hooks#available-hooks).
-
 ## Slot
 
 A placeholder in your product that users can fill with their own generated
@@ -260,7 +243,7 @@ editor emits a valid file from whatever look you land on. See
 [Theming](/connect/theming) for the full token reference.
 
 <Frame caption="The playground's theme editor: presets, per-token colors, any Google Font, radius, density, motion.">
-  <img src="/images/ui/hero-theme-editor.png" alt="The Vendo playground theme editor open over the activities surface" />
+  <img src="/images/ui/hero-theme-editor.png" alt="The Vendo playground theme editor open over a Vendo surface" />
 </Frame>
 
 ## See every surface live

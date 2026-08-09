@@ -108,29 +108,11 @@ Automations and MCP door calls do not have a browser surface, so they surface
 `connect-required` as an actionable in-band error that names the connector and
 toolkit the user needs to connect.
 
-## The settings panel
+## Managing connected accounts
 
-`ConnectedAccountsPanel` (exported from `@vendoai/ui/chrome`) lists a user's
-connected accounts and disconnects them. Disconnect severs the account on the
-broker.
-
-Mount it yourself wherever you already handle user settings. The panel wraps
-itself in its own theme and stylesheet, so a `VendoProvider` ancestor is the
-only requirement — no surrounding Vendo chrome. It is designed against a
-~780px measure, so give it a width-constrained container; at full bleed the
-rows stretch:
-
-```tsx
-import { ConnectedAccountsPanel } from "@vendoai/ui/chrome";
-
-// anywhere inside <VendoProvider>:
-<div style={{ maxWidth: 780 }}>
-  <ConnectedAccountsPanel />
-</div>
-```
-
-Or read the same state through the `useConnections` hook from `@vendoai/ui`
-and render it yourself.
+Read a user's connected accounts — and disconnect them — through the
+`useConnections` hook from `@vendoai/ui`, and render them wherever you
+already handle user settings. Disconnect severs the account on the broker.
 
 ## Risk labels for Composio tools
 
