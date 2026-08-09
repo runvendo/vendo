@@ -95,29 +95,6 @@ export function isGrantPrincipal(encoded: string): boolean {
   return parseGrantPrincipal(encoded) !== undefined;
 }
 
-/**
- * Build contract §9.1 companion (ratified 2026-08-01) — what the HOST's own
- * identity system answers when asked to turn a typed name into one of its own
- * subjects.
- *
- * Vendo holds no directory (locked: the host's identity system IS the org), so
- * "Mia" cannot be resolved here and must not be pretended at: the surface that
- * asked used to encode whatever was typed VERBATIM as the subject, which wrote a
- * `user:` grant that matched nobody — after the app had already moved into the
- * team. The `user:` principal is minted from `subject`, never from the query.
- *
- * The seam that produces this takes `(query, asker)`: only the host can scope its
- * own directory, and "people in the asker's own org" is unimplementable if the
- * host is never told who asked. Vendo's own half of that is the door, which
- * refuses an asker holding no asserted membership at all.
- */
-export interface ResolvedPerson {
-  /** The host's own stable subject — the one the grant is written for. */
-  subject: string;
-  /** Consumer-voice name, so the asking surface can confirm WHO it matched. */
-  display?: string;
-}
-
 /** Render the encoding, so no caller has to know the grammar. */
 export function encodeGrantPrincipal(target: GrantPrincipal): string {
   if (target.kind === "user") return `user:${target.subject}`;

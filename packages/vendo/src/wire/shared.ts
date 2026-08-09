@@ -6,7 +6,6 @@ import {
   type Json,
   type Membership,
   type Principal,
-  type ResolvedPerson,
   type RunContext,
   type ToolOutcome,
   type ToolRegistry,
@@ -61,10 +60,6 @@ export interface WireDeps {
       decode with `principal`; the preset memoizes per Request). Resolved once
       per context resolution and stashed as `ctx.user`; unset → no [User] block. */
   userFacts?: (req: Request) => Promise<Record<string, Json> | undefined>;
-  /** Build contract §9.1 companion — the host's own directory lookup. Takes the
-      ASKER so the host can scope its directory to them. Unset → /status says so
-      and no surface may offer to name one person. */
-  resolvePerson?: (query: string, asker: Principal) => Promise<ResolvedPerson | null>;
   ready: () => Promise<void>;
   /** VENDO_BASE_URL is https → TLS terminates upstream, so the request reaches
       this process as http. */

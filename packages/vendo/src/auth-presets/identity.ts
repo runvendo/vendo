@@ -1,5 +1,5 @@
 import type { SecretSource } from "@vendoai/actions/presets";
-import type { ActAs, Json, Membership, PermissionGrant, Principal, ResolvedPerson } from "@vendoai/core";
+import type { ActAs, Json, Membership, PermissionGrant, Principal } from "@vendoai/core";
 import { joinUrl } from "@vendoai/core";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 import { environment } from "../wire/shared.js";
@@ -170,8 +170,6 @@ export interface ComposeHostAuthPresetOptions {
   login(request: Request, returnTo: string): Response;
   /** Build contract §9.1 — forwarded verbatim; presets never interpret it. */
   memberships?: (principal: Principal) => Promise<Membership[]>;
-  /** Build contract §9.1 companion — forwarded verbatim, same as memberships. */
-  resolvePerson?: (query: string, asker: Principal) => Promise<ResolvedPerson | null>;
 }
 
 /** The three-seam shape every named preset shares (authJs is the template):
@@ -232,6 +230,5 @@ export function composeHostAuthPreset(opts: ComposeHostAuthPresetOptions): HostA
     actAs: opts.actAs,
     oauth,
     ...(opts.memberships === undefined ? {} : { memberships: opts.memberships }),
-    ...(opts.resolvePerson === undefined ? {} : { resolvePerson: opts.resolvePerson }),
   };
 }

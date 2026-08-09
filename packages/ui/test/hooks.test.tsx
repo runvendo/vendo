@@ -268,15 +268,11 @@ describe("headless hooks", () => {
       return null;
     }
 
-    // `namesPeople` is §9.1's companion: the host wired `resolvePerson`, so a
-    // surface may offer to name one person. This wire asserts none, which is
-    // the single-player answer — false, exactly like an empty memberships
-    // list.
-    const offline = { posture: "unconfigured", connected: false, memberships: [], namesPeople: false };
+    const offline = { posture: "unconfigured", connected: false, memberships: [] };
     const view = render(<Probe value={client} />);
     expect(latest).toEqual(offline);
     await waitFor(() => expect(latest)
-      .toEqual({ posture: "rules", connected: true, memberships: [], namesPeople: false }));
+      .toEqual({ posture: "rules", connected: true, memberships: [] }));
 
     await wire.close();
     const disconnectedClient = createVendoClient({ baseUrl: wire.url });

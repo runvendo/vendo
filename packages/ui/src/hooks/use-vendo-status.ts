@@ -10,17 +10,12 @@ interface StatusState {
   /** Build contract §9.1 — the orgs the host asserted for this caller, or []
       when the deployment is single-player. */
   memberships: Membership[];
-  /** Build contract §9.1 companion — the host can name a person from a typed
-      query (`resolvePerson`). False ⇒ no surface may offer to name one person:
-      Vendo holds no directory, and encoding what was typed named nobody. */
-  namesPeople: boolean;
 }
 
 const OFFLINE: StatusState = {
   posture: "unconfigured",
   connected: false,
   memberships: [],
-  namesPeople: false,
 };
 
 export function useVendoStatus(): StatusState {
@@ -37,7 +32,6 @@ export function useVendoStatus(): StatusState {
             posture: status.posture,
             connected: true,
             memberships: status.memberships ?? [],
-            namesPeople: status.namesPeople === true,
           });
         }
       })

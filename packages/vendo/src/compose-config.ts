@@ -57,7 +57,7 @@ function validateSweepConfig(sweep: CreateVendoConfig["sweep"]): ResolvedSweep {
 /** 09-vendo §2 — the config, the identity seams, and the sweep cadence. */
 export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   "appsMounted" | "automationsMounted" | "config" | "composed" | "resolvePrincipal"
-  | "actAsSeam" | "oauthSeam" | "membershipsSeam" | "resolvePersonSeam" | "userFactsSeam"
+  | "actAsSeam" | "oauthSeam" | "membershipsSeam" | "userFactsSeam"
   | "sweepConfig" | "sweepNow"> => {
   // Whether each subsystem mounts, decided once. `apps: false` is folded away
   // here so the hundred reads below stay `config.apps?.x`: an unmounted
@@ -113,11 +113,6 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   // is handed to the wire, the automations engine, and the schedule engine, so
   // an attended request and an unattended fire resolve the SAME answer.
   const membershipsSeam = config.auth?.memberships;
-  // Build contract §9.1 companion — the fifth seam, on the same preset and for
-  // the same reason: Vendo holds no directory, so only the host can turn what
-  // someone typed into one of its own subjects. Unset, /status reports
-  // `namesPeople: false` and no surface may offer to name one person.
-  const resolvePersonSeam = config.auth?.resolvePerson;
   // Spec 2026-08-05 §1 — the [User] facts seam rides the preset only (decision
   // 5: no seam for raw principal-trio hosts — a hand-rolled `principal` has no
   // facts channel).
@@ -137,7 +132,6 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
     actAsSeam,
     oauthSeam,
     membershipsSeam,
-    resolvePersonSeam,
     userFactsSeam,
     sweepConfig,
     sweepNow,

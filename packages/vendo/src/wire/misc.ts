@@ -193,11 +193,6 @@ export const statusRoutes: RouteEntry[] = [
       // surface can name them. Nothing is stored: this is the same per-request
       // answer `can()` just used, echoed to the surface.
       ...(ctx.memberships === undefined ? {} : { memberships: ctx.memberships }),
-      // Build contract §9.1 companion — can the HOST name a person from what
-      // someone types? Vendo holds no directory, so with the `resolvePerson`
-      // seam unset no surface may offer to name one: the surface that used to
-      // encoded whatever was typed as the subject, and named nobody.
-      ...(deps.resolvePerson === undefined ? {} : { namesPeople: true }),
       blocks: {
         store: true,
         agent: true,

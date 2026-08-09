@@ -76,7 +76,7 @@ function isSecureDeployment(): boolean {
  * minting story (04 §2.1), configured from these same options.
  */
 export function authJs(options: HostAuthPresetOptions = {}): HostAuthPreset {
-  const { secret, user, memberships, resolvePerson } = options;
+  const { secret, user, memberships } = options;
 
   const sessionClaims = async (request: Request): Promise<JwtClaims | null> => {
     const getToken = await loadGetToken();
@@ -115,7 +115,6 @@ export function authJs(options: HostAuthPresetOptions = {}): HostAuthPreset {
     // Build contract §9.1 (+ its companion) — handed straight through: the org
     // chart and the directory are the HOST's, and no preset interprets either.
     memberships,
-    resolvePerson,
     resolveUser: makeUserResolver(user, userFromNameEmailClaims),
     actAs,
     login: (request, returnTo) => loginRedirect(request, returnTo),

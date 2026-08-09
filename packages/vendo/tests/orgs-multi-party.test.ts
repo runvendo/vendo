@@ -7,7 +7,6 @@ import {
   type AppDocument,
   type Membership,
   type Principal,
-  type ResolvedPerson,
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
@@ -77,7 +76,7 @@ let acting: Principal = dana;
 
 async function boot(
   store: VendoStore,
-  opts: { key?: boolean; resolvePerson?: (query: string, asker: Principal) => Promise<ResolvedPerson | null> } = {},
+  opts: { key?: boolean } = {},
 ): Promise<Vendo> {
   // The key fills Cloud defaults for the adapter slots this composition leaves
   // unset; `key: false` is how §9.6 boots a keyless deployment over the very
@@ -88,7 +87,6 @@ async function boot(
     auth: {
       principal: async () => acting,
       memberships: async (principal) => memberships[principal.subject] ?? [],
-      ...(opts.resolvePerson === undefined ? {} : { resolvePerson: opts.resolvePerson }),
     },
   });
   // Wave-2's §10 config consolidation narrowed `tools:` to the host's own
@@ -384,28 +382,6 @@ describe("§9.8: open() hands a served app a RESOLVABLE url", () => {
       kind: "http",
       url: "https://maple.test/api/vendo/apps/app_abs/serve/",
     });
-  });
-});
-
-/**
- * Build contract §9.1 companion (ratified 2026-08-01) — Vendo holds no
- * directory, so only the HOST can turn a typed name into a subject. `/status`
- * reports whether it can: a surface without that answer would encode what was
- * typed VERBATIM as the subject, writing `user:Mia` — a row matching nobody.
- * What the seam ANSWERS is `auth-presets/resolve-person.test.ts`'s; this is the
- * one bit of it the composition puts on the wire.
- */
-describe("§9.1 companion: /status says whether the host can name a person", () => {
-  /** Never called here — `/status` reports the seam's PRESENCE, which is the
-      whole question a surface asks before offering to share with one person. */
-  const resolvePerson = async (): Promise<ResolvedPerson | null> => null;
-
-  it("says nothing when the seam is unset, and true when the host wired one", async () => {
-    const store = await tempStore();
-    // The surface learns from the SAME per-request answer everything else uses.
-    expect((await call(await boot(store), dana, "GET", "/status")).body.namesPeople).toBeUndefined();
-    expect((await call(await boot(store, { resolvePerson }), dana, "GET", "/status")).body.namesPeople)
-      .toBe(true);
   });
 });
 

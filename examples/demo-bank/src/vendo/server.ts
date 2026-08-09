@@ -5,7 +5,7 @@ import { vendoAutoJudge } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
 import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { createVendo, guard, vendoModel, type HostAuthPreset } from "@vendoai/vendo/server";
-import { authSecret, primaryMapleUser, resolveMaplePerson, resolveMapleSubject } from "@/server/users";
+import { authSecret, primaryMapleUser, resolveMapleSubject } from "@/server/users";
 import { mapleKnowledgeDocs } from "./knowledge";
 import { mapleMcpConfig } from "./mcp-config";
 import { namedHarness } from "./proof-harness";
@@ -50,19 +50,6 @@ const mapleAuthJs = authJs({
       teams: ["support"],
       admin: user.subject === primaryMapleUser().subject,
     }];
-  },
-  // Build contract §9.1 companion — Maple's OWN roster answers "who is the
-  // person they typed?". Vendo holds no directory, so this seam is the only
-  // reason the Share dialog may offer to share with one person: without it the
-  // dialog does not offer it, and the app is never moved for a grant that could
-  // not be written. The grant is written for the SUBJECT this returns.
-  // The ASKER decides what they may see: Maple answers its own staff and nobody
-  // else. One org here, so membership is the same question as "did Maple issue
-  // you" — a real deployment would compare the asker's org to the match's.
-  resolvePerson: async (query, asker) => {
-    if (!resolveMapleSubject(asker.subject)) return null;
-    const user = resolveMaplePerson(query);
-    return user ? { subject: user.subject, display: user.display } : null;
   },
 });
 

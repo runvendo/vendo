@@ -116,7 +116,6 @@ export interface VendoComposition {
   /** Build contract §9.1 — the host org query the wire, the harness, the
    *  automations engine and the MCP door all resolve the SAME answer through. */
   membershipsSeam: HostAuthPreset["memberships"];
-  resolvePersonSeam: HostAuthPreset["resolvePerson"];
   userFactsSeam: HostAuthPreset["facts"];
   sweepConfig: ResolvedSweep;
   sweepNow: () => number;

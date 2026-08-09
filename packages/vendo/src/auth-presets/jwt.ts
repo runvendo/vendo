@@ -32,7 +32,7 @@ const EMPTY_SECRET_MESSAGE =
  * same semantics as authJs (null = subject unknown → decline/null).
  */
 export function jwt(options: HostAuthPresetOptions = {}): HostAuthPreset {
-  const { secret, user, memberships, resolvePerson } = options;
+  const { secret, user, memberships } = options;
   if (secret === undefined) {
     throw new Error(MISSING_SECRET_OPTION_MESSAGE);
   }
@@ -61,7 +61,6 @@ export function jwt(options: HostAuthPresetOptions = {}): HostAuthPreset {
     // Build contract §9.1 (+ its companion) — handed straight through: the org
     // chart and the directory are the HOST's, and no preset interprets either.
     memberships,
-    resolvePerson,
     resolveUser: makeUserResolver(user, userFromNameEmailClaims),
     // Away + MCP execution: the shipped generic HS256 minting preset (04
     // §2.1), fed the same secret this preset verifies sessions with.
