@@ -6,8 +6,6 @@ const DEFAULT_TIMEOUT_MS = 300_000;
 const TTL_EXTEND_INTERVAL_MS = 60_000;
 const DEFAULT_PORT = 8080;
 const SNAPSHOT_REF_PREFIX = "e2b:v2:";
-/** Refs minted by the retired v1 adapter, still present in persisted app documents. */
-const LEGACY_SNAPSHOT_REF_PREFIX = "e2b:v1:";
 
 export interface E2BSandboxOptions {
   /** E2B API key. When omitted, the SDK reads E2B_API_KEY. */
@@ -92,22 +90,9 @@ const decodeSnapshotRef = (snapshotRef: string): Omit<E2BSnapshotState, "version
         port: state.port,
       };
     }
-    if (snapshotRef.startsWith(LEGACY_SNAPSHOT_REF_PREFIX) && snapshotRef.length > LEGACY_SNAPSHOT_REF_PREFIX.length) {
-      const state = decodePayload(snapshotRef.slice(LEGACY_SNAPSHOT_REF_PREFIX.length));
-      if (state.version !== 1 || typeof state.snapshotId !== "string" || state.snapshotId.length === 0) {
-        throw new Error("invalid snapshot id");
-      }
-      if (!validPort(state.port)) throw new Error("invalid port");
-      if (!validDomains(state.egress)) throw new Error("invalid egress policy");
-      return {
-        snapshotId: state.snapshotId,
-        ...(state.egress === undefined ? {} : { allowedDomains: [...state.egress] }),
-        port: state.port,
-      };
-    }
     throw new Error("unknown prefix");
   } catch {
-    throw new VendoError("validation", "E2B snapshot references must start with e2b:v2: (or the retired e2b:v1:) and carry a valid payload");
+    throw new VendoError("validation", "E2B snapshot references must start with e2b:v2: and carry a valid payload");
   }
 };
 

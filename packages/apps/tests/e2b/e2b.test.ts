@@ -202,6 +202,12 @@ describe("e2bSandbox", () => {
     await expect(adapter.resume("modal:im_wrong")).rejects.toMatchObject({ code: "validation" });
     await expect(adapter.resume("e2b:v2:")).rejects.toMatchObject({ code: "validation" });
     await expect(adapter.resume("e2b:")).rejects.toMatchObject({ code: "validation" });
+    // v1 refs are retired: a pre-v2 snapshot is no longer resumable.
+    await expect(adapter.resume(`e2b:v1:${Buffer.from(JSON.stringify({
+      version: 1,
+      snapshotId: "snapshot_789",
+      port: 9090,
+    })).toString("base64url")}`)).rejects.toMatchObject({ code: "validation" });
     await expect(adapter.resume(v2SnapshotRef)).resolves.toMatchObject({ id: "sandbox_456" });
     expect(sdk.create).toHaveBeenLastCalledWith("snapshot_789", {
       apiKey: "key_test",
@@ -211,35 +217,19 @@ describe("e2bSandbox", () => {
     expect(sdk.connect).not.toHaveBeenCalled();
   });
 
-  it("still resumes refs minted by the retired v1 adapter, mapping egress to allowedDomains", async () => {
-    const legacyRef = `e2b:v1:${Buffer.from(JSON.stringify({
-      version: 1,
-      snapshotId: "snapshot_789",
-      egress: ["api.example.com"],
-      port: 9090,
-    })).toString("base64url")}`;
-    const adapter = e2bSandbox({ apiKey: "key_test", timeoutMs: 9_000 });
-    const machine = await adapter.resume(legacyRef);
-    expect(sdk.create).toHaveBeenLastCalledWith("snapshot_789", {
-      apiKey: "key_test",
-      timeoutMs: 9_000,
-      network: { allowOut: ["api.example.com"], denyOut: ["0.0.0.0/0"] },
-    });
-    // and the restored $PORT drives request routing
-    await machine.request({ method: "GET", path: "/port" });
-    expect(fetch).toHaveBeenLastCalledWith("https://9090-sandbox_456.e2b.app/port", expect.anything());
-  });
-
   it("persists a non-default port and a denied-egress policy in the opaque snapshot ref", async () => {
     const adapter = e2bSandbox({ apiKey: "key_test", timeoutMs: 9_000 });
     const machine = await adapter.create({ env: { PORT: "9090" }, allowedDomains: [] });
     const snapshotRefWithPolicy = await machine.snapshot();
-    await adapter.resume(snapshotRefWithPolicy);
+    const resumed = await adapter.resume(snapshotRefWithPolicy);
     expect(sdk.create).toHaveBeenLastCalledWith("snapshot_789", {
       apiKey: "key_test",
       timeoutMs: 9_000,
       network: { allowOut: [], denyOut: ["0.0.0.0/0"] },
     });
+    // and the restored $PORT drives request routing
+    await resumed.request({ method: "GET", path: "/port" });
+    expect(fetch).toHaveBeenLastCalledWith("https://9090-sandbox_456.e2b.app/port", expect.anything());
   });
 
   it("destroys a sleeping machine by ref: reaps the paused source and deletes the snapshot", async () => {
@@ -267,13 +257,13 @@ describe("e2bSandbox", () => {
     await expect(adapter.destroy(emptySourceRef)).rejects.toMatchObject({ code: "validation" });
   });
 
-  it("destroys a retired v1 ref by snapshot deletion alone (no recorded source sandbox)", async () => {
-    const legacyRef = `e2b:v1:${Buffer.from(JSON.stringify({
-      version: 1,
+  it("destroys a ref with no recorded source sandbox by snapshot deletion alone", async () => {
+    const sourcelessRef = `e2b:v2:${Buffer.from(JSON.stringify({
+      version: 2,
       snapshotId: "snapshot_789",
       port: 8080,
     })).toString("base64url")}`;
-    await e2bSandbox({ apiKey: "key_test" }).destroy(legacyRef);
+    await e2bSandbox({ apiKey: "key_test" }).destroy(sourcelessRef);
     expect(sdk.staticKill).not.toHaveBeenCalled();
     expect(sdk.deleteSnapshot).toHaveBeenCalledWith("snapshot_789", { apiKey: "key_test" });
   });
