@@ -27,6 +27,6 @@
     "@vendoai-fixtures/test-kit": "workspace:*",
     "pg": "^8.22.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.6"
   }
 }

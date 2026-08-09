@@ -21,11 +21,11 @@
   "devDependencies": {
     "@ai-sdk/anthropic": "3.0.12",
     "@playwright/test": "^1.48.0",
-    "@vitest/coverage-v8": "^2.1.0",
+    "@vitest/coverage-v8": "^3.2.6",
     "@types/node": "^22.0.0",
     "ai": ">=6.0.0 <7",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.6"
   }
 }
