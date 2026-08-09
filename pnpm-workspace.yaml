@@ -4,7 +4,6 @@ packages:
   - "examples/*"
   - "corpus/harness"
   - "corpus/hosts/*"
-  - "bench"
   - "genbench"
 
 # pnpm 9 ran every dependency build script; pnpm 11 (strictDepBuilds) requires

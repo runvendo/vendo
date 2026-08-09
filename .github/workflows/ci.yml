@@ -310,7 +310,7 @@ jobs:
       - name: Turbo remote cache (GitHub-cache backed)
         uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
-      # Five suites CI never executed. Each has a `test` script and no
+      # Four suites CI never executed. Each has a `test` script and no
       # `test:coverage`, so test-rest's turbo run passes over them and no step
       # named them — they ran only in release.yml's unfiltered `pnpm test`,
       # which is the worst possible place to first learn a suite is red. That is
@@ -330,15 +330,12 @@ jobs:
       # only their workspace deps built. That is what the `^...` step below
       # builds (14 tasks, replayed from the remote cache that typecheck-lint's
       # `pnpm build` fills). Sequential steps, not one parallel turbo run, for
-      # the same reason as the redteam/automations steps further down. All five
+      # the same reason as the redteam/automations steps further down. All four
       # are hermetic — scripted models, temp PGlite stores, no network, no keys;
       # ai-sdk-agent's two live journeys self-skip without a key, as do
       # existing-agents-e2e's two (VENDO_LIVE_JOURNEY=1).
       - name: Build the orphan suites' workspace deps (no example builds)
-        run: pnpm turbo run build --filter=@vendoai/bench^... --filter=@vendoai-corpus/express-host^... --filter=@vendoai-examples/ai-sdk-agent^... --filter=@vendoai-examples/mastra-agent^...
-      # Perf-budget arithmetic: stats, report, budgets, and the create-total
-      # guard. Pure functions — no bench actually runs here.
-      - run: pnpm --filter @vendoai/bench test
+        run: pnpm turbo run build --filter=@vendoai-corpus/express-host^... --filter=@vendoai-examples/ai-sdk-agent^... --filter=@vendoai-examples/mastra-agent^...
       # The Express corpus host: six e2e that boot the real relay on loopback
       # over real HTTP (status, chat-tool, approvals, generated view, the fetch
       # adapter, and `vendo doctor` against the running wire).
@@ -351,7 +348,7 @@ jobs:
       # handler, against the example's own composeVendo and checked-in
       # .vendo/tools.json. Added by #1001 and never once run in CI until now.
       - run: pnpm --filter @vendoai-examples/mastra-agent test
-      # The fifth, and the one that motivated the rest: the BYO-agent
+      # The fourth, and the one that motivated the rest: the BYO-agent
       # marked-diff contract, which derives each example's pre-Vendo starter and
       # round-trips the marked diff back. Same rationale as above, and the
       # sharpest case of it — #1001 added a devDependency to
