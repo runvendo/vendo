@@ -70,4 +70,4 @@ Ephemeral principals take the SAME path as everyone else: their rows are ordinar
 
 ## Retention and erasure
 
-`eraseStore(store)` is the store-level erase API — `bySubject(subject)` for full erasure and `byApp(appId)` — cascading the matching rows across all 16 tables (ephemeral subjects included — their rows are ordinary disk rows) and returning per-table deleted counts. It is the only sanctioned deletion path for `vendo_audit` rows. It is also re-exported from `@vendoai/vendo/server`. Host SQL remains available for everything else.
+`eraseStore(store)` is the store-level erase API — `bySubject(subject)` for full erasure and `byApp(appId)` — cascading the matching rows across all 20 tables (ephemeral subjects included — their rows are ordinary disk rows) and returning per-table deleted counts. It is the only sanctioned deletion path for `vendo_audit` rows. It is also re-exported from `@vendoai/vendo/server`. Host SQL remains available for everything else.

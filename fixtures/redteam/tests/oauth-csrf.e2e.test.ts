@@ -11,8 +11,8 @@
  *     never redirected to (open-redirect / code-exfil).
  *   - cross-resource token substitution — a bearer minted for one MCP resource
  *     is rejected at a different resource (confused-deputy).
- *   - CSRF on the wire — the JSON-content-type mutation gate, the import
- *     media-type gate, and the __Host- prefixed anonymous cookie.
+ *   - CSRF on the wire — the JSON-content-type mutation gate and the import
+ *     media-type gate.
  *
  * The door is composed over the SAME real store + guard + bound registry a live
  * umbrella uses (createStack), and the wire is a real createVendo handler.
@@ -181,9 +181,9 @@ describe("MCP door OAuth — adversarial (ENG-251)", () => {
 });
 
 describe("umbrella wire CSRF floor — adversarial (ENG-251)", () => {
-  // A createVendo handler with an anonymous principal resolver. The model is
-  // never reached: every probe below is rejected at the CSRF/cookie floor,
-  // ahead of principal resolution and agent execution.
+  // A createVendo handler whose resolver refuses every request. The model is
+  // never reached, and neither is the resolver: every probe below is rejected
+  // at the CSRF floor, ahead of principal resolution and agent execution.
   const wire = () => createVendo({
     model: {} as unknown as LanguageModel,
     principal: async () => null,
@@ -214,17 +214,5 @@ describe("umbrella wire CSRF floor — adversarial (ENG-251)", () => {
     expect(await response.json()).toMatchObject({
       error: { message: "import requires Content-Type: application/octet-stream" },
     });
-  });
-
-  it("mints the anonymous session cookie with the __Host- prefix over https (fixation defense)", async () => {
-    const handler = wire();
-    const response = await handler(new Request(`${ORIGIN}/api/vendo/status`));
-    const setCookie = response.headers.get("set-cookie") ?? "";
-    // __Host- requires Secure + Path=/ + no Domain — a sibling subdomain cannot
-    // plant it. Removing the prefix (or Secure) would regress session fixation.
-    expect(setCookie).toContain("__Host-vendo_anon_session=");
-    expect(setCookie).toContain("Secure");
-    expect(setCookie).toContain("Path=/");
-    expect(setCookie).not.toContain("Domain=");
   });
 });

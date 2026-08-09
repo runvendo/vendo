@@ -74,8 +74,8 @@ export const devRoutes: RouteEntry[] = [
   route("POST", "/dev/inclient-approval", async ({ request, deps, context }) => {
     if (!deps.development) return undefined;
     const body = await requestJson(request);
-    // Approving a host-page mount is a HOST trust decision — an anonymous
-    // visitor's minted ephemeral session is not enough, even in dev.
+    // Approving a host-page mount is a HOST trust decision — an ephemeral
+    // principal is not enough, even in dev.
     const approvalContext = await context("app");
     if (approvalContext.principal.ephemeral === true) {
       return json({ error: { code: "blocked", message: "in-client approval injection requires a host-resolved principal" } }, 401);

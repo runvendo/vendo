@@ -224,16 +224,6 @@ describe("connected accounts over the wire", () => {
     expect(adaList.connections).toEqual([expect.objectContaining({ id: "ca_ada" })]);
   });
 
-  it("refuses to initiate for an anonymous (ephemeral) visitor", async () => {
-    const response = await stack.wireFetch("/connections/initiate", {
-      method: "POST",
-      body: JSON.stringify({ toolkit: "gmail" }),
-    });
-    expect(response.status).toBe(403);
-    const body = await response.json() as { error: { message: string } };
-    expect(body.error.message).toContain("signed-in");
-  });
-
   it("refuses to initiate for a synthetic webhook subject", async () => {
     const response = await fetch(`${stack.baseUrl}/api/vendo/connections/initiate`, {
       method: "POST",

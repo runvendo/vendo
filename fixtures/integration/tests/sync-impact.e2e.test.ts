@@ -99,8 +99,9 @@ describe("ENG-261: sync impact through the composed wire", () => {
     const app = await importAutomation(stack, plainApp(), ADA);
     await stack.sql("UPDATE vendo_apps SET enabled = true WHERE id = $1", [app.id]);
 
-    // No principal header, no cookie — the anonymous caller the old
-    // NODE_ENV-only gate handed the whole deployment's app inventory to.
+    // No principal header — the unidentified caller the old NODE_ENV-only gate
+    // handed the whole deployment's app inventory to. The route is absent, so
+    // the 404 lands ahead of any identity question.
     const response = await stack.wireFetch("/sync/impact", {
       method: "POST",
       body: JSON.stringify({ tools: [TOOL] }),
