@@ -118,9 +118,9 @@ export function VendoAppProvider({ appId, baseUrl, children }: VendoAppProviderP
     };
   }, [appId, baseUrl]);
 
-  // The host's own client, so there is one door implementation and one
-  // anonymous-session gate. Relative + same-origin by default: the call rides
-  // the viewer's session, which IS the auth mechanism.
+  // The host's own client, so there is one door implementation. Relative +
+  // same-origin by default: the call rides the viewer's session, which IS the
+  // auth mechanism.
   const client = useMemo(
     () => createVendoClient(address.baseUrl === "" ? {} : { baseUrl: address.baseUrl }),
     [address.baseUrl],

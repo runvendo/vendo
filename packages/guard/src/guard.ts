@@ -1555,10 +1555,10 @@ class GuardImplementation implements VendoGuard {
    * The claim is the gate; the marker is observability, so a crash between them
    * fails closed (the row reads un-consumed but can never be claimed again).
    * Two things can still cost the spend after a won claim: a GONE row — subject
-   * erasure (02-store §5) and anonymous-subject adoption both DELETE approval
-   * rows, and re-putting the caller's stale copy would resurrect an erased
-   * subject's approval AND run the tool as them — and a void that beat the
-   * claim, which must not be overwritten. Hence the re-read.
+   * erasure (02-store §5) DELETEs approval rows, and re-putting the caller's
+   * stale copy would resurrect an erased subject's approval AND run the tool as
+   * them — and a void that beat the claim, which must not be overwritten. Hence
+   * the re-read.
    */
   async #spendConsumedTransition(
     id: string,
@@ -1610,9 +1610,8 @@ class GuardImplementation implements VendoGuard {
     if (!claimed && (await this.#consumedTransitionClaimant(id)) !== "void") return "spent";
     // Re-read rather than trusting the caller's copy, which may predate a decide
     // landing on the same row: the receipt, not that copy, is the gate. A row
-    // that is GONE was erased (02-store §5) or dropped by anon-adoption while
-    // this was in flight; re-putting it would resurrect erased data, so there is
-    // nothing left to void.
+    // that is GONE was erased (02-store §5) while this was in flight; re-putting
+    // it would resurrect erased data, so there is nothing left to void.
     const current = await store.get(id);
     if (current === null) return "already-void";
     const fresh = approvalData(current);
