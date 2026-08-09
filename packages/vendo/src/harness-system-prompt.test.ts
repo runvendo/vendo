@@ -330,3 +330,36 @@ describe("the connect etiquette every discovery surface carries", () => {
     expect(seen[0]).not.toMatch(/point (the user )?(to|at) the connect/i);
   });
 });
+
+/** Keystone graduates 2026-07-31 (section C): catalog grounding prevents the
+ * agent from hallucinating live state out of static catalog prose. Rides with
+ * the catalog on tree venues. */
+describe('catalog grounding', () => {
+  const guard = () => createGuard({ store: memoryStoreAdapter(), policy: {} });
+  const ctxWithVenue = (venue: any) => ({ ...ctx(), venue } as RunContext);
+
+  it('prepends the grounding barrier to the catalog on tree venues', async () => {
+    const system = { catalog: 'Host components:\n- InvoiceTable: renders invoice line items' };
+    for (const venue of ['chat', 'app'] as const) {
+      const prompt = await assembleSystemPrompt(guard(), ctxWithVenue(venue), system, false, false);
+      expect(prompt).toContain('Catalog grounding');
+      expect(prompt).toContain('Host components:');
+      expect(prompt).toContain(`Catalog grounding\n- When asked about what is on screen or whether it can be edited, ALWAYS ground your answer on the live app document state.\n- Catalog descriptions only inform component selection, never the live state.\n\nHost components:\n- InvoiceTable: renders invoice line items`);
+    }
+  });
+
+  it('omits the barrier when no catalog is present', async () => {
+    for (const venue of ['chat', 'app'] as const) {
+      const prompt = await assembleSystemPrompt(guard(), ctxWithVenue(venue), undefined, false, false);
+      expect(prompt).not.toContain('Catalog grounding');
+    }
+  });
+
+  it('stays out of automation and MCP venues even with a catalog configured', async () => {
+    const system = { catalog: 'Host components:\n- InvoiceTable: renders invoice line items' };
+    for (const venue of ['automation', 'mcp'] as const) {
+      const prompt = await assembleSystemPrompt(guard(), ctxWithVenue(venue), system, false, false);
+      expect(prompt).not.toContain('Catalog grounding');
+    }
+  });
+});

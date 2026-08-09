@@ -156,7 +156,10 @@ export async function assembleSystemPrompt(
   // 03-agent §3 item (4) — the umbrella assembles the summary (AGENT-1); the
   // agent places it, venue-gated.
   const catalog = system?.catalog?.trim();
-  if (catalog && TREE_VENUES.has(ctx.venue)) sections.push(catalog);
+  if (catalog && TREE_VENUES.has(ctx.venue)) {
+    sections.push(`Catalog grounding\n- When asked about what is on screen or whether it can be edited, ALWAYS ground your answer on the live app document state.\n- Catalog descriptions only inform component selection, never the live state.`);
+    sections.push(catalog);
+  }
 
   // Knowledge k8 (ENG-368): the static index + usage guidance rides only the
   // venues whose turns go through this assembler with a knowledge-capable
