@@ -39,9 +39,10 @@ describe("cloudTools", () => {
 
     const descriptors = await connector.descriptors();
     expect(descriptors).toHaveLength(1);
-    // Same normalization + curated risk the BYO composioConnector applies.
+    // Same normalization + upstream-hint risk the BYO composioConnector applies:
+    // this fixture carries no destructiveHint/readOnlyHint, so it is ungraded.
     expect(descriptors[0]!.name).toBe("gmail_GMAIL_SEND_EMAIL");
-    expect(descriptors[0]!.risk).toBe("write");
+    expect(descriptors[0]!.risk).toBe("ungraded");
     expect(stub.requests[0]!.url).toBe("https://cloud.test/api/v1/tools?toolkits=gmail");
   });
 
@@ -50,6 +51,28 @@ describe("cloudTools", () => {
     const connector = cloudTools({ apiKey: "vnd_key", baseUrl: "https://cloud.test", apps: ["gmail", "slack"], fetch: stub.fetchImpl });
     await connector.descriptors();
     expect(stub.requests[0]!.url).toBe("https://cloud.test/api/v1/tools?toolkits=gmail%2Cslack");
+  });
+
+  it("skips a duplicate tool name instead of failing the whole registry load", async () => {
+    // A thrown descriptors() takes the ENTIRE registry down, host tools
+    // included, and this connector is auto-composed from a bare VENDO_API_KEY.
+    // One repeated slug from the console must not delete the host's own tools.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const stub = consoleStub(() => ({ body: { tools: [GMAIL_TOOL, GMAIL_TOOL] } }));
+      const connector = cloudTools({ apiKey: "vnd_key", baseUrl: "https://cloud.test", apps: ["gmail"], fetch: stub.fetchImpl });
+      const descriptors = await connector.descriptors();
+      expect(descriptors.map((descriptor) => descriptor.name)).toEqual(["gmail_GMAIL_SEND_EMAIL"]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("dedupes repeated toolkits so the broker is not asked for the same list twice", async () => {
+    const stub = consoleStub(() => ({ body: { tools: [] } }));
+    const connector = cloudTools({ apiKey: "vnd_key", baseUrl: "https://cloud.test", apps: ["gmail", "gmail"], fetch: stub.fetchImpl });
+    await connector.descriptors();
+    expect(stub.requests[0]!.url).toBe("https://cloud.test/api/v1/tools?toolkits=gmail");
   });
 
   it("degrades to zero tools (never throws) when the broker is missing or unconfigured", async () => {
@@ -127,78 +150,5 @@ describe("cloudTools", () => {
       status: "error",
       error: { code: "connector-error", message: "broker exploded" },
     });
-  });
-});
-
-describe("cloudTools lazy mode (no apps) — connection-scoped loading", () => {
-  const CATALOG = { available: [
-    { toolkit: "gmail", connector: "composio", description: "Send and read email with Gmail" },
-    { toolkit: "slack", connector: "composio", description: "Post messages to Slack" },
-  ] };
-
-  it("loads nothing eagerly; index from catalog; per-toolkit expansion cached", async () => {
-    const fetched: string[] = [];
-    const stub = consoleStub((url) => {
-      if (url.includes("/api/v1/connections/catalog")) return { body: CATALOG };
-      if (url.includes("/api/v1/tools?toolkits=")) {
-        fetched.push(new URL(url).searchParams.get("toolkits")!);
-        return { body: { tools: [GMAIL_TOOL] } };
-      }
-      return { status: 404, body: {} };
-    });
-    const connector = cloudTools({ apiKey: "vnd_key", baseUrl: "https://cloud.test", fetch: stub.fetchImpl });
-
-    await expect(connector.descriptors()).resolves.toEqual([]);
-    expect(fetched).toEqual([]);
-
-    await expect(connector.discoveryIndex!()).resolves.toEqual([
-      { toolkit: "gmail", description: "Send and read email with Gmail" },
-      { toolkit: "slack", description: "Post messages to Slack" },
-    ]);
-
-    await expect(connector.expandToolkits!(["gmail", "nope"])).resolves.toBe(true);
-    expect((await connector.descriptors()).map((d) => d.name)).toEqual(["gmail_GMAIL_SEND_EMAIL"]);
-    await expect(connector.expandToolkits!(["gmail"])).resolves.toBe(false);
-    await connector.descriptors();
-    expect(fetched).toEqual(["gmail"]);
-  });
-
-  it("catalog failure degrades the index to [] with a warn, never throws", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const stub = consoleStub(() => ({ status: 503, body: { error: { message: "unconfigured" } } }));
-      const connector = cloudTools({ apiKey: "vnd_key", baseUrl: "https://cloud.test", fetch: stub.fetchImpl });
-      await expect(connector.discoveryIndex!()).resolves.toEqual([]);
-      await expect(connector.expandToolkits!(["gmail"])).resolves.toBe(false);
-      expect(warn).toHaveBeenCalled();
-    } finally {
-      warn.mockRestore();
-    }
-  });
-
-  it("apps mode stays eager and never lazily expands", async () => {
-    const stub = consoleStub((url) =>
-      url.includes("/api/v1/tools") ? { body: { tools: [GMAIL_TOOL] } } : { status: 404, body: {} });
-    const connector = cloudTools({ apiKey: "vnd_key", baseUrl: "https://cloud.test", apps: ["gmail"], fetch: stub.fetchImpl });
-    expect((await connector.descriptors()).map((d) => d.name)).toEqual(["gmail_GMAIL_SEND_EMAIL"]);
-    await expect(connector.expandToolkits!(["slack"])).resolves.toBe(false);
-  });
-
-  it("apps scoping also scopes the discovery index (criterion 9: index size == scoped set)", async () => {
-    const stub = consoleStub((url) =>
-      url.includes("/api/v1/connections/catalog")
-        ? {
-            body: { available: [
-              ...CATALOG.available,
-              { toolkit: "notion", connector: "composio", description: "Notion pages" },
-              { toolkit: "jira", connector: "composio", description: "Jira issues" },
-            ] },
-          }
-        : { body: { tools: [GMAIL_TOOL] } });
-    const connector = cloudTools({ apiKey: "vnd_key", baseUrl: "https://cloud.test", apps: ["gmail", "slack"], fetch: stub.fetchImpl });
-
-    const index = await connector.discoveryIndex!();
-    expect(index).toHaveLength(2);
-    expect(index.map((entry) => entry.toolkit).sort()).toEqual(["gmail", "slack"]);
   });
 });

@@ -2,6 +2,17 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // Worker caps live in config, not in the root `test` scripts: a cap in a
+    // command line only applies when someone types that command, so a bare
+    // `npx vitest`, an IDE runner and a debug run all escaped it. Env
+    // (VITEST_MIN/MAX_FORKS, VITEST_MIN/MAX_THREADS) still wins, so CI is
+    // unchanged. Both halves are required: vitest 2.1 defaults the min to the
+    // CPU count independently of the max, and a max-only cap makes Tinypool
+    // throw `minThreads and maxThreads must not conflict` before any test runs.
+    poolOptions: {
+      forks: { minForks: 1, maxForks: 2 },
+      threads: { minThreads: 1, maxThreads: 2 },
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
@@ -15,13 +26,6 @@ export default defineConfig({
         "src/**/*.test.ts",
         "src/**/*.test-util.ts",
         "src/**/*.live.test.ts",
-        // Live-only source, same standing as *.live.test.ts: these execute
-        // only against real Agentset/Anthropic credentials, which CI does not
-        // have, so CI coverage of them is 0 by construction — their proof is
-        // the committed artifacts that verifier-live.test.ts recomputes. The
-        // 98-line floor over the deterministic module is unchanged.
-        "src/knowledge-eval/verifier-live.ts",
-        "src/knowledge-eval/agentset-engine.ts",
       ],
       // Ratcheted line-coverage floor (guard convention): set at/just below
       // the measured value (98.98 at introduction) so it can only rise;

@@ -14,19 +14,26 @@ import {
 } from "@vendoai/core";
 import { KNOWLEDGE_CHUNKS_COLLECTION, KNOWLEDGE_DOCS_COLLECTION } from "../collections.js";
 import { structuralChunker } from "../ingest/chunker.js";
+// Schema intent matches a term on its title case- and whitespace-insensitively,
+// which is the same normalization ingest uses to mint the term's id fragment.
+// They must agree, so they are one function.
+import { termSlug } from "../ingest/parse.js";
 
 /** A stored chunk row: the chunk plus doc fields denormalized at upsert time
     (upsert replaces every chunk of a doc, so they can never go stale) —
-    search filters visibility and boosts titles without a per-row doc join. */
+    search filters visibility and boosts titles without a per-row doc join.
+    `source` is optional on READ only: rows written before it was denormalized
+    lack it and hash-based sync never rewrites an unchanged doc, so search
+    falls back to the doc row. Upsert always writes it. */
 interface ChunkRow extends KnowledgeChunk {
   kind: KnowledgeDoc["kind"];
   visibility: KnowledgeDoc["visibility"];
   title: string;
+  source?: string;
 }
 
-/** LIST PAGINATION ruling: every corpus scan pages with the keyset cursor
-    (page cap 1000); status()-style counts via paginated scan are the
-    accepted R1 answer. */
+/** Every corpus scan pages with the keyset cursor (page cap 1000), including
+    the status() counts. */
 async function listAll(store: RecordStore, refs?: Record<string, string>): Promise<VendoRecord[]> {
   const records: VendoRecord[] = [];
   let cursor: string | undefined;
@@ -51,33 +58,28 @@ function snippetAround(text: string, tokens: string[]): string {
   return text.slice(start, at + SNIPPET_RADIUS * 2).trim();
 }
 
-/** Exact-lookup normalization for schema intent: a term matches on its title
-    case-insensitively, whitespace-insensitively, or via its slug form. */
-const exactKey = (text: string): string =>
-  text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-
-/** The built-in local lexical engine (free tier — knowledge design v2 R1/R3):
- * keyword retrieval over the host's own store, in the knowledge-owned
- * collections. Honestly keyword-grade — deterministic term-frequency ranking
- * with title/heading boosts, no embeddings, no fuzziness.
+/** The built-in local lexical engine (free tier): keyword retrieval over the
+ * host's own store, in the knowledge-owned collections. Honestly
+ * keyword-grade — deterministic term-frequency ranking with title/heading
+ * boosts, no embeddings, no fuzziness.
  *
- * Intents (LEXICAL INTENTS ruling): `chat` ranks token matches over chunks;
- * `deep` is an honest no-op escalation for a lexical engine (same retrieval —
- * engines behind the wire do real agentic deep search); `schema` is exact
- * term/title lookup over glossary/api docs where empty means not-found.
- * Scores are engine-relative and zero-match queries return zero hits.
+ * Intents: `chat` ranks token matches over chunks; `deep` is an honest no-op
+ * escalation for a lexical engine (same retrieval — engines behind the wire do
+ * real agentic deep search); `schema` is exact term/title lookup over
+ * glossary/api docs where empty means not-found. Scores are engine-relative
+ * and zero-match queries return zero hits.
  *
- * Zero-config: `knowledge: lexicalKnowledge()` — createVendo injects the
- * composed store (server wiring, ENG-360). Pass `{ store }` to keep the
- * knowledge tables in a different database (BYO rule); until a store is
- * bound, operations fail loudly rather than pretending to be an empty corpus.
+ * Zero-config: `knowledge: vendoKnowledge()` — createVendo injects the
+ * composed store. Pass `{ store }` to keep the knowledge tables in a different
+ * database (BYO rule); until a store is bound, operations fail loudly rather
+ * than pretending to be an empty corpus.
  */
-export function lexicalKnowledge(options: { store?: StoreAdapter } = {}): KnowledgeAdapter {
+export function vendoKnowledge(options: { store?: StoreAdapter } = {}): KnowledgeAdapter {
   const store = (): StoreAdapter => {
     if (options.store === undefined) {
       throw new VendoError(
         "validation",
-        "lexicalKnowledge() has no store bound — pass lexicalKnowledge({ store }) or wire it through createVendo, which injects the composed store",
+        "vendoKnowledge() has no store bound — pass vendoKnowledge({ store }) or wire it through createVendo, which injects the composed store",
       );
     }
     return options.store;
@@ -91,16 +93,21 @@ export function lexicalKnowledge(options: { store?: StoreAdapter } = {}): Knowle
   const kindMatches = (kind: KnowledgeKind, kinds: KnowledgeKind[] | undefined): boolean =>
     kinds === undefined || kinds.includes(kind);
 
+  /** The cited chunk's source, reading through to the doc row for chunks
+      written before `source` was denormalized onto the row. */
+  const chunkSource = async (chunk: ChunkRow): Promise<string | undefined> =>
+    chunk.source ?? ((await docRows().get(chunk.docId))?.data as KnowledgeDoc | undefined)?.source;
+
   /** schema intent: exact term/title match over glossary+api docs. */
   async function schemaSearch(query: KnowledgeQuery, ctx: KnowledgeContext, limit: number): Promise<KnowledgeHit[]> {
-    const key = exactKey(query.text);
+    const key = termSlug(query.text);
     if (key.length === 0) return [];
     const hits: KnowledgeHit[] = [];
     for (const row of await listAll(docRows())) {
       const doc = row.data as KnowledgeDoc;
       if (doc.kind !== "glossary" && doc.kind !== "api") continue;
       if (!kindMatches(doc.kind, query.kinds) || !visible(doc.visibility, ctx)) continue;
-      if (exactKey(doc.title) !== key) continue;
+      if (termSlug(doc.title) !== key) continue;
       hits.push({
         ref: { docId: doc.id, title: doc.title, source: doc.source },
         snippet: doc.text.slice(0, SNIPPET_RADIUS * 2).trim(),
@@ -126,8 +133,8 @@ export function lexicalKnowledge(options: { store?: StoreAdapter } = {}): Knowle
       const tokens = tokenize(query.text);
       if (tokens.length === 0) return { hits: [] };
       const scored: { chunk: ChunkRow; score: number }[] = [];
-      // Visibility and kind filter BEFORE ranking (R5): invisible rows never
-      // enter the candidate set, so they cannot influence scores or limits.
+      // Visibility and kind filter BEFORE ranking: invisible rows never enter
+      // the candidate set, so they cannot influence scores or limits.
       for (const row of await listAll(chunkRows())) {
         const chunk = row.data as ChunkRow;
         if (!visible(chunk.visibility, ctx) || !kindMatches(chunk.kind, query.kinds)) continue;
@@ -148,15 +155,16 @@ export function lexicalKnowledge(options: { store?: StoreAdapter } = {}): Knowle
         b.score - a.score
         || (a.chunk.docId < b.chunk.docId ? -1 : a.chunk.docId > b.chunk.docId ? 1 : 0)
         || a.chunk.index - b.chunk.index);
-      // limit truncates the ranking, never changes it (R3).
+      // limit truncates the ranking, never changes it — so the doc-row
+      // fallback for source-less legacy chunks costs at most `limit` gets.
       return {
-        hits: scored.slice(0, limit).map(({ chunk, score }) => ({
-          ref: { docId: chunk.docId, chunkId: chunk.chunkId, title: chunk.title },
+        hits: await Promise.all(scored.slice(0, limit).map(async ({ chunk, score }) => ({
+          ref: { docId: chunk.docId, chunkId: chunk.chunkId, title: chunk.title, source: await chunkSource(chunk) },
           snippet: snippetAround(chunk.text, tokens),
           kind: chunk.kind,
           visibility: chunk.visibility,
           score,
-        })),
+        }))),
       };
     },
 
@@ -164,7 +172,7 @@ export function lexicalKnowledge(options: { store?: StoreAdapter } = {}): Knowle
       const row = await docRows().get(ref.docId);
       if (row === null) return null;
       const doc = row.data as KnowledgeDoc;
-      // A ref is not a capability: internal docs read as unknown (R5).
+      // A ref is not a capability: internal docs read as unknown.
       if (!visible(doc.visibility, ctx)) return null;
       if (ref.chunkId !== undefined) {
         const chunkRow = await chunkRows().get(ref.chunkId);
@@ -191,15 +199,21 @@ export function lexicalKnowledge(options: { store?: StoreAdapter } = {}): Knowle
         const keep = new Set(chunks.map((chunk) => chunk.chunkId));
         // Replace chunk rows: stale rows go first so a re-chunked doc never
         // leaves orphans, then the new rows land, then the doc row — by the
-        // time upsert resolves the doc is searchable (frozen invariant).
+        // time upsert resolves the doc is searchable.
         for (const stale of await listAll(chunkRows(), { doc_id: doc.id })) {
           if (!keep.has(stale.id)) await chunkRows().delete(stale.id);
         }
         for (const chunk of chunks) {
-          const data: ChunkRow = { ...chunk, kind: doc.kind, visibility: doc.visibility, title: doc.title };
-          // REFS ruling: chunks ref their doc; knowledge is host-level, so
-          // rows deliberately carry no subject_id (subject-erase skips them).
-          await chunkRows().put({ id: chunk.chunkId, data: { ...data }, refs: { doc_id: doc.id } });
+          const data: ChunkRow = {
+            ...chunk,
+            kind: doc.kind,
+            visibility: doc.visibility,
+            title: doc.title,
+            source: doc.source,
+          };
+          // Chunks ref their doc; knowledge is host-level, so rows deliberately
+          // carry no subject_id (subject-erase skips them).
+          await chunkRows().put({ id: chunk.chunkId, data, refs: { doc_id: doc.id } });
         }
         await docRows().put({ id: doc.id, data: { ...doc }, refs: { source: doc.source } });
       }
@@ -231,17 +245,17 @@ export function lexicalKnowledge(options: { store?: StoreAdapter } = {}): Knowle
 }
 
 /** Engines built with no store of their own — the zero-config
-    `lexicalKnowledge()` form. A WeakSet rather than a marker property so what
+    `vendoKnowledge()` form. A WeakSet rather than a marker property so what
     the host holds stays exactly a `KnowledgeAdapter`. */
 const storeless = new WeakSet<KnowledgeAdapter>();
 
 /** The composition seam's half of zero-config local knowledge (server.ts
-    `selectKnowledge`): hand a store-less `lexicalKnowledge()` the store
+    `selectKnowledge`): hand a store-less `vendoKnowledge()` the store
     createVendo composed. Everything else — an engine the host gave its own
     store, a cloud/BYO/custom adapter — passes through untouched, so this can
     sit unconditionally on the explicit-adapter rung. Hosts never call it;
-    it is how `knowledge: lexicalKnowledge()` gets the store the docs promise
+    it is how `knowledge: vendoKnowledge()` gets the store the docs promise
     without any host plumbing. */
 export function bindKnowledgeStore(adapter: KnowledgeAdapter, store: StoreAdapter): KnowledgeAdapter {
-  return storeless.has(adapter) ? lexicalKnowledge({ store }) : adapter;
+  return storeless.has(adapter) ? vendoKnowledge({ store }) : adapter;
 }

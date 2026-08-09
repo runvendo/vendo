@@ -50,11 +50,27 @@ describe("claudeCliHarness", () => {
     expect(text).toBe("the result");
     expect(capturedArgs).toEqual([
       "-p", "go read the codebase",
-      "--allowedTools", "Read", "Glob", "Grep",
+      "--allowedTools", "Read(//host/root/**)", "Glob(//host/root/**)", "Grep(//host/root/**)",
       "--disallowedTools",
       "Bash", "Write", "Edit", "WebFetch", "WebSearch", "Task", "TodoWrite", "NotebookEdit", "KillShell", "BashOutput",
       "--setting-sources", "",
     ]);
+  });
+
+  it("confines reads to the root — a bare tool name would auto-allow Read on ANY path", async () => {
+    let capturedArgs: string[] = [];
+    const harness = claudeCliHarness({
+      exec: async (args) => { capturedArgs = args; return { stdout: "ok", stderr: "", code: 0 }; },
+    });
+    await harness.run({ root: "/host/root", env: {}, instructions: "go" });
+    const allowed = capturedArgs.slice(
+      capturedArgs.indexOf("--allowedTools") + 1,
+      capturedArgs.indexOf("--disallowedTools"),
+    );
+    expect(allowed).not.toContain("Read");
+    expect(allowed).not.toContain("Glob");
+    expect(allowed).not.toContain("Grep");
+    for (const rule of allowed) expect(rule).toContain("(//host/root/**)");
   });
 
   it("passes cwd = host root and forwards the caller's env over process.env", async () => {
@@ -194,7 +210,13 @@ describe("claudeCliHarness", () => {
       })).toBe("your CLAUDE_CODE_OAUTH_TOKEN");
     });
 
-    it("labels the rung with ANTHROPIC_BASE_URL when only a custom base URL is set (no token), not the Vendo Cloud key", async () => {
+    it("labels the rung with the DEVELOPER'S OWN ANTHROPIC_BASE_URL (no token), not the Vendo Cloud key", async () => {
+      // A bare base URL is still a credential (mTLS/proxy auth) and still wins
+      // — but only when it is the developer's, which by the time an env
+      // reaches a rung is the only kind there is: readEnvFiles refuses to
+      // carry one out of `.env`/`.env.local`, so an env like this one can only
+      // have come from the shell or an explicit programmatic caller. The seam
+      // proving the project half is closed lives in sync-flow.test.ts.
       const harness = claudeCliHarness({ probeBinary: async () => true, probeLogin: async () => false });
       expect(await harness.availability({
         root: "/x",

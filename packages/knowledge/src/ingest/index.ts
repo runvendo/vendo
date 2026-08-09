@@ -12,7 +12,7 @@ export {
   type KnowledgeSourceConfig,
 } from "./config.js";
 export { structuralChunker } from "./chunker.js";
-export { parseSourceFile, docId, termSlug } from "./parse.js";
+export { parseSourceFile } from "./parse.js";
 
 /** Hand-rolled glob (zero new deps): `**` spans whole path segments, `*` and
     `?` stay within one. No brace/extglob syntax — the config format keeps to
@@ -50,7 +50,7 @@ const staticPrefix = (glob: string): string[] => {
 
 /** Sorted recursive file walk. Dotfiles and node_modules never match — a
     knowledge glob is for authored content, not vendored trees. The walk is
-    clamped to `root` (checker round 1 fix 1's second layer: even a pattern
+    clamped to `root` (the second layer of the traversal guard: even a pattern
     that slipped past schema validation can never read outside the root). */
 async function walkFiles(root: string, prefix: string[]): Promise<string[]> {
   const rootPath = resolve(root);

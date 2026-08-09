@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { VendoError, safeErrorMessage, vendoErrorCodeSchema, type VendoErrorCode } from "./errors.js";
+import { formatMeterExhausted, parseMeterExhausted } from "./meter-exhausted.js";
 import {
   knowledgeDocSchema,
   knowledgePostureSchema,
@@ -137,6 +138,7 @@ export const KNOWLEDGE_WIRE_STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   validation: 400,
   "not-found": 404,
   blocked: 403,
+  forbidden: 403,
   conflict: 409,
   "cloud-required": 402,
   "sandbox-unavailable": 501,
@@ -169,6 +171,12 @@ export function knowledgeWireErrorBody(error: VendoError): { status: number; bod
     tails — e.g. the cloud client folding bare 401 into "cloud-required" —
     belong to the client (ENG-364), not the protocol. */
 export function parseKnowledgeWireError(status: number, body: unknown): VendoError {
+  // The pool refusal wins: it is the ONE crafted sentence every Vendo surface
+  // prints, and this door used to swallow it into a generic 402.
+  const refusal = parseMeterExhausted(body);
+  if (refusal !== undefined) {
+    return new VendoError("cloud-required", formatMeterExhausted(refusal));
+  }
   const parsed = knowledgeWireErrorSchema.safeParse(body);
   if (parsed.success) {
     return new VendoError(parsed.data.error.code, parsed.data.error.message);

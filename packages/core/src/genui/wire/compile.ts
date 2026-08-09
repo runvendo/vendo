@@ -31,9 +31,9 @@ import { safeErrorMessage } from "../../errors.js";
 import { FN_REFERENCE_PATTERN } from "../../fn-references.js";
 import { VENDO_TREE_FORMAT } from "../../formats.js";
 import type { Json } from "../../ids.js";
+import { isWellFormedUtf16 } from "../../jcs.js";
 import { isPlainObject, type TreeNode } from "../tree-node.js";
-import { RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
-import { WIRE_COMPONENT_NAMES } from "../../kit/specs.js";
+import { KIT_COMPONENT_NAMES, WIRE_COMPONENT_NAMES } from "../../kit/specs.js";
 import { QUERY_NAME_PATTERN, type TreeQuery, type Tree } from "../tree.js";
 import type { ShapeType } from "../../shape.js";
 import { parseAttributes } from "./attributes.js";
@@ -41,14 +41,15 @@ import type { WireIssue } from "./expression.js";
 import { checkBindingShapes, mirrorBindingIssues, type BindingShapeError } from "./shape-check.js";
 import { expandInlineRefs } from "./inline-refs.js";
 import { admitIslandSource, claimNodeSlot, claimQuerySlot } from "./limits.js";
-import { collectText, NAME_CHAR, readName, scanCloseTag, scanTagEnd, skipComment, skipElement, skipWhitespace } from "./scan.js";
-import { FAILED, issue, isWellFormedUtf16, type CompileState, type Frame } from "./state.js";
+import { collectText, NAME_CHAR, readName, scanCloseTag, scanTagEnd, skipCommentOrBraces, skipElement, skipWhitespace } from "./scan.js";
+import { FAILED, issue, type CompileState, type Frame } from "./state.js";
 
 /** v2 spec §2 / plan D3 — compiler options. `hostComponents` (the host
  *  catalog names) feeds source resolution: host brand wins over the prewired
- *  set and islands. `toolShapes` (v2 spec §3) are the shape cards' outputs
- *  keyed by tool name (host tools and fn: refs alike); when present, every
- *  `$path` binding is type-checked against them (shape-check.ts). */
+ *  set and islands. `toolShapes` (v2 spec §3) are the tools' DECLARED output
+ *  schemas in structural form (`shapeFromJsonSchema`), keyed by tool name
+ *  (host tools and fn: refs alike); when present, every `$path` binding is
+ *  type-checked against them (shape-check.ts). */
 export interface WireCompileOptions {
   hostComponents?: readonly string[];
   toolShapes?: Readonly<Record<string, ShapeType>>;
@@ -86,12 +87,17 @@ export interface WireCompileResult {
 /** D3 — component tag names (and Island names) are PascalCase. */
 const PASCAL_TAG_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
 
-/** D3 (extended W3) — the full built-in vocabulary: the legacy prewired set
- *  plus the adopted Kit names, shared with the engine's catalog validation
- *  via kit/specs. */
-const PREWIRED_NAMES: ReadonlySet<string> = new Set(WIRE_COMPONENT_NAMES);
+/** D3 (V4) — the built-in vocabulary a NODE resolves against: the Kit names the
+ *  wire can express, shared with the engine's catalog validation via
+ *  kit/specs. */
+const BUILTIN_NAMES: ReadonlySet<string> = new Set(WIRE_COMPONENT_NAMES);
 
-const RESERVED_SET: ReadonlySet<string> = new Set(RESERVED_COMPONENT_NAMES);
+/** The set an ISLAND NAME may not shadow: the FULL Kit, not just the
+ *  wire-expressible slice. Every consumer downstream reads the full Kit —
+ *  `prepareIslands` rejects the name and the renderer hard-fails the payload —
+ *  so an island named after a Kit component the wire cannot spell (Accordion)
+ *  used to compile clean and then never render at all. */
+const KIT_NAMES: ReadonlySet<string> = new Set(KIT_COMPONENT_NAMES);
 
 /** D3 — island content ends at the FIRST occurrence of this literal. */
 const ISLAND_CLOSE = "</Island>";
@@ -140,7 +146,7 @@ const mintId = (state: CompileState, component: string): string => {
  *  contained unknown-component notice). */
 const resolveSource = (state: CompileState, name: string): TreeNode["source"] => {
   if (state.hostComponents.has(name)) return "host";
-  if (PREWIRED_NAMES.has(name)) return "prewired";
+  if (BUILTIN_NAMES.has(name)) return "prewired";
   if (state.islandNames.has(name)) return "generated";
   return undefined;
 };
@@ -213,7 +219,7 @@ export const compileIsland = (state: CompileState): void => {
     return;
   }
   const name = attrs.props?.name;
-  const validName = typeof name === "string" && PASCAL_TAG_PATTERN.test(name) && !RESERVED_SET.has(name);
+  const validName = typeof name === "string" && PASCAL_TAG_PATTERN.test(name) && !KIT_NAMES.has(name);
   const duplicate = validName && Object.prototype.hasOwnProperty.call(state.components, name);
   if (!validName) {
     issue(
@@ -351,10 +357,10 @@ export const parseChildren = (state: CompileState, frames: Frame[], rootLabel = 
   while (state.index < state.source.length) {
     appendTextChild(state, frames, collectText(state));
     if (state.index >= state.source.length) break;
-    // Comment skipping and close-tag scanning share scan.ts's skipComment /
+    // Comment skipping and close-tag scanning share scan.ts's skipCommentOrBraces /
     // scanCloseTag with the pre-scan, so both cursors move identically by
     // construction.
-    const comment = skipComment(state);
+    const comment = skipCommentOrBraces(state);
     if (comment === "eof") break;
     if (comment === "skipped") continue;
     // The cursor sits on a "<" that plausibly starts a tag.
@@ -420,6 +426,33 @@ const opensApp = (state: CompileState): boolean => opensRoot(state, "App");
  * issue happen in the main pass, in source order (this pass runs on a
  * throwaway state whose issues are discarded).
  */
+/** Pre-scan `<Query>`: records a grammar-valid id and steps the cursor past
+ *  the element. False stops the scan (the tag was truncated). */
+const prescanQuery = (state: CompileState, queryNames: Set<string>): boolean => {
+  const attrs = parseAttributes(state, "declaration");
+  if (attrs === FAILED) return false;
+  const id = attrs.props?.id;
+  if (typeof id === "string" && QUERY_NAME_PATTERN.test(id) && id !== "state") queryNames.add(id);
+  if (!attrs.selfClosing) skipElement(state, "Query");
+  return true;
+};
+
+/** Pre-scan `<Island>`: records a grammar-valid, non-reserved name and steps
+ *  the cursor past the raw content. False stops the scan. */
+const prescanIsland = (state: CompileState, islandNames: Set<string>): boolean => {
+  const attrs = parseAttributes(state, "declaration");
+  if (attrs === FAILED) return false;
+  if (attrs.selfClosing) return true; // no content — the main pass skips it
+  const close = state.source.indexOf(ISLAND_CLOSE, state.index);
+  if (close === -1) return false; // unterminated — the main pass drops it
+  state.index = close + ISLAND_CLOSE.length;
+  const islandName = attrs.props?.name;
+  if (typeof islandName === "string" && PASCAL_TAG_PATTERN.test(islandName) && !KIT_NAMES.has(islandName)) {
+    islandNames.add(islandName);
+  }
+  return true;
+};
+
 export const prescanDeclarations = (wire: string, rootTag = "App"): { queryNames: Set<string>; islandNames: Set<string> } => {
   const queryNames = new Set<string>();
   const islandNames = new Set<string>();
@@ -434,8 +467,8 @@ export const prescanDeclarations = (wire: string, rootTag = "App"): { queryNames
     if (state.index >= state.source.length) break;
     // Comments and close tags move through the same scan.ts helpers as
     // parseChildren, so the pre-scan cursor mirrors the main pass by
-    // construction (see skipComment/scanCloseTag).
-    const comment = skipComment(state);
+    // construction (see skipCommentOrBraces/scanCloseTag).
+    const comment = skipCommentOrBraces(state);
     if (comment === "eof") break;
     if (comment === "skipped") continue;
     if (state.source[state.index + 1] === "/") {
@@ -449,24 +482,11 @@ export const prescanDeclarations = (wire: string, rootTag = "App"): { queryNames
     state.index += 1;
     const name = readName(state);
     if (name === "Query") {
-      const attrs = parseAttributes(state, "declaration");
-      if (attrs === FAILED) break;
-      const id = attrs.props?.id;
-      if (typeof id === "string" && QUERY_NAME_PATTERN.test(id) && id !== "state") queryNames.add(id);
-      if (!attrs.selfClosing) skipElement(state, "Query");
+      if (!prescanQuery(state, queryNames)) break;
       continue;
     }
     if (name === "Island") {
-      const attrs = parseAttributes(state, "declaration");
-      if (attrs === FAILED) break;
-      if (attrs.selfClosing) continue; // no content — the main pass skips it
-      const close = state.source.indexOf(ISLAND_CLOSE, state.index);
-      if (close === -1) break; // unterminated — the main pass drops it
-      state.index = close + ISLAND_CLOSE.length;
-      const islandName = attrs.props?.name;
-      if (typeof islandName === "string" && PASCAL_TAG_PATTERN.test(islandName) && !RESERVED_SET.has(islandName)) {
-        islandNames.add(islandName);
-      }
+      if (!prescanIsland(state, islandNames)) break;
       continue;
     }
     if (name === "App" || !PASCAL_TAG_PATTERN.test(name)) {
@@ -516,7 +536,7 @@ const finishResult = (
   };
   if (state.queries.length > 0) tree.queries = state.queries;
   // v2 spec §3 — the binding shape check runs as a post-pass over the
-  // emitted nodes, only when the caller supplied shape cards. Shape errors
+  // emitted nodes, only when the caller supplied tool shapes. Shape errors
   // are repairable, not structural: the binding stays in the tree (repair
   // needs the anchor) and `complete` is untouched — the engine's ship gate
   // is `bindingErrors.length > 0`. Each error also mirrors into the issue

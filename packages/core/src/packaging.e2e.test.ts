@@ -19,7 +19,7 @@ const RUNTIME_EXPORTS = [
   "VENDO_POLICY_FORMAT", "VENDO_CAPABILITY_MISS_FORMAT", "descriptorHash", "validateTree", "validateAppDocument", "VendoError",
   "safeErrorMessage", "canonicalJson", "sha256Hex", "TOOL_NAME_PATTERN",
   "TREE_MAX_NODES", "TREE_MAX_QUERIES", "TREE_MAX_GENERATED_COMPONENTS",
-  "TREE_MAX_COMPONENT_SOURCE_CHARS", "TREE_MAX_TOTAL_COMPONENT_CHARS", "RESERVED_COMPONENT_NAMES",
+  "TREE_MAX_COMPONENT_SOURCE_CHARS", "TREE_MAX_TOTAL_COMPONENT_CHARS", "KIT_COMPONENT_NAMES",
   "isPathBinding", "isStateBinding",
   "principalSchema", "runContextSchema", "triggerRefSchema", "riskLabelSchema",
   "toolDescriptorSchema", "toolCallSchema", "toolOutcomeSchema",
@@ -34,6 +34,8 @@ const RUNTIME_EXPORTS = [
   "isoDateTimeSchema", "jsonSchemaSchema",
   "VENDO_TREE_FORMAT", "validateTree", "treeSchema", "treeQuerySchema",
   "compileWire", "WIRE_ISSUE_CODES",
+  "defaultVendoTheme", "resolveTheme", "colorSchemeForBackground", "themeCssVariables",
+  "VENDO_THEME_VARIABLE_NAMES",
 ];
 
 interface PackedPackage {
@@ -112,8 +114,8 @@ describe("packaging e2e — the artifact blocks will install", () => {
         description: (vector.descriptor as { description: string }).description,
         inputSchema: (vector.descriptor as { inputSchema: unknown }).inputSchema,
         risk: (vector.descriptor as { risk: string }).risk,
-        ...((vector.descriptor as { critical?: boolean }).critical !== undefined
-          ? { critical: (vector.descriptor as { critical?: boolean }).critical }
+        ...((vector.descriptor as { confirmEach?: boolean }).confirmEach !== undefined
+          ? { confirmEach: (vector.descriptor as { confirmEach?: boolean }).confirmEach }
           : {}),
       })).toBe(vector.canonical);
       expect(core.descriptorHash(vector.descriptor)).toBe(vector.hash);

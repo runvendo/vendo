@@ -5,6 +5,7 @@ import {
   VENDO_TOOLS_FORMAT,
   compoundBindingSchema,
   compoundToolSchema,
+  extractedToolSchema,
   judgmentsFileSchema,
   overridesFileSchema,
   toolBindingSchema,
@@ -146,7 +147,7 @@ describe("overridesFileSchema", () => {
       tools: {
         host_invoices_list: {
           risk: "write",
-          critical: true,
+          confirmEach: true,
           disabled: false,
           description: "List invoices for the signed-in client",
           audience: "end-user",
@@ -208,7 +209,7 @@ describe("judgmentsFileSchema", () => {
             description: "List the signed-in client's invoices",
             title: "List invoices",
             risk: "read",
-            critical: true,
+            confirmEach: true,
             disabled: true,
             audience: "operator",
             semantics: { "data.amountCents": { kind: "money", unit: "cents" } },
@@ -261,7 +262,7 @@ describe("judgmentsFileSchema", () => {
   });
 
   it("only the four capability fields can be queued as a pending loosening", () => {
-    for (const field of ["risk", "critical", "disabled", "audience"]) {
+    for (const field of ["risk", "confirmEach", "disabled", "audience"]) {
       expect(judgmentsFileSchema.safeParse(judgmentsFile({
         tools: { host_x: judgment({ pending: [{ field, value: "x", evidence: "quoted handler line" }] }) },
       })).success).toBe(true);
@@ -299,5 +300,22 @@ describe("judgmentsFileSchema", () => {
         JSON.stringify(smuggled),
       ).toBe(false);
     }
+  });
+});
+
+describe("schema source markers", () => {
+  it("parses both markers and rejects an invented rung", () => {
+    const base = {
+      name: "host_items_list",
+      description: "List items",
+      inputSchema: { type: "object", properties: {} },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/items", argsIn: "query" },
+    };
+    const parsed = extractedToolSchema.parse({ ...base, inputSchemaSource: "declared", outputSchemaSource: "unknown" });
+    expect(parsed).toMatchObject({ inputSchemaSource: "declared", outputSchemaSource: "unknown" });
+    // Absence is legal — a pre-marker file still parses.
+    expect(extractedToolSchema.safeParse(base).success).toBe(true);
+    expect(extractedToolSchema.safeParse({ ...base, inputSchemaSource: "guessed" }).success).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { tempDir } from "../temp-dir.test-util.js";
 import { parseInstallEvalArgs, runCli } from "../cli.js";
 import { createRunContext } from "../run-context.js";
 import type { RunInstallAgentOptions } from "./agent.js";
@@ -59,7 +59,7 @@ function dryRunOptions(overrides: Partial<InstallEvalCommandOptions> = {}): Inst
 
 describe("runInstallEvalCommand --dry-run", () => {
   it("runs the whole pipeline off the canned transcript without invoking the agent or doctor", async () => {
-    const corpusRoot = await mkdtemp(path.join(tmpdir(), "install-eval-run-"));
+    const corpusRoot = await tempDir("install-eval-run-");
     const context = createRunContext({ corpusRoot });
     const stdout: string[] = [];
     const stderr: string[] = [];
@@ -112,7 +112,7 @@ describe("runInstallEvalCommand --dry-run", () => {
   });
 
   it("--strict fails when a fixture is not clean", async () => {
-    const corpusRoot = await mkdtemp(path.join(tmpdir(), "install-eval-strict-"));
+    const corpusRoot = await tempDir("install-eval-strict-");
     const context = createRunContext({ corpusRoot });
     const exit = await runInstallEvalCommand(dryRunOptions({ strict: true }), {
       stdout: () => {},
@@ -151,7 +151,7 @@ const TWO_TURN_TRANSCRIPT = [
 
 describe("runInstallEvalCommand with the scripted two-turn agent seam", () => {
   it("scores turns, cost, and the ask gate across BOTH invocations of one run", async () => {
-    const corpusRoot = await mkdtemp(path.join(tmpdir(), "install-eval-two-turn-"));
+    const corpusRoot = await tempDir("install-eval-two-turn-");
     const context = createRunContext({ corpusRoot });
     const stdout: string[] = [];
     let agentOptions: RunInstallAgentOptions | undefined;

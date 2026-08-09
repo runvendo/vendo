@@ -10,7 +10,6 @@
  * pins the two in step).
  */
 import { z } from "zod";
-import { PREWIRED_COMPONENT_NAMES } from "../genui/tree-limits.js";
 import { config, copy, data, type KitComponentSpec, type PropClass } from "./schema.js";
 
 // ---- shared zod fragments -------------------------------------------------
@@ -63,6 +62,17 @@ export const KIT_SPECS: KitComponentSpec[] = [
     examples: ["<Surface title=\"Overdue\"><DataTable .../></Surface>"],
   },
   {
+    name: "Card",
+    group: "layout",
+    summary: "A titled content block with an optional one-line description. Use it to label a region; Surface is the plain bordered container.",
+    props: {
+      title: copy(z.string(), "card heading"),
+      description: copy(z.string(), "one-line subheading under the title"),
+      tone: config(z.enum(["default", "accent", "danger"]), "border emphasis"),
+    },
+    examples: ['<Card title="Overdue" description="Worst first"><DataTable rows={invoices.data} columns={[{key:"client"}]}/></Card>'],
+  },
+  {
     name: "Divider",
     group: "layout",
     summary: "A horizontal rule between blocks.",
@@ -76,7 +86,12 @@ export const KIT_SPECS: KitComponentSpec[] = [
     group: "values",
     summary: "Themed text. Use variant=heading for section titles.",
     props: {
-      text: copy(z.string(), "the text to show", { required: true }),
+      // string | number, matching the implementation (`text: ReactNode`, which
+      // renders a number verbatim). The spec said `string` only, which never
+      // bit anyone while the legacy prewired Text shadowed this one with a
+      // permissive `any` prop — retiring it (V4) made the over-tight schema
+      // load-bearing and blocked the very common `<Text text={count}/>`.
+      text: copy(z.union([z.string(), z.number()]), "the text to show", { required: true }),
       variant: config(z.enum(["body", "heading", "caption", "label"]), "text role"),
     },
     examples: ['<Text text="This month" variant="heading"/>'],
@@ -364,12 +379,28 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Tabs",
     group: "feedback",
-    summary: "Self-managing tabs. Give each tab a label and content; switching needs no handler.",
+    summary: "Self-managing tabs. Name the tabs, then nest ONE child per tab in tab order — switching panels needs no handler and never leaves the page.",
     props: {
-      tabs: config(z.array(z.object({ label: z.string(), content: z.unknown(), disabled: z.boolean().optional() })), "tab definitions", { required: true }),
-      defaultIndex: config(z.number().int().nonnegative(), "initially selected tab"),
+      tabs: config(
+        z.array(z.union([
+          z.string(),
+          z.object({
+            value: z.string().optional(),
+            label: z.string(),
+            disabled: z.boolean().optional(),
+            // Code-only: a panel passed inline instead of as a child. Wire
+            // trees cannot express an element in an attribute, so they nest
+            // panels as children (the shape the plan skeleton emits).
+            content: z.unknown().optional(),
+          }),
+        ])),
+        "tab labels, or {value,label} items",
+        { required: true },
+      ),
+      value: config(z.string(), "the initially selected tab's value"),
+      defaultIndex: config(z.number().int().nonnegative(), "initially selected tab, by position"),
     },
-    examples: ["<Tabs tabs={[{label:\"Overview\",content:<Stat .../>},{label:\"Detail\",content:<DataTable .../>}]}/>"],
+    examples: ['<Tabs tabs={["Overview","Detail"]}><Stat label="Open" value={x.count}/><DataTable rows={x.data} columns={[{key:"client"}]}/></Tabs>'],
   },
   {
     name: "Callout",
@@ -412,27 +443,21 @@ export const KIT_COMPONENT_NAMES: readonly string[] = KIT_SPECS.map((spec) => sp
 
 /** Kit components whose props cannot be expressed as wire attribute values
  *  (element-valued `content` slots). They stay renderable and usable inside
- *  islands, but the WIRE prompt must not teach them — the legacy prewired
- *  Tabs (string tabs + onChange) remains the tree-level tabs surface. */
-export const KIT_WIRE_UNSAFE_NAMES: readonly string[] = ["Tabs", "Accordion"];
+ *  islands, but the WIRE prompt must not teach them. Tabs is NOT one of them:
+ *  it takes its panels as CHILDREN, which the wire expresses natively. */
+export const KIT_WIRE_UNSAFE_NAMES: readonly string[] = ["Accordion"];
 
 /**
- * The Kit names the WIRE adopts in W3: wire-expressible and not shadowed by
- * a legacy prewired primitive (the legacy set keeps its names + prop
- * surfaces until the Wave-5 retirement — stored apps keep rendering
- * byte-identically). These are taught by `kitPrompt`, resolved as prewired
- * by the compiler, and rendered from `KIT_COMPONENTS`.
+ * The Kit names the WIRE may use: everything the wire can express. These are
+ * taught by `kitPrompt`, resolved as prewired by the compiler, and rendered
+ * from `KIT_COMPONENTS`.
  */
 export const KIT_WIRE_COMPONENT_NAMES: readonly string[] = KIT_COMPONENT_NAMES.filter((name) =>
-  !KIT_WIRE_UNSAFE_NAMES.includes(name)
-  && !(PREWIRED_COMPONENT_NAMES as readonly string[]).includes(name));
+  !KIT_WIRE_UNSAFE_NAMES.includes(name));
 
-/** The full component vocabulary a wire tree may name without a source map:
- *  the legacy prewired set plus the adopted Kit names. */
-export const WIRE_COMPONENT_NAMES: readonly string[] = [
-  ...PREWIRED_COMPONENT_NAMES,
-  ...KIT_WIRE_COMPONENT_NAMES,
-];
+/** The full component vocabulary a wire tree may name without a source map.
+ *  One family since V4: the Kit is the only built-in set. */
+export const WIRE_COMPONENT_NAMES: readonly string[] = KIT_WIRE_COMPONENT_NAMES;
 
 /** Prop name → class for one Kit component (law-1 enforcement handle). */
 export function kitPropClasses(name: string): Readonly<Record<string, PropClass>> | undefined {

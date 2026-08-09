@@ -1,5 +1,6 @@
 import {
   VENDO_APP_FORMAT,
+  triggerKindRefs,
   type AppDocument,
   type ApprovalId,
   type AuditEvent,
@@ -10,6 +11,7 @@ import {
   type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
+  type Trigger,
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import type { AppsRuntime } from "@vendoai/apps";
@@ -39,11 +41,11 @@ const ctx = (subject = "user_a"): RunContext => ({
   sessionId: `session_${subject}`,
 });
 
-const app = (id: string, trigger: NonNullable<AppDocument["trigger"]>, name = id): AppDocument =>
-  ({ format: VENDO_APP_FORMAT, id, name, trigger });
+const app = (id: string, trigger: Omit<Trigger, "id">, name = id): AppDocument =>
+  ({ format: VENDO_APP_FORMAT, id, name, triggers: [{ id: "main", ...trigger }] });
 
 const seedApp = async (store: StoreAdapter, doc: AppDocument, subject = "user_a", enabled = false): Promise<void> => {
-  await store.records("vendo_apps").put({ id: doc.id, data: { subject, enabled, doc }, refs: { subject, ...(doc.trigger === undefined ? {} : { trigger_kind: doc.trigger.on.kind }) } });
+  await store.records("vendo_apps").put({ id: doc.id, data: { subject, enabled, doc }, refs: { subject, ...triggerKindRefs(doc.triggers) } });
 };
 
 class GuardDouble implements Guard {
@@ -60,7 +62,8 @@ const registry = (
   execute: (call: ToolCall, runCtx: RunContext) => Promise<ToolOutcome> = async () => ({ status: "ok", output: {} }),
 ): ToolRegistry => ({ async descriptors() { return descriptors; }, execute });
 
-const appsDouble = (): AppsRuntime => ({ call: async () => ({ status: "ok", output: {} }) } as AppsRuntime);
+const appsCall: AppsRuntime["call"] = async () => ({ status: "ok", output: {} });
+const appsDouble = (): AppsRuntime => ({ call: appsCall } as AppsRuntime);
 
 /** Real HMAC-SHA256 signer over `id.timestamp.body`, key = base64url secret. */
 const sign = async (secret: string, deliveryId: string, timestamp: string, body: string): Promise<string> => {
@@ -109,8 +112,8 @@ describe("webhook signature verification", () => {
   const buildEnabled = async () => {
     const engine = createAutomations({ apps: appsDouble(), tools: registry([readTool]), guard, store, now: () => NOW });
     await seedApp(store, externalApp());
-    await engine.enable(externalApp().id, ctx());
-    const secret = ((await store.records("automations:webhook").get(externalApp().id))?.data as { secret: string }).secret;
+    await engine.enable(externalApp().id, "main", ctx());
+    const secret = ((await store.records("automations:webhook").get(`${externalApp().id}:main`))?.data as { secret: string }).secret;
     return { engine, secret };
   };
 

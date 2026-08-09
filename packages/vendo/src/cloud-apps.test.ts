@@ -81,8 +81,8 @@ describe("cloudApps", () => {
   });
 
   it("defaults the base URL to the Vendo console", async () => {
-    const fetchImpl = vi.fn(async () => Response.json(snapshot));
-    const client = cloudApps({ apiKey: "vnd_secret", fetch: fetchImpl as unknown as typeof fetch });
+    const fetchImpl = vi.fn<typeof fetch>(async () => Response.json(snapshot));
+    const client = cloudApps({ apiKey: "vnd_secret", fetch: fetchImpl });
     await client.share(doc.id, doc);
     expect(String(fetchImpl.mock.calls[0]![0])).toBe("https://console.vendo.run/api/v1/apps/share");
   });

@@ -7,7 +7,7 @@ const skateshopTools = {
   tools: [
     {
       name: "list_skateshop_catalog_products",
-      description: "List Skateshop catalog products/items with price, inventory, rating, category, and subcategory. Use for browse, show, deck, store, inventory, and table requests. Always call this (or search_skateshop_products) before answering any product/catalog/cart/order prompt — never answer from memory. Seeded products include Youness gradient cuts impact 8.375 skateboard deck, Max mean pets paintings impact light 8.25 skateboard deck, Nike Streakfly, Nike InfinityRN 4, Nike Air Max 2013, and Nike Pegasus 40 BTC. For list/browse/compare prompts render a Table view with columns Product, Price, Inventory, Rating, and Category, then give a one-sentence summary.",
+      description: "List Skateshop catalog products/items with price, inventory, rating, category, and subcategory. Use for browse, show, deck, store, inventory, and table requests. Always call this (or search_skateshop_products) before answering any product/catalog/cart/order prompt — never answer from memory. Seeded products include Youness gradient cuts impact 8.375 skateboard deck, Max mean pets paintings impact light 8.25 skateboard deck, Nike Streakfly, Nike InfinityRN 4, Nike Air Max 2013, and Nike Pegasus 40 BTC. For list/browse/compare prompts render a DataTable view with columns Product, Price, Inventory, Rating, and Category, then give a one-sentence summary.",
       inputSchema: {
         type: "object",
         properties: {
@@ -581,8 +581,8 @@ export async function prepareSkateshopE2eRepo(appRoot: string, logsDir: string):
   // The curated manifest is the server-side tool source (createActions reads
   // .vendo/tools.json); guidance lives in the tool descriptions since the old
   // handler-level instructionsExtra knob no longer exists, and the chat
-  // surface ships as the corpus-mounted VendoOverlay (init wires the VendoRoot
-  // provider only).
+  // surface ships as the corpus-mounted VendoOverlay (init's paste carries the
+  // VendoProvider only).
   await mountCorpusOverlay(appRoot, "src/app");
   actions.push("mounted the corpus Vendo overlay");
 

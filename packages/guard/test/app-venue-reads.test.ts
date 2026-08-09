@@ -5,13 +5,13 @@ import { asLanguageModel, scriptedJudgeModel, throwingJudgeModel } from "./fixtu
 import { call, context, descriptor, FixtureTools } from "./fixtures/tools.js";
 
 /**
- * Re-gate 2026-07-26 finding 2: reads invoked from the APP venue render UI —
+ * Reads invoked from the APP venue render UI —
  * query resolution and island tools consume the outcome at render time, and a
  * parked read query is never resumed (apps call.ts resumes only mutating
  * actions). An "ask" ruling on a present app-venue read is therefore a
  * permanently empty surface plus a dead approval card. The heuristic deciders
  * (judge, call-rate breaker) must never park such a read; deliberate postures
- * (policy rules, host policy code, critical descriptors, the away downgrade)
+ * (policy rules, host policy code, confirmEach descriptors, the away downgrade)
  * keep their ask.
  */
 describe("app-venue reads are never parked by heuristic deciders", () => {
@@ -108,11 +108,11 @@ describe("app-venue reads are never parked by heuristic deciders", () => {
     expect(decision).toMatchObject({ action: "ask", decidedBy: "rule" });
   });
 
-  it("a critical read still asks in the app venue (05 §2: nothing suppresses critical)", async () => {
+  it("a confirmEach read still asks in the app venue (05 §2: nothing suppresses confirmEach)", async () => {
     const guard = createGuard({ store: createMemoryStore() });
-    const critical = descriptor("read", { name: "host_critical_read", critical: true });
-    const decision = await guard.check(call("host_critical_read"), critical, appCtx);
-    expect(decision).toMatchObject({ action: "ask", decidedBy: "critical" });
+    const confirmEach = descriptor("read", { name: "host_confirm_each_read", confirmEach: true });
+    const decision = await guard.check(call("host_confirm_each_read"), confirmEach, appCtx);
+    expect(decision).toMatchObject({ action: "ask", decidedBy: "confirmEach" });
   });
 
   it("away app-venue reads still park (05 §6 downgrade unaffected)", async () => {

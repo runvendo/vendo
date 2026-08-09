@@ -6,7 +6,9 @@
  * implementation lives in client-impl.ts (lane A).
  */
 import type {
+  AccessLevel,
   AppDocument,
+  AppGrantRecord,
   AppId,
   ApprovalDecision,
   ApprovalId,
@@ -15,6 +17,7 @@ import type {
   GrantId,
   Json,
   PermissionGrant,
+  ResolvedPerson,
   RunId,
   ThreadId,
   ToolOutcome,
@@ -33,6 +36,7 @@ import type {
   PinDrift,
   PinForkResult,
   PinRebaseResult,
+  PlacementEntry,
   RunPlan,
   RunRecord,
   RunStatus,
@@ -105,10 +109,27 @@ export interface VendoClient {
     call(id: AppId, ref: string, args: Json): Promise<ToolOutcome>;
     edit(id: AppId, instruction: string): Promise<EditResult>;
     history(id: AppId): Promise<VersionEntry[]>;
-    undo(id: AppId): Promise<AppDocument>;
     exportApp(id: AppId): Promise<Uint8Array>;
     importApp(bytes: Uint8Array): Promise<AppDocument>;
     fork(id: AppId): Promise<AppDocument>;
+    /**
+     * Build contract §9.2–§9.6 — the Share dialog's transport. `grants` reads
+     * the app's grant list AND the caller's own level (what the surface reads
+     * to choose between "Edit" and the fork offer); `share`/`unshare` write
+     * them and need a Cloud key; `promote` moves a personal app into an org.
+     */
+    grants(id: AppId): Promise<{ level: AccessLevel | null; grants: AppGrantRecord[]; personal: boolean }>;
+    share(id: AppId, principal: string, level: AccessLevel): Promise<{ grants: AppGrantRecord[] }>;
+    unshare(id: AppId, principal: string): Promise<{ grants: AppGrantRecord[] }>;
+    promote(id: AppId, orgId: string): Promise<AppDocument>;
+    /**
+     * Build contract §9.1 companion — ask the HOST who a typed name is. Vendo
+     * holds no directory, so the dialog cannot resolve "Mia" and must not guess:
+     * `null` means the host does not know them, and the grant is written for the
+     * `subject` that comes back, never for what was typed. Owner-gated; refuses
+     * with `not-implemented` where the host wired no `resolvePerson` seam.
+     */
+    resolvePerson(id: AppId, query: string): Promise<{ person: ResolvedPerson | null }>;
     /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
     shipDiff(id: AppId): Promise<ShipDiff>;
     /** GET /apps/:id/pin-drift — the pins whose captured host baseline changed under the fork (06 §8). */
@@ -119,11 +140,13 @@ export interface VendoClient {
      * POST /apps/fork-pin (no appId) or /apps/:id/fork-pin — the gesture-owned
      * DETERMINISTIC fork of a remixable host slot (06 §8): the engine copies
      * the captured baseline and records the pin with no model call. Without an
-     * appId a minimal app is minted around the fork (the empty-slot Remix
-     * gesture). An optional instruction rides the ordinary edit path
-     * afterwards, already scoped to the forked component.
+     * appId a minimal app is minted around the fork (the `<Remixable>` ✦
+     * gesture). `props` — the wrapper's serializable live props at fork time —
+     * is stored on the fork as its dashboard seed (2026-08-02 final shape). An
+     * optional instruction rides the ordinary edit path afterwards, already
+     * scoped to the forked component.
      */
-    forkPin(input: { appId?: AppId; slot: string; instruction?: string }): Promise<PinForkResult>;
+    forkPin(input: { appId?: AppId; slot: string; props?: Record<string, Json>; instruction?: string }): Promise<PinForkResult>;
     /**
      * POST /apps/:id/machine/ping — the embed surface's keepalive (Wave 7 H2):
      * user activity on an embedded served app rides one host-proxied HEAD
@@ -131,19 +154,41 @@ export interface VendoClient {
      * means the machine had slept — the embed's URL is stale; re-open.
      */
     pingMachine(id: AppId): Promise<{ state: "awake" | "woke" }>;
+    /**
+     * Placement (2026-08-05) — "show this app in that slot". `POST
+     * /apps/:id/place`; one app per slot, so the answer names whatever the
+     * write displaced (`evicted`).
+     */
+    place(id: AppId, slot: string): Promise<{ evicted?: string }>;
+    /** `POST /apps/:id/unplace` — clear the slot, if this app still holds it. */
+    unplace(id: AppId, slot: string): Promise<void>;
+    /** `GET /apps/placements` — what is in the caller's slots. Pass the slots
+     *  actually mounted so one request answers the whole page. */
+    placements(slots?: readonly string[]): Promise<PlacementEntry[]>;
   };
 
   automations: {
     list(): Promise<AutomationEntry[]>;
-    enable(id: AppId): Promise<EnableResult>;
-    disable(id: AppId): Promise<void>;
-    dryRun(id: AppId): Promise<RunPlan>;
+    /** Arm/disarm/preview ONE trigger of an app — an automation is an app with
+     *  a LIST of triggers, and each is decided on its own. */
+    enable(id: AppId, triggerId: string): Promise<EnableResult>;
+    disable(id: AppId, triggerId: string): Promise<void>;
+    dryRun(id: AppId, triggerId: string): Promise<RunPlan>;
   };
 
   runs: {
-    list(filter?: { appId?: AppId; status?: RunStatus; cursor?: string }): Promise<{ runs: RunRecord[]; cursor?: string }>;
+    list(filter?: {
+      appId?: AppId;
+      triggerId?: string;
+      status?: RunStatus;
+      cursor?: string;
+    }): Promise<{ runs: RunRecord[]; cursor?: string }>;
     get(id: RunId): Promise<RunRecord>;
     stop(id: RunId): Promise<void>;
+    /** POST /runs/:id/rerun — run it again: a FRESH run of the same automation
+     *  on the same triggering event. The remedy a failed run leaves behind (07
+     *  §1 `runs.rerun`); answers with the new run's id. */
+    rerun(id: RunId): Promise<RunId>;
   };
 
   activity: {

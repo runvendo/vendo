@@ -40,6 +40,26 @@ describe("lane-cards picks", () => {
     await wire?.close();
   });
 
+  // A recurring Slack post used to be described as "It runs as you, and you can
+  // pause it anytime." Pausing needs a management surface, and `@vendoai/ui`
+  // cannot know whether the host mounted one — Maple mounts none, so the library
+  // was promising, in the host's voice, something the host could not honour. The
+  // sentence keeps every claim that is true on EVERY host and drops the one that
+  // depends on a screen (#1014 deleted the only surface that ever backed it).
+  it("describes a recurring Slack post without promising a place to pause it", () => {
+    const recurring = toolPresentation("slack_SLACK_SEND_MESSAGE", {
+      channel: "#renewals",
+      text: "Morning digest",
+      trigger: "every weekday at 8am",
+    });
+    expect(recurring.description).toBe(
+      "Vendo will post to #renewals on your behalf, every weekday at 8am. It runs as you.",
+    );
+    // The one-off sibling never carried the promise, and still doesn't.
+    expect(toolPresentation("slack_SLACK_SEND_MESSAGE", { channel: "#renewals", text: "Hi" }).description)
+      .toBe("Vendo will post to #renewals on your behalf, running as you.");
+  });
+
   it("1-A: synthesizes a structured consequence from the real Slack inputs", () => {
     const presentation = toolPresentation("slack_SLACK_SEND_MESSAGE", slackApproval.call.args);
     expect(presentation.consequence).toEqual({
@@ -72,13 +92,16 @@ describe("lane-cards picks", () => {
     expect(screen.getByLabelText("Real tool inputs").closest("details")).toBe(details);
   });
 
-  it("1-A: a destructive ask keeps every input in plain sight (no fold)", () => {
+  it("1-A: a destructive ask keeps every input in plain sight (no fold) — and still says what it does", () => {
     const critical: ApprovalRequest = {
       ...slackApproval,
       descriptor: { ...slackApproval.descriptor, risk: "destructive" },
     };
     render(<VendoProvider client={client}><ApprovalCard approval={critical} onDecide={() => undefined} /></VendoProvider>);
-    expect(document.querySelector(".fl-approval-consequence-line")).toBeNull();
+    // This used to assert NO consequence line on a critical ask, which left the
+    // money card with the robotic fallback. The exemption is about the FOLD, not
+    // the sentence: maximum scrutiny means the sentence AND the open fields.
+    expect(document.querySelector(".fl-approval-consequence-line")?.textContent).toContain("#renewals");
     expect(document.querySelector("details.fl-approval-details")).toBeNull();
     expect(screen.getByLabelText("Real tool inputs")).toBeTruthy();
   });
@@ -117,7 +140,8 @@ describe("lane-cards picks", () => {
   });
 
   it("7-A: a running run swaps the state line to step N/M and puts the runner on the arrow", async () => {
-    wire.state.automations[0]!.app.trigger = {
+    wire.state.automations[0]!.triggers[0]!.trigger = {
+      id: "main",
       on: { kind: "host-event", event: "invoice.created" },
       run: { kind: "steps", steps: [{ id: "load", tool: "host_invoices_list" }, { id: "send", tool: "host_email_send" }] },
     };
@@ -135,8 +159,9 @@ describe("lane-cards picks", () => {
   });
 
   it("7-A: an enabled schedule carries the next-run countdown in the state line", async () => {
-    wire.state.automations[0]!.enabled = true;
-    wire.state.automations[0]!.app.trigger = {
+    wire.state.automations[0]!.triggers[0]!.enabled = true;
+    wire.state.automations[0]!.triggers[0]!.trigger = {
+      id: "main",
       on: { kind: "schedule", every: "6h" },
       run: { kind: "steps", steps: [{ id: "load", tool: "host_invoices_list" }] },
     };
@@ -217,6 +242,50 @@ describe("lane-cards picks", () => {
       expect(onDone).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener(ACTIVITY_BUMP_EVENT, onBump);
+    }
+  });
+
+  it("4-C: a host on theme.motion reduced gets the opacity-only exit, anchor or not", () => {
+    // The morph told the DOM one thing and itself another: it wrote
+    // data-vendo-motion="reduced" from the theme (which the chrome stylesheet
+    // turns into `transition: none`) while its own timings and the dock path
+    // still read the OS media query alone. So a reduced-motion host got the
+    // travel budget and the dock with every transition stripped — the pill
+    // teleported, then vanished into an anchor it never travelled to.
+    vi.useFakeTimers();
+    const anchor = document.createElement("button");
+    anchor.setAttribute(ACTIVITY_ANCHOR_ATTRIBUTE, "");
+    anchor.getBoundingClientRect = () => ({
+      top: 10, left: 500, width: 60, height: 30, right: 560, bottom: 40, x: 500, y: 10, toJSON: () => ({}),
+    }) as DOMRect;
+    document.body.appendChild(anchor);
+    const onBump = vi.fn();
+    window.addEventListener(ACTIVITY_BUMP_EVENT, onBump);
+    const onDone = vi.fn();
+    try {
+      const view = render(
+        <MorphToast
+          startRect={{ top: 100, left: 20, width: 400, height: 200 }}
+          title="Post to #renewals in Slack — approved"
+          theme={{
+            colors: { background: "#fff", surface: "#f7f7f8", text: "#111", muted: "#666", accent: "#111", accentText: "#fff", danger: "#c00", border: "#eee" },
+            typography: { fontFamily: "system-ui", baseSize: "15px" },
+            radius: { small: "6px", medium: "10px", large: "16px" },
+            density: "comfortable",
+            motion: "reduced",
+          }}
+          onDone={onDone}
+        />,
+      );
+      expect(document.querySelector<HTMLElement>(".fl-morph-card")?.style.transition).toBe("opacity .3s");
+      // No travel to wait out, and the dock is not taken: fade hold, then gone.
+      vi.advanceTimersByTime(3200 + 460 + 10);
+      expect(onBump).not.toHaveBeenCalled();
+      expect(onDone).toHaveBeenCalledTimes(1);
+      view.unmount();
+    } finally {
+      window.removeEventListener(ACTIVITY_BUMP_EVENT, onBump);
+      anchor.remove();
     }
   });
 });

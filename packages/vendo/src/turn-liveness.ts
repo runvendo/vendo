@@ -78,6 +78,56 @@ export function touchActiveTurn(threadId: string, subject: string): boolean {
   return active;
 }
 
+/**
+ * The mid-turn STEER sink of a turn in flight (§10.2).
+ *
+ * Its own registry rather than a field on {@link ActiveTurn} because the two are
+ * published by different halves at different moments: the wire registers the
+ * abort from OUTSIDE the turn, once `runTurn.stream` has returned, while the
+ * runtime publishes this from INSIDE it (`liveTurn`). One entry with two
+ * registrars would be a two-phase handshake for no gain.
+ */
+interface SteerableTurn {
+  threadId: string;
+  subject: string;
+  steer: (text: string, messageId: string) => Promise<boolean>;
+}
+
+const STEERABLE_TURNS_KEY = Symbol.for("vendoai.vendo.steerable-turns@1");
+
+function steerableTurns(): Set<SteerableTurn> {
+  const holder = globalThis as { [STEERABLE_TURNS_KEY]?: Set<SteerableTurn> };
+  return (holder[STEERABLE_TURNS_KEY] ??= new Set());
+}
+
+/** Publish this turn's steer sink; returns its retraction. */
+export function registerTurnSteer(turn: SteerableTurn): () => void {
+  const entry: SteerableTurn = { ...turn };
+  steerableTurns().add(entry);
+  return () => { steerableTurns().delete(entry); };
+}
+
+/**
+ * Hand `text` to `subject`'s own turn in flight on `threadId`. Principal-scoped
+ * exactly like {@link touchActiveTurn}: foreign or unknown ids answer `false` —
+ * no oracle, and nobody can speak into another principal's build.
+ *
+ * `false` is a FACT and not a failure: it is also the answer when the turn simply
+ * cannot take a message, and the caller's own queue is the fallback either way.
+ */
+export async function steerActiveTurn(
+  threadId: string,
+  subject: string,
+  text: string,
+  messageId: string,
+): Promise<boolean> {
+  for (const turn of steerableTurns()) {
+    if (turn.threadId !== threadId || turn.subject !== subject) continue;
+    return await turn.steer(text, messageId);
+  }
+  return false;
+}
+
 /** Wrap a turn response so `onSettled` runs exactly once when its stream
  *  finishes, errors, or is cancelled — the turn's registry entry must not
  *  outlive the stream. Mirrors the wire's inflight-bracket wrapper. */

@@ -161,7 +161,7 @@ async function composeVendo(entityId: string, baseUrl: string) {
     // The demo posture: BYO Composio scoped to the demo's toolkits, guard
     // asking on every write (Maple's .vendo/policy.json intent).
     connectors: [composioConnector({ apiKey: apiKey!, apps: ["gmail", "slack"], entityId: () => entityId })],
-    policy: { rules: [{ match: { risk: "write" }, action: "ask" }, { match: { risk: "destructive" }, action: "ask" }] },
+    guard: { policy: { rules: [{ match: { risk: "write" }, action: "ask" }, { match: { risk: "destructive" }, action: "ask" }] } },
     principal: async () => ({ kind: "user", subject: entityId }),
   });
   // Settle composition (boot-time schema load) before the counter is read.
@@ -247,7 +247,9 @@ describe.skipIf(!apiKey || !hasModel)("discovery discipline, live (criteria 13 +
     const approvals = await (await vendo.handler(new Request("http://live.test/api/vendo/approvals"))).json() as unknown[];
     expect(approvals).toEqual([]);
     // The gate's other claim: the unconnected toolkit never reaches the broker.
-    expect(turn.paths.filter((path) => path.startsWith("/api/v3/tools/execute/"))).toEqual([]);
+    // Version-agnostic on purpose: pinned to one version, this assertion goes
+    // vacuously true the moment the executor moves.
+    expect(turn.paths.filter((path) => /^\/api\/v3(\.1)?\/tools\/execute\//.test(path))).toEqual([]);
     expect(turn.paths.length).toBeLessThanOrEqual(ROUND_TRIP_BUDGET);
   }, 240_000);
 });

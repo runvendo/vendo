@@ -39,13 +39,13 @@ describe("npxEngineHarness", () => {
     it("labels ANTHROPIC_API_KEY, naming the download", async () => {
       const harness = npxEngineHarness();
       expect(await harness.availability({ root: "/x", env: { ANTHROPIC_API_KEY: "sk" } }))
-        .toBe("your ANTHROPIC_API_KEY (via the Vendo engine, ~250MB one-time download)");
+        .toBe("your ANTHROPIC_API_KEY (via npm-fetched Claude Code, ~250MB one-time download)");
     });
 
     it("falls back to VENDO_API_KEY, naming the Vendo Cloud key and the download", async () => {
       const harness = npxEngineHarness();
       expect(await harness.availability({ root: "/x", env: { VENDO_API_KEY: "vnd_x" } }))
-        .toBe("your Vendo Cloud key (managed inference, via the Vendo engine, ~250MB one-time download)");
+        .toBe("your Vendo Cloud key (managed inference, via npm-fetched Claude Code, ~250MB one-time download)");
     });
 
     it("prefers ANTHROPIC_API_KEY's label over the Vendo Cloud key when both are set", async () => {
@@ -53,13 +53,13 @@ describe("npxEngineHarness", () => {
       expect(await harness.availability({
         root: "/x",
         env: { ANTHROPIC_API_KEY: "sk", VENDO_API_KEY: "vnd_x" },
-      })).toBe("your ANTHROPIC_API_KEY (via the Vendo engine, ~250MB one-time download)");
+      })).toBe("your ANTHROPIC_API_KEY (via npm-fetched Claude Code, ~250MB one-time download)");
     });
 
     it("treats a blank ANTHROPIC_API_KEY as absent and falls back to VENDO_API_KEY", async () => {
       const harness = npxEngineHarness();
       expect(await harness.availability({ root: "/x", env: { ANTHROPIC_API_KEY: "   ", VENDO_API_KEY: "vnd_x" } }))
-        .toBe("your Vendo Cloud key (managed inference, via the Vendo engine, ~250MB one-time download)");
+        .toBe("your Vendo Cloud key (managed inference, via npm-fetched Claude Code, ~250MB one-time download)");
     });
 
     // Spec-review follow-up (b216d0f4 landed hasOwnAnthropicEnvOverride after
@@ -71,19 +71,19 @@ describe("npxEngineHarness", () => {
     it("labels ANTHROPIC_AUTH_TOKEN as an own credential, naming the download", async () => {
       const harness = npxEngineHarness();
       expect(await harness.availability({ root: "/x", env: { ANTHROPIC_AUTH_TOKEN: "corp-tok" } }))
-        .toBe("your ANTHROPIC_AUTH_TOKEN (via the Vendo engine, ~250MB one-time download)");
+        .toBe("your ANTHROPIC_AUTH_TOKEN (via npm-fetched Claude Code, ~250MB one-time download)");
     });
 
     it("labels CLAUDE_CODE_OAUTH_TOKEN as an own credential, naming the download", async () => {
       const harness = npxEngineHarness();
       expect(await harness.availability({ root: "/x", env: { CLAUDE_CODE_OAUTH_TOKEN: "oauth-tok" } }))
-        .toBe("your CLAUDE_CODE_OAUTH_TOKEN (via the Vendo engine, ~250MB one-time download)");
+        .toBe("your CLAUDE_CODE_OAUTH_TOKEN (via npm-fetched Claude Code, ~250MB one-time download)");
     });
 
     it("labels ANTHROPIC_BASE_URL as an own credential, naming the download", async () => {
       const harness = npxEngineHarness();
       expect(await harness.availability({ root: "/x", env: { ANTHROPIC_BASE_URL: "https://corp.example/v1" } }))
-        .toBe("your ANTHROPIC_BASE_URL (via the Vendo engine, ~250MB one-time download)");
+        .toBe("your ANTHROPIC_BASE_URL (via npm-fetched Claude Code, ~250MB one-time download)");
     });
 
     it("prefers the own-credential env-override label over the Vendo Cloud key when both are set", async () => {
@@ -91,7 +91,7 @@ describe("npxEngineHarness", () => {
       expect(await harness.availability({
         root: "/x",
         env: { ANTHROPIC_AUTH_TOKEN: "corp-tok", ANTHROPIC_BASE_URL: "https://corp.example/v1", VENDO_API_KEY: "vnd_x" },
-      })).toBe("your ANTHROPIC_AUTH_TOKEN (via the Vendo engine, ~250MB one-time download)");
+      })).toBe("your ANTHROPIC_AUTH_TOKEN (via npm-fetched Claude Code, ~250MB one-time download)");
     });
 
     it("never invokes the exec seam (no npm/network probe)", async () => {
@@ -104,7 +104,7 @@ describe("npxEngineHarness", () => {
   });
 
   describe("run", () => {
-    it("invokes `npm exec --yes @vendoai/engine@<PINNED_VERSION> -- run` with cwd = host root", async () => {
+    it("invokes `npm exec --yes @anthropic-ai/claude-code@<PINNED_VERSION>` headless and read-only, cwd = host root", async () => {
       let capturedArgs: string[] = [];
       let capturedOptions: { cwd: string; env: NodeJS.ProcessEnv } | undefined;
       const harness = npxEngineHarness({
@@ -116,27 +116,60 @@ describe("npxEngineHarness", () => {
       });
       const text = await harness.run({ root: "/host/root", env: {}, instructions: "go read the codebase" });
       expect(text).toBe("the result");
-      expect(capturedArgs).toEqual(["exec", "--yes", `${ENGINE_PACKAGE_NAME}@${ENGINE_PACKAGE_VERSION}`, "--", "run"]);
+      expect(capturedArgs).toEqual([
+        "exec", "--yes", `${ENGINE_PACKAGE_NAME}@${ENGINE_PACKAGE_VERSION}`, "--",
+        "-p", "go read the codebase",
+        "--allowedTools", "Read(//host/root/**)", "Glob(//host/root/**)", "Grep(//host/root/**)",
+        "--disallowedTools",
+        "Bash", "Write", "Edit", "WebFetch", "WebSearch", "Task",
+        "TodoWrite", "NotebookEdit", "KillShell", "BashOutput",
+        "--setting-sources", "",
+      ]);
       expect(capturedOptions?.cwd).toBe("/host/root");
     });
 
-    it("pins an exact version, never a range", () => {
-      expect(ENGINE_PACKAGE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
-      expect(ENGINE_PACKAGE_NAME).toBe("@vendoai/engine");
+    it("confines reads to the root — a bare tool name would auto-allow Read on ANY path", async () => {
+      let capturedArgs: string[] = [];
+      const harness = npxEngineHarness({
+        exec: async (args) => { capturedArgs = args; return { stdout: "ok", stderr: "", code: 0 }; },
+      });
+      await harness.run({ root: "/host/root", env: {}, instructions: "go" });
+      const allowed = capturedArgs.slice(
+        capturedArgs.indexOf("--allowedTools") + 1,
+        capturedArgs.indexOf("--disallowedTools"),
+      );
+      expect(allowed).not.toContain("Read");
+      expect(allowed).not.toContain("Glob");
+      expect(allowed).not.toContain("Grep");
+      for (const rule of allowed) expect(rule).toContain("(//host/root/**)");
     });
 
-    it("writes the job JSON ({ instructions, root }) to the child's stdin — no credentials inside it", async () => {
-      let capturedInput = "";
+    it("pins an exact version of Anthropic's published package, never a range", () => {
+      expect(ENGINE_PACKAGE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(ENGINE_PACKAGE_NAME).toBe("@anthropic-ai/claude-code");
+    });
+
+    it("passes the model pin through when VENDO_MODEL_EXTRACT is set", async () => {
+      let capturedArgs: string[] = [];
       const harness = npxEngineHarness({
-        exec: async (_args, options) => { capturedInput = options.input; return { stdout: "ok", stderr: "", code: 0 }; },
+        exec: async (args) => { capturedArgs = args; return { stdout: "ok", stderr: "", code: 0 }; },
+      });
+      await harness.run({ root: "/x", env: { VENDO_MODEL_EXTRACT: "vendo-extract" }, instructions: "go" });
+      expect(capturedArgs.slice(-2)).toEqual(["--model", "vendo-extract"]);
+    });
+
+    it("never puts a credential on the child's argv — those ride the env only", async () => {
+      let capturedArgs: string[] = [];
+      const harness = npxEngineHarness({
+        exec: async (args) => { capturedArgs = args; return { stdout: "ok", stderr: "", code: 0 }; },
       });
       await harness.run({
         root: "/host/root",
-        env: { ANTHROPIC_API_KEY: "sk-should-not-appear-in-job" },
+        env: { ANTHROPIC_API_KEY: "sk-should-not-appear-on-argv" },
         instructions: "go read the codebase",
       });
-      expect(JSON.parse(capturedInput)).toEqual({ instructions: "go read the codebase", root: "/host/root" });
-      expect(capturedInput).not.toContain("sk-should-not-appear-in-job");
+      expect(capturedArgs).toContain("go read the codebase");
+      expect(capturedArgs.join(" ")).not.toContain("sk-should-not-appear-on-argv");
     });
 
     it("passes cwd = host root and forwards the caller's env over process.env", async () => {
@@ -173,7 +206,7 @@ describe("npxEngineHarness", () => {
       expect(order[0]).toMatch(/^progress:/);
       expect(order[0]).toMatch(/250MB/);
       expect(order[0]).toMatch(/cach/i);
-      expect(order.indexOf("exec-called")).toBeGreaterThan(order.indexOf(order[0]));
+      expect(order.indexOf("exec-called")).toBeGreaterThan(order.indexOf(order[0]!));
       expect(order.indexOf("exec-called")).toBe(1);
     });
 
@@ -287,7 +320,7 @@ describe("npxEngineHarness", () => {
         vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "ambient-corp-token");
         const harness = npxEngineHarness();
         expect(await harness.availability({ root: "/x", env: { VENDO_API_KEY: "vnd_x" } }))
-          .toBe("your ANTHROPIC_AUTH_TOKEN (via the Vendo engine, ~250MB one-time download)");
+          .toBe("your ANTHROPIC_AUTH_TOKEN (via npm-fetched Claude Code, ~250MB one-time download)");
       });
 
       it("passes ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL through untouched even with VENDO_API_KEY set (no CUSTOM_HEADERS)", async () => {

@@ -27,12 +27,12 @@ ${effect}  return <VendoOverlay />;
 }
 
 /**
- * `vendo init` wires `<VendoRoot theme={...}>` into the App Router layout but
- * ships no chat chrome — hosts mount `VendoOverlay` themselves (the demo apps
- * do exactly this). The corpus fixtures are hosts too, so e2e prep mounts the
- * overlay via a small client component beside the layout. Fails loudly when
- * the layout does not carry init's VendoRoot wrapper, so the harness surfaces
- * the next init-scaffold drift instead of silently producing a chat-less page.
+ * The `<VendoProvider theme={...}>` paste `vendo init` prints carries no chat
+ * chrome — hosts mount `VendoOverlay` themselves (the demo apps do exactly
+ * this). The corpus fixtures are hosts too, so e2e prep mounts the overlay via
+ * a small client component beside the layout. Fails loudly when the layout
+ * does not carry the pasted VendoProvider wrapper, so the harness surfaces
+ * the next init drift instead of silently producing a chat-less page.
  */
 export async function mountCorpusOverlay(
   appRoot: string,
@@ -45,12 +45,12 @@ export async function mountCorpusOverlay(
   const layoutPath = path.join(appDir, "layout.tsx");
   const source = await readFile(layoutPath, "utf8");
   if (source.includes(componentName)) return;
-  if (!source.includes("{children}</VendoRoot>")) {
+  if (!source.includes("{children}</VendoProvider>")) {
     throw new Error(
-      `Corpus e2e prep expected ${layoutPath} to wrap {children} in VendoRoot (vendo init layout output drifted?)`,
+      `Corpus e2e prep expected ${layoutPath} to wrap {children} in VendoProvider (vendo init paste drifted?)`,
     );
   }
   const next = `import { ${componentName} } from "./vendo-corpus-e2e";\n${source}`
-    .replace("{children}</VendoRoot>", `{children}<${componentName} /></VendoRoot>`);
+    .replace("{children}</VendoProvider>", `{children}<${componentName} /></VendoProvider>`);
   await writeFile(layoutPath, next);
 }

@@ -61,6 +61,10 @@ function blankInput(properties: Record<string, unknown> = {}): Record<string, un
   };
 }
 
+// None of these fixtures declares a schema, so every harvested baseline below
+// carries the blind markers on both slots.
+const blind = { inputSchemaSource: "unknown", outputSchemaSource: "unknown" } as const;
+
 describe("app route verb evidence", () => {
   it("reads exported declarations, declaration lists, and destructured exports", async () => {
     const root = await temporaryRoot();
@@ -76,13 +80,13 @@ describe("app route verb evidence", () => {
     // inference PR — harvested from today's scanRoutes output).
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_fn_list", description: "GET /api/fn", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_fn_list", description: "GET /api/fn", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/fn", argsIn: "query" } },
-        { name: "host_list_create", description: "POST /api/list", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_list_create", description: "POST /api/list", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/list", argsIn: "body" } },
-        { name: "host_pair_list", description: "GET /api/pair", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_pair_list", description: "GET /api/pair", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/pair", argsIn: "query" } },
-        { name: "host_pair_update", description: "PUT /api/pair", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_pair_update", description: "PUT /api/pair", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "PUT", path: "/api/pair", argsIn: "body" } },
       ],
       warnings: [],
@@ -100,7 +104,7 @@ describe("app route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_aliased_update", description: "PATCH /api/aliased", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_aliased_update", description: "PATCH /api/aliased", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "PATCH", path: "/api/aliased", argsIn: "body" } },
       ],
       warnings: [],
@@ -121,13 +125,13 @@ describe("app route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_named_list", description: "GET /api/named", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_named_list", description: "GET /api/named", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/named", argsIn: "query" } },
-        { name: "host_named_delete", description: "DELETE /api/named", inputSchema: blankInput(), risk: "destructive",
+        { ...blind, name: "host_named_delete", description: "DELETE /api/named", inputSchema: blankInput(), risk: "destructive",
           binding: { kind: "route", method: "DELETE", path: "/api/named", argsIn: "query" } },
-        { name: "host_star_list", description: "GET /api/star", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_star_list", description: "GET /api/star", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/star", argsIn: "query" } },
-        { name: "host_star_delete", description: "DELETE /api/star", inputSchema: blankInput(), risk: "destructive",
+        { ...blind, name: "host_star_delete", description: "DELETE /api/star", inputSchema: blankInput(), risk: "destructive",
           binding: { kind: "route", method: "DELETE", path: "/api/star", argsIn: "query" } },
       ],
       warnings: [],
@@ -146,9 +150,9 @@ describe("app route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_mixed_list", description: "GET /api/mixed", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_mixed_list", description: "GET /api/mixed", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/mixed", argsIn: "query" } },
-        { name: "host_mixed_create", description: "POST /api/mixed", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_mixed_create", description: "POST /api/mixed", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/mixed", argsIn: "body" } },
       ],
       warnings: [],
@@ -166,7 +170,7 @@ describe("app route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_noise_update", description: "PUT /api/noise", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_noise_update", description: "PUT /api/noise", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "PUT", path: "/api/noise", argsIn: "body" } },
       ],
       warnings: [],
@@ -184,9 +188,9 @@ describe("app route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_keyed_list", description: "GET /api/keyed", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_keyed_list", description: "GET /api/keyed", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/keyed", argsIn: "query" } },
-        { name: "host_keyed_create", description: "POST /api/keyed", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_keyed_create", description: "POST /api/keyed", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/keyed", argsIn: "body" } },
       ],
       warnings: [],
@@ -213,17 +217,17 @@ describe("app route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_blob_get", description: "GET /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "write",
+        { ...blind, name: "host_blob_get", description: "GET /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/blob/{rest}", argsIn: "query" } },
-        { name: "host_blob_create", description: "POST /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "write",
+        { ...blind, name: "host_blob_create", description: "POST /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/blob/{rest}", argsIn: "body" } },
-        { name: "host_blob_update", description: "PUT /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "write",
+        { ...blind, name: "host_blob_update", description: "PUT /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "PUT", path: "/api/blob/{rest}", argsIn: "body" } },
-        { name: "host_things_list", description: "GET /api/things", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_things_list", description: "GET /api/things", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/things", argsIn: "query" } },
-        { name: "host_things_create", description: "POST /api/things", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_things_create", description: "POST /api/things", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/things", argsIn: "body" } },
-        { name: "host_things_update", description: "PUT /api/things/{id}", inputSchema: blankInput({ id: { type: "string" } }), risk: "write",
+        { ...blind, name: "host_things_update", description: "PUT /api/things/{id}", inputSchema: blankInput({ id: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "PUT", path: "/api/things/{id}", argsIn: "body" } },
       ],
       warnings: [],
@@ -262,19 +266,19 @@ describe("pages route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_allow_array_list", description: "GET /api/allow-array", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_allow_array_list", description: "GET /api/allow-array", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/allow-array", argsIn: "query" } },
-        { name: "host_allow_array_create", description: "POST /api/allow-array", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_allow_array_create", description: "POST /api/allow-array", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/allow-array", argsIn: "body" } },
-        { name: "host_allow_string_list", description: "GET /api/allow-string", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_allow_string_list", description: "GET /api/allow-string", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/allow-string", argsIn: "query" } },
-        { name: "host_allow_string_update", description: "PATCH /api/allow-string", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_allow_string_update", description: "PATCH /api/allow-string", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "PATCH", path: "/api/allow-string", argsIn: "body" } },
-        { name: "host_compare_update", description: "PUT /api/compare", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_compare_update", description: "PUT /api/compare", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "PUT", path: "/api/compare", argsIn: "body" } },
-        { name: "host_switch_list", description: "GET /api/switch", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_switch_list", description: "GET /api/switch", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/switch", argsIn: "query" } },
-        { name: "host_switch_delete", description: "DELETE /api/switch", inputSchema: blankInput(), risk: "destructive",
+        { ...blind, name: "host_switch_delete", description: "DELETE /api/switch", inputSchema: blankInput(), risk: "destructive",
           binding: { kind: "route", method: "DELETE", path: "/api/switch", argsIn: "query" } },
       ],
       warnings: [],
@@ -390,6 +394,52 @@ describe("pages route verb evidence", () => {
     expect(await methodsFor(root, "/api/put-only")).toEqual(["PUT"]);
   });
 
+  it("does not read a lowercase case clause as verb evidence (a switch on a body discriminant)", async () => {
+    const root = await temporaryRoot();
+    // A POST-only handler that dispatches on `req.body.action`, not on
+    // `req.method`. Reading `case "delete"` as a verb hands the agent an
+    // ENABLED, destructive-graded DELETE at the route's real URL that the
+    // handler never implements — and, because any verb evidence wins over
+    // none, it replaces the POST the route actually serves.
+    await write(
+      root,
+      "pages/api/bulk.ts",
+      [
+        "export default async function handle(req: any, res: any) {",
+        "  if (req.method !== \"POST\") return res.status(405).end();",
+        "  switch (req.body.action) {",
+        "    case \"delete\":",
+        "      return res.status(200).json({ ok: true });",
+        "    case \"archive\":",
+        "      return res.status(200).json({ ok: true });",
+        "    default:",
+        "      return res.status(400).end();",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    // The same switch with no `req.method` guard anywhere: the false verb is
+    // the route's ONLY evidence, so it does not merely add a phantom tool —
+    // any verb evidence short-circuits the `req.body` inference below it, so
+    // the phantom DELETE *replaces* the POST this handler actually serves.
+    await write(
+      root,
+      "pages/api/dispatch.ts",
+      [
+        "export default async function handle(req: any, res: any) {",
+        "  switch (req.body.action) {",
+        "    case \"delete\":",
+        "      return res.status(200).json({ ok: true });",
+        "    default:",
+        "      return res.status(400).end();",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    expect(await methodsFor(root, "/api/bulk")).toEqual(["POST"]);
+    expect(await methodsFor(root, "/api/dispatch")).toEqual(["POST"]);
+  });
+
   it("treats a NextAuth handler as GET+POST", async () => {
     const root = await temporaryRoot();
     await write(
@@ -401,9 +451,9 @@ describe("pages route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_auth_get", description: "GET /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "write",
+        { ...blind, name: "host_auth_get", description: "GET /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/auth/{nextauth}", argsIn: "query" } },
-        { name: "host_auth_create", description: "POST /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "write",
+        { ...blind, name: "host_auth_create", description: "POST /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/auth/{nextauth}", argsIn: "body" } },
       ],
       warnings: [],
@@ -426,7 +476,7 @@ describe("pages route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_delegate_create", description: "POST /api/delegate", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_delegate_create", description: "POST /api/delegate", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/delegate", argsIn: "body" } },
       ],
       warnings: [],
@@ -445,7 +495,7 @@ describe("pages route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_re_exported_delete", description: "DELETE /api/re-exported", inputSchema: blankInput(), risk: "destructive",
+        { ...blind, name: "host_re_exported_delete", description: "DELETE /api/re-exported", inputSchema: blankInput(), risk: "destructive",
           binding: { kind: "route", method: "DELETE", path: "/api/re-exported", argsIn: "query" } },
       ],
       warnings: [],
@@ -482,15 +532,15 @@ describe("pages route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_raw_create", description: "POST /api/raw", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_raw_create", description: "POST /api/raw", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/raw", argsIn: "body" } },
-        { name: "host_stripe_webhook_create", description: "POST /api/stripe/webhook", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_stripe_webhook_create", description: "POST /api/stripe/webhook", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/stripe/webhook", argsIn: "body" } },
-        { name: "host_trpc_page_list", description: "GET /api/trpc-page", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_trpc_page_list", description: "GET /api/trpc-page", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/trpc-page", argsIn: "query" } },
-        { name: "host_trpc_page_create", description: "POST /api/trpc-page", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_trpc_page_create", description: "POST /api/trpc-page", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/trpc-page", argsIn: "body" } },
-        { name: "host_upload_create", description: "POST /api/upload", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_upload_create", description: "POST /api/upload", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "POST", path: "/api/upload", argsIn: "body" } },
       ],
       warnings: [],
@@ -540,10 +590,10 @@ describe("pages route verb evidence", () => {
 
     expect(await scannedTools(root)).toEqual({
       tools: [
-        { name: "host_health_list", description: "GET /api/health", inputSchema: blankInput(), risk: "write",
+        { ...blind, name: "host_health_list", description: "GET /api/health", inputSchema: blankInput(), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/health", argsIn: "query" } },
-        { name: "host_teams_documents_status_list", description: "GET /api/teams/{teamId}/documents/status",
-          inputSchema: blankInput({ teamId: { type: "string" } }), risk: "write",
+        { ...blind, name: "host_teams_documents_status_list", description: "GET /api/teams/{teamId}/documents/status",
+          inputSchema: blankInput({ teamId: { type: "string" } }), risk: "ungraded",
           binding: { kind: "route", method: "GET", path: "/api/teams/{teamId}/documents/status", argsIn: "query" } },
       ],
       warnings: [],
@@ -557,22 +607,145 @@ describe("pages route verb evidence", () => {
     expect(tools).toEqual([expect.objectContaining({
       name: "host_opaque_unclassified",
       disabled: true,
-      risk: "destructive",
+      risk: "ungraded",
       binding: expect.objectContaining({ method: "POST", path: "/api/opaque" }),
     })]);
     expect(warnings).toEqual([expect.stringContaining("/api/opaque")]);
 
     expect(await scannedTools(root)).toEqual({
       tools: [{
+        ...blind,
         name: "host_opaque_unclassified",
         description: "Route /api/opaque could not be classified",
         inputSchema: { type: "object", properties: {} },
-        risk: "destructive",
+        risk: "ungraded",
         disabled: true,
         note: "pages handler has no supported HTTP method evidence; enable only after review; overrides.json can flip disabled/risk",
         binding: { kind: "route", method: "POST", path: "/api/opaque", argsIn: "body" },
       }],
       warnings: ["route /api/opaque could not be classified: pages handler has no supported HTTP method evidence"],
     });
+  });
+});
+
+describe("graphql endpoints", () => {
+  it("emits no tool for a yoga pages handler", async () => {
+    const root = await temporaryRoot();
+    await write(
+      root,
+      "pages/api/graphql.ts",
+      [
+        "import { createSchema, createYoga } from \"graphql-yoga\";",
+        "export const config = { api: { bodyParser: false } };",
+        "const schema = createSchema({ typeDefs: \"type Query { me: String }\", resolvers: {} });",
+        "export default createYoga({ schema, graphqlEndpoint: \"/api/graphql\" });",
+      ].join("\n"),
+    );
+    expect(await scannedTools(root)).toEqual({
+      tools: [],
+      warnings: ["route /api/graphql is a GraphQL endpoint; GraphQL is not an extracted stack, so no tool was emitted"],
+    });
+  });
+
+  it("emits no tool for an apollo app-router handler", async () => {
+    const root = await temporaryRoot();
+    await write(
+      root,
+      "app/api/graphql/route.ts",
+      [
+        "import { ApolloServer } from \"@apollo/server\";",
+        "import { startServerAndCreateNextHandler } from \"@as-integrations/next\";",
+        "const server = new ApolloServer({ typeDefs: \"type Query { me: String }\", resolvers: {} });",
+        "const handler = startServerAndCreateNextHandler(server);",
+        "export { handler as GET, handler as POST };",
+      ].join("\n"),
+    );
+    expect(await scannedTools(root)).toEqual({
+      tools: [],
+      warnings: ["route /api/graphql is a GraphQL endpoint; GraphQL is not an extracted stack, so no tool was emitted"],
+    });
+  });
+
+  it("emits no tool for an app route that re-exports its verbs from a local yoga module", async () => {
+    const root = await temporaryRoot();
+    await write(
+      root,
+      "app/api/graphql/graphql-server.ts",
+      [
+        "import { createSchema, createYoga } from \"graphql-yoga\";",
+        "const schema = createSchema({ typeDefs: \"type Query { me: String }\", resolvers: {} });",
+        "const yoga = createYoga({ schema, graphqlEndpoint: \"/api/graphql\" });",
+        "export const GET = yoga;",
+        "export const POST = yoga;",
+      ].join("\n"),
+    );
+    await write(root, "app/api/graphql/route.ts", "export { GET, POST } from \"./graphql-server\";\n");
+    expect(await scannedTools(root)).toEqual({
+      tools: [],
+      warnings: ["route /api/graphql is a GraphQL endpoint; GraphQL is not an extracted stack, so no tool was emitted"],
+    });
+  });
+
+  it("emits no tool for a pages route that default-re-exports a shared lib yoga module", async () => {
+    const root = await temporaryRoot();
+    await write(
+      root,
+      "lib/graphql/yoga.ts",
+      [
+        "import { createSchema, createYoga } from \"graphql-yoga\";",
+        "const schema = createSchema({ typeDefs: \"type Query { me: String }\", resolvers: {} });",
+        "export default createYoga({ schema, graphqlEndpoint: \"/api/graphql\" });",
+      ].join("\n"),
+    );
+    await write(
+      root,
+      "pages/api/graphql.ts",
+      [
+        "export { default } from \"../../lib/graphql/yoga\";",
+        "export const config = { api: { bodyParser: false } };",
+      ].join("\n"),
+    );
+    expect(await scannedTools(root)).toEqual({
+      tools: [],
+      warnings: ["route /api/graphql is a GraphQL endpoint; GraphQL is not an extracted stack, so no tool was emitted"],
+    });
+  });
+
+  it("emits no tool for an apollo handler re-exported through a barrel file", async () => {
+    const root = await temporaryRoot();
+    await write(
+      root,
+      "lib/graphql/handler.ts",
+      [
+        "import { ApolloServer } from \"@apollo/server\";",
+        "import { startServerAndCreateNextHandler } from \"@as-integrations/next\";",
+        "const server = new ApolloServer({ typeDefs: \"type Query { me: String }\", resolvers: {} });",
+        "const handler = startServerAndCreateNextHandler(server);",
+        "export const GET = handler;",
+        "export const POST = handler;",
+      ].join("\n"),
+    );
+    await write(root, "lib/graphql/index.ts", "export * from \"./handler\";\n");
+    await write(root, "app/api/graphql/route.ts", "export { GET, POST } from \"../../../lib/graphql/index\";\n");
+    expect(await scannedTools(root)).toEqual({
+      tools: [],
+      warnings: ["route /api/graphql is a GraphQL endpoint; GraphQL is not an extracted stack, so no tool was emitted"],
+    });
+  });
+
+  it("keeps a REST route that merely calls an upstream GraphQL API", async () => {
+    const root = await temporaryRoot();
+    await write(
+      root,
+      "app/api/stars/route.ts",
+      [
+        "import { request, gql } from \"graphql-request\";",
+        "export async function GET() {",
+        "  const data = await request(\"https://api.github.com/graphql\", gql`{ viewer { login } }`);",
+        "  return Response.json(data);",
+        "}",
+      ].join("\n"),
+    );
+    expect(await methodsFor(root, "/api/stars")).toEqual(["GET"]);
   });
 });

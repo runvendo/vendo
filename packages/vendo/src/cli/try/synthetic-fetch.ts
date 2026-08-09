@@ -17,7 +17,7 @@ import type { FixturesFile } from "./profile.js";
  * matching any one (decoded) segment. Overlapping templates resolve by
  * specificity: the template binding the fewest `{param}` segments wins, so
  * `GET /api/users/{id}` can never shadow `GET /api/users/me`. Bindings without
- * a method+path shape (trpc, graphql, server-action) never match here.
+ * a method+path shape (trpc, server-action) never match here.
  * Documented gap: an array-valued path param (withPathArgs joins arrays into
  * MULTIPLE segments) never survives the segment-count check — such a request
  * answers the honest 404 below rather than a wrong fixture.

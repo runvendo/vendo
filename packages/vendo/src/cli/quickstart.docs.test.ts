@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { registrySource, routeSource, vendoRootWrapperSource } from "./init-scaffolds.js";
+import { routeSource } from "./init-scaffolds.js";
 
 /**
  * Quickstart drift gate. `docs/quickstart.md` is the first code a host ever
@@ -17,7 +17,7 @@ import { registrySource, routeSource, vendoRootWrapperSource } from "./init-scaf
  *      `CreateVendoConfig`/`Vendo` (nested shapes and optionality included), so
  *      the types and the imports are checked by `pnpm typecheck` rather than by
  *      a list maintained here,
- *   3. the listing's top-level key set and @deprecated marks vs `server.ts` —
+ *   3. the listing's top-level key set and @deprecated marks vs `types.ts` —
  *      a readable failure for the most common drift, and the one thing types
  *      cannot carry,
  *   4. every `@vendoai/*` import specifier in a code block resolvable from a
@@ -30,7 +30,7 @@ import { registrySource, routeSource, vendoRootWrapperSource } from "./init-scaf
  */
 
 const QUICKSTART = new URL("../../../../docs/quickstart.md", import.meta.url);
-const SERVER_SOURCE = new URL("../server.ts", import.meta.url);
+const TYPES_SOURCE = new URL("../types.ts", import.meta.url);
 const CONFIG_FIXTURE = new URL("./quickstart-config-surface.docs-check.ts", import.meta.url);
 
 /** The fixture's copy of the doc block, between its markers. */
@@ -115,31 +115,12 @@ function deprecatedMembers(source: string, name: string): string[] {
 const blocks = codeBlocks(await readFile(QUICKSTART, "utf8"));
 
 describe("docs/quickstart.md stays 1:1 with the surfaces it documents", () => {
-  it("shows the registry scaffold's own import, not a transitive one", () => {
-    const documented = blockFor(blocks, "vendo/registry.tsx");
-    const scaffold = registrySource("tsx");
-
-    // The specifier is the whole point (init-scaffolds.ts: @vendoai/core is
-    // transitive, so a host importing it fails to resolve with TS2307).
-    const scaffoldImport = codeLines(scaffold).find((line) => line.startsWith("import type {"))!;
-    expect(scaffoldImport).toBe(`import type { ComponentRegistry } from "@vendoai/vendo";`);
-    expect(codeLines(documented)).toContain(scaffoldImport);
-    expect(documented).toContain("satisfies ComponentRegistry");
-  });
-
   it("shows the route scaffold verbatim as the primary composition", () => {
     const documented = blockFor(blocks, "app/api/vendo/[...vendo]/route.ts");
     const scaffold = routeSource({
       serverActions: false,
       auth: { preset: "authJs", dependency: "next-auth" },
-      registrySpecifier: "@/vendo/registry",
     });
-    expect(codeLines(documented)).toEqual(codeLines(scaffold));
-  });
-
-  it("shows the client-mount scaffold verbatim", () => {
-    const documented = blockFor(blocks, "vendo/vendo-root.tsx");
-    const scaffold = vendoRootWrapperSource({ themeSpecifier: "../.vendo/theme.json" });
     expect(codeLines(documented)).toEqual(codeLines(scaffold));
   });
 
@@ -191,7 +172,7 @@ describe("docs/quickstart.md stays 1:1 with the surfaces it documents", () => {
 
   it("lists exactly the documented interfaces' members, deprecations included", async () => {
     const listing = configListing(blocks);
-    const source = await readFile(SERVER_SOURCE, "utf8");
+    const source = await readFile(TYPES_SOURCE, "utf8");
     for (const name of ["CreateVendoConfig", "Vendo"]) {
       expect(interfaceMembers(listing, name), name).toEqual(interfaceMembers(source, name));
     }

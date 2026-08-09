@@ -1,5 +1,1420 @@
 # @vendoai/core
 
+## 0.8.1
+
+### Patch Changes
+
+- a7a0fcf: A host's own backend gets in at the MCP door with a service key — no per-user
+  OAuth, no browser.
+
+  `createVendo({ mcp: { serviceAuth: { keys: [...] } } })` arms the door's own
+  `/token` endpoint for RFC 8693 token exchange: the backend POSTs
+  `grant_type=urn:ietf:params:oauth:grant-type:token-exchange` with
+  `client_id=vendo-service`, the key as `client_secret`, and one of its own user
+  ids as `subject_token`, and gets back a ten-minute `vmat_` bearer token for
+  that user. Keys are opaque strings the host mints itself (`openssl rand -hex
+32`); the door stores only their hashes, compares in constant time, and
+  answers every failure with the same `invalid_client`. No refresh tokens —
+  rotation is "exchange again." Audit rows carry a `svc:<hash>` client id so
+  service-minted sessions are distinguishable from interactive ones.
+
+- e092567: A standalone session can reopen an existing conversation.
+
+  `session(subject, { threadId })` reopens the named conversation instead of minting
+  a new one. Ownership is the store's own subject scope — someone else's thread reads
+  back as absent and is refused as `not-found`, never silently swapped for a new
+  conversation. The resume path deliberately skips `threadStore.put`, whose replace
+  semantics would delete the very transcript the resume exists to read back.
+
+  Until now `createSession` minted a fresh thread on every call and `SessionOptions`
+  had no way to name an existing one, so a Node backend that built a session per HTTP
+  request — which is what the README showed — lost the whole conversation on every
+  request. Multi-turn only worked while the JS object stayed alive in process memory.
+  The README now passes `threadId` in, hands `session.threadId` back out, and says
+  plainly that a session is request-lifetime while the thread is not.
+
+  The `[User]` and `[Situation]` prompt blocks are now one implementation in
+  `@vendoai/core` (`userPromptBlock`, `situationPromptBlock`, `promptFactLines`),
+  shared by the standalone assembler and the umbrella's. They were two copies of a
+  prompt-injection defence — the indent that stops a client-supplied fact from
+  forging a top-level `Directions` section — and only the umbrella's labeled the
+  situation "observation, not instruction". The shared block carries that label, so
+  the standalone surface gains it. No other behaviour changes.
+
+- b99147f: Connect asks first: a `request_connection` tool and a connect card that owns the whole answer.
+
+  The agent can now ASK for a connection instead of spending a call it already knows
+  will be refused. `request_connection` (toolkit + one plain sentence) mints exactly the
+  `connect-required` outcome a refused service call produces, so the card the user sees
+  is the same card — nothing new on the wire. The tool is projected only where the
+  deployment can actually connect the toolkit, and refuses one it cannot rather than
+  raising a button that can never succeed.
+
+  The card itself now opens its sign-in window _inside the click_, before any `await`:
+  Safari and Firefox judge a popup by call-stack provenance, and the old order (initiate,
+  then open) is precisely the shape they block. The window opens centered and blank, is
+  navigated when the redirect URL arrives, and is closed from the opener once the account
+  goes active. A window the browser blocked anyway is no longer a dead end — the same
+  poll keeps running behind an "Open sign-in in a new tab" link.
+
+  The card also says what connecting grants, in plain words rather than OAuth scope
+  strings, and offers "Not now" — which leaves a one-line Skipped record that still
+  re-offers Connect, and tells the agent so it can adapt.
+
+- 46923cc: Internal refactor: core's six highest-cognitive-complexity functions are decomposed into named helpers. `applyStep` and `reshapeShape` (reshape.ts) each split one branch per reshape op; `validateAppDocumentUnsafe` (app-document.ts) splits one function per cross-field rule; `validateTreeUnsafe` (genui/tree.ts) splits the query block and the node walk; `parseAttributes` (genui/wire/attributes.ts) splits the `=`-value forms and the duplicate-attribute message; `prescanDeclarations` (genui/wire/compile.ts) splits the `<Query>` and `<Island>` pre-scan branches. Every extracted helper is module-private and every message, order of checks and return value is unchanged. **No public surface changed** — not one exported symbol, signature or type moved, and no test file was touched.
+- b50a766: Core drops nine exports nothing calls. `inferFieldSemantic`, `humanizeEnumValue`, `semanticAtPointer`, `semanticFormatToken` and `describeSemantic` were orphaned when the dev-server inference pass was deleted — the semantics that reach generation come from the judge and the host's `overrides.json`, and no consumer in the monorepo or the console has called these since. `startSseKeepalive` was justified by "the `vendo try` dev server writes to a Node `ServerResponse`", a surface that does not exist; `withSseKeepalive` is the live keepalive and is untouched. `VendoApprovalWirePart`, `VendoConnectWirePart` and `requestNumberValues` had zero references. `declaredMoneyUnit`, `describeShapeWithSemantics`, `fieldSemanticSchema`, `toolSemanticsSchema` and the money-name regexes behind them are unchanged, and `declaredMoneyUnit`'s test now also pins the "a bare total is a count, not money" rule the deleted inference test carried.
+- 022f789: The automations adoption handoff is removed. When an automation's sponsorship
+  lapsed — the sponsor left, lost their permissions, or somebody else edited the
+  app — the automation stopped and an "adoption card" waited inside the app so the
+  next editor could take it on, re-approving its reads and writes as themselves.
+  No host used it.
+
+  Sponsorship itself is unchanged: an automation still runs as a named person, and
+  still stops when that person's authority lapses. What goes is the second half —
+  the handoff to somebody new.
+
+  Gone: `AutomationsEngine.adoption()` and `.adopt()`, the `AdoptionCard` and
+  `AdoptionNeed` types (`@vendoai/automations`); `ADOPTION_VENUE_KEY`
+  (`@vendoai/core`); `POST /automations/:id/adopt/:triggerId` (`@vendoai/vendo`);
+  `client.automations.adopt()`, `<AdoptionCard>`, `<AdoptionVenueCard>`,
+  `ADOPTION_VENUE_KEY`, `AdoptionCardProps`, `AdoptionVenue` and `AdoptResult`
+  (`@vendoai/ui`).
+
+  Pre-1.0 hard cut, no deprecation shim. A stopped automation is restarted the way
+  it was armed in the first place: anyone who can edit the app calls `enable()`
+  again, which re-approves its reads and writes under the new sponsor. The stopped
+  sentence the run row and the list carry now says "anyone who can edit this app
+  can turn it back on" instead of "…can take it on".
+
+- 354f231: Remove undo and rollback entirely.
+
+  **BREAKING, despite the patch version.** This release ships as a patch off the
+  0.8 line (pre-1.0 convention), so the version number does NOT signal the removal
+  below. If you call any export in the lists that follow, this release breaks your
+  build — read them before upgrading. A `0.8.x` range accepts this version, so the
+  version number alone will not hold it back.
+
+  Two separate features, both cut: rolling an app back to a previous version, and
+  walking a workspace file back to the version before its newest commit. **Users
+  lose the ability to roll an app back.** That is deliberate. Pre-1.0, so this is
+  a hard cut with no deprecation shim.
+
+  Version history LISTING stays, everywhere: the app's capped 50-entry version log
+  and the workspace's per-path revision trail are unchanged, and so is everything
+  built on the recorded history — the review venue's newest-approved-version serve
+  (`review.serveDocFor`), the pin-rebase replay trail (`history.pinIntents`), and
+  the edit journal's append/discard/prune.
+
+  Removed from `@vendoai/apps`:
+
+  - `AppsRuntime.history(appId, ctx).undo()` — the surface now returns
+    `{ list(): Promise<VersionEntry[]> }` only
+  - `AppHistoryAccess.surface(appId).undo()` (the `createAppHistory` internal)
+
+  Removed from `@vendoai/core`:
+
+  - `StoreOps.workspace.undo(target, opts)`
+  - `storeWireWorkspaceUndoRequestSchema`
+  - the `"workspace.undo"` key from `STORE_WIRE_PATHS`, so the store wire is
+    **31 doors, not 32** — `StoreWireStatus.ops` is now `31`, and the workspace
+    family is 4 (index · read · commit · history)
+  - the `workspace.undo` cases from the `storeOpsConformance` suite, and the
+    `undo` implementation from `memoryStoreOps`
+
+  Removed from `@vendoai/store`:
+
+  - `workspaceStore(store).undo(caller, path)`
+  - `WorkspaceRows.undo` and the `UndoOutcome` type (internal — never exported
+    from the package index)
+  - `createStoreOps(store).workspace.undo`, with its `pathsMovedOn`,
+    `newestCommitTouching` and `commitCreated` helpers and the `created` array
+    the commit ledger wrote for them
+  - the `recordHistory` option on the internal write path, whose only `false`
+    caller was undo — every landed write now records its superseded revision
+
+  Removed from `@vendoai/ui`:
+
+  - `VendoClient["apps"].undo(id)`
+  - `useApp().history.undo()` — the hook's `history` is now `{ list() }`
+
+  Removed from `@vendoai/vendo`:
+
+  - the `POST /apps/:id/history` route (the `{ op: "undo" }` body). `GET
+/apps/:id/history` is unchanged; the path now serves GET only
+  - the `workspace.undo` leg of the hosted (Cloud) store adapter, which called
+    the console's `POST /workspace/undo`
+
+  **Existing data is left exactly where it is — no migration, no cleanup.**
+  Existing `vendo_workspace_history` rows and `vendo:app-history:*` records stay
+  readable by listing, but the content they hold becomes unrestorable: nothing
+  reads it now. Those rows self-trim at `WORKSPACE_HISTORY_LIMIT` per path, except
+  for a deleted path that is never written again, which holds its blob forever.
+  That is a real consequence of removing the feature, and it is not repaired here.
+
+- ee92750: The `$expr` fact check and the evaluator agree about `days_until`.
+
+  `days_until(invoices.due_date)` reads the `due_date` COLUMN off every row, and the
+  evaluator has always refused it — "days_until() reads one date, but
+  invoices.due_date is a list of 3". The static check looked past the column at its
+  items, saw strings, and passed. So a generated app shipped through the fact check
+  clean and then rendered the contained data-shape notice instead of the number the
+  model was asked for. `days_until` is now checked as the scalar slot it is, with
+  the evaluator's own repair sentence. The check/evaluator agreement table that
+  landed with the two-level column paths grows the three rows that cover it.
+
+  Two smaller compiler corrections ride along. A duplicate attribute whose LAST value
+  was dropped (single-quoted, ill-formed UTF-16, an invalid action) was still reported
+  as "the last one wins", which sent a retry back to re-write the value that never
+  landed; the message now names the outcome — including the case where EVERY value
+  was dropped and no attribute survives at all — and two compiler-owned `id`
+  attributes no longer claim a winner where both are ignored. And `compilePlan`'s
+  issue list — which is verbatim the model's retry prompt — is capped at 64 with a
+  final count, the way the wire compiler already caps its own; a broken document
+  previously minted one sentence per stray token with no bound. That count reads
+  "1 further problem was not listed" when exactly one is omitted.
+
+  Internal only, no public surface change: the wire attribute layer's dead `patch`
+  element mode, its action-attribute regex duplicated into the printer, and
+  `state.ts`'s pass-through re-export of `isWellFormedUtf16` are gone.
+
+- d599d23: `.vendo/tools.json` is the one source of truth for every tool's request and
+  response schema, and the runtime sampler is gone.
+
+  Sync fills both slots through a trust ladder and records which rung filled each
+  one: the host's own spec (`declared`), its TypeScript types (`types`), the AI
+  judge reading the handler (`inferred`), or nothing (`unknown`). The judge may
+  only fill a slot nothing else could read — refused in code, not by prompt — and
+  its fills survive the next sync through the same carry-over `semantics` uses.
+  Coverage is reported plainly by `vendo sync`.
+
+  Every prompt that lists tools now lists all of them: a tool with a declared
+  schema shows its shape, and a tool with a blind slot says so in words. A blind
+  input never prints as `{}`, which reads as "takes no arguments" — and a
+  declared no-argument tool still prints the empty schema it really has.
+
+  **Breaking, both pre-1.0:**
+
+  - `AppsConfig.connectedToolkits` is removed from `@vendoai/apps`. Its only
+    reader was the create-time shape sampler, which is deleted: nothing calls the
+    host to learn a shape anymore. Drop the option; there is no replacement and
+    nothing to migrate.
+  - `deriveShapeCard`, `deriveShape`, `mergeShapes`, `ShapeCard` and
+    `shapeCardSchema` are removed from `@vendoai/core`. Shapes come from declared
+    JSON Schema now — use `shapeFromJsonSchema(schema)`, which additionally keeps
+    `enum` values a sample always erased.
+
+  A host that declares its response schemas gets strictly better checking and one
+  fewer live call per create. A host that declares nothing keeps working: blind
+  tools run permissively, and the report says which ones they are.
+
+- 89660d1: Three compiler correctness fixes: the inline-ref pre-pass no longer rewrites text children or quoted attribute values (only attribute expressions are scanned for inline tool calls), a stray close tag inside a `<Group>` no longer ends the group and drops the leaves after it, and `checkExpr` now resolves a column exactly as the evaluator does — one array level per hop, so `sum(orders, "lines.cents")` passes the check as it has always evaluated, while a list the field's own type declares, and any list in `difference()`'s two scalar slots, are rejected by both halves.
+- 2b6d60f: Remove the orphan wire text-edit surface and the inert reshape deprecation walker.
+
+  `applyTextEdits`, `recompileWithIdentity`, `TextEdit` and `TextEditResult` are
+  gone from `@vendoai/core`: the consumer was deleted when the conductor replaced
+  the generation engine, and nothing has called them since. The four `<Edit>`
+  patch issue codes they fed (`missing-edit`, `unknown-target`, `invalid-patch-op`,
+  `patch-invalid`) go with them, and the two generation prompts stop teaching an
+  `<Edit><Old><New>` dialect no parser reads — the "edit the text, never rewrite
+  the file" rule stays.
+
+  `findDeprecatedReshapeUsage` and its two orphaned constants
+  (`DEPRECATED_RESHAPE_OPS`, `DEPRECATED_FORMAT_KINDS`) are also gone. The notices
+  were never surfaced to anyone. The deprecated ops themselves keep compiling and
+  rendering for stored apps exactly as before.
+
+- b99147f: One component family: the legacy prewired set is retired, and the Kit is the
+  only built-in vocabulary.
+
+  Vendo shipped two component families that shadowed each other by name. The
+  legacy prewired/branded set (`packages/ui/src/tree/{primitives,branded}.tsx`)
+  won every name collision, so the Kit's `Stat` could never format a value, its
+  `Text` was masked by a permissive one, and `DataTable`'s smart table sat behind
+  a plain `Table`. That set is gone. One family now, declared once by
+  `KIT_SPECS`, taught by `kitPrompt()`, resolved by the compiler, rendered by
+  `KIT_COMPONENTS`, and validated from the same schemas.
+
+  **Breaking — `@vendoai/ui/tree`.** These exports are removed: `Stack`, `Row`,
+  `Grid`, `Text`, `Skeleton`, `Surface`, `Divider`, `Card`, `Button`, `Input`,
+  `Select`, `Table`, `Badge`, `Stat`, `Tabs`, `PREWIRED_COMPONENTS`,
+  `BRANDED_COMPONENTS`, and their prop types. Import the components from
+  `@vendoai/ui/kit` instead — every name above except `Table` and `Skeleton`
+  exists there with theme-token styling and real prop schemas.
+
+  - **`Table` → `DataTable`.** The Kit table sorts, filters, searches,
+    paginates, resolves dot-path column keys, and formats each cell. Its
+    `columns` take `{key, label?, format?, align?}` objects rather than bare
+    strings, `rows` is required, and `emptyLabel`/`rowKey` are `emptyState` and
+    automatic respectively.
+  - **`Skeleton` is no longer a component.** A loading placeholder is renderer
+    chrome, not something a tree names, so it moved inside
+    `tree/forming-skeleton.tsx` and off the public surface. It marks itself with
+    `data-skeleton` (it was `data-primitive="Skeleton"`).
+  - **`Tabs` keeps its tree contract.** The Kit `Tabs` now accepts the wire
+    shape — string or `{value,label}` items, an initial `value`, and panels as
+    CHILDREN in tab order — alongside its code-only `{label, content}` items.
+    Tabbed apps are unaffected.
+  - **`data-primitive` is gone.** Every built-in marks itself with `data-kit`;
+    tests and styles selecting on `data-primitive` must be retargeted.
+
+  **Reserved names now follow the Kit.** `RESERVED_COMPONENT_NAMES`,
+  `BRANDED_COMPONENT_NAMES`, and `PREWIRED_COMPONENT_NAMES` are removed from
+  `@vendoai/core`; `KIT_COMPONENT_NAMES` and `KIT_WIRE_COMPONENT_NAMES` replace
+  them, so a generated component may not shadow any Kit name.
+
+  Two schemas were widened where the retired family had been quietly absorbing
+  real usage: `Text.text` takes `string | number` (matching its `ReactNode`
+  implementation), and a single-segment `$state` read binds into any prop again
+  while `state.key.deeper` stays a compile error.
+
+  Stored apps naming `Table` or `Skeleton` render the contained
+  "Unknown component" notice on that node while every sibling still renders.
+
+- b99147f: One theme→CSS-variable mapping, owned by `@vendoai/core`.
+
+  The same `VendoTheme` was flattened into `--vendo-*` custom properties in three
+  places — the ui chrome, the MCP door's connect/consent pages, and the MCP Apps
+  shim's `:root{}` block — each a hand-kept copy of the others, and they had
+  drifted: the door emitted 16 of the 32 variables the chrome does, so a themed
+  MCP page never saw `--vendo-color-scheme`, `--vendo-base-size`, the density
+  sizing scale, or the motion timings. `defaultVendoTheme`, `resolveTheme`,
+  `colorSchemeForBackground` and `themeCssVariables` now live in
+  `@vendoai/core` (and are exported from it); `@vendoai/ui` re-exports them
+  unchanged, and both MCP paths are a one-line serialization of the same call.
+  `VENDO_THEME_VARIABLE_NAMES` is read off that mapping, so the generation
+  prompt's brand-token line and the shim's reverse read cannot fall behind a
+  rename.
+
+  Two brand bugs fell out of the merge. The Kit's token fallbacks had `surface`
+  and `background` swapped, so an unthemed Kit painted a white page with
+  off-white cards inverted; its `fontFamily` fallback had also lost the Onest
+  brand stack. Both now derive from `defaultVendoTheme` instead of being retyped.
+
+  The phantom `--vendo-space-*` variables are gone. Nothing ever emitted them, so
+  every reference rendered its fallback; the door pages, the Kit's `Stack`/`Row`
+  gap, and the tree's notice and open-in-product card now use the real
+  `--vendo-density-*` variables where the scale matches, and the literal
+  elsewhere. Rendered output is unchanged.
+
+- 2357b22: The setup surface: declared URLs, one join law, a VendoProvider-only surface, and `init` = install + the shared sync flow.
+
+  **Breaking: `VendoRoot` is removed. Use `VendoProvider`.**
+
+  ```diff
+  -import { VendoRoot } from "@vendoai/vendo/react";
+  -<VendoRoot components={registry}>{children}</VendoRoot>
+  +import { VendoProvider } from "@vendoai/vendo/react";
+  +<VendoProvider baseUrl="/api/vendo" components={registry}>{children}</VendoProvider>
+  ```
+
+  That is the whole migration: the props are identical, and `baseUrl` is the wire
+  mount with your deployment's path prefix included (default `/api/vendo`).
+  `npx vendo doctor` names the swap and the file if you miss one (`E-WIRE-010`).
+
+  **Breaking: `VENDO_BASE_URL` is the app's FULL public URL, path prefix included.**
+
+  Set it to `https://site.com/maple`, not `https://site.com`. Nothing strips its path
+  any more: host tool calls, login redirects and box callbacks all hang off it, each
+  attaching the prefix exactly once through one helper in `@vendoai/core`. Two new
+  optional overrides: `VENDO_HOST_API_URL` (the host API on another origin) and
+  `VENDO_LOGIN_URL` (the login page, which may be on another domain).
+
+  Stored tool paths in `.vendo/tools.json` are now **prefix-free** — run `vendo sync`
+  once to regenerate them. This closes #866 (login redirect drops the base path),
+  #867 (returnTo double-prefix) and #914 (host tools 404 under a path prefix). When the
+  client and the server disagree about where the wire is mounted, the browser now gets
+  one loud named error instead of a mysterious 404, and `vendo doctor` catches an
+  OpenAPI server mount that disagrees with `VENDO_BASE_URL` (`E-CFG-003`).
+
+  **`vendo init` no longer generates `vendo/registry.tsx` or `vendo/vendo-root.tsx`.**
+
+  It scaffolds the server route handler and prints one paste: `<VendoProvider>` around
+  your client root. If you have host components, you write one small `"use client"`
+  file yourself — see the quickstart. Existing generated files are untouched; they are
+  yours now.
+
+  **`vendo init` ends in the same flow `vendo sync` runs.** One extraction, one theme
+  path, one consent question, one report — `init` in full mode (a fresh install has
+  judged nothing), `sync` incremental. `init` now reads `.env` as well as `.env.local`,
+  so a model key that lives in `.env` is no longer invisible.
+
+## 0.8.0
+
+### Minor Changes
+
+- 963d980: Agents can address a place on the page, and a slot tells the truth about what is in it.
+
+  An agent could make a person a screen, but never say WHERE it goes: a host wired
+  exactly one destination and everything landed there. Now a slot is something the
+  agent can name, the person can choose, and the page can be honest about.
+
+  **Placement is a row, not a string on the app document.** "Show this app in that
+  slot" moves off `doc.placements` — which is never read any more — and into real
+  rows in the generic collections: a pointer at `plc:<subject>:<slot>` naming who
+  holds the slot under which token (the single compare-and-swap arbitration
+  point), and a live row at `plcv:<subject>:<slot>:<token>` that exists only while
+  that placement holds it. That buys three things a document scan could not: a
+  slot can show a build that has not landed yet, a slot resolves in one query
+  instead of listing every app the person owns, and one app per slot is enforced
+  by the write instead of by whoever read last.
+
+  - `apps.place({ app, slot })` / `apps.unplace(…)` / `apps.placements({ slots })`
+    on the runtime, `POST /apps/:id/place`, `POST /apps/:id/unplace` and
+    `GET /apps/placements?slots=…` on the wire, `client.apps.place/unplace/
+placements` on the client.
+  - `place()` is one decision, not read-then-write: it compare-and-swaps on the
+    pointer's revision, the loser retries against the winner's row, and the
+    displaced app comes back as `evicted` so the surface can say what moved.
+  - `unplace()` and "clear this slot" only ever delete the token they named, so a
+    stale client can never evict the app that replaced it. Tokens are never
+    reused.
+  - Rows carry `refs.app_id`, and deleting an app sweeps them BY APP — so deleting
+    an app you share can no longer leave a permanent "didn't build" card standing
+    over somebody else's host markup.
+  - `GET /apps/placements` gates every entry on the same viewer check
+    `open`/`get`/`list` use; a slot the caller may no longer view reads as empty.
+    Slot ids are normalized identically on read and write, and percent-encoded per
+    item in the query, so an id containing a "," survives the round trip.
+  - `useSlotApp(slot)` now answers `{ appId, status }`, over ONE poller per client
+    shared by every mounted slot (it no longer takes `pollMs`).
+
+  **`vendo_make` takes one optional `slot`,** honoured on both engines the one
+  front door routes to. The slot is claimed at MINT — the instant the app id
+  exists, before a single token is generated — so the place the caller aimed at
+  shows the build forming instead of staying empty until it lands, and shows the
+  failure if it never does. An ask no engine landed writes the same terminal
+  tombstone a failed build writes, so a claimed slot turns into the honest failure
+  card the moment either engine gives up. A placement whose app no longer exists
+  renders as nothing placed, never a stuck failure card. On a CHANGE, `slot` is
+  refused by name: silently moving an existing app would evict whatever holds that
+  slot off the back of an edit nobody aimed there.
+
+  **Two new tools do the moving.** `vendo_apps_pin { app, slot }` puts an app the
+  user already has into a slot and reports what it replaced as `evicted`;
+  `vendo_apps_unpin { app, slot }` takes it out and leaves the app itself alone.
+  Both aim by the app's id OR the name the user said, and both are graded `write`
+  — a placement row is small and reversible.
+
+  Neither is offered to an unattended run, and neither is executable in one.
+  `PRESENCE_ONLY_TOOLS` (core) joins THE LAW's projection, and the guard's choke
+  point refuses a presence-only call outright — so a standing automation grant
+  that reaches `execute()` by name, without listing, can no longer rearrange a
+  page with nobody watching. Keyed on the name, not the grade, so policy rules and
+  consent cards still read an honest `write`. A slot-bearing `vendo_make` in an
+  unattended run still RUNS and simply drops the slot: placement is what needs a
+  person present, creation is not, and refusing the call would silently break the
+  automations that legitimately build screens.
+
+  **`McpDoorConfig.withholdTools`** names tools one door never offers, checked
+  BEFORE the `vendo_` prefix bypass and on BOTH legs of a mount — a turn-bearing
+  session used to be able to list and call a name the deployment said it never
+  offers. Curation, not security: a withheld name answers with the same in-band
+  not-found an unknown name gets.
+
+  **`VendoSlot` reads the placement's build status, not just its app id:**
+
+  - **building** — an EMPTY slot shows the skeleton it already uses, minus the
+    invitation, because there is nothing left to ask for. A slot carrying the
+    host's own markup KEEPS it until the build is ready: a working host component
+    never blanks into a skeleton for the length of a build.
+  - **failed** — the consumer sentence (never the wire's `reason`, which names
+    components and env vars and is written for whoever can fix the build), a "Try
+    again" that re-issues the ORIGINAL request when the failed record kept one,
+    and "Clear this slot". The failed card DOES replace the host's own children,
+    deliberately: a build that will never land should not hide behind markup that
+    looks fine.
+  - **ready** — unchanged, and now proven in a browser for both surface kinds.
+
+  **`AddToPicker` puts "Add to…" on a generated view's bar,** so a person can send
+  it to any slot the host has mounted instead of the one place a host wired. It
+  awaits `client.apps.place` before saying "Added to Hero", then announces the
+  placement so a mounted slot fills without waiting out its poll. It appears in
+  both places a generated view has a bar — the app embed and the IN-THREAD card,
+  which is the surface a person actually reaches a view from in every host that
+  renders its conversation through `VendoOverlay`. The affordance stays a
+  one-click "Pin to dashboard" while the origin knows a single destination — a
+  menu of one is not a choice — and becomes the picker the moment it knows more.
+
+  - `noteSlot` / `knownSlots` (new, re-exported from `vendoai/react`): the picker's
+    destinations. A slot id is the host's markup and no Vendo record carries it, so
+    a mounted `VendoSlot` recording itself in origin-scoped `localStorage` is the
+    only way a surface on another page can offer that slot at all. A slot the host
+    filled with an explicit `appId`/`pin` stays out of the list — a placement
+    written into it would never be read.
+
+  **Pinning is Vendo's write now:** with `pinSlot` set, the pin affordance calls
+  `apps.place` itself. `onPin` remains as an optional side-effect seam, so a host
+  no longer needs a pin route of its own (Maple's is deleted).
+
+- 21c8b10: One brain, one scheduler, and consent that is per trigger — everywhere outside
+  `@vendoai/automations` that has to agree with it.
+
+  A fire-time call now carries WHICH trigger fired (`TriggerRef.id`) and WHICH
+  firing it belongs to (`TriggerRef.lineageId`), so the guard matches an away grant
+  on (app, trigger) instead of app-wide — arming one trigger no longer authorizes
+  its siblings — and keys effect receipts on the firing, so re-running a run that
+  failed loudly cannot repeat the work the first attempt already completed. The
+  store carries that dimension too: grant and run rows index the trigger, so an
+  adapter that trusts its own refs narrows exactly as far as the engine does
+  instead of handing back a sibling trigger's grant. An agentic firing runs through
+  the same away runner the rest of Vendo uses, seeing only the connector dispatcher
+  it was actually granted. A machine app's `vendo.json` schedules are folded into
+  its document triggers when the manifest syncs, so there is exactly one scheduler
+  in the deployment (the automations engine) and one tick that drives it. The panel
+  and the wire follow: per-trigger enable, disable, dry-run and adopt doors, a
+  `POST /runs/:runId/rerun` door, and a run that stopped for a missing permission
+  showing "Failed" with the consent card and Grant & re-run right on the row.
+
+- 1bb535b: The checks floor moves to the paint seam, and `instant()` is removed.
+
+  ## BREAKING: `instant()` is gone
+
+  `instant()`, `InstantHarnessDeps` and `InstantHarnessOptions` are removed from
+  `@vendoai/harnesses` and from the `@vendoai/vendo/server` re-export. Two engines
+  and no third: the lean `vendo()` loop, and the builder on the claude-code
+  runtime.
+
+  The specialist existed to put a layout on screen in seconds by routing an app ask
+  straight at the guarded engine tool. The paint seam now does exactly that for
+  **every** harness — a plan file renders its skeleton the moment it parses,
+  whoever wrote it — so its whole reason for being was absorbed by the thing every
+  thinker already rides.
+
+  **If you had `harness: instant()`:** delete it. The slot's default is `vendo()`,
+  which is the same guard, the same audit trail, the same view channel, and the
+  same skeleton-in-seconds behaviour.
+
+  ```diff
+  - import { createVendo, instant } from "@vendoai/vendo/server";
+  + import { createVendo } from "@vendoai/vendo/server";
+
+    export const vendo = createVendo({
+  -   harness: instant(),
+      auth: { ... },
+    });
+  ```
+
+  ## The checks floor runs on every commit, for every author
+
+  The render seam compiled `app.vendo` with `compileWire(content)` and **no
+  options**, so it spoke a different dialect than every other compile of model
+  wire. Measured, both directions:
+
+  - a lying binding — a `$path` naming a field the tool's response shape does not
+    have — compiled to `issues: []` and `bindingErrors: []`. "The engine's
+    unshippable gate" was structurally dead on the files-first path, and the app
+    painted a label promising a number it could never show.
+  - an app built on inline tool references had its binding **dropped** and its
+    query never minted, and painted anyway, because the tree kept its children.
+
+  So nothing checked a harness's own writes. The floor was live for the built-in
+  conductor and structurally dead for every other author — a builder writing
+  `app.vendo` with its own hands, a human with an editor.
+
+  Now composition injects the floor into the seam (`RenderSeamOptions.floor`, built
+  from the new `AppsRuntime.floor(ctx)`). Every commit to `app.vendo` compiles in
+  the production dialect and runs the seven deterministic fact checks plus whatever
+  the host plugged in through a pack. A blocking finding means the view does not
+  paint — through the seam's existing "emits nothing, the last good view stays"
+  mechanism, not a new failure channel — and the write still lands, so `validate`
+  can read it back and repair it.
+
+  Hosts need no code change for this: the seam is wired in composition.
+
+  ## `validate` runs the whole floor, and the builder must pass it
+
+  `AppsRuntime.validate` built its layer from `config.checks` alone, so it ran the
+  fact checks and skipped the AI reviewer. The building-apps skill teaches
+  "validate after every edit", and what it taught could not see invented data,
+  dishonest tool use, dead controls, dropped work, or a single one of the host's
+  own judgment **rules**. The reviewer is now composed in, fail-open as everywhere
+  else: silence, a refusal, and a failed request all mean no findings.
+
+  The claude-code harness's loop now requires it. After the turn's work reaches the
+  store, the loop calls the same registered `validate` verb through
+  `turn.tools.call` and, if an app document does not pass, hands the findings back
+  for **one** bounded fix round. New exports for hosts driving their own harness
+  loop: `validateWrittenApps`, `repairInstruction`, `VALIDATE_TOOL` from
+  `@vendoai/harnesses`.
+
+  ## `Finding` carries its check
+
+  `Finding` gains an optional `check` naming the `Check` that produced it, stamped
+  by the checking layer. Additive — existing readers are unaffected — but code that
+  asserts exact `Finding` object equality will see the extra field. It makes
+  architecture design §7's carve-out ("except host-check failures, which only the
+  host can waive") representable for the first place: a built-in fact finding and a
+  host's own plugged check were previously the same anonymous object.
+
+  ## Also
+
+  `@vendoai/core` gains the `AppFloor` port. The generation conductor is
+  **quarantined** (`@deprecated`): its callers are frozen, not extended, and new
+  work uses the lean loop with the floor at the seam.
+
+- 8d623ec: Connector discovery uses the broker's own search; execution stays ours.
+
+  `search_connectors` searched a local keyword index and then EXPANDED a matching
+  toolkit server-side, expecting the client to re-list via
+  `notifications/tools/list_changed`. Measured live, Claude Code's agent SDK
+  registers no list-changed handler for an HTTP MCP server — exactly one
+  `tools/list` per session — so a tool the model had just found was uncallable for
+  the rest of that session. The shape is one the industry has abandoned (GitHub
+  removed `--dynamic-toolsets`; Composio, whose catalog this is, never shipped it).
+
+  Three permanent tools replace it, so the listing never changes and callability
+  never depends on a re-list. They are ordinary registry tools, so they work on
+  both the `vendo()` and `claudeCode()` harness paths:
+
+  - **`find_service_tools(need)`** — the connector's OWN search. Each match
+    carries the callable slug, the full input schema, the caller's connection
+    status and the broker's next-step message, inline, so the model can construct
+    a call with no second lookup. A match the broker has no schema for says so
+    rather than inviting a guess. The answer is bounded by its own SERIALIZED
+    size, under the turn's `agent.toolOutputCap`, so it can never be the result
+    that cap truncates: broker schemas are kilobytes each (Composio's run 5–7KB),
+    and a result cut at a character count loses a schema mid-object with nothing
+    saying which match lost it. Matches are included whole, in the broker's
+    relevance order, until the budget is spent; whatever is left over is reported
+    as `moreMatches` (a count) and `moreMatchesNote` (narrow the `need` and search
+    again), never dropped silently. A single schema larger than the whole budget
+    still returns its row, with the same `schemaUnavailable` marker that already
+    sends the model to ask rather than guess.
+  - **`use_service_tool(slug, arguments)`** — looks up the broker's per-tool risk
+    tag, maps it to a `RiskLabel`, lets the guard decide run/ask/refuse, executes,
+    and lands on the audit trail with its toolkit named — the same guarded path a
+    `host_*` call travels. An untagged tool is `ungraded` (ask-by-default); risk is
+    never inferred from a tool's name.
+  - **`list_connections`** — unchanged, re-backed by the connector's connection API.
+
+  The Composio adapter also trims the documentation Composio ships for PEOPLE
+  inside the machine schema — `examples`, `human_parameter_name`,
+  `human_parameter_description` — before a schema reaches the model. It is a third
+  of the bytes and none of it is needed to construct a call (measured against
+  their live catalog 2026-08-03: eight email matches, 36,407 chars whole, 24,736
+  trimmed), so trimming is what lets a realistic search come back complete instead
+  of short. Only KEYWORDS are removed: a parameter named `examples` is an
+  argument, and survives.
+
+  Both new tools exist only when a connector adapter can actually serve them
+  ("no adapter, no tool"): `find_service_tools` and `use_service_tool` need a
+  connector implementing the new capabilities, `list_connections` needs only a
+  configured connector.
+
+  **The Composio adapter's tool plane now speaks one API version, so a tool the
+  search finds is a tool that runs.** Discovery is Composio's tool-router, which
+  exists only at `v3.1`; execution and the `apps`-scoped listing were still on
+  `v3`. Those are two different catalogs, not two doors onto one — so the model
+  would find a slug and the executor would answer `Tool <SLUG> not found`, an
+  opaque connector error rather than a connect card or a hint to search again.
+  Live-measured against their catalog 2026-08-03, 19 of the 42 slugs a `v3.1`
+  search returned for eight ordinary needs did not exist on `v3` at all: every
+  Outlook mail and calendar action (`OUTLOOK_SEND_EMAIL`, `OUTLOOK_CREATE_DRAFT`,
+  `OUTLOOK_SEND_DRAFT`, `OUTLOOK_CALENDAR_CREATE_EVENT`), every `COMPOSIO_SEARCH_*`,
+  five `TEXT_TO_PDF_*`, `GOOGLECALENDAR_EVENTS_GET` and
+  `WEATHERMAP_GEOCODE_LOCATION`. It only stayed hidden because Gmail and Slack
+  happen to exist in both. Connector tools that used to fail now run.
+
+  The skew ran the other way too, so the listing moved with the executor: `v3`
+  carries legacy names `v3.1` has renamed (`OUTLOOK_OUTLOOK_CREATE_DRAFT`,
+  `COMPOSIO_SEARCH_NEWS_SEARCH`), and a `v3` listing feeding a `v3.1` executor
+  breaks identically. An `apps`-scoped host therefore sees the larger, current
+  `v3.1` catalog — Gmail goes from 23 tools to 63, Outlook from 43 to 305 — and
+  more of those tools arrive `ungraded`, which is ask-by-default.
+
+  Connected accounts and auth configs stay on `v3` deliberately: live-verified
+  identical on both versions, and that plane has no catalog to skew against.
+  Both versions are named in one constant each at the top of the adapter.
+
+  **Removed public surface.** All of it existed to serve lazy expansion:
+
+  - `@vendoai/core`: `ToolListingContext.listingScope` and
+    `ToolRegistry.releaseListingScope`. A listing no longer has to be identified —
+    every tool a run may call is on every listing that run is given.
+  - `@vendoai/actions`: `Connector.discoveryIndex`, `Connector.expandToolkits`,
+    the `ToolkitIndexEntry` type, `ActionsRegistry.expandToolkits`, the `ctx`
+    parameter of `ActionsRegistry.search`/`loadoutSeed`, and
+    `ToolSearchOptions.maxExpansions`. `ActionsRegistry.loadoutSeed` now answers
+    with every loaded tool and ignores its `connectedToolkits` argument: the
+    argument only ever filtered lazily expanded connector tools, and there are
+    none. New in their place, all optional:
+    `Connector.searchTools`, `Connector.toolRisk`, `Connector.executeSlug`, and the
+    `ServiceToolMatch` type. `Connector.toolkitOf` is unchanged — the pre-guard
+    connect check still rides it.
+  - `@vendoai/agent`: `CONNECTOR_DISCOVERY_TOOLS` now names the three tools above;
+    the discovery registry's ports changed shape with them.
+  - `@vendoai/mcp`: the door no longer advertises `tools.listChanged`, no longer
+    diffs its listing around a call, and no longer keeps a per-session
+    notification-replay flag.
+  - `@vendoai/vendo`: the `maxSearchExpansions` handler option.
+
+  **Known gap, deliberately not papered over.** A connector that cannot search
+  gets neither new tool, and the zero-key Vendo Cloud connector has no search
+  backend today — so a Cloud-default deployment that does not scope
+  `connectorApps` reaches connectors through the connect dock only until the
+  console broker exposes a search endpoint. Filling that with keyword scoring or
+  name-based risk inference is exactly what this change removes.
+
+  **Automations can run connector tools, through the consent they already use.**
+  `use_service_tool` is one tool name standing in for the broker's whole catalog,
+  so its descriptor cannot carry a real grade — it is `ungraded`, and design §12
+  withholds `ungraded` from an unattended run the same way it withholds
+  `destructive`. Left there, arming an automation on a connector would have been a
+  narrowing: before this wave an individually-graded `read` connector tool WAS
+  offered to an automation.
+
+  The fix reuses declare-then-accrete consent rather than inventing a mechanism.
+  An automation's steps declare the service actions they will call; the person
+  arming it approves those specific actions, in the enable card they already see;
+  the unattended run may then call exactly those slugs.
+
+  - **`@vendoai/core`**: `GrantScope` gains a third member,
+    `{ kind: "service-tool", slug }` — the missing middle between "this whole
+    tool" (twenty thousand actions on this one name) and "this exact payload"
+    (useless on the next run). Plus `USE_SERVICE_TOOL`, `serviceToolSlug`,
+    `serviceToolPhrase`, `withResolvedRisk`, and `RiskResolver` (moved here from
+    `@vendoai/guard`, which re-exports it unchanged).
+  - **`@vendoai/guard`**: a `service-tool` grant matches a call by its slug.
+    `tool` and `exact` grants are untouched, and nothing attended mints the new
+    scope, so chat behaviour is unchanged.
+  - **`@vendoai/automations`**: `AutomationsConfig.resolveRisk` — the SAME
+    resolver the composition gives the guard. Arm-time capture grades a declared
+    connector call with it, so the consent card states the grade the call will
+    really run under and the grant it mints carries the descriptor hash the guard
+    recomputes at fire time. Capture is per service action, and its consent
+    sentence names the action in a person's words ("Allow "Morning digest" to
+    fetch emails in Gmail while you're away").
+  - **`@vendoai/ui`**: a consent row for a connector permission reads as its
+    service action with the service's own logo, instead of "Use an outside
+    service" once per row.
+
+  What did NOT change: §12 still withholds the dispatcher from every unattended
+  listing, and a granted service action the broker grades `destructive` is still
+  refused away — the same answer a granted `host_*` send has always got.
+
+  **Second known limit.** An agentic automation declares no slug, so it captures
+  no connector grant at arm time: its connector calls park at fire time and
+  accrete a per-slug grant when a person approves them. The alternative would have
+  been a tool-wide grant on the dispatcher, which is the whole catalog behind one
+  card.
+
+- a004031: **BREAKING:** the deprecated V2 aliases from the pre-de-versioning naming
+  (0.4.x) are removed: `compileWireV2`, `printWireV2`, `validateTreeV2`,
+  `VENDO_TREE_FORMAT_V2`, `treeV2Schema`, `treeQueryV2Schema`, `TreeV2`, and
+  `TreeQueryV2`. Each was a pure re-export of its unversioned name — use
+  `compileWire`, `printWire`, `validateTree`, `VENDO_TREE_FORMAT`, `treeSchema`,
+  `treeQuerySchema`, `Tree`, and `TreeQuery` instead. The rename is mechanical:
+  drop the `V2` suffix.
+- 2722d81: The wire dialect becomes a strict TSX subset, with one call grammar.
+
+  `compileWire` and `printWire` change surface syntax. A document already stored as
+  a canonical tree is unaffected — the IR is untouched, `$reshape` still carries the
+  same steps — but wire TEXT written against the old grammar no longer compiles,
+  which is why this is a major bump.
+
+  - **Reshapes are value-first nested calls.** `{revenue.rows | asPoints(month,
+revenue)}` becomes `{asPoints(revenue.rows, "month", "revenue")}`, and a chain
+    nests instead of piping: `rename(pick(q.rows, "month"), "month", "label")`.
+    Reading the nesting from the inside out reads the steps in order. Field
+    arguments are quoted strings; bare identifiers in argument position are gone.
+    The printer emits chains inside-out under the unchanged byte-identical
+    round-trip law, and it refuses to print a step no longer writable on the wire,
+    falling back to the quoted object literal.
+  - **Every aggregate names its field.** `sum(invoices.amount_cents)` becomes
+    `sum(invoices.data, "amount_cents")`; `count(rows)` is unchanged. The implicit
+    column read is gone from the call surface — an aggregate reads
+    `rows.field` explicitly.
+  - **`group_by` takes the rows it groups, plus a descriptor.**
+    `group_by(rows, "issued_at", "month", sum.of("amount_cents"))` — arity 3 to 4.
+    Because the rows are an argument, the old "aggregates the SAME rows it groups"
+    inference retires with the grammar that needed it, and `count.of()` replaces
+    `count(rows)` in the aggregate slot.
+  - **Comments are JSX comments.** `{/* … */}` replaces `<!-- … -->`; the HTML form
+    is no longer a comment.
+  - **Braces in text are refused**, as the new `braces-in-text` issue code.
+    `<Text>Total: {q.total}</Text>` rendered the braces literally; a value reaches
+    the screen through a binding (`<Text text={q.total}/>`).
+
+  **Two aggregate vocabularies collapse into one, and `avg` retires.** The dialect
+  had a reshape `avg` and an expression `average` on the same surface, where the
+  wrong one silently dropped the attribute. The surviving names are `sum, count,
+average, min, max, difference, days_until, group_by`. `avg` is removed from
+  `RESHAPE_OPS`; `sum`/`min`/`max`/`count` stay in the registry for STORED
+  documents but are no longer writable on the wire, so exactly one `sum` is
+  reachable. The numeric reduce behind both is now a single exported
+  `reduceNumeric`.
+
+  `WIRE_RESHAPE_OPS`, `isWireReshapeOp`, `reduceNumeric` and
+  `AGGREGATE_DESCRIPTORS` are new exports; `EXPR_CALLS` is unchanged.
+
+- a5293af: The freeze flag: one switch that stops every call.
+
+  `guard.freeze(by)` writes a single row — `freeze` in the guard's own
+  `guard:controls` collection — and `#checkWithMetadata` reads it before anything
+  else. While it is set, every check comes back
+  `{ action: "block", decidedBy: "frozen" }`: a declared read, a call a standing
+  grant authorizes, an approved replay. Nothing is spent on the way — no risk
+  resolution, no breaker slot, and no parked approval left behind for someone to
+  answer later. `guard.unfreeze(by)` lifts it and `guard.frozen()` reads it.
+
+  It is a ROW and not a config field on purpose: the moment you need a kill switch
+  is the moment you cannot redeploy to get one. The console flips the same row
+  directly through the store, and a guard in another process obeys it on its very
+  next check.
+
+  Both directions land on the audit trail as `policy-decision` events naming who
+  flipped the switch, and every call the freeze refused is audited exactly as any
+  other block is. `@vendoai/core`'s `GuardDecision` block arm and `AuditEvent`
+  gain the `"frozen"` provenance (schemas included).
+
+- b022eb3: Add `@vendoai/harnesses` — the runtime that runs any harness, plus `vendo()`.
+
+  Who thinks becomes a swappable adapter. A harness receives a `Turn` (the
+  canonical transcript, guarded tools, pack skills, the workspace, the model seats)
+  and yields a closed four-member event vocabulary; the runtime does everything
+  else, so a harness author cannot forget the safety story.
+
+  New in `@vendoai/harnesses`:
+
+  - `defineHarness(def)` — returns the value itself. A harness needing host
+    dependencies is a plain factory closure; there is no factory concept.
+  - `createHarnessRuntime(deps)` — builds the `Turn`, runs the harness, converts
+    events plus mirrored tool calls into the EXISTING ai-SDK UIMessage stream with
+    today's `data-vendo-*` parts, persists the transcript one row per message, and
+    enforces the routing table (`text` → screen + transcript · `status` → screen
+    only · `error` → screen + audit · `usage` → audit only). Tool calls are
+    mirrored by the runtime, never yielded.
+  - `vendo()` — the default in-process, key-free thinker. It DRIVES the shipped
+    `@vendoai/agent` turn loop rather than reimplementing it, so the step cap,
+    `buildFailedStop`, the history window, the cache breakpoints and the
+    tool-search loadout are shared. Tools execute through `turn.tools.call()`,
+    which runs the shipped guarded-call path — the guard, the audit row, the view
+    channel and the transcript mirror included. It also hires its own bounded
+    subagents; every hire is metered and leaves an audit row plus a receipt.
+  - `assertHarnessComposable(harness, { sandbox })` — `requires: { sandbox }` is a
+    boot-time composition error, never a runtime surprise.
+  - The hot-path render seam: a commit that lands `app.vendo` or `plan.vendo` emits
+    today's `data-vendo-view` part on the stable per-app stream id, so the skeleton
+    reaches the screen whoever wrote the file. An unparseable or conflicted commit
+    emits nothing and the last good view stays.
+  - `turn.state` — opaque harness state, persisted at turn end, cleared by a
+    harness swap or an arbitrary history edit.
+
+  New in `@vendoai/core` (types only, so every block may speak them): `Harness`,
+  `Turn`, `TurnTools`, `ToolResult`, `DeniedNeeds`, `ToolListing`, `TurnSkills`,
+  `SkillListing`, `TurnState`, `HarnessEvent`, plus the two seams `Turn` is typed
+  against — `WorkspaceFs`/`CommitResult` and `Seat`/`ResolvedModels`. `ai` and
+  `just-bash` join core as OPTIONAL peer dependencies (type-only imports; hosts
+  that do not touch these shapes install neither).
+
+- 6eb8a04: **BREAKING:** the knowledge entailment verifier is removed. The knowledge
+  stack is a pure retrieval plug-in again, and `weakScoreThreshold` is once more
+  the sole refusal calibration — unchanged, and still the knob to tune.
+
+  The check shipped off by default and the live measurement is why it never got
+  turned on: over the 94-question corpus it still answered 7-10 of 34
+  unanswerable questions per pass, while costing a model call per search and
+  seconds of latency on a call the user waits through. It never cleared the bar
+  it existed for, so it is gone rather than left as a knob nobody should set.
+
+  Removed surface:
+
+  - `@vendoai/knowledge`: `entailmentVerifier`, `KNOWLEDGE_VERIFY_TIMEOUT_MS`,
+    `KNOWLEDGE_VERIFY_TURN_BUDGET_MS`, the `KnowledgeVerifier` /
+    `KnowledgeVerdict` / `KnowledgeVerifierInput` / `KnowledgeVerifierPassage` /
+    `KnowledgeVerifyOptions` / `EntailmentVerifierOptions` types, and the
+    `verifier` + `verifyTurnBudgetMs` options on `createKnowledgeTools`. The tool
+    reverts to its pre-verifier decision rule: chat search → one deep retry on
+    weak evidence → structured `insufficient-evidence`.
+  - `@vendoai/core`: the `verifier` model seat (`Seat`, `SEATS`,
+    `ResolvedModels`, `migrateModelSeats`) and the `unverified` field on the
+    `data-vendo-citations` stream part.
+  - `@vendoai/vendo`: the `VENDO_KNOWLEDGE_VERIFY` and
+    `VENDO_MODEL_KNOWLEDGE_VERIFIER` environment knobs, and the
+    `models.verifier` / `models.knowledgeVerifier` slots.
+  - `@vendoai/ui`: the amber "I couldn't check this answer against the
+    documentation" line. The engine-outage flag and the structured
+    searched-line are untouched.
+
+- fbf265b: One front door: `vendo_make` replaces `vendo_apps_create` and `vendo_apps_edit`,
+  and it hands back words instead of the app.
+
+  **Breaking.** `vendo_apps_create` and `vendo_apps_edit` no longer exist. In their
+  place is one tool with three parameters:
+
+  ```ts
+  {
+    request: string,   // the ask, in the calling agent's own words — required
+    app?: string,      // an existing AppId, to change that one specifically
+    context?: string,  // free-text background, for callers whose conversation we cannot see
+  }
+  ```
+
+  Two tools meant every calling agent — ours, a host's own AI SDK or Mastra agent,
+  an outside agent over MCP — had to decide "new or change?" before it could ask,
+  and get it right. That was never their decision: the seam knows whether an app
+  exists, and a caller that wants a specific one says so with `app`. `context`
+  exists because an outside agent's transcript is not ours to read; on our own
+  doors the runtime's transcript stays authoritative and `context` is supplemental.
+
+  **Also breaking: the tool returns a receipt, not the document.**
+
+  ```ts
+  interface MakeReceipt {
+    id: AppId;
+    title: string;
+    status: "ready" | "building" | "failed";
+    say: string; // ONE speakable line, consumer voice
+  }
+  ```
+
+  The old tools returned the entire `AppDocument` — the tree, the island sources,
+  the storage declarations, the machine reference. So a model was handed UI and
+  trusted not to describe it, retell it, or invent from it. A model handed a tree
+  eventually talks about the tree. Screens go server → slot; the agent only ever
+  gets words, and `say` is the line it can utter verbatim. `status: "building"` is
+  the honest answer while work continues.
+
+  Two things follow from the receipt, and both are improvements rather than
+  compromises. The automation card is now PUBLISHED by the apps runtime through the
+  existing view-stream seam instead of being reconstructed at the agent bridge out
+  of the edit tool's return value — one less part read by shape (01-core §16's own
+  anti-smuggling rule, which that reconstruction was the exception to). And
+  `instant()` now speaks the receipt's `say` rather than a canned "Updated.",
+  which fixes a real mis-speak: a rejected change comes back OK, so the canned line
+  claimed success for work that did not happen.
+
+  **Migrating.** If you call the tool by name from your own agent, rename it and
+  rename `prompt` → `request` and `appId` → `app`; drop `instruction` into
+  `request`. If you read fields off its result, read `id` and `title` off the
+  receipt and say `say`. If you had a policy rule or an override matching
+  `vendo_apps_create` / `vendo_apps_edit` / `vendo_apps_*` for the build tools,
+  match `vendo_make` — it deliberately sits OUTSIDE the `vendo_apps_` prefix,
+  because it is the front door rather than a member of the runtime's family. Core
+  exports `isVendoAppsTool(name)` for anything that needs to recognise both.
+
+  Everything else about the call is unchanged: risk grade `read` (actions inside
+  the screen are still graded and consented individually at call time), the view
+  channel, the build-failed banner, and the transcript's build card.
+
+- 2ed91b0: **BREAKING:** the pack concept is gone. Capability arrives on `tools` and
+  `skills`, and app generation and automations mount themselves.
+
+  A pack was a labelled bundle of four lists, and every one of those lists already
+  had a home of its own: tools → the one registry, skills → the workspace mount,
+  checks → the checking floor, components → the catalog. The label bought a noun,
+  a `definePack` handle, a provider function shape, a client-side second import,
+  and a default list — and nothing else. A developer should never have to learn
+  it; they already know "tools" and "skills".
+
+  - `createVendo({ packs })` is removed. `tools:` now takes executable
+    `ToolDefinition` entries alongside the `vendo sync` declarations it already
+    took (told apart by `execute`), and `skills:` is new — SKILL.md values mounted
+    at `/host/skills`. Checks keep arriving through `apps.checks` and components
+    through `catalog`, exactly as a host already writes them.
+  - `definePack`, `PackProvider` and `Pack` are removed; `PackSkill` is renamed
+    `Skill` and kept as a deprecated alias for one release. `<VendoRoot packs>` is
+    removed — components were always passable through `components` directly.
+  - The boot-time collision check survives verbatim in the composition merge: two
+    contributors claiming one tool or skill name is still an error at boot that
+    names both, and a contributor claiming one of the host's own extracted tool
+    names still refuses to compose.
+  - New: `apps: false` unmounts app generation (`vendo_make`, the `vendo_apps_*`
+    tools, the `building-apps` skill and the `/apps` wire surface are absent, not
+    refusing), and `automations: false` unmounts automations (`/automations`,
+    `/runs` and `/webhooks` answer not-found, `vendo.emit` refuses, nothing fires,
+    and THE LAW's unattended-irreversibility rule leaves the reviewer's rubric).
+    Both mount by default.
+  - `@vendoai/automations` now exports `UNATTENDED_IRREVERSIBILITY_RULE` and
+    `unattendedIrreversibilityCheck` — the rule moved to the block whose law it is.
+    It joins the reviewer's rubric by default now that it rides the subsystem
+    rather than an opt-in pack.
+
+  A default `createVendo()` composes exactly the tool set and skill set it did
+  before, asserted against literal lists in `default-composition.test.ts`.
+
+- d0c3cc9: Risk grading stops guessing from tool names, and a tool nobody has graded now
+  says so out loud instead of running.
+
+  **The word lists are gone.** Extraction used to read a tool's name against
+  `DESTRUCTIVE_WORDS` / `READ_WORDS` (and Composio slug verbs) to pick a grade.
+  English is infinite, so that list was guaranteed to miss — _pay, charge,
+  refund, approve, merge, publish_ were never on it — and its existence is what
+  stopped anyone from auditing the labels. No code path concludes anything from
+  a tool's name anymore.
+
+  **Only facts grade a tool**, in priority order: a human (`overrides.json`), the
+  AI judge (which reads the handler source and quotes its evidence), then
+  protocol facts that are true by definition — HTTP `DELETE` is `destructive`, a
+  declared GraphQL/tRPC `mutation` is at least `write`, and Composio's own
+  `destructiveHint`/`readOnlyHint` say what they say. A `GET` is **not** a fact
+  about reading (GETs that mutate exist) and a `POST` is not a fact about
+  writing (search endpoints post).
+
+  **⚠️ Breaking behavior: an unjudged catalog now asks on mutations.** Anything
+  nothing above graded is the new first-class `ungraded` risk state, and the
+  guard's default treatment is to ask — like `destructive`, and at the guard
+  level rather than as an init-written rule, so a hand-wired server with no
+  policy config at all gets it too. On an install that never ran the AI judge
+  this is a real change: tools that used to run silently now park on an approval.
+  That is the point — `payInvoice` classified `write` and ran un-gated. Three
+  ways forward, and every one of them is a sentence:
+
+  - run `vendo sync` with a model key so the judge grades the catalog;
+  - grade the tools you care about by hand in `.vendo/overrides.json`;
+  - or decide, in writing, that you accept them:
+    `{ "match": { "risk": "ungraded" }, "action": "run" }`.
+
+  `vendo doctor` reports the count plainly (`catalog: 34/61 tools ungraded`,
+  code `E-TOOLS-003`), and a keyless `vendo init`/`vendo sync` says what the
+  consequence is instead of implying the grades are real.
+
+  **`critical` is now `confirmEach`.** Behavior is unchanged — checked before
+  rules, grants, and the judge; none of them can suppress it; every call earns
+  its own input-bound, single-use approval. The old name read as a severity rung
+  and it is not one: the grade is a _fact_ about the action (a payment is a
+  `write`), while `confirmEach` is _governance_ — who must be present. They are
+  orthogonal, which is why a data export can be `read` + `confirmEach` and a bulk
+  archive can be `destructive` without it. Host-authored files
+  (`overrides.json`, `judgments.json`, `.vendo/tools.json`) accept `critical:` as
+  a read alias indefinitely; every writer emits `confirmEach`. In TypeScript,
+  `ToolDescriptor.critical` becomes `ToolDescriptor.confirmEach` and
+  `decidedBy: "critical"` becomes `decidedBy: "confirmEach"`.
+
+  **A standing denial means a person said no.** An ask that re-issues the same
+  call id is answered by the user's earlier no instead of minting a new card — but
+  only when a _human_ wrote it: an abandoned chat turn, a timed-out embed, and the
+  TTL sweep reap the pending row and let the next issue ask again. A person's no
+  also voids any unconsumed yes still sitting on the same call, and a decision can
+  be taken back with `guard.approvals.revoke(id, principal)` / `DELETE
+/approvals/:id` (the mirror of `grants.revoke`). Taking a decision back and
+  replaying an approval are the same one-time transition, so a call can never both
+  run and be voided — a take-back that arrives after the call was already
+  authorized answers `conflict` rather than reporting success. `Guard` grows one
+  optional method for the block that spends a yes WITHOUT replaying its call
+  (automations arms a standing grant from it): `spendApproval(id, principal)`
+  contends on that same transition and answers `spent` / `already-spent` /
+  `taken-back`. Custom Guards are unaffected — callers feature-detect it, exactly
+  like `abandonApprovals`.
+
+  Three known limits, all written down at the code that carries them. The receipt
+  is the only atomic step: an approval ROW has no guarded write (the store offers
+  `atomic` for threads, apps and generic rows only), so every marker on it is a
+  read followed by a write and something can move the row in between. Because the
+  transition winner is settled before any row write, the worst that costs you is a
+  stale marker — never an execution, since the transition a call would need is
+  already spent. And a custom `Guard` that does not implement the optional
+  `spendApproval` puts the automations grant mint back on that read-then-write
+  footing, where a revoke landing in the window can lose to the mint; the guard
+  that ships here has the seam. Third: when an automation's parked run resumes, its
+  standing grant is written just before the call and taken back if the call is not
+  authorized after all — every outcome the process lives through, a thrown one
+  included, but a hard kill in between leaves that grant behind and nothing sweeps
+  it. It shows up in `grants.list`, pinned to the tool's `descriptorHash`,
+  app-bound and away-only, and you can revoke it.
+
+  One consequence worth knowing: `descriptorHash` follows the field rename, so
+  approvals and grants persisted before the upgrade no longer match their tool's
+  new hash. They lapse into a re-ask, which is the fail-closed direction.
+
+- 798b618: The screen agent: `vendo_make` starts in a cheap assembly loop, and the conductor
+  is what it falls through to.
+
+  Every request for something to look at used to go straight into the generation
+  conductor — a plan call, a fill worker per group, and the checking layer's two fix
+  rounds — whether the ask was a full app or one number on a card. Now the seam
+  routes: a lean loop assembles the document itself, and escalates when it cannot.
+
+  **The loop** (`screenAgent()` / `assembleScreen` in `@vendoai/harnesses`) is the
+  same `startTurn` call `vendo()` and `instant()` drive, with a small loadout and a
+  tight budget:
+
+  - **Assembly tools only.** The verbs by name (`search_components`, `validate`,
+    `vendo_apps_data_list`, `vendo_apps_open`, `ask_user`) unioned with the host's
+    `read`-risk tools. No mutating host tool, no build tool, and `vendo_make` itself
+    is withheld — the screen agent is what it calls.
+  - **The host's own declared result shapes** ride the brief, off
+    `ToolListing.outputSchema`, so field names are known before any query runs.
+  - **The shipped job description**, reused: `buildingAppsSkill` and its
+    `references/format.md`, plus one short block correcting what is different here
+    (no disk, no delegation, two files, one door out). There is no third prompt.
+  - **`SCREEN_STEPS = 10`.** An ask that needs more than that is an ask for a build.
+  - **No new write path and no new paint path.** It writes `app.vendo` through the
+    workspace and the render seam's `commit()` proxy paints it, exactly as the
+    `claudeCode()` harness already builds apps.
+
+  **Escalation** (`escalate`) writes `plan.vendo` and hands the ask on. The plan's
+  skeleton paints in seconds and becomes the build's first frame — no consent step,
+  one plain sentence, the work proceeds. `AppsRuntime.create` now accepts a
+  caller-minted `appId` so the escalated plan and the build that finishes it land on
+  one app and one view stream instead of two.
+
+  **The routing is an adapter slot, and it is default-safe.** `AppsConfig.screen`
+  takes core's new `ScreenAssembler`; composition is the only place that fills it
+  (`apps.experimentalScreenAgent: true`, host config only). `vendo_make` falls
+  through to `conductCreate` unchanged on every other answer — an escalation, an
+  assembler that could not run, one that threw, and an `assembled` that left no app
+  row behind. That last check is what makes the promise true rather than intended:
+  the row is the truth, so a screen agent that saved bytes nobody can render costs a
+  request nothing.
+
+  Screens run unsandboxed, by design: a description is data, its props are
+  schema-validated, and the kit treats them as inert.
+
+  New in `@vendoai/core`: `ScreenAssembler`, `ScreenRequest`, `ScreenOutcome`.
+  Edits go through the conductor as before — routing them needs the app's checkout
+  projection, which is not this change.
+
+- 98eba22: A streaming turn never goes silent, and a turn whose client vanished can be
+  rejoined.
+
+  **SSE keepalive.** A turn's first byte waits on a provider call and a slow tool
+  streams nothing for its whole duration, so the wire could sit quiet long enough
+  for a proxy or a browser to drop the connection. Every turn response now leads
+  with an SSE comment frame and gets one per 15s of silence. `@vendoai/core` gains
+  `withSseKeepalive`, `startSseKeepalive`, `SSE_KEEPALIVE_FRAME` and
+  `DEFAULT_SSE_KEEPALIVE_INTERVAL_MS`; both engines' responses use it, and the
+  `vendo try` dev server's own copy is gone.
+
+  Hosts may notice: **the SSE body now contains comment frames.** They are ignored
+  by the SSE grammar, so `useChat`, `DefaultChatTransport` and any spec-compliant
+  parser see an unchanged message sequence — but a hand-rolled reader that assumes
+  every frame starts with `data: ` needs to skip lines beginning with `:`. This is
+  not a new event: there is no new `HarnessEvent` member and no new
+  `data-vendo-*` part.
+
+  **Stream resume.** The client half already shipped in `ai@6`
+  (`ChatTransport.reconnectToStream`, which `useChat().resumeStream()` calls) and
+  had no server to talk to, so a reload mid-turn painted the user's question and
+  nothing else. The wire gains `GET /threads/:id/stream` — the SDK's own URL,
+  method and 204 contract — serving the turn from the start of the stream and then
+  following it live. Recording is per-turn, in memory, byte-capped, and dropped 30s
+  after the turn settles; the persisted transcript remains the durable record.
+
+  `useVendoThread` now resumes automatically after it loads a thread's transcript,
+  and returns `resumeStream()` for surfaces that reconnect on their own.
+
+- f7c6da2: A strict mount guards its creates, a refused turn writes nothing, and eleven
+  exports nobody imported are gone.
+
+  `expectedRevision` on a workspace commit entry gains its third state: a number
+  compares, `null` means "this path must not exist yet", and the absent field
+  stays unguarded. The SQL backend already refused a create built on a base that
+  had moved; the hosted backend required a number and so degraded exactly that
+  case into an unguarded write, silently overwriting the colleague who created
+  the shared `/orgs` file first. Both backends and the memory reference are now
+  held to the same conformance case.
+
+  The per-turn refusal on a store that can serve neither the transcript nor the
+  workspace is atomic: the doors are resolved before the first write, so a
+  refused turn no longer leaves a `vendo_threads` row carrying the user's message
+  on a deployment that can never answer it.
+
+  `@vendoai/harnesses` drops eleven exports with no importer anywhere
+  (`abandonPendingApprovals`, `guardApprovalIds`, `addAgentTool`,
+  `buildAgentTools`, `guardedCall`, `previewApproval`, `computeInitialLoadout`,
+  `createToolSearchSession`, `CAPABILITY_MISS_TOOL_NAME`,
+  `createCapabilityMissDetector`, `scrubCapabilityMissText`). The `./vendo`
+  subpath is untouched.
+
+- 14e8246: A team-shared file now reaches the `claudeCode()` sandbox — and its edits come home.
+
+  Orgs, teams and sharing shipped, and the sandbox harness never learned. On
+  `claudeCode()` a file in an `/orgs/<org>` mount was invisible: "update our team's
+  Quarterly Report app" answered that it does not exist, or built a personal
+  duplicate. Worse, when a path did reach the box, the edit was filtered out on the
+  way back — the agent said "done" and the write was dropped with no error
+  anywhere. The same ask on `vendo()` worked, because the in-process façade asked
+  `can()` and the sandbox path asked a hardcoded table of two mount prefixes.
+
+  Permission on the sandbox path is now the workspace's, per file:
+
+  - `WorkspaceFs.canCommit(path)` (new) answers "may this caller land a write
+    here?" against LIVE rows — the same question `commit()` already asked itself
+    per staged path. `/host` and anything outside the caller's mounts answer false;
+    inside `/orgs/<org>/apps/<appId>/**` the app's own grants decide.
+  - Checkout materializes every visible file and marks it read-only per FILE, so a
+    viewer-level team app lands read-only beside an editable one and the model
+    meets the refusal when it reaches for the file — not after rewriting it.
+  - Sync-back re-asks the same question against live rows for writes and for
+    deletions, so a grant revoked mid-session bites, and one refused org path can
+    never take the caller's own work down with it.
+  - A team app's `plan.vendo`/`app.vendo` are watched mid-turn like a personal
+    app's, so its skeleton paints during the turn instead of at the end.
+
+  `@vendoai/apps` is in this bump because the box door it publishes
+  (`box/turn-routes.mjs`, the `./box-door` export, shipped in the machine image)
+  carries the other half: its whole-tree and by-shape walks used to answer about
+  `/user/` only, so a team file's edit was left on the box's disk. A new
+  `@vendoai/harnesses` against an old `@vendoai/apps` is this bug again — the two
+  must move together.
+
+  For hosts this is additive: `WorkspaceFs` is produced by
+  `workspaceStore(store).open(...)` and consumed, never implemented — the new
+  method only widens what you can call on the workspace you already hold.
+
+- fbf265b: A turn, a beat and a screen each say what they are — plus an app's code moves
+  into its row.
+
+  **`Turn.turnId`, and every audit row carries it.** There was no turn id anywhere,
+  so an audit row, a mirrored tool call and a painted view could not be joined to
+  the exchange they came out of. "Which calls belonged to the turn where the user
+  asked for X" was unanswerable from the audit plane — the plane billing and
+  reconciliation read. `mintTurnId()` mints `"trn_<32 hex>"`, the runtime stamps it
+  where it already builds the `Turn`, and it rides the `RunContext` from that line
+  on, so every guarded call, audit row and painted view downstream is joinable
+  without a new parameter on fifteen signatures. Opaque to adapters. Additive for
+  hosts: `RunContext.turnId` and `AuditEvent.turnId` are optional, and absent means
+  "no turn", never "unknown turn".
+
+  **Beats.** `HarnessEvent`'s `status` member gains an optional `phase`
+  (`"understanding" | "planning" | "assembling" | "building" | "checking" |
+"finishing"` — closed at six) and an optional `appId`. The union itself stays
+  closed at four members, because adding one is a breaking change for every host
+  renderer and widening one is not. A harness that yields only `label` puts the
+  identical transient `data-vendo-status` chunk on the wire it always did.
+
+  **`ScreenDescription`.** The view channel carried `UIPayload` —
+  `{ formatVersion: string; [key: string]: unknown }` — an open bag whose seven real
+  fields were read by inline cast at each consumer, so a deployed host frontend had
+  nothing to hold us to. The fields are now declared and versioned, and the render
+  seam GATES on them: what it compiles must parse or nothing paints, which is the
+  law that seam already lived by for content that does not compile. The schema
+  refuses `data` outright — a description says what to fetch, never what came back
+  — so that law is enforceable rather than written down.
+
+  **`AppDocument.source`.** An app's code had three homes: island TSX in
+  `components`, the wire surface in workspace file rows, and — for a served app —
+  only inside the sandbox snapshot behind `machine.snapshotRef`. Lose the snapshot
+  and the customer's app was gone, because the store never had it. `source` maps
+  POSIX-relative paths to `AppSourceFile { hash, bytes, text?, blobRef? }`, inline
+  up to `WORKSPACE_INLINE_MAX_BYTES` (which moves to `@vendoai/core`, where its two
+  readers can both see one answer) and blob-spilled past it through the SAME
+  `FilesAdapter` the workspace rows already spill to. `machine.snapshotRef` becomes
+  a cache: an app can always be rebuilt from its row.
+
+  `checkoutApp` / `commitApp` in `@vendoai/apps` make a workspace a working copy of
+  that row — checkout projects the document onto a filesystem, commit diffs the
+  changed paths back. The two hot paths (`app.vendo`, `plan.vendo`) stay the render
+  seam's, `trigger` travels untouched through every path, and a source key that
+  would escape the app's directory is refused by the document validator.
+
+  All additive for hosts: every new field is optional, every schema stays
+  `.passthrough()`, and rows written before this keep parsing unchanged.
+
+- 38a840d: `vendo_make` has ONE engine. Assembly that produces no screen is the answer.
+
+  `ScreenOutcome.unavailable` used to fall through to the conductor, and so did an
+  unwired assembler, an assembler that threw, and an `assembled` that left no app
+  row behind. All four now end the ask with a FAILED `MakeReceipt` whose `say`
+  names what happened — the assembler's own `why` verbatim where there is one.
+
+  A quiet fall-through is how a composition bug ships: a deployment that forgot to
+  fill `apps.screen`, or whose assembler is broken, read all-green while every ask
+  was served by an engine nobody chose. It reads as broken now.
+
+  `escalate` is unchanged — it is a request for the builder, not the seam failing,
+  and a deployment with a sandbox still runs the build at the same app id.
+
+  **Migration**
+
+  - **`apps.screen` is required for `vendo_make`.** `createVendo()` fills it; a host
+    composing `@vendoai/apps` directly must pass a `ScreenAssembler` or `vendo_make`
+    will answer `status: "failed"` on every new-app request. `AppsRuntime.create`
+    and `AppsRuntime.edit` are unaffected and still generate.
+  - **`conductCreate`, `conductEdit`, `ConductedApp`, `ConductedResult` and
+    `ConductorOptions` are no longer exported from `@vendoai/apps`.** They were
+    public for "external bench harnesses"; a reverse-dependency walk found no
+    caller in this repo, the examples, the corpus harness or the docs. The pipeline
+    still runs inside `createApps()` — it just has no public surface to be extended
+    through.
+  - `generationPromptSections` (internal, `generation/contracts/sections.ts`) is
+    deleted: no caller, and a second unmaintained description of the v2 tree
+    contract is worse than none.
+
+### Patch Changes
+
+- 2e792a1: Advisory compile issues are advisory at every validation door.
+
+  #906 put ONE floor behind the four doors an app reaches a screen through, but the
+  compile issues in FRONT of that floor were still classified twice. The paint seam
+  refuses only what did not parse — `compile-failed`, `missing-app` — while
+  `validateCompiledCreate` turned EVERY wire issue into a block.
+
+  They disagreed on `wire-id-ignored`, which is not a code a model has to invent:
+  `checkoutApp` writes an app's own `app.vendo` with
+  `printWire(…, { includeIds: true })`, so every element of a checked-out app carries
+  an id the compiler then ignores. The seam painted those bytes and
+  `validate({ document })` refused them — the door the assembly loop is told to call
+  "the floor" answering "does not pass" over our own printer's output. PR #913
+  measured it and deliberately left it.
+
+  Core now names the one classification the doors share
+  (`isAdvisoryWireIssue` / `WIRE_ADVISORY_ISSUE_CODES`), and the create and edit
+  validators read it instead of blocking on every issue. Nothing else moves: an
+  issue that drops something the author actually wrote still blocks everywhere, and
+  the paint seam's own parse gate is untouched.
+
+- 3f98372: **Apps remember what they were asked for.** A screen or build run is stateless,
+  so the ARTIFACT now carries its own context: `AppDocument` gains an additive
+  `memory` of two parts.
+
+  - **`asks`** — every `vendo_make` request that touched this app, VERBATIM and in
+    order, the create ask first. Never a paraphrase (a paraphrase drifts the intent
+    it exists to preserve) and never the `<context>`-fenced composite an engine is
+    briefed with: the memory holds what the PERSON said, so one calling agent's
+    background for one call cannot become a standing requirement.
+  - **`decisions`** — a short block the agent writes through `save_app`'s new
+    optional `decisions` field: choices made, constraints found, things ruled out.
+    REPLACED on every run that writes one, never appended, because a superseded
+    decision presented as a current one is worse than no memory at all.
+
+  Both are read back where the next editor actually reads: the edit brain's brief
+  OPENS with the memory, ahead of the document, and the in-box builder's task
+  context does the same. Without it an editor meets a deliberately filtered list
+  and "fixes" it.
+
+  Server-written throughout. `AppsRuntime.remember` is the one door that writes
+  memory (`editor`-gated); a model-authored `memory` is stripped from a generated
+  document, and an edit pins the stored one. Caps live at that write site rather
+  than in the schema — the last 20 asks, 1KB of decisions — so a stored row
+  survives a cap that changes. Reasoning traces, transcripts and tool outputs are
+  deliberately not stored.
+
+- f884bfe: Closes the two gaps behind #822's defect 1 (the canonical "compare weather in
+  three cities" dashboard failing persistently on the BYO default model):
+
+  - **The brain's direct-mode prompt now teaches the wire's real constraints.**
+    `brainPrompt` had almost no dialect-syntax teaching for a direct (single-shot)
+    answer — the fill-worker prompt had it, but a "tiny ask" never reaches a
+    worker. The model reached for JS idioms the wire rejects: a method-call tool
+    name (`cities.map`, `Math.round`), braces as text interpolation, and a loop
+    variable with no declared query behind it. `brainPrompt`'s rules now say so
+    explicitly, and that a fixed small set of named rows reads by array
+    position off its query, never a loop.
+  - **A direct answer that fails to compile now gets a retry.** `conductCreate`
+    had a fix-it loop for every other outcome (`checkAndFix`, bounded at
+    `FIX_ROUNDS`) except this one: a direct answer with ANY compile mistake
+    (unknown tool, braces-in-text, an undeclared reference) returned
+    `kind: "failure"` on the very first try, with no chance to self-heal from
+    the compiler's own message. It now retries up to `FIX_ROUNDS` times, feeding
+    the brain its own wire and exactly what was wrong with it — the same
+    teaching-sentence discipline `fixInstruction` already uses.
+  - **The wire's "unknown-reference" issue now names the declared queries**, the
+    same way "unknown tool" already lists the real tools — a retry (from either
+    fix above) gets something to pick from instead of guessing again.
+
+- c9df3f7: `instant()`, the default-route flip, and the consolidated `createVendo` surface.
+
+  **`instant()` — the non-agentic specialist.** `@vendoai/harnesses` gains a
+  second built-in thinker for hosts that want speed as the resident. One routing
+  call sorts the ask into create / edit / act / cannot; an app ask goes STRAIGHT
+  to the guarded apps tool, so the plan — which is the layout — reaches the screen
+  while a resident thinker would still be forming its first sentence. Non-app asks
+  act through the same guard door, capped at two steps so it is never a thinking
+  loop. Genuinely impossible asks refuse in the consumer's voice. Every host
+  effect goes through `turn.tools.call()`, so the guard, the audit row, the
+  approval card, the view channel and the transcript mirror are unchanged — the
+  specialist buys speed, never a second safety story.
+
+  ```ts
+  import { createVendo, instant } from "@vendoai/vendo/server";
+  const vendo = createVendo({ auth: authJs(), harness: instant() });
+  ```
+
+  **`POST /threads` now runs through the harness runtime for every host** — the
+  host's harness when they named one, `vendo()` when they did not. The rails that
+  kept this opt-in (`find_tools`, the connection-scoped loadout, the curated menu,
+  capability-miss detection) all reach the harness path, and the assembled system
+  prompt rides the turn. Deployments whose store has no SQL handle (the Cloud
+  hosted store, or a host's own non-SQL adapter) stay on the shipped agent path,
+  because the transcript and workspace are tables.
+
+  **The config surface is consolidated onto §10's eight slots** — `auth`, `tools`,
+  `harness`, `packs`, `models`, `store`, `files`, `sandbox`. Additive only; no
+  shipped host breaks:
+
+  - NEW `tools:` — the host's own tool declarations in memory, the same
+    `ExtractedTool[]` `vendo init` / `vendo sync` write to `.vendo/tools.json`.
+    Precedence: `tools:` → `profile.tools` (now deprecated) → the file.
+  - `model` → `models.default`, `paint` → `models.fill`, `profile.tools` →
+    `tools:`. All three still work for one more minor and warn once, naming the
+    move.
+  - Every one of the 33 top-level keys has a stated destination, and the table is
+    gated: a key added to the config without a documented destination fails a
+    test.
+
+  Also: the docs-rot gate on `handler-options.mdx` is real again. Its
+  exhaustiveness assertion lived in a test file, which this package's tsconfig
+  excludes from typecheck — so it never compiled and the documented key list sat
+  ten keys behind the interface. The list moved into `src/config-keys.ts`, where
+  both directions of the assertion actually run.
+
+- e6aaa7a: Two generation-hardening fixes, both aimed at a model correcting itself instead
+  of an app failing outright:
+
+  - **The `.data` envelope binding miss now names the fix.** When a binding reads
+    a field that is actually one level down, under the tool's own `data` field
+    (`sum(accounts, "balance")` where `accounts` is `{ data: [...] }`), the fact
+    check's "the real fields are: data" message now also says which path to use
+    instead (`accounts.data.balance`) — the fix-it retry gets the exact
+    correction rather than just the shape.
+  - **The plan's own vocabulary no longer leaks into a shipped app as an unknown
+    component.** A worker filling a group, or the brain writing a whole app in
+    one shot, occasionally copies the PLAN's own wrapper syntax
+    (`<Leaf component="Stat" query="..." purpose="...">`, `<Group>`) verbatim
+    into the markup it writes. `skeleton.ts`'s `withoutPlanVocabulary` already
+    stripped `query`/`purpose` off a fill fragment's props; it now also resolves
+    a stray `<Leaf component="X">` to the `X` it names and a stray `<Group>` to
+    the `Stack` it always meant, and the same pass now also runs on the DIRECT
+    create path (`validateCompiledCreate`), which has no fill fragment and
+    previously had no defence against this at all.
+
+- 10a2b44: An approval now reaches ONLY the conversation that parked it.
+
+  Every `agent().session()` subscribed to the shared guard's
+  `onApprovalRequested` unscoped, so a guarded action parked in one
+  conversation surfaced in every other session's `on("approval")` handler —
+  another user's pending action, preview included, with live approve/deny
+  closures. The subscription was also never released, so a dead session's
+  callback outlived it on the guard.
+
+  The guard has always recorded the parking conversation
+  (`ApprovalRecordData.sessionId`, from `RunContext.sessionId`); that identity
+  now rides the emitted request too (`ApprovalRequest.ctx.sessionId`, optional
+  only for rows persisted before it existed). Sessions deliver a request to
+  their handlers only when it names their own thread — an ownerless request
+  matches none, failing closed — and the guard subscription is taken on the
+  first `on()` handler and released with the last. Deciding an approval was
+  and remains owner-scoped: a foreign principal's decide is `not-found`.
+
+## 0.7.0
+
+### Minor Changes
+
+- 8f5a7c0: A failed turn now carries its own error, so the thread never shows a blank
+  reply.
+
+  When a turn's stream errored, the only trace on the wire was the ai-SDK `error`
+  chunk. That chunk belongs to no message: it sets `useChat`'s transient `error`
+  and nothing else. The turn itself persisted as an assistant message with **zero
+  parts**, so the moment the thread was re-read — a reload, a thread switch,
+  `VendoPage` refetching after the mint — the explanation was gone and the user's
+  question sat there answered by a blank bubble. On a keyless install that
+  blank bubble was the whole first experience: the server logged `Vendo found no
+model key…`, the panel showed nothing durable.
+
+  The agent now writes the same gated string (`wireErrorMessage` — Vendo's own
+  crafted text or the fixed generic line, never provider internals) into the turn
+  as a `data-vendo-turn-error` part beside the error chunk. It persists with the
+  turn, and the thread renders it inline where the reply would have been, in the
+  failed-beat vocabulary a failed app build already uses. The live banner keeps
+  its Retry but drops its detail line while the turn is already saying it, so the
+  same sentence is never printed twice.
+
+  Additive to the wire (§15 forward-compat): consumers that don't recognize the
+  part ignore it.
+
 ## 0.6.1
 
 ## 0.6.0

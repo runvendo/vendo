@@ -2,14 +2,28 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { type StoreAdapter } from "@vendoai/core";
+import {
+  STORE_WIRE_PATHS,
+  VendoError,
+  storeWireBlobsDeleteRequestSchema,
+  storeWireBlobsGetRequestSchema,
+  storeWireBlobsListRequestSchema,
+  storeWireBlobsPutRequestSchema,
+  storeWireRecordsClaimRequestSchema,
+  storeWireRecordsCompareAndSwapRequestSchema,
+  storeWireRecordsDeleteRequestSchema,
+  storeWireRecordsGetRequestSchema,
+  storeWireRecordsInsertIfAbsentRequestSchema,
+  storeWireRecordsListRequestSchema,
+  storeWireRecordsPutRequestSchema,
+  type StoreAdapter,
+} from "@vendoai/core";
 import { storeAdapterConformance } from "@vendoai/core/conformance";
 import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
-import { hostedStore } from "./hosted-store.js";
+import { hostedStore, hostedStoreOps, type HostedStore } from "./hosted-store.js";
 import { fakeConsole } from "./hosted-store.test-util.js";
 
 const encoder = new TextEncoder();
-
 
 const hosted = (console_: ReturnType<typeof fakeConsole>) => hostedStore({
   apiKey: "vnd_secret",
@@ -189,8 +203,8 @@ describe("hostedStore wire", () => {
   });
 
   it("defaults the base URL to the Vendo console", async () => {
-    const cloudFetch = vi.fn(async () => Response.json({ record: null }));
-    const store = hostedStore({ apiKey: "vnd_secret", fetch: cloudFetch as unknown as typeof fetch });
+    const cloudFetch = vi.fn<typeof fetch>(async () => Response.json({ record: null }));
+    const store = hostedStore({ apiKey: "vnd_secret", fetch: cloudFetch });
     await store.records("invoices").get("x");
     expect(cloudFetch.mock.calls[0]![0]).toBe("https://console.vendo.run/api/v1/store/records/invoices/get");
   });
@@ -207,7 +221,7 @@ describe("hostedStore wire", () => {
 });
 
 describe("hostedStore error mapping", () => {
-  const adapterFor = (fetchImpl: unknown): VendoStore =>
+  const adapterFor = (fetchImpl: unknown): HostedStore =>
     hostedStore({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: fetchImpl as typeof fetch });
   const respond = (code: string, message: string, status: number, extra: Record<string, unknown> = {}) =>
     vi.fn(async () => Response.json({ error: { code, message, ...extra } }, { status }));
@@ -223,22 +237,24 @@ describe("hostedStore error mapping", () => {
     });
   });
 
-  it("renders the pricing-v3 meter-exhausted refusal as the crafted spec-§5 sentence", async () => {
+  it("renders the pool meter-exhausted refusal as the crafted dollar sentence", async () => {
+    // The console's real 402 body: one meter (`usage`), dollars, one limit.
     const store = adapterFor(respond("meter-exhausted", "meter exhausted", 402, {
-      meter: "storage_gb",
-      used: 12,
-      limit: 10,
+      meter: "usage",
+      unit: "usd",
+      used: 6.2,
+      limit: 5,
       resets_at: "2026-08-01T00:00:00.000Z",
       reason: "allowance",
       exits: { upgrade_url: "https://console.vendo.run/billing", byo_docs_url: "https://docs.vendo.run/byo" },
     }));
     await expect(store.records("invoices").put({ id: "r", data: {} })).rejects.toMatchObject({
       code: "cloud-required",
-      message: "Vendo Cloud paused storage — the allowance for this billing period is used up "
-        + "(12 of 10 used; resets 2026-08-01). "
+      message: "Vendo Cloud paused usage — the $5.00 included this billing period is used up "
+        + "($6.20 of $5.00 used; resets 2026-08-01). "
         + "Upgrade your plan (https://console.vendo.run/billing) "
         + "or bring your own infrastructure (https://docs.vendo.run/byo).",
-      detail: { meter: "storage_gb" },
+      detail: { meter: "usage", unit: "usd" },
     });
   });
 
@@ -490,6 +506,660 @@ describe("demo-host journey through the store seam", () => {
     } finally {
       await store.close();
       await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hostedStoreOps — the 31-op client over `vendo/store-wire@1`.
+//
+// Unit tests over an injected fake fetch: they pin the route, the request body
+// and the response decoding for every op — records and blobs against the
+// EXPORTED store-wire v1 contract, the rest against the console's doors
+// (vendo-web apps/console/lib/api/store-handlers.ts + store-doors.ts). A fake
+// fetch proves only that the client talks to ITSELF — the real proof is this
+// same client run against those handlers over real HTTP, with no mock on
+// either side.
+// ---------------------------------------------------------------------------
+
+const P = STORE_WIRE_PATHS;
+
+const wireRecord = {
+  id: "inv_1",
+  data: { total: 5 },
+  refs: { owner: "user_a" },
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  revision: "1",
+};
+
+/** The door each named op knocks on. Records and blobs speak the EXPORTED
+ * store-wire v1 contract (STORE_WIRE_PATHS, collection/namespace/key on the
+ * body, blob bytes base64); transcripts, harness, workspace,
+ * lifecycle.promote and /status answer at their STORE_WIRE_PATHS path too;
+ * erase + the session verbs keep the console's own routes. `keyed` marks the
+ * 20 mutations that carry an Idempotency-Key. */
+const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
+  "records.get": { method: "POST", path: P["records.get"] },
+  "records.put": { method: "POST", path: P["records.put"], keyed: true },
+  "records.delete": { method: "POST", path: P["records.delete"], keyed: true },
+  "records.list": { method: "POST", path: P["records.list"] },
+  "records.claim": { method: "POST", path: P["records.claim"], keyed: true },
+  "records.insertIfAbsent": { method: "POST", path: P["records.insertIfAbsent"], keyed: true },
+  "records.compareAndSwap": { method: "POST", path: P["records.compareAndSwap"], keyed: true },
+  "blobs.put": { method: "POST", path: P["blobs.put"], keyed: true },
+  "blobs.get": { method: "POST", path: P["blobs.get"] },
+  "blobs.delete": { method: "POST", path: P["blobs.delete"], keyed: true },
+  "blobs.list": { method: "POST", path: P["blobs.list"] },
+  "transcripts.putThread": { method: "POST", path: P["transcripts.putThread"], keyed: true },
+  "transcripts.getThread": { method: "POST", path: P["transcripts.getThread"] },
+  "transcripts.listThreads": { method: "POST", path: P["transcripts.listThreads"] },
+  "transcripts.deleteThread": { method: "POST", path: P["transcripts.deleteThread"], keyed: true },
+  "transcripts.putMessage": { method: "POST", path: P["transcripts.putMessage"], keyed: true },
+  "transcripts.recordAnswer": { method: "POST", path: P["transcripts.recordAnswer"], keyed: true },
+  "harness.get": { method: "POST", path: P["harness.get"] },
+  "harness.set": { method: "POST", path: P["harness.set"], keyed: true },
+  "harness.clear": { method: "POST", path: P["harness.clear"], keyed: true },
+  "workspace.index": { method: "POST", path: P["workspace.index"] },
+  "workspace.read": { method: "POST", path: P["workspace.read"] },
+  "workspace.commit": { method: "POST", path: P["workspace.commit"], keyed: true },
+  "workspace.history": { method: "POST", path: P["workspace.history"] },
+  "lifecycle.erase": { method: "POST", path: "/erase", keyed: true },
+  "lifecycle.adopt": { method: "POST", path: "/sessions/adopt", keyed: true },
+  "lifecycle.promote": { method: "POST", path: P["lifecycle.promote"], keyed: true },
+  "lifecycle.session.register": { method: "POST", path: "/sessions/register", keyed: true },
+  "lifecycle.session.stale": { method: "POST", path: "/sessions/stale" },
+  "lifecycle.session.claim": { method: "POST", path: "/sessions/claim", keyed: true },
+  status: { method: "GET", path: P.status },
+};
+
+const door = (op: string): string => `${DOORS[op]!.method} ${DOORS[op]!.path}`;
+
+interface WireCall {
+  path: string;
+  method: string;
+  idempotencyKey: string | null;
+  body: unknown;
+}
+
+/** A mount that answers the canned body for each op's `METHOD path` route and
+ * records what the client sent. */
+const wireFake = (bodies: Record<string, unknown> = {}) => {
+  const calls: WireCall[] = [];
+  const fetchImpl = (async (url: string, init: RequestInit = {}) => {
+    const parsed = new URL(url);
+    const path = `${parsed.pathname.slice("/api/v1/store".length)}${parsed.search}`;
+    const method = init.method ?? "GET";
+    calls.push({
+      path,
+      method,
+      idempotencyKey: new Headers(init.headers).get("idempotency-key"),
+      body: typeof init.body === "string" ? JSON.parse(init.body) as unknown : undefined,
+    });
+    return Response.json(bodies[`${method} ${path}`] ?? {});
+  }) as unknown as typeof fetch;
+  return {
+    calls,
+    ops: hostedStoreOps({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: fetchImpl }),
+  };
+};
+
+/** One well-formed answer per op, so the whole contract can be driven once. */
+const ALL_BODIES: Record<string, unknown> = {
+  [door("records.get")]: { record: wireRecord },
+  [door("records.put")]: { record: wireRecord },
+  [door("records.delete")]: { ok: true },
+  [door("records.list")]: { records: [wireRecord], cursor: "cur_records" },
+  [door("records.claim")]: { claimed: true },
+  [door("records.insertIfAbsent")]: { record: wireRecord },
+  [door("records.compareAndSwap")]: { record: null },
+  [door("blobs.put")]: { ok: true },
+  [door("blobs.get")]: { blob: { bytes: btoa("blob bytes"), contentType: "text/plain" } },
+  [door("blobs.delete")]: { ok: true },
+  [door("blobs.list")]: { keys: ["images/a.png"] },
+  [door("transcripts.putThread")]: { record: wireRecord },
+  [door("transcripts.getThread")]: { record: wireRecord },
+  [door("transcripts.listThreads")]: { records: [wireRecord], cursor: "cur_threads" },
+  [door("transcripts.deleteThread")]: { ok: true },
+  [door("transcripts.putMessage")]: { record: wireRecord },
+  [door("transcripts.recordAnswer")]: { record: wireRecord },
+  [door("harness.get")]: { state: { step: 3 } },
+  [door("harness.set")]: { ok: true },
+  [door("harness.clear")]: { ok: true },
+  [door("workspace.index")]: { entries: [{ path: "/a.md" }], cursor: "cur_index" },
+  [door("workspace.read")]: { files: { "/a.md": "hi" } },
+  [door("workspace.commit")]: { ok: true, commitId: "wsc_1" },
+  [door("workspace.history")]: { entries: [{ commitId: "wsc_1" }] },
+  [door("lifecycle.erase")]: { report: { vendo_apps: 1 } },
+  [door("lifecycle.adopt")]: { report: null },
+  [door("lifecycle.promote")]: { ok: true },
+  [door("lifecycle.session.register")]: { ok: true },
+  [door("lifecycle.session.stale")]: { subjects: ["sub_1"] },
+  [door("lifecycle.session.claim")]: { claimed: false },
+  [door("status")]: { format: "vendo/store-wire@1", ops: 31 },
+};
+
+const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<void> => {
+  await ops.records.get("invoices", "inv_1");
+  await ops.records.put("invoices", { id: "inv_1", data: { total: 5 } });
+  await ops.records.delete("invoices", "inv_1");
+  await ops.records.list("invoices");
+  await ops.records.claim("invoices", { id: "inv_1", data: { total: 5 } });
+  await ops.records.insertIfAbsent("invoices", { id: "inv_2", data: {} });
+  await ops.records.compareAndSwap("invoices", { id: "inv_2", data: {} }, "1");
+  await ops.blobs.put("uploads", "a.png", new Uint8Array([1]));
+  await ops.blobs.get("uploads", "a.png");
+  await ops.blobs.delete("uploads", "a.png");
+  await ops.blobs.list("uploads");
+  await ops.transcripts.putThread({ id: "thr_1", subject: "sub_1", messages: [] });
+  await ops.transcripts.getThread("thr_1");
+  await ops.transcripts.listThreads();
+  await ops.transcripts.deleteThread("thr_1");
+  await ops.transcripts.putMessage("thr_1", { role: "user" });
+  await ops.transcripts.recordAnswer("thr_1", { text: "done" });
+  await ops.harness.get("app_1", "sub_1");
+  await ops.harness.set("app_1", "sub_1", { step: 3 });
+  await ops.harness.clear("app_1", "sub_1");
+  await ops.workspace.index();
+  await ops.workspace.read(["/a.md"]);
+  await ops.workspace.commit([{ path: "/a.md", data: "hi" }]);
+  await ops.workspace.history();
+  await ops.lifecycle.erase({ subject: "sub_1" });
+  await ops.lifecycle.adopt("sub_anon", "sub_real");
+  await ops.lifecycle.promote("app_1", "org_1");
+  await ops.lifecycle.sessionRegister("sub_1");
+  await ops.lifecycle.sessionStale(30_000);
+  await ops.lifecycle.sessionClaim("sub_1", 30_000);
+  await ops.status();
+};
+
+describe("hostedStoreOps — the 31-op wire client", () => {
+  it("routes all 31 ops to the console's real door, with a key on exactly the mutations", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+    await driveEveryOp(ops);
+
+    const expected = Object.values(DOORS);
+    expect(calls).toHaveLength(31);
+    expect(calls.map((call) => `${call.method} ${call.path}`))
+      .toEqual(expected.map((route) => `${route.method} ${route.path}`));
+    expect(calls.map((call) => call.idempotencyKey === null ? "read" : "keyed"))
+      .toEqual(expected.map((route) => route.keyed === true ? "keyed" : "read"));
+    // 19 mutations, 12 reads — and the /status handshake is the one GET with
+    // no body at all.
+    expect(expected.filter((route) => route.keyed === true)).toHaveLength(19);
+    expect(calls.at(-1)).toMatchObject({ path: P.status, method: "GET", body: undefined });
+    // Distinct keys across distinct operations (one per logical mutation).
+    const keys = calls.map((call) => call.idempotencyKey).filter((key) => key !== null);
+    expect(new Set(keys).size).toBe(19);
+  });
+
+  it("records: seven ops on the wire door, collection on the body, records/cursor decoded", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+
+    expect(await ops.records.get("invoices", "inv_1")).toMatchObject({ id: "inv_1", data: { total: 5 } });
+    expect(calls[0]).toMatchObject({ path: P["records.get"], body: { collection: "invoices", id: "inv_1" } });
+
+    expect(await ops.records.put("invoices", { id: "inv_1", data: { total: 5 } })).toMatchObject({ id: "inv_1" });
+    expect(calls[1]!.body).toEqual({ collection: "invoices", record: { id: "inv_1", data: { total: 5 } } });
+
+    await ops.records.delete("invoices", "inv_1");
+    expect(calls[2]!.body).toEqual({ collection: "invoices", id: "inv_1" });
+
+    expect(await ops.records.list("invoices", { refs: { owner: "user_a" }, limit: 10 })).toEqual({
+      records: [expect.objectContaining({ id: "inv_1" })],
+      cursor: "cur_records",
+    });
+    expect(calls[3]!.body).toEqual({ collection: "invoices", query: { refs: { owner: "user_a" }, limit: 10 } });
+    // An unqueried list still sends a query object, so a door reading
+    // `body.query ?? {}` never sees a bare body.
+    await ops.records.list("invoices");
+    expect(calls[4]!.body).toEqual({ collection: "invoices", query: {} });
+
+    expect(await ops.records.claim("invoices", { id: "inv_1", data: { total: 5 } }, { data: { total: 6 } })).toBe(true);
+    expect(calls[5]!.body).toEqual({
+      collection: "invoices",
+      expected: { id: "inv_1", data: { total: 5 } },
+      replacement: { data: { total: 6 } },
+    });
+
+    expect(await ops.records.insertIfAbsent("invoices", { id: "inv_2", data: {} })).toMatchObject({ id: "inv_1" });
+    expect(calls[6]).toMatchObject({
+      path: P["records.insertIfAbsent"],
+      body: { collection: "invoices", record: { id: "inv_2", data: {} } },
+    });
+
+    // A lost compare-and-swap is null at the seam, not an error.
+    expect(await ops.records.compareAndSwap("invoices", { id: "inv_2", data: {} }, "1")).toBeNull();
+    expect(calls[7]).toMatchObject({
+      path: P["records.compareAndSwap"],
+      body: { collection: "invoices", record: { id: "inv_2", data: {} }, expectedRevision: "1" },
+    });
+
+    // The collection rides the body VERBATIM — no path encoding to get wrong.
+    await ops.records.get("app:app_1:orders", "o_1");
+    expect(calls[8]).toMatchObject({
+      path: P["records.get"],
+      body: { collection: "app:app_1:orders", id: "o_1" },
+    });
+  });
+
+  it("blobs: JSON POST on the wire door, bytes base64 on the body", async () => {
+    const bytes = new Uint8Array([0, 1, 2, 255]);
+    const { calls, ops } = wireFake(ALL_BODIES);
+
+    await ops.blobs.put("uploads", "images/a.png", bytes, { contentType: "image/png" });
+    expect(calls[0]).toMatchObject({ method: "POST", path: P["blobs.put"] });
+    expect(calls[0]!.body).toEqual({
+      namespace: "uploads",
+      key: "images/a.png",
+      bytes: btoa(String.fromCharCode(0, 1, 2, 255)),
+      contentType: "image/png",
+    });
+    expect(calls[0]!.idempotencyKey).toEqual(expect.stringMatching(/^idm_/));
+
+    expect(await ops.blobs.get("uploads", "images/a.png")).toEqual({
+      bytes: encoder.encode("blob bytes"),
+      contentType: "text/plain",
+    });
+    expect(calls[1]).toMatchObject({
+      method: "POST",
+      path: P["blobs.get"],
+      body: { namespace: "uploads", key: "images/a.png" },
+    });
+
+    await ops.blobs.delete("uploads", "images/a.png");
+    expect(calls[2]).toMatchObject({
+      method: "POST",
+      path: P["blobs.delete"],
+      body: { namespace: "uploads", key: "images/a.png" },
+    });
+    expect(calls[2]!.idempotencyKey).toEqual(expect.stringMatching(/^idm_/));
+
+    expect(await ops.blobs.list("uploads", "images/")).toEqual(["images/a.png"]);
+    expect(calls[3]).toMatchObject({
+      method: "POST",
+      path: P["blobs.list"],
+      body: { namespace: "uploads", prefix: "images/" },
+    });
+
+    // A missing blob is null at the seam — `{blob: null}` on a 2xx or the
+    // ENVELOPED not-found; a bare 404 stays loud (degrades to not-implemented).
+    const absent = wireFake({ ...ALL_BODIES, [door("blobs.get")]: { blob: null } });
+    expect(await absent.ops.blobs.get("uploads", "gone.png")).toBeNull();
+    const envelopedMiss = hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async () => Response.json(
+        { error: { code: "not-found", message: "Blob not found." } },
+        { status: 404 },
+      )) as unknown as typeof fetch,
+    });
+    expect(await envelopedMiss.blobs.get("uploads", "gone.png")).toBeNull();
+    const bare = hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async () => new Response("<html>nginx</html>", { status: 404 })) as unknown as typeof fetch,
+    });
+    await expect(bare.blobs.get("uploads", "gone.png")).rejects.toMatchObject({ code: "not-implemented" });
+  });
+
+  it("records and blobs requests validate against the EXPORTED store-wire v1 request schemas", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+    await ops.records.get("invoices", "inv_1");
+    await ops.records.put("invoices", { id: "inv_1", data: { total: 5 } });
+    await ops.records.delete("invoices", "inv_1");
+    await ops.records.list("invoices", { limit: 10 });
+    await ops.records.claim("invoices", { id: "inv_1", data: { total: 5 } }, { data: { total: 6 } });
+    await ops.records.insertIfAbsent("invoices", { id: "inv_2", data: {} });
+    await ops.records.compareAndSwap("invoices", { id: "inv_2", data: {} }, "1");
+    await ops.blobs.put("uploads", "a.bin", new Uint8Array([7]), { contentType: "application/octet-stream" });
+    await ops.blobs.get("uploads", "a.bin");
+    await ops.blobs.delete("uploads", "a.bin");
+    await ops.blobs.list("uploads", "a");
+
+    const CONTRACT: [keyof typeof P, { safeParse(value: unknown): { success: boolean } }][] = [
+      ["records.get", storeWireRecordsGetRequestSchema],
+      ["records.put", storeWireRecordsPutRequestSchema],
+      ["records.delete", storeWireRecordsDeleteRequestSchema],
+      ["records.list", storeWireRecordsListRequestSchema],
+      ["records.claim", storeWireRecordsClaimRequestSchema],
+      ["records.insertIfAbsent", storeWireRecordsInsertIfAbsentRequestSchema],
+      ["records.compareAndSwap", storeWireRecordsCompareAndSwapRequestSchema],
+      ["blobs.put", storeWireBlobsPutRequestSchema],
+      ["blobs.get", storeWireBlobsGetRequestSchema],
+      ["blobs.delete", storeWireBlobsDeleteRequestSchema],
+      ["blobs.list", storeWireBlobsListRequestSchema],
+    ];
+    expect(calls).toHaveLength(CONTRACT.length);
+    for (const [index, [op, schema]] of CONTRACT.entries()) {
+      const call = calls[index]!;
+      expect(`${call.method} ${call.path}`).toBe(`POST ${P[op]}`);
+      expect(schema.safeParse(call.body).success).toBe(true);
+    }
+  });
+
+  it("transcripts: six ops over thread ids and message payloads", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+    const thread = { id: "thr_1", subject: "sub_1", messages: [{ role: "user" }], title: "Budget" };
+
+    expect(await ops.transcripts.putThread(thread)).toMatchObject({ id: "inv_1" });
+    expect(calls[0]!.body).toEqual({ thread });
+
+    expect(await ops.transcripts.getThread("thr_1", { cursor: "cur_1", limit: 50 })).toMatchObject({ id: "inv_1" });
+    expect(calls[1]!.body).toEqual({ id: "thr_1", cursor: "cur_1", limit: 50 });
+
+    expect(await ops.transcripts.listThreads({ subject: "sub_1", limit: 25 })).toEqual({
+      records: [expect.objectContaining({ id: "inv_1" })],
+      cursor: "cur_threads",
+    });
+    expect(calls[2]!.body).toEqual({ subject: "sub_1", limit: 25 });
+
+    await ops.transcripts.deleteThread("thr_1");
+    expect(calls[3]!.body).toEqual({ id: "thr_1" });
+
+    await ops.transcripts.putMessage("thr_1", { role: "assistant", content: "hi" });
+    expect(calls[4]!.body).toEqual({ threadId: "thr_1", message: { role: "assistant", content: "hi" } });
+
+    await ops.transcripts.recordAnswer("thr_1", { text: "done" });
+    expect(calls[5]!.body).toEqual({ threadId: "thr_1", answer: { text: "done" } });
+  });
+
+  it("harness: get/set/clear keyed by app and subject", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+
+    expect(await ops.harness.get("app_1", "sub_1")).toEqual({ step: 3 });
+    expect(calls[0]!.body).toEqual({ appId: "app_1", subject: "sub_1" });
+
+    await ops.harness.set("app_1", "sub_1", { step: 4 });
+    expect(calls[1]!.body).toEqual({ appId: "app_1", subject: "sub_1", state: { step: 4 } });
+
+    await ops.harness.clear("app_1", "sub_1");
+    expect(calls[2]!.body).toEqual({ appId: "app_1", subject: "sub_1" });
+
+    // An absent state is null at the seam.
+    const absent = wireFake({ [door("harness.get")]: { state: null } });
+    expect(await absent.ops.harness.get("app_1", "sub_1")).toBeNull();
+  });
+
+  it("workspace: index/read/commit/history, caller-owned commit key", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+
+    expect(await ops.workspace.index({ cursor: "cur_0", limit: 100 })).toEqual({
+      entries: [{ path: "/a.md" }],
+      cursor: "cur_index",
+    });
+    expect(calls[0]!.body).toEqual({ cursor: "cur_0", limit: 100 });
+
+    expect(await ops.workspace.read(["/a.md"])).toEqual({ "/a.md": "hi" });
+    expect(calls[1]!.body).toEqual({ paths: ["/a.md"] });
+
+    await ops.workspace.commit([{ path: "/a.md", data: "hi" }], { idempotencyKey: "idm_caller" });
+    expect(calls[2]!.body).toEqual({ entries: [{ path: "/a.md", data: "hi" }] });
+    // The caller's key wins — a resumed job replays its own commit.
+    expect(calls[2]!.idempotencyKey).toBe("idm_caller");
+
+    expect(await ops.workspace.history()).toEqual({ entries: [{ commitId: "wsc_1" }] });
+    expect(calls[3]!.body).toEqual({});
+  });
+
+  it("workspace: the path leg of history rides the same door", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+
+    await ops.workspace.history({ path: "/a.md", owner: "own_1" });
+    expect(calls[0]!.body).toEqual({ path: "/a.md", owner: "own_1" });
+  });
+
+  it("lifecycle: erase/adopt/promote plus the three session doors", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+
+    // The erase door takes the target FLAT (exactly one of subject/appId).
+    expect(await ops.lifecycle.erase({ subject: "sub_1" })).toEqual({ vendo_apps: 1 });
+    expect(calls[0]).toMatchObject({ path: "/erase", body: { subject: "sub_1" } });
+
+    // A replayed adoption finds nothing to merge — null, not an error.
+    expect(await ops.lifecycle.adopt("sub_anon", "sub_real")).toBeNull();
+    expect(calls[1]).toMatchObject({ path: "/sessions/adopt", body: { from: "sub_anon", to: "sub_real" } });
+
+    await ops.lifecycle.promote("app_1", "org_1");
+    expect(calls[2]).toMatchObject({ path: "/lifecycle/promote", body: { appId: "app_1", orgId: "org_1" } });
+
+    // Millisecond clocks ride the wire so an injected session clock stays
+    // authoritative, exactly as on the StoreAdapter session doors.
+    await ops.lifecycle.sessionRegister("sub_1", 1_000);
+    expect(calls[3]).toMatchObject({ path: "/sessions/register", body: { subject: "sub_1", now: 1_000 } });
+
+    expect(await ops.lifecycle.sessionStale(30_000, 61_000)).toEqual(["sub_1"]);
+    expect(calls[4]).toMatchObject({ path: "/sessions/stale", body: { idleMs: 30_000, now: 61_000 } });
+
+    expect(await ops.lifecycle.sessionClaim("sub_1", 30_000)).toBe(false);
+    expect(calls[5]).toMatchObject({ path: "/sessions/claim", body: { subject: "sub_1", idleMs: 30_000 } });
+  });
+
+  it("status: the GET handshake, parsed as vendo/store-wire@1", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+    expect(await ops.status()).toMatchObject({ format: "vendo/store-wire@1", ops: 31 });
+    expect(calls[0]).toMatchObject({ path: "/status", method: "GET" });
+    await expect(wireFake({ [door("status")]: { format: "vendo/store-wire@2", ops: 31 } }).ops.status())
+      .rejects.toThrow(/invalid status/);
+  });
+
+  it("passes cursors through untouched — the server paginates, never the client", async () => {
+    const { calls, ops } = wireFake({
+      [door("records.list")]: { records: [], cursor: "opaque||server||cursor" },
+      [door("workspace.history")]: { entries: [] },
+    });
+    expect(await ops.records.list("invoices", { cursor: "opaque||prev", limit: 1000 })).toEqual({
+      records: [],
+      cursor: "opaque||server||cursor",
+    });
+    expect(calls[0]!.body).toEqual({ collection: "invoices", query: { cursor: "opaque||prev", limit: 1000 } });
+    // No cursor from the server means the page is the last one.
+    expect(await ops.workspace.history({ cursor: "opaque||prev" })).toEqual({ entries: [] });
+    expect(calls[1]!.body).toEqual({ cursor: "opaque||prev" });
+  });
+
+  it("replays the SAME Idempotency-Key on a timeout retry", async () => {
+    const seen: (string | null)[] = [];
+    let attempts = 0;
+    const fetchImpl = (async (_url: string, init: RequestInit = {}) => {
+      seen.push(new Headers(init.headers).get("idempotency-key"));
+      attempts += 1;
+      if (attempts === 1) {
+        throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+      }
+      return Response.json({ record: wireRecord });
+    }) as unknown as typeof fetch;
+    const ops = hostedStoreOps({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: fetchImpl });
+
+    // The write still resolves, and the server's ledger sees ONE logical
+    // mutation: the retry replays the key verbatim rather than minting one.
+    expect(await ops.records.put("invoices", { id: "inv_1", data: { total: 5 } })).toMatchObject({ id: "inv_1" });
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBe(seen[1]);
+    expect(seen[0]).toEqual(expect.stringMatching(/^idm_/));
+
+    // A NEW logical operation mints a new key.
+    await ops.records.put("invoices", { id: "inv_1", data: { total: 6 } });
+    expect(seen[2]).not.toBe(seen[0]);
+  });
+
+  it("replays the same body on a retry, so the ledger's request hash still matches", async () => {
+    const bodies: (string | undefined)[] = [];
+    let attempts = 0;
+    const fetchImpl = (async (_url: string, init: RequestInit = {}) => {
+      bodies.push(typeof init.body === "string" ? init.body : undefined);
+      attempts += 1;
+      if (attempts === 1) {
+        throw Object.assign(new Error("aborted"), { name: "TimeoutError" });
+      }
+      return Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+    const ops = hostedStoreOps({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: fetchImpl });
+    await ops.workspace.commit([{ path: "/a.md", data: "hi" }], { idempotencyKey: "idm_caller" });
+    expect(bodies).toEqual([bodies[0], bodies[0]]);
+    expect(bodies[0]).toBe(JSON.stringify({ entries: [{ path: "/a.md", data: "hi" }] }));
+  });
+
+  it("does not retry a non-timeout failure — a refusal is an answer", async () => {
+    let attempts = 0;
+    const ops = hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async () => {
+        attempts += 1;
+        return Response.json({ error: { code: "conflict", message: "taken" } }, { status: 409 });
+      }) as unknown as typeof fetch,
+    });
+    await expect(ops.records.put("invoices", { id: "inv_1", data: {} }))
+      .rejects.toMatchObject({ code: "conflict" });
+    expect(attempts).toBe(1);
+  });
+
+  it("maps an enveloped error to its VendoError code through parseStoreWireError", async () => {
+    const enveloped = (code: string, message: string, status: number) => hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async () => Response.json({ error: { code, message } }, { status })) as unknown as typeof fetch,
+    });
+    await expect(enveloped("conflict", "belongs to another subject", 409)
+      .records.put("vendo_threads", { id: "thr_1", data: {} }))
+      .rejects.toMatchObject({ code: "conflict", message: "belongs to another subject" });
+    await expect(enveloped("blocked", "vendo_audit is append-only", 403)
+      .records.delete("vendo_audit", "aud_1"))
+      .rejects.toMatchObject({ code: "blocked", message: "vendo_audit is append-only" });
+    // The idempotency ledger's own refusal — same key, different body — is a
+    // conflict the caller must see, never a swallowed replay.
+    await expect(enveloped("conflict", "Idempotency-Key was already used with a different request body.", 409)
+      .workspace.commit([{ path: "/a.md", data: "hi" }], { idempotencyKey: "idm_caller" }))
+      .rejects.toMatchObject({ code: "conflict" });
+    // An enveloped not-found stays not-found; a BARE 404 is a mount failure
+    // and degrades to not-implemented rather than reading as absence.
+    await expect(enveloped("not-found", "unknown record", 404).records.get("invoices", "r"))
+      .rejects.toMatchObject({ code: "not-found" });
+    const bare = hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async () => new Response("<html>nginx</html>", { status: 404 })) as unknown as typeof fetch,
+    });
+    await expect(bare.records.get("invoices", "r")).rejects.toMatchObject({ code: "not-implemented" });
+  });
+
+  it("surfaces an unsupported op cleanly, naming it — never a silent fallback", async () => {
+    const notImplemented = (body: BodyInit | null) => hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async () => new Response(body, {
+        status: 501,
+        ...(body === null ? {} : { headers: { "content-type": "application/json" } }),
+      })) as unknown as typeof fetch,
+    });
+    // The console's catch-all answers the ENVELOPED not-implemented 501 for
+    // any op its mount does not serve (app/api/v1/store/[...op]/route.ts).
+    const enveloped = notImplemented(JSON.stringify({
+      error: { code: "not-implemented", message: "Unknown store operation: workspace/commit." },
+    }));
+    await expect(enveloped.workspace.commit([{ path: "/a.md", data: "hi" }])).rejects.toMatchObject({
+      code: "not-implemented",
+      message: 'Vendo Cloud store does not support the "workspace.commit" operation — Unknown store operation: workspace/commit.',
+    });
+    // A bare 501 (no envelope) names the op just the same.
+    await expect(notImplemented(null).lifecycle.promote("app_1", "org_1")).rejects.toMatchObject({
+      code: "not-implemented",
+      message: expect.stringContaining('does not support the "lifecycle.promote" operation'),
+    });
+    // Every family names its own op — no silent partial execution anywhere.
+    await expect(notImplemented(null).transcripts.recordAnswer("thr_1", { text: "x" })).rejects.toMatchObject({
+      code: "not-implemented",
+      message: expect.stringContaining('"transcripts.recordAnswer"'),
+    });
+    await expect(notImplemented(null).blobs.put("uploads", "a.png", new Uint8Array([1]))).rejects.toMatchObject({
+      code: "not-implemented",
+      message: expect.stringContaining('"blobs.put"'),
+    });
+    await expect(notImplemented(null).lifecycle.sessionStale(1_000)).rejects.toMatchObject({
+      code: "not-implemented",
+      message: expect.stringContaining('"lifecycle.session.stale"'),
+    });
+  });
+
+  it("treats a malformed 2xx as service misbehavior, never the caller's fault", async () => {
+    const answering = (body: unknown) => hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async () => Response.json(body)) as unknown as typeof fetch,
+    });
+    await expect(answering({}).records.get("invoices", "r")).rejects.toThrow(/invalid record/);
+    await expect(answering({ records: "nope" }).records.list("invoices")).rejects.toThrow(/invalid list/);
+    await expect(answering({ claimed: "yes" }).records.claim("invoices", { id: "r", data: {} }))
+      .rejects.toThrow(/invalid claim/);
+    await expect(answering({ keys: [1] }).blobs.list("uploads")).rejects.toThrow(/invalid blob list/);
+    await expect(answering({ blob: {} }).blobs.get("uploads", "a.png")).rejects.toThrow(/invalid blob/);
+    await expect(answering({}).harness.get("app_1", "sub_1")).rejects.toThrow(/invalid harness state/);
+    await expect(answering({}).workspace.index()).rejects.toThrow(/invalid entries/);
+    await expect(answering({ files: [] }).workspace.read(["/a.md"])).rejects.toThrow(/invalid workspace read/);
+    await expect(answering({}).lifecycle.erase({ subject: "s" })).rejects.toThrow(/invalid report/);
+    await expect(answering({ subjects: [1] }).lifecycle.sessionStale(1_000)).rejects.toThrow(/invalid stale/);
+  });
+});
+
+describe("hostedStore keeps its StoreAdapter surface and gains the op surface", () => {
+  it("carries records/blobs/erase/sessions unchanged, plus ops on the same doors", async () => {
+    const console_ = fakeConsole();
+    const store = hosted(console_);
+    expect(typeof store.records).toBe("function");
+    expect(typeof store.blobs).toBe("function");
+    expect(typeof store.erase.bySubject).toBe("function");
+    expect(typeof store.sessions.register).toBe("function");
+    expect(Object.keys(store.ops).sort()).toEqual([
+      "blobs", "harness", "lifecycle", "records", "status", "transcripts", "workspace",
+    ]);
+
+    // The op surface rides the SAME mount, key and identity headers as the
+    // StoreAdapter surface, over its own wire doors — a record written through
+    // one is readable through the other, which is what "one home, two
+    // surfaces" has to mean.
+    await store.ops.records.put("invoices", { id: "inv_1", data: { total: 5 } });
+    expect(console_.requests.at(-1)).toMatchObject({
+      url: "https://cloud.test/api/v1/store/records/put",
+      authorization: "Bearer vnd_secret",
+    });
+    expect(await store.records("invoices").get("inv_1")).toMatchObject({ id: "inv_1", data: { total: 5 } });
+    await store.ops.records.delete("invoices", "inv_1");
+    expect(await store.ops.records.get("invoices", "inv_1")).toBeNull();
+
+    // Blobs too: base64 JSON on the ops wire, REST bytes on the adapter, both
+    // surfaces on the same key.
+    await store.ops.blobs.put("uploads", "images/a.png", new Uint8Array([7]), { contentType: "image/png" });
+    expect(await store.blobs("uploads").get("images/a.png")).toMatchObject({ contentType: "image/png" });
+    expect(await store.ops.blobs.list("uploads", "images/")).toEqual(["images/a.png"]);
+
+    // And the session doors: register through the ops surface, sweep through
+    // the adapter's.
+    await store.ops.lifecycle.sessionRegister("anon_1", 1_000);
+    expect(await store.sessions.stale(1, 100_000)).toEqual(["anon_1"]);
+  });
+
+  // 16 of the 32 ops have no door in the fake: all 6 transcripts, all 3
+  // harness, all 5 workspace, lifecycle.promote and /status. It used to answer
+  // them with a `not-found` envelope — the SAME answer a live console sends
+  // when it refuses — so a test exercising one of those families read a
+  // plausible rejection and asserted nothing. The fake now throws out of
+  // `fetch`, which no console answer can be mistaken for.
+  it("never stands in for a door it does not serve", async () => {
+    const store = hosted(fakeConsole());
+    const unserved: Array<[string, () => Promise<unknown>]> = [
+      ["transcripts", () => store.ops.transcripts.listThreads()],
+      ["harness", () => store.ops.harness.get("app_1", "sub_1")],
+      ["workspace", () => store.ops.workspace.index()],
+      ["lifecycle.promote", () => store.ops.lifecycle.promote("app_1", "org_1")],
+      ["status", () => store.ops.status()],
+    ];
+    for (const [family, call] of unserved) {
+      const error = await call().then(() => undefined, (reason: unknown) => reason);
+      expect(error, family).toBeInstanceOf(Error);
+      expect((error as Error).name, family).toBe("FakeConsoleUnservedRoute");
+      // Not a VendoError: a wire-legal code would be the console's own voice.
+      expect(error, family).not.toBeInstanceOf(VendoError);
     }
   });
 });

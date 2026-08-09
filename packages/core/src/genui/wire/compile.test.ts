@@ -9,6 +9,7 @@ import {
   TREE_MAX_QUERIES,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
 } from "../tree-limits.js";
+import { KIT_COMPONENT_NAMES, WIRE_COMPONENT_NAMES } from "../../kit/specs.js";
 import { validateTree } from "../tree.js";
 import { compileWire, type WireCompileOptions, type WireCompileResult } from "./compile.js";
 
@@ -166,6 +167,30 @@ describe("compileWire attributes", () => {
     const result = compile('<App><Card a="1" a="2"/></App>');
     expect(result.tree.nodes[1]?.props).toStrictEqual({ a: "2" });
     expect(codes(result)).toEqual(["duplicate-attribute"]);
+  });
+
+  it("says the earlier attribute stands when the last one was dropped", () => {
+    // "the last one wins" is the model's repair instruction: told the last one
+    // won when it was dropped, a retry re-sends the value that never landed.
+    const result = compile(`<App><Card a="1" a='2'/></App>`);
+    expect(result.tree.nodes[1]?.props).toStrictEqual({ a: "1" });
+    expect(result.issues.map(({ message }) => message).join("\n")).not.toContain("the last one wins");
+  });
+
+  it("does not claim a survivor when every duplicate value was dropped", () => {
+    // Both values are dropped, so no onClick prop exists. Telling a retry that
+    // "the earlier one stands" points it at a value that is not there.
+    const result = compile('<App><Card onClick="not a tool" onClick="also not a tool"/></App>');
+    expect(result.tree.nodes[1]?.props).toBeUndefined();
+    expect(result.issues.map(({ message }) => message)).toContain(
+      'duplicate attribute "onClick" (every value was dropped, so the attribute is missing)',
+    );
+  });
+
+  it("does not claim a winner when both duplicates are compiler-owned ids", () => {
+    const result = compile('<App><Card id="one" id="two"/></App>');
+    expect(result.tree.nodes[1]).toStrictEqual({ id: "card-1", component: "Card", source: "prewired" });
+    expect(result.issues.map(({ message }) => message).join("\n")).not.toContain("the last one wins");
   });
 
   it("drops an ill-formed UTF-16 string attribute (lone surrogate)", () => {
@@ -595,12 +620,34 @@ describe("compileWire source resolution (D3)", () => {
     expect(result.tree.nodes[1]).toStrictEqual({ id: "note-1", component: "Note", source: "generated" });
   });
 
-  it("host beats prewired beats island for the same name", () => {
+  it("host beats built-in beats island for the same name", () => {
     const host = compile("<App><Card/></App>", { hostComponents: ["Card"] });
     expect(host.tree.nodes[1]?.source).toBe("host");
-    const prewiredOverIsland = compile('<App><Card/><Island name="Card">src</Island></App>');
-    expect(prewiredOverIsland.tree.nodes[1]?.source).toBe("prewired");
-    expect(prewiredOverIsland.components).toStrictEqual({ Card: "src" });
+    // V4 — the built-in vocabulary is the whole Kit, and an island may not
+    // take one of its names: the built-in always wins resolution, so the
+    // island source would be dead weight. The NAME is refused outright.
+    const builtinOverIsland = compile('<App><Card/><Island name="Card">src</Island></App>');
+    expect(builtinOverIsland.tree.nodes[1]?.source).toBe("prewired");
+    expect(builtinOverIsland.components).toStrictEqual({});
+    expect(codes(builtinOverIsland)).toContain("invalid-island-name");
+  });
+
+  /**
+   * The island-name gate reads WIRE_COMPONENT_NAMES, which is the Kit MINUS
+   * the names the wire cannot express (KIT_WIRE_UNSAFE_NAMES — "Accordion").
+   * Every consumer downstream reads the FULL Kit instead: `prepareIslands`
+   * rejects the name (KIT_COMPONENT_NAMES) and the tree renderer hard-fails the
+   * whole payload ("generated component shadows a Kit component name"). So a
+   * wire the compiler calls clean cannot render at all. The stricter set is the
+   * right one — a Kit name is unreachable as an island whether or not the wire
+   * can spell its props.
+   */
+  it("refuses an island named after a Kit component the WIRE cannot express (Accordion)", () => {
+    expect(KIT_COMPONENT_NAMES).toContain("Accordion");
+    expect(WIRE_COMPONENT_NAMES).not.toContain("Accordion");
+    const result = compileWire('<App><Island name="Accordion">src</Island><Badge/></App>');
+    expect(result.components).toStrictEqual({});
+    expect(codes(result)).toContain("invalid-island-name");
   });
 
   it("leaves source undefined for unknown names, with no issue", () => {
@@ -807,14 +854,14 @@ describe("compileWire full-spec-example gate (spec §2)", () => {
     expect(result.complete).toBe(true);
   };
 
-  it("compiles the spec example (reshape pipe dropped) with zero issues", () => {
+  it("compiles the spec example with no reshape and zero issues", () => {
     const result = compile(specWire("revenue"));
     expectSpecTree(result);
     expect(result.issues).toEqual([]);
   });
 
-  it("compiles the spec example WITH the pipe to a $reshape binding, zero issues (v2 spec §3)", () => {
-    const result = compile(specWire("revenue | asPoints(month, revenue)"));
+  it("compiles the spec example WITH a reshape call to a $reshape binding, zero issues (v3 spec §5)", () => {
+    const result = compile(specWire('asPoints(revenue, "month", "revenue")'));
     expect(result.issues).toEqual([]);
     const chart = result.tree.nodes.find((node) => node.id === "linechart-1");
     expect(chart?.props?.points).toEqual({
@@ -1013,7 +1060,7 @@ describe("compileWire shape check (v2 spec §3)", () => {
 </App>`;
 
   it("a valid binding with a valid reshape produces no errors", () => {
-    const result = compile(chartWire("revenue.rows | asPoints(month, revenue)"), shapes);
+    const result = compile(chartWire('asPoints(revenue.rows, "month", "revenue")'), shapes);
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);
   });
@@ -1036,7 +1083,7 @@ describe("compileWire shape check (v2 spec §3)", () => {
   });
 
   it("a reshape referencing absent fields fails with missing/available for repair", () => {
-    const result = compile(chartWire("revenue.rows | asPoints(period, revenue)"), shapes);
+    const result = compile(chartWire('asPoints(revenue.rows, "period", "revenue")'), shapes);
     expect(codes(result)).toEqual(["shape-mismatch"]);
     const error = result.bindingErrors[0];
     expect(error?.missing).toEqual(["period"]);
@@ -1044,8 +1091,8 @@ describe("compileWire shape check (v2 spec §3)", () => {
     expect(error?.path).toBe("/revenue/rows");
   });
 
-  it("a reshape op incompatible with the known shape fails (aggregate over a string field)", () => {
-    const result = compile(chartWire("revenue.rows | sum(month)"), shapes);
+  it("a reshape op incompatible with the known shape fails (currency format over a string field)", () => {
+    const result = compile(chartWire('format(revenue.rows, "month", "currency")'), shapes);
     expect(codes(result)).toEqual(["shape-mismatch"]);
     expect(result.bindingErrors[0]?.message).toContain("month");
   });
@@ -1064,7 +1111,7 @@ describe("compileWire shape check (v2 spec §3)", () => {
 </App>`, shapes);
     expect(unknownTool.bindingErrors).toEqual([]);
 
-    const jsonRegion = compile(chartWire("revenue.rows | pick(anything)"), {
+    const jsonRegion = compile(chartWire('pick(revenue.rows, "anything")'), {
       toolShapes: { "metrics.revenue": { kind: "json" } },
     });
     expect(jsonRegion.bindingErrors).toEqual([]);
@@ -1138,7 +1185,7 @@ describe("compileWire prewired option projection (v2 spec §3)", () => {
   });
 
   it("the deprecated asOptions projection STILL compiles (stored apps; staged retirement)", () => {
-    const result = compile(selectWire("accts.data | asOptions(id, name)"), shapes);
+    const result = compile(selectWire('asOptions(accts.data, "id", "name")'), shapes);
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);
   });
@@ -1228,14 +1275,14 @@ describe("compileWire display-slot object check (raw-braces class)", () => {
   const tableWire = (attrs: string): string => `
 <App name="Deadlines">
   <Query id="dl" tool="host_listDeadlines"/>
-  <Table ${attrs}/>
+  <DataTable ${attrs}/>
 </App>`;
 
-  it("Table rows carrying object-valued columns fail: every displayed cell must be a scalar", () => {
+  it("DataTable rows carrying object-valued columns fail: every displayed cell must be a scalar", () => {
     const result = compile(tableWire("rows={dl.data}"), shapes);
     expect(codes(result)).toEqual(["shape-mismatch"]);
     const error = result.bindingErrors[0];
-    expect(error?.nodeId).toBe("table-1");
+    expect(error?.nodeId).toBe("datatable-1");
     expect(error?.prop).toBe("rows");
     expect(error?.message).toContain("progress");
     expect(error?.message).toContain("assignedTo");
@@ -1248,9 +1295,9 @@ describe("compileWire display-slot object check (raw-braces class)", () => {
   });
 
   it("a literal columns list restricted to scalar keys passes; one naming an object field fails", () => {
-    const scalarColumns = compile(tableWire('columns={["client", "dueDate"]} rows={dl.data}'), shapes);
+    const scalarColumns = compile(tableWire('columns={[{key: "client"}, {key: "dueDate"}]} rows={dl.data}'), shapes);
     expect(scalarColumns.bindingErrors).toEqual([]);
-    const objectColumn = compile(tableWire('columns={["client", {key: "progress"}]} rows={dl.data}'), shapes);
+    const objectColumn = compile(tableWire('columns={[{key: "client"}, {key: "progress"}]} rows={dl.data}'), shapes);
     expect(codes(objectColumn)).toEqual(["shape-mismatch"]);
     expect(objectColumn.bindingErrors[0]?.message).toContain("progress");
     expect(objectColumn.bindingErrors[0]?.message).not.toContain("assignedTo");
@@ -1263,7 +1310,7 @@ describe("compileWire display-slot object check (raw-braces class)", () => {
 
   it("the deprecated template projection STILL clears the error (stored apps; staged retirement)", () => {
     const result = compile(tableWire(
-      'rows={dl.data | template(progress, "{progress.received} of {progress.total}") | template(assignedTo, "{assignedTo.name}")}',
+      'rows={template(template(dl.data, "progress", "{progress.received} of {progress.total}"), "assignedTo", "{assignedTo.name}")}',
     ), shapes);
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);
@@ -1287,8 +1334,8 @@ describe("compileWire display-slot object check (raw-braces class)", () => {
 <App name="D">
   <Query id="dl" tool="host_listDeadlines"/>
   <Stat label="Next" value={dl.nearest.name}/>
-  <Text text={dl.nearest | template("{name} — {dueDate}")}/>
-  <Badge label={dl.data | count()}/>
+  <Text text={template(dl.nearest, "{name} — {dueDate}")}/>
+  <Badge label={count(dl.data)}/>
 </App>`, shapes);
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);
@@ -1321,27 +1368,88 @@ describe("compileWire shape check pointer misses", () => {
   });
 });
 
+/** v3 spec §5 (D4) — comments are JSX comments; the HTML form is gone. */
 describe("compileWire comments", () => {
-  it("skips HTML comments between elements and inside text", () => {
-    const result = compile('<App name="C"><!-- Header --><Text text="hi"/><!-- KPI Row --><Card/></App>');
+  it("skips JSX comments between elements and inside text", () => {
+    const result = compile('<App name="C">{/* Header */}<Text text="hi"/>{/* KPI Row */}<Card/></App>');
     expect(result.tree.nodes.map((node) => node.component)).toEqual(["Stack", "Text", "Card"]);
     expect(result.issues).toEqual([]);
     expect(result.complete).toBe(true);
   });
 
+  it("keeps the text on either side of a comment", () => {
+    const result = compile('<App name="C"><Card>before {/* aside */} after</Card></App>');
+    expect(result.tree.nodes.filter((node) => node.component === "Text").map((node) => node.props?.text))
+      .toEqual(["before", "after"]);
+    expect(result.issues).toEqual([]);
+  });
+
   it("treats an unterminated comment as truncation, not content", () => {
-    const result = compileWire('<App name="C"><Text text="hi"/><!-- dangling', undefined);
+    const result = compileWire('<App name="C"><Text text="hi"/>{/* dangling', undefined);
     expect(result.tree.nodes.map((node) => node.component)).toEqual(["Stack", "Text"]);
     expect(result.complete).toBe(false);
+  });
+});
+
+/** v3 spec §5 (D5) — braces in text position are not interpolation. */
+describe("compileWire braces in text", () => {
+  it("blocks a brace run in text and skips it, keeping the surrounding text", () => {
+    const result = compile('<App name="C"><Card>Total: {revenue.total} today</Card></App>');
+    expect(result.issues.map((issue) => issue.code)).toEqual(["braces-in-text"]);
+    expect(result.tree.nodes.filter((node) => node.component === "Text").map((node) => node.props?.text))
+      .toEqual(["Total:", "today"]);
+  });
+
+  it("blocks a stray closing brace too", () => {
+    const result = compile("<App name=\"C\"><Card>a } b</Card></App>");
+    expect(result.issues.map((issue) => issue.code)).toEqual(["braces-in-text"]);
+  });
+
+  it("leaves braces inside attribute values and island source alone", () => {
+    const result = compile('<App name="C"><Query id="q" tool="t"/><Text text={q.total}/>'
+      + '<Island name="N">export default function N() { return <p>{"{}"}</p>; }</Island></App>');
+    expect(result.issues).toEqual([]);
+    expect(result.components.N).toContain("{}");
+  });
+});
+
+/**
+ * v3 spec §5 (D6) — there is NO module envelope, and that is a design property
+ * rather than an omission: a wire document is exactly one `<App>` element, and
+ * the only declaration elements are `<Query>` and `<Island>` (whose source is
+ * sealed — no imports, and none can be added). Graduation adds imports/exports
+ * via a codemod when it ships; until then an envelope element must stay an
+ * unknown element, not quietly become grammar.
+ */
+describe("compileWire has no module envelope (D6)", () => {
+  it("gives every envelope name NO declaration meaning — it is just an unknown component", () => {
+    for (const tag of ["Import", "Export", "Module", "Use", "Include", "Require"]) {
+      const result = compile(`<App name="C"><${tag} from="./x">y</${tag}><Card/></App>`);
+      // A PascalCase name the compiler does not know is a sourceless component
+      // node (the renderer shows its contained unknown-component notice). What
+      // matters for D6 is what it is NOT: it declares nothing, hoists nothing,
+      // and brings nothing into scope.
+      const node = result.tree.nodes.find((candidate) => candidate.component === tag);
+      expect(node?.source).toBeUndefined();
+      expect(result.tree.queries).toBeUndefined();
+      expect(result.components).toEqual({});
+      expect(result.complete).toBe(true);
+    }
+  });
+
+  it("cannot bring a name into binding scope, so a binding through one still drops", () => {
+    const result = compile('<App name="C"><Import from="./q"/><Card v={q.rows}/></App>');
+    expect(result.issues.map((issue) => issue.code)).toEqual(["unknown-reference"]);
+    expect(result.tree.nodes.find((node) => node.component === "Card")?.props).toBeUndefined();
   });
 });
 
 describe("compileWire comments before declarations", () => {
   it("still pre-scans queries and islands declared after a comment (Devin, PR #381)", () => {
     const wire = [
-      '<App name="C"><!-- data -->',
+      '<App name="C">{/* data */}',
       '<Query id="metric" tool="host_metric"/>',
-      "<!-- widgets --><Note/>",
+      "{/* widgets */}<Note/>",
       '<Card value={metric.total}/>',
       '<Island name="Note">export default function Note() { return <p>n</p>; }</Island></App>',
     ].join("");

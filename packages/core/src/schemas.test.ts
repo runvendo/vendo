@@ -112,7 +112,7 @@ describe("outcome, guard, and audit schemas", () => {
 
   it("enforces decidedBy sets on each guard action", () => {
     expect(guardDecisionSchema.safeParse({ action: "run", decidedBy: "grant", grantId: "grt_1" }).success).toBe(true);
-    expect(guardDecisionSchema.safeParse({ action: "ask", decidedBy: "critical", approval }).success).toBe(true);
+    expect(guardDecisionSchema.safeParse({ action: "ask", decidedBy: "confirmEach", approval }).success).toBe(true);
     expect(guardDecisionSchema.safeParse({ action: "block", decidedBy: "rule", reason: "Unsafe" }).success).toBe(true);
     expect(guardDecisionSchema.safeParse({ action: "run", decidedBy: "breaker" }).success).toBe(false);
     expect(guardDecisionSchema.safeParse({ action: "block", decidedBy: "grant", reason: "No" }).success).toBe(false);
@@ -128,7 +128,7 @@ describe("outcome, guard, and audit schemas", () => {
       presence: "away",
       outcome: "pending-approval",
     };
-    for (const decidedBy of ["grant", "rule", "judge", "default", "critical", "breaker"]) {
+    for (const decidedBy of ["grant", "rule", "judge", "default", "confirmEach", "breaker"]) {
       expect(auditEventSchema.safeParse({ ...base, decidedBy }).success).toBe(true);
     }
     expect(auditEventSchema.safeParse({ ...base, id: "event_1" }).success).toBe(false);

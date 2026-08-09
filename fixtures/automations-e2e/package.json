@@ -13,12 +13,14 @@
   },
   "dependencies": {
     "@vendoai/actions": "workspace:*",
-    "@vendoai/agent": "workspace:*",
+    "@vendoai/agents": "workspace:*",
     "@vendoai/apps": "workspace:*",
     "@vendoai/automations": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
-    "@vendoai/store": "workspace:*"
+    "@vendoai/harnesses": "workspace:*",
+    "@vendoai/store": "workspace:*",
+    "@vendoai/vendo": "workspace:*"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "^3.0.12",

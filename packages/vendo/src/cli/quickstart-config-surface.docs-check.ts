@@ -31,40 +31,44 @@ type Assert<T extends true> = T;
 // --- BEGIN docs/quickstart.md config surface ---
 import type {
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, CatalogFile,
-  ComponentCatalog, ComponentRegistry, Connector, ExtractedTool,
-  HostOAuthAdapter, Json, Judge, KnowledgeAdapter, OverridesFile, PolicyConfig,
-  PolicyFile, Principal, RunId, SandboxAdapter, SecretsProvider, ToolRegistry,
-  VendoAgent, VendoGuard, VendoStore, VendoTheme,
+  ComponentCatalog, ComponentRegistry, Connector, ExtractedTool, FilesAdapter,
+  Harness, HostOAuthAdapter, Json, KnowledgeAdapter, OverridesFile,
+  PolicyFile, Principal, RunContext, RunId,
+  SandboxAdapter, SecretsProvider, Skill, ToolDefinition, ToolRegistry,
+  VendoGuard, VendoStore, VendoTheme,
 } from "../index.js";
 import type {
-  ConnectionsService, HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
+  AppsConfig, ComposedAgent, ConnectionsService, GuardRules, HarnessTurns,
+  HostAuthPreset, ModelsConfig, ServerActionHandler,
 } from "../server.js";
 import type { LanguageModel } from "ai";
 
 export interface CreateVendoConfig {
-  /** @deprecated superseded by `models.agent`. */
+  /** @deprecated superseded by `models.default`. */
   model?: LanguageModel;
-  /** @deprecated the model half is superseded by `models.paint`; `disabled` stays. */
+  /** @deprecated the model half is superseded by `models.fill`; `disabled` stays. */
   paint?: { model?: LanguageModel; disabled?: boolean };
-  models?: ModelsConfig;      // { agent, paint, judge, knowledgeVerifier } — name or model object
+  models?: ModelsConfig;      // seats: default, reviewer, judge, fill
   auth?: HostAuthPreset;      // one preset fills principal + actAs + oauth
   principal?: (req: Request) => Promise<Principal | null>; // escape hatch
+  tools?: readonly (ExtractedTool | ToolDefinition)[]; // `vendo sync` declarations, and/or executable tools
+  skills?: readonly Skill[];  // SKILL.md values mounted at /host/skills
   catalog?: ComponentCatalog | ComponentRegistry;          // registry.tsx, or the array form
   theme?: VendoTheme;         // programmatic override for .vendo/theme.json
-  brief?: string;             // programmatic override for .vendo/brief.md
+  instructions?: string;      // THE prose knob; programmatic override for .vendo/brief.md
   store?: VendoStore;
+  files?: FilesAdapter;       // workspace file content; unset → blobs in the store, 5 MiB cap
   sandbox?: SandboxAdapter;
+  harness?: Harness<never>;   // WHO THINKS. unset → vendo(). also: claudeCode()
   knowledge?: KnowledgeAdapter; // unset → no vendo_knowledge_search tool
-  connectors?: Connector[];
-  connectorApps?: string[];   // toolkit scope for the auto-composed Cloud connector
+  connectors?: readonly (string | Connector)[]; // a string names a Cloud toolkit; an object is a provider
   connections?: ConnectionsService; // explicit connections adapter; always wins over defaults
   actAs?: ActAs;              // escape hatch
   serverActions?: Record<string, ServerActionHandler>; // the generated vendo-actions.ts map
-  policy?: PolicyConfig;      // "cautious" | "readonly" | "autopilot" | { file } | { rules }
-  judge?: Judge;
+  guard?: VendoGuard | GuardRules; // guard({ policy, judge, approvals }), or a built guard
   secrets?: SecretsProvider;
   telemetry?: boolean;
-  development?: boolean | { root?: string; out?: string }; // dev-only source capture
+  development?: boolean;    // dev-only injection seams
   profileDir?: string;        // the project root .vendo/ is read under
   fetch?: typeof fetch;       // the fetch host tool bindings execute through
   profile?: {                 // the same .vendo/ pieces, in memory (filesystem-less venues)
@@ -80,40 +84,28 @@ export interface CreateVendoConfig {
     baseUrl?: string;
     remoteAs?: { issuer: string; jwksUri?: string; audience: string };
     federation?: { secret: string };
+    serviceAuth?: { keys: readonly string[] }; // your backend's `vsk_` keys
   };
   oauth?: HostOAuthAdapter;   // escape hatch; required when `mcp` is true and `auth` is absent
-  agent?: {
-    instructions?: string;
-    toolOutputCap?: number;
-    maxOutputTokens?: number;
-    historyWindow?: number;
-    maxInitialTools?: number;
-    loadout?: string[];
-    maxSearchExpansions?: number;
-    maxSteps?: number;
-  };
+  agent?: ComposedAgent;      // a whole agent() from @vendoai/agents, adopted by this deployment
   sessions?: { ttlMs?: number; sweepIntervalMs?: number; now?: () => number };
-  approvals?: { parkedCallTtlMs?: number };
-  apps?: {
-    experimentalServedApps?: boolean;
-    experimentalMachines?: boolean;
-    pipeline?: {              // generation-pipeline knobs, measured before default-on
-      structuredRepair?: boolean;
-      regionParallel?: boolean;
-      endPass?: boolean;
-      exemplarContract?: boolean;
-      smokeRender?: boolean;
-      rebind?: boolean;
+  toolOutputCap?: number;     // how much of one tool result reaches the model; 0 disables
+  maxInitialTools?: number;   // cap on the uncurated initial loadout; the rest via find_tools
+  loadout?: readonly string[]; // the curated initial loadout, by tool name
+  apps?: false | {            // false unmounts app generation: no tools, skill or /apps routes
+    review?: {                // review-kind remixes: who may review (queue/reject/approve)
+      reviewer?(ctx: RunContext): boolean | Promise<boolean>;
     };
+    pipeline?: AppsConfig["pipeline"];                 // { smokeRender } — the island render gate
+    checks?: AppsConfig["checks"];                     // the host's own checks, appended to the built-ins
     designRules?: string;
   };
-  tours?: readonly TourEntry[];
+  automations?: false;        // false unmounts automations: no /automations, /runs or /webhooks routes
 }
 
 export interface Vendo {
   handler: (req: Request) => Promise<Response>;
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;
-  agent: VendoAgent;
   guard: VendoGuard;
   guardedTools: ToolRegistry; // the guard-bound registry the vendo_* tool pack executes through
   apps: AppsRuntime;
@@ -121,6 +113,7 @@ export interface Vendo {
   actions: ActionsRegistry;
   connections: ConnectionsService;
   store: VendoStore;
+  harness: HarnessTurns;      // turns served through the composed Harness
 }
 // --- END docs/quickstart.md config surface ---
 

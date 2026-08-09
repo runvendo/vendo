@@ -15,14 +15,13 @@ export interface RegisteredComponent {
   description: string;
   propsSchema?: StandardSchema;
   examples?: string[];
-  remixable?: boolean;
 }
 
 /** 01-core §14 */
 export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 
 /** 01-core §14 (2026-07-18 amendment) — name-keyed registry form. The same
- * object serves both sides: the server reads the data fields, <VendoRoot>
+ * object serves both sides: the server reads the data fields, <VendoProvider>
  * reads the component references. The composition normalizes registry →
  * catalog entry by entry: key → `name`, `props` → `propsSchema`, `component`
  * dropped (the server MUST IGNORE it — never touched, never executed). */
@@ -33,7 +32,6 @@ export interface ComponentRegistryEntry {
   /** The ONE optional props schema — same StandardSchema, same derivation. */
   props?: StandardSchema;
   examples?: string[];
-  remixable?: boolean;
 }
 
 /** 01-core §14 — keys are component names (PascalCase). */
@@ -51,7 +49,9 @@ export interface NormalizedCatalogEntry extends RegisteredComponent {
 /** The normalized internal catalog the composition hands to the apps block. */
 export type NormalizedCatalog = ReadonlyArray<NormalizedCatalogEntry>;
 
-/** 01-core §14 */
+/** 01-core §14. The shape only: `./theme.js` owns the defaults, the merge, and
+ * the one mapping onto `--vendo-*` CSS variables that every surface renders
+ * through. */
 export interface VendoTheme {
   colors: {
     background: string;

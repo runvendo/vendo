@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { VERSION } from "../wire/shared.js";
-import { CLI_VERSION } from "./shared.js";
+import { browserOpenCommand, CLI_VERSION } from "./shared.js";
 
 // Both constants ride user-facing surfaces (--version, doctor fix_ref URLs,
 // the cloud client user-agent, the wire /status body), but changesets only
@@ -14,5 +14,19 @@ describe("hand-maintained version constants", () => {
     };
     expect(CLI_VERSION).toBe(pkg.version);
     expect(VERSION).toBe(pkg.version);
+  });
+});
+
+describe("browserOpenCommand", () => {
+  it("goes through cmd /c on Windows — start is a shell built-in, not an executable", () => {
+    expect(browserOpenCommand("win32", "http://127.0.0.1:4123")).toEqual({
+      command: "cmd",
+      args: ["/c", "start", "", "http://127.0.0.1:4123"],
+    });
+  });
+
+  it("uses open on macOS and xdg-open elsewhere", () => {
+    expect(browserOpenCommand("darwin", "u")).toEqual({ command: "open", args: ["u"] });
+    expect(browserOpenCommand("linux", "u")).toEqual({ command: "xdg-open", args: ["u"] });
   });
 });

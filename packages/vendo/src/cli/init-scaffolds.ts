@@ -1,10 +1,12 @@
 import { join, relative, sep } from "node:path";
+import { applyJudgment, judgmentsFileSchema, overridesFileSchema } from "@vendoai/actions";
 import {
   extractServerActions,
   serverActionRegistrations,
   type ServerActionRegistration,
 } from "@vendoai/actions/sync";
 import { AUTH_FAMILY_INFO, AUTH_PRESET_SPECIFIER, type AuthMatch } from "./init-auth.js";
+import { readOptional } from "./shared.js";
 
 /** The wired preset line plus its escape-hatch comment. The lead-in stays
     honest about how the preset got here: detection cites the found
@@ -15,44 +17,8 @@ export function authConfigLines(auth: AuthMatch): string {
     : `Detected ${auth.dependency}`;
   return `  // ${origin} — ${auth.preset}() fills the identity seams\n` +
     `  // (request→user, actAs, door OAuth); options and the per-seam escape\n` +
-    `  // hatch: docs/act-as-presets.md.\n` +
+    `  // hatch: https://docs.vendo.run/connect/act-as-presets.\n` +
     `  auth: ${auth.preset}(),\n`;
-}
-
-/** The empty shared registry (one file, two consumers): `createVendo` reads it
-    as `catalog` (data fields only), `<VendoRoot components={registry}>` reads
-    the component references. Generated only while absent — never clobbered. */
-export function registrySource(variant: "tsx" | "mjs"): string {
-  const header = `/**\n` +
-    ` * The Vendo component registry — generated empty by \`vendo init\`, then yours.\n` +
-    ` * One file, two consumers: \`createVendo\` takes this object as \`catalog\` and\n` +
-    ` * reads only the data fields (description, props, examples); <VendoRoot\n` +
-    ` * components={registry}> takes the same object and reads only the component\n` +
-    ` * references. There is no second map to keep in sync.\n` +
-    ` *\n` +
-    ` * Add entries keyed by component name, e.g.:\n` +
-    ` *\n` +
-    ` *   SpendingDonut: {\n` +
-    ` *     component: SpendingDonut,\n` +
-    ` *     description: "Spending by category. Use for where-did-my-money-go requests.",\n` +
-    ` *     props: z.object({\n` +
-    ` *       slices: z.array(z.object({ category: z.string(), amount: z.number() })),\n` +
-    ` *     }),\n` +
-    ` *     examples: ['{"slices":[{"category":"dining","amount":342.18}]}'],\n` +
-    ` *   },\n` +
-    ` *\n` +
-    ` * (\`props\` is an optional zod schema; a schema-less entry is legal.)\n` +
-    ` */\n`;
-  // The type comes from @vendoai/vendo, not @vendoai/core: a host only gets
-  // @vendoai/vendo (and @vendoai/ui) as a direct dependency, so under pnpm
-  // strict linking @vendoai/core (transitive) doesn't resolve for the host
-  // (TS2307). @vendoai/vendo's root entry already re-exports the full
-  // @vendoai/core type surface (index.ts: `export type * from "@vendoai/core"`),
-  // and the bare root — not /server or /react — is the neutral entry for a
-  // type this file needs in both the server route and the client wrap.
-  return variant === "tsx"
-    ? `${header}import type { ComponentRegistry } from "@vendoai/vendo";\n\nexport const registry = {} satisfies ComponentRegistry;\n`
-    : `${header}export const registry = {};\n`;
 }
 
 /** The anonymous-composition principal line (no auth preset wired). The
@@ -62,53 +28,16 @@ export function registrySource(variant: "tsx" | "mjs"): string {
     the embeds, which call this route directly (0.4.1 E2E cert blocker B4:
     a `() => null` wire against a demo-user chat route rendered an infinite
     skeleton). Replaced wholesale when an auth preset is wired. */
-export function anonymousPrincipalLines(): string {
+export function anonymousPrincipalLines(typescript: boolean): string {
+  // `as const` narrows kind to the Principal literal in TypeScript and is a
+  // SyntaxError in a .mjs file (self-serve audit B2: every plain-JS host died on
+  // its first `node server.js`), so the annotation rides the host's language.
+  const kind = typescript ? `"user" as const` : `"user"`;
   return `  // Who the wire's callers act as. This must resolve the SAME subject your\n` +
     `  // agent loop uses (the docs' chat routes set this demo principal), or apps\n` +
     `  // and approvals created in chat are invisible to the embeds, which call\n` +
     `  // this route directly. Replace both sides with your real session lookup.\n` +
-    `  principal: async () => ({ kind: "user" as const, subject: "demo-user" }),\n`;
-}
-
-/**
- * The client mount wrapper (visible-surface fix, 0.4.1 E2E cert B3/M3): one
- * generated "use client" boundary owns the registry + theme imports and
- * mounts `<VendoOverlay />` — the launcher pill + panel end users actually
- * see. The registry holds component references, so importing it in a Server
- * Component layout and passing it into the client provider fails RSC
- * serialization ("Only plain objects can be passed to Client Components");
- * this wrapper is the layout-safe mount. Generated only while absent.
- */
-export function vendoRootWrapperSource(options: {
-  /** Posix-style import specifier from the wrapper's dir to .vendo/theme.json,
-      or null when resolveJsonModule is explicitly disabled. */
-  themeSpecifier: string | null;
-}): string {
-  const withTheme = options.themeSpecifier !== null;
-  return `"use client";\n\n` +
-    `/**\n` +
-    ` * The Vendo client mount — generated by \`vendo init\`, then yours.\n` +
-    ` * This "use client" boundary owns the registry${withTheme ? " and theme" : ""} imports: the\n` +
-    ` * registry carries component references, which cannot cross a Server\n` +
-    ` * Component boundary as props (RSC serialization). <VendoOverlay /> is the\n` +
-    ` * visible surface — the launcher pill + panel. Swap it for your own\n` +
-    ` * surface (<VendoThread />, the BYO embeds) whenever you like.\n` +
-    ` */\n` +
-    `import { VendoOverlay, VendoRoot as VendoClientRoot } from "@vendoai/vendo/react";\n` +
-    `import type { ReactNode } from "react";\n` +
-    `import { registry } from "./registry";\n` +
-    (withTheme
-      ? `import theme from ${JSON.stringify(options.themeSpecifier)};\n` +
-        `import type { VendoTheme } from "@vendoai/vendo";\n`
-      : "") +
-    `\nexport function VendoRoot({ children }: { children: ReactNode }) {\n` +
-    `  return (\n` +
-    `    <VendoClientRoot components={registry}${withTheme ? " theme={theme as VendoTheme}" : ""}>\n` +
-    `      {children}\n` +
-    `      <VendoOverlay />\n` +
-    `    </VendoClientRoot>\n` +
-    `  );\n` +
-    `}\n`;
+    `  principal: async () => ({ kind: ${kind}, subject: "demo-user" }),\n`;
 }
 
 /** The preset's own import line (its own subpath, never "@vendoai/vendo/server"
@@ -119,30 +48,128 @@ function authImportLine(auth: AuthMatch | null): string {
   return auth === null ? "" : `import { ${auth.preset} } from ${JSON.stringify(AUTH_PRESET_SPECIFIER[auth.preset])};\n`;
 }
 
-export function routeSource(options: { serverActions: boolean; auth: AuthMatch | null; registrySpecifier: string }): string {
+export function routeSource(options: { serverActions: boolean; auth: AuthMatch | null }): string {
   return authImportLine(options.auth) +
-    `import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";\n` +
+    `import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";\n` +
     (options.serverActions ? `import { serverActions } from "./vendo-actions";\n` : "") +
-    `import { registry } from ${JSON.stringify(options.registrySpecifier)};\n` +
     `\nconst vendo = createVendo({\n` +
-    (options.auth === null ? anonymousPrincipalLines() : authConfigLines(options.auth)) +
-    `  catalog: registry,\n` +
+    // The Next route is always TypeScript (app/api/vendo/[...vendo]/route.ts).
+    (options.auth === null ? anonymousPrincipalLines(true) : authConfigLines(options.auth)) +
     (options.serverActions ? `  serverActions,\n` : "") +
-    `  policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
+    `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
     `export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n`;
 }
 
-/** Best-effort detection of the host's registrable server actions for the
- * wiring map. Failure degrades to no map — sync reports extraction problems
- * loudly, and runtime execution fails closed on the missing registration. */
-export async function wiringServerActions(root: string): Promise<ServerActionRegistration[]> {
+/**
+ * The server actions the runtime will actually dispatch: the host's current
+ * `"use server"` surface, minus whatever a judgment or a human override
+ * disabled. `vendo init` and `vendo doctor` MUST resolve the same set — a split
+ * here is a nag on one side (register a tool nothing will ever call) or a false
+ * green on the other. Failure degrades to none: sync reports extraction
+ * problems loudly, and execution fails closed on a missing registration anyway.
+ */
+export async function requiredServerActions(root: string): Promise<ServerActionRegistration[]> {
   try {
     const { tools } = await extractServerActions(root);
-    return serverActionRegistrations(tools);
+    const vendoDir = join(root, ".vendo");
+    const overrides = await readVendoFile(join(vendoDir, "overrides.json"), (value) => overridesFileSchema.parse(value).tools);
+    const judgments = await readVendoFile(join(vendoDir, "judgments.json"), (value) => judgmentsFileSchema.parse(value).tools);
+    // The same three-layer stack the runtime resolves — skeleton ⊕ judgments ⊕
+    // overrides — so a tool this demands registration for is one the agent can
+    // actually reach. A human override wins last, including a deliberate wake.
+    return serverActionRegistrations(tools.filter((tool) => {
+      const effective = applyJudgment(tool, judgments?.[tool.name]);
+      return (overrides?.[tool.name]?.disabled ?? effective.disabled ?? false) !== true;
+    }));
   } catch {
     return [];
   }
+}
+
+/** A `.vendo/` file, or null when absent or malformed — both mean "no recorded
+    decision", never a reason to fail the caller. */
+async function readVendoFile<T>(path: string, parse: (value: unknown) => T): Promise<T | null> {
+  const raw = await readOptional(path);
+  if (raw === null) return null;
+  try {
+    return parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * How a route composes its server-action map. Init raises the wiring paste and
+ * doctor raises E-WIRE-009 on exactly ONE of these — `"unwired"` — so the two
+ * share the answer instead of each pattern-matching their own way. The scope is
+ * load-bearing: an `import { serverActions } …` line with nothing inside
+ * `createVendo({ … })` is NOT wiring (the tools still fail closed), and it is
+ * the likeliest real state, because it is where a half-applied paste lands.
+ */
+export type ServerActionsWiring = "wired" | "unwired" | "unknown";
+
+export function serverActionsWiring(source: string): ServerActionsWiring {
+  const call = source.match(/createVendo\(\s*\{/);
+  // Unrecognized composition: no honest paste to name, nothing honest to grade.
+  if (call === null) return "unknown";
+  return /(^|[\s{,])serverActions\b/.test(source.slice(source.indexOf(call[0]))) ? "wired" : "unwired";
+}
+
+/** Does this route source the GENERATED map? A route that composes its own
+    (a local object, an aliased import) is a shape init leaves alone, so
+    neither init nor doctor may create or grade `vendo-actions.ts` for it. */
+export function importsGeneratedMap(source: string): boolean {
+  return /from\s+["']\.\/vendo-actions["']/.test(source);
+}
+
+/** A registration in the map's own key form. */
+export function registrationKey(registration: ServerActionRegistration): string {
+  return `${registration.module}#${registration.exportName}`;
+}
+
+/** Registrations an existing map does not carry. A map is compared by the keys
+    it registers, never byte-for-byte: it is the developer's file from creation
+    on, so their formatting, their comments, and their own extra entries are all
+    legitimate — only an ABSENT key means a tool that fails closed. */
+export function missingRegistrations(
+  map: string,
+  registrations: readonly ServerActionRegistration[],
+): ServerActionRegistration[] {
+  return registrations.filter((registration) => !map.includes(JSON.stringify(registrationKey(registration))));
+}
+
+/** The import specifier the map uses to reach an action module. */
+function registrationSpecifier(root: string, wiringDir: string, registration: ServerActionRegistration): string {
+  const target = relative(wiringDir, join(root, registration.module))
+    .split(sep).join("/")
+    .replace(/\.(?:tsx|ts|jsx|js)$/, "");
+  return target.startsWith(".") ? target : `./${target}`;
+}
+
+/** The paste that adds missing registrations to an existing map — only the
+    missing ones, never the whole file. Aliases continue the file's own
+    `actionN` convention above the highest one already in it, so a paste can
+    never shadow a binding the developer already has. */
+export function missingRegistrationLines(
+  root: string,
+  wiringDir: string,
+  map: string,
+  missing: readonly ServerActionRegistration[],
+): string[] {
+  const used = [...map.matchAll(/\baction(\d+)\b/g)].map((match) => Number(match[1]));
+  let next = used.length === 0 ? 0 : Math.max(...used) + 1;
+  const imports: string[] = [];
+  const entries: string[] = [];
+  for (const registration of missing) {
+    const alias = `action${next++}`;
+    const specifier = registrationSpecifier(root, wiringDir, registration);
+    imports.push(registration.exportName === "default"
+      ? `import ${alias} from ${JSON.stringify(specifier)};`
+      : `import { ${registration.exportName} as ${alias} } from ${JSON.stringify(specifier)};`);
+    entries.push(`  ${JSON.stringify(registrationKey(registration))}: ${alias},`);
+  }
+  return [...imports, "… then add inside the serverActions map:", ...entries];
 }
 
 /**
@@ -153,24 +180,23 @@ export async function wiringServerActions(root: string): Promise<ServerActionReg
  */
 export function serverActionsModuleSource(root: string, wiringDir: string, registrations: ServerActionRegistration[]): string {
   const header = `/**\n` +
-    ` * Server-action registration map — generated by \`vendo init\`; re-run init\n` +
-    ` * when the "use server" surface changes. createVendo dispatches\n` +
-    ` * server-action tools in-process through this map; an action missing here\n` +
-    ` * fails closed at execution time (no work performed).\n` +
+    ` * Server-action registration map — created by \`vendo init\`, yours from here.\n` +
+    ` * Init never rewrites a file you already have and compares this one only by\n` +
+    ` * the keys it registers, so your edits are safe; when an action is missing,\n` +
+    ` * init prints just the entries to add. createVendo dispatches server-action\n` +
+    ` * tools in-process through this map; an action missing here fails closed at\n` +
+    ` * execution time (no work performed).\n` +
     ` */\n`;
   if (registrations.length === 0) return `${header}export const serverActions = {};\n`;
   const imports: string[] = [];
   const entries: string[] = [];
   registrations.forEach((registration, index) => {
     const alias = `action${index}`;
-    const target = relative(wiringDir, join(root, registration.module))
-      .split(sep).join("/")
-      .replace(/\.(?:tsx|ts|jsx|js)$/, "");
-    const specifier = target.startsWith(".") ? target : `./${target}`;
+    const specifier = registrationSpecifier(root, wiringDir, registration);
     imports.push(registration.exportName === "default"
       ? `import ${alias} from ${JSON.stringify(specifier)};`
       : `import { ${registration.exportName} as ${alias} } from ${JSON.stringify(specifier)};`);
-    entries.push(`  ${JSON.stringify(`${registration.module}#${registration.exportName}`)}: ${alias},`);
+    entries.push(`  ${JSON.stringify(registrationKey(registration))}: ${alias},`);
   });
   return `${header}${imports.join("\n")}\n\n` +
     `export const serverActions = {\n${entries.join("\n")}\n};\n`;
@@ -185,7 +211,6 @@ export function serverActionsModuleSource(root: string, wiringDir: string, regis
  *  rule (reference shape: the vendo-on-Workers field integration,
  *  2026-07-21). */
 export function customServerSource(typescript: boolean, auth: AuthMatch | null = null): string {
-  const registrySpecifier = typescript ? "./registry" : "./registry.mjs";
   const envType = typescript
     ? `\nexport interface VendoEnv {\n` +
       `  VENDO_API_KEY?: string;\n` +
@@ -208,17 +233,15 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
     ? ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
       ` *   // the cast narrows TypeScript's widened JSON-module string literals;\n` +
       ` *   // <VendoOverlay /> is the visible surface (launcher pill + panel):\n` +
-      ` *   import { VendoOverlay, VendoRoot } from "@vendoai/vendo/react";\n` +
-      ` *   import { registry } from "<path-to>/vendo/registry";\n` +
+      ` *   import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";\n` +
       ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
       ` *   import type { VendoTheme } from "@vendoai/vendo";\n` +
-      ` *   root.render(<VendoRoot components={registry} theme={theme as VendoTheme}><App /><VendoOverlay /></VendoRoot>);\n`
+      ` *   root.render(<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}><App /><VendoOverlay /></VendoProvider>);\n`
     : ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
       ` *   // <VendoOverlay /> is the visible surface (launcher pill + panel):\n` +
-      ` *   import { VendoOverlay, VendoRoot } from "@vendoai/vendo/react";\n` +
-      ` *   import { registry } from "<path-to>/vendo/registry.mjs";\n` +
+      ` *   import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";\n` +
       ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
-      ` *   root.render(<VendoRoot components={registry} theme={theme}><App /><VendoOverlay /></VendoRoot>);\n`;
+      ` *   root.render(<VendoProvider baseUrl="/api/vendo" theme={theme}><App /><VendoOverlay /></VendoProvider>);\n`;
   return `/**\n` +
     ` * Route your runtime's requests through this module:\n` +
     ` *   // Cloudflare Workers:\n` +
@@ -231,8 +254,7 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
     ` */\n` +
     `import { createAnthropic } from "@ai-sdk/anthropic";\n` +
     authImportLine(auth) +
-    `import { cloudConnections, cloudSandbox, cloudTools, createVendo, hostedStore } from "@vendoai/vendo/server";\n` +
-    `import { registry } from ${JSON.stringify(registrySpecifier)};\n` +
+    `import { cloudConnections, cloudSandbox, cloudTools, createVendo, guard, hostedStore } from "@vendoai/vendo/server";\n` +
     envType +
     `\n${signatures.vendoVar}\n` +
     `\n/** Lazy singleton: constructed on the first request, never at module\n` +
@@ -245,10 +267,9 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
     `    const baseUrl = (env.VENDO_CLOUD_URL ?? processEnv.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(/\\/+$/, "");\n` +
     `    const cloud = apiKey === undefined || apiKey === "" ? undefined : { apiKey, baseUrl };\n` +
     `    vendo = createVendo({\n` +
-    (auth === null ? anonymousPrincipalLines() : authConfigLines(auth))
+    (auth === null ? anonymousPrincipalLines(typescript) : authConfigLines(auth))
       .split("\n").map((line) => (line === "" ? line : `    ${line}`)).join("\n") +
-    `      catalog: registry,\n` +
-    `      policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
+    `      guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
     `      // With a Vendo Cloud key the infrastructure seams wire the Cloud\n` +
     `      // adapters EXPLICITLY (composition decides; blocks never read the\n` +
     `      // environment). Without one, pass your own adapters here — model,\n` +
@@ -289,6 +310,13 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
         mountReturn: `: (request: ExpressRequest, response: ServerResponse, next: ExpressNext) => void`,
       }
     : { requestHeaders: "(headers)", absoluteUrl: "(request)", sendResponse: "(source, target)", handle: "(request, response)", mountReturn: "" };
+  // getSetCookie is the only correct way to read multiple Set-Cookie headers,
+  // but it is missing from older lib.dom Headers types — the TS variant casts,
+  // and the JS variant must not (a cast is a SyntaxError in .mjs; self-serve
+  // audit B2).
+  const getSetCookieExpression = typescript
+    ? `(source.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie`
+    : `source.headers.getSetCookie`;
   const requestInit = typescript
     ? `  const init: RequestInit & { duplex?: "half" } = { method, headers: requestHeaders(request.headers) };\n`
     : `  const init = { method, headers: requestHeaders(request.headers) };\n`;
@@ -299,22 +327,19 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
   // The client-entry hint mirrors the host's language: the TS variant needs the
   // VendoTheme cast (JSON-module literals widen to string), the JS variant must
   // not show type-only syntax a JavaScript host cannot paste.
-  const registrySpecifier = typescript ? "./registry" : "./registry.mjs";
   const clientHint = typescript
     ? ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
       ` *   // the cast narrows TypeScript's widened JSON-module string literals;\n` +
       ` *   // <VendoOverlay /> is the visible surface (launcher pill + panel):\n` +
-      ` *   import { VendoOverlay, VendoRoot } from "@vendoai/vendo/react";\n` +
-      ` *   import { registry } from "<path-to>/vendo/registry";\n` +
+      ` *   import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";\n` +
       ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
       ` *   import type { VendoTheme } from "@vendoai/vendo";\n` +
-      ` *   root.render(<VendoRoot components={registry} theme={theme as VendoTheme}><App /><VendoOverlay /></VendoRoot>);\n`
+      ` *   root.render(<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}><App /><VendoOverlay /></VendoProvider>);\n`
     : ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
       ` *   // <VendoOverlay /> is the visible surface (launcher pill + panel):\n` +
-      ` *   import { VendoOverlay, VendoRoot } from "@vendoai/vendo/react";\n` +
-      ` *   import { registry } from "<path-to>/vendo/registry.mjs";\n` +
+      ` *   import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";\n` +
       ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
-      ` *   root.render(<VendoRoot components={registry} theme={theme}><App /><VendoOverlay /></VendoRoot>);\n`;
+      ` *   root.render(<VendoProvider baseUrl="/api/vendo" theme={theme}><App /><VendoOverlay /></VendoProvider>);\n`;
   return `/**\n` +
     ` * Add these wiring lines in your host:\n` +
     ` *   app.use("/api/vendo", mountVendo());\n` +
@@ -322,13 +347,11 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
     ` */\n` +
     imports +
     authImportLine(auth) +
-    `import { createVendo } from "@vendoai/vendo/server";\n` +
-    `import { registry } from ${JSON.stringify(registrySpecifier)};\n` +
+    `import { createVendo, guard } from "@vendoai/vendo/server";\n` +
     types +
     `\nconst vendo = createVendo({\n` +
-    (auth === null ? anonymousPrincipalLines() : authConfigLines(auth)) +
-    `  catalog: registry,\n` +
-    `  policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
+    (auth === null ? anonymousPrincipalLines(typescript) : authConfigLines(auth)) +
+    `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
     `function requestHeaders${signatures.requestHeaders} {\n` +
     `  const result = new Headers();\n` +
@@ -350,7 +373,7 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
     `  source.headers.forEach((value, name) => {\n` +
     `    if (name.toLowerCase() !== "set-cookie") target.setHeader(name, value);\n` +
     `  });\n` +
-    `  const getSetCookie = (source.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;\n` +
+    `  const getSetCookie = ${getSetCookieExpression};\n` +
     `  const fallbackCookie = source.headers.get("set-cookie");\n` +
     `  const cookies = typeof getSetCookie === "function"\n` +
     `    ? getSetCookie.call(source.headers)\n` +
@@ -390,9 +413,16 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
 }
 
 export const VENDO_ENV_EXAMPLE =
-  "# Trusted host origin for same-origin API calls. Dev trusts the request's own\n" +
-  "# origin automatically; production fails loud without this set (a credential-\n" +
-  "# forwarding call errors instead of silently running unauthenticated).\n" +
+  "# This deployment's FULL public URL — path prefix included. Nothing strips its\n" +
+  "# path: every URL Vendo builds (host tool calls, login redirects, box callbacks)\n" +
+  "# hangs off it. Dev trusts the request's own origin automatically; production\n" +
+  "# fails loud without this set (a credential-forwarding call errors instead of\n" +
+  "# silently running unauthenticated).\n" +
   "VENDO_BASE_URL=http://localhost:3000\n" +
+  "# Optional — the host API on another origin (default: the public URL above).\n" +
+  "# VENDO_HOST_API_URL=\n" +
+  "# Optional — the login page (default: {public URL}/login). May be absolute,\n" +
+  "# on another domain.\n" +
+  "# VENDO_LOGIN_URL=\n" +
   "# Model key — REQUIRED in production. In dev, `vendo init` can mint a free starter key instead.\n" +
   "# ANTHROPIC_API_KEY=\n";

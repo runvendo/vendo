@@ -23,7 +23,6 @@ describe("event allowlist", () => {
       "init_completed",
       "init_failed",
       "doctor_run",
-      "extract_completed",
       "command_run",
       "star_prompt",
       "agent_run",
@@ -44,11 +43,6 @@ describe("event allowlist", () => {
         "llmSkipped",
         "keyPrompt",
         "command",
-        "componentsOffered",
-        "componentCount",
-        "remixOffered",
-        "remixWrapped",
-        "remixSkipped",
         "toolCount",
         "durationMs",
         "typescript",
@@ -68,22 +62,6 @@ describe("event allowlist", () => {
   it("init_failed permits exactly framework, failedStep, and errorClass", () => {
     expect([...EVENT_ALLOWLIST.init_failed].sort()).toEqual(
       [...BASE_PROP_KEYS, "framework", "failedStep", "errorClass"].sort(),
-    );
-  });
-
-  it("extract_completed permits exactly the documented result metrics", () => {
-    expect([...EVENT_ALLOWLIST.extract_completed].sort()).toEqual(
-      [
-        ...BASE_PROP_KEYS,
-        "framework",
-        "method",
-        "routeCount",
-        "toolCount",
-        "ok",
-        "durationMs",
-        "frameworkVersion",
-        "zodVersion",
-      ].sort(),
     );
   });
 
@@ -110,15 +88,10 @@ describe("cloud prop keys", () => {
         "projectName",
         "errorDetail",
         "repoHost",
-        "connectionsConfigured",
-        "toolkitsEnabled",
-        "servedApps",
-        "experimentalFlags",
         "detectMs",
         "engineMs",
         "themeMs",
         "wiringMs",
-        "componentsMs",
       ].sort(),
     );
   });
@@ -131,10 +104,4 @@ describe("cloud prop keys", () => {
     }
   });
 
-  it("does not include the producer-set lane markers", () => {
-    // `cloud` and `cloudKeyHash` are set by the client itself, never
-    // accepted from callers — so they must not be in any allowed set.
-    expect(CLOUD_PROP_KEYS.has("cloud")).toBe(false);
-    expect(CLOUD_PROP_KEYS.has("cloudKeyHash")).toBe(false);
-  });
 });

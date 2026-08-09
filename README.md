@@ -71,23 +71,17 @@ Every capture below is a real agent run in a demo host app, not a mockup.
 
 <table>
   <tr>
-    <td width="50%" valign="top">
+    <td width="33%" valign="top">
       <img src="assets/hero.gif" alt="A Maple customer asks where their money went and the agent composes a live spending view" width="100%">
       <p align="center"><sub><b>Build views.</b> Ask a question, get a live view composed from the host's own components and API.</sub></p>
     </td>
-    <td width="50%" valign="top">
+    <td width="33%" valign="top">
       <img src="assets/remix.gif" alt="A Cadence user hovers the deadlines card, asks for urgency color-coding, and applies the remix in place" width="100%">
       <p align="center"><sub><b>Remix the UI.</b> Hover a component, describe the change, apply it in place.</sub></p>
     </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
+    <td width="33%" valign="top">
       <img src="assets/automation.gif" alt="A Cadence user asks for a morning document-chase automation and turns it on with per-tool approvals" width="100%">
       <p align="center"><sub><b>Automate across tools.</b> Plain language in, standing automation out, every tool gated by approval.</sub></p>
-    </td>
-    <td width="50%" valign="top">
-      <img src="assets/voice.gif" alt="A Maple voice session: the user asks out loud where their money went and the agent renders the view while talking back" width="100%">
-      <p align="center"><sub><b>Talk to it.</b> A live voice session: ask out loud, the agent talks back and renders the view.</sub></p>
     </td>
   </tr>
 </table>
@@ -111,7 +105,7 @@ schema on Postgres. Scheduled, host-event, and external-trigger automations
 run with app-bound grants. Headless hooks ship alongside optional,
 theme-driven React chrome.
 
-`vendo init` also asks about the model import, product brief, critical-tool
+`vendo init` also asks about the model import, product brief, confirm-each
 risk labels, and whether to open the [MCP door](https://docs.vendo.run/capabilities/mcp)
 (a host decision, never a default), extracts your theme automatically, and
 writes the reviewable `.vendo/` directory with its PGlite data directory
@@ -138,12 +132,12 @@ Install individual blocks when you want to compose Vendo yourself.
 | --- | --- |
 | `@vendoai/core` | Shared types, schemas, formats, validators, and seams |
 | `@vendoai/store` | Postgres persistence, with PGlite as the default |
-| `@vendoai/agent` | Conversation loop, streaming, tools, and thread context |
+| `@vendoai/harnesses` | The turn runtime: conversation loop, streaming, tools, and thread context |
 | `@vendoai/actions` | Host API and connector tools executed as the signed-in user |
 | `@vendoai/guard` | Policy, approvals, grants, audit, breakers, and safety |
 | `@vendoai/apps` | App generation, editing, execution, interchange, and sandbox adapters |
 | `@vendoai/automations` | Trigger ingestion, schedules, away runs, and run history |
-| `@vendoai/ui` | Headless React hooks, optional chrome, tree rendering, and voice surfaces |
+| `@vendoai/ui` | Headless React hooks, optional chrome, tree rendering, and the in-jail component kit |
 | `@vendoai/mcp` | The door: serves the host's tools to outside MCP clients |
 | `@vendoai/telemetry` | Anonymous, opt-out build and development telemetry |
 | `@vendoai/vendo` | Default composition, public wire, React entry, and `vendo` bin |

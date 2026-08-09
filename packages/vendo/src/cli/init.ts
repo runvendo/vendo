@@ -6,11 +6,11 @@ import type { ExtractedTool, OverridesFile } from "@vendoai/actions";
 import { mergeOverrides, vendoSync } from "@vendoai/actions/sync";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import type { VendoTheme } from "@vendoai/core";
 import { scrubErrorDetail, type Telemetry } from "@vendoai/telemetry";
 import { detectDepVersions, installedAiVersion } from "./dep-versions.js";
 import { AUTH_MD_URL, runCloudStep, upsertEnvLocal, warnEnvLocalNotIgnored, type CloudStepOptions } from "./cloud-init.js";
-import { runInitJudgment, type InitJudgmentOptions } from "./init-judgment.js";
+import type { InitPolishSeam } from "./init-judgment.js";
+import { runSyncFlow, type SyncFlowResult } from "./sync-flow.js";
 import { BRIEF_TEMPLATE } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, workspaceHostCandidates, type HostFramework } from "./framework.js";
@@ -19,29 +19,34 @@ import { ensureProviderDeps, ensureZodFloor, type InstallRunner } from "./provid
 import {
   customServerSource,
   expressServerSource,
-  registrySource,
+  importsGeneratedMap,
+  missingRegistrationLines,
+  missingRegistrations,
+  requiredServerActions,
   routeSource,
   serverActionsModuleSource,
+  serverActionsWiring,
   VENDO_ENV_EXAMPLE,
-  vendoRootWrapperSource,
-  wiringServerActions,
 } from "./init-scaffolds.js";
 import { createPrettyOutput, plainSelect, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { contrastingText } from "./theme/color.js";
 import {
   applyThemeDraft,
-  extractTheme as extractThemeSlots,
+  toVendoTheme,
   validateSlotValue,
   type ThemeSlotValues,
   type ThemeSummary,
 } from "./theme/extract-theme.js";
 import {
+  appDirectory,
   askYesNo,
+  clientRoot,
   cloudProjectProps,
   consoleOutput,
-  envLocalValueSync,
+  envFileValueSync,
   errorClass,
   exists,
+  invokedByPackageScript,
   readOptional,
   toolingTelemetry,
   type Output,
@@ -52,19 +57,24 @@ import {
  * `vendo init` (install-dx v1, re-derived 2026-07-18): one command, zero
  * questions on the happy path, no ceremony.
  *
- *   scan → wire (the surface files — empty vendo/registry.tsx, the client
- *   mount vendo/vendo-root.tsx, the catch-all handler wired to the registry,
- *   and the ONE bounded layout edit that mounts <VendoRoot> + <VendoOverlay />
- *   so a by-the-book install is actually visible (0.4.1 E2E cert B3); a
- *   detected auth preset gets one consent-style confirm in interactive runs,
+ *   scan → wire (the server surface — the catch-all handler holding the
+ *   composition; init never writes a client file;
+ *   a detected auth preset gets one consent-style confirm in interactive runs,
  *   --yes/non-interactive accept it silently — plus package.json hooks)
  *   → key (env stated, else the cloud starter offer) → done summary (files
- *   changed, any remaining paste, next steps).
+ *   changed, the mount paste, next steps).
  *
- * The layout edit is the one place init touches user-authored code: it is
- * idempotent (skipped when <VendoRoot> or <VendoOverlay> is already mounted),
- * bounded (wrap the single JSX `{children}` + one import line), and degrades
- * to the printed paste when the layout can't be edited safely.
+ * INIT ONLY EVER CREATES FILES IN YOUR SOURCE TREE (locked DX law). Everything
+ * above is a NEW Vendo-owned file, or Vendo-owned config: `package.json`'s two
+ * sync hooks, and one idempotent append of `VENDO_BASE_URL` to `.env.example`
+ * (the only pre-existing host-authored file init still writes, and it appends
+ * — it never rewrites a line). A source file that already exists is never
+ * written at all, however stale: mounting the visible
+ * surface in the host's own layout, wiring `serverActions` into a route that
+ * predates the host's actions, refreshing a stale registration map — each one
+ * is the developer's paste, so the run ends with one unmissable block naming
+ * the file and the exact lines (the `ManualEdit`s below), and `vendo doctor`
+ * fails until they land (E-WIRE-004, E-WIRE-009).
  *
  * Removed by design: the interview, per-diff y/N approvals, the lib/ai.ts
  * scaffold (createVendo's `model` is optional now), remix offers, the
@@ -73,43 +83,7 @@ import {
  * ceremony (doctor owns verification and the live turn).
  */
 
-const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
-
 const BRIEF_PLACEHOLDER = `${BRIEF_TEMPLATE}\n`;
-
-/** Slot values → the frozen runtime VendoTheme contract. Exported so the try
- *  surface's deterministic pass (cli/try/extract.ts) writes theme.json with
- *  the EXACT conversion init uses — one derivation law, never two. */
-export function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
-  const deriveRadius = (factor: number, fallback: string): string => {
-    const value = slots.radius.match(/^(\d+(?:\.\d+)?)px$/)?.[1];
-    return value === undefined ? fallback : `${Number(value) * factor}px`;
-  };
-  return {
-    colors: {
-      background: slots.background,
-      surface: slots.surface,
-      text: slots.text,
-      muted: slots.mutedText,
-      accent: slots.accent,
-      accentText: slots.accentText,
-      danger: slots.danger,
-      border: slots.border,
-    },
-    typography: {
-      fontFamily: slots.fontFamily,
-      headingFamily: slots.headingFamily,
-      baseSize: slots.baseSize,
-    },
-    radius: {
-      small: deriveRadius(0.5, DEFAULT_RADIUS.small),
-      medium: slots.radius,
-      large: deriveRadius(1.5, DEFAULT_RADIUS.large),
-    },
-    density: slots.density,
-    motion: slots.motion,
-  };
-}
 
 export interface RiskRecommendation {
   tool: string;
@@ -117,14 +91,37 @@ export interface RiskRecommendation {
   recommendation: string;
 }
 
+/** A step init cannot take for you. Init only ever CREATES files in your source
+    tree, so every change to a file that already exists — the visible-surface
+    mount, the server-action wiring — is the developer's paste, structured so
+    the terminal block, the `manualSteps` lines, and the `--agent` plan all
+    carry the SAME file and lines. */
+export interface ManualEdit {
+  /** The file the paste goes in, relative to the init root. */
+  file: string;
+  /** The exact lines to paste (or the diff to apply), in order. */
+  lines: string[];
+  /** What skipping it costs. */
+  why: string;
+}
+
 export interface InitPlan {
   framework: Exclude<HostFramework, "unknown"> | "custom";
   root: string;
   writes: string[];
   codeChanges: Array<{ path: string; diff: string }>;
-  /** Whatever wiring the run could not do safely itself (empty when the
-      layout auto-wire landed): the paste lines for the user. */
+  /** Whatever wiring the run could not do safely itself: the paste lines for
+      the user. Always carries the mount when one is outstanding. */
   manualSteps: string[];
+  /** The mount paste as data (absent when a surface is already mounted, and
+      on Express/custom hosts, whose two wiring lines have no single file to
+      name — they ride `manualSteps`). */
+  mount?: ManualEdit;
+  /** Changes init found for files that already exist and it therefore will not
+      write: an existing route.ts missing its `serverActions` wiring, a
+      registration map that has fallen behind the host's `"use server"`
+      surface. Absent when there are none. */
+  edits?: ManualEdit[];
   /** --agent only: deterministic extraction results, so an agent can act on
       real tool names instead of re-deriving them. */
   extraction?: { tools: ExtractedTool[]; warnings: string[] };
@@ -150,8 +147,11 @@ export interface InitOptions {
   cloudKey?: string;
   /** --byo: answer the cloud-login offer with "no — bring my own key". */
   byo?: boolean;
-  /** --ai-polish: consent to the AI extraction pass without the prompt. */
-  aiPolish?: boolean;
+  /** --ai / --no-ai (`--ai-polish` is the legacy spelling of `--ai`): `true`
+      runs the judgment pass with no prompt, `false` forces it off, and
+      `undefined` asks in an interactive run and skips otherwise. No answer is
+      ever persisted — every interactive run asks again. */
+  ai?: boolean;
   /** --engine: pin the AI-polish rung family (claude | codex | npx). */
   engine?: string;
   /** --theme slot=value answers for the uncertain-slot review. */
@@ -176,7 +176,7 @@ export interface InitOptions {
   /** Test seam (ENG-339): cloud-in-init step overrides. */
   cloud?: Partial<Omit<CloudStepOptions, "root" | "output" | "yes" | "credential">>;
   /** Test seam: judgment step overrides (harnesses, consent). */
-  extract?: Partial<Omit<InitJudgmentOptions, "root" | "output" | "yes" | "env">>;
+  extract?: InitPolishSeam;
   /** Test seam: the detect+confirm auth question, asked only in interactive
       runs when exactly one auth family is detected and init is creating the
       composition. Mirrors the AI-polish consent's confirm shape. */
@@ -246,21 +246,6 @@ async function defaultThemeReview(summary: ThemeSummary): Promise<Record<string,
   return overrides;
 }
 
-/** Where init scaffolds app/api/vendo/[...vendo] and (for a fresh scaffold)
-    the app-router layout wrap. Next hard-fails ("pages and app directories
-    should be under the same folder") when app/ and pages/ sit at different
-    bases, so a host whose pages router already lives under src/ must get its
-    NEW app/ segment there too, mirroring detectRouter's src/pages signal
-    below — even before any src/app exists to detect directly. This still
-    hands a pure-Pages host an App-Router route segment by design (valid in
-    Next as long as both share one base); whether pages-native hosts deserve
-    a pages/api scaffold instead is a separate, unaddressed question. */
-async function appDirectory(root: string): Promise<string> {
-  if (await exists(join(root, "src", "app"))) return join(root, "src", "app");
-  if (await exists(join(root, "src", "pages"))) return join(root, "src", "app");
-  return join(root, "app");
-}
-
 /** Telemetry `router` enum (init_completed): app | pages | none, from the
     same directory evidence appDirectory rides. Express hosts are "none". */
 async function detectRouter(root: string, framework: Exclude<HostFramework, "unknown"> | "custom"): Promise<"app" | "pages" | "none"> {
@@ -285,22 +270,6 @@ function pastePath(target: string): string {
   return /^[\w./@+-]+$/.test(path) ? path : `'${path.replace(/'/g, "'\\''")}'`;
 }
 
-/** The file whose client root the <VendoRoot> paste belongs in, and the child
-    expression it wraps there. A pages-only host has NO app/layout.tsx to wrap
-    — its client root is pages/_app.tsx, and the generated vendo-root.tsx is a
-    client component that mounts there unchanged. (Where the API route segment
-    gets scaffolded is a separate, deliberate choice — see appDirectory.)
-    Keyed on the layout FILE, not on detectRouter: the scaffold creates app/
-    mid-run, and the answer must be the same before and after it. */
-async function clientRoot(root: string): Promise<{ file: string; children: string }> {
-  const layout = join(await appDirectory(root), "layout.tsx");
-  if (!(await exists(layout))) {
-    for (const pages of [join(root, "src", "pages"), join(root, "pages")]) {
-      if (await exists(pages)) return { file: join(pages, "_app.tsx"), children: "<Component {...pageProps} />" };
-    }
-  }
-  return { file: layout, children: "{children}" };
-}
 
 /** Relative, posix-style import specifier from the layout's directory to the
     project-root `.vendo/theme.json` — printed for the user's paste, never
@@ -341,41 +310,36 @@ function diff(path: string, before: string | null, after: string): string {
 }
 
 /**
- * Wire the server-action registration map into an EXISTING generated route
- * (ENG-248 idempotency fix): a host that adds `"use server"` actions AFTER the
- * initial init gets vendo-actions.ts generated, but its route.ts still calls
- * `createVendo` without `serverActions` — so every server-action call fails
- * closed at runtime. Best-effort: rewrites only the recognized
- * `createVendo({ ... })` shape; returns null when already wired or the shape is
- * unrecognized (never corrupts a hand-customized route). Idempotent: a route
- * that already imports and passes serverActions yields null.
+ * The server-action wiring an EXISTING route is missing (ENG-248): a host that
+ * adds `"use server"` actions AFTER the initial init gets vendo-actions.ts
+ * generated, but its route.ts still calls `createVendo` without
+ * `serverActions` — so every server-action call fails closed at runtime. Init
+ * does not own a file it did not create, so this returns the developer's paste
+ * rather than a rewrite. Null when there is nothing to say: the route already
+ * passes a map (including one sourced from somewhere else — a local map, an
+ * aliased import — which our import would only shadow), or the composition is
+ * unrecognized and no honest two-line paste exists for it.
  */
-function wireRouteServerActions(source: string): string | null {
-  const importsMap = /from\s+["']\.\/vendo-actions["']/.test(source);
-  const call = source.match(/createVendo\(\s*\{/);
-  if (!call) return null; // unrecognized composition — leave it untouched
-  const callIndex = source.indexOf(call[0]);
-  const passesActions = /(^|[\s{,])serverActions\b/.test(source.slice(callIndex));
-  // Already wired, or hand-customized: a route that passes serverActions
-  // sourced from anywhere other than ./vendo-actions (a local map, an aliased
-  // import) would get a conflicting duplicate binding from our import — leave
-  // it untouched either way.
-  if (passesActions) return null;
-
-  let next = source;
-  if (!importsMap) {
-    const importLine = `import { serverActions } from "./vendo-actions";`;
-    const serverImport = next.match(/^.*from\s+["']@vendoai\/vendo\/server["'];?[^\n]*$/m);
-    if (serverImport) {
-      const at = next.indexOf(serverImport[0]) + serverImport[0].length;
-      next = `${next.slice(0, at)}\n${importLine}${next.slice(at)}`;
-    } else {
-      next = `${importLine}\n${next}`;
-    }
-  }
-  next = next.replace(/createVendo\(\s*\{/, (match) => `${match}\n  serverActions,`);
-  return next === source ? null : next;
+function routeServerActionsEdit(source: string, file: string): ManualEdit | null {
+  if (serverActionsWiring(source) !== "unwired") return null;
+  return {
+    file,
+    lines: [
+      ...(importsGeneratedMap(source) ? [] : [`import { serverActions } from "./vendo-actions";`]),
+      `… then add inside createVendo({ … }): serverActions,`,
+    ],
+    why: "createVendo dispatches server-action tools through that map — without it every one of them fails closed at execution time (no work performed).",
+  };
 }
+
+/** The auto-installed hooks carry `--no-ai` explicitly so they can never
+    prompt and never spend: a hook runs on someone's `npm run dev`/`build`,
+    which is exactly the run that must stay deterministic. `[hook, the bare
+    form earlier inits wrote, the flagged form]`. */
+const SYNC_HOOKS = [
+  ["predev", "vendo sync", "vendo sync --no-ai"],
+  ["prebuild", "vendo sync --strict", "vendo sync --strict --no-ai"],
+] as const;
 
 function packageWithSyncHooks(raw: string): string | null {
   const manifest = JSON.parse(raw) as Record<string, unknown>;
@@ -384,18 +348,28 @@ function packageWithSyncHooks(raw: string): string | null {
     ? priorScripts as Record<string, unknown>
     : {};
   let changed = false;
-  const hook = (name: "predev" | "prebuild", command: string): void => {
+  const hook = (name: string, bare: string, command: string): void => {
     const prior = scripts[name];
     if (typeof prior !== "string") {
       scripts[name] = command;
       changed = true;
-    } else if (!prior.includes(command)) {
-      scripts[name] = `${command} && ${prior}`;
-      changed = true;
+      return;
     }
+    const segments = prior.split("&&").map((segment) => segment.trim());
+    // Idempotent upgrade of the hookless entry a prior init wrote — and only
+    // that exact entry. Any other `vendo sync …` in the script is the user's
+    // own call (their flags, their order) and is left alone; a script with no
+    // vendo sync at all gets the flagged command prepended.
+    if (segments.includes(bare)) {
+      scripts[name] = segments.map((segment) => (segment === bare ? command : segment)).join(" && ");
+      changed = true;
+      return;
+    }
+    if (segments.some((segment) => segment.startsWith("vendo sync"))) return;
+    scripts[name] = `${command} && ${prior}`;
+    changed = true;
   };
-  hook("predev", "vendo sync");
-  hook("prebuild", "vendo sync --strict");
+  for (const [name, bare, command] of SYNC_HOOKS) hook(name, bare, command);
   if (!changed) return null;
   manifest["scripts"] = scripts;
 
@@ -445,14 +419,17 @@ function riskRecommendations(tools: ExtractedTool[]): RiskRecommendation[] {
     if (tool.disabled === true) {
       return [{ tool: tool.name, risk: tool.risk, recommendation: "extracted disabled (unclassifiable); enable it deliberately in .vendo/overrides.json after review" }];
     }
-    if (tool.critical === true) {
-      return [{ tool: tool.name, risk: tool.risk, recommendation: "already marked critical in .vendo/overrides.json; policy asks before running it" }];
+    if (tool.confirmEach === true) {
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "already marked confirmEach in .vendo/overrides.json; policy asks before running it" }];
+    }
+    if (tool.risk === "ungraded") {
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "nobody has graded this yet, so it asks on every call; run `vendo sync` with a model key, or grade it in .vendo/overrides.json" }];
     }
     if (tool.risk === "destructive") {
-      return [{ tool: tool.name, risk: tool.risk, recommendation: "irreversible; mark it critical in .vendo/overrides.json so policy asks first" }];
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "irreversible; mark it confirmEach in .vendo/overrides.json so policy asks first" }];
     }
     if (tool.risk === "write") {
-      return [{ tool: tool.name, risk: tool.risk, recommendation: "writes host data; review it and mark critical in .vendo/overrides.json when irreversible" }];
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "writes host data; review it and mark confirmEach in .vendo/overrides.json when irreversible" }];
     }
     return [];
   });
@@ -469,69 +446,55 @@ async function setupSkillSource(): Promise<string | null> {
   }
 }
 
-/** The remaining manual wiring lines, derived from how far the auto-wire got.
-    A layout wired this run (or one that already mounts a surface) leaves
-    nothing to paste; an uneditable layout gets the wrapper paste (the wrapper
-    owns the registry/theme imports — pasting them into a Server Component
-    layout is the RSC-serialization crash the wrapper exists to avoid); a
-    <VendoRoot>-without-surface host gets the one overlay line; Express keeps
-    its printed wiring lines. */
-async function manualWiringLines(root: string, layout: LayoutWiring, withRegistry: boolean): Promise<string[]> {
+/** The mount paste for a Next host, as data — ONE paste: `<VendoProvider>`
+    around the app's client root. A host that already mounts a surface needs
+    nothing. No overlay line: the chat bubble is an optional documented line,
+    never something init prints. Null on Express and custom hosts: their wiring
+    has no single host file to name, so it stays in the printed lines below. */
+async function mountStep(root: string, layout: LayoutWiring): Promise<ManualEdit | null> {
+  if (layout.kind === "already" || layout.kind === "express" || layout.kind === "custom") return null;
+  const { file: entry, children } = await clientRoot(root);
+  const entryDir = dirname(entry);
+  const specifier = await themeImportSpecifier(root, entryDir);
+  return {
+    file: relative(root, entry),
+    lines: [
+      `import { VendoProvider } from "@vendoai/vendo/react";`,
+      ...(specifier === null
+        ? []
+        : [
+            `import theme from ${JSON.stringify(specifier)};`,
+            `import type { VendoTheme } from "@vendoai/vendo";`,
+          ]),
+      `… then wrap: <VendoProvider baseUrl="/api/vendo"${specifier === null ? "" : " theme={theme as VendoTheme}"}>${children}</VendoProvider>`,
+    ],
+    why: "<VendoProvider> is what the @vendoai/ui hooks and embeds read; baseUrl is the wire mount, path prefix included. Until this lands, Vendo is wired but nothing on the page can reach it.",
+  };
+}
+
+/** A manual edit as the compact printed/plan lines. */
+function editLines(step: ManualEdit): string[] {
+  return [`In ${step.file}:`, ...step.lines.map((line) => `  ${line}`), `  (${step.why})`];
+}
+
+/** Everything the run could not do itself: the mount paste plus, on Express
+    and custom runtimes, their own two wiring lines. */
+async function manualWiringLines(root: string, layout: LayoutWiring): Promise<string[]> {
   if (layout.kind === "express") {
-    const wrap = withRegistry
-      ? `<VendoRoot components={registry} theme={theme}>…<VendoOverlay /></VendoRoot>`
-      : `<VendoRoot theme={theme}>…<VendoOverlay /></VendoRoot>`;
     return [
       `app.use("/api/vendo", mountVendo());   // in your server`,
-      `${wrap}  // around your client root (see vendo/server for the imports; <VendoOverlay /> is the visible launcher + panel)`,
+      `<VendoProvider baseUrl="/api/vendo" theme={theme}>…</VendoProvider>  // around your client root`,
     ];
   }
   if (layout.kind === "custom") {
-    const wrap = withRegistry
-      ? `<VendoRoot components={registry} theme={theme}>…<VendoOverlay /></VendoRoot>`
-      : `<VendoRoot theme={theme}>…<VendoOverlay /></VendoRoot>`;
     return [
       `Route your runtime's requests through the generated module — Cloudflare Workers: export default { fetch: (request, env) => handleVendoRequest(request, env) };`,
-      `${wrap}  // around your client root (see vendo/server for the imports; <VendoOverlay /> is the visible launcher + panel)`,
-      `Set VENDO_BASE_URL to the deployed origin (credential forwarding fails closed without it).`,
+      `<VendoProvider baseUrl="/api/vendo" theme={theme}>…</VendoProvider>  // around your client root`,
+      `Set VENDO_BASE_URL to the deployment's FULL public URL, path prefix included (credential forwarding fails closed without it).`,
     ];
   }
-  if (layout.kind === "wired" || layout.kind === "already") return [];
-  if (layout.kind === "overlay-missing") {
-    return [
-      `In ${layout.layoutPath}: nothing renders yet — <VendoRoot> is a context provider. Mount the visible surface inside it:`,
-      `  import { VendoOverlay } from "@vendoai/vendo/react";`,
-      `  … then add: <VendoOverlay />  (the launcher pill + panel users open)`,
-    ];
-  }
-  const app = await appDirectory(root);
-  const { file: entry, children } = await clientRoot(root);
-  const entryDir = dirname(entry);
-  const entryRel = relative(root, entry);
-  if (withRegistry) {
-    const wrapperSpecifier = relative(entryDir, join(dirname(app), "vendo", "vendo-root")).split(sep).join("/");
-    return [
-      `In ${entryRel}:`,
-      `  import { VendoRoot } from ${JSON.stringify(wrapperSpecifier)};`,
-      `  … then wrap: <VendoRoot>${children}</VendoRoot>`,
-      `  (${join("vendo", "vendo-root.tsx")} mounts <VendoOverlay />, the visible launcher + panel)`,
-    ];
-  }
-  // No registry consumer (a hand-wired route that ignores it): the direct
-  // provider + overlay paste — theme.json is serializable, so it may cross
-  // the Server Component boundary; the registry may not.
-  const specifier = await themeImportSpecifier(root, entryDir);
-  const importLines = [
-    `import { VendoOverlay, VendoRoot } from "@vendoai/vendo/react";`,
-    ...(specifier === null
-      ? []
-      : [
-          `import theme from ${JSON.stringify(specifier)};`,
-          `import type { VendoTheme } from "@vendoai/vendo";`,
-        ]),
-  ];
-  const wrap = `<VendoRoot${specifier === null ? "" : " theme={theme as VendoTheme}"}>${children}<VendoOverlay /></VendoRoot>`;
-  return [`In ${entryRel}:`, ...importLines.map((line) => `  ${line}`), `  … then wrap: ${wrap}`];
+  const step = await mountStep(root, layout);
+  return step === null ? [] : editLines(step);
 }
 
 /** The repo-specific agent tail (agent-install-dx): a non-interactive
@@ -543,7 +506,6 @@ async function manualWiringLines(root: string, layout: LayoutWiring, withRegistr
 async function agentTailLines(args: {
   root: string;
   framework: Exclude<HostFramework, "unknown"> | "custom";
-  registryPath: string | null;
   compositionPath: string | null;
   authWired: AuthMatch | null;
   /** How far the visible-surface wiring got this run. */
@@ -551,6 +513,8 @@ async function agentTailLines(args: {
   /** No model credential resolved this run — the tail points the agent at
       the auth.md key flow (Agent Install DX, Layer 2). */
   cloudKeyMissing: boolean;
+  /** Files that already existed, so init printed the change instead. */
+  edits: ManualEdit[];
 }): Promise<string[]> {
   const lines: string[] = [];
   // Auth is a tail fact only when a composition was created this run — a
@@ -564,23 +528,19 @@ async function agentTailLines(args: {
       lines.push(`auth: ${args.authWired.preset}() wired (detected ${args.authWired.dependency})`);
     }
   }
-  if (args.registryPath !== null) {
-    lines.push(`edit ${args.registryPath} — register the components the agent may render (generated empty)`);
-  }
   if (args.compositionPath !== null && args.authWired === null) {
     lines.push(`edit ${args.compositionPath} — add the auth preset named in the advisory above when the host has auth`);
   }
   if (args.framework === "express") {
     // No exact entry file exists to name on Express — point at the printed
     // wiring lines instead of guessing a path.
-    lines.push("edit your server and client entries — paste the mountVendo() and <VendoRoot>/<VendoOverlay /> lines above (without a mounted surface, users see nothing)");
-  } else if (args.layout.kind === "wired") {
-    lines.push(`surface: ${args.layout.layoutPath} wired this run — <VendoRoot> wraps the app and mounts <VendoOverlay /> (the visible launcher + panel) via ${join("vendo", "vendo-root.tsx")}; review the diff`);
-  } else if (args.layout.kind === "overlay-missing") {
-    lines.push(`edit ${args.layout.layoutPath} — add <VendoOverlay /> inside your <VendoRoot> (see the lines above; <VendoRoot> alone renders NOTHING visible)`);
+    lines.push("edit your server and client entries — paste the mountVendo() and <VendoProvider> lines above (without a mounted provider, nothing on the page can reach Vendo)");
   } else if (args.layout.kind === "manual") {
     const entry = relative(args.root, (await clientRoot(args.root)).file);
-    lines.push(`edit ${entry} — wrap the app in the <VendoRoot> lines above (it mounts <VendoOverlay />, the visible surface; without it users see nothing)`);
+    lines.push(`edit ${entry} — wrap the app in the <VendoProvider> lines above (without it, nothing on the page can reach Vendo)`);
+  }
+  for (const edit of args.edits) {
+    lines.push(`edit ${edit.file} — apply the change printed above yourself (it already exists, so init did not write it)`);
   }
   if (await readOptional(join(args.root, ".vendo", "brief.md")) === BRIEF_PLACEHOLDER) {
     lines.push(`edit ${join(".vendo", "brief.md")} — replace the placeholder with what this product does and for whom`);
@@ -630,19 +590,14 @@ export function starViaGh(spawnStar: NonNullable<InitOptions["spawnStar"]>, time
   });
 }
 
-/** How the visible surface reached (or didn't reach) the host's layout —
-    drives the manual fallback lines and the agent tail. */
+/** Whether the visible surface is already mounted in the host's own source —
+    drives the mount paste and the agent tail. Init never edits those files, so
+    there is no "wired by init" state: the only question is what is left for
+    the developer to paste. */
 type LayoutWiring =
-  /** Init edited the layout this run: <VendoRoot> (the generated wrapper)
-      now wraps `{children}` and mounts <VendoOverlay />. */
-  | { kind: "wired"; layoutPath: string }
-  /** The layout already mounts <VendoRoot> but no <VendoOverlay /> is
-      mounted anywhere obvious — the one remaining paste is the overlay. */
-  | { kind: "overlay-missing"; layoutPath: string }
   /** A Vendo mount already exists — nothing to do or say. */
   | { kind: "already" }
-  /** The layout couldn't be edited safely (missing, no single JSX
-      `{children}`) — the printed paste is the fallback. */
+  /** Nothing mounts Vendo yet — the printed paste is the step. */
   | { kind: "manual" }
   /** Express hosts keep their two printed wiring lines. */
   | { kind: "express" }
@@ -650,61 +605,181 @@ type LayoutWiring =
       printed wiring lines — route requests through it, mount the client. */
   | { kind: "custom" };
 
-/** Where the wrapped `{children}` insert lands: the SINGLE JSX-rendered
-    `{children}` (between a `>` and a `<`). Requiring the JSX position keeps
-    the layout's own `({ children })` parameter destructure out of the count. */
-const LAYOUT_CHILDREN = /(>)(\s*\{\s*children\s*\}\s*)(<)/g;
-
-/** End index for the wrapper import: after the last top-level import
-    statement (lazy up to its module-specifier string literal, so multi-line
-    destructures work), else after a leading directive ("use client"), else 0. */
-function importInsertionIndex(source: string): number {
-  const heads = [...source.matchAll(/^import\b/gm)];
-  if (heads.length === 0) {
-    const directive = /^(?:\s*(?:'[^']*'|"[^"]*");?[^\S\n]*\n)+/.exec(source);
-    return directive === null ? 0 : directive[0].length;
-  }
-  const last = heads[heads.length - 1]!.index!;
-  const statement = /import\s[\s\S]*?["'][^"']*["'][^\S\n]*;?/.exec(source.slice(last));
-  const end = last + (statement === null ? 0 : statement[0].length);
-  const newline = source.indexOf("\n", end);
-  return newline === -1 ? source.length : newline + 1;
+/** What one framework's composition branch contributes to the plan: the files
+ *  init will create, the pastes it can only describe, and the auth facts the
+ *  agent tail reports. */
+interface ScaffoldPlan {
+  changes: PlannedChange[];
+  edits: ManualEdit[];
+  authAdvice: string | null;
+  authWired: AuthMatch | null;
+  compositionPath: string | null;
+  layout: LayoutWiring;
 }
 
-/**
- * The one bounded edit init makes to user-authored code (visible-surface fix,
- * 0.4.1 E2E cert B3): mount the generated client wrapper around the layout's
- * `{children}` and import it. Null — leave the file untouched, fall back to
- * the printed paste — whenever a Vendo mount already exists (idempotence) or
- * the file doesn't have exactly one JSX `{children}` to wrap (ambiguity).
- * Exported for direct unit tests.
- */
-export function wireNextLayout(source: string, wrapperSpecifier: string): string | null {
-  if (source.includes("VendoRoot") || source.includes("VendoOverlay")) return null;
-  const matches = [...source.matchAll(LAYOUT_CHILDREN)];
-  if (matches.length !== 1) return null;
-  const match = matches[0]!;
-  const open = match.index! + match[1]!.length;
-  const close = match.index! + match[0]!.length - match[3]!.length;
-  let next = `${source.slice(0, open)}<VendoRoot>${source.slice(open, close)}</VendoRoot>${source.slice(close)}`;
-  const at = importInsertionIndex(next);
-  const importLine = `import { VendoRoot } from ${JSON.stringify(wrapperSpecifier)};\n`;
-  next = `${next.slice(0, at)}${importLine}${next.slice(at)}`;
-  return next;
+const emptyScaffold = (layout: LayoutWiring): ScaffoldPlan => ({
+  changes: [],
+  edits: [],
+  authAdvice: null,
+  authWired: null,
+  compositionPath: null,
+  layout,
+});
+
+async function planCustomComposition(
+  root: string,
+  options: InitOptions,
+  confirmAuth?: ConfirmAuth,
+  selectAuth?: SelectAuth,
+): Promise<ScaffoldPlan> {
+  const scaffold = emptyScaffold({ kind: "custom" });
+  const wiring = await detectVendoWiring(root);
+  if (!wiring.server || !wiring.client) {
+    const typescript = await exists(join(root, "tsconfig.json"));
+    const server = join(root, "vendo", typescript ? "server.ts" : "server.mjs");
+    const serverBefore = await readOptional(server);
+    // Same ownership rule as the Express branch: init composes only when it
+    // CREATES the composition.
+    const scaffolding = serverBefore === null && !wiring.server;
+    if (scaffolding) {
+      const path = relative(root, server);
+      const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
+      const serverAfter = customServerSource(typescript, auth.wired);
+      scaffold.changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
+      scaffold.authAdvice = auth.advice;
+      scaffold.authWired = auth.wired;
+      scaffold.compositionPath = path;
+    }
+  }
+  return scaffold;
+}
+
+async function planExpressComposition(
+  root: string,
+  options: InitOptions,
+  confirmAuth?: ConfirmAuth,
+  selectAuth?: SelectAuth,
+): Promise<ScaffoldPlan> {
+  const scaffold = emptyScaffold({ kind: "express" });
+  const wiring = await detectVendoWiring(root);
+  if (!wiring.server || !wiring.client) {
+    const typescript = await exists(join(root, "tsconfig.json"));
+    const server = join(root, "vendo", typescript ? "server.ts" : "server.mjs");
+    const serverBefore = await readOptional(server);
+    // Init owns the composition only when it CREATES it: no generated
+    // server module yet AND no hand-wired createVendo anywhere else. A host
+    // that composed at its own path but hasn't pasted <VendoProvider> yet
+    // gets no duplicate server module — the Express analog of the Next
+    // branch's routeBefore === null guard.
+    const scaffolding = serverBefore === null && !wiring.server;
+    if (scaffolding) {
+      const path = relative(root, server);
+      // Detect + confirm happens only here — fresh composition creation —
+      // so a re-run before the manual <VendoProvider> paste neither asks nor
+      // re-fires the advisory after "Already wired".
+      const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
+      const serverAfter = expressServerSource(typescript, auth.wired);
+      scaffold.changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
+      scaffold.authAdvice = auth.advice;
+      scaffold.authWired = auth.wired;
+      scaffold.compositionPath = path;
+    }
+  }
+  return scaffold;
+}
+
+/** The registration map is generated once, when the host's first "use server"
+ *  action appears. After that it is the developer's file and is never rewritten
+ *  — so an existing one is compared by the KEYS it registers, not byte-for-byte.
+ *  Byte-comparing would demand a paste for their own formatting, their own extra
+ *  entries, and even a reworded comment in a Vendo release, forever, on a
+ *  surface that never moved. */
+function planServerActionsMap(
+  scaffold: ScaffoldPlan,
+  root: string,
+  actionsModule: string,
+  actionsBefore: string | null,
+  registrations: Awaited<ReturnType<typeof requiredServerActions>>,
+): void {
+  const path = relative(root, actionsModule);
+  if (actionsBefore === null) {
+    const actionsAfter = serverActionsModuleSource(root, dirname(actionsModule), registrations);
+    scaffold.changes.push({ absolute: actionsModule, path, before: null, after: actionsAfter, diff: diff(path, null, actionsAfter) });
+    return;
+  }
+  const missing = missingRegistrations(actionsBefore, registrations);
+  if (missing.length > 0) {
+    scaffold.edits.push({
+      file: path,
+      lines: missingRegistrationLines(root, dirname(actionsModule), actionsBefore, missing),
+      why: `${missing.length} action${missing.length === 1 ? "" : "s"} the host exposes ${missing.length === 1 ? "is" : "are"} not registered here — ${missing.length === 1 ? "it fails" : "each one fails"} closed at execution time (no work performed). The rest of the file is yours; nothing else needs to change.`,
+    });
+  }
+}
+
+async function planNextComposition(
+  root: string,
+  options: InitOptions,
+  confirmAuth?: ConfirmAuth,
+  selectAuth?: SelectAuth,
+): Promise<ScaffoldPlan> {
+  const scaffold = emptyScaffold({ kind: "manual" });
+  const app = await appDirectory(root);
+  const route = join(app, "api", "vendo", "[...vendo]", "route.ts");
+  const actionsModule = join(app, "api", "vendo", "[...vendo]", "vendo-actions.ts");
+  const routeBefore = await readOptional(route);
+  const actionsBefore = await readOptional(actionsModule);
+  const registrations = await requiredServerActions(root);
+  // …and the map exists only for a route that will CONSUME it: the one being
+  // created now, one that already imports ./vendo-actions, or one init is
+  // about to hand the import paste to. A route composing its own map never
+  // grows an orphan — the same rule the registry above follows, and the same
+  // shape doctor stays silent about.
+  const mapConsumed = routeBefore === null
+    || importsGeneratedMap(routeBefore)
+    || serverActionsWiring(routeBefore) === "unwired";
+  if (registrations.length > 0 && mapConsumed) {
+    planServerActionsMap(scaffold, root, actionsModule, actionsBefore, registrations);
+  }
+  if (routeBefore === null) {
+    const path = relative(root, route);
+    // Detect + confirm happens only on fresh composition creation.
+    const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
+    const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired });
+    scaffold.changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
+    scaffold.authAdvice = auth.advice;
+    scaffold.authWired = auth.wired;
+    scaffold.compositionPath = path;
+  } else if (registrations.length > 0) {
+    // The route already exists but server actions appeared since it was
+    // generated: name the wiring the existing createVendo is missing, so
+    // server-action execution stops failing closed (ENG-248).
+    const edit = routeServerActionsEdit(routeBefore, relative(root, route));
+    if (edit !== null) scaffold.edits.push(edit);
+  }
+
+  // Init never writes a client file, so the only question is whether the host
+  // already mounts one. A host source that mounts the provider IS the mount.
+  const mounts = await detectVendoWiring(root);
+  if (mounts.client) scaffold.layout = { kind: "already" };
+  return scaffold;
 }
 
 async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{
   plan: InitPlan;
   changes: PlannedChange[];
   manualSteps: string[];
+  /** The mount paste as data; null when a surface is already mounted or the
+      host is Express/custom (their lines ride `manualSteps`). */
+  mount: ManualEdit | null;
+  /** Changes to files that already exist, which init therefore leaves alone. */
+  edits: ManualEdit[];
   authAdvice: string | null;
   /** What the fresh composition wired (agent-tail fact); null when no
       composition was created this run OR it stayed anonymous. */
   authWired: AuthMatch | null;
   /** Relative path of the composition created THIS run; null otherwise. */
   compositionPath: string | null;
-  /** Relative path of the registry generated THIS run; null otherwise. */
-  registryPath: string | null;
   /** How the visible surface reached (or didn't reach) the layout. */
   layout: LayoutWiring;
 }> {
@@ -715,180 +790,13 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   // explicit --framework so agents never inherit a guess silently).
   const detected = options.framework ?? await detectFramework(root);
   const framework: "next" | "express" | "custom" = detected === "unknown" ? "custom" : detected;
-  const changes: PlannedChange[] = [];
-  let authAdvice: string | null = null;
-  let authWired: AuthMatch | null = null;
-  let compositionPath: string | null = null;
-  let registryPath: string | null = null;
-  let withRegistry = false;
-  let layout: LayoutWiring = { kind: "manual" };
+  const scaffold = framework === "custom"
+    ? await planCustomComposition(root, options, confirmAuth, selectAuth)
+    : framework === "express"
+      ? await planExpressComposition(root, options, confirmAuth, selectAuth)
+      : await planNextComposition(root, options, confirmAuth, selectAuth);
+  const { changes, edits, authAdvice, authWired, compositionPath, layout } = scaffold;
 
-  if (framework === "custom") {
-    layout = { kind: "custom" };
-    const wiring = await detectVendoWiring(root);
-    if (!wiring.server || !wiring.client) {
-      const typescript = await exists(join(root, "tsconfig.json"));
-      const server = join(root, "vendo", typescript ? "server.ts" : "server.mjs");
-      const registryFile = join(root, "vendo", typescript ? "registry.tsx" : "registry.mjs");
-      const registryBefore = await readOptional(registryFile);
-      const serverBefore = await readOptional(server);
-      // Same ownership rules as the Express branch: init composes only when
-      // it CREATES the composition, and the registry regenerates only for a
-      // consumer that uses it.
-      const scaffolding = serverBefore === null && !wiring.server;
-      const registryPlanned = registryBefore === null
-        && (scaffolding || serverBefore?.includes("./registry") === true);
-      if (registryPlanned) {
-        const path = relative(root, registryFile);
-        const registryAfter = registrySource(typescript ? "tsx" : "mjs");
-        changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
-        registryPath = path;
-      }
-      if (scaffolding) {
-        const path = relative(root, server);
-        const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
-        const serverAfter = customServerSource(typescript, auth.wired);
-        changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
-        authAdvice = auth.advice;
-        authWired = auth.wired;
-        compositionPath = path;
-      }
-      withRegistry = registryBefore !== null || registryPlanned;
-    }
-  } else if (framework === "express") {
-    layout = { kind: "express" };
-    const wiring = await detectVendoWiring(root);
-    if (!wiring.server || !wiring.client) {
-      const typescript = await exists(join(root, "tsconfig.json"));
-      const server = join(root, "vendo", typescript ? "server.ts" : "server.mjs");
-      const registryFile = join(root, "vendo", typescript ? "registry.tsx" : "registry.mjs");
-      const registryBefore = await readOptional(registryFile);
-      const serverBefore = await readOptional(server);
-      // Init owns the composition only when it CREATES it: no generated
-      // server module yet AND no hand-wired createVendo anywhere else. A host
-      // that composed at its own path but hasn't pasted <VendoRoot> yet gets
-      // neither a duplicate server module nor an orphaned registry — the
-      // Express analog of the Next branch's routeBefore === null guard.
-      const scaffolding = serverBefore === null && !wiring.server;
-      // The registry regenerates only for a composition that uses it: the one
-      // being created now, or a previously generated server module whose
-      // ./registry import would otherwise dangle. Never clobbered.
-      const registryPlanned = registryBefore === null
-        && (scaffolding || serverBefore?.includes("./registry") === true);
-      if (registryPlanned) {
-        const path = relative(root, registryFile);
-        const registryAfter = registrySource(typescript ? "tsx" : "mjs");
-        changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
-        registryPath = path;
-      }
-      if (scaffolding) {
-        const path = relative(root, server);
-        // Detect + confirm happens only here — fresh composition creation —
-        // so a re-run before the manual <VendoRoot> paste neither asks nor
-        // re-fires the advisory after "Already wired".
-        const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
-        const serverAfter = expressServerSource(typescript, auth.wired);
-        changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
-        authAdvice = auth.advice;
-        authWired = auth.wired;
-        compositionPath = path;
-      }
-      withRegistry = registryBefore !== null || registryPlanned;
-    }
-  } else {
-    const app = await appDirectory(root);
-    const route = join(app, "api", "vendo", "[...vendo]", "route.ts");
-    const actionsModule = join(app, "api", "vendo", "[...vendo]", "vendo-actions.ts");
-    const routeBefore = await readOptional(route);
-    const actionsBefore = await readOptional(actionsModule);
-    const registrations = await wiringServerActions(root);
-    // The shared registry mirrors the app dir (src/app → src/vendo): generated
-    // only while absent and only when the route uses it — a fresh scaffold, or
-    // a route that already imports vendo/registry. A hand-wired route that
-    // ignores the registry never grows an orphan file.
-    const registryFile = join(dirname(app), "vendo", "registry.tsx");
-    const registryBefore = await readOptional(registryFile);
-    const registryPlanned = registryBefore === null
-      && (routeBefore === null || routeBefore.includes("vendo/registry"));
-    if (registryPlanned) {
-      const path = relative(root, registryFile);
-      const registryAfter = registrySource("tsx");
-      changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
-      registryPath = path;
-    }
-    withRegistry = registryBefore !== null || registryPlanned;
-    // The registration map regenerates whenever the detected "use server"
-    // surface changes; an existing map is kept compiling (emptied, never
-    // deleted) when the last action disappears.
-    if (registrations.length > 0 || actionsBefore !== null) {
-      const actionsAfter = serverActionsModuleSource(root, dirname(actionsModule), registrations);
-      if (actionsAfter !== actionsBefore) {
-        const path = relative(root, actionsModule);
-        changes.push({ absolute: actionsModule, path, before: actionsBefore, after: actionsAfter, diff: diff(path, actionsBefore, actionsAfter) });
-      }
-    }
-    if (routeBefore === null) {
-      const path = relative(root, route);
-      // Detect + confirm happens only on fresh composition creation.
-      const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
-      const registrySpecifier = relative(dirname(route), join(dirname(app), "vendo", "registry")).split(sep).join("/");
-      const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, registrySpecifier });
-      changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
-      authAdvice = auth.advice;
-      authWired = auth.wired;
-      compositionPath = path;
-    } else if (registrations.length > 0) {
-      // The route already exists but server actions appeared since it was
-      // generated: wire the registration map into the existing createVendo so
-      // server-action execution doesn't fail closed (ENG-248 idempotency fix).
-      const wiredRoute = wireRouteServerActions(routeBefore);
-      if (wiredRoute !== null) {
-        const path = relative(root, route);
-        changes.push({ absolute: route, path, before: routeBefore, after: wiredRoute, diff: diff(path, routeBefore, wiredRoute) });
-      }
-    }
-
-    // Visible surface (0.4.1 E2E cert B3): the client mount wrapper next to
-    // the registry — the "use client" boundary that owns the registry + theme
-    // imports (passing the registry from the Server Component layout into the
-    // client provider fails RSC serialization) and mounts <VendoOverlay /> —
-    // plus the ONE bounded layout edit that wraps `{children}` in it. Both
-    // idempotent: an existing wrapper is never clobbered, a layout already
-    // mounting <VendoRoot> or <VendoOverlay> is never re-edited, and an
-    // uneditable layout degrades to the printed paste.
-    const wrapperFile = join(dirname(app), "vendo", "vendo-root.tsx");
-    const wrapperBefore = await readOptional(wrapperFile);
-    const layoutFile = join(app, "layout.tsx");
-    const layoutBefore = await readOptional(layoutFile);
-    // The generated wrapper doesn't count as a host mount: its overlay is
-    // only real once a layout mounts the wrapper itself.
-    const mounts = await detectVendoWiring(root, { exclude: [wrapperFile] });
-    if (mounts.client || mounts.surface) {
-      // A mounted <VendoRoot> next to an existing wrapper IS the surface —
-      // the wrapper renders <VendoOverlay /> (the re-run after an auto-wire).
-      layout = mounts.surface || wrapperBefore !== null
-        ? { kind: "already" }
-        // A pages-only host mounted <VendoRoot> in pages/_app.tsx, not in an
-        // app/layout.tsx it doesn't have — name the file it really wraps in.
-        : { kind: "overlay-missing", layoutPath: relative(root, (await clientRoot(root)).file) };
-    } else if (withRegistry) {
-      // The wrapper consumes ./registry, so it exists only alongside one —
-      // a hand-wired host that ignores the registry keeps the manual paste.
-      if (wrapperBefore === null) {
-        const path = relative(root, wrapperFile);
-        const themeSpecifier = await themeImportSpecifier(root, dirname(wrapperFile));
-        const wrapperAfter = vendoRootWrapperSource({ themeSpecifier });
-        changes.push({ absolute: wrapperFile, path, before: null, after: wrapperAfter, diff: diff(path, null, wrapperAfter) });
-      }
-      const wrapperSpecifier = relative(app, join(dirname(app), "vendo", "vendo-root")).split(sep).join("/");
-      const layoutAfter = layoutBefore === null ? null : wireNextLayout(layoutBefore, wrapperSpecifier);
-      if (layoutAfter !== null) {
-        const path = relative(root, layoutFile);
-        changes.push({ absolute: layoutFile, path, before: layoutBefore, after: layoutAfter, diff: diff(path, layoutBefore, layoutAfter) });
-        layout = { kind: "wired", layoutPath: path };
-      }
-    }
-  }
   const packageJson = join(root, "package.json");
   const packageBefore = await readOptional(packageJson);
   if (packageBefore !== null) {
@@ -925,16 +833,22 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     ".vendo/policy.json",
     ".vendo/brief.md",
     ".vendo/theme.json",
+    ".vendo/theme.extracted.json",
     ".vendo/data/.gitignore",
   ];
-  const manualSteps = await manualWiringLines(root, layout, withRegistry);
+  const mount = await mountStep(root, layout);
+  const manualSteps = [
+    ...await manualWiringLines(root, layout),
+    ...edits.flatMap(editLines),
+  ];
   return {
     changes,
+    edits,
     manualSteps,
+    mount,
     authAdvice,
     authWired,
     compositionPath,
-    registryPath,
     layout,
     plan: {
       framework,
@@ -942,6 +856,8 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
       writes,
       codeChanges: changes.map(({ path, diff: rendered }) => ({ path, diff: rendered })),
       manualSteps,
+      ...(mount === null ? {} : { mount }),
+      ...(edits.length === 0 ? {} : { edits }),
     },
   };
 }
@@ -949,14 +865,6 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
 async function writeIfMissing(path: string, content: string, force: boolean): Promise<void> {
   if (!force && await exists(path)) return;
   await writeText(path, content);
-}
-
-/** The value of one NAME=value line in .env.local (the cloud step's upsert
-    target) — the same-run pickup reads the freshly minted key back from disk.
-    One parser for the whole CLI: shared.ts's envLocalValueSync (telemetry's
-    cloud-key read uses the same one, so the two can never disagree). */
-async function envLocalValue(root: string, name: string): Promise<string | null> {
-  return envLocalValueSync(root, name);
 }
 
 async function ensureVendoEnvExample(root: string): Promise<void> {
@@ -979,6 +887,395 @@ function telemetryFor(options: InitOptions, output: Output, root: string): Telem
 }
 
 /** 09-vendo §5 — idempotent, zero-question setup. */
+/** Apply the answers a human gave (via `--theme` or the review prompt) over the
+ *  extracted/merged summary, in place. Unknown slots and invalid values are
+ *  reported and skipped rather than written. */
+function applyThemeAnswers(
+  summary: ThemeSummary,
+  answers: Record<string, string>,
+  output: Output,
+): void {
+  for (const [slot, raw] of Object.entries(answers)) {
+    if (!Object.hasOwn(summary.slots, slot)) {
+      output.error(`ignored unknown theme slot ${JSON.stringify(slot)}`);
+      continue;
+    }
+    const value = validateSlotValue(slot as keyof ThemeSlotValues, raw);
+    if (value === null) {
+      output.error(`ignored invalid theme ${slot} value ${JSON.stringify(raw)}`);
+    } else {
+      (summary.slots as unknown as Record<string, string>)[slot] = value;
+      summary.matched[slot] = "(you)";
+      // The slot no longer defaulted — the human just set it.
+      summary.defaulted = summary.defaulted.filter((name) => name !== slot);
+    }
+  }
+  // A replaced accent invalidates an accentText nobody chose — one that
+  // was contrast-derived, or still the neutral default because the
+  // model omitted the accent too. Re-derive against the new accent; an
+  // explicit token or a direct human/model answer stays authoritative.
+  const accentTextUnchosen = summary.matched["accentText"] === "(contrast) accent"
+    || summary.defaulted.includes("accentText");
+  if (summary.matched["accent"] === "(you)" && accentTextUnchosen) {
+    summary.slots.accentText = contrastingText(summary.slots.accent);
+    summary.matched["accentText"] = "(contrast) accent";
+    summary.defaulted = summary.defaulted.filter((name) => name !== "accentText");
+  }
+}
+
+/** Theme finalization (Task 4): merge whatever the AI pass filled — if
+ *  consent was declined or unavailable, `themeDraft` is simply null
+ *  and the exact-only summary stands — then --theme answers (a human
+ *  "(you)" wins over a model value), the one-glance palette print, and
+ *  finally the uncertain-slot review. */
+async function finalizeTheme(input: {
+  themeSummary: ThemeSummary;
+  themeDraft: SyncFlowResult["themeDraft"];
+  themePath: string;
+  options: InitOptions;
+  output: Output;
+}): Promise<void> {
+  const { themeSummary, themeDraft, themePath, options, output } = input;
+  const summary = themeDraft === null ? themeSummary : applyThemeDraft(themeSummary, themeDraft);
+  // --theme answers land first; the review prompt then covers only the
+  // uncertain slots the flags left unanswered (non-interactive runs keep
+  // the extracted/merged values for those, exactly as before).
+  const answers: Record<string, string> = { ...(options.themeAnswers ?? {}) };
+  const unanswered = summary.uncertain.filter((entry) => !Object.hasOwn(answers, entry.slot));
+  if (unanswered.length > 0 && options.yes !== true) {
+    const reviewed = await (options.themeReview ?? defaultThemeReview)(
+      unanswered.length === summary.uncertain.length ? summary : { ...summary, uncertain: unanswered },
+    );
+    for (const [slot, raw] of Object.entries(reviewed)) {
+      if (!Object.hasOwn(answers, slot)) answers[slot] = raw;
+    }
+  }
+  if (Object.keys(answers).length > 0) applyThemeAnswers(summary, answers, output);
+  await writeText(themePath, `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
+  printThemeSummary(summary, output);
+}
+
+/** Done — the pastes init cannot take (it only ever CREATES files in your
+ *  source tree), then their own dev server. They get their own framed block
+ *  because skipping them is the whole failure mode: a green install nobody
+ *  can see, or server-action tools that silently fail closed. */
+function printClosingSteps(input: {
+  output: Output;
+  handSteps: ManualEdit[];
+  manualSteps: string[];
+  credential: DevCredential;
+  cloud: { keyValid: boolean };
+  compositionPath: string | null;
+}): void {
+  const { output, handSteps, manualSteps, credential, cloud, compositionPath } = input;
+  if (handSteps.length > 0) {
+    const rule = "─".repeat(64);
+    output.log(`\n${rule}`);
+    output.log(handSteps.length === 1
+      ? "ONE STEP LEFT — paste this yourself (init never edits your files)"
+      : `${handSteps.length} STEPS LEFT — paste these yourself (init never edits your files)`);
+    for (const step of handSteps) {
+      output.log(`\n  File: ${step.file}`);
+      for (const line of step.lines) output.log(`    ${line}`);
+      output.log(`\n  ${step.why}`);
+    }
+    output.log("  Then confirm it landed: npx vendo doctor");
+    output.log(rule);
+  }
+  // Express and custom hosts have no single host file to name, so their
+  // wiring keeps the compact list; the block above already said everything
+  // a Next host needs, and nothing is printed twice.
+  if (handSteps.length === 0 && manualSteps.length > 0) {
+    output.log("\nLast steps are yours:");
+    for (const line of manualSteps) output.log(`  ${line}`);
+  }
+  // A run without a USABLE model credential is wired but not answering, so
+  // the closing line must not claim otherwise. The rung alone is not that
+  // answer: resolveDevCredential only checks that VENDO_API_KEY is non-blank
+  // (and VENDO_DEV_CREDENTIAL=vendo-cloud pins the rung with no key at all),
+  // so a malformed key resolves "vendo-cloud" while the cloud step — the one
+  // thing that inspected the key — already said it is not usable. Keyless,
+  // the composition decides: one written THIS run passes no model, so "no
+  // key" is the whole story, while one init did not write may pass its own
+  // `model` to createVendo — nothing here can see that, so state the
+  // condition rather than guess either way.
+  // …and it only gets to speak at all once nothing is outstanding: a paste
+  // still pending means the frame above just said Vendo is invisible until
+  // it lands, so "the agent is live in your app" would contradict it in the
+  // same breath (self-serve audit F5).
+  const modelReady = credential.rung === "env-key"
+    || (credential.rung === "vendo-cloud" && cloud.keyValid);
+  if (handSteps.length === 0) {
+    output.log(`\nThen start your dev server — ${modelReady
+      ? "the agent is live in your app."
+      : compositionPath !== null
+        ? "the agent is live once you add a model key."
+        : "no model key resolved here, so the agent is live only if your composition passes its own model."}`);
+  }
+  output.log(`${handSteps.length === 0 ? "" : "\n"}Verify everything: \`npx vendo doctor\` (it can start the server and run a live turn).`);
+}
+
+/** Star ask (agent-install-dx §CLI-5): the interactive success screen
+ *  ends with ONE consent question — never shown non-interactively (the
+ *  playbook owns the agent-path ask; deterministic runs stay that way),
+ *  and never fatal: nothing in this step can change init's exit code.
+ *  Yes stars via gh; any failure degrades to the repo URL, one line.
+ *  No does nothing — no guilt text. */
+async function askForStar(input: {
+  options: InitOptions;
+  pretty: PrettyOutput | null;
+  output: Output;
+  telemetry: Telemetry;
+}): Promise<void> {
+  const { options, pretty, output, telemetry } = input;
+  try {
+    // Consent guard: an unshown prompt is NEVER a yes. On a non-TTY
+    // stdin (programmatic `interactive: true`, `init < file`) both real
+    // confirms would resolve the default — pretty.confirm returns it,
+    // askYesNo would block — and starring is an account action, so the
+    // answer without a real keyboard is false, regardless of path.
+    const confirmStar = options.confirmStar
+      ?? (async (question: string, defaultYes: boolean) =>
+        stdin.isTTY === true
+          ? (pretty === null ? askYesNo : pretty.confirm)(question, defaultYes)
+          : false);
+    if (await confirmStar(`Star ${STAR_REPO} to support the project?`, true)) {
+      const starred = await starViaGh(
+        options.spawnStar ?? ((command, args) => spawn(command, args, { stdio: "ignore" })),
+      );
+      if (!starred) output.log(`Star it anytime: ${STAR_LINK}`);
+      // Star attribution: `starred` is an exact star-from-the-CLI signal
+      // (closed outcome enum; counts-and-enums promise holds).
+      await telemetry.track("star_prompt", { outcome: starred ? "starred" : "star-failed" });
+    } else {
+      await telemetry.track("star_prompt", { outcome: "declined" });
+    }
+  } catch {
+    // The ask is best-effort by design; init already succeeded.
+  }
+}
+
+/** An undetectable framework has NO safe default: a non-interactive run
+ *  (agents) errors with the exact flag instead of guessing the Next layout
+ *  into an unknown host. An interactive run keeps today's fall-through to the
+ *  custom scaffold — silently wrong when the host is a workspace package one
+ *  level down, so name the candidates instead of guessing for them.
+ *
+ *  Returns false when init must stop with exit 1. */
+async function guardUndetectedFramework(input: {
+  root: string;
+  options: InitOptions;
+  output: Output;
+  interactive: boolean;
+}): Promise<boolean> {
+  const { root, options, output, interactive } = input;
+  if (options.framework !== undefined || await detectFramework(root) !== "unknown") return true;
+  if (options.yes === true || !interactive) {
+    output.error(
+      "Framework not detected (no next or express dependency in package.json) and this run cannot ask. " +
+      "Pass --framework. Examples: vendo init --yes --framework next · --framework custom (any Web-standard runtime: Cloudflare Workers, Bun, Hono, ...)",
+    );
+    return false;
+  }
+  const candidates = await workspaceHostCandidates(root);
+  if (candidates.length > 0) {
+    output.error(
+      `warning: no next or express dependency in this directory, but ${candidates.join(", ")} ` +
+      `${candidates.length === 1 ? "looks" : "look"} like the host — did you mean ${candidates[0]}? ` +
+      `Re-run there (vendo init ${pastePath(join(root, candidates[0]!))}) or pass --framework to scaffold this directory anyway.`,
+    );
+  }
+  return true;
+}
+
+/** Key first (product order fix): the model-credential story — env keys,
+ *  else the Vendo Cloud offer — runs BEFORE the AI-assisted passes, so a
+ *  starter key minted here powers the SAME run's theme model pass and AI
+ *  polish instead of those passes reporting "no model" while the offer
+ *  waits below them. --yes / non-interactive semantics are unchanged. */
+async function resolveModelCredential(input: {
+  root: string;
+  env: Record<string, string | undefined>;
+  options: InitOptions;
+  output: Output;
+  pretty: PrettyOutput | null;
+}): Promise<{ credential: DevCredential; cloud: Awaited<ReturnType<typeof runCloudStep>> }> {
+  const { root, env, options, output, pretty } = input;
+  // Dev keys may live in .env.local rather than this process's env — a
+  // PRIOR run's minted starter key, or hand-added provider keys. Merge
+  // them into the env every credential consumer reads (credential ladder,
+  // cloud step, theme model pass, AI polish); an explicit env value
+  // always wins over .env.local.
+  let effectiveEnv = env;
+  for (const name of [...ENV_KEY_VARS.map((entry) => entry.envVar), "VENDO_API_KEY"]) {
+    if ((env[name] ?? "").trim() !== "") continue;
+    const stored = envFileValueSync(root, name);
+    if (stored !== null) effectiveEnv = { ...effectiveEnv, [name]: stored };
+  }
+  let credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
+  if (credential.rung === "env-key") {
+    output.log(`Model: ${describeDevCredential(credential)} — production uses this same key server-side.`);
+  }
+  const cloud = await runCloudStep({
+    root,
+    output,
+    // --byo answers the offer with "no" AND suppresses the agent-path
+    // auth.md pointer (an explicit BYO choice is final); --yes skips the
+    // prompt but still gets the pointer so an agent can mint in-band.
+    yes: options.yes === true,
+    byo: options.byo === true,
+    credential,
+    // The RUN's env, not process.env: a programmatic caller's key must be
+    // what the probe and the mint see (seams in options.cloud still win).
+    env: effectiveEnv,
+    // The step's own command_run row rides init's telemetry seams.
+    ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
+    ...(pretty === null ? {} : { confirm: pretty.confirm }),
+    ...(options.cloud ?? {}),
+  });
+  // Same-run pickup: a starter key minted just now lands in .env.local —
+  // merge it the same way so THIS run's passes already benefit.
+  if (cloud.wroteEnvLocal) {
+    const minted = envFileValueSync(root, "VENDO_API_KEY");
+    if (minted !== null) {
+      effectiveEnv = { ...effectiveEnv, VENDO_API_KEY: minted };
+      credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
+    }
+  }
+  return { credential, cloud };
+}
+
+/** Wire — apply the bounded change set. No gates, no prompts. Then scan:
+ *  the .vendo artifacts + static extraction (the hints layer for the AI
+ *  extraction; interim tools.json source until it lands).
+ *
+ *  Returns the elapsed wiringMs the cloud telemetry lane reports. */
+async function wireAndScaffold(input: {
+  root: string;
+  changes: PlannedChange[];
+  force: boolean;
+}): Promise<number> {
+  const { root, changes, force } = input;
+  const wiringStarted = Date.now();
+  for (const change of changes) {
+    await writeText(change.absolute, change.after);
+  }
+
+  await ensureVendoEnvExample(root);
+  await mkdir(join(root, ".vendo"), { recursive: true });
+  await writeIfMissing(
+    join(root, ".vendo", "overrides.json"),
+    `${JSON.stringify({
+      format: "vendo/overrides@3",
+      tools: {},
+      remix: { ignoreSlots: [] },
+    }, null, 2)}\n`,
+    force,
+  );
+  await writeIfMissing(
+    join(root, ".vendo", "policy.json"),
+    `${JSON.stringify({
+      format: "vendo/policy@1",
+      directions: [],
+      rules: [
+        { match: { risk: "destructive" }, action: "ask", note: "Review irreversible actions" },
+        // ENG-370 hardening: knowledge tools are read-class, so this rule
+        // must sit ABOVE the read→run rule (first match wins). MCP clients
+        // sit outside the product surface; hosts may harden ask → block.
+        { match: { tool: "vendo_knowledge_*", venue: "mcp" }, action: "ask", note: "Knowledge access from an MCP client" },
+        { match: { risk: "read" }, action: "run" },
+      ],
+    }, null, 2)}\n`,
+    force,
+  );
+  await writeIfMissing(
+    join(root, ".vendo", "brief.md"),
+    BRIEF_PLACEHOLDER,
+    force,
+  );
+  await writeIfMissing(join(root, ".vendo", "data", ".gitignore"), "*\n!.gitignore\n", force);
+  return Date.now() - wiringStarted;
+}
+
+/** init ENDS in the one shared flow — the same extraction, theme path,
+ *  consent, judgment, prose stages, report and Cloud pushes `vendo sync`
+ *  runs, in "full" mode (a fresh install has judged nothing). */
+async function runInstallSyncFlow(input: {
+  root: string;
+  output: Output;
+  options: InitOptions;
+  pretty: PrettyOutput | null;
+}): Promise<SyncFlowResult> {
+  const { root, output, options, pretty } = input;
+  // `--extract` is the test seam onto the flow's judgment step, in init's own
+  // flat spelling; where it overlaps a real flag, the seam wins.
+  const extract = options.extract ?? {};
+  const ai = extract.ai ?? options.ai;
+  const engine = extract.engine ?? options.engine;
+  return runSyncFlow({
+    root,
+    output,
+    mode: "full",
+    // The AI-polish step keeps its OWN interactivity posture (a real TTY that
+    // no package script drives), distinct from `interactive` above — that one
+    // is the auth confirm's seam, and spending money on a model is not a
+    // question a programmatic caller may be assumed to have answered.
+    interactive: extract.interactive
+      ?? (!invokedByPackageScript() && Boolean(stdin.isTTY) && Boolean(stdout.isTTY)),
+    yes: options.yes === true,
+    // --ai IS the consent (no prompt, non-interactive runs stop skipping);
+    // --no-ai is the refusal. No flag = ask, every interactive run.
+    ...(ai === undefined ? {} : { ai }),
+    ...(options.force === true ? { force: true } : {}),
+    ...(engine === undefined ? {} : { engine }),
+    ...(pretty === null ? {} : { confirm: pretty.confirm, choose: pretty.select }),
+    ...(extract.choose === undefined ? {} : { choose: extract.choose }),
+    judge: {
+      ...(extract.harnesses === undefined ? {} : { harnesses: extract.harnesses }),
+      ...(extract.confirm === undefined ? {} : { confirm: extract.confirm }),
+      ...(extract.resolveCredential === undefined ? {} : { resolveCredential: extract.resolveCredential }),
+    },
+  });
+}
+
+/** The two dependency repairs a fresh install owes the host, both degrading to
+ *  a printed command rather than failing the run. */
+async function ensureHostDeps(input: {
+  root: string;
+  output: Output;
+  options: InitOptions;
+  pretty: PrettyOutput | null;
+  interactive: boolean;
+  credential: DevCredential;
+}): Promise<void> {
+  const { root, output, options, pretty, interactive, credential } = input;
+  // The credential's runtime provider must be resolvable from the host or
+  // the FIRST turn 500s (dev-creds/model.ts loads it host-side; nothing
+  // declares @ai-sdk/* — 0.4.1 E2E cert finding). Install exactly what the
+  // resolved credential needs; a failure degrades to the manual command.
+  await ensureProviderDeps({
+    root,
+    credential,
+    output,
+    ...(options.installProvider === undefined ? {} : { run: options.installProvider }),
+  });
+
+  // FINDINGS F2 (skateshop): a host pinning zod < 3.25 builds red once the
+  // wiring pulls ai@6 into the bundle (ai imports the zod/v3 + zod/v4
+  // subpaths that arrive in 3.25, and the host's own pin wins the installed
+  // tree). Ask-and-bump with the auth confirm's interactivity posture:
+  // --yes performs the announced bump, non-interactive prints the command.
+  await ensureZodFloor({
+    root,
+    output,
+    ...(options.yes === true ? { yes: true } : {}),
+    ...(options.yes === true || !interactive
+      ? {}
+      : { confirm: options.confirmZodBump ?? (pretty === null ? askYesNo : pretty.confirm) }),
+    ...(options.installZod === undefined ? {} : { run: options.installZod }),
+  });
+}
+
 export async function runInit(options: InitOptions): Promise<number> {
   // The clack-style renderer rides the SAME Output seam: it restyles the
   // exact plain messages below, and is selected only for a human terminal
@@ -1009,29 +1306,9 @@ export async function runInit(options: InitOptions): Promise<number> {
   // Detect + confirm (interactive runs only): --yes and non-interactive runs
   // accept the detected default silently — the same interactivity posture as
   // the AI-polish consent.
-  const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
-  // An undetectable framework has NO safe default: a non-interactive run
-  // (agents) errors with the exact flag instead of guessing the Next layout
-  // into an unknown host. An interactive run keeps today's fall-through to the
-  // custom scaffold — silently wrong when the host is a workspace package one
-  // level down, so name the candidates instead of guessing for them.
-  if (options.framework === undefined && await detectFramework(root) === "unknown") {
-    if (options.yes === true || !interactive) {
-      output.error(
-        "Framework not detected (no next or express dependency in package.json) and this run cannot ask. " +
-        "Pass --framework. Examples: vendo init --yes --framework next · --framework custom (any Web-standard runtime: Cloudflare Workers, Bun, Hono, ...)",
-      );
-      return 1;
-    }
-    const candidates = await workspaceHostCandidates(root);
-    if (candidates.length > 0) {
-      output.error(
-        `warning: no next or express dependency in this directory, but ${candidates.join(", ")} ` +
-        `${candidates.length === 1 ? "looks" : "look"} like the host — did you mean ${candidates[0]}? ` +
-        `Re-run there (vendo init ${pastePath(join(root, candidates[0]!))}) or pass --framework to scaffold this directory anyway.`,
-      );
-    }
-  }
+  const interactive = options.interactive
+    ?? (!invokedByPackageScript() && Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
+  if (!await guardUndetectedFramework({ root, options, output, interactive })) return 1;
   // (No stdin-TTY guard on these defaults, unlike the star ask's: an unshown
   // auth confirm resolving its default just wires the detected preset — the
   // very accept the non-interactive path performs silently anyway.)
@@ -1042,7 +1319,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
   const detectStarted = Date.now();
-  const { plan, changes, manualSteps, authAdvice, authWired, compositionPath, registryPath, layout } = await buildPlan(options, confirmAuth, selectAuth);
+  const { plan, changes, edits, manualSteps, mount, authAdvice, authWired, compositionPath, layout } = await buildPlan(options, confirmAuth, selectAuth);
   const detectMs = Date.now() - detectStarted;
   let telemetry = telemetryFor(options, output, root);
   await telemetry.track("init_started", { framework: plan.framework });
@@ -1056,52 +1333,7 @@ export async function runInit(options: InitOptions): Promise<number> {
       output.log("Wrote VENDO_API_KEY to .env.local (--cloud-key).");
       await warnEnvLocalNotIgnored(root, output);
     }
-    // Key first (product order fix): the model-credential story — env keys,
-    // else the Vendo Cloud offer — runs BEFORE the AI-assisted passes, so a
-    // starter key minted here powers the SAME run's theme model pass and AI
-    // polish instead of those passes reporting "no model" while the offer
-    // waits below them. --yes / non-interactive semantics are unchanged.
-    // Dev keys may live in .env.local rather than this process's env — a
-    // PRIOR run's minted starter key, or hand-added provider keys. Merge
-    // them into the env every credential consumer reads (credential ladder,
-    // cloud step, theme model pass, AI polish); an explicit env value
-    // always wins over .env.local.
-    let effectiveEnv = env;
-    for (const name of [...ENV_KEY_VARS.map((entry) => entry.envVar), "VENDO_API_KEY"]) {
-      if ((env[name] ?? "").trim() !== "") continue;
-      const stored = await envLocalValue(root, name);
-      if (stored !== null) effectiveEnv = { ...effectiveEnv, [name]: stored };
-    }
-    let credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
-    if (credential.rung === "env-key") {
-      output.log(`Model: ${describeDevCredential(credential)} — production uses this same key server-side.`);
-    }
-    const cloud = await runCloudStep({
-      root,
-      output,
-      // --byo answers the offer with "no" AND suppresses the agent-path
-      // auth.md pointer (an explicit BYO choice is final); --yes skips the
-      // prompt but still gets the pointer so an agent can mint in-band.
-      yes: options.yes === true,
-      byo: options.byo === true,
-      credential,
-      // The RUN's env, not process.env: a programmatic caller's key must be
-      // what the probe and the mint see (seams in options.cloud still win).
-      env: effectiveEnv,
-      // The step's own command_run row rides init's telemetry seams.
-      ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
-      ...(pretty === null ? {} : { confirm: pretty.confirm }),
-      ...(options.cloud ?? {}),
-    });
-    // Same-run pickup: a starter key minted just now lands in .env.local —
-    // merge it the same way so THIS run's passes already benefit.
-    if (cloud.wroteEnvLocal) {
-      const minted = await envLocalValue(root, "VENDO_API_KEY");
-      if (minted !== null) {
-        effectiveEnv = { ...effectiveEnv, VENDO_API_KEY: minted };
-        credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
-      }
-    }
+    const { credential, cloud } = await resolveModelCredential({ root, env, options, output, pretty });
     // A key that landed in .env.local THIS run (--cloud-key upsert or the
     // login ceremony) must activate the telemetry cloud lane for the rest of
     // this run's events too — rebuild the client so it re-reads .env.local.
@@ -1110,89 +1342,10 @@ export async function runInit(options: InitOptions): Promise<number> {
       telemetry = telemetryFor(options, output, root);
     }
 
-    // Wire — apply the bounded change set and list it. No gates, no prompts.
-    // (Timed for the cloud lane's wiringMs; the static scan below adds on.)
-    const wiringStarted = Date.now();
-    for (const change of changes) {
-      await writeText(change.absolute, change.after);
-    }
+    const wiringMs = await wireAndScaffold({ root, changes, force: options.force === true });
 
-    // Scan — .vendo artifacts + static extraction (the hints layer for the AI
-    // extraction; interim tools.json source until it lands).
-    await ensureVendoEnvExample(root);
-    await mkdir(join(root, ".vendo"), { recursive: true });
-    await writeIfMissing(
-      join(root, ".vendo", "overrides.json"),
-      `${JSON.stringify({
-        format: "vendo/overrides@3",
-        tools: {},
-        remix: { ignoreSlots: [] },
-      }, null, 2)}\n`,
-      options.force === true,
-    );
-    await writeIfMissing(
-      join(root, ".vendo", "policy.json"),
-      `${JSON.stringify({
-        format: "vendo/policy@1",
-        directions: [],
-        rules: [
-          { match: { risk: "destructive" }, action: "ask", note: "Review irreversible actions" },
-          // ENG-370 hardening: knowledge tools are read-class, so this rule
-          // must sit ABOVE the read→run rule (first match wins). MCP clients
-          // sit outside the product surface; hosts may harden ask → block.
-          { match: { tool: "vendo_knowledge_*", venue: "mcp" }, action: "ask", note: "Knowledge access from an MCP client" },
-          { match: { risk: "read" }, action: "run" },
-        ],
-      }, null, 2)}\n`,
-      options.force === true,
-    );
-    await writeIfMissing(
-      join(root, ".vendo", "brief.md"),
-      BRIEF_PLACEHOLDER,
-      options.force === true,
-    );
-    // Theme (Task 2/4 re-derive): the exact-only allowlist pass runs and
-    // writes theme.json right away — never overwriting an existing one (it
-    // is the editable source of truth) unless --force. Whatever brand slots
-    // the allowlist left unfilled ride the consent-gated AI-polish pass
-    // below; the merge, --theme answers, the one-glance palette print, and
-    // the uncertain-slot review all happen AFTER that pass returns, further
-    // down this function — a pre-existing theme.json is never touched.
-    const themePath = join(root, ".vendo", "theme.json");
-    const themeCreatedThisRun = options.force === true || !(await exists(themePath));
-    let wiringMs = Date.now() - wiringStarted;
-    let themeMs: number | undefined;
-    let themeSummary: ThemeSummary | null = null;
-    if (themeCreatedThisRun) {
-      pretty?.spin("Capturing your theme");
-      const themeStarted = Date.now();
-      themeSummary = await extractThemeSlots(root);
-      themeMs = Date.now() - themeStarted;
-      pretty?.stopSpin();
-      await writeText(themePath, `${JSON.stringify(toVendoTheme(themeSummary.slots), null, 2)}\n`);
-    }
-    await writeIfMissing(join(root, ".vendo", "data", ".gitignore"), "*\n!.gitignore\n", options.force === true);
-
-    pretty?.spin("Learning your API surface");
-    const scanStarted = Date.now();
-    const report = await vendoSync({ root, out: join(root, ".vendo") });
-    wiringMs += Date.now() - scanStarted;
-    pretty?.stopSpin();
-    for (const warning of report.warnings) output.error(`warning: ${warning}`);
-
-    let toolCount = 0;
-    let routeCount = 0;
-    try {
-      const tools = JSON.parse(await readFile(join(root, ".vendo", "tools.json"), "utf8")) as {
-        tools?: Array<{ binding?: { kind?: string } }>;
-      };
-      toolCount = tools.tools?.length ?? 0;
-      routeCount = tools.tools?.filter((tool) => tool.binding?.kind === "route").length ?? 0;
-    } catch {
-      // Sync already reported any extraction warning; telemetry gets a count only.
-    }
-
-    // Summary — what changed, what was learned.
+    // Summary — what changed. What was LEARNED is the shared flow's report,
+    // printed by the flow itself a few lines down.
     if (changes.length > 0) {
       output.log(`\nWired (${changes.length} file${changes.length === 1 ? "" : "s"}):`);
       for (const change of changes) {
@@ -1205,99 +1358,32 @@ export async function runInit(options: InitOptions): Promise<number> {
     // silent — the comment in the scaffold cites the escape hatch; none or
     // ambiguous gets exactly one calm line naming the line to add.
     if (authAdvice !== null) output.log(authAdvice);
-    output.log(`Learned: ${toolCount} tools · theme captured → .vendo/ (tools.json, theme.json, brief.md)`);
 
-    // The judgment pass, then the brief and theme stages: a coding agent grades
-    // the extracted catalog with a verbatim source quote behind every proposal,
-    // an independent skeptic checks each one, and loosenings wait for a human
-    // (reviewed inline in an interactive run). Consent-gated; skipped silently
-    // when non-interactive or credential-less. Judgments land in
-    // `.vendo/judgments.json`, so `overrides.json` keeps meaning only "what a
-    // person decided" and a re-sync can never clobber either.
+    // init ENDS in the one shared flow — the same extraction, theme path,
+    // consent, judgment, prose stages, report and Cloud pushes `vendo sync`
+    // runs, in "full" mode (a fresh install has judged nothing). Install-only
+    // work stays above this line; everything below it is the flow's, and init
+    // stays fail-LOUD: the catch at the bottom still exits 1.
+    const themePath = join(root, ".vendo", "theme.json");
     const engineStarted = Date.now();
-    const polish = await runInitJudgment({
-      root,
-      output,
-      env: effectiveEnv,
-      yes: options.yes === true,
-      // --ai-polish IS the consent: no prompt, and non-interactive runs
-      // stop skipping.
-      ...(options.aiPolish === true ? { consent: true } : {}),
-      ...(options.force === true ? { force: true } : {}),
-      ...(options.engine === undefined ? {} : { engine: options.engine }),
-      ...(pretty === null ? {} : { confirm: pretty.confirm, choose: pretty.select }),
-      ...(themeCreatedThisRun && themeSummary !== null ? {
-        theme: {
-          needed: themeSummary.needed,
-          alreadyExact: Object.fromEntries(
-            Object.entries(themeSummary.matched)
-              .filter(([, provenance]) => provenance.startsWith("--"))
-              .map(([slot]) => [slot, String(themeSummary!.slots[slot as keyof ThemeSlotValues])]),
-          ),
-          evidencePaths: themeSummary.evidencePaths,
-        },
-      } : {}),
-      ...(options.extract ?? {}),
-    });
+    const flow = await runInstallSyncFlow({ root, output, options, pretty });
     const engineMs = Date.now() - engineStarted;
+    const { themeSummary, counts: { tools: toolCount, routes: routeCount } } = flow;
 
     // Theme finalization (Task 4): merge whatever the AI pass filled — if
-    // consent was declined or unavailable, `polish.theme` is simply absent
+    // consent was declined or unavailable, `flow.themeDraft` is simply null
     // and the exact-only summary stands — then --theme answers (a human
     // "(you)" wins over a model value), the one-glance palette print, and
     // finally the uncertain-slot review. Skipped entirely when theme.json
-    // pre-existed this run (nothing above ran either).
-    if (themeCreatedThisRun && themeSummary !== null) {
-      const summary = polish.theme === undefined ? themeSummary : applyThemeDraft(themeSummary, polish.theme);
-      // --theme answers land first; the review prompt then covers only the
-      // uncertain slots the flags left unanswered (non-interactive runs keep
-      // the extracted/merged values for those, exactly as before).
-      const answers: Record<string, string> = { ...(options.themeAnswers ?? {}) };
-      const unanswered = summary.uncertain.filter((entry) => !Object.hasOwn(answers, entry.slot));
-      if (unanswered.length > 0 && options.yes !== true) {
-        const reviewed = await (options.themeReview ?? defaultThemeReview)(
-          unanswered.length === summary.uncertain.length ? summary : { ...summary, uncertain: unanswered },
-        );
-        for (const [slot, raw] of Object.entries(reviewed)) {
-          if (!Object.hasOwn(answers, slot)) answers[slot] = raw;
-        }
-      }
-      if (Object.keys(answers).length > 0) {
-        for (const [slot, raw] of Object.entries(answers)) {
-          if (!Object.hasOwn(summary.slots, slot)) {
-            output.error(`ignored unknown theme slot ${JSON.stringify(slot)}`);
-            continue;
-          }
-          const value = validateSlotValue(slot as keyof ThemeSlotValues, raw);
-          if (value === null) {
-            output.error(`ignored invalid theme ${slot} value ${JSON.stringify(raw)}`);
-          } else {
-            (summary.slots as unknown as Record<string, string>)[slot] = value;
-            summary.matched[slot] = "(you)";
-            // The slot no longer defaulted — the human just set it.
-            summary.defaulted = summary.defaulted.filter((name) => name !== slot);
-          }
-        }
-        // A replaced accent invalidates an accentText nobody chose — one that
-        // was contrast-derived, or still the neutral default because the
-        // model omitted the accent too. Re-derive against the new accent; an
-        // explicit token or a direct human/model answer stays authoritative.
-        const accentTextUnchosen = summary.matched["accentText"] === "(contrast) accent"
-          || summary.defaulted.includes("accentText");
-        if (summary.matched["accent"] === "(you)" && accentTextUnchosen) {
-          summary.slots.accentText = contrastingText(summary.slots.accent);
-          summary.matched["accentText"] = "(contrast) accent";
-          summary.defaulted = summary.defaulted.filter((name) => name !== "accentText");
-        }
-      }
-      await writeText(themePath, `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
-      printThemeSummary(summary, output);
+    // pre-existed this run (the flow reconciles that one instead).
+    if (themeSummary !== null) {
+      await finalizeTheme({ themeSummary, themeDraft: flow.themeDraft, themePath, options, output });
     }
 
     // Judgment state, one line: a pass that ran already narrated itself (it
     // owns the judged/queued/rejected counts); otherwise say so honestly.
-    if (!polish.ran) {
-      output.log("judgment: structural-only — extraction grades stand (add a model key and run `vendo sync` to judge the catalog)");
+    if (!flow.judged.ran) {
+      output.log("judgment: structural-only — only protocol facts are graded, so every ungraded tool asks on each call (add a model key and run `vendo sync` to grade the catalog)");
     }
 
     // Project-shape enrichment (posthog-analytics §3): bools, closed enums,
@@ -1310,7 +1396,7 @@ export async function runInit(options: InitOptions): Promise<number> {
       typescript: await exists(join(root, "tsconfig.json")),
       router: await detectRouter(root, plan.framework),
       // The engine that actually ran the AI polish; "none" when it didn't run.
-      engine: polish.engine ?? "none",
+      engine: flow.judged.engine ?? "none",
       // route-scan today; "zod" is reserved for a future oracle-backed detect
       // (the zod collector currently enriches route-scan output invisibly).
       apiDetectMethod: routeCount > 0 ? "route-scan" : "none",
@@ -1321,36 +1407,12 @@ export async function runInit(options: InitOptions): Promise<number> {
       // every one of them in the anonymous lane.
       detectMs,
       engineMs,
-      ...(themeMs === undefined ? {} : { themeMs }),
+      ...(flow.themeMs === undefined ? {} : { themeMs: flow.themeMs }),
       wiringMs,
       ...(await cloudProjectProps(root)),
     });
 
-    // The credential's runtime provider must be resolvable from the host or
-    // the FIRST turn 500s (dev-creds/model.ts loads it host-side; nothing
-    // declares @ai-sdk/* — 0.4.1 E2E cert finding). Install exactly what the
-    // resolved credential needs; a failure degrades to the manual command.
-    await ensureProviderDeps({
-      root,
-      credential,
-      output,
-      ...(options.installProvider === undefined ? {} : { run: options.installProvider }),
-    });
-
-    // FINDINGS F2 (skateshop): a host pinning zod < 3.25 builds red once the
-    // wiring pulls ai@6 into the bundle (ai imports the zod/v3 + zod/v4
-    // subpaths that arrive in 3.25, and the host's own pin wins the installed
-    // tree). Ask-and-bump with the auth confirm's interactivity posture:
-    // --yes performs the announced bump, non-interactive prints the command.
-    await ensureZodFloor({
-      root,
-      output,
-      ...(options.yes === true ? { yes: true } : {}),
-      ...(options.yes === true || !interactive
-        ? {}
-        : { confirm: options.confirmZodBump ?? (pretty === null ? askYesNo : pretty.confirm) }),
-      ...(options.installZod === undefined ? {} : { run: options.installZod }),
-    });
+    await ensureHostDeps({ root, output, options, pretty, interactive, credential });
 
     // The one short Cloud reminder in the end-of-run summary — ONLY while no
     // key exists (the full emphasized block already ran up top; no repeat).
@@ -1366,33 +1428,8 @@ export async function runInit(options: InitOptions): Promise<number> {
       output.error(`warning: installed ai@${aiVersion} is unsupported — Vendo supports ai@6; downgrade (npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3) or track github.com/runvendo/vendo/issues/478`);
     }
 
-    // Done — whatever paste remains (none when the layout auto-wire landed),
-    // then their own dev server.
-    if (layout.kind === "wired") {
-      output.log(`\nMounted <VendoRoot> + <VendoOverlay /> (the visible launcher + panel) in ${layout.layoutPath} — review the diff before committing.`);
-    }
-    if (manualSteps.length > 0) {
-      output.log("\nLast steps are yours:");
-      for (const line of manualSteps) output.log(`  ${line}`);
-    }
-    // A run without a USABLE model credential is wired but not answering, so
-    // the closing line must not claim otherwise. The rung alone is not that
-    // answer: resolveDevCredential only checks that VENDO_API_KEY is non-blank
-    // (and VENDO_DEV_CREDENTIAL=vendo-cloud pins the rung with no key at all),
-    // so a malformed key resolves "vendo-cloud" while the cloud step — the one
-    // thing that inspected the key — already said it is not usable. Keyless,
-    // the composition decides: one written THIS run passes no model, so "no
-    // key" is the whole story, while one init did not write may pass its own
-    // `model` to createVendo — nothing here can see that, so state the
-    // condition rather than guess either way.
-    const modelReady = credential.rung === "env-key"
-      || (credential.rung === "vendo-cloud" && cloud.keyValid);
-    output.log(`\nThen start your dev server — ${modelReady
-      ? "the agent is live in your app."
-      : compositionPath !== null
-        ? "the agent is live once you add a model key."
-        : "no model key resolved here, so the agent is live only if your composition passes its own model."}`);
-    output.log("Verify everything: `npx vendo doctor` (it can start the server and run a live turn).");
+    const handSteps = [...(mount === null ? [] : [mount]), ...edits];
+    printClosingSteps({ output, handSteps, manualSteps, credential, cloud, compositionPath });
 
     // Agent tail (agent-install-dx): the --yes-or-non-TTY path is agent-driven
     // — the run's FINAL block is the repo-specific pointers an agent parses.
@@ -1400,40 +1437,20 @@ export async function runInit(options: InitOptions): Promise<number> {
     // never reaches here (its read-only JSON plan returned above).
     if (options.yes === true || !interactive) {
       output.log("\nAgent tail:");
-      const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired, layout, cloudKeyMissing: credential.rung === "none" });
+      const tail = await agentTailLines({ root, framework: plan.framework, compositionPath, authWired, layout, edits, cloudKeyMissing: credential.rung === "none" });
       for (const line of tail) output.log(`  ${line}`);
     } else {
-      // Star ask (agent-install-dx §CLI-5): the interactive success screen
-      // ends with ONE consent question — never shown non-interactively (the
-      // playbook owns the agent-path ask; deterministic runs stay that way),
-      // and never fatal: nothing in this step can change init's exit code.
-      // Yes stars via gh; any failure degrades to the repo URL, one line.
-      // No does nothing — no guilt text.
-      try {
-        // Consent guard: an unshown prompt is NEVER a yes. On a non-TTY
-        // stdin (programmatic `interactive: true`, `init < file`) both real
-        // confirms would resolve the default — pretty.confirm returns it,
-        // askYesNo would block — and starring is an account action, so the
-        // answer without a real keyboard is false, regardless of path.
-        const confirmStar = options.confirmStar
-          ?? (async (question: string, defaultYes: boolean) =>
-            stdin.isTTY === true
-              ? (pretty === null ? askYesNo : pretty.confirm)(question, defaultYes)
-              : false);
-        if (await confirmStar(`Star ${STAR_REPO} to support the project?`, true)) {
-          const starred = await starViaGh(
-            options.spawnStar ?? ((command, args) => spawn(command, args, { stdio: "ignore" })),
-          );
-          if (!starred) output.log(`Star it anytime: ${STAR_LINK}`);
-          // Star attribution: `starred` is an exact star-from-the-CLI signal
-          // (closed outcome enum; counts-and-enums promise holds).
-          await telemetry.track("star_prompt", { outcome: starred ? "starred" : "star-failed" });
-        } else {
-          await telemetry.track("star_prompt", { outcome: "declined" });
-        }
-      } catch {
-        // The ask is best-effort by design; init already succeeded.
-      }
+      await askForStar({ options, pretty, output, telemetry });
+    }
+    // The run's LAST word is the outstanding paste, on both paths (self-serve
+    // audit F5: interactive installs used to end on the star ask with the one
+    // step that matters scrolled off-screen). The frame itself stays up-screen
+    // — the agent tail's "the lines above" pointers depend on that order — so
+    // the closer is a one-line echo of it, not a second copy.
+    if (handSteps.length > 0) {
+      output.log(handSteps.length === 1
+        ? `\n→ Don't forget the paste in ${handSteps[0]!.file} (frame above)`
+        : `\n→ Don't forget the ${handSteps.length} pastes above (frame above)`);
     }
     pretty?.done(Date.now() - started, true);
     return 0;

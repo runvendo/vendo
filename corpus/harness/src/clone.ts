@@ -1,9 +1,9 @@
-import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { cp, mkdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ManifestEntry } from "./manifest.js";
+import { runCommand, type CommandResult } from "./process.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
 export type CloneRepo = Pick<ManifestEntry, "name" | "gitUrl" | "pinnedSha" | "localPath">;
@@ -12,12 +12,6 @@ export interface EnsureRepoCheckoutOptions {
   context?: CorpusRunContext;
   gitBin?: string;
   workspaceRoot?: string;
-}
-
-interface CommandResult {
-  code: number | null;
-  stdout: string;
-  stderr: string;
 }
 
 interface FetchAttempt {
@@ -29,27 +23,17 @@ interface FetchAttempt {
 const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 
 function runGit(gitBin: string, args: readonly string[], cwd: string): Promise<CommandResult> {
-  return new Promise((resolve, reject) => {
-    const targetDir = args[0] === "-C" && args[1] ? args[1] : cwd;
-    const child = spawn(gitBin, args, {
-      cwd,
-      env: {
-        ...process.env,
-        // All corpus clones are direct children of .repos. Even if a caller
-        // forgets the toplevel identity check, Git must not discover beyond
-        // that cache boundary.
-        GIT_CEILING_DIRECTORIES: realpathSync(path.dirname(targetDir)),
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
+  const targetDir = args[0] === "-C" && args[1] ? args[1] : cwd;
+  return runCommand(gitBin, {
+    args,
+    cwd,
+    env: {
+      ...process.env,
+      // All corpus clones are direct children of .repos. Even if a caller
+      // forgets the toplevel identity check, Git must not discover beyond
+      // that cache boundary.
+      GIT_CEILING_DIRECTORIES: realpathSync(path.dirname(targetDir)),
+    },
   });
 }
 

@@ -159,10 +159,10 @@ async function readTurnStream(
 /** Human-facing list of what a Cloud key unlocks over OSS single-player. Shown
  *  whether or not a key is present, so a keyless dev sees the offer. */
 export const CLOUD_UNLOCKS: readonly string[] = [
-  "a free dev-mode starter model allowance (keyless first turns)",
+  "a free starter model allowance (keyless first turns)",
   "team sharing and org governance (roles, SSO)",
   "hosted deploys of your enabled automations",
-  "registry publishing and hosted infrastructure defaults like the managed MCP broker",
+  "registry publishing, and hosted defaults for the adapter slots you leave unset (managed inference, the sandbox pool, the hosted store, the connections broker)",
 ];
 
 export interface CloudDoctorResult {
@@ -215,16 +215,28 @@ function defaultSpawnDev(packageManager: string, root: string): ChildProcess {
   return spawn(packageManager, ["run", "dev"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
 }
 
-async function waitForStatus(statusUrl: string, fetchImpl: typeof fetch, timeoutMs: number): Promise<boolean> {
+/** `abandon` settles when the caller no longer wants an answer (the spawn
+    failed). Without it the loop outlives the race it lost and its ref'd poll
+    timer keeps node alive for the whole timeout — the CLI prints its verdict
+    and then sits there, because bin/vendo.mjs only sets `process.exitCode`. */
+async function waitForStatus(
+  statusUrl: string,
+  fetchImpl: typeof fetch,
+  timeoutMs: number,
+  abandon: Promise<unknown>,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+  let abandoned = false;
+  void abandon.then(() => { abandoned = true; });
+  while (!abandoned && Date.now() < deadline) {
     try {
       const response = await fetchImpl(`${statusUrl}/status`);
       if (response.ok) return true;
     } catch {
       // not up yet
     }
-    await new Promise((resolve) => setTimeout(resolve, 750));
+    if (abandoned) break;
+    await Promise.race([new Promise((resolve) => setTimeout(resolve, 750)), abandon]);
   }
   return false;
 }
@@ -263,7 +275,7 @@ export async function startDevServerForProbe(options: StartDevServerOptions): Pr
     child.unref?.(); // injected test doubles may not implement it
   };
   const up = await Promise.race([
-    waitForStatus(options.statusUrl, fetchImpl, options.timeoutMs ?? 120_000),
+    waitForStatus(options.statusUrl, fetchImpl, options.timeoutMs ?? 120_000, spawnFailed),
     spawnFailed,
   ]);
   if (!up) stop();

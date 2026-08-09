@@ -41,6 +41,10 @@ const POLICY = {
   rules: [
     { match: { risk: "read" }, action: "run" },
     { match: { risk: "write" }, action: "run" },
+    // A freshly synced catalog nobody has judged is `ungraded`, which the
+    // guard asks about by default; this host says in writing that it runs
+    // them, which is exactly the escape hatch D3 leaves open.
+    { match: { risk: "ungraded" }, action: "run" },
     { match: { risk: "destructive" }, action: "ask" },
   ],
 } as const;
@@ -80,11 +84,12 @@ describe("J8: OpenAPI sync produces tools.json whose tools are callable over the
     expect(toolsFile.format).toBe("vendo/tools@3");
     const byName = new Map(toolsFile.tools.map((tool) => [tool.name, tool]));
 
-    // The read + write invoice tools were extracted straight from the spec.
+    // Both invoice tools were extracted straight from the spec. Neither GET
+    // nor POST is a protocol fact about risk, so no judge run means ungraded.
     const listInvoices = byName.get("host_listInvoices");
-    expect(listInvoices?.risk).toBe("read");
+    expect(listInvoices?.risk).toBe("ungraded");
     expect(listInvoices?.binding.path).toBe("/api/invoices");
-    expect(byName.get("host_createInvoice")?.risk).toBe("write");
+    expect(byName.get("host_createInvoice")?.risk).toBe("ungraded");
     // Every extracted tool name is contract-legal.
     expect(toolsFile.tools.every((tool) => /^[a-zA-Z0-9_-]{1,64}$/.test(tool.name))).toBe(true);
 

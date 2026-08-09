@@ -3,23 +3,30 @@
  * theme variable with a porcelain default — so a Kit component is brand-native
  * on any host and never hardcodes Vendo's own brand (W2 §The Kit, axis 1).
  */
+import { defaultVendoTheme } from "@vendoai/core";
 import type { CSSProperties } from "react";
 
+/** Every fallback is READ OFF `defaultVendoTheme` rather than retyped, because
+ * the retyped copy had drifted: surface and background were swapped (an
+ * unthemed Kit painted a white page with off-white cards INVERTED), and
+ * fontFamily had lost the brand stack. */
+const d = defaultVendoTheme;
+
 export const t = {
-  text: "var(--vendo-color-text, #1a1a1e)",
-  muted: "var(--vendo-color-muted, #6b6b76)",
-  surface: "var(--vendo-color-surface, #ffffff)",
-  background: "var(--vendo-color-background, #f7f7f8)",
-  accent: "var(--vendo-color-accent, #111111)",
-  accentText: "var(--vendo-color-accent-text, #ffffff)",
-  danger: "var(--vendo-color-danger, #c62f2f)",
-  border: "var(--vendo-color-border, #e3e3e8)",
-  radiusSmall: "var(--vendo-radius-small, 6px)",
-  radiusMedium: "var(--vendo-radius-medium, 10px)",
-  radiusLarge: "var(--vendo-radius-large, 16px)",
-  fontFamily: "var(--vendo-font-family, system-ui, sans-serif)",
-  headingFamily: "var(--vendo-heading-family, var(--vendo-font-family, system-ui, sans-serif))",
-  fontSize: "var(--vendo-font-size, 15px)",
+  text: `var(--vendo-color-text, ${d.colors.text})`,
+  muted: `var(--vendo-color-muted, ${d.colors.muted})`,
+  surface: `var(--vendo-color-surface, ${d.colors.surface})`,
+  background: `var(--vendo-color-background, ${d.colors.background})`,
+  accent: `var(--vendo-color-accent, ${d.colors.accent})`,
+  accentText: `var(--vendo-color-accent-text, ${d.colors.accentText})`,
+  danger: `var(--vendo-color-danger, ${d.colors.danger})`,
+  border: `var(--vendo-color-border, ${d.colors.border})`,
+  radiusSmall: `var(--vendo-radius-small, ${d.radius.small})`,
+  radiusMedium: `var(--vendo-radius-medium, ${d.radius.medium})`,
+  radiusLarge: `var(--vendo-radius-large, ${d.radius.large})`,
+  fontFamily: `var(--vendo-font-family, ${d.typography.fontFamily})`,
+  headingFamily: `var(--vendo-heading-family, var(--vendo-font-family, ${d.typography.fontFamily}))`,
+  fontSize: `var(--vendo-font-size, ${d.typography.baseSize})`,
   motionDuration: "var(--vendo-motion-duration, 160ms)",
   motionEasing: "var(--vendo-motion-easing, cubic-bezier(0.2, 0.8, 0.2, 1))",
 } as const;
@@ -46,10 +53,10 @@ export const control: CSSProperties = {
 /** Recharts-friendly categorical palette derived from the host accent. */
 export const chartSeries = [
   t.accent,
-  "color-mix(in srgb, var(--vendo-color-accent, #111111) 55%, var(--vendo-color-surface, #ffffff))",
-  "color-mix(in srgb, var(--vendo-color-accent, #111111) 30%, var(--vendo-color-surface, #ffffff))",
-  "var(--vendo-color-muted, #6b6b76)",
-  "color-mix(in srgb, var(--vendo-color-danger, #c62f2f) 70%, var(--vendo-color-accent, #111111))",
+  `color-mix(in srgb, ${t.accent} 55%, ${t.surface})`,
+  `color-mix(in srgb, ${t.accent} 30%, ${t.surface})`,
+  t.muted,
+  `color-mix(in srgb, ${t.danger} 70%, ${t.accent})`,
 ] as const;
 
 /** Nth series color, wrapping. */

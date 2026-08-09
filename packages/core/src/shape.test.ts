@@ -1,99 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  deriveShapeCard,
-  describeShape,
-  shapeAtPointer,
-  shapeCardSchema,
-  type ShapeType,
-} from "./shape.js";
-import type { Json } from "./ids.js";
-
-/** deriveShape/mergeShapes are internal; deriveShapeCard is their only
- *  production path, so derivation (single sample) and merging (multiple
- *  samples) are exercised through it. */
-const derived = (...samples: Json[]): ShapeType => deriveShapeCard("t", samples).output;
-
-/** v2 spec §3 — shape cards keep structure only; values are never stored. */
-describe("shape derivation (single-sample deriveShapeCard)", () => {
-  it("derives scalar kinds", () => {
-    expect(derived("hi")).toEqual({ kind: "string" });
-    expect(derived(3.5)).toEqual({ kind: "number" });
-    expect(derived(true)).toEqual({ kind: "boolean" });
-    expect(derived(null)).toEqual({ kind: "null" });
-  });
-
-  it("derives objects field-by-field, preserving field order", () => {
-    expect(derived({ month: "Jan", revenue: 1200 })).toEqual({
-      kind: "object",
-      fields: { month: { kind: "string" }, revenue: { kind: "number" } },
-    });
-  });
-
-  it("derives nested structures", () => {
-    expect(derived({ rows: [{ id: 1 }] })).toEqual({
-      kind: "object",
-      fields: {
-        rows: { kind: "array", items: { kind: "object", fields: { id: { kind: "number" } } } },
-      },
-    });
-  });
-
-  it("merges array element shapes across elements (missing fields become optional)", () => {
-    expect(derived([{ a: 1, b: "x" }, { a: 2 }])).toEqual({
-      kind: "array",
-      items: {
-        kind: "object",
-        fields: { a: { kind: "number" }, b: { kind: "string" } },
-        optional: ["b"],
-      },
-    });
-  });
-
-  it("derives an empty array's items as json (unknown)", () => {
-    expect(derived([])).toEqual({ kind: "array", items: { kind: "json" } });
-  });
-
-  it("degrades non-Json values (undefined, functions) to json instead of throwing", () => {
-    expect(derived(undefined)).toEqual({ kind: "json" });
-    expect(derived(() => 1)).toEqual({ kind: "json" });
-  });
-
-  it("caps derivation depth: pathologically deep samples degrade to json, never overflow", () => {
-    let deep: unknown = 1;
-    for (let i = 0; i < 10_000; i += 1) deep = { next: deep };
-    const shape = derived(deep);
-    expect(shape.kind).toBe("object");
-    expect(JSON.stringify(shape)).toContain('"json"');
-  });
-});
-
-describe("shape merging (multi-sample deriveShapeCard)", () => {
-  it("merges identical scalar kinds to themselves", () => {
-    expect(derived("a", "b")).toEqual({ kind: "string" });
-  });
-
-  it("degrades mismatched kinds to json", () => {
-    expect(derived("a", 1)).toEqual({ kind: "json" });
-    expect(derived({}, [])).toEqual({ kind: "json" });
-  });
-
-  it("json absorbs everything", () => {
-    expect(derived(undefined, "a")).toEqual({ kind: "json" });
-    expect(derived("a", undefined)).toEqual({ kind: "json" });
-  });
-
-  it("merges objects field-wise, marking one-sided fields optional across samples", () => {
-    expect(derived({ a: 1, b: "x" }, { a: 2 }, { a: 3, c: true })).toEqual({
-      kind: "object",
-      fields: { a: { kind: "number" }, b: { kind: "string" }, c: { kind: "boolean" } },
-      optional: ["b", "c"],
-    });
-  });
-
-  it("merges arrays item-wise", () => {
-    expect(derived([1], [2])).toEqual({ kind: "array", items: { kind: "number" } });
-  });
-});
+import { describeShape, shapeAtPointer, shapeFromJsonSchema, type ShapeType } from "./shape.js";
+import type { JsonSchema } from "./ids.js";
 
 describe("shapeAtPointer", () => {
   const shape: ShapeType = {
@@ -160,48 +67,114 @@ describe("describeShape", () => {
     expect(text).toContain("…");
     expect(text.length).toBeLessThan(2_000);
   });
+
+  it("renders a declared enum as its values, not as the bare kind", () => {
+    expect(describeShape({ kind: "string", enum: ["paid", "void"] })).toBe('"paid" | "void"');
+    expect(describeShape({
+      kind: "object",
+      fields: { status: { kind: "string", enum: ["open"] }, total: { kind: "number" } },
+    })).toBe('{ status: "open", total: number }');
+  });
 });
 
-describe("shape cards", () => {
-  it("deriveShapeCard merges multiple recorded samples", () => {
-    const card = deriveShapeCard("metrics.revenue", [
-      { rows: [{ month: "Jan", revenue: 1 }] },
-      { rows: [{ month: "Feb", revenue: 2, note: "promo" }] },
-    ]);
-    expect(card.tool).toBe("metrics.revenue");
-    expect(card.source).toBe("sample");
-    expect(card.output).toEqual({
+describe("shapeFromJsonSchema", () => {
+  it("converts scalars, arrays and objects, marking non-required fields optional", () => {
+    expect(shapeFromJsonSchema({ type: "string" })).toEqual({ kind: "string" });
+    expect(shapeFromJsonSchema({ type: "integer" })).toEqual({ kind: "number" });
+    expect(shapeFromJsonSchema({
+      type: "object",
+      properties: {
+        rows: { type: "array", items: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+        note: { type: "string" },
+      },
+      required: ["rows"],
+    })).toEqual({
       kind: "object",
       fields: {
-        rows: {
-          kind: "array",
-          items: {
-            kind: "object",
-            fields: {
-              month: { kind: "string" },
-              revenue: { kind: "number" },
-              note: { kind: "string" },
-            },
-            optional: ["note"],
-          },
-        },
+        rows: { kind: "array", items: { kind: "object", fields: { id: { kind: "string" } } } },
+        note: { kind: "string" },
       },
+      optional: ["note"],
     });
   });
 
-  it("deriveShapeCard with no samples yields an unknown (json) output", () => {
-    expect(deriveShapeCard("metrics.revenue", []).output).toEqual({ kind: "json" });
+  it("keeps enum and const values on the scalar branch", () => {
+    expect(shapeFromJsonSchema({ type: "string", enum: ["paid", "void"] }))
+      .toEqual({ kind: "string", enum: ["paid", "void"] });
+    expect(shapeFromJsonSchema({ const: 7 })).toEqual({ kind: "number", enum: [7] });
   });
 
-  it("shapeCardSchema accepts a derived card and rejects malformed ones", () => {
-    const card = deriveShapeCard("payments.list", [{ items: [] }], "2026-07-18T00:00:00Z");
-    expect(card.sampledAt).toBe("2026-07-18T00:00:00Z");
-    expect(shapeCardSchema.safeParse(card).success).toBe(true);
-    expect(shapeCardSchema.safeParse({ tool: "t" }).success).toBe(false);
-    expect(shapeCardSchema.safeParse({
-      tool: "t",
-      output: { kind: "wat" },
-      source: "sample",
-    }).success).toBe(false);
+  it("intersects allOf branches, keeping their enums and required fields", () => {
+    expect(shapeFromJsonSchema({
+      allOf: [
+        {
+          type: "object",
+          properties: { id: { type: "string" }, status: { type: "string", enum: ["posted", "pending"] }, notes: { type: "string" } },
+          required: ["id", "status"],
+        },
+        { type: "object", properties: { actor: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } } },
+      ],
+    })).toEqual({
+      kind: "object",
+      fields: {
+        id: { kind: "string" },
+        status: { kind: "string", enum: ["posted", "pending"] },
+        notes: { kind: "string" },
+        actor: { kind: "object", fields: { name: { kind: "string" } } },
+      },
+      optional: ["notes", "actor"],
+    });
+  });
+
+  it("intersects sibling properties with the allOf branches", () => {
+    expect(shapeFromJsonSchema({
+      type: "object",
+      properties: { total: { type: "number" } },
+      required: ["total"],
+      allOf: [{ type: "object", properties: { id: { type: "string" } }, required: ["id"] }],
+    })).toEqual({ kind: "object", fields: { id: { kind: "string" }, total: { kind: "number" } } });
+  });
+
+  it("degrades an allOf with a non-object member whole", () => {
+    expect(shapeFromJsonSchema({ allOf: [{ type: "object", properties: { id: { type: "string" } } }, { type: "string" }] }))
+      .toEqual({ kind: "json" });
+    // An unmodelled member is not a constraint either: better unconstrained
+    // than confidently narrow.
+    expect(shapeFromJsonSchema({
+      allOf: [{ type: "object", properties: { id: { type: "string" } } }, { anyOf: [{ type: "string" }, { type: "number" }] }],
+    })).toEqual({ kind: "json" });
+  });
+
+  it("treats a constraint-only allOf branch as a constraint, not an erasure", () => {
+    // The standard OpenAPI idiom: one branch describes, the next only tightens.
+    expect(shapeFromJsonSchema({
+      allOf: [
+        { type: "object", properties: { id: { type: "string" }, note: { type: "string" } } },
+        { required: ["id"] },
+      ],
+    })).toEqual({
+      kind: "object",
+      fields: { id: { kind: "string" }, note: { kind: "string" } },
+      optional: ["note"],
+    });
+    expect(shapeFromJsonSchema({
+      allOf: [{ type: "object", properties: { id: { type: "string" } }, required: ["id"] }, { additionalProperties: false }],
+    })).toEqual({ kind: "object", fields: { id: { kind: "string" } } });
+  });
+
+  it("degrades an allOf of constraints alone rather than closing an empty object", () => {
+    expect(shapeFromJsonSchema({ allOf: [{ required: ["id"] }] })).toEqual({ kind: "json" });
+  });
+
+  it("degrades unmodelled constructs to json instead of throwing", () => {
+    expect(shapeFromJsonSchema({})).toEqual({ kind: "json" });
+    expect(shapeFromJsonSchema({ anyOf: [{ type: "string" }, { type: "number" }] })).toEqual({ kind: "json" });
+    expect(shapeFromJsonSchema({ type: "array" })).toEqual({ kind: "array", items: { kind: "json" } });
+  });
+
+  it("caps conversion depth instead of overflowing", () => {
+    let schema: JsonSchema = { type: "string" };
+    for (let index = 0; index < 10_000; index += 1) schema = { type: "object", properties: { next: schema } };
+    expect(JSON.stringify(shapeFromJsonSchema(schema))).toContain('"json"');
   });
 });

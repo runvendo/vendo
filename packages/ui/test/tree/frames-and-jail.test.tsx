@@ -32,19 +32,53 @@ describe("AppFrame", () => {
     expect(same.getAttribute("sandbox")).not.toContain("allow-same-origin");
   });
 
+  it("fits the served app's reported height, inside the host's bounds", () => {
+    // ONE resize protocol: the served app reports the same `{vendo, kind, height}`
+    // the jail runtime does, and the http frame honours it through the same
+    // shared gate/clamp (tree/frame-resize.ts).
+    render(<AppFrame surface={{ kind: "http", url: "https://machine.invalid/app" }} />);
+    const frame = screen.getByTitle("Vendo app") as HTMLIFrameElement;
+
+    window.dispatchEvent(new MessageEvent("message", {
+      source: frame.contentWindow,
+      data: { vendo: true, kind: "resize", height: 640 },
+    }));
+    expect(frame.style.height).toBe("640px");
+
+    // The host's slot is a constraint the app lives inside, never overrides.
+    frame.style.maxHeight = "420px";
+    window.dispatchEvent(new MessageEvent("message", {
+      source: frame.contentWindow,
+      data: { vendo: true, kind: "resize", height: 3_000 },
+    }));
+    expect(frame.style.height).toBe("420px");
+  });
+
+  it("ignores a resize from any window other than the app's own frame", () => {
+    render(<AppFrame surface={{ kind: "http", url: "https://machine.invalid/app" }} />);
+    const frame = screen.getByTitle("Vendo app") as HTMLIFrameElement;
+
+    window.dispatchEvent(new MessageEvent("message", {
+      source: window,
+      data: { vendo: true, kind: "resize", height: 2_000 },
+    }));
+    expect(frame.style.height).toBe("");
+  });
+
   it("pings on user activity, throttled to the keepalive interval (Wave 7 H2)", async () => {
     vi.useFakeTimers();
     try {
       const ping = vi.fn(async () => ({ state: "awake" as const }));
-      const reopen = vi.fn(async () => undefined);
       render(
         <AppFrame
           surface={{ kind: "http", url: "https://machine.invalid/app" }}
-          keepalive={{ ping, reopen, intervalMs: 1_000 }}
+          keepalive={{ ping, intervalMs: 1_000 }}
         />,
       );
-      // Idle: ticks pass with no activity → no ping (nothing keeps an unused
-      // machine awake).
+      // Idle: ticks pass with no activity → no ping. NOTHING KEEPS AN UNUSED
+      // MACHINE AWAKE — a sandbox machine is paid for by the second, so an
+      // embed nobody is using must be allowed to sleep. A tab left open is not
+      // use.
       await vi.advanceTimersByTimeAsync(3_000);
       expect(ping).not.toHaveBeenCalled();
       // Host-page activity → one ping on the next tick, then throttled.
@@ -53,44 +87,50 @@ describe("AppFrame", () => {
       expect(ping).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(2_000);
       expect(ping).toHaveBeenCalledTimes(1);
-      expect(reopen).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("a woke ping shows the resuming cover and re-opens the surface once (Wave 7 H2)", async () => {
+  it("counts focus inside the cross-origin frame as activity (Wave 7 H2)", async () => {
     vi.useFakeTimers();
     try {
-      const ping = vi.fn(async () => ({ state: "woke" as const }));
-      let resolveReopen = () => undefined as void;
-      const reopen = vi.fn(() => new Promise<void>((resolve) => { resolveReopen = () => resolve(); }));
-      const { rerender } = render(
+      // Activity INSIDE the frame is invisible to the host page, so the frame
+      // holding focus is the only observable signal that someone is using it.
+      const ping = vi.fn(async () => ({ state: "awake" as const }));
+      render(
         <AppFrame
           surface={{ kind: "http", url: "https://machine.invalid/app" }}
-          keepalive={{ ping, reopen, intervalMs: 1_000 }}
+          keepalive={{ ping, intervalMs: 1_000 }}
+        />,
+      );
+      (screen.getByTitle("Vendo app") as HTMLIFrameElement).focus();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(ping).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a woke ping is not the frame's problem: no cover, no re-open (URLs are stable)", async () => {
+    vi.useFakeTimers();
+    try {
+      // The machine slept and woke. With a stable proxy URL the frame's address
+      // never changed, so there is nothing to re-open and nothing to cover — the
+      // live embed stays under the user.
+      const ping = vi.fn(async () => ({ state: "woke" as const }));
+      render(
+        <AppFrame
+          surface={{ kind: "http", url: "https://machine.invalid/app" }}
+          keepalive={{ ping, intervalMs: 1_000 }}
         />,
       );
       fireEvent.pointerDown(window);
       await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
-      expect(reopen).toHaveBeenCalledTimes(1);
-      // While the re-open is in flight, the EXISTING wake/loading state
-      // replaces the stale iframe — no dead embed under the user.
-      expect(screen.getByLabelText("Vendo app resuming")).toBeTruthy();
-      expect(screen.queryByTitle("Vendo app")).toBeNull();
-      // The re-open lands a fresh surface URL; the frame comes back on it.
-      await act(async () => {
-        resolveReopen();
-        await vi.advanceTimersByTimeAsync(0);
-      });
-      rerender(
-        <AppFrame
-          surface={{ kind: "http", url: "https://machine.invalid/app2" }}
-          keepalive={{ ping, reopen, intervalMs: 1_000 }}
-        />,
-      );
+      expect(ping).toHaveBeenCalledTimes(1);
+      expect(screen.queryByLabelText("Vendo app resuming")).toBeNull();
       const frame = screen.getByTitle("Vendo app") as HTMLIFrameElement;
-      expect(frame.src).toBe("https://machine.invalid/app2");
+      expect(frame.src).toBe("https://machine.invalid/app");
     } finally {
       vi.useRealTimers();
     }
@@ -107,7 +147,7 @@ describe("AppFrame", () => {
 
   it("uses a skeleton when the resuming cover is absent", () => {
     render(<AppFrame surface={{ kind: "resuming" }} />);
-    expect(document.querySelector('[data-primitive="Skeleton"]')).not.toBeNull();
+    expect(document.querySelector('[data-skeleton]')).not.toBeNull();
   });
 
   it("dispatches tree surfaces through PayloadView", () => {
@@ -125,6 +165,49 @@ describe("AppFrame", () => {
       />,
     );
     expect(screen.getByText("Instant app")).toBeTruthy();
+  });
+
+  it("does not carry one app's $state into the next app mounted in its place", async () => {
+    // The same leak as the TreeView case, through the surface a host actually
+    // renders: both apps carry the compiler's synthetic `root`, so only `appId`
+    // separates them.
+    const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
+    const payload = (island: string) => ({
+      formatVersion: VENDO_TREE_FORMAT,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Row", children: ["generated", "probe"] },
+        { id: "generated", component: island, source: "generated" as const },
+        { id: "probe", component: "StateProbe", source: "host" as const, props: { value: { $state: "draft" } } },
+      ],
+      components: { [island]: `export default function ${island}() { return <div>editor</div> }` },
+    });
+
+    const view = render(
+      <AppFrame
+        appId="app_a"
+        surface={{ kind: "tree", payload: payload("EditorA") }}
+        components={{ StateProbe }}
+        onAction={ok}
+      />,
+    );
+    const iframe = screen.getByTitle("Generated component: EditorA") as HTMLIFrameElement;
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "state-set", key: "draft", value: "belongs to app A" },
+    }));
+    await waitFor(() => expect(screen.getByText("belongs to app A")).toBeTruthy());
+
+    view.rerender(
+      <AppFrame
+        appId="app_b"
+        surface={{ kind: "tree", payload: payload("EditorB") }}
+        components={{ StateProbe }}
+        onAction={ok}
+      />,
+    );
+    expect(screen.queryByText("belongs to app A")).toBeNull();
+    expect(screen.getByText("undefined")).toBeTruthy();
   });
 
   it("contains unknown surface kinds", () => {
@@ -242,6 +325,13 @@ describe("generated component jail structure", () => {
     expect(iframe.srcdoc).toContain('http-equiv="Content-Security-Policy"');
     expect(iframe.srcdoc).toContain("default-src 'none'");
     expect(iframe.srcdoc).toContain("connect-src 'none'");
+    // No nonce, ever. Generated code shares this document, so it can read a
+    // nonce off a script element and stamp its own remote <script> with it —
+    // and a nonce in script-src also makes `'unsafe-inline'` be ignored. Only
+    // with no nonce does the (empty) source list actually govern.
+    expect(iframe.srcdoc).toContain("script-src 'unsafe-inline' 'unsafe-eval'");
+    expect(iframe.srcdoc).not.toContain("'nonce-");
+    expect(iframe.srcdoc).not.toMatch(/<script[^>]*nonce/);
     expect((globalThis as Record<string, unknown>).__vendoHostExecuted).toBeUndefined();
     expect(document.querySelector("script")).toBeNull();
     expect(evalSpy).not.toHaveBeenCalled();
@@ -285,19 +375,27 @@ describe("generated component jail structure", () => {
 
     window.dispatchEvent(new MessageEvent("message", {
       source: iframe.contentWindow,
-      data: { kind: "resize", height: 1_400 },
+      data: { vendo: true, kind: "resize", height: 1_400 },
     }));
     expect(iframe.style.height).toBe("1400px");
 
     window.dispatchEvent(new MessageEvent("message", {
       source: iframe.contentWindow,
-      data: { kind: "resize", height: 280 },
+      data: { vendo: true, kind: "resize", height: 280 },
     }));
     expect(iframe.style.height).toBe("280px");
 
     window.dispatchEvent(new MessageEvent("message", {
       source: iframe.contentWindow,
-      data: { kind: "resize", height: 10_000 },
+      data: { vendo: true, kind: "resize", height: 10_000 },
+    }));
+    expect(iframe.style.height).toBe("8192px");
+
+    // Same protocol, same identity gate as the served app's http frame: only the
+    // frame we rendered may resize it (see tree/frame-resize.ts).
+    window.dispatchEvent(new MessageEvent("message", {
+      source: window,
+      data: { vendo: true, kind: "resize", height: 4_000 },
     }));
     expect(iframe.style.height).toBe("8192px");
   });
@@ -325,7 +423,7 @@ describe("generated component jail structure", () => {
 
     await waitFor(() => expect(screen.queryByTitle("Generated component: Partial")).toBeNull());
     expect(screen.queryByRole("note", { name: "Generated component error" })).toBeNull();
-    expect(document.querySelector('[data-primitive="Skeleton"]')).not.toBeNull();
+    expect(document.querySelector('[data-skeleton]')).not.toBeNull();
   });
 
   it("contains a generated component that renders no content", async () => {

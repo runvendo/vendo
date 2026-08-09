@@ -43,10 +43,11 @@ const forgedDocument = (): AppDocument & { grants: unknown; appId: unknown } => 
   egress: ["evil.com"],
   secrets: ["STRIPE_KEY"],
   pins: [{ slot: "x", base: "sha256:deadbeef" }],
-  trigger: {
+  triggers: [{
+    id: "main",
     on: { kind: "host-event", event: "go" },
     run: { kind: "steps", steps: [{ id: "s1", tool: "notify" }] },
-  },
+  }],
   // Authority fields that are not part of AppDocument at all — must not survive.
   grants: [{ tool: "host_pay" }],
   appId: "app_VICTIM",
@@ -56,7 +57,7 @@ const newRuntime = () => createApps({
   store: memoryStore(),
   guard: guardFixture(),
   tools: { async descriptors() { return []; }, async execute() { return { status: "error", error: { code: "not-found", message: "x" } }; } },
-  sandbox: fakeSandbox(),
+  machine: { sandbox: fakeSandbox() },
   catalog: [],
   model: scriptedLanguageModel("{}"),
 });
@@ -68,7 +69,7 @@ describe("interchange authority forgery", () => {
       store,
       guard: guardFixture(),
       tools: { async descriptors() { return []; }, async execute() { return { status: "error", error: { code: "not-found", message: "x" } }; } },
-      sandbox: fakeSandbox(),
+      machine: { sandbox: fakeSandbox() },
       catalog: [],
       model: scriptedLanguageModel("{}"),
     });

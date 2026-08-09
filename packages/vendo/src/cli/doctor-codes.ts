@@ -15,15 +15,18 @@ import { CLI_VERSION } from "./shared.js";
  */
 export const DOCTOR_ERROR_CODES = {
   "E-WIRE-001": "Express server is not wired with createVendo from @vendoai/vendo/server",
-  "E-WIRE-002": "Express client is not wrapped in <VendoRoot>",
+  "E-WIRE-002": "Express client is not wrapped in <VendoProvider>",
   "E-WIRE-003": "the Next.js catch-all handler app/api/vendo/[...vendo]/route.ts is missing",
-  "E-WIRE-004": "the Next.js root layout is not wrapped in <VendoRoot>",
+  "E-WIRE-004": "the Next.js root layout is not wrapped in <VendoProvider>",
   "E-WIRE-005": "the @vendoai/vendo (or vendoai alias) dependency is not declared",
-  "E-WIRE-006": "no visible agent surface is mounted (<VendoRoot> alone renders nothing)",
+  "E-WIRE-006": "no visible agent surface is mounted (<VendoProvider> alone renders nothing)",
   "E-WIRE-007": "no createVendo server wiring found in an unknown-framework host",
-  "E-WIRE-008": "no <VendoRoot> found in an unknown-framework host's source",
+  "E-WIRE-008": "no <VendoProvider> found in an unknown-framework host's source",
+  "E-WIRE-009": "detected \"use server\" actions are not registered or not wired into createVendo",
+  "E-WIRE-010": "the host still names the removed <VendoRoot> (swap it for <VendoProvider>)",
   "E-CFG-001": "a required .vendo/ config file is missing",
   "E-CFG-002": ".vendo/data/.gitignore is missing",
+  "E-CFG-003": "the OpenAPI spec's relative server mount and VENDO_BASE_URL's path prefix disagree",
   "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
   "E-DEP-002": "the running wire serves a different @vendoai/vendo version than this CLI (split-brain install)",
   "E-DEP-003": "the installed zod predates the zod/v3 + zod/v4 subpaths the AI SDK imports (zod < 3.25)",
@@ -57,6 +60,8 @@ export const DOCTOR_ERROR_CODES = {
   "E-CLOUD-001": "VENDO_API_KEY is set but not usable",
   "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
   "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
+  "E-TOOLS-003": "part of the tool catalog is ungraded (nobody has graded it, so it asks on every call)",
+  "E-TOOLS-004": "part of the tool catalog declares no request/response shape (the agent must pass whole outputs through / cannot know the arguments)",
 } as const;
 
 export type DoctorErrorCode = keyof typeof DOCTOR_ERROR_CODES;

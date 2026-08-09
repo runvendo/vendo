@@ -1,11 +1,11 @@
 ---
 title: "Tools from your API"
-description: "How Vendo sync extracts OpenAPI, tRPC, GraphQL, Next.js server actions, and host routes into .vendo/tools.json and runs them under guard."
+description: "How Vendo sync extracts OpenAPI, tRPC, Next.js server actions, and host routes into .vendo/tools.json and runs them under guard."
 ---
 
-Vendo sync extracts OpenAPI operations, tRPC procedures, GraphQL operations,
-Next.js server actions, and host routes into `.vendo/tools.json`, turning your
-API into a set of guarded tools. Extraction runs during build and development
+Vendo sync extracts OpenAPI operations, tRPC procedures, Next.js server
+actions, and host routes into `.vendo/tools.json`, turning your API into a set
+of guarded tools. Extraction runs during build and development
 so the tool surface never drifts from your API.
 
 ## How extraction works
@@ -60,13 +60,13 @@ each mount is detected independently.
 ```json
 {
   "name": "host_polls_delete",
-  "description": "polls.delete",
+  "description": "tRPC mutation polls.delete",
   "inputSchema": {
     "type": "object",
     "properties": { "id": { "type": "string" } },
     "required": ["id"]
   },
-  "risk": "write",
+  "risk": "destructive",
   "binding": {
     "kind": "trpc",
     "procedure": "polls.delete",
@@ -105,75 +105,7 @@ The extractor loads the TypeScript compiler from your app's own
 `node_modules`. If TypeScript is not available, tRPC extraction is skipped with
 a warning and no tRPC tools are emitted; extraction never fails your build.
 
-### GraphQL operations
-
-If your app serves a GraphQL API, sync extracts each query and mutation as its
-own tool. The extractor reads two static sources (no server runs) and picks
-up whichever your app uses:
-
-- **SDL files** (`.graphql`, `.gql`, `.graphqls`), including split schemas,
-  `schema { query: X }` root renames, `extend type`, enums, input objects,
-  custom scalars, and list or non-null wrappers. SDL is parsed with your app's
-  own `graphql` package.
-- **Code-first resolvers** using `@nestjs/graphql` or `type-graphql`.
-  `@Query`, `@Mutation`, and `@Subscription` methods are read from the
-  TypeScript source, along with `@Args`, `@InputType`, `@ObjectType`,
-  `@ArgsType`, `registerEnumType`, and custom scalars declared with
-  `new GraphQLScalarType({ name })` or `graphql-type-json`.
-
-```json
-{
-  "name": "host_polls_delete",
-  "description": "polls.delete",
-  "inputSchema": {
-    "type": "object",
-    "properties": { "id": { "type": "string" } },
-    "required": ["id"]
-  },
-  "risk": "destructive",
-  "binding": {
-    "kind": "graphql",
-    "operation": "delete",
-    "type": "mutation",
-    "endpoint": "/graphql",
-    "document": "mutation delete($id: ID!) { delete(id: $id) { __typename } }"
-  }
-}
-```
-
-Each binding records the operation name, its `query` or `mutation` type, the
-endpoint, and a full executable `document`. The document declares variables
-for every argument, marks optional or defaulted arguments as nullable so the
-agent can omit them, and uses a depth-limited default selection set with a
-`{ __typename }` floor. At runtime Vendo POSTs
-`{ query: document, variables: args }` to the endpoint and unwraps a single
-root field on success. A 200 response with a non-empty `errors` array surfaces
-as an http-error outcome.
-
-The extractor discovers the endpoint from Next route files hosting Yoga or
-Apollo handlers, from `GraphQLModule.forRoot*` `path` literals (including
-through `useFactory` cross-file resolution), and from `createYoga` endpoint
-literals. It falls back to `/graphql` when no literal is found.
-
-Risk labels follow the operation type. Queries are `read` only when the
-operation name reads like a fetch; anything else falls back to the conservative
-default. Mutations default to `write`, and the destructive word list can lift
-them to `destructive`, the same rules that apply to route and tRPC tools.
-
-Tool identity keys on the endpoint, the operation kind, and the operation
-name. GraphQL lets a query and a mutation share one field name across the two
-root types, so those stay two distinct tools; address them independently in
-[overrides](#durable-overrides).
-
-Some surfaces are always emitted as `disabled`. See [Disabled
-cases](#disabled-cases) for the full list.
-
-The GraphQL extractor loads both the `graphql` and TypeScript packages from
-your app's own `node_modules`. If either is missing, GraphQL extraction is
-skipped with a warning and no GraphQL tools are emitted; extraction never
-fails your build.
-
-### Next.js server actions
+### Next.js server actions {#next-js-server-actions}
 
 If your Next.js app declares server actions, sync extracts each exported
 action as its own tool. The extractor statically scans modules that begin with
@@ -183,8 +115,8 @@ tool.
 
 ```json
 {
-  "name": "host_actions_boards_delete_board",
-  "description": "actions/boards#deleteBoard",
+  "name": "host_delete_board",
+  "description": "server action app/actions/boards.ts#deleteBoard",
   "inputSchema": {
     "type": "object",
     "properties": { "id": { "type": "string" } },
@@ -250,8 +182,8 @@ into `createVendo`.
 
 Route scanning reads Next.js route conventions: App Router `route.ts`
 handlers and `pages/api` files. Hosts on Express, Fastify, or Hono get route
-tools from an OpenAPI spec, a tRPC router, or a GraphQL schema today — plain
-routes on those frameworks are not yet scanned.
+tools from an OpenAPI spec or a tRPC router today — plain routes on those
+frameworks are not yet scanned.
 
 ```json
 {
@@ -276,13 +208,24 @@ routes on those frameworks are not yet scanned.
 Route scans fail closed. The extractor emits any route it cannot classify as
 disabled, with a note.
 
+A GraphQL endpoint is skipped, with a warning naming the route. Vendo does not
+extract GraphQL, and a GraphQL handler answers one POST with a
+`{ query, variables }` envelope that route dispatch cannot construct — so the
+route yields no tool rather than one that fails on every call.
+
+Detection reads the route file and any local module it re-exports its handler
+from, so `export { GET, POST } from "./graphql-server"` is skipped too. A route
+that instead *imports* a GraphQL server and wraps it in its own exported
+handler is not recognized; set `"disabled": true` on that tool in
+`overrides.json`.
+
 ## Durable overrides
 
 ```json
 {
   "format": "vendo/overrides@3",
   "tools": {
-    "host_invoices_delete": { "risk": "destructive", "critical": true },
+    "host_invoices_delete": { "risk": "destructive", "confirmEach": true },
     "host_internal_debug": { "disabled": true }
   }
 }
@@ -307,27 +250,14 @@ provider-specific wiring.
 
 ### Extractor order
 
-Extractors run in a fixed order: OpenAPI first, then tRPC, then GraphQL, then
-server actions, then the route scan. Each extractor decides whether it
-applies to your app; the ones that do not detect anything are skipped. When
-the tRPC or GraphQL extractor emits tools for a mount, any catch-all route
-under that mount (for example `/api/trpc/[trpc]` or `/api/graphql/[...slug]`)
-is dropped from the route scan so you do not see duplicate coverage of the
-same surface.
+Extractors run in a fixed order: OpenAPI first, then tRPC, then server
+actions, then the route scan. Each extractor decides whether it applies to
+your app; the ones that do not detect anything are skipped. When the tRPC
+extractor emits tools for a mount, any catch-all route under that mount (for
+example `/api/trpc/[trpc]`) is dropped from the route scan so you do not see
+duplicate coverage of the same surface.
 
 ### Disabled cases
-
-**GraphQL.** Some surfaces are always emitted as `disabled` with a note so you
-can promote them explicitly through overrides:
-
-- Subscriptions (Vendo does not open long-lived transports for you).
-- Operations whose argument or return types are declared outside the app root
-  (for example, types imported from a sibling workspace package).
-- Every operation on hosts that serve multiple GraphQL schemas from separate
-  endpoints (for example, an app with `/graphql`, `/metadata`, and
-  `/admin-panel` mounted independently). Static analysis cannot attribute each
-  operation to a single endpoint, so the extractor fails closed rather than
-  guess.
 
 **Next.js server actions.** The extractor fails closed and emits
 `disabled: true` with a note in two cases:
@@ -346,10 +276,21 @@ can promote them explicitly through overrides:
 `vendo init` generates an actions registration map beside your handler route
 and wires it into `createVendo({ serverActions })`. The map imports every
 detected action module keyed by `"<module>#<exportName>"`, so Vendo can
-dispatch calls through the map at runtime. The map regenerates deterministically
-when the detected surface changes; re-running `vendo init` on an unchanged
-surface leaves an empty diff. If the last action disappears, the map is
-emptied, never deleted, so your route keeps compiling.
+dispatch calls through the map at runtime.
+
+Init writes those two files exactly once — on the run that creates them. From
+then on they are yours to edit, and init never rewrites a file that already
+exists. An existing map is compared only by the keys it registers, so your
+formatting, your comments, your aliases and your own extra entries all survive:
+when an action is missing, a later `vendo init` prints just the entries to add
+(plus the `serverActions` line for a route that predates your actions), and
+`vendo doctor` fails [E-WIRE-009](/agents/verify#E-WIRE-009) until you apply
+them. Re-running init on an unchanged surface prints nothing.
+
+Actions disabled in `.vendo/overrides.json` are left out of all of this — the
+runtime never dispatches them, so neither init nor doctor asks you to register
+them. A route that passes a `serverActions` map it composes itself is left
+alone entirely, and no generated map is created for it.
 
 When the map lacks an entry for an action, or the registered value is not a
 function, execution fails closed with a clear `not-implemented` error and no

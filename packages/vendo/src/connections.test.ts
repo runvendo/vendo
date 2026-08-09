@@ -156,8 +156,8 @@ describe("cloudConnections", () => {
   });
 
   it("defaults the base URL to the Vendo console", async () => {
-    const cloudFetch = vi.fn(async () => Response.json({ connections: [] }));
-    const service = cloudConnections({ apiKey: "vnd_secret", fetch: cloudFetch as unknown as typeof fetch });
+    const cloudFetch = vi.fn<typeof fetch>(async () => Response.json({ connections: [] }));
+    const service = cloudConnections({ apiKey: "vnd_secret", fetch: cloudFetch });
     await service.list(ada);
     expect(cloudFetch.mock.calls[0]![0]).toContain("https://console.vendo.run/api/v1/connections");
   });
@@ -288,7 +288,7 @@ describe("unconfiguredConnections", () => {
 
 describe("catalog posture", () => {
   it("cloud rides the console's catalog endpoint", async () => {
-    const cloudFetch = vi.fn(async () =>
+    const cloudFetch = vi.fn<typeof fetch>(async () =>
       Response.json({ available: [{ toolkit: "gmail", connector: "composio" }] }));
     const cloud = cloudConnections({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: cloudFetch as unknown as typeof fetch });
     await expect(cloud.catalog()).resolves.toEqual([{ toolkit: "gmail", connector: "composio" }]);
@@ -322,8 +322,8 @@ describe("adapter rule", () => {
       const byo = byoConnections([fakeConnector("composio", { user_ada: [adaGmail] })]);
       expect(await byo.list(ada)).toEqual([adaGmail]);
 
-      const cloudFetch = vi.fn(async () => Response.json({ connections: [] }));
-      const cloud = cloudConnections({ apiKey: "vnd_arg", baseUrl: "https://arg.test", fetch: cloudFetch as unknown as typeof fetch });
+      const cloudFetch = vi.fn<typeof fetch>(async () => Response.json({ connections: [] }));
+      const cloud = cloudConnections({ apiKey: "vnd_arg", baseUrl: "https://arg.test", fetch: cloudFetch });
       await cloud.list(ada);
       expect(cloudFetch.mock.calls[0]![0]).toContain("https://arg.test/");
 

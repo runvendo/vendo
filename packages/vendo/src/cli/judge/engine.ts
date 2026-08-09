@@ -2,6 +2,7 @@ import { resolveDevCredential, type DevCredential } from "../../dev-creds/resolv
 import { claudeCliHarness } from "../extract/claude-cli-harness.js";
 import { claudeHarness } from "../extract/claude-harness.js";
 import { codexCliHarness } from "../extract/codex-cli-harness.js";
+import { hasOwnAnthropicEnvOverride } from "../extract/gateway-fuel.js";
 import { npxEngineHarness } from "../extract/npx-engine-harness.js";
 import type { ExtractionHarness } from "../extract/harness.js";
 
@@ -11,7 +12,8 @@ import type { ExtractionHarness } from "../extract/harness.js";
  * both are preserved verbatim:
  *
  * - the CREDENTIAL gate comes first (resolveDevCredential: BYO provider key →
- *   VENDO_API_KEY → none), so a keyless repo never probes a single harness. The
+ *   VENDO_API_KEY → none, WIDENED here by Claude Code's own-credential env vars
+ *   — see the gate itself), so a keyless repo never probes a single harness. The
  *   probes are local and cheap but they are still observable work, and the
  *   keyless answer is "structural-only", not "try anyway";
  * - an `--engine` pin NEVER falls back to another provider. The pin is usually a
@@ -83,7 +85,16 @@ export async function resolveJudgmentEngine(
 ): Promise<{ engine: AvailableEngine | null; reason?: string }> {
   const resolve = options.resolveCredential ?? resolveDevCredential;
   const credential = await resolve({ env: options.env });
-  if (credential.rung === "none") {
+  // resolveDevCredential answers a DIFFERENT question — what can serve a
+  // product turn at runtime — and real API keys are the only answer to that
+  // one (doctor, doctor-live and dev-creds/model.ts all read it, so it must
+  // stay that way). A coding agent is not a product turn: Claude Code also
+  // runs on an interactive OAuth token or a corporate endpoint, none of which
+  // is a key. Without this widening, `vendo sync --ai` on an incremental run —
+  // the ONE path that falls back to this resolver instead of sweeping the
+  // ladder — told those devs they had no engine while `vendo init` and an
+  // interactive `vendo sync` ran fine on the same credentials.
+  if (credential.rung === "none" && !hasOwnAnthropicEnvOverride(options.env)) {
     return {
       engine: null,
       reason: "no model credential — set ANTHROPIC_API_KEY / OPENAI_API_KEY (BYO) or VENDO_API_KEY (`vendo login`)",

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import {
+  DEFAULT_TRIGGER_ID,
   descriptorHash,
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
@@ -79,7 +80,6 @@ async function tempStore(prefix: string): Promise<VendoStore> {
   const dataDir = await mkdtemp(join(tmpdir(), prefix));
   const store = createStore({ dataDir });
   cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
   });
@@ -114,7 +114,10 @@ async function knowledgeCallingModel(): Promise<{ model: LanguageModel; prompts:
       call += 1;
       return {
         stream: simulateReadableStream({
-          chunks: searching
+          // Spread so the chunk element type is inferred from BOTH branches:
+          // handed the conditional directly, `simulateReadableStream<T>` resolves
+          // `T` from the first arm alone and then rejects the second.
+          chunks: [...(searching
             ? [
               { type: "tool-call" as const, toolCallId: "call_kb", toolName: "vendo_knowledge_search", input: JSON.stringify({ query: "escalation" }) },
               { type: "finish" as const, usage, finishReason: { unified: "tool-calls" as const, raw: undefined } },
@@ -124,7 +127,7 @@ async function knowledgeCallingModel(): Promise<{ model: LanguageModel; prompts:
               { type: "text-delta" as const, id: "t1", delta: "Done." },
               { type: "text-end" as const, id: "t1" },
               { type: "finish" as const, usage, finishReason: { unified: "stop" as const, raw: undefined } },
-            ],
+            ])],
         }),
       };
     },
@@ -207,11 +210,12 @@ describe("visibility governance — venue leakage matrix (k8 T5)", () => {
       format: VENDO_APP_FORMAT,
       id: "app_gov_auto",
       name: "Escalation digest",
-      trigger: {
+      triggers: [{
+        id: DEFAULT_TRIGGER_ID,
         on: { kind: "host-event", event: "gov-check" },
         // Step args are JSONata expressions — a literal query needs quotes.
         run: { kind: "steps", steps: [{ id: "kb", tool: "vendo_knowledge_search", args: { query: "'escalation'" } }] },
-      },
+      }],
     };
     await vendo.store.ensureSchema();
     await vendo.store.records("vendo_apps").put({

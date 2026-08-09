@@ -1,29 +1,35 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { canonicalJson, descriptorHash, VendoError, type ToolSemantics } from "@vendoai/core";
+import { canonicalJson, descriptorHash, VendoError, type JsonSchema, type ToolSemantics } from "@vendoai/core";
 import {
   VENDO_TOOLS_FORMAT,
+  judgmentsFileSchema,
   overridesFileSchema,
+  schemaIsBlind,
   toolsFileSchema,
   type BreakingChange,
   type ExtractedTool,
+  type JudgmentsFile,
   type OverridesFile,
   type SyncReport,
   type ToolOverride,
   type ToolsFile,
-  type UnresolvedPin,
 } from "../formats.js";
-import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged, type SourcedExtractedTool } from "./common.js";
+import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged } from "./common.js";
 import { compilerFloorWarning } from "./compiler-gate.js";
 import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";
+import { captureHostComponents } from "./components.js";
 import { runExtractors } from "./extractors.js";
 import { capturePins } from "./pins.js";
 
 export type SyncReportWithWarnings = SyncReport & {
   warnings: string[];
-  unresolvedPins: UnresolvedPin[];
+  /** Loud `<Remixable>` wrapper errors ("file:line — message"). The CLI fails
+   *  the run on them: a wrapper that cannot capture is a defended constraint,
+   *  not a degradation. */
+  remixableErrors: string[];
 };
 
 function definedOverride(override: ToolOverride): ToolOverride {
@@ -114,6 +120,14 @@ function typeNames(value: unknown): string[] {
 }
 
 export function inputNarrowed(previous: ExtractedTool, next: ExtractedTool): boolean {
+  // The JUDGE'S FILL is not a narrowing. A tool whose input nobody could read
+  // carried a fail-closed placeholder; the run that infers it replaces that
+  // placeholder wholesale, which trips every rule below. Reporting that as
+  // breaking makes `vendoSync({ strict: true })` THROW on the judge's own
+  // work. Only inference is exempt: a blind input turning `declared` means the
+  // host added a real validator, which IS a breaking change worth reporting.
+  if (schemaIsBlind(previous.inputSchemaSource) && next.inputSchemaSource === "inferred") return false;
+
   const oldSchema = objectValue(previous.inputSchema);
   const newSchema = objectValue(next.inputSchema);
   const oldRequired = new Set(arrayValue(oldSchema.required).filter((value): value is string => typeof value === "string"));
@@ -200,16 +214,111 @@ async function sourceHash(root: string, srcPath: string, cache: Map<string, stri
   return cache.get(srcPath);
 }
 
+/** Read for ONE reason: to report standing judgments this extraction stranded.
+ *  Fail-soft, unlike `readOverrides` — a malformed judgments file is the judgment
+ *  pass's own loud failure, the same call the runtime and doctor readers make, and
+ *  sync must not refuse to extract because the AI layer's cache is unreadable. */
+async function readJudgments(file: string): Promise<JudgmentsFile | null> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(file, "utf8");
+  } catch {
+    return null;
+  }
+  try {
+    return judgmentsFileSchema.parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
 /** The previous machine layer + the authored layer of `.vendo/`. */
 interface VendoDirState {
   previousTools: ExtractedTool[];
   overrides: OverridesFile | null;
+  judgments: JudgmentsFile | null;
 }
 
 async function loadVendoDir(out: string, warnings: string[]): Promise<VendoDirState> {
   const previous = await readPrevious(path.join(out, "tools.json"), warnings);
   const overrides = await readOverrides(path.join(out, "overrides.json"));
-  return { previousTools: previous?.tools ?? [], overrides };
+  const judgments = await readJudgments(path.join(out, "judgments.json"));
+  return { previousTools: previous?.tools ?? [], overrides, judgments };
+}
+
+/**
+ * Standing judgments this extraction stranded — the grades a host still has on
+ * disk and no longer gets.
+ *
+ * `applyJudgment` holds a judgment INERT when its recorded binding no longer
+ * matches the tool's, so a handler that moved never inherits a grade meant for
+ * whatever used to answer there. Correct, and silent: the tool quietly falls
+ * back to `ungraded`, which the guard withholds exactly like `destructive`, so
+ * every call asks. #1056 was 22 of 22 stranded that way — Maple moved its
+ * `/maple` prefix out of the OpenAPI paths into the spec's `servers` url, and
+ * nothing said so. `vendo doctor` counted the ungraded tools but cannot fail,
+ * and `pruneJudgments` would have deleted the entries loudly except it only
+ * runs inside the KEYED judge pass. On the keyless path — `vendo sync --no-ai`,
+ * the documented BYO posture, which cannot grade at all — a stranded judgment
+ * was therefore never applied, never pruned, and never mentioned.
+ *
+ * Only tools the catalog still carries. A judgment for a tool that is simply
+ * GONE is ordinary churn the next keyed sync prunes; naming it here would be
+ * noise, and unlike a hand-authored override (whose miss is a typo worth
+ * reporting) this file is machine-written.
+ *
+ * ONE line, not one per tool: the failure mode is systematic — a mount point or
+ * a path convention moves and stalls the whole catalog at once — so 22 warnings
+ * would be a wall saying one thing. The count carries the scale, one worked
+ * before/after carries the diagnosis (it is what makes a prefix change obvious),
+ * and the name list caps like the `blind:` line's does.
+ */
+function strandedJudgments(tools: readonly ExtractedTool[], judgments: JudgmentsFile | null): string[] {
+  if (judgments === null) return [];
+  const stranded: Array<{ name: string; was: string; now: string }> = [];
+  let judged = 0;
+  for (const tool of [...tools].sort((a, b) => a.name.localeCompare(b.name))) {
+    const judgment = judgments.tools[tool.name];
+    if (judgment === undefined) continue;
+    judged += 1;
+    const now = bindingIdentity(tool.binding);
+    if (judgment.binding === now) continue;
+    stranded.push({ name: tool.name, was: judgment.binding, now });
+  }
+  const first = stranded[0];
+  if (first === undefined) return [];
+  const names = stranded.map(({ name }) => name);
+  const shown = names.slice(0, 6).join(", ");
+  // Out of the tools that CARRY a judgment, not the whole catalog: "3/30" would
+  // read as thirty judgments and understate a total break.
+  return [
+    `${stranded.length}/${judged} standing judgments no longer match their tool, so those tools are ungraded`
+    + ` and ask on every call — ${first.name} was graded against "${first.was}", now "${first.now}".`
+    + ` Re-run \`vendo sync\` with a model key to re-grade: ${shown}${names.length > 6 ? ` +${names.length - 6} more` : ""}`,
+  ];
+}
+
+/** What survives a wholesale regeneration of the machine layer, keyed by tool
+ *  name and gated on binding identity. */
+interface CarriedFields {
+  identity: string;
+  semantics?: ToolSemantics;
+  inputSchema?: JsonSchema;
+  outputSchema?: JsonSchema;
+}
+
+function schemaCoverage(tools: readonly ExtractedTool[]): SyncReport["toolSchemas"] {
+  const inputs: string[] = [];
+  const outputs: string[] = [];
+  for (const tool of tools) {
+    if (schemaIsBlind(tool.inputSchemaSource)) inputs.push(tool.name);
+    if (schemaIsBlind(tool.outputSchemaSource)) outputs.push(tool.name);
+  }
+  return {
+    total: tools.length,
+    inputs: { known: tools.length - inputs.length, unknown: inputs.sort() },
+    outputs: { known: tools.length - outputs.length, unknown: outputs.sort() },
+  };
 }
 
 export async function vendoSync(options: {
@@ -222,19 +331,28 @@ export async function vendoSync(options: {
   clearAliasCache(); // same-process re-runs (watch mode) must see tsconfig edits
   const warnings: string[] = [];
   const toolsPath = path.join(out, "tools.json");
-  const { previousTools, overrides } = await loadVendoDir(out, warnings);
+  const { previousTools, overrides, judgments } = await loadVendoDir(out, warnings);
 
   const extraction = await runExtractors(root);
   warnings.push(...extraction.warnings);
   const extractedTools = unionExtracted(extraction.tools);
-  // Machine layer carry-over: per-tool field semantics persist across syncs.
-  // A carried entry is keyed by name AND binding identity: a same-named tool
-  // whose binding changed serves a different response, so its stale shape
-  // hints drop.
-  const semanticsByName = new Map<string, { semantics: ToolSemantics; identity: string }>();
+  // Machine layer carry-over: per-tool field semantics and JUDGE-INFERRED
+  // schemas persist across syncs. Keyed by name AND binding identity — a
+  // same-named tool whose binding changed serves a different response, so its
+  // stale hints drop. Only `inferred` schemas are carried: a declared/types
+  // schema is re-derived by its extractor every run, and carrying one would
+  // resurrect a schema the host's own spec just deleted.
+  const carriedByName = new Map<string, CarriedFields>();
   for (const tool of previousTools) {
-    const semantics = tool.semantics;
-    if (semantics !== undefined) semanticsByName.set(tool.name, { semantics, identity: bindingIdentity(tool.binding) });
+    const carried: CarriedFields = { identity: bindingIdentity(tool.binding) };
+    if (tool.semantics !== undefined) carried.semantics = tool.semantics;
+    if (tool.inputSchemaSource === "inferred") carried.inputSchema = tool.inputSchema;
+    if (tool.outputSchemaSource === "inferred" && tool.outputSchema !== undefined) {
+      carried.outputSchema = tool.outputSchema;
+    }
+    if (carried.semantics !== undefined || carried.inputSchema !== undefined || carried.outputSchema !== undefined) {
+      carriedByName.set(tool.name, carried);
+    }
   }
   const hashCache = new Map<string, string | undefined>();
   const tools: ExtractedTool[] = [];
@@ -244,14 +362,18 @@ export async function vendoSync(options: {
     // otherwise, never traced.
     const source = srcPath ?? (tool.binding.kind === "server-action" ? tool.binding.module : undefined);
     const srcHash = source === undefined ? undefined : await sourceHash(root, source, hashCache);
-    const carried = semanticsByName.get(tool.name);
-    const semantics = carried !== undefined && carried.identity === bindingIdentity(tool.binding)
-      ? carried.semantics
-      : undefined;
+    const carried = carriedByName.get(tool.name);
+    const inherited = carried !== undefined && carried.identity === bindingIdentity(tool.binding) ? carried : undefined;
+    // The extractor's own reading always wins; a carried value only fills a
+    // slot this run left blind.
+    const inputFill = schemaIsBlind(tool.inputSchemaSource) ? inherited?.inputSchema : undefined;
+    const outputFill = tool.outputSchema === undefined ? inherited?.outputSchema : undefined;
     tools.push({
       ...tool,
       ...(srcHash === undefined ? {} : { srcHash }),
-      ...(semantics === undefined ? {} : { semantics }),
+      ...(inherited?.semantics === undefined ? {} : { semantics: inherited.semantics }),
+      ...(inputFill === undefined ? {} : { inputSchema: inputFill, inputSchemaSource: "inferred" as const }),
+      ...(outputFill === undefined ? {} : { outputSchema: outputFill, outputSchemaSource: "inferred" as const }),
     });
   }
   const extracted = toolsFileSchema.parse({ format: VENDO_TOOLS_FORMAT, tools });
@@ -263,6 +385,9 @@ export async function vendoSync(options: {
       }
     }
   }
+  // The same courtesy the authored layer above has always had, for the machine
+  // layer that silently loses a grade instead of a label.
+  warnings.push(...strandedJudgments(extracted.tools, judgments));
 
   const mergedPrevious = mergeOverrides(previousTools, overrides);
   const mergedNext = mergeOverrides(extracted.tools, overrides);
@@ -271,18 +396,42 @@ export async function vendoSync(options: {
   await writeIfChanged(toolsPath, `${JSON.stringify(extracted, null, 2)}\n`);
   const catalogScan = await scanComponentCatalog(root);
   warnings.push(...catalogScan.warnings);
-  await writeCatalog(out, catalogScan.entries);
+  const catalog = await writeCatalog(out, catalogScan.entries);
   const pins = await capturePins(root, out, new Set(overrides?.remix?.ignoreSlots ?? []));
   warnings.push(...pins.warnings);
+  // The host's OWN registered components, captured for real so the console's
+  // gallery renders them instead of a grey labeled block. Shares the pin walk's
+  // app-root stylesheets — one project, one set of root CSS.
+  const components = await captureHostComponents({
+    root,
+    out,
+    sites: catalogScan.sites,
+    styles: pins.styles,
+    catalog: catalog.entries,
+    degraded: catalogScan.degraded,
+  });
+  warnings.push(...components.warnings);
   // One report-level warning when any loader rejected a too-old host compiler
   // (the per-extractor "skipped" lines say what degraded; this says why).
   const floorWarning = compilerFloorWarning();
   if (floorWarning !== null) warnings.push(floorWarning);
   const report: SyncReportWithWarnings = {
     ...comparison,
-    pins: { captured: pins.captured, drifted: pins.drifted },
-    unresolvedPins: pins.unresolved,
+    toolSchemas: schemaCoverage(extracted.tools),
+    pins: {
+      captured: pins.captured,
+      drifted: pins.drifted,
+      ...(pins.pruned.length === 0 ? {} : { pruned: pins.pruned }),
+    },
+    remixableErrors: pins.errors,
     catalog: { discovered: catalogScan.discovered, registered: catalogScan.registered },
+    components: {
+      captured: components.captured,
+      drifted: components.drifted,
+      ...(components.pruned.length === 0 ? {} : { pruned: components.pruned }),
+      ...(components.skipped.length === 0 ? {} : { skipped: components.skipped }),
+      ...(components.withoutSamples.length === 0 ? {} : { withoutSamples: components.withoutSamples }),
+    },
     warnings,
   };
   if (options.strict && report.breaking.length > 0) {

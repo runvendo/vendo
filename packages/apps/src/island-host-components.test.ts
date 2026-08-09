@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { ambientKitEquivalent, prepareIslands } from "./generation/validation/islands.js";
-import { islandIssueNames } from "./engine.js";
+import { ambientKitEquivalent, prepareIslands } from "./checking/islands.js";
 
 /**
  * Rematch gate 2026-07-25 (docs/eval/runs/2026-07-25-rematch): 17+ Cadence
  * and several Maple creates burned every repair round on islands referencing
- * host catalog components (<CadenceStatusBadge>, <MapleSparkline>) or
- * non-ambient prewired names (<Skeleton>, <Table>) that can never resolve in
- * the sandbox. The create contract warns about this, but the repair prompt
+ * host catalog components (<CadenceStatusBadge>, <MapleSparkline>,
+ * <MapleSkeleton>) that can never resolve in the sandbox. (V4 removed the
+ * second source of these — the non-ambient legacy primitives — by making the
+ * built-in vocabulary a subset of the ambient Kit; host names are the only
+ * offenders left.) The create contract warns about this, but the repair prompt
  * only carried a generic issue naming the WHOLE ambient list — no concrete
  * substitution — so repair reproduced the class instead of fixing it. Each
  * offending tag now gets its own teaching issue that names the ambient Kit
@@ -37,8 +38,10 @@ describe("ambientKitEquivalent", () => {
   });
 
   it("maps common host-component vocabulary to the closest Kit name", () => {
-    expect(ambientKitEquivalent("Table")).toBe("DataTable");
-    expect(ambientKitEquivalent("Card")).toBe("Surface");
+    expect(ambientKitEquivalent("MapleTable")).toBe("DataTable");
+    // V4 — Card is a Kit component now, so a host "…Card" maps to Card itself
+    // (the suffix rule) instead of being redirected at Surface.
+    expect(ambientKitEquivalent("MapleCard")).toBe("Card");
     expect(ambientKitEquivalent("MapleMetricTile")).toBe("Stat");
     expect(ambientKitEquivalent("CadenceAlertBanner")).toBe("Callout");
   });
@@ -64,24 +67,31 @@ describe("prepareIslands — host components inside islands teach the substituti
     expect(prepared.issues[0]).toContain("ambient Kit equivalent (Sparkline)");
   });
 
-  it("teaches the loading-state substitution for <Skeleton> (non-ambient prewired, no catalog needed)", async () => {
-    const prepared = await prepare("<Skeleton />");
+  it("teaches the loading-state substitution for a host loading placeholder", async () => {
+    const prepared = await prepare("<MapleSkeleton />", ["MapleSkeleton"]);
     expect(prepared.issues).toHaveLength(1);
-    expect(prepared.issues[0]).toContain("<Skeleton> renders on the host page and cannot exist inside an island");
+    expect(prepared.issues[0]).toContain("<MapleSkeleton> renders on the host page and cannot exist inside an island");
     expect(prepared.issues[0]).toContain("loading");
   });
 
-  it("catches non-ambient BRANDED prewired names (<Table>, <Card>) the reserved list missed", async () => {
-    const prepared = await prepare("<Card><Table rows={[]} /></Card>");
+  it("names the Kit equivalent for host table/card components", async () => {
+    const prepared = await prepare("<MapleCard><MapleTable rows={[]} /></MapleCard>", ["MapleCard", "MapleTable"]);
     expect(prepared.issues).toHaveLength(2);
     expect(prepared.issues.join("\n")).toContain("ambient Kit equivalent (DataTable)");
-    expect(prepared.issues.join("\n")).toContain("ambient Kit equivalent (Surface)");
+    expect(prepared.issues.join("\n")).toContain("ambient Kit equivalent (Card)");
+  });
+
+  /** V4 — a built-in name inside an island is FINE now: every wire built-in is
+   *  also an ambient Kit name, so <DataTable>/<Card> render in the sandbox. */
+  it("says nothing about a built-in name inside an island", async () => {
+    const prepared = await prepare("<Card><DataTable rows={[]} /></Card>");
+    expect(prepared.issues).toEqual([]);
   });
 
   it("emits one teaching issue per offending tag", async () => {
     const prepared = await prepare(
-      "<CadenceStatusBadge /><Skeleton />",
-      ["CadenceStatusBadge"],
+      "<CadenceStatusBadge /><MapleSkeleton />",
+      ["CadenceStatusBadge", "MapleSkeleton"],
     );
     expect(prepared.issues).toHaveLength(2);
   });
@@ -100,10 +110,5 @@ describe("prepareIslands — host components inside islands teach the substituti
     };
     const prepared = await prepareIslands(source, undefined, ["CadenceStatusBadge"]);
     expect(prepared.issues).toEqual([]);
-  });
-
-  it("routes the teaching issues to the island-scoped repair (issue shape stays island-prefixed)", async () => {
-    const prepared = await prepare("<CadenceStatusBadge />", ["CadenceStatusBadge"]);
-    expect(islandIssueNames(prepared.issues)).toEqual(["Panel"]);
   });
 });

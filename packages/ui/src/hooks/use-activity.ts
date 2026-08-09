@@ -1,7 +1,7 @@
 /** Self-scoped audit activity transport (08-ui §3). */
 import type { AuditEvent } from "@vendoai/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { useResource, type PollOptions } from "./use-resource.js";
 
 function dedupe(events: AuditEvent[]): AuditEvent[] {
@@ -23,9 +23,7 @@ function pageCursor(event: AuditEvent | undefined): string | undefined {
 }
 
 export function useActivity(options?: PollOptions): {
-  /** Back-compat alias for `data` (contract §3). */
   events: AuditEvent[];
-  data: AuditEvent[];
   error: Error | undefined;
   isLoading: boolean;
   /** Whether another page may still exist. Flips to `false` once a fetched page
@@ -35,7 +33,7 @@ export function useActivity(options?: PollOptions): {
   loadMore(): Promise<void>;
   refresh(): Promise<void>;
 } {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const list = useCallback(() => client.activity.list(), [client]);
   const { data: firstPage, error, isLoading, refresh } = useResource(list, [] as AuditEvent[], options);
   // Pages appended by loadMore; a refresh (manual or poll) reloads the first
@@ -65,5 +63,5 @@ export function useActivity(options?: PollOptions): {
     setEnded(added.length === 0);
   }, [client, events]);
 
-  return { events, data: events, error, isLoading, hasMore, loadMore, refresh };
+  return { events, error, isLoading, hasMore, loadMore, refresh };
 }

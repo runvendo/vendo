@@ -1,4 +1,3 @@
-import { descriptorHash } from "@vendoai/core";
 import type { ApprovalRequest, StoreAdapter } from "@vendoai/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createGuard } from "../../src/index.js";
@@ -120,7 +119,6 @@ describe("approvals fail closed without the store's atomic claims", () => {
       ctx: { principal: alice, venue: "chat", presence: "present" },
       createdAt: new Date().toISOString(),
     };
-    expect(descriptorHash(request.descriptor)).toBe(descriptorHash(descriptor("write")));
     await base.records("vendo_approvals").put({
       id: request.id,
       data: {

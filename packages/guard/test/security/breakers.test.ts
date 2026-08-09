@@ -1,3 +1,4 @@
+import { VendoError } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createGuard } from "../../src/index.js";
 import { createMemoryStore } from "../fixtures/memory-store.js";
@@ -30,7 +31,7 @@ describe("deterministic breakers (05 §2)", () => {
     ).resolves.toMatchObject({ action: "ask", decidedBy: "breaker" });
   });
 
-  it("criterion 15 (discovery-discipline): a tripped write breaker never flips READS to ask", async () => {
+  it("a tripped write breaker never flips READS to ask", async () => {
     const store = createMemoryStore();
     const guard = createGuard({
       store,
@@ -104,13 +105,13 @@ describe("deterministic breakers (05 §2)", () => {
   });
 });
 
-// genqa defect 1 — the agent bridge's needsApproval→execute pairing calls the
+// The agent bridge's needsApproval→execute pairing calls the
 // guard twice for one logical call (packages/agent/src/tools.ts): a preview
 // through `previewCheck`, then the real, dispatching check through
 // `check()`/`bind().execute()` moments later. A `previewCheck` "run" must
 // never itself spend the write budget or call-rate window — only the REAL
 // check that follows it does — or a run's budget silently halves.
-describe("previewCheck does not double-spend the breakers (genqa defect 1)", () => {
+describe("previewCheck does not double-spend the breakers", () => {
   it("previewing every write before the real check still allows the full maxWritesPerRun budget", async () => {
     const store = createMemoryStore();
     const guard = createGuard({
@@ -178,5 +179,37 @@ describe("previewCheck does not double-spend the breakers (genqa defect 1)", () 
     await expect(guard.check(call(write.name, {}, "real-1"), write, run)).resolves.toMatchObject({
       action: "run",
     });
+  });
+});
+
+// Now that `guard({ breakers })` is a public door (#932/#934), a typo is a HOST's
+// typo, and both ends of the range fail silently and in opposite directions: a
+// negative limit parks every call forever, while NaN/Infinity make the
+// comparisons false so the breaker never trips at all. Refused at construction,
+// like `approvals.parkedCallTtlMs` — the same rule, from `guard({ … })` and from
+// a direct `createGuard` alike.
+describe("a breaker limit has to be a limit", () => {
+  const store = createMemoryStore();
+  const refuses = (breakers: { maxCallsPerMinute?: number; maxWritesPerRun?: number }) =>
+    expect(() => createGuard({ store, breakers })).toThrow(VendoError);
+
+  it("refuses a limit that is negative, fractional, NaN or infinite", () => {
+    for (const bad of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      refuses({ maxCallsPerMinute: bad });
+      refuses({ maxWritesPerRun: bad });
+    }
+  });
+
+  it("keeps ZERO, which is the documented lockdown — everything asks", async () => {
+    // Not a typo and not a disabled breaker: `writes >= 0` and `active.length > 0`
+    // are both immediately true, so a budget of nothing parks the first call. The
+    // suites above already lean on it (`maxWritesPerRun: 0`, `maxCallsPerMinute: 0`).
+    const guard = createGuard({
+      store,
+      breakers: { maxCallsPerMinute: 0, maxWritesPerRun: 0 },
+      policy: { rules: [{ match: {}, action: "run" }] },
+    });
+    await expect(guard.check(call("host_read"), descriptor("read"), context()))
+      .resolves.toMatchObject({ action: "ask", decidedBy: "breaker" });
   });
 });

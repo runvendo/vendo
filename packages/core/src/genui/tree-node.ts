@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { Json } from "../ids.js";
-import { TREE_MAX_NODES, TREE_MAX_QUERIES } from "./tree-limits.js";
 
 export {
   TREE_MAX_NODES,
@@ -10,9 +9,6 @@ export {
   TREE_MAX_TOTAL_COMPONENT_BYTES,
   TREE_MAX_COMPONENT_SOURCE_CHARS,
   TREE_MAX_TOTAL_COMPONENT_CHARS,
-  RESERVED_COMPONENT_NAMES,
-  BRANDED_COMPONENT_NAMES,
-  PREWIRED_COMPONENT_NAMES,
 } from "./tree-limits.js";
 
 import type { ReshapeStep } from "../reshape.js";

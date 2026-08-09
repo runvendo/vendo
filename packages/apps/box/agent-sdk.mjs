@@ -40,7 +40,8 @@ Box conventions (the skin of the box):
 - Host tools ride POST "$VENDO_HOST_URL/tools/<name>" with the same bearer; approvals and audit happen host-side.
 
 Working style:
-- STRONGLY prefer zero-dependency Node: node:http for the server, the global fetch for egress, node:crypto etc. The box egress is deny-by-default, so \`npm install\` reaches only registries you DECLARE in vendo.json egress — avoid it unless the task truly needs a package.
+- START from the pre-baked template at /opt/vendo-box/template (\`cp -a /opt/vendo-box/template/. /app/\`) rather than writing a server from scratch: it is Vite + React 19 with @vendoai/ui installed, the /fn envelopes wired, and its deps already present. The box egress is deny-by-default, so \`npm install\` reaches only registries you DECLARE in vendo.json egress — build with what the template already ships instead of adding packages.
+- The real toolchain is your code validator: \`npm run typecheck\` (tsc), \`npm run build\` (vite) and \`npm run validate\` (which runs both, then checks the skin contract) all work offline in the box. Never hand-check syntax; run them.
 - Verify against reality: after writing code, restart the app (curl the supervisor route above), wait a moment, then curl your own endpoints on http://localhost:$PORT and fix failures before reporting.
 - Never bind $PORT from a process you spawn yourself; the supervisor owns the app process.
 - End the task by calling the report_done tool EXACTLY ONCE with your honest structured result — ok=false with a clear summary beats a fake success. List the fn names you serve in fns.
@@ -90,11 +91,13 @@ const sdkEngine = async ({ prompt, systemAppend, model, url, key, env, appDir, l
     model,
     maxTurns: MAX_TURNS,
     systemPrompt: { type: "preset", preset: "claude_code", append: systemAppend },
-    // The box IS the sandbox: every tool is pre-approved, the provider network
-    // layer (deny-by-default egress) is the real boundary.
+    // The box IS the sandbox: every tool is pre-approved, and the provider's
+    // domain-filtered egress is the boundary. That boundary is real against
+    // ordinary clients and bypassable by one that omits SNI, so it is defence
+    // in depth rather than containment — docs/verification/box-egress/README.md.
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
-    // Web tools are pointless behind deny-by-default egress; subagents and
+    // Web tools have no allowlisted host to reach; subagents and
     // interactive tools have no place in a headless box task.
     disallowedTools: ["WebSearch", "WebFetch", "Task", "AskUserQuestion"],
     mcpServers: { vendo: reportServer },

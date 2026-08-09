@@ -11,6 +11,7 @@ import {
   type E2eNavigationOptions,
   type E2ePage,
 } from "./layers/e2e.js";
+import { errorMessage } from "./util.js";
 
 const safeIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const nativeScreenSchema = z.object({
@@ -154,8 +155,8 @@ export interface GenerationApprovalOptions {
 const defaultPromptTimeoutMs = 240_000;
 const nativeScreenTimeoutMs = 60_000;
 const firstPaintSelector = "[data-vendo-node-id]";
-const generationToolSelector = '.fl-tool:has-text("vendo_apps_create"), .fl-tool:has-text("vendo_apps_edit")';
-const generationApprovalSelector = '.fl-approval:has-text("vendo_apps_create") button:has-text("Approve"), .fl-approval:has-text("vendo_apps_edit") button:has-text("Approve")';
+const generationToolSelector = '.fl-tool:has-text("vendo_make")';
+const generationApprovalSelector = '.fl-approval:has-text("vendo_make") button:has-text("Approve")';
 const viewport = { width: 1_440, height: 960 };
 
 export function galleryNavigationOptions(timeoutMs: number): E2eNavigationOptions {
@@ -271,7 +272,7 @@ export async function createPlaywrightGalleryDriver(): Promise<GalleryCaptureDri
         const targetUrl = new URL(input.screen.path, input.readinessUrl).toString();
         await prepareLayer3Page(
           input.repoName,
-          page as unknown as E2ePage,
+          page,
           nativeScreenTimeoutMs,
           targetUrl,
           galleryNavigationOptions(nativeScreenTimeoutMs),
@@ -309,18 +310,18 @@ export async function createPlaywrightGalleryDriver(): Promise<GalleryCaptureDri
         );
         await prepareLayer3Page(
           input.repoName,
-          page as unknown as E2ePage,
+          page,
           Math.min(timeoutMs, 30_000),
           targetUrl,
           galleryNavigationOptions(timeoutMs),
         );
-        await openVendoSurface(page as unknown as E2ePage, Math.min(timeoutMs, 30_000));
+        await openVendoSurface(page, Math.min(timeoutMs, 30_000));
         const initialGeneratedNodes = await page.locator(firstPaintSelector).count();
         const initialGenerationTools = await page.locator(generationToolSelector).count();
         const startedAt = performance.now();
-        await sendPrompt(page as unknown as E2ePage, input.prompt.prompt);
+        await sendPrompt(page, input.prompt.prompt);
         let stopApprovalWatcher = false;
-        const approvalWatcher = approveGenerationIfRequested(page as unknown as E2ePage, {
+        const approvalWatcher = approveGenerationIfRequested(page, {
           timeoutMs,
           shouldStop: () => stopApprovalWatcher,
         });
@@ -344,7 +345,7 @@ export async function createPlaywrightGalleryDriver(): Promise<GalleryCaptureDri
         await page.screenshot({ path: firstPaintPath, fullPage: false });
 
         const remainingMs = Math.max(1_000, timeoutMs - firstPaint);
-        await waitForIdle(page as unknown as E2ePage, remainingMs);
+        await waitForIdle(page, remainingMs);
         const settledStartedAt = performance.now();
         while (
           await page.locator(firstPaintSelector).count() <= initialGeneratedNodes
@@ -403,11 +404,9 @@ export async function approveGenerationIfRequested(
   }));
   const startedAt = performance.now();
   while (!options.shouldStop?.() && performance.now() - startedAt < options.timeoutMs) {
-    const matches = page.locator(generationApprovalSelector);
-    const approve = matches.first ? matches.first() : matches;
+    const approve = page.locator(generationApprovalSelector).first();
     try {
       if (await approve.count() > 0) {
-        if (!approve.click) throw new Error("Gallery approval control is not clickable.");
         await approve.click();
         return true;
       }
@@ -650,10 +649,6 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 const galleryCss = `

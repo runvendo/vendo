@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { confineToolToRoot, resolveThroughSymlinks } from "./confine-to-root.js";
 import { extractionModelPin, type ExtractionHarness, type ExtractionRunInput } from "./harness.js";
 
 /**
@@ -12,7 +13,10 @@ import { extractionModelPin, type ExtractionHarness, type ExtractionRunInput } f
  * into the host app by init.
  *
  * Isolation: `settingSources: []` (never inherit the dev's personal Claude
- * Code settings/hooks), read-only tool allowlist, no shell/web/write surface.
+ * Code settings/hooks), read-only tool set, no shell/web/write surface, and
+ * `canUseTool` confining every read to the host root (confine-to-root.ts).
+ * `tools` rather than `allowedTools` on purpose: a blanket allowlist
+ * auto-allows Read/Glob/Grep on ANY path and never consults the callback.
  */
 
 const SDK_PACKAGE = "@anthropic-ai/claude-agent-sdk";
@@ -89,17 +93,24 @@ export function claudeHarness(options: ClaudeHarnessOptions = {}): ExtractionHar
       const sdk = await load(input.root);
       if (sdk === null) throw new Error(`${SDK_PACKAGE} is not available`);
       const model = extractionModelPin(input.env);
+      // Containment is judged against the REALPATH of the root: if the host
+      // root is itself reached through a symlink (macOS /tmp -> /private/tmp),
+      // tool paths resolve to the real side and a string-prefix check against
+      // the raw root would misjudge every one of them.
+      const rootRealpath = resolveThroughSymlinks(input.root);
       const stream = sdk.query({
         prompt: input.instructions,
         options: {
           cwd: input.root,
           settingSources: [],
-          allowedTools: ["Read", "Glob", "Grep"],
+          tools: ["Read", "Glob", "Grep"],
           disallowedTools: [
             "Bash", "Write", "Edit", "WebFetch", "WebSearch", "Task",
             "TodoWrite", "NotebookEdit", "KillShell", "BashOutput",
           ],
           permissionMode: "default",
+          canUseTool: async (toolName: string, toolInput: Record<string, unknown>) =>
+            confineToolToRoot(toolName, toolInput, rootRealpath),
           maxTurns: 40,
           // Forward the caller's env so a key present only in the passed map
           // (not process.env) still authenticates the SDK subprocess.

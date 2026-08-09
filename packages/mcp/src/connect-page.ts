@@ -47,7 +47,7 @@ export function connectPage(input: {
       margin: 0;
       display: grid;
       place-items: start center;
-      padding: var(--vendo-space-large, 28px);
+      padding: 28px;
       background:
         radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--vendo-color-accent, #3157d5) 12%, transparent), transparent 38rem),
         var(--vendo-color-background, #f3ede2);
@@ -55,7 +55,7 @@ export function connectPage(input: {
     main {
       width: min(100%, 40rem);
       margin: auto;
-      padding: var(--vendo-space-large, 30px);
+      padding: 30px;
       border: 1px solid var(--vendo-color-border, rgba(23, 24, 29, .12));
       border-top: 3px solid var(--vendo-color-accent, #3157d5);
       border-radius: var(--vendo-radius-medium, 16px);
@@ -74,7 +74,7 @@ export function connectPage(input: {
       letter-spacing: -.04em;
     }
     h1 {
-      margin: var(--vendo-space-large, 24px) 0 var(--vendo-space-small, 10px);
+      margin: 24px 0 var(--vendo-density-content-gap, 10px);
       font-family: var(--vendo-heading-family, var(--vendo-font-family, inherit));
       font-size: clamp(1.45rem, 4vw, 1.8rem);
       line-height: 1.18;
@@ -86,15 +86,15 @@ export function connectPage(input: {
        at the top, per the light-from-above model) reads as a field to take
        something OUT of, not a form to fill in. */
     .url {
-      margin-top: var(--vendo-space-large, 26px);
-      padding: var(--vendo-space-medium, 14px);
+      margin-top: 26px;
+      padding: 14px;
       border-radius: var(--vendo-radius-small, 10px);
       background: color-mix(in srgb, var(--vendo-color-surface, #fffdf9) 72%, var(--vendo-color-background, #f3ede2));
       box-shadow: inset 0 1px 2px color-mix(in srgb, var(--vendo-color-text, #17181d) 10%, transparent);
     }
     .url label {
       display: block;
-      margin-bottom: var(--vendo-space-small, 8px);
+      margin-bottom: 8px;
       color: var(--vendo-color-muted, #686a73);
       font-size: .74rem;
       font-weight: 650;
@@ -115,10 +115,10 @@ export function connectPage(input: {
       outline-offset: 3px;
       border-radius: 3px;
     }
-    .hint { margin-top: var(--vendo-space-small, 8px); font-size: .78rem; }
-    section { margin-top: var(--vendo-space-large, 30px); }
+    .hint { margin-top: 8px; font-size: .78rem; }
+    section { margin-top: 30px; }
     h2 {
-      margin: 0 0 var(--vendo-space-small, 10px);
+      margin: 0 0 var(--vendo-density-content-gap, 10px);
       font-size: .95rem;
       font-weight: 650;
       letter-spacing: -.01em;
@@ -129,7 +129,7 @@ export function connectPage(input: {
       list-style: none;
       counter-reset: step;
       display: grid;
-      gap: var(--vendo-space-small, 8px);
+      gap: 8px;
     }
     /* A two-column grid needs exactly TWO items: the ::before marker and ONE
        wrapper. Inline children (<strong>) would otherwise each become their own
@@ -139,7 +139,7 @@ export function connectPage(input: {
       display: grid;
       grid-template-columns: 1.4rem 1fr;
       align-items: start;
-      gap: var(--vendo-space-small, 10px);
+      gap: var(--vendo-density-content-gap, 10px);
       color: var(--vendo-color-muted, #686a73);
       line-height: 1.5;
     }
@@ -170,7 +170,7 @@ export function connectPage(input: {
     .cta {
       display: inline-block;
       min-height: 2.7rem;
-      margin-top: var(--vendo-space-medium, 14px);
+      margin-top: 14px;
       border: 1px solid transparent;
       border-radius: var(--vendo-radius-small, 10px);
       padding: .75rem 1.1rem;
@@ -186,8 +186,8 @@ export function connectPage(input: {
       outline-offset: 2px;
     }
     pre {
-      margin: var(--vendo-space-small, 10px) 0 0;
-      padding: var(--vendo-space-medium, 12px);
+      margin: var(--vendo-density-content-gap, 10px) 0 0;
+      padding: 12px;
       border-radius: var(--vendo-radius-small, 10px);
       background: color-mix(in srgb, var(--vendo-color-text, #17181d) 6%, transparent);
       color: var(--vendo-color-text, #17181d);
@@ -195,8 +195,8 @@ export function connectPage(input: {
       overflow-x: auto;
     }
     .fine {
-      margin-top: var(--vendo-space-large, 26px);
-      padding-top: var(--vendo-space-medium, 16px);
+      margin-top: 26px;
+      padding-top: 16px;
       border-top: 1px solid var(--vendo-color-border, rgba(23, 24, 29, .12));
       font-size: .78rem;
     }
@@ -205,7 +205,7 @@ export function connectPage(input: {
       .cta:active { transform: none; }
     }
     @media (max-width: 30rem) {
-      main { padding: var(--vendo-space-large, 24px) var(--vendo-space-medium, 18px); }
+      main { padding: 24px 18px; }
       .cta { display: block; text-align: center; }
     }
   </style>

@@ -1,4 +1,4 @@
-import { canonicalJson, type AuditEvent, type RunContext, type ToolCall, type ToolOutcome, type ToolRegistry } from "@vendoai/core";
+import { auditContext, canonicalJson, type AuditEvent, type RunContext, type ToolCall, type ToolOutcome, type ToolRegistry } from "@vendoai/core";
 
 /** Discovery-discipline 2026-07-25 (criterion 11): the connect check runs
  * BEFORE any guard decision. Without it, a call to an unconnected brokered
@@ -74,11 +74,10 @@ export function createConnectGate(options: ConnectGateOptions): ConnectGate {
         id: "",
         at: "",
         kind: "tool-call",
-        principal: ctx.principal,
-        venue: ctx.venue,
-        presence: ctx.presence,
-        ...(ctx.appId === undefined ? {} : { appId: ctx.appId }),
-        ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
+        // This is the ONLY row a gated call produces — the gate reports it
+        // itself, and the guard never sees the call — so a hand-copied ctx here
+        // is a turn's unconnected-connector attempt going unjoinable.
+        ...auditContext(ctx),
         tool: call.tool,
         inputPreview: preview(call),
         outcome: outcome.status,
@@ -98,7 +97,13 @@ export function createConnectGate(options: ConnectGateOptions): ConnectGate {
   return {
     check,
     bind: (tools) => ({
-      descriptors: () => tools.descriptors(),
+      // Forward the projection context. Dropping it silently disabled THE LAW's
+      // primary mechanism (design §12): the guard withholds destructive and
+      // external tools from an unattended run, and a gate that swallows `ctx`
+      // makes every one of them visible to an automation again. The gate has no
+      // opinion about projection — its whole job is execution — so it must pass
+      // the argument straight through rather than re-declaring a narrower shape.
+      descriptors: (ctx) => tools.descriptors(ctx),
       execute: async (call, ctx) => {
         const gated = await check(call, ctx);
         if (gated === undefined) return tools.execute(call, ctx);

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import YAML from "yaml";
-import type { ExtractedTool, HttpMethod } from "../formats.js";
+import type { ExtractedTool, HttpMethod, SchemaSource } from "../formats.js";
 import { extractedRisk, routeToolFullName } from "./common.js";
 
 type JsonObject = Record<string, unknown>;
@@ -111,10 +111,31 @@ function descriptionFor(operation: JsonObject, method: HttpMethod, route: string
   return parts.length > 0 ? parts.join(". ") : `${method} ${route}`;
 }
 
-export async function extractOpenApi(specPath: string): Promise<ExtractedTool[]> {
+async function readDocument(specPath: string): Promise<JsonObject> {
   const raw = await fs.readFile(specPath, "utf8");
   const parsed = specPath.endsWith(".yaml") || specPath.endsWith(".yml") ? YAML.parse(raw) : JSON.parse(raw);
-  const document = jsonObject(parsed);
+  return jsonObject(parsed);
+}
+
+/**
+ * The mount point a RELATIVE `servers[0].url` declares — `"/cadence"` for a host
+ * served in place at `demos.vendo.run/cadence` — or "" for a host at the origin
+ * root. `"/"`, an absent `servers`, and an absolute url all mean "" (an absolute
+ * url carries its own path on `binding.baseUrl` instead), so every spec that
+ * does not opt in is untouched.
+ *
+ * Read here and applied by the caller across ALL extractors, not folded into the
+ * bindings below: see `runExtractors`.
+ */
+export async function openApiMountPath(specPath: string): Promise<string> {
+  const servers = (await readDocument(specPath)).servers;
+  const url = jsonObject((Array.isArray(servers) ? servers : [])[0]).url;
+  if (typeof url !== "string" || !url.startsWith("/")) return "";
+  return url.replace(/\/+$/u, "");
+}
+
+export async function extractOpenApi(specPath: string): Promise<ExtractedTool[]> {
+  const document = await readDocument(specPath);
   const paths = jsonObject(document.paths);
   const baseUrl = absoluteBaseUrl(document);
   const tools: ExtractedTool[] = [];
@@ -136,8 +157,13 @@ export async function extractOpenApi(specPath: string): Promise<ExtractedTool[]>
         name,
         description: descriptionFor(operation, method, route),
         inputSchema: inputSchema(document, pathItem, operation),
-        ...(output === undefined ? {} : { outputSchema: output }),
-        risk: extractedRisk(method, name, "openapi"),
+        // A spec that declares no parameters HAS declared the argument list:
+        // an empty one. That is what stops the AI judge touching this slot.
+        inputSchemaSource: "declared" satisfies SchemaSource,
+        ...(output === undefined
+          ? { outputSchemaSource: "unknown" satisfies SchemaSource }
+          : { outputSchema: output, outputSchemaSource: "declared" satisfies SchemaSource }),
+        risk: extractedRisk(method),
         binding: {
           kind: "openapi",
           operationId,

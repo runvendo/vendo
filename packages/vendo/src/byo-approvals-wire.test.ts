@@ -30,7 +30,6 @@ async function tempStore(): Promise<VendoStore> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-byo-wire-"));
   const store = createStore({ dataDir });
   cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
   });
@@ -86,10 +85,12 @@ async function setup(options: { parkedCallTtlMs?: number; clock?: () => number }
     model: {} as LanguageModel,
     principal: async () => principal,
     store,
-    policy: { rules: [{ match: { risk: "write" }, action: "ask" }] },
-    ...(options.parkedCallTtlMs === undefined
-      ? {}
-      : { approvals: { parkedCallTtlMs: options.parkedCallTtlMs } }),
+    guard: {
+      policy: { rules: [{ match: { risk: "write" }, action: "ask" }] },
+      ...(options.parkedCallTtlMs === undefined
+        ? {}
+        : { approvals: { parkedCallTtlMs: options.parkedCallTtlMs } }),
+    },
     ...(options.clock === undefined
       ? {}
       : { sessions: { ttlMs: 0, sweepIntervalMs: 1, now: options.clock } }),

@@ -39,12 +39,8 @@ import {
  */
 
 /** The model slots the runtime composes. `extract` never runs in-process —
- *  it exists so the CLI extraction ladder shares the same pin names.
- *  `knowledgeVerifier` (K15) is the knowledge tool's evidence check: its own
- *  slot beside `judge` rather than borrowing it, so a host can pin or swap the
- *  cheap model that gates its answers without touching the judge that grades
- *  them. */
-export type VendoModelSlot = "agent" | "paint" | "judge" | "extract" | "knowledgeVerifier";
+ *  it exists so the CLI extraction ladder shares the same pin names. */
+export type VendoModelSlot = "agent" | "paint" | "judge" | "extract";
 
 export interface DevModelOptions {
   /** Host app root; providers resolve from here. Default cwd. */
@@ -139,12 +135,6 @@ const CLOUD_FAMILY: Record<VendoModelSlot, string> = {
   paint: "vendo-paint",
   judge: "vendo-judge",
   extract: "vendo-extract",
-  // The gateway serves the family's fast tier under `vendo-judge`; the
-  // knowledge verifier wants exactly that tier, so it rides that id rather
-  // than an id the gateway would have to grace-remap on every knowledge turn.
-  // The SLOT is still its own — VENDO_MODEL_KNOWLEDGE_VERIFIER and
-  // models.knowledgeVerifier pin this call and nothing else.
-  knowledgeVerifier: "vendo-judge",
 };
 
 /** Env pins, one per slot (spec DX surface 5). Highest non-explicit
@@ -154,7 +144,6 @@ export const SLOT_PIN_ENV: Record<VendoModelSlot, string> = {
   paint: "VENDO_MODEL_PAINT",
   judge: "VENDO_MODEL_JUDGE",
   extract: "VENDO_MODEL_EXTRACT",
-  knowledgeVerifier: "VENDO_MODEL_KNOWLEDGE_VERIFIER",
 };
 
 export const NO_CREDENTIAL_MESSAGE =
@@ -179,12 +168,12 @@ function inferSlot(name: string | undefined): VendoModelSlot {
 
 /** The cheap/fast slots: no name given means the family's fast pick, not the
  *  flagship. */
-const FAST_SLOTS = new Set<VendoModelSlot>(["paint", "judge", "knowledgeVerifier"]);
+const FAST_SLOTS = new Set<VendoModelSlot>(["paint", "judge"]);
 
 /** The slots whose model `createVendo`'s `models` block can configure by name
  *  or object. The agent and paint slots resolve through their own paths
  *  (resolveModels), so they are not bound per-instance here. */
-const CONFIGURABLE_SLOTS = ["judge", "knowledgeVerifier"] as const;
+const CONFIGURABLE_SLOTS = ["judge"] as const;
 type ConfigurableSlot = (typeof CONFIGURABLE_SLOTS)[number];
 export type ConfigurableSlotModels = Partial<Record<ConfigurableSlot, string | LanguageModel>>;
 
@@ -360,9 +349,8 @@ export class DevModelController {
   }
 
   private async resolveOnce(): Promise<Resolution> {
-    // Explicit model object configured for this slot (models.judge,
-    // models.knowledgeVerifier) — the "explicit object wins" tier: no
-    // credential resolution, no pins.
+    // Explicit model object configured for this slot (models.judge) — the
+    // "explicit object wins" tier: no credential resolution, no pins.
     const configured = this.configured;
     if (configured !== undefined && typeof configured !== "string") {
       this.announce(`explicit models.${this.slot} model object`);

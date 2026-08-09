@@ -25,7 +25,7 @@ const hostTools: ExtractedTool[] = [
     description: "Delete an invoice",
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
     risk: "destructive",
-    critical: true,
+    confirmEach: true,
     binding: { kind: "route", method: "DELETE", path: "/api/invoices/{id}", argsIn: "query" },
   },
 ];

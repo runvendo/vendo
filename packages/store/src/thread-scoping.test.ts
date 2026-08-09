@@ -33,12 +33,12 @@ for (const backend of backends()) {
         .rejects.toMatchObject<VendoError>({ code: "conflict" });
 
       // u1's row is byte-for-byte intact.
-      expect(await made.sql("SELECT id, subject, messages FROM vendo_threads WHERE id = 'thr_sql'"))
+      expect(await made.sql("SELECT t.id, t.subject, (SELECT jsonb_agg(m.message ORDER BY m.seq) FROM vendo_thread_messages m WHERE m.thread_id = t.id) AS messages FROM vendo_threads t WHERE t.id = 'thr_sql'"))
         .toEqual([{ id: "thr_sql", subject: "user_one", messages: [{ role: "user", text: "mine" }] }]);
 
       // Same-subject re-put still updates in place.
       await threads.put(u1, { id: "thr_sql", messages: [{ role: "user", text: "updated" }] });
-      expect((await made.sql("SELECT messages FROM vendo_threads WHERE id = 'thr_sql'"))[0]?.["messages"])
+      expect((await made.sql("SELECT (SELECT jsonb_agg(m.message ORDER BY m.seq) FROM vendo_thread_messages m WHERE m.thread_id = t.id) AS messages FROM vendo_threads t WHERE t.id = 'thr_sql'"))[0]?.["messages"])
         .toEqual([{ role: "user", text: "updated" }]);
     });
 
@@ -133,7 +133,7 @@ for (const backend of backends()) {
         { id: "thr_cas_foreign", data: threadData(u2.subject, "steal by swap") },
         mine.revision!,
       )).toBeNull();
-      expect(await made.sql("SELECT subject, messages FROM vendo_threads WHERE id = 'thr_cas_foreign'"))
+      expect(await made.sql("SELECT t.subject, (SELECT jsonb_agg(m.message ORDER BY m.seq) FROM vendo_thread_messages m WHERE m.thread_id = t.id) AS messages FROM vendo_threads t WHERE t.id = 'thr_cas_foreign'"))
         .toEqual([{ subject: u1.subject, messages: [{ role: "user", text: "mine" }] }]);
     });
 

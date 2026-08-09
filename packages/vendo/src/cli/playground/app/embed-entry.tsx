@@ -2,9 +2,9 @@
  * The docs inline-embed IIFE entry (vendo.run/playground/embed.js): wires the
  * pure `mountScenario`/`mountLauncher` from `./surface.js` onto `window` so a
  * host page can mount REAL chrome surfaces — scripted data, no model key —
- * directly into its DOM (no iframe). Built by scripts/build-playground.mjs into
- * embed-bundle.gen.ts; the CLI playground server and the vendo-web static
- * export both serve it as /embed.js.
+ * directly into its DOM (no iframe). Built by scripts/build-embed.mjs (run by
+ * hand) into embed-bundle.gen.ts, which vendo-web serves as
+ * /playground/embed.js.
  *
  *   window.VendoDocsEmbed.mount(el, { scenario: "approval-flow" })
  *   window.VendoDocsEmbed.mountLauncher()

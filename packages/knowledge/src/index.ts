@@ -1,24 +1,21 @@
 /**
- * @vendoai/knowledge — the product knowledge base (knowledge design v2,
- * 2026-07-22).
+ * @vendoai/knowledge — the product knowledge base.
  *
  * This package holds the concrete `KnowledgeAdapter` engines — the built-in
  * local lexical engine, the cloud client, and the BYO HTTP template — plus the
  * ingestion pipeline (parse → normalize → structural chunk → sync) and the
  * `vendo_knowledge_search` agent tool, all behind core's frozen contract
- * (`@vendoai/core`, ENG-358).
+ * (`@vendoai/core`).
  *
  * Pure re-export barrel, alphabetical by module.
  */
 
 export type { KnowledgeAdapter } from "@vendoai/core";
 
-/** Knowledge K1 — the `vendo_knowledge_search` agent tool (tool-layer intent
-    policy, structured refusal, read-more) over any adapter. */
+/** The `vendo_knowledge_search` agent tool (tool-layer intent policy,
+    structured refusal, read-more) over any adapter. */
 export {
   createKnowledgeTools,
-  KNOWLEDGE_VERIFY_TURN_BUDGET_MS,
-  toCitation,
   VENDO_KNOWLEDGE_RESULT_KIND,
   VENDO_KNOWLEDGE_SEARCH_TOOL,
   type KnowledgeCitation,
@@ -38,15 +35,11 @@ export {
   type KnowledgeConfig,
   type KnowledgeSourceConfig,
 } from "./ingest/index.js";
-export { bindKnowledgeStore, lexicalKnowledge } from "./local/lexical.js";
-/** Knowledge K14 — the verifier pass itself (cheap model, capped, fail-open). */
+export { bindKnowledgeStore, vendoKnowledge } from "./local/lexical.js";
+/** The static prompt index (boot + sync-state refresh). */
 export {
-  entailmentVerifier,
-  KNOWLEDGE_VERIFY_TIMEOUT_MS,
-  type EntailmentVerifierOptions,
-  type KnowledgeVerdict,
-  type KnowledgeVerifier,
-  type KnowledgeVerifierInput,
-  type KnowledgeVerifierPassage,
-  type KnowledgeVerifyOptions,
-} from "./verifier.js";
+  knowledgeIndexResolver,
+  knowledgeIndexSummary,
+  parseKnowledgeConfig,
+  type KnowledgeIndexReaders,
+} from "./prompt-note.js";

@@ -19,7 +19,7 @@ export async function POST(req: Request) {
       // --- vendo: the quickstart's inline `weather` tool moved into the pack as
       // `vendo_host_get_weather` (lib/vendo.ts), so every call routes through
       // policy → approval → audit. The spread also adds `vendo_host_send_trip_report`
-      // (parks for approval), `vendo_create_app` (generated UI), and `vendo_delegate`.
+      // (parks for approval), `vendo_make` (generated UI), and `vendo_delegate`.
       ...(await vendoTools(vendo, { principal: demoUser })),
       // --- /vendo
     },

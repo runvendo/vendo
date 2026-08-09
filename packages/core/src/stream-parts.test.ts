@@ -192,6 +192,7 @@ describe("vendoAutomationPartSchema", () => {
       enabled: true,
       description: "Emails you when checking dips below $2,000.",
       trigger: {
+        id: "main",
         on: { kind: "schedule", cron: "0 8 * * *" },
         run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
       },

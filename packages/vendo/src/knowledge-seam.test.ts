@@ -27,7 +27,6 @@ async function tempStore(prefix: string): Promise<VendoStore> {
   const dataDir = await mkdtemp(join(tmpdir(), prefix));
   const store = createStore({ dataDir });
   cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
   });

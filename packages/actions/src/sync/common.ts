@@ -154,6 +154,10 @@ async function resolvedCandidate(base: string, realRoot: string): Promise<Resolv
     } catch {
       continue;
     }
+    // The pre-realpath check above is not enough: an in-project symlink
+    // pointing into node_modules resolves to a path inside the root and would
+    // otherwise be captured as if it were the host's own source.
+    if (realCandidate.split(path.sep).includes("node_modules")) continue;
     if (!isInside(realRoot, realCandidate)) continue;
     try {
       return { file: realCandidate, source: await fs.readFile(realCandidate, "utf8") };
@@ -300,6 +304,14 @@ async function importBases(importer: string, specifier: string, root: string): P
   return bases;
 }
 
+/** True when a specifier names a PACKAGE rather than the host's own source:
+ *  nothing relative to resolve and no tsconfig path alias that maps it. Source
+ *  capture stops at that boundary — a node_modules module is never the host's
+ *  code — and stays silent about it, so only genuinely broken host imports warn. */
+export async function isPackageSpecifier(importer: string, specifier: string, root: string): Promise<boolean> {
+  return (await importBases(importer, specifier, root)).length === 0;
+}
+
 async function resolveImportedSource(
   importer: string,
   specifier: string,
@@ -437,7 +449,7 @@ export function allocateToolName(preferred: string, fallbackSuffix: string, used
 }
 
 function uniqueNameFallback(binding: PrimitiveToolBinding): string {
-  if (binding.kind === "trpc" || binding.kind === "graphql") return binding.type;
+  if (binding.kind === "trpc") return binding.type;
   if (binding.kind === "server-action") return "action";
   return binding.method;
 }
@@ -456,12 +468,6 @@ export function withUniqueNames<T extends ExtractedTool>(tools: T[]): T[] {
  *  the tool's `srcHash` (content hash) in the v3 write. */
 export type SourcedExtractedTool = ExtractedTool & { srcPath?: string };
 
-const DESTRUCTIVE_WORDS = new Set([
-  "delete", "remove", "destroy", "cancel", "close", "reset", "revoke", "purge", "wipe", "archive",
-  "unpause", "transfer", "send", "invite",
-]);
-const READ_WORDS = new Set(["get", "list", "fetch", "search", "find", "read", "show", "query", "describe", "count"]);
-
 function words(value: string): string[] {
   return value
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
@@ -471,48 +477,32 @@ function words(value: string): string[] {
     .filter(Boolean);
 }
 
-function containsWord(value: string, vocabulary: ReadonlySet<string>): boolean {
-  return words(value).some((word) => vocabulary.has(word));
+/**
+ * Extraction grades from PROTOCOL FACTS ONLY (risk-grading redesign D2). A
+ * tool's NAME never decides anything: English is infinite, so a word list is
+ * guaranteed to miss (*pay, charge, refund, approve, merge, publish*) and its
+ * existence is what stops a host from auditing the labels.
+ *
+ * `DELETE` is destructive by definition of the method. Nothing else about an
+ * HTTP route is: `GET` alone does not earn `read` (GETs that mutate exist) and
+ * `POST` does not earn `write` (search endpoints post). Anything not proven is
+ * `ungraded`, which the guard asks about until a human or the judge grades it.
+ */
+export function extractedRisk(method: HttpMethod): ExtractedTool["risk"] {
+  return method === "DELETE" ? "destructive" : "ungraded";
 }
 
-export function extractedRisk(method: HttpMethod, name: string, source: "openapi" | "route"): ExtractedTool["risk"] {
-  if (method === "DELETE" || containsWord(name, DESTRUCTIVE_WORDS)) return "destructive";
-  if (source === "openapi" && method === "GET" && containsWord(name, READ_WORDS)) return "read";
-  return "write";
-}
-
-/** tRPC risk labeling (04 §1, fail-closed): the destructive word list applies
- * unchanged; a query earns `read` only with a read-shaped name; everything
- * else — mutations and ambiguously-named queries — defaults to `write`. */
-export function trpcRisk(type: "query" | "mutation", procedure: string): ExtractedTool["risk"] {
-  if (containsWord(procedure, DESTRUCTIVE_WORDS)) return "destructive";
-  if (type === "query" && containsWord(procedure, READ_WORDS)) return "read";
-  return "write";
+/** tRPC risk labeling (04 §1, fail-closed): a `mutation` is a DECLARED
+ * mutation, so it is at least `write` and can never be `read`. A `query` is
+ * not a declared read — tRPC does not stop one from writing — so it stays
+ * `ungraded` until something authorized grades it. */
+export function trpcRisk(type: "query" | "mutation"): ExtractedTool["risk"] {
+  return type === "mutation" ? "write" : "ungraded";
 }
 
 export function trpcToolFullName(procedure: string): string {
   const parts = words(procedure);
   return `host_${parts.length > 0 ? parts.join("_") : "procedure"}`;
-}
-
-/** GraphQL risk labeling (04 §1, fail-closed): identical semantics to tRPC —
- * the destructive word list applies unchanged; a query earns `read` only with
- * a read-shaped name; mutations and ambiguously-named queries default `write`. */
-export function graphqlRisk(type: "query" | "mutation", operation: string): ExtractedTool["risk"] {
-  return trpcRisk(type, operation);
-}
-
-export function graphqlToolFullName(operation: string): string {
-  const parts = words(operation);
-  return `host_${parts.length > 0 ? parts.join("_") : "operation"}`;
-}
-
-/** Server-action risk labeling (04 §1, fail-closed): the destructive word list
- * applies unchanged; everything else defaults to `write`. A read-shaped name
- * never earns `read` — a server action is a POST-shaped mutation surface and
- * static parsing cannot prove it reads only. */
-export function serverActionRisk(name: string): ExtractedTool["risk"] {
-  return containsWord(name, DESTRUCTIVE_WORDS) ? "destructive" : "write";
 }
 
 export function serverActionToolFullName(name: string): string {

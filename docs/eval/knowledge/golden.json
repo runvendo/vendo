@@ -172,7 +172,7 @@
       "memoryQuery": "extracts openapi operations, trpc procedures",
       "expectedDocIds": ["tools-from-your-api"],
       "keyPoints": [
-        "Sync extracts OpenAPI, tRPC, GraphQL, server actions, and host routes",
+        "Sync extracts OpenAPI, tRPC, server actions, and host routes",
         "Extraction writes .vendo/tools.json",
         "Extracted tools are guarded"
       ]

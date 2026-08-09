@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { useVendoContext, type ConnectorOption } from "../context.js";
+import { useVendoProvider, type ConnectorOption } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
 import { useConnectorCatalog } from "../hooks/use-connector-catalog.js";
 import type { ConnectionAccount } from "../wire-types.js";
 import { toolkitLogoUrl } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { completeConnection } from "./connect-dock.js";
+import { completeConnection, connectRefusalCopy, openConnectPopup } from "./connect-dock.js";
 import { toolkitDisplayName } from "./humanize.js";
 
 /** ui-lane-panels picks A + D + F — identity-forward rows, a two-step
@@ -45,6 +45,32 @@ function ToolkitMark({ toolkit }: { toolkit: string }) {
   );
 }
 
+const refusalCode = (reason: unknown): unknown => (reason as { code?: unknown } | null)?.code;
+
+/** The broker answers not-found for any id outside the caller's own scope
+ *  (`ConnectorConnections`' frozen rule), so this is the account ALREADY being
+ *  gone — the person's intent, achieved. The row on screen is the stale half. */
+const alreadyGone = (reason: unknown): boolean => refusalCode(reason) === "not-found";
+
+/** The disconnect half of `connectRefusalCopy`. A refused disconnect leaves the
+ *  account connected — but only some of these clear on their own, and "try
+ *  again in a moment" sends the rest back to the same wall forever. */
+function disconnectRefusalCopy(reason: unknown, name: string): string {
+  const code = refusalCode(reason);
+  // The person can act, just not from here as they are.
+  if (code === "blocked") return `Sign in first, then disconnect ${name}.`;
+  if (code === "forbidden") return `You don’t have access to disconnect ${name} here.`;
+  // Nothing is behind the button on this deployment — no broker configured, or
+  // Cloud standing lapsed. No number of retries reaches it.
+  if (code === "not-implemented" || code === "cloud-required") {
+    return `Disconnecting ${name} isn’t set up here — there’s nothing you can do from this screen.`;
+  }
+  // Everything else: broker 5xx, timeouts, a dropped request — and `validation`,
+  // which the client also stamps on any envelope carrying no code of its own,
+  // so it is the unknown bucket rather than a verdict about the deployment.
+  return `We couldn’t disconnect ${name} — it is still connected. Try again in a moment.`;
+}
+
 interface Severing {
   /** Seconds left on the undo window (display only). */
   left: number;
@@ -64,18 +90,43 @@ export interface ConnectedAccountsPanelProps {
  * in-flow (the connect card); the empty state additionally offers connecting
  * ahead of time via the same broker redirect. */
 export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPanelProps = {}) {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const { options: connectors } = useConnectorCatalog();
   const { connections, disconnect, refresh } = useConnections();
   const [confirming, setConfirming] = useState<Record<string, boolean>>({});
   const [severing, setSevering] = useState<Record<string, Severing | undefined>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string>();
+  // Connects whose sign-in window the browser refused, keyed like `busy` — the
+  // buttons disable per key, so two can run at once, and a shared notice would
+  // let the second connect erase a link the first still needs. `url` is the
+  // broker's own redirect, known only once initiate lands: the fallback link
+  // needs it WHILE the poll runs.
+  const [blocked, setBlocked] = useState<Record<string, { name: string; url?: string } | undefined>>({});
+  // Accounts the WIRE has confirmed gone. The list read that follows a sever is
+  // not what proves it: `useResource` keeps its last good page when a refresh
+  // fails, which would put the row back wearing a Connected chip.
+  const [severed, setSevered] = useState<Record<string, boolean>>({});
   const timers = useRef(new Map<string, { commit: number; tick: number }>());
   // Pending disconnects flush on unmount (an undone-looking row must never
   // silently survive navigation), so the latest wire args live in a ref.
   const pendingRef = useRef(new Map<string, { connector: string }>());
   const cancelled = useRef(false);
+
+  // …and never permanently. `not-found` is also what the composition throws
+  // when the CONNECTOR is missing rather than the account, and the client
+  // cannot tell those apart — so a list read the server actually ANSWERS
+  // overrules the sever: an account still on that page is live, whatever the
+  // disconnect said. `useResource` replaces this array only on a successful
+  // read, so a failed refresh never reaches here and the row stays gone.
+  useEffect(() => {
+    setSevered(current => {
+      const kept = Object.keys(current).filter(id => !connections.some(row => row.id === id));
+      return kept.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(kept.map(id => [id, true]));
+    });
+  }, [connections]);
 
   // The unmount flush must see the CURRENT disconnect without re-running the
   // effect (an effect keyed on `disconnect` would flush pending severs on any
@@ -130,8 +181,22 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
         setBusy(current => ({ ...current, [id]: true }));
         try {
           await disconnect(id, connection.connector);
+          if (!cancelled.current) setSevered(current => ({ ...current, [id]: true }));
         } catch (reason) {
-          if (!cancelled.current) setError(reason instanceof Error ? reason.message : String(reason));
+          // spec §16 law 3 — the wire's sentence is the developer's; the person
+          // gets ours, and it names the refusal rather than a blanket retry.
+          // An account that is already gone is not a failure to report: the
+          // broker answers not-found for anything outside the caller's own
+          // scope, so the sever is a fact and only the row is stale.
+          if (cancelled.current) return;
+          if (alreadyGone(reason)) {
+            setSevered(current => ({ ...current, [id]: true }));
+            // The row is already gone from the page, so this read is not what
+            // proves it — it is the check on the claim. A successful one that
+            // still has the account brings it back (see the effect above); a
+            // failed one changes nothing.
+            await refresh();
+          } else setError(disconnectRefusalCopy(reason, toolkitDisplayName(connection.toolkit)));
         } finally {
           if (!cancelled.current) {
             setBusy(current => ({ ...current, [id]: false }));
@@ -149,48 +214,82 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
     setSevering(current => ({ ...current, [id]: undefined }));
   };
 
-  // Demo-hygiene: a non-active row leads with a single obvious repair — the
-  // same initiate/complete broker flow the connect card runs, then a refresh
-  // so the repaired account settles into the Connected chip.
-  const reconnect = async (connection: ConnectionAccount) => {
+  /**
+   * The panel's one connect: the same initiate → sign-in window → poll-to-active
+   * flow the connect card runs, then a refresh so the account settles into the
+   * Connected chip.
+   *
+   * The window opens FIRST, synchronously inside the click (`openConnectPopup`).
+   * Both callers used to hand `completeConnection` no window at all, which left
+   * it opening one after the initiate await — the post-await shape Safari and
+   * Firefox refuse by call-stack provenance, so the button did nothing at all.
+   * A window the browser refuses anyway is not a dead end either: the connect is
+   * initiated and the poll is running, so `blocked` offers the broker's URL as a
+   * plain link and finishing there settles the row as normal.
+   */
+  const connect = async (key: string, name: string, input: { toolkit: string; connector?: string }) => {
+    const popup = openConnectPopup(key);
+    const clearBlocked = () => setBlocked(current => ({ ...current, [key]: undefined }));
     setError(undefined);
-    setBusy(current => ({ ...current, [`reconnect-${connection.id}`]: true }));
+    setBlocked(current => ({ ...current, [key]: popup === null ? { name } : undefined }));
+    setBusy(current => ({ ...current, [key]: true }));
     try {
-      await completeConnection(
-        client,
-        { toolkit: connection.toolkit, connector: connection.connector },
-        () => cancelled.current,
-      );
-      if (!cancelled.current) await refresh();
+      await completeConnection(client, input, () => cancelled.current, popup, url => {
+        if (popup === null && !cancelled.current) setBlocked(current => ({ ...current, [key]: { name, url } }));
+      });
+      if (cancelled.current) return;
+      clearBlocked();
+      await refresh();
     } catch (reason) {
-      if (!cancelled.current) setError(reason instanceof Error ? reason.message : String(reason));
+      if (!cancelled.current) {
+        // This connect is over, so its link is stale — a fresh initiate is what a
+        // retry needs, and the refusal copy says so. Only THIS key clears: a
+        // sibling connect may still be waiting on its own sign-in.
+        clearBlocked();
+        setError(connectRefusalCopy(reason, name));
+      }
     } finally {
-      if (!cancelled.current) setBusy(current => ({ ...current, [`reconnect-${connection.id}`]: false }));
+      if (!cancelled.current) setBusy(current => ({ ...current, [key]: false }));
     }
   };
+
+  // Demo-hygiene: a non-active row leads with a single obvious repair.
+  const reconnect = (connection: ConnectionAccount) => connect(
+    `reconnect-${connection.id}`,
+    toolkitDisplayName(connection.toolkit),
+    { toolkit: connection.toolkit, connector: connection.connector },
+  );
 
   // Connect-ahead runs through the host's connector catalog (context), so the
   // chips honour host labels and pinned broker connectors — never a hardcoded
   // toolkit list.
-  const connectAhead = async (option: ConnectorOption) => {
-    setError(undefined);
-    setBusy(current => ({ ...current, [`connect-${option.toolkit}`]: true }));
-    try {
-      await completeConnection(client, { toolkit: option.toolkit, connector: option.connector }, () => cancelled.current);
-      if (!cancelled.current) await refresh();
-    } catch (reason) {
-      if (!cancelled.current) setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      if (!cancelled.current) setBusy(current => ({ ...current, [`connect-${option.toolkit}`]: false }));
-    }
-  };
+  const connectAhead = (option: ConnectorOption) => connect(
+    `connect-${option.toolkit}`,
+    option.label ?? toolkitDisplayName(option.toolkit),
+    { toolkit: option.toolkit, connector: option.connector },
+  );
+
+  const rows = connections.filter(connection => severed[connection.id] !== true);
 
   return (
     <ChromeRoot>
       <section aria-labelledby="vendo-accounts-heading" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <h2 id="vendo-accounts-heading" className="fl-auto-title" style={{ margin: 0 }}>Connected accounts</h2>
         {error ? <div role="alert" className="fl-error">{error}</div> : null}
-        {connections.length === 0 ? (
+        {Object.entries(blocked).map(([key, entry]) => entry === undefined ? null : (
+          // The window never opened, but the connect did: the poll is running on
+          // that account, so the same URL in a tab finishes it. One notice per
+          // connect still waiting — each names its own service.
+          <div key={key} role="status" className="fl-connect-blocked">
+            <span>Your browser blocked the {entry.name} sign-in window. Open it yourself — we’ll pick it up from here.</span>
+            {entry.url === undefined ? null : (
+              <a className="fl-btn fl-btn-primary" href={entry.url} target="_blank" rel="noreferrer">
+                Open sign-in in a new tab
+              </a>
+            )}
+          </div>
+        ))}
+        {rows.length === 0 ? (
           <div className="fl-acct-ghost">
             <span className="fl-acct-ghost-title">No connected accounts yet</span>
             <p className="fl-acct-ghost-copy">
@@ -218,7 +317,7 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
             ) : null}
           </div>
         ) : null}
-        {connections.map(connection => {
+        {rows.map(connection => {
           const name = toolkitDisplayName(connection.toolkit);
           const status = STATUS[connection.status];
           const sever = severing[connection.id];

@@ -1,4 +1,4 @@
-import type { VendoTheme } from "@vendoai/core";
+import { themeCssVariables, type VendoTheme } from "@vendoai/core";
 
 /**
  * The chrome every door-rendered page shares: the host's theme as `--vendo-*`
@@ -8,36 +8,16 @@ import type { VendoTheme } from "@vendoai/core";
  * instead of two copies to keep in sync by hand.
  */
 
-/** Intentionally mirrors `@vendoai/ui`'s theme-token mapping (`packages/ui/src/theme.ts`)
- * rather than importing it: `scripts/dependency-guard.mjs` restricts `@vendoai/mcp` to
- * `@vendoai/core` only, so ui is not an importable dependency here. There is no shared
- * home for this mapping today — core does not carry it, and ui does not re-export it from
- * core — so any change to ui's theme→CSS-variable mapping must be mirrored here by eye. */
+/** The style-attribute serialization of core's one theme→CSS-variable mapping.
+ * It lives in core rather than ui because `scripts/dependency-guard.mjs`
+ * restricts `@vendoai/mcp` to `@vendoai/core`, so ui is not importable here. */
 export function vendoThemeStyle(theme: VendoTheme): string {
-  const variables: Record<string, string> = {};
-  for (const [key, value] of Object.entries(theme.colors)) {
-    variables[`--vendo-color-${kebab(key)}`] = value;
-  }
-  variables["--vendo-font-family"] = theme.typography.fontFamily;
-  if (theme.typography.headingFamily !== undefined) {
-    variables["--vendo-heading-family"] = theme.typography.headingFamily;
-  }
-  variables["--vendo-font-size"] = theme.typography.baseSize;
-  for (const [key, value] of Object.entries(theme.radius)) {
-    variables[`--vendo-radius-${kebab(key)}`] = value;
-  }
-  variables["--vendo-density"] = theme.density;
-  variables["--vendo-motion"] = theme.motion;
-  return Object.entries(variables).map(([name, value]) => `${name}:${value}`).join(";");
+  return Object.entries(themeCssVariables(theme)).map(([name, value]) => `${name}:${value}`).join(";");
 }
 
 /** The theme as a ready-to-inline `style` attribute (empty when unthemed). */
 export function themeAttribute(theme?: VendoTheme): string {
   return theme === undefined ? "" : ` style="${escapeHtml(vendoThemeStyle(theme))}"`;
-}
-
-function kebab(name: string): string {
-  return name.replace(/[A-Z]/g, (character) => `-${character.toLowerCase()}`);
 }
 
 export function escapeHtml(value: string): string {

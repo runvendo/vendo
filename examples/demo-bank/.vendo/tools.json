@@ -1,0 +1,1857 @@
+{
+  "format": "vendo/tools@3",
+  "tools": [
+    {
+      "name": "host_auth_create",
+      "description": "POST /api/auth/{nextauth}",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "nextauth": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nextauth"
+        ],
+        "additionalProperties": true
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/api/auth/{nextauth}",
+        "argsIn": "body"
+      },
+      "inputSchemaSource": "unknown",
+      "outputSchemaSource": "unknown",
+      "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec"
+    },
+    {
+      "name": "host_auth_get",
+      "description": "GET /api/auth/{nextauth}",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "nextauth": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nextauth"
+        ],
+        "additionalProperties": true
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/auth/{nextauth}",
+        "argsIn": "query"
+      },
+      "inputSchemaSource": "unknown",
+      "outputSchemaSource": "unknown",
+      "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec"
+    },
+    {
+      "name": "host_createOrder",
+      "description": "Place a delivery order on the user's account. This MOVES MONEY: it charges the user's card and appends a transaction.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "merchant": {
+                "type": "string",
+                "description": "Merchant name, e.g. DoorDash"
+              },
+              "amountCents": {
+                "type": "number",
+                "description": "Charge amount in cents, e.g. 3184"
+              },
+              "descriptor": {
+                "type": "string",
+                "description": "Card statement descriptor"
+              },
+              "items": {
+                "type": "string",
+                "description": "Human-readable order contents"
+              },
+              "hour": {
+                "type": "number",
+                "description": "Order hour (0-23, Pacific). Demo default is late-night."
+              },
+              "minute": {
+                "type": "number",
+                "description": "Order minute (0-59)"
+              }
+            }
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "accountId": {
+                "type": "string"
+              },
+              "cardId": {
+                "type": "string"
+              },
+              "merchant": {
+                "type": "string"
+              },
+              "descriptor": {
+                "type": "string"
+              },
+              "logo": {
+                "type": "string"
+              },
+              "amount": {
+                "type": "integer",
+                "description": "Amount in integer cents, negative for a debit: divide by 100 exactly once before displaying."
+              },
+              "timestamp": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "dining",
+                  "groceries",
+                  "coffee",
+                  "transport",
+                  "subscriptions",
+                  "shopping",
+                  "income",
+                  "transfer",
+                  "housing",
+                  "other"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "posted",
+                  "pending",
+                  "authorized"
+                ]
+              },
+              "statusTimeline": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "at"
+                  ]
+                }
+              },
+              "method": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "string"
+              },
+              "recurringId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "accountId",
+              "merchant",
+              "descriptor",
+              "amount",
+              "timestamp",
+              "category",
+              "status",
+              "statusTimeline",
+              "method"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "createOrder",
+        "method": "POST",
+        "path": "/api/orders"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_demo_reset_create",
+      "description": "POST /api/demo/reset",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/api/demo/reset",
+        "argsIn": "body"
+      },
+      "inputSchemaSource": "unknown",
+      "outputSchemaSource": "unknown",
+      "srcHash": "sha256:ab3ae3e6b09905fa7c73eb198dbfb1d227d46621e883c333933eedd3ae060613"
+    },
+    {
+      "name": "host_getAccount",
+      "description": "Fetch one account by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Account id, e.g. acct_checking"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "checking",
+                  "savings",
+                  "credit",
+                  "investing"
+                ]
+              },
+              "mask": {
+                "type": "string"
+              },
+              "balance": {
+                "type": "integer",
+                "description": "Balance in integer cents: divide by 100 exactly once before displaying."
+              },
+              "accountNumber": {
+                "type": "string"
+              },
+              "routingNumber": {
+                "type": "string"
+              },
+              "apy": {
+                "type": "number"
+              },
+              "sparkline": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "kind",
+              "mask",
+              "balance",
+              "accountNumber",
+              "sparkline"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getAccount",
+        "method": "GET",
+        "path": "/api/accounts/{id}"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_getBudgets",
+      "description": "Budgets with spend-to-date per category.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "dining",
+                    "groceries",
+                    "coffee",
+                    "transport",
+                    "subscriptions",
+                    "shopping",
+                    "income",
+                    "transfer",
+                    "housing",
+                    "other"
+                  ]
+                },
+                "limit": {
+                  "type": "integer",
+                  "description": "Monthly limit in integer cents."
+                },
+                "spent": {
+                  "type": "integer",
+                  "description": "Spent this month, in integer cents."
+                }
+              },
+              "required": [
+                "category",
+                "limit",
+                "spent"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getBudgets",
+        "method": "GET",
+        "path": "/api/insights/budgets"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_getCashflowInsights",
+      "description": "Cash inflow/outflow summary.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "The cashflow periods live under `data` — the array itself is `data`, never the response body.",
+        "properties": {
+          "data": {
+            "type": "array",
+            "description": "One entry per period, oldest first.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "in": {
+                  "type": "integer",
+                  "description": "Money in for the period, in integer cents (e.g. 1284000 = $12,840.00): divide by 100 exactly once before displaying, including any totals you compute."
+                },
+                "out": {
+                  "type": "integer",
+                  "description": "Money out for the period, in integer cents: divide by 100 exactly once before displaying."
+                }
+              },
+              "required": [
+                "label",
+                "in",
+                "out"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getCashflowInsights",
+        "method": "GET",
+        "path": "/api/insights/cashflow"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_getProfile",
+      "description": "Fetch the signed-in user's profile.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "netWorth": {
+                "type": "integer",
+                "description": "Net worth in integer cents."
+              },
+              "accountCount": {
+                "type": "integer"
+              },
+              "avatarInitials": {
+                "type": "string"
+              },
+              "demoAutologin": {
+                "type": "boolean"
+              },
+              "staff": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "subject": {
+                      "type": "string"
+                    },
+                    "display": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "subject",
+                    "display",
+                    "email"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "name",
+              "email",
+              "netWorth",
+              "accountCount",
+              "avatarInitials"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getProfile",
+        "method": "GET",
+        "path": "/api/profile"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_getRecurringInsights",
+      "description": "Detected recurring charges and subscriptions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "merchant": {
+                  "type": "string"
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "Amount in integer cents, negative for a debit."
+                },
+                "cadence": {
+                  "type": "string",
+                  "enum": [
+                    "monthly",
+                    "weekly"
+                  ]
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "dining",
+                    "groceries",
+                    "coffee",
+                    "transport",
+                    "subscriptions",
+                    "shopping",
+                    "income",
+                    "transfer",
+                    "housing",
+                    "other"
+                  ]
+                },
+                "nextDate": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "merchant",
+                "amount",
+                "cadence",
+                "category",
+                "nextDate"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getRecurringInsights",
+        "method": "GET",
+        "path": "/api/insights/recurring"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_getSpendingInsights",
+      "description": "Spending by category for the current period.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "The spending slices live under `data` — the array itself is `data`, never the response body.",
+        "properties": {
+          "data": {
+            "type": "array",
+            "description": "One slice per spending category, largest first.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "dining",
+                    "groceries",
+                    "coffee",
+                    "transport",
+                    "subscriptions",
+                    "shopping",
+                    "income",
+                    "transfer",
+                    "housing",
+                    "other"
+                  ]
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "Amount spent in integer cents (e.g. 285000 = $2,850.00): divide by 100 exactly once before displaying, including any totals you compute."
+                }
+              },
+              "required": [
+                "category",
+                "amount"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getSpendingInsights",
+        "method": "GET",
+        "path": "/api/insights/spending"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_getTransaction",
+      "description": "Fetch one transaction by id, including its status timeline.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "accountId": {
+                "type": "string"
+              },
+              "cardId": {
+                "type": "string"
+              },
+              "merchant": {
+                "type": "string"
+              },
+              "descriptor": {
+                "type": "string"
+              },
+              "logo": {
+                "type": "string"
+              },
+              "amount": {
+                "type": "integer",
+                "description": "Amount in integer cents, negative for a debit: divide by 100 exactly once before displaying."
+              },
+              "timestamp": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "dining",
+                  "groceries",
+                  "coffee",
+                  "transport",
+                  "subscriptions",
+                  "shopping",
+                  "income",
+                  "transfer",
+                  "housing",
+                  "other"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "posted",
+                  "pending",
+                  "authorized"
+                ]
+              },
+              "statusTimeline": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "at"
+                  ]
+                }
+              },
+              "method": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "string"
+              },
+              "recurringId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "accountId",
+              "merchant",
+              "descriptor",
+              "amount",
+              "timestamp",
+              "category",
+              "status",
+              "statusTimeline",
+              "method"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getTransaction",
+        "method": "GET",
+        "path": "/api/transactions/{id}"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_listAccounts",
+      "description": "List the user's bank accounts with balances.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "checking",
+                    "savings",
+                    "credit",
+                    "investing"
+                  ]
+                },
+                "mask": {
+                  "type": "string"
+                },
+                "balance": {
+                  "type": "integer",
+                  "description": "Balance in integer cents: divide by 100 exactly once before displaying."
+                },
+                "accountNumber": {
+                  "type": "string"
+                },
+                "routingNumber": {
+                  "type": "string"
+                },
+                "apy": {
+                  "type": "number"
+                },
+                "sparkline": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "kind",
+                "mask",
+                "balance",
+                "accountNumber",
+                "sparkline"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listAccounts",
+        "method": "GET",
+        "path": "/api/accounts"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_listAccountTransactions",
+      "description": "List recent transactions for one account.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Account id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "One page of transactions. The rows are `data.data`; the outer `data` is the API envelope.",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "cardId": {
+                      "type": "string"
+                    },
+                    "merchant": {
+                      "type": "string"
+                    },
+                    "descriptor": {
+                      "type": "string"
+                    },
+                    "logo": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "description": "Amount in integer cents, negative for a debit: divide by 100 exactly once before displaying."
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "dining",
+                        "groceries",
+                        "coffee",
+                        "transport",
+                        "subscriptions",
+                        "shopping",
+                        "income",
+                        "transfer",
+                        "housing",
+                        "other"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "posted",
+                        "pending",
+                        "authorized"
+                      ]
+                    },
+                    "statusTimeline": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "state": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "state",
+                          "at"
+                        ]
+                      }
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "notes": {
+                      "type": "string"
+                    },
+                    "recurringId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "accountId",
+                    "merchant",
+                    "descriptor",
+                    "amount",
+                    "timestamp",
+                    "category",
+                    "status",
+                    "statusTimeline",
+                    "method"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": "string"
+              },
+              "total": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "data",
+              "total"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listAccountTransactions",
+        "method": "GET",
+        "path": "/api/accounts/{id}/transactions"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_listCards",
+      "description": "List the user's physical and virtual cards.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "physical",
+                    "virtual"
+                  ]
+                },
+                "network": {
+                  "type": "string",
+                  "enum": [
+                    "visa",
+                    "mastercard"
+                  ]
+                },
+                "mask": {
+                  "type": "string"
+                },
+                "expMonth": {
+                  "type": "integer"
+                },
+                "expYear": {
+                  "type": "integer"
+                },
+                "frozen": {
+                  "type": "boolean"
+                },
+                "spendLimit": {
+                  "type": "integer",
+                  "description": "Spend limit in integer cents."
+                },
+                "design": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "accountId",
+                "type",
+                "network",
+                "mask",
+                "expMonth",
+                "expYear",
+                "frozen",
+                "design"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listCards",
+        "method": "GET",
+        "path": "/api/cards"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_listCardTransactions",
+      "description": "List recent transactions charged to one card.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Card id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "One page of transactions. The rows are `data.data`; the outer `data` is the API envelope.",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "cardId": {
+                      "type": "string"
+                    },
+                    "merchant": {
+                      "type": "string"
+                    },
+                    "descriptor": {
+                      "type": "string"
+                    },
+                    "logo": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "description": "Amount in integer cents, negative for a debit: divide by 100 exactly once before displaying."
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "dining",
+                        "groceries",
+                        "coffee",
+                        "transport",
+                        "subscriptions",
+                        "shopping",
+                        "income",
+                        "transfer",
+                        "housing",
+                        "other"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "posted",
+                        "pending",
+                        "authorized"
+                      ]
+                    },
+                    "statusTimeline": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "state": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "state",
+                          "at"
+                        ]
+                      }
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "notes": {
+                      "type": "string"
+                    },
+                    "recurringId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "accountId",
+                    "merchant",
+                    "descriptor",
+                    "amount",
+                    "timestamp",
+                    "category",
+                    "status",
+                    "statusTimeline",
+                    "method"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": "string"
+              },
+              "total": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "data",
+              "total"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listCardTransactions",
+        "method": "GET",
+        "path": "/api/cards/{id}/transactions"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_listGoals",
+      "description": "List savings goals with progress.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "integer",
+                  "description": "Target in integer cents."
+                },
+                "saved": {
+                  "type": "integer",
+                  "description": "Saved so far, in integer cents."
+                },
+                "icon": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "target",
+                "saved",
+                "icon"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listGoals",
+        "method": "GET",
+        "path": "/api/goals"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_listNotifications",
+      "description": "List recent account notifications.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "deposit",
+                    "card",
+                    "alert",
+                    "security",
+                    "transfer"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "read": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "title",
+                "body",
+                "at",
+                "read"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listNotifications",
+        "method": "GET",
+        "path": "/api/notifications"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_listPayees",
+      "description": "List saved payees.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "person",
+                    "biller"
+                  ]
+                },
+                "mask": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "kind"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listPayees",
+        "method": "GET",
+        "path": "/api/payees"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_listScheduledPayments",
+      "description": "List upcoming scheduled payments.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "payeeId": {
+                  "type": "string"
+                },
+                "payeeName": {
+                  "type": "string"
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "Amount in integer cents."
+                },
+                "nextDate": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "cadence": {
+                  "type": "string",
+                  "enum": [
+                    "once",
+                    "weekly",
+                    "monthly"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "payeeId",
+                "payeeName",
+                "amount",
+                "nextDate",
+                "cadence"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listScheduledPayments",
+        "method": "GET",
+        "path": "/api/payments/scheduled"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_listTransactions",
+      "description": "Search and list transactions across all accounts, with filters, sorting and cursor pagination.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text match on merchant/descriptor"
+          },
+          "category": {
+            "type": "string",
+            "description": "Category, e.g. dining, groceries, coffee, transport, subscriptions"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "pending | authorized | posted"
+          },
+          "from": {
+            "type": "string",
+            "description": "ISO date lower bound"
+          },
+          "to": {
+            "type": "string",
+            "description": "ISO date upper bound"
+          },
+          "min": {
+            "type": "number",
+            "description": "Minimum absolute amount in cents"
+          },
+          "max": {
+            "type": "number",
+            "description": "Maximum absolute amount in cents"
+          },
+          "sort": {
+            "type": "string",
+            "description": "date_desc | date_asc | amount_desc | amount_asc"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "cursor": {
+            "type": "string"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "One page of transactions. The rows are `data.data`; the outer `data` is the API envelope.",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "cardId": {
+                      "type": "string"
+                    },
+                    "merchant": {
+                      "type": "string"
+                    },
+                    "descriptor": {
+                      "type": "string"
+                    },
+                    "logo": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "description": "Amount in integer cents, negative for a debit: divide by 100 exactly once before displaying."
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "dining",
+                        "groceries",
+                        "coffee",
+                        "transport",
+                        "subscriptions",
+                        "shopping",
+                        "income",
+                        "transfer",
+                        "housing",
+                        "other"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "posted",
+                        "pending",
+                        "authorized"
+                      ]
+                    },
+                    "statusTimeline": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "state": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "state",
+                          "at"
+                        ]
+                      }
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "notes": {
+                      "type": "string"
+                    },
+                    "recurringId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "accountId",
+                    "merchant",
+                    "descriptor",
+                    "amount",
+                    "timestamp",
+                    "category",
+                    "status",
+                    "statusTimeline",
+                    "method"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": "string"
+              },
+              "total": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "data",
+              "total"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listTransactions",
+        "method": "GET",
+        "path": "/api/transactions"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_transferMoney",
+      "description": "Send money to a person from the user's checking account. This IRREVERSIBLY MOVES MONEY: it debits checking and appends a transfer. There is no undo.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Amount to send in cents (positive whole number), e.g. 50000 = $500.00"
+          },
+          "recipient_name": {
+            "type": "string",
+            "description": "Who the money goes to, e.g. Alex Rivera"
+          },
+          "memo": {
+            "type": "string",
+            "description": "Optional note shown on the transfer, e.g. June rent"
+          }
+        },
+        "required": [
+          "amount",
+          "recipient_name"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "allOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "cardId": {
+                    "type": "string"
+                  },
+                  "merchant": {
+                    "type": "string"
+                  },
+                  "descriptor": {
+                    "type": "string"
+                  },
+                  "logo": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer",
+                    "description": "Amount in integer cents, negative for a debit: divide by 100 exactly once before displaying."
+                  },
+                  "timestamp": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "dining",
+                      "groceries",
+                      "coffee",
+                      "transport",
+                      "subscriptions",
+                      "shopping",
+                      "income",
+                      "transfer",
+                      "housing",
+                      "other"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "posted",
+                      "pending",
+                      "authorized"
+                    ]
+                  },
+                  "statusTimeline": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string"
+                        },
+                        "at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "at"
+                      ]
+                    }
+                  },
+                  "method": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "recurringId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "accountId",
+                  "merchant",
+                  "descriptor",
+                  "amount",
+                  "timestamp",
+                  "category",
+                  "status",
+                  "statusTimeline",
+                  "method"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "actor": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "transferMoney",
+        "method": "POST",
+        "path": "/api/transfers"
+      },
+      "inputSchemaSource": "declared",
+      "outputSchemaSource": "declared",
+      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+    },
+    {
+      "name": "host_voice_create",
+      "description": "POST /api/voice",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "risk": "ungraded",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/api/voice",
+        "argsIn": "body"
+      },
+      "inputSchemaSource": "unknown",
+      "outputSchemaSource": "unknown",
+      "srcHash": "sha256:3aaabc0c7dcfc4f4b4c835307f88a4c6660a2ce5ff3665dd457b1d701b55dfeb"
+    }
+  ]
+}

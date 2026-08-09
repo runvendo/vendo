@@ -100,6 +100,36 @@ describe("parseSourceFile", () => {
     })).toThrow(/collide/);
   });
 
+  it("treats a heading-less glossary file as one entry named after the file", () => {
+    const docs = parseSourceFile({
+      source,
+      path: "glossary/pricing-terms.md",
+      raw: "Interchange is the fee the card network charges per authorization.\n",
+    });
+    expect(docs).toHaveLength(1);
+    expect(docs[0]).toMatchObject({
+      id: "glossary#glossary/pricing-terms.md#pricing-terms",
+      title: "pricing-terms",
+      text: "Interchange is the fee the card network charges per authorization.",
+    });
+  });
+
+  it("yields no docs for a glossary file with nothing in it", () => {
+    expect(parseSourceFile({ source, path: "glossary.md", raw: "\n   \n" })).toEqual([]);
+  });
+
+  it("names the offending entry when a JSON array element lacks a term or a definition", () => {
+    expect(() => parseSourceFile({ source, path: "api.json", raw: '[{"name": "GET /accounts"}]' }))
+      .toThrow(/api\.json: entry 0 must carry string term\/name and definition\/description/);
+    expect(() => parseSourceFile({ source, path: "api.json", raw: '[{"description": "List accounts."}]' }))
+      .toThrow(/entry 0 must carry/);
+  });
+
+  it("names the offending term when a JSON object maps it to a non-string", () => {
+    expect(() => parseSourceFile({ source, path: "terms.json", raw: '{"APR": {"rate": 1}}' }))
+      .toThrow(/terms\.json: value for term "APR" must be a string definition/);
+  });
+
   it("titles a prose doc from its first h1, fence-aware", () => {
     const docs = parseSourceFile({
       source: { name: "docs", glob: "**/*.md", kind: "docs", visibility: "public" },
@@ -109,6 +139,18 @@ describe("parseSourceFile", () => {
     expect(docs).toHaveLength(1);
     expect(docs[0]!.title).toBe("Real Title");
     expect(docs[0]!.id).toBe("docs#guide.md");
+  });
+
+  it("falls back from an h1 to the first heading of any level, then to the file name", () => {
+    const prose = { name: "docs", glob: "**/*.md", kind: "docs", visibility: "public" } as const;
+    const h2Only = parseSourceFile({ source: prose, path: "guide.md", raw: "## Getting started\nBody.\n" });
+    expect(h2Only[0]!.title).toBe("Getting started");
+    const headingless = parseSourceFile({
+      source: prose,
+      path: "docs/release-notes.md",
+      raw: "Body with no heading at all.\n",
+    });
+    expect(headingless[0]!.title).toBe("release-notes");
   });
 });
 
@@ -151,6 +193,23 @@ describe("ingestSources", () => {
     });
     const second = await ingestSources(config, { root });
     expect(second).toEqual(first);
+  });
+
+  it("skips a source whose directory does not exist instead of failing the whole ingest", async () => {
+    // A renamed or not-yet-created folder in .vendo/knowledge.json matches
+    // nothing; the sources that do exist still ingest.
+    const withMissing: KnowledgeConfig = {
+      ...config,
+      sources: [
+        { name: "handbook", glob: "handbook/**/*.md", kind: "docs", visibility: "public" },
+        config.sources[1]!,
+      ],
+    };
+    const docs = await ingestSources(withMissing, { root });
+    expect(docs.map((doc) => doc.id)).toEqual([
+      "glossary#glossary.md#term-a",
+      "glossary#glossary.md#term-b",
+    ]);
   });
 
   it("rejects an invalid config loudly instead of ingesting a subset", async () => {

@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { InstallEvalFixture } from "./fixtures.js";
 import type { DoctorOutcome } from "./score.js";
+import { runCommand, type CommandResult } from "../process.js";
+import { pathExists } from "../util.js";
 
 /**
  * The harness runs `vendo doctor --json` ITSELF at the end of every run
@@ -17,10 +19,6 @@ import type { DoctorOutcome } from "./score.js";
 const CLI_MISSING_CODE = "vendo-cli-missing";
 const SERVER_UNREACHABLE_CODE = "dev-server-unreachable";
 const PORT_OCCUPIED_CODE = "port-already-occupied";
-
-async function pathExists(file: string): Promise<boolean> {
-  return access(file).then(() => true, () => false);
-}
 
 interface DevServerHandle {
   stop(): Promise<void>;
@@ -76,26 +74,6 @@ function startDevServer(
       await writeFile(logPath, chunks.join(""));
     },
   };
-}
-
-interface CommandResult {
-  code: number | null;
-  stdout: string;
-  stderr: string;
-}
-
-function runCommand(command: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv): Promise<CommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
-  });
 }
 
 interface DoctorJsonReport {
@@ -211,12 +189,11 @@ export async function runFixtureDoctor(options: RunFixtureDoctorOptions): Promis
         detail: `dev server never became ready at ${options.fixture.devServer.readinessUrl}`,
       };
     }
-    const result = await runCommand(
-      doctorCommand.command,
-      [...doctorCommand.prefixArgs, "doctor", ".", "--json", "--url", options.fixture.doctorUrl],
-      options.fixtureDir,
+    const result = await runCommand(doctorCommand.command, {
+      args: [...doctorCommand.prefixArgs, "doctor", ".", "--json", "--url", options.fixture.doctorUrl],
+      cwd: options.fixtureDir,
       env,
-    );
+    });
     await writeFile(
       path.join(options.logsDir, "install-eval.doctor.json.log"),
       `$ vendo doctor . --json --url ${options.fixture.doctorUrl}\n${result.stdout}\n${result.stderr}`,

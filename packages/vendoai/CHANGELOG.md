@@ -1,5 +1,128 @@
 # vendoai
 
+## 0.8.1
+
+### Patch Changes
+
+- 2357b22: The setup surface: declared URLs, one join law, a VendoProvider-only surface, and `init` = install + the shared sync flow.
+
+  **Breaking: `VendoRoot` is removed. Use `VendoProvider`.**
+
+  ```diff
+  -import { VendoRoot } from "@vendoai/vendo/react";
+  -<VendoRoot components={registry}>{children}</VendoRoot>
+  +import { VendoProvider } from "@vendoai/vendo/react";
+  +<VendoProvider baseUrl="/api/vendo" components={registry}>{children}</VendoProvider>
+  ```
+
+  That is the whole migration: the props are identical, and `baseUrl` is the wire
+  mount with your deployment's path prefix included (default `/api/vendo`).
+  `npx vendo doctor` names the swap and the file if you miss one (`E-WIRE-010`).
+
+  **Breaking: `VENDO_BASE_URL` is the app's FULL public URL, path prefix included.**
+
+  Set it to `https://site.com/maple`, not `https://site.com`. Nothing strips its path
+  any more: host tool calls, login redirects and box callbacks all hang off it, each
+  attaching the prefix exactly once through one helper in `@vendoai/core`. Two new
+  optional overrides: `VENDO_HOST_API_URL` (the host API on another origin) and
+  `VENDO_LOGIN_URL` (the login page, which may be on another domain).
+
+  Stored tool paths in `.vendo/tools.json` are now **prefix-free** — run `vendo sync`
+  once to regenerate them. This closes #866 (login redirect drops the base path),
+  #867 (returnTo double-prefix) and #914 (host tools 404 under a path prefix). When the
+  client and the server disagree about where the wire is mounted, the browser now gets
+  one loud named error instead of a mysterious 404, and `vendo doctor` catches an
+  OpenAPI server mount that disagrees with `VENDO_BASE_URL` (`E-CFG-003`).
+
+  **`vendo init` no longer generates `vendo/registry.tsx` or `vendo/vendo-root.tsx`.**
+
+  It scaffolds the server route handler and prints one paste: `<VendoProvider>` around
+  your client root. If you have host components, you write one small `"use client"`
+  file yourself — see the quickstart. Existing generated files are untouched; they are
+  yours now.
+
+  **`vendo init` ends in the same flow `vendo sync` runs.** One extraction, one theme
+  path, one consent question, one report — `init` in full mode (a fresh install has
+  judged nothing), `sync` incremental. `init` now reads `.env` as well as `.env.local`,
+  so a model key that lives in `.env` is no longer invisible.
+
+- Updated dependencies [a7a0fcf]
+- Updated dependencies [8af0712]
+- Updated dependencies [e092567]
+- Updated dependencies [464dce8]
+- Updated dependencies [b99147f]
+- Updated dependencies [022f789]
+- Updated dependencies [53717c4]
+- Updated dependencies [d3e7dcd]
+- Updated dependencies [9b72f48]
+- Updated dependencies [354f231]
+- Updated dependencies [d599d23]
+- Updated dependencies [38e36a0]
+- Updated dependencies [c3b7589]
+- Updated dependencies [0d8f419]
+- Updated dependencies [5f643c7]
+- Updated dependencies [c05d1da]
+- Updated dependencies [8792ab9]
+- Updated dependencies [d31d2bf]
+- Updated dependencies [d24162c]
+- Updated dependencies [66d7db5]
+- Updated dependencies [18d35bd]
+- Updated dependencies [a621123]
+- Updated dependencies [2357b22]
+- Updated dependencies [9e14651]
+  - @vendoai/vendo@0.8.1
+
+## 0.8.0
+
+### Patch Changes
+
+- Updated dependencies [963d980]
+- Updated dependencies [10a2b44]
+- Updated dependencies [1572060]
+- Updated dependencies [3f98372]
+- Updated dependencies [cfacf95]
+- Updated dependencies [21c8b10]
+- Updated dependencies [1bb535b]
+- Updated dependencies [05ac24c]
+- Updated dependencies [8d623ec]
+- Updated dependencies [10a2b44]
+- Updated dependencies [56e0cc3]
+- Updated dependencies [a004031]
+- Updated dependencies [c9df3f7]
+- Updated dependencies [7c12970]
+- Updated dependencies [6eb8a04]
+- Updated dependencies [215bfcc]
+- Updated dependencies [6c1273a]
+- Updated dependencies [fbf265b]
+- Updated dependencies [f7c6da2]
+- Updated dependencies [dd1042c]
+- Updated dependencies [2ed91b0]
+- Updated dependencies [d0c3cc9]
+- Updated dependencies [0197470]
+- Updated dependencies [38dd824]
+- Updated dependencies [798b618]
+- Updated dependencies [8132329]
+- Updated dependencies [98eba22]
+- Updated dependencies [f7c6da2]
+- Updated dependencies [6a3d9e3]
+- Updated dependencies [b576ab9]
+- Updated dependencies [a0dbfc6]
+- Updated dependencies [a004031]
+- Updated dependencies [39a7ecc]
+  - @vendoai/vendo@0.8.0
+
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [47c53e9]
+- Updated dependencies [c0f43b1]
+- Updated dependencies [e56ed30]
+- Updated dependencies [3cfde47]
+- Updated dependencies [ed1940a]
+- Updated dependencies [89b2455]
+  - @vendoai/vendo@0.7.0
+
 ## 0.6.1
 
 ### Patch Changes

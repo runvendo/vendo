@@ -5,9 +5,13 @@
     relative timestamp (absolute in the title/dateTime). */
 import type { AuditEvent } from "@vendoai/core";
 import { useEffect, useState } from "react";
+import { developmentMode } from "./dev-mode.js";
+import { fieldRows } from "./field-rows.js";
 import type { ToolMetaMap } from "./humanize.js";
+import { truncateHead } from "./truncate.js";
 import {
   describeActivity,
+  decidedByLabel,
   eventOutcomeLabel,
   formatAuditTime,
   formatRelativeAuditTime,
@@ -55,6 +59,68 @@ function KindGlyph({ kind, label }: { kind: AuditEvent["kind"]; label: string })
   );
 }
 
+/** How many humanized fields a row's detail carries before it stops being a
+    scannable line. */
+const DETAIL_FIELDS = 3;
+
+/** …and how long the whole line may be. Three fields at `field-rows`' own
+    400-char value cap is ~1.2 kB on a line whose entire job is to be scanned;
+    a fat args object put all of it on one row. */
+const DETAIL_CAP = 120;
+
+/**
+ * CR-2 — a VALUE has to be consumer-safe too.
+ *
+ * THE DEFECT: `fieldRows` humanizes the LABELS and passes the values through
+ * verbatim, so the real audit shape of an app change rendered on a person's
+ * own activity rail as "App id app_9a3f2b1c · Instruction add a chart". An id is
+ * exactly what the humanization of this row exists to keep out; humanizing only
+ * half of each pair let it back in through the other half.
+ *
+ * Dropped, not masked: the row is a one-line summary, and the honest summary of
+ * an id is nothing at all. (The full args stay in the dev-mode preview.)
+ */
+const ID_VALUE = /^(?:[a-z]{2,6}_[A-Za-z0-9][A-Za-z0-9-]{3,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+function namesAnId(value: string): boolean {
+  return value.split("\n").some(line => ID_VALUE.test(line.trim()));
+}
+
+/**
+ * What a row says about the INPUTS, in the user's language.
+ *
+ * THE DEFECT this replaces: the row printed `event.inputPreview` verbatim, and
+ * the guard mints that string as `<tool slug> <canonical JSON>` (guard.ts,
+ * `inputPreview`) — so a person's own activity rail read
+ * `host_getSpendingInsights {"period":"month"}`. The same args go through the
+ * consent surfaces' humanization instead (`fieldRows`, so declared money reads
+ * as money at any depth), and a preview that is NOT that shape prints nothing
+ * at all — a string we cannot account for is never shown to a person. The raw
+ * preview stays a debugging aid, dev-mode only, exactly as the waiting strip
+ * keeps it.
+ */
+export function activityDetail(event: Pick<AuditEvent, "tool" | "inputPreview">): string | undefined {
+  const preview = event.inputPreview?.trim();
+  if (preview === undefined || preview.length === 0) return undefined;
+  const brace = preview.indexOf("{");
+  if (brace === -1) return undefined;
+  // Guard previews lead with the tool slug; anything else in front of the args
+  // is a shape this row does not know how to read.
+  const slug = preview.slice(0, brace).trim();
+  if (slug.length > 0 && slug !== event.tool) return undefined;
+  let args: unknown;
+  try {
+    args = JSON.parse(preview.slice(brace));
+  } catch {
+    // A truncated (500-char capped) or non-JSON preview: nothing honest to say.
+    return undefined;
+  }
+  const rows = fieldRows(args).filter(row => !namesAnId(row.value));
+  if (rows.length === 0) return undefined;
+  const detail = rows.slice(0, DETAIL_FIELDS).map(row => `${row.label} ${row.value}`).join(" · ");
+  return detail.length > DETAIL_CAP ? `${truncateHead(detail, DETAIL_CAP)}…` : detail;
+}
+
 /** The rows only — header, caption, footer and empty states stay with the
     owning panel (they differ between the audit table and the shelf feed). */
 export function ActivityLedger({ events, tools }: { events: AuditEvent[]; tools?: ToolMetaMap }) {
@@ -70,19 +136,22 @@ export function ActivityLedger({ events, tools }: { events: AuditEvent[]; tools?
       {events.map(event => {
         const { kindLabel, action } = describeActivity(event, tools);
         const { label, tone } = eventOutcomeLabel(event);
+        // The server's own preview is a debugging aid, not consumer copy
+        // (waiting-queue.tsx keeps it the same way).
+        const detail = developmentMode() ? event.inputPreview : activityDetail(event);
         return (
           <li className="fl-act-led-row" key={event.id}>
             <KindGlyph kind={event.kind} label={kindLabel} />
             <span className="fl-act-led-main">
               <b>{action}</b>
-              {event.inputPreview ? <span className="fl-act-led-det"> — {event.inputPreview}</span> : null}
+              {detail ? <span className="fl-act-led-det"> — {detail}</span> : null}
             </span>
             <span className="fl-act-led-out">
               <span className="fl-act-outcome">
                 <OutcomeIcon tone={tone} />
                 <span>
                   {label}
-                  {event.decidedBy ? <span className="fl-act-led-by"> by {event.decidedBy}</span> : null}
+                  {event.decidedBy ? <span className="fl-act-led-by"> by {decidedByLabel(event.decidedBy)}</span> : null}
                 </span>
               </span>
             </span>

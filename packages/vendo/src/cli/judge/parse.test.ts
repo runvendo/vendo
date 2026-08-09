@@ -54,6 +54,15 @@ describe("repairJson — the two malformations real judge batches produce", () =
     expect(JSON.parse(repairJson(`{"a": [{"b": 1`)!)).toEqual({ a: [{ b: 1 }] });
   });
 
+  it("drops a trailing comma sitting AT eof before closing — a batch cut after a complete grade", () => {
+    // The commonest truncation of all: the model finished one grade, wrote the
+    // separator, and the output stopped. The trailing-comma rule only fires when
+    // a closer already follows, so the comma survived and the auto-closers were
+    // appended after it — losing every recoverable grade in the batch.
+    expect(JSON.parse(repairJson(`{"tools":[{"name":"a"},`)!)).toEqual({ tools: [{ name: "a" }] });
+    expect(JSON.parse(repairJson(`{"tools":[{"name":"a"},  \n`)!)).toEqual({ tools: [{ name: "a" }] });
+  });
+
   it("NEVER touches commas or braces inside a string literal", () => {
     const raw = `{"evidence": "const x = {a: 1,}; // trailing , here ]"}`;
     expect(JSON.parse(repairJson(raw)!)).toEqual({

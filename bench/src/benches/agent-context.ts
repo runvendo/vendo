@@ -1,19 +1,19 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAgent } from "@vendoai/agent";
-import { createGuard } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
+import { createVendo } from "@vendoai/vendo/server";
 import type { LanguageModel } from "ai";
-import type { RunContext, ToolRegistry } from "@vendoai/core";
+import type { Principal, RunContext } from "@vendoai/core";
 import { measure, summarize } from "../stats.js";
 import type { CaseResult, Suite, SuiteResult } from "../types.js";
 
 /**
- * @vendoai/agent context seam over a real PGlite store. Measures `threads.list`, which the
- * fix slims: a stored title + a messages-less list projection let the listing derive titles
- * without loading every thread's full message array. Each seeded thread carries a chunky
- * messages array so the before/after difference (full messages vs. title-only) is visible.
+ * The thread-listing seam over a real PGlite store, driven through the door that
+ * serves it: `createVendo(...).harness.threads.list`. The fix it measures slims that
+ * listing — a stored title + a messages-less list projection let it derive titles without
+ * loading every thread's full message array. Each seeded thread carries a chunky messages
+ * array so the before/after difference (full messages vs. title-only) is visible.
  */
 
 const THREADS = 150;
@@ -21,11 +21,6 @@ const MESSAGES_PER_THREAD = 30;
 const SUBJECT = "bench_reader";
 const ITERATIONS = 60;
 const WARMUP = 10;
-
-const emptyTools = (): ToolRegistry => ({
-  async descriptors() { return []; },
-  async execute() { return { status: "ok", output: {} }; },
-});
 
 // A never-called model — this suite exercises only thread listing, not generation.
 const idleModel = (): LanguageModel => ({
@@ -59,10 +54,10 @@ export const agentContextSuite: Suite = {
     const cases: CaseResult[] = [];
     try {
       await store.ensureSchema();
-      const guard = createGuard({ store });
-      const agent = createAgent({ model: idleModel(), tools: emptyTools(), guard, store });
+      const principal: Principal = { kind: "user", subject: SUBJECT };
+      const vendo = createVendo({ models: { default: idleModel() }, principal: async () => principal, store });
       const ctx: RunContext = {
-        principal: { kind: "user", subject: SUBJECT },
+        principal,
         venue: "chat",
         presence: "present",
         sessionId: `sess_${SUBJECT}`,
@@ -75,7 +70,7 @@ export const agentContextSuite: Suite = {
       const list = await measure({
         warmup: WARMUP,
         iterations: ITERATIONS,
-        fn: () => agent.threads.list(ctx),
+        fn: () => vendo.harness.threads.list(ctx),
       });
       cases.push(summarize("thread-list", list));
     } finally {

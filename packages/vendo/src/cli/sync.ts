@@ -1,10 +1,11 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
+import { stdin, stdout } from "node:process";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
 import { pushSyncReport } from "./cloud/services.js";
-import { mergeEnvOverDotEnv, readDotEnvFallback } from "./doctor.js";
-import { runJudgmentPass, type JudgmentPassOptions } from "./judge/pass.js";
-import { askYesNo, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
+import type { JudgmentPassOptions } from "./judge/pass.js";
+import { runSyncFlow, type SyncFlowResult } from "./sync-flow.js";
+import { consoleOutput, invokedByPackageScript, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
 
 export interface SyncReportPayload {
   report: SyncReportWithWarnings;
@@ -30,12 +31,30 @@ export interface SyncOptions {
   review?: boolean;
   /** --full: judge the whole catalog instead of only what moved. */
   full?: boolean;
-  /** --no-ai: workspace-internal sync — skip the judgment pass entirely (the
-   *  demo apps' predev/prebuild hooks; committed files must not churn).
-   *  `--no-watermark` remains a silent alias. */
-  noAi?: boolean;
+  /** --ai / --no-ai (`--no-watermark` is the legacy spelling of `--no-ai`):
+   *  `true` runs the judgment pass with no prompt, `false` forces it off, and
+   *  `undefined` asks in an interactive run and skips otherwise. Identical to
+   *  init's rule; no answer is ever persisted. */
+  ai?: boolean;
+  /** --yes: this run cannot ask (never prompt, take the flags as given). */
+  yes?: boolean;
+  /** --theme-refresh: take the deterministic theme scan's values even for
+   *  slots a human hand-edited. */
+  themeRefresh?: boolean;
   /** --engine: pin the judgment engine family (claude | codex | npx). */
   engine?: string;
+  /** Test seam: interactivity override for the AI question (default: TTY),
+   *  mirroring init's. */
+  interactive?: boolean;
+  /** Test seam: the wall-clock budget for each Cloud reconcile (pin baselines,
+   *  registered components). */
+  baselineBudgetMs?: number;
+  /** --push-components / --no-push-components: send the registered-component
+   *  source corpus to Vendo Cloud. `undefined` reads the project's saved answer
+   *  (`.vendo/cloud.json`) and, with none, ASKS once in an interactive run. */
+  pushComponents?: boolean;
+  /** askYesNo seam for the component-upload question (tests inject an answer). */
+  confirm?: (question: string, defaultYes?: boolean) => Promise<boolean>;
   /** Judgment-pass seams (tests / init's chosen harness). */
   judge?: Pick<JudgmentPassOptions,
     "harness" | "harnesses" | "resolveCredential" | "confirm" | "onProgress">;
@@ -44,45 +63,26 @@ export interface SyncOptions {
 /** `sync --json` — the one machine-readable object printed on stdout. */
 export interface SyncJsonResult {
   ok: boolean;                       // exitCode === 0
-  exitCode: 0 | 2 | 3;
+  /** 1 = the run could not do what was asked (`--report` with no Cloud key);
+   *  2 = uncapturable `<Remixable>` wrapper, or breaking changes under
+   *  --strict; 3 = breaking changes with saved references. */
+  exitCode: 0 | 1 | 2 | 3;
   report: SyncReportWithWarnings;
   /** [] = nothing referenced the changed tools; null = impact unknown (dev server unreachable). */
   impact: ToolImpact[] | null;
   /** CLI-level events not carried by the report (unreachable impact endpoint, report-push problems). */
   notes: string[];
+  /** The theme re-scan: which slots this run took from the host, and which
+   *  the host disagrees with but a human owns. null = no `.vendo/theme.json`
+   *  to reconcile (run `vendo init`). */
+  theme: { updated: string[]; pinned: string[] } | null;
+  /** The pin baselines reconciled with Vendo Cloud. null = keyless/BYO — the
+   *  baselines stayed on disk and no request was made. */
+  baselines: { pushed: string[]; pruned: string[] } | null;
+  /** The registered-component corpus reconciled with Vendo Cloud. null =
+   *  keyless/BYO, or the project has not said yes — nothing left the machine. */
+  components: { pushed: string[]; pruned: string[]; modules: { uploaded: number; deleted: number } } | null;
   error?: string;                    // present when extraction itself failed soft
-}
-
-function impactResponse(value: unknown): ToolImpact[] {
-  if (typeof value !== "object" || value === null || !Array.isArray((value as { impact?: unknown }).impact)) {
-    throw new Error("invalid sync impact response");
-  }
-  const impact = (value as { impact: unknown[] }).impact;
-  for (const entry of impact) {
-    if (typeof entry !== "object" || entry === null) throw new Error("invalid sync impact response");
-    const candidate = entry as Partial<ToolImpact>;
-    if (typeof candidate.tool !== "string" || !Array.isArray(candidate.apps)
-      || !Array.isArray(candidate.automations) || typeof candidate.grants !== "number") {
-      throw new Error("invalid sync impact response");
-    }
-  }
-  return impact as ToolImpact[];
-}
-
-function printImpact(output: Output, impact: ToolImpact[]): void {
-  for (const entry of impact) {
-    const categories = [
-      [entry.automations.length, "automation"],
-      [entry.apps.length, "app"],
-      [entry.grants, "grant"],
-    ] as const;
-    const references = categories
-      .filter(([count]) => count > 0)
-      .map(([count, label]) => `${count} ${label}${count === 1 ? "" : "s"}`);
-    output.log(references.length === 0
-      ? `impact: ${entry.tool} no saved references`
-      : `impact: ${entry.tool} breaks ${references.join(", ")}`);
-  }
 }
 
 function nonzero(entry: ToolImpact): boolean {
@@ -101,144 +101,113 @@ export async function runSync(options: SyncOptions): Promise<number> {
   );
 }
 
+/** The `--report` push. Returns whether the run asked to report and could not
+ *  — a `--report` that never reported is a failed run (self-serve audit B6:
+ *  this used to complain and exit 0, so a CI reporting lane stayed green for
+ *  as long as it never reported). */
+async function pushReport(
+  flow: SyncFlowResult,
+  options: SyncOptions,
+  noteError: (message: string) => void,
+): Promise<boolean> {
+  // The same resolved key the baseline push uses — a `--report` that saw a
+  // different env from the reconcile beside it was a trap (#567's fix
+  // applies to every keyed leg of a sync, not just the judgment pass).
+  const apiKey = flow.cloudKey;
+  if (!apiKey) {
+    noteError("vendo sync: --report needs a Vendo Cloud key — run `vendo login`, set VENDO_API_KEY, or pass --key.");
+    return true;
+  }
+  // `impact` rides along only when the check actually ran: nothing
+  // changed means nothing could be impacted, and an empty array would
+  // read to the console as a checked, clean blast radius.
+  const report = flow.report;
+  const checked = report.breaking.length > 0 || report.tools.changed.length > 0;
+  const payload: SyncReportPayload = {
+    report,
+    ...(checked && flow.impact !== null ? { impact: flow.impact } : {}),
+    at: new Date().toISOString(),
+  };
+  try {
+    if (options.push !== undefined) await options.push(payload);
+    else await pushSyncReport(payload, {
+      apiKey,
+      ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
+      ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    });
+  } catch (error) {
+    noteError(`warning: failed to push sync report: ${error instanceof Error ? error.message : "unknown error"}`);
+  }
+  return false;
+}
+
+/**
+ * sync = the shared flow (sync-flow.ts) in "incremental" mode, plus the two
+ * things that are the COMMAND's and not the flow's: the `--report` push and
+ * the exit codes. Fail-soft on purpose — a sync problem must never break a
+ * build — where `vendo init` runs the same flow in "full" mode and fails loud.
+ */
 async function sync(options: SyncOptions): Promise<number> {
   const output = options.output ?? consoleOutput;
   const json = options.json === true;
   // In --json mode, human lines that duplicate report fields are dropped and
   // CLI-level events collect into `notes`; stdout carries exactly one object.
   const notes: string[] = [];
-  const note = (message: string): void => { if (json) notes.push(message); else output.log(message); };
   const noteError = (message: string): void => { if (json) notes.push(message); else output.error(message); };
   try {
     const root = resolve(options.targetDir);
-    const vendoDir = join(root, ".vendo");
-    const report: SyncReportWithWarnings = await (options.sync ?? vendoSync)({
+    // `--json` and `--yes` are non-interactive by construction, and so is a run
+    // started by a package script: the `predev` hook an older init wrote has a
+    // TTY, but the human asked for a dev server, not a question.
+    const interactive = options.interactive
+      ?? (options.yes !== true && !json && !invokedByPackageScript()
+        && Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
+    const flow = await runSyncFlow({
       root,
-      out: vendoDir,
-      // The CLI needs the report to compute exit 2 vs 3; it applies strictness below.
-      strict: false,
+      output: json ? { log() {}, error() {} } : output,
+      mode: options.full === true ? "full" : "incremental",
+      interactive,
+      yes: options.yes === true,
+      ...(options.ai === undefined ? {} : { ai: options.ai }),
+      ...(options.engine === undefined ? {} : { engine: options.engine }),
+      ...(options.review === undefined ? {} : { review: options.review }),
+      ...(options.themeRefresh === undefined ? {} : { themeRefresh: options.themeRefresh }),
+      ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
+      ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
+      ...(options.url === undefined ? {} : { url: options.url }),
+      ...(options.sync === undefined ? {} : { sync: options.sync }),
+      ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+      ...(options.confirm === undefined ? {} : { confirm: options.confirm }),
+      ...(options.judge === undefined ? {} : { judge: options.judge }),
+      ...(options.pushComponents === undefined ? {} : { pushComponents: options.pushComponents }),
+      ...(options.baselineBudgetMs === undefined ? {} : { baselineBudgetMs: options.baselineBudgetMs }),
     });
-    if (!json) {
-      for (const warning of report.warnings) output.error(`warning: ${warning}`);
-      output.log(`tools: +${report.tools.added.length} -${report.tools.removed.length} ~${report.tools.changed.length}`);
-      output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
-      output.log(`catalog.json: ${report.catalog.discovered} discovered, ${report.catalog.registered} registered`);
-      if (report.pins.drifted.length > 0) {
-        // 06-apps §8 — drift never auto-rebases: the fork's owner decides.
-        output.log(`drifted: ${report.pins.drifted.join(", ")} — existing forks stay on the old capture until each owner rebases (POST /apps/:id/rebase-pin or the vendo_apps_rebase_pin agent tool)`);
-      }
-    }
-    // Remix is experimental: unresolved slots warn loudly (slot + reason +
-    // fix hint) but never fail the run — breaking a host's build over a
-    // feature labeled experimental is the wrong contract. When remix
-    // graduates, this returns to a hard exit so the remixable promise is
-    // enforced at dev time. In --json mode the human lines are dropped: the
-    // pins ride in report.unresolvedPins.
-    if (report.unresolvedPins.length > 0 && !json) {
-      output.error("experimental: unresolved remixable slots (remix is experimental — these components cannot be forked until resolved):");
-      for (const pin of report.unresolvedPins) {
-        output.error(`  ${pin.slot} [${pin.reason}]: ${pin.hint}`);
-      }
-    }
+    notes.push(...flow.notes);
+    const report = flow.report;
 
-    const wireUrl = (options.url ?? process.env.VENDO_URL ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
+    const reportUnkeyed = options.report !== true
+      ? false
+      : await pushReport(flow, options, noteError);
 
-    // The judgment pass: grade the freshly synced catalog, with a verbatim
-    // quote behind every proposal and an independent skeptic checking each one.
-    // Hardenings and prose apply themselves; loosenings wait for a human —
-    // `--review` asks now, otherwise they queue as `pending`. Keyless resolves
-    // to one structural-only line; `--no-ai` (workspace-internal syncs) skips
-    // the pass entirely. Fail-soft like everything else in sync — the exit code
-    // never changes.
-    if (options.noAi !== true) {
-      // The judgment credential resolves from this env, so the project's
-      // dotenv must be visible: `vendo login` and BYO keys land in `.env.local`
-      // / `.env`, and a fresh shell that never `source`d them would otherwise
-      // sync structural-only with no signal why (#567). Reuse doctor's parser
-      // (never hand-roll) — real process env still wins over both files.
-      // Precedence end to end: explicit > process.env > .env.local > .env.
-      const judgeEnv = mergeEnvOverDotEnv(await readDotEnvFallback(root), process.env);
-      try {
-        await runJudgmentPass({
-          root,
-          out: vendoDir,
-          mode: options.full === true ? "full" : "incremental",
-          loosenings: options.review === true ? "review" : "queue",
-          env: judgeEnv,
-          // --json keeps exactly one object on stdout, so the pass's narrative
-          // rides the same `notes` channel every other human line does.
-          output: { log: note, error: noteError },
-          ...(options.engine === undefined ? {} : { engine: options.engine }),
-          confirm: options.judge?.confirm ?? askYesNo,
-          ...(options.judge?.harness === undefined ? {} : { harness: options.judge.harness }),
-          ...(options.judge?.harnesses === undefined ? {} : { harnesses: options.judge.harnesses }),
-          ...(options.judge?.resolveCredential === undefined ? {} : { resolveCredential: options.judge.resolveCredential }),
-          ...(options.judge?.onProgress === undefined ? {} : { onProgress: options.judge.onProgress }),
-        });
-      } catch (error) {
-        note(`judgment failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
-      }
-    }
-
-    const tools = [...new Set([
-      ...report.breaking.map((breaking) => breaking.tool),
-      ...report.tools.changed,
-    ])];
-    let impact: ToolImpact[] | undefined;
-    if (tools.length > 0) {
-      const impactUrl = wireUrl;
-      try {
-        const response = await (options.fetchImpl ?? fetch)(`${impactUrl}/sync/impact`, {
-          method: "POST",
-          headers: { accept: "application/json", "content-type": "application/json" },
-          body: JSON.stringify({ tools }),
-        });
-        if (!response.ok) throw new Error(`sync impact returned ${response.status}`);
-        impact = impactResponse(await response.json());
-        if (!json) printImpact(output, impact);
-      } catch {
-        note(`impact unknown — dev server not reachable at ${impactUrl}`);
-      }
-    }
-
-    if (options.report === true) {
-      const apiKey = options.apiKey ?? process.env.VENDO_API_KEY;
-      if (!apiKey) {
-        noteError("--report requires VENDO_API_KEY or --key");
-      } else {
-        const payload: SyncReportPayload = {
-          report,
-          ...(impact === undefined ? {} : { impact }),
-          at: new Date().toISOString(),
-        };
-        try {
-          if (options.push !== undefined) await options.push(payload);
-          else await pushSyncReport(payload, {
-            apiKey,
-            ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
-            ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-          });
-        } catch (error) {
-          noteError(`warning: failed to push sync report: ${error instanceof Error ? error.message : "unknown error"}`);
-        }
-      }
-    }
-
-    let exitCode: SyncJsonResult["exitCode"] = 0;
+    let exitCode: SyncJsonResult["exitCode"] = report.remixableErrors.length > 0 ? 2 : 0;
     if (options.strict === true && report.breaking.length > 0) {
       if (!json) for (const breaking of report.breaking) output.error(`breaking: ${breaking.tool} ${breaking.change}`);
       const breakingTools = new Set(report.breaking.map((breaking) => breaking.tool));
-      exitCode = impact?.some((entry) => breakingTools.has(entry.tool) && nonzero(entry)) === true ? 3 : 2;
+      exitCode = flow.impact?.some((entry) => breakingTools.has(entry.tool) && nonzero(entry)) === true ? 3 : 2;
     }
+    // A --report that never reported is a failed run, whatever the catalog
+    // said; the --strict codes are more specific, so they keep their meaning.
+    if (reportUnkeyed && exitCode === 0) exitCode = 1;
     if (json) {
       const result: SyncJsonResult = {
         ok: exitCode === 0,
         exitCode,
         report,
-        // Nothing changed → nothing could be impacted; changes without a
-        // reachable dev server → unknown, surfaced as null plus a note.
-        impact: impact ?? (tools.length === 0 ? [] : null),
+        impact: flow.impact,
         notes,
+        theme: flow.theme,
+        baselines: flow.baselines,
+        components: flow.components,
       };
       output.log(JSON.stringify(result, null, 2));
     }
@@ -250,9 +219,12 @@ async function sync(options: SyncOptions): Promise<number> {
       const result: SyncJsonResult = {
         ok: exitCode === 0,
         exitCode,
-        report: { tools: { added: [], removed: [], changed: [] }, breaking: [], pins: { captured: [], drifted: [] }, unresolvedPins: [], catalog: { discovered: 0, registered: 0 }, warnings: [] },
+        report: { tools: { added: [], removed: [], changed: [] }, breaking: [], toolSchemas: { total: 0, inputs: { known: 0, unknown: [] }, outputs: { known: 0, unknown: [] } }, pins: { captured: [], drifted: [] }, remixableErrors: [], catalog: { discovered: 0, registered: 0 }, components: { captured: [], drifted: [] }, warnings: [] },
         impact: null,
         notes,
+        theme: null,
+        baselines: null,
+        components: null,
         error: message,
       };
       output.log(JSON.stringify(result, null, 2));

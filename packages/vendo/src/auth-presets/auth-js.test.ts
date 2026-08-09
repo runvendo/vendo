@@ -192,6 +192,25 @@ describe("authJs() oauth login redirect", () => {
     expect(location.searchParams.get("returnTo")).toBe(returnTo);
   });
 
+  /** #866 — the login redirect keeps the deployment's path prefix, and
+   *  VENDO_LOGIN_URL can move it off the deployment entirely. */
+  it("redirects a sessionless caller to the login page UNDER the base path", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://site.com/maple");
+    const preset = authJs({ secret });
+    const redirect = async (): Promise<URL> => {
+      const result = await preset.oauth?.session?.(
+        new Request("https://site.com/maple/api/vendo/threads"),
+        { returnTo: "/maple/api/vendo/threads" },
+      );
+      return new URL((result as Response).headers.get("location")!);
+    };
+    const location = await redirect();
+    expect(location.pathname).toBe("/maple/login");
+    expect(location.searchParams.get("returnTo")).toBe("/maple/api/vendo/threads");
+    vi.stubEnv("VENDO_LOGIN_URL", "https://auth.other.com/login");
+    expect((await redirect()).origin).toBe("https://auth.other.com");
+  });
+
   it("conformance redirect case honors an operator-set VENDO_BASE_URL (env-aware expected origin)", async () => {
     // Correct preset behavior redirects to the PUBLIC origin when
     // VENDO_BASE_URL is set; the kit's expectation must move with it instead

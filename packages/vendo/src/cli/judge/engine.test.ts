@@ -61,6 +61,21 @@ describe("resolveJudgmentEngine", () => {
     expect(resolved.reason).toContain("VENDO_API_KEY");
   });
 
+  it.each(["ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"])(
+    "%s is a coding-agent credential the gate must honor, even though it serves no product turn",
+    async (envVar) => {
+      const resolved = await resolveJudgmentEngine({
+        root: "/tmp",
+        env: { [envVar]: "set" },
+        // The real resolver's answer for this env: no runtime model key. The
+        // harnesses run on it all the same.
+        resolveCredential: async () => ({ rung: "none" }),
+        harnesses: [harness("claude-cli", `your ${envVar}`)],
+      });
+      expect(resolved.engine?.credential).toBe(`your ${envVar}`);
+    },
+  );
+
   it("picks the first available rung when no pin is given", async () => {
     const resolved = await resolveJudgmentEngine({
       root: "/tmp",

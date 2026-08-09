@@ -1,9 +1,8 @@
-import type { ZodType } from "zod";
+import { assert, assertBytesEqual, assertDeepEqual, assertParses } from "./assertions.js";
 import {
   TOOL_NAME_PATTERN,
   agentRunReportSchema,
   authMaterialSchema,
-  canonicalJson,
   descriptorHash,
   guardDecisionSchema,
   isoDateTimeSchema,
@@ -27,6 +26,10 @@ import {
 export { memoryStoreAdapter, type MemoryStoreAdapterOptions } from "./memory-store.js";
 export { memoryKnowledgeAdapter, type MemoryKnowledgeAdapterOptions } from "./memory-knowledge.js";
 export { knowledgeAdapterConformance, type KnowledgeConformanceOptions } from "./knowledge.js";
+export { appAccessConformance, type AppAccessConformanceOptions } from "./app-access.js";
+export { storeOpsConformance, type StoreOpsConformanceOptions } from "./store-ops.js";
+export { memoryStoreOps } from "./memory-store-ops.js";
+export { memoryAppAccess, type MemoryAppAccess } from "./memory-app-access.js";
 
 /**
  * One executable seam assertion. Cases throw on failure and can be mounted in any
@@ -50,32 +53,6 @@ export interface ConformanceReport {
   failures: Array<{ name: string; error: string }>;
   ok: boolean;
 }
-
-const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
-  if (!condition) throw new Error(message);
-};
-
-const assertParses = <T>(schema: ZodType<T>, value: unknown, message: string): T => {
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) {
-    throw new Error(`${message}: ${JSON.stringify(parsed.error.issues)}`);
-  }
-  return parsed.data;
-};
-
-const assertDeepEqual = (actual: unknown, expected: unknown, message: string): void => {
-  // undefined is not JSON — map it to a sentinel so a null/undefined mismatch
-  // fails with THIS assertion message, not canonicalJson's.
-  const canon = (value: unknown): string => (value === undefined ? "undefined" : canonicalJson(value));
-  assert(canon(actual) === canon(expected), message);
-};
-
-const assertBytesEqual = (actual: Uint8Array, expected: Uint8Array, message: string): void => {
-  assert(actual.length === expected.length, `${message}: byte lengths differ`);
-  for (let index = 0; index < actual.length; index += 1) {
-    assert(actual[index] === expected[index], `${message}: byte ${index} differs`);
-  }
-};
 
 /** Executes all cases without stopping at the first failure. */
 export async function runConformance(suite: ConformanceSuite): Promise<ConformanceReport> {
@@ -326,8 +303,8 @@ export function toolRegistryConformance(opts: {
 export function guardConformance(opts: {
   makeGuard(): Promise<Guard>;
   ctx: RunContext;
-  criticalDescriptor: ToolDescriptor;
-  criticalCall: ToolCall;
+  confirmEachDescriptor: ToolDescriptor;
+  confirmEachCall: ToolCall;
   readDescriptor: ToolDescriptor;
   readCall: ToolCall;
   sampleAuditEvent: AuditEvent;
@@ -336,28 +313,28 @@ export function guardConformance(opts: {
     seam: "Guard",
     cases: [
       {
-        /** 01-core §6: check returns a GuardDecision for critical and read calls. */
+        /** 01-core §6: check returns a GuardDecision for confirmEach and read calls. */
         name: "01-core §6 — check returns schema-valid decisions",
         async run(): Promise<void> {
           const guard = await opts.makeGuard();
-          assertParses(guardDecisionSchema, await guard.check(opts.criticalCall, opts.criticalDescriptor, opts.ctx), "critical decision is invalid");
+          assertParses(guardDecisionSchema, await guard.check(opts.confirmEachCall, opts.confirmEachDescriptor, opts.ctx), "confirmEach decision is invalid");
           assertParses(guardDecisionSchema, await guard.check(opts.readCall, opts.readDescriptor, opts.ctx), "read decision is invalid");
         },
       },
       {
-        /** 01-core §4 and 05-guard §2 step 1: critical is an unsuppressible ask. */
-        name: "01-core §4; 05-guard §2 step 1 — critical always asks with frozen descriptor and input preview",
+        /** 01-core §4 and 05-guard §2 step 1: confirmEach is an unsuppressible ask. */
+        name: "01-core §4; 05-guard §2 step 1 — confirmEach always asks with frozen descriptor and input preview",
         async run(): Promise<void> {
           const guard = await opts.makeGuard();
           const decision = assertParses(
             guardDecisionSchema,
-            await guard.check(opts.criticalCall, opts.criticalDescriptor, opts.ctx),
-            "critical decision is invalid",
+            await guard.check(opts.confirmEachCall, opts.confirmEachDescriptor, opts.ctx),
+            "confirmEach decision is invalid",
           );
-          assert(decision.action === "ask", "critical descriptor did not yield ask");
-          assert(decision.decidedBy === "critical", "critical ask was not decidedBy critical");
-          assert(decision.approval.inputPreview.trim().length > 0, "critical approval inputPreview is empty");
-          assertDeepEqual(decision.approval.descriptor, opts.criticalDescriptor, "approval descriptor was not frozen from the asked descriptor");
+          assert(decision.action === "ask", "confirmEach descriptor did not yield ask");
+          assert(decision.decidedBy === "confirmEach", "confirmEach ask was not decidedBy confirmEach");
+          assert(decision.approval.inputPreview.trim().length > 0, "confirmEach approval inputPreview is empty");
+          assertDeepEqual(decision.approval.descriptor, opts.confirmEachDescriptor, "approval descriptor was not frozen from the asked descriptor");
         },
       },
       {

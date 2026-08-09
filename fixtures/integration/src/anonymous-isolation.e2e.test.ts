@@ -20,8 +20,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createStack,
-  generationTurn,
+  screenAgentCreateTurns,
   readSse,
+  readSseMidStream,
   resetFixture,
   textTurn,
   toolCallTurn,
@@ -75,12 +76,13 @@ describe("J7: anonymous sessions are isolated per client through the composed wi
     await resetFixture();
     stack = await createStack({
       turns: [
-        // Client 1, thread thr_anon_app: generate an app (create → generate → text).
-        toolCallTurn("vendo_apps_create", { prompt: "Build a greeting card" }, "call_app"),
+        // Client 1, thread thr_anon_app: generate an app (make → generate → text).
+        toolCallTurn("vendo_make", { request: "Build a greeting card" }, "call_app"),
         // Two-lane create (v2 spec §4): the tier-0 paint lane and the full
         // lane each consume one generation turn.
-        generationTurn(CREATE_DIALECT),
-        generationTurn(CREATE_DIALECT, "gen_2"),
+        // The screen agent answers this ask itself (it is THE engine for a
+        // `vendo_make` now), so the conductor spends no generation turns.
+        ...screenAgentCreateTurns(CREATE_DIALECT),
         textTurn("Created your app.", "t1"),
         // Client 1, thread thr_anon_del: a destructive host tool that the composed
         // policy parks (destructive → ask) — an approval queued under the anon subject.
@@ -107,14 +109,21 @@ describe("J7: anonymous sessions are isolated per client through the composed wi
     expect(oneId).toMatch(/^[0-9a-f]{32}$/);
 
     // --- Client 1 parks a destructive approval (second thread, SAME cookie) --
-    const parked = await one.fetch("/threads", {
+    // Build contract §1.4: the guarded call blocks INSIDE the tool call
+    // awaiting the tap, so the approval is only "pending" while this request
+    // is still open. This journey never decides it (the point is isolation,
+    // not the eventual outcome), so synchronize on the approval card and
+    // abort the request afterward instead of waiting out the frozen bound.
+    const abortDelete = new AbortController();
+    const parked = readSseMidStream(await one.fetch("/threads", {
       method: "POST",
       body: JSON.stringify({
         threadId: "thr_anon_del",
         message: { id: "u2", role: "user", parts: [{ type: "text", text: "Delete invoice inv_0003" }] },
       }),
-    });
-    await readSse(parked);
+      signal: abortDelete.signal,
+    }));
+    await parked.approval;
     expect(one.lastMintedCookie()).toBe(false); // a valid cookie is reused, not re-minted
     expect(one.id()).toBe(oneId); // subject is stable across requests
 
@@ -146,5 +155,10 @@ describe("J7: anonymous sessions are isolated per client through the composed wi
       expect(rows, table).toHaveLength(expected);
       for (const row of rows) expect(row.subject, table).toBe(`anonymous_${oneId}`);
     }
+
+    // Never decided by design (see above) — cut the still-blocked request
+    // short instead of waiting out the frozen approval bound.
+    abortDelete.abort();
+    await parked.done.catch(() => {});
   });
 });

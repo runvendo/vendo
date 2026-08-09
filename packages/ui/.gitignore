@@ -2,3 +2,4 @@ src/tree/jail/runtime-bundle.gen.ts
 e2e/screenshots/
 e2e/test-results/
 playwright-report/
+e2e/harness/dist/

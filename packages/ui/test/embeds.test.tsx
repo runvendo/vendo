@@ -11,6 +11,7 @@ import {
   createVendoClient,
   type VendoClient,
 } from "../src/index.js";
+import { BUILD_FAILURE_COPY } from "../src/chrome/thread/message-data.js";
 import { createWireServer } from "./wire-server.js";
 
 // Existing-agents Lane B — the three embeds a BYO chat surface renders from
@@ -18,7 +19,7 @@ import { createWireServer } from "./wire-server.js";
 // use. The wire owns approval state; the embed renders it in place with the
 // existing failed/expired vocabulary — never a silent blank.
 
-const appRef: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_1", title: "Invoices" };
+const appRef: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_1", title: "Invoices", status: "building" };
 const approvalRef: VendoApprovalRef = {
   kind: "vendo/approval-ref@1",
   approvalId: "apr_1",
@@ -104,6 +105,10 @@ describe("existing-agents embeds", () => {
     });
 
     it("renders the executed outcome's failure with the failed vocabulary, not a blank", async () => {
+      // ⚠️ TEST EDIT (M36): this required the WIRE's own sentence ("downstream
+      // exploded") on the card. That is the tool's/provider's text on a host's
+      // own page — §16 law 3's exact class. The failed vocabulary and a
+      // consumer line stay; the wire's half is dev-mode only (asserted below).
       wire.state.approvals = [];
       wire.state.approvalResolutions.set("apr_1", {
         state: "executed",
@@ -111,7 +116,24 @@ describe("existing-agents embeds", () => {
       });
       mount(<VendoApprovalEmbed refValue={approvalRef} />);
       await waitFor(() => expect(screen.getByText(/couldn't finish/i)).toBeDefined());
-      expect(screen.getByText(/downstream exploded/)).toBeDefined();
+      expect(screen.getByText(/Nothing changed/)).toBeDefined();
+      expect(document.body.textContent).not.toContain("downstream exploded");
+    });
+
+    it("keeps the wire's sentence for developers — dev mode only", async () => {
+      const previous = process.env.NODE_ENV;
+      process.env.NODE_ENV = "development";
+      try {
+        wire.state.approvals = [];
+        wire.state.approvalResolutions.set("apr_1", {
+          state: "executed",
+          outcome: { status: "error", error: { code: "error", message: "downstream exploded" } },
+        });
+        mount(<VendoApprovalEmbed refValue={approvalRef} />);
+        await waitFor(() => expect(screen.getByText(/downstream exploded/)).toBeDefined());
+      } finally {
+        process.env.NODE_ENV = previous;
+      }
     });
 
     it("renders expired for a TTL-swept approval", async () => {
@@ -127,7 +149,10 @@ describe("existing-agents embeds", () => {
       await waitFor(() => expect(screen.getByText(/expired/i)).toBeDefined());
     });
 
-    it("surfaces a wire failure as an alert, never a silent blank", async () => {
+    it("surfaces a wire failure as one honest line plus Try again, never a silent blank", async () => {
+      // ⚠️ TEST EDIT (M36 + ruling 18): this required the wire's "wire down" in
+      // the alert. Ruling 18 says a non-conversational surface owes the reader an
+      // honest LINE and a way to TRY AGAIN — not the transport's sentence.
       wire.state.failures.push({
         method: "GET",
         path: "/approvals/apr_1",
@@ -136,7 +161,10 @@ describe("existing-agents embeds", () => {
         status: 501,
       });
       mount(<VendoApprovalEmbed refValue={approvalRef} />);
-      await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("wire down"));
+      await waitFor(() => expect(screen.getByRole("alert")).toBeDefined());
+      expect(screen.getByText(/couldn’t reach this approval/i)).toBeDefined();
+      expect(screen.getByRole("alert").textContent).not.toContain("wire down");
+      expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
     });
   });
 
@@ -148,14 +176,14 @@ describe("existing-agents embeds", () => {
     });
 
     it("shows the build beat while the app is not yet servable", async () => {
-      const building: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_building", title: "Weather board" };
+      const building: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_building", title: "Weather board", status: "building" };
       mount(<VendoAppEmbed refValue={building} />);
       await waitFor(() => expect(screen.getByText(/Building/)).toBeDefined());
       expect(screen.getByText("Weather board")).toBeDefined();
     });
 
     it("polls the build window under the pending flag, so a miss is a 200 envelope and never a console 404", async () => {
-      const building: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_building", title: "Weather board" };
+      const building: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_building", title: "Weather board", status: "building" };
       mount(<VendoAppEmbed refValue={building} />);
       await waitFor(() => {
         const polls = wire.requests.filter(item => item.path.startsWith("/apps/app_building/open"));
@@ -167,15 +195,16 @@ describe("existing-agents embeds", () => {
     });
 
     it("resolves the failed vocabulary WITH the reason promptly when the build terminally fails (#492)", async () => {
-      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_doomed", title: "Budget tracker" };
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_doomed", title: "Budget tracker", status: "building" };
       // The build turn threw server-side: open() now answers {kind:"failed"}
       // instead of an eternal pending, so the embed resolves on the FIRST poll
       // rather than waiting for APP_BUILD_DEADLINE_MS.
       wire.state.failedApps.set("app_doomed", { reason: "quota exhausted", retryable: false });
       mount(<VendoAppEmbed refValue={doomed} />);
-      await waitFor(() => expect(screen.getByText(/couldn't finish/i)).toBeDefined());
-      // The honest reason is shown, not just the generic failed beat.
-      expect(screen.getByText("quota exhausted")).toBeDefined();
+      await waitFor(() => expect(screen.getByText(/— couldn't finish/)).toBeDefined());
+      // The wire's `reason` is the DEVELOPER's sentence; the person is told
+      // §15's copy instead (see the consumer-voice test below).
+      expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined();
       // A non-retryable failure carries no retry affordance.
       expect(screen.queryByText(/Retryable/)).toBeNull();
       expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
@@ -183,8 +212,63 @@ describe("existing-agents embeds", () => {
       expect(screen.queryByRole("status")).toBeNull();
     });
 
+    // Spec §16 law 3 on the BYO embed surface. Every `reason` the wire carries
+    // is written for whoever can FIX the build, and this embed rendered it
+    // verbatim — the same leak just closed in the thread (91281801d). These are
+    // the real sentences, from the wave E2E capture and from the runtime's own
+    // constants (apps/runtime.ts CREATE_BLOCKED / BUILD_WATCHDOG_REASON, and
+    // vendo/dev-creds' install line).
+    const developerReasons = [
+      "This app wasn't created, because it didn't pass the checks that keep an app honest:"
+      + " the `value` expression is a declarative string that the DataTable does not evaluate,"
+      + " not JavaScript: amount / sum(spending.data.amount)",
+      'query "spendingDataReduce" names unknown tool "spending.data.reduce"; the host tools are:'
+      + " host_getAccounts, host_listScheduledPayments, host_listInvoices",
+      "ANTHROPIC_API_KEY is set but @ai-sdk/anthropic is not installed in this app;"
+      + " install it (`npm install ai@^6 @ai-sdk/anthropic@^3`).",
+      "the build never finished — the server-side build task stalled or died without reporting a"
+      + " failure. Retry the request; if this repeats, check the host server log.",
+    ];
+
+    // A machine audit, not an eyeball: whatever the wire says, nothing
+    // code-shaped may reach what a person reads on a host's own page.
+    const codeShaped: readonly [string, RegExp][] = [
+      ["a backtick quote", /`/],
+      ["call syntax", /\w+\(/],
+      ["a dotted path", /\w\.\w+\.\w/],
+      ["a snake_case identifier", /[A-Za-z]_[A-Za-z]/],
+      ["a package specifier", /@[\w-]+\//],
+      ["an npm command", /\bnpm\b/],
+      ["a shouted env var", /\b[A-Z][A-Z0-9_]{4,}\b/],
+    ];
+
+    it.each(developerReasons)(
+      "says the CONSUMER sentence, never the developer's, for: %s",
+      async (reason) => {
+        const appId = `app_voice_${developerReasons.indexOf(reason)}`;
+        const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId, title: "Spending board", status: "building" };
+        wire.state.failedApps.set(appId, { reason, retryable: true, prompt: "A spending board" });
+        mount(<VendoAppEmbed refValue={doomed} />);
+        await waitFor(() => expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined());
+
+        const rendered = document.querySelector<HTMLElement>('[data-vendo-embed="app"]')?.textContent ?? "";
+        expect(rendered).toContain(BUILD_FAILURE_COPY);
+        // Not one fragment of the wire sentence survives.
+        expect(rendered).not.toContain(reason);
+        for (const word of reason.split(/\s+/).filter((token) => token.length > 12)) {
+          expect(rendered).not.toContain(word);
+        }
+        for (const [what, pattern] of codeShaped) {
+          expect(pattern.test(rendered), `${what} reached the embed: ${rendered}`).toBe(false);
+        }
+        // The embed keeps its own affordance — this is a copy fix, not a
+        // capability removal.
+        expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
+      },
+    );
+
     it("shows a retry BUTTON when the terminal failure is retryable — never a dead embed (speed-core, criterion 8)", async () => {
-      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry", title: "Retry tracker" };
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry", title: "Retry tracker", status: "building" };
       // The shape the build watchdog persists: terminal, retryable, with the
       // original prompt riding the record so the retry re-issues it exactly.
       wire.state.failedApps.set("app_retry", {
@@ -193,13 +277,15 @@ describe("existing-agents embeds", () => {
         prompt: "Build a subscriptions tracker with all my recurring charges and their renewal dates",
       });
       mount(<VendoAppEmbed refValue={doomed} />);
-      await waitFor(() => expect(screen.getByText(/couldn't finish/i)).toBeDefined());
-      expect(screen.getByText(/the build never finished/)).toBeDefined();
+      await waitFor(() => expect(screen.getByText(/— couldn't finish/)).toBeDefined());
+      // The watchdog sentence says to check the host server log — a developer's
+      // next step, not this reader's.
+      expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined();
       expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
     });
 
     it("retry re-issues the create with the persisted prompt and resolves into the fresh build", async () => {
-      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry2", title: "Net worth…" };
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry2", title: "Net worth…", status: "building" };
       wire.state.failedApps.set("app_retry2", {
         reason: "the build never finished",
         retryable: true,
@@ -221,7 +307,7 @@ describe("existing-agents embeds", () => {
     });
 
     it("actions on the retried app target the REPLACEMENT app id, never the dead record (checker F5)", async () => {
-      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_dead", title: "Refresh board" };
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_dead", title: "Refresh board", status: "building" };
       wire.state.failedApps.set("app_dead", {
         reason: "the build never finished",
         retryable: true,
@@ -241,7 +327,7 @@ describe("existing-agents embeds", () => {
     });
 
     it("retry falls back to the embed title when the failed record predates the prompt field", async () => {
-      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry3", title: "Budget board" };
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry3", title: "Budget board", status: "building" };
       wire.state.failedApps.set("app_retry3", { reason: "generation failed", retryable: true });
       mount(<VendoAppEmbed refValue={doomed} />);
       fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
@@ -251,7 +337,7 @@ describe("existing-agents embeds", () => {
     });
 
     it("a failed retry resolves back to the failed vocabulary with the retry button, never a blank", async () => {
-      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry4", title: "Alerts inbox" };
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry4", title: "Alerts inbox", status: "building" };
       wire.state.failedApps.set("app_retry4", { reason: "generation failed", retryable: true, prompt: "An alerts inbox" });
       wire.state.failures.push({
         method: "POST",
@@ -262,12 +348,13 @@ describe("existing-agents embeds", () => {
       });
       mount(<VendoAppEmbed refValue={doomed} />);
       fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
-      await waitFor(() => expect(screen.getByText(/could not produce a valid app/)).toBeDefined());
+      // The retried create's own wire error is a developer sentence too.
+      await waitFor(() => expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined());
       expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
     });
 
     it("resolves the build beat into the app when the build lands mid-poll", async () => {
-      const late: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_late", title: "Late app" };
+      const late: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_late", title: "Late app", status: "building" };
       mount(<VendoAppEmbed refValue={late} />);
       await waitFor(() => expect(screen.getByText(/Building/)).toBeDefined());
       // The build lands: the app becomes servable on a later poll.
@@ -291,7 +378,7 @@ describe("existing-agents embeds", () => {
       // eternal pending into the failed beat at its bound.
       vi.useFakeTimers();
       try {
-        const masked: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_masked", title: "Masked app" };
+        const masked: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_masked", title: "Masked app", status: "building" };
         const pendingClient: VendoClient = {
           ...client,
           apps: {
@@ -307,8 +394,8 @@ describe("existing-agents embeds", () => {
         await act(async () => {
           await vi.advanceTimersByTimeAsync(5 * 60_000 + 2_000);
         });
-        expect(screen.getByText(/couldn't finish/i)).toBeDefined();
-        expect(screen.getByText("the build never finished")).toBeDefined();
+        expect(screen.getByText(/— couldn't finish/)).toBeDefined();
+        expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined();
       } finally {
         vi.useRealTimers();
       }
@@ -321,7 +408,7 @@ describe("existing-agents embeds", () => {
       // absolute deadline timer depends on nothing but the clock.
       vi.useFakeTimers();
       try {
-        const hung: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_hung", title: "Hung app" };
+        const hung: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_hung", title: "Hung app", status: "building" };
         const hangingClient: VendoClient = {
           ...client,
           apps: {
@@ -339,8 +426,8 @@ describe("existing-agents embeds", () => {
         await act(async () => {
           await vi.advanceTimersByTimeAsync(5 * 60_000 + 2_000);
         });
-        expect(screen.getByText(/couldn't finish/i)).toBeDefined();
-        expect(screen.getByText("the build never finished")).toBeDefined();
+        expect(screen.getByText(/— couldn't finish/)).toBeDefined();
+        expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined();
         // Terminal — the skeleton is gone.
         expect(screen.queryByRole("status")).toBeNull();
       } finally {

@@ -12,10 +12,10 @@ rules live in the [Decision reference](#decision-reference) at the end.
 
 ## How guard.bind decides
 
-For each call the guard walks one fixed order: the critical flag first, then
-a matching grant, then policy rules, then policy code, then the judge, then
-the default posture. Critical tools always ask. Breakers can turn a run
-decision into an ask.
+For each call the guard walks one fixed order: the `confirmEach` flag first,
+then a matching grant, then policy rules, then policy code, then the judge,
+then the default posture. A `confirmEach` tool always asks. Breakers can turn
+a run decision into an ask.
 
 Declared risk is a conservative default. For a small set of Vendo tools
 where the safe path depends on the arguments, guard resolves the effective
@@ -45,7 +45,7 @@ shape is under [Grant invalidation](#grant-invalidation).
 Hosts that expose hundreds of tools would flood the model's context if every
 tool were sent up front. The agent instead starts each thread from a bounded
 initial loadout and discovers the rest at runtime through the
-`vendo_tools_search` meta-tool.
+`find_tools` meta-tool.
 
 The guard invariant is unchanged: every tool, initial or searched-in,
 executes through the same guard-bound registry. The loadout gates only what
@@ -60,11 +60,13 @@ lifecycle event with principal, venue, presence, and app context.
 ## Decision reference
 
 Tool names match `/^[a-zA-Z0-9_-]{1,64}$/`; underscore is the namespace
-separator. Risk is `read`, `write`, or `destructive`.
+separator. Risk is `read`, `write`, `destructive`, or `ungraded` — the last meaning
+nobody (human, judge, or protocol fact) has graded the tool yet, which the
+guard treats like `destructive` and asks about.
 
 ### guard.bind decision order
 
-1. Critical flag (critical tools always ask)
+1. `confirmEach` flag (a `confirmEach` tool always asks)
 2. Grant match
 3. Policy rules
 4. Policy code
@@ -75,16 +77,11 @@ Breakers can turn a run decision into an ask at any point.
 
 ### Effective risk resolution
 
-- `vendo_apps_create` is `read`. Creating an app writes only to Vendo's own
-  app store and always produces a jailed layer-1 tree document. It runs
-  immediately with no approval card.
-- `vendo_apps_edit` is declared `write`. It is downgraded to `read` for a
-  single call only when the app is owner-scoped, is a tree (layer 1) document,
-  and the edit instruction does not require server code. A tree-only edit
-  runs without approval; an edit that adds server behavior, host-tool writes,
-  destructive actions, or egress keeps the approval card. If an edit
-  classified as tree-only unexpectedly emits server code, the runtime fails
-  closed before the sandbox runs or the app is persisted.
+- `vendo_make` is `read`, whether it starts a new app or changes the one named
+  by `app`. The only lifecycle write is to Vendo's own app store, so it runs
+  immediately with no approval card. The ceremony belongs on what a screen
+  does, not on the person rearranging their own view: every action inside the
+  screen is a tool call of its own, graded and guarded at call time.
 - `vendo_apps_rebase_pin` is `write`. It replays a remixed pin's recorded
   edit trail onto a newly captured host baseline and produces one new app
   version. Rebase is user- or host-invoked only; the agent never
@@ -94,14 +91,18 @@ Breakers can turn a run decision into an ask at any point.
 
 Loadout selection is deterministic:
 
-- If you pass an explicit `agent.loadout` list, the agent loads exactly those
-  tool names (missing names are dropped).
-- Else, if the enabled host surface fits `agent.maxInitialTools` (default
-  `128`), every enabled host tool is loaded.
-- Else, the agent picks a read-first bounded default: safest risk first, then
-  name. The remainder stay searchable.
+- An explicit `loadout` list wins: exactly those tool names, uncapped
+  (missing names are dropped).
+- Otherwise the default is a connection-scoped seed — your host tools plus
+  the toolkits this principal has actually connected — capped at
+  `maxInitialTools` (default `128`), never an alphabetical slice.
+- If the seed cannot be resolved, the agent degrades to the whole enabled
+  host surface when it fits the cap, else to a read-first bounded default:
+  safest risk first, then name. The remainder stay searchable.
 
-`vendo_tools_search` ranks candidates from the enabled, post-override
+Vendo's own `vendo_*` tools are always active and never count against the cap.
+
+`find_tools` ranks candidates from the enabled, post-override
 descriptor set: name-token matches beat name substrings, name matches beat
 description matches, and a full-query match in the name earns a bonus. Ties
 break by name so results are stable. Disabled tools are never returned. When
@@ -109,7 +110,7 @@ the model calls a searched-in tool, it becomes available on the very next
 step; loaded tools persist for the life of the thread and are cleared when
 the thread is deleted.
 
-See [`agent.maxInitialTools` and `agent.loadout`](/reference/handler-options#agent-context)
+See [`maxInitialTools` and `loadout`](/reference/handler-options#turn-context)
 for the configuration surface.
 
 ### Grant invalidation

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, type WriteStream } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { detectsKeyQuestion } from "./score.js";
@@ -105,6 +105,17 @@ function killProcessGroup(child: ReturnType<typeof spawn>, signal: NodeJS.Signal
   }
 }
 
+/** `end()` only QUEUES the flush; the callback fires once the bytes are on
+ * disk (or the write failed). */
+function endStream(stream: WriteStream): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.end((error?: Error | null) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
+
 interface InvokeClaudeOnceOptions {
   claudeBin: string;
   args: string[];
@@ -129,39 +140,40 @@ async function invokeClaudeOnce(options: InvokeClaudeOnceOptions): Promise<Invok
   const transcript = createWriteStream(options.transcriptPath, { flags });
   // stderr goes to its own log so the transcript stays pure JSONL.
   const stderrLog = createWriteStream(`${options.transcriptPath}.stderr.log`, { flags });
+  let timer: NodeJS.Timeout | undefined;
 
-  return new Promise<InvokeClaudeOnceResult>((resolve, reject) => {
-    const child = spawn(options.claudeBin, options.args, {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: true,
-    });
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      killProcessGroup(child, "SIGTERM");
-      setTimeout(() => { killProcessGroup(child, "SIGKILL"); }, 10_000).unref();
-    }, options.timeBudgetMs);
-    const finish = (): void => {
-      clearTimeout(timer);
-      transcript.end();
-      stderrLog.end();
-    };
+  try {
+    return await new Promise<InvokeClaudeOnceResult>((resolve, reject) => {
+      const child = spawn(options.claudeBin, options.args, {
+        cwd: options.cwd,
+        env: options.env,
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: true,
+      });
+      let timedOut = false;
+      timer = setTimeout(() => {
+        timedOut = true;
+        killProcessGroup(child, "SIGTERM");
+        setTimeout(() => { killProcessGroup(child, "SIGKILL"); }, 10_000).unref();
+      }, options.timeBudgetMs);
 
-    child.stdout.pipe(transcript, { end: false });
-    child.stderr.pipe(stderrLog, { end: false });
-    child.on("error", (error) => {
-      finish();
-      reject(error);
+      child.stdout.pipe(transcript, { end: false });
+      child.stderr.pipe(stderrLog, { end: false });
+      child.on("error", reject);
+      child.on("close", (code) => {
+        // The agent is done; sweep any process-group stragglers regardless.
+        killProcessGroup(child, "SIGKILL");
+        resolve({ code, timedOut, command: `${options.claudeBin} ${options.args.map((arg) => (arg.includes(" ") ? JSON.stringify(arg) : arg)).join(" ")}` });
+      });
     });
-    child.on("close", (code) => {
-      finish();
-      // The agent is done; sweep any process-group stragglers regardless.
-      killProcessGroup(child, "SIGKILL");
-      resolve({ code, timedOut, command: `${options.claudeBin} ${options.args.map((arg) => (arg.includes(" ") ? JSON.stringify(arg) : arg)).join(" ")}` });
-    });
-  });
+  } finally {
+    clearTimeout(timer);
+    // Returning on "close" alone let the caller readFile() a transcript whose
+    // last bytes were still queued — or, since a WriteStream opens its fd
+    // lazily, a file that did not exist yet. Both logs hit disk before we
+    // return, on the error path too.
+    await Promise.all([endStream(transcript), endStream(stderrLog)]);
+  }
 }
 
 export async function runInstallAgent(options: RunInstallAgentOptions): Promise<InstallAgentResult> {

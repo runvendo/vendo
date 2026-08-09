@@ -10,10 +10,11 @@ connect to over OAuth. Every door tool call runs through the same guard-bound
 registry, policy, approvals, and audit path as chat, so outside agents get no
 weaker perimeter than your own conversation surface.
 
-Opening the door is a host decision. It is off by default, and `vendo init`
-asks whether you want it. On yes, init generates the Next.js discovery route
-and points you at the host-owned OAuth wiring; it never invents an auth adapter
-or turns the flag on by itself.
+Opening the door is a host decision, and entirely a manual one. It is off by
+default; `vendo init` never asks about it, never turns it on, and scaffolds
+none of its wiring. You set `mcp: true`, make sure a `HostOAuthAdapter` is in
+the composition — any `auth` preset already carries one, so most hosts need
+nothing extra — and add the discovery route yourself. All three are below.
 
 **Status: experimental.** `mcp: true` is real, guard-bound, and covered by
 protocol-level e2e (`fixtures/mcp-e2e`), but it stays out of the main
@@ -45,6 +46,17 @@ no OAuth dance and no door: spread the guarded tool pack into your loop
 through the `@vendoai/vendo/ai-sdk` or `@vendoai/vendo/mastra` subpath. See
 [Use with your existing agent](/existing-agents). The door remains the
 third-party-agent story.
+
+One exception to that last one: a backend of yours that has to act for a user
+who is **not** at a browser — a nightly job, a queue worker — can run neither
+the OAuth dance nor the in-process pack. `mcp: { serviceAuth: { keys } }` opens
+first-party service auth at the door's own token endpoint for exactly that:
+your backend posts a key you generated (`openssl rand -hex 32`) plus one of your
+user ids to the door's token endpoint for a ten-minute token bound to that user, then
+talks MCP with it like any other client. Per-user OAuth stays the story for
+anyone else's agent;
+a service key is for code you deploy. See
+[Your own backend, as one of your users](/existing-agents/mcp).
 
 ## Enable the door
 
@@ -167,6 +179,13 @@ so a client can warn a person before a write without re-reading prose:
 | `read` | `true` | `false` |
 | `write` | `false` | `false` |
 | `destructive` | `false` | `true` |
+| `ungraded` | *omitted* | *omitted* |
+
+An `ungraded` tool asserts neither hint. MCP's own default for
+`destructiveHint` is `true`, so emitting `false` would be an active claim of
+safety about a tool nobody has graded — and `true` would be the opposite guess.
+Omitting them leaves the client on the spec's conservative defaults. Grade the
+tool (`vendo sync`, or `.vendo/overrides.json`) and the hints appear.
 
 Annotations are hints for presentation. The guard is what decides.
 
@@ -273,11 +292,11 @@ JavaScript and it themes itself from `.vendo/theme.json`.
 
 The door's transport and OAuth endpoints mount under the wire at
 `/api/vendo/mcp`, so your existing catch-all handler already serves them. The
-OAuth discovery documents live at the origin root, outside `/api/vendo`. When
-you opt into MCP during `vendo init`, a Next.js host gets
-`app/.well-known/[...vendo]/route.ts` (under `src/app` when present), forwarding
-to the same handler. If you wire Vendo without init, add the equivalent route
-as a two-line re-export of the shipped handler:
+OAuth discovery documents live at the origin root, outside `/api/vendo`, so
+the catch-all never sees them. Init does not scaffold that route: add it by
+hand as a two-line re-export of the shipped handler. On Next.js it goes at
+`app/.well-known/[...vendo]/route.ts` (under `src/app` when present) —
+`examples/demo-bank` has the reference wiring.
 
 ```ts
 // app/.well-known/[...vendo]/route.ts
@@ -306,7 +325,8 @@ well-known routes before that second mount.
 
 ## Set VENDO_BASE_URL
 
-Set `VENDO_BASE_URL` to your product's public origin in every real deployment:
+Set `VENDO_BASE_URL` to your product's full public URL — path prefix included
+— in every real deployment:
 
 ```bash
 VENDO_BASE_URL=https://app.example.com
@@ -348,8 +368,7 @@ export const vendo = createVendo({
 ```
 
 `baseUrl`, `remoteAs`, and `federation` live under `mcp: { … }`; they are
-not top-level `createVendo` keys. The object form is also the one place to
-gate broker trust behind environment variables.
+not top-level `createVendo` keys.
 
 ## How door calls reach host tools
 
@@ -396,6 +415,26 @@ your product. Skip it if you want the door to run its own OAuth surface. The
 exact token requirements and endpoint behavior in this mode are specified in
 [remoteAs token requirements](#remoteas-token-requirements).
 
+When a hosted broker fronts the door, you do not need the object form at all:
+set `VENDO_MCP_BROKER_URL` to your tenant's MCP endpoint and leave `mcp: true`.
+
+```bash
+VENDO_MCP_BROKER_URL=https://acme.mcp.vendo.run/mcp
+```
+
+Broker mode is something you **declare**, not something Vendo discovers. That
+one variable is the whole switch: the URL's origin becomes the issuer, the URL
+itself becomes the expected token audience, and the door stops serving its own
+`/authorize`, `/token` and `/register`. Nothing is registered anywhere and
+nothing is fetched at boot, so no deploy can repoint another one; a URL the
+door cannot verify tokens against fails loudly rather than quietly reverting to
+a local OAuth surface. An explicit `mcp.remoteAs` still wins over it.
+
+So does an explicit `mcp.serviceAuth`: its exchange only exists at the door's own
+`/token`, so configuring it is a choice of local authorization server, and this
+variable — a default — leaves it alone. To front a `serviceAuth` door with a
+broker, move the exchange to the broker and drop `serviceAuth`.
+
 ## Federate login from an external authorization server
 
 `federation` adds a signed handshake so an external authorization server can
@@ -418,7 +457,9 @@ export const vendo = createVendo({
 ```
 
 Set `VENDO_MCP_FEDERATION_SECRET` to a high-entropy secret shared with the
-external authorization server. That server crafts an HS256-signed request JWT
+external authorization server; the composition reads it directly, so the
+`mcp: { federation }` object above is only needed when the secret comes from
+somewhere other than that variable. That server crafts an HS256-signed request JWT
 and redirects the user's browser to
 `GET /api/vendo/mcp/federate?request=<compact JWS>`. The exact claims the
 request JWT must carry are listed in
@@ -475,8 +516,15 @@ What each revocation retires, and how the endpoint answers, is specified in
 The door exposes your saved apps as MCP Apps. `tools/list` includes
 `vendo_apps_list`, `vendo_apps_open`, and `vendo_apps_call`, and opened apps
 render through a static HTML shim. Interactions inside a rendered app route back
-through the same guard-bound path. The door is a viewer and runner: app creation
-and editing stay in-product.
+through the same guard-bound path.
+
+The door also *makes* them. `vendo_make` is on the same list, so an outside
+agent asks for a screen in plain language exactly as your own agent does, and
+`vendo_apps_pin` / `vendo_apps_unpin` put a saved app into one of your product's
+slots. None of it hands the agent any UI: `vendo_make` answers with a four-field
+receipt of words, and the screen arrives on the person's own page in your
+product, on a channel the agent is not on. The full walkthrough is
+[Bring your own agent over MCP](/existing-agents/mcp).
 
 ### HTTP apps open in-product
 
@@ -567,7 +615,8 @@ ordinary 404 rather than a 500.
 - **Discovery and audience binding.** The door derives its OAuth discovery
   documents (issuer, endpoint URLs, the protected-resource `resource`) and its
   token audience binding from `VENDO_BASE_URL` when set, so clients see your
-  public origin instead of an unreachable proxy-internal one. Forwarded
+  full public URL — path prefix included — instead of an unreachable
+  proxy-internal one. Forwarded
   headers such as `X-Forwarded-Host` are never trusted. Without it, the door
   falls back to the request URL, which is fine for local development and wrong
   behind a proxy.
@@ -578,9 +627,12 @@ ordinary 404 rather than a 500.
 
 ### remoteAs token requirements
 
-- Tokens must be ES256-signed JWTs with `iss`, `sub`, `aud`, `iat`, and `exp`
-  claims. `iss` must equal the configured `issuer`, `aud` must equal the
-  configured `audience`, and `exp` must be in the future.
+- Tokens must be JWTs with `iss`, `sub`, `aud`, `iat`, and `exp` claims,
+  signed with one of `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`,
+  `ES256`, `ES384`, or `ES512`. Symmetric algorithms and `none` are rejected.
+  `iss` must equal the configured `issuer`, `aud` must equal the configured
+  `audience`, and `exp` must be in the future. Neither `issuer` nor `audience`
+  may be blank — the door refuses to start if either is.
 - The door caches the JWKS in memory and refetches it when a bearer arrives
   with an unfamiliar `kid`, which covers ordinary key rotation. `jwksUri` is
   optional; the door discovers it from the issuer's RFC 8414 metadata when

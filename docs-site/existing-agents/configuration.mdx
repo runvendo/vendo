@@ -18,7 +18,8 @@ your repo:
 - an auth preset or a `principal` line,
 - `catalog` (the component registry init generated),
 - a `serverActions` map, only when init detected `"use server"` actions,
-- `policy: {}` reads `.vendo/policy.json`: destructive asks, reads run.
+- `guard: guard({ policy: {} })` reads `.vendo/policy.json`: destructive asks,
+  reads run.
 
 ## One principal, two places
 
@@ -46,10 +47,10 @@ explicit provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `VENDO_DEV_CREDENTIAL=vendo-cloud`. The gateway rides the stock
   `@ai-sdk/anthropic` provider, which Vendo ships (your app's own install
   wins when present).
-- No `VENDO_API_KEY` yet? `npx vendo login` mints a free metered dev key
+- No `VENDO_API_KEY` yet? `npx vendo login` mints a free metered API key
   straight into `.env.local`.
 - If your loop's model has no key on this machine, either set one or point
-  your `model` at `devModel()` from `@vendoai/vendo/server` to ride the
+  your `model` at `vendoModel()` from `@vendoai/vendo/server` to ride the
   same ladder.
 
 The done-criterion for an install is a REAL chat turn that renders a Vendo
@@ -58,9 +59,7 @@ tool output — `vendo doctor` cannot check your loop's model.
 ## Next.js notes
 
 - The wire route needs no `runtime` or `dynamic` exports: Node is the
-  default runtime and route handlers are dynamic by default. On a Next 16
-  app with `cacheComponents: true`, an `export const dynamic` line is a
-  build error.
+  default runtime and route handlers are dynamic by default.
 - `serverExternalPackages: ["esbuild", "@electric-sql/pglite"]` keeps
   Vendo's native and wasm dependencies out of the bundler.
 

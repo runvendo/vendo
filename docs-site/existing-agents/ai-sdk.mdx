@@ -71,7 +71,7 @@ const result = streamText({
 ```
 
 That one spread gives your agent a guarded `vendo_<action>` tool per host
-action, `vendo_create_app` (micro-apps in your chat), and `vendo_delegate`.
+action, `vendo_make` (micro-apps in your chat), and `vendo_delegate`.
 `principal` is the same caller your auth resolves in `lib/vendo.ts`
 ([why](/existing-agents/configuration#one-principal-two-places)).
 
@@ -104,7 +104,7 @@ case "dynamic-tool":
   builds through the Vendo Cloud gateway, set
   `VENDO_DEV_CREDENTIAL=vendo-cloud` (the gateway rides the stock
   `@ai-sdk/anthropic` provider, so that package must be installed). No
-  `VENDO_API_KEY` yet? `npx vendo login` mints a free metered dev key
+  `VENDO_API_KEY` yet? `npx vendo login` mints a free metered API key
   straight into `.env.local`. If your loop's model has no key on this
   machine, either set one or point your `model` at `vendoModel()` from
   `@vendoai/vendo/server` to ride the same ladder. The done-criterion is a

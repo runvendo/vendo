@@ -23,12 +23,16 @@ describe("greeting-as-tutorial (ui-usage-dx §6 — first-open discoverability)"
 
   const intro = () => screen.queryByText(/reshape a screen to fit how you work/i);
 
-  /** Wire traffic minus ChromeRoot's mount-time guard-posture probe
-   *  (GET /status) — baseline for ANY thread render, greeting or not. The
-   *  greeting invariant is that IT adds nothing: no thread create, no send,
-   *  no persistence. */
+  /** Wire traffic minus the thread's own mount-time probes — the guard posture
+   *  (GET /status, which since the policy banner became opt-in only fires when a
+   *  host mounts the notice) and the composer's connector catalog
+   *  (GET /connections/catalog). Both are baseline for ANY thread render,
+   *  greeting or not, and the catalog one lands asynchronously — it made this
+   *  test flaky. The greeting invariant is that IT adds nothing: no thread
+   *  create, no send, no persistence. */
+  const BASELINE_GETS = new Set(["/status", "/connections/catalog"]);
   const nonBaselineRequests = () =>
-    wire.requests.filter(request => !(request.method === "GET" && request.path === "/status"));
+    wire.requests.filter(request => !(request.method === "GET" && BASELINE_GETS.has(request.path)));
 
   it("renders the default greeting on a first-ever fresh conversation, marks seen, fires NO transport calls", async () => {
     render(<VendoProvider client={client}><VendoThread /></VendoProvider>);
@@ -53,7 +57,7 @@ describe("greeting-as-tutorial (ui-usage-dx §6 — first-open discoverability)"
     const composer = screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
     expect(composer.value).toBe(chip.textContent);
     // Still zero added wire traffic: no thread create, no message send.
-    expect(nonBaselineRequests()).toHaveLength(0);
+    expect(nonBaselineRequests().map(request => `${request.method} ${request.path}`)).toHaveLength(0);
     // And nothing was persisted locally as a fake transcript either — the
     // greeting block is the only assistant-style content on screen.
     expect(document.querySelectorAll(".fl-turn-user, .fl-turn-assistant")).toHaveLength(0);

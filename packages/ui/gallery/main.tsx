@@ -1,12 +1,18 @@
 /**
- * W2 Kit gallery — renders every Kit component under both demo-host themes
- * (Maple + Cadence). Browser-verification surface; screenshots are committed to
- * docs/verification/w2-kit/. Not shipped in the package.
+ * Kit + card gallery — renders every Kit component under both demo-host themes
+ * (Maple + Cadence), then the CARDS board: every chrome card kind at every
+ * state and every degraded-data case (see ./cards.tsx). Browser-verification
+ * surface; screenshots are committed under docs/. Not shipped in the package.
+ *
+ * `#cards` renders the card board alone (what `capture-gallery.mjs cards`
+ * loads); `#kit` renders the Kit panels alone; no hash renders both.
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import type { VendoTheme } from "@vendoai/core";
+import { VendoProvider } from "../src/context.js";
 import { themeCssVariables } from "../src/theme.js";
+import { CardsBoard, GALLERY_TOOLS } from "./cards.js";
 import {
   Accordion,
   Badge,
@@ -244,11 +250,47 @@ function ThemedPanel({ name, theme }: { name: string; theme: VendoTheme }) {
   );
 }
 
+/** The designed card reference. One theme (Maple): the cards' job here is shape
+    and degraded data, not the theme sweep the Kit panels already run. */
+function CardsPanel() {
+  return (
+    <div
+      data-theme="Maple"
+      style={{
+        ...(themeCssVariables(MAPLE) as React.CSSProperties),
+        background: "var(--vendo-color-background)",
+        color: "var(--vendo-color-text)",
+        fontFamily: "var(--vendo-font-family)",
+        padding: 28,
+        minHeight: "100vh",
+      }}
+    >
+      <div style={{ maxWidth: 660, margin: "0 auto" }}>
+        <h1 style={{ fontFamily: "var(--vendo-font-family)", fontSize: 22, marginTop: 0, letterSpacing: "-0.02em" }}>
+          Vendo cards — Maple theme
+        </h1>
+        {/* An explicit connector list keeps the board off the wire (no auto
+            catalog fetch), so every case renders the same way every time. */}
+        <VendoProvider theme={MAPLE} tools={GALLERY_TOOLS} connectors={[{ toolkit: "slack", connector: "slack" }]}>
+          <CardsBoard />
+        </VendoProvider>
+      </div>
+    </div>
+  );
+}
+
+const view = globalThis.location.hash;
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <div>
-      <ThemedPanel name="Maple" theme={MAPLE} />
-      <ThemedPanel name="Cadence" theme={CADENCE} />
+      {view === "#cards" ? null : (
+        <>
+          <ThemedPanel name="Maple" theme={MAPLE} />
+          <ThemedPanel name="Cadence" theme={CADENCE} />
+        </>
+      )}
+      {view === "#kit" ? null : <CardsPanel />}
     </div>
   </StrictMode>,
 );

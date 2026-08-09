@@ -7,6 +7,7 @@ import {
   type Principal,
 } from "@vendoai/core";
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
+import { inMemoryBoxFiles } from "@vendoai/apps/testing";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -30,7 +31,6 @@ async function tempStore(prefix: string): Promise<VendoStore> {
   const dataDir = await mkdtemp(join(tmpdir(), prefix));
   const store = createStore({ dataDir });
   cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
   });
@@ -57,6 +57,9 @@ function captureSandbox(specs: SandboxSpec[]): SandboxAdapter {
     async snapshot() { return "fake:snap"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },
+    // The seam's ONE in-memory implementation (@vendoai/apps/testing), so no
+    // two fakes can drift over what reading a box file means.
+    files: inMemoryBoxFiles(new Map()),
   };
   return {
     async create(spec) {
@@ -89,8 +92,6 @@ async function provisionedEnv(rungs: Record<string, string> = {}): Promise<Recor
     principal: async () => ADA,
     store,
     sandbox: captureSandbox(specs),
-    // Wave 9 — machine provisioning is flag-gated.
-    apps: { experimentalMachines: true },
   });
   await vendo.apps.machine.provision("app_box", {
     principal: ADA,

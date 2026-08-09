@@ -37,7 +37,7 @@ import { composioConnector } from "@vendoai/actions";
 import { descriptorHash, type Principal } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import { createVendo } from "@vendoai/vendo/server";
-import { connectWithSdk, type ConnectedClient } from "../../../mcp-e2e/src/support.ts";
+import { connectWithSdk, type ConnectedClient } from "@vendoai-fixtures/test-kit/mcp-client";
 import { startComposioStub } from "./composio-stub.ts";
 import {
   MCP_APPS_FIXTURE_ID,
@@ -173,7 +173,7 @@ export async function startBackends(): Promise<Backends> {
     },
     store,
     actAs: async (principal: Principal) => ({ headers: { cookie: await loginCookie(principal.subject) } }),
-    policy: { file: ".vendo/policy.json" },
+    guard: { policy: { file: ".vendo/policy.json" } },
     connectors: [composioConnector({ apiKey: "stub-key", apps: ["gmail"], baseUrl: composioStub.url })],
     mcp: { baseUrl: wireUrl },
     oauth: {
@@ -334,7 +334,25 @@ export async function startBackends(): Promise<Backends> {
     const response = await vendo.handler(request);
     res.statusCode = response.status;
     response.headers.forEach((value, name) => res.setHeader(name, value));
-    res.end(Buffer.from(await response.arrayBuffer()));
+    if (response.body === null) {
+      res.end();
+      return;
+    }
+    // STREAM the body, never buffer it — the same way the node harness's bridge
+    // does (fixtures/integration/src/harness.ts). A real host framework hands the
+    // Response straight to the runtime, which streams it; `arrayBuffer()` here
+    // waits for the turn to END before sending a single byte. That is invisible
+    // for a turn that finishes on its own, and a deadlock for one that parks: the
+    // approval card cannot reach the browser, so the tap that would resume the
+    // turn can never happen, and the turn only ever times out.
+    res.flushHeaders();
+    const reader = response.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(Buffer.from(value));
+    }
+    res.end();
   }
 
   let closed = false;
@@ -344,14 +362,19 @@ export async function startBackends(): Promise<Backends> {
     await connectedMcp?.close().catch(() => undefined);
     await composioStub.close().catch(() => undefined);
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
-    if (host.exitCode === null) {
-      host.kill("SIGTERM");
-      const exited = new Promise<void>((resolve) => host.once("exit", () => resolve()));
-      await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 5_000))]);
-      if (host.exitCode === null) host.kill("SIGKILL");
+    // The data dir goes in a finally: a host that will not die, or a PGlite
+    // close that rejects, must not strand the scratch directory.
+    try {
+      if (host.exitCode === null) {
+        host.kill("SIGTERM");
+        const exited = new Promise<void>((resolve) => host.once("exit", () => resolve()));
+        await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 5_000))]);
+        if (host.exitCode === null) host.kill("SIGKILL");
+      }
+      await store.close();
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
     }
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
   };
   // Vite kills this process on teardown; make sure the next child dies with it.
   const onSignal = () => void close().finally(() => process.exit(0));

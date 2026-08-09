@@ -1,7 +1,6 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { capturedPinBaselineSchema } from "@vendoai/actions";
 import {
   VENDO_APP_FORMAT,
   VENDO_POLICY_FORMAT,
@@ -19,8 +18,9 @@ import type { ConnectionsService } from "./connections.js";
 import { VERSION as WIRE_VERSION } from "./wire/shared.js";
 import { appStore, createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
 import { createHmac, randomBytes } from "node:crypto";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import type { LanguageModel } from "ai";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 // authJs now ships on its own subpath (@vendoai/vendo/auth/auth-js), not
 // "./server.js" — corpus-triage Task 9.
 import { authJs } from "./auth-presets/auth-js.js";
@@ -36,15 +36,22 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-/** Temp-dir PGlite store with registered teardown. Teardown awaits schema
- * readiness first: createVendo fires ensureSchema() without awaiting it, and
- * closing PGlite mid-query hangs the process (bites tests that compose and
- * assert without ever touching the wire). */
+/** Temp-dir PGlite store with registered teardown.
+ *
+ * Teardown does NOT call ensureSchema(). It used to, to dodge a close-race back
+ * when createVendo kicked schema readiness off without awaiting it — but
+ * construction is pure now (`composeReady`: "Construction stays PURE — no I/O,
+ * no timers"), the `ready()` latch fires on the first handler touch, and every
+ * caller of it awaits. So there is nothing in flight to wait for.
+ *
+ * That call was not free. `createStore` is lazy, so a store a test never
+ * touches costs 2.3ms; the teardown ensureSchema() forced a full initdb +
+ * migration on it, measured at 4354.9ms — ~1900x, to prepare a database
+ * moments before deleting it. */
 async function tempStore(prefix: string): Promise<VendoStore> {
   const dataDir = await mkdtemp(join(tmpdir(), prefix));
   const store = createStore({ dataDir });
   cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
   });
@@ -71,9 +78,74 @@ const app = (id = "app_wire"): AppDocument => ({
   },
 });
 
+/**
+ * Any prompt, as one flat string — every string leaf of it, in order.
+ *
+ * Leaves rather than text parts alone: a tool RESULT is what the assembly loop
+ * reads its own floor's verdict from, and that verdict is structured output, not
+ * a text part. Quotes survive, which a `JSON.stringify` of the prompt would not
+ * (`"DiskMetric"` becomes `\"DiskMetric\"`).
+ */
+const promptTextOf = (prompt: unknown): string => {
+  const leaves = (value: unknown): string[] => {
+    if (typeof value === "string") return [value];
+    if (Array.isArray(value)) return value.flatMap(leaves);
+    if (typeof value === "object" && value !== null) return Object.values(value).flatMap(leaves);
+    return [];
+  };
+  return leaves(prompt).join("\n");
+};
+
+const ZERO_USAGE = {
+  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 0, text: 0, reasoning: 0 },
+} as const;
+
+/** One turn of the assembly loop: one of its hands, or the closing word. */
+type ScreenTurn = { tool: string; input: unknown } | { say: string };
+
+const screenChunks = (turn: ScreenTurn, index: number): Array<Record<string, unknown>> =>
+  "say" in turn
+    ? [
+      { type: "text-start", id: `t${index}` },
+      { type: "text-delta", id: `t${index}`, delta: turn.say },
+      { type: "text-end", id: `t${index}` },
+      { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+    ]
+    : [
+      { type: "tool-call", toolCallId: `c${index}`, toolName: turn.tool, input: JSON.stringify(turn.input) },
+      { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
+    ];
+
+/**
+ * A model that plays THE builder.
+ *
+ * There is one engine behind `apps.create` and `apps.edit`: the screen
+ * assembler's loop. So a fixture answers with its hands — `save_app`,
+ * `validate`, `escalate` — in order, and `prompts` collects every brief it was
+ * handed (the loop's system message is the deployment's own prompt, then the
+ * shipped building-apps skill, its format reference, and the environment note).
+ */
+async function screenModel(turns: ScreenTurn[], prompts?: string[]): Promise<LanguageModel> {
+  const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+  const remaining = turns.map((turn, index) => screenChunks(turn, index));
+  const model = new MockLanguageModelV3({
+    doStream: async ({ prompt }: { prompt?: unknown }) => {
+      prompts?.push(promptTextOf(prompt));
+      const chunks = remaining.shift() ?? screenChunks({ say: "done" }, remaining.length);
+      return { stream: simulateReadableStream({ chunks: chunks as never }) };
+    },
+  });
+  return model as unknown as LanguageModel;
+}
+
 async function setup(
-  resolver = vi.fn(async () => principal),
-  options: Pick<Partial<CreateVendoConfig>, "policy" | "development"> = {},
+  // `null` is a real answer from this seam — it is how an anonymous session is
+  // expressed (`CreateVendoConfig["principal"]` is `=> Promise<Principal | null>`),
+  // and a dozen cases below pass exactly that. Inferring the parameter from the
+  // default would pin it to the non-null half.
+  resolver: Mock<() => Promise<Principal | null>> = vi.fn(async () => principal),
+  options: Pick<Partial<CreateVendoConfig>, "guard" | "development"> = {},
 ): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
   const store = await tempStore("vendo-wire-");
   const vendo = createVendo({
@@ -101,15 +173,43 @@ function request(method: string, path: string, body?: unknown, headers: Record<s
   });
 }
 
+/**
+ * The same request arriving from a chosen ORIGIN — which is to say, carrying a
+ * chosen Host header. The wire learns its same-origin base from exactly this,
+ * so it is also how the poisoning attack is expressed.
+ */
+function requestFrom(
+  origin: string,
+  method: string,
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+): Request {
+  return new Request(`${origin}/api/vendo${path}`, {
+    method,
+    headers: {
+      ...(["POST", "PUT", "PATCH", "DELETE"].includes(method) ? { "content-type": "application/json" } : {}),
+      ...headers,
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
 function stubRouteBlocks(vendo: Vendo): void {
-  vi.spyOn(vendo.agent, "stream").mockResolvedValue(new Response("event: done\n\n", {
+  vi.spyOn(vendo.harness, "stream").mockResolvedValue(new Response("event: done\n\n", {
     headers: { "content-type": "text/event-stream" },
   }));
-  vi.spyOn(vendo.agent.threads, "list").mockResolvedValue([]);
-  vi.spyOn(vendo.agent.threads, "get").mockResolvedValue({
+  // Wave 2 flipped `POST /threads` onto the harness runtime for every host, and
+  // D4 moved the thread list/get/delete routes onto the same door — so every
+  // /threads route these tests drive is `vendo.harness`.
+  vi.spyOn(vendo.harness, "stream").mockResolvedValue(new Response("event: done\n\n", {
+    headers: { "content-type": "text/event-stream" },
+  }));
+  vi.spyOn(vendo.harness.threads, "list").mockResolvedValue([]);
+  vi.spyOn(vendo.harness.threads, "get").mockResolvedValue({
     id: "thr_x", subject: principal.subject, messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   });
-  vi.spyOn(vendo.agent.threads, "delete").mockResolvedValue();
+  vi.spyOn(vendo.harness.threads, "delete").mockResolvedValue();
   vi.spyOn(vendo.guard.approvals, "pending").mockResolvedValue([]);
   vi.spyOn(vendo.guard.approvals, "decide").mockResolvedValue();
   vi.spyOn(vendo.guard.grants, "list").mockResolvedValue([]);
@@ -124,10 +224,7 @@ function stubRouteBlocks(vendo: Vendo): void {
   vi.spyOn(vendo.apps, "edit").mockResolvedValue({
     app: app(), version: { at: new Date().toISOString(), intent: "edit", rung: 1 },
   });
-  vi.spyOn(vendo.apps, "history").mockReturnValue({
-    list: async () => [],
-    undo: async () => app(),
-  });
+  vi.spyOn(vendo.apps, "history").mockReturnValue({ list: async () => [] });
   vi.spyOn(vendo.apps, "exportApp").mockResolvedValue(new Uint8Array([1, 2, 3]));
   vi.spyOn(vendo.apps, "importApp").mockResolvedValue(app("app_imported"));
   vi.spyOn(vendo.apps, "fork").mockResolvedValue(app("app_forked"));
@@ -137,7 +234,7 @@ function stubRouteBlocks(vendo: Vendo): void {
   vi.spyOn(vendo.automations, "dryRun").mockResolvedValue({ steps: [], grantsMissing: [] });
   vi.spyOn(vendo.automations.runs, "list").mockResolvedValue({ runs: [] });
   vi.spyOn(vendo.automations.runs, "get").mockResolvedValue({
-    id: "run_x", appId: "app_wire", trigger: { kind: "schedule" }, status: "ok",
+    id: "run_x", appId: "app_wire", triggerId: "trg_wire", trigger: { kind: "schedule" }, status: "ok",
     startedAt: new Date().toISOString(), steps: [],
   });
   vi.spyOn(vendo.automations.runs, "stop").mockResolvedValue();
@@ -166,7 +263,6 @@ describe("09 §3 public wire", () => {
       request("POST", "/apps/app_wire/call", { ref: "host_x", args: {} }),
       request("POST", "/apps/app_wire/edit", { instruction: "edit" }),
       request("GET", "/apps/app_wire/history"),
-      request("POST", "/apps/app_wire/history", { op: "undo" }),
       request("GET", "/apps/app_wire/export"),
       request("POST", "/apps/import", new Uint8Array([1, 2, 3]), { "content-type": "application/octet-stream" }),
       request("POST", "/apps/app_wire/fork", {}),
@@ -187,7 +283,7 @@ describe("09 §3 public wire", () => {
     }
   });
 
-  it("wires client disconnect to the agent turn: POST /threads hands the request signal to agent.stream (AGENT-3)", async () => {
+  it("wires client disconnect to the chat turn: POST /threads hands the request signal to the served turn (AGENT-3)", async () => {
     const { vendo } = await setup();
     stubRouteBlocks(vendo);
     const controller = new AbortController();
@@ -198,7 +294,9 @@ describe("09 §3 public wire", () => {
       signal: controller.signal,
     });
     await vendo.handler(disconnectable);
-    const streamInput = vi.mocked(vendo.agent.stream).mock.calls[0]?.[0];
+    // The served door, post-flip. The invariant is unchanged: whoever runs the
+    // turn is handed a signal live-wired to the request.
+    const streamInput = vi.mocked(vendo.harness.stream).mock.calls[0]?.[0];
     expect(streamInput?.signal).toBeInstanceOf(AbortSignal);
     expect(streamInput?.signal?.aborted).toBe(false);
     // The handed signal is live-wired to the request: a client disconnect
@@ -272,13 +370,15 @@ describe("09 §3 public wire", () => {
     expect(await flagged.json()).toEqual({ kind: "failed", reason: "quota exhausted", retryable: false });
   });
 
-  it("open?pending=1 answers {kind:'failed'} — not pending — when the record exists under another principal (0.4.1 E2E cert B4)", async () => {
-    // Principal mismatch (wire principal ≠ chat principal): the record
-    // EXISTS, just not for this caller, and it never will — masking that
-    // owner-scoped not-found as {kind:"pending"} was the infinite skeleton.
-    // The flag now answers the terminal failed vocabulary with the diagnosis
-    // so the embed resolves promptly. A genuinely absent record (the build
-    // window) keeps answering pending, covered above.
+  it("open?pending=1 keeps the principal-mismatch diagnosis for the HOST, and stays masked to the caller (0.4.1 E2E cert B4 · §9.4)", async () => {
+    // Principal mismatch (wire principal ≠ chat principal): the record EXISTS,
+    // just not for this caller. That diagnosis is a HOST wiring problem in a
+    // developer's voice, and serving it made ?pending=1 an existence oracle —
+    // a stranger with an app id learned a team app was real, at HTTP 200, while
+    // the same request without the flag correctly 404'd (wave-3 finding F3).
+    // So the signal stays, in the server log, and the caller hears exactly what
+    // a caller of a non-existent app hears.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const store = await tempStore("vendo-wire-b4-");
     const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
     stubRouteBlocks(vendo);
@@ -288,22 +388,22 @@ describe("09 §3 public wire", () => {
 
     const flagged = await vendo.handler(request("GET", "/apps/app_foreign/open?pending=1"));
     expect(flagged.status).toBe(200);
-    const body = await flagged.json() as { kind: string; reason?: string; retryable?: boolean };
-    expect(body.kind).toBe("failed");
-    expect(body.retryable).toBe(false);
-    expect(body.reason).toContain("principal");
+    expect(await flagged.json()).toEqual({ kind: "pending" });
+    expect(warn.mock.calls.flat().join(" ")).toContain("principal");
 
     // Unflagged callers keep the contracted 404 envelope.
     const bare = await vendo.handler(request("GET", "/apps/app_foreign/open"));
     expect(bare.status).toBe(404);
   });
 
-  it("open?pending=1 passes a TERMINAL failed record through with its server-written reason when open() refuses the caller (0.4.6 cert defect D2)", async () => {
-    // A terminal build failure is terminal for EVERY caller: a subject the
-    // owner-scoped open() refuses must still see {kind:"failed"} with the
-    // persisted reason — masking it as {kind:"pending"} is the D2 infinite
-    // skeleton. The record shape mirrors the runtime's #532 write exactly
-    // (records-door put; a failed doc has no ui payload).
+  it("open?pending=1 masks a TERMINAL failed record from a caller who cannot see the app (0.4.6 cert defect D2 · §9.4)", async () => {
+    // A terminal build failure is terminal for every caller who can SEE the
+    // app — and a failed build is still an existence proof, so a caller who
+    // cannot view it hears pending like anyone asking after an app that isn't
+    // there (wave-3 finding F3). The owner-side half of D2 is unchanged and is
+    // pinned in wire/apps.grants.test.ts. The record shape mirrors the
+    // runtime's #532 write exactly (records-door put; a failed doc has no ui
+    // payload).
     const store = await tempStore("vendo-wire-d2-");
     const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
     stubRouteBlocks(vendo);
@@ -326,7 +426,60 @@ describe("09 §3 public wire", () => {
 
     const flagged = await vendo.handler(request("GET", "/apps/app_dead/open?pending=1"));
     expect(flagged.status).toBe(200);
-    expect(await flagged.json()).toEqual({ kind: "failed", reason: "quota exhausted", retryable: false });
+    expect(await flagged.json()).toEqual({ kind: "pending" });
+  });
+
+  it("open?pending=1 answers a REAL-STORE failed record to a real VIEWER: {kind:'failed'} with the server-written reason (#532 · D2)", async () => {
+    // The cross-seam pin this file lost. Both real-store cases above were
+    // correctly re-pointed to `pending` because their caller is a non-viewer, so
+    // the only test left asserting `{kind:"failed"}` hand-stubs
+    // `store.records().get()` (wire/apps.grants.test.ts) — nothing proved that a
+    // REAL row's `doc.buildFailed` still reaches the embed. Renaming that field
+    // would have broken every failed build's surface with the suite green.
+    //
+    // A §9.2 viewer GRANT is what makes the caller a viewer here, which is also
+    // the first time this path is proven for someone who is not the owner.
+    const store = await tempStore("vendo-wire-viewer-failed-");
+    vi.stubEnv("VENDO_API_KEY", "vnd_viewer_failed");
+    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    stubRouteBlocks(vendo);
+    await store.ensureSchema();
+    await store.records("vendo_apps").put({
+      id: "app_team_dead",
+      data: {
+        subject: "team_org",
+        enabled: false,
+        doc: {
+          format: VENDO_APP_FORMAT,
+          id: "app_team_dead",
+          name: "Dead team app",
+          buildFailed: { reason: "the build timed out", retryable: true, at: new Date().toISOString() },
+        },
+      },
+      refs: { subject: "team_org" },
+    });
+    await store.records("vendo_app_grants").put({
+      id: "ag_viewer_failed",
+      data: {
+        appId: "app_team_dead",
+        orgId: "team_org",
+        principal: `user:${principal.subject}`,
+        level: "viewer",
+        createdBy: "someone_else",
+      },
+      refs: { app_id: "app_team_dead", principal: `user:${principal.subject}`, level: "viewer" },
+    });
+    // A failed app has no servable document, so open() refuses — which is
+    // exactly the case the probe exists for.
+    vi.spyOn(vendo.apps, "open").mockRejectedValue(new VendoError("not-found", "app not found: app_team_dead"));
+
+    const flagged = await vendo.handler(request("GET", "/apps/app_team_dead/open?pending=1"));
+    expect(flagged.status).toBe(200);
+    expect(await flagged.json()).toEqual({
+      kind: "failed",
+      reason: "the build timed out",
+      retryable: true,
+    });
   });
 
   it("open?pending=1 disambiguates on a HOSTED wire-door store: pending only while no record exists, terminal failures and principal mismatches resolve (defect D2)", async () => {
@@ -351,7 +504,9 @@ describe("09 §3 public wire", () => {
     const building = await vendo.handler(request("GET", "/apps/app_building/open?pending=1"));
     expect(await building.json()).toEqual({ kind: "pending" });
 
-    // (b) a terminal failed record resolves with its reason for any caller.
+    // (b) a terminal failed record: the probe reaches it through the adapter on
+    // a hosted store (the D2 fix), and §9.4 then masks the answer because this
+    // caller cannot see the app at all.
     await store.records("vendo_apps").put({
       id: "app_dead",
       data: {
@@ -367,44 +522,46 @@ describe("09 §3 public wire", () => {
       refs: { subject: "someone_else" },
     });
     const dead = await vendo.handler(request("GET", "/apps/app_dead/open?pending=1"));
-    expect(await dead.json()).toEqual({ kind: "failed", reason: "the build never finished", retryable: true });
+    expect(await dead.json()).toEqual({ kind: "pending" });
 
-    // (c) a live record under another subject answers the B4 principal-
-    // mismatch diagnosis — reachable on hosted stores for the first time.
+    // (c) a live record under another subject: the B4 diagnosis is logged for
+    // the host (reachable on hosted stores for the first time) and the caller
+    // stays masked.
+    //
+    // The spy is CLEARED first: it was installed once at the top of this case
+    // and (b) already logged through it, so the assertion below read accumulated
+    // calls and would have passed even if (c) logged nothing at all — the same
+    // vacuous shape this wave fixed elsewhere.
+    vi.mocked(console.warn).mockClear();
     await store.records("vendo_apps").put({
       id: "app_foreign",
       data: { subject: "someone_else", enabled: true, doc: app("app_foreign") },
       refs: { subject: "someone_else" },
     });
     const foreign = await vendo.handler(request("GET", "/apps/app_foreign/open?pending=1"));
-    const body = await foreign.json() as { kind: string; reason?: string };
-    expect(body.kind).toBe("failed");
-    expect(body.reason).toContain("principal");
+    expect(await foreign.json()).toEqual({ kind: "pending" });
+    expect(vi.mocked(console.warn).mock.calls.flat().join(" ")).toContain("principal");
   });
 
-  it("does not read history for an unowned app on GET or undo", async () => {
+  it("does not read history for an unowned app", async () => {
     const { vendo } = await setup();
     stubRouteBlocks(vendo);
     vi.mocked(vendo.apps.get).mockResolvedValue(null);
     const history = vi.mocked(vendo.apps.history);
 
-    for (const [method, body] of [
-      ["GET", undefined],
-      ["POST", { op: "undo" }],
-    ] as const) {
-      const response = await vendo.handler(request(method, "/apps/app_other/history", body));
-      expect(response.status).toBe(404);
-      expect(await response.json()).toEqual({
-        error: { code: "not-found", message: "app not found: app_other" },
-      });
-    }
+    const response = await vendo.handler(request("GET", "/apps/app_other/history"));
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: { code: "not-found", message: "app not found: app_other" },
+    });
     expect(history).not.toHaveBeenCalled();
   });
 
-  it("enforces history() ownership at the wire: cross-principal reads and undo are denied for real", async () => {
-    // 06-apps: history(appId) is ownership-blind by frozen signature; THIS route
-    // is the enforcement boundary. No mocks — a real store row, a real history
-    // entry, and the real apps runtime behind the handler.
+  it("enforces history() ownership at the wire: cross-principal reads are denied for real", async () => {
+    // Build contract §9.3: the LEVEL lives in the apps runtime (`history` takes
+    // the ctx — list needs viewer) and this route masks what the caller cannot
+    // see. No mocks — a real store row, a real history entry, and the real apps
+    // runtime behind the handler, so both halves are proven.
     let current: Principal = { kind: "user", subject: "user_owner" };
     const { vendo } = await setup(vi.fn(async () => current));
     expect((await vendo.handler(request("GET", "/status"))).status).toBe(200); // migrate the store
@@ -427,25 +584,19 @@ describe("09 §3 public wire", () => {
 
     // Another authenticated principal is told the app does not exist…
     current = { kind: "user", subject: "user_mallory" };
-    for (const [method, body] of [["GET", undefined], ["POST", { op: "undo" }]] as const) {
-      const denied = await vendo.handler(request(method, "/apps/app_hist/history", body));
-      expect(denied.status).toBe(404);
-      expect(await denied.json()).toEqual({
-        error: { code: "not-found", message: "app not found: app_hist" },
-      });
-    }
+    const denied = await vendo.handler(request("GET", "/apps/app_hist/history"));
+    expect(denied.status).toBe(404);
+    expect(await denied.json()).toEqual({
+      error: { code: "not-found", message: "app not found: app_hist" },
+    });
 
-    // …and the denied undo mutated NOTHING: the app row and history survive.
+    // …and the denial read NOTHING: the app row and history survive untouched,
+    // proving the 404 was ownership rather than routing.
     current = { kind: "user", subject: "user_owner" };
     const row = await vendo.store.records("vendo_apps").get("app_hist");
     expect((row?.data as { doc: AppDocument }).doc).toEqual(doc);
     const listAfter = await vendo.handler(request("GET", "/apps/app_hist/history"));
     expect(await listAfter.json()).toHaveLength(1);
-
-    // The owner's undo works, proving the 404s above were ownership, not routing.
-    const undone = await vendo.handler(request("POST", "/apps/app_hist/history", { op: "undo" }));
-    expect(undone.status).toBe(200);
-    expect(await undone.json()).toMatchObject({ id: "app_hist", name: "Wire app v1" });
   });
 
   it("enforces JSON CSRF on mutations with only the three contracted exceptions", async () => {
@@ -519,6 +670,7 @@ describe("09 §3 public wire", () => {
     const custom: SandboxAdapter = {
       create: vi.fn(async () => { throw new Error("not called"); }),
       resume: vi.fn(async () => { throw new Error("not called"); }),
+      destroy: vi.fn(async () => { throw new Error("not called"); }),
     };
     const store = await tempStore("vendo-wire-custom-");
     const statusFor = async (
@@ -727,26 +879,20 @@ describe("09 §3 public wire", () => {
       return vendo;
     };
 
-    // Unset slot + key → the Cloud tools connector composes LAZILY: nothing
-    // eager at boot; expansion pulls exactly the asked-for toolkit through
-    // the console broker with BYO-identical names.
+    // Unset slot + key → the Cloud tools connector composes, and registers NO
+    // tools: the console's catalog is tens of thousands of tools and the listing
+    // never carries them (connector discovery 2026-08-03).
     const auto = await compose({});
     const bootNames = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
     expect(bootNames.some((name) => name.startsWith("gmail_") || name.startsWith("slack_"))).toBe(false);
-    await auto.actions.expandToolkits(["gmail"]);
-    const expanded = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
-    expect(expanded).toContain("gmail_GMAIL_SEND_EMAIL");
 
-    // The loadout seed: connected toolkits' tools in, unconnected out.
-    const seed = await auto.actions.loadoutSeed(["gmail"]);
-    expect(seed).toContain("gmail_GMAIL_SEND_EMAIL");
-    expect(seed.some((name) => name.startsWith("slack_"))).toBe(false);
-
-    // Search discovers the UNCONNECTED toolkit by intent and annotates it.
-    const matches = await auto.actions.search("post a message to slack channels");
-    const slack = matches.find((match) => match.name.startsWith("slack_"));
-    expect(slack).toBeDefined();
-    expect(slack!.description).toMatch(/connect/i);
+    // …and the Cloud default has no search backend, so it gets `list_connections`
+    // alone. The service-tool pair would be a search that answers nothing, and
+    // there is deliberately no keyword-scoring fallback behind it.
+    const projected = (await auto.guardedTools.descriptors(ctx)).map((descriptor) => descriptor.name);
+    expect(projected).toContain("list_connections");
+    expect(projected).not.toContain("find_service_tools");
+    expect(projected).not.toContain("use_service_tool");
 
     // An explicit connectors array — even empty — always wins over the key.
     const explicit = await compose({ connectors: [] });
@@ -754,7 +900,7 @@ describe("09 §3 public wire", () => {
     expect(explicitNames).not.toContain("gmail_GMAIL_SEND_EMAIL");
   });
 
-  it("connectorApps scopes the auto-composed cloud connector AND the connect catalog (criterion 9)", async () => {
+  it("a toolkit STRING in connectors scopes the auto-composed cloud connector AND the connect catalog (criterion 9)", async () => {
     // Same stub-console pattern as the connectors-seam test above: the wire
     // serves a 3-toolkit catalog; the host scopes to gmail only.
     const { createServer } = await import("node:http");
@@ -799,7 +945,7 @@ describe("09 §3 public wire", () => {
       model: {} as LanguageModel,
       principal: vi.fn(async () => principal),
       store,
-      connectorApps: ["gmail"],
+      connectors: ["gmail"],
     });
     await vendo.handler(request("GET", "/status"));
 
@@ -966,7 +1112,7 @@ describe("09 §3 public wire", () => {
     }
   });
 
-  it("serves sync impact on dev servers and blocks it in production", async () => {
+  it("serves sync impact in a development composition", async () => {
     vi.stubEnv("NODE_ENV", "development");
     const { vendo } = await setup();
 
@@ -975,13 +1121,60 @@ describe("09 §3 public wire", () => {
     expect(await response.json()).toEqual({
       impact: [{ tool: "host_get_widgets", apps: [], automations: [], grants: 0 }],
     });
+  });
 
+  it("does not mount sync impact when NODE_ENV is unset", async () => {
+    // The gate used to be a per-request `NODE_ENV === "production"` refusal, so
+    // ABSENCE of configuration read as "not production" and served the door:
+    // every enabled app's and automation's id and title, plus the live grant
+    // count, for every subject in the deployment, to an unauthenticated caller.
+    // NODE_ENV is unset on plenty of Node deploys and `process` does not exist
+    // at all on edge runtimes, where `environment()` returns undefined for the
+    // same reason. Mounting is a composition fact now, and absent means closed.
+    vi.stubEnv("NODE_ENV", undefined);
+    const { vendo } = await setup();
+
+    const response = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_get_widgets"] }));
+    expect(response.status).toBe(404);
+  });
+
+  it("does not mount sync impact in production", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    const blocked = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_get_widgets"] }));
-    expect(blocked.status).toBe(403);
-    expect(await blocked.json()).toEqual({
-      error: { code: "blocked", message: "sync impact is only available on a dev server" },
-    });
+    const { vendo } = await setup();
+
+    const response = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_get_widgets"] }));
+    expect(response.status).toBe(404);
+  });
+
+  it("does not mount the doctor probes when NODE_ENV is unset", async () => {
+    // The gate used to be a per-request `NODE_ENV === "production"` refusal on
+    // the /doctor/ prefix, so ABSENCE of configuration read as "not production"
+    // and served the whole probe surface unauthenticated: /doctor/machines
+    // enumerates every machine-bearing app in the deployment (id, name,
+    // provisioned-at, awake-right-now, and each declared cron + fn) across every
+    // subject, and reports whether VENDO_TICK_SECRET guards /tick;
+    // POST /doctor/act-as makes the composition mint host actAs material for a
+    // synthetic principal on demand. NODE_ENV is unset on plenty of Node deploys
+    // and `process` does not exist at all on edge runtimes, where
+    // `environment()` returns undefined for the same reason. Mounting is a
+    // composition fact now, and absent means closed.
+    vi.stubEnv("NODE_ENV", undefined);
+    const { vendo } = await setup();
+
+    for (const probe of [
+      request("GET", "/doctor/machines"),
+      request("GET", "/doctor/present/echo"),
+      request("GET", "/doctor/act-as/echo"),
+      request("POST", "/doctor/present", {}),
+      request("POST", "/doctor/act-as", {}),
+    ]) {
+      expect((await vendo.handler(probe)).status, probe.url).toBe(404);
+    }
+
+    // The one deliberate exception, unchanged: /doctor/base-url reports a
+    // static composition fact and exists to catch a PRODUCTION misconfiguration,
+    // so it is mounted in every environment.
+    expect((await vendo.handler(request("GET", "/doctor/base-url"))).status).toBe(200);
   });
 
   it("validates sync impact tool arrays", async () => {
@@ -1009,106 +1202,6 @@ describe("09 §3 public wire", () => {
     // this export Next.js would 405 a PATCH before it ever reached the wire's
     // own cloud-required seam (the /orgs routes match ANY method).
     expect((await next.PATCH(request("PATCH", "/orgs/org_1/members/user_1", { role: "admin" }))).status).toBe(402);
-  });
-});
-
-describe("development runtime source capture", () => {
-  async function captureRoot(): Promise<string> {
-    const root = await mkdtemp(join(tmpdir(), "vendo-runtime-capture-"));
-    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
-    return root;
-  }
-
-  it("writes a schema-valid baseline for a runtime-only registration", async () => {
-    const root = await captureRoot();
-    const sourceFile = join(root, "src", "runtime-card.tsx");
-    await mkdir(join(root, "src"), { recursive: true });
-    await writeFile(sourceFile, "export const RuntimeCard = () => <article>runtime</article>;\n", "utf8");
-    const { vendo } = await setup(vi.fn(async () => principal), { development: { root } });
-
-    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
-      slot: "RuntimeCard",
-      source: new URL(`file://${sourceFile}`).href,
-      exportable: true,
-    }));
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ slot: "RuntimeCard", status: "captured" });
-    const baseline = JSON.parse(await readFile(join(root, ".vendo", "remixable", "RuntimeCard.json"), "utf8"));
-    expect(capturedPinBaselineSchema.safeParse(baseline).success).toBe(true);
-    expect(baseline).toMatchObject({ slot: "RuntimeCard", exportable: true });
-  });
-
-  it("rejects capture from an anonymous session without touching disk", async () => {
-    const root = await captureRoot();
-    const sourceFile = join(root, "src", "runtime-card.tsx");
-    await mkdir(join(root, "src"), { recursive: true });
-    await writeFile(sourceFile, "export const RuntimeCard = () => null;\n", "utf8");
-    const { vendo } = await setup(vi.fn(async () => null), { development: { root } });
-
-    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
-      slot: "RuntimeCard",
-      source: sourceFile,
-      exportable: false,
-    }));
-    expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({
-      error: { code: "blocked", message: "runtime capture requires a host-resolved principal" },
-    });
-    await expect(access(join(root, ".vendo", "remixable", "RuntimeCard.json"))).rejects.toThrow();
-  });
-
-  it("does not mount the route outside development", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    const { vendo } = await setup();
-    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
-      slot: "Absent",
-      source: "/tmp/absent.tsx",
-      exportable: false,
-    }));
-    expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: { code: "not-found", message: "unknown Vendo route" } });
-  });
-
-  it("refuses sources outside the host root", async () => {
-    const root = await captureRoot();
-    const outside = await mkdtemp(join(tmpdir(), "vendo-runtime-outside-"));
-    cleanups.push(async () => { await rm(outside, { recursive: true, force: true }); });
-    const outsideFile = join(outside, "outside.tsx");
-    await writeFile(outsideFile, "export const Outside = () => null;\n", "utf8");
-    const { vendo } = await setup(vi.fn(async () => principal), { development: { root } });
-
-    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
-      slot: "Outside",
-      source: outsideFile,
-      exportable: false,
-    }));
-    expect(response.status).toBe(400);
-    await expect(access(join(root, ".vendo", "remixable", "Outside.json"))).rejects.toThrow();
-  });
-
-  it("preserves an existing static baseline", async () => {
-    const root = await captureRoot();
-    const sourceFile = join(root, "runtime-card.tsx");
-    const baselineFile = join(root, ".vendo", "remixable", "RuntimeCard.json");
-    await writeFile(sourceFile, "export const RuntimeCard = () => null;\n", "utf8");
-    await mkdir(join(root, ".vendo", "remixable"), { recursive: true });
-    const existing = {
-      slot: "RuntimeCard",
-      source: "export const RuntimeCard = () => <strong>static</strong>;",
-      hash: `sha256:${"b".repeat(64)}`,
-      exportable: true,
-      capturedAt: new Date(Date.now() + 60_000).toISOString(),
-    };
-    await writeFile(baselineFile, `${JSON.stringify(existing, null, 2)}\n`, "utf8");
-    const { vendo } = await setup(vi.fn(async () => principal), { development: { root } });
-
-    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
-      slot: "RuntimeCard",
-      source: sourceFile,
-      exportable: false,
-    }));
-    expect(await response.json()).toMatchObject({ status: "preserved", hash: existing.hash });
-    expect(JSON.parse(await readFile(baselineFile, "utf8"))).toEqual(existing);
   });
 });
 
@@ -1144,7 +1237,7 @@ describe("06-apps §9 in-client venue over the wire", () => {
   });
 
   it("injects an approval in development and open() rides the hash-pinned verdict end to end", async () => {
-    const { vendo } = await setup(vi.fn(async () => principal), { development: {} });
+    const { vendo } = await setup(vi.fn(async () => principal), { development: true });
     const doc = app("app_venue");
     await seedApp(vendo, doc);
 
@@ -1182,7 +1275,7 @@ describe("06-apps §9 in-client venue over the wire", () => {
   });
 
   it("rejects approval injection from an anonymous session", async () => {
-    const { vendo } = await setup(vi.fn(async () => null), { development: {} });
+    const { vendo } = await setup(vi.fn(async () => null), { development: true });
     const response = await vendo.handler(request("POST", "/dev/inclient-approval", {
       appId: "app_venue",
     }));
@@ -1206,7 +1299,10 @@ describe("06-apps §9 in-client venue over the wire", () => {
 describe("09 §2 composition", () => {
   it("audits one structured warning when present auth cannot be forwarded", async () => {
     vi.stubEnv("VENDO_BASE_URL", "");
-    const { vendo } = await setup();
+    // `development` because the probe this drives the present-forward branch
+    // through is a development-only route now. The branch under test is the
+    // untrusted-learned-origin one, which is unrelated to the flag.
+    const { vendo } = await setup(undefined, { development: true });
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const target = input instanceof Request ? input : new Request(input, init);
       return vendo.handler(target);
@@ -1243,7 +1339,7 @@ describe("09 §2 composition", () => {
     });
   });
 
-  it("09-vendo §2 install-dx wave 1.1: NODE_ENV=development trusts its own learned origin — present credentials forward with zero VENDO_BASE_URL", async () => {
+  it("09-vendo §2 install-dx wave 1.1: NODE_ENV=development trusts its own learned LOOPBACK origin — present credentials forward with zero VENDO_BASE_URL", async () => {
     vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("VENDO_BASE_URL", "");
     const { vendo } = await setup();
@@ -1255,8 +1351,15 @@ describe("09 §2 composition", () => {
     // Teach the zero-config route origin, then run the real present-forward
     // branch: unlike the untrusted-origin case above, the credentials MUST
     // reach the doctor's own echo route.
-    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
-    const probe = await vendo.handler(request("POST", "/doctor/present", {}, {
+    //
+    // The origin moved from `https://host.test` to loopback when the poisoning
+    // fence landed, and the promise this test exists for is unchanged: in
+    // development, with zero VENDO_BASE_URL, the wire trusts the origin it was
+    // actually reached at. `next dev` serves localhost, which is that origin.
+    // A non-loopback learned origin is now untrusted in every environment,
+    // because a request origin is the Host header (see the SECURITY pins below).
+    expect((await vendo.handler(requestFrom("http://localhost:3000", "GET", "/status"))).status).toBe(200);
+    const probe = await vendo.handler(requestFrom("http://localhost:3000", "POST", "/doctor/present", {}, {
       authorization: "Bearer vendo-doctor-present",
       cookie: "vendo_doctor_present=1",
     }));
@@ -1270,6 +1373,81 @@ describe("09 §2 composition", () => {
       && event.detail !== null
       && "warning" in event.detail);
     expect(warnings).toHaveLength(0);
+  });
+
+  /**
+   * THE POISONING ATTACK on route binding's learned base.
+   *
+   * `install-dx wave 1.1` made a DEV-learned origin trusted, so present-mode
+   * calls forward the caller's `cookie` and `authorization` to it. The learner
+   * had no restriction on WHICH origin it would learn, and a request origin is
+   * the Host header. One request carrying `Host: attacker.evil` therefore fixed
+   * the base process-wide and sent the caller's real session cookie and bearer
+   * to the attacker on every present-mode host tool call after it.
+   *
+   * Measured by the independent checker, then reproduced here RED before the
+   * fence. Closed with the same rule the tool door uses: loopback only, first
+   * qualifying request wins.
+   */
+  it("SECURITY: a spoofed non-loopback Host never becomes the learned base, so present credentials cannot ride it", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VENDO_BASE_URL", "");
+    const { vendo } = await setup();
+    const reached: Array<{ url: string; cookie: string | null; authorization: string | null }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const target = input instanceof Request ? input : new Request(input, init);
+      reached.push({
+        url: target.url,
+        cookie: target.headers.get("cookie"),
+        authorization: target.headers.get("authorization"),
+      });
+      return vendo.handler(target);
+    }));
+
+    // The attacker's Host arrives FIRST — this is the whole attack.
+    expect((await vendo.handler(requestFrom("https://attacker.evil", "GET", "/status"))).status).toBe(200);
+    await vendo.handler(requestFrom("https://attacker.evil", "POST", "/doctor/present", {}, {
+      authorization: "Bearer the-callers-real-token",
+      cookie: "session=the-callers-real-session",
+    }));
+
+    // Nothing that reached the attacker's origin carried the caller's identity.
+    const toAttacker = reached.filter((entry) => entry.url.startsWith("https://attacker.evil"));
+    expect(toAttacker.every((entry) => entry.cookie === null && entry.authorization === null)).toBe(true);
+
+    // And the withholding was audited, exactly as an untrusted origin should be.
+    const events = await vendo.guard.audit.query({ principal });
+    const warnings = events.events.filter((event) =>
+      event.detail !== undefined
+      && typeof event.detail === "object"
+      && event.detail !== null
+      && "warning" in event.detail);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      detail: { warning: { code: "present-credentials-not-forwarded", reason: "untrusted-host-origin" } },
+    });
+  });
+
+  it("SECURITY: a loopback origin already learned cannot be REPLACED by a later spoofed Host", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VENDO_BASE_URL", "");
+    const { vendo } = await setup();
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const target = input instanceof Request ? input : new Request(input, init);
+      return vendo.handler(target);
+    }));
+
+    // The real origin is learned first, then the attacker tries to move it.
+    expect((await vendo.handler(requestFrom("http://localhost:3000", "GET", "/status"))).status).toBe(200);
+    expect((await vendo.handler(requestFrom("https://attacker.evil", "GET", "/status"))).status).toBe(200);
+
+    // The base is still loopback, so the doctor's own echo route still answers
+    // and the credentials still reach it — the latch held.
+    const probe = await vendo.handler(requestFrom("http://localhost:3000", "POST", "/doctor/present", {}, {
+      authorization: "Bearer vendo-doctor-present",
+      cookie: "vendo_doctor_present=1",
+    }));
+    expect(await probe.json()).toEqual({ ok: true });
   });
 
   it("09-vendo §2 install-dx wave 1.1: logs one loud console.error at composition when NODE_ENV=production and VENDO_BASE_URL is unset", async () => {
@@ -1334,7 +1512,7 @@ describe("09 §2 composition", () => {
       refs: { subject: principal.subject },
     });
     expect((await vendo.actions.descriptors()).map((descriptor) => descriptor.name))
-      .toEqual(expect.arrayContaining(["vendo_apps_create", "vendo_apps_edit", "vendo_apps_open"]));
+      .toEqual(expect.arrayContaining(["vendo_make", "vendo_apps_open"]));
 
     const outcome = await vendo.apps.call("app_wire", "vendo_apps_open", { appId: "app_wire" }, ctx);
     expect(outcome).toMatchObject({ status: "ok", output: { kind: "tree" } });
@@ -1342,13 +1520,15 @@ describe("09 §2 composition", () => {
     expect(events.events.some((event) => event.kind === "tool-call" && event.tool === "vendo_apps_open")).toBe(true);
   });
 
-  it("projects rung-1 app risk consistently across chat and MCP venues", async () => {
+  it("projects app-edit risk consistently across chat and MCP venues", async () => {
     const { vendo } = await setup(vi.fn(async () => principal), {
-      policy: {
-        rules: [
-          { match: { risk: "write" }, action: "ask" },
-          { match: { risk: "read" }, action: "run" },
-        ],
+      guard: {
+        policy: {
+          rules: [
+            { match: { risk: "write" }, action: "ask" },
+            { match: { risk: "read" }, action: "run" },
+          ],
+        },
       },
     });
     expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
@@ -1367,35 +1547,38 @@ describe("09 §2 composition", () => {
       refs: { subject: principal.subject },
     });
     const byName = new Map((await vendo.actions.descriptors()).map((descriptor) => [descriptor.name, descriptor]));
-    expect(byName.get("vendo_apps_create")?.risk).toBe("read");
-    expect(byName.get("vendo_apps_edit")?.risk).toBe("write");
-    const edit = byName.get("vendo_apps_edit")!;
+    // Yousef's ruling (2026-07-28): an app edit does not need approval. Editing
+    // your own view is the same act as creating it, so it runs — in EVERY venue,
+    // which is what this test is really about: one answer per act, not per door.
+    // One tool now carries both acts, so ONE risk answers for both: a change is
+    // the same call as a build with `app` filled in.
+    const edit = byName.get("vendo_make")!;
+    expect(edit.risk).toBe("read");
     const chat = { ...ctx, venue: "chat" as const };
     const mcp = { ...ctx, venue: "mcp" as const };
-    const treeCall = {
-      id: "call_tree_chat",
-      tool: edit.name,
-      args: { appId: "app_wire", instruction: "Make the heading blue" },
-    };
-
-    await expect(vendo.guard.check(treeCall, edit, chat)).resolves.toMatchObject({ action: "run" });
-    await expect(vendo.guard.check({ ...treeCall, id: "call_tree_mcp" }, edit, mcp))
-      .resolves.toMatchObject({ action: "run" });
-    await expect(vendo.guard.check({
-      id: "call_server_chat",
-      tool: edit.name,
-      args: { appId: "app_wire", instruction: "Persist this to the database" },
-    }, edit, chat)).resolves.toMatchObject({ action: "ask" });
-    await expect(vendo.guard.check({
-      id: "call_server_mcp",
-      tool: edit.name,
-      args: { appId: "app_wire", instruction: "Persist this to the database" },
-    }, edit, mcp)).resolves.toMatchObject({ action: "ask" });
+    for (const [id, venue] of [["call_chat", chat], ["call_mcp", mcp]] as const) {
+      await expect(vendo.guard.check({
+        id,
+        tool: edit.name,
+        args: { app: "app_wire", request: "Persist this to the database" },
+      }, edit, venue)).resolves.toMatchObject({ action: "run" });
+    }
+    // Including an edit of an already-served app: the request rides the box,
+    // and what the BOX then does is gated on its own terms (egress approval,
+    // per-tool risk), never by a prompt about rearranging a view.
     await expect(vendo.guard.check({
       id: "call_http",
       tool: edit.name,
-      args: { appId: "app_http", instruction: "Make the heading blue" },
-    }, edit, chat)).resolves.toMatchObject({ action: "ask" });
+      args: { app: "app_http", request: "Make the heading blue" },
+    }, edit, chat)).resolves.toMatchObject({ action: "run" });
+    // The ceremony stays where it belongs: writing the app's stored rows asks.
+    const dataPut = byName.get("vendo_apps_data_put")!;
+    expect(dataPut.risk).toBe("write");
+    await expect(vendo.guard.check({
+      id: "call_data_put",
+      tool: dataPut.name,
+      args: { appId: "app_wire", collection: "notes", id: "n1", data: {} },
+    }, dataPut, chat)).resolves.toMatchObject({ action: "ask" });
   });
 
   it("uses per-client session-scoped ephemeral principals when the resolver returns null", async () => {
@@ -1782,7 +1965,9 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
   it("auth's actAs half is live — the doctor actAs probe round-trips a minted Auth.js session", async () => {
     vi.stubEnv("AUTH_SECRET", authJsSecret);
     const store = await tempStore("vendo-auth-actas-");
-    const vendo = createVendo({ model: {} as LanguageModel, store, auth: authJs() });
+    // `development` because the probe this drives is a development-only route
+    // now; the dev server `vendo doctor` targets gets it from NODE_ENV.
+    const vendo = createVendo({ model: {} as LanguageModel, store, auth: authJs(), development: true });
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const target = input instanceof Request ? input : new Request(input, init);
       return vendo.handler(target);
@@ -1808,42 +1993,59 @@ describe("XCUT-3 — umbrella runtime store surface", () => {
 });
 
 describe("app design rules (spec 2026-07-20)", () => {
-  /** Minimal scripted model (mirrors @vendoai/apps' internal test
-   *  helper, which is not exported): captures every prompt as flat text and
-   *  answers with fixed wire markup so runtime.create completes. */
-  const appGenModel = (prompts: string[]): LanguageModel => ({
-    specificationVersion: "v2" as const,
-    provider: "vendo-test",
-    modelId: "vendo-test-appgen",
-    supportedUrls: {},
-    async doGenerate(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
-      prompts.push(flatPrompt(call.prompt));
-      return {
-        content: [{ type: "text" as const, text: APP_WIRE }],
-        finishReason: "stop" as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-      };
-    },
-    async doStream(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
-      prompts.push(flatPrompt(call.prompt));
-      return {
-        stream: new ReadableStream({
-          start(controller) {
-            controller.enqueue({ type: "stream-start", warnings: [] });
-            controller.enqueue({ type: "text-start", id: "text_1" });
-            controller.enqueue({ type: "text-delta", id: "text_1", delta: APP_WIRE });
-            controller.enqueue({ type: "text-end", id: "text_1" });
-            controller.enqueue({
-              type: "finish",
-              finishReason: "stop",
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-            });
-            controller.close();
-          },
-        }),
-      };
-    },
-  }) as unknown as LanguageModel;
+  /** `save_app`'s own reply — its presence says THIS assembly run already saved,
+   *  which is how one model answers several runs without counting calls. */
+  const SAVED_MARKER = "Run validate on it now.";
+
+  /** Minimal scripted model (mirrors @vendoai/apps' internal test helper, which
+   *  is not exported): captures every prompt as flat text and plays the ONE
+   *  builder — one `save_app` of fixed wire markup per run, then a closing word
+   *  — so `runtime.create` completes. */
+  const appGenModel = (prompts: string[]): LanguageModel => {
+    const turnFor = (prompt: unknown): ScreenTurn => promptTextOf(prompt).includes(SAVED_MARKER)
+      ? { say: "done" }
+      : { tool: "save_app", input: { content: APP_WIRE } };
+    return {
+      specificationVersion: "v2" as const,
+      provider: "vendo-test",
+      modelId: "vendo-test-appgen",
+      supportedUrls: {},
+      async doGenerate(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
+        prompts.push(flatPrompt(call.prompt));
+        const turn = turnFor(call.prompt);
+        if ("say" in turn) {
+          return {
+            content: [{ type: "text" as const, text: turn.say }],
+            finishReason: "stop" as const,
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        }
+        return {
+          content: [{
+            type: "tool-call" as const,
+            toolCallId: "c_save_app",
+            toolName: turn.tool,
+            input: JSON.stringify(turn.input),
+          }],
+          finishReason: "tool-calls" as const,
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+      async doStream(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
+        prompts.push(flatPrompt(call.prompt));
+        const chunks = screenChunks(turnFor(call.prompt), 0);
+        return {
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({ type: "stream-start", warnings: [] });
+              for (const chunk of chunks) controller.enqueue(chunk);
+              controller.close();
+            },
+          }),
+        };
+      },
+    } as unknown as LanguageModel;
+  };
 
   const APP_WIRE = '<App name="Design check"><Text text="ok"/><Disclaimer reason="Fixture app."/></App>';
   const flatPrompt = (prompt: Array<{ content: string | Array<{ text?: string }> }>): string =>
@@ -1954,6 +2156,13 @@ describe("app design rules (spec 2026-07-20)", () => {
         name: "host_ledger",
         description: "Ledger rows",
         inputSchema: { type: "object", properties: {} },
+        // The DECLARED response — the only source of a tool's shape now that
+        // nothing samples the host. Semantics annotate the fields it names.
+        outputSchema: {
+          type: "object",
+          properties: { amount: { type: "number" }, dueAt: { type: "string" } },
+          required: ["amount", "dueAt"],
+        },
         risk: "read",
         binding: { kind: "route", method: "GET", path: "/ledger", argsIn: "query" },
         semantics: { amount: { kind: "money", unit: amount } },
@@ -1970,7 +2179,6 @@ describe("app design rules (spec 2026-07-20)", () => {
     vi.stubEnv("E2B_API_KEY", "");
     vi.stubEnv("VENDO_API_KEY", "vnd_cloud_key");
     vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-overrides.test");
-    // A trusted origin so the create-time shape sampler's route read resolves.
     vi.stubEnv("VENDO_BASE_URL", hostOrigin);
     // The cloud-owned authored layer annotates a SECOND field, so the merged
     // view can only be right if both legs applied.
@@ -1986,26 +2194,79 @@ describe("app design rules (spec 2026-07-20)", () => {
           { headers: { etag: '"rel_1"' } },
         );
       }
-      // The create-time shape sampler's one read of the host route.
-      if (url.startsWith(`${hostOrigin}/ledger`)) return Response.json({ amount: 1200, dueAt: "2026-01-31" });
       throw new Error(`unexpected fetch ${url}`);
     }));
 
     const store = await tempStore("vendo-cloud-overrides-store-");
     await store.ensureSchema();
     const prompts: string[] = [];
+    // The semantics annotations reach whoever BINDS against the query, so the
+    // fake model walks the ONE builder: a document with a query on host_ledger
+    // and a node reading it, saved as a whole.
+    const LEDGER_APP = '<App name="Ledger"><Query id="ledger" tool="host_ledger"/>'
+      + "<Text text={ledger.amount}/></App>";
+    const planModel = ((): LanguageModel => {
+      const turnFor = (prompt: unknown): ScreenTurn => promptTextOf(prompt).includes(SAVED_MARKER)
+        ? { say: "done" }
+        : { tool: "save_app", input: { content: LEDGER_APP } };
+      const capture = (call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }): ScreenTurn => {
+        prompts.push(flatPrompt(call.prompt));
+        return turnFor(call.prompt);
+      };
+      return {
+        specificationVersion: "v2" as const,
+        provider: "vendo-test",
+        modelId: "vendo-test-plan",
+        supportedUrls: {},
+        async doGenerate(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
+          const turn = capture(call);
+          if ("say" in turn) {
+            return {
+              content: [{ type: "text" as const, text: turn.say }],
+              finishReason: "stop" as const,
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          }
+          return {
+            content: [{
+              type: "tool-call" as const,
+              toolCallId: "c_save_app",
+              toolName: turn.tool,
+              input: JSON.stringify(turn.input),
+            }],
+            finishReason: "tool-calls" as const,
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+        async doStream(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
+          const chunks = screenChunks(capture(call), 0);
+          return {
+            stream: new ReadableStream({
+              start(controller) {
+                controller.enqueue({ type: "stream-start", warnings: [] });
+                for (const chunk of chunks) controller.enqueue(chunk);
+                controller.close();
+              },
+            }),
+          };
+        },
+      } as unknown as LanguageModel;
+    })();
     // Explicit store wins over the key (BYO); connectors:[] avoids the cloud
     // tools connector's descriptor fetch — the ONLY config fetch is /api/v1/config.
     const vendo = createVendo({
-      model: appGenModel(prompts),
+      model: planModel,
       principal: async () => principal,
       store,
       connectors: [],
     });
     cleanups.push(async () => { await vendo.store.close(); });
 
+    // The worker's query brief carries the shape card ("shape: { amount:
+    // number:money.cents, … }") — that line is where a generation actually
+    // reads the merged semantics.
     const shapeCard = (all: string[]): string =>
-      all.filter((p) => p.includes("TOOL RESPONSE SHAPES")).join("\n");
+      all.filter((p) => p.includes("shape: ")).join("\n");
 
     // First generation: local semantics always apply; this generation's own
     // descriptors() read also resolves the cloud-owned overrides (enablement,
@@ -2291,34 +2552,47 @@ describe("09 §3 conversational turn against the real composed store", () => {
       outputTokens: { total: 0, text: 0, reasoning: 0 },
     } as const;
     let agentCalls = 0;
+    // The screen agent assembles in PASSES: it saves the app as it grows, and
+    // every save paints through the render seam. That is what makes the create
+    // arrive in pieces — a first section on screen before the second is written
+    // — and each save lands as its own view on the app's own stream.
+    const generation = (delta: string) => ({
+      stream: simulateReadableStream({ chunks: [
+        { type: "text-start" as const, id: "generation" },
+        { type: "text-delta" as const, id: "generation", delta },
+        { type: "text-end" as const, id: "generation" },
+        { type: "finish" as const, usage, finishReason: { unified: "stop" as const, raw: undefined } },
+      ] }),
+    });
+    const saveApp = (content: string, id: string) => ({
+      stream: simulateReadableStream({ chunks: [
+        { type: "tool-call" as const, toolCallId: id, toolName: "save_app", input: JSON.stringify({ content }) },
+        { type: "finish" as const, usage, finishReason: { unified: "tool-calls" as const, raw: undefined } },
+      ] }),
+    });
+    const section = (count: number) => `<App name="SSE app">\n  <Stack>\n${
+      Array.from({ length: count }, (_, index) => `    <Text text="Section ${index + 1} ready" />`).join("\n")
+    }\n  </Stack>\n</App>`;
+    const screenTurns = [
+      saveApp(section(1), "c1"),
+      saveApp(section(2), "c2"),
+      saveApp(section(3), "c3"),
+      generation("done"),
+    ];
     const model = new MockLanguageModelV3({
       doStream: async ({ prompt }) => {
         const serialized = JSON.stringify(prompt);
-        if (serialized.includes("TASK: CREATE_APP")) {
-          return {
-            stream: simulateReadableStream({ chunks: [
-              { type: "text-start", id: "generation" },
-              {
-                type: "text-delta",
-                id: "generation",
-                delta: '<App name="SSE app"><Stack>',
-              },
-              {
-                type: "text-delta",
-                id: "generation",
-                delta: '<Text text="Ready"/><Disclaimer reason="Fixture app."/></Stack></App>',
-              },
-              { type: "text-end", id: "generation" },
-              { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
-            ] }),
-          };
+        // The screen agent's own brief. The one marker that says "this prompt is
+        // the assembly loop's" without counting calls.
+        if (serialized.includes("# In this loop")) {
+          return screenTurns.shift() ?? generation("nothing more to do");
         }
 
         agentCalls += 1;
         if (agentCalls === 1) {
           return {
             stream: simulateReadableStream({ chunks: [
-              { type: "tool-call", toolCallId: "call_create_sse", toolName: "vendo_apps_create", input: JSON.stringify({ prompt: "Build an SSE app" }) },
+              { type: "tool-call", toolCallId: "call_create_sse", toolName: "vendo_make", input: JSON.stringify({ request: "Build an SSE app" }) },
               { type: "finish", usage, finishReason: { unified: "tool-calls", raw: undefined } },
             ] }),
           };
@@ -2348,7 +2622,7 @@ describe("09 §3 conversational turn against the real composed store", () => {
       model: model as unknown as LanguageModel,
       principal: async () => principal,
       store,
-      policy: { rules: [{ match: { tool: "vendo_apps_*", presence: "present" }, action: "run" }] },
+      guard: { policy: { rules: [{ match: { tool: "vendo_apps_*", presence: "present" }, action: "run" }] } },
     });
 
     const response = await vendo.handler(request("POST", "/threads", {
@@ -2366,10 +2640,17 @@ describe("09 §3 conversational turn against the real composed store", () => {
 
     expect(response.status).toBe(200);
     expect(views.length).toBeGreaterThanOrEqual(3);
-    expect(views[0]?.data.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }, { id: "stack-1" }] });
+    // The app ARRIVES IN PIECES: each save is its own view, and each one carries
+    // more of the app than the last. This is the property the SSE handler exists
+    // for — the person watches it fill in rather than waiting for one blob.
+    const nodeCounts = views.map((view) => view.data.payload.nodes.length);
+    expect(nodeCounts.at(-1)).toBeGreaterThan(nodeCounts[0] as number);
+    // ONE reconciliation id across every piece, so the card updates in place
+    // instead of a second card appearing beside it.
     expect(new Set(views.map((view) => view.id))).toEqual(new Set([`vendo-view:${views[0]?.data.appId}`]));
-    expect(views.at(-1)?.data.payload.nodes).toHaveLength(4);
-    expect(views.at(-1)?.data.payload.streaming).toBeUndefined();
+    // …and the last word SETTLES. While `streaming` is on, the card never
+    // reaches a verdict and stays on "Building your view…".
+    expect(views.at(-1)?.data.payload.streaming).not.toBe(true);
   });
 });
 
@@ -2413,7 +2694,7 @@ describe("ENG-252 agent.loadout through createVendo", () => {
       principal: async () => principal,
       store,
       connectors: [connector],
-      agent: { loadout: ["host_beta"] },
+      loadout: ["host_beta"],
     });
 
     const turn = await vendo.handler(request("POST", "/threads", {
@@ -2424,11 +2705,11 @@ describe("ENG-252 agent.loadout through createVendo", () => {
     await turn.text();
 
     // The curated loadout gates the host surface: only the named tool is
-    // offered; the rest stay discoverable via vendo_tools_search.
+    // offered; the rest stay discoverable via find_tools.
     expect(toolNamesPerCall).toHaveLength(1);
     expect(toolNamesPerCall[0]).toContain("host_beta");
     expect(toolNamesPerCall[0]).not.toContain("host_alpha");
-    expect(toolNamesPerCall[0]).toContain("vendo_tools_search");
+    expect(toolNamesPerCall[0]).toContain("find_tools");
   });
 });
 
@@ -2482,12 +2763,15 @@ describe("surfaces.agent through createVendo", () => {
           };
           return {
             stream: simulateReadableStream({
-              chunks: step === "search"
+              // Spread so the chunk element type is inferred from BOTH branches:
+              // handed the conditional directly, `simulateReadableStream<T>`
+              // resolves `T` from the first arm alone and then rejects the second.
+              chunks: [...(step === "search"
                 ? [
                   {
                     type: "tool-call" as const,
                     toolCallId: "call_search",
-                    toolName: "vendo_tools_search",
+                    toolName: "find_tools",
                     input: JSON.stringify({ query: "export the raw ledger" }),
                   },
                   finish,
@@ -2497,7 +2781,7 @@ describe("surfaces.agent through createVendo", () => {
                   { type: "text-delta" as const, id: "t1", delta: "Done." },
                   { type: "text-end" as const, id: "t1" },
                   finish,
-                ],
+                ])],
             }),
           };
         },
@@ -2523,7 +2807,7 @@ describe("surfaces.agent through createVendo", () => {
 
     expect(recorder.toolNamesPerCall[0]).toContain("host_listAccounts");
     expect(recorder.toolNamesPerCall[0]).not.toContain("host_exportLedger");
-    expect(recorder.toolNamesPerCall[0]).toContain("vendo_tools_search");
+    expect(recorder.toolNamesPerCall[0]).toContain("find_tools");
     // The registry itself is untouched — the door and the host's own code still
     // see the whole surface; only what the AGENT is offered is curated.
     expect((await vendo.actions.descriptors()).map((entry) => entry.name)).toContain("host_exportLedger");
@@ -2560,7 +2844,7 @@ describe("surfaces.agent through createVendo", () => {
       principal: async () => principal,
       store,
       // The host names BOTH tools in its explicit loadout; the menu still wins.
-      agent: { loadout: ["host_listAccounts", "host_exportLedger"] },
+      loadout: ["host_listAccounts", "host_exportLedger"],
     });
     const turn = await vendo.handler(request("POST", "/threads", {
       threadId: "thr_surface_loadout",
@@ -2571,7 +2855,7 @@ describe("surfaces.agent through createVendo", () => {
 
     expect(recorder.toolNamesPerCall[0]).toContain("host_listAccounts");
     expect(recorder.toolNamesPerCall[0]).not.toContain("host_exportLedger");
-    expect(recorder.toolNamesPerCall[0]).toContain("vendo_tools_search");
+    expect(recorder.toolNamesPerCall[0]).toContain("find_tools");
   });
 
   it("without a surfaces block the agent surface is unchanged", async () => {
@@ -2597,26 +2881,9 @@ describe("surfaces.agent through createVendo", () => {
 
 describe("09 §2 apps composition", () => {
   it("passes host-component catalog registrations to createApps", { timeout: 120_000 }, async () => {
-    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const store = await tempStore("vendo-catalog-");
     const generated = '<App name="Catalog app"><MetricCard label="Revenue"/></App>';
-    const model = new MockLanguageModelV3({
-      doStream: async () => ({
-        stream: simulateReadableStream({ chunks: [
-          { type: "text-start", id: "generation" },
-          { type: "text-delta", id: "generation", delta: generated },
-          { type: "text-end", id: "generation" },
-          {
-            type: "finish",
-            usage: {
-              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-              outputTokens: { total: 0, text: 0, reasoning: 0 },
-            },
-            finishReason: { unified: "stop", raw: undefined },
-          },
-        ] }),
-      }),
-    });
+    const model = await screenModel([{ tool: "save_app", input: { content: generated } }, { say: "done" }]);
     const catalog: ComponentCatalog = [{
       name: "MetricCard",
       description: "Use for a single headline metric.",
@@ -2636,26 +2903,9 @@ describe("09 §2 apps composition", () => {
   });
 
   it("accepts the name-keyed registry catalog form and ignores component references", { timeout: 120_000 }, async () => {
-    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const store = await tempStore("vendo-registry-catalog-");
     const generated = '<App name="Registry app"><MetricCard label="Revenue"/></App>';
-    const model = new MockLanguageModelV3({
-      doStream: async () => ({
-        stream: simulateReadableStream({ chunks: [
-          { type: "text-start", id: "generation" },
-          { type: "text-delta", id: "generation", delta: generated },
-          { type: "text-end", id: "generation" },
-          {
-            type: "finish",
-            usage: {
-              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-              outputTokens: { total: 0, text: 0, reasoning: 0 },
-            },
-            finishReason: { unified: "stop", raw: undefined },
-          },
-        ] }),
-      }),
-    });
+    const model = await screenModel([{ tool: "save_app", input: { content: generated } }, { say: "done" }]);
     // 01 §14: the server MUST IGNORE the component reference — a trap proves
     // it is never touched or executed.
     const registry: ComponentRegistry = {
@@ -2684,7 +2934,6 @@ describe("09 §2 apps composition", () => {
   });
 
   it("loads catalog@1 from .vendo and plumbs it through to createApps", { timeout: 120_000 }, async () => {
-    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const root = await mkdtemp(join(tmpdir(), "vendo-disk-catalog-"));
     const dataDir = join(root, "data");
     await mkdir(join(root, ".vendo"), { recursive: true });
@@ -2703,23 +2952,7 @@ describe("09 §2 apps composition", () => {
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
     const generated = '<App name="Disk catalog app"><DiskMetric level={42}/></App>';
-    const model = new MockLanguageModelV3({
-      doStream: async () => ({
-        stream: simulateReadableStream({ chunks: [
-          { type: "text-start", id: "generation" },
-          { type: "text-delta", id: "generation", delta: generated },
-          { type: "text-end", id: "generation" },
-          {
-            type: "finish",
-            usage: {
-              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-              outputTokens: { total: 0, text: 0, reasoning: 0 },
-            },
-            finishReason: { unified: "stop", raw: undefined },
-          },
-        ] }),
-      }),
-    });
+    const model = await screenModel([{ tool: "save_app", input: { content: generated } }, { say: "done" }]);
     const previousCwd = process.cwd();
     const vendo = (() => {
       try {
@@ -2740,7 +2973,6 @@ describe("09 §2 apps composition", () => {
     // 04 §1 gap closure end-to-end: ajvIssuePath → standardIssuePath →
     // pathTargetsRuntimeBinding. The disk schema says value must be a number;
     // a {$path} binding at that prop must be exempted, a plain wrong type not.
-    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const root = await mkdtemp(join(tmpdir(), "vendo-disk-catalog-binding-"));
     const dataDir = join(root, "data");
     await mkdir(join(root, ".vendo"), { recursive: true });
@@ -2765,30 +2997,20 @@ describe("09 §2 apps composition", () => {
     // against the live descriptor list at create (verify-v2 fixes).
     const bound = '<App name="Disk binding app"><Query id="metrics" tool="vendo_apps_data_list"/><DiskMetric value={metrics.value}/></App>';
     const bad = '<App name="Disk binding app"><DiskMetric value="not a number"/></App>';
-    const outputs = [
-      bound,
-      // The second bad output feeds the engine's 2-attempt repair loop so the
-      // second create fails on both attempts.
-      bad,
-      bad,
-    ];
-    const model = new MockLanguageModelV3({
-      doStream: async () => ({
-        stream: simulateReadableStream({ chunks: [
-          { type: "text-start", id: "generation" },
-          { type: "text-delta", id: "generation", delta: outputs.shift() ?? "" },
-          { type: "text-end", id: "generation" },
-          {
-            type: "finish",
-            usage: {
-              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-              outputTokens: { total: 0, text: 0, reasoning: 0 },
-            },
-            finishReason: { unified: "stop", raw: undefined },
-          },
-        ] }),
-      }),
-    });
+    /** Every brief the builder was handed — the `validate` run below reports the
+     *  ajv violation back into one of them, which is where a real author reads
+     *  it. */
+    const prompts: string[] = [];
+    const model = await screenModel([
+      // The FIRST create: the bound document, saved and left alone.
+      { tool: "save_app", input: { content: bound } },
+      { say: "done" },
+      // The SECOND: the literal violation. It saves, the floor refuses to paint
+      // it, and `validate` is how the author hears why.
+      { tool: "save_app", input: { content: bad } },
+      { tool: "validate", input: { document: bad } },
+      { say: "I could not make that one work." },
+    ], prompts);
     const previousCwd = process.cwd();
     const vendo = (() => {
       try {
@@ -2812,17 +3034,18 @@ describe("09 §2 apps composition", () => {
         ]),
       },
     });
-    // A genuine type violation against the same disk schema still fails.
-    // Wave 2 — create() re-throws with the classified reason in the message;
-    // the raw issue list rides detail.issues for in-process callers.
+    // A genuine type violation against the same disk schema still fails: the
+    // floor refuses to paint it, no row lands, and `create` re-throws with the
+    // classified reason in the message and the issue list on detail.
     await expect(vendo.apps.create({ prompt: "Show the broken metric" }, ctx)).rejects.toMatchObject({
       code: "validation",
-      detail: {
-        issues: expect.arrayContaining([
-          expect.stringContaining('props invalid for host component "DiskMetric"'),
-        ]),
-      },
+      detail: { issues: expect.any(Array) },
     });
+    // …and the refusal is the DISK SCHEMA's, named as such. `validate` is the
+    // review floor for the one builder, so the ajv violation reaches the author
+    // in its own words — a create that merely failed would not tell them which
+    // prop was wrong.
+    expect(prompts.join("\n")).toContain('props invalid for host component "DiskMetric"');
   });
 
   it("warns loudly when createVendo finds a malformed .vendo/catalog.json", async () => {
@@ -2866,10 +3089,10 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
         async principal(subject) { return { kind: "user", subject }; },
       },
     });
-    // createVendo kicks off ensureSchema() without blocking; a test whose
-    // requests all 404 before `await ready` would otherwise close the store
-    // mid-schema-creation (the known PGlite close-race hang).
-    await store.ensureSchema();
+    // No ensureSchema() here: its only stated purpose was dodging the PGlite
+    // close-race, and that race is gone — construction is pure, so nothing is
+    // in flight to be closed mid-creation. This store's requests all 404, so
+    // forcing a boot would pay a full initdb for a schema no case reads.
     return vendo;
   }
   const root = (path: string): Request => new Request(`https://host.test${path}`);
@@ -2958,6 +3181,193 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
     expect(payload).toMatchObject({ sub: "user_door", jti: "umbrella-federation-nonce", aud: issuer });
   });
 
+  // Broker mode is DECLARED, never discovered: `VENDO_MCP_BROKER_URL` is the tenant's
+  // own MCP endpoint, so the door reads the issuer and the audience out of it
+  // by URL parsing. Nothing is registered anywhere, so no boot-time call can
+  // repoint a live deployment or swap its authentication architecture.
+  describe("VENDO_MCP_BROKER_URL declares broker mode", () => {
+    const BROKER = "https://acme.mcp.vendo.run";
+    const mcpRequest = (token: string): Request => new Request("https://host.test/api/vendo/mcp", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+        "mcp-protocol-version": "2025-11-25",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "0" } },
+      }),
+    });
+
+    it("verifies against the declared issuer and the canonicalized endpoint as audience", async () => {
+      // The trailing slash proves both halves are URL-PARSED, never
+      // concatenated: the issuer is the origin, the audience is the endpoint
+      // canonicalized exactly as the door canonicalizes its own resource.
+      vi.stubEnv("VENDO_MCP_BROKER_URL", `${BROKER}/mcp/`);
+      const { privateKey, publicKey } = await generateKeyPair("ES256");
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url === `${BROKER}/.well-known/oauth-authorization-server`) {
+          return Response.json({ issuer: BROKER, jwks_uri: `${BROKER}/jwks` });
+        }
+        if (url === `${BROKER}/jwks`) {
+          return Response.json({ keys: [{ ...(await exportJWK(publicKey)), alg: "ES256", use: "sig", kid: "k1" }] });
+        }
+        return new Response(null, { status: 404 });
+      });
+      const vendo = await mcpVendo();
+
+      const prm = await vendo.handler(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
+      expect((await prm.json() as { authorization_servers?: string[] }).authorization_servers).toEqual([BROKER]);
+      expect((await vendo.handler(root("/.well-known/oauth-authorization-server/api/vendo/mcp"))).status).toBe(404);
+
+      const mint = (audience: string): Promise<string> => new SignJWT({})
+        .setProtectedHeader({ alg: "ES256", kid: "k1" })
+        .setIssuer(BROKER).setAudience(audience).setSubject("broker_user")
+        .setIssuedAt().setExpirationTime("5m").sign(privateKey);
+      expect((await vendo.handler(mcpRequest(await mint(`${BROKER}/mcp`)))).status).toBe(200);
+      // A token for any other resource is not this door's to accept.
+      expect((await vendo.handler(mcpRequest(await mint("https://host.test/api/vendo/mcp")))).status).toBe(401);
+    });
+
+    it("wires federation from VENDO_MCP_FEDERATION_SECRET", async () => {
+      vi.stubEnv("VENDO_MCP_BROKER_URL", `${BROKER}/mcp`);
+      vi.stubEnv("VENDO_MCP_FEDERATION_SECRET", "declared-federation-secret-with-entropy");
+      const vendo = await mcpVendo();
+      const request = signHs256("declared-federation-secret-with-entropy", {
+        iss: BROKER,
+        aud: "https://host.test/api/vendo/mcp",
+        exp: Math.floor(Date.now() / 1_000) + 300,
+        jti: "declared-nonce",
+        redirect_uri: `${BROKER}/federation/callback`,
+        scopes: ["tools"],
+        client_name: "Vendo broker",
+      });
+      const federated = await vendo.handler(root(`/api/vendo/mcp/federate?request=${request}`));
+      expect(federated.status).toBe(302);
+    });
+
+    it("unset leaves the local door, and an explicit mcp.remoteAs still wins over it", async () => {
+      const local = await mcpVendo();
+      const as = await local.handler(root("/.well-known/oauth-authorization-server/api/vendo/mcp"));
+      expect(as.status).toBe(200);
+
+      vi.stubEnv("VENDO_MCP_BROKER_URL", `${BROKER}/mcp`);
+      const explicit = await mcpVendo({
+        remoteAs: { issuer: "https://own-as.example.com", audience: "https://host.test/api/vendo/mcp" },
+      });
+      const prm = await explicit.handler(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
+      expect((await prm.json() as { authorization_servers?: string[] }).authorization_servers)
+        .toEqual(["https://own-as.example.com"]);
+    });
+
+    // ADAPTER RULE: the env var is a DEFAULT, and a default never displaces what
+    // the host passed. An explicit `mcp.serviceAuth` IS a local
+    // authorization-server choice — the RFC 8693 exchange it opens exists only
+    // at the door's own /token, which a broker-fronted door 404s — so the door
+    // stays local and the exchange a customer configured keeps answering.
+    it("an explicit mcp.serviceAuth keeps the door's own token endpoint over the declared broker", async () => {
+      const key = "vsk_0123456789abcdef0123456789abcdef0123456789abcdef";
+      vi.stubEnv("VENDO_MCP_BROKER_URL", `${BROKER}/mcp`);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const vendo = await mcpVendo({ serviceAuth: { keys: [key] } });
+
+      // The door still owns its OAuth surface, and advertises the exchange...
+      const as = await vendo.handler(root("/.well-known/oauth-authorization-server/api/vendo/mcp"));
+      expect(as.status).toBe(200);
+      expect((await as.json() as { grant_types_supported?: string[] }).grant_types_supported)
+        .toContain("urn:ietf:params:oauth:grant-type:token-exchange");
+      const prm = await vendo.handler(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
+      expect((await prm.json() as { authorization_servers?: string[] }).authorization_servers)
+        .toEqual(["https://host.test/api/vendo/mcp"]);
+
+      // ...and the exchange itself answers at {mount}/token rather than 404ing.
+      const exchanged = await vendo.handler(new Request("https://host.test/api/vendo/mcp/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+          client_id: "vendo-service",
+          client_secret: key,
+          subject_token: "user_door",
+          subject_token_type: "urn:vendo:params:oauth:token-type:user-id",
+          resource: "https://host.test/api/vendo/mcp",
+        }),
+      }));
+      expect(exchanged.status).toBe(200);
+      expect((await exchanged.json() as { access_token?: string }).access_token).toMatch(/^vmat_/);
+      // And nothing to warn about: the host named ONE authorization server.
+      expect(warn.mock.calls.flat().join(" ")).not.toContain("mcp.serviceAuth");
+    });
+
+    it("a malformed VENDO_MCP_BROKER_URL fails LOUD at composition — never a quiet drop to local", async () => {
+      vi.stubEnv("VENDO_MCP_BROKER_URL", "acme.mcp.vendo.run/mcp");
+      await expect(mcpVendo()).rejects.toThrow(/VENDO_MCP_BROKER_URL must be an absolute http\(s\) URL/);
+    });
+
+    // serviceAuth wins the PRECEDENCE, not the parse: a broker URL nobody can
+    // verify tokens against is a broken deployment either way, so the loud
+    // failure must not be short-circuited by the slot it no longer fills.
+    it("still rejects a malformed broker URL when mcp.serviceAuth pins the door local", async () => {
+      vi.stubEnv("VENDO_MCP_BROKER_URL", "acme.mcp.vendo.run/mcp");
+      await expect(mcpVendo({ serviceAuth: { keys: ["vsk_service_key_with_enough_entropy"] } }))
+        .rejects.toThrow(/VENDO_MCP_BROKER_URL must be an absolute http\(s\) URL/);
+    });
+
+    // This URL becomes the OAuth resource audience, so anything that cannot BE
+    // a resource identifier is refused at composition rather than normalized
+    // into one. A silently-stripped fragment is the worst outcome: the door
+    // would verify against an audience the operator never typed while every
+    // broker-minted token failed with nothing explaining why.
+    it.each([
+      ["a fragment (RFC 8707 §2)", "https://acme.mcp.vendo.run/mcp#frag", /VENDO_MCP_BROKER_URL cannot contain a fragment/],
+      ["embedded credentials", "https://user:pw@acme.mcp.vendo.run/mcp", /VENDO_MCP_BROKER_URL cannot contain credentials/],
+      ["a non-http scheme", "ftp://acme.mcp.vendo.run/mcp", /VENDO_MCP_BROKER_URL must be an absolute http\(s\) URL/],
+    ])("rejects %s at composition", async (_label, url, message) => {
+      vi.stubEnv("VENDO_MCP_BROKER_URL", url);
+      await expect(mcpVendo()).rejects.toThrow(message);
+    });
+  });
+
+  it("serves BOTH spellings when the deployment is mounted under a path prefix", async () => {
+    // A path-mounted deployment is asked for the same document two ways. RFC
+    // 8414 §3 / RFC 9728 §3.1 derive the well-known URL from the FULL resource
+    // URI, so a client of `https://app.example.com/maple/api/vendo/mcp` asks
+    // for `…/oauth-protected-resource/maple/api/vendo/mcp` — the prefix rides
+    // in the suffix — while the door's own metadata URL is prefix-local and
+    // names `…/oauth-protected-resource/api/vendo/mcp`. Both must reach the
+    // door; the door itself strips the prefix off the suffix, so both answer
+    // with the one canonical resource.
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com/maple");
+    const vendo = await mcpVendo();
+
+    const derived = await vendo.handler(root("/.well-known/oauth-protected-resource/maple/api/vendo/mcp"));
+    expect(derived.status).toBe(200);
+    expect(await derived.json()).toMatchObject({ resource: "https://app.example.com/maple/api/vendo/mcp" });
+
+    const derivedAs = await vendo.handler(root("/.well-known/oauth-authorization-server/maple/api/vendo/mcp"));
+    expect(derivedAs.status).toBe(200);
+    expect(await derivedAs.json()).toMatchObject({ issuer: "https://app.example.com/maple/api/vendo/mcp" });
+
+    const prefixLess = await vendo.handler(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
+    expect(prefixLess.status).toBe(200);
+    expect(await prefixLess.json()).toMatchObject({ resource: "https://app.example.com/maple/api/vendo/mcp" });
+  });
+
+  it("accepts only the prefix the deployment actually configured", async () => {
+    // The second spelling is the configured base path and nothing else: the
+    // allowlist stays exact, so a made-up prefix is still not the door's path.
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com/maple");
+    const vendo = await mcpVendo();
+    const res = await vendo.handler(root("/.well-known/oauth-protected-resource/syrup/api/vendo/mcp"));
+    expect(res.status).toBe(404);
+    expect((await res.json() as { resource?: unknown }).resource).toBeUndefined();
+  });
+
   it("does NOT route boundary-adjacent or foreign well-known paths to the door", async () => {
     const vendo = await mcpVendo();
     // A boundary-free prefix would have matched all of these; the exact-path set
@@ -2990,10 +3400,10 @@ describe("10-mcp §5 — wellKnownVendoHandler (the Next.js app/.well-known/[...
         async principal(subject) { return { kind: "user", subject }; },
       },
     });
-    // See the identical comment on the door describe block above: a test
-    // whose requests all resolve before `await ready` would otherwise close
-    // the store mid-schema-creation (the known PGlite close-race hang).
-    await store.ensureSchema();
+    // No ensureSchema(), same as the door block above: these cases only read
+    // well-known metadata, so nothing here ever queries the store — forcing a
+    // boot would pay a full initdb purely to satisfy a close-race that no
+    // longer exists (construction is pure; the `ready()` latch is awaited).
     return vendo;
   }
   const root = (path: string): Request => new Request(`https://host.test${path}`);
@@ -3016,6 +3426,22 @@ describe("10-mcp §5 — wellKnownVendoHandler (the Next.js app/.well-known/[...
 
     const alias = await route.GET(root("/.well-known/mcp-server-card"));
     expect(alias.status).toBe(200);
+  });
+
+  it("forwards the prefix-including spelling of a path-mounted deployment too", async () => {
+    // The Next.js route adapter matches the SAME set the wire does, so a
+    // path-mounted deployment serves discovery at the URL a spec client derives
+    // instead of 404ing it with an empty body.
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com/maple");
+    const route = wellKnownVendoHandler(await mcpVendo());
+
+    const prm = await route.GET(root("/.well-known/oauth-protected-resource/maple/api/vendo/mcp"));
+    expect(prm.status).toBe(200);
+    expect((await prm.json() as { resource?: string }).resource).toBe("https://app.example.com/maple/api/vendo/mcp");
+
+    const as = await route.GET(root("/.well-known/oauth-authorization-server/maple/api/vendo/mcp"));
+    expect(as.status).toBe(200);
+    expect((await as.json() as { issuer?: string }).issuer).toBe("https://app.example.com/maple/api/vendo/mcp");
   });
 
   it("404s empty-body on a well-known path outside the door's four (mirrors the hand-written route it replaces)", async () => {
@@ -3168,11 +3594,13 @@ describe("ENG-353 — turn liveness: heartbeat-armed idle abort for disconnects 
   // milliseconds, and a spurious idle-abort here would flake the suite.
   const IDLE_MS = 1_000;
 
-  /** agent.stream stub whose SSE body stays open until the handed signal
-   *  aborts — a long-generating turn. */
+  /** A stub of the served chat door (post-flip: `harness.stream`) whose SSE body
+   *  stays open until the handed signal aborts — a long-generating turn.
+   *  Liveness is the wire route's, not the thinker's, so what runs the turn is
+   *  incidental here; it just has to be the door `POST /threads` actually calls. */
   function streamingTurnStub(vendo: Vendo, threadId = "thr_live"): { signals: AbortSignal[] } {
     const signals: AbortSignal[] = [];
-    vi.spyOn(vendo.agent, "stream").mockImplementation(async (input: { signal?: AbortSignal }) => {
+    vi.spyOn(vendo.harness, "stream").mockImplementation(async (input: { signal?: AbortSignal }) => {
       signals.push(input.signal!);
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
@@ -3274,7 +3702,7 @@ describe("ENG-353 — turn liveness: heartbeat-armed idle abort for disconnects 
 
   it("a completed turn unregisters: beats after the stream drained report inactive", async () => {
     const { vendo } = await setup();
-    vi.spyOn(vendo.agent, "stream").mockResolvedValue(new Response(
+    vi.spyOn(vendo.harness, "stream").mockResolvedValue(new Response(
       new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
@@ -3531,6 +3959,31 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
     expect(content).toContain("Product\nDisk brief for the profile seam.");
   });
 
+  it("a profileDir pointing AT the .vendo directory resolves every surface, not just tools.json", async () => {
+    // `vendoDirOf` exists because a gate that always appends `/.vendo/` reads
+    // nothing at all when profileDir already names it. The actions registry
+    // honours that rule; the surface reader must too, or theme, brief, catalog
+    // and knowledge all silently resolve to `.vendo/.vendo/…` and disappear.
+    const root = await diskProfile();
+    const store = await tempStore("vendo-profile-dotdir-store-");
+    const { model, prompts } = await promptCapture();
+
+    const vendo = createVendo({
+      model,
+      principal: async () => principal,
+      store,
+      profileDir: join(root, ".vendo"),
+    });
+
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("host_from_disk");
+
+    await runTurn(vendo, "thr_profile_dotdir");
+    const content = systemContent(prompts);
+    expect(content).toContain("Disk Grotesk");
+    expect(content).toContain("Product\nDisk brief for the profile seam.");
+  });
+
   it("workerd portability regression: profile.tools skips the tools.json disk read entirely (a malformed file there is never opened)", async () => {
     // Reproduces the real-workerd failure class's PRIMARY fix: a supplied
     // in-memory profile piece must make the disk leg never run at all.
@@ -3661,7 +4114,7 @@ describe("unified try surface (Task 15a) — in-memory profile", () => {
       model: {} as LanguageModel,
       principal: async () => principal,
       store: await tempStore("vendo-profile-policy-prec-"),
-      policy: { rules: [{ match: {}, action: "block", note: "explicit config wins" }] },
+      guard: { policy: { rules: [{ match: {}, action: "block", note: "explicit config wins" }] } },
       profile: {
         tools: [profileTool("host_invoices_list")],
         policy: { format: VENDO_POLICY_FORMAT, rules: [{ match: {}, action: "run" }] },
@@ -3713,5 +4166,144 @@ describe("execution-v2 — box-edit env knobs", () => {
     // Valid positive-integer values still compose.
     vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "2500");
     expect(() => createVendo({ model: {} as LanguageModel, store })).not.toThrow();
+  });
+});
+
+describe("mid-build steering — POST /threads/:id/steer (§10.2)", () => {
+  /**
+   * The WHOLE chain, no stub on either side: the real wire route, the real
+   * principal-scoped registry, the real harness runtime, and a harness that
+   * really registers `Turn.onSteer`. The only thing scripted is the thinker,
+   * because a unit test cannot run a model.
+   */
+  async function steerableSetup(resolver = vi.fn(async () => principal)) {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const heard: string[] = [];
+    /** Set when the harness declines to register — the "cannot take one" leg. */
+    let deaf = false;
+    const harness = {
+      name: "steerable",
+      async *run(turn: { onSteer?: (handler: (text: string) => Promise<boolean>) => void }) {
+        if (!deaf) {
+          turn.onSteer?.(async (text) => {
+            heard.push(text);
+            return true;
+          });
+        }
+        yield { type: "text" as const, delta: "building it" };
+        await released;
+        yield { type: "text" as const, delta: " — done." };
+      },
+    };
+    const store = await tempStore("vendo-steer-");
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: resolver,
+      store,
+      harness: harness as never,
+    });
+    return { vendo, release, heard, resolver, goDeaf: () => { deaf = true; } };
+  }
+
+  const turnBody = { message: { id: "m_steer_turn", role: "user", parts: [{ type: "text", text: "build me a workbench" }] } };
+
+  it("lands the user's words in the running turn and in the transcript, once, in order", async () => {
+    const { vendo, release, heard } = await steerableSetup();
+    const turn = await vendo.handler(request("POST", "/threads", turnBody));
+    const threadId = turn.headers.get("x-vendo-thread-id")!;
+    expect(threadId).toMatch(/^thr_/);
+
+    const steered = await vendo.handler(request("POST", `/threads/${threadId}/steer`, {
+      text: "group by client instead",
+      messageId: "m_steer_words",
+    }));
+    expect(steered.status).toBe(200);
+    expect(await steered.json()).toEqual({ landed: true });
+    expect(heard).toEqual(["group by client instead"]);
+
+    release();
+    await turn.text();
+
+    // Read back through the REAL read path: the steer is a normal user turn,
+    // between the ask and the answer.
+    const thread = await (await vendo.handler(request("GET", `/threads/${threadId}`))).json() as {
+      messages: Array<{ id: string; role: string; parts: Array<{ type: string; text?: string }> }>;
+    };
+    expect(thread.messages.map((message) => [message.role, message.id])).toEqual([
+      ["user", "m_steer_turn"],
+      ["user", "m_steer_words"],
+      ["assistant", expect.any(String)],
+    ]);
+    expect(thread.messages[1]!.parts).toEqual([{ type: "text", text: "group by client instead" }]);
+  });
+
+  it("answers `landed: false` for a thread with no turn in flight — and writes nothing", async () => {
+    const { vendo, release } = await steerableSetup();
+    const turn = await vendo.handler(request("POST", "/threads", turnBody));
+    const threadId = turn.headers.get("x-vendo-thread-id")!;
+    release();
+    await turn.text();
+
+    const steered = await vendo.handler(request("POST", `/threads/${threadId}/steer`, {
+      text: "too late",
+      messageId: "m_late",
+    }));
+    expect(steered.status).toBe(200);
+    expect(await steered.json()).toEqual({ landed: false });
+
+    const thread = await (await vendo.handler(request("GET", `/threads/${threadId}`))).json() as {
+      messages: Array<{ id: string }>;
+    };
+    expect(thread.messages.map((message) => message.id)).not.toContain("m_late");
+  });
+
+  it("gives an unknown thread id no oracle — the same answer as a thread that is simply idle", async () => {
+    const { vendo, release } = await steerableSetup();
+    const turn = await vendo.handler(request("POST", "/threads", turnBody));
+    const unknown = await vendo.handler(request("POST", "/threads/thr_does_not_exist/steer", {
+      text: "hello?",
+      messageId: "m_probe",
+    }));
+    expect(unknown.status).toBe(200);
+    expect(await unknown.json()).toEqual({ landed: false });
+    release();
+    await turn.text();
+  });
+
+  it("a FOREIGN principal cannot steer another person's build, and learns nothing by trying", async () => {
+    const resolver = vi.fn(async () => principal);
+    const { vendo, release, heard } = await steerableSetup(resolver);
+    const turn = await vendo.handler(request("POST", "/threads", turnBody));
+    const threadId = turn.headers.get("x-vendo-thread-id")!;
+
+    resolver.mockResolvedValue({ kind: "user", subject: "user_mallory" } as never);
+    const foreign = await vendo.handler(request("POST", `/threads/${threadId}/steer`, {
+      text: "wire the money to me",
+      messageId: "m_evil",
+    }));
+    // Indistinguishable from an idle thread: no oracle, exactly like the beat.
+    expect(foreign.status).toBe(200);
+    expect(await foreign.json()).toEqual({ landed: false });
+    expect(heard).toEqual([]);
+
+    release();
+    await turn.text();
+  });
+
+  it("a harness that never registers a handler answers `landed: false`, with no capability protocol anywhere", async () => {
+    const { vendo, release, goDeaf } = await steerableSetup();
+    goDeaf();
+    const turn = await vendo.handler(request("POST", "/threads", turnBody));
+    const threadId = turn.headers.get("x-vendo-thread-id")!;
+
+    const steered = await vendo.handler(request("POST", `/threads/${threadId}/steer`, {
+      text: "are you listening",
+      messageId: "m_unheard",
+    }));
+    expect(await steered.json()).toEqual({ landed: false });
+
+    release();
+    await turn.text();
   });
 });

@@ -1,4 +1,4 @@
-import type { ExtractedTool } from "@vendoai/actions";
+import { schemaIsBlind, type ExtractedTool } from "@vendoai/actions";
 
 /**
  * ALL prompt content for the judgment channel lives HERE — the judge pass and
@@ -37,10 +37,10 @@ import type { ExtractedTool } from "@vendoai/actions";
 export const JUDGE_OUTPUT_RULES = [
   "Rules:",
   "- Reply with ONLY one fenced json block matching:",
-  '  { "tools": [{ "name", "evidence", "reason"?, "description"?, "title"?, "risk"?, "critical"?,',
-  '    "disabled"?, "audience"?, "semantics"? }], "narrative": string }',
+  '  { "tools": [{ "name", "evidence", "reason"?, "description"?, "title"?, "risk"?, "confirmEach"?,',
+  '    "disabled"?, "audience"?, "semantics"?, "inputSchema"?, "outputSchema"? }], "narrative": string }',
   "- tools: include ONLY names from the catalog above. You may not add, rename, or rebind tools;",
-  "  bindings and input schemas are machine-owned and ignored if you send them.",
+  "  bindings are machine-owned and ignored if you send them.",
   "- evidence: REQUIRED on every entry — a short snippet quoted VERBATIM from the handler source",
   "  you actually read, copied character for character (<= 500 chars). A second reviewer will",
   "  look for this exact string in the file; an entry whose evidence is paraphrased, invented, or",
@@ -53,7 +53,9 @@ export const JUDGE_OUTPUT_RULES = [
   '  "List recent transactions"). <= 60 chars. Describe only what the tool actually does; a',
   "  title that promises more than the handler delivers is a lie, not a label. Write one for",
   "  every tool you touch.",
-  "- risk: read -> write -> destructive. The test is MUTATION OF STORED STATE — does calling this",
+  "- risk: read -> write -> destructive. A tool listed as `ungraded` is one NOBODY has graded yet —",
+  "  the scanner only asserts protocol facts — so every ungraded tool you read needs a grade.",
+  "  The test is MUTATION OF STORED STATE — does calling this",
   "  handler change data that outlives the request? `write` creates or updates stored state;",
   "  `destructive` deletes it or changes it irreversibly; `read` does not change stored state.",
   "  The following are NOT mutations and must be graded read, however much work they do:",
@@ -83,9 +85,9 @@ export const JUDGE_OUTPUT_RULES = [
   "  SELF-CONSISTENCY: your grade must agree with your own reason. If your reason asserts the",
   '  handler changes no stored state, then risk must be "read". A write or destructive grade that',
   "  contradicts its own reason is dropped and reported — you gain nothing by it.",
-  "  Mark irreversible operations critical: true.",
-  "- critical / disabled: critical: true and disabled: true harden the tool and apply immediately.",
-  "  You may also propose the reverse — critical: false, or disabled: false to WAKE a tool the",
+  "  Mark irreversible operations confirmEach: true.",
+  "- confirmEach / disabled: confirmEach: true and disabled: true harden the tool and apply immediately.",
+  "  You may also propose the reverse — confirmEach: false, or disabled: false to WAKE a tool the",
   "  scanner disabled because it could not classify it statically. Those are queued for a human",
   "  to approve, never applied by you, and they cost the same verbatim evidence.",
   '- audience: who the handler\'s own auth admits — "end-user" (a signed-in customer acting on',
@@ -98,6 +100,18 @@ export const JUDGE_OUTPUT_RULES = [
   '  | { "kind": "date", "format": "iso"|"epoch" } | { "kind": "enum", "labels": {value: label} }',
   '  | { "kind": "id", "entity"? } | { "kind": "percent", "scale": "ratio"|"0-100" } |',
   '  { "kind": "plain" }. Only include fields you read evidence for in the handler code/types.',
+  '- inputSchema / outputSchema: JSON Schema for what the handler READS from the request and what it',
+  '  RETURNS on success. Send one ONLY for a tool the catalog above flags "inputSchemaUnknown": true /',
+  '  "outputSchemaUnknown": true. Every other slot is already filled by the host\'s own contract',
+  "  (an OpenAPI spec, a tRPC .output(), a typed server action) and a proposal for it is refused",
+  "  outright and counted — you gain nothing by sending it.",
+  "  Describe the SHAPE THE HANDLER ACTUALLY PRODUCES, envelope included: if it returns",
+  '  `Response.json({ data: rows })`, the outputSchema is the object with a `data` array, not the',
+  "  array. Read the response construction and the types it is built from — never the route name.",
+  "  Include enum values wherever the code constrains a field to a closed set; an enum erased to a",
+  "  bare string is worse than no schema at all. Omit any field you are not sure of, and omit the",
+  "  whole slot if you cannot read it: a wrong schema is a confident lie the next agent binds to.",
+  "  Your evidence quote must cover the schema too — quote the response construction or the type.",
   "- narrative: a short human-readable story of what you read and what you changed — anything",
   "  suspicious especially. Plain prose, <= 30 lines.",
 ].join("\n");
@@ -122,10 +136,15 @@ export function judgmentFacts(tools: ExtractedTool[]): string {
     name: tool.name,
     binding: `${tool.binding.kind}${"method" in tool.binding && "path" in tool.binding ? ` ${String(tool.binding.method)} ${String(tool.binding.path)}` : ""}`,
     risk: tool.risk,
-    ...(tool.critical === true ? { critical: true } : {}),
+    ...(tool.confirmEach === true ? { confirmEach: true } : {}),
     ...(tool.disabled === true ? { disabled: true } : {}),
     ...(tool.audience === undefined ? {} : { audience: tool.audience }),
     ...(tool.title === undefined ? {} : { title: tool.title }),
+    // The fill gate, stated as a FACT about each tool rather than as a rule
+    // the model has to apply: a slot that is not flagged here is already
+    // filled by the host's own contract and any proposal for it is refused.
+    ...(schemaIsBlind(tool.inputSchemaSource) ? { inputSchemaUnknown: true } : {}),
+    ...(schemaIsBlind(tool.outputSchemaSource) ? { outputSchemaUnknown: true } : {}),
     description: tool.description,
   })), null, 2);
 }
@@ -147,7 +166,7 @@ export function composeJudgeInstructions(input: JudgeChunkInput): string {
   return [
     "You are Vendo's judgment agent. A deterministic scanner already extracted this product's API",
     "tools into the catalog below; your pass adds the judgment the scanner cannot: real",
-    "descriptions, risk/audience/critical corrections, response-field semantics. READ THE HANDLER",
+    "descriptions, risk/audience/confirmEach corrections, response-field semantics. READ THE HANDLER",
     "SOURCE for every tool you grade (Read/Glob/Grep only) — this pass is worthless guessed from",
     "names, and every grade you return has to carry a quote from the code.",
     "",
@@ -211,9 +230,11 @@ export function composeSkepticInstructions(input: {
       binding: `${subject.tool.binding.kind}${"method" in subject.tool.binding && "path" in subject.tool.binding ? ` ${String(subject.tool.binding.method)} ${String(subject.tool.binding.path)}` : ""}`,
       current: {
         risk: subject.tool.risk,
-        ...(subject.tool.critical === true ? { critical: true } : {}),
+        ...(subject.tool.confirmEach === true ? { confirmEach: true } : {}),
         ...(subject.tool.disabled === true ? { disabled: true } : {}),
         ...(subject.tool.audience === undefined ? {} : { audience: subject.tool.audience }),
+        ...(schemaIsBlind(subject.tool.inputSchemaSource) ? { inputSchemaUnknown: true } : {}),
+        ...(schemaIsBlind(subject.tool.outputSchemaSource) ? { outputSchemaUnknown: true } : {}),
       },
       proposed: subject.moves.map((move) => ({ field: move.field, from: move.from, to: move.to })),
       evidence: subject.evidence,
@@ -225,6 +246,9 @@ export function composeSkepticInstructions(input: {
     '  { "verdicts": [{ "name", "field", "verdict": "uphold" | "reject", "reason"? }] }',
     "- Return exactly one verdict for EVERY (name, field) pair listed above. A pair you omit is",
     "  treated as rejected.",
+    '- An "inputSchema" or "outputSchema" field is a claim about the handler like any other: REJECT it',
+    "  unless the source really produces that shape, envelope and enum values included. A schema that",
+    "  is merely plausible is a reject — the next agent binds to it as if it were the contract.",
     "- reason: one sentence, required on a reject, saying what the code actually shows. <= 300 chars.",
   ].join("\n");
 }

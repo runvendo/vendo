@@ -11,14 +11,12 @@ import { runKnowledge } from "./cli/knowledge/index.js";
 import { runMcp } from "./cli/mcp/index.js";
 import { CLI_VERSION } from "./cli/shared.js";
 import { runSync } from "./cli/sync.js";
-import { runTry } from "./cli/try.js";
 
 const HELP = `vendo — install your product's agent
 
 Usage: vendo <command> [dir] [options]
 
 Commands:
-  try             See your product's agent before installing: profile this repo read-only, serve a live local demo
   init [dir]      Set up Vendo: wire the handler, extract tools + theme, resolve a model key
   login           Claim a Vendo Cloud key: approve in the browser; the key lands in .env.local
   doctor [dir]    Verify the install: wiring, live probes, and one real model turn (--json for agents)
@@ -40,17 +38,18 @@ Options:
   --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
-  --ai-polish                Init only: consent to the judgment pass without a prompt (works non-interactively)
-  --engine <name>            Init/try/sync: pin the AI engine (claude, codex, npx) instead of first-available
+  --ai                       Init/sync: run the AI judgment pass without asking (works non-interactively)
+  --engine <name>            Init/sync: pin the AI engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
   --list                     Eject only: show the ejectable surfaces
   --url <url>                Doctor/server-json: mounted wire base or public MCP URL
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
   --review                   Sync only: show the queued + new loosenings and confirm before writing
   --full                     Sync only: judge the whole catalog instead of only what moved
-  --port <port>              Try only: listen on a fixed port (default: any free port)
-  --no-open                  Try only: print the URL without opening the browser
-  --no-ai                    Sync: skip the judgment pass (workspace-internal syncs); try: skip the background AI deepening
+  --theme-refresh            Sync only: take the theme scan's values even for slots you hand-edited
+  --push-components          Sync only: send registered host-component source to Vendo Cloud without asking (CI)
+  --no-push-components       Sync only: keep registered host-component source on this machine
+  --no-ai                    Init/sync: force the AI judgment pass off
   --json                     Sync/doctor: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
   --key <key>                Sync/cloud: override VENDO_API_KEY
@@ -73,21 +72,25 @@ function options(args: string[], name: string): string[] {
   return values;
 }
 
-const INIT_FLAGS = new Set(["--agent", "--yes", "--force", "--byo", "--ai-polish"]);
+/** `--ai`/`--no-ai` is the canonical pair on BOTH init and sync (decision 2).
+    `--ai-polish` (init) and `--no-watermark` (sync) are the documented older
+    spellings and stay accepted so pinned scripts and hooks keep working. */
+const INIT_FLAGS = new Set(["--agent", "--yes", "--force", "--byo", "--ai", "--ai-polish", "--no-ai"]);
 const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme", "--engine"];
 /** Agent-install-dx: every init wizard question has a value-flag answer; a
     bad value fails as loudly as an unknown flag, with the valid choices. */
 const INIT_AUTH_VALUES = ["authJs", "clerk", "supabase", "auth0", "jwt", "none"];
 const INIT_FRAMEWORK_VALUES = ["next", "express", "custom"];
 /** The user-facing engine families (judge/engine.ts's ENGINE_FAMILIES values) —
-    one ladder, so `init --engine` and `try --engine` accept the same names. */
+    one ladder, so `init --engine` and `sync --engine` accept the same names. */
 const ENGINE_VALUES = ["claude", "codex", "npx"];
 const DOCTOR_FLAGS = new Set(["--json", "--yes"]);
 const DOCTOR_VALUE_OPTIONS = ["--url"];
-/** `--no-watermark` is the pre-judgment-layer name for `--no-ai`; it stays
-    accepted (and undocumented) so the demo hooks and any pinned script that
-    still passes it keep working. */
-const SYNC_FLAGS = new Set(["--strict", "--json", "--report", "--review", "--full", "--no-ai", "--no-watermark"]);
+const SYNC_FLAGS = new Set([
+  "--strict", "--json", "--report", "--review", "--full", "--yes",
+  "--theme-refresh", "--ai", "--no-ai", "--no-watermark",
+  "--push-components", "--no-push-components",
+]);
 const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url", "--engine"];
 const LOGIN_VALUE_OPTIONS = ["--api-url", "--wait"];
 
@@ -115,47 +118,6 @@ function optionErrors(args: string[], flags: Set<string>, valueOptions: string[]
   return errors;
 }
 
-/** `vendo try` follows the ENG-335 rule too: unknown flags (and stray
-    positionals — try always profiles the cwd) fail loudly, and a bad
-    --engine names the valid families instead of silently running keyless. */
-function tryOptionErrors(args: string[]): { errors: string[]; port?: number; engine?: string } {
-  const errors: string[] = [];
-  let port: number | undefined;
-  let engine: string | undefined;
-  const parsePort = (value: string | undefined): void => {
-    const parsed = value !== undefined && /^\d+$/.test(value) ? Number(value) : NaN;
-    if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65_535) port = parsed;
-    else errors.push("--port requires a port number (1-65535)");
-  };
-  const parseEngine = (value: string | undefined): void => {
-    if (value !== undefined && ENGINE_VALUES.includes(value)) engine = value;
-    else errors.push(`--engine must be one of ${ENGINE_VALUES.join(", ")} (example: vendo try --engine claude)`);
-  };
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index]!;
-    if (arg === "--no-open" || arg === "--no-ai") continue;
-    if (arg === "--port" || arg === "--engine") {
-      const value = args[index + 1];
-      const usable = value !== undefined && !value.startsWith("--");
-      (arg === "--port" ? parsePort : parseEngine)(usable ? value : undefined);
-      if (usable) index += 1;
-      continue;
-    }
-    if (arg.startsWith("--port=")) {
-      parsePort(arg.slice("--port=".length));
-      continue;
-    }
-    if (arg.startsWith("--engine=")) {
-      parseEngine(arg.slice("--engine=".length));
-      continue;
-    }
-    errors.push(arg.startsWith("--")
-      ? `unknown option: ${arg}`
-      : `unexpected argument: ${arg} — try profiles the current directory; cd there and rerun`);
-  }
-  return { errors, port, engine };
-}
-
 function target(args: string[]): string {
   const optionValues = new Set<string>();
   for (const name of ["--url", "--key", "--api-url", "--apply",
@@ -165,6 +127,142 @@ function target(args: string[]): string {
     }
   }
   return args.find((value) => !value.startsWith("--") && !optionValues.has(value)) ?? process.cwd();
+}
+
+/** One function per command: each owns its own flag validation and the shape it
+ *  hands its runner, so `main` below stays the flat table of what `vendo <x>`
+ *  means. Every one of them prints `vendo <command>: <problems>` + HELP and
+ *  exits 1 rather than passing a bad flag down. */
+async function loginCommand(args: string[]): Promise<number> {
+  const problems = optionErrors(args, new Set(), LOGIN_VALUE_OPTIONS);
+  const wait = option(args, "--wait");
+  if (wait !== undefined && !/^\d+$/.test(wait)) {
+    problems.push("--wait takes a whole number of seconds (example: vendo login --wait 90)");
+  }
+  if (problems.length > 0) {
+    console.error(`vendo login: ${problems.join("; ")}\n\n${HELP}`);
+    return 1;
+  }
+  return runLoginCommand(args);
+}
+
+async function initCommand(args: string[]): Promise<number> {
+  const problems = optionErrors(args, INIT_FLAGS, INIT_VALUE_OPTIONS);
+  const auth = option(args, "--auth");
+  if (auth !== undefined && !INIT_AUTH_VALUES.includes(auth)) {
+    problems.push(`--auth must be one of ${INIT_AUTH_VALUES.join(", ")} (example: vendo init --auth clerk)`);
+  }
+  const framework = option(args, "--framework");
+  if (framework !== undefined && !INIT_FRAMEWORK_VALUES.includes(framework)) {
+    problems.push("--framework must be next, express, or custom (example: vendo init --framework custom for a Cloudflare Worker / Bun / Deno host)");
+  }
+  const cloudKey = option(args, "--cloud-key");
+  if (cloudKey !== undefined && !isVendoKey(cloudKey)) {
+    problems.push("--cloud-key must be a Vendo Cloud key (vnd_ + 40 hex; `vendo login` issues one)");
+  }
+  const engine = option(args, "--engine");
+  if (engine !== undefined && !ENGINE_VALUES.includes(engine)) {
+    problems.push(`--engine must be one of ${ENGINE_VALUES.join(", ")} (example: vendo init --engine codex)`);
+  }
+  if (cloudKey !== undefined && args.includes("--byo")) {
+    problems.push("--cloud-key and --byo answer the same question — pass one or the other");
+  }
+  const initAi = args.includes("--ai") || args.includes("--ai-polish");
+  if (initAi && args.includes("--no-ai")) {
+    problems.push("--ai and --no-ai answer the same question — pass one or the other");
+  }
+  const themePairs = options(args, "--theme");
+  const badTheme = themePairs.find((pair) => !/^[A-Za-z]+=./.test(pair));
+  if (badTheme !== undefined) {
+    problems.push(`--theme takes slot=value (example: vendo init --theme accent=#7c3bed), got ${JSON.stringify(badTheme)}`);
+  }
+  if (problems.length > 0) {
+    console.error(`vendo init: ${problems.join("; ")}\n\n${HELP}`);
+    return 1;
+  }
+  return runInit({
+    targetDir: target(args),
+    agent: args.includes("--agent"),
+    yes: args.includes("--yes"),
+    force: args.includes("--force"),
+    ...(auth === undefined ? {} : { auth: auth as InitOptions["auth"] }),
+    ...(framework === undefined ? {} : { framework: framework as InitOptions["framework"] }),
+    ...(cloudKey === undefined ? {} : { cloudKey }),
+    ...(args.includes("--byo") ? { byo: true } : {}),
+    ...(initAi ? { ai: true } : args.includes("--no-ai") ? { ai: false } : {}),
+    ...(engine === undefined ? {} : { engine }),
+    ...(themePairs.length === 0 ? {} : {
+      themeAnswers: Object.fromEntries(themePairs.map((pair) => {
+        const at = pair.indexOf("=");
+        return [pair.slice(0, at), pair.slice(at + 1)];
+      })),
+    }),
+  });
+}
+
+async function ejectCommand(args: string[]): Promise<number> {
+  const positional = args.filter((value) => !value.startsWith("--"));
+  const list = args.includes("--list");
+  // `eject --list [dir]` has no surface positional — the first one is the dir.
+  return runEject({
+    surface: list ? undefined : positional[0],
+    targetDir: (list ? positional[0] : positional[1]) ?? process.cwd(),
+    list,
+    force: args.includes("--force"),
+  });
+}
+
+async function doctorCommand(args: string[]): Promise<number> {
+  const problems = optionErrors(args, DOCTOR_FLAGS, DOCTOR_VALUE_OPTIONS);
+  if (problems.length > 0) {
+    console.error(`vendo doctor: ${problems.join("; ")}\n\n${HELP}`);
+    return 1;
+  }
+  return runDoctor({
+    targetDir: target(args),
+    url: option(args, "--url"),
+    json: args.includes("--json"),
+    yes: args.includes("--yes"),
+  });
+}
+
+async function syncCommand(args: string[]): Promise<number> {
+  const problems = optionErrors(args, SYNC_FLAGS, SYNC_VALUE_OPTIONS);
+  const engine = option(args, "--engine");
+  if (engine !== undefined && !ENGINE_VALUES.includes(engine)) {
+    problems.push(`--engine must be one of ${ENGINE_VALUES.join(", ")} (example: vendo sync --engine codex)`);
+  }
+  if (args.includes("--review") && args.includes("--json")) {
+    problems.push("--review is interactive and cannot combine with --json");
+  }
+  const syncNoAi = args.includes("--no-ai") || args.includes("--no-watermark");
+  if (args.includes("--ai") && syncNoAi) {
+    problems.push("--ai and --no-ai answer the same question — pass one or the other");
+  }
+  if (args.includes("--push-components") && args.includes("--no-push-components")) {
+    problems.push("--push-components and --no-push-components answer the same question — pass one or the other");
+  }
+  if (problems.length > 0) {
+    console.error(`vendo sync: ${problems.join("; ")}\n\n${HELP}`);
+    return 1;
+  }
+  return runSync({
+    targetDir: target(args),
+    strict: args.includes("--strict"),
+    url: option(args, "--url"),
+    json: args.includes("--json"),
+    report: args.includes("--report"),
+    apiKey: option(args, "--key"),
+    apiUrl: option(args, "--api-url"),
+    review: args.includes("--review"),
+    full: args.includes("--full"),
+    yes: args.includes("--yes"),
+    themeRefresh: args.includes("--theme-refresh"),
+    ...(args.includes("--ai") ? { ai: true } : syncNoAi ? { ai: false } : {}),
+    ...(args.includes("--push-components") ? { pushComponents: true }
+      : args.includes("--no-push-components") ? { pushComponents: false } : {}),
+    ...(engine === undefined ? {} : { engine }),
+  });
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -177,150 +275,28 @@ export async function main(argv: string[]): Promise<number> {
     console.log(CLI_VERSION);
     return 0;
   }
-  if (command === "login") {
-    const problems = optionErrors(args, new Set(), LOGIN_VALUE_OPTIONS);
-    const wait = option(args, "--wait");
-    if (wait !== undefined && !/^\d+$/.test(wait)) {
-      problems.push("--wait takes a whole number of seconds (example: vendo login --wait 90)");
-    }
-    if (problems.length > 0) {
-      console.error(`vendo login: ${problems.join("; ")}\n\n${HELP}`);
-      return 1;
-    }
-    return runLoginCommand(args);
-  }
+  if (command === "login") return loginCommand(args);
   if (command === "cloud") return runCloud(args);
   if (command === "config") return runConfig(args);
   if (command === "knowledge") return runKnowledge(args);
   if (command === "mcp") return runMcp(args);
-  if (command === "init") {
-    const problems = optionErrors(args, INIT_FLAGS, INIT_VALUE_OPTIONS);
-    const auth = option(args, "--auth");
-    if (auth !== undefined && !INIT_AUTH_VALUES.includes(auth)) {
-      problems.push(`--auth must be one of ${INIT_AUTH_VALUES.join(", ")} (example: vendo init --auth clerk)`);
-    }
-    const framework = option(args, "--framework");
-    if (framework !== undefined && !INIT_FRAMEWORK_VALUES.includes(framework)) {
-      problems.push("--framework must be next, express, or custom (example: vendo init --framework custom for a Cloudflare Worker / Bun / Deno host)");
-    }
-    const cloudKey = option(args, "--cloud-key");
-    if (cloudKey !== undefined && !isVendoKey(cloudKey)) {
-      problems.push("--cloud-key must be a Vendo Cloud key (vnd_ + 40 hex; `vendo login` issues one)");
-    }
-    const engine = option(args, "--engine");
-    if (engine !== undefined && !ENGINE_VALUES.includes(engine)) {
-      problems.push(`--engine must be one of ${ENGINE_VALUES.join(", ")} (example: vendo init --engine codex)`);
-    }
-    if (cloudKey !== undefined && args.includes("--byo")) {
-      problems.push("--cloud-key and --byo answer the same question — pass one or the other");
-    }
-    const themePairs = options(args, "--theme");
-    const badTheme = themePairs.find((pair) => !/^[A-Za-z]+=./.test(pair));
-    if (badTheme !== undefined) {
-      problems.push(`--theme takes slot=value (example: vendo init --theme accent=#7c3bed), got ${JSON.stringify(badTheme)}`);
-    }
-    if (problems.length > 0) {
-      console.error(`vendo init: ${problems.join("; ")}\n\n${HELP}`);
-      return 1;
-    }
-    return runInit({
-      targetDir: target(args),
-      agent: args.includes("--agent"),
-      yes: args.includes("--yes"),
-      force: args.includes("--force"),
-      ...(auth === undefined ? {} : { auth: auth as InitOptions["auth"] }),
-      ...(framework === undefined ? {} : { framework: framework as InitOptions["framework"] }),
-      ...(cloudKey === undefined ? {} : { cloudKey }),
-      ...(args.includes("--byo") ? { byo: true } : {}),
-      ...(args.includes("--ai-polish") ? { aiPolish: true } : {}),
-      ...(engine === undefined ? {} : { engine }),
-      ...(themePairs.length === 0 ? {} : {
-        themeAnswers: Object.fromEntries(themePairs.map((pair) => {
-          const at = pair.indexOf("=");
-          return [pair.slice(0, at), pair.slice(at + 1)];
-        })),
-      }),
-    });
-  }
-  if (command === "eject") {
-    const positional = args.filter((value) => !value.startsWith("--"));
-    const list = args.includes("--list");
-    // `eject --list [dir]` has no surface positional — the first one is the dir.
-    return runEject({
-      surface: list ? undefined : positional[0],
-      targetDir: (list ? positional[0] : positional[1]) ?? process.cwd(),
-      list,
-      force: args.includes("--force"),
-    });
-  }
-  if (command === "doctor") {
-    const problems = optionErrors(args, DOCTOR_FLAGS, DOCTOR_VALUE_OPTIONS);
-    if (problems.length > 0) {
-      console.error(`vendo doctor: ${problems.join("; ")}\n\n${HELP}`);
-      return 1;
-    }
-    return runDoctor({
-      targetDir: target(args),
-      url: option(args, "--url"),
-      json: args.includes("--json"),
-      yes: args.includes("--yes"),
-    });
-  }
+  if (command === "init") return initCommand(args);
+  if (command === "eject") return ejectCommand(args);
+  if (command === "doctor") return doctorCommand(args);
   if (command === "refine") {
     // Retired in #568 (format v3): `vendo sync` now owns AI enrichment of
-    // .vendo (compounds/briefs live in .vendo/overrides.json), and the try
-    // surface's refine panel carries the conversational-correction loop —
-    // the refine ENGINE lives on there (src/refine.ts).
-    console.error("vendo refine was retired — `vendo sync` AI-enriches .vendo now (compounds and briefs live in .vendo/overrides.json), and `vendo try` offers conversational corrections in its refine panel. Run: vendo sync");
+    // .vendo (compounds/briefs live in .vendo/overrides.json).
+    console.error("vendo refine was retired — `vendo sync` AI-enriches .vendo now (compounds and briefs live in .vendo/overrides.json). Run: vendo sync");
     return 1;
-  }
-  if (command === "try") {
-    const { errors, port, engine } = tryOptionErrors(args);
-    if (errors.length > 0) {
-      console.error(`vendo try: ${errors.join("; ")}\n\n${HELP}`);
-      return 1;
-    }
-    return runTry({
-      port,
-      open: !args.includes("--no-open"),
-      ai: !args.includes("--no-ai"),
-      ...(engine === undefined ? {} : { engine }),
-    });
   }
   if (command === "playground") {
-    // Retired: `vendo try` absorbed the playground's job (the scripted
-    // surfaces still serve when try runs keyless or outside a repo). The
-    // bundle machinery lives on in cli/playground.ts and cli/playground/.
-    console.error("vendo playground was retired — `vendo try` does the same job (and more): scripted surfaces with no model key, plus a live profile of your repo when run inside one. Run: vendo try");
+    // Retired: the playground's job moved into the hosted try surface
+    // (vendo.run/playground). The bundle machinery lives on in
+    // cli/playground.ts and cli/playground/.
+    console.error("vendo playground was retired — set Vendo up in your own repo instead: `vendo init`, then `vendo doctor`. Docs: https://vendo.run/quickstart");
     return 1;
   }
-  if (command === "sync") {
-    const problems = optionErrors(args, SYNC_FLAGS, SYNC_VALUE_OPTIONS);
-    const engine = option(args, "--engine");
-    if (engine !== undefined && !ENGINE_VALUES.includes(engine)) {
-      problems.push(`--engine must be one of ${ENGINE_VALUES.join(", ")} (example: vendo sync --engine codex)`);
-    }
-    if (args.includes("--review") && args.includes("--json")) {
-      problems.push("--review is interactive and cannot combine with --json");
-    }
-    if (problems.length > 0) {
-      console.error(`vendo sync: ${problems.join("; ")}\n\n${HELP}`);
-      return 1;
-    }
-    return runSync({
-      targetDir: target(args),
-      strict: args.includes("--strict"),
-      url: option(args, "--url"),
-      json: args.includes("--json"),
-      report: args.includes("--report"),
-      apiKey: option(args, "--key"),
-      apiUrl: option(args, "--api-url"),
-      review: args.includes("--review"),
-      full: args.includes("--full"),
-      noAi: args.includes("--no-ai") || args.includes("--no-watermark"),
-      ...(engine === undefined ? {} : { engine }),
-    });
-  }
+  if (command === "sync") return syncCommand(args);
   console.error(`Unknown command: ${command}\n\n${HELP}`);
   return 1;
 }

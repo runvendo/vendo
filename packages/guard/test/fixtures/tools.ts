@@ -46,9 +46,9 @@ export const fixtureDescriptors: ToolDescriptor[] = [
   descriptor("write"),
   descriptor("destructive"),
   descriptor("destructive", {
-    name: "host_critical",
-    description: "critical fixture tool",
-    critical: true,
+    name: "host_confirm_each",
+    description: "confirmEach fixture tool",
+    confirmEach: true,
   }),
 ];
 

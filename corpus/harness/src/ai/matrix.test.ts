@@ -64,7 +64,7 @@ async function makeExpectationsRoot(withLabels: boolean): Promise<string> {
       version: 1,
       tools: [
         { name: "listInvoices", method: "GET", path: "/api/invoices", risk: "read" },
-        { name: "deleteInvoice", method: "DELETE", path: "/api/invoices/{id}", risk: "destructive", critical: true },
+        { name: "deleteInvoice", method: "DELETE", path: "/api/invoices/{id}", risk: "destructive", confirmEach: true },
       ],
     }));
   }
@@ -85,7 +85,7 @@ const perfectJudgments = {
       fields: {
         description: "Permanently delete one invoice by id; this cannot be undone.",
         risk: "destructive",
-        critical: true,
+        confirmEach: true,
       },
       evidence: "await db.invoice.delete({ where: { id } })",
     },
@@ -102,6 +102,8 @@ const judgedCounts = {
   evidenceless: 0,
   advisoriesClamped: 0,
   inconsistentRisk: 0,
+  schemasInferred: 0,
+  schemasRejected: 0,
 } as const;
 
 /** A fake judgment pass: records the options it was handed, writes a canned

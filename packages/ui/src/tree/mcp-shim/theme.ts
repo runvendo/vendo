@@ -1,16 +1,29 @@
-import type { VendoTheme } from "@vendoai/core";
-import { defaultVendoTheme } from "../../theme.js";
+import { VENDO_THEME_VARIABLE_NAMES, defaultVendoTheme, type VendoTheme } from "@vendoai/core";
 
 type CssVariables = Pick<CSSStyleDeclaration, "getPropertyValue">;
 
+/** The read side of core's one theme→CSS-variable mapping: a name this reader
+ * asks for must be a name that mapping emits. Without the check a rename on the
+ * write side degrades every themed MCP App to the neutral default in silence —
+ * the reader would just never find its variable. */
+function emitted(name: string): string {
+  if (!VENDO_THEME_VARIABLE_NAMES.includes(name)) {
+    throw new Error(`[vendo] ${name} is not emitted by themeCssVariables; the MCP shim theme reader is out of sync`);
+  }
+  return name;
+}
+
 /** Rebuild the typed theme from the CSS transport used by the door. Keeping the
  * shim on variables (rather than embedded JSON) leaves the generated source
- * generic and gives its own chrome and the inner jail one canonical namespace. */
+ * generic and gives its own chrome and the inner jail one canonical namespace.
+ * Only the variables a `VendoTheme` field maps back from are read; the derived
+ * ones (color-scheme, the density sizing scale, motion timings) are the
+ * mapping's output, not its input. */
 export function readThemeCssVariables(style: CssVariables): VendoTheme {
   const value = (name: string, fallback: string): string =>
-    style.getPropertyValue(name).trim() || fallback;
+    style.getPropertyValue(emitted(name)).trim() || fallback;
   const optional = (name: string): string | undefined =>
-    style.getPropertyValue(name).trim() || undefined;
+    style.getPropertyValue(emitted(name)).trim() || undefined;
   const density = optional("--vendo-density");
   const motion = optional("--vendo-motion");
   const headingFamily = optional("--vendo-heading-family") ?? defaultVendoTheme.typography.headingFamily;

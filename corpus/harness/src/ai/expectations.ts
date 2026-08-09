@@ -2,7 +2,6 @@ import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import {
-  expectedGraphqlToolInventorySchema,
   expectedHttpToolInventorySchema,
   expectedServerActionToolInventorySchema,
   expectedTrpcToolInventorySchema,
@@ -11,11 +10,11 @@ import {
 /**
  * `corpus/expectations/<repo>/ai-expected.json` — ground-truth labels for the
  * AI extraction matrix. Entries reuse the binding-identity conventions of
- * `expected.json` (method+path, tRPC procedure, GraphQL operation,
- * server-action module#export) and add the judgment the AI pass is scored on:
+ * `expected.json` (method+path, tRPC procedure, server-action module#export)
+ * and add the judgment the AI pass is scored on:
  *
  * - `risk`: the correct semantic risk grade for the tool.
- * - `critical`: the tool is irreversible and must carry a critical mark.
+ * - `confirmEach`: the tool is irreversible and must carry a confirmEach mark.
  * - `wake`: only meaningful for statically-unclassifiable (disabled) tools.
  *   `false` pins a tool that must stay asleep; when omitted, a disabled tool
  *   with a labeled risk is expected to be woken with that grade.
@@ -25,14 +24,13 @@ const riskSchema = z.enum(["read", "write", "destructive"]);
 
 const aiJudgmentFields = {
   risk: riskSchema,
-  critical: z.boolean().optional(),
+  confirmEach: z.boolean().optional(),
   wake: z.boolean().optional(),
 };
 
 export const aiExpectedToolSchema = z.union([
   expectedHttpToolInventorySchema.omit({ readOrWrite: true }).extend(aiJudgmentFields).strict(),
   expectedTrpcToolInventorySchema.omit({ readOrWrite: true }).extend(aiJudgmentFields).strict(),
-  expectedGraphqlToolInventorySchema.omit({ readOrWrite: true }).extend(aiJudgmentFields).strict(),
   expectedServerActionToolInventorySchema.omit({ readOrWrite: true }).extend(aiJudgmentFields).strict(),
 ]);
 
@@ -50,7 +48,6 @@ export type RepoAiExpectations = z.infer<typeof repoAiExpectationsSchema>;
  * ai-expected shape (which drops `readOrWrite`). */
 export function aiExpectedToolIdentity(item: AiExpectedTool): string {
   if ("procedure" in item) return `trpc\t${item.procedure}`;
-  if ("operation" in item) return `graphql\t${item.operation}`;
   if ("module" in item) return `server-action\t${item.module}#${item.export}`;
   return `${item.method}\t${item.path}`;
 }

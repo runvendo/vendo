@@ -1,5 +1,6 @@
 import { VendoError } from "@vendoai/core";
 import { z } from "zod";
+import { FN_NAME_PATTERN } from "./call.js";
 
 /** execution-v2 spec ("The skin of the box") — `vendo.json`, the manifest an
  * app ships at its box root. The manifest carries exactly two declarations and nothing
@@ -7,10 +8,6 @@ import { z } from "zod";
  * scheduler broker (Wave 2 Lane D), and `egress`, the outbound-domain
  * allowlist the sandbox network layer enforces (Wave 2 Lane E). Declarative
  * only — no runtime library is required inside the box. */
-
-/** The fn-name half of core's 01 §8 `fn:<name>` grammar, bounded like tool
- * route names — a schedule targets `POST /fn/<name>`, never a `fn:` ref. */
-const FN_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
 
 /** Five whitespace-separated cron fields ("0 8 * * *"). Field syntax stays the
  * broker's concern; the manifest gate pins the shape so a typo\'d schedule

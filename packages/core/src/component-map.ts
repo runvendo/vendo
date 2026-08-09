@@ -4,11 +4,11 @@
  * components live one level up). Not exported from the package root.
  */
 import {
-  RESERVED_COMPONENT_NAMES,
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
 } from "./genui/tree-limits.js";
+import { KIT_COMPONENT_NAMES } from "./kit/specs.js";
 
 const COMPONENT_NAME_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
 
@@ -32,8 +32,8 @@ export function componentMapError(components: Record<string, unknown>): string |
     if (!COMPONENT_NAME_PATTERN.test(name)) {
       return `generated component name "${name}" must be a PascalCase identifier`;
     }
-    if ((RESERVED_COMPONENT_NAMES as readonly string[]).includes(name)) {
-      return `generated component name "${name}" is reserved (prewired primitive)`;
+    if (KIT_COMPONENT_NAMES.includes(name)) {
+      return `generated component name "${name}" is reserved (Kit component)`;
     }
     const source = components[name];
     if (typeof source !== "string") {

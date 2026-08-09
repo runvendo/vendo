@@ -16,7 +16,7 @@ import { listAllRecords } from "./persistence.js";
  * The app's `egress` declaration (mirroring `vendo.json`) is an ASK, not an
  * authority: each declared domain needs a one-time owner approval before a
  * machine may provision or wake with it. The flow reuses the guard's existing
- * critical-approval machinery (the ENG-345 exposure-grant pattern — no new
+ * confirmEach-approval machinery (the ENG-345 exposure-grant pattern — no new
  * ceremony types): an unapproved declaration parks ONE approval naming the
  * missing domains, and the decision seam commits them onto the app document's
  * `egressApproved` field. This module owns the pure policy math and the store
@@ -66,9 +66,16 @@ export const unapprovedEgress = (app: AppDocument): string[] => {
  *    declaration or approval. The host assembles them from the same URLs it
  *    injects as VENDO_STORE_URL / VENDO_HOST_URL / VENDO_INFERENCE_URL.
  *
- * An app that declares nothing gets the implicit skin domains only:
- * machine egress is deny-by-default at the network layer (the SSRF and
- * exfil answer, including for the BYO-model-key case).
+ * An app that declares nothing gets the implicit skin domains only, and machine
+ * egress is filtered against that list at the provider's network layer.
+ *
+ * This used to be described here as "the SSRF and exfil answer". It is not, and
+ * nothing downstream should be built as if it were: the provider matches on the
+ * requested server name, so an ordinary client is held to the list and a client
+ * that omits SNI is not (measured — `docs/verification/box-egress/README.md`).
+ * It answers SSRF from ORDINARY app code, which is the common case and worth
+ * having; it does not contain a hostile process, including in the
+ * BYO-model-key case.
  */
 export const boxAllowlist = (app: AppDocument, implicitDomains: readonly string[]): string[] => {
   const unapproved = unapprovedEgress(app);
@@ -99,8 +106,6 @@ const listAll = (store: StoreAdapter, refs: Record<string, string>): Promise<Ven
  * the doc first, denial just clears — fail closed).
  */
 export interface EgressApprovals {
-  /** Parked requests for one app. */
-  pending(appId: AppId): Promise<EgressApprovalRequest[]>;
   /** Park one domain on a guard approval (re-parking the same domain overwrites). */
   putPending(request: EgressApprovalRequest): Promise<void>;
   /** Parked requests riding a specific guard approval id. */
@@ -122,9 +127,6 @@ export const createEgressApprovals = (store: StoreAdapter): EgressApprovals => {
   });
 
   return {
-    async pending(appId) {
-      return (await listAll(store, { app_id: appId })).map(requestData);
-    },
     async putPending(request) {
       await collection.put({
         id: recordId(request.appId, request.domain),

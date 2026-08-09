@@ -1,6 +1,7 @@
 import {
   VendoError,
   canonicalJson,
+  triggerKindRefs,
   validateAppDocument,
   type AppDocument,
   type AppId,
@@ -48,16 +49,14 @@ export interface AppRowData {
 }
 
 /** Trigger edits invalidate enable-time capture, cursor, and webhook state.
- *  Canonical comparison — key order must not cause a spurious disarm. */
+ *  Canonical comparison over the whole list — key order (or trigger order)
+ *  must not cause a spurious disarm. */
 export const enabledAfterDocumentEdit = (
   previous: AppDocument,
   next: AppDocument,
   enabled: boolean,
-): boolean => {
-  const canon = (trigger: AppDocument["trigger"]): string =>
-    trigger === undefined ? "" : canonicalJson(trigger);
-  return canon(previous.trigger) === canon(next.trigger) && enabled;
-};
+): boolean =>
+  canonicalJson(previous.triggers ?? []) === canonicalJson(next.triggers ?? []) && enabled;
 
 export const rowFromRecord = (record: VendoRecord): AppRowData => {
   const data = record.data as Partial<AppRowData> | null;
@@ -82,20 +81,48 @@ export const documentFromRecord = (record: VendoRecord): AppDocument =>
 export interface AppRecordWrite {
   id: AppId;
   data: AppRowData;
-  refs: { subject: string; trigger_kind?: string };
+  refs: { subject: string } & Record<string, string>;
 }
 
+/**
+ * The same document without its conversation.
+ *
+ * `session` was the BRAIN's transcript, carried on the app document so "no, the
+ * other chart" could resolve across turns. The brain is gone and so is the
+ * conversation: the app's own text is the state every editor reads, and an app's
+ * MEMORY (`memory`, the one door in `remember`) is what carries intent forward.
+ *
+ * This survives it as hygiene. Rows written before the brain died still hold a
+ * transcript, and a model-written app or an imported `.vendoapp` can still put
+ * the key there — so it is stripped off every document that leaves the runtime,
+ * and {@link appRecordInput} strips it off every one that enters the store.
+ */
+export const withoutSession = <T extends object>(document: T): T => {
+  const copy = { ...document } as T & { session?: unknown };
+  delete copy.session;
+  return copy;
+};
+
+/** The app row to write. A `session` the document carries in is dropped — see
+ *  {@link withoutSession}: the brain's transcript has no writer any more, and a
+ *  forged one must never be persisted. */
 export const appRecordInput = (
   app: AppDocument,
   subject: string,
   enabled = false,
-): AppRecordWrite => ({
-  id: app.id,
-  data: { subject, enabled, doc: validateDocument(app, app.id) },
-  // trigger_kind indexes apps by trigger kind for the automations tick/emit. The reserved
-  // vendo_apps store derives the same value from a column; a generic StoreAdapter keeps this.
-  refs: { subject, ...(app.trigger === undefined ? {} : { trigger_kind: app.trigger.on.kind }) },
-});
+): AppRecordWrite => {
+  const doc = validateDocument(app, app.id) as AppDocument & { session?: unknown };
+  delete doc.session;
+  return {
+    id: app.id,
+    data: { subject, enabled, doc },
+    // trigger_kind_<kind> indexes apps by trigger kind for the automations tick/emit — one ref
+    // key per kind, because an app's triggers are a LIST and may span more than one kind. The
+    // reserved vendo_apps store derives the same value from a column; a generic StoreAdapter
+    // keeps this.
+    refs: { subject, ...triggerKindRefs(app.triggers) },
+  };
+};
 
 /**
  * Wave 7 — mint the next `machine.envStaleAt` marker, strictly greater than

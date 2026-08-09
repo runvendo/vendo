@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { KnowledgeContext, KnowledgeDoc } from "@vendoai/core";
 import { knowledgeAdapterConformance, memoryStoreAdapter, runConformance } from "@vendoai/core/conformance";
 import { KNOWLEDGE_CHUNKS_COLLECTION, KNOWLEDGE_DOCS_COLLECTION } from "../collections.js";
-import { lexicalKnowledge } from "./lexical.js";
+import { bindKnowledgeStore, vendoKnowledge } from "./lexical.js";
 
 const ctx: KnowledgeContext = { principal: { kind: "user", subject: "user_lexical_test" } };
 
@@ -40,15 +40,15 @@ const CORPUS: KnowledgeDoc[] = [
 
 async function seeded() {
   const store = memoryStoreAdapter();
-  const adapter = lexicalKnowledge({ store });
+  const adapter = vendoKnowledge({ store });
   await adapter.upsert!(CORPUS);
   return { store, adapter };
 }
 
-describe("lexicalKnowledge — conformance", () => {
+describe("vendoKnowledge — conformance", () => {
   it("passes the KnowledgeAdapter conformance suite over the memory store", async () => {
     const report = await runConformance(knowledgeAdapterConformance({
-      makeAdapter: async () => ({ adapter: lexicalKnowledge({ store: memoryStoreAdapter() }) }),
+      makeAdapter: async () => ({ adapter: vendoKnowledge({ store: memoryStoreAdapter() }) }),
       posture: { fetch: true, write: true, visibility: "enforced" },
     }));
     expect(report.failures).toEqual([]);
@@ -56,7 +56,7 @@ describe("lexicalKnowledge — conformance", () => {
   });
 });
 
-describe("lexicalKnowledge — retrieval quality", () => {
+describe("vendoKnowledge — retrieval quality", () => {
   it("answers multi-word natural questions with ranked hits (not substring matching)", async () => {
     const { adapter } = await seeded();
     const result = await adapter.search({ text: "How long do refunds take?" }, ctx);
@@ -101,6 +101,28 @@ describe("lexicalKnowledge — retrieval quality", () => {
     expect((await adapter.search({ text: "Refund policy", intent: "schema" }, ctx)).hits).toEqual([]);
   });
 
+  it("carries the doc source on every intent so citations keep provenance", async () => {
+    const { adapter } = await seeded();
+    const chat = await adapter.search({ text: "How long do refunds take?" }, ctx);
+    expect(chat.hits[0]!.ref.source).toBe(CORPUS[0]!.source);
+    const schema = await adapter.search({ text: "APR", intent: "schema" }, ctx);
+    expect(schema.hits[0]!.ref.source).toBe(CORPUS[3]!.source);
+  });
+
+  it("falls back to the doc row for chunks written before chunk rows carried a source", async () => {
+    const { store, adapter } = await seeded();
+    // Every store synced by a shipped version holds chunk rows in this shape,
+    // and hash-based sync never rewrites an unchanged doc.
+    const chunks = store.records(KNOWLEDGE_CHUNKS_COLLECTION);
+    for (const row of (await chunks.list({ refs: { doc_id: "docs#refunds.md" }, limit: 1000 })).records) {
+      const { source: _dropped, ...legacy } = row.data as Record<string, unknown>;
+      await chunks.put({ id: row.id, data: legacy, refs: row.refs! });
+    }
+    const hit = (await adapter.search({ text: "How long do refunds take?" }, ctx)).hits[0]!;
+    expect(hit.ref.docId).toBe("docs#refunds.md");
+    expect(hit.ref.source).toBe(CORPUS[0]!.source);
+  });
+
   it("an empty kinds array matches nothing; kinds filter applies in-query", async () => {
     const { adapter } = await seeded();
     expect((await adapter.search({ text: "refunds", kinds: [] }, ctx)).hits).toEqual([]);
@@ -109,10 +131,10 @@ describe("lexicalKnowledge — retrieval quality", () => {
   });
 });
 
-describe("lexicalKnowledge — fetch, store rows, and lifecycle", () => {
+describe("vendoKnowledge — fetch, store rows, and lifecycle", () => {
   it("fetch joins the cited chunk with its structural neighbors", async () => {
     const store = memoryStoreAdapter();
-    const adapter = lexicalKnowledge({ store });
+    const adapter = vendoKnowledge({ store });
     const long = doc({
       id: "docs#long.md",
       title: "Long guide",
@@ -165,7 +187,30 @@ describe("lexicalKnowledge — fetch, store rows, and lifecycle", () => {
   });
 
   it("fails loudly when no store is bound instead of reading as an empty corpus", async () => {
-    const unbound = lexicalKnowledge();
+    const unbound = vendoKnowledge();
     await expect(unbound.search({ text: "anything" }, ctx)).rejects.toThrow(/no store bound/);
+  });
+});
+
+/** The composition seam vendo's `selectKnowledge` drives (compose-selection.ts):
+    a store-less `vendoKnowledge()` is handed the store createVendo composed,
+    and everything else passes through. Both halves were only ever pinned from
+    `packages/vendo` through the package barrel, so this package — which owns
+    the code — measured neither. */
+describe("bindKnowledgeStore — the composition seam", () => {
+  it("hands a store-less vendoKnowledge() the composed store so it can actually serve", async () => {
+    const store = memoryStoreAdapter();
+    const bound = bindKnowledgeStore(vendoKnowledge(), store);
+    await bound.upsert!(CORPUS);
+    const result = await bound.search({ text: "How long do refunds take?" }, ctx);
+    expect(result.hits[0]!.ref.docId).toBe("docs#refunds.md");
+    // The store it was handed is the one it wrote through — not a private one.
+    const rows = (await store.records(KNOWLEDGE_DOCS_COLLECTION).list({ limit: 1000 })).records;
+    expect(rows).toHaveLength(CORPUS.length);
+  });
+
+  it("passes an adapter that already owns a store through untouched", () => {
+    const own = vendoKnowledge({ store: memoryStoreAdapter() });
+    expect(bindKnowledgeStore(own, memoryStoreAdapter())).toBe(own);
   });
 });

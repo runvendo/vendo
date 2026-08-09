@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/store",
-  "version": "0.6.1",
+  "version": "0.8.1",
   "description": "Persistence under everything: core's StoreAdapter on Postgres — PGlite zero-config default, real Postgres in prod, one schema.",
   "keywords": [
     "ai",
@@ -44,19 +44,20 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "conformance": "tsc -p tsconfig.json && vitest run src/conformance.test.ts src/contract-routing.conformance.test.ts src/security/audit-append-only.conformance.test.ts src/security/secrets-aad.conformance.test.ts src/flip-guards.conformance.test.ts src/erase.conformance.test.ts src/postgres-gate.test.ts",
+    "conformance": "tsc -p tsconfig.json && vitest run src/conformance.test.ts src/contract-routing.conformance.test.ts src/security/audit-append-only.conformance.test.ts src/security/secrets-aad.conformance.test.ts src/flip-guards.conformance.test.ts src/erase.conformance.test.ts src/workspace.erase.test.ts src/postgres-gate.test.ts",
     "test": "tsc -p tsconfig.json && vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:coverage": "tsc -p tsconfig.json && vitest run --coverage"
   },
   "dependencies": {
-    "@vendoai/core": "workspace:*",
     "@electric-sql/pglite": "^0.5.4",
+    "@vendoai/core": "workspace:*",
     "pg": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.10",
+    "just-bash": "^3.1.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   },

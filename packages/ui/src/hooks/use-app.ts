@@ -1,7 +1,7 @@
 /** Single-app transport (08-ui §3). */
 import type { AppDocument, AppId, Json, ToolOutcome } from "@vendoai/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import type { EditResult, OpenSurface, VersionEntry } from "../wire-types.js";
 
 /** How many times a load may try before the error becomes the user's problem.
@@ -12,31 +12,37 @@ const LOAD_ATTEMPTS = 3;
  *  inside the skeleton the user is already looking at. */
 const RETRY_BASE_MS = 300;
 
-export function useApp(appId: AppId): {
+export interface AppOptions {
+  /** H16 — `false` means DON'T boot: no `apps.get`, no `apps.open`, no iframe.
+   *  A grid of live app tiles pairs this with `useInViewport` so the thirty
+   *  apps below the fold cost nothing until they are scrolled to. Defaults on,
+   *  so every existing caller is unchanged. */
+  enabled?: boolean;
+}
+
+export function useApp(appId: AppId, { enabled = true }: AppOptions = {}): {
   app: AppDocument | undefined;
-  /** Alias for `app` — the consistent `data` field across data hooks (§3). */
-  data: AppDocument | undefined;
   surface: OpenSurface | undefined;
   error: Error | undefined;
   isLoading: boolean;
   call(ref: string, args: Json): Promise<ToolOutcome>;
   edit(instruction: string): Promise<EditResult>;
-  history: { list(): Promise<VersionEntry[]>; undo(): Promise<AppDocument> };
+  history: { list(): Promise<VersionEntry[]> };
   refresh(): Promise<void>;
 } {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const [app, setApp] = useState<AppDocument>();
   const [surface, setSurface] = useState<OpenSurface>();
   const [error, setError] = useState<Error>();
   const [isLoading, setIsLoading] = useState(true);
   const generationRef = useRef(0);
   // Reset per appId (below), so `isLoading` reflects only the first load of the
-  // current app — an edit/undo refresh does not flicker it true→false.
+  // current app — an edit refresh does not flicker it true→false.
   const loadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     // Mirror useResource: bump per call, so overlapping refreshes (manual +
-    // edit + undo) can never let a stale response clobber newer app state.
+    // edit) can never let a stale response clobber newer app state.
     const generation = (generationRef.current += 1);
     const current = () => generation === generationRef.current;
     if (!loadedRef.current) setIsLoading(true);
@@ -67,13 +73,19 @@ export function useApp(appId: AppId): {
     setApp(undefined);
     setSurface(undefined);
     setError(undefined);
+    // Nothing is loading while the surface is off, so say so rather than
+    // leaving a consumer on a skeleton that will never resolve.
+    if (!enabled) {
+      setIsLoading(false);
+      return;
+    }
     void refresh();
     // Bump the generation on unmount / appId change so an in-flight response
     // can't land on a stale (or torn-down) app.
     return () => {
       generationRef.current += 1;
     };
-  }, [refresh]);
+  }, [enabled, refresh]);
 
   const call = useCallback((ref: string, args: Json) => client.apps.call(appId, ref, args), [appId, client]);
   const edit = useCallback(
@@ -85,16 +97,9 @@ export function useApp(appId: AppId): {
     [appId, client, refresh],
   );
   const history = useMemo(
-    () => ({
-      list: () => client.apps.history(appId),
-      undo: async () => {
-        const result = await client.apps.undo(appId);
-        await refresh();
-        return result;
-      },
-    }),
-    [appId, client, refresh],
+    () => ({ list: () => client.apps.history(appId) }),
+    [appId, client],
   );
 
-  return { app, data: app, surface, error, isLoading, call, edit, history, refresh };
+  return { app, surface, error, isLoading, call, edit, history, refresh };
 }

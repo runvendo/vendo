@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { VendoRoot } from "@vendoai/vendo/react";
+import { VendoProvider } from "@vendoai/vendo/react";
 import { VendoOverlay } from "@vendoai/ui/chrome";
 import { App } from "./App.js";
 import "./brand.css";
@@ -30,11 +30,11 @@ if (root === null) throw new Error("Relay root element is missing");
 
 createRoot(root).render(
   <StrictMode>
-    <VendoRoot baseUrl="/api/vendo" theme={relayTheme} components={{}}>
+    <VendoProvider baseUrl="/api/vendo" theme={relayTheme} components={{}}>
       <App />
       <div id="relay-vendo-layer" aria-live="polite">
         <VendoOverlay />
       </div>
-    </VendoRoot>
+    </VendoProvider>
   </StrictMode>,
 );

@@ -89,7 +89,7 @@ async function compose(): Promise<{ vendo: Vendo; fetchSpy: ReturnType<typeof vi
     model: {} as LanguageModel,
     principal: async () => principal,
     store,
-    policy: { rules: [{ match: { tool: "host_send" }, action: "ask" }] },
+    guard: { policy: { rules: [{ match: { tool: "host_send" }, action: "ask" }] } },
   });
   return { vendo, fetchSpy };
 }
@@ -101,7 +101,7 @@ describe("@vendoai/vendo/mastra — vendoMastraTools", () => {
     const names = Object.keys(tools).sort();
     expect(names).toContain("vendo_host_list");
     expect(names).toContain("vendo_host_send");
-    expect(names).toContain("vendo_create_app");
+    expect(names).toContain("vendo_make");
     expect(names).toContain("vendo_delegate");
     expect(names.some((name) => name.startsWith("vendo_vendo_"))).toBe(false);
     for (const [name, tool] of Object.entries(tools)) {
@@ -252,7 +252,7 @@ describe("@vendoai/vendo/mastra — open-schema args bridge", () => {
       async doStream() {
         throw new Error("doStream not scripted");
       },
-    } as unknown as LanguageModel;
+    } as unknown as ConstructorParameters<typeof Agent>[0]["model"];
     const agent = new Agent({
       id: "bridge-agent",
       name: "Bridge Agent",

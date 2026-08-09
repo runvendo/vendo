@@ -73,13 +73,32 @@ export default defineConfig({
     },
   }],
   webServer: [{
-    command: `pnpm exec vite --config e2e/harness/vite.config.ts --host 127.0.0.1 --port ${port}`,
+    command: harnessCommand(port),
     cwd: packageRoot,
     url: `${baseURL}/thread`,
     reuseExistingServer: false,
-    timeout: 60_000,
+    timeout: 180_000,
     stdout: "pipe",
     stderr: "pipe",
     env: { NO_COLOR: "1", VENDO_HARNESS_PORT: String(port) },
   }],
 });
+
+/**
+ * PRODUCTION by default: build the harness, then `vite preview` it.
+ *
+ * The dev server hands the app `process.env.NODE_ENV === "development"`, which
+ * switches on every `developmentMode()` rail in the chrome — the developer
+ * detail lines §16 keeps off a person's screen. A suite that only ever ran on
+ * the dev server can therefore assert (and screenshot) copy that ships to
+ * nobody, which is exactly what verification-eng229 was doing. Verifying the
+ * shipped build is the whole point of a browser gate.
+ *
+ * `VENDO_HARNESS_DEV=1` restores the dev server for interactive debugging.
+ */
+function harnessCommand(port: number): string {
+  const vite = `pnpm exec vite --config e2e/harness/vite.config.ts`;
+  return process.env.VENDO_HARNESS_DEV === "1"
+    ? `${vite} --host 127.0.0.1 --port ${port}`
+    : `${vite} build --logLevel warn && ${vite} preview --host 127.0.0.1 --port ${port} --strictPort`;
+}

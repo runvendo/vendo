@@ -78,6 +78,11 @@ button, input, textarea, summary { font: inherit; }
 
 .appframe-grid > section { border: 1px solid #cad3e0; border-radius: 12px; padding: 14px; }
 
+/* Each section sized by its own content, so a section's height IS its frame's. */
+.appframe-column { display: flex; flex-direction: column; gap: 20px; align-items: stretch; }
+
+.appframe-column > section { border: 1px solid #cad3e0; border-radius: 12px; padding: 14px; }
+
 @media (max-width: 720px) {
   .harness-shell { padding: 14px; }
   .harness-surface { padding: 16px; }

@@ -8,8 +8,8 @@ import {
   type CloudCommandOptions,
   type CloudFetcher,
 } from "./cloud/command.js";
-import { mergeEnvOverDotEnv, readDotEnvFallback } from "./doctor.js";
 import { askYesNo, consoleOutput, exists, readOptional, writeText, type Output } from "./shared.js";
+import { readEnvFiles } from "./sync-flow.js";
 
 /** `vendo config` (unified auth) — move a `.vendo` content surface between local
  * disk and the hosted console, and report each surface's resolved OWNER.
@@ -109,10 +109,10 @@ function keyOptions(args: string[], options: ConfigCommandOptions): CloudFetchOp
  *  `vendo login` writes VENDO_API_KEY to `.env.local`, so a fresh shell after
  *  login must pick the key up from there with no manual `source` — while an
  *  already-set process VENDO_API_KEY still wins, exactly as init and the
- *  runtime resolve credentials. Reuses doctor's dotenv util (no hand-rolled
- *  parser). */
+ *  runtime resolve credentials. Reuses the CLI's one env reader (no
+ *  hand-rolled parser). */
 async function scopedEnv(dir: string, options: ConfigCommandOptions): Promise<Record<string, string | undefined>> {
-  return mergeEnvOverDotEnv(await readDotEnvFallback(dir), (options.env ?? process.env) as NodeJS.ProcessEnv);
+  return readEnvFiles(dir, (options.env ?? process.env) as NodeJS.ProcessEnv);
 }
 
 /** The same key resolution the runtime uses: an explicit `--key`, else

@@ -26,7 +26,7 @@ function guardedConfig(sqlStore: PGliteStore) {
 }
 
 describe("approval park and resume over the real SQL mapping", () => {
-  it("runs one approved critical replay and parks the second identical replay", async () => {
+  it("runs one approved confirmEach replay and parks the second identical replay", async () => {
     const sqlStore = await store();
     const guard = createGuard(guardedConfig(sqlStore));
     const tools = new FixtureTools();
@@ -34,19 +34,19 @@ describe("approval park and resume over the real SQL mapping", () => {
     const ctx = context({
       venue: "automation",
       presence: "away",
-      appId: "app_critical",
-      trigger: { runId: "run_critical", kind: "host-event" },
+      appId: "app_confirm_each",
+      trigger: { runId: "run_confirm_each", kind: "host-event" },
     });
-    const critical = call("host_critical", { invoiceId: "inv_critical" }, "call_critical");
+    const confirmEach = call("host_confirm_each", { invoiceId: "inv_confirm_each" }, "call_confirm_each");
 
-    const parked = await bound.execute(critical, ctx);
+    const parked = await bound.execute(confirmEach, ctx);
     expect(parked).toMatchObject({ status: "pending-approval" });
-    if (parked.status !== "pending-approval") throw new Error("expected critical call to park");
+    if (parked.status !== "pending-approval") throw new Error("expected confirmEach call to park");
     await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
 
-    await expect(bound.execute(critical, ctx)).resolves.toMatchObject({ status: "ok" });
+    await expect(bound.execute(confirmEach, ctx)).resolves.toMatchObject({ status: "ok" });
     expect(tools.executions).toHaveLength(1);
-    await expect(bound.execute(critical, ctx)).resolves.toMatchObject({ status: "pending-approval" });
+    await expect(bound.execute(confirmEach, ctx)).resolves.toMatchObject({ status: "pending-approval" });
     expect(tools.executions).toHaveLength(1);
   });
 
@@ -99,6 +99,50 @@ describe("approval park and resume over the real SQL mapping", () => {
     });
     expect(tools.executions).toHaveLength(1);
     unsubscribe();
+
+    // The console's feed chips each row by the risk the guard gated on.
+    const events = (await guard.audit.query({ principal: alice, limit: 50 })).events;
+    expect(events.find((event) => event.kind === "approval" && event.outcome === "pending-approval"))
+      .toMatchObject({ tool: "host_destructive", risk: "destructive" });
+    expect(events.find((event) => event.kind === "tool-call" && event.outcome === "ok"))
+      .toMatchObject({ tool: "host_destructive", risk: "destructive" });
+  });
+
+  it("notifies onApprovalRequested with the parked request, after it persisted", async () => {
+    const sqlStore = await store();
+    const guard = createGuard(guardedConfig(sqlStore));
+    const destructive = descriptor("destructive");
+    const seen: Array<{ id: string; statusAtNotify?: string }> = [];
+    // Async on purpose: a returned thenable is awaited (as decision callbacks
+    // are), and the row the subscriber reads mid-callback proves the park
+    // persisted before it was announced.
+    const unsubscribe = guard.onApprovalRequested(async (request) => {
+      const row = await sqlStore.query<{ status: string }>(
+        "SELECT status FROM vendo_approvals WHERE id = $1",
+        [request.id],
+      );
+      seen.push({ id: request.id, statusAtNotify: row.rows[0]?.status });
+    });
+    guard.onApprovalRequested(() => {
+      throw new Error("a failing subscriber must not turn the ask into an error");
+    });
+
+    const decision = await guard.check(
+      call(destructive.name, { invoiceId: "inv_requested" }, "call_requested"),
+      destructive,
+      context(),
+    );
+    if (decision.action !== "ask") throw new Error("expected parked call");
+    expect(seen).toEqual([{ id: decision.approval.id, statusAtNotify: "pending" }]);
+
+    unsubscribe();
+    const second = await guard.check(
+      call(destructive.name, { invoiceId: "inv_requested_2" }, "call_requested_2"),
+      destructive,
+      context(),
+    );
+    expect(second.action).toBe("ask");
+    expect(seen).toHaveLength(1);
   });
 
   it("never resumes a call whose tool or args differ from the approved request", async () => {
@@ -338,9 +382,13 @@ describe("approval park and resume over the real SQL mapping", () => {
     guard.onApprovalDecision(callback);
     await guard.approvals.decide(first.approvalId, { approve: false }, alice);
     expect(callback).toHaveBeenCalledWith(first.approvalId, false);
+    // The no STANDS: re-issuing the identical call is answered by the denial,
+    // never by a fresh card. (A caller with a stable call id — the apps
+    // runtime's derived query ids — would otherwise re-park forever.)
     await expect(bound.execute(call("host_destructive", {}, "deny_1"), context())).resolves.toMatchObject({
-      status: "pending-approval",
+      status: "blocked",
     });
+    expect(tools.executions).toHaveLength(0);
 
     await expect(
       guard.approvals.decide(second.approvalId as ApprovalId, { approve: true }, bob),

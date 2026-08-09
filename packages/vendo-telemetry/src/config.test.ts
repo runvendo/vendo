@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, saveConfig, configPath, configDir } from "./config.js";
+import { loadConfig, saveConfig, configPath, configDir, type TelemetryConfig } from "./config.js";
 
 let home: string;
 beforeEach(() => {
@@ -38,26 +38,38 @@ describe("config store", () => {
     expect(reread.noticeShown).toBe(true);
   });
 
-  it("honors a hand-written opt-out even without an anonymous id (review)", () => {
+  it("honors a hand-written opt-out even without an anonymous id", () => {
     mkdirSync(configDir(home), { recursive: true });
     writeFileSync(configPath(home), JSON.stringify({ optedOut: true }), "utf8");
-    const c = loadConfig(home);
+    const c = loadConfig(home, {});
     expect(c.optedOut).toBe(true);
   });
 
-  it("does not mint or persist a tracking id when an env opt-out is set (review)", () => {
+  it("regenerates and rewrites the config when the file on disk is corrupt", () => {
+    mkdirSync(configDir(home), { recursive: true });
+    writeFileSync(configPath(home), "{ truncated wri", "utf8");
+    const c = loadConfig(home, {});
+    expect(c.anonymousId).toMatch(/[0-9a-f-]{36}/);
+    expect(c.optedOut).toBe(false);
+    // A corrupt file is replaced, not just worked around in memory: the next
+    // process must read the same id back instead of minting another one.
+    expect((JSON.parse(readFileSync(configPath(home), "utf8")) as TelemetryConfig).anonymousId).toBe(c.anonymousId);
+    expect(loadConfig(home, {}).anonymousId).toBe(c.anonymousId);
+  });
+
+  it("does not mint or persist a tracking id when an env opt-out is set", () => {
     const c = loadConfig(home, { DO_NOT_TRACK: "1" });
     expect(c.optedOut).toBe(true);
     expect(existsSync(configPath(home))).toBe(false);
   });
 
-  it("still writes a normal opted-in config on first run without env opt-out (review)", () => {
+  it("still writes a normal opted-in config on first run without env opt-out", () => {
     const c = loadConfig(home, {});
     expect(c.optedOut).toBe(false);
     expect(existsSync(configPath(home))).toBe(true);
   });
 
-  it("degrades to an in-memory config when the config dir can't be written (review)", () => {
+  it("degrades to an in-memory config when the config dir can't be written", () => {
     // Make configDir un-creatable: a file where the .vendo parent must be a dir.
     const badHome = join(home, "as-file");
     writeFileSync(badHome, "x", "utf8"); // badHome/.vendo/... → ENOTDIR on mkdir

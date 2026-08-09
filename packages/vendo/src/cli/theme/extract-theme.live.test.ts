@@ -30,11 +30,11 @@ import {
  */
 
 const live = typeof process.env["ANTHROPIC_API_KEY"] === "string" && process.env["ANTHROPIC_API_KEY"] !== "";
-const appsDir = fileURLToPath(new URL("../../../../../apps/", import.meta.url));
+const examplesDir = fileURLToPath(new URL("../../../../../examples/", import.meta.url));
 
 const harness = claudeCliHarness();
 // availability() only inspects env, not root — any root string is fine here.
-const cliAvailability = live ? await harness.availability({ root: appsDir, env: process.env }) : null;
+const cliAvailability = live ? await harness.availability({ root: examplesDir, env: process.env }) : null;
 if (live && cliAvailability === null) {
   // eslint-disable-next-line no-console
   console.log("[live] skipping: ANTHROPIC_API_KEY is set but no `claude` binary/login was found on PATH");
@@ -62,20 +62,6 @@ const TRUTH: Record<string, GroundTruth> = {
     border: "#ecebe8",
     fontFamily: "inter",
   },
-  // Cadence "Porcelain Ledger": ink-first — primary buttons are bg-ink and
-  // the sheet itself demotes evergreen to "data only", so the accent is the
-  // ink, NOT the green (the old extractor's green accent was a silent wrong
-  // brand). --color-surface is the PAGE background, cards are --color-card
-  // white, ink-faint is the dominant muted text (59 uses vs 34 ink-soft).
-  "demo-accounting": {
-    accent: "#111111",
-    background: "#fbfbfa",
-    surface: "#ffffff",
-    text: "#111111",
-    mutedText: "#908c85",
-    border: "#ecebe8",
-    fontFamily: "inter",
-  },
 };
 
 /** The token sheet each app's ground truth above is read from — the same file
@@ -85,12 +71,11 @@ const TRUTH: Record<string, GroundTruth> = {
  *  evidencePaths from gatherContext's own collected CSS files). */
 const EVIDENCE_PATHS: Record<string, string[]> = {
   "demo-bank": ["src/app/globals.css"],
-  "demo-accounting": ["src/app/globals.css"],
 };
 
-describe.skipIf(!live || cliAvailability === null)("extractTheme live accuracy (both demo apps)", () => {
+describe.skipIf(!live || cliAvailability === null)("extractTheme live accuracy (demo app)", () => {
   it.each(Object.keys(TRUTH))("%s scores at least 6/7 with no silent misses", async (app) => {
-    const root = join(appsDir, app);
+    const root = join(examplesDir, app);
 
     // Step 1: the deterministic allowlist pass ONLY — no resolveModel. This is
     // the same exact pass runThemeStage's caller runs before deciding
@@ -140,7 +125,7 @@ describe.skipIf(!live || cliAvailability === null)("extractTheme live accuracy (
         const value = validateSlotValue(slot, String(raw));
         if (value === null) continue;
         // Accepted values overwrite ONLY needed slots — exact reads always win.
-        (slots as Record<string, unknown>)[slot] = value;
+        (slots as unknown as Record<string, unknown>)[slot] = value;
         filled.add(slot);
       }
 

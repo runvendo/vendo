@@ -166,12 +166,12 @@ describe("deterministic breakers through bind (05 §2)", () => {
   });
 });
 
-describe("critical tier is unsuppressible (05 §2 step 1, §4)", () => {
+describe("confirmEach tier is unsuppressible (05 §2 step 1, §4)", () => {
   it("still asks when a matching standing grant, a run rule, and a run judge all agree", async () => {
     const sqlStore = await store();
-    const criticalDesc = descriptor("read", { name: "host_locked", critical: true });
+    const confirmEachDesc = descriptor("read", { name: "host_locked", confirmEach: true });
     // A grant that would otherwise authorize the exact tool + hash.
-    await seedGrant(sqlStore, { descriptor: criticalDesc });
+    await seedGrant(sqlStore, { descriptor: confirmEachDesc });
     const guard = createGuard({
       store: sqlStore,
       policy: { rules: [{ match: {}, action: "run" }] },
@@ -180,12 +180,12 @@ describe("critical tier is unsuppressible (05 §2 step 1, §4)", () => {
 
     // Critical short-circuits at stage 1: grant, rule, and judge never get to unlock it.
     await expect(
-      guard.check(call(criticalDesc.name, {}, "crit_check"), criticalDesc, context()),
-    ).resolves.toMatchObject({ action: "ask", decidedBy: "critical" });
+      guard.check(call(confirmEachDesc.name, {}, "crit_check"), confirmEachDesc, context()),
+    ).resolves.toMatchObject({ action: "ask", decidedBy: "confirmEach" });
 
-    const bound = guard.bind(new FixtureTools([criticalDesc]));
+    const bound = guard.bind(new FixtureTools([confirmEachDesc]));
     await expect(
-      bound.execute(call(criticalDesc.name, {}, "crit_exec"), context()),
+      bound.execute(call(confirmEachDesc.name, {}, "crit_exec"), context()),
     ).resolves.toMatchObject({ status: "pending-approval" });
   });
 });

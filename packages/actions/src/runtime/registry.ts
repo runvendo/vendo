@@ -2,6 +2,7 @@ import { readOptionalVendoJson } from "#actions/host-files";
 import {
   VendoError,
   descriptorHash,
+  joinUrl,
   toolDescriptorSchema,
   type ActAs,
   type PermissionGrant,
@@ -22,7 +23,6 @@ import {
   type CapabilityBrief,
   type CompoundTool,
   type ExtractedTool,
-  type GraphqlBinding,
   type HttpMethod,
   type JudgmentsFile,
   type OpenApiBinding,
@@ -36,7 +36,7 @@ import {
 import { applyJudgment } from "../judgments.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
-import { searchToolDescriptors, tokenize, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
+import { searchToolDescriptors, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
 import { defaultFetch } from "@vendoai/core";
 
 export interface ActionsRegistry extends ToolRegistry {
@@ -49,13 +49,9 @@ export interface ActionsRegistry extends ToolRegistry {
    * descriptor set), so a hit is always a loadable, guard-bound tool.
    */
   search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]>;
-  /** Fetch + register the named lazy toolkits' tools (idempotent, global —
-   * descriptors are the same for every principal; per-USER scoping lives in
-   * the agent's loadout, spec 2026-07-20). */
-  expandToolkits(toolkits: string[]): Promise<void>;
-  /** The per-turn initial loadout: host/eager tools first, then the given
-   * (connected) toolkits' tools — never an alphabetical slice of the catalog. */
-  loadoutSeed(connectedToolkits: string[]): Promise<string[]>;
+  /** The per-turn initial loadout: every loaded tool, never an alphabetical
+   * slice of the catalog. */
+  loadoutSeed(): Promise<string[]>;
   /**
    * The tool menu one SURFACE offers, resolved from `.vendo/overrides.json`'s
    * `surfaces` block. `undefined` means unrestricted — the surface offers
@@ -174,10 +170,6 @@ interface LoadedRegistry {
    *  descriptor surface deliberately drops, kept here because the door's
    *  default menu is defined in terms of it. Absent name = ungraded. */
   audience: Map<string, ExtractedTool["audience"]>;
-  /** Every name any source claimed — including disabled/quarantined entries
-   * that never reach dispatch. Incremental expansion checks it so a
-   * mid-run toolkit append can never shadow a reserved name. */
-  reserved: Set<string>;
 }
 
 const STRIPPED_HEADERS = new Set([
@@ -189,13 +181,19 @@ const STRIPPED_HEADERS = new Set([
   "upgrade",
 ]);
 
-function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
+/**
+ * The descriptor surface, as a field WHITELIST: provenance the registry knows
+ * (audience, semantics, the binding itself) deliberately does not travel to
+ * whoever reads `descriptors()`.
+ */
+function descriptorOf(tool: ToolDescriptor & { binding?: ToolBinding }): ToolDescriptor {
   return {
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,
     risk: tool.risk,
-    ...(tool.critical !== undefined ? { critical: tool.critical } : {}),
+    ...(tool.outputSchema !== undefined ? { outputSchema: tool.outputSchema } : {}),
+    ...(tool.confirmEach !== undefined ? { confirmEach: tool.confirmEach } : {}),
     ...(tool.title !== undefined ? { title: tool.title } : {}),
   };
 }
@@ -208,7 +206,7 @@ function mergeOverride<T extends ToolDescriptor & Pick<ExtractedTool, "audience"
   return {
     ...descriptor,
     ...(override.risk !== undefined ? { risk: override.risk } : {}),
-    ...(override.critical !== undefined ? { critical: override.critical } : {}),
+    ...(override.confirmEach !== undefined ? { confirmEach: override.confirmEach } : {}),
     ...(override.description !== undefined ? { description: override.description } : {}),
     ...(override.title !== undefined ? { title: override.title } : {}),
     ...(override.disabled !== undefined ? { disabled: override.disabled } : {}),
@@ -245,10 +243,6 @@ function withPathArgs(path: string, args: Record<string, unknown>): { path: stri
   };
 }
 
-function joinedUrl(baseUrl: string, path: string): URL {
-  return new URL(`${baseUrl.replace(/\/$/, "")}${path}`);
-}
-
 /**
  * How a failed host call names what it called: origin **and** path. A wire
  * origin pointing at the wrong host 404s every tool while every path is
@@ -283,7 +277,7 @@ function resolveUrl(binding: RouteBinding | OpenApiBinding, configuredBaseUrl?: 
     );
   }
   try {
-    return joinedUrl(baseUrl, binding.path);
+    return joinUrl(baseUrl, binding.path);
   } catch {
     throw new VendoError("validation", `Invalid baseUrl for ${binding.path}; set createActions({ baseUrl }) to a valid origin`);
   }
@@ -437,7 +431,7 @@ function trpcRequest(binding: TrpcBinding, args: Record<string, unknown>, config
   }
   let url: URL;
   try {
-    url = joinedUrl(configuredBaseUrl, `${binding.mount.replace(/\/$/, "")}/${binding.procedure}`);
+    url = joinUrl(configuredBaseUrl, `${binding.mount.replace(/\/$/, "")}/${binding.procedure}`);
   } catch {
     throw new VendoError("validation", `Invalid baseUrl for trpc procedure ${binding.procedure}; set createActions({ baseUrl }) to a valid origin`);
   }
@@ -466,64 +460,6 @@ function trpcOutput(binding: TrpcBinding, parsed: unknown): unknown {
     return (data as { json: unknown }).json;
   }
   return data;
-}
-
-/** The GraphQL HTTP transport (04 §1): every operation — query or mutation —
- * is a POST of `{ query: document, variables: args }` to the host endpoint.
- * The binding's document declares each tool argument as a same-named variable,
- * so the agent's args ride through unmodified. Auth semantics (present-forward,
- * away/actAs, venue=mcp) are identical to route bindings. */
-function graphqlRequest(binding: GraphqlBinding, args: Record<string, unknown>, configuredBaseUrl?: string): {
-  url: URL;
-  method: HttpMethod;
-  body: string;
-} {
-  if (!binding.document) {
-    throw new VendoError(
-      "validation",
-      `Cannot execute graphql binding ${binding.operation}; extraction emitted no executable document for it (fail-closed); review the tool's note before enabling`,
-    );
-  }
-  if (!configuredBaseUrl) {
-    throw new VendoError(
-      "validation",
-      `Cannot execute graphql binding ${binding.operation}; set createActions({ baseUrl }) for server-side graphql execution`,
-    );
-  }
-  let url: URL;
-  try {
-    url = joinedUrl(configuredBaseUrl, binding.endpoint.length > 1 ? binding.endpoint.replace(/\/+$/, "") : binding.endpoint);
-  } catch {
-    throw new VendoError("validation", `Invalid baseUrl for graphql operation ${binding.operation}; set createActions({ baseUrl }) to a valid origin`);
-  }
-  return { url, method: "POST", body: JSON.stringify({ query: binding.document, variables: args }) };
-}
-
-/** Unwrap the GraphQL response envelope. GraphQL reports failures as a 200
- * with an `errors` array — that is still a failed call and surfaces as an
- * http-error outcome so the agent sees the server's message. On success the
- * single root field's value (the document has exactly one) is the output. */
-function graphqlOutput(binding: GraphqlBinding, parsed: unknown): ToolOutcome {
-  const envelope = parsed !== null && typeof parsed === "object"
-    ? parsed as { data?: unknown; errors?: unknown }
-    : undefined;
-  const errors = envelope?.errors;
-  if (Array.isArray(errors) && errors.length > 0) {
-    const message = errors
-      .map((item) => item !== null && typeof item === "object" && typeof (item as { message?: unknown }).message === "string"
-        ? (item as { message: string }).message
-        : "GraphQL error")
-      .join("; ");
-    return error("http-error", `graphql ${binding.operation} → errors: ${message.slice(0, 200)}`);
-  }
-  const data = envelope && "data" in envelope ? envelope.data : parsed;
-  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
-    const record = data as Record<string, unknown>;
-    if (Object.keys(record).length === 1 && binding.operation in record) {
-      return { status: "ok", output: record[binding.operation] };
-    }
-  }
-  return { status: "ok", output: data };
 }
 
 /** The JSON projection of an in-process return value: Dates become ISO
@@ -575,30 +511,36 @@ async function executeServerAction(
   return projected.ok ? projected.output : error("server-action-error", `Server action ${key} returned a non-JSON value: ${projected.message}`);
 }
 
-async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
-  if (!isArgsObject(call.args)) return error("validation", `Arguments for ${call.tool} must be an object`);
-  if (tool.binding.kind === "server-action") return executeServerAction(config, tool.binding, call, ctx);
+/** The HTTP request one host tool call becomes. */
+interface HostRequest {
+  url: URL;
+  method: HttpMethod;
+  body: string | undefined;
+}
 
+/** Bind the call's arguments onto the tool's declared shape: the tRPC envelope,
+ *  or path substitution and then query/body per the binding's `argsIn`. */
+function hostRequest(
+  config: RegistryConfig,
+  binding: RouteBinding | OpenApiBinding | TrpcBinding,
+  call: ToolCall,
+  args: Record<string, unknown>,
+): { request: HostRequest } | { error: ToolOutcome } {
   let url: URL;
   let method: HttpMethod;
   let body: string | undefined;
   try {
-    if (tool.binding.kind === "trpc") {
-      const request = trpcRequest(tool.binding, call.args, config.baseUrl);
-      url = request.url;
-      method = request.method;
-      body = request.body;
-    } else if (tool.binding.kind === "graphql") {
-      const request = graphqlRequest(tool.binding, call.args, config.baseUrl);
+    if (binding.kind === "trpc") {
+      const request = trpcRequest(binding, args, config.baseUrl);
       url = request.url;
       method = request.method;
       body = request.body;
     } else {
-      method = tool.binding.method;
-      const substituted = withPathArgs(tool.binding.path, call.args);
-      url = resolveUrl({ ...tool.binding, path: substituted.path }, config.baseUrl);
-      if (tool.binding.kind === "route") {
-        if (tool.binding.argsIn === "query") {
+      method = binding.method;
+      const substituted = withPathArgs(binding.path, args);
+      url = resolveUrl({ ...binding, path: substituted.path }, config.baseUrl);
+      if (binding.kind === "route") {
+        if (binding.argsIn === "query") {
           for (const [key, value] of Object.entries(substituted.remaining)) appendQuery(url, key, value);
         } else {
           body = JSON.stringify(substituted.remaining);
@@ -613,23 +555,74 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
       }
     }
   } catch (cause) {
-    return error("validation", cause instanceof Error ? cause.message : `Invalid arguments for ${call.tool}`);
+    return { error: error("validation", cause instanceof Error ? cause.message : `Invalid arguments for ${call.tool}`) };
   }
+  return { request: { url, method, body } };
+}
 
-  let headers: Record<string, string>;
-  let actAsMinted = false;
+/** The present user's own credentials, forwarded only where the binding and the
+ *  configured origin allow it — and never silently when they do not. */
+async function presentHeaders(
+  config: RegistryConfig,
+  tool: ExtractedTool,
+  call: ToolCall,
+  ctx: RunContext,
+  url: URL,
+): Promise<{ headers: Record<string, string> } | { error: ToolOutcome }> {
+  const forwardsPresentHeaders = mayForwardPresentHeaders(
+    tool.binding,
+    url,
+    config.baseUrl,
+    config.baseUrlTrusted ?? true,
+  );
+  if (!forwardsPresentHeaders && hasInboundAuthHeaders(ctx)) {
+    const reason = config.baseUrlTrusted === false
+      ? "untrusted-host-origin" as const
+      : "cross-origin-binding" as const;
+    if (config.onPresentCredentialsNotForwarded !== undefined) {
+      try {
+        await config.onPresentCredentialsNotForwarded({ ctx, tool: descriptorOf(tool), reason });
+      } catch {
+        // A warning sink must never turn a host API call into a product failure.
+      }
+    }
+    // "untrusted-host-origin" only (09-vendo §2 install-dx wave 1.1):
+    // "cross-origin-binding" always stays warn-only, in every policy.
+    if (reason === "untrusted-host-origin" && config.untrustedOriginPolicy === "fail") {
+      return {
+        error: error(
+          "blocked",
+          `Present credentials for ${call.tool} cannot be forwarded because VENDO_BASE_URL is not set. `
+            + "Set VENDO_BASE_URL to this deployment's full public URL (path prefix included) — "
+            + "or VENDO_HOST_API_URL when the host API answers on another origin — and restart the server.",
+        ),
+      };
+    }
+  }
+  return { headers: forwardsPresentHeaders ? forwardedHeaders(ctx) : {} };
+}
+
+/** How this call authenticates to the host: the ActAs seam for away and MCP,
+ *  the present user's forwarded credentials otherwise. */
+async function hostHeaders(
+  config: RegistryConfig,
+  tool: ExtractedTool,
+  call: ToolCall,
+  ctx: RunContext,
+  url: URL,
+): Promise<{ headers: Record<string, string>; actAsMinted: boolean } | { error: ToolOutcome }> {
   if (ctx.presence === "away") {
-    if (!config.actAs) return error("not-implemented", "away execution isn't set up for this product");
+    if (!config.actAs) return { error: error("not-implemented", "away execution isn't set up for this product") };
     const grant = (ctx as ActionsRunContext).grant;
-    if (!grant) return error("validation", "away execution requires a captured grant");
+    if (!grant) return { error: error("validation", "away execution requires a captured grant") };
     const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
       declined: "the host declined away execution for this action",
       failed: "away authentication failed",
     });
-    if ("error" in authed) return authed.error;
-    headers = authed.headers;
-    actAsMinted = true;
-  } else if (ctx.venue === "mcp" || (ctx as ActionsRunContext).mcpConsent !== undefined) {
+    if ("error" in authed) return { error: authed.error };
+    return { headers: authed.headers, actAsMinted: true };
+  }
+  if (ctx.venue === "mcp" || (ctx as ActionsRunContext).mcpConsent !== undefined) {
     // 04 §4 / 10-mcp §2.1 / §3: an MCP-OAuth user has no host browser session,
     // so the present path has nothing to forward — and we forward NOTHING even
     // if a forged/mis-plumbed ctx carries requestHeaders (fail-closed). Host
@@ -644,88 +637,84 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     // (unauthenticated for MCP users) present-forward branch. A venue="app" ctx
     // WITHOUT mcpConsent (ordinary in-product app use) never enters here.
     if (!config.actAs) {
-      return error(
-        "not-implemented",
-        "MCP host execution isn't set up for this product — the host must provide actAs (createVendo({ actAs }))",
-      );
+      return {
+        error: error(
+          "not-implemented",
+          "MCP host execution isn't set up for this product — the host must provide actAs (createVendo({ actAs }))",
+        ),
+      };
     }
     const actionsCtx = ctx as ActionsRunContext;
     // A ctx with neither a real grant nor the door's consent record did not come
     // from the door — fail closed rather than authenticate an unattested call.
     const grant = actionsCtx.grant ?? mcpConsentGrant(actionsCtx, call, tool);
-    if (!grant) return error("validation", "MCP host execution requires the door's consent context");
+    if (!grant) return { error: error("validation", "MCP host execution requires the door's consent context") };
     const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
       declined: "the host declined MCP execution for this action",
       failed: "MCP authentication failed",
     });
-    if ("error" in authed) return authed.error;
-    headers = authed.headers;
-    actAsMinted = true;
-  } else {
-    const forwardsPresentHeaders = mayForwardPresentHeaders(
-      tool.binding,
-      url,
-      config.baseUrl,
-      config.baseUrlTrusted ?? true,
-    );
-    if (!forwardsPresentHeaders && hasInboundAuthHeaders(ctx)) {
-      const reason = config.baseUrlTrusted === false
-        ? "untrusted-host-origin" as const
-        : "cross-origin-binding" as const;
-      if (config.onPresentCredentialsNotForwarded !== undefined) {
-        try {
-          await config.onPresentCredentialsNotForwarded({ ctx, tool: descriptorOf(tool), reason });
-        } catch {
-          // A warning sink must never turn a host API call into a product failure.
-        }
-      }
-      // "untrusted-host-origin" only (09-vendo §2 install-dx wave 1.1):
-      // "cross-origin-binding" always stays warn-only, in every policy.
-      if (reason === "untrusted-host-origin" && config.untrustedOriginPolicy === "fail") {
-        return error(
-          "blocked",
-          `Present credentials for ${call.tool} cannot be forwarded because VENDO_BASE_URL is not set. `
-            + "Set VENDO_BASE_URL to this deployment's public origin and restart the server.",
-        );
+    if ("error" in authed) return { error: authed.error };
+    return { headers: authed.headers, actAsMinted: true };
+  }
+  const present = await presentHeaders(config, tool, call, ctx, url);
+  return "error" in present ? present : { headers: present.headers, actAsMinted: false };
+}
+
+/** The host request itself. Every failure — transport, status, body — comes back
+ *  as an outcome, so the caller's audit enrichment always runs. */
+async function fetchHostTool(
+  config: RegistryConfig,
+  tool: ExtractedTool,
+  call: ToolCall,
+  { url, method, body }: HostRequest,
+  headers: Record<string, string>,
+): Promise<ToolOutcome> {
+  try {
+    const request = config.fetch ?? defaultFetch;
+    const response = await request(url, {
+      method,
+      headers,
+      ...(body !== undefined ? { body } : {}),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      return error(
+        "http-error",
+        `${method} ${requestTarget(url)} → ${response.status}: ${text.slice(0, 200)}`,
+      );
+    }
+    if (text) {
+      try {
+        const parsed: unknown = JSON.parse(text);
+        return {
+          status: "ok",
+          output: tool.binding.kind === "trpc" ? trpcOutput(tool.binding, parsed) : parsed,
+        };
+      } catch {
+        // Successful non-JSON responses retain their HTTP status and text.
       }
     }
-    headers = forwardsPresentHeaders ? forwardedHeaders(ctx) : {};
+    return { status: "ok", output: { status: response.status, text } };
+  } catch (cause) {
+    return error("network-error", cause instanceof Error ? cause.message : `Network request failed for ${call.tool}`);
   }
+}
+
+async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
+  if (!isArgsObject(call.args)) return error("validation", `Arguments for ${call.tool} must be an object`);
+  if (tool.binding.kind === "server-action") return executeServerAction(config, tool.binding, call, ctx);
+
+  const built = hostRequest(config, tool.binding, call, call.args);
+  if ("error" in built) return built.error;
+  const { url, body } = built.request;
+
+  const authed = await hostHeaders(config, tool, call, ctx, url);
+  if ("error" in authed) return authed.error;
+  const { headers, actAsMinted } = authed;
   setHeader(headers, "accept", "application/json");
   if (body !== undefined) setHeader(headers, "content-type", "application/json");
 
-  const outcome = await (async (): Promise<ToolOutcome> => {
-    try {
-      const request = config.fetch ?? defaultFetch;
-      const response = await request(url, {
-        method,
-        headers,
-        ...(body !== undefined ? { body } : {}),
-      });
-      const text = await response.text();
-      if (!response.ok) {
-        return error(
-          "http-error",
-          `${method} ${requestTarget(url)} → ${response.status}: ${text.slice(0, 200)}`,
-        );
-      }
-      if (text) {
-        try {
-          const parsed: unknown = JSON.parse(text);
-          if (tool.binding.kind === "graphql") return graphqlOutput(tool.binding, parsed);
-          return {
-            status: "ok",
-            output: tool.binding.kind === "trpc" ? trpcOutput(tool.binding, parsed) : parsed,
-          };
-        } catch {
-          // Successful non-JSON responses retain their HTTP status and text.
-        }
-      }
-      return { status: "ok", output: { status: response.status, text } };
-    } catch (cause) {
-      return error("network-error", cause instanceof Error ? cause.message : `Network request failed for ${call.tool}`);
-    }
-  })();
+  const outcome = await fetchHostTool(config, tool, call, built.request, headers);
   // Audit enrichment: every actAs-authenticated host call reports the seam's
   // disposition, even when the host request itself then fails.
   return actAsMinted ? withActAs(outcome, "minted") : outcome;
@@ -999,135 +988,8 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       // Runtime dispatch keeps only enabled entries once all collision checks ran.
       const dispatch = new Map<string, Dispatch>();
       for (const [name, entry] of reserved) if (entry) dispatch.set(name, entry);
-      return { descriptors, dispatch, audience, reserved: new Set(reserved.keys()) };
+      return { descriptors, dispatch, audience };
     })();
-  }
-
-  /** Discovery discipline (spec 2026-07-25): merge ONLY the newly expanded connectors'
-   * tools into an already-loaded registry — same override + disabled
-   * semantics as buildRegistry, without redoing the host/compound merge. A
-   * name that is already reserved is kept as-is (previously expanded tools
-   * re-listed by the connector) rather than thrown as a boot-style conflict:
-   * expansion runs on live traffic, and a collision here would poison the
-   * load memo for the rest of the process. */
-  async function appendExpanded(
-    current: Promise<LoadedRegistry>,
-    changed: Connector[],
-  ): Promise<LoadedRegistry> {
-    const [loaded, host] = await Promise.all([current, loadHost()]);
-    const descriptors = [...loaded.descriptors];
-    const dispatch = new Map(loaded.dispatch);
-    const reserved = new Set(loaded.reserved);
-    // Audience is carried forward the same way buildRegistry records it, so a
-    // mid-run expanded tool grades identically for the door's default menu.
-    const audience = new Map(loaded.audience);
-    for (const connector of changed) {
-      const list = await cachedDescriptors(connector);
-      for (let index = 0; index < list.length; index += 1) {
-        const rawDescriptor = parseToolDescriptor(list[index]!, `connector ${connector.name}[${index}]`);
-        if (reserved.has(rawDescriptor.name)) continue;
-        const merged = mergeOverride(rawDescriptor, host.overrides.tools[rawDescriptor.name]);
-        const { disabled: _disabled, audience: _audience, semantics: _semantics, ...descriptor } = merged;
-        reserved.add(descriptor.name);
-        if (merged.audience !== undefined) audience.set(descriptor.name, merged.audience);
-        if (merged.disabled === true) continue;
-        descriptors.push(descriptor);
-        dispatch.set(descriptor.name, { kind: "connector", descriptor, connector });
-      }
-    }
-    return { descriptors, dispatch, audience, reserved };
-  }
-
-  /** Default cap on toolkits one search may expand — bounds fan-out when a
-   * broad intent matches many index blurbs. Hosts tune it per query via
-   * ToolSearchOptions.maxExpansions. */
-  const MAX_SEARCH_EXPANSIONS = 3;
-  let indexPromise: Promise<Array<{ toolkit: string; label?: string; description?: string }>> | undefined;
-  /** Discovery discipline (spec 2026-07-25): identical queries answer from a process-lifetime memo — repeat
-   * discovery costs zero index reads, zero expansions, zero schema fetches.
-   * add() invalidates it (the searchable surface changed). */
-  const searchMemo = new Map<string, Promise<ToolSearchMatch[]>>();
-
-  function discoveryEntries() {
-    if (indexPromise === undefined) {
-      const building = (async () => {
-        const lists = await Promise.all(connectors.map((connector) => connector.discoveryIndex?.() ?? Promise.resolve([])));
-        return lists.flat();
-      })();
-      indexPromise = building;
-      // A rejected index is not the answer forever (see cachedDescriptors).
-      building.catch(() => {
-        if (indexPromise === building) indexPromise = undefined;
-      });
-    }
-    return indexPromise;
-  }
-
-  /** Expand named toolkits on every lazy connector; on any growth, bust that
-   * connector's descriptor memo and APPEND the new tools to an already-loaded
-   * registry — never a full load-memo bust, so the host/compound merge
-   * and every other source's schemas stay done. A failed append degrades to
-   * the full rebuild rather than a poisoned load memo. */
-  async function expand(toolkits: string[]): Promise<boolean> {
-    if (toolkits.length === 0) return false;
-    const changed: Connector[] = [];
-    for (const connector of connectors) {
-      if (connector.expandToolkits === undefined) continue;
-      if (await connector.expandToolkits(toolkits)) {
-        descriptorPromises.delete(connector);
-        changed.push(connector);
-      }
-    }
-    if (changed.length === 0) return false;
-    const current = loadedPromise;
-    if (current !== undefined) {
-      loadedPromise = appendExpanded(current, changed).catch(() => buildRegistry());
-    }
-    return true;
-  }
-
-  async function runSearch(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]> {
-    // Rank the discovery index FIRST (toolkit-level pseudo-descriptors for
-    // lazily-loaded connectors) and expand the top matches, so an unloaded
-    // toolkit's tools are findable by intent ("send email" → gmail).
-    const index = await discoveryEntries();
-    const maxExpansions = Math.max(Math.trunc(options?.maxExpansions ?? MAX_SEARCH_EXPANSIONS), 0);
-    const expandedNames = new Set<string>();
-    if (index.length > 0 && maxExpansions > 0) {
-      // Whole-word overlap scoring: the tool scorer's substring matching
-      // lets stopwords ("an" ⊂ "channels") expand unrelated toolkits, so the
-      // index ranks on exact word tokens only, ignoring 1–2 char tokens.
-      const queryTokens = tokenize(query).filter((token) => token.length >= 3);
-      const scored = index
-        .map((entry) => {
-          const words = new Set(tokenize(`${entry.label ?? ""} ${entry.description ?? ""}`));
-          let score = 0;
-          for (const token of queryTokens) {
-            if (token === entry.toolkit.toLowerCase()) score += 8;
-            else if (words.has(token)) score += 2;
-          }
-          return { toolkit: entry.toolkit, score };
-        })
-        .filter((hit) => hit.score > 0)
-        .sort((a, b) => (b.score - a.score) || (a.toolkit < b.toolkit ? -1 : 1))
-        .slice(0, maxExpansions);
-      await expand(scored.map((hit) => hit.toolkit));
-      for (const hit of scored) expandedNames.add(hit.toolkit);
-    }
-    // load().descriptors is the post-override, enabled-only surface — disabled
-    // tools never reach it, so they can never be returned as loadable.
-    const matches = searchToolDescriptors((await load()).descriptors, query, options);
-    if (expandedNames.size === 0) return matches;
-    return matches.map((match) => {
-      const toolkit = [...expandedNames].find((name) => match.name.startsWith(`${name}_`));
-      // A plain fact, not an invitation (discovery-discipline criterion 12):
-      // the old suffix told the model calling unconnected tools was the way
-      // to prompt a connect, which turned catalogs into call sprees.
-      return toolkit === undefined ? match : {
-        ...match,
-        description: `${match.description} (part of the ${toolkit} toolkit — requires a connected ${toolkit} account)`,
-      };
-    });
   }
 
   const compoundExecutor = createCompoundExecutor({
@@ -1142,7 +1004,6 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     add(tools: ToolRegistry): void {
       added.push(tools);
       loadedPromise = undefined;
-      searchMemo.clear();
     },
 
     async descriptors(): Promise<ToolDescriptor[]> {
@@ -1153,10 +1014,6 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       return (await loadHost()).briefs;
     },
 
-    async expandToolkits(toolkits: string[]): Promise<void> {
-      await expand(toolkits);
-    },
-
     async connectorToolkit(tool: string): Promise<{ connector: string; toolkit: string } | undefined> {
       const entry = (await load()).dispatch.get(tool);
       if (!entry || entry.kind !== "connector") return undefined;
@@ -1164,22 +1021,8 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       return toolkit === undefined ? undefined : { connector: entry.connector.name, toolkit };
     },
 
-    async loadoutSeed(connectedToolkits: string[]): Promise<string[]> {
-      await expand(connectedToolkits);
-      const { descriptors: all, dispatch } = await load();
-      const eager: string[] = [];
-      const connected: string[] = [];
-      for (const descriptor of all) {
-        const entry = dispatch.get(descriptor.name);
-        if (!entry) continue;
-        const isLazyConnectorTool = entry.kind === "connector" && entry.connector.expandToolkits !== undefined;
-        if (!isLazyConnectorTool) {
-          eager.push(descriptor.name);
-          continue;
-        }
-        if (connectedToolkits.some((toolkit) => descriptor.name.startsWith(`${toolkit}_`))) connected.push(descriptor.name);
-      }
-      return [...eager, ...connected];
+    async loadoutSeed(): Promise<string[]> {
+      return (await load()).descriptors.map((descriptor) => descriptor.name);
     },
 
     async surfaceMenu(surface: "agent" | "mcp"): Promise<string[] | undefined> {
@@ -1188,20 +1031,20 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       if (authored !== undefined) {
         // A menu is a FILTER, not a validated reference list. The authored set
         // is returned whole and matched against the live surface at use time,
-        // because the surface grows: a lazy connector's tools do not exist at
-        // boot, and dropping their names here would make them permanently
-        // unreachable the moment they DO arrive. Unmatched names simply never
-        // match anything, which is what a filter should do.
+        // because the surface grows: an `add()`-registered registry's tools do
+        // not exist at boot, and dropping their names here would make them
+        // permanently unreachable the moment they DO arrive. Unmatched names
+        // simply never match anything, which is what a filter should do.
         const unmatched = authored.tools.filter((name) => !dispatch.has(name));
         if (unmatched.length > 0 && !surfaceMenuWarned.has(surface)) {
           surfaceMenuWarned.add(surface);
           console.warn(
             unmatched.length === authored.tools.length
               ? `[vendo] surfaces.${surface}.tools in .vendo/overrides.json matches no registered tool at all `
-                + `(${unmatched.join(", ")}). If these are not lazy connector tools awaiting expansion, this surface `
+                + `(${unmatched.join(", ")}). If these are not tools a later \`add()\` registers, this surface `
                 + "will offer nothing — check for typos or re-run `vendo sync`."
               : `[vendo] surfaces.${surface}.tools in .vendo/overrides.json names tools that are not registered right `
-                + `now: ${unmatched.join(", ")}. They stay on the menu (a lazy connector tool matches once expanded); `
+                + `now: ${unmatched.join(", ")}. They stay on the menu (a later \`add()\` can still supply them); `
                 + "if that is not what they are, check for a typo, a disabled tool, or re-run `vendo sync`.",
           );
         }
@@ -1217,19 +1060,9 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     },
 
     async search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]> {
-      const memoKey = [
-        query.trim().toLowerCase().replace(/\s+/g, " "),
-        options?.limit ?? "",
-        options?.maxExpansions ?? "",
-      ].join("\u0000");
-      const memoized = searchMemo.get(memoKey);
-      if (memoized !== undefined) return memoized;
-      if (searchMemo.size > 500) searchMemo.clear();
-      const promise = runSearch(query, options);
-      searchMemo.set(memoKey, promise);
-      // A failed search must not pin its failure for the process lifetime.
-      promise.catch(() => searchMemo.delete(memoKey));
-      return promise;
+      // Post-override and enabled-only, so a disabled tool can never come back
+      // as loadable.
+      return searchToolDescriptors((await load()).descriptors, query, options);
     },
 
     async execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {

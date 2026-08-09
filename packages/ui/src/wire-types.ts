@@ -11,10 +11,11 @@ import type {
   AppDocument,
   AppId,
   ApprovalRequest,
-  AuditEvent,
   IsoDateTime,
+  Membership,
   RunId,
   ThreadId,
+  Trigger,
   TriggerSource,
   ToolOutcome,
   UIPayload,
@@ -43,16 +44,41 @@ export interface PendingSurface {
   kind: "pending";
 }
 
+/** 06-apps — one row of `GET /apps/placements`: what is in a slot, and where
+ *  that app's build stands. `title` is "" while a build has not landed. */
+export interface PlacementEntry {
+  slot: string;
+  app: AppId;
+  title: string;
+  status: "ready" | "building" | "failed";
+}
+
+/**
+ * Remix final shape (2026-08-02) — where the CURRENT version of a review-kind
+ * remix stands with the host reviewer, riding the venue verdict: "pending"
+ * renders as "sent for review"; "rejected" carries the reviewer's note for
+ * the user's panel.
+ */
+export type ReviewStanding =
+  | { status: "pending"; versionHash: string }
+  | { status: "rejected"; versionHash: string; note: string; by: string; at: IsoDateTime };
+
 /**
  * 06-apps §9 — the additive in-client venue verdict riding a tree payload
  * (`payload.inClient`). SERVER-AUTHORITATIVE: only the runtime's hash-pin
  * verification writes it. `granted: true` is the ONLY state that lets the
  * renderer mount generated code in the host page; a missing field and every
- * other state stay in the sandboxed iframe jail.
+ * other state stay in the sandboxed iframe jail — except review-kind's
+ * `reason: "pending-review"` (2026-08-02), which must render the ORIGINAL
+ * host component: the server ships no executable fork source with it, so a
+ * jailed fork render cannot occur. A granted verdict's `review` rider means
+ * an OLDER approved version is being served while the current one awaits
+ * review.
  */
 export type InClientVenue =
-  | { granted: true; versionHash: string; approvedBy: string; at: IsoDateTime }
-  | { granted: false; versionHash: string; reason: "version-changed" };
+  | { granted: true; versionHash: string; approvedBy: string; at: IsoDateTime; review?: ReviewStanding }
+  | { granted: false; versionHash: string; reason: "version-changed" }
+  | { granted: false; versionHash: string; reason: "pending-review"; review: ReviewStanding };
 
 /**
  * 06-apps §8 — one drifted pin riding a tree payload (`payload.pinDrift`):
@@ -166,20 +192,27 @@ export interface ConnectableToolkit {
   description?: string;
 }
 
-/** 07-automations §5 */
-export type RunStatus = "running" | "ok" | "error" | "stopped" | "pending-approval";
+/** 07-automations §5. No waiting state: a run that meets a permission nobody
+ *  granted fails LOUDLY (`error`, code `needs-permission`) and the person grants
+ *  it and runs it again. */
+export type RunStatus = "running" | "ok" | "error" | "stopped";
 
 /** 07-automations §5 — what `/runs` routes return. */
 export interface RunRecord {
   id: RunId;
   appId: AppId;
+  /** WHICH trigger of the app fired this run. An app has a list of them, so the
+   *  app id alone no longer says what ran. */
+  triggerId: string;
   trigger: { kind: TriggerSource["kind"]; event?: string };
   status: RunStatus;
   startedAt: IsoDateTime;
   finishedAt?: IsoDateTime;
   steps: Array<{ id: string; tool: string; outcome: ToolOutcome["status"]; at: IsoDateTime; detail?: string }>;
   summary?: string;
-  error?: { code: string; message: string };
+  /** `needs-permission` is the code a surface acts on: `tool`/`slug` name what
+   *  the run needed, so the row can offer Grant & re-run. */
+  error?: { code: string; message: string; tool?: string; slug?: string };
 }
 
 /** 07-automations §1 — what `POST /automations/:id/dry-run` returns. */
@@ -193,9 +226,30 @@ export interface RunPlan {
  *  asks so panels can render "waiting on N permissions" reload-safely. */
 export interface AutomationEntry {
   app: AppDocument;
+  /** An automation is an app with a LIST of triggers, and everything a person
+   *  decides is per trigger: armed, who it runs as, whether it stopped, what it
+   *  is still waiting to be allowed. Only `editors` is per app. */
+  triggers: AutomationTriggerEntry[];
+  /** How many principals hold a grant on the app, when the deployment has an
+   *  access seam at all — the wider editor set the label names. */
+  editors?: number;
+}
+
+/** One trigger of an automation, as the panel renders it. */
+export interface AutomationTriggerEntry {
+  trigger: Trigger;
   enabled: boolean;
   pendingGrants?: number;
   grantSetId?: string;
+  /** §13 — whose access it runs with. `display` only when the caller IS the
+   *  sponsor: Vendo holds no directory, so a name for anyone else would be
+   *  invented; the subject is the honest fallback. */
+  sponsor?: { subject: string; display?: string };
+  /** Set exactly while this trigger is STOPPED. `summary` is the same consumer
+   *  sentence the stopped run row carries, so the list is a route back to a
+   *  paused automation instead of the one place it vanished from. It never names
+   *  the sponsor: anyone who can edit the app reads it. */
+  stopped?: { reason: "edit" | "departure" | "grants"; summary: string };
 }
 
 /** 07-automations §1 — what `POST /automations/:id/enable` returns.
@@ -242,4 +296,12 @@ export interface VendoStatus {
   posture: GuardPosture;
   version: string;
   blocks: Record<string, unknown>;
+  /** Build contract §9.1 — the orgs the host asserted for this caller this
+      request. Absent on a single-player deployment; never stored anywhere. */
+  memberships?: Membership[];
+  /** Build contract §9.1 companion — the host wired `resolvePerson`, so it can
+      turn a typed name into one of its own subjects. Absent ⇒ the Share dialog
+      does not offer to share with one person (Vendo has no directory of its
+      own, and encoding what was typed wrote a grant that matched nobody). */
+  namesPeople?: boolean;
 }

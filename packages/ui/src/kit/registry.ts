@@ -7,7 +7,7 @@
 import type { ComponentType } from "react";
 
 // Components
-import { Divider, Grid, Row, Stack, Surface } from "./layout.js";
+import { Card, Divider, Grid, Row, Stack, Surface } from "./layout.js";
 import { DateTime, EnumBadge, Money, Num, Percent, Text } from "./values.js";
 import { DataTable } from "./data/data-table.js";
 import { CardList } from "./data/card-list.js";
@@ -34,7 +34,7 @@ export { KIT_SPECS, kitComponentNames, kitSpec } from "@vendoai/core";
 
 /** Name → React component, for the tree renderer. */
 export const KIT_COMPONENTS: Readonly<Record<string, ComponentType<Record<string, never>>>> = {
-  Stack, Row, Grid, Surface, Divider,
+  Stack, Row, Grid, Surface, Card, Divider,
   Text, Money, DateTime, Percent, Num, EnumBadge,
   DataTable, CardList, Stat, Badge,
   LineChart, BarChart, DonutChart, Sparkline, Progress,

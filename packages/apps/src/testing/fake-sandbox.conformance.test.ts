@@ -1,12 +1,12 @@
 import { sandboxAdapterConformance } from "../adapter-conformance.js";
 import type { SandboxConformanceHarness } from "../adapter-conformance.js";
-import { FakeSandboxMachine, fakeSandbox, type MachineApp } from "./fake-sandbox.js";
+import { FakeSandboxMachine, fakeSandbox, type MachineApp, type MachineResponse } from "./fake-sandbox.js";
 
 const encoder = new TextEncoder();
 
 /** The conformance app contract, in-process: env from ctx, egress simulated
     with the fake's provider-faithful allowlist rule. */
-const conformanceApp: MachineApp = (request, ctx) => {
+const conformanceApp: MachineApp = (request, ctx): MachineResponse => {
   const env = /^\/conformance\/env\/([A-Za-z_][A-Za-z0-9_]*)$/.exec(request.path);
   if (env?.[1] !== undefined) {
     return { status: 200, headers: {}, body: ctx.env[env[1]] ?? "" };

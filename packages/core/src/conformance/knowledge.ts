@@ -8,6 +8,7 @@ import {
   type KnowledgeDoc,
   type KnowledgePosture,
 } from "../index.js";
+import { assert, assertParses } from "./assertions.js";
 import type { ConformanceCase, ConformanceSuite } from "./index.js";
 
 /** The suite seeds, mutates, and removes fixed `doc_conformance_*` ids: run
@@ -50,16 +51,6 @@ const DEFAULT_SEED: { public: KnowledgeDoc; internal: KnowledgeDoc } = {
 };
 
 const ctx: KnowledgeContext = { principal: { kind: "user", subject: "user_knowledge_conformance" } };
-
-const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
-  if (!condition) throw new Error(message);
-};
-
-const assertParses = <T>(schema: { safeParse(value: unknown): { success: boolean; error?: unknown; data?: unknown } }, value: unknown, message: string): T => {
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) throw new Error(`${message}: ${JSON.stringify(parsed.error)}`);
-  return parsed.data as T;
-};
 
 /** Executable KnowledgeAdapter checks — knowledge design v2 (2026-07-22) R2/R5.
     ENG-358 freezes this skeleton; ENG-359 grows the behavioral case set. */
@@ -291,7 +282,7 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
         const unlimited = await adapter.search({ text: seed.public.title, limit: 10 }, ctx);
         assert(unlimited.hits.length >= 3, "seeding two siblings did not produce three hits — prefix truncation cannot be exercised");
         const limited = await adapter.search({ text: seed.public.title, limit: 2 }, ctx);
-        const identity = (hit: { ref: { docId: string; chunkId?: string } }): string => `${hit.ref.docId} ${hit.ref.chunkId ?? ""}`;
+        const identity = (hit: { ref: { docId: string; chunkId?: string } }): string => `${hit.ref.docId}\0${hit.ref.chunkId ?? ""}`;
         assert(
           JSON.stringify(limited.hits.map(identity)) === JSON.stringify(unlimited.hits.slice(0, 2).map(identity)),
           "limit: 2 did not return the unlimited ranking's exact two-hit prefix — limit must truncate, never re-rank",

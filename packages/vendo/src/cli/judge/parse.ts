@@ -106,7 +106,10 @@ export function repairJson(raw: string): string | null {
       let ahead = index + 1;
       while (ahead < raw.length && /\s/.test(raw[ahead]!)) ahead += 1;
       const next = raw[ahead];
-      if (next === "}" || next === "]") continue;
+      // `undefined` means end of input, where the auto-closers below are about
+      // to supply the closer — so this comma is redundant there too. It is the
+      // commonest truncation of all: a batch cut right after a complete grade.
+      if (next === undefined || next === "}" || next === "]") continue;
       out.push(char);
       continue;
     }

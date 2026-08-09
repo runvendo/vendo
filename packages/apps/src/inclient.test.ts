@@ -1,9 +1,16 @@
 import { VENDO_APP_FORMAT, type AppDocument, type RunContext, type ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createInClientApprovals } from "./inclient.js";
-import { createApps } from "./index.js";
+import { createApps, type AppsRuntime } from "./index.js";
 import { pinComponentName, type InClientApproval, type PinBaseline } from "./pins.js";
-import { guardFixture, memoryStore, scriptedLanguageModel, seedAppRow } from "./testing/index.js";
+import {
+  authoringAssembler,
+  basicLanguageModel,
+  guardFixture,
+  memoryStore,
+  scriptedAssembler,
+  seedAppRow,
+} from "./testing/index.js";
 import { appVersionHash } from "./version-hash.js";
 
 const tools: ToolRegistry = {
@@ -114,7 +121,7 @@ describe("createInClientApprovals", () => {
     await approvals.record(approvalFor(first));
     await approvals.record({ ...approvalFor(second), at: "2026-07-15T10:00:00.000Z" });
     expect(await approvals.list(first.id)).toHaveLength(2);
-    // An undo back to the first version matches the first approval again.
+    // Each version matches its own approval, and both stay matched.
     expect((await approvals.verdictFor(first)).granted).toBe(true);
     expect((await approvals.verdictFor(second)).granted).toBe(true);
   });
@@ -159,13 +166,23 @@ describe("runtime in-client surface", () => {
   const setup = () => {
     const store = memoryStore();
     const guard = guardFixture();
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store,
       guard,
       tools,
       catalog: [],
       pinBaselines: [baseline],
-      model: scriptedLanguageModel('<Edit><SetName name="Edited name"/></Edit>'),
+      model: basicLanguageModel(),
+      // A rename through the ONE engine: the assembler opens the app, rewrites
+      // it under the instruction's name and saves the whole thing through the
+      // real `authored` write — which is exactly what makes this a NEW version
+      // and drops the hash-pinned approval.
+      screen: scriptedAssembler(() => runtime, ({ request }) => {
+        // An EDIT's brief leads with the app's memory block, so the ask is its last line.
+        const said = request.split("\n").map((line) => line.trim()).filter((line) => line !== "").at(-1) ?? "";
+        return `<App name="${said.replaceAll('"', "'")}"><Text text="Renamed"/><Disclaimer reason="Fixture app."/></App>`;
+      }),
     });
     return { store, guard, runtime };
   };
@@ -217,8 +234,8 @@ describe("runtime in-client surface", () => {
     expect(await runtime.inClient.verdict(app.id, ctx)).toMatchObject({ granted: true });
     expect(guard.audit.some((event) =>
       event.kind === "app-lifecycle"
-      && event.detail?.operation === "in-client-approve"
-      && event.detail?.versionHash === approval.versionHash)).toBe(true);
+      && (event.detail as { operation?: string } | undefined)?.operation === "in-client-approve"
+      && (event.detail as { versionHash?: string } | undefined)?.versionHash === approval.versionHash)).toBe(true);
   });
 
   it("open() rides the granted verdict, an edit drops back loudly, and re-approval re-grants", async () => {
@@ -319,15 +336,20 @@ describe("runtime in-client surface", () => {
 
   it("strips a model-forged inClient field from create()'s stream and the persisted document", async () => {
     const store = memoryStore();
-    const runtime = createApps({
+    let runtime: AppsRuntime;
+    runtime = createApps({
       store,
       guard: guardFixture(),
       tools,
       catalog: [],
-      // v2: the model emits wire markup, so it CANNOT express a tree-level
+      model: basicLanguageModel(),
+      // v2: an author emits wire markup, so it CANNOT express a tree-level
       // inClient field at all — the compiler owns the tree. The runtime strip
       // stays as defense in depth; this pins stream + document stay clean.
-      model: scriptedLanguageModel('<App name="Forged venue"><Text text="hi"/><Disclaimer reason="Fixture app."/></App>'),
+      screen: authoringAssembler(
+        () => runtime,
+        '<App name="Forged venue"><Text text="hi"/><Disclaimer reason="Fixture app."/></App>',
+      ),
     });
     const views: unknown[] = [];
     const created = await runtime.create({

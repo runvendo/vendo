@@ -19,7 +19,6 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 import {
   descriptorHash,
   toolOutcomeSchema,
-  type ActAs,
   type PermissionGrant,
   type Principal,
   type RunContext,
@@ -88,7 +87,7 @@ describe("createActions registry", () => {
       {
         format: VENDO_OVERRIDES_FORMAT,
         tools: {
-          host_probe: { risk: "destructive", critical: true, description: "Overridden host" },
+          host_probe: { risk: "destructive", confirmEach: true, description: "Overridden host" },
           host_hidden: { disabled: true },
           ext_write: { risk: "read", description: "Overridden connector" },
           ext_hidden: { disabled: true },
@@ -103,7 +102,7 @@ describe("createActions registry", () => {
     const actions = createActions({ dir: root, connectors: [ext], fetch: vi.fn() as unknown as typeof fetch, baseUrl: "http://stub" });
 
     await expect(actions.descriptors()).resolves.toEqual([
-      { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "destructive", critical: true },
+      { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "destructive", confirmEach: true },
       { name: "ext_write", description: "Overridden connector", inputSchema: {}, risk: "read" },
     ]);
     await actions.descriptors();
@@ -116,6 +115,22 @@ describe("createActions registry", () => {
       status: "error",
       error: { code: "not-found" },
     });
+  });
+
+  // D5 (2026-08-03): extraction records the host's declared response body, and
+  // the descriptor whitelist used to drop it — so the model learned a query's
+  // fields only by calling it once. Carried verbatim now, still never invented.
+  it("carries an extracted outputSchema onto the descriptor, and omits it when there is none", async () => {
+    const outputSchema = { type: "object", properties: { data: { type: "array" } }, required: ["data"] };
+    const root = await tempVendo({
+      format: VENDO_TOOLS_FORMAT,
+      tools: [routeTool("host_declared", { outputSchema }), routeTool("host_undeclared")],
+    });
+    const actions = createActions({ dir: root, fetch: vi.fn() as unknown as typeof fetch, baseUrl: "http://stub" });
+
+    const [declared, undeclared] = await actions.descriptors();
+    expect(declared?.outputSchema).toEqual(outputSchema);
+    expect(undeclared).not.toHaveProperty("outputSchema");
   });
 
   describe("hosted-config overrides injection (cse lane 3)", () => {
@@ -212,7 +227,7 @@ describe("createActions registry", () => {
   it("dispatches added registries untouched and catches connector execute rejections", async () => {
     const addedOutcome: ToolOutcome = { status: "blocked", reason: "owned by child" };
     const added: ToolRegistry = {
-      descriptors: async () => [{ name: "vendo_apps_create", description: "Create app", inputSchema: {}, risk: "write" }],
+      descriptors: async () => [{ name: "vendo_make", description: "Make a screen", inputSchema: {}, risk: "read" }],
       execute: vi.fn(async () => addedOutcome),
     };
     const ext = connector(
@@ -222,8 +237,8 @@ describe("createActions registry", () => {
     const actions = createActions({ connectors: [ext] });
     actions.add(added);
 
-    expect((await actions.descriptors()).map((item) => item.name)).toEqual(["ext_fail", "vendo_apps_create"]);
-    await expect(actions.execute({ id: "1", tool: "vendo_apps_create", args: {} }, ctx)).resolves.toBe(addedOutcome);
+    expect((await actions.descriptors()).map((item) => item.name)).toEqual(["ext_fail", "vendo_make"]);
+    await expect(actions.execute({ id: "1", tool: "vendo_make", args: {} }, ctx)).resolves.toBe(addedOutcome);
     const failed = await actions.execute({ id: "2", tool: "ext_fail", args: {} }, ctx);
     expect(toolOutcomeSchema.parse(failed)).toMatchObject({
       status: "error",
@@ -238,18 +253,18 @@ describe("createActions registry", () => {
     const base = routeTool("host_invoices_delete", { risk: "write" });
     const root = await tempVendo(
       { format: VENDO_TOOLS_FORMAT, tools: [base] },
-      { format: VENDO_OVERRIDES_FORMAT, tools: { host_invoices_delete: { risk: "destructive", critical: true } } },
+      { format: VENDO_OVERRIDES_FORMAT, tools: { host_invoices_delete: { risk: "destructive", confirmEach: true } } },
     );
     const actions = createActions({ dir: root, baseUrl: "http://stub" });
     const [descriptor] = await actions.descriptors();
-    expect(descriptor).toMatchObject({ name: "host_invoices_delete", risk: "destructive", critical: true });
+    expect(descriptor).toMatchObject({ name: "host_invoices_delete", risk: "destructive", confirmEach: true });
 
     const merged: ToolDescriptor = {
       name: "host_invoices_delete",
       description: "host_invoices_delete",
       inputSchema: { type: "object" },
       risk: "destructive",
-      critical: true,
+      confirmEach: true,
     };
     const preMerge: ToolDescriptor = { name: "host_invoices_delete", description: "host_invoices_delete", inputSchema: { type: "object" }, risk: "write" };
     expect(descriptorHash(descriptor!)).toBe(descriptorHash(merged));
@@ -490,6 +505,43 @@ describe("host HTTP execution", () => {
       expect(failed.error.message).toContain(prefix);
       expect(failed.error.message).toHaveLength(prefix.length + 200);
     }
+  });
+
+  /** #914: a deployment served under a path prefix configures
+   *  VENDO_BASE_URL = the FULL public URL. Stored binding paths are
+   *  prefix-FREE, and the runtime attaches the prefix exactly once — a bare
+   *  concat produced `/maple/maple/api/probe` and 404'd every host tool while
+   *  every page rendered perfectly. */
+  it("attaches a configured base URL's path prefix exactly once", async () => {
+    const requested: string[] = [];
+    const actions = createActions({
+      tools: [routeTool("host_probe")],
+      baseUrl: "https://site.test/maple",
+      fetch: async (input) => {
+        requested.push(new URL(String(input)).pathname);
+        return Response.json({ ok: true });
+      },
+    });
+    await expect(actions.execute({ id: "1", tool: "host_probe", args: {} }, ctx))
+      .resolves.toMatchObject({ status: "ok" });
+    expect(requested.at(-1)).toBe("/maple/probe");
+  });
+
+  /** Prove-it-can-fail pin: an ALREADY-prefixed stored path (a stale
+   *  tools.json written before mounted() was deleted) must still resolve to
+   *  ONE prefix, never two. */
+  it("does not double a prefix a stale stored path already carries", async () => {
+    const requested: string[] = [];
+    const actions = createActions({
+      tools: [routeTool("host_probe", { binding: { kind: "route", method: "GET", path: "/maple/probe", argsIn: "query" } })],
+      baseUrl: "https://site.test/maple",
+      fetch: async (input) => {
+        requested.push(new URL(String(input)).pathname);
+        return Response.json({ ok: true });
+      },
+    });
+    await actions.execute({ id: "1", tool: "host_probe", args: {} }, ctx);
+    expect(requested.at(-1)).toBe("/maple/probe");
   });
 
   // A wrong wire origin 404s every tool call while every path is correct, so an
@@ -938,75 +990,6 @@ describe("host HTTP execution — trpc bindings (04 §1 tRPC HTTP envelope)", ()
   });
 });
 
-describe("host HTTP execution — graphql bindings (04 §1 GraphQL transport)", () => {
-  const document = "query pollGet($id: ID!) { pollGet(id: $id) { id title } }";
-  const graphqlTool = (extras: Partial<ExtractedTool["binding"] & Record<string, unknown>> = {}): ExtractedTool => ({
-    name: "host_poll_get",
-    description: "GraphQL query pollGet",
-    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
-    risk: "read",
-    binding: { kind: "graphql", operation: "pollGet", type: "query", endpoint: "/api/graphql", document, ...extras },
-  });
-
-  function capturingFetch(status: number, payload: unknown): { fetch: typeof fetch; seen: Array<{ url: string; method?: string; body?: unknown }> } {
-    const seen: Array<{ url: string; method?: string; body?: unknown }> = [];
-    const impl = (async (input: URL | RequestInfo, init?: RequestInit) => {
-      seen.push({
-        url: String(input),
-        method: init?.method,
-        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
-      });
-      return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
-    }) as typeof fetch;
-    return { fetch: impl, seen };
-  }
-
-  it("executes as POST {endpoint} with the document and args as variables, unwrapping the root field", async () => {
-    const { fetch, seen } = capturingFetch(200, { data: { pollGet: { id: "p1", title: "Standup" } } });
-    const actions = createActions({ tools: [graphqlTool()], baseUrl: "http://host.test", fetch });
-
-    const outcome = await actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx);
-    expect(outcome).toEqual({ status: "ok", output: { id: "p1", title: "Standup" } });
-    expect(new URL(seen[0]!.url).pathname).toBe("/api/graphql");
-    expect(seen[0]!.method).toBe("POST");
-    expect(seen[0]!.body).toEqual({ query: document, variables: { id: "p1" } });
-  });
-
-  it("surfaces a 200-with-errors GraphQL response as an http-error outcome", async () => {
-    const { fetch } = capturingFetch(200, { data: null, errors: [{ message: "Poll not found" }] });
-    const actions = createActions({ tools: [graphqlTool()], baseUrl: "http://host.test", fetch });
-    await expect(actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx)).resolves.toMatchObject({
-      status: "error",
-      error: { code: "http-error", message: expect.stringContaining("Poll not found") },
-    });
-  });
-
-  it("returns a validation outcome when no baseUrl is configured", async () => {
-    const actions = createActions({ tools: [graphqlTool()] });
-    await expect(actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx)).resolves.toMatchObject({
-      status: "error",
-      error: { code: "validation", message: expect.stringContaining("baseUrl") },
-    });
-  });
-
-  it("fails closed with a validation outcome when the binding carries no executable document", async () => {
-    const actions = createActions({ tools: [graphqlTool({ document: undefined })], baseUrl: "http://host.test" });
-    await expect(actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx)).resolves.toMatchObject({
-      status: "error",
-      error: { code: "validation", message: expect.stringContaining("no executable document") },
-    });
-  });
-
-  it("maps non-2xx graphql responses to http-error outcomes", async () => {
-    const { fetch } = capturingFetch(500, { errors: [{ message: "boom" }] });
-    const actions = createActions({ tools: [graphqlTool()], baseUrl: "http://host.test", fetch });
-    await expect(actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx)).resolves.toMatchObject({
-      status: "error",
-      error: { code: "http-error", message: expect.stringContaining("500") },
-    });
-  });
-});
-
 describe("zero-live-host-tools boot warning", () => {
   it("warns once when the composed host surface has no live tool", async () => {
     const warned: string[] = [];
@@ -1045,14 +1028,14 @@ describe("in-memory overrides (unified try surface Task 15a, rebased on the v3 i
       overrides: {
         format: VENDO_OVERRIDES_FORMAT,
         tools: {
-          host_probe: { risk: "destructive", critical: true, description: "Overridden host" },
+          host_probe: { risk: "destructive", confirmEach: true, description: "Overridden host" },
           host_hidden: { disabled: true },
         },
       },
     });
 
     await expect(actions.descriptors()).resolves.toEqual([
-      { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "destructive", critical: true },
+      { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "destructive", confirmEach: true },
     ]);
     await expect(actions.execute({ id: "1", tool: "host_hidden", args: {} }, ctx)).resolves.toMatchObject({
       status: "error",

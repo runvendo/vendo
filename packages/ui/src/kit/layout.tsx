@@ -3,7 +3,7 @@ import type { CSSProperties, PropsWithChildren } from "react";
 import { font, t } from "./tokens.js";
 
 const gapVar = (gap: number | undefined): string =>
-  gap === undefined ? "var(--vendo-space-small, 10px)" : `${gap}px`;
+  gap === undefined ? "var(--vendo-density-content-gap, 10px)" : `${gap}px`;
 
 export interface StackProps {
   gap?: number;
@@ -118,6 +118,52 @@ export function Surface({ title, children }: PropsWithChildren<SurfaceProps>) {
       ) : null}
       {children}
     </section>
+  );
+}
+
+export interface CardProps {
+  title?: string;
+  description?: string;
+  tone?: "default" | "accent" | "danger";
+}
+
+/** A titled content block; Surface is the untitled/plain container. */
+export function Card({ title, description, tone = "default", children }: PropsWithChildren<CardProps>) {
+  const toneColor = tone === "accent" ? t.accent : tone === "danger" ? t.danger : t.border;
+  return (
+    <article
+      data-kit="Card"
+      data-tone={tone}
+      style={{
+        ...font,
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--vendo-density-content-gap, 10px)",
+        border: `1px solid ${toneColor}`,
+        borderRadius: t.radiusLarge,
+        background: t.surface,
+        boxShadow: `0 8px 24px color-mix(in srgb, ${t.text} 7%, transparent)`,
+        padding: "var(--vendo-density-card-padding, 16px)",
+      }}
+    >
+      {title ? (
+        <div
+          style={{
+            fontFamily: t.headingFamily,
+            fontSize: "calc(var(--vendo-font-size, 15px) * 1.08)",
+            fontWeight: 650,
+            letterSpacing: "-0.015em",
+            lineHeight: 1.3,
+          }}
+        >
+          {title}
+        </div>
+      ) : null}
+      {description ? (
+        <div style={{ color: t.muted, fontSize: "0.9em", lineHeight: 1.45 }}>{description}</div>
+      ) : null}
+      {children}
+    </article>
   );
 }
 

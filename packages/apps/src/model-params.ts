@@ -45,7 +45,6 @@
  * generation outage. Non-Claude models are left completely untouched: every
  * other provider still takes sampling, and this must not regress them.
  */
-import { VendoError } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 
 /**
@@ -113,42 +112,9 @@ export interface ModelCallParams {
  * regressed in any way. On a model that rejects sampling the temperature is
  * dropped (it is the engine's own preference, not a caller's instruction) and
  * an explicit output cap is set so an unaware provider cannot silently fall
- * back to 4096. For a caller's explicit sampling choice use
- * {@link explicitSamplingParams}, which refuses to drop anything.
+ * back to 4096.
  */
 export const modelCallParams = (model: LanguageModel): ModelCallParams =>
   acceptsSamplingParams(model)
     ? { temperature: 0 }
     : { maxOutputTokens: UNKNOWN_MODEL_MAX_OUTPUT_TOKENS };
-
-/** A sampling choice made by a caller rather than by the engine. */
-export interface SamplingRequest {
-  temperature?: number;
-  topP?: number;
-  topK?: number;
-}
-
-/**
- * A caller's explicit sampling choice, which must never be silently dropped.
- * Where {@link modelCallParams} quietly gives up the engine's own determinism
- * preference on a model that cannot take it, this throws: turning a caller's
- * stated request into a different request without telling them is worse than
- * refusing it.
- */
-export const explicitSamplingParams = (
-  model: LanguageModel,
-  sampling: SamplingRequest,
-): ModelCallParams => {
-  const requested = Object.entries(sampling)
-    .filter(([, value]) => value !== undefined)
-    .map(([name]) => name);
-  if (acceptsSamplingParams(model)) return { ...sampling };
-  if (requested.length > 0) {
-    throw new VendoError(
-      "validation",
-      `model "${modelIdOf(model)}" does not accept sampling parameters (${requested.join(", ")}): the Claude 5 model line removed temperature/top_p/top_k. Drop the setting, or run this call on a model that still accepts it.`,
-      { model: modelIdOf(model), rejected: requested },
-    );
-  }
-  return { maxOutputTokens: UNKNOWN_MODEL_MAX_OUTPUT_TOKENS };
-};

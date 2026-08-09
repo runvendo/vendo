@@ -5,7 +5,7 @@ import { FORBIDDEN_SERVER_MODULES, analyzeClosure } from "./closure-guard.js";
 // The client-only invariant (HANDOFF oss-export, Task 2): the `@vendoai/vendo/
 // try-surface` entry's import closure must contain ONLY @vendoai/ui,
 // @vendoai/core, react, ai, and the app's own files — NEVER the umbrella server
-// graph (@vendoai/store, @vendoai/actions, @vendoai/agent, ./server,
+// graph (@vendoai/store, @vendoai/actions, ./server,
 // createVendo). This guard walks the SOURCE value-import closure and fails if a
 // server module ever enters it, so vendo-web can compile the entry as a client
 // route. The fixtures prove it catches a regression, transitively, without
@@ -36,7 +36,6 @@ describe("closure guard — analyzeClosure", () => {
   it("exposes the forbidden module list it enforces", () => {
     expect(FORBIDDEN_SERVER_MODULES).toContain("@vendoai/store");
     expect(FORBIDDEN_SERVER_MODULES).toContain("@vendoai/actions");
-    expect(FORBIDDEN_SERVER_MODULES).toContain("@vendoai/agent");
   });
 });
 

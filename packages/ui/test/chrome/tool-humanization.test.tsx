@@ -3,7 +3,7 @@ import type { ApprovalRequest, Thread } from "@vendoai/core";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VendoProvider, createVendoClient, type ToolMetaMap, type VendoClient } from "../../src/index.js";
-import { ApprovalCard, VendoThread } from "../../src/chrome/index.js";
+import { ApprovalCard, BuildBeat, VendoThread } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
 const NOW = "2026-07-11T12:00:00.000Z";
@@ -185,8 +185,76 @@ describe("ApprovalCard humanization", () => {
 
   it("shows the humanized context byline by default and hides it when showContext is false", () => {
     const view = render(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={() => undefined} /></VendoProvider>);
-    expect(screen.getByText(/Runs as you · asked in an app · app_1/)).toBeTruthy();
+    // This line used to pin the app id INTO the byline (`· app_1`).
+    expect(screen.getByText("Runs as you · asked in an app")).toBeTruthy();
+    expect(screen.queryByText(/app_1/)).toBeNull();
     view.rerender(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={() => undefined} showContext={false} /></VendoProvider>);
     expect(screen.queryByText(/Runs as you/)).toBeNull();
+  });
+});
+
+describe("Vendo's own tools never read as their identifiers (§3)", () => {
+  let wire: Awaited<ReturnType<typeof createWireServer>>;
+  let client: VendoClient;
+
+  beforeEach(async () => {
+    wire = await createWireServer();
+    client = createVendoClient({ baseUrl: wire.url });
+  });
+  afterEach(async () => {
+    cleanup();
+    await wire.close();
+  });
+
+  const appsEdit = {
+    type: "dynamic-tool" as const,
+    toolName: "vendo_make",
+    toolCallId: "call_apps",
+    state: "input-available" as const,
+    input: { app: "app_1", request: "make it blue" },
+  };
+
+  it("narrates the live beat with a title — never 'Vendo apps edit…'", () => {
+    // The exact string wave-1 live proof E1-5 photographed. This surface holds no
+    // descriptor: the wire tool part carries a name and nothing else.
+    render(
+      <VendoProvider client={client}>
+        <BuildBeat part={appsEdit as never} risk="write" />
+      </VendoProvider>,
+    );
+    const beat = document.querySelector(".fl-beat");
+    expect(beat?.textContent).toContain("Make you a screen");
+    expect(beat?.textContent).not.toMatch(/vendo/i);
+    // The raw name stays as the machine affordance, exactly as for host tools.
+    expect(beat?.getAttribute("data-vendo-tool")).toBe("vendo_make");
+    // M32 — and never as a tooltip, where it is both hoverable and read out.
+    expect(beat?.hasAttribute("title")).toBe(false);
+  });
+
+  it("M32 — a beat carries the slug for machines only, never in a tooltip", () => {
+    render(
+      <VendoProvider client={client}>
+        <BuildBeat part={appsEdit as never} risk="write" />
+      </VendoProvider>,
+    );
+    const beat = document.querySelector(".fl-beat")!;
+    expect(beat.getAttribute("data-vendo-tool")).toBe("vendo_make");
+    expect(beat.hasAttribute("title")).toBe(false);
+    // Every tooltip anywhere on the beat is free of the slug.
+    for (const node of document.querySelectorAll("[title]")) {
+      expect(node.getAttribute("title")).not.toContain("vendo_make");
+    }
+  });
+
+  it("labels a failed beat for one of Vendo's own tools with its title too", { timeout: 20_000 }, async () => {
+    const thread = threadWith([{ ...appsEdit, state: "output-error" as const, errorText: "boom" }]);
+    render(
+      <VendoProvider client={threadClient(client, thread)}>
+        <VendoThread threadId={thread.id} />
+      </VendoProvider>,
+    );
+    await waitFor(() => expect(document.querySelector(".fl-turn-assistant")).toBeTruthy(), { timeout: 15_000 });
+    expect(screen.getByText(/Make you a screen/)).toBeTruthy();
+    expect(screen.queryByText(/Vendo make/)).toBeNull();
   });
 });

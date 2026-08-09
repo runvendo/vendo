@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   applyReshape,
-  DEPRECATED_FORMAT_KINDS,
-  DEPRECATED_RESHAPE_OPS,
-  findDeprecatedReshapeUsage,
   findInvalidReshape,
+  isWireReshapeOp,
+  reduceNumeric,
   RESHAPE_MAX_STEPS,
   RESHAPE_OPS,
   reshapeShape,
+  WIRE_RESHAPE_OPS,
   type ReshapeStep,
 } from "./reshape.js";
 import type { ShapeType } from "./shape.js";
@@ -111,18 +111,17 @@ describe("applyReshape", () => {
     });
   });
 
-  it("aggregates: sum/avg/min/max over a field, count over the array", () => {
+  it("aggregates: sum/min/max over a field, count over the array", () => {
     expect(applyReshape(rows, [step("sum", "revenue")])).toEqual({ ok: true, value: 2100 });
-    expect(applyReshape(rows, [step("avg", "revenue")])).toEqual({ ok: true, value: 1050 });
     expect(applyReshape(rows, [step("min", "revenue")])).toEqual({ ok: true, value: 900 });
     expect(applyReshape(rows, [step("max", "revenue")])).toEqual({ ok: true, value: 1200 });
     expect(applyReshape(rows, [step("count")])).toEqual({ ok: true, value: 2 });
   });
 
-  it("aggregates over an empty array: sum 0, count 0, avg/min/max null", () => {
+  it("aggregates over an empty array: sum 0, count 0, min/max null", () => {
     expect(applyReshape([], [step("sum", "x")])).toEqual({ ok: true, value: 0 });
     expect(applyReshape([], [step("count")])).toEqual({ ok: true, value: 0 });
-    expect(applyReshape([], [step("avg", "x")])).toEqual({ ok: true, value: null });
+    expect(applyReshape([], [step("min", "x")])).toEqual({ ok: true, value: null });
   });
 
   it("format renders deterministic en-US strings (scalar and per-row forms)", () => {
@@ -479,37 +478,7 @@ describe("template (object→string projection)", () => {
 });
 
 /** W5a (v3 spec §Dialect retirement) — staged retirement mechanics. */
-describe("findDeprecatedReshapeUsage", () => {
-  it("flags asOptions, template, and format currencyCents — once per distinct kind", () => {
-    const tree = {
-      nodes: [
-        { id: "select-1", component: "Select", props: { options: { $path: "/accounts/data", $reshape: [{ op: "asOptions", args: ["id", "name"] }] } } },
-        { id: "table-1", component: "Table", props: { rows: { $path: "/deadlines/data", $reshape: [
-          { op: "template", args: ["assignedTo", "{assignedTo.name}"] },
-          { op: "format", args: ["amount", "currencyCents"] },
-        ] } } },
-        { id: "text-1", component: "Text", props: { value: { $path: "/x", $reshape: [{ op: "template", args: ["{a}"] }] } } },
-      ],
-    };
-    const notices = findDeprecatedReshapeUsage(tree);
-    expect(notices).toHaveLength(3);
-    expect(notices.join("\n")).toContain('"asOptions"');
-    expect(notices.join("\n")).toContain('"template"');
-    expect(notices.join("\n")).toContain('"currencyCents"');
-    expect(notices.join("\n")).toContain("labelField");
-  });
-
-  it("the taught path is clean: Kit-native props and live ops raise no notice", () => {
-    expect(findDeprecatedReshapeUsage({
-      nodes: [
-        { id: "select-1", component: "Select", props: { options: { $path: "/accounts/data" }, labelField: "name", valueField: "id" } },
-        { id: "stat-1", component: "Stat", props: { value: { $path: "/txns/data", $reshape: [{ op: "sum", args: ["amount"] }] } } },
-        { id: "chart-1", component: "Chart", props: { points: { $path: "/rev/rows", $reshape: [{ op: "asPoints", args: ["month", "revenue"] }] } } },
-        { id: "text-1", component: "Text", props: { value: { $path: "/d", $reshape: [{ op: "format", args: ["date"] }] } } },
-      ],
-    })).toEqual([]);
-  });
-
+describe("deprecated reshape dialect", () => {
   it("deprecated ops STAY COMPILING for stored apps (staged retirement, not deletion)", () => {
     expect(findInvalidReshape({ $reshape: [{ op: "asOptions", args: ["id", "name"] }] })).toBeNull();
     expect(findInvalidReshape({ $reshape: [{ op: "template", args: ["{name}"] }] })).toBeNull();
@@ -536,15 +505,28 @@ describe("frozen reshape op registry", () => {
       "format",
       "template",
       "sum",
-      "avg",
       "min",
       "max",
       "count",
     ]);
   });
 
-  it("the deprecated subset is exactly the retired dialect", () => {
-    expect(DEPRECATED_RESHAPE_OPS).toEqual(["asOptions", "template"]);
-    expect(DEPRECATED_FORMAT_KINDS).toEqual(["currencyCents"]);
+  it("the WIRE subset excludes every aggregate — one sum, and it is the $expr one", () => {
+    // v3 spec §5 (D1/D2): the aggregates retired from the dialect with the
+    // pipe. They stay in RESHAPE_OPS for STORED documents; nothing the wire can
+    // write reaches them, so `sum` has exactly one meaning to a model.
+    expect(WIRE_RESHAPE_OPS).toEqual(["pick", "rename", "asPoints", "asOptions", "format", "template"]);
+    for (const op of ["sum", "min", "max", "count"]) expect(isWireReshapeOp(op)).toBe(false);
+    // `avg` is gone outright: `average` is the surviving name.
+    expect(RESHAPE_OPS as readonly string[]).not.toContain("avg");
+  });
+
+  it("has ONE numeric reduce, shared with the $expr aggregates", () => {
+    expect(reduceNumeric("sum", [])).toBe(0);
+    expect(reduceNumeric("average", [1, 2, 6])).toBe(3);
+    expect(reduceNumeric("min", [4, 2])).toBe(2);
+    expect(reduceNumeric("max", [4, 2])).toBe(4);
+    // null = "no values"; each caller decides what that means.
+    expect(reduceNumeric("average", [])).toBeNull();
   });
 });

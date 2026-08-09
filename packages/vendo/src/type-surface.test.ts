@@ -48,8 +48,7 @@ const HOST_FACING_TYPES = [
   "AuditEvent",
   // store
   "VendoStore",
-  // agent
-  "VendoAgent",
+  // the thread lifecycle
   "Thread",
   "ThreadSummary",
   // actions
@@ -142,14 +141,6 @@ describe("09-vendo §1 — umbrella root type surface", () => {
       ],
       "./src/server.js",
     );
-    expect(failure, failure ?? "").toBeNull();
-  });
-
-  it("names the tour types beside createVendo on the server entry", () => {
-    // A host writes `const tours: TourEntry[] = [...]` next to its
-    // createVendo call, so every tour type must resolve from the same entry
-    // the config does — never from a subpath.
-    const failure = typecheckImports(["TourEntry", "TourResponse", "TourPart", "TourApp"], "./src/server.js");
     expect(failure, failure ?? "").toBeNull();
   });
 

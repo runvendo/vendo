@@ -1,5 +1,124 @@
 # @vendoai/knowledge
 
+## 0.8.1
+
+### Patch Changes
+
+- 5724311: Knowledge citations keep their provenance on the main search path, and both
+  shipped wire engines are one client.
+
+  The built-in local engine denormalized `kind`, `visibility` and `title` from
+  the doc into each chunk row but not `source`, so the chat/deep ref shape had no
+  `source` while the schema-intent and `fetch` shapes did. Since `toCitation`
+  forwards `source` only when it is present, every citation an agent produced on
+  the default retrieval path silently lost the file or URL the text came from —
+  only glossary lookups and the cloud engine carried it. `source` is now
+  denormalized alongside `title` at upsert time and rides the hit ref, so all
+  three intents return the same ref shape.
+
+  Existing stores get this without a re-sync. Chunk rows written by earlier
+  versions have no `source` field, and `vendo knowledge sync` skips documents
+  whose content hash is unchanged, so those rows would never be rewritten —
+  search reads through to the document row for them instead. Nothing to run, no
+  migration, and the doc row has always carried `source`.
+
+  `cloudKnowledge` and `httpKnowledge` were the same `vendo/knowledge-wire@1`
+  client written out twice: identical transport, identical response parsing,
+  identical `includeInternal` handling, identical route bodies. Only the base
+  path, whether the bearer is mandatory, the posture, and the wording of the
+  client's own errors ever differed. They now share one internal client that
+  takes those four as arguments, so a retry, header, timeout or status mapping is
+  added in one place instead of two that can drift. No behaviour changes for
+  either engine.
+
+  `toCitation` is no longer exported from the package barrel. It is the tool's
+  own hit-to-citation mapper, it had no importer anywhere, and the citation shape
+  it produces is already public as `KnowledgeCitation`.
+
+- Updated dependencies [a7a0fcf]
+- Updated dependencies [e092567]
+- Updated dependencies [b99147f]
+- Updated dependencies [46923cc]
+- Updated dependencies [b50a766]
+- Updated dependencies [022f789]
+- Updated dependencies [354f231]
+- Updated dependencies [ee92750]
+- Updated dependencies [d599d23]
+- Updated dependencies [89660d1]
+- Updated dependencies [2b6d60f]
+- Updated dependencies [b99147f]
+- Updated dependencies [b99147f]
+- Updated dependencies [2357b22]
+  - @vendoai/core@0.8.1
+
+## 0.8.0
+
+### Minor Changes
+
+- 6eb8a04: **BREAKING:** the knowledge entailment verifier is removed. The knowledge
+  stack is a pure retrieval plug-in again, and `weakScoreThreshold` is once more
+  the sole refusal calibration — unchanged, and still the knob to tune.
+
+  The check shipped off by default and the live measurement is why it never got
+  turned on: over the 94-question corpus it still answered 7-10 of 34
+  unanswerable questions per pass, while costing a model call per search and
+  seconds of latency on a call the user waits through. It never cleared the bar
+  it existed for, so it is gone rather than left as a knob nobody should set.
+
+  Removed surface:
+
+  - `@vendoai/knowledge`: `entailmentVerifier`, `KNOWLEDGE_VERIFY_TIMEOUT_MS`,
+    `KNOWLEDGE_VERIFY_TURN_BUDGET_MS`, the `KnowledgeVerifier` /
+    `KnowledgeVerdict` / `KnowledgeVerifierInput` / `KnowledgeVerifierPassage` /
+    `KnowledgeVerifyOptions` / `EntailmentVerifierOptions` types, and the
+    `verifier` + `verifyTurnBudgetMs` options on `createKnowledgeTools`. The tool
+    reverts to its pre-verifier decision rule: chat search → one deep retry on
+    weak evidence → structured `insufficient-evidence`.
+  - `@vendoai/core`: the `verifier` model seat (`Seat`, `SEATS`,
+    `ResolvedModels`, `migrateModelSeats`) and the `unverified` field on the
+    `data-vendo-citations` stream part.
+  - `@vendoai/vendo`: the `VENDO_KNOWLEDGE_VERIFY` and
+    `VENDO_MODEL_KNOWLEDGE_VERIFIER` environment knobs, and the
+    `models.verifier` / `models.knowledgeVerifier` slots.
+  - `@vendoai/ui`: the amber "I couldn't check this answer against the
+    documentation" line. The engine-outage flag and the structured
+    searched-line are untouched.
+
+### Patch Changes
+
+- Updated dependencies [2e792a1]
+- Updated dependencies [963d980]
+- Updated dependencies [3f98372]
+- Updated dependencies [21c8b10]
+- Updated dependencies [1bb535b]
+- Updated dependencies [8d623ec]
+- Updated dependencies [a004031]
+- Updated dependencies [2722d81]
+- Updated dependencies [f884bfe]
+- Updated dependencies [a5293af]
+- Updated dependencies [b022eb3]
+- Updated dependencies [c9df3f7]
+- Updated dependencies [6eb8a04]
+- Updated dependencies [fbf265b]
+- Updated dependencies [2ed91b0]
+- Updated dependencies [e6aaa7a]
+- Updated dependencies [d0c3cc9]
+- Updated dependencies [798b618]
+- Updated dependencies [10a2b44]
+- Updated dependencies [98eba22]
+- Updated dependencies [f7c6da2]
+- Updated dependencies [14e8246]
+- Updated dependencies [fbf265b]
+- Updated dependencies [38a840d]
+  - @vendoai/core@0.8.0
+
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [8f5a7c0]
+  - @vendoai/core@0.7.0
+
 ## 0.6.1
 
 ### Patch Changes

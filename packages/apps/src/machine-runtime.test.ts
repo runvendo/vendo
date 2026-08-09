@@ -50,8 +50,6 @@ const setup = async (options: {
     guard,
     tools,
     catalog: [],
-    // Wave 9 — the machine surface under test is flag-gated for NEW provisions.
-    experimentalMachines: true,
     machine: {
       ...(options.withAdapter === false ? {} : { sandbox }),
       buildEnv: () => ({ PORT: "8080" }),

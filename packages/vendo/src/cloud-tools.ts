@@ -17,10 +17,11 @@ export interface CloudToolsOptions {
   apiKey: string;
   /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
   baseUrl?: string;
-  /** Toolkit scoping, same meaning as composioConnector's `apps`. Unset =
-   * everything the console's catalog advertises (enabled auth configs).
-   * When set, pass the SAME list to cloudConnections({ apps }) so the
-   * connect dock's catalog stays in lockstep with the executable tools. */
+  /** Toolkit scoping, same meaning as composioConnector's `apps`. Unset = this
+   * connector registers NO tools at all: the console's catalog is far too large
+   * to mount on a listing, so the long tail is reached through the service-tool
+   * pair instead. When set, pass the SAME list to cloudConnections({ apps }) so
+   * the connect dock's catalog stays in lockstep with the executable tools. */
   apps?: string[];
   fetch?: typeof fetch;
 }
@@ -67,13 +68,7 @@ export function cloudTools(options: CloudToolsOptions): Connector {
     return { ok: response.ok, status: response.status, payload };
   }
 
-  // Connection-scoped tool loading (spec 2026-07-20): without explicit `apps`
-  // the connector is LAZY — nothing fetches eagerly; discovery rides the
-  // console catalog and schemas load per toolkit on expansion.
-  const lazy = options.apps === undefined;
-  const expandedToolkits = new Set<string>();
   const toolkitToolCache = new Map<string, Promise<WireTool[]>>();
-  let indexPromise: Promise<Array<{ toolkit: string; label?: string; description?: string }>> | undefined;
 
   /** One toolkits= fetch, degrade-never-throw (a failed toolkit just loads
    * nothing this round; the memo is dropped so a later read retries). */
@@ -107,38 +102,6 @@ export function cloudTools(options: CloudToolsOptions): Connector {
     return promise;
   }
 
-  async function buildIndex(): Promise<Array<{ toolkit: string; label?: string; description?: string }>> {
-    let response: { ok: boolean; status: number; payload: unknown };
-    try {
-      response = await cloudFetch("/api/v1/connections/catalog");
-    } catch (error) {
-      indexPromise = undefined;
-      console.warn("[vendo] Vendo Cloud catalog unreachable; connector discovery is empty:", error instanceof Error ? error.message : error);
-      return [];
-    }
-    if (!response.ok) {
-      indexPromise = undefined;
-      console.warn(`[vendo] Vendo Cloud catalog returned ${response.status}; connector discovery is empty.`);
-      return [];
-    }
-    const available = response.payload && typeof response.payload === "object"
-      ? (response.payload as { available?: unknown }).available
-      : undefined;
-    if (!Array.isArray(available)) return [];
-    return available
-      .filter((entry): entry is { toolkit: string; label?: string; description?: string } =>
-        !!entry && typeof entry === "object" && typeof (entry as { toolkit?: unknown }).toolkit === "string")
-      // Host `apps` scoping bounds discovery too: an unscoped index would keep
-      // advertising the console's whole catalog to tool search even when the
-      // executable surface is scoped (discovery-discipline, criterion 9).
-      .filter((entry) => options.apps === undefined || options.apps.includes(entry.toolkit))
-      .map((entry) => ({
-        toolkit: entry.toolkit,
-        ...(typeof entry.label === "string" ? { label: entry.label } : {}),
-        ...(typeof entry.description === "string" ? { description: entry.description } : {}),
-      }));
-  }
-
   return {
     name: "composio",
 
@@ -146,41 +109,31 @@ export function cloudTools(options: CloudToolsOptions): Connector {
     // per-user connected account (same semantics as BYO composioConnector).
     toolkitOf: (tool) => normalizedToRaw.get(tool)?.toolkit,
 
-    discoveryIndex: () => (indexPromise ??= buildIndex()),
-
-    async expandToolkits(toolkits: string[]): Promise<boolean> {
-      if (!lazy) return false;
-      const connectable = new Set((await (indexPromise ??= buildIndex())).map((entry) => entry.toolkit));
-      let changed = false;
-      for (const toolkit of toolkits) {
-        if (!connectable.has(toolkit) || expandedToolkits.has(toolkit)) continue;
-        expandedToolkits.add(toolkit);
-        changed = true;
-      }
-      return changed;
-    },
-
     async descriptors(): Promise<ToolDescriptor[]> {
+      // Registry tools exist only for an explicitly scoped deployment. UNSCOPED
+      // (`apps` unset) this connector registers NOTHING: the console's catalog
+      // is tens of thousands of tools, and the whole point of the service-tool
+      // pair is that the long tail is reached through Composio's own search
+      // rather than mounted on the listing.
+      if (options.apps === undefined) {
+        normalizedToRaw = new Map();
+        return [];
+      }
       // The auto-composed cloud default must never brick the host: a thrown
       // descriptors() fails the ENTIRE registry load, host tools included.
-      // Every fetch below degrades to "no connector tools" with one warn.
-      let items: WireTool[];
-      if (lazy) {
-        if (expandedToolkits.size === 0) {
-          normalizedToRaw = new Map();
-          return [];
-        }
-        const lists = await Promise.all([...expandedToolkits].map((toolkit) => fetchToolkitTools(toolkit)));
-        items = lists.flat();
-      } else {
-        items = await fetchToolkitTools(options.apps!.join(","));
-      }
+      // The fetch below degrades to "no connector tools" with one warn.
+      const items = await fetchToolkitTools([...new Set(options.apps)].join(","));
       const nextNormalizedToRaw = new Map<string, { raw: string; toolkit: string }>();
       const descriptors: ToolDescriptor[] = [];
       for (const item of items) {
         if (typeof item.slug !== "string" || typeof item.toolkit !== "string") continue;
         const name = normalizeToolName(item.toolkit, item.slug);
-        if (nextNormalizedToRaw.has(name)) throw new Error(`Cloud tools name collision: ${name}`);
+        // Degrade, do not throw: the console repeating a slug must not delete
+        // the host's own tools. First one wins so the list stays stable.
+        if (nextNormalizedToRaw.has(name)) {
+          console.warn(`[vendo] Cloud tools: skipping duplicate tool name ${name}`);
+          continue;
+        }
         nextNormalizedToRaw.set(name, { raw: item.slug, toolkit: item.toolkit });
         const tags = Array.isArray(item.tags)
           ? (item.tags as unknown[]).filter((tag): tag is string => typeof tag === "string")
@@ -192,9 +145,9 @@ export function cloudTools(options: CloudToolsOptions): Connector {
             item.inputParameters && typeof item.inputParameters === "object" && !Array.isArray(item.inputParameters)
               ? (item.inputParameters as Record<string, unknown>)
               : {},
-          // The same curated risk labels BYO Composio tools get — the guard
-          // and approval cards behave identically across postures.
-          risk: composioToolRisk(item.slug, item.toolkit, tags),
+          // The same upstream-hint risk labels BYO Composio tools get — the
+          // guard and approval cards behave identically across postures.
+          risk: composioToolRisk(tags),
         });
       }
       // Swapped atomically so a concurrent execute() never sees a half map.

@@ -69,6 +69,100 @@ const fail = (code: "version" | "provision", message: string): TreeValidation =>
   error: { code, message },
 });
 
+/** The `queries` block: an array within the cap, each entry a well-formed
+ *  declaration with a unique, non-reserved identifier name. */
+const queriesError = (queries: unknown): TreeValidation | null => {
+  if (!Array.isArray(queries)) {
+    return fail("provision", "queries must be an array");
+  }
+  if (queries.length > TREE_MAX_QUERIES) {
+    return fail("provision", `too many queries (max ${TREE_MAX_QUERIES})`);
+  }
+  const queryNames = new Set<string>();
+  for (const query of queries) {
+    if (!isPlainObject(query)) {
+      return fail("provision", "each query must be an object");
+    }
+    if (typeof query.name !== "string" || !QUERY_NAME_PATTERN.test(query.name)) {
+      return fail("provision", "query name must match /^[A-Za-z_][A-Za-z0-9_]*$/");
+    }
+    if (query.name === "state") {
+      return fail("provision", 'query name "state" is reserved');
+    }
+    if (queryNames.has(query.name)) {
+      return fail("provision", `duplicate query name "${query.name}"`);
+    }
+    queryNames.add(query.name);
+    if (typeof query.tool !== "string" || query.tool.length === 0) {
+      return fail("provision", "query tool must be a non-empty string");
+    }
+    if (query.tool.startsWith("fn:") && !FN_REFERENCE_PATTERN.test(query.tool)) {
+      return fail("provision", `query tool "${query.tool}" is not a valid fn: reference`);
+    }
+    if (query.input !== undefined && !isPlainObject(query.input)) {
+      return fail("provision", "query input must be a plain object");
+    }
+  }
+  return null;
+};
+
+/** One node's own shape and prop grammar — everything checkable without
+ *  looking at the rest of the tree. */
+const nodeError = (node: unknown): TreeValidation | null => {
+  if (!isPlainObject(node)) {
+    return fail("provision", "each node must be an object");
+  }
+  if (typeof node.id !== "string" || node.id.length === 0) {
+    return fail("provision", "each node must have a non-empty string id");
+  }
+  if (typeof node.component !== "string") {
+    return fail("provision", `node "${node.id}" must have a string component`);
+  }
+  if (node.source !== undefined && !["prewired", "host", "generated"].includes(node.source as string)) {
+    return fail("provision", `node "${node.id}" has an invalid source`);
+  }
+  if (node.children !== undefined
+    && (!Array.isArray(node.children) || !node.children.every((child) => typeof child === "string"))) {
+    return fail("provision", `node "${node.id}" children must be an array of strings`);
+  }
+  if (node.props !== undefined && !isPlainObject(node.props)) {
+    return fail("provision", `node "${node.id}" props must be a plain object`);
+  }
+  if (node.props !== undefined) {
+    // Same rule as v1 CORE-5 (01 §8): fn: grammar holds ANYWHERE a tree
+    // names a callable — action names in props included. Machine-presence
+    // and generated-component presence are enforced one level up by the
+    // app-document validator, which knows `server` and `components`.
+    const invalidAction = findInvalidActionReference(node.props);
+    if (invalidAction !== null) {
+      return fail("provision", `node "${node.id}" action "${invalidAction}" is not a valid fn: reference`);
+    }
+    // v2 spec §3 — the bounded reshape vocabulary is enforced here at the
+    // format gate (same walk discipline as the fn: action rule above), so
+    // an unknown op or malformed chain can never reach the renderer.
+    const invalidReshape = findInvalidReshape(node.props);
+    if (invalidReshape !== null) {
+      return fail("provision", `node "${node.id}" has an invalid $reshape: ${invalidReshape}`);
+    }
+  }
+  return null;
+};
+
+/** Every node, plus the cross-node id uniqueness rule. Fills `ids` so the
+ *  caller can check the root against it. */
+const nodesError = (nodes: readonly unknown[], ids: Set<string>): TreeValidation | null => {
+  for (const node of nodes) {
+    const violation = nodeError(node);
+    if (violation !== null) return violation;
+    const { id } = node as { id: string };
+    if (ids.has(id)) {
+      return fail("provision", `duplicate node id "${id}"`);
+    }
+    ids.add(id);
+  }
+  return null;
+};
+
 const validateTreeUnsafe = (input: unknown): TreeValidation => {
   if (!isPlainObject(input)) {
     return fail("provision", "tree must be a non-null object");
@@ -95,82 +189,13 @@ const validateTreeUnsafe = (input: unknown): TreeValidation => {
   }
 
   if (input.queries !== undefined) {
-    if (!Array.isArray(input.queries)) {
-      return fail("provision", "queries must be an array");
-    }
-    if (input.queries.length > TREE_MAX_QUERIES) {
-      return fail("provision", `too many queries (max ${TREE_MAX_QUERIES})`);
-    }
-    const queryNames = new Set<string>();
-    for (const query of input.queries) {
-      if (!isPlainObject(query)) {
-        return fail("provision", "each query must be an object");
-      }
-      if (typeof query.name !== "string" || !QUERY_NAME_PATTERN.test(query.name)) {
-        return fail("provision", "query name must match /^[A-Za-z_][A-Za-z0-9_]*$/");
-      }
-      if (query.name === "state") {
-        return fail("provision", 'query name "state" is reserved');
-      }
-      if (queryNames.has(query.name)) {
-        return fail("provision", `duplicate query name "${query.name}"`);
-      }
-      queryNames.add(query.name);
-      if (typeof query.tool !== "string" || query.tool.length === 0) {
-        return fail("provision", "query tool must be a non-empty string");
-      }
-      if (query.tool.startsWith("fn:") && !FN_REFERENCE_PATTERN.test(query.tool)) {
-        return fail("provision", `query tool "${query.tool}" is not a valid fn: reference`);
-      }
-      if (query.input !== undefined && !isPlainObject(query.input)) {
-        return fail("provision", "query input must be a plain object");
-      }
-    }
+    const violation = queriesError(input.queries);
+    if (violation !== null) return violation;
   }
 
   const ids = new Set<string>();
-  for (const node of nodes) {
-    if (!isPlainObject(node)) {
-      return fail("provision", "each node must be an object");
-    }
-    if (typeof node.id !== "string" || node.id.length === 0) {
-      return fail("provision", "each node must have a non-empty string id");
-    }
-    if (typeof node.component !== "string") {
-      return fail("provision", `node "${node.id}" must have a string component`);
-    }
-    if (node.source !== undefined && !["prewired", "host", "generated"].includes(node.source as string)) {
-      return fail("provision", `node "${node.id}" has an invalid source`);
-    }
-    if (node.children !== undefined
-      && (!Array.isArray(node.children) || !node.children.every((child) => typeof child === "string"))) {
-      return fail("provision", `node "${node.id}" children must be an array of strings`);
-    }
-    if (node.props !== undefined && !isPlainObject(node.props)) {
-      return fail("provision", `node "${node.id}" props must be a plain object`);
-    }
-    if (node.props !== undefined) {
-      // Same rule as v1 CORE-5 (01 §8): fn: grammar holds ANYWHERE a tree
-      // names a callable — action names in props included. Machine-presence
-      // and generated-component presence are enforced one level up by the
-      // app-document validator, which knows `server` and `components`.
-      const invalidAction = findInvalidActionReference(node.props);
-      if (invalidAction !== null) {
-        return fail("provision", `node "${node.id}" action "${invalidAction}" is not a valid fn: reference`);
-      }
-      // v2 spec §3 — the bounded reshape vocabulary is enforced here at the
-      // format gate (same walk discipline as the fn: action rule above), so
-      // an unknown op or malformed chain can never reach the renderer.
-      const invalidReshape = findInvalidReshape(node.props);
-      if (invalidReshape !== null) {
-        return fail("provision", `node "${node.id}" has an invalid $reshape: ${invalidReshape}`);
-      }
-    }
-    if (ids.has(node.id)) {
-      return fail("provision", `duplicate node id "${node.id}"`);
-    }
-    ids.add(node.id);
-  }
+  const violation = nodesError(nodes, ids);
+  if (violation !== null) return violation;
 
   if (!ids.has(root)) {
     return fail("provision", `root "${root}" does not match any node id`);

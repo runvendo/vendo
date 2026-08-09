@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { NormalizedCatalog } from "@vendoai/core";
-import { isWorkerLoadablePath, resolveWorkerModulePaths, sampleFromShape, smokeRenderIslands } from "./generation/validation/smoke-render.js";
-import { modelEngine } from "./engine.js";
-import { scriptedLanguageModel, type ScriptedModelCall } from "./testing/index.js";
+import { isWorkerLoadablePath, resolveWorkerModulePaths, sampleFromShape, smokeRenderIslands } from "./checking/smoke-render.js";
 
 /**
  * v4 wave — the smoke-render gate. Final gate 2026-07-21: two crash forms
@@ -313,55 +310,10 @@ describe("sampleFromShape", () => {
     expect(sample.clients).toHaveLength(2);
     expect(sample.clients[0]).toEqual({ id: "sample", name: "sample", missingDocs: 2 });
   });
-});
 
-// ---------------------------------------------------------------------------
-// Integration: the gate runs inside create's validation and routes to repair.
-// ---------------------------------------------------------------------------
-
-const promptText = (call: ScriptedModelCall): string => call.prompt.map((message) => {
-  if (typeof message.content === "string") return message.content;
-  return message.content.map((part) => part.text ?? "").join("");
-}).join("\n");
-
-const deps = (model: unknown, extra: Record<string, unknown> = {}) => ({
-  model,
-  catalog: [] as unknown as NormalizedCatalog,
-  tools,
-  toolShapes,
-  ...extra,
-}) as unknown as Parameters<typeof modelEngine.create>[1];
-
-describe("smoke-render gate inside create validation", () => {
-  it("routes a hooks-in-map island to repair and ships the repaired app", async () => {
-    const broken = `<App name="Cards"><Island name="ClientContactCards">${HOOKS_IN_MAP}</Island><ClientContactCards/></App>`;
-    const fixed = `<App name="Cards"><Island name="ClientContactCards">${HEALTHY.replace("ClientList", "ClientContactCards")}</Island><ClientContactCards/></App>`;
-    const prompts: string[] = [];
-    const model = scriptedLanguageModel((call) => {
-      prompts.push(promptText(call));
-      return prompts.length === 1 ? broken : fixed;
-    });
-    const document = await modelEngine.create(
-      { prompt: "contact cards with a quick message button" },
-      deps(model, { pipeline: { structuredRepair: false } }),
-    );
-    expect(prompts).toHaveLength(2);
-    expect(prompts[1]).toContain("never inside .map(), loops, or conditions");
-    expect(document.components?.ClientContactCards).not.toContain("clients.map((client) => {");
-  }, 60_000);
-
-  it("can be disabled with pipeline.smokeRender: false", async () => {
-    const broken = `<App name="Cards"><Island name="ClientContactCards">${HOOKS_IN_MAP}</Island><ClientContactCards/></App>`;
-    let calls = 0;
-    const model = scriptedLanguageModel(() => {
-      calls += 1;
-      return broken;
-    });
-    const document = await modelEngine.create(
-      { prompt: "contact cards" },
-      deps(model, { pipeline: { structuredRepair: false, smokeRender: false } }),
-    );
-    expect(calls).toBe(1);
-    expect(document.components?.ClientContactCards).toBeDefined();
-  }, 60_000);
+  it("samples an enum-carrying scalar as its first declared value", () => {
+    expect(sampleFromShape({ kind: "string", enum: ["dining", "groceries"] })).toBe("dining");
+    expect(sampleFromShape({ kind: "number", enum: [0, 1] })).toBe(0);
+    expect(sampleFromShape({ kind: "string" })).toBe("sample");
+  });
 });

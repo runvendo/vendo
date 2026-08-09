@@ -67,7 +67,7 @@ export interface CreateTryBootOptions {
 
 export interface TryBoot {
   /** The boot config this store was created with — later surface pieces (live
-   *  chat, refine) read `apiBase` here instead of re-reading `window.__VENDO_TRY__`. */
+   *  chat) read `apiBase` here instead of re-reading `window.__VENDO_TRY__`. */
   readonly config: TryBootConfig;
   readonly state: TryBootState;
   /** Fetch + parse the initial profile. `{ ok: false }` = fall back to

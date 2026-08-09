@@ -1,7 +1,7 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { tempDir } from "../temp-dir.test-util.js";
 import {
   buildEnumeratorPrompt,
   collectFrontendSources,
@@ -28,7 +28,7 @@ function capability(overrides: Partial<UiCapability> & Pick<UiCapability, "id">)
 }
 
 async function tempRepo(): Promise<string> {
-  return mkdtemp(path.join(os.tmpdir(), "ui-parity-"));
+  return tempDir("ui-parity-");
 }
 
 describe("diffUiParity", () => {

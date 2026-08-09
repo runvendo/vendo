@@ -13,6 +13,7 @@
 // CORE-6: the contract pins the byte caps in kilobytes, so island sources
 // are measured with component-map.ts's shared UTF-8 byte counter.
 import { utf8ByteLength } from "../../component-map.js";
+import { isWellFormedUtf16 } from "../../jcs.js";
 import {
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
@@ -20,7 +21,7 @@ import {
   TREE_MAX_QUERIES,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
 } from "../tree-limits.js";
-import { issue, isWellFormedUtf16, type CompileState } from "./state.js";
+import { issue, type CompileState } from "./state.js";
 
 /** §8 TREE_MAX_NODES — true when another node may be appended. Beyond the
  *  cap, elements are still parsed for document structure/recovery, but no

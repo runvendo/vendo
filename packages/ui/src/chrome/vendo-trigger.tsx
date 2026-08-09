@@ -27,10 +27,7 @@ export interface VendoTriggerProps {
  */
 export function VendoTrigger({ prompt, context, children }: VendoTriggerProps) {
   return (
-    // automaticPolicyNotice={false}: a bare button must never grow the
-    // "running without a policy" banner beside itself — the surfaces the
-    // trigger opens carry that warning.
-    <ChromeRoot automaticPolicyNotice={false}>
+    <ChromeRoot>
       <button
         type="button"
         className="fl-btn"

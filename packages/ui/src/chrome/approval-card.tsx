@@ -1,35 +1,37 @@
-import { canonicalJson, sha256Hex, type ApprovalDecision, type ApprovalRequest, type Json } from "@vendoai/core";
+import {
+  canonicalJson,
+  sha256Hex,
+  type ApprovalDecision,
+  type ApprovalRequest,
+} from "@vendoai/core";
 import { useState } from "react";
 import { useVendoTools } from "../context.js";
 import { ContainedNotice } from "../tree/notice.js";
-import { toolPresentation } from "./build-beat.js";
+import { consentWords, toolPresentation } from "./build-beat.js";
+import {
+  CardActions,
+  CardByline,
+  CardFields,
+  CardHead,
+  CardLine,
+  CardShell,
+  SHIELD_GLYPH,
+  ToolkitLogo,
+} from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { humanizeToolName, type ToolMeta } from "./humanize.js";
+import { developmentMode } from "./dev-mode.js";
+import { fieldRows } from "./field-rows.js";
 
-/** The wire risk slugs, in the user's language (the raw slug stays available
-    on the chip's tooltip via the tool name; end users never read jargon). */
+/** The wire risk slugs, in the user's language. The raw TOOL slug used to ride
+    the chip's `title` tooltip "for developers" — a tooltip is an end-user
+    surface (L37), so it is dev-mode only now; the slug's real home is the
+    `data-risk`/`data-vendo-tool` attributes machines read. */
 const RISK_LABEL: Record<string, string> = {
   read: "Read-only",
   write: "Makes changes",
   destructive: "Irreversible",
+  ungraded: "Not reviewed",
 };
-
-/** Flat, primitive-valued args render as aligned field rows — humanized label,
-    host-formatted value (ToolMeta.formatField), raw value on the tooltip so
-    the real input stays one hover away; anything nested falls back to the raw
-    JSON preview (real inputs, always). */
-function flatFields(args: unknown, meta?: ToolMeta): Array<[string, string, string]> | undefined {
-  if (typeof args !== "object" || args === null || Array.isArray(args)) return undefined;
-  const entries = Object.entries(args as Record<string, unknown>);
-  if (entries.length === 0 || entries.length > 8) return undefined;
-  const rows: Array<[string, string, string]> = [];
-  for (const [key, value] of entries) {
-    if (value !== null && typeof value === "object") return undefined;
-    const raw = String(value);
-    rows.push([humanizeToolName(key), meta?.formatField?.(key, value as Json) ?? raw, raw]);
-  }
-  return rows;
-}
 
 const VENUE_LABEL: Record<string, string> = {
   chat: "asked here in chat",
@@ -40,6 +42,34 @@ const VENUE_LABEL: Record<string, string> = {
   app: "asked in an app",
   automation: "asked by an automation",
 };
+
+/** The same venues, once the surface can NAME the app or automation. */
+const VENUE_NAMED: Record<string, (name: string) => string> = {
+  app: name => `asked in ${name}`,
+  automation: name => `asked by ${name}`,
+};
+
+/** Every Vendo id family is `<prefix>_<rest>` (core `ids.ts`: app_, apr_, grt_,
+    run_, thr_). An id is not something a person can read, so the byline treats
+    any id-shaped token as no name at all — whatever passed it in. */
+const ID_SHAPED = /^[a-z]{2,6}_/;
+
+/** ENG-216 — who is asking, in the user's language.
+ *
+ *  THE DEFECT this exists for: the byline printed `approval.ctx.appId` verbatim,
+ *  so a bank customer read "Runs as you · asked in an app · app_1". The wire
+ *  carries only that id; a name arrives only when the SURFACE knows one (the
+ *  activities queue resolves it off the automations list), and without one the
+ *  bare phrase is the honest answer. An unknown venue drops the phrase rather
+ *  than print its slug. */
+export function venueByline(venue: string, venueName?: string): string {
+  const name = venueName?.trim();
+  const named = name !== undefined && name.length > 0 && !ID_SHAPED.test(name)
+    ? VENUE_NAMED[venue]?.(name)
+    : undefined;
+  const phrase = named ?? VENUE_LABEL[venue];
+  return phrase === undefined ? "Runs as you" : `Runs as you · ${phrase}`;
+}
 
 export interface ApprovalCardProps {
   approval: ApprovalRequest;
@@ -52,12 +82,34 @@ export interface ApprovalCardProps {
    */
   allowRemember?: boolean;
   /**
-   * ENG-216 — show the `venue · presence · appId` context byline. Queue
-   * surfaces carry a real server `ctx` and keep it (default true); the
-   * in-thread card sets this false because the live conversation is already
-   * the context and the wire carries no ctx to display honestly.
+   * ENG-216 — show the venue context byline. Queue surfaces carry a real server
+   * `ctx` and keep it (default true); the in-thread card sets this false because
+   * the live conversation is already the context and the wire carries no ctx to
+   * display honestly.
    */
   showContext?: boolean;
+  /**
+   * A human name for the app/automation that asked, when the SURFACE knows one
+   * (the wire's `ctx` carries only an id). Absent ⇒ the bare venue phrase; an
+   * id-shaped value is refused, since an id in front of a user is the defect
+   * this prop exists to remove.
+   */
+  venueName?: string;
+}
+
+/** The consumer's half of a refusal (spec §16 law 3) — the same defect the
+ *  connect and standing-access cards carried: this card rendered whatever
+ *  `onDecide` threw, and the wire's sentences carry approval and app ids. The
+ *  developer sentence keeps its home in the server's own error; the person
+ *  looking at the card is told what it means for them. `refusalCopy` in
+ *  grant-set-card.tsx is the pattern. */
+function refusalCopy(reason: unknown): string {
+  const code = (reason as { code?: unknown } | null)?.code;
+  if (code === "not-found") return "This request isn’t waiting on you any more — it may have expired.";
+  if (code === "conflict") return "This request was already answered.";
+  if (code === "forbidden") return "This request isn’t yours to answer.";
+  if (code === "cloud-required") return "Answering this isn’t turned on for this workspace yet.";
+  return "That didn’t go through — nothing was approved. Try again in a moment.";
 }
 
 function approvalDate(grantedAt: string): string {
@@ -66,35 +118,58 @@ function approvalDate(grantedAt: string): string {
   );
 }
 
-/** 01-core §5; 08-ui §4 — the one consent surface, always showing real inputs. */
-export function ApprovalCard({ approval, onDecide, allowRemember = true, showContext = true }: ApprovalCardProps) {
+/** 01-core §5; 08-ui §4; spec §16 — the one consent surface, on the one card
+    shell, always showing the real inputs. */
+export function ApprovalCard({ approval, onDecide, allowRemember = true, showContext = true, venueName }: ApprovalCardProps) {
   const [remember, setRemember] = useState(false);
   const [scope, setScope] = useState<"exact" | "tool">("exact");
   const [duration, setDuration] = useState<"session" | "standing">("session");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const critical = approval.descriptor.risk === "destructive" || approval.descriptor.critical === true;
+  // #747 renamed `critical` → `confirmEach` (a GOVERNANCE flag — who must be
+  // present — not a risk rung); host files may still spell it the old way and
+  // core accepts that alias, so reading the new name here is enough.
+  //
+  // UNGRADED joins the condition, and does NOT duplicate main's semantics:
+  // main makes the GUARD ask on ungraded; this makes the CARD keep its
+  // ceremony — never fold the real inputs behind Details on an ask nobody has
+  // graded. The chip still reads "Not reviewed", so the card claims none of
+  // the irreversibility `destructive` would.
+  const ceremony = approval.descriptor.risk === "destructive"
+    || approval.descriptor.risk === "ungraded"
+    || approval.descriptor.confirmEach === true;
   // ENG-216 humanization (host ToolMeta wins, else the prettified id — never
   // the raw slug) layered with the consent presentation: toolkit mark,
   // automation eyebrow, and a plain-language description synthesized from the
   // REAL inputs when the host supplies none.
-  const meta = useVendoTools()[approval.descriptor.name];
+  // H-1 — ONE field, on both surfaces. The card read `descriptor.name` and the
+  // queue row read `call.tool`, so a server-served ask whose descriptor is
+  // named differently from the call printed two different sentences for one
+  // ask — and the card additionally missed the host's `ToolMeta`, which is
+  // keyed by the WIRE tool id. `call.tool` is what will actually run, so it is
+  // the field; waiting-queue.tsx reads the same one.
+  const tool = approval.call.tool;
+  const meta = useVendoTools()[tool];
   const presentation = toolPresentation(
-    approval.descriptor.name,
+    tool,
     approval.call.args,
     meta,
     approval.descriptor.title,
+    approval.descriptor.inputSchema,
   );
   const title = presentation.title;
-  const description = (presentation.description ?? approval.descriptor.description).trim();
-  const fields = flatFields(approval.call.args, meta);
-  // Lane pick 1-A — consequence-first: when the presentation can truthfully
-  // say what approving does in one sentence, that sentence leads and the raw
-  // fields fold behind a "Details" disclosure (still the same real inputs,
-  // one tap away). Critical/destructive asks are exempt: maximum scrutiny
-  // keeps every input in plain sight.
-  const consequence = !critical ? presentation.consequence : undefined;
-  const showDescription = !consequence && description.length > 0 && description !== title;
+  const rows = fieldRows(approval.call.args, approval.descriptor.inputSchema, meta);
+  // Ruling 14 — ONE plain-words ladder, shared with the queue row (`consentWords`
+  // in build-beat.tsx): host sentence → consequence from the real inputs → our
+  // own synthesized sentence → the consequence class. The descriptor's own
+  // description is never on it.
+  const words = consentWords(tool, approval.descriptor.risk, presentation, meta);
+  const consequence = words.consequence;
+  // The FOLD is the separate call: the raw fields tuck behind a "Details"
+  // disclosure only on an ordinary ask. Critical/destructive keeps every input
+  // in plain sight — maximum scrutiny — and still gets the sentence (a money
+  // ask is exactly where "Vendo will run Send money as you." used to land).
+  const foldFields = consequence !== undefined && !ceremony;
 
   const decide = async (approve: boolean) => {
     const decision: ApprovalDecision = { approve };
@@ -115,98 +190,55 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
     try {
       await onDecide(decision);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(refusalCopy(reason));
     } finally {
       setBusy(false);
     }
   };
 
+  const inputs = <CardFields rows={rows} />;
   return (
     <ChromeRoot>
-      <article className={`fl-approval fl-item-in${critical ? " fl-approval--ceremony" : ""}`} aria-label={`Approval for ${title}`}>
-        <div className="fl-approval-head">
-          <span className="fl-approval-ic" aria-hidden="true">
-            {presentation.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- chrome surface, plain img by design
-              <img
-                src={presentation.logoUrl}
-                alt=""
-                width={16}
-                height={16}
-                style={{ display: "block", objectFit: "contain" }}
-              />
-            ) : (
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
-              </svg>
-            )}
-          </span>
-          <div className="fl-approval-heading">
-            <div className="fl-approval-eyebrow">{presentation.eyebrow}</div>
-            <div className="fl-approval-title">{title}</div>
-            {showDescription ? <div className="fl-approval-desc">{description}</div> : null}
-          </div>
-          <span
-            className="fl-chip"
-            data-risk={approval.descriptor.risk}
-            title={approval.descriptor.name}
-            style={{ marginLeft: "auto", padding: "2px 7px", fontSize: "10px", cursor: "default" }}
-          >
-            {RISK_LABEL[approval.descriptor.risk] ?? approval.descriptor.risk}
-          </span>
-        </div>
+      <CardShell label={`Approval for ${title}`} className="fl-approval fl-item-in" ceremony={ceremony}>
+        <CardHead
+          icon={<ToolkitLogo {...(presentation.logoUrl === undefined ? {} : { src: presentation.logoUrl })} fallback={SHIELD_GLYPH} />}
+          eyebrow={presentation.eyebrow}
+          title={title}
+          aside={
+            <span
+              className="fl-chip"
+              data-risk={approval.descriptor.risk}
+              data-vendo-tool={tool}
+              {...(developmentMode() ? { title: tool } : {})}
+              style={{ marginLeft: "auto", padding: "2px 7px", fontSize: "10px", cursor: "default" }}
+            >
+              {RISK_LABEL[approval.descriptor.risk] ?? approval.descriptor.risk}
+            </span>
+          }
+        />
+        {/* Law 3 — the card always says what approving DOES: the synthesized
+            consequence, else the described one, else the one thing that is
+            true of every call. */}
         {consequence ? (
-          <p className="fl-approval-consequence-line">
+          <CardLine className="fl-approval-consequence-line">
             {consequence.pre}
             {consequence.artifact !== undefined ? <strong>{consequence.artifact}</strong> : null}
             {consequence.mid}
             {consequence.target !== undefined ? <strong>{consequence.target}</strong> : null}
             {consequence.post}
-          </p>
-        ) : null}
-        {(() => {
-          const inputs = fields ? (
-            <dl className="fl-approval-fields" aria-label="Real tool inputs" style={{ display: "grid", gap: "7px", margin: 0 }}>
-              {fields.map(([label, value, raw]) => (
-                <div className="fl-approval-field" key={label}>
-                  <dt>{label}</dt>
-                  <dd title={raw === value ? undefined : raw}>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : (
-            <pre
-              className="fl-approval-fields"
-              aria-label="Real tool inputs"
-              style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-            >
-              {approval.inputPreview}
-            </pre>
-          );
-          // The consequence sentence carries the meaning; the mechanical rows
-          // fold but never leave the DOM (the a11y contract keeps its name).
-          return consequence ? (
-            <details className="fl-approval-details">
-              <summary>Details — real inputs</summary>
-              {inputs}
-            </details>
-          ) : inputs;
-        })()}
-        {showContext ? (
-          <div className="fl-approval-more" style={{ marginTop: "8px" }}>
-            Runs as you · {VENUE_LABEL[approval.ctx.venue] ?? approval.ctx.venue}
-            {approval.ctx.appId ? ` · ${approval.ctx.appId}` : ""}
-          </div>
-        ) : null}
+          </CardLine>
+        ) : (
+          <CardLine>{words.sentence}</CardLine>
+        )}
+        {/* The consequence sentence carries the meaning; the mechanical rows
+            fold but never leave the DOM (the a11y contract keeps its name). */}
+        {foldFields ? (
+          <details className="fl-approval-details">
+            <summary>Details — real inputs</summary>
+            {inputs}
+          </details>
+        ) : inputs}
+        {showContext ? <CardByline>{venueByline(approval.ctx.venue, venueName)}</CardByline> : null}
         {allowRemember ? (
           <details className="fl-auto-details">
             <summary>Remember this decision</summary>
@@ -250,11 +282,11 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
           </div>
         ) : null}
         {error ? <div role="alert" className="fl-error">{error}</div> : null}
-        <div className="fl-approval-actions">
-          <button className={`fl-btn ${critical ? "fl-btn-ceremony" : "fl-btn-primary"}`} type="button" disabled={busy} onClick={() => void decide(true)}>Approve</button>
+        <CardActions>
+          <button className={`fl-btn ${ceremony ? "fl-btn-ceremony" : "fl-btn-primary"}`} type="button" disabled={busy} onClick={() => void decide(true)}>Approve</button>
           <button className="fl-btn" type="button" disabled={busy} onClick={() => void decide(false)}>Deny</button>
-        </div>
-      </article>
+        </CardActions>
+      </CardShell>
     </ChromeRoot>
   );
 }

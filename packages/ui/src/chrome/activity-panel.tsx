@@ -18,8 +18,10 @@ export function ActivityPanel() {
     setError(undefined);
     try {
       await loadMore();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+    } catch {
+      // spec §16 law 3 — the wire's sentence names our own store; the person is
+      // told what did not happen, and the button stays there to try again.
+      setError("We couldn’t load more just now — try again.");
     }
   };
 

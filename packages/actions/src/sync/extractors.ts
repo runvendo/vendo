@@ -1,7 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { SourcedExtractedTool } from "./common.js";
-import { detectGraphql, extractGraphql, graphqlEndpoints } from "./graphql.js";
 import { extractOpenApi } from "./openapi.js";
 import { scanRoutes } from "./route-scan.js";
 import { detectServerActions, extractServerActions } from "./server-actions.js";
@@ -18,7 +17,8 @@ export interface Extractor {
   extract(root: string): Promise<ExtractorResult>;
 }
 
-async function firstOpenApiSpec(root: string): Promise<string | null> {
+/** The first OpenAPI document the extractors find, in their order. */
+export async function firstOpenApiSpec(root: string): Promise<string | null> {
   const candidates = [
     "openapi.json",
     "openapi.yaml",
@@ -59,12 +59,6 @@ const trpcExtractor: Extractor = {
   extract: extractTrpc,
 };
 
-const graphqlExtractor: Extractor = {
-  name: "graphql",
-  detect: detectGraphql,
-  extract: extractGraphql,
-};
-
 const serverActionsExtractor: Extractor = {
   name: "server-actions",
   detect: detectServerActions,
@@ -82,17 +76,16 @@ const routeScanExtractor: Extractor = {
 export const extractorRegistrations: readonly Extractor[] = [
   openApiExtractor,
   trpcExtractor,
-  graphqlExtractor,
   serverActionsExtractor,
   routeScanExtractor,
 ];
 
-/** Route-scan sees a tRPC mount or a GraphQL endpoint as an opaque catch-all
- * HTTP route; when the trpc/graphql extractors produced real operation tools
- * for that mount, the shadowing route tools are dropped. No trpc/graphql
- * tools → no filtering (unchanged behavior for every other host). */
+/** Route-scan sees a tRPC mount as an opaque catch-all HTTP route; when the
+ * trpc extractor produced real procedure tools for that mount, the shadowing
+ * route tools are dropped. No trpc tools → no filtering (unchanged behavior
+ * for every other host). */
 function withoutShadowedRoutes(tools: SourcedExtractedTool[]): SourcedExtractedTool[] {
-  const mounts = [...trpcMounts(tools), ...graphqlEndpoints(tools)];
+  const mounts = trpcMounts(tools);
   if (mounts.length === 0) return tools;
   return tools.filter((tool) => {
     if (tool.binding.kind !== "route") return true;
@@ -113,5 +106,8 @@ export async function runExtractors(
     tools.push(...result.tools);
     warnings.push(...result.warnings);
   }
+  // Stored paths are PREFIX-FREE (spec 2026-08-06 §B1). The deployment's path
+  // prefix lives in VENDO_BASE_URL and is attached exactly once, at call time,
+  // by core's joinUrl — baking it in here is what produced /maple/maple/… (#914).
   return { tools: withoutShadowedRoutes(tools), warnings };
 }

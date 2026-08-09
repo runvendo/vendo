@@ -11,9 +11,22 @@ import { z } from "zod";
 import type { HostOAuthAdapter } from "./adapter.js";
 import { consentPage } from "./consent-page.js";
 
+/** Reserved client_id for the service-key exchange. Not a registered client and
+ *  never resolved as one: the key, not the client record, is the credential. */
+const SERVICE_CLIENT_ID = "vendo-service";
+/** The subject_token a host presents is one of ITS user ids, in its own
+ *  spelling — no token type in the RFC's registry describes that. */
+const SERVICE_SUBJECT_TOKEN_TYPE = "urn:vendo:params:oauth:token-type:user-id";
+/** RFC 8693 §2.1. */
+export const TOKEN_EXCHANGE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:token-exchange";
+
 const CLIENTS_COLLECTION = "vendo_mcp_clients";
 const GRANTS_COLLECTION = "vendo_mcp_grants";
 const ACCESS_TOKEN_SECONDS = 60 * 60;
+/** Short because there is no refresh path to revoke: a backend that holds the
+ *  key mints another on demand. */
+const SERVICE_ACCESS_TOKEN_SECONDS = 10 * 60;
+const SERVICE_SCOPES = ["read", "write"];
 const REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60;
 const CODE_SECONDS = 60;
 const CONSENT_SECONDS = 10 * 60;
@@ -126,6 +139,7 @@ interface OAuthServerConfig {
   store: StoreAdapter;
   guard: Guard;
   theme?: VendoTheme;
+  serviceAuth?: { keys: readonly string[] };
 }
 
 interface ResolvedClient {
@@ -139,6 +153,7 @@ export class OAuthServer {
   readonly #store: StoreAdapter;
   readonly #guard: Guard;
   readonly #theme: VendoTheme | undefined;
+  readonly #serviceKeys: readonly string[] | undefined;
 
   constructor(config: OAuthServerConfig) {
     if (config.oauth.authorize === undefined && config.oauth.session === undefined) {
@@ -148,6 +163,27 @@ export class OAuthServer {
     this.#store = config.store;
     this.#guard = config.guard;
     this.#theme = config.theme;
+    // A key no presented key can ever equal is not a stricter door: it is one
+    // that ADVERTISES the exchange and answers every attempt `invalid_client`,
+    // which is the most expensive possible way to learn about an unset env var.
+    // The offending value never reaches the message.
+    const serviceKeys = config.serviceAuth?.keys;
+    if (serviceKeys !== undefined) {
+      if (serviceKeys.length === 0) {
+        throw new TypeError(
+          "serviceAuth.keys is empty; list a key (any opaque string — `openssl rand -hex 32`), "
+          + "or drop `serviceAuth` to close the exchange",
+        );
+      }
+      const blank = serviceKeys.findIndex((key) => !key?.trim());
+      if (blank !== -1) {
+        throw new TypeError(
+          `serviceAuth.keys[${blank}] is blank; a service key is any non-empty string, and an unset `
+          + "environment variable is the usual cause. The value is not echoed here.",
+        );
+      }
+    }
+    this.#serviceKeys = serviceKeys;
   }
 
   get hasPrebuiltConsent(): boolean {
@@ -381,12 +417,16 @@ export class OAuthServer {
     }));
   }
 
-  async token(req: Request): Promise<Response> {
+  async token(req: Request, resource: string): Promise<Response> {
     if (!contentType(req).startsWith("application/x-www-form-urlencoded")) {
       return oauthJsonError("invalid_request", "Expected application/x-www-form-urlencoded");
     }
     const form = new URLSearchParams(await req.text());
     const grantType = form.get("grant_type");
+    // A door with no `serviceAuth` falls through to unsupported_grant_type.
+    if (grantType === TOKEN_EXCHANGE_GRANT_TYPE && this.#serviceKeys !== undefined) {
+      return this.#exchangeServiceKey(form, resource, this.#serviceKeys);
+    }
     if (grantType === "authorization_code") {
       const code = form.get("code");
       if (!code) return oauthJsonError("invalid_request", "code is required");
@@ -616,6 +656,73 @@ export class OAuthServer {
     return json(body, 200, tokenHeaders());
   }
 
+  /**
+   * RFC 8693 at the same token endpoint: a service key plus one host user id
+   * for one short-lived access token bound to that user.
+   *
+   * No `principal()` check here. The subject is whatever the host's backend
+   * says one of its users is called; a bogus one dies at `principal()` on the
+   * first MCP request the token is used for, which is the same kill switch
+   * every other grant answers to.
+   */
+  async #exchangeServiceKey(form: URLSearchParams, resource: string, keys: readonly string[]): Promise<Response> {
+    const secret = form.get("client_secret");
+    const subject = form.get("subject_token");
+    if (!secret || !subject) {
+      return oauthJsonError("invalid_request", "client_secret and subject_token are required");
+    }
+    if (form.get("subject_token_type") !== SERVICE_SUBJECT_TOKEN_TYPE) {
+      return oauthJsonError("invalid_request", `subject_token_type must be ${SERVICE_SUBJECT_TOKEN_TYPE}`);
+    }
+    // The subject is a bare wire string that lands in the grant, its refs and an
+    // audit row. Postgres jsonb cannot hold a NUL, so a subject with control
+    // characters fails the WRITE mid-exchange — a 501 with a query in it rather
+    // than the OAuth refusal the caller can read.
+    if (/\p{Cc}/u.test(subject)) {
+      return oauthJsonError("invalid_request", "subject_token must not contain control characters");
+    }
+    // A key is an OPAQUE string: the door hashes what it was given and compares
+    // digests, and never parses or shape-checks either side. ONE answer for a
+    // wrong client_id, an unknown key and a retired one — anything narrower
+    // tells whoever is guessing which half of the credential they have right.
+    const hash = await sha256Hex(secret);
+    const listed = form.get("client_id") === SERVICE_CLIENT_ID
+      && (await Promise.all(keys.map(sha256Hex))).some((candidate) => equalHashes(candidate, hash));
+    if (!listed) return oauthJsonError("invalid_client", "Service key is not valid for this MCP server");
+    // `hash` is the presented secret's digest, which IS the matched key's — so
+    // this names which key acted without a key value going near it.
+    const clientId = `svc:${hash.slice(0, 8)}`;
+    const requestedResource = form.get("resource");
+    if (requestedResource !== null && !sameCanonicalUri(requestedResource, resource)) {
+      return oauthJsonError("invalid_target", "resource does not identify this MCP server");
+    }
+    // One access grant and nothing else: no refresh token, so no rotation, no
+    // family, and nothing outstanding to revoke after ten minutes. The backend
+    // holding the key exchanges again.
+    const accessToken = `vmat_${randomBase64Url(32)}`;
+    const grant: AccessGrant = {
+      kind: "access",
+      subject,
+      clientId,
+      resource,
+      scopes: SERVICE_SCOPES,
+      expiresAt: expiresIn(SERVICE_ACCESS_TOKEN_SECONDS),
+    };
+    await this.#store.records(GRANTS_COLLECTION).put({
+      id: `mcpg_${randomHex(12)}`,
+      data: grant,
+      refs: { kind: "access", token_hash: await sha256Hex(accessToken), subject, client_id: clientId },
+    });
+    await this.#audit({ kind: "user", subject }, clientId, "exchange");
+    return json({
+      access_token: accessToken,
+      issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+      token_type: "Bearer",
+      expires_in: SERVICE_ACCESS_TOKEN_SECONDS,
+      scope: SERVICE_SCOPES.join(" "),
+    }, 200, tokenHeaders());
+  }
+
   async #issueTokens(source: Pick<CodeGrant, "subject" | "clientId" | "familyId" | "resource" | "scopes">): Promise<{
     access_token: string;
     token_type: "Bearer";
@@ -722,11 +829,11 @@ export class OAuthServer {
       changed = await this.#revokeFamily(family.id) || changed;
     }
 
-    // Outstanding grants minted before family anchors shipped remain valid
-    // across a rolling deployment. Revoke those with the same guarded UPDATE
-    // pattern instead of list-then-delete.
-    const legacy = await listAll(store, { subject, client_id: clientId });
-    for (const record of legacy) {
+    // The service-key exchange mints ONE access grant with no refresh token and
+    // therefore no family anchor (§3.4), so a family sweep cannot reach it.
+    // Revoke those per grant, with the same guarded UPDATE.
+    const familyless = await listAll(store, { subject, client_id: clientId });
+    for (const record of familyless) {
       const access = accessGrantSchema.safeParse(record.data);
       if (access.success && access.data.familyId === undefined) {
         changed = await this.#revokeTokenRecord(record, accessGrantSchema) || changed;
@@ -735,21 +842,6 @@ export class OAuthServer {
       const refresh = refreshGrantSchema.safeParse(record.data);
       if (refresh.success && refresh.data.familyId === undefined) {
         changed = await this.#revokeTokenRecord(record, refreshGrantSchema) || changed;
-      }
-    }
-    // Pre-family authorization codes did not carry subject/client refs. Their
-    // one-minute window still overlaps rolling deploys, so scan the bounded
-    // code set, filter by parsed binding, and guard-update matches as revoked.
-    const legacyCodes = await listAll(store, { kind: "code" });
-    for (const record of legacyCodes) {
-      const code = codeGrantSchema.safeParse(record.data);
-      if (
-        code.success
-        && code.data.familyId === undefined
-        && code.data.subject === subject
-        && code.data.clientId === clientId
-      ) {
-        changed = await this.#revokeTokenRecord(record, codeGrantSchema) || changed;
       }
     }
     return changed;
@@ -775,7 +867,11 @@ export class OAuthServer {
     throw new Error("Token grant changed too many times during revocation");
   }
 
-  async #audit(principal: Principal, clientId: string, event: "issue" | "refresh" | "register" | "revoke"): Promise<void> {
+  async #audit(
+    principal: Principal,
+    clientId: string,
+    event: "issue" | "refresh" | "register" | "revoke" | "exchange",
+  ): Promise<void> {
     const audit: AuditEvent = {
       id: `aud_${randomHex(12)}`,
       at: new Date().toISOString(),
@@ -993,6 +1089,17 @@ function randomBase64Url(byteLength: number): string {
 async function sha256Hex(value: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** Constant time in the CONTENT of two same-length hex digests: a compare that
+ *  returns early leaks how much of a guess was right, one byte at a time. */
+function equalHashes(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
 }
 
 async function sha256Base64Url(value: string): Promise<string> {

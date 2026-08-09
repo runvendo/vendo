@@ -1,5 +1,4 @@
-import { spawn } from "node:child_process";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -47,7 +46,6 @@ import {
   type ScoredLayerRunResult,
 } from "./layers/scored.js";
 import {
-  corpusHostCommandEnv,
   runStructuralLayer as defaultRunStructuralLayer,
   type StructuralCheckResult,
   type StructuralCommandResult,
@@ -104,6 +102,8 @@ import {
   type KnowledgeEvalDeps,
   type KnowledgeEvalOptions,
 } from "./knowledge-eval/run.js";
+import { runHostCommand } from "./process.js";
+import { errorMessage, isRecord, pathExists, readOptional } from "./util.js";
 
 const usage = `Usage:
   pnpm corpus --help
@@ -259,7 +259,7 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     discoverConfiguredGalleryRepoNames: deps.discoverConfiguredGalleryRepoNames ?? defaultDiscoverConfiguredGalleryRepoNames,
     captureGalleryRepo: deps.captureGalleryRepo ?? defaultCaptureGalleryRepo,
     writeGalleryHtml: deps.writeGalleryHtml ?? defaultWriteGalleryHtml,
-    commandRunner: deps.commandRunner ?? runShellCommand,
+    commandRunner: deps.commandRunner ?? runHostCommand,
     discoverAiConfiguredRepoNames: deps.discoverAiConfiguredRepoNames ?? defaultDiscoverAiConfiguredRepoNames,
     ensureAgentSdk: deps.ensureAgentSdk ?? defaultEnsureAgentSdk,
     createExtractionHarness: deps.createExtractionHarness ?? corpusExtractionHarness,
@@ -487,19 +487,6 @@ function selectedRepos(manifest: CorpusManifest, names: readonly string[]): Mani
   });
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-async function readOptional(file: string | undefined): Promise<string | undefined> {
-  if (!file) return undefined;
-  try {
-    return await readFile(file, "utf8");
-  } catch {
-    return undefined;
-  }
-}
-
 function artifactPaths(artifacts: InitStepArtifacts): string[] {
   return [artifacts.log, artifacts.diff, artifacts.tokenCost].filter((value): value is string => Boolean(value));
 }
@@ -550,14 +537,6 @@ function printBaselineUpdate(
   write(update.source.trimEnd());
 }
 
-async function pathExists(file: string): Promise<boolean> {
-  return access(file).then(() => true, () => false);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 async function detectPackageRunner(repoDir: string, packageManager: unknown): Promise<string> {
   if (typeof packageManager === "string") {
     if (packageManager.startsWith("pnpm@")) return "pnpm";
@@ -583,24 +562,7 @@ async function detectTypecheckCommand(repoDir: string): Promise<string | undefin
   return `${runner} typecheck`;
 }
 
-function runShellCommand(command: string, options: { cwd: string; env?: NodeJS.ProcessEnv }): Promise<StructuralCommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, {
-      cwd: options.cwd,
-      env: corpusHostCommandEnv(options.env),
-      shell: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
-  });
-}
+
 
 function commandLogLabel(command: string, index: number): string {
   const orderedLabels = ["typecheck", "build"];
@@ -674,6 +636,37 @@ async function captureHostBaseline(
   return { typecheck, build };
 }
 
+/** Checkout, resolve the app root, bootstrap, and inject the local Vendo build:
+ *  everything every command needs in place before `vendo init` can run. */
+async function prepareRepo(
+  repo: ManifestEntry,
+  context: CorpusRunContext,
+  injector: LocalVendoInjector,
+  deps: ResolvedDeps,
+): Promise<{ appRoot: string; bootstrap: BootstrapResult }> {
+  const checkoutDir = await deps.ensureRepoCheckout(repo, { context, workspaceRoot: deps.workspaceRoot });
+  const appRoot = resolveAppRoot(repo, checkoutDir);
+  const bootstrap = await deps.bootstrapRepo(repo, { context, env: deps.env });
+  await injector.inject(repo);
+  return { appRoot, bootstrap };
+}
+
+/** Run init once and refuse to continue on a failure. The sweep does NOT use
+ *  this: it runs init twice with AI polish on and feeds a non-zero exit code to
+ *  the structural layer as a finding rather than throwing. */
+async function runCheckedInit(
+  repo: ManifestEntry,
+  context: CorpusRunContext,
+  deps: ResolvedDeps,
+  artifactPrefix: string,
+): Promise<InitStepResult> {
+  const init = await deps.runInit(repo, { context, env: deps.env, artifactPrefix });
+  if (init.exitCode !== 0) {
+    throw new Error(`vendo init failed for ${repo.name}; see ${init.artifacts.log}`);
+  }
+  return init;
+}
+
 async function runRepoThroughLayerOne(
   repo: ManifestEntry,
   options: RunCommandOptions,
@@ -684,12 +677,9 @@ async function runRepoThroughLayerOne(
   const logPaths: string[] = [];
 
   try {
-    const checkoutDir = await deps.ensureRepoCheckout(repo, { context, workspaceRoot: deps.workspaceRoot });
-    const appRoot = resolveAppRoot(repo, checkoutDir);
-    const bootstrap = await deps.bootstrapRepo(repo, { context, env: deps.env });
+    const { appRoot, bootstrap } = await prepareRepo(repo, context, injector, deps);
     logPaths.push(bootstrap.logs.stdout, bootstrap.logs.stderr);
 
-    const injectResult = await injector.inject(repo);
     const typecheckCommand = repo.bootstrap.typecheckCommand ?? await detectTypecheckCommand(appRoot);
     const buildCommand = repo.bootstrap.buildCommand;
     const baselineCommands = createLoggedCommandRunner(context.logsDir(repo.name), "baseline", deps.commandRunner);
@@ -869,20 +859,10 @@ async function runBootCommand(options: BootCommandOptions, deps: ResolvedDeps): 
 
   const context = deps.createContext();
   const injector = deps.createInjector({ context, workspaceRoot: deps.workspaceRoot });
-  await deps.ensureRepoCheckout(repo, { context, workspaceRoot: deps.workspaceRoot });
-  await deps.bootstrapRepo(repo, { context, env: deps.env });
-
-  const injectResult = await injector.inject(repo);
-  const init = await deps.runInit(repo, {
-    context,
-    env: deps.env,
-    artifactPrefix: "boot.init",
-  });
-  if (init.exitCode !== 0) {
-    throw new Error(`vendo init failed for ${repo.name}; see ${init.artifacts.log}`);
-  }
-  await deps.applyVendoRootPaste(injectResult.repoDir, repo.framework, await readOptional(init.artifacts.log) ?? "");
-  await deps.prepareE2eRepo(repo, injectResult.repoDir, context.logsDir(repo.name));
+  const { appRoot } = await prepareRepo(repo, context, injector, deps);
+  const init = await runCheckedInit(repo, context, deps, "boot.init");
+  await deps.applyVendoRootPaste(appRoot, repo.framework, await readOptional(init.artifacts.log) ?? "");
+  await deps.prepareE2eRepo(repo, appRoot, context.logsDir(repo.name));
 
   const handle = await deps.bootRepo(repo, {
     context,
@@ -930,18 +910,8 @@ async function runGalleryCommand(options: GalleryCommandOptions, deps: ResolvedD
     let result: GalleryRepoResult | undefined;
     let failure: string | undefined;
     try {
-      const checkoutDir = await deps.ensureRepoCheckout(repo, { context, workspaceRoot: deps.workspaceRoot });
-      const appRoot = resolveAppRoot(repo, checkoutDir);
-      await deps.bootstrapRepo(repo, { context, env: deps.env });
-      await injector.inject(repo);
-      const init = await deps.runInit(repo, {
-        context,
-        env: deps.env,
-        artifactPrefix: "gallery.init",
-      });
-      if (init.exitCode !== 0) {
-        throw new Error(`vendo init failed for ${repo.name}; see ${init.artifacts.log}`);
-      }
+      const { appRoot } = await prepareRepo(repo, context, injector, deps);
+      const init = await runCheckedInit(repo, context, deps, "gallery.init");
       await deps.applyVendoRootPaste(appRoot, repo.framework, await readOptional(init.artifacts.log) ?? "");
       await deps.prepareE2eRepo(repo, appRoot, context.logsDir(repo.name));
       // Build only when the dev server serves prebuilt output (manifest
@@ -1033,14 +1003,8 @@ async function runAiCommand(options: AiCommandOptions, deps: ResolvedDeps): Prom
   const results: AiRepoResult[] = [];
   for (const repo of repos) {
     try {
-      const checkoutDir = await deps.ensureRepoCheckout(repo, { context, workspaceRoot: deps.workspaceRoot });
-      const appRoot = resolveAppRoot(repo, checkoutDir);
-      await deps.bootstrapRepo(repo, { context, env: deps.env });
-      await injector.inject(repo);
-      const init = await deps.runInit(repo, { context, env: deps.env, artifactPrefix: "ai.init" });
-      if (init.exitCode !== 0) {
-        throw new Error(`vendo init failed for ${repo.name}; see ${init.artifacts.log}`);
-      }
+      const { appRoot } = await prepareRepo(repo, context, injector, deps);
+      await runCheckedInit(repo, context, deps, "ai.init");
       results.push(await deps.runAiRepoMatrix({
         repoName: repo.name,
         appRoot,

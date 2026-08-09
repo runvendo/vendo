@@ -7,6 +7,7 @@ import {
   type Principal,
 } from "@vendoai/core";
 import { createAppTokens, type SandboxAdapter, type SandboxMachine } from "@vendoai/apps";
+import { inMemoryBoxFiles } from "@vendoai/apps/testing";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -23,7 +24,6 @@ async function tempStore(prefix: string): Promise<VendoStore> {
   const dataDir = await mkdtemp(join(tmpdir(), prefix));
   const store = createStore({ dataDir });
   cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
   });
@@ -62,6 +62,9 @@ function boxSandbox(handler: BoxHandler): SandboxAdapter {
     async snapshot() { return "fake:snap"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },
+    // The seam's ONE in-memory implementation (@vendoai/apps/testing), so no
+    // two fakes can drift over what reading a box file means.
+    files: inMemoryBoxFiles(new Map()),
   };
   return {
     async create() { return machine; },
@@ -101,8 +104,6 @@ async function setup(handler: BoxHandler = () => ({ status: 200 })): Promise<Ski
     },
     store,
     sandbox: boxSandbox(handler),
-    // Wave 9 — machine provisioning is flag-gated.
-    apps: { experimentalMachines: true },
   });
   // Provision (Lane B's graduation step) so the fn door has a machine to wake;
   // it mints the app's bearer, which the test rotates to hold a known one.
@@ -287,9 +288,7 @@ describe("the Lane E redaction guard on the box seams", () => {
       store,
       sandbox: boxSandbox(handler),
       secrets: { get: async (name) => (name === "STRIPE_KEY" ? STRIPE_VALUE : undefined) },
-      // Wave 9 — machine provisioning is flag-gated.
-      apps: { experimentalMachines: true },
-    });
+      });
     await vendo.apps.machine.provision("app_skin", {
       principal: ADA,
       venue: "app",

@@ -13,7 +13,7 @@ export function NoPolicyNotice() {
   const nested = useChromeRootPresence();
   if (!connected || posture !== "unconfigured" || nested) return null;
   return (
-    <ChromeRoot automaticPolicyNotice={false}>
+    <ChromeRoot>
       <PolicyNoticeBody />
     </ChromeRoot>
   );

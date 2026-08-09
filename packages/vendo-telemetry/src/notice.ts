@@ -3,8 +3,8 @@ import type { TelemetryConfig } from "./config.js";
 const NOTICE = [
   "Vendo collects anonymous, opt-out usage telemetry to guide development.",
   "No code, prompts, file contents, or keys are ever collected.",
-  "Details and opt-out: TELEMETRY.md; disable now: `vendo telemetry disable`",
-  "(also honored: VENDO_TELEMETRY_DISABLED=1, DO_NOT_TRACK=1, CI)",
+  "Details and opt-out: TELEMETRY.md; disable now: VENDO_TELEMETRY_DISABLED=1",
+  "(also honored: DO_NOT_TRACK=1, CI)",
 ].join("\n");
 
 export interface NoticeIO {

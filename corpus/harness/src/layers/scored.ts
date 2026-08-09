@@ -19,6 +19,7 @@ import {
   type ThemeRubricDimension,
 } from "../expectations.js";
 import type { ScorecardCheck, ScorecardLayerInput, ScorecardScore } from "../scorecard.js";
+import { errorMessage } from "../util.js";
 
 export interface ScoredLayerContext {
   repoName: string;
@@ -50,12 +51,7 @@ interface WeightedResult {
 }
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-const DESTRUCTIVE_NAME = /(^|_)(delete|remove|destroy|cancel|close|reset|revoke|purge|wipe)(_|$)/;
 const EPSILON = 0.000001;
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function round(value: number): number {
   return Number(value.toFixed(6));
@@ -103,27 +99,31 @@ function scoreTheme(expected: RepoExpectations, actual: VendoTheme): WeightedRes
 }
 
 // A tool's IDENTITY for scoring is binding-kind-aware — the endpoint
-// (method + path) for HTTP-shaped bindings, the procedure dot-path for tRPC,
-// the operation name for GraphQL — plus its read/write classification, and
-// NOT its name. Tool names are a deterministic, contract-defined value
-// (01-core §15: provider-safe `host_<path>` slugs), while the checked-in
-// expectations carry the pre-freeze OpenAPI-operationId names
-// (`getAdminTeams`). Keying on the identity is the "adapted names" the v0
-// corpus requires, and still catches every real extraction defect: a missed
-// surface drops recall, a mis-classified read/write breaks the key.
+// (method + path) for HTTP-shaped bindings and the procedure dot-path for
+// tRPC — and NOT its name. Tool names are a
+// deterministic, contract-defined value (01-core §15: provider-safe
+// `host_<path>` slugs), while the checked-in expectations carry the pre-freeze
+// OpenAPI-operationId names (`getAdminTeams`). Keying on the identity is the
+// "adapted names" the v0 corpus requires, and catches the extraction defect
+// that matters here: a missed surface drops recall, an invented one drops
+// precision.
 export function actualToolIdentity(tool: ExtractedTool): string {
   if (tool.binding.kind === "trpc") return `trpc\t${tool.binding.procedure}`;
-  if (tool.binding.kind === "graphql") return `graphql\t${tool.binding.operation}`;
   if (tool.binding.kind === "server-action") return `server-action\t${tool.binding.module}#${tool.binding.exportName}`;
   return `${tool.binding.method}\t${tool.binding.path}`;
 }
 
+// Risk-grading redesign D2 — extraction no longer classifies read vs write
+// (only protocol facts grade a tool), so the inventory key is the surface
+// alone. The curator's `readOrWrite` stays ground truth for the AI lane, which
+// scores the judge's grades in `ai.risk.accuracy`; asserting it here would be
+// asserting a claim extraction deliberately stopped making.
 function actualInventoryKey(tool: ExtractedTool): string {
-  return `${actualToolIdentity(tool)}\t${tool.risk === "read" ? "read" : "write"}`;
+  return actualToolIdentity(tool);
 }
 
 function expectedInventoryKey(item: RepoExpectations["tools"][number]): string {
-  return `${expectedToolIdentity(item)}\t${item.readOrWrite}`;
+  return expectedToolIdentity(item);
 }
 
 function scoreTools(expected: RepoExpectations, actualTools: readonly ExtractedTool[]): WeightedResult {
@@ -135,9 +135,23 @@ function scoreTools(expected: RepoExpectations, actualTools: readonly ExtractedT
   const precision = actualTools.length === 0 ? 1 : actualMatches / actualTools.length;
   const recall = expected.tools.length === 0 ? 1 : expectedMatches / expected.tools.length;
 
+  // Schema coverage, scored only over tools the curator actually asserted it
+  // for. Zero assertions = zero weight, so no repo's score moves until someone
+  // has read its contract.
+  const byIdentity = new Map(actualTools.map((tool) => [actualToolIdentity(tool), tool]));
+  const asserted = expectedInventories.flatMap((item) => [
+    ...(item.inputSchema === undefined ? [] : [{ item, slot: "inputSchemaSource" as const, want: item.inputSchema }]),
+    ...(item.outputSchema === undefined ? [] : [{ item, slot: "outputSchemaSource" as const, want: item.outputSchema }]),
+  ]);
+  const schemaMatches = asserted.filter(({ item, slot, want }) => {
+    const actual = byIdentity.get(expectedToolIdentity(item));
+    return actual !== undefined && ((actual[slot] ?? "unknown") !== "unknown") === want;
+  }).length;
+  const schemaScore = asserted.length === 0 ? 0 : schemaMatches / asserted.length;
+
   return {
-    points: precision + recall,
-    total: 2,
+    points: precision + recall + schemaScore,
+    total: asserted.length === 0 ? 2 : 3,
     checks: [
       {
         id: "tools.precision",
@@ -149,30 +163,47 @@ function scoreTools(expected: RepoExpectations, actualTools: readonly ExtractedT
         pass: recall === 1,
         detail: `${expectedMatches}/${expected.tools.length} expected tools were generated; recall ${recall.toFixed(3)}`,
       },
+      ...(asserted.length === 0 ? [] : [{
+        id: "tools.schemas",
+        pass: schemaScore === 1,
+        detail: `${schemaMatches}/${asserted.length} curated request/response schema expectations matched`,
+      }]),
     ],
   };
 }
 
+/** Risk-grading redesign D2 — extraction asserts protocol facts and nothing
+ * else, so the check is now: does the grade it landed agree with the curator's
+ * annotation as far as a protocol fact can reach? A DELETE the curator calls
+ * dangerous must be `destructive`; a declared mutation must be `write`; every
+ * other tool must be `ungraded` — never a guess in either direction. */
 function expectedAnnotationMatches(expected: ExpectedToolAnnotation, actual: ExtractedTool | undefined): boolean {
   if (!actual) return false;
-  const expectedRisk = expected.dangerous ? "destructive" : expected.mutating ? "write" : "read";
-  return actual.risk === expectedRisk;
+  const method = effectiveWriteMethod(actual);
+  if (method === "DELETE") return actual.risk === "destructive" && expected.dangerous;
+  const declaredMutation = actual.binding.kind === "trpc" && actual.binding.type === "mutation";
+  if (declaredMutation) return actual.risk === "write" && expected.mutating;
+  return actual.risk === "ungraded";
 }
 
-/** A tRPC or GraphQL mutation is write-shaped exactly like a POST; a query
- * like a GET; a server action is always POST-shaped. */
+/** A tRPC mutation is write-shaped exactly like a POST; a query like a GET;
+ * a server action is always POST-shaped. */
 function effectiveWriteMethod(tool: ExtractedTool): string {
-  if (tool.binding.kind === "trpc" || tool.binding.kind === "graphql") {
+  if (tool.binding.kind === "trpc") {
     return tool.binding.type === "query" ? "GET" : "POST";
   }
   if (tool.binding.kind === "server-action") return "POST";
   return tool.binding.method;
 }
 
+/** Fail-closed against PROTOCOL FACTS only (risk-grading redesign D1: a tool
+ * NAME grades nothing). `ungraded` is never auto-allowed — the guard asks on
+ * it — so two defects remain: a write-capable method that landed `read`, and
+ * a DELETE that is not `destructive`. */
 function isUnsafeAutoAllowed(tool: ExtractedTool): boolean {
   const method = effectiveWriteMethod(tool);
   if (WRITE_METHODS.has(method) && tool.risk === "read") return true;
-  if ((method === "DELETE" || DESTRUCTIVE_NAME.test(tool.name)) && tool.risk !== "destructive") return true;
+  if (method === "DELETE" && tool.risk !== "destructive") return true;
   return false;
 }
 

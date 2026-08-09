@@ -109,9 +109,9 @@ describe("public guard surface", () => {
   });
 
   it("shows real inputs and truncates approval previews to 500 characters", async () => {
-    const critical = descriptor("destructive", { name: "host_critical", critical: true });
+    const confirmEach = descriptor("destructive", { name: "host_confirm_each", confirmEach: true });
     const guard = createGuard({ store: createMemoryStore() });
-    const decision = await guard.check(call(critical.name, { secret: "x".repeat(600) }), critical, context());
+    const decision = await guard.check(call(confirmEach.name, { secret: "x".repeat(600) }), confirmEach, context());
     expect(decision.action).toBe("ask");
     if (decision.action !== "ask") throw new Error("expected approval");
     expect(decision.approval.inputPreview).toHaveLength(500);

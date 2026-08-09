@@ -1,11 +1,15 @@
-/** Live leg (ANTHROPIC_API_KEY-gated): a real model behind agent.asRunner()
- * drives an away agentic automation through the same guard-bound registry the
- * engine hands every run — 07 §4 agentic with real reasoning, real fixture
- * tools, and app-bound authority only.
+/** Live leg (ANTHROPIC_API_KEY-gated): a real model behind the `@vendoai/agents`
+ * away runner drives an away agentic automation through the same guard-bound
+ * registry the engine hands every run — 07 §4 agentic with real reasoning, real
+ * fixture tools, and app-bound authority only.
+ *
+ * The thinker is the SHIPPED default harness (`vendo()`) on the shipped runtime,
+ * so this leg proves the whole away entry and not a test-only loop.
  */
 import { describe, expect, it } from "vitest";
 import type { LanguageModel } from "ai";
-import { createAgent } from "@vendoai/agent";
+import { awayRunner } from "@vendoai/agents";
+import { vendo } from "@vendoai/harnesses";
 import { automationDoc, createStack, ownerCtx, resetFixture } from "./harness.js";
 import { ADA, approve } from "./support.js";
 
@@ -18,13 +22,13 @@ describe.skipIf(!plausible)("live agentic automation", () => {
     const { createAnthropic } = await import("@ai-sdk/anthropic");
     const anthropic = createAnthropic({ apiKey: liveKey });
     const stack = await createStack({
-      runnerFrom: ({ guard, bound, store }) =>
-        createAgent({
-          model: anthropic("claude-haiku-4-5") as LanguageModel,
-          tools: bound,
+      runnerFrom: ({ guard, store }) =>
+        awayRunner({
+          harness: vendo(),
+          models: { default: anthropic("claude-haiku-4-5") as LanguageModel },
           guard,
           store,
-        }).asRunner(),
+        }),
     });
     try {
       const appId = "app_live_agentic";
@@ -40,7 +44,7 @@ describe.skipIf(!plausible)("live agentic automation", () => {
         },
       }));
 
-      const enabled = await stack.automations.enable(appId, ownerCtx(ADA.subject, appId));
+      const enabled = await stack.automations.enable(appId, "main", ownerCtx(ADA.subject, appId));
       // Agentic capture proposes the full bound surface; grant only the read.
       const listCapture = enabled.missing.filter((request) => request.call.tool === "host_invoices_list");
       expect(listCapture).toHaveLength(1);

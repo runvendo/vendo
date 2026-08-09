@@ -13,15 +13,23 @@ import { appIdSchema, approvalIdSchema, type AppId, type ApprovalId } from "./id
 export const VENDO_APP_REF_KIND = "vendo/app-ref@1" as const;
 export const VENDO_APPROVAL_REF_KIND = "vendo/approval-ref@1" as const;
 
-/** `vendo_create_app` returned fast: the build was ACCEPTED and is still
+/** `vendo_make` returned fast: the build was ACCEPTED and is still
  *  streaming over the wire — the app is NOT built yet. `<VendoAppEmbed>` mounts
  *  it by this ref and shows live build progress, the finished app, or the build
- *  failure itself, so the model must not claim the app is created/ready/done. */
+ *  failure itself, so the model must not claim the app is created/ready/done.
+ *  `status` is always `"building"` — a MACHINE-readable field, not prose, so a
+ *  model that skims past the tool description still cannot mistake this for a
+ *  finished, describable resource: given an envelope carrying only an appId and
+ *  a title, observed conversations narrated a fabricated, finished dashboard.
+ *  A build that terminally fails is never wrapped in this ref —
+ *  see `appRefFromReceipt` in `@vendoai/harnesses`. */
 export interface VendoAppRef {
   kind: typeof VENDO_APP_REF_KIND;
   appId: AppId;
   /** Display title for the embed's chrome while the build streams. */
   title: string;
+  /** Always "building": this envelope never means done, win or lose. */
+  status: "building";
 }
 
 /** A guarded call parked on approval: the model sees "pending — the user must
@@ -41,6 +49,7 @@ export const vendoAppRefSchema = z.object({
   kind: z.literal(VENDO_APP_REF_KIND),
   appId: appIdSchema,
   title: z.string(),
+  status: z.literal("building"),
 }).passthrough() satisfies z.ZodType<VendoAppRef>;
 
 export const vendoApprovalRefSchema = z.object({

@@ -204,10 +204,10 @@ const loadE2b = async (): Promise<E2BModule> => {
  * allowedDomains rides E2B's provider-native network allowlist plus an
  * all-traffic deny rule; undefined means unrestricted egress.
  *
- * The machine object also carries adapter-private exec/files used for
- * bootstrap, diagnostics, and the dying v1 compat paths — they are NOT part
- * of the public seam (the in-box agent owns the inside of the box).
- * The optional SDK is imported only when create/resume is called.
+ * `files` is part of the public seam (sandbox.ts). The machine object also
+ * carries adapter-private exec used for bootstrap, diagnostics, and the dying
+ * v1 compat paths — NOT part of the seam (the in-box agent owns the inside of
+ * the box). The optional SDK is imported only when create/resume is called.
  */
 export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -289,6 +289,19 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
           .then(() => undefined);
         await destroying;
       },
+      files: {
+        async read(path: string) {
+          return sandbox.files.read(path, { format: "bytes" });
+        },
+        async write(path: string, bytes: Uint8Array | string) {
+          await sandbox.files.write(path, typeof bytes === "string" ? bytes : toArrayBuffer(bytes));
+        },
+        async list(dir: string) {
+          // E2B lists one level by default and reports entry names, which is
+          // the seam's rule exactly.
+          return (await sandbox.files.list(dir)).map((entry) => entry.name);
+        },
+      },
       // ——— adapter-private below this line (bootstrap/diagnostics + v1 compat) ———
       async exec(cmd: string, execOptions?: { cwd?: string; timeoutMs?: number }) {
         // Box bootstrap and diagnostics are activity too — a minutes-long
@@ -310,17 +323,6 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
           }
           throw error;
         }
-      },
-      files: {
-        async read(path: string) {
-          return sandbox.files.read(path, { format: "bytes" });
-        },
-        async write(path: string, bytes: Uint8Array | string) {
-          await sandbox.files.write(path, typeof bytes === "string" ? bytes : toArrayBuffer(bytes));
-        },
-        async list(dir: string) {
-          return (await sandbox.files.list(dir)).map((entry) => entry.name);
-        },
       },
     } satisfies SandboxMachine & Record<string, unknown> as SandboxMachine;
   };

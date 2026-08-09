@@ -130,6 +130,25 @@ describe("auth0() tenant environment (Auth0's own conventions)", () => {
       .resolves.toEqual({ kind: "user", subject: "user_issuer_base" });
   });
 
+  it("tolerates a trailing slash on AUTH0_DOMAIN — copy-paste is how people set it", async () => {
+    // Auth0 issuers always carry exactly one trailing slash. A pasted
+    // `tenant.auth0.com/` produced `https://tenant.auth0.com//`, which matches
+    // no token's `iss` and points the JWKS fetch at the wrong path, so EVERY
+    // login fails with no hint about the extra character.
+    vi.stubEnv("AUTH0_DOMAIN", `${tenantDomain}/`);
+    const preset = auth0();
+    await expect(preset.principal(withBearer(await sessionToken("user_slash"))))
+      .resolves.toEqual({ kind: "user", subject: "user_slash" });
+    expect(jwksState.url).toBe(`https://${tenantDomain}/.well-known/jwks.json`);
+  });
+
+  it("names AUTH0_DOMAIN rather than throwing a URL parse error on an unusable value", async () => {
+    vi.stubEnv("AUTH0_DOMAIN", "https://");
+    const preset = auth0();
+    await expect(preset.principal(withBearer(await sessionToken("user_bad_domain"))))
+      .rejects.toThrow(/AUTH0_DOMAIN/);
+  });
+
   it("throws an actionable error naming AUTH0_DOMAIN when no tenant is configured", async () => {
     const preset = auth0();
     await expect(preset.principal(withBearer(await sessionToken("user_nodomain"))))

@@ -59,33 +59,18 @@ async function tickAuthorized(request: Request): Promise<boolean> {
 
 /** The development-only injection seams. Each handler guards on its composed
     dependency and falls through otherwise: production handlers receive no
-    runtimeCapture dependency / no development flag, so these answer the
-    ordinary 404 — there is no guarded-but-mounted production endpoint. */
+    development flag, so these answer the ordinary 404 — there is no
+    guarded-but-mounted production endpoint. */
 export const devRoutes: RouteEntry[] = [
-  route("POST", "/dev/remixable-source", async ({ request, deps, context }) => {
-    if (deps.runtimeCapture === undefined) return undefined;
-    const body = await requestJson(request);
-    // Capture writes .vendo/remixable baselines on the developer's disk, so
-    // it requires a HOST-resolved principal — an anonymous visitor's minted
-    // ephemeral session is not enough, even in a development composition.
-    const captureContext = await context("app");
-    if (captureContext.principal.ephemeral === true) {
-      return json({ error: { code: "blocked", message: "runtime capture requires a host-resolved principal" } }, 401);
-    }
-    if (typeof body["exportable"] !== "boolean") {
-      throw new VendoError("validation", "exportable must be a boolean");
-    }
-    return json(await deps.runtimeCapture.capture({
-      slot: string(body["slot"], "slot"),
-      source: string(body["source"], "source"),
-      exportable: body["exportable"],
-    }));
-  }),
   // 06-apps §9 — the documented LOCAL injection seam for in-client approval
   // records (demos and dev; Cloud's review console mints these in
   // production). Development compositions only: production handlers fall
-  // through to the ordinary 404, exactly like /dev/remixable-source, so no
-  // production surface can self-approve an app into the host page.
+  // through to the ordinary 404, so no production surface can self-approve
+  // an app into the host page. For a REVIEW-KIND remix the runtime refuses
+  // the app's own user even here (round-2 hardening): approval IS the
+  // review, so it takes the composition's reviewer assertion
+  // (apps.review.reviewer) — which also lets an asserted reviewer approve
+  // across the owner boundary.
   route("POST", "/dev/inclient-approval", async ({ request, deps, context }) => {
     if (!deps.development) return undefined;
     const body = await requestJson(request);
@@ -105,44 +90,64 @@ export const devRoutes: RouteEntry[] = [
   }),
 ];
 
-/** The machine-facing surfaces: webhook ingress, the authenticated scheduler
-    tick, and the dev-only sync impact probe. All match on the RAW path
-    (prefix or exact) ahead of any segment decoding, exactly like the old
-    chain. (The v1 run-token apps proxy mount died with execution-v2 Wave 1.5;
-    the box callback surface at /box/ is its replacement.) */
-export const systemRoutes: RouteEntry[] = [
+/** External-event ingress. Mounted with the automations subsystem, and absent
+    without it — a delivery to a deployment that does not run automations is a
+    404 rather than a door that accepts the event and drops it. */
+export const webhookRoutes: RouteEntry[] = [
   prefixRoute("POST", "/webhooks/", async ({ request, deps }) => {
     return await deps.automations.webhook(request);
   }),
-  route("POST", "/tick", async ({ request, deps }) => {
+];
+
+/** The machine-facing surface: the authenticated scheduler tick. Matches on the
+    RAW path ahead of any segment decoding, exactly like the old chain. The tick
+    is here rather than with the webhook door because it also drives the hosted
+    session sweep, which every deployment needs. (The v1 run-token apps proxy
+    mount died with execution-v2 Wave 1.5; the box callback surface at /box/ is
+    its replacement.) */
+export const systemRoutes: RouteEntry[] = [
+  route("POST", "/tick", async ({ request, deps, sweep }) => {
     if (!await tickAuthorized(request)) {
       return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
     }
-    // execution-v2 Lane D — one authenticated tick drives BOTH schedulers: the
-    // automations engine and the machine-app vendo.json schedules (additive
-    // `schedules` field). Point any external cron here (Vercel cron, GitHub
-    // Actions, crontab); the Cloud broker calls this same surface. The engines
-    // settle independently so one failing can never suppress the other; any
-    // failure still answers 500 so a retrying cron comes back (both engines
-    // are idempotent within their windows).
-    const [runs, schedules] = await Promise.allSettled([
+    // One authenticated tick drives the ONE scheduler — the automations engine,
+    // which fires every trigger including the schedules a machine app declares
+    // in its vendo.json (folded into doc triggers at manifest sync) — plus the
+    // hosted TTL sweep (sweepOnTick). Point any external cron here (Vercel cron,
+    // GitHub Actions, crontab); the Cloud broker calls this same surface. The
+    // legs settle independently so one failing can never suppress the other; any
+    // failure still answers 500 so a retrying cron comes back (both are
+    // idempotent within their windows).
+    const [runs, sessions] = await Promise.allSettled([
       deps.automations.tick(),
-      deps.apps.schedules.tick(),
+      deps.sweepOnTick ? sweep() : Promise.resolve(),
     ]);
     const errors = [
       ...(runs.status === "rejected" ? [`automations: ${runs.reason instanceof Error ? runs.reason.message : "tick failed"}`] : []),
-      ...(schedules.status === "rejected" ? [`schedules: ${schedules.reason instanceof Error ? schedules.reason.message : "tick failed"}`] : []),
+      ...(sessions.status === "rejected" ? [`sessions: ${sessions.reason instanceof Error ? sessions.reason.message : "sweep failed"}`] : []),
     ];
     return json({
       ...(runs.status === "fulfilled" ? { runIds: runs.value } : {}),
-      ...(schedules.status === "fulfilled" ? { schedules: schedules.value } : {}),
       ...(errors.length === 0 ? {} : { errors }),
     }, errors.length === 0 ? 200 : 500);
   }),
+];
+
+/** The `vendo sync` blast-radius probe, mounted ONLY in a development
+    composition (wireRoutesFor) — a deployment that did not opt in has no such
+    route and answers the ordinary 404.
+
+    It used to sit in systemRoutes and refuse per-request on
+    `environment("NODE_ENV") === "production"`, which failed OPEN twice over:
+    `environment()` answers undefined for an unset NODE_ENV and on any runtime
+    without a `process` global (edge, Workers). Either one served this to an
+    anonymous caller — and the answer is not scoped to a principal, it reads
+    the deployment's whole vendo_apps and vendo_grants collections, so it was
+    cross-subject enumeration. Absence of configuration has to mean closed;
+    `deps.development` is the flag that already means that, and it is decided at
+    boot rather than per request. */
+export const syncImpactRoutes: RouteEntry[] = [
   route("POST", "/sync/impact", async ({ request, deps }) => {
-    if (environment("NODE_ENV") === "production") {
-      throw new VendoError("blocked", "sync impact is only available on a dev server");
-    }
     const body = await requestJson(request);
     const tools = body["tools"];
     if (!Array.isArray(tools) || tools.length > 200 || tools.some((tool) => typeof tool !== "string")) {
@@ -180,10 +185,19 @@ export const activityRoutes: RouteEntry[] = [
 
 export const statusRoutes: RouteEntry[] = [
   route("GET", "/status", async ({ deps, context }) => {
-    await context("chat");
+    const ctx = await context("chat");
     return json({
       posture: deps.guard.status().posture,
       version: VERSION,
+      // Build contract §9.1 — the orgs the host ASSERTED for this caller, so
+      // the Share dialog can offer them by name. Nothing is stored: this is
+      // the same per-request answer `can()` just used, echoed to the surface.
+      ...(ctx.memberships === undefined ? {} : { memberships: ctx.memberships }),
+      // Build contract §9.1 companion — can the HOST name a person from what
+      // someone types? Vendo holds no directory, so with the `resolvePerson`
+      // seam unset the Share dialog must not offer to share with one person at
+      // all: it used to, and encoded whatever was typed as the subject.
+      ...(deps.resolvePerson === undefined ? {} : { namesPeople: true }),
       blocks: {
         store: true,
         agent: true,
@@ -195,8 +209,10 @@ export const statusRoutes: RouteEntry[] = [
         // Inference seam (cloud definition 2026-07-17): "custom" (host-passed
         // model) or "ladder" (the composed vendoModel env default).
         model: deps.model,
-        // 10-mcp §1 — the door is off by default; true only when
-        // createVendo({ mcp: true }) opened it.
+        // 10-mcp §1 + the broker seam: false while the door
+        // is closed (it is off by default); "local" when the open door serves
+        // its own OAuth surface; "broker" when an external authorization
+        // server fronts it.
         mcp: deps.mcp,
         // 04-actions §3 — how per-user connected accounts are brokered:
         // "byo" (host's own Composio key), "cloud" (VENDO_API_KEY), or off.

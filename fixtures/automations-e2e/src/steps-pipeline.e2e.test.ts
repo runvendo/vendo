@@ -5,7 +5,13 @@ import { ADA, enableAndApprove, fixtureInvoices, record } from "./support.js";
 describe("deterministic steps pipelines", () => {
   beforeEach(resetFixture);
 
-  it("lists then fans out over open invoices, sends each, and records ordered outcomes", async () => {
+  // The subject here is the FAN-OUT machinery — forEach over a previous step's
+  // output, one ordered step outcome per item, persisted and audited. It rides a
+  // non-destructive write (PATCH `host_invoices_update`) because THE LAW
+  // (design §12) never projects a destructive or external action into an
+  // unattended run, so `host_invoices_send` could not reach the fan-out at all.
+  // The law's own refusal is proven in park-resume.e2e.test.ts.
+  it("lists then fans out over open invoices, updates each, and records ordered outcomes", async () => {
     const stack = await createStack();
     try {
       const appId = "app_steps_fanout";
@@ -19,9 +25,9 @@ describe("deterministic steps pipelines", () => {
               { id: "list", tool: "host_invoices_list" },
               {
                 id: "send",
-                tool: "host_invoices_send",
+                tool: "host_invoices_update",
                 forEach: "$filter(steps.list.invoices, function($invoice) { $invoice.status = 'open' })",
-                args: { id: "item.id" },
+                args: { id: "item.id", memo: "'swept'" },
               },
             ],
           },
@@ -61,24 +67,34 @@ describe("deterministic steps pipelines", () => {
       ]);
       expect(typeof stored.summary).toBe("string");
 
+      // Each fanned-out item really executed against the host: both open
+      // invoices carry the memo the step wrote. (Asserting only `status` would
+      // now pass vacuously — `open` is what the forEach filtered ON.)
       const invoices = await fixtureInvoices();
-      expect(invoices.find(({ id }) => id === "inv_0002")?.status).toBe("open");
-      expect(invoices.find(({ id }) => id === "inv_0005")?.status).toBe("open");
+      expect(invoices.find(({ id }) => id === "inv_0002")?.memo).toBe("swept");
+      expect(invoices.find(({ id }) => id === "inv_0005")?.memo).toBe("swept");
       expect(Number((await stack.sql<{ count: unknown }>(
         "SELECT COUNT(*)::int AS count FROM vendo_audit WHERE kind = 'run' AND app_id = $1",
         [appId],
       ))[0]?.count)).toBeGreaterThanOrEqual(2);
 
       // Audit enrichment (ENG-264): every guard tool-call event from a
-      // trigger-fired away run carries the trigger ref { runId, kind } into
-      // the persisted audit row's event jsonb.
-      const triggered = await stack.sql<{ trigger: { runId?: string; kind?: string } | null }>(
+      // trigger-fired away run carries the trigger ref
+      // { runId, kind, id, lineageId } into the persisted audit row's event
+      // jsonb. `id` names WHICH trigger of the app fired — the dimension the
+      // guard matches an away grant on — so the trail says which trigger's
+      // authority each call ran under, and `lineageId` names the FIRING the
+      // effect ledger keys receipts on (this run is nobody's re-run, so it is
+      // its own root).
+      const triggered = await stack.sql<{
+        trigger: { runId?: string; kind?: string; id?: string; lineageId?: string } | null;
+      }>(
         "SELECT event->'trigger' AS trigger FROM vendo_audit WHERE kind = 'tool-call' AND app_id = $1",
         [appId],
       );
       expect(triggered.length).toBeGreaterThanOrEqual(3);
       for (const row of triggered) {
-        expect(row.trigger).toEqual({ runId, kind: "host-event" });
+        expect(row.trigger).toEqual({ runId, kind: "host-event", id: "main", lineageId: runId });
       }
     } finally {
       await stack.close();
@@ -241,12 +257,15 @@ describe("deterministic steps pipelines", () => {
           on: { kind: "host-event", event: "invoice.policy" },
           run: {
             kind: "steps",
-            steps: [{ id: "blocked", tool: "host_invoices_send", args: { id: "'inv_0003'" } }],
+            // A declared WRITE, so the block rule above is what stops it — the
+            // send tool is declared destructive now and would be refused by THE
+            // LAW before any policy rule got a say.
+            steps: [{ id: "blocked", tool: "host_invoices_update", args: { id: "'inv_0003'" } }],
           },
         },
       }));
       const ctx = ownerCtx(ADA.subject, appId);
-      await stack.automations.enable(appId, ctx);
+      await stack.automations.enable(appId, "main", ctx);
       const ids = await stack.automations.emit("invoice.policy", {}, ADA);
       const id = ids[0];
       if (!id) throw new Error("emit did not return a run id");

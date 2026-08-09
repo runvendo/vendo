@@ -1,8 +1,5 @@
 "use client";
 
-import { createVendoClient, VendoProvider } from "@vendoai/ui";
-import { useMemo, type ComponentProps } from "react";
-
 // Named re-exports, not `export *`: this file is a "use client" boundary, and
 // Next's flight loader builds the client-reference manifest by statically
 // enumerating a client module's named exports — it cannot do that through
@@ -19,7 +16,7 @@ export {
   // context.ts
   VendoProvider,
   hostComponentMap,
-  useVendoContext,
+  useVendoProvider,
   useVendoDiscoverability,
   useVendoGreeting,
   useVendoTheme,
@@ -40,8 +37,14 @@ export {
   // hooks/*
   useActivity,
   useApp,
+  useAppGrants,
   useApps,
   useApprovals,
+  // spec §4 (N1) — the one attention source (askCount + unseen results), and
+  // the shapes it hands back.
+  useAttention,
+  type RunActivity,
+  type RunResult,
   useAutomations,
   useConnections,
   useConnectorCatalog,
@@ -55,18 +58,25 @@ export {
   useVendoOverlay,
   type VendoOverlayController,
   useVendoStatus,
+  useVendoContext,
   useVendoThread,
   type VendoThreadApproval,
   ScriptedTransport,
   type DirectorCue,
   type DirectorScript,
+  // pin-events.ts — the bus a slot re-reads on, for a host that pins from its
+  // own control instead of a Vendo surface.
+  announcePin,
+  onPinAnnounced,
+  // slot-notes.ts — the destinations the embed's "Add to…" picker offers; a
+  // mounted VendoSlot is the only thing that knows a slot exists.
+  knownSlots,
+  noteSlot,
+  type SlotNote,
   // theme.ts
   defaultVendoTheme,
   resolveTheme,
   themeCssVariables,
-  // voice/use-voice.ts
-  useVoice,
-  type UseVoiceResult,
   // wire-types.ts
   type OpenSurface,
   type InClientVenue,
@@ -94,16 +104,3 @@ export {
 // does not resolve for them (same TS2307 story as the registry's
 // ComponentRegistry import).
 export { VendoOverlay, type VendoOverlayProps } from "@vendoai/ui/chrome";
-export { remixable, type RemixableRegistration, type RemixableReportOptions } from "./remixable.js";
-
-type ProviderProps = ComponentProps<typeof VendoProvider>;
-
-/** 09-vendo §1 — the UI provider prewired to the default wire base. */
-export function VendoRoot(props: Omit<ProviderProps, "client"> & {
-  client?: ProviderProps["client"];
-  baseUrl?: string;
-}): ReturnType<typeof VendoProvider> {
-  const { client: configuredClient, baseUrl = "/api/vendo", ...providerProps } = props;
-  const defaultClient = useMemo(() => createVendoClient({ baseUrl }), [baseUrl]);
-  return <VendoProvider {...providerProps} client={configuredClient ?? defaultClient} />;
-}

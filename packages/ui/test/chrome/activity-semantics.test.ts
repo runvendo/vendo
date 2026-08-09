@@ -1,6 +1,7 @@
 import type { AuditEvent } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import {
+  decidedByLabel,
   describeActivity,
   eventOutcomeLabel,
   formatAuditTime,
@@ -8,6 +9,7 @@ import {
   kindGlyph,
   outcomeLabel,
 } from "../../src/chrome/activity-semantics.js";
+import { activityDetail } from "../../src/chrome/activity-ledger.js";
 
 describe("formatRelativeAuditTime", () => {
   const now = new Date("2026-07-18T10:00:00.000Z");
@@ -97,6 +99,46 @@ describe("eventOutcomeLabel", () => {
     expect(eventOutcomeLabel({ kind: "approval", outcome: undefined, detail: undefined }))
       .toEqual({ label: "Running", tone: "running" });
   });
+
+  it("D6 · a harness run row is written at turn END, so it never reads as in flight", () => {
+    expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { harness: "vendo", usage: {} } }))
+      .toEqual({ label: "Succeeded", tone: "ok" });
+    expect(eventOutcomeLabel({
+      kind: "run",
+      outcome: undefined,
+      detail: { harness: "claude-code", error: { message: "boom" } },
+    })).toEqual({ label: "Failed", tone: "error" });
+  });
+
+  // ⚠️ TEST EDIT — this replaces "an automation-engine run row keeps its own
+  // older display, untouched", which asserted `{ status: "ok" }` reads
+  // "Running". That assertion PINNED the bug the D6 comment had already named
+  // and deferred: the engine's `audit()` never sets a wire `outcome`, so on a
+  // real deployment 20 of 25 finished automation rows claimed to be in flight
+  // while the API said `ok`. The row's own status is the answer; it is no
+  // longer a separate question.
+  it("reads an automation-engine run row's real outcome from detail.status", () => {
+    expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { status: "ok" } }))
+      .toEqual({ label: "Succeeded", tone: "ok" });
+    expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { status: "error" } }))
+      .toEqual({ label: "Failed", tone: "error" });
+    expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { status: "stopped" } }))
+      .toEqual({ label: "Stopped", tone: "blocked" });
+  });
+
+  it("keeps a genuinely running automation row running — `running` is the one live status", () => {
+    expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { status: "running" } }))
+      .toEqual({ label: "Running", tone: "running" });
+  });
+
+  it("reads the engine's three refusal statuses as the failures they are", () => {
+    // The engine writes these instead of (not as well as) a plain `error` on the
+    // row that refused, so leaving them unmapped left real failures reading live.
+    for (const status of ["sponsorship-check-failed", "sponsorship-invalidated", "webhook-rejected"]) {
+      expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { status } }))
+        .toEqual({ label: "Failed", tone: "error" });
+    }
+  });
 });
 
 describe("describeActivity", () => {
@@ -122,7 +164,9 @@ describe("describeActivity", () => {
 
   it("gives every other audit kind a concrete phrase", () => {
     expect(describeActivity(event({ kind: "door-auth", tool: undefined })).action).toBe("Account connected");
-    expect(describeActivity(event({ kind: "run", tool: undefined })).action).toBe("Automation run");
+    // The fixture's venue is `chat`, so "Automation run" was this expectation
+    // pinning the bug, not describing the product.
+    expect(describeActivity(event({ kind: "run", tool: undefined })).action).toBe("Chat turn");
     expect(describeActivity(event({ kind: "policy-decision", tool: undefined })).action).toBe("Policy decision");
     expect(describeActivity(event({ kind: "app-lifecycle", tool: undefined })).action).toBe("App updated");
     expect(describeActivity(event({ kind: "share", tool: undefined })).action).toBe("App shared");
@@ -131,5 +175,96 @@ describe("describeActivity", () => {
 
   it("falls back to a readable phrase for a tool call with no tool id", () => {
     expect(describeActivity(event({ kind: "tool-call", tool: undefined })).action).toBe("Tool call");
+  });
+
+  it("D6 · names a run after the DOOR it arrived through, never 'Automation' for all four", () => {
+    // Measured: seven finished chat turns on a user's own activity rail, every
+    // one of them reading "Automation run", while not one automation had run.
+    for (const [venue, badge, action] of [
+      ["chat", "Chat", "Chat turn"],
+      ["app", "App", "App run"],
+      ["automation", "Automation", "Automation run"],
+      ["mcp", "Agent", "Connected agent run"],
+    ] as const) {
+      const described = describeActivity(event({ kind: "run", tool: undefined, venue }));
+      expect(described.kindLabel).toBe(badge);
+      expect(described.action).toBe(action);
+    }
+  });
+
+  it("D6 · a hired specialist gets its own sentence, not the thread's", () => {
+    const described = describeActivity(event({
+      kind: "run",
+      tool: undefined,
+      detail: { harness: "claude-code", subagent: { purpose: "build the app" } },
+    }));
+    expect(described.action).toBe("Specialist hired");
+  });
+});
+
+/** CR-2 — the ledger's detail line humanized the LABELS and let the VALUES
+ *  through verbatim, so a person's own activity rail read
+ *  "App id app_9a3f2b1c · Instruction add a chart". */
+describe("activityDetail — the values are consumer copy too", () => {
+  const preview = (tool: string, args: unknown) => activityDetail({ tool, inputPreview: `${tool} ${JSON.stringify(args)}` });
+
+  it("drops an id-shaped value and keeps the words a person wrote", () => {
+    expect(preview("vendo_make", { app: "app_9a3f2b1c", request: "add a chart" }))
+      .toBe("Request add a chart");
+  });
+
+  it("says nothing at all when every value is an id", () => {
+    expect(preview("vendo_apps_open", { appId: "app_9a3f2b1c", threadId: "thr_18f0" })).toBeUndefined();
+  });
+
+  it("keeps ordinary values that merely contain an underscore", () => {
+    expect(preview("host_invoices_list", { status: "past_due" })).toBe("Status past_due");
+  });
+
+  it("stays a SCANNABLE line — three fields at the 400-char value cap is 1.2 kB", () => {
+    const detail = preview("host_invoices_list", {
+      note: "x".repeat(600),
+      other: "y".repeat(600),
+      third: "z".repeat(600),
+    });
+    expect(detail).toBeDefined();
+    expect(detail!.length).toBeLessThanOrEqual(121);
+  });
+});
+
+describe("decidedByLabel", () => {
+  it("says what actually happened: an older no is still standing", () => {
+    // Raw, the ledger read "blocked by denied", which sounds like a fresh
+    // refusal. It is the user's OWN no from earlier doing the blocking.
+    expect(decidedByLabel("denied")).toBe("previously denied");
+  });
+
+  it("humanizes the other slugs a person would stumble over", () => {
+    expect(decidedByLabel("confirmEach")).toBe("confirm-each");
+    expect(decidedByLabel("default")).toBe("the default posture");
+  });
+
+  it("passes through the ones that already read as English", () => {
+    for (const slug of ["grant", "rule", "judge", "breaker"]) {
+      expect(decidedByLabel(slug)).toBe(slug);
+    }
+  });
+});
+
+describe("eventOutcomeLabel — taking a decision back", () => {
+  it("names an approval revoke instead of leaving it Running forever", () => {
+    expect(eventOutcomeLabel({
+      kind: "approval",
+      outcome: undefined,
+      detail: { approvalRevoked: "apr_1", priorStatus: "denied" },
+    })).toEqual({ label: "Decision taken back", tone: "ok" });
+  });
+
+  it("says a no that arrived mid-replay came too late — never a row still Running", () => {
+    expect(eventOutcomeLabel({
+      kind: "approval",
+      outcome: undefined,
+      detail: { supersedeTooLate: "apr_1" },
+    })).toEqual({ label: "Ran before the no landed", tone: "error" });
   });
 });

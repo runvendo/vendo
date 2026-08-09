@@ -22,7 +22,7 @@ vi.mock("node:worker_threads", () => ({
 
 describe("smokeRenderIslands on a Worker-thread-less environment (workerd)", () => {
   it("skips the gate silently instead of throwing when new Worker() is unimplemented", async () => {
-    const { smokeRenderIslands } = await import("./generation/validation/smoke-render.js");
+    const { smokeRenderIslands } = await import("./checking/smoke-render.js");
     const source = `
 export default function ClientList() {
   return <Text text="hello" />;

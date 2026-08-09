@@ -31,14 +31,20 @@ ever sent, and it is scrubbed first: file paths, email addresses, and
 secret-shaped strings are replaced with fixed tokens, then the result is
 capped at 200 characters.
 
-Disable telemetry with any of these controls — each applies to both lanes, so
-an opted-out user with a cloud key sends nothing:
+Disable this stream with any of these controls — each applies to both lanes,
+so an opted-out user with a cloud key sends nothing:
 
-- `VENDO_TELEMETRY_DISABLED=1`
+- `VENDO_TELEMETRY_DISABLED=1` (or `true`)
+- `DO_NOT_TRACK=1` (or `true`)
+- `CI` set to anything other than `""`, `"0"`, or `"false"`
 - `"optedOut": true` in `~/.vendo/telemetry.json`
-- `DO_NOT_TRACK=1`
-- `CI`
-- `NODE_ENV=production`
+
+`NODE_ENV` is a separate, narrower gate. It applies only to the dev-server
+runtime collector, which fires solely when `NODE_ENV` is `development` or
+`test` — an unset or unrecognized value is treated as production and
+collects nothing. It does **not** gate the CLI and build collector, which is
+what `vendo init`, `sync`, and `doctor` report through; use the four controls
+above for that.
 
 The stored id is a random UUID and is not derived from a machine, account,
 project, or host app. Deleting the file rotates it.
@@ -82,9 +88,9 @@ Vendo Cloud uploads capability misses when, and only when, both of these hold:
 - the environment does not trip a kill switch (see below)
 
 The non-empty API key is the host's explicit opt-in, so production runs upload
-misses by default once a key is present. The build-and-development-only
-`NODE_ENV=production` fail-close and the persisted `optedOut` flag in
-`~/.vendo/telemetry.json` do not gate this stream.
+misses by default once a key is present. Neither the `NODE_ENV` fail-close
+(which applies only to the dev-server runtime collector) nor the persisted
+`optedOut` flag in `~/.vendo/telemetry.json` gates this stream.
 
 Any of these environment values blocks upload for the current process:
 

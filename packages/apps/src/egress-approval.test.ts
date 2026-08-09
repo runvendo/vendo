@@ -88,20 +88,19 @@ describe("egress approval store", () => {
     requestedAt: "2026-07-19T00:00:00.000Z",
   });
 
-  it("parks, lists by app and by approval, and clears on decision", async () => {
+  it("parks, lists by approval, and clears on decision", async () => {
     const approvals = createEgressApprovals(memoryStore());
     await approvals.putPending(request("api.example.com"));
     await approvals.putPending(request("hooks.stripe.com"));
 
-    expect((await approvals.pending("app_egress_test")).map((r) => r.domain).sort()).toEqual([
+    expect((await approvals.byApproval("apr_1")).map((r) => r.domain).sort()).toEqual([
       "api.example.com",
       "hooks.stripe.com",
     ]);
-    expect((await approvals.byApproval("apr_1")).length).toBe(2);
     expect(await approvals.byApproval("apr_other")).toEqual([]);
 
     await approvals.remove("app_egress_test", "api.example.com");
-    expect((await approvals.pending("app_egress_test")).map((r) => r.domain)).toEqual([
+    expect((await approvals.byApproval("apr_1")).map((r) => r.domain)).toEqual([
       "hooks.stripe.com",
     ]);
   });
@@ -110,9 +109,10 @@ describe("egress approval store", () => {
     const approvals = createEgressApprovals(memoryStore());
     await approvals.putPending(request("api.example.com", "apr_1"));
     await approvals.putPending(request("api.example.com", "apr_2"));
-    const pending = await approvals.pending("app_egress_test");
-    expect(pending.length).toBe(1);
-    expect(pending[0]?.approvalId).toBe("apr_2");
+    // The overwrite carries the domain onto the NEW approval, so the old one no
+    // longer holds it — one parked record, not two.
+    expect(await approvals.byApproval("apr_1")).toEqual([]);
+    expect((await approvals.byApproval("apr_2")).map((r) => r.domain)).toEqual(["api.example.com"]);
   });
 
   it("clearForApp removes every parked request for the app", async () => {
@@ -120,6 +120,6 @@ describe("egress approval store", () => {
     await approvals.putPending(request("api.example.com"));
     await approvals.putPending(request("hooks.stripe.com"));
     await approvals.clearForApp("app_egress_test");
-    expect(await approvals.pending("app_egress_test")).toEqual([]);
+    expect(await approvals.byApproval("apr_1")).toEqual([]);
   });
 });

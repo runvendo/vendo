@@ -1,0 +1,154 @@
+/**
+ * The rest of the ONE registry: the connector-discovery pair (only as far as an
+ * adapter backs it), the knowledge tool, and the capability-miss surface the
+ * agent reports an unfulfillable ask through.
+ */
+import type { Connector } from "@vendoai/actions";
+import type { Json } from "@vendoai/core";
+import { createKnowledgeTools, knowledgeIndexResolver } from "@vendoai/knowledge";
+import {
+  capabilitySurfaceSnapshot,
+  createCapabilityMissCapture,
+  type CapabilitySurfaceSnapshot,
+} from "./capability-misses.js";
+import type { VendoComposition } from "./compose-context.js";
+import {
+  cloudKeyOptions,
+  DEFAULT_TOOL_OUTPUT_CAP,
+  selectKnowledge,
+} from "./compose-selection.js";
+import { connectorDiscoveryRegistry } from "./connector-discovery.js";
+import { dotVendoFile } from "./dot-vendo.js";
+
+/** The discovery tools' ports. Each body only runs on a real tool call, long
+ *  after createVendo has returned, so the seams it reads may be composed later. */
+const connectorDiscoveryPorts = (
+  composition: VendoComposition,
+  catalogConnectors: Connector[],
+  serviceCatalog: boolean,
+): Parameters<typeof connectorDiscoveryRegistry>[0] => ({
+    ...(serviceCatalog ? {
+      // The BROKER's own search, not ours. Composio is never named here — a
+      // connector fills the slot or nothing does. `findCtx` is the CALLER's, so
+      // each match's `connected` is that person's answer, not the deployment's,
+      // and the fan-out is over the SAME connectors `use_service_tool` can
+      // reach, or the model would be handed rows it can never run.
+      find: async (need, findCtx) => (await Promise.all(
+        catalogConnectors.map((connector) => connector.searchTools!(need, findCtx)),
+      )).flat(),
+      // The outcome travels back VERBATIM: the guard lifts its `connectorAccount`
+      // passthrough onto the audit row, which is how a connector call gets its
+      // toolkit named without a second audit path. `undefined` = no connector
+      // serves this slug, and the tool turns that into "search first".
+      use: async (slug, args, useCtx) => {
+        const owner = await composition.serviceToolOwner(slug);
+        return owner === undefined ? undefined : await owner.connector.executeSlug!(slug, args, useCtx);
+      },
+    } : {}),
+    // The connect dock's catalog (toolkits with an enabled auth config),
+    // annotated per subject from the same cache the connect gate reads.
+    list: async (listCtx) => {
+      const [connectable, connected] = await Promise.all([
+        composition.connections.catalog(),
+        composition.connectedToolkitsFor(listCtx).then((toolkits) => new Set(toolkits)),
+      ]);
+      return connectable.map((entry) => ({
+        toolkit: entry.toolkit,
+        ...(entry.label === undefined ? {} : { label: entry.label }),
+        ...(entry.description === undefined ? {} : { description: entry.description }),
+        connected: connected.has(entry.toolkit),
+      })) as unknown as Json;
+    },
+    // The same catalog `list` reads, resolved to ONE row: the ask the agent
+    // raises can only name a toolkit this deployment can actually connect, so
+    // the card's button always has a broker behind it. `undefined` is the
+    // honest answer for anything else — the tool turns it into "check what
+    // exists" rather than a dead button.
+    connect: async (toolkit) => {
+      const entry = (await composition.connections.catalog()).find((candidate) => candidate.toolkit === toolkit);
+      return entry === undefined ? undefined : { connector: entry.connector, toolkit: entry.toolkit };
+    },
+});
+
+/** The discovery pair, the knowledge tool, and the capability-miss surface. */
+export const composeTools = (composition: VendoComposition): Pick<VendoComposition,
+  "toolOutputCap" | "catalogConnectors" | "serviceCatalog" | "knowledgeIndex"
+  | "missSurface" | "missCapture"> => {
+  const { config, actions, store, resolvedConnectors, surfaceRoot } = composition;
+  // One value, three readers: the agent's context, the harness bridge, and the
+  // discovery registry — which bounds its own search under it rather than being
+  // cut by it (the cap slices serialized JSON, so a search that reaches it loses
+  // a schema mid-object).
+  const toolOutputCap = config.toolOutputCap ?? DEFAULT_TOOL_OUTPUT_CAP;
+  // The connector-discovery tools (design 2026-08-03), on the SAME registry, each
+  // only as far as an adapter backs it — the "no adapter, no tool" rule knowledge
+  // follows below, applied per tool rather than per registry.
+  //
+  // `list_connections` answers a standalone question ("what can I connect?") and
+  // needs nothing but a connector. The CATALOG PAIR needs all THREE halves of the
+  // find → use loop from the same connector: only the broker can index tens of
+  // thousands of third-party tools (`searchTools`), only it can grade them
+  // (`toolRisk`, which is also how a slug is claimed below), and only it can run
+  // them (`executeSlug`). Anything less projects a tool the model can see and can
+  // never successfully use — there is deliberately no fallback, no keyword scoring
+  // (design §Deletions) and no name-based inference (§12, #747). The zero-key Cloud
+  // default connector has no search backend, so a Cloud-default host is projected
+  // `list_connections` alone rather than a search that answers nothing.
+  //
+  // The ports read seams declared BELOW this line (`connections`,
+  // `connectedToolkitsFor`), the established pattern here: a port body only runs on
+  // a real tool call, long after createVendo has returned.
+  const catalogConnectors = resolvedConnectors.filter((connector) =>
+    connector.searchTools !== undefined
+    && connector.toolRisk !== undefined
+    && connector.executeSlug !== undefined);
+  const serviceCatalog = catalogConnectors.length > 0;
+  if (resolvedConnectors.length > 0) {
+    actions.add(connectorDiscoveryRegistry(
+      connectorDiscoveryPorts(composition, catalogConnectors, serviceCatalog),
+      { toolOutputCap },
+    ));
+  }
+  // Knowledge K1 — the tool exists exactly when an adapter is configured;
+  // no adapter, no `vendo_knowledge_search` in any descriptor surface.
+  const knowledge = selectKnowledge(config.knowledge, store);
+  // K14 — the calibrated band + verifier ride exactly the engine they were
+  // calibrated against (the Cloud default); a host-passed adapter keeps the
+  // uncalibrated defaults it has today.
+  if (knowledge !== undefined) {
+    actions.add(createKnowledgeTools(knowledge));
+  }
+  // Knowledge k8 (ENG-368) — the prompt index rides exactly when the tool
+  // composes. Byte-stable at a fixed sync state, refreshed when the sync
+  // manifest changes (never rebuilt per-turn); knowledge.json is an
+  // ingestion input, not a config surface, so it reads through the raw
+  // fail-soft reader like catalog.json.
+  const knowledgeIndex = knowledge === undefined
+    ? undefined
+    : knowledgeIndexResolver(knowledge, {
+        readConfig: () => dotVendoFile("knowledge.json", surfaceRoot),
+        readManifest: () => dotVendoFile("knowledge-manifest.json", surfaceRoot),
+      });
+  // #557 — the capability-miss surface is DEFERRED to first use behind a
+  // memoized promise. Building it eagerly at compose would call
+  // actions.descriptors() → loadHost → the cloud overrides fetch at module
+  // init, which Workers forbids in global scope (portability-gate). It resolves
+  // ONCE, on the first capability-miss upload or detector report — the same
+  // boot-once posture as the enablement provider it now shares loadHost with.
+  // (The zero-live-tools warning, emitted inside loadHost, therefore fires on
+  // that first request rather than at compose.)
+  let missSurfacePromise: Promise<CapabilitySurfaceSnapshot> | undefined;
+  const missSurface = (): Promise<CapabilitySurfaceSnapshot> =>
+    (missSurfacePromise ??= actions.descriptors()
+      .then(capabilitySurfaceSnapshot)
+      .catch(() => capabilitySurfaceSnapshot([])));
+  // ADAPTER RULE, miss-upload seam: capability-misses.ts never reads the
+  // environment for its Cloud uploader — VENDO_API_KEY fills the slot HERE,
+  // like the share/publish seam above; unfilled, misses stay local-only.
+  const missCloud = cloudKeyOptions();
+  const missCapture = createCapabilityMissCapture({
+    surface: missSurface,
+    ...(missCloud === undefined ? {} : { cloud: missCloud }),
+  });
+  return { toolOutputCap, catalogConnectors, serviceCatalog, knowledgeIndex, missSurface, missCapture };
+};

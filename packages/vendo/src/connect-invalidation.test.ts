@@ -72,7 +72,7 @@ async function composeVendo(connector: Connector) {
     store,
     connectors: [connector],
     principal: vi.fn(async () => principal),
-    policy: { rules: [{ match: { risk: "write" }, action: "ask" }] },
+    guard: { policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } },
   });
   await vendo.handler(new Request("http://invalidation.test/api/vendo/status"));
   return vendo;

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { request as httpRequest, type ClientRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { resolveConsent } from "./consent.js";
+import { resolveConsent, truthy } from "./consent.js";
 import { baseProps, projectProps, type ProjectProps } from "./base-props.js";
 import { CLOUD_PROP_KEYS, EVENT_ALLOWLIST, type EventName } from "./events.js";
 import { scrubErrorDetail } from "./scrub.js";
@@ -194,14 +194,11 @@ export function createTelemetry(deps: TelemetryDeps): Telemetry {
   // Internal lane: VENDO_INTERNAL=1 tags events instead of dropping them, so
   // internal harnesses (cert campaigns, eval sandboxes) that intentionally
   // exercise the real telemetry path stay verifiable end-to-end while
-  // analytics filters them out on `internal = true`. Same truthy values as
-  // consent.ts. Deliberately NOT a consent input — CI / DO_NOT_TRACK /
-  // VENDO_TELEMETRY_DISABLED semantics are unchanged, and this marker is
-  // producer-set like the cloud markers so callers can never spoof it.
-  const internalMarker =
-    deps.env.VENDO_INTERNAL === "1" || deps.env.VENDO_INTERNAL === "true"
-      ? { internal: true }
-      : {};
+  // analytics filters them out on `internal = true`. Deliberately NOT a
+  // consent input — CI / DO_NOT_TRACK / VENDO_TELEMETRY_DISABLED semantics are
+  // unchanged, and this marker is producer-set like the cloud markers so
+  // callers can never spoof it.
+  const internalMarker = truthy(deps.env.VENDO_INTERNAL) ? { internal: true } : {};
   // Filesystem-backed props are computed once per client, never per event.
   // Guarded so the never-throw contract holds at the API surface even if
   // cwd resolution or the filesystem probes fail in an unexpected way.

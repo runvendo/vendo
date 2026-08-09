@@ -11,7 +11,7 @@ import { deploymentIdentityHeaders } from "./deployment-identity.js";
  * hostedStore, cloudConnections, cloudApps): the wire-legal error table, the
  * enveloped-error raise, and the key-authed sender. Behavior still comes
  * ONLY from each adapter's constructor arguments (adapter rule — see
- * selectSandbox/selectStore in server.ts); nothing here reads the
+ * selectSandbox/selectStore in compose-store.ts); nothing here reads the
  * environment. */
 
 /** Console error codes forwarded as-is when they are wire-legal VendoError

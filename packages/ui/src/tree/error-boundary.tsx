@@ -33,14 +33,16 @@ export class NodeErrorBoundary extends Component<BoundaryProps, BoundaryState> {
   }
 
   componentDidUpdate(previous: BoundaryProps): void {
+    // Every arm must be an INPUT change. Clearing on `streaming === true`
+    // alone is true of the boundary's own error re-render too, so the latch
+    // clears itself, the child throws again, and the loop only ends when
+    // React's nested-update guard crashes the surface the boundary exists to
+    // contain. A new prefix arrives as a new `retryKey`; the flip to the
+    // final payload arrives as a `streaming` change.
     if (
       (previous.nodeId !== this.props.nodeId
         || previous.retryKey !== this.props.retryKey
-        // A latched mid-stream error retries on EVERY new prefix (partials
-        // arrive throttled, so the retry loop is bounded), and the flip to
-        // the final payload re-evaluates fresh instead of inheriting a
-        // transient crash from the stream.
-        || previous.streaming === true)
+        || previous.streaming !== this.props.streaming)
       && this.state.error
     ) this.setState({ error: undefined });
   }
@@ -51,8 +53,15 @@ export class NodeErrorBoundary extends Component<BoundaryProps, BoundaryState> {
         return <FormingSkeleton name={this.props.nodeId} />;
       }
       return (
-        <ContainedNotice label="Node render error">
-          {`Node "${this.props.nodeId}" could not render: ${this.state.error.message}`}
+        // M36 — the exception's own message is generated-component code talking
+        // ("Cannot read properties of undefined (reading 'map')"), and the node
+        // id is our plumbing. Both are the developer's half; a person reads the
+        // one honest sentence.
+        <ContainedNotice
+          label="Node render error"
+          detail={`Node "${this.props.nodeId}": ${this.state.error.message}`}
+        >
+          Part of this view didn’t load.
         </ContainedNotice>
       );
     }

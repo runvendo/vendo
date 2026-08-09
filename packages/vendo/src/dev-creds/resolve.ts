@@ -44,7 +44,15 @@ export async function resolveDevCredential(
 
   const pinned = env["VENDO_DEV_CREDENTIAL"]?.trim();
   if (pinned !== undefined && pinned.length > 0) {
-    if (pinned === "vendo-cloud" || pinned === "none") return { rung: pinned };
+    if (pinned === "none") return { rung: "none" };
+    // A pin that cannot resolve degrades, exactly like the env-key pin below:
+    // without VENDO_API_KEY the cloud branch would call the Cloud gateway with
+    // `apiKey: undefined`, and @ai-sdk/anthropic then falls back to
+    // process.env.ANTHROPIC_API_KEY — sending the host's own provider key to a
+    // third-party origin.
+    if (pinned === "vendo-cloud") {
+      return present(env, "VENDO_API_KEY") ? { rung: "vendo-cloud" } : { rung: "none" };
+    }
     const match = /^env-key:(anthropic|openai|google)$/.exec(pinned);
     if (match !== null) {
       const provider = match[1] as EnvKeyProvider;

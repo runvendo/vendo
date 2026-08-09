@@ -186,8 +186,8 @@ does not edit or commit it.
 
 Ground-truth labels for the AI extraction matrix (`pnpm corpus ai`). Entries
 reuse the same binding identities as `expected.json` (method + path, tRPC
-procedure, GraphQL operation, server-action module + export) and carry the
-judgment the AI pass is scored on:
+procedure, server-action module + export) and carry the judgment the AI pass
+is scored on:
 
 ```json
 {

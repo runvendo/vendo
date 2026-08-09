@@ -26,10 +26,9 @@ import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo } from "./server.js";
 
-// 04-actions §6 guard-visibility e2e: compound steps route through the REAL
-// guard binding, so approvals, grants, breakers, and audit demonstrably see
-// every individual step. The stub-seam adversarial suite lives in
-// packages/actions/src/security/compound-no-bypass.test.ts.
+// Guard-visibility e2e: compound steps route through the REAL guard binding,
+// so approvals, grants, breakers, and audit demonstrably see every individual
+// step.
 
 const principal: Principal = { kind: "user", subject: "user_compound" };
 const ctx: RunContext = {
@@ -268,18 +267,18 @@ describe("breakers and critical steps see individual step calls", () => {
   });
 
   it("a critical step asks EVERY run even with a standing grant", async () => {
-    const tools = [writeTool("host_critical", { critical: true })];
+    const tools = [writeTool("host_confirm_each", { confirmEach: true })];
     const { guard, bound } = await compose({
       tools,
       overrides: authored([
-        compound("host_flow", [{ id: "crit", tool: "host_critical" }], { risk: "write" }),
+        compound("host_flow", [{ id: "crit", tool: "host_confirm_each" }], { risk: "write" }),
       ]),
     });
 
     const first = await bound.execute(call("host_flow", {}, "call_run1"), ctx);
     expect(first.status).toBe("pending-approval");
     const approval = (await guard.approvals.pending(principal))[0]!;
-    expect(approval.call.tool).toBe("host_critical");
+    expect(approval.call.tool).toBe("host_confirm_each");
     await guard.approvals.decide(approval.id, {
       approve: true,
       remember: { scope: { kind: "tool" }, duration: "standing" },
@@ -442,13 +441,15 @@ describe("the real createVendo composition wires the seam", () => {
     process.chdir(root);
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); });
-    // createVendo kicks off ensureSchema() without blocking; approvals need it done.
+    // Kept deliberately: the approval rows below are read directly, so this
+    // case needs the schema present. (Not for the old close-race reason —
+    // construction is pure now, so nothing kicks schema off on its own.)
     await store.ensureSchema();
     const vendo = createVendo({
       model: {} as LanguageModel,
       principal: async () => principal,
       store,
-      policy: { rules: [{ match: { tool: "host_send" }, action: "ask" }] },
+      guard: { policy: { rules: [{ match: { tool: "host_send" }, action: "ask" }] } },
     });
 
     expect((await vendo.actions.descriptors()).map((descriptor) => descriptor.name)).toContain("host_flow");

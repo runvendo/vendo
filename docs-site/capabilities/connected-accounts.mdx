@@ -114,10 +114,23 @@ toolkit the user needs to connect.
 connected accounts and disconnects them. Disconnect severs the account on the
 broker.
 
-`VendoPage` chrome mounts the panel automatically under a new **Accounts**
-tab. If you render your own chrome, drop the panel in wherever you already
-handle user settings, or read the same state through the `useConnections`
-hook from `@vendoai/ui`.
+Mount it yourself wherever you already handle user settings. The panel wraps
+itself in its own theme and stylesheet, so a `VendoProvider` ancestor is the
+only requirement — no surrounding Vendo chrome. It is designed against a
+~780px measure, so give it a width-constrained container; at full bleed the
+rows stretch:
+
+```tsx
+import { ConnectedAccountsPanel } from "@vendoai/ui/chrome";
+
+// anywhere inside <VendoProvider>:
+<div style={{ maxWidth: 780 }}>
+  <ConnectedAccountsPanel />
+</div>
+```
+
+Or read the same state through the `useConnections` hook from `@vendoai/ui`
+and render it yourself.
 
 ## Risk labels for Composio tools
 

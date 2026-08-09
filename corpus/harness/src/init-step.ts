@@ -1,9 +1,9 @@
-import { spawn } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveAppRoot } from "./app-root.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
+import { runCommand, type CommandResult } from "./process.js";
 
 export interface InitStepRepo {
   name: string;
@@ -38,14 +38,6 @@ export interface RunVendoInitStepOptions {
   aiPolish?: boolean;
 }
 
-interface CommandResult {
-  code: number | null;
-  signal: NodeJS.Signals | null;
-  stdout: string;
-  stderr: string;
-  combined: string;
-}
-
 const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 const defaultCliBin = path.join(defaultWorkspaceRoot, "packages/vendo/bin/vendo.mjs");
 
@@ -72,36 +64,6 @@ function initArgs(repoDir: string, options: RunVendoInitStepOptions): string[] {
   return args;
 }
 
-function runCommand(
-  command: string,
-  args: readonly string[],
-  cwd: string,
-  env: NodeJS.ProcessEnv,
-): Promise<CommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let combined = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-      combined += chunk;
-    });
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-      combined += chunk;
-    });
-    child.on("error", reject);
-    child.on("close", (code, signal) => resolve({ code, signal, stdout, stderr, combined }));
-  });
-}
-
 function commandOutput(result: CommandResult): string {
   return (result.stderr || result.stdout).trim();
 }
@@ -112,7 +74,7 @@ async function checkedCommand(
   cwd: string,
   env: NodeJS.ProcessEnv,
 ): Promise<CommandResult> {
-  const result = await runCommand(command, args, cwd, env);
+  const result = await runCommand(command, { args, cwd, env });
   if (result.code !== 0) {
     const output = commandOutput(result);
     throw new Error(`${command} ${args.join(" ")} failed${output ? `:\n${output}` : ""}`);
@@ -197,7 +159,7 @@ export async function runVendoInitStep(
     ? await captureGitTree(repoDir, logsDir, options.gitBin ?? "git", env)
     : undefined;
   const startedAt = Date.now();
-  const result = await runCommand(cliCommand, cliArgs, defaultWorkspaceRoot, env);
+  const result = await runCommand(cliCommand, { args: cliArgs, cwd: defaultWorkspaceRoot, env });
   const durationMs = Date.now() - startedAt;
   await writeFile(artifacts.log, result.combined);
 

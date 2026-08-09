@@ -4,6 +4,12 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { scanComponentCatalog } from "./catalog-scan.js";
 
+/** The provider's two import specifiers, assembled at runtime because the
+ *  dependency guard's static text scan reads import-shaped strings even inside
+ *  fixtures, and actions may not import @vendoai/vendo or @vendoai/ui. */
+const VENDO_REACT = ["@vendoai", "vendo", "react"].join("/");
+const UI_PACKAGE = ["@vendoai", "ui"].join("/");
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -85,9 +91,42 @@ describe("deterministic component catalog scan", () => {
     `);
 
     const [entry] = (await scanComponentCatalog(root)).entries;
-    expect(entry).toMatchObject({ name: "ExoticCard", propsSchema: {} });
+    expect(entry).toMatchObject({
+      name: "ExoticCard",
+      propsSchema: { type: "object", properties: { render: {} }, additionalProperties: false },
+    });
     expect(entry?.note).toContain("could not be represented deterministically");
-    expect(entry?.note).toContain("property render");
+    expect(entry?.note).toContain("render");
+  });
+
+  it("keeps the representable props when one prop is exotic", async () => {
+    const root = await host(`
+      export function MixedCard(
+        { title, count, onSelect, footer }:
+        { title: string; count?: number; onSelect: (id: string) => void; footer?: (value: string) => string },
+      ) {
+        return <div onClick={() => onSelect(title)}>{count}{footer?.("x")}</div>;
+      }
+      type ComponentType = (props: unknown) => unknown;
+      export const hostComponents: Record<string, ComponentType> = { MixedCard: MixedCard as ComponentType };
+      export function CatalogRoot() { return <VendoRoot components={hostComponents} />; }
+    `);
+
+    const [entry] = (await scanComponentCatalog(root)).entries;
+    // One unrepresentable prop degrades to permissive `{}` and drops out of
+    // `required`; every prop that converted fine still reaches the catalog,
+    // so the console does not read "declares no props schema".
+    expect(entry).toMatchObject({
+      name: "MixedCard",
+      propsSchema: {
+        type: "object",
+        properties: { count: { type: "number" }, footer: {}, onSelect: {}, title: { type: "string" } },
+        required: ["title"],
+        additionalProperties: false,
+      },
+    });
+    expect(entry?.note).toContain("onSelect");
+    expect(entry?.note).toContain("footer");
   });
 
   it("lets a createVendo catalog registration win, deriving its disk schema from the single zod props schema", async () => {
@@ -279,5 +318,29 @@ describe("deterministic component catalog scan", () => {
     expect(result.entries).toEqual([]);
     expect(result.warnings).toContainEqual(expect.stringContaining("inline components map"));
     expect(result.warnings).not.toContainEqual(expect.stringContaining("NotVendoRoot"));
+  });
+
+  it("recognizes <VendoProvider components={…}> from @vendoai/vendo/react", async () => {
+    const root = await host(`
+      type ComponentType = (props: unknown) => unknown;
+      import { VendoProvider } from "${VENDO_REACT}";
+      export function Badge({ active }: { active?: boolean }) { return <span>{active}</span>; }
+      export const hostComponents: Record<string, ComponentType> = { Badge: Badge as ComponentType };
+      export function Root() { return <VendoProvider components={hostComponents} />; }
+    `);
+    const result = await scanComponentCatalog(root);
+    expect(result.entries.map((entry) => entry.name)).toEqual(["Badge"]);
+  });
+
+  it("recognizes <VendoProvider> imported from @vendoai/ui, and under an alias", async () => {
+    const root = await host(`
+      type ComponentType = (props: unknown) => unknown;
+      import { VendoProvider as Root } from "${UI_PACKAGE}";
+      export function Badge({ active }: { active?: boolean }) { return <span>{active}</span>; }
+      export const hostComponents: Record<string, ComponentType> = { Badge: Badge as ComponentType };
+      export function App() { return <Root components={hostComponents} />; }
+    `);
+    const result = await scanComponentCatalog(root);
+    expect(result.entries.map((entry) => entry.name)).toEqual(["Badge"]);
   });
 });

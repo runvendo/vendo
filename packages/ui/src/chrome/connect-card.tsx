@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
 import { useConnectorCatalog } from "../hooks/use-connector-catalog.js";
 import { toolkitLogoUrl } from "./build-beat.js";
+import {
+  CardActions,
+  CardHead,
+  CardLine,
+  CardShell,
+  CARD_EYEBROWS,
+  LINK_GLYPH,
+  TICK_GLYPH,
+  ToolkitLogo,
+} from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { completeConnection } from "./connect-dock.js";
-import { toolkitDisplayName } from "./humanize.js";
+import { completeConnection, connectRefusalCopy, openConnectPopup } from "./connect-dock.js";
+import { developmentMode } from "./dev-mode.js";
+import { toolkitAccessCopy, toolkitDisplayName } from "./humanize.js";
 
 export interface ConnectCardProps {
   connector: string;
@@ -22,15 +33,21 @@ export interface ConnectCardProps {
    * persistent panel covers standing management). Default true.
    */
   live?: boolean;
+  /** What connecting actually lets us do, in plain words ("read and send mail
+   *  as you"). Defaults to the toolkit's entry in `toolkitAccessCopy`. Never an
+   *  OAuth scope string — see that table. */
+  access?: string;
+  /** Fired when the person chooses "Not now". The card collapses to a one-line
+   *  Skipped record that still offers Connect; the thread tells the agent so it
+   *  can adapt instead of waiting. */
+  onDeclined?(): void;
 }
 
-type Phase = "idle" | "connecting" | "connected" | "failed";
-
-const tick = (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="m5 12 4 4L19 6" />
-  </svg>
-);
+/** idle → the ask. connecting → the popup is open and the poll runs.
+ *  popup-blocked → the browser refused the window; the SAME poll runs and the
+ *  card offers the URL as a link. timed-out → the poll gave up, nothing
+ *  changed. connected/skipped → the two settled records. failed → a refusal. */
+type Phase = "idle" | "connecting" | "popup-blocked" | "timed-out" | "connected" | "skipped" | "failed";
 
 /** 04-actions §3 / 08-ui §4 — the inline connect card: a connector call ended
  * `connect-required`, so offer the broker's OAuth redirect in place, poll the
@@ -45,12 +62,22 @@ const tick = (
  *
  * 2026-07 demo feedback — the full lifecycle lives ON the card: a spinner-led
  * "Connecting…" button while the OAuth window is open, and a permanent quiet
- * "Connected" record once the broker reports the account active. */
-export function ConnectCard({ connector, toolkit, message, onConnected, live = true }: ConnectCardProps) {
-  const { client } = useVendoContext();
+ * "Connected" record once the broker reports the account active.
+ *
+ * V5 — the card is a consent surface, so it answers the three questions a
+ * consent surface owes: what this grants (the plain-words access line, never a
+ * scope string), what happens if you say no ("Not now", which records a Skipped
+ * line that still re-offers), and what to do when the machinery gets in the way
+ * (a blocked popup keeps polling behind a plain link; a timed-out poll says
+ * nothing changed). */
+export function ConnectCard({ connector, toolkit, message, onConnected, live = true, access, onDeclined }: ConnectCardProps) {
+  const { client } = useVendoProvider();
   const { options: connectors } = useConnectorCatalog();
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string>();
+  // The broker's hosted OAuth URL, known as soon as `initiate` lands — the
+  // blocked-popup fallback link needs it WHILE the poll runs.
+  const [redirectUrl, setRedirectUrl] = useState<string>();
   // Stale cards (a past turn's ask) consult the wire: an active account for
   // this toolkit means the connect was completed — render the Connected
   // record so the transcript keeps the moment (it survives reload/restore).
@@ -73,9 +100,6 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
     }, 1_000);
     return () => clearInterval(timer);
   }, [phase]);
-  // Keyed to the toolkit so a failed mark for one toolkit never suppresses
-  // branding after the prop changes.
-  const [logoFailedFor, setLogoFailedFor] = useState<string>();
   const cancelled = useRef(false);
   useEffect(() => {
     // cancelled persists across effects; reset for StrictMode remounts.
@@ -89,89 +113,137 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
   // the connect dock); otherwise the proper-cased toolkit.
   const option = connectors.find(candidate => candidate.toolkit === toolkit);
   const displayName = option?.label ?? toolkitDisplayName(toolkit);
-  const logoUrl = logoFailedFor === toolkit ? undefined : toolkitLogoUrl(toolkit);
+  const accessCopy = access ?? toolkitAccessCopy(toolkit);
 
   const wireConnected = !live
     && connections.some(account => account.toolkit === toolkit && account.status === "active");
   const connected = phase === "connected" || wireConnected;
-  // A stale ask that was never completed renders nothing — re-offering an old
-  // connect is the persistent panel's job, not the transcript's.
-  if (!live && !connected) return null;
+  // A stale ask that was never ANSWERED renders nothing — re-offering an old
+  // connect is the persistent panel's job, not the transcript's. A card the
+  // person answered with "Not now" is the exception: declining sends the agent
+  // its continuation, which immediately makes this turn stale, so without this
+  // the Skipped record blinks out the instant it appears.
+  if (!live && !connected && phase !== "skipped") return null;
 
   const connect = async () => {
-    setPhase("connecting");
+    // FIRST, before any await: a popup opened after one is blocked outright in
+    // Safari and Firefox (openConnectPopup). A blocked window is not a dead end
+    // — the same poll runs and the card offers the URL as a link instead.
+    const popup = openConnectPopup(toolkit);
+    setPhase(popup === null ? "popup-blocked" : "connecting");
     setError(undefined);
+    setRedirectUrl(undefined);
     try {
-      await completeConnection(client, { toolkit, connector }, () => cancelled.current);
+      await completeConnection(client, { toolkit, connector }, () => cancelled.current, popup, setRedirectUrl);
       if (cancelled.current) return;
       setPhase("connected");
       await onConnected();
     } catch (reason) {
       if (cancelled.current) return;
-      setPhase("failed");
-      setError(reason instanceof Error ? reason.message : String(reason));
+      // A deadline is not a refusal: nobody said no, the wait simply ended.
+      const timedOut = (reason as { code?: unknown } | null)?.code === "timeout";
+      setPhase(timedOut ? "timed-out" : "failed");
+      if (!timedOut) setError(connectRefusalCopy(reason, displayName));
+      // Where a developer reads it: the host who forgot the connector needs the
+      // sentence that names what to configure, and only they should see it.
+      if (developmentMode()) {
+        console.warn(`[vendo] ConnectCard "${toolkit}": ${reason instanceof Error ? reason.message : String(reason)}`);
+      }
     }
   };
 
+  const decline = () => {
+    setPhase("skipped");
+    onDeclined?.();
+  };
+
+  // The one-line record of a declined ask. It still offers Connect: "not now"
+  // is a moment's answer, not a standing one, and the ask is right there.
+  if (phase === "skipped") {
+    return (
+      <ChromeRoot>
+        <CardShell
+          label={`Connect ${displayName}`}
+          className="fl-approval fl-connect-skipped fl-item-in"
+          data-vendo-connect-card="skipped"
+        >
+          <span className="fl-connect-skip-copy">Skipped — {displayName} isn’t connected</span>
+          <button
+            className="fl-btn fl-btn-quiet fl-connect-reoffer"
+            type="button"
+            aria-label={`Connect ${displayName}`}
+            onClick={() => void connect()}
+          >
+            Connect
+          </button>
+        </CardShell>
+      </ChromeRoot>
+    );
+  }
+
+  const waiting = phase === "connecting" || phase === "popup-blocked";
+
   return (
     <ChromeRoot>
-      <article className="fl-approval fl-item-in" aria-label={`Connect ${displayName}`} data-vendo-connect-card={connected ? "connected" : phase}>
-        <div className="fl-approval-head">
-          <span className="fl-approval-ic" aria-hidden="true">
-            {logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- chrome surface, plain img by design
-              <img
-                src={logoUrl}
-                alt=""
-                width={16}
-                height={16}
-                style={{ display: "block", objectFit: "contain" }}
-                onError={() => setLogoFailedFor(toolkit)}
-              />
-            ) : (
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 1 1 0 10h-2M8 12h8" />
-              </svg>
-            )}
-          </span>
-          <div className="fl-approval-heading">
-            <div className="fl-approval-eyebrow">CONNECT</div>
-            <div className="fl-approval-title">{displayName}</div>
-          </div>
-          <span
-            className="fl-chip"
-            title={connector}
-            style={{ marginLeft: "auto", padding: "2px 7px", fontSize: "10px", cursor: "default" }}
-          >
-            OAuth
-          </span>
-        </div>
-        <p className="fl-approval-more" style={{ marginTop: "8px" }}>{message}</p>
+      <CardShell
+        label={`Connect ${displayName}`}
+        className="fl-approval fl-item-in"
+        data-vendo-connect-card={connected ? "connected" : phase}
+      >
+        <CardHead
+          icon={<ToolkitLogo src={toolkitLogoUrl(toolkit)} fallback={LINK_GLYPH} />}
+          eyebrow={CARD_EYEBROWS.connect}
+          title={displayName}
+          aside={
+            <span
+              className="fl-chip"
+              title={connector}
+              style={{ marginLeft: "auto", padding: "2px 7px", fontSize: "10px", cursor: "default" }}
+            >
+              OAuth
+            </span>
+          }
+        />
+        <CardLine>{message}</CardLine>
+        {/* What the person is actually agreeing to, in words — never the
+            broker's scope strings (toolkitAccessCopy). */}
+        {connected ? null : <CardLine className="fl-connect-access">Connecting lets us {accessCopy}.</CardLine>}
         {error ? <div role="alert" className="fl-error">{error}</div> : null}
-        <div className="fl-approval-actions">
+        <CardActions>
           {connected ? (
             // The permanent record: the button becomes a quiet connected badge
-            // — the card stays in the transcript as proof the account is live.
-            <span role="status" className="fl-connect-done">
-              <span className="fl-connect-done-ic" aria-hidden="true">{tick}</span>
-              Connected
-            </span>
+            // — the card stays in the transcript as proof the account is live,
+            // with the one line saying what that account can now do.
+            <>
+              <span role="status" className="fl-connect-done">
+                <span className="fl-connect-done-ic" aria-hidden="true">{TICK_GLYPH}</span>
+                Connected
+              </span>
+              <span className="fl-connect-receipt">We can now {accessCopy}.</span>
+            </>
+          ) : phase === "popup-blocked" ? (
+            // The window never opened, but the connect did: the poll is running
+            // on the same account, so the same URL in a tab finishes it.
+            <div role="status" className="fl-connect-blocked">
+              <span>Your browser blocked the sign-in window. Open it yourself — we’ll pick it up from here.</span>
+              {redirectUrl === undefined ? null : (
+                <a className="fl-btn fl-btn-primary" href={redirectUrl} target="_blank" rel="noreferrer">
+                  Open sign-in in a new tab
+                </a>
+              )}
+            </div>
+          ) : phase === "timed-out" ? (
+            <>
+              <span role="status" className="fl-approval-more">Nothing changed — the sign-in never finished.</span>
+              <button className="fl-btn fl-btn-primary" type="button" onClick={() => void connect()}>Try again</button>
+            </>
           ) : (
             <>
               <button
                 className="fl-btn fl-btn-primary"
                 type="button"
                 aria-label={`Connect ${displayName}`}
-                disabled={phase === "connecting"}
+                disabled={waiting}
                 onClick={() => void connect()}
               >
                 {phase === "connecting" ? (
@@ -181,6 +253,11 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
                   </>
                 ) : `Connect ${displayName}`}
               </button>
+              {/* The other real answer. A stale card is a record, not an ask,
+                  so it never offers one. */}
+              {live && !waiting ? (
+                <button className="fl-btn fl-btn-quiet" type="button" onClick={decline}>Not now</button>
+              ) : null}
               {phase === "connecting" ? (
                 <span role="status" className="fl-approval-more">
                   Finish signing in, then come back.
@@ -189,8 +266,8 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
               ) : null}
             </>
           )}
-        </div>
-      </article>
+        </CardActions>
+      </CardShell>
     </ChromeRoot>
   );
 }

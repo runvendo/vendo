@@ -3,46 +3,80 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vendoSync } from "@vendoai/actions/sync";
 import { appVersionHash, pinBaselineSchema, pinComponentName } from "@vendoai/apps";
-import { VENDO_APP_FORMAT, type AppDocument, type Principal } from "@vendoai/core";
+import { VENDO_APP_FORMAT, printWire, type AppDocument, type Principal } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo } from "./server.js";
 
-const scriptedModel = (responses: string[]): LanguageModel => {
-  let call = 0;
-  const next = (): string => {
-    const response = responses[Math.min(call, responses.length - 1)];
-    call += 1;
-    if (response === undefined) throw new Error("scripted model exhausted");
-    return response;
-  };
+interface ModelCall {
+  prompt: Array<{ role: string; content: string | Array<{ type?: string; text?: string }> }>;
+}
+
+/** The whole prompt as text, tool results included — a `save_app` reply is a
+ *  tool RESULT, and it is what says the current run has already saved. */
+const promptText = (call: ModelCall): string => JSON.stringify(call.prompt ?? "");
+
+/** The screen agent's own brief (`environmentNote`), verbatim — the one marker
+ *  that says a prompt belongs to the assembly loop. */
+const SCREEN_BRIEF_MARKER = "# In this loop";
+const SAVED_MARKER = "Run validate on it now.";
+
+/**
+ * The screen agent, scripted. There is one builder now, so both the user's edit
+ * and the rebase's REPLAY of that same recorded intent come through here: read
+ * the app's document as it stands, add the remix note to the pinned island's
+ * source, save the whole thing back.
+ *
+ * Reading the document rather than a printed copy in the prompt is what keeps
+ * the same script correct on the replay, where the island source is the host's
+ * NEW baseline.
+ */
+const screenModel = (document: () => Promise<string>): LanguageModel => {
+  const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+  const saving = (prompt: string): boolean =>
+    prompt.includes(SCREEN_BRIEF_MARKER) && !prompt.includes(SAVED_MARKER);
+  const rewrite = async (): Promise<string> => (await document()).replace("$1.2M", "$1.2M — remixed");
   return {
     specificationVersion: "v2",
     provider: "vendo-drift-fixture",
     modelId: "vendo-drift-fixture-v1",
     supportedUrls: {},
-    async doGenerate() {
+    async doGenerate(call: ModelCall) {
+      if (!saving(promptText(call))) {
+        return { content: [{ type: "text" as const, text: "done" }], finishReason: "stop" as const, usage };
+      }
       return {
-        content: [{ type: "text" as const, text: next() }],
-        finishReason: "stop" as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        content: [{
+          type: "tool-call" as const,
+          toolCallId: "call_save_app",
+          toolName: "save_app",
+          input: JSON.stringify({ content: await rewrite() }),
+        }],
+        finishReason: "tool-calls" as const,
+        usage,
       };
     },
-    async doStream() {
-      const text = next();
+    async doStream(call: ModelCall) {
+      const content = saving(promptText(call)) ? await rewrite() : undefined;
       return {
         stream: new ReadableStream({
           start(controller) {
             controller.enqueue({ type: "stream-start", warnings: [] });
-            controller.enqueue({ type: "text-start", id: "text_1" });
-            controller.enqueue({ type: "text-delta", id: "text_1", delta: text });
-            controller.enqueue({ type: "text-end", id: "text_1" });
-            controller.enqueue({
-              type: "finish",
-              finishReason: "stop",
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-            });
+            if (content === undefined) {
+              controller.enqueue({ type: "text-start", id: "text_1" });
+              controller.enqueue({ type: "text-delta", id: "text_1", delta: "done" });
+              controller.enqueue({ type: "text-end", id: "text_1" });
+              controller.enqueue({ type: "finish", finishReason: "stop", usage });
+            } else {
+              controller.enqueue({
+                type: "tool-call",
+                toolCallId: "call_save_app",
+                toolName: "save_app",
+                input: JSON.stringify({ content }),
+              });
+              controller.enqueue({ type: "finish", finishReason: "tool-calls", usage });
+            }
             controller.close();
           },
         }),
@@ -74,43 +108,53 @@ describe.sequential("06-apps §8 — the drift→rebase journey through the real
     const root = await mkdtemp(join(tmpdir(), "vendo-drift-rebase-"));
     cleanups.push(async () => rm(root, { recursive: true, force: true }));
     await mkdir(join(root, "src"), { recursive: true });
-    const slot = "net-worth-card";
+    const slot = "MapleNetWorthCard";
     const componentName = pinComponentName(slot);
     const hostSource = `export default function MapleNetWorthCard() {
   return <article><span>Net worth</span><strong>$1.2M</strong></article>;
 }\n`;
     const componentFile = join(root, "src", "MapleNetWorthCard.tsx");
     await writeFile(componentFile, hostSource);
-    await writeFile(join(root, "src", "host-catalog.tsx"), `
+    await writeFile(join(root, "src", "page.tsx"), `
+import { Remixable } from "@vendoai/ui/chrome";
 import MapleNetWorthCard from "./MapleNetWorthCard";
-export const hostCatalog = [{
-  name: "${slot}",
-  component: MapleNetWorthCard,
-  remixable: true,
-  exportable: true,
-}];
+export default function Page() {
+  return <Remixable><MapleNetWorthCard /></Remixable>;
+}
 `);
     const synced = await vendoSync({ root, out: join(root, ".vendo") });
     expect(synced.pins).toEqual({ captured: [slot], drifted: [] });
     const baselineFile = join(root, ".vendo", "remixable", `${slot}.json`);
     const oldHash = pinBaselineSchema.parse(JSON.parse(await readFile(baselineFile, "utf8"))).hash;
 
-    const remixedSource = hostSource.replace("$1.2M", "$1.2M — remixed");
     const store = createStore({ dataDir: join(root, ".data") });
     cleanups.push(async () => store.close());
     await store.ensureSchema();
     process.chdir(root);
     const ctx = { principal, venue: "app" as const, presence: "present" as const, sessionId: "session_drift" };
 
+    /** The composition currently serving, and the app under edit — both are set
+     *  as the journey reaches them, because the assembler opens the app's own
+     *  document and the host redeploys halfway through. */
+    let active: ReturnType<typeof createVendo> | undefined;
+    let appUnderEdit: string | undefined;
+    const asItStands = async (): Promise<string> => {
+      const app = await active!.apps.get(appUnderEdit!, ctx);
+      if (app === null) throw new Error("no app row to rewrite");
+      return printWire(
+        { tree: app.tree as never, components: app.components ?? {}, name: app.name },
+        { includeIds: true },
+      );
+    };
+
     // ONE host process lifetime: fork the pin (gesture, no model) and edit the fork.
     const vendo = createVendo({
-      model: scriptedModel([
-        `<Edit><Island name="${componentName}">${remixedSource}</Island></Edit>`,
-      ]),
+      model: screenModel(asItStands),
       principal: async () => principal,
       store,
-      development: { root },
+      development: true,
     });
+    active = vendo;
     const imported = await vendo.apps.importApp({
       format: VENDO_APP_FORMAT,
       id: "app_identity_is_replaced",
@@ -123,6 +167,7 @@ export const hostCatalog = [{
       },
     } as AppDocument, ctx);
     const appId = imported.id;
+    appUnderEdit = appId;
     // Gesture-owned forking (2026-07-21): the fork rides its own wire route,
     // executed deterministically by the engine — the model never sees it.
     const forkResponse = await vendo.handler(request("POST", `/apps/${appId}/fork-pin`, { slot }));
@@ -155,14 +200,15 @@ export const hostCatalog = [{
     // The host redeploys: a fresh composition loads the NEW baselines over the
     // SAME store. Drift must now be loud on every surface the app rides.
     const redeployed = createVendo({
-      model: scriptedModel([
-        // The rebase replays the ONE recorded pin intent through the model.
-        `<Edit><Island name="${componentName}">${newBaseline.source.replace("$1.2M", "$1.2M — remixed")}</Island></Edit>`,
-      ]),
+      // The rebase replays the ONE recorded pin intent through the same builder,
+      // which now opens the app with the NEW baseline source under the pinned
+      // component.
+      model: screenModel(asItStands),
       principal: async () => principal,
       store,
-      development: { root },
+      development: true,
     });
+    active = redeployed;
     const expectedDrift = {
       slot,
       component: componentName,

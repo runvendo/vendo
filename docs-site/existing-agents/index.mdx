@@ -31,7 +31,7 @@ The pack adds three things:
    every call routed through policy, approval, and audit. The pack wraps the
    same guard-bound registry Vendo's own loop uses, so no tool reachable from
    your loop has an unguarded route.
-2. **Micro-apps in your chat.** A `vendo_create_app` tool builds live,
+2. **Micro-apps in your chat.** A `vendo_make` tool builds live,
    interactive micro-apps that render inline in your own chat surface via
    embed components.
 3. **Vendo as a delegate.** A `vendo_delegate` tool hands Vendo's agent a
@@ -46,14 +46,31 @@ the embeds: Vendo minus the conversation.
 
 ```ts
 // lib/vendo.ts: the same composition as any Vendo host
-import { createVendo } from "@vendoai/vendo/server";
-import { serverActions } from "./vendo-actions";
+import { createVendo, guard } from "@vendoai/vendo/server";
+
+export async function getWeather(city: string) { /* … */ }
+export async function sendTripReport(to: string, body: string) { /* … */ }
 
 export const vendo = createVendo({
-  policy: "cautious",
-  serverActions, // the map vendo init generates from your host actions
+  guard: guard({ policy: "cautious" }),
+  // in-process dispatch for the actions declared in .vendo/tools.json
+  serverActions: {
+    "lib/vendo.ts#getWeather": getWeather,
+    "lib/vendo.ts#sendTripReport": sendTripReport,
+  },
 });
 ```
+
+Each key is `<declaring module>#<export name>` — the path of the file the
+action is *declared* in, relative to the project root, not the file that
+imports it. Move `getWeather` into `lib/actions.ts` and the key becomes
+`lib/actions.ts#getWeather`; get it wrong and dispatch fails closed with
+`not-implemented`.
+
+On a Next.js host that ran `vendo init`, this map is generated for you as
+`vendo-actions.ts` next to the route file and imported from there — the route
+module is the composition. Compose in `lib/` only if you are wiring by hand,
+as the BYO examples do.
 
 Then build the tool pack per framework and spread it into your agent:
 
@@ -77,7 +94,7 @@ built-ins are already prefixed:
 | Tool | What it does |
 | --- | --- |
 | `vendo_<your action>` | one per registered host action, guard-wrapped per call |
-| `vendo_create_app` | builds a micro-app; returns fast with an app ref while the build streams over the wire, so your loop never blocks on generation |
+| `vendo_make` | builds a micro-app; returns fast with an app ref while the build streams over the wire, so your loop never blocks on generation |
 | `vendo_delegate` | hands Vendo's own agent a whole task via the runner seam; returns `{ status, summary, refs }` |
 
 `include` and `exclude` filter the pack by final (namespaced) tool name,
@@ -94,7 +111,8 @@ executes the parked call and the embed resolves in place to the executed
 result. Deny resolves it to "declined" and discards the parked call.
 
 Parked calls expire on a TTL sweep, 60 minutes by default. Tune it with
-`createVendo({ approvals: { parkedCallTtlMs } })`; `0` disables expiry. An
+`createVendo({ guard: guard({ approvals: { parkedCallTtlMs } }) })`; `0`
+disables expiry. An
 expired call resolves the embed to "expired" and never runs.
 
 Your agent learns the outcome on a later turn if it matters. This is the
@@ -102,7 +120,7 @@ same eventual consistency Vendo's own thread uses for abandoned approvals,
 in a new venue.
 
 See [Embeds and envelopes](/existing-agents/embeds) for the envelope
-contract and the three `@vendoai/ui` embed components that render it inside
+contract and the three embed components that render it inside
 your own chat.
 
 ## Two models, deliberately

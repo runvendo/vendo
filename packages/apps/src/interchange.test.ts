@@ -2,13 +2,12 @@ import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT, validateAppDocument } from "@vendoai/core";
 import { unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { createApps, type SandboxAdapter } from "./index.js";
+import { createApps } from "./index.js";
+import { pinComponentName } from "./pins.js";
 import {
-  fakeSandbox,
   guardFixture,
   memoryStore,
   seedAppRow,
-  scriptedLanguageModel,
 } from "./testing/index.js";
 
 const encoder = new TextEncoder();
@@ -38,14 +37,6 @@ const document = (overrides: Partial<AppDocument> = {}): AppDocument => ({
   },
   storage: { invoices: { about: "Invoices being chased", refs: { invoice: "host.invoice" } } },
   ...overrides,
-});
-
-const codeEdit = JSON.stringify({
-  rung: 2,
-  files: [
-    { path: "/app/server.js", content: "export const ready = true;" },
-    { path: "/app/node_modules/cache/index.js", content: "export const cache = true;" },
-  ],
 });
 
 describe(".vendoapp interchange through createApps", () => {
@@ -88,8 +79,9 @@ describe(".vendoapp interchange through createApps", () => {
     expect(await store.records("vendo_state").get(`${copy.id}:user_grace`)).toBeNull();
     expect(guard.grants).toHaveLength(1);
     expect(guard.grants.some((grant) => grant.appId === copy.id)).toBe(false);
-    expect(guard.audit.filter((event) => event.detail?.operation === "export")).toHaveLength(1);
-    expect(guard.audit.filter((event) => event.detail?.operation === "import")).toHaveLength(2);
+    const operationOf = (event: { detail?: unknown }) => (event.detail as { operation?: string } | undefined)?.operation;
+    expect(guard.audit.filter((event) => operationOf(event) === "export")).toHaveLength(1);
+    expect(guard.audit.filter((event) => operationOf(event) === "import")).toHaveLength(2);
   });
 
   it("exports only the document, without identity, lineage, or machine state", async () => {
@@ -138,7 +130,15 @@ describe(".vendoapp interchange through createApps", () => {
   it("fails export for forbidden or missing pin baselines and preserves allowed pins", async () => {
     const ctx = context("user_ada");
     const pin = { slot: "invoice-card", base: "sha256:x" };
-    const cases = [
+    // The mismatched-hash case carries its forked component, as every real
+    // fork does, so the export gate is refusing a genuine pin whose baseline
+    // moved rather than a hand-built document.
+    const forkedComponent = { [pinComponentName("invoice-card")]: "source" };
+    const cases: Array<{
+      baselines: Parameters<typeof createApps>[0]["pinBaselines"];
+      allowed: boolean;
+      components?: Record<string, string>;
+    }> = [
       { baselines: [], allowed: false },
       {
         baselines: [{
@@ -153,6 +153,7 @@ describe(".vendoapp interchange through createApps", () => {
           capturedAt: "2026-07-11T12:00:00.000Z",
         }],
         allowed: false,
+        components: forkedComponent,
       },
       {
         baselines: [{
@@ -171,7 +172,10 @@ describe(".vendoapp interchange through createApps", () => {
         catalog: [],
         pinBaselines: testCase.baselines,
       });
-      const app = await runtime.importApp(document({ pins: [pin] }), ctx);
+      const app = await runtime.importApp(document({
+        pins: [pin],
+        ...(testCase.components === undefined ? {} : { components: testCase.components }),
+      }), ctx);
       if (!testCase.allowed) {
         await expect(runtime.exportApp(app.id, ctx)).rejects.toMatchObject({
           code: "blocked",

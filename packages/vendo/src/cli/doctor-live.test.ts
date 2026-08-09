@@ -137,4 +137,29 @@ describe("startDevServerForProbe", () => {
     expect(started.ok).toBe(false);
     expect(started.log.join("")).toContain("spawn yarn ENOENT");
   });
+
+  it("stops polling as soon as the spawn fails, so doctor exits with its verdict", async () => {
+    // The status poll is the only thing left holding node's event loop after
+    // doctor prints — bin/vendo.mjs sets process.exitCode and never calls
+    // process.exit(). A poll that outlives the spawn failure hangs the CLI for
+    // the whole timeout.
+    const child = new EventEmitter() as unknown as ChildProcess & EventEmitter;
+    (child as unknown as { kill: () => void }).kill = vi.fn();
+    const fetchImpl = vi.fn(async () => { throw new Error("connection refused"); });
+    const started = await startDevServerForProbe({
+      root: "/nonexistent/vendo-doctor-spawn-test",
+      statusUrl: "http://localhost:3000/api/vendo",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      timeoutMs: 60_000,
+      spawnDev: () => {
+        setImmediate(() => child.emit("error", new Error("spawn yarn ENOENT")));
+        return child;
+      },
+    });
+    expect(started.ok).toBe(false);
+
+    const pollsAtReturn = fetchImpl.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 1_700)); // two poll intervals
+    expect(fetchImpl.mock.calls.length).toBe(pollsAtReturn);
+  });
 });

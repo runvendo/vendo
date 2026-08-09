@@ -1,16 +1,15 @@
-import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
+import type { AppDocument, RunContext, ScreenAssembler, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { createApps, type SandboxAdapter } from "./index.js";
+import { createApps, type AppsRuntime } from "./index.js";
 import { createAppHistory } from "./history.js";
 import { enabledAfterDocumentEdit } from "./persistence.js";
 import {
   basicLanguageModel,
-  fakeSandbox,
   guardFixture,
   memoryStore,
+  scriptedAssembler,
   seedAppRow,
-  scriptedLanguageModel,
 } from "./testing/index.js";
 
 const tools: ToolRegistry = {
@@ -29,55 +28,63 @@ const context = (subject: string): RunContext => ({
   sessionId: `session_${subject}`,
 });
 
+/** What the person just said, as a legal display title. An EDIT's brief leads
+ *  with the app's memory block, so the ask itself is the last line of it. Capped
+ *  at the create validator's display-title length (APP_NAME_MAX_CHARS). */
+const titleFor = (request: string): string => {
+  const said = request.split("\n").map((line) => line.trim()).filter((line) => line !== "").at(-1) ?? "";
+  return said.slice(0, 40).replaceAll('"', "'") || "Untitled app";
+};
+
+/** The ONE engine, scripted: every ask is tiny, so the assembler writes the whole
+ *  app on the spot and names it after what was said — a create and an edit alike.
+ *  It lands through the real `AppsRuntime.authored`, so the row, the version, the
+ *  audit event and the guard decision are all the shipped ones. */
+const screenFor = (runtime: () => AppsRuntime): ScreenAssembler =>
+  scriptedAssembler(runtime, ({ request }) => {
+    const said = titleFor(request);
+    return `<App name="${said}"><Text text="${said}"/><Disclaimer reason="Scripted fixture app."/></App>`;
+  });
+
 const setup = (withModel = true) => {
   const store = memoryStore();
   const guard = guardFixture();
-  const runtime = createApps({
+  let runtime: AppsRuntime;
+  runtime = createApps({
     store,
     guard,
     tools,
     catalog: [],
     model: withModel ? basicLanguageModel() : undefined,
+    screen: screenFor(() => runtime),
   });
   return { store, guard, runtime };
 };
 
 describe("apps lifecycle", () => {
-  it("disarms changed triggers on edit and undo while preserving unchanged trigger edits", async () => {
-    const store = memoryStore();
+  it("disarms changed triggers on edit while preserving unchanged trigger edits", async () => {
     const original: AppDocument = {
       format: VENDO_APP_FORMAT,
       id: "app_trigger_arm",
       name: "Trigger arm",
-      trigger: {
+      triggers: [{
+        id: "main",
         on: { kind: "host-event", event: "invoice.created" },
         run: { kind: "steps", steps: [{ id: "read", tool: "host_read" }] },
-      },
+      }],
     };
     const renamed = { ...original, name: "Renamed" };
     const changed: AppDocument = {
       ...renamed,
-      trigger: {
+      triggers: [{
+        id: "main",
         on: { kind: "host-event", event: "invoice.updated" },
         run: { kind: "steps", steps: [{ id: "read", tool: "host_read" }] },
-      },
+      }],
     };
 
     expect(enabledAfterDocumentEdit(original, renamed, true)).toBe(true);
     expect(enabledAfterDocumentEdit(original, changed, true)).toBe(false);
-
-    const history = createAppHistory(store);
-    await history.append(original.id, original, {
-      at: "2026-07-12T12:00:00.000Z",
-      intent: "Change trigger",
-      rung: 1,
-    });
-    await seedAppRow(store, changed, "user_ada", true);
-    await history.surface(original.id).undo();
-    expect((await store.records("vendo_apps").get(original.id))?.data).toMatchObject({
-      enabled: false,
-      doc: { trigger: original.trigger },
-    });
   });
 
   it("round-trips create, get, and newest-first list without leaking across owners", async () => {
@@ -115,9 +122,19 @@ describe("apps lifecycle", () => {
 
     const { runtime } = setup();
     const app = await runtime.create({ prompt: `  ${"x".repeat(80)}  ` }, context("user_ada"));
-    // Empty-states batch — the name is a display title capped by the create
-    // validator (APP_NAME_MAX_CHARS), never the ask echoed back at length.
+    // Empty-states batch — the name is a display title, never the ask echoed
+    // back at length.
     expect(app.name).toHaveLength(40);
+    // …and the cap is the PRODUCT's, not the fixture's: the same document with
+    // the ask echoed back whole is a finding at the `validate` door, which is
+    // where the create validator's APP_NAME_MAX_CHARS now bites.
+    const echoed = "x".repeat(80);
+    const verdict = await runtime.validate(
+      { document: `<App name="${echoed}"><Text text="hi"/><Disclaimer reason="Fixture."/></App>` },
+      context("user_ada"),
+    );
+    expect(verdict.ok).toBe(false);
+    expect(verdict.findings.some(({ message }) => message.includes("at most 40 characters"))).toBe(true);
   });
 
   it("forks a fresh validated document without copying history or app data", async () => {
@@ -139,7 +156,7 @@ describe("apps lifecycle", () => {
     expect(await store.records(`app:${fork.id}:notes`).list()).toEqual({ records: [] });
     expect(await store.records("vendo_state").get(`${fork.id}:${ctx.principal.subject}`)).toBeNull();
     expect(await store.blobs(`app:${fork.id}:files`).list()).toEqual([]);
-    expect(await runtime.history(fork.id).list()).toEqual([]);
+    expect(await runtime.history(fork.id, ctx).list()).toEqual([]);
   });
 
   it("a fork never carries a machine or a retired v1 server ref", async () => {
@@ -204,7 +221,7 @@ describe("apps lifecycle", () => {
     ]);
   });
 
-  it("caps public history at 50 entries and undo restores and pops the latest snapshot", async () => {
+  it("caps public history at 50 entries", async () => {
     const { runtime } = setup();
     const ctx = context("user_ada");
     const app = await runtime.create({ prompt: "Original" }, ctx);
@@ -213,16 +230,11 @@ describe("apps lifecycle", () => {
       await runtime.edit(app.id, `Edit ${index}`, ctx);
     }
 
-    const history = runtime.history(app.id);
+    const history = runtime.history(app.id, ctx);
     const entries = await history.list();
     expect(entries).toHaveLength(50);
     expect(entries[0]?.intent).toBe("Edit 51");
     expect(entries.at(-1)?.intent).toBe("Edit 2");
-
-    const restored = await history.undo();
-    expect(restored.name).toBe("Edit 50");
-    expect(await runtime.get(app.id, ctx)).toEqual(restored);
-    expect(await history.list()).toHaveLength(49);
   });
 
   it("keeps the full per-pin replay trail when public version history is capped", async () => {
@@ -241,57 +253,15 @@ describe("apps lifecycle", () => {
         intent: `Pin edit ${index}`,
         rung: 1,
       }, ["net-worth-card"]);
+      // The cap is applied by the caller once its write has LANDED — an append
+      // is speculative until then, and pruning inside it charged a refused write
+      // the oldest real version (see AppHistoryAccess.prune).
+      await history.prune(app.id);
     }
 
     expect(await history.surface(app.id).list()).toHaveLength(50);
     expect((await history.pinIntents(app.id, "net-worth-card")).map(({ intent }) => intent))
       .toEqual(Array.from({ length: 51 }, (_, index) => `Pin edit ${index + 1}`));
-
-    await history.surface(app.id).undo();
-    expect(await history.pinIntents(app.id, "net-worth-card")).toHaveLength(50);
-  });
-
-  it("undoes same-millisecond edits in strict LIFO order", async () => {
-    const store = memoryStore({ timestamp: () => "2026-07-11T12:00:00.000Z" });
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-      model: basicLanguageModel(),
-    });
-    const app: AppDocument = {
-      format: VENDO_APP_FORMAT,
-      id: "app_lifo",
-      name: "Original",
-      ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Text" }],
-      },
-    };
-    await seedAppRow(store, app, "user_ada");
-    const uuid = vi.spyOn(globalThis.crypto, "randomUUID")
-      .mockReturnValueOnce("ffffffff-ffff-4fff-8fff-ffffffffffff")
-      .mockReturnValueOnce("00000000-0000-4000-8000-000000000000");
-    try {
-      await runtime.edit(app.id, "First", context("user_ada"));
-      await runtime.edit(app.id, "Second", context("user_ada"));
-
-      await expect(runtime.history(app.id).undo()).resolves.toMatchObject({ name: "First" });
-      await expect(runtime.history(app.id).undo()).resolves.toEqual(app);
-    } finally {
-      uuid.mockRestore();
-    }
-  });
-
-  it("rejects undo on empty history", async () => {
-    const { runtime } = setup();
-    const app = await runtime.create({ prompt: "No history" }, context("user_ada"));
-    await expect(runtime.history(app.id).undo()).rejects.toEqual(
-      new VendoError("conflict", "nothing to undo"),
-    );
   });
 
   it("rejects invalid stored documents on reads with the app id in detail", async () => {
@@ -333,6 +303,111 @@ describe("apps lifecycle", () => {
     });
 
     await expect(runtime.list(ctx)).resolves.toEqual([edited.app]);
-    await expect(runtime.history(valid.id).list()).resolves.toEqual([edited.version]);
+    await expect(runtime.history(valid.id, ctx).list()).resolves.toEqual([edited.version]);
+  });
+
+  it("reports the version history stored, not a later clock read", async () => {
+    // Only `Date` is faked: the store, the guard and every await in the write
+    // path still run on real timers.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-07-12T12:00:00.000Z"));
+    try {
+      const store = memoryStore();
+      let runtime: AppsRuntime;
+      const assembler = screenFor(() => runtime);
+      runtime = createApps({
+        store,
+        guard: guardFixture(),
+        tools,
+        catalog: [],
+        model: basicLanguageModel(),
+        // The assembler's save is where the history row is appended, so moving
+        // the clock the moment it returns puts every later read in the NEXT
+        // millisecond — the straddle that used to need a busy machine.
+        screen: {
+          async assemble(request, assembleCtx) {
+            const outcome = await assembler.assemble(request, assembleCtx);
+            vi.setSystemTime(new Date(Date.now() + 1));
+            return outcome;
+          },
+        },
+      });
+      const ctx = context("user_ada");
+      const app = await runtime.create({ prompt: "Valid" }, ctx);
+      const edited = await runtime.edit(app.id, "Edited", ctx);
+
+      await expect(runtime.history(app.id, ctx).list()).resolves.toEqual([edited.version]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never reports an overlapping edit's version as its own", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-07-12T12:00:00.000Z"));
+    /** A save that has landed, and a hold released by the test. */
+    const gate = () => {
+      let open = (): void => {};
+      const held = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      let landed = (): void => {};
+      const saved = new Promise<void>((resolve) => {
+        landed = resolve;
+      });
+      return { held, open, saved, landed };
+    };
+    const gates = new Map([["First", gate()], ["Second", gate()]]);
+    const gateFor = (request: string) =>
+      [...gates].find(([instruction]) => request.trimEnd().endsWith(instruction))?.[1];
+    try {
+      const store = memoryStore();
+      let runtime: AppsRuntime;
+      const assembler = screenFor(() => runtime);
+      runtime = createApps({
+        store,
+        guard: guardFixture(),
+        tools,
+        catalog: [],
+        model: basicLanguageModel(),
+        // Held between the save and the answer, so the test can interleave two
+        // edits of the SAME app around each other's history row.
+        screen: {
+          async assemble(request, assembleCtx) {
+            const outcome = await assembler.assemble(request, assembleCtx);
+            vi.setSystemTime(new Date(Date.now() + 1));
+            const held = gateFor(request.request);
+            if (held !== undefined) {
+              held.landed();
+              await held.held;
+            }
+            return outcome;
+          },
+        },
+      });
+      const ctx = context("user_ada");
+      const app = await runtime.create({ prompt: "Valid" }, ctx);
+
+      // "First" saves its row, then waits. "Second" starts on top of it, saves
+      // its own row, and waits too — so when "First" answers, the newest row on
+      // this app is SOMEONE ELSE'S edit.
+      const first = runtime.edit(app.id, "First", ctx);
+      await gates.get("First")?.saved;
+      const second = runtime.edit(app.id, "Second", ctx);
+      await gates.get("Second")?.saved;
+      gates.get("First")?.open();
+      const firstResult = await first;
+      gates.get("Second")?.open();
+      const secondResult = await second;
+
+      // Never the sibling's row — the words in the version an edit reports are
+      // the words that edit was given.
+      expect(firstResult.version.intent).toBe("First");
+      expect(secondResult.version.intent).toBe("Second");
+      // …and the edit whose row is still the newest one reports it verbatim.
+      await expect(runtime.history(app.id, ctx).list()).resolves.toContainEqual(secondResult.version);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

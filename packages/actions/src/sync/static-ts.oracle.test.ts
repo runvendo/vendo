@@ -19,7 +19,6 @@ import {
  * is safe and intended (see `oracleRead`).
  */
 
-type CaseMode = "match" | "divergent" | "permissive";
 
 interface BaseCase {
   name: string;

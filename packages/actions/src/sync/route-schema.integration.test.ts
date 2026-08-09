@@ -32,8 +32,10 @@ async function write(root: string, relativePath: string, source: string): Promis
   await fs.writeFile(file, source, "utf8");
 }
 
+/** Strips the whole input SLOT — the schema and the marker recording where it
+ *  came from, which moves with it. */
 function withoutInputSchema(tool: Record<string, unknown>): Record<string, unknown> {
-  const { inputSchema: _inputSchema, ...rest } = tool;
+  const { inputSchema: _inputSchema, inputSchemaSource: _inputSchemaSource, ...rest } = tool;
   return rest;
 }
 

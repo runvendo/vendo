@@ -1,6 +1,6 @@
 import path from "node:path";
 import type TS from "typescript";
-import type { HttpMethod } from "../formats.js";
+import type { HttpMethod, SchemaSource } from "../formats.js";
 import {
   MAX_RESOLVE_DEPTH,
   PERMISSIVE_INPUT,
@@ -110,6 +110,11 @@ function zodExtractionFor(state: RouteScanState): StaticExtraction | null {
 export interface RouteInputResult {
   bodySchema?: Record<string, unknown>;
   queryProperties?: Record<string, unknown>;
+  /** Which collector produced `bodySchema`. Absent when nothing was
+   *  recognized (a permissive fallback, or query scraping alone), which the
+   *  caller records as `"unknown"` — a scraped query string is evidence of
+   *  use, not a declaration of the argument list. */
+  source?: Extract<SchemaSource, "declared" | "types">;
   note?: string;
 }
 
@@ -203,7 +208,7 @@ function methodHandlerBody(module: FileModule, ts: typeof TS, method: HttpMethod
  * *what* is being read, only how it's typed or guarded: `await`, redundant
  * parens, `as`/`satisfies` casts, non-null assertions, and a trailing
  * `.catch(...)` fallback (demo-bank's own handlers read
- * `(await req.json().catch(() => ({}))) as T` — apps/demo-bank's orders
+ * `(await req.json().catch(() => ({}))) as T` — examples/demo-bank's orders
  * route). Peeling `.catch`'s receiver, not its whole call, is what lets the
  * loop reach the underlying `.json()` call under any combination of the above. */
 function unwrapJsonCandidate(ts: typeof TS, node: TS.Node): TS.Node {
@@ -332,6 +337,7 @@ function interpretedToResult(
   urlPath: string,
   interpreted: { schema: Record<string, unknown>; recognized: boolean; reason?: string },
   fallbackReason: string,
+  source: Extract<SchemaSource, "declared" | "types">,
 ): RouteInputResult {
   const bodySchema = interpreted.recognized ? interpreted.schema : { ...PERMISSIVE_INPUT };
   const note = interpreted.recognized
@@ -340,7 +346,13 @@ function interpretedToResult(
       : undefined
     : `input schema not statically interpreted (${interpreted.reason ?? fallbackReason}); permissive schema emitted`;
 
-  return { bodySchema: excludePathParams(bodySchema, urlPath), ...(note ? { note } : {}) };
+  return {
+    bodySchema: excludePathParams(bodySchema, urlPath),
+    // An unrecognized verdict emitted the PERMISSIVE schema; that is the one
+    // unambiguous blind marker, so it records no rung.
+    ...(interpreted.recognized ? { source } : {}),
+    ...(note ? { note } : {}),
+  };
 }
 
 async function zodCollector(
@@ -357,7 +369,7 @@ async function zodCollector(
   if (!receiver) return null;
 
   const interpreted = await zodFromExpression(extraction, module, receiver, 0);
-  return interpretedToResult(route.urlPath, interpreted, "unrecognized validator");
+  return interpretedToResult(route.urlPath, interpreted, "unrecognized validator", "declared");
 }
 
 // ---------------------------------------------------------------------------
@@ -651,7 +663,7 @@ async function checkerCollector(
     const checker = program.getTypeChecker();
     const type = checker.getTypeFromTypeNode(typeNode);
     const interpreted = schemaForCheckerType(ts, checker, program, type, 0);
-    return interpretedToResult(route.urlPath, interpreted, "unsupported type");
+    return interpretedToResult(route.urlPath, interpreted, "unsupported type", "types");
   } catch {
     return null;
   }

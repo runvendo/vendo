@@ -18,7 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 /** The umbrella server-graph packages the client surface must never pull in. */
-export const FORBIDDEN_SERVER_MODULES = ["@vendoai/store", "@vendoai/actions", "@vendoai/agent"] as const;
+export const FORBIDDEN_SERVER_MODULES = ["@vendoai/store", "@vendoai/actions"] as const;
 
 /** Relative-import targets that are the umbrella's own server entry points
  *  (they export `createVendo` and the server composition). */

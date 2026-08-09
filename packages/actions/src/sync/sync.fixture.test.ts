@@ -34,27 +34,30 @@ describe("vendoSync host fixture", () => {
       "host_getInvoice",
       "host_listCustomers",
     ].map((name) => [name, byName.get(name)?.risk]))).toEqual({
-      host_listInvoices: "read",
-      host_createInvoice: "write",
-      host_updateInvoice: "write",
+      // Only the DELETE is a protocol fact (risk-grading redesign D2). The
+      // rest — GET archive, POST send, GET list — are `ungraded` until the
+      // judge or a human grades them, and the guard asks on every one.
+      host_listInvoices: "ungraded",
+      host_createInvoice: "ungraded",
+      host_updateInvoice: "ungraded",
       host_deleteInvoice: "destructive",
-      host_sendInvoice: "destructive",
-      host_downloadInvoicesArchive: "destructive",
-      host_getInvoice: "read",
-      host_listCustomers: "read",
+      host_sendInvoice: "ungraded",
+      host_downloadInvoicesArchive: "ungraded",
+      host_getInvoice: "ungraded",
+      host_listCustomers: "ungraded",
     });
-    expect(byName.get("host_login_create")?.risk).toBe("write");
-    expect(byName.get("host_ping_list")?.risk).toBe("write");
+    expect(byName.get("host_login_create")?.risk).toBe("ungraded");
+    expect(byName.get("host_ping_list")?.risk).toBe("ungraded");
     expect(byName.get("host_listCustomers")?.binding).toMatchObject({ kind: "openapi", path: "/api/customers" });
     // Alias resolution: the summary route only re-exports GET through @fixture/* (not in openapi.json).
     expect(byName.get("host_reports_summary_list")).toMatchObject({
-      risk: "write",
+      risk: "ungraded",
       binding: { kind: "route", method: "GET", path: "/api/reports/summary", argsIn: "query" },
     });
     expect(toolsFile.tools.some((tool) => String(tool.binding?.path).startsWith("/api/vendo"))).toBe(false);
     expect(byName.get("host_export_data_unclassified")).toMatchObject({
       disabled: true,
-      risk: "destructive",
+      risk: "ungraded",
       binding: { kind: "route", method: "POST", path: "/api/export-data", argsIn: "body" },
     });
     expect(byName.get("host_export_data_unclassified")?.note).toContain("enable only after review");
@@ -64,9 +67,9 @@ describe("vendoSync host fixture", () => {
       captured: ["AliasedCard", "BarrelCard", "InvoiceCard", "NamespaceCard"],
       drifted: [],
     });
-    expect(first.unresolvedPins).toEqual([]);
+    expect(first.remixableErrors).toEqual([]);
     const invoicePin = JSON.parse(await fs.readFile(path.join(out, "remixable", "InvoiceCard.json"), "utf8"));
-    expect(invoicePin).toMatchObject({ slot: "InvoiceCard", exportable: true });
+    expect(invoicePin).toMatchObject({ slot: "InvoiceCard", exportable: false });
     expect(invoicePin.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(await fs.readFile(path.join(out, "remixable", "AliasedCard.json"), "utf8")).toContain("Aliased import");
     expect(await fs.readFile(path.join(out, "remixable", "BarrelCard.json"), "utf8")).toContain("Barrel chain");
@@ -82,6 +85,6 @@ describe("vendoSync host fixture", () => {
     expect(second.tools).toEqual({ added: [], removed: [], changed: [] });
     expect(second.breaking).toEqual([]);
     expect(second.pins).toEqual({ captured: [], drifted: [] });
-    expect(second.unresolvedPins).toEqual([]);
+    expect(second.remixableErrors).toEqual([]);
   });
 });

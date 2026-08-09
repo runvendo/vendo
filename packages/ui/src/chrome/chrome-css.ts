@@ -5,11 +5,14 @@ import { ONEST_FONT_CSS } from "./onest-font.gen.js";
  *  font, defaultVendoTheme's first family) rides along as inlined @font-face
  *  data so the unthemed default look renders it with zero host setup — hosts
  *  that set their own fontFamily simply never reference it. */
-export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2 Vendo shell design, ported onto the frozen
-   VendoTheme contract. Every aesthetic token below is DERIVED from the contract
-   brand tokens (--vendo-color-*, --vendo-radius-*, --vendo-font-*) that
-   themeCssVariables() emits, so the host's brand still drives everything while
-   the frosted-glass design system rides on top. */
+export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 design language (2026-08-03), a RECIPE over the
+   frozen VendoTheme contract. Every aesthetic token below is DERIVED from the
+   contract brand tokens (--vendo-color-*, --vendo-radius-*, --vendo-font-*)
+   that themeCssVariables() emits: S1 fixes the RELATIONSHIPS (hairline borders
+   at ~8% of the foreground, the radius scale as multiples of radius.medium,
+   muted-text mixing, shadow only on floating elements), never the palette. A
+   warm-branded host renders warm S1; a neutral host renders neutral S1.
+   The frosted-glass identity is retired: surfaces are flat. */
 .vendo-root {
   /* ENG-226: scheme derived from the luminance of the theme's colors.background
      (themeCssVariables emits --vendo-color-scheme) — a dark-brand host flips
@@ -18,14 +21,18 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   /* brand → shell token bridge */
   --vendo-fg: var(--vendo-color-text, #14151a);
   /* Muted is pulled ~40% toward the text color so small muted labels
-     (.fl-picker-group, .fl-voice-status, captions) clear WCAG AA 4.5:1 on the
+     (.fl-picker-group, captions) clear WCAG AA 4.5:1 on the
      glass surfaces — in BOTH schemes, since text always contrasts the bg. */
   --vendo-fg-muted: color-mix(in srgb, var(--vendo-color-muted, #8a8b92) 45%, var(--vendo-color-text, #14151a));
   --vendo-bg: var(--vendo-color-background, #f3ede2);
   --vendo-surface: var(--vendo-color-surface, #fffdf9);
   --vendo-accent: var(--vendo-color-accent, #1b1c22);
   --vendo-accent-fg: var(--vendo-color-accent-text, #ffffff);
-  --vendo-border: var(--vendo-color-border, rgba(20,21,26,.09));
+  /* S1 hairline: felt, not seen. Derived as ~8% of the foreground rather than
+     read from colors.border, so the edge always sits the same distance from the
+     text in ANY brand and in both schemes (a host's literal border color could
+     not do that). colors.border is consequently unread by the chrome. */
+  --vendo-border: color-mix(in srgb, var(--vendo-color-text, #14151a) 8%, transparent);
   --vendo-radius: var(--vendo-radius-medium, 12px);
   /* radius.small / radius.large were emitted by the theme but never read — only
      medium drove the whole sheet. Bridge them so small chrome (chips, badges,
@@ -33,6 +40,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
      (panels, sheets, pickers, connect card) pick up radius.large. */
   --vendo-radius-sm: var(--vendo-radius-small, 7px);
   --vendo-radius-lg: var(--vendo-radius-large, 16px);
+  /* S1 radius scale as MULTIPLES of radius.medium (default 10px → 14/26px), so a
+     square-brand host (radius.medium: 0) stays square everywhere. */
+  --vendo-radius-card: calc(var(--vendo-radius) * 1.4);
+  --vendo-radius-composer: calc(var(--vendo-radius) * 2.6);
   --vendo-font: var(--vendo-font-family, inherit);
   /* headingFamily was contract-listed but unread by the chrome; falls back to
      the body font when the host doesn't set a distinct heading face. */
@@ -47,12 +58,26 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   --vendo-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   /* derived aesthetics */
   --vendo-accent-soft: color-mix(in srgb, var(--vendo-accent) 8%, transparent);
-  --vendo-border-strong: color-mix(in srgb, var(--vendo-fg) 16%, transparent);
-  --vendo-shadow: 0 1px 2px color-mix(in srgb, var(--vendo-fg) 5%, transparent),
-    0 6px 18px color-mix(in srgb, var(--vendo-fg) 6%, transparent);
-  --vendo-glass: color-mix(in srgb, var(--vendo-surface) 58%, transparent);
-  --vendo-glass-strong: color-mix(in srgb, var(--vendo-surface) 82%, transparent);
-  --vendo-blur: saturate(1.4) blur(40px);
+  --vendo-border-strong: color-mix(in srgb, var(--vendo-fg) 14%, transparent);
+  /* WCAG 1.4.11 (non-text contrast, 3:1) — the S1 hairline is deliberately
+     felt-not-seen, which is fine for a divider and NOT fine for the only mark
+     that tells you which conversation is open, which rail row is selected, or
+     whether a switch is off. Those marks derive one step up: ~50% of the
+     foreground mixed into the background, which clears 3:1 against both the
+     background and the surface in either scheme, and is still nothing but the
+     host's own tokens. Never used for decoration. */
+  --vendo-indicator: color-mix(in srgb, var(--vendo-fg) 50%, var(--vendo-bg));
+  /* The ONE shadow, and it only ever paints elements that FLOAT above the
+     surface: the composer card, toasts, hovered tiles, popovers/menus, the
+     launcher pill and the overlay panel. Every resting surface is flat. */
+  --vendo-shadow-float: 0 1px 2px color-mix(in srgb, var(--vendo-fg) 5%, transparent),
+    0 10px 28px color-mix(in srgb, var(--vendo-fg) 8%, transparent);
+  /* M2 motion (spec §6): one unhurried duration + one iOS-sheet easing. Named
+     apart from the theme's --vendo-motion-* pair, which themeCssVariables emits
+     INLINE on the root (an inline custom property beats this rule) and which
+     drives the generated-view layer's 160ms hover transitions. */
+  --vendo-duration: 380ms;
+  --vendo-ease: cubic-bezier(0.32, 0.72, 0, 1);
   --vendo-ok: #2e9e6b;
   --vendo-danger: var(--vendo-color-danger, #b0392b);
   --vendo-danger-bg: color-mix(in srgb, var(--vendo-danger) 8%, var(--vendo-surface));
@@ -64,6 +89,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   --vendo-warn: light-dark(#7a5000, #d9a94e);
   --vendo-warn-text: light-dark(#8a6a2e, #d9a94e);
   --vendo-warn-edge: #b3822f;
+  /* DEAD as of Lane B: the .fl-btn-critical alias it existed for is gone
+     (critical IS ceremony now) and nothing reads this token. It survives only
+     because test/theme-tokens.test.tsx pins its amber literal to exactly one
+     definition — retire that pin and this token together. */
   --vendo-warn-fill-critical: light-dark(#a97e2f, #b3822f);
   --vendo-warn-on-fill: light-dark(#fff, #14151a);
   --vendo-warn-tint: #f0b429;
@@ -96,9 +125,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    parent and everything sizes to content exactly as before. Overlay, slot and
    palette roots mount fixed/inline children and are deliberately NOT matched;
    the voice stage is left to the voice-v1 stage-layout work (it commonly
-   mounts as a sibling of a thread — see Maple /vendo — where claiming 100%
-   would carve the pane in half). */
-.vendo-root:has(> .fl-thread), .vendo-root:has(> .fl-page) {
+   mounts as a sibling of a thread, where claiming 100% would carve the pane
+   in half). */
+.vendo-root:has(> .fl-thread) {
   display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
 /* ---------- thread shell ---------- */
@@ -125,26 +154,26 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    minimum and gets crushed to its borders the moment the thread overflows. */
 .fl-msglist > * { flex-shrink: 0; }
 .fl-msglist::-webkit-scrollbar { display: none; }
-/* Every thread item enters fluidly (fade + rise + un-blur) instead of popping —
-   tool panels, approvals, connect cards, turns alike. Render-view slots are
-   excluded: FluidReveal already morphs those. */
+/* Every thread item enters fluidly (M2: blur-to-focus + rise) instead of
+   popping — tool panels, approvals, connect cards, turns alike. Render-view
+   slots are excluded: FluidReveal already morphs those. */
 @media (prefers-reduced-motion: no-preference) {
   /* ENG-218 — entrance-animation gating on restore: turns present when a long
      thread is reopened carry .fl-no-entrance (set in chrome/thread), so only
      turns that ARRIVE after restore (streamed replies, sends) run the rise.
-     A reopened 200-turn thread no longer fires 200 animations on first paint. */
-  .fl-msglist > :not(.fl-reveal):not(.fl-no-entrance) { animation: fl-item-in .32s cubic-bezier(.22, 1, .36, 1) both; }
+     A reopened 200-turn thread no longer fires 200 animations on first paint —
+     which is also what makes the blur affordable: at most a couple of items
+     rasterize at a time. */
+  .fl-msglist > :not(.fl-reveal):not(.fl-no-entrance) { animation: fl-item-in var(--vendo-duration) var(--vendo-ease) both; }
 }
-/* Opacity+transform only — blur would force per-element rasterization, and a
-   reopened 200-item thread runs every entrance at once on first paint. */
 @keyframes fl-item-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: none; } }
+  from { opacity: 0; transform: translateY(10px); filter: blur(5px); }
+  to   { opacity: 1; transform: none; filter: blur(0); } }
 @keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
 /* ENG-218 — "show N earlier messages": reveals the deferred head of a windowed
    long thread. Sits at the top of the list, centered, quiet until hovered. */
 .fl-load-older { align-self: center; margin: 2px auto 4px; padding: 5px 12px; cursor: pointer;
-  font: inherit; font-size: .82em; color: var(--vendo-fg-muted); background: var(--vendo-glass);
+  font: inherit; font-size: .82em; color: var(--vendo-fg-muted); background: var(--vendo-surface);
   border: 1px solid var(--vendo-border); border-radius: 999px; transition: color .12s, border-color .12s; }
 .fl-load-older:hover { color: var(--vendo-fg); border-color: var(--vendo-border-strong); }
 /* ENG-218 — expand/collapse control for a huge single message (assistant or
@@ -159,9 +188,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 /* Jump to latest — appears only when scrolled up from the bottom. */
 .fl-jump { position: absolute; right: 14px; bottom: 12px; width: 34px; height: 34px; border-radius: 50%;
   display: grid; place-items: center; cursor: pointer; color: var(--vendo-fg);
-  border: 1px solid var(--vendo-border-strong); background: var(--vendo-glass-strong);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  box-shadow: var(--vendo-shadow); animation: fl-fade-in .15s ease; transition: border-color .12s; }
+  border: 1px solid var(--vendo-border-strong); background: var(--vendo-surface);
+  box-shadow: var(--vendo-shadow-float); animation: fl-fade-in .15s ease; transition: border-color .12s; }
 .fl-jump:hover { border-color: var(--vendo-accent); }
 .fl-jump:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
 /* Connect dock (ENG-205): the in-bar connect-tools entry. The .fl-dock
@@ -197,7 +225,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    transition. Guarded by the media query (plus the data-vendo-motion="reduced"
    kill-switch above) so reduced-motion users get the old instant tray. */
 @media (prefers-reduced-motion: no-preference) {
-  .fl-tray { animation: fl-tray-open .32s cubic-bezier(.22, 1, .36, 1) both; }
+  .fl-tray { animation: fl-tray-open var(--vendo-duration) var(--vendo-ease) both; }
   .fl-tray[data-closing] { animation: fl-tray-close .18s cubic-bezier(.4, 0, 1, 1) both; }
 }
 .fl-tray[data-closing] { pointer-events: none; }
@@ -214,8 +242,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   border-radius: 14px 14px 0 0; border-bottom: 0;
   /* Fill the tray exactly: the standalone picker's 560px cap + flex-start
      would leave a dead strip beside the bar whenever the bar is wider. */
-  max-width: none; align-self: stretch;
-  -webkit-backdrop-filter: none; backdrop-filter: none; }
+  max-width: none; align-self: stretch; }
 /* No bottom scrim: the row clipped at the seam is the scroll cue. */
 
 /* Host-component thread items (Connect card): same geometry as the render slot
@@ -229,9 +256,11 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-turn-assistant:has(.fl-uihost) { align-self: stretch; max-width: 100%; width: 100%; }
 
 /* App boundary: the generated view sits inside a titled frame so it reads as a
-   discrete piece of software, cleanly separated from the surrounding chat. */
-.fl-appcard { border: 1px solid var(--vendo-border); border-radius: 14px; overflow: hidden;
-  background: var(--vendo-surface); box-shadow: var(--vendo-shadow);
+   discrete piece of software, cleanly separated from the surrounding chat.
+   Flat (S1): the hairline is the boundary, not a shadow — the card rests on the
+   thread, it does not float above it. */
+.fl-appcard { border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius-card); overflow: hidden;
+  background: var(--vendo-surface);
   /* Breathing room when the settled card scrolls its top into view. */
   scroll-margin-top: 10px; }
 .fl-appcard-bar { display: flex; align-items: center; gap: 8px; padding: 9px 13px;
@@ -247,23 +276,17 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-appcard-name { font: 600 12.5px/1 var(--vendo-font); color: var(--vendo-fg);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fl-appcard-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-.fl-appcard-foot { display: flex; align-items: center; justify-content: flex-end; padding: 12px 16px;
-  border-top: 1px solid var(--vendo-border);
-  background: color-mix(in srgb, var(--vendo-surface) 94%, var(--vendo-fg) 6%); }
-.fl-appcard-pin { display: inline-flex; align-items: center; gap: 6px; }
 
-/* Approval→notification morph: a solid-glass card (same material as the
-   overlay) that travels to the top-right on a GPU transform.
+/* Approval→notification morph: a floating card (same material as the overlay)
+   that travels to the top-right on a GPU transform.
    The layer must stay transparent — it carries .vendo-root (which paints a
    surface bg) and is full-viewport, so a background here whites out the page. */
 .fl-morph-layer { position: fixed; inset: 0; z-index: 2147483003; pointer-events: none; background: none; }
 .fl-morph-card { display: flex; align-items: center; gap: 11px; box-sizing: border-box;
   padding: 11px 15px; overflow: hidden; transform-origin: top left; will-change: transform, width, height, opacity;
-  border: 1px solid var(--vendo-border-strong); border-radius: 15px;
-  background: var(--vendo-glass-strong);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  box-shadow: 0 20px 48px color-mix(in srgb, var(--vendo-fg) 22%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent); }
+  border: 1px solid var(--vendo-border-strong); border-radius: var(--vendo-radius-card);
+  background: var(--vendo-surface);
+  box-shadow: 0 20px 48px color-mix(in srgb, var(--vendo-fg) 22%, transparent); }
 .fl-morph-live { position: relative; width: 9px; height: 9px; flex: 0 0 9px; border-radius: 999px;
   background: var(--vendo-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--vendo-accent) 15%, transparent); }
 .fl-morph-copy { min-width: 0; flex: 1; }
@@ -311,11 +334,14 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 @keyframes fl-fill-out { from { opacity: 1; } to { opacity: 0; } }
 
 /* App boot bar (pick C, V2 indeterminate sweep): while a generated view is
-   still forming, the appcard bar narrates — the dot pulses (fl-beat-orb), the
-   label reads "Building your view…", and a short accent segment sweeps along
-   the bar's bottom edge. On ready the label pair crossfades to the app name
-   and the sweep fades. Honest by design: no fake percentage, no completion
-   jump. The label pair shares one grid cell so the swap never remounts. */
+   still forming, the label reads "Building your view…" and a short accent
+   segment sweeps along the bar's bottom edge. On ready the label pair
+   crossfades to the app name and the sweep fades. Honest by design: no fake
+   percentage, no completion jump. The label pair shares one grid cell so the
+   swap never remounts.
+   BUILD CALM (spec §8): the sweeping hairline is the ONLY animated element
+   anywhere in the card while it builds — the dot rests, the beat orbs rest,
+   the skeleton rests. One moving thing reads as work; four read as noise. */
 .fl-appcard-bar { position: relative; }
 .fl-boot-labels { position: relative; display: grid; min-width: 0; flex: 1; }
 .fl-boot-labels > span { grid-area: 1 / 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -327,15 +353,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   border-radius: 2px; background: var(--vendo-accent); opacity: 0; transition: opacity .5s ease; }
 .fl-appcard-bar[data-state="building"] .fl-boot-hairline { opacity: 1; }
 @media (prefers-reduced-motion: no-preference) {
-  .fl-appcard-bar[data-state="building"] .fl-appcard-dot { animation: fl-beat-orb 1.6s ease-in-out infinite; }
   .fl-appcard-bar[data-state="building"] .fl-boot-hairline { animation: fl-boot-sweep 1.5s cubic-bezier(.45, .05, .55, .95) infinite; }
 }
 @keyframes fl-boot-sweep { from { transform: translateX(-110%); } to { transform: translateX(495%); } }
 
-/* Working indicator — fluidkit metaball droplets (ENG-205); inherits the muted
-   foreground as the flat-material fill. The .fl-typing dots below are its
-   first-paint and no-fluidkit fallback. */
-.fl-thinking { align-self: flex-start; color: var(--vendo-fg-muted); padding: 4px 2px; }
 /* Typing indicator — three pulsing dots while the agent is working. */
 .fl-typing { align-self: flex-start; display: flex; align-items: center; gap: 5px; padding: 4px 2px; }
 .fl-typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--vendo-fg-muted);
@@ -347,8 +368,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-turn-user { position: relative; align-self: flex-end; background: var(--vendo-user-bubble); color: var(--vendo-user-bubble-fg);
   padding: 9px 14px; border-radius: var(--vendo-radius-lg) var(--vendo-radius-lg) var(--vendo-radius-sm) var(--vendo-radius-lg);
   max-width: 82%; font-size: var(--vendo-text-body); line-height: 1.5;
-  letter-spacing: -.006em; border: 1px solid var(--vendo-border);
-  box-shadow: 0 1px 2px light-dark(rgba(20,21,26,.06), rgba(0,0,0,.28)); }
+  letter-spacing: -.006em; border: 1px solid var(--vendo-border); }
 .fl-usertext { white-space: pre-wrap; word-break: break-word; }
 .fl-turn-assistant { align-self: flex-start; max-width: 92%; line-height: 1.65; font-size: var(--vendo-text-body); letter-spacing: -.006em; }
 /* Space a turn's parts (beats, the app card, text) so the app boundary reads
@@ -366,6 +386,15 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   margin-left: 2px; vertical-align: -2px; background: var(--vendo-accent); border-radius: 1px;
   animation: fl-blink 1s steps(1) infinite; }
 @keyframes fl-blink { 50% { opacity: 0; } }
+/* §8's one-animation law, made true in the frame it is actually broken in: a
+   turn that is streaming PROSE while its app card builds ran two loops at once
+   (blinking caret + gliding hairline), and a forming markdown table added a
+   third. While any card in this thread is building, the hairline is the only
+   moving thing — the caret still marks the insertion point, it just stops
+   flashing. */
+.fl-thread:has(.fl-appcard-bar[data-state="building"]) .fl-caret,
+.fl-thread:has(.fl-appcard-bar[data-state="building"]) .fl-md--streaming > :last-child::after,
+.fl-thread:has(.fl-appcard-bar[data-state="building"]) .fl-skeleton-bar { animation: none; }
 
 /* ---------- markdown ---------- */
 .fl-md > :first-child { margin-top: 0; }
@@ -393,7 +422,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-codeblock pre { margin: 0; }
 .fl-copy { position: absolute; top: 7px; right: 7px; font: 500 11px/1 var(--vendo-font); padding: 4px 8px;
   border-radius: 7px; border: 1px solid var(--vendo-border); color: var(--vendo-fg-muted);
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  background: var(--vendo-surface);
   cursor: pointer; opacity: 0; transition: opacity .12s, color .12s; }
 .fl-codeblock:hover .fl-copy, .fl-copy:focus-visible { opacity: 1; }
 .fl-copy:hover { color: var(--vendo-fg); }
@@ -414,52 +443,23 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   background-size: 400% 100%; animation: fl-shimmer 1.5s ease infinite; border-radius: 6px; }
 @keyframes fl-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 
-/* ---------- glass skeleton (2026-07-05 recipe): a view taking shape ---------- */
-/* The glass ground: translucent fill + hairline white border + inset highlight,
-   frosted for real in shell chrome (inside the sandbox iframe backdrop-filter
-   can't see the host page — the translucent fill IS the fallback there). Both
-   grounds flip with the host scheme; tint and radius come from the existing
-   theme tokens — no new theme keys. */
-.fl-glass { border-radius: var(--vendo-radius); padding: var(--vendo-density-card-padding);
-  background: light-dark(rgba(255,255,255,.42), rgba(22,24,30,.55));
-  border: 1px solid light-dark(rgba(255,255,255,.65), rgba(255,255,255,.14));
-  box-shadow: 0 4px 24px light-dark(rgba(23,23,26,.06), rgba(0,0,0,.35)),
-    inset 0 1px 0 light-dark(rgba(255,255,255,.8), rgba(255,255,255,.08));
-  -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%); }
-.fl-glass-skeleton { align-self: flex-start; width: 100%; }
-.fl-glass-line { display: flex; align-items: center; gap: 9px;
-  font: 500 13.5px/1.4 var(--vendo-font); color: var(--vendo-fg); }
-.fl-glass-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--vendo-accent);
-  flex-shrink: 0; animation: fl-glass-pulse 1.6s ease-in-out infinite; }
-@keyframes fl-glass-pulse { 50% { transform: scale(1.25); opacity: 1; } }
-/* Shimmer blocks: the HOST ACCENT at .10→.22→.10 (light) / .16→.32→.16 (dark),
-   sweeping 1.8s — the recipe's exact tint ramp via color-mix instead of a
-   precomputed rgb triplet. */
-.fl-glass-shimmer { border-radius: 10px;
-  background: linear-gradient(100deg,
-    light-dark(color-mix(in srgb, var(--vendo-accent) 10%, transparent), color-mix(in srgb, var(--vendo-accent) 16%, transparent)) 30%,
-    light-dark(color-mix(in srgb, var(--vendo-accent) 22%, transparent), color-mix(in srgb, var(--vendo-accent) 32%, transparent)) 50%,
-    light-dark(color-mix(in srgb, var(--vendo-accent) 10%, transparent), color-mix(in srgb, var(--vendo-accent) 16%, transparent)) 70%);
-  background-size: 200% 100%; animation: fl-glass-shimmer 1.8s linear infinite; }
-@keyframes fl-glass-shimmer { from { background-position: 120% 0; } to { background-position: -80% 0; } }
-/* The approved grid: a view forming — 3 stat tiles, a wide chart, two rows. */
-.fl-glass-grid { display: grid; gap: 8px; margin-top: 12px; grid-template-columns: repeat(3, 1fr); }
-.fl-glass-tile { height: 44px; }
-.fl-glass-chart { grid-column: span 3; height: 96px; }
-.fl-glass-row { grid-column: span 3; height: 18px; }
-.fl-glass-row.is-short { width: 72%; }
-/* Repaint veil: shimmer over an updating view instead of a flash —
-   pointer-transparent, content stays readable. */
-.fl-glass-veil { position: absolute; inset: 0; z-index: 4; pointer-events: none;
-  border-radius: var(--vendo-radius); }
-/* Integrations tray placeholder rows. */
-.fl-picker-loading .fl-glass-shimmer { height: 46px; border-radius: 11px; }
+/* ---------- skeleton ground: a view taking shape ---------- */
+/* The frosted recipe is retired (S1): a forming view rests on the same flat
+   surface + hairline every other card uses, so a skeleton and the view that
+   replaces it read as one object. */
+.fl-glass { border-radius: var(--vendo-radius-card); padding: var(--vendo-density-card-padding);
+  background: var(--vendo-surface); border: 1px solid var(--vendo-border); }
+/* Placeholder blocks: the HOST ACCENT at a flat .10 (light) / .16 (dark) tint.
+   STATIC by design (spec §8 build calm) — a skeleton can sit on screen for
+   seconds while a plan fills in, and the app bar's hairline already says
+   "working"; a second sweeping loop only competes with it. */
+.fl-glass-shimmer { border-radius: var(--vendo-radius);
+  background: light-dark(color-mix(in srgb, var(--vendo-accent) 10%, transparent),
+    color-mix(in srgb, var(--vendo-accent) 16%, transparent)); }
 
 /* ---------- build beats (the thread's human progress voice) ----------
    One quiet line per tool call: pulsing orb while working, tick when done,
-   loud only on error. Completed beats yield the line to the newest one
-   (.fl-beat-superseded collapses) so a build narrates as one voice. The
-   mechanical record lives in the Activity panel. */
+   loud only on error. The mechanical record lives in the Activity panel. */
 /* Beats stack as one connected checklist: tight, even rhythm, no per-item
    collapse. Consecutive beats hug (2px) so the group reads as a single block;
    completed lines quiet to muted, the active one carries the pulsing orb. */
@@ -469,57 +469,46 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   .fl-beat { animation: fl-fade-in .24s ease both; }
 }
 .fl-beat-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Static (spec §8 build calm): the trailing "…" on the label carries the
+   working state; the orb is a position marker, not a heartbeat. */
 .fl-beat-orb { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
   background: radial-gradient(circle at 35% 35%,
     color-mix(in srgb, var(--vendo-accent) 55%, var(--vendo-surface) 45%), var(--vendo-accent)); }
-@media (prefers-reduced-motion: no-preference) {
-  .fl-beat-orb { animation: fl-beat-orb 1.6s ease-in-out infinite; }
-}
-@keyframes fl-beat-orb { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }
 .fl-beat-ic { display: grid; place-items: center; width: 12px; height: 12px; flex-shrink: 0; }
+/* The in-flight beat keeps full-strength text; settled ones quiet to muted. */
+.fl-beat-working { color: var(--vendo-fg); }
 .fl-beat-done { color: var(--vendo-fg-muted); }
 .fl-beat-tick { color: var(--vendo-ok); }
 .fl-beat-error { color: var(--vendo-danger); }
 .fl-beat-x { color: var(--vendo-danger); }
 .fl-beat-count { margin-left: 2px; padding: 1px 6px; border-radius: 999px; flex-shrink: 0;
   font: 600 10.5px/1.4 var(--vendo-font); color: var(--vendo-fg-muted);
-  border: 1px solid var(--vendo-border); background: var(--vendo-glass-strong); }
+  border: 1px solid var(--vendo-border); background: var(--vendo-surface); }
+/* A terminally failed app build: the ✕ beat plus the classified reason,
+   indented under it. Prose, not a failure component (spec §15) — no card, no
+   retry chrome; the agent's next sentence carries the recovery. */
+.fl-buildfail { align-self: flex-start; }
+/* A failure headline is CONTENT: it wraps rather than ellipsizing. The beat's
+   nowrap clip is right for a progress line and wrong here, and TWO rules hid
+   the sentence together — a turn is shrink-to-fit (.fl-turn-assistant is
+   align-self: flex-start), so this block's former 92% max-width resolved
+   against a width its own text had just set, making the box 8% narrower than
+   the headline inside it, and the ellipsis ate the end. A persisted failure
+   with no detail line under it read "The response didn't f…" after a reload
+   (PR #864 proof). The turn already caps at 92% of the list. */
+.fl-buildfail .fl-beat-label { overflow: visible; white-space: normal; text-overflow: clip; }
+.fl-buildfail .fl-approval-more { margin-left: 21px; line-height: 1.5; }
 
-/* ---------- tool chip (kept quiet; most are hidden in the thread) ---------- */
-.fl-tool { align-self: flex-start; display: flex; align-items: center; gap: 8px;
-  font: 500 12px/1 var(--vendo-font); color: var(--vendo-fg-muted);
-  border: 1px solid var(--vendo-border); border-radius: 10px; padding: 7px 11px;
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur); }
-.fl-tool-label { color: var(--vendo-fg); }
-.fl-tool-detail { color: var(--vendo-fg-muted); font-weight: 400;
-  max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fl-tool-count { margin-left: 2px; padding: 1px 6px; border-radius: 999px; flex-shrink: 0;
-  font: 600 10.5px/1.5 var(--vendo-font); color: var(--vendo-fg-muted);
-  background: var(--vendo-glass); border: 1px solid var(--vendo-border); }
-.fl-tool-icon { display: grid; place-items: center; width: 14px; height: 14px; font-size: 11px; flex-shrink: 0; }
-.fl-tool-done .fl-tool-icon { color: var(--vendo-ok); }
-.fl-tool-error { color: var(--vendo-danger); border-color: var(--vendo-danger-border); }
-.fl-tool-error .fl-tool-icon, .fl-tool-err { color: var(--vendo-danger); }
-/* Working spinner. */
-.fl-tool-spinner { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
-  border: 2px solid var(--vendo-border-strong); border-top-color: var(--vendo-fg-muted);
-  animation: fl-spin .8s linear infinite; }
+/* The tool chip was replaced by the build beats above; only its error line
+   survives (the voice consent bar's inline failure text). */
 @keyframes fl-spin { to { transform: rotate(360deg); } }
 
 /* ---------- approval / buttons ---------- */
 .fl-approval { align-self: flex-start; border: 1px solid var(--vendo-border);
-  border-radius: var(--vendo-radius); padding: 14px; box-shadow: var(--vendo-shadow);
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  border-radius: var(--vendo-radius-card); padding: 16px;
+  background: var(--vendo-surface);
   max-width: 88%; min-width: min(360px, 88%); }
 .fl-automation-approval-slot { align-self: flex-start; width: 100%; display: flex; }
-.fl-approval-head { display: flex; align-items: flex-start; gap: 10px; }
-.fl-approval-ic { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0;
-  border-radius: 9px; color: var(--vendo-accent); background: var(--vendo-accent-soft); }
-.fl-approval-eyebrow { font: 600 10.5px/1 var(--vendo-font); letter-spacing: .05em;
-  text-transform: uppercase; color: var(--vendo-fg-muted); }
-.fl-approval-title { margin-top: 4px; font: 600 13.5px/1.3 var(--vendo-heading-font); color: var(--vendo-fg);
-  letter-spacing: -.01em; }
-.fl-approval-desc { margin-top: 3px; font: 400 12px/1.4 var(--vendo-font); color: var(--vendo-fg-muted); }
 .fl-approval-fields { margin: 12px 0 0; padding: 10px 0 2px; border-top: 1px solid var(--vendo-border);
   display: flex; flex-direction: column; gap: 7px; }
 .fl-approval-field { display: grid; grid-template-columns: minmax(88px, auto) 1fr; gap: 12px;
@@ -529,8 +518,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    (field-rows.ts), one per line, instead of raw JSON. */
 .fl-approval-field dd { margin: 0; color: var(--vendo-fg); overflow-wrap: anywhere; white-space: pre-line; }
 .fl-approval-more { font-size: 11.5px; color: var(--vendo-fg-muted); }
-.fl-approval-desc { margin: 10px 0 0; font: 400 12.5px/1.5 var(--vendo-font); color: var(--vendo-fg-soft, var(--vendo-fg-muted)); }
-.fl-approval-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
 /* Connect-card lifecycle (2026-07 demo feedback): the button spins while the
    OAuth window is open, then becomes a quiet permanent Connected badge. */
 .fl-connect-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; display: inline-block;
@@ -543,6 +530,18 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-connect-done-ic { display: inline-grid; place-items: center; width: 15px; height: 15px;
   border-radius: 999px; background: var(--vendo-accent); color: var(--vendo-accent-fg); }
 .fl-connect-done-ic svg { width: 9px; height: 9px; }
+/* V5 connect states: the plain-words access line, the settled receipt beside
+   the badge, the blocked-popup fallback, and the collapsed Skipped record. */
+.fl-connect-access { color: var(--vendo-fg-muted); font-size: 12px; }
+.fl-connect-receipt { color: var(--vendo-fg-muted); font-size: 11.5px; }
+.fl-connect-blocked { display: flex; flex-direction: column; align-items: flex-start; gap: 9px;
+  font-size: 12.5px; line-height: 1.45; color: var(--vendo-fg); }
+/* Two classes on purpose: .fl-cardshell (column, card padding) is declared far
+   below this block and would otherwise win on source order. */
+.fl-approval.fl-connect-skipped { flex-direction: row; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 9px 10px 9px 14px; min-width: min(300px, 88%); }
+.fl-connect-skip-copy { color: var(--vendo-fg-muted); font-size: 12.5px; text-align: left; }
+.fl-connect-reoffer { flex: 0 0 auto; }
 /* Grant-set consent card (demo-live-readiness mockup §2): the enumerated
    permission rows under the standing-access head, and the settled outcome. */
 .fl-grantset { min-width: min(420px, 88%); }
@@ -550,8 +549,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-grant { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center;
   padding: 9px 0; border-top: 1px solid color-mix(in srgb, var(--vendo-border) 68%, transparent); }
 .fl-grant:first-child { border-top: 1px solid var(--vendo-border); }
-.fl-grant-ic { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0;
-  border-radius: 8px; color: var(--vendo-accent); background: var(--vendo-accent-soft); }
 .fl-grant-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .fl-grant-copy b { font: 600 12.8px/1.35 var(--vendo-font); color: var(--vendo-fg); overflow-wrap: anywhere; }
 .fl-grant-copy span { color: var(--vendo-fg-muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
@@ -559,57 +556,16 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-grantset-outcome { display: flex; align-items: center; gap: 7px; margin-top: 12px; padding-top: 11px;
   border-top: 1px solid var(--vendo-border); font: 600 12.5px/1 var(--vendo-font); color: var(--vendo-fg); }
 .fl-grantset[data-state="denied"] .fl-grantset-outcome { color: var(--vendo-fg-muted); font-weight: 500; }
-.fl-automation-approval { padding: 14px; }
-.fl-auto-approval-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-.fl-auto-approval-heading { min-width: 0; }
-.fl-auto-approval-title { margin-top: 5px; font: 650 15px/1.25 var(--vendo-heading-font); color: var(--vendo-fg);
-  letter-spacing: -.01em; overflow-wrap: anywhere; }
-.fl-auto-logo-stack { display: flex; align-items: center; flex-shrink: 0; padding-top: 1px; }
-.fl-auto-logo { display: grid; place-items: center; width: 31px; height: 31px; border: 1px solid var(--vendo-border);
-  border-radius: 10px; background: var(--vendo-surface); box-shadow: inset 0 1px 0 light-dark(rgba(255,255,255,.58), rgba(255,255,255,.08)); }
-.fl-auto-logo + .fl-auto-logo { margin-left: -7px; }
-.fl-auto-summary { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; padding-top: 12px;
-  border-top: 1px solid var(--vendo-border); }
-.fl-auto-summary-row { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 10px; align-items: start; }
-.fl-auto-summary-k { padding-top: 1px; color: var(--vendo-fg-muted); font-size: 11.5px; font-weight: 650; }
-.fl-auto-summary-v { min-width: 0; display: flex; flex-direction: column; gap: 2px; color: var(--vendo-fg);
-  font-size: 12.5px; line-height: 1.35; }
-.fl-auto-summary-v strong { font: 600 12.8px/1.35 var(--vendo-font); overflow-wrap: anywhere; }
-.fl-auto-summary-v span { color: var(--vendo-fg-muted); overflow-wrap: anywhere; }
-.fl-auto-access { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
-.fl-auto-access-label { color: var(--vendo-fg-muted); font-size: 11.5px; font-weight: 650; }
-.fl-auto-access-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center;
-  min-width: 0; padding: 9px 0; border-top: 1px solid color-mix(in srgb, var(--vendo-border) 68%, transparent); }
-.fl-auto-access-row:first-of-type { border-top: 0; }
-.fl-auto-access-logo { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--vendo-border);
-  border-radius: 10px; background: var(--vendo-surface); box-shadow: inset 0 1px 0 light-dark(rgba(255,255,255,.58), rgba(255,255,255,.08)); }
-.fl-auto-access-copy { min-width: 0; }
-.fl-auto-access-title { color: var(--vendo-fg); font-size: 12.5px; font-weight: 650; line-height: 1.2; }
-.fl-auto-access-sub { margin-top: 2px; color: var(--vendo-fg-muted); font-size: 11.5px; line-height: 1.25;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fl-auto-access-badge[data-auto] { background: var(--vendo-accent); color: var(--vendo-accent-fg); border-color: var(--vendo-accent); }
-.fl-auto-access-badge { justify-self: end; max-width: 112px; padding: 4px 7px; border-radius: 999px;
-  background: var(--vendo-accent-soft); color: var(--vendo-fg); font-size: 10.5px; font-weight: 650;
-  line-height: 1.15; text-align: center; overflow-wrap: normal; }
+.fl-automation-approval { padding: 16px; }
 .fl-auto-details { margin-top: 8px; }
 .fl-auto-details summary { color: var(--vendo-fg-muted); font-size: 11px; cursor: pointer; }
 .fl-auto-details pre { margin: 7px 0 0; max-height: 180px; overflow: auto; white-space: pre-wrap;
   font: 11px/1.35 var(--vendo-font-mono); color: var(--vendo-fg-muted); }
-.fl-auto-created-layer { position: fixed; inset: 0; z-index: 2147483002; pointer-events: none; overflow: visible; background: none; }
-.fl-auto-created-panel { position: absolute; box-sizing: border-box; transform-origin: 100% 0%;
-  will-change: top, left, width, height, opacity, transform; }
-.fl-auto-created-panel--morph .fl-auto-created-toast { position: absolute; inset: 0; opacity: 0; }
-.fl-auto-created-proposal { width: 100%; }
-.fl-auto-created-proposal .fl-approval { width: 100%; max-width: none; min-width: 0; box-sizing: border-box; }
+/* "Automation is live" toast — floats, so it keeps a shadow. */
 .fl-auto-created-toast { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 58px;
-  box-shadow: 0 14px 40px rgba(0,0,0,.20);
-  box-sizing: border-box; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--vendo-border) 72%, var(--vendo-accent) 28%);
-  border-radius: 14px; color: var(--vendo-fg);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--vendo-surface) 94%, var(--vendo-accent) 6%), var(--vendo-surface)),
-    var(--vendo-surface);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  box-shadow: 0 18px 44px light-dark(rgba(20,21,26,.14), rgba(0,0,0,.42)), inset 0 1px 0 light-dark(rgba(255,255,255,.58), rgba(255,255,255,.08)); }
+  box-sizing: border-box; padding: 11px 12px; border: 1px solid var(--vendo-border);
+  border-radius: var(--vendo-radius-card); color: var(--vendo-fg); background: var(--vendo-surface);
+  box-shadow: var(--vendo-shadow-float); }
 .fl-auto-created-live { position: relative; width: 9px; height: 9px; flex: 0 0 9px; border-radius: 999px;
   background: var(--vendo-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--vendo-accent) 15%, transparent); }
 .fl-auto-created-live::after { position: absolute; inset: -4px; border: 1px solid color-mix(in srgb, var(--vendo-accent) 24%, transparent);
@@ -619,14 +575,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   line-height: 1.18; text-overflow: ellipsis; white-space: nowrap; }
 .fl-auto-created-sub { overflow: hidden; margin-top: 3px; color: var(--vendo-fg-muted); font-size: 12px;
   line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
-.fl-auto-created-logos { display: flex; align-items: center; justify-content: flex-end; min-width: 38px; flex: 0 0 auto; }
-.fl-auto-created-logo { position: relative; display: inline-grid; width: 32px; height: 32px; place-items: center;
-  border: 1px solid var(--vendo-border); border-radius: 10px; background: var(--vendo-surface);
-  box-shadow: inset 0 1px 0 light-dark(rgba(255,255,255,.58), rgba(255,255,255,.08)); }
-.fl-auto-created-logo + .fl-auto-created-logo { margin-left: -7px; }
-.fl-auto-created-count { position: absolute; right: -5px; bottom: -5px; min-width: 16px; height: 16px; padding: 0 4px;
-  border: 1px solid var(--vendo-surface); border-radius: 999px; background: var(--vendo-accent);
-  color: var(--vendo-accent-fg); font-size: 10px; font-weight: 750; line-height: 14px; text-align: center; }
 @keyframes fl-auto-created-pulse {
   0% { opacity: .52; transform: scale(.7); }
   100% { opacity: 0; transform: scale(1.9); }
@@ -645,55 +593,32 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-approval-batch-row input[type="checkbox"]:checked::after { content: ""; width: 8.5px; height: 8.5px;
   background: var(--vendo-accent-fg);
   clip-path: polygon(14% 44%, 0 62%, 40% 100%, 100% 18%, 84% 4%, 39% 68%); }
-.fl-btn { border: 1px solid var(--vendo-border); border-radius: 9px; padding: 8px 15px;
+/* Buttons are flat (S1): the fill and the hairline carry the hierarchy.
+   There is exactly ONE filled style, .fl-btn-primary, plus .fl-btn-ceremony
+   for the destructive register. */
+.fl-btn { border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius); padding: 8px 15px;
   font: 550 12.5px/1 var(--vendo-font); letter-spacing: -.006em;
   /* Icon + label ride one non-wrapping row (a squeezed flex row used to fold
      the connect spinner onto its own line above the label). */
   display: inline-flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap;
   background: var(--vendo-surface); color: var(--vendo-fg); cursor: pointer;
-  box-shadow: 0 1px 1.5px color-mix(in srgb, var(--vendo-fg) 5%, transparent);
-  transition: background .13s, border-color .13s, transform .05s, box-shadow .13s; }
+  transition: background .13s, border-color .13s, transform .05s; }
 .fl-btn:hover { background: var(--vendo-accent-soft); border-color: var(--vendo-border-strong); }
-.fl-btn:active { transform: translateY(.5px); box-shadow: none; }
-.fl-btn-primary { background: var(--vendo-accent); color: var(--vendo-accent-fg); border-color: transparent;
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--vendo-fg) 22%, transparent), inset 0 1px 0 rgba(255,255,255,.16); }
+.fl-btn:active { transform: translateY(.5px); }
+.fl-btn-primary { background: var(--vendo-accent); color: var(--vendo-accent-fg); border-color: transparent; }
 .fl-btn-primary:hover { opacity: .92; background: var(--vendo-accent); border-color: transparent; }
-.fl-btn-quiet { border-color: transparent; background: transparent; box-shadow: none;
+/* Ceremony = the ONLY other filled button: destructive confirms. Its AA-safe
+   fill/text pair per scheme is pinned in the a11y hardening block at the end. */
+.fl-btn-ceremony { background: var(--vendo-warn); color: var(--vendo-warn-on-fill); border-color: transparent; }
+.fl-btn-ceremony:hover { opacity: .92; background: var(--vendo-warn); border-color: transparent; }
+.fl-btn-quiet { border-color: transparent; background: transparent;
   color: var(--vendo-fg-muted); padding: 8px 10px; }
 .fl-btn-quiet:hover { background: var(--vendo-accent-soft); border-color: transparent; color: var(--vendo-fg); }
 /* Inline button spinner (Reconnect) — tinted for a filled primary button. */
 .fl-btn-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
   border: 2px solid color-mix(in srgb, var(--vendo-accent-fg) 35%, transparent);
   border-top-color: var(--vendo-accent-fg); animation: fl-spin .7s linear infinite; }
-/* Ceremony stays on the neutral card — the amber lives in one accent bar,
-   the icon and the eyebrow (refactoring-ui: accent border over full wash). */
-.fl-approval--ceremony { border-color: var(--vendo-warn-border);
-  box-shadow: inset 3px 0 0 var(--vendo-warn), var(--vendo-shadow); }
-.fl-approval--ceremony .fl-approval-ic { color: var(--vendo-warn); background: color-mix(in srgb, var(--vendo-warn) 16%, transparent); }
-.fl-approval--ceremony .fl-approval-eyebrow { color: var(--vendo-warn); }
-.fl-approval-unverified { margin-left: 8px; padding: 1px 6px; border-radius: 999px; font-size: 9.5px;
-  font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--vendo-fg-muted);
-  background: color-mix(in srgb, var(--vendo-fg-muted) 12%, transparent); }
-.fl-approval-consequence { margin-top: 10px; font: 600 12px/1.4 var(--vendo-font); color: var(--vendo-warn); }
-.fl-btn-ceremony { background: var(--vendo-warn); color: var(--vendo-warn-on-fill); border-color: transparent;
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--vendo-warn) 40%, transparent); }
-.fl-btn-ceremony:hover { opacity: .92; background: var(--vendo-warn); border-color: transparent; }
-.fl-approval--escalation { border-color: var(--vendo-warn-border);
-  box-shadow: inset 3px 0 0 var(--vendo-warn), var(--vendo-shadow); }
-.fl-approval--escalation .fl-approval-ic { color: var(--vendo-warn); background: color-mix(in srgb, var(--vendo-warn) 16%, transparent); }
-.fl-approval--escalation .fl-approval-eyebrow { color: var(--vendo-warn); }
-.fl-approval-reason { margin: 10px 0 0; font: 400 12.5px/1.4 var(--vendo-font); color: var(--vendo-fg);
-  /* Defensive: the reason is model-authored text — capped at 200 chars at the
-     stamp site (runtime escalation.ts), but never let a runaway value blow
-     the card up regardless. */
-  max-height: 7em; overflow-y: auto; overflow-wrap: break-word; }
-.fl-uinode { align-self: flex-start; width: 100%; }
-
-/* ---------- fade proposal (ENG-193 §3 Moment 5/§4.4) ---------- */
-.fl-fade { display: flex; flex-direction: column; gap: 10px; margin: 6px 0; padding: 12px 14px;
-  border: 1px dashed var(--vendo-border); border-radius: 12px; background: var(--vendo-accent-soft); }
-.fl-fade-text { font-size: 13px; line-height: 1.4; color: var(--vendo-fg); }
-.fl-fade-actions { display: flex; gap: 8px; }
+.fl-approval-consequence { margin-top: 10px; font: 500 12px/1.4 var(--vendo-font); color: var(--vendo-warn-text); }
 
 /* ---------- waiting list ("waiting on you", ENG-193 §4.6) ---------- */
 /* Height-capped with internal scroll: an unbounded inbox (verified live with
@@ -704,43 +629,24 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-waiting { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
   max-height: min(40vh, 360px); overflow-y: auto; overscroll-behavior: contain;
   border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur); }
+  background: var(--vendo-surface); }
 /* The scroller's children must never compress (same rule as .fl-msglist). */
 .fl-waiting > * { flex-shrink: 0; }
-.fl-waiting-head { font: 600 11px/1 var(--vendo-font); letter-spacing: .04em;
-  text-transform: uppercase; color: var(--vendo-fg-muted); }
-.fl-waiting-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
-  padding: 9px 0; border-top: 1px solid var(--vendo-border); }
-.fl-waiting-row:first-of-type { border-top: none; }
-.fl-waiting-row-main { display: flex; align-items: flex-start; gap: 9px; min-width: 0; }
-.fl-waiting-ic { flex-shrink: 0; line-height: 1.3; }
-.fl-waiting-row-title { font: 600 13px/1.3 var(--vendo-font); color: var(--vendo-fg); }
-.fl-waiting-row-preview { margin-top: 2px; font-size: 12px; color: var(--vendo-fg-muted);
-  overflow-wrap: anywhere; white-space: pre-line; }
-.fl-waiting-row-meta { margin-top: 4px; font-size: 11px; color: var(--vendo-fg-muted); }
-.fl-waiting-stale { color: var(--vendo-fg-muted); }
-.fl-waiting-actions { display: flex; gap: 6px; flex-shrink: 0; }
-.fl-waiting-row--ceremony { background: var(--vendo-warn-bg); border-radius: 9px; padding: 9px; margin: 0 -9px; }
-.fl-waiting-row--ceremony .fl-waiting-row-title { color: var(--vendo-warn); }
 
 /* ---------- composer ---------- */
 /* Column so attachment chips / drop zone stack above the input row. */
 .fl-composer { position: relative; display: flex; flex-direction: column; gap: 8px; margin: 10px 16px 16px;
   padding: 7px 8px 7px 14px;
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  border: 1px solid var(--vendo-border); border-radius: 14px;
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--vendo-fg) 5%, transparent),
-    0 10px 28px color-mix(in srgb, var(--vendo-fg) 7%, transparent);
+  background: var(--vendo-surface);
+  border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius-composer);
+  box-shadow: var(--vendo-shadow-float);
   transition: border-color .14s, box-shadow .14s, border-radius .2s ease; }
 /* No focus ring on pointer focus (Apple/OpenAI-quiet): the caret is the
    signal. KEYBOARD focus still gets a visible ring via :focus-visible —
    the textarea keeps outline:0, so without this rule Tab-focus would be
    invisible on the product's primary input. */
 .fl-composer:has(:focus-visible) { border-color: var(--vendo-border-strong);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--vendo-fg) 5%, transparent),
-    0 10px 28px color-mix(in srgb, var(--vendo-fg) 7%, transparent),
-    0 0 0 3px var(--vendo-accent-soft); }
-.fl-composer-drag { border-color: var(--vendo-accent); }
+  box-shadow: var(--vendo-shadow-float), 0 0 0 3px var(--vendo-accent-soft); }
 /* align-items:flex-start so the text grows DOWNWARD from a fixed top edge and
    the controls stay where the user last saw them. flex-end (the old rule) was
    right for a one-line field and wrong for every other: the textarea's own text
@@ -806,8 +712,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 
 /* ---------- activity panel ---------- */
 .fl-act { align-self: flex-start; width: 100%; max-width: 92%; border: 1px solid var(--vendo-border);
-  border-radius: 13px; background: var(--vendo-glass-strong); box-shadow: 0 1px 2px light-dark(rgba(20,21,26,.04), rgba(0,0,0,.35));
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur); overflow: hidden; }
+  border-radius: var(--vendo-radius-card); background: var(--vendo-surface); overflow: hidden; }
 .fl-act-head { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 13px; cursor: pointer;
   border: 0; background: transparent; font: 600 12.5px/1.2 var(--vendo-font); color: var(--vendo-fg); text-align: left; }
 .fl-act-head:hover { background: var(--vendo-accent-soft); }
@@ -830,13 +735,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-act-denied { color: var(--vendo-fg-muted); }
 .fl-act-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
   border: 2px solid var(--vendo-border-strong); border-top-color: var(--vendo-fg-muted); animation: fl-spin .8s linear infinite; }
-.fl-act-table { border-collapse: collapse; display: block; width: 100%; }
 .fl-act-cap { display: block; width: 100%; padding: 9px 13px 3px; text-align: left;
   color: var(--vendo-fg-muted); font-weight: 500; font-size: 11.5px; }
-.fl-act-thead, .fl-act-tbody { display: block; }
-.fl-act-grid { display: grid; grid-template-columns: 1.5fr 1.4fr 1fr 1.05fr; gap: 10px;
-  align-items: start; padding: 9px 13px; border-bottom: 1px solid var(--vendo-border); }
-.fl-act-tbody .fl-act-grid:last-child { border-bottom: 0; }
 .fl-act-th { text-align: left; font-weight: 600; font-size: 10.5px; letter-spacing: .05em;
   text-transform: uppercase; color: var(--vendo-fg-muted); }
 .fl-act-cell { min-width: 0; font-size: 12.5px; }
@@ -857,10 +757,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-act-peek-row:last-child { border-bottom: 0; }
 .fl-act-peek-k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fl-act-peek-v { color: var(--vendo-fg-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
-.fl-receipt { margin-left: 6px; padding: 0; border: none; background: none; cursor: pointer;
-  font: 500 10.5px/1 var(--vendo-font); color: var(--vendo-fg-muted); text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--vendo-fg-muted) 45%, transparent); }
-.fl-receipt-fields { margin-top: 6px; padding-left: 26px; }
 
 /* ---------- turn actions ---------- */
 .fl-turn-actions { display: flex; align-items: center; gap: 2px; margin-top: 6px;
@@ -884,9 +780,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   font: 550 12px/1 var(--vendo-font); transition: background .12s, color .12s; }
 .fl-turn-btn:hover { background: var(--vendo-accent-soft); color: var(--vendo-fg); }
 .fl-turn-btn:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 1px; }
-.fl-turn-up { color: var(--vendo-ok); }
-.fl-turn-down { color: var(--vendo-danger); }
-.fl-turn-ts { margin-left: 8px; font-size: 11px; color: var(--vendo-fg-muted); opacity: .7; }
 
 /* ---------- markdown: tables + math ---------- */
 .fl-md table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; }
@@ -926,14 +819,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-greeting-intro { margin: 0; line-height: 1.65; font-size: var(--vendo-text-body); letter-spacing: -.006em; }
 .fl-greeting .fl-chips { justify-content: flex-start; }
 .fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-/* Mixed suggestions (cards + chips): the chips are the second tier, under an
-   "Or try this" micro-label (demo-live-readiness mockup §1). */
-.fl-try-row { margin-top: 16px; }
-.fl-try-row .fl-chips { justify-content: flex-start; }
-.fl-try-label { display: block; margin-bottom: 9px; font-size: 11px; font-weight: 600;
-  letter-spacing: .08em; text-transform: uppercase; color: var(--vendo-fg-muted); }
-.fl-chip { border: 1px solid var(--vendo-border); background: var(--vendo-glass-strong);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+.fl-chip { border: 1px solid var(--vendo-border); background: var(--vendo-surface);
   border-radius: 999px; padding: 8px 14px; font-size: 12.5px; color: var(--vendo-fg); cursor: pointer;
   transition: border-color .14s, background .14s, transform .18s cubic-bezier(.22,1,.36,1), box-shadow .18s; }
 .fl-chip:hover { border-color: var(--vendo-border-strong); background: var(--vendo-surface);
@@ -947,8 +833,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 
 /* ---------- connection selector (denser, brand-forward) ---------- */
 .fl-picker { border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius-lg);
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  box-shadow: var(--vendo-shadow); overflow: auto; padding: 18px 18px 20px; max-width: 560px;
+  background: var(--vendo-surface);
+  box-shadow: var(--vendo-shadow-float); overflow: auto; padding: 18px 18px 20px; max-width: 560px;
   max-height: min(560px, 70vh); align-self: flex-start; width: 100%;
   scrollbar-width: none; }
 .fl-picker::-webkit-scrollbar { display: none; }
@@ -966,7 +852,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 0; }
 .fl-picker-item { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 11px;
   border: 1px solid var(--vendo-border); background: var(--vendo-surface); transition: transform .12s, border-color .12s, box-shadow .12s; }
-.fl-picker-item:hover { transform: translateY(-1px); border-color: var(--vendo-border-strong); box-shadow: var(--vendo-shadow); }
+.fl-picker-item:hover { transform: translateY(-1px); border-color: var(--vendo-border-strong); box-shadow: var(--vendo-shadow-float); }
 .fl-picker-item.is-connected { background: color-mix(in srgb, var(--vendo-ok) 9%, var(--vendo-surface));
   border-color: color-mix(in srgb, var(--vendo-ok) 26%, var(--vendo-border));
   transition: transform .12s, border-color .35s cubic-bezier(.22,1,.36,1), box-shadow .12s, background .35s cubic-bezier(.22,1,.36,1); }
@@ -1002,20 +888,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-connect-done { display: inline-flex; align-items: center; gap: 9px; align-self: flex-start;
   border: 1px solid var(--vendo-border); border-radius: 999px; padding: 7px 14px 7px 9px;
   background: var(--vendo-surface); font-size: 12.5px; font-weight: 550; }
-.fl-connect-done-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--vendo-ok);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-ok) 18%, transparent); }
-.fl-connect { border: 1px solid var(--vendo-border-strong); border-radius: var(--vendo-radius-lg);
-  padding: var(--vendo-density-card-padding); background: var(--vendo-glass-strong);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  box-shadow: var(--vendo-shadow); max-width: 100%; align-self: flex-start; width: 100%; }
-.fl-connect-head { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 13.5px; }
-.fl-connect-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--vendo-surface);
-  border: 1px solid var(--vendo-border); display: grid; place-items: center; }
 
 /* ---------- automation card ---------- */
 .fl-automation { align-self: flex-start; width: 100%; border-radius: var(--vendo-radius); overflow: hidden;
-  border: 1px solid var(--vendo-border); background: var(--vendo-glass-strong);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur); box-shadow: var(--vendo-shadow); }
+  border: 1px solid var(--vendo-border); background: var(--vendo-surface); box-shadow: var(--vendo-shadow-float); }
 .fl-auto-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
 .fl-auto-ic { width: 34px; height: 34px; border-radius: 10px; background: var(--vendo-accent);
   color: var(--vendo-accent-fg); display: grid; place-items: center; flex-shrink: 0; }
@@ -1026,6 +902,11 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 /* Grant-set wait state (mockup §2): enabled but permissions outstanding. */
 .fl-auto-wait { background: var(--vendo-warn);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-warn) 18%, transparent); }
+/* §9.9 — why a stopped automation stopped. An accent border rather than another
+   badge: it is one sentence of explanation, and the row above already carries
+   the state word. Warn, not danger — nothing is broken, it is waiting. */
+.fl-auto-stopped { border-left: 2px solid var(--vendo-warn); padding-left: 8px; margin-top: 6px;
+  color: var(--vendo-fg); }
 .fl-auto-toggle { margin-left: auto; width: 40px; height: 23px; border-radius: 999px; background: var(--vendo-accent);
   position: relative; flex-shrink: 0; border: 0; cursor: pointer; }
 .fl-auto-toggle::after { content: ""; position: absolute; top: 2.5px; right: 2.5px; width: 18px; height: 18px;
@@ -1045,14 +926,13 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 /* ---------- overlay (clipping fixed: bounded height, scrolls) ---------- */
 /* Portal wrapper: provides theme vars to the modal without generating a box. */
 .fl-overlay-portal { display: contents; }
-.fl-overlay-scrim { position: fixed; inset: 0; background: color-mix(in srgb, var(--vendo-fg) 22%, transparent);
-  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); z-index: 2147483000;
+.fl-overlay-scrim { position: fixed; inset: 0; background: color-mix(in srgb, var(--vendo-fg) 22%, transparent); z-index: 2147483000;
   animation: fl-scrim-in .2s ease both; }
 .fl-overlay-panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2147483001;
   width: min(620px, 94vw); height: min(680px, 86vh); display: flex; flex-direction: column;
-  background: var(--vendo-glass); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  background: var(--vendo-bg);
   border: 1px solid var(--vendo-border-strong); border-radius: var(--vendo-radius-lg); overflow: hidden;
-  box-shadow: 0 30px 80px color-mix(in srgb, var(--vendo-fg) 28%, transparent);
+  box-shadow: 0 30px 80px color-mix(in srgb, var(--vendo-fg) 24%, transparent);
   /* open animation — the "squeeze": a horizontal stretch out from a sliver, with a
      springy overshoot. transform-origin stays centered so it grows symmetrically. */
   transform-origin: center; animation: fl-overlay-stretch .5s cubic-bezier(.22, 1.2, .36, 1) both; }
@@ -1134,7 +1014,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-embed-expand { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
   display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; cursor: pointer;
   border: 1px solid var(--vendo-border-strong); border-radius: 999px;
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  background: var(--vendo-surface);
   color: var(--vendo-fg); font: 600 11.5px/1 var(--vendo-font);
   box-shadow: 0 8px 22px color-mix(in srgb, var(--vendo-fg) 14%, transparent);
   transition: border-color .14s, transform .18s cubic-bezier(.22, 1, .36, 1); }
@@ -1190,10 +1070,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   /* Silence every looping loader for vestibular-sensitive users. */
   .fl-caret, .fl-md--streaming > :last-child::after { animation: none; opacity: 1; }
   .fl-typing span, .fl-skeleton-bar,
-  .fl-tool-spin, .fl-tool-spinner, .fl-act-pulse, .fl-act-spin, .fl-connect-spin,
+  .fl-act-pulse, .fl-act-spin, .fl-connect-spin,
   .fl-auto-created-live::after { animation: none; }
-  /* Glass skeleton: the sweep and pulse freeze; the blocks stay tinted. */
-  .fl-glass-shimmer, .fl-glass-dot { animation: none; }
   .fl-picker-item.is-just-connected, .fl-picker-item.is-just-connected .fl-picker-on { animation: none; }
   .fl-msglist-wrap, .fl-jump, .fl-md--streaming > * { animation: none; opacity: 1; }
   /* The launcher blob rests as a plain circle; the panel resize snaps. */
@@ -1232,13 +1110,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   border-top: 1px solid var(--vendo-border-strong);
   border-radius: var(--vendo-radius-lg) var(--vendo-radius-lg) 0 0; }
 .fl-overlay-panel.fl-takeover:has(.fl-landing) .fl-landing { padding-top: 18px; }
-.fl-page.fl-takeover { position: fixed; inset: 0; z-index: 2147483001; isolation: isolate;
-  background: var(--vendo-bg);
-  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
-    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px)); }
 /* The palette is a modal over EVERY takeover surface: its scrim (2147483000)
-   would otherwise sit under a takeover page/overlay panel (2147483001). */
+   would otherwise sit under a takeover overlay panel (2147483001). */
 .fl-overlay-scrim.fl-takeover { z-index: 2147483002; }
 
 /* ---------- mobile input + touch ergonomics (ENG-228) ---------- */
@@ -1267,8 +1140,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--vendo-border);
   border-radius: 999px; padding: 10px 15px; font-size: 13px; font-weight: 600; color: var(--vendo-fg);
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  box-shadow: var(--vendo-shadow); cursor: pointer; }
+  background: var(--vendo-surface);
+  box-shadow: var(--vendo-shadow-float); cursor: pointer; }
 /* ENG-220: the supported overlay entry — VendoOverlay's default launcher is a
    fixed brand pill pinned to a viewport corner (safe-area aware). z-index sits
    one below the scrim so the open overlay covers it. Placement variants keyed
@@ -1300,15 +1173,14 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   .fl-whisper { animation: fl-whisper-in .4s ease-out both; }
 }
 @keyframes fl-whisper-pulse {
-  0% { box-shadow: var(--vendo-shadow), 0 0 0 0 color-mix(in srgb, var(--vendo-accent) 45%, transparent); }
-  70% { box-shadow: var(--vendo-shadow), 0 0 0 14px color-mix(in srgb, var(--vendo-accent) 0%, transparent); }
-  100% { box-shadow: var(--vendo-shadow), 0 0 0 0 transparent; }
+  0% { box-shadow: var(--vendo-shadow-float), 0 0 0 0 color-mix(in srgb, var(--vendo-accent) 45%, transparent); }
+  70% { box-shadow: var(--vendo-shadow-float), 0 0 0 14px color-mix(in srgb, var(--vendo-accent) 0%, transparent); }
+  100% { box-shadow: var(--vendo-shadow-float), 0 0 0 0 transparent; }
 }
 @keyframes fl-whisper-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .fl-whisper { display: flex; flex-direction: column; gap: 3px; max-width: 250px; padding: 11px 14px;
-  border: 1px solid var(--vendo-border); border-radius: 14px; background: var(--vendo-glass-strong);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  box-shadow: var(--vendo-shadow); font-size: 12.5px; line-height: 1.45; }
+  border: 1px solid var(--vendo-border); border-radius: 14px; background: var(--vendo-surface);
+  box-shadow: var(--vendo-shadow-float); font-size: 12.5px; line-height: 1.45; }
 .fl-whisper strong { font-weight: 600; font-size: 13px; color: var(--vendo-fg); }
 .fl-whisper span { color: var(--vendo-fg-muted); }
 /* Fixed variants sit just above the pill, matching its corner. */
@@ -1316,39 +1188,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   position: fixed; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); z-index: 2147482999; }
 .fl-whisper[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
 .fl-whisper[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
-
-/* ---------- page + tabs + slot ---------- */
-/* The Page surface is ingrained: the chat IS the page (no card-in-card). Tabs are
-   a quiet underline row, the body fills the height, only the message list scrolls. */
-.fl-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.fl-page > [hidden] { display: none; }
-.fl-tabbar { display: flex; align-items: center; gap: 2px; padding: 0 0 0 2px;
-  border-bottom: 1px solid var(--vendo-border); flex-shrink: 0; overflow-x: auto; scrollbar-width: none; }
-.fl-tabbar::-webkit-scrollbar { display: none; }
-.fl-tab { display: flex; align-items: center; gap: 7px; padding: 10px 13px; font-size: 12.5px; font-weight: 500;
-  color: var(--vendo-fg-muted); border: 0; border-bottom: 2px solid transparent; background: transparent;
-  cursor: pointer; white-space: nowrap; margin-bottom: -1px; transition: color .12s; }
-.fl-tab:hover { color: var(--vendo-fg); }
-.fl-tab[aria-selected="true"] { color: var(--vendo-fg); border-bottom-color: var(--vendo-accent); }
-.fl-tab-new { color: var(--vendo-fg-muted); font-size: 16px; line-height: 1; padding: 8px 11px; }
-/* Body region below the tabs — the only thing that scrolls is the inner message list. */
-.fl-page-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.fl-page-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.fl-page-pane[hidden] { display: none; }
-.fl-slot-empty { border: 1.5px dashed var(--vendo-border-strong); border-radius: var(--vendo-radius-lg);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
-  padding: 24px; cursor: pointer; background: var(--vendo-glass-strong); color: var(--vendo-fg-muted);
-  width: 100%; transition: border-color .12s, color .12s; }
-.fl-slot-empty:hover { border-color: var(--vendo-accent); color: var(--vendo-fg); }
-/* Trust screen mounted as a docked side panel beside the page chrome (ENG-193
-   §3 Moment 12) — the accounting demo's own overlay, not a portal (unlike
-   VendoOverlay's Cmd+K palette, which escapes the host's stacking context
-   entirely and so needs the near-max z-index above); this only needs to sit
-   above the page it's mounted inside. */
-.fl-trust-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .28);
-  display: flex; justify-content: flex-end; }
-.fl-trust-overlay > div { width: min(420px, 92vw); height: 100%; background: var(--vendo-bg);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, .12); }
 
 /* ---------- generative dashboard slot (vendo-slot) ---------- */
 .fl-slot { position: relative; width: 100%; min-height: var(--fl-slot-min-h, 370px);
@@ -1358,9 +1197,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-slot-ghost { position: relative; width: 100%; flex: 1; display: flex; flex-direction: column;
   cursor: pointer; overflow: hidden;
   border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius); padding: 14px;
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  background: var(--vendo-surface);
   color: var(--vendo-fg-muted); text-align: left; transition: border-color .14s, box-shadow .14s; }
-.fl-slot-ghost:hover { border-color: var(--vendo-border-strong); box-shadow: var(--vendo-shadow); }
+.fl-slot-ghost:hover { border-color: var(--vendo-border-strong); box-shadow: var(--vendo-shadow-float); }
 /* The empty-state ghost is a real button (ENG-223): strip the UA button chrome
    so it reads exactly like the div variant, and give the CTA a visible focus ring. */
 .fl-slot-ghost-cta { font: inherit; appearance: none; -webkit-appearance: none; }
@@ -1394,7 +1233,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-invite-mark { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
   color: var(--vendo-fg); opacity: .85; }
 .fl-invite-mark-tile { background: var(--vendo-accent); color: var(--vendo-accent-fg);
-  opacity: 1; box-shadow: var(--vendo-shadow); }
+  opacity: 1; box-shadow: var(--vendo-shadow-float); }
 .fl-invite-title { font: 600 14px/1 var(--vendo-font); color: var(--vendo-fg); }
 .fl-invite-sub { font-weight: 400; font-size: 11.5px; color: var(--vendo-fg-muted); text-align: center;
   max-width: 82%; line-height: 1.4; }
@@ -1403,14 +1242,14 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-invite-chips { display: flex; flex-direction: column; gap: 7px; align-items: center; max-width: 92%; }
 .fl-invite-chip { border: 1px solid var(--vendo-border); border-radius: 999px; padding: 8px 14px;
   background: var(--vendo-surface); font: 500 12px/1.2 var(--vendo-font); color: var(--vendo-fg);
-  cursor: pointer; box-shadow: var(--vendo-shadow); transition: border-color .12s, transform .12s; }
+  cursor: pointer; box-shadow: var(--vendo-shadow-float); transition: border-color .12s, transform .12s; }
 .fl-invite-chip:hover { border-color: color-mix(in srgb, var(--vendo-accent) 40%, var(--vendo-border));
   transform: translateY(-1px); }
 .fl-invite-chip:focus-visible, .fl-invite-btn:focus-visible, .fl-invite-own:focus-visible {
   outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
 .fl-invite-btn { margin-top: 6px; display: inline-flex; align-items: center; gap: 7px; border: 0;
   border-radius: 9px; padding: 9px 16px; background: var(--vendo-accent); color: var(--vendo-accent-fg);
-  font: 600 12.5px/1 var(--vendo-font); cursor: pointer; box-shadow: var(--vendo-shadow);
+  font: 600 12.5px/1 var(--vendo-font); cursor: pointer; box-shadow: var(--vendo-shadow-float);
   transition: opacity .14s, transform .14s; }
 .fl-invite-btn:hover { opacity: .9; transform: translateY(-1px); }
 .fl-invite-own { margin-top: 4px; border: 0; background: transparent; cursor: pointer;
@@ -1418,50 +1257,61 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   text-decoration: underline; text-underline-offset: 3px; }
 .fl-invite-own:hover { color: var(--vendo-fg); }
 
-/* ---- remix affordance (ui-usage-dx §2 — remix folds into Slot as a flag) ----
-   Hover-revealed over the slot's content: the filled state (.fl-slot) and the
-   host-original state (the [data-vendo-slot] inline wrapper) share one rule.
-   Focus reveals it too, so it stays keyboard-reachable. */
-.fl-slot-remix { position: absolute; top: 10px; right: 10px; z-index: 6;
-  display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
-  border: 1px solid var(--vendo-border); border-radius: 9px;
-  background: color-mix(in srgb, var(--vendo-surface) 92%, transparent);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  color: var(--vendo-fg-muted); font: 600 11.5px/1 var(--vendo-font-family);
-  box-shadow: var(--vendo-shadow); cursor: pointer;
-  opacity: 0; pointer-events: none; transition: opacity .15s, color .15s; }
-[data-vendo-slot]:hover .fl-slot-remix, .fl-slot-remix:focus-visible { opacity: 1; pointer-events: auto; }
-.fl-slot-remix:hover { color: var(--vendo-fg); }
-.fl-slot-remix:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+/* ---- <Remixable>: the seed that blooms into the pill ----
+   A ~9px muted ✦ at rest in the wrapped element's top-right corner, blooming
+   IN PLACE into the ✦ Remix pill — same corner, same optical centre, so it
+   reads as one mark opening rather than a glyph swapping for a button. The
+   reveal is driven by [data-vendo-revealed] (React state), never :hover: a
+   CSS-only reveal dies on the cursor's way to the pill, which is exactly the
+   travel that has to keep it alive (Remixable holds it open for a grace
+   period). A flat accent pill, never a ring — a projector loses an outline.
+   Both marks sit above the host's own content but never intercept it: the
+   seed is inert, the pill only once revealed. */
+.fl-remixable { position: relative; }
+.fl-remixable-chrome { display: contents; }
+.fl-remix-seed { position: absolute; top: 4px; right: 5px; z-index: 6; pointer-events: none;
+  font-size: 9px; line-height: 1; color: var(--vendo-accent); opacity: .32; }
+.fl-remix-pill { position: absolute; top: 3px; right: 4px; z-index: 6; transform-origin: top right;
+  display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 3px;
+  padding: 3px 8px; background: var(--vendo-accent); color: var(--vendo-accent-fg);
+  font: 600 11px/1.35 var(--vendo-font-family); letter-spacing: .01em; white-space: nowrap;
+  cursor: pointer; opacity: 0; transform: scale(.9); pointer-events: none; }
+.fl-remix-pill-mark { font-size: 10px; line-height: 1; }
+.fl-remixable[data-vendo-revealed] .fl-remix-seed { opacity: 0; transform: scale(1.4); }
+.fl-remixable[data-vendo-revealed] .fl-remix-pill { opacity: 1; transform: scale(1); pointer-events: auto; }
+.fl-remixable[data-vendo-revealed] .fl-remix-pill:active { transform: scale(.97); }
+.fl-remix-pill:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+/* The bloom itself — guarded, so under reduced motion the two states simply
+   swap with no travel (the .vendo-root[data-vendo-motion="reduced"] rule
+   covers the theme-level dial the same way). */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-remix-seed { transition: opacity 120ms cubic-bezier(.23,1,.32,1), transform 120ms cubic-bezier(.23,1,.32,1); }
+  .fl-remix-pill { transition: opacity 180ms cubic-bezier(.23,1,.32,1), transform 180ms cubic-bezier(.23,1,.32,1); }
+}
 
-/* ---- filled state + overflow menu ---- */
+/* ---- ✦ management popover (2026-08-02 final shape) ----
+   The pill on an already-remixed component opens this instead of forking:
+   status line, open-in-panel, revert. Borrows the slot menu's glass look.
+   The wrap carries the pill's absolute position so pill and menu share an
+   anchor; the pill inside it drops its own offset. No entry animation — the
+   popover appears in place (reduced motion needs no special case). */
+.fl-remix-menu-wrap { position: absolute; top: 3px; right: 4px; z-index: 7; }
+.fl-remix-menu-wrap .fl-remix-pill { position: static; }
+.fl-remix-menu { position: absolute; top: 26px; right: 0; min-width: 188px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+  border: 1px solid var(--vendo-border-strong); border-radius: 12px;
+  background: var(--vendo-surface);
+  box-shadow: var(--vendo-shadow-float); font-family: var(--vendo-font-family); }
+.fl-remix-status { padding: 6px 9px 7px; font: 500 11px/1.4 var(--vendo-font-family);
+  color: var(--vendo-fg-muted); border-bottom: 1px solid var(--vendo-border); margin-bottom: 3px; }
+.fl-remix-menu button { text-align: left; font: 500 12.5px/1.2 var(--vendo-font-family); padding: 7px 9px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--vendo-fg); cursor: pointer; }
+.fl-remix-menu button:hover { background: var(--vendo-accent-soft); }
+.fl-remix-menu button:disabled { color: var(--vendo-fg-muted); cursor: default; }
+.fl-remix-menu button.is-danger { color: var(--vendo-danger); }
+
+/* ---- filled state ---- */
 .fl-slot-filled { position: relative; flex: 1; }
-.fl-slot-filled > .fl-uinode { height: 100%; }
-.fl-slot-menu-wrap { position: absolute; top: 8px; right: 8px; }
-.fl-slot-menu-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
-  border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--vendo-fg-muted);
-  cursor: pointer; opacity: 0; transition: opacity .14s, background .14s, color .14s; }
-.fl-slot-filled:hover .fl-slot-menu-btn, .fl-slot-menu-btn[aria-expanded="true"] { opacity: 1; }
-.fl-slot-menu-btn:hover, .fl-slot-menu-btn[aria-expanded="true"] {
-  background: var(--vendo-glass-strong); border-color: var(--vendo-border); color: var(--vendo-fg); }
-.fl-slot-menu { position: absolute; top: 34px; right: 0; z-index: 5; min-width: 132px; padding: 5px;
-  display: flex; flex-direction: column; border: 1px solid var(--vendo-border-strong); border-radius: 12px;
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  box-shadow: var(--vendo-shadow); }
-.fl-slot-menu button { text-align: left; font-size: 12.5px; padding: 7px 9px; border: 0; border-radius: 8px;
-  background: transparent; color: var(--vendo-fg); cursor: pointer; }
-.fl-slot-menu button:hover { background: var(--vendo-accent-soft); }
-.fl-slot-menu button.is-danger { color: var(--vendo-danger); }
-
-/* ---- pin-to-card footer (slot overlay only) ---- */
-.fl-pinbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px 0; }
-.fl-pin-btn { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
-  padding: 8px 13px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
-  background: var(--vendo-accent); color: var(--vendo-accent-fg); transition: opacity .14s; }
-.fl-pin-btn:not(:disabled):hover { opacity: .88; }
-.fl-pin-btn:disabled { cursor: default; background: var(--vendo-surface);
-  color: var(--vendo-fg-muted); border-color: var(--vendo-border); }
-.fl-pinbar-hint { font-size: 11.5px; color: var(--vendo-fg-muted); }
 
 /* ---------- error ---------- */
 .fl-error { margin: 8px 16px; padding: 10px 13px; border-radius: 12px;
@@ -1475,29 +1325,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 /* Hover fill: page-bg text reads on the danger fill in light; on a dark theme
    the page bg is near-black on red, so the dark branch pins white (ENG-226). */
 .fl-error-retry:hover { background: var(--vendo-danger); color: light-dark(var(--vendo-bg, #fff), #fff); }
-
-/* ---------- Trust screen (ENG-193 §3 Moment 12) ---------- */
-.fl-trust { display: flex; flex-direction: column; gap: 16px; padding: 16px; overflow-y: auto;
-  background: var(--vendo-bg); color: var(--vendo-fg); font-family: var(--vendo-font); }
-.fl-trust-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.fl-trust-title { font-size: 14px; font-weight: 600; line-height: 1.4; }
-.fl-trust-close { border: none; background: transparent; font-size: 20px; line-height: 1; cursor: pointer;
-  color: var(--vendo-fg-muted); }
-.fl-trust-section { display: flex; flex-direction: column; gap: 8px; }
-.fl-trust-section-head { font: 600 11px/1 var(--vendo-font); letter-spacing: .04em; text-transform: uppercase;
-  color: var(--vendo-fg-muted); margin: 0; }
-.fl-trust-empty { font-size: 12.5px; color: var(--vendo-fg-muted); }
-.fl-trust-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
-  padding: 8px 0; border-top: 1px solid var(--vendo-border); }
-.fl-trust-row:first-of-type { border-top: none; }
-.fl-trust-row-title { font: 600 13px/1.3 var(--vendo-font); }
-.fl-trust-row-meta { margin-top: 2px; font-size: 11px; color: var(--vendo-fg-muted); }
-.fl-trust-critical { font-size: 12.5px; color: var(--vendo-fg-muted); }
-.fl-trust-diary { font-size: 13px; line-height: 1.5; padding: 10px 12px; border-radius: 10px;
-  background: var(--vendo-accent-soft); }
-.fl-trust-activity { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
-.fl-trust-activity-row { display: flex; gap: 8px; font-size: 12px; color: var(--vendo-fg-muted); }
-.fl-trust-activity-time { flex-shrink: 0; width: 48px; }
 
 /* ---------- VendoToasts (2026-07-04): automation delivery surface ---------- */
 .fl-toasts { position: fixed; z-index: 2147483100; display: flex; flex-direction: column; gap: 10px;
@@ -1528,214 +1355,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   color: var(--vendo-fg-muted); font: 600 12px/1 var(--vendo-font); }
 .fl-toasts-dismiss:hover { color: var(--vendo-fg); }
 @keyframes fl-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-/* ---------- realtime voice stage (ENG-185) ---------- */
-/* The stage fills the surface that launched it. The blob head is pinned; the
-   feed scrolls beneath it; the caption + footer stay anchored at the bottom.
-   overflow hidden: when the stage shares a bounded flex column with a thread
-   (Maple /vendo stacks them as siblings) a short viewport squeezes this root
-   toward zero height — without the clip its foot (the Transcript button) kept
-   painting over the thread content above and STOLE ITS CLICKS (the in-thread
-   Approve button's lower half landed on Transcript at ~729px-tall viewports).
-   A squeezed stage must clip to its own box, never overlay a sibling. */
-.fl-voice-root { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
-.fl-voice-root > .fl-voice-stage { flex: 1; }
-.fl-voice-stage { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0;
-  animation: fl-voice-rise .42s cubic-bezier(.22, 1, .36, 1) both; }
-@keyframes fl-voice-rise { from { opacity: 0; transform: translateY(18px) scale(.985); }
-  to { opacity: 1; transform: none; } }
-.fl-voice-stage.is-leaving { animation: fl-voice-settle .5s ease both; }
-@keyframes fl-voice-settle { from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: translateY(14px) scale(.99); } }
-
-/* Presence rests centered until the first view lands, then rises to the top.
-   Grid rows [lift · head · feed]: the lift spacer animates 1fr → 0fr, carrying
-   the head from vertical center up to the top as the feed opens beneath it. */
-.fl-voice-canvas { flex: 1; min-height: 0; display: grid;
-  grid-template-rows: 1fr auto 1fr;
-  transition: grid-template-rows .55s cubic-bezier(.22, 1, .36, 1); }
-.fl-voice-canvas.has-views { grid-template-rows: 0fr auto 1fr; }
-.fl-voice-lift { min-height: 0; }
-.fl-voice-head { display: flex; flex-direction: column; align-items: center; gap: 8px;
-  padding: 18px 0 10px; flex-shrink: 0; }
-.fl-voice-blob { position: relative; display: grid; place-items: center; border-radius: 50%;
-  color: var(--vendo-accent); transition: transform .12s ease; }
-.fl-voice-blob .fl-voice-disc { width: 46%; height: 46%; border-radius: 50%;
-  background: var(--vendo-accent); transition: background .2s, opacity .2s; }
-.fl-voice-blob.is-muted .fl-voice-disc, .fl-voice-blob.is-error .fl-voice-disc { opacity: .38; }
-.fl-voice-blob.is-error .fl-voice-disc { background: var(--vendo-fg-muted); }
-.fl-voice-glyph { position: absolute; display: grid; place-items: center; color: var(--vendo-fg);
-  opacity: .85; }
-.fl-voice-status { font: 500 12px/1 var(--vendo-font); color: var(--vendo-fg-muted);
-  letter-spacing: .01em; min-height: 12px; }
-.fl-voice-stage.is-speaking .fl-voice-status { color: var(--vendo-fg); }
-
-/* The scroll edges blur out: content dissolves under the blob and above the
-   caption. A soft alpha mask on the scroller + frosted strips (backdrop blur,
-   themselves mask-faded so the blur tapers instead of ending on a hard line). */
-.fl-voice-feedwrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.fl-voice-feedwrap::before, .fl-voice-feedwrap::after { content: ""; position: absolute; left: 0; right: 0;
-  height: 40px; z-index: 1; pointer-events: none;
-  -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px); }
-.fl-voice-feedwrap::before { top: 0;
-  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
-  mask-image: linear-gradient(180deg, #000 30%, transparent); }
-.fl-voice-feedwrap::after { bottom: 0;
-  -webkit-mask-image: linear-gradient(0deg, #000 30%, transparent);
-  mask-image: linear-gradient(0deg, #000 30%, transparent); }
-/* An ACTUAL stage: each view is a full slide; scroll pages between slides
-   (mandatory snap — one view owns the stage at rest, always). */
-.fl-voice-feed { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
-  scroll-snap-type: y mandatory;
-  display: flex; flex-direction: column; padding: 0 18px; scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 22px), transparent);
-  mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 22px), transparent); }
-.fl-voice-feed::-webkit-scrollbar { display: none; }
-/* Slides are slightly shorter than the stage and snap to CENTER, so the
-   neighbors peek in at the top/bottom edges — blurred, smaller, unmistakably
-   "there's more" — and grow into the frame as they take focus. A too-tall
-   view scrolls inside its card instead of hanging below the fold. */
-.fl-voice-slide { height: calc(100% - 84px); box-sizing: border-box; flex-shrink: 0;
-  scroll-snap-align: center; scroll-snap-stop: always;
-  display: flex; align-items: center; justify-content: center; padding: 4px 0;
-  /* Off-stage: blurred, dimmed, visibly smaller; the focused one is crisp
-     and whole. The transition IS the "animate into the frame" beat. */
-  filter: blur(2.5px); opacity: .45; transform: scale(.78);
-  transition: filter .45s ease, opacity .45s ease, transform .45s ease; }
-.fl-voice-slide.is-focus { filter: none; opacity: 1; transform: none; }
-/* Neighbors hug the boundary nearest the stage, so what peeks is the CARD's
-   edge, not empty slide padding. */
-.fl-voice-slide.is-before { align-items: flex-end; }
-.fl-voice-slide.is-after { align-items: flex-start; }
-/* Edge spacers give the deck's first/last slide the scroll room to reach
-   true center — without them the ends rest half-a-peek off-center. */
-.fl-voice-feed::before, .fl-voice-feed::after { content: ""; flex: 0 0 42px; }
-@media (prefers-reduced-motion: no-preference) {
-  /* \`backwards\`, never \`both\`: a forwards fill would pin the keyframe's
-     \`transform: none; opacity: 1\` over the off-stage shrink/dim forever. */
-  .fl-voice-slide { animation: fl-item-in .36s cubic-bezier(.22, 1, .36, 1) backwards; }
-}
-/* Tall views scroll inside their slide — mandatory snap never traps content.
-   No border-radius here: the card has no background of its own, so a radius
-   would only clip the flush top corners of the sandboxed view (the generated
-   title/table headers sit at the iframe's edge — margin:0 body). The rounding
-   belongs to the view's own surfaces, and to the pending card below. */
-.fl-voice-slide .fl-voice-card { width: min(720px, 100%); max-height: 100%; overflow: auto;
-  scrollbar-width: none; }
-.fl-voice-slide .fl-voice-card::-webkit-scrollbar { display: none; }
-.fl-voice-slide.is-pending .fl-voice-card { border: 1px solid var(--vendo-border); padding: 12px;
-  border-radius: var(--vendo-radius); background: var(--vendo-glass-strong); }
-/* Slide dots — where you are among the session's views; tap to jump. */
-.fl-voice-dots { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); z-index: 2;
-  display: flex; flex-direction: column; gap: 8px; }
-.fl-voice-dots button { width: 7px; height: 7px; border-radius: 50%; border: 0; padding: 0;
-  cursor: pointer; background: color-mix(in srgb, var(--vendo-fg) 22%, transparent);
-  transition: background .2s ease, transform .2s ease; }
-.fl-voice-dots button.is-on { background: var(--vendo-accent); transform: scale(1.3); }
-
-/* Lives in the head, right under the blob + status — the words stay with the
-   presence. Fixed height (~2 lines) so the feed doesn't jump as lines stream. */
-/* Two sticky rows — your last line and the agent's — each clamped so long
-   streaming lines show their tail, not their start. Settled lines dim
-   instead of vanishing. */
-.fl-voice-caption { height: 62px; padding: 0 22px; text-align: center; max-width: 620px;
-  font-size: 13.5px; line-height: 1.45; flex-shrink: 0; overflow: hidden;
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; }
-.fl-voice-caption > span { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
-.fl-voice-caption .is-user { color: var(--vendo-fg-muted); font-size: 12.5px; -webkit-line-clamp: 1; }
-.fl-voice-caption .is-user::before { content: "“"; }
-.fl-voice-caption .is-user::after { content: "”"; }
-.fl-voice-caption .is-agent { color: var(--vendo-fg); -webkit-line-clamp: 2; }
-.fl-voice-caption .is-settled { opacity: .55; transition: opacity .4s ease; }
-.fl-voice-caption em { font-style: italic; color: var(--vendo-fg-muted); }
-
-/* ---- consent bar: approvals dock at the edge, the agent's UI keeps the
-   stage. Act tier breathes the listening ring (spoken yes acceptable);
-   critical goes amber with the named confirm; settled = transient receipt. */
-.fl-voice-consent { margin: 0 18px 8px; padding: 9px 12px; border-radius: 13px; flex-shrink: 0;
-  display: flex; align-items: center; gap: 10px; font-size: 12.5px;
-  border: 1px solid var(--vendo-border-strong); background: var(--vendo-glass-strong);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  box-shadow: var(--vendo-shadow); animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both; }
-.fl-voice-consent.is-listening { animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both,
-  fl-voice-ring 2.2s ease-in-out .3s infinite; }
-.fl-voice-consent-ic { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0;
-  border-radius: 8px; border: 1px solid var(--vendo-border); color: var(--vendo-fg-muted); }
-.fl-voice-consent-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.fl-voice-consent-title { font-weight: 600; color: var(--vendo-fg); overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; }
-.fl-voice-consent-fact { font-weight: 400; color: var(--vendo-fg-muted); }
-.fl-voice-consent-warn { font-size: 11px; font-weight: 500; color: var(--vendo-warn-text); }
-.fl-voice-consent-actions { display: flex; gap: 6px; flex-shrink: 0; }
-.fl-voice-consent.is-critical { border-color: color-mix(in srgb, var(--vendo-warn-edge) 55%, var(--vendo-border)); }
-.fl-voice-consent.is-critical .fl-voice-consent-ic { color: var(--vendo-warn-text);
-  border-color: color-mix(in srgb, var(--vendo-warn-edge) 40%, var(--vendo-border)); }
-.fl-voice-consent.is-receipt { justify-content: center; font-weight: 600; color: var(--vendo-ok);
-  border-color: color-mix(in srgb, var(--vendo-ok) 40%, var(--vendo-border)); }
-.fl-voice-consent.is-receipt.is-declined { color: var(--vendo-fg-muted);
-  border-color: var(--vendo-border); }
-
-.fl-voice-banner { margin: 0 18px 8px; padding: 9px 13px; border-radius: 12px; flex-shrink: 0;
-  border: 1px solid var(--vendo-danger-border); background: var(--vendo-danger-bg);
-  color: var(--vendo-danger); font-size: 12.5px; display: flex; align-items: center; gap: 10px; }
-.fl-voice-stage.is-reconnecting .fl-voice-banner { border-color: var(--vendo-border-strong);
-  background: var(--vendo-glass-strong); color: var(--vendo-fg-muted); }
-
-.fl-voice-foot { display: flex; align-items: center; justify-content: space-between;
-  padding: 6px 14px 12px; flex-shrink: 0; }
-.fl-voice-drawer-btn { border: 0; background: transparent; color: var(--vendo-fg-muted);
-  font: 500 11.5px/1 var(--vendo-font); letter-spacing: .02em; cursor: pointer; padding: 6px 4px; }
-.fl-voice-drawer-btn:hover { color: var(--vendo-fg); }
-.fl-voice-controls { display: flex; align-items: center; gap: 6px; }
-.fl-voice-controls .fl-icon-btn.is-active { color: var(--vendo-danger); }
-
-.fl-voice-drawer { position: absolute; left: 10px; right: 10px; bottom: 46px; max-height: 46%;
-  overflow: auto; z-index: 4; padding: 12px 14px; border-radius: 14px;
-  border: 1px solid var(--vendo-border-strong); background: var(--vendo-glass-strong);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  box-shadow: var(--vendo-shadow); display: flex; flex-direction: column; gap: 8px;
-  animation: fl-fade-in .16s ease; }
-.fl-voice-drawer-empty { font-size: 12px; color: var(--vendo-fg-muted); text-align: center; padding: 8px; }
-.fl-voice-line { display: grid; grid-template-columns: 44px 1fr; gap: 10px; font-size: 12.5px; line-height: 1.45; }
-.fl-voice-line-role { color: var(--vendo-fg-muted); font-weight: 600; font-size: 11px; padding-top: 1px; }
-.fl-voice-line.is-user span:last-child { color: var(--vendo-fg-muted); }
-.fl-voice-line.is-agent span:last-child { color: var(--vendo-fg); }
-.fl-voice-line em { font-style: italic; color: var(--vendo-fg-muted); }
-
-/* ---- approval card voice/tier registers (ENG-185 × ENG-193) ---- */
-/* Act-tier while a spoken yes is acceptable: a soft breathing ring. */
-.fl-approval-listening { animation: fl-voice-ring 2.2s ease-in-out infinite; }
-@keyframes fl-voice-ring {
-  0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--vendo-accent) 34%, transparent); }
-  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--vendo-accent) 12%, transparent); } }
-/* Critical: amber always-confirm register — voice announces, the hand confirms. */
-.fl-approval-critical { border-color: color-mix(in srgb, var(--vendo-warn-edge) 55%, var(--vendo-border)); }
-.fl-approval-critical .fl-approval-eyebrow { color: var(--vendo-warn-text); }
-.fl-approval-consequence { margin-top: 10px; font-size: 12px; font-weight: 500;
-  color: var(--vendo-warn-text); }
-.fl-btn-critical { background: var(--vendo-warn-fill-critical); border-color: transparent; color: var(--vendo-warn-on-fill); }
 /* Settled: the card becomes a receipt. */
 .fl-approval-approved { border-color: color-mix(in srgb, var(--vendo-ok) 45%, var(--vendo-border)); }
-.fl-approval-declined { opacity: .7; }
-.fl-approval-outcome { margin-top: 12px; font: 600 12.5px/1.2 var(--vendo-font); }
-.fl-approval-outcome.is-approved { color: var(--vendo-ok); }
-.fl-approval-outcome.is-declined { color: var(--vendo-fg-muted); }
-
-@media (prefers-reduced-motion: reduce) {
-  .fl-voice-stage, .fl-voice-stage.is-leaving, .fl-voice-slide { animation: none; opacity: 1; }
-  .fl-voice-canvas { transition: none; }
-  .fl-voice-slide:not(.is-focus) { opacity: .45; }
-  .fl-voice-blob { transition: none; transform: none !important; }
-  .fl-approval-listening { animation: none;
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--vendo-accent) 30%, transparent); }
-  .fl-voice-consent, .fl-voice-consent.is-listening { animation: none;
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--vendo-accent) 30%, transparent); }
-  /* No animated blur for vestibular-sensitive users: unfocused slides dim only. */
-  .fl-voice-slide { transition: none; filter: none; }
-  .fl-voice-dots button { transition: none; }
-}
-
-.fl-voice-consent.is-automation { display: block; padding: 0; background: none; border: none; box-shadow: none; }
-.fl-voice-consent.is-automation .fl-approval { width: 100%; max-width: none; }
 
 /* --- a11y hardening (design port): guaranteed focus ring + AA ceremony buttons --- */
 .vendo-root :focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
@@ -1748,9 +1369,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    amber fill + white text in light (7.1:1); light amber fill + near-black text
    in dark (8.7:1, and the fill itself pops ~8:1 off the dark warn-bg) — flipping only the fill
    would drop white-on-#d9a94e to 2.2:1 (ENG-226 review catch). */
-.fl-btn-ceremony, .fl-btn-critical { background: var(--vendo-warn); border-color: transparent;
+.fl-btn-ceremony { background: var(--vendo-warn); border-color: transparent;
   color: var(--vendo-warn-on-fill); }
-.fl-btn-ceremony:hover, .fl-btn-critical:hover { opacity: .92; background: var(--vendo-warn); }
+.fl-btn-ceremony:hover { opacity: .92; background: var(--vendo-warn); }
 
 /* ==================== ui-lane-panels lane block ====================
    Converged picks (the lane report they came from was worktree scratch, never
@@ -1798,7 +1419,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 @keyframes fl-approval-enter { from { opacity: 0; transform: translateX(14px) scale(.985); } }
 .fl-approvals-ghost { position: absolute; inset: 6px -5px auto auto; width: 96%; height: 100%;
   border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
-  background: var(--vendo-glass); z-index: -1; }
+  background: var(--vendo-surface); z-index: -1; }
 
 /* ---- automations run-dot history strip ---- */
 .fl-auto-runs { display: flex; align-items: center; gap: 4px; padding: 12px 16px 14px;
@@ -1806,7 +1427,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-auto-runs-lbl { font-size: 11px; color: var(--vendo-fg-muted); margin-right: 6px; white-space: nowrap; }
 .fl-auto-runs-dot { width: 14px; height: 7px; border-radius: 3px; background: var(--vendo-ok);
   opacity: .85; animation: fl-auto-runs-pop .3s var(--vendo-motion-easing) both; cursor: default; }
-.fl-auto-runs-dot[data-status="pending-approval"] { background: var(--vendo-warn-tint); }
 .fl-auto-runs-dot[data-status="error"] { background: var(--vendo-danger); }
 .fl-auto-runs-dot[data-status="stopped"] { background: var(--vendo-border-strong); }
 .fl-auto-runs-dot[data-status="running"] { background: var(--vendo-accent); }
@@ -1855,143 +1475,47 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-acct-connect-chip:hover { background: var(--vendo-accent-soft); border-style: solid; }
 .fl-acct-connect-chip:disabled { opacity: .6; cursor: default; }
 .fl-acct-connect-chip .fl-acct-logo { width: 24px; height: 24px; border-radius: 999px; }
+
+/* ---- wave-3 share dialog + fork offer (build contract §9.2-§9.6) ---- */
+.fl-share { display: flex; flex-direction: column; gap: 12px; padding: 16px;
+  border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
+  background: var(--vendo-surface); font: 400 13px/1.5 var(--vendo-font); color: var(--vendo-fg); }
+.fl-share-head { display: flex; align-items: center; gap: 10px; }
+.fl-share-title { font-weight: 600; font-size: 14px; }
+.fl-share-head .fl-btn { margin-left: auto; }
+.fl-share-note { margin: 0; color: var(--vendo-fg-muted); font-size: 12.5px; }
+.fl-share-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.fl-share-input { flex: 1 1 180px; min-width: 0; padding: 7px 11px; font: inherit;
+  border: 1px solid var(--vendo-border); border-radius: 9px; background: var(--vendo-bg); color: inherit; }
+.fl-share-level { padding: 7px 9px; font: inherit; border: 1px solid var(--vendo-border);
+  border-radius: 9px; background: var(--vendo-bg); color: inherit; }
+/* One labelled control that appears mid-task (who exactly, which team). Tighter
+   than the dialog's own 12px gap, so the label belongs to ITS field rather than
+   floating between two. The basis reset is load-bearing: .fl-share-input carries
+   flex-basis 180px for the horizontal row, which in a column would be a height. */
+.fl-share-field { display: flex; flex-direction: column; gap: 6px; }
+.fl-share-field .fl-share-input { flex: 0 0 auto; }
+.fl-share-error { margin: 0; color: var(--vendo-danger); font-size: 12.5px; }
+.fl-share-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.fl-share-empty { color: var(--vendo-fg-muted); font-size: 12.5px; padding: 6px 0; }
+.fl-share-row { display: flex; align-items: center; gap: 10px; padding: 8px 0;
+  border-top: 1px solid var(--vendo-border); }
+.fl-share-who { font-weight: 500; }
+.fl-share-lvl { color: var(--vendo-fg-muted); font-size: 12px; }
+.fl-share-revoke { margin-left: auto; }
+.fl-share-fork { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px;
+  border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
+  background: var(--vendo-accent-soft); font: 400 13px/1.55 var(--vendo-font); color: var(--vendo-fg); }
+.fl-share-fork-copy { margin: 0; }
+.fl-share-fork-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* ================== end ui-lane-panels lane block ================== */
 
-/* ================================================================
-   voice-lane composite (2026-07-19) — ui-lane-voice's converged Round 2:
-   PiP dock (P-C) · speaker lean (P-F) · rolling ticker (S-C) · idle
-   invitation (S-E) · attention vignette (S-F) · spoken-yes consent (C-A) ·
-   connect-during-voice slot (Cn-A) · mobile safe-area foot (M-A).
-   One marked block so every lane's chrome-css edits merge cleanly.
-   ================================================================ */
-
-/* ---- S-C rolling ticker: the caption slot holds the last 3 transcript
-   lines, newest bright, older fading and shrinking upward. */
-.fl-voice-caption { height: 84px; }
-.fl-voice-tick { animation: fl-voice-tick-up .4s cubic-bezier(.22, 1, .36, 1) both; }
-.fl-voice-tick.is-age-2 { opacity: .3; font-size: 11.5px; }
-.fl-voice-tick.is-age-1 { opacity: .55; font-size: 12.5px; }
-.fl-voice-tick.is-age-0 { opacity: 1; }
-.fl-voice-tick.is-age-0.is-settled { opacity: .8; }
-@keyframes fl-voice-tick-up { from { transform: translateY(9px); opacity: 0; } }
-
-/* ---- P-C dock: once a view lands the head becomes a corner pill (travel is
-   FLIP-animated in stage.tsx on fluidkit MorphSurface's BODY_SPRING; the ball
-   remounts at 30px — never a scaled svg). The pill and the docked ticker own
-   an aligned top band; the deck starts below it. */
-.fl-voice-stage.is-docked .fl-voice-canvas { grid-template-rows: 0fr auto 1fr; }
-.fl-voice-stage.is-docked .fl-voice-head { position: absolute; top: 12px; right: 14px; z-index: 5;
-  flex-direction: row; align-items: center; gap: 8px; min-height: 52px;
-  padding: 5px 12px 5px 6px; border-radius: 999px;
-  border: 1px solid var(--vendo-border-strong); background: var(--vendo-glass-strong);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  box-shadow: var(--vendo-shadow); }
-.fl-voice-stage.is-docked .fl-voice-status { min-height: auto; }
-.fl-voice-stage.is-docked > .fl-voice-caption { position: absolute; top: 12px; left: 14px; z-index: 5;
-  height: auto; min-height: 52px; max-width: min(46%, 360px); padding: 8px 12px;
-  text-align: left; align-items: flex-start; justify-content: center;
-  border-radius: 12px; border: 1px solid var(--vendo-border); background: var(--vendo-glass-strong);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both; }
-.fl-voice-stage.is-docked > .fl-voice-caption .fl-voice-tick.is-age-2 { display: none; }
-.fl-voice-stage.is-docked .fl-voice-feedwrap { margin-top: 80px; }
-
-/* ---- P-F speaker lean: the presence settles toward the user's words and
-   lifts for its own — center-stage only; the docked pill stays still. */
-.fl-voice-stage:not(.is-docked) .fl-voice-blob { transition: transform .6s cubic-bezier(.22, 1, .36, 1), filter .6s ease; }
-.fl-voice-stage:not(.is-docked) .fl-voice-blob.is-lean-user { transform: translateY(7px) scale(.97); }
-.fl-voice-stage:not(.is-docked) .fl-voice-blob.is-lean-agent { transform: translateY(-5px) scale(1.04); filter: brightness(1.06); }
-.fl-voice-glow { width: 120px; height: 26px; margin-top: -20px; border-radius: 50%; flex-shrink: 0;
-  background: radial-gradient(ellipse, color-mix(in srgb, var(--vendo-accent) 22%, transparent), transparent 70%);
-  filter: blur(6px); pointer-events: none; animation: fl-fade-in .6s ease both; }
-
-/* ---- S-E idle invitation: host-provided suggestion chips under the presence. */
-.fl-voice-invite { display: flex; flex-direction: column; gap: 8px; align-items: center; margin-top: 6px; }
-.fl-voice-chip { border: 1px solid var(--vendo-border-strong); border-radius: 999px; cursor: pointer;
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  color: var(--vendo-fg); font: 500 12.5px/1 var(--vendo-font); padding: 10px 16px;
-  animation: fl-item-in .4s cubic-bezier(.22, 1, .36, 1) backwards;
-  transition: border-color .15s, transform .15s; }
-.fl-voice-chip:hover { border-color: var(--vendo-accent); transform: translateY(-1px); }
-.fl-voice-chip:nth-child(2) { animation-delay: .08s; }
-.fl-voice-chip:nth-child(3) { animation-delay: .16s; }
-.fl-voice-invite-hint { font: 500 11.5px/1 var(--vendo-font); color: var(--vendo-fg-muted); margin-top: 2px; }
-
-/* ---- S-F attention vignette: a whisper-soft dim outside the point of
-   attention — the ball while the agent speaks, the card once docked. */
-.fl-voice-spot { position: absolute; inset: 0; pointer-events: none; z-index: 1; opacity: 0;
-  background: radial-gradient(circle var(--fl-spot-r, 260px) at var(--fl-spot-x, 50%) var(--fl-spot-y, 30%),
-    transparent 60%, color-mix(in srgb, var(--vendo-fg) 5%, transparent));
-  transition: opacity .8s ease; }
-.fl-voice-stage.is-spot-on .fl-voice-spot { opacity: 1; }
-
-/* ---- C-A spoken-yes: the act-tier bar says voice works, with a live
-   equalizer while the mic is open; a heard yes flips the hint. */
-.fl-voice-consent-hint { font-size: 11px; color: var(--vendo-fg-muted); display: flex; align-items: center; }
-.fl-voice-consent-hint.is-heard { color: var(--vendo-ok); font-weight: 600; }
-.fl-voice-eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; margin-left: 6px; }
-.fl-voice-eq i { width: 2.5px; height: 100%; border-radius: 2px; background: currentColor;
-  animation: fl-voice-eq 1s ease-in-out infinite; }
-.fl-voice-eq i:nth-child(1) { height: 60%; }
-.fl-voice-eq i:nth-child(2) { animation-delay: .15s; }
-.fl-voice-eq i:nth-child(3) { height: 45%; animation-delay: .3s; }
-@keyframes fl-voice-eq { 0%, 100% { transform: scaleY(.5); } 50% { transform: scaleY(1); } }
-
-/* ---- Cn-A connect-during-voice: the ConnectCard docks at the consent edge,
-   centered (the approval card's max-width would left-hug a full-width slot),
-   with the connecting hint stacked under the button as a caption. */
-.fl-voice-connect { margin: 0 18px 8px; flex-shrink: 0; display: flex; justify-content: center; }
-.fl-voice-connect .fl-approval { align-self: auto; width: 100%; margin-inline: auto;
-  animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both; }
-.fl-voice-connect .fl-approval-actions { flex-wrap: wrap; row-gap: 6px; }
-.fl-voice-connect .fl-approval-actions .fl-approval-more { flex-basis: 100%; margin: 0; }
-
-/* ---- M-A mobile safe-area foot: the controls clear the home indicator, and
-   touch surfaces get real 48px targets. */
-.fl-voice-foot { padding-bottom: max(12px, env(safe-area-inset-bottom, 0px) + 10px); }
-@media (pointer: coarse) {
-  .fl-voice-foot { padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 20px); }
-  .fl-voice-controls { gap: 10px; }
-  .fl-voice-controls .fl-icon-btn { width: 48px; height: 48px; border-radius: 14px; }
-  .fl-voice-controls .fl-btn { min-height: 48px; padding: 12px 26px; border-radius: 999px; font-size: 14px; }
-  .fl-voice-drawer-btn { padding: 14px 10px; font-size: 12.5px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .fl-voice-tick, .fl-voice-chip, .fl-voice-glow, .fl-voice-eq i { animation: none; }
-  .fl-voice-spot { transition: none; }
-  .fl-voice-stage:not(.is-docked) .fl-voice-blob { transition: none; }
-}
-
 /* ====================================================================
-   ui-lane-thread block — the converged thread-surface picks (C1 ribbon,
-   C5 bar pin, 2B/2C/2E/2F composer, 3A/3D list, 4B landing cards, 6B
-   mobile jump, 8A-8E markdown). Derived from existing tokens only.
+   ui-lane-thread block — the converged thread-surface picks (C5 bar pin,
+   2B/2C/2E/2F composer, 3A/3D list, 4B landing cards, 6B mobile jump,
+   8A-8E markdown). Derived from existing tokens only.
    ==================================================================== */
-
-/* C1 — live status ribbon, tucked BEHIND the composer (one unit, Codex-
-   style): narrower than the composer, top corners only, and its bottom edge
-   slides under the card — the composer (position:relative) paints over the
-   overlap, so the composer keeps its own full radius. The composer sits
-   either adjacent or inside the dock anchor, so both DOM shapes lose their
-   top margin. */
-.fl-ribbon { display: flex; align-items: center; gap: 9px; margin: 0 30px -12px; padding: 7px 12px 19px;
-  border: 1px solid var(--vendo-border); border-bottom: 0; border-radius: 14px 14px 0 0;
-  background: color-mix(in srgb, var(--vendo-fg) 3%, var(--vendo-glass-strong));
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  font: 500 12.5px/1.3 var(--vendo-font); color: var(--vendo-fg-muted); }
-.fl-ribbon + .fl-composer, .fl-ribbon + .fl-dock-anchor .fl-composer { margin-top: 0; }
-.fl-ribbon .fl-beat-orb { width: 9px; height: 9px; }
-.fl-ribbon-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: var(--vendo-fg); font-weight: 550; }
-@media (prefers-reduced-motion: no-preference) {
-  .fl-ribbon { animation: fl-item-in .24s cubic-bezier(.22, 1, .36, 1) both; }
-  .fl-ribbon-label { animation: fl-fade-in .22s ease both; }
-}
-.fl-ribbon-time { flex-shrink: 0; font: 500 10.5px/1 var(--vendo-font-mono); color: var(--vendo-fg-muted);
-  opacity: .75; font-variant-numeric: tabular-nums; }
-.fl-ribbon-count { margin-left: auto; flex-shrink: 0; font: 600 10.5px/1.4 var(--vendo-font);
-  border: 1px solid var(--vendo-border); border-radius: 999px; padding: 1px 7px; color: var(--vendo-fg-muted); }
 
 /* C5 — the pin lives on the app-card bar once the view is ready (replaces the
    old footer row). Sits between the boot labels and the hairline. */
@@ -2004,6 +1528,38 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 @media (prefers-reduced-motion: no-preference) {
   .fl-appcard-bar[data-state="ready"] .fl-barpin { animation: fl-fade-in .3s ease both; }
 }
+/* The pin nudge (founder mockup, 2026-08-04). A settled build INVITES the pin
+   with a slow ring at the edge of vision — never a toast, never an action, and
+   never while the build is still running (§8 gives a build one moving thing).
+   Taken, it resolves to the settled accent state. Reduced motion keeps the
+   accent and drops the ring: the colour alone is the invitation. */
+.fl-barpin[data-vendo-pin] { color: var(--vendo-accent); }
+.fl-barpin[data-vendo-pin="pinned"] { background: var(--vendo-accent-soft); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-barpin[data-vendo-pin="invite"] { animation: fl-pin-nudge 2.4s var(--vendo-ease) infinite; }
+  /* The card's pin also fades in with its bar (rule above); naming both keeps
+     the entrance, which a bare nudge would silently replace. */
+  .fl-appcard-bar[data-state="ready"] .fl-barpin[data-vendo-pin="invite"] {
+    animation: fl-fade-in .3s ease both, fl-pin-nudge 2.4s var(--vendo-ease) infinite; }
+}
+@keyframes fl-pin-nudge {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--vendo-accent) 26%, transparent); }
+  45% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--vendo-accent) 10%, transparent); } }
+
+/* "Add to…" on the embed's app-card bar: the picker that writes a placement
+   from a chat page. The trigger is the existing .fl-barpin; the menu borrows
+   the ✦ popover's glass look (.fl-remix-menu). */
+.fl-slotpick { position: relative; margin-left: auto; display: inline-flex; flex-shrink: 0; }
+.fl-slotpick .fl-barpin { margin-left: 0; }
+.fl-slotpick-menu { position: absolute; top: 28px; right: 0; z-index: 8; min-width: 172px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+  border: 1px solid var(--vendo-border-strong); border-radius: 12px;
+  background: var(--vendo-surface); box-shadow: var(--vendo-shadow-float); }
+.fl-slotpick-menu button { text-align: left; font: 500 12.5px/1.2 var(--vendo-font); padding: 7px 9px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--vendo-fg); cursor: pointer; }
+.fl-slotpick-menu button:hover { background: var(--vendo-accent-soft); }
+.fl-slotpick-menu button:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 1px; }
+.fl-slotpick-note { padding: 6px 9px; font: 500 11px/1.4 var(--vendo-font); color: var(--vendo-fg-muted); }
 
 /* 2B — Send now on the queued pill. */
 .fl-queued-now { flex-shrink: 0; border: 0; background: none; cursor: pointer; padding: 3px 6px;
@@ -2043,7 +1599,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-newbar { position: absolute; left: 16px; right: 16px; bottom: calc(100% - 10px); display: flex;
   align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; cursor: pointer;
   border: 1px solid var(--vendo-border); border-radius: 14px 14px 0 0; border-bottom: 0;
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  background: var(--vendo-surface);
   font: 600 12px/1 var(--vendo-font); color: var(--vendo-fg);
   box-shadow: 0 -1px 2px color-mix(in srgb, var(--vendo-fg) 5%, transparent),
     0 -10px 28px color-mix(in srgb, var(--vendo-fg) 7%, transparent); }
@@ -2070,14 +1626,14 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 @media (max-width: 480px) {
   .fl-newbar { left: 0; right: 0; bottom: calc(100% - 2px); margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
     border-radius: 999px; border-bottom: 1px solid var(--vendo-border);
-    padding: 7px 14px; font-size: 11.5px; box-shadow: var(--vendo-shadow); }
+    padding: 7px 14px; font-size: 11.5px; box-shadow: var(--vendo-shadow-float); }
   .fl-newbar small { display: none; }
   .fl-dock-anchor:has(.fl-newbar):not(:has(.fl-tray)) .fl-composer { border-top-left-radius: 14px; border-top-right-radius: 14px; }
 }
 /* mirror of the 480px pill block above — keep identical */
 .fl-takeover .fl-newbar { left: 0; right: 0; bottom: calc(100% - 2px); margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
   border-radius: 999px; border-bottom: 1px solid var(--vendo-border);
-  padding: 7px 14px; font-size: 11.5px; box-shadow: var(--vendo-shadow); }
+  padding: 7px 14px; font-size: 11.5px; box-shadow: var(--vendo-shadow-float); }
 .fl-takeover .fl-newbar small { display: none; }
 .fl-takeover .fl-dock-anchor:has(.fl-newbar):not(:has(.fl-tray)) .fl-composer { border-top-left-radius: 14px; border-top-right-radius: 14px; }
 
@@ -2090,9 +1646,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-turn-assistant .fl-fold-veil { background: linear-gradient(180deg, transparent, var(--vendo-bg) 82%); }
 .fl-fold--open .fl-fold-veil { position: static; height: auto; background: none; padding: 8px 0 0; }
 .fl-fold-pill { border: 1px solid var(--vendo-border-strong); border-radius: 999px;
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  background: var(--vendo-surface);
   padding: 5px 12px; font: 600 11.5px/1.3 var(--vendo-font); color: var(--vendo-fg); cursor: pointer;
-  box-shadow: var(--vendo-shadow); text-decoration: none; margin-top: 0; }
+  box-shadow: var(--vendo-shadow-float); text-decoration: none; margin-top: 0; }
 .fl-fold-pill:hover { border-color: var(--vendo-accent); }
 
 /* 4B — starter cards on the landing (object suggestions). */
@@ -2105,7 +1661,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-cards:has(> .fl-card:nth-child(5)) > .fl-card { flex: 1 1 160px; min-width: 150px; }
 .fl-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left;
   cursor: pointer; border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
-  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  background: var(--vendo-surface);
   padding: 12px 13px; color: var(--vendo-fg);
   transition: border-color .14s, transform .18s cubic-bezier(.22, 1, .36, 1), box-shadow .18s; }
 .fl-card:hover { border-color: var(--vendo-border-strong); transform: translateY(-1px);
@@ -2184,13 +1740,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   max-height: 86vh; overflow-y: auto; overscroll-behavior: contain; outline: none; }
 .fl-approval-sheet-grabber { width: 36px; height: 4px; border-radius: 999px;
   background: var(--vendo-border-strong); margin: 4px auto 12px; }
-/* Inside the sheet the card sheds its own chrome — the sheet IS the surface. */
-.fl-approval-sheet .fl-approval { max-width: none; min-width: 0; width: 100%;
-  border: 0; box-shadow: none; background: none; padding: 0;
-  -webkit-backdrop-filter: none; backdrop-filter: none; }
-/* …except the ceremony register: a destructive ask keeps its warn wash. */
-.fl-approval-sheet .fl-approval--ceremony { border: 1px solid var(--vendo-warn-border);
-  background: var(--vendo-warn-bg); padding: 12px; border-radius: var(--vendo-radius); }
+/* Ancestors may SIZE the card, never undress it (spec §16 law 1): the sheet
+   sets width only, so the same shell arrives here as in the thread and queue. */
+.fl-approval-sheet .fl-approval { max-width: none; min-width: 0; width: 100%; }
 @media (prefers-reduced-motion: no-preference) {
   .fl-approval-sheet { animation: fl-sheet-up .42s cubic-bezier(.22,1.1,.36,1) both; }
   .fl-approval-sheet-scrim { animation: fl-fade-in .3s ease both; }
@@ -2198,7 +1750,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 @keyframes fl-sheet-up { from { transform: translateY(100%); } to { transform: none; } }
 /* 1-H · thumb-zone decision buttons (same query as the ENG-228 block). */
 @media (max-width: 767px), (pointer: coarse) {
-  .fl-approval-actions .fl-btn { padding: 14px 15px; font-size: 14px; flex: 1; }
+  .fl-card-actions .fl-btn { padding: 14px 15px; font-size: 14px; flex: 1; }
 }
 
 /* 3-A′ · real brand marks in the tray rows (monogram = fallback). */
@@ -2236,7 +1788,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    users. (The data-vendo-motion="reduced" root rule already covers theme-level
    reduction; this covers the OS preference.) */
 @media (prefers-reduced-motion: reduce) {
-  .fl-overlay-scrim, .fl-toasts-card, .fl-voice-drawer,
+  .fl-overlay-scrim, .fl-toasts-card,
   .fl-approvals-slide, .fl-auto-runs-dot, .fl-acct-severed { animation: none; opacity: 1; }
 }
 
@@ -2260,7 +1812,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    devices (the mockup's chip:hover behavior). */
 .fl-cite-pop { position: absolute; left: 0; top: calc(100% + 8px); width: 292px; z-index: 5;
   background: var(--vendo-surface); border: 1px solid var(--vendo-border); border-radius: 10px;
-  box-shadow: var(--vendo-shadow); padding: 12px 14px; text-align: left; cursor: default;
+  box-shadow: var(--vendo-shadow-float); padding: 12px 14px; text-align: left; cursor: default;
   display: none; }
 .fl-cite--open .fl-cite-pop { display: block; }
 @media (hover: hover) { .fl-cite:hover .fl-cite-pop { display: block; } }
@@ -2283,5 +1835,253 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
      (axe). The darker warn token keeps the amber register and passes. */
   color: var(--vendo-warn); }
 .fl-know-unavail svg { flex: none; margin-top: 2px; }
+
+/* ================== card shell (spec §16, one shell three laws) ==================
+   The ONE geometry every consent/status card wears — approval, connect,
+   standing-access, automation, resolved — on every surface (thread,
+   queue, activities, sheet, voice, embeds, center). Contents differ; geometry
+   never does. Components land in Lane B (chrome/card-shell.tsx).
+
+   Law 1: ancestors may set width/max-width on .fl-cardshell, nothing else.
+   Law 2: ONE icon well size (28px), ONE primary button (.fl-btn-primary),
+          ONE ceremony button (.fl-btn-ceremony).
+   Law 3: the plain-words line is mandatory — it has a rule, so it has a slot. */
+.fl-cardshell { display: flex; flex-direction: column; box-sizing: border-box;
+  padding: 16px 18px; border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius-card);
+  background: var(--vendo-surface); color: var(--vendo-fg);
+  font: 400 var(--vendo-text-body)/1.5 var(--vendo-font); }
+/* The destructive register: an amber edge bar over the same neutral card. */
+.fl-cardshell--ceremony { border-color: var(--vendo-warn-border);
+  box-shadow: inset 3px 0 0 var(--vendo-warn); }
+/* Settled — the card is a receipt, not an ask. */
+.fl-cardshell--settled { color: var(--vendo-fg-muted); }
+
+.fl-card-head { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
+/* The copy column. min-width:0 stops a long unbroken title from refusing to
+   shrink and pushing the card past its own border. */
+.fl-card-heading { min-width: 0; flex: 1; }
+/* The ONE icon well. Every card kind, every surface — 28px, no exceptions. */
+.fl-card-ic { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0;
+  border-radius: var(--vendo-radius); overflow: hidden;
+  color: var(--vendo-accent); background: var(--vendo-accent-soft); }
+.fl-card-ic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.fl-card-eyebrow { font: 600 10.5px/1 var(--vendo-font); letter-spacing: .05em;
+  text-transform: uppercase; color: var(--vendo-fg-muted); }
+.fl-cardshell--ceremony .fl-card-eyebrow { color: var(--vendo-warn); }
+.fl-cardshell--ceremony .fl-card-ic { color: var(--vendo-warn);
+  background: color-mix(in srgb, var(--vendo-warn) 16%, transparent); }
+.fl-card-title { margin-top: 4px; font: 600 13.5px/1.3 var(--vendo-heading-font); color: var(--vendo-fg);
+  letter-spacing: -.01em; overflow-wrap: anywhere; }
+/* The mandatory plain-words line: what this DOES, in the user's language. */
+.fl-card-line { margin: 10px 0 0; font: 500 13px/1.5 var(--vendo-font); color: var(--vendo-fg); }
+.fl-card-line strong { font-weight: 650; }
+
+.fl-card-fields { margin: 12px 0 0; padding: 10px 0 2px; border-top: 1px solid var(--vendo-border);
+  display: flex; flex-direction: column; gap: 7px; }
+.fl-card-field { display: grid; grid-template-columns: minmax(88px, auto) 1fr; gap: 12px;
+  font-size: 12.5px; line-height: 1.45; }
+.fl-card-field dt { color: var(--vendo-fg-muted); }
+/* pre-line: object/array inputs arrive as compact one-per-line \`Key: value\`
+   text (field-rows.ts) rather than raw JSON. */
+.fl-card-field dd { margin: 0; color: var(--vendo-fg); overflow-wrap: anywhere; white-space: pre-line; }
+/* Money and counts right-align on tabular figures so a column of amounts
+   reads as a column. Set by the shell when the value is numeric. */
+.fl-card-field dd[data-numeric] { text-align: right; font-variant-numeric: tabular-nums; }
+
+.fl-card-list { list-style: none; margin: 12px 0 0; padding: 0;
+  display: flex; flex-direction: column; }
+.fl-card-list > li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 11px;
+  align-items: center; padding: 9px 0; border-top: 1px solid var(--vendo-border); }
+.fl-card-list > li:first-child { border-top: 0; padding-top: 2px; }
+
+.fl-card-actions { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+/* The byline: who/what is asking, or when it settled. Always last, always quiet. */
+.fl-card-byline { margin-top: 10px; font-size: 11.5px; color: var(--vendo-fg-muted); }
+
+/* ============================ LANE C ============================
+   The transcript shows the work (spec §1 + §8 D1 + §15). The beat vocabulary
+   itself lives above (.fl-beat*); this section adds the two pieces the settled
+   transcript needed: the result a beat earned, and the row a finished turn
+   folds into. */
+
+/* "Reading transactions · 142 transactions" — the count trails the label a
+   step quieter, so the eye reads the work first and the receipt second. */
+.fl-beat-result { flex-shrink: 0; font-weight: 400; color: var(--vendo-fg-muted); }
+
+/* The settled turn's one reopenable row: reads as a beat (same rhythm, same
+   tick, same indent), behaves as a disclosure. */
+.fl-beatsummary { align-self: flex-start; display: flex; align-items: center; gap: 9px;
+  margin: 0; padding: 3px 2px; border: 0; background: none; cursor: pointer;
+  font: 500 13px/1.35 var(--vendo-font); color: var(--vendo-fg-muted); text-align: left; }
+.fl-beatsummary:hover { color: var(--vendo-fg); }
+.fl-beatsummary:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px;
+  border-radius: var(--vendo-radius-sm); }
+
+/* No entrance stampede: a restored turn already carries .fl-no-entrance, and
+   reopening one mounts its whole checklist in a single commit — N fade-ins at
+   once is the opposite of calm. */
+.fl-no-entrance .fl-beat { animation: none; }
+
+/* ---------- the workspace beat rail (§3.4 + §10.2) ----------
+   A heavy build is watched as an accumulating vertical list of the SAME beat
+   line the transcript uses, on the existing split-view stage. Sits under
+   whatever the stage is showing, above the pane's bottom edge. */
+.fl-beatrail { flex: none; padding: 14px 18px 16px; border-top: 1px solid var(--vendo-border); }
+.fl-beatrail-head { margin: 0 0 10px; font: 600 11px/1 var(--vendo-font); letter-spacing: .055em;
+  text-transform: uppercase; color: var(--vendo-fg-muted); }
+.fl-beats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+/* The caption is the point of the rail: watching is optional. */
+.fl-beatrail-cap { margin: 12px 0 0; max-width: 42ch;
+  font: 400 11.5px/1.45 var(--vendo-font); color: var(--vendo-fg-muted); }
+/* The rail's own register — the mockup's 6px pip. In the TRANSCRIPT the orb is
+   a static position marker (§8 build calm, where the card is the step and the
+   boot hairline is the one moving thing); a rail with no card and no hairline
+   has nothing else to say "still going", so here the pip carries the pulse. */
+.fl-beatrail .fl-beat-orb { width: 6px; height: 6px; background: var(--vendo-accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-beatrail .fl-beat-working .fl-beat-orb { animation: fl-beat-pip 1.5s var(--vendo-ease) infinite; }
+}
+@keyframes fl-beat-pip { 50% { opacity: .35; transform: scale(.82); } }
+
+/* ================== LANE B — card-shell surfaces (spec §16, §4) ==================
+   Nothing here dresses or undresses a card: it sizes the shell inside each
+   ancestor (law 1) and styles the two containers the shell lives in. */
+
+/* N1 — the waiting strip is COUNT-FIRST: a slim summary row that expands the
+   shell cards in place. Native <details>, so no state and no JS. */
+.fl-waiting-strip > summary { display: flex; align-items: center; gap: 8px; cursor: pointer;
+  list-style: none; font: 600 11px/1 var(--vendo-font); letter-spacing: .04em;
+  text-transform: uppercase; color: var(--vendo-fg-muted); }
+.fl-waiting-strip > summary::-webkit-details-marker { display: none; }
+.fl-waiting-strip > summary:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 3px; border-radius: 4px; }
+.fl-waiting-strip > summary::after { content: ""; width: 6px; height: 6px; margin-left: auto;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg); transition: transform var(--vendo-duration) var(--vendo-ease); }
+.fl-waiting-strip[open] > summary { margin-bottom: 10px; }
+.fl-waiting-strip[open] > summary::after { transform: rotate(225deg); }
+.fl-waiting-cards { display: flex; flex-direction: column; gap: 8px; }
+/* Law 1 — the ancestors that size the shell (width only, never its dress):
+   the strip, the mobile sheet, and the activities stack. */
+.fl-waiting-cards > .fl-cardshell,
+.fl-approval-sheet .fl-cardshell,
+.fl-approvals-stack .fl-cardshell { width: 100%; max-width: none; min-width: 0; }
+/* The automation card's flow nodes are CONTENTS now: the panel's padded block
+   loses its own box because the shell owns the padding. */
+.fl-cardshell > .fl-auto-flow { margin-top: 12px; padding: 12px 0 0; }
+/* The morph pill's mark comes from the shared <ToolkitLogo> (which owns the
+   onError fallback), so its size rides the CSS instead of img attributes. */
+.fl-morph-logo img, .fl-morph-logo svg { display: block; width: 18px; height: 18px; object-fit: contain; }
+
+/* ---------- LANE D — background attention (spec §2 G1, §3 H1, §4 N1) ---------- */
+/* The pill while a run keeps going without the user: the morph blob gives way
+   to a progress ring and the label to the live beat. Nothing here opens or
+   folds a surface — the pill only tells the truth about what is happening. */
+.fl-launcher-ring { width: 18px; height: 18px; flex: none; border-radius: 50%;
+  /* One element, two rings: --fl-ring is the filled fraction (determinate),
+     and the indeterminate variant below swaps in a fixed arc that turns. */
+  background: conic-gradient(var(--vendo-accent) var(--fl-ring, 0%), var(--vendo-border-strong) 0);
+  mask: radial-gradient(closest-side, transparent 60%, #000 62%);
+  -webkit-mask: radial-gradient(closest-side, transparent 60%, #000 62%);
+  transition: background var(--vendo-duration) var(--vendo-ease); }
+.fl-launcher-ring[data-vendo-ring="indeterminate"] {
+  background: conic-gradient(var(--vendo-accent) 0 22%, var(--vendo-border-strong) 22% 100%); }
+.fl-launcher-beat { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The two standing signals. A count is a decision waiting on you; the dot is
+   only "there is something new" — so the count always wins the corner. */
+.fl-launcher-badge { min-width: 18px; height: 18px; padding: 0 5px; flex: none;
+  display: inline-grid; place-items: center; border-radius: 999px;
+  background: var(--vendo-accent); color: var(--vendo-accent-fg);
+  font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.fl-launcher-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--vendo-accent); }
+/* Blob-only orb (label: null): the signals ride the corner instead of widening
+   the circle. The fixed corner variants are their own containing block. */
+.fl-launcher[data-vendo-launcher-bare] .fl-launcher-badge { position: absolute; top: -3px; right: -3px; }
+.fl-launcher[data-vendo-launcher-bare] .fl-launcher-dot { position: absolute; top: 3px; right: 3px; }
+/* The completion toast rides above the pill it came from, in the corner the
+   user last saw working — never a center-screen modal. */
+.fl-launcher-toast { display: flex; align-items: center; gap: 10px; max-width: 300px;
+  padding: 10px 10px 10px 14px; border: 1px solid var(--vendo-border); border-radius: 14px;
+  background: var(--vendo-surface); box-shadow: var(--vendo-shadow-float);
+  font-size: 12.5px; line-height: 1.45; color: var(--vendo-fg);
+  position: fixed; z-index: 2147482999; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+.fl-launcher-toast[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
+.fl-launcher-toast[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
+.fl-launcher-toast-head { flex: 1; min-width: 0; font-weight: 550;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.fl-launcher-toast-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.fl-launcher-toast-x { display: grid; place-items: center; width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 8px; background: none; color: var(--vendo-fg-muted); cursor: pointer; }
+.fl-launcher-toast-x:hover { color: var(--vendo-fg); background: var(--vendo-accent-soft); }
+@media (prefers-reduced-motion: no-preference) {
+  /* The ONE moving part of the closed-panel state: the indeterminate arc. */
+  .fl-launcher-ring[data-vendo-ring="indeterminate"] { animation: fl-ring-turn 1.4s linear infinite; }
+  .fl-launcher-beat { animation: fl-beat-in var(--vendo-duration) var(--vendo-ease) both; }
+  .fl-launcher-toast { animation: fl-toast-in var(--vendo-duration) var(--vendo-ease) both; }
+}
+@keyframes fl-ring-turn { to { transform: rotate(360deg); } }
+@keyframes fl-beat-in { from { opacity: 0; filter: blur(4px); } to { opacity: 1; filter: none; } }
+@keyframes fl-toast-in { from { opacity: 0; transform: translateY(10px); filter: blur(5px); }
+  to { opacity: 1; transform: none; filter: none; } }
+
+/* ================== the app shelf: apps as LIVE tiles (§10 pick HB, §14) ==================
+   Rendered by hosts that mount the app shelf themselves; also the landing
+   target the pin ceremony flies to when one is on the page. */
+.fl-shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;
+  margin: 0 auto; padding: 0 30px 4px; width: 100%; max-width: 660px; }
+.fl-shelf--grid { max-width: none; padding: 0; gap: 18px; }
+/* A tile is a CONTROL (its whole face opens the app), so its edge is the thing
+   that says where the control is — the 8% hairline left that at ~1.15:1. */
+.fl-tile { position: relative; display: flex; flex-direction: column; overflow: hidden; text-align: left;
+  border: 1px solid var(--vendo-indicator); border-radius: var(--vendo-radius-card);
+  background: var(--vendo-surface);
+  transition: transform var(--vendo-duration) var(--vendo-ease), box-shadow var(--vendo-duration) var(--vendo-ease); }
+/* Hover-lift is one of the two places shadow is allowed to appear (S1). */
+.fl-tile:hover { transform: translateY(-2px); box-shadow: var(--vendo-shadow-float); }
+/* The preview is the app's REAL surface, scaled down and made unreachable: a
+   tile's affordance is "open this", never "use this at 40%". */
+.fl-tile-view { position: relative; height: 124px; overflow: hidden; pointer-events: none;
+  border-bottom: 1px solid var(--vendo-border); }
+.fl-tile-scale { display: block; width: 250%; height: 250%; transform: scale(.4); transform-origin: top left; }
+.fl-tile-hit { position: absolute; inset: 0; border: 0; background: transparent; cursor: pointer; }
+.fl-tile-cap { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 7px;
+  padding: 10px 12px; }
+.fl-tile-name { font: 550 13.5px/1.35 var(--vendo-heading-font); color: var(--vendo-fg);
+  overflow-wrap: anywhere; }
+.fl-tile-hint { color: var(--vendo-fg-muted); font-size: 11.5px; line-height: 1.45; }
+/* The faint "a view goes here" ground, shared by a loading tile and a ghost. */
+.fl-tile-skel { display: block; height: 124px;
+  background: repeating-linear-gradient(180deg, transparent 0 16px,
+    color-mix(in srgb, var(--vendo-fg) 5%, transparent) 16px 23px); }
+/* §14 CS2 — day zero the shelf ADVERTISES: dashed ghosts naming what to build,
+   retired for good the moment a real app exists. */
+.fl-tile--ghost { cursor: pointer; padding: 0; border-style: dashed; background: transparent; }
+.fl-tile--ghost:hover { transform: translateY(-2px); box-shadow: none;
+  border-color: var(--vendo-border-strong); }
+.fl-tile--ghost .fl-tile-skel { height: 92px; opacity: .8; }
+
+/* Room to breathe (§10 "with room to breathe"): the per-app verbs are ONE quiet
+   line of text under the name — four bordered pills wrapped onto two rows and
+   turned every tile into a toolbar, and hiding them until hover only traded the
+   clutter for a dead band of reserved space. */
+.fl-tile-acts { display: flex; flex-wrap: wrap; gap: 12px; }
+/* An app with no view of its own (an automation) says so, rather than resting
+   forever on a skeleton that pretends one is coming. */
+.fl-tile-none { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 7px; height: 100%; color: var(--vendo-fg-muted); font-size: 11.5px; }
+.fl-tile-act { border: 0; padding: 0; background: transparent; color: var(--vendo-fg-muted);
+  font: 500 11.5px/1.4 var(--vendo-font); cursor: pointer; transition: color .14s; }
+.fl-tile-act:hover { color: var(--vendo-fg); }
+.fl-tile-act--ceremony:hover { color: var(--vendo-warn); }
+.fl-tile-act:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+.fl-tile-form { display: flex; align-items: center; gap: 6px; }
+.fl-tile-form .fl-picker-search { margin-bottom: 0; }
+/* M2 respects the OS (spec §6): the tile hover-lift and the waiting strip's
+   disclosure chevron are off under prefers-reduced-motion. The hover SHADOW
+   stays: it is depth, not motion. */
+@media (prefers-reduced-motion: reduce) {
+  .fl-tile { transition: box-shadow var(--vendo-duration) var(--vendo-ease); }
+  .fl-tile:hover, .fl-tile--ghost:hover { transform: none; }
+  .fl-waiting-strip > summary::after { transition: none; }
+}
 
 `;

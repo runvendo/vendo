@@ -125,7 +125,7 @@ describe("ENG-345 constraint 2 & 3 & (b) — owner-only, approval-gated flip", (
     const parked = await runtime.secrets.setExposure({ appId: "app_ada", secretName: "STRIPE_KEY", expose: true }, ada);
     expect(parked.status).toBe("pending-approval");
     // The flip rode the guard's CRITICAL approval flow (constraint 3).
-    expect(guard.approvals.some((approval) => approval.descriptor.critical === true)).toBe(true);
+    expect(guard.approvals.some((approval) => approval.descriptor.confirmEach === true)).toBe(true);
     expect(await statusOf(runtime, "app_ada", ada, "STRIPE_KEY")).toBe("pending");
 
     if (parked.status !== "pending-approval") throw new Error("unreachable");

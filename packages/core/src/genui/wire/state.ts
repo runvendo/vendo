@@ -2,8 +2,7 @@
  * Internal: shared compiler state for the vendo-genui/v2 wire markup compiler
  * (v2 spec §2, docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md;
  * plan decisions D3/D6). Bottom of the wire module stack: compile →
- * attributes → scan → state; expression.ts also imports the shared UTF-16
- * well-formedness guard from here.
+ * attributes → scan → state.
  */
 
 import type { TreeNode } from "../tree-node.js";
@@ -98,9 +97,3 @@ export const issue = (state: CompileState, code: WireIssueCode, message: string)
 export const mergeIssues = (state: CompileState, issues: readonly WireIssue[]): void => {
   for (const entry of issues) pushCapped(state, entry);
 };
-
-/** The shared UTF-16 well-formedness guard, canonically in jcs.ts (whose
- *  canonicalJson throws on lone surrogates, so ill-formed UTF-16 must never
- *  enter props). Re-exported for the markup layer (attributes.ts, compile.ts,
- *  limits.ts) and the expression layer (expression.ts). */
-export { isWellFormedUtf16 } from "../../jcs.js";

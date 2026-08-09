@@ -7,6 +7,13 @@ import type { ExtractedTool } from "../formats.js";
 import { routeToolFullName, withUniqueNames } from "./common.js";
 import { inputNarrowed, mergeOverrides, vendoSync } from "./index.js";
 
+/** The proven wrapper-import specifier fixtures write to disk. Assembled at
+ *  runtime because the dependency guard's static text scan reads
+ *  import-shaped strings even inside fixtures, and actions may not import
+ *  @vendoai/ui. */
+const UI_CHROME = ["@vendoai", "ui", "chrome"].join("/");
+const VENDO_REACT = ["@vendoai", "vendo", "react"].join("/");
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -66,7 +73,7 @@ describe("sync public helpers", () => {
       format: "vendo/overrides@3",
       tools: {
         host_items_list: { risk: "destructive", disabled: true, description: "new" },
-        host_typo_target: { critical: true },
+        host_typo_target: { confirmEach: true },
       },
     });
     expect(merged[0]).toMatchObject({ risk: "destructive", disabled: true, description: "new" });
@@ -155,7 +162,7 @@ describe("validation and route classification", () => {
     await vendoSync({ root, out });
     const tools = await toolsAt(out);
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
-    expect(byName.get("host_opaque_unclassified")).toMatchObject({ disabled: true, risk: "destructive" });
+    expect(byName.get("host_opaque_unclassified")).toMatchObject({ disabled: true, risk: "ungraded" });
     expect(byName.get("host_files_get")?.binding.path).toBe("/api/files/{slug}");
     expect(byName.get("host_reports_create")?.binding.path).toBe("/api/reports/{parts}");
     expect(byName.get("host_comment_only_unclassified")).toMatchObject({
@@ -180,54 +187,90 @@ describe("validation and route classification", () => {
     expect(report.warnings.some((warning) => warning.includes("connector_missing"))).toBe(false);
   });
 
-  it("returns machine-readable unresolved pins and honors the per-slot ignore list", async () => {
-    const unresolvedHost = await temporaryHost();
+  /** #1056: a standing judgment whose binding moved is held INERT by
+   *  `applyJudgment`, so its tool silently falls back to `ungraded` and asks on
+   *  every call. Nothing said so on the keyless path — the only path that cannot
+   *  re-grade — because `pruneJudgments` runs solely inside the keyed judge pass.
+   *  Sync is where a host finds out. */
+  it("warns when a standing judgment's binding no longer matches its tool", async () => {
+    const { root, out } = await temporaryHost();
+    await writeSpec(root, { "/api/items": { get: operation("listItems") } });
+    await writeFile(out, "judgments.json", JSON.stringify({
+      format: "vendo/judgments@1",
+      tools: {
+        host_listItems: { binding: "GET /mount/api/items", fields: { risk: "read" }, evidence: "return items;" },
+        host_departed: { binding: "GET /api/departed", fields: { risk: "read" }, evidence: "return gone;" },
+      },
+    }));
+
+    const report = await vendoSync({ root, out });
+    const stranded = report.warnings.filter((warning) => warning.includes("standing judgment"));
+    expect(stranded).toHaveLength(1);
+    expect(stranded[0]).toContain("1/1 standing judgments no longer match their tool");
+    expect(stranded[0]).toContain(`host_listItems was graded against "GET /mount/api/items", now "GET /api/items"`);
+    // A judgment for a tool the catalog no longer carries is ordinary churn the
+    // next keyed sync prunes — not a stranded grade, so not this host's problem.
+    expect(stranded[0]).not.toContain("host_departed");
+  });
+
+  it("stays silent when every standing judgment still binds to its tool", async () => {
+    const { root, out } = await temporaryHost();
+    await writeSpec(root, { "/api/items": { get: operation("listItems") } });
+    await writeFile(out, "judgments.json", JSON.stringify({
+      format: "vendo/judgments@1",
+      tools: { host_listItems: { binding: "GET /api/items", fields: { risk: "read" }, evidence: "return items;" } },
+    }));
+
+    const report = await vendoSync({ root, out });
+    expect(report.warnings.filter((warning) => warning.includes("standing judgment"))).toEqual([]);
+  });
+
+  it("reports loud wrapper errors and honors the per-slot ignore list", async () => {
+    const inlineHost = await temporaryHost();
     await writeFile(
-      unresolvedHost.root,
-      "src/vendo/components.tsx",
-      // A local re-export stands in for the umbrella helper: the dependency
-      // guard reads literal specifiers, and pins.ts keys on the remixable( call.
-      `import { remixable } from "./vendo-remix-helper";\n` +
-      `export const components = [remixable({ name: "InlineCard", component: () => null }, import.meta.url)];\n`,
+      inlineHost.root,
+      "src/app/page.tsx",
+      `import { Remixable } from "${UI_CHROME}";\n` +
+      `export default function Page() { return <Remixable><div>inline</div></Remixable>; }\n`,
     );
-    const unresolved = await vendoSync(unresolvedHost);
-    expect(unresolved.unresolvedPins).toEqual([expect.objectContaining({
-      slot: "InlineCard",
-      reason: "inline-component",
-    })]);
-    expect(unresolved.unresolvedPins[0]?.hint).toContain("run the host in dev with Vendo mounted");
+    const inline = await vendoSync(inlineHost);
+    expect(inline.remixableErrors).toEqual([
+      expect.stringContaining("src/app/page.tsx:2"),
+    ]);
+    expect(inline.remixableErrors[0]).toContain("extract it into a component and wrap that");
 
     const ignoredHost = await temporaryHost();
+    await writeFile(ignoredHost.root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }\n");
     await writeFile(
       ignoredHost.root,
-      "src/vendo/components.tsx",
-      `import { remixable } from "./vendo-remix-helper";\n` +
-      `export const components = [remixable({ name: "InlineCard", component: () => null }, import.meta.url)];\n`,
+      "src/app/page.tsx",
+      `import { Remixable } from "${UI_CHROME}";\n` +
+      `import { Card } from "../components/Card";\n` +
+      `export default function Page() { return <Remixable><Card /></Remixable>; }\n`,
     );
     await writeFile(ignoredHost.out, "overrides.json", JSON.stringify({
       format: "vendo/overrides@3",
       tools: {},
-      remix: { ignoreSlots: ["InlineCard"] },
+      remix: { ignoreSlots: ["Card"] },
     }));
-    expect((await vendoSync(ignoredHost)).unresolvedPins).toEqual([]);
+    const ignored = await vendoSync(ignoredHost);
+    expect(ignored.remixableErrors).toEqual([]);
+    expect(ignored.pins.captured).toEqual([]);
   });
 
-  it("accepts a schema-valid runtime baseline for a statically unresolved slot", async () => {
+  it("no longer captures registry remixable: true registrations", async () => {
     const host = await temporaryHost();
+    await writeFile(host.root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }\n");
     await writeFile(
       host.root,
       "src/vendo/components.tsx",
-      `import { remixable } from "./vendo-remix-helper";\n` +
-      `export const components = [remixable({ name: "RuntimeCard", component: () => null }, import.meta.url)];\n`,
+      `import { Card } from "../components/Card";\n` +
+      `export const components = [{ name: "Card", component: Card, remixable: true }];\n`,
     );
-    await writeFile(host.out, "remixable/RuntimeCard.json", JSON.stringify({
-      slot: "RuntimeCard",
-      source: "export function RuntimeCard() { return null; }",
-      hash: `sha256:${"a".repeat(64)}`,
-      exportable: false,
-      capturedAt: new Date().toISOString(),
-    }));
-    expect((await vendoSync(host)).unresolvedPins).toEqual([]);
+    const report = await vendoSync(host);
+    expect(report.remixableErrors).toEqual([]);
+    expect(report.pins.captured).toEqual([]);
+    await expect(fs.access(path.join(host.out, "remixable", "Card.json"))).rejects.toThrow();
   });
 
   it("allocates colliding sanitized names independently of OpenAPI declaration order", async () => {
@@ -428,5 +471,121 @@ describe("declared response bodies", () => {
     await vendoSync(host);
 
     expect((await toolsAt(host.out)).find((entry) => entry.name === "host_listItems")).not.toHaveProperty("outputSchema");
+  });
+});
+
+describe("the provider→components seam", () => {
+  /** No mock on either side: real source in, real vendoSync, real .vendo/
+   *  artifacts read back off disk. The host-component previews shipped four
+   *  times green-and-dead because the producer and the consumer each mocked
+   *  the other. */
+  it("captures the components a <VendoProvider> registers", { timeout: 120_000 }, async () => {
+    const { root, out } = await temporaryHost();
+    await writeSpec(root, {});
+    await writeFile(root, "tsconfig.json", `${JSON.stringify({
+      compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", jsx: "react-jsx", strict: true },
+      include: ["src"],
+    })}\n`);
+    await writeFile(root, "src/vendo-root.tsx", `
+      import { VendoProvider } from "${VENDO_REACT}";
+      type ComponentType = (props: unknown) => unknown;
+      export function BalanceCard({ label, cents }: { label: string; cents: number }) {
+        return <article>{label}{cents}</article>;
+      }
+      export const registry: Record<string, ComponentType> = { BalanceCard: BalanceCard as ComponentType };
+      export function Root({ children }: { children: unknown }) {
+        return <VendoProvider components={registry}>{children}</VendoProvider>;
+      }
+    `);
+
+    const report = await vendoSync({ root, out });
+    expect(report.catalog.discovered).toBeGreaterThan(0);
+
+    const catalog = JSON.parse(await fs.readFile(path.join(out, "catalog.json"), "utf8")) as {
+      entries: Array<{ name: string }>;
+    };
+    expect(catalog.entries.map((entry) => entry.name)).toContain("BalanceCard");
+
+    // The consumer's half of the seam: the captured record vendo-web reads.
+    const record = JSON.parse(await fs.readFile(path.join(out, "components", "BalanceCard.json"), "utf8")) as {
+      name: string;
+    };
+    expect(record.name).toBe("BalanceCard");
+  });
+});
+
+describe("schema source markers and coverage", () => {
+  it("counts both slots, keeps a declared empty input out of the blind list", async () => {
+    const host = await temporaryHost();
+    await writeSpec(host.root, {
+      "/api/items": { get: operation("listItems") },
+      "/api/items/{id}": {
+        get: operation("getItem", [{ name: "id", in: "path", required: true, schema: { type: "string" } }]),
+      },
+    });
+    const report = await vendoSync(host);
+
+    expect(report.toolSchemas.total).toBe(2);
+    // An OpenAPI operation that declares no parameters HAS declared its
+    // argument list; it is not blind.
+    expect(report.toolSchemas.inputs).toEqual({ known: 2, unknown: [] });
+    expect(report.toolSchemas.outputs).toEqual({ known: 0, unknown: ["host_getItem", "host_listItems"] });
+  });
+
+  it("carries an inferred schema across a re-sync and drops it when the binding moves", async () => {
+    const host = await temporaryHost();
+    await writeSpec(host.root, { "/api/items": { get: operation("listItems") } });
+    await vendoSync(host);
+
+    const toolsPath = path.join(host.out, "tools.json");
+    const file = JSON.parse(await fs.readFile(toolsPath, "utf8")) as { tools: Array<Record<string, any>> };
+    const inferred = { type: "object", properties: { data: { type: "array" } } };
+    file.tools[0]!.outputSchema = inferred;
+    file.tools[0]!.outputSchemaSource = "inferred";
+    await fs.writeFile(toolsPath, `${JSON.stringify(file, null, 2)}\n`, "utf8");
+
+    await vendoSync(host);
+    const carried = (await toolsAt(host.out)).find((tool) => tool.name === "host_listItems");
+    expect(carried?.outputSchema).toEqual(inferred);
+    expect(carried?.outputSchemaSource).toBe("inferred");
+
+    // Same name, different handler: the stale inferred schema must not follow.
+    await writeSpec(host.root, { "/api/moved": { get: operation("listItems") } });
+    await vendoSync(host);
+    const rebound = (await toolsAt(host.out)).find((tool) => tool.name === "host_listItems");
+    expect(rebound).not.toHaveProperty("outputSchema");
+    expect(rebound?.outputSchemaSource).toBe("unknown");
+  });
+
+  it("does not report a blind-to-filled input as breaking, and strict does not throw on it", async () => {
+    const previous: ExtractedTool = {
+      name: "host_orders_create",
+      description: "POST /api/orders",
+      inputSchema: { type: "object", properties: {}, additionalProperties: true },
+      inputSchemaSource: "unknown",
+      risk: "write",
+      binding: { kind: "route", method: "POST", path: "/api/orders", argsIn: "body" },
+    };
+    const filled: ExtractedTool = {
+      ...previous,
+      inputSchema: {
+        type: "object",
+        properties: { merchant: { type: "string" } },
+        required: ["merchant"],
+        additionalProperties: false,
+      },
+      inputSchemaSource: "inferred",
+    };
+    expect(inputNarrowed(previous, filled)).toBe(false);
+    // A real narrowing between two KNOWN inputs is still breaking.
+    expect(inputNarrowed({ ...filled, inputSchemaSource: "declared" }, {
+      ...filled,
+      inputSchema: {
+        type: "object",
+        properties: { merchant: { type: "string" }, hour: { type: "number" } },
+        required: ["merchant", "hour"],
+        additionalProperties: false,
+      },
+    })).toBe(true);
   });
 });

@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "jsx": "preserve",
+    "noEmit": true,
+    "allowJs": true
+  },
+  "include": ["src", "box"]
+}

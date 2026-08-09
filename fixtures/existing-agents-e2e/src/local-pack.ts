@@ -10,7 +10,6 @@ import path from "node:path";
 export const VENDO_PACKAGE_NAMES = [
   "@vendoai/core",
   "@vendoai/store",
-  "@vendoai/agent",
   "@vendoai/actions",
   "@vendoai/guard",
   "@vendoai/mcp",

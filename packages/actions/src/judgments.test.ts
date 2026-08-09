@@ -60,9 +60,9 @@ describe("classifyField", () => {
     expect(classifyField(tool({ disabled: true }), "disabled", false)).toBe("loosen");
   });
 
-  it("routes marking critical as a hardening and clearing it as a loosening", () => {
-    expect(classifyField(tool(), "critical", true)).toBe("harden");
-    expect(classifyField(tool({ critical: true }), "critical", false)).toBe("loosen");
+  it("routes marking confirmEach as a hardening and clearing it as a loosening", () => {
+    expect(classifyField(tool(), "confirmEach", true)).toBe("harden");
+    expect(classifyField(tool({ confirmEach: true }), "confirmEach", false)).toBe("loosen");
   });
 
   it("routes prose and semantics with the hardenings — the AI is the sole description author", () => {
@@ -96,8 +96,8 @@ describe("splitProposal", () => {
 
   it("drops no-ops from both sides (restating the current grade is not a change)", () => {
     const { hardenings, loosenings } = splitProposal(
-      tool({ risk: "write", critical: true, audience: "operator", disabled: true }),
-      proposal({ risk: "write", critical: true, audience: "operator", disabled: true }),
+      tool({ risk: "write", confirmEach: true, audience: "operator", disabled: true }),
+      proposal({ risk: "write", confirmEach: true, audience: "operator", disabled: true }),
     );
     expect(hardenings).toEqual({});
     expect(loosenings).toEqual([]);
@@ -121,12 +121,12 @@ describe("splitProposal", () => {
 describe("applyJudgment", () => {
   it("applies the judgment's fields when the binding still matches", () => {
     const applied = applyJudgment(tool(), judgment({
-      fields: { description: "Lists the signed-in client's invoices", risk: "destructive", critical: true },
+      fields: { description: "Lists the signed-in client's invoices", risk: "destructive", confirmEach: true },
     }));
     expect(applied).toMatchObject({
       description: "Lists the signed-in client's invoices",
       risk: "destructive",
-      critical: true,
+      confirmEach: true,
     });
   });
 

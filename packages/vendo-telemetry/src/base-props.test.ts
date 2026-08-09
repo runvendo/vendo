@@ -37,6 +37,16 @@ function gitRepoDir(originUrl?: string): string {
   return dir;
 }
 
+/** A repo whose config PATH resolves but cannot be read: `.git/config` is a
+    directory, so the read fails EISDIR. This is the unexpected filesystem
+    shape both never-throw guards exist for — a `.git` that isn't a git dir at
+    all is already covered by the malformed-pointer cases. */
+function unreadableGitConfigDir(): string {
+  const dir = tempDir();
+  mkdirSync(join(dir, ".git", "config"), { recursive: true });
+  return dir;
+}
+
 function expectedHash(input: string): string {
   return createHash("sha256").update(PROJECT_ID_SALT + input).digest("hex");
 }
@@ -133,6 +143,12 @@ describe("projectProps.projectIdHash", () => {
     expect(projectProps({}, checkout).projectIdHash).toBe(expectedHash("github.com/runvendo/vendo"));
   });
 
+  it("falls back to package.json when the git config path exists but cannot be read", () => {
+    const dir = unreadableGitConfigDir();
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "unreadable-git-app" }));
+    expect(projectProps({}, dir).projectIdHash).toBe(expectedHash("unreadable-git-app"));
+  });
+
   it("never throws on unreadable or malformed git state", () => {
     const broken = tempDir();
     writeFileSync(join(broken, ".git"), "not a real gitdir pointer");
@@ -166,6 +182,12 @@ describe("repoHost", () => {
     writeFileSync(join(broken, ".git"), "not a real gitdir pointer");
     expect(() => repoHost(broken)).not.toThrow();
     expect(repoHost(broken)).toBeUndefined();
+  });
+
+  it("never throws when the git config path exists but cannot be read", () => {
+    const dir = unreadableGitConfigDir();
+    expect(() => repoHost(dir)).not.toThrow();
+    expect(repoHost(dir)).toBeUndefined();
   });
 });
 

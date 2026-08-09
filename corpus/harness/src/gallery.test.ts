@@ -99,7 +99,7 @@ describe("captureGalleryRepo", () => {
     };
     const page = {
       locator(selector: string) {
-        expect(selector).toContain("vendo_apps_create");
+        expect(selector).toContain("vendo_make");
         return locator;
       },
     } as unknown as E2ePage;

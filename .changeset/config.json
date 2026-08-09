@@ -6,14 +6,15 @@
     [
       "@vendoai/core",
       "@vendoai/store",
-      "@vendoai/agent",
       "@vendoai/actions",
       "@vendoai/guard",
       "@vendoai/apps",
       "@vendoai/automations",
+      "@vendoai/harnesses",
       "@vendoai/ui",
       "@vendoai/mcp",
       "@vendoai/knowledge",
+      "@vendoai/agents",
       "@vendoai/vendo",
       "vendoai"
     ]

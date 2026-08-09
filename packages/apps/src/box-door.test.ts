@@ -1,5 +1,6 @@
 import { VENDO_APP_FORMAT, type AppDocument, type RunContext, type ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
+import { inMemoryBoxFiles } from "./testing/box-files.js";
 import { createApps } from "./index.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 import { basicLanguageModel, guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
@@ -45,6 +46,8 @@ function handlerSandbox(handler: BoxHandler): SandboxAdapter {
         body: encoder.encode(answer.body ?? ""),
       };
     },
+    async url() { return "https://8080-fake_box_v2.test"; },
+    files: inMemoryBoxFiles(new Map()),
     async snapshot() { return "fake:box-door"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },
@@ -66,7 +69,6 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
       tools: emptyTools,
       catalog: [],
       model,
-      experimentalMachines: true,
       machine: {
         sandbox: handlerSandbox((request) => {
           seen.push(request);
@@ -96,7 +98,6 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
       tools: emptyTools,
       catalog: [],
       model,
-      experimentalMachines: true,
       machine: { sandbox: handlerSandbox(() => ({ status: 200 })) },
     });
     await seedAppRow(store, doc, "user_ada");
@@ -113,7 +114,6 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
       tools: emptyTools,
       catalog: [],
       model,
-      experimentalMachines: true,
       machine: { sandbox: handlerSandbox(() => ({ status: 200 })) },
     });
     await seedAppRow(store, doc, "user_ada");
@@ -123,7 +123,7 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
 
   it("fails honestly without a sandbox adapter", async () => {
     const store = memoryStore();
-    const runtime = createApps({ store, guard: guardFixture(), tools: emptyTools, catalog: [], model, experimentalMachines: true });
+    const runtime = createApps({ store, guard: guardFixture(), tools: emptyTools, catalog: [], model });
     await seedAppRow(store, doc, "user_ada");
     await expect(runtime.machine.provision(doc.id, ctx()))
       .rejects.toMatchObject({ code: "sandbox-unavailable" });

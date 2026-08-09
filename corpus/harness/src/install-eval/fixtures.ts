@@ -1,9 +1,10 @@
-import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ensureRepoCheckout } from "../clone.js";
 import { loadManifest } from "../manifest.js";
 import { createRunContext } from "../run-context.js";
+import { runCommand, type CommandResult } from "../process.js";
+import { isRecord } from "../util.js";
 
 /**
  * Install-eval fixtures: real host apps copied to a clean directory with the
@@ -11,13 +12,13 @@ import { createRunContext } from "../run-context.js";
  * dependency, no lockfile, no vendor tarballs, no agent-config files — so a
  * headless coding agent starts from what a real pre-Vendo repo looks like.
  *
- * KNOWN LIMIT (documented on purpose): the demo apps' SOURCE still imports
+ * KNOWN LIMIT (documented on purpose): the demo app's SOURCE still imports
  * Vendo (layout wiring, vendo/ server files) because de-integrating the app
  * code would be a hand-maintained fork. The fixture therefore measures
  * "restore a working install from a repo whose deps and contract are gone",
  * which exercises the same playbook loop (install → init → hand-wire →
  * doctor) with a head start on wiring. express-host is closest to a truly
- * pre-Vendo host; treat demo rows accordingly in the report.
+ * pre-Vendo host; treat the demo row accordingly in the report.
  */
 
 export interface InstallEvalFixture {
@@ -41,7 +42,7 @@ export interface InstallEvalFixture {
 /**
  * External corpus repos evaluated for the fixture set (spec asks for the
  * corpus repos — the only truly pre-Vendo hosts): every other deep-tier
- * external repo (umami, skateshop, papermark, teable, twenty) needs
+ * external repo (umami, skateshop, papermark, teable) needs
  * dockerized Postgres/Redis plus seeds to boot its dev server, which the
  * install eval deliberately does not drag in — the subject is the install
  * loop, not the host's data stack — and the remaining broad-tier repos have
@@ -74,17 +75,7 @@ export const INSTALL_EVAL_FIXTURES: readonly InstallEvalFixture[] = [
   },
   {
     name: "demo-bank",
-    sourcePath: "apps/demo-bank",
-    devServer: {
-      command: "npm run dev",
-      readinessUrl: "http://127.0.0.1:3000",
-      readinessTimeoutMs: 180_000,
-    },
-    doctorUrl: "http://127.0.0.1:3000/api/vendo",
-  },
-  {
-    name: "demo-accounting",
-    sourcePath: "apps/demo-accounting",
+    sourcePath: "examples/demo-bank",
     devServer: {
       command: "npm run dev",
       readinessUrl: "http://127.0.0.1:3000",
@@ -132,10 +123,6 @@ const EXCLUDED_ROOT_FILES = new Set([
   "bun.lockb",
 ]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isVendoPackageName(name: string): boolean {
   return name === "vendoai" || name.startsWith("@vendoai/");
 }
@@ -170,24 +157,8 @@ export function stripVendoFromPackageJson(source: string): string {
   return `${JSON.stringify(pkg, null, 2)}\n`;
 }
 
-interface CommandResult {
-  code: number | null;
-  stdout: string;
-  stderr: string;
-}
-
 function runGit(args: readonly string[], cwd: string): Promise<CommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
-  });
+  return runCommand("git", { args, cwd });
 }
 
 async function checkedGit(args: readonly string[], cwd: string): Promise<void> {

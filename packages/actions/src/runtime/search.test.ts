@@ -1,8 +1,5 @@
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import type { ToolDescriptor } from "@vendoai/core";
-import { afterEach, describe, expect, it } from "vitest";
-import { composioConnector } from "../connectors/composio.js";
+import { describe, expect, it } from "vitest";
 import { createActions, type ExtractedTool } from "../index.js";
 import { searchToolDescriptors } from "./search.js";
 
@@ -85,88 +82,5 @@ describe("ActionsRegistry.search (over the merged surface)", () => {
     const matches = await registry.search("refund a payout", { limit: 5 });
     expect(matches[0]?.name).toBe("host_payouts_refund");
     expect(matches[0]?.risk).toBe("destructive");
-  });
-
-  const closers: Array<() => Promise<void>> = [];
-  afterEach(async () => {
-    await Promise.all(closers.splice(0).map((close) => close()));
-  });
-
-  it("discovers a bare composioConnector's toolkits by intent: index-ranked, expanded on demand", async () => {
-    // Connection-scoped tool loading (spec 2026-07-20): a bare connector no
-    // longer exposes the full catalog eagerly. The registry search ranks the
-    // toolkit-level discovery index, expands the matching toolkit, and only
-    // THEN returns its real tools — annotated with the connect hint.
-    const toolFetches: string[] = [];
-    const server = createServer((req, res) => {
-      const url = new URL(req.url ?? "/", "http://stub");
-      res.setHeader("content-type", "application/json");
-      if (url.pathname === "/api/v3/auth_configs") {
-        res.end(JSON.stringify({
-          items: [
-            { id: "ac_gmail", toolkit: { slug: "gmail" }, status: "ENABLED" },
-            { id: "ac_linear", toolkit: { slug: "linear" }, status: "ENABLED" },
-            { id: "ac_notion", toolkit: { slug: "notion" }, status: "ENABLED" },
-          ],
-          total_items: 3,
-          next_cursor: null,
-        }));
-        return;
-      }
-      const slugMatch = /^\/api\/v3\/toolkits\/([^/]+)$/.exec(url.pathname);
-      if (slugMatch) {
-        const slug = slugMatch[1]!;
-        const blurbs: Record<string, string> = {
-          gmail: "Send and read email",
-          linear: "Create and track engineering issues",
-          notion: "Create pages and databases",
-        };
-        res.end(JSON.stringify({ slug, name: slug, meta: { description: blurbs[slug] ?? "" } }));
-        return;
-      }
-      if (url.pathname === "/api/v3/tools") {
-        const toolkit = url.searchParams.get("toolkit_slug")!;
-        toolFetches.push(toolkit);
-        const tools: Record<string, { slug: string; description: string }> = {
-          gmail: { slug: "SEND_EMAIL", description: "Send an email" },
-          linear: { slug: "CREATE_ISSUE", description: "Create a tracking issue" },
-          notion: { slug: "CREATE_PAGE", description: "Create a notion page" },
-        };
-        const tool = tools[toolkit]!;
-        res.end(JSON.stringify({ items: [{ slug: tool.slug, toolkit_slug: toolkit, description: tool.description, input_parameters: {} }] }));
-        return;
-      }
-      res.statusCode = 404;
-      res.end("{}");
-    });
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        server.off("error", reject);
-        resolve();
-      });
-    });
-    const { port } = server.address() as AddressInfo;
-    closers.push(async () => {
-      server.close();
-      server.closeAllConnections();
-    });
-
-    const registry = createActions({
-      connectors: [composioConnector({ apiKey: "secret", baseUrl: `http://127.0.0.1:${port}` })],
-    });
-
-    // Nothing loads eagerly — the boot surface has no connector tools.
-    expect(await registry.descriptors()).toEqual([]);
-
-    // Intent-driven discovery: the linear index entry matches, expands, and
-    // its real tool comes back annotated; unrelated toolkits stay unloaded.
-    const matches = await registry.search("create a tracking issue for engineering");
-    expect(matches[0]?.name).toBe("linear_CREATE_ISSUE");
-    expect(matches[0]?.description).toMatch(/connect/i);
-    // linear expanded; "create" also overlaps notion's blurb (bounded fan-out
-    // is fine) — but gmail, with zero word overlap, must stay unloaded.
-    expect(toolFetches).toContain("linear");
-    expect(toolFetches).not.toContain("gmail");
   });
 });

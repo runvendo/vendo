@@ -14,31 +14,41 @@
       "name": "listTasks",
       "method": "GET",
       "path": "/api/tasks",
-      "readOrWrite": "read"
+      "readOrWrite": "read",
+      "inputSchema": true,
+      "outputSchema": true
     },
     {
       "name": "createTask",
       "method": "POST",
       "path": "/api/tasks",
-      "readOrWrite": "write"
+      "readOrWrite": "write",
+      "inputSchema": true,
+      "outputSchema": true
     },
     {
       "name": "getTask",
       "method": "GET",
       "path": "/api/tasks/{id}",
-      "readOrWrite": "read"
+      "readOrWrite": "read",
+      "inputSchema": true,
+      "outputSchema": true
     },
     {
       "name": "deleteTask",
       "method": "DELETE",
       "path": "/api/tasks/{id}",
-      "readOrWrite": "write"
+      "readOrWrite": "write",
+      "inputSchema": true,
+      "outputSchema": false
     },
     {
       "name": "completeTask",
       "method": "POST",
       "path": "/api/tasks/{id}/complete",
-      "readOrWrite": "write"
+      "readOrWrite": "write",
+      "inputSchema": true,
+      "outputSchema": true
     }
   ],
   "annotations": [

@@ -11,7 +11,8 @@ on:
 # id-token: write powers npm trusted publishing (OIDC) AND provenance: the
 # workflow's OIDC token is exchanged for a short-lived npm credential, so
 # there is no NPM_TOKEN secret anywhere. Each package on npmjs.com lists this
-# repo + this workflow file as its trusted publisher (see PUBLISH.md).
+# repo + this workflow file as its trusted publisher (see CONTRIBUTING.md,
+# "Releases").
 #
 # The publish itself uses the npm CLI (>= 11.5.1), not `pnpm publish`: pnpm
 # 11.10's own token exchange 404s against npmjs ("Unknown error"), verified
@@ -54,6 +55,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # `pnpm test` now includes the UI smoke pack (`turbo run test:ui`), a real
+      # Chromium run — so the release gate needs the browser the CI browser job
+      # installs too.
+      - run: pnpm --filter @vendoai/ui exec playwright install --with-deps chromium
       - run: pnpm test
         env:
           POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_test

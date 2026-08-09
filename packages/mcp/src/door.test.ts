@@ -4,10 +4,13 @@ import {
   type AuditEvent,
   type BlobStore,
   type Guard,
+  type Json,
+  type Membership,
   type Principal,
   type RecordQuery,
   type RecordStore,
   type StoreAdapter,
+  type ToolCall,
   type ToolOutcome,
   type ToolRegistry,
   type VendoTheme,
@@ -15,6 +18,7 @@ import {
 } from "@vendoai/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
 import { exportJWK, generateKeyPair, jwtVerify, SignJWT, type KeyLike } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMcpDoorWithState } from "./door.js";
@@ -23,6 +27,7 @@ import {
   type AppsPort,
   type HostOAuthAdapter,
   type McpDoor,
+  type TurnCredentialPort,
 } from "./index.js";
 import type {
   McpDoorState,
@@ -35,6 +40,13 @@ const BASE = "https://product.example/api/vendo/mcp";
 const PROXIED_BASE = "http://door.internal:8787/api/vendo/mcp";
 const REDIRECT = "https://client.example/callback";
 const VERIFIER = "a-very-long-pkce-verifier-that-is-valid-for-the-test-suite-1234567890";
+/** Two service keys, deliberately spelled nothing alike, because a key has no
+ *  format the door checks. The label is `svc:` plus the first 8 hex of the key's
+ *  sha256 — pinned literally here so a change to that derivation cannot pass. */
+const SERVICE_KEY = "vsk_0123456789abcdef0123456789abcdef0123456789abcdef";
+const SERVICE_KEY_B = "any opaque string will do - the door never parses a key";
+const SERVICE_CLIENT = "svc:5c006a4c";
+const SERVICE_CLIENT_B = "svc:67ed3026";
 const CONSENT_THEME: VendoTheme = {
   colors: {
     background: "#101820",
@@ -230,6 +242,47 @@ describe("createMcpDoor routing and OAuth", () => {
     const connected = await connect(harness.door, tokens.access_token);
     expect((await connected.client.listTools()).tools.length).toBeGreaterThan(0);
     await connected.client.close();
+  });
+
+  it("keeps the standalone SSE slot reachable when a stream dies unread", async () => {
+    // The door's 409 recovery survived the connector-discovery cutover, but its
+    // only coverage did not: those tests drove it through `search_connectors`'
+    // `list_changed` announcement, which was deleted with the tool. The recovery
+    // is what it always was — measured live 2026-08-03, a standalone stream died
+    // silently, the client's reconnects came back 409 "Only one SSE stream is
+    // allowed per session", it gave up, and the session had no notification
+    // channel left for the rest of its life. The transport frees a slot only
+    // through the body's `cancel`, and a socket that just dies never fires it;
+    // an unread, uncancelled body is exactly that state.
+    //
+    // Raw HTTP, not the SDK client: the client owns its own reconnect policy and
+    // would never leave a session sitting in this state.
+    const harness = makeHarness();
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const initialized = await harness.door.handler(mcpRequest(tokens.access_token));
+    const sessionId = initialized.headers.get("mcp-session-id")!;
+
+    // Every dead stream is HELD, and that is load-bearing: a body the runtime
+    // collects has its `cancel` fired for it, which frees the slot by accident
+    // and would prove nothing about the door. Held, the only thing that can free
+    // it is the door's own recovery.
+    const dead: Response[] = [await harness.door.handler(sseRequest(tokens.access_token, sessionId))];
+    expect(dead[0]!.status).toBe(200);
+
+    // Twice, because one recovery is not the property: the release has to leave
+    // the DOOR holding the reconnected stream, or the second death is the
+    // permanent one — a 409 nothing can free.
+    for (let death = 0; death < 2; death += 1) {
+      const reconnected = await harness.door.handler(sseRequest(tokens.access_token, sessionId));
+      expect(reconnected.status).toBe(200);
+      expect(reconnected.headers.get("content-type")).toContain("text/event-stream");
+      dead.push(reconnected);
+    }
+    expect(dead).toHaveLength(3);
+
+    // And none of it disturbed the session itself.
+    expect((await harness.door.handler(mcpRequest(tokens.access_token, sessionId))).status).toBe(200);
   });
 
   it("returns the exact RFC 9728 challenge for missing and invalid bearer tokens", async () => {
@@ -502,25 +555,15 @@ describe("createMcpDoor routing and OAuth", () => {
     await connectedA.client.close().catch(() => undefined);
   });
 
-  it("revokes a pre-family authorization code during a rolling deployment", async () => {
+  it("refuses an authorization code still outstanding when the client was revoked", async () => {
     const harness = makeHarness();
     const client = await register(harness.door);
-    const code = "vmcd_pre_family_code";
-    await harness.store.records("vendo_mcp_grants").put({
-      id: "mcpg_pre_family_code",
-      data: {
-        kind: "code",
-        subject: "user_1",
-        clientId: client.body.client_id,
-        resource: BASE,
-        scopes: ["read", "write"],
-        codeChallenge: await pkceChallenge(VERIFIER),
-        redirectUri: REDIRECT,
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      },
-      refs: { kind: "code", token_hash: await sha256Hex(code) },
-    });
+    const auth = await authorize(harness.door, client.body.client_id);
+    const code = new URL(auth.headers.get("location")!).searchParams.get("code")!;
 
+    // A code lives a minute; a revoke inside that window has to reach it. The
+    // family anchor is what does it — the code carries the family id and the
+    // exchange re-checks that the family is still active.
     await harness.door.revokeClient("user_1", client.body.client_id);
 
     const exchangeResponse = await exchange(harness.door, {
@@ -531,7 +574,22 @@ describe("createMcpDoor routing and OAuth", () => {
     });
     expect(exchangeResponse.status).toBe(400);
     expect(await exchangeResponse.json()).toMatchObject({ error: "invalid_grant" });
-    expect(harness.store.rows("vendo_mcp_grants")[0]?.data.revokedAt).toEqual(expect.any(String));
+  });
+
+  it("revokes an outstanding service-key access grant, which carries no family", async () => {
+    const harness = makeHarness({ serviceAuth: { keys: [SERVICE_KEY] } });
+    const exchanged = await serviceExchange(harness.door);
+    const { access_token: token } = await exchanged.json() as TokenResponse;
+    expect((await harness.door.handler(mcpRequest(token))).status).toBe(200);
+
+    // The service-key exchange mints ONE access grant and nothing else — no
+    // refresh token, so no rotation and no family anchor to hang a revocation
+    // on. Per-grant revocation is the only thing that can reach it.
+    await harness.door.revokeClient("user_1", "vendo-service");
+    expect((await harness.door.handler(mcpRequest(token))).status).toBe(200);
+
+    await harness.door.revokeClient("user_1", `svc:${(await sha256Hex(SERVICE_KEY)).slice(0, 8)}`);
+    expect((await harness.door.handler(mcpRequest(token))).status).toBe(401);
   });
 
   it("consumes an authorization code the moment it is presented, even on PKCE failure", async () => {
@@ -853,12 +911,14 @@ describe("createMcpDoor configured canonical base URL (ENG-333)", () => {
     expect(await prm.json()).toMatchObject({ resource: BASE });
   });
 
-  it("uses only the origin of a base URL that carries a path", async () => {
+  it("folds a path on the base URL into the advertised resource", async () => {
     const harness = makeHarness({ baseUrl: "https://product.example/some/app/path" });
     const prm = await harness.door.handler(new Request(
       "http://door.internal:8787/.well-known/oauth-protected-resource/api/vendo/mcp",
     ));
-    expect(await prm.json()).toMatchObject({ resource: BASE });
+    expect(await prm.json()).toMatchObject({
+      resource: "https://product.example/some/app/path/api/vendo/mcp",
+    });
   });
 
   it("advertises the external issuer alongside the public resource under remoteAs", async () => {
@@ -880,6 +940,140 @@ describe("createMcpDoor configured canonical base URL (ENG-333)", () => {
     for (const baseUrl of ["not a url", "ftp://product.example", "https://user:secret@product.example"]) {
       expect(() => makeHarness({ baseUrl }), baseUrl).toThrow(TypeError);
     }
+  });
+});
+
+describe("createMcpDoor mounted under a path prefix", () => {
+  // A self-hosted deployment living under `https://product.example/maple`. The
+  // reverse proxy strips `/maple` before the request reaches the process, so
+  // the door sees only the door-local path — the base URL's path is the one
+  // channel that can carry the prefix.
+  const PREFIXED_BASE_URL = "https://product.example/maple";
+  const PREFIXED_RESOURCE = "https://product.example/maple/api/vendo/mcp";
+  const STRIPPED_MOUNT = "http://door.internal:8787/api/vendo/mcp";
+
+  it("advertises OAuth endpoints under the same prefix the door is mounted on", async () => {
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL });
+    const as = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/oauth-authorization-server/api/vendo/mcp",
+    ));
+    expect(await as.json()).toMatchObject({
+      issuer: PREFIXED_RESOURCE,
+      authorization_endpoint: `${PREFIXED_RESOURCE}/authorize`,
+      token_endpoint: `${PREFIXED_RESOURCE}/token`,
+      revocation_endpoint: `${PREFIXED_RESOURCE}/revoke`,
+      registration_endpoint: `${PREFIXED_RESOURCE}/register`,
+    });
+  });
+
+  it("advertises the prefixed resource in the protected-resource metadata", async () => {
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL });
+    const prm = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/oauth-protected-resource/api/vendo/mcp",
+    ));
+    expect(await prm.json()).toEqual({
+      resource: PREFIXED_RESOURCE,
+      authorization_servers: [PREFIXED_RESOURCE],
+      bearer_methods_supported: ["header"],
+    });
+  });
+
+  it("names a prefix-local metadata URL in the 401 challenge", async () => {
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL });
+    const challenge = await harness.door.handler(new Request(STRIPPED_MOUNT, { method: "POST" }));
+    expect(challenge.status).toBe(401);
+    // Prefix-local, not RFC 9728 root-insertion: the deployment only owns
+    // paths under `/maple`, so a root well-known URL would never route to it.
+    expect(challenge.headers.get("www-authenticate")).toBe(
+      'Bearer resource_metadata="https://product.example/maple/.well-known/oauth-protected-resource/api/vendo/mcp"',
+    );
+  });
+
+  it("advertises the prefixed transport URL on the server card", async () => {
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL, mount: "/api/vendo/mcp" });
+    const card = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/mcp/server-card.json",
+    ));
+    expect(await card.json()).toMatchObject({
+      transports: [{ type: "streamable-http", url: PREFIXED_RESOURCE }],
+      authorization: {
+        type: "oauth2",
+        resource_metadata: "https://product.example/maple/.well-known/oauth-protected-resource/api/vendo/mcp",
+      },
+    });
+  });
+
+  it("answers discovery whose mount suffix already carries the prefix, without doubling it", async () => {
+    // RFC 8414/9728 root-insertion: a spec client derives the well-known URL
+    // from the FULL resource URI, so the suffix arrives prefix-INCLUDING.
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL });
+    const prm = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/oauth-protected-resource/maple/api/vendo/mcp",
+    ));
+    expect(await prm.json()).toMatchObject({ resource: PREFIXED_RESOURCE });
+  });
+
+  it("serves a request that still carries the public prefix identically", async () => {
+    // A prefix-PRESERVING mount (no stripping proxy) reaches the same door.
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL });
+    const challenge = await harness.door.handler(new Request(
+      "http://door.internal:8787/maple/api/vendo/mcp",
+      { method: "POST" },
+    ));
+    expect(challenge.status).toBe(401);
+    expect(challenge.headers.get("www-authenticate")).toBe(
+      'Bearer resource_metadata="https://product.example/maple/.well-known/oauth-protected-resource/api/vendo/mcp"',
+    );
+  });
+
+  it("keeps the consent flow under the prefix", async () => {
+    const returnTos: string[] = [];
+    const harness = makeHarness({
+      baseUrl: PREFIXED_BASE_URL,
+      oauth: {
+        async session(_req, ctx) {
+          returnTos.push(ctx.returnTo);
+          return { subject: "user_1" };
+        },
+        async principal(subject) { return { kind: "user", subject }; },
+      },
+    });
+    const registration = await register(harness.door, {}, STRIPPED_MOUNT);
+    const page = await authorize(
+      harness.door,
+      registration.body.client_id,
+      { resource: PREFIXED_RESOURCE },
+      STRIPPED_MOUNT,
+    );
+    const html = await page.text();
+    // The user's browser reaches the door THROUGH the prefix; a form action or
+    // returnTo without it lands on the host's own 404 page.
+    expect(htmlAttribute(html, "form", "action")).toContain(`${PREFIXED_RESOURCE}/authorize?`);
+    expect(returnTos[0]).toContain(`${PREFIXED_RESOURCE}/authorize?`);
+  });
+
+  it("binds the whole OAuth flow and RFC 8707 audience to the prefixed resource", async () => {
+    const harness = makeHarness({ baseUrl: PREFIXED_BASE_URL });
+    const registration = await register(harness.door, {}, STRIPPED_MOUNT);
+    const auth = await authorize(
+      harness.door,
+      registration.body.client_id,
+      { resource: PREFIXED_RESOURCE },
+      STRIPPED_MOUNT,
+    );
+    const code = new URL(auth.headers.get("location")!).searchParams.get("code")!;
+    const exchanged = await exchange(harness.door, {
+      code,
+      client_id: registration.body.client_id,
+      code_verifier: VERIFIER,
+      resource: PREFIXED_RESOURCE,
+    }, STRIPPED_MOUNT);
+    expect(exchanged.status).toBe(200);
+    const tokens = await exchanged.json() as TokenResponse;
+
+    const response = await harness.door.handler(mcpRequest(tokens.access_token, undefined, STRIPPED_MOUNT));
+    expect(response.status).toBe(200);
+    expect(harness.principalSubjects).toEqual(["user_1"]);
   });
 });
 
@@ -955,6 +1149,54 @@ describe("createMcpDoor remote authorization server trust", () => {
     const response = await harness.door.handler(mcpRequest(token));
     expect(response.status).toBe(401);
     expect(harness.principalSubjects).toEqual([]);
+  });
+
+  it("accepts an RS256 access token, the default of the mainstream authorization servers", async () => {
+    const as = await remoteAsFixture("RS256");
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({
+      remoteAs: { issuer: as.issuer, audience: BASE },
+      principal: (subject) => ({ kind: "user", subject }),
+    });
+
+    const response = await harness.door.handler(mcpRequest(await as.mint({ sub: "rs256_user" })));
+
+    expect(response.status).toBe(200);
+    expect(harness.principalSubjects).toEqual(["rs256_user"]);
+  });
+
+  it("rejects an HS256 token forged from the published RSA key — the algorithm allowlist stays asymmetric", async () => {
+    const as = await remoteAsFixture("RS256");
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({ remoteAs: { issuer: as.issuer, audience: BASE } });
+
+    // Classic algorithm confusion: sign HS256 with the public modulus everyone
+    // can read off the JWKS. Only the allowlist stands between this and a token
+    // anyone can mint.
+    const secret = new TextEncoder().encode((await as.publicJwk()).n as string);
+    const forged = await new SignJWT({})
+      .setProtectedHeader({ alg: "HS256", kid: as.kid() })
+      .setIssuer(as.issuer)
+      .setAudience(BASE)
+      .setSubject("forged_user")
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(secret);
+
+    expect((await harness.door.handler(mcpRequest(forged))).status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
+  it("refuses to compose a door whose remote authorization server has a blank issuer or audience", async () => {
+    // jose skips the `aud`/`iss` VALUE check when the expected value is falsy,
+    // so a blank one silently turns the audience binding off and every token
+    // that server ever signed becomes good at this door.
+    for (const remoteAs of [
+      { issuer: "https://as.example", audience: "" },
+      { issuer: "", audience: BASE },
+    ]) {
+      expect(() => makeHarness({ remoteAs })).toThrow(/issuer and audience/);
+    }
   });
 
   it("rejects a JWT whose signature does not match the trusted key", async () => {
@@ -1131,6 +1373,58 @@ describe("createMcpDoor login federation", () => {
   });
 });
 
+/** F4 (wave-3 independent check) — build contract §9.1/§9.3. `can()` reads the
+ *  caller's orgs from the ctx and NEVER queries them, so a RunContext with no
+ *  `memberships` can never match an `org:`/`team:` grant: over a door without
+ *  this seam a team app shared with you is absent from list and not-found on
+ *  open. The wire, the harness and the automations engine all get the seam; this
+ *  is the fourth door. */
+describe("createMcpDoor asserts the caller's orgs (§9.1)", () => {
+  it("resolves the host's memberships onto every RunContext it mints", async () => {
+    const seen: Array<Parameters<AppsPort["list"]>[0]> = [];
+    const asked: Principal[] = [];
+    const harness = makeHarness({
+      memberships: async (principal) => {
+        asked.push(principal);
+        return [{ org: "maple", display: "Maple Bank", teams: ["support"] }];
+      },
+      apps: {
+        async list(ctx) { seen.push(ctx); return []; },
+        async open() { throw new Error("unused"); },
+        async call() { throw new Error("unused"); },
+      },
+    });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    await connected.client.callTool({ name: "host_lookup", arguments: { query: "x" } });
+    // The apps half of §9.3 goes through the door's own ride-along tool, which
+    // is the verb a shared team app would be missing from.
+    await connected.client.callTool({ name: "vendo_apps_list", arguments: {} });
+
+    // The seam is keyed on the Principal, exactly as §9.1 freezes it.
+    expect(asked[0]).toEqual({ kind: "user", subject: "user_1" });
+    // ...and the answer REACHES the ctx — the assertion that was missing, and
+    // the only thing `can()` ever reads.
+    expect(harness.executions[0]?.ctx.memberships)
+      .toEqual([{ org: "maple", display: "Maple Bank", teams: ["support"] }]);
+    expect(seen[0]?.memberships)
+      .toEqual([{ org: "maple", display: "Maple Bank", teams: ["support"] }]);
+  });
+
+  it("leaves memberships absent when the host asserts none — every unkeyed deployment", async () => {
+    const harness = makeHarness();
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    await connected.client.callTool({ name: "host_lookup", arguments: { query: "x" } });
+
+    expect(harness.executions[0]?.ctx).not.toHaveProperty("memberships");
+  });
+});
+
 describe("createMcpDoor MCP protocol", () => {
   it("uses the real SDK for descriptors and all in-band outcome mappings", async () => {
     let outcome: ToolOutcome = { status: "ok", output: { answer: 42 } };
@@ -1202,9 +1496,12 @@ describe("createMcpDoor MCP protocol", () => {
     const harness = makeHarness({ principal: () => principal });
     const registration = await register(harness.door);
     const tokens = await issue(harness.door, registration.body.client_id);
-    const connected = await connect(harness.door, tokens.access_token);
-    await connected.client.listTools();
-    const sessionId = connected.transport.sessionId!;
+    // Raw HTTP, not the SDK client: the client's unawaited background SSE GET
+    // could observe the null principal first, kill the subject, and hand THIS
+    // request the 404 — exactly one request may be in flight across the flip.
+    const initialized = await harness.door.handler(mcpRequest(tokens.access_token));
+    expect(initialized.status).toBe(200);
+    const sessionId = initialized.headers.get("mcp-session-id")!;
 
     principal = null;
     const revoked = await harness.door.handler(mcpRequest(tokens.access_token, sessionId));
@@ -1614,6 +1911,66 @@ describe("createMcpDoor MCP protocol", () => {
   });
 });
 
+/**
+ * `internal: true` is AUTHORITATIVE, whatever else the caller passed.
+ *
+ * `createMcpDoor` is public API and `internal` is documented as the way to ask
+ * for a turn-only door. It was first shipped read in ONE place — a constructor
+ * guard — while the runtime branched on "is there an oauth adapter", so
+ * `createMcpDoor({ internal: true, oauth })` served the WHOLE OUTSIDE DOOR:
+ * discovery 200, a client that actually completed dynamic registration, and a
+ * `www-authenticate` challenge naming the way in. The caller got the exact
+ * opposite of what they asked for. These pin the flag, with oauth present.
+ */
+describe("createMcpDoor internal: true is authoritative even when an oauth adapter is passed", () => {
+  const internalHarness = () => makeHarness({ internal: true, mount: "/api/vendo/mcp" });
+
+  it("serves NO discovery: an outside client cannot even learn the door is there", async () => {
+    const { door } = internalHarness();
+    for (const path of [
+      "https://product.example/.well-known/oauth-protected-resource/api/vendo/mcp",
+      "https://product.example/.well-known/oauth-authorization-server/api/vendo/mcp",
+      "https://product.example/.well-known/mcp/server-card.json",
+      "https://product.example/.well-known/mcp-server-card",
+    ]) {
+      const response = await door.handler(new Request(path));
+      expect(response.status, path).toBe(404);
+    }
+  });
+
+  it("registers NOBODY: the authorization server and the connect page are not there", async () => {
+    const { door } = internalHarness();
+    const registered = await door.handler(new Request(`${BASE}/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ client_name: "outside", redirect_uris: [REDIRECT] }),
+    }));
+    // 201 here was the defect: a real client id was minted against a door that
+    // had been asked to serve nobody.
+    expect(registered.status).toBe(404);
+
+    for (const path of [`${BASE}/authorize?response_type=code&client_id=x`, `${BASE}/token`, `${BASE}/connect`]) {
+      const response = await door.handler(new Request(path, path.endsWith("/token") ? { method: "POST" } : {}));
+      expect(response.status, path).toBe(404);
+    }
+  });
+
+  it("refuses the mount FLAT: a 401 that names no resource metadata to register against", async () => {
+    const { door } = internalHarness();
+    const response = await door.handler(new Request(BASE, {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+        "mcp-protocol-version": "2025-11-25",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    }));
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toBeNull();
+  });
+});
+
 describe("createMcpDoor connect page", () => {
   const get = (door: McpDoor, path = `${BASE}/connect`) => door.handler(new Request(path));
 
@@ -1729,6 +2086,25 @@ describe("createMcpDoor tool menu, titles, and annotations", () => {
     await connected.client.close();
   });
 
+  it("says nothing about a tool NOBODY graded — an ungraded listing carries neither hint", async () => {
+    const { connected } = await open({
+      extraDescriptors: [
+        { name: "host_maybe", description: "Nobody graded this", inputSchema: { type: "object" }, risk: "ungraded" as const, title: "Maybe" },
+        { name: "host_unknown", description: "Nobody graded this either", inputSchema: { type: "object" }, risk: "ungraded" as const },
+      ],
+    });
+    const listed = await connected.client.listTools();
+    const byName = new Map(listed.tools.map((tool) => [tool.name, tool]));
+
+    // MCP's default for `destructiveHint` is TRUE, so emitting `false` was an
+    // active claim of safety about a tool nobody judged — and `true` would be
+    // the opposite guess. Omitted, the client keeps its own conservative
+    // default. `readOnlyHint: false` is the same unfounded claim, so it goes too.
+    expect(byName.get("host_maybe")?.annotations).toEqual({ title: "Maybe" });
+    expect(byName.get("host_unknown")?.annotations).toEqual({});
+    await connected.client.close();
+  });
+
   it("treats an empty title as no title (generated files can carry one; the wire must not)", async () => {
     const { connected } = await open({
       extraDescriptors: [
@@ -1783,7 +2159,7 @@ describe("createMcpDoor tool menu, titles, and annotations", () => {
   });
 
   it("re-resolves the menu per listing, so a lazily expanded tool becomes visible without a restart", async () => {
-    // The registry GROWS mid-session (a lazy connector's expandToolkits), and
+    // The registry GROWS mid-session (an `add()`), and
     // the umbrella's menu provider reads the registry. A door that resolved the
     // menu once would filter the late tool out forever.
     let expanded = false;
@@ -1841,19 +2217,926 @@ describe("createMcpDoor tool menu, titles, and annotations", () => {
     expect(listed.tools.map((tool) => tool.name)).toEqual(["host_lookup", "host_pay", "host_wipe", "host_admin"]);
     await connected.client.close();
   });
+
+  it("never offers a withheld tool — not even a vendo_ one the menu can never curate away", async () => {
+    // The prefix bypass exists so a host's curated menu cannot delete Vendo's
+    // own plumbing. `withholdTools` is the deployment's own decision about ITS
+    // door, so it is checked FIRST — otherwise it could hold back everything
+    // except the tools it most needs to.
+    const { connected } = await open({
+      extraDescriptors: [
+        ...surfaceDescriptors,
+        { name: "vendo_make", description: "Make a screen", inputSchema: { type: "object" }, risk: "read" as const },
+        { name: "vendo_apps_pin", description: "Pin an app", inputSchema: { type: "object" }, risk: "write" as const },
+      ],
+      withholdTools: ["vendo_apps_pin", "host_admin"],
+    });
+
+    const listed = (await connected.client.listTools()).tools.map((tool) => tool.name);
+    expect(listed).not.toContain("vendo_apps_pin");
+    expect(listed).not.toContain("host_admin");
+    expect(listed).toContain("vendo_make");
+    expect(listed).toContain("host_lookup");
+    await connected.client.close();
+  });
+
+  it("answers a call to a withheld tool with the same in-band not-found an unknown name gets", async () => {
+    const { harness, connected } = await open({
+      extraDescriptors: [
+        { name: "vendo_apps_pin", description: "Pin an app", inputSchema: { type: "object" }, risk: "write" as const },
+      ],
+      withholdTools: ["vendo_apps_pin"],
+    });
+
+    const before = harness.executions.length;
+    const refused = await connected.client.callTool({ name: "vendo_apps_pin", arguments: {} });
+    expect(refused).toMatchObject({
+      isError: true,
+      content: [{ type: "text", text: expect.stringContaining("not-found") }],
+    });
+    // Not offered means not callable: the tool never ran.
+    expect(harness.executions.length).toBe(before);
+    await connected.client.close();
+  });
+
+  it("withholds an apps ride-along by name, so the apps path is not a way around it", async () => {
+    const { connected } = await open({
+      withholdTools: ["vendo_apps_call"],
+      apps: {
+        async list() { return []; },
+        async open() { return { kind: "tree" as const, payload: { formatVersion: "vendo-genui/v2", root: "root", nodes: [] } }; },
+        async call() { return {}; },
+      },
+    });
+
+    const listed = (await connected.client.listTools()).tools.map((tool) => tool.name);
+    expect(listed).toContain("vendo_apps_list");
+    expect(listed).toContain("vendo_apps_open");
+    expect(listed).not.toContain("vendo_apps_call");
+    const refused = await connected.client.callTool({ name: "vendo_apps_call", arguments: {} });
+    expect(refused).toMatchObject({ isError: true });
+    await connected.client.close();
+  });
 });
+
+/**
+ * D5's declared result shape, measured against what the OFFICIAL client actually
+ * does with it: `tools/list` is parsed with the SDK's own `ToolSchema` (one bad
+ * schema rejects the WHOLE listing) and `tools/call` THROWS on any non-`isError`
+ * result whose `structuredContent` is missing or fails the advertised schema.
+ * Every assertion here therefore goes through the real SDK client.
+ */
+describe("createMcpDoor declared output schemas on the wire", () => {
+  /** The shape a generated tools.json really carries: named fields, plus a
+   *  `required` and a closed `additionalProperties` the door cannot honour. */
+  const declared = {
+    type: "object",
+    properties: {
+      rows: { type: "array", items: { type: "object", properties: { id: { type: "string" } } } },
+      total: { type: "integer" },
+    },
+    required: ["rows", "total"],
+    additionalProperties: false,
+  };
+
+  /** A marker no other schema in this file carries, so the door's compile cache
+   *  (module-level, and warm from the tests above) is guaranteed to miss it. */
+  const COMPILE_PROBE = "compile-cache probe";
+
+  const declaring = (name: string, outputSchema: Record<string, unknown>) => ({
+    name,
+    description: `the ${name} tool`,
+    inputSchema: { type: "object", properties: {} },
+    outputSchema,
+    risk: "read" as const,
+  });
+
+  async function open(options: HarnessOptions) {
+    const harness = makeHarness(options);
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    return { harness, connected: await connect(harness.door, tokens.access_token) };
+  }
+
+  it("keeps the declared fields and types, and drops only what it cannot enforce", async () => {
+    const { connected } = await open({ extraDescriptors: [declaring("host_report", declared)] });
+    const listed = await connected.client.listTools();
+    expect(listed.tools.find((tool) => tool.name === "host_report")?.outputSchema).toEqual({
+      // The field names and types are the whole of D5's value to the model, and
+      // they survive verbatim...
+      type: "object",
+      properties: declared.properties,
+      // ...while `required` and a closed `additionalProperties` do not: the
+      // client validates EVERY ok result against this, and the door has to be
+      // able to return results the host never declared.
+      additionalProperties: true,
+    });
+    await connected.client.close();
+  });
+
+  it("drops every top-level keyword that could REJECT a result the door has no choice about", async () => {
+    // Each of these was measured against the official client's own validator: a
+    // required nested in `allOf`, a `maxProperties` and a `not` each turned a
+    // served result into a client throw. `properties` and `type` survive; the
+    // power to reject does not.
+    const hostile = {
+      type: "object",
+      properties: { rows: { type: "array" }, nested: { type: "object", required: ["id"] } },
+      allOf: [{ required: ["rows"] }],
+      anyOf: [{ required: ["rows"] }],
+      maxProperties: 2,
+      minProperties: 2,
+      not: { properties: { rows: { const: null } } },
+      if: { required: ["rows"] },
+      then: { required: ["total"] },
+      propertyNames: { pattern: "^[a-z]+$" },
+      dependentRequired: { rows: ["total"] },
+      unevaluatedProperties: false,
+    };
+    const { connected } = await open({ extraDescriptors: [declaring("host_report", hostile)] });
+    const listed = await connected.client.listTools();
+    expect(listed.tools.find((tool) => tool.name === "host_report")?.outputSchema).toEqual({
+      type: "object",
+      // A NESTED `required` survives deliberately: it constrains the value of a
+      // field the host declared, so it can only reject the host's own result —
+      // never a reserved-key envelope, whose keys no host schema mentions.
+      properties: hostile.properties,
+      additionalProperties: true,
+    });
+    await connected.client.close();
+  });
+
+  it("drops the two keywords that reject a key without ever NAMING one", async () => {
+    // Round 5, both proven against the SDK's own validator before the fix.
+    // `patternProperties` types keys by REGEX, so "^vendo" type-rejected
+    // `vendo_truncated: true` (and "^.*$" would have taken `vendo_value` too) —
+    // no reserved-name check could see it, because the name is never written.
+    const patterned = {
+      type: "object",
+      properties: { answer: { type: "string" } },
+      patternProperties: { "^vendo": { type: "string" } },
+    };
+    // A top-level `$ref` reaches AROUND the strip: the `required` and the closed
+    // `additionalProperties` live in `$defs`, where deleting top-level keywords
+    // never looks, and both envelopes failed. Not reachable from the shipped
+    // OpenAPI extractor (it inlines refs) — a hand-written outputSchema is.
+    const referencing = {
+      type: "object",
+      $ref: "#/$defs/Row",
+      $defs: { Row: { type: "object", required: ["id"], additionalProperties: false, properties: { id: { type: "string" } } } },
+    };
+    const { connected } = await open({
+      extraDescriptors: [declaring("host_patterned", patterned), declaring("host_referencing", referencing)],
+      getOutcome: (call) => call.tool === "host_patterned"
+        ? { status: "ok", output: { vendo_truncated: true, vendo_chars: 91_000, vendo_preview: "{\"answer\"" } }
+        : { status: "ok", output: "just text" },
+    });
+
+    const listed = await connected.client.listTools();
+    const byName = new Map(listed.tools.map((tool) => [tool.name, tool]));
+    expect(byName.get("host_patterned")?.outputSchema).toEqual({
+      type: "object",
+      properties: { answer: { type: "string" } },
+      additionalProperties: true,
+    });
+    // `$defs` stays: an unreferenced definition constrains nothing, and the door
+    // only removes what can reject.
+    expect(byName.get("host_referencing")?.outputSchema).toEqual({
+      type: "object",
+      $defs: referencing.$defs,
+      additionalProperties: true,
+    });
+
+    // The proof: the client compiled both advertised schemas and validates every
+    // ok result against them, so a kept keyword would throw right here.
+    const truncated = await connected.client.callTool({ name: "host_patterned", arguments: {} });
+    expect(truncated.isError).toBeFalsy();
+    expect(truncated.structuredContent).toMatchObject({ vendo_truncated: true });
+    const wrapped = await connected.client.callTool({ name: "host_referencing", arguments: {} });
+    expect(wrapped.isError).toBeFalsy();
+    expect(wrapped.structuredContent).toEqual({ vendo_value: "just text" });
+    await connected.client.close();
+  });
+
+  it("drops the two keywords that pin the WHOLE object, which the strip above them cannot reach", async () => {
+    // Round 6: `const` and `enum` do not reject a KEY, they reject the object,
+    // so deleting `required`/`additionalProperties` around them changed nothing —
+    // both envelopes came back "must be equal to constant"/"one of the allowed
+    // values" from the client's own validator. The last two of this family: a
+    // swept Ajv run cleared bare `$defs`, `definitions`, `$recursiveRef` and a
+    // nested `required`.
+    const pinned = {
+      type: "object",
+      properties: { id: { type: "string" } },
+      const: { id: "x" },
+    };
+    const listed_ = {
+      type: "object",
+      properties: { id: { type: "string" } },
+      enum: [{ id: "x" }, { id: "y" }],
+    };
+    const { connected } = await open({
+      extraDescriptors: [declaring("host_pinned", pinned), declaring("host_listed", listed_)],
+      getOutcome: (call) => call.tool === "host_pinned"
+        ? { status: "ok", output: { vendo_truncated: true, vendo_chars: 91_000, vendo_preview: "{\"id\"" } }
+        : { status: "ok", output: "just text" },
+    });
+
+    const listed = await connected.client.listTools();
+    const byName = new Map(listed.tools.map((tool) => [tool.name, tool]));
+    for (const name of ["host_pinned", "host_listed"]) {
+      expect(byName.get(name)?.outputSchema, name).toEqual({
+        type: "object",
+        properties: { id: { type: "string" } },
+        additionalProperties: true,
+      });
+    }
+
+    // The proof: the client compiled both advertised schemas and validates every
+    // ok result against them, so a kept keyword throws right here.
+    const truncated = await connected.client.callTool({ name: "host_pinned", arguments: {} });
+    expect(truncated.isError).toBeFalsy();
+    expect(truncated.structuredContent).toMatchObject({ vendo_truncated: true });
+    const wrapped = await connected.client.callTool({ name: "host_listed", arguments: {} });
+    expect(wrapped.isError).toBeFalsy();
+    expect(wrapped.structuredContent).toEqual({ vendo_value: "just text" });
+    await connected.client.close();
+  });
+
+  it("a TRUNCATED ok output validates even against a schema built to reject it", async () => {
+    // Exactly what `toolOutputCap` substitutes for a large output (agent/tools.ts
+    // capOutcome) — a shape no host schema mentions. Against the unsanitized
+    // schema the client threw "Structured content does not match the tool's
+    // output schema" and the model never saw its answer. Every rejecting path the
+    // AI review PROVED, in one schema: allOf-required, maxProperties, not, and a
+    // declared property whose name collides with a reserved envelope key.
+    const envelope = {
+      vendo_truncated: true,
+      vendo_chars: 91_000,
+      vendo_preview: '{"rows":[{"id":"a"}',
+    };
+    const hostile = {
+      type: "object",
+      properties: { rows: { type: "array" }, vendo_preview: { type: "object" } },
+      allOf: [{ required: ["rows"] }],
+      maxProperties: 1,
+      not: { properties: { vendo_truncated: { const: true } } },
+    };
+    const { connected } = await open({
+      extraDescriptors: [declaring("host_report", hostile)],
+      getOutcome: () => ({ status: "ok", output: envelope }),
+    });
+    const listed = await connected.client.listTools();
+    // The colliding declaration is gone from the wire, so the reserved key falls
+    // under the open `additionalProperties` instead of being type-checked.
+    expect(listed.tools.find((tool) => tool.name === "host_report")?.outputSchema).toEqual({
+      type: "object",
+      properties: { rows: { type: "array" } },
+      additionalProperties: true,
+    });
+
+    const result = await connected.client.callTool({ name: "host_report", arguments: {} });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toEqual(envelope);
+    await connected.client.close();
+  });
+
+  it("wraps EVERY non-record ok output under the reserved key, declared or not", async () => {
+    // A declaring tool that answered with a bare string carried no
+    // structuredContent at all, and the client threw on the RESULT: "has an
+    // output schema but did not return structured content". The door no longer
+    // asks WHETHER the tool declared one — the client compiles no validator for an
+    // undeclared tool, so the extra key is invisible there, and asking cost a
+    // `tools/list` after the write had already executed.
+    const { connected } = await open({
+      extraDescriptors: [declaring("host_report", declared)],
+      getOutcome: (call) => ({
+        status: "ok",
+        output: call.tool === "host_report" ? "just text" : ["a", "b"],
+      }),
+    });
+    await connected.client.listTools();
+
+    const declaringCall = await connected.client.callTool({ name: "host_report", arguments: {} });
+    expect(declaringCall.isError).toBeFalsy();
+    expect(declaringCall.structuredContent).toEqual({ vendo_value: "just text" });
+    expect(textOf(declaringCall)).toBe('"just text"');
+
+    // host_lookup declares no output shape; the same wrapper rides anyway, and
+    // the client accepts it because it has no schema to check it against.
+    const undeclared = await connected.client.callTool({ name: "host_lookup", arguments: {} });
+    expect(undeclared.isError).toBeFalsy();
+    expect(undeclared.structuredContent).toEqual({ vendo_value: ["a", "b"] });
+    expect(textOf(undeclared)).toBe('["a","b"]');
+    await connected.client.close();
+  });
+
+  it("an unstatable host schema costs that ONE tool its schema, never the whole listing", async () => {
+    const { connected } = await open({
+      extraDescriptors: [
+        declaring("host_report", declared),
+        // A boolean subschema is LEGAL JSON Schema 2020-12 and still unstatable:
+        // the client asserts every `properties` value is an object.
+        declaring("host_bool_property", { type: "object", properties: { anything: true } }),
+        // A top-level array — ordinary in an OpenAPI response spec.
+        declaring("host_array", { type: "array", items: { type: "string" } }),
+        // Past the serialized-size cap.
+        declaring("host_huge", { type: "object", properties: hugeProperties() }),
+        // WELL-SHAPED and still fatal: the client COMPILES every advertised
+        // schema (`cacheToolMetadata`, run on each successful listTools), and a
+        // compile throw rejects the whole listing. A dangling $ref is what
+        // extraction leaves for a recursive response model with no $defs on the
+        // wire; `type: "bogus"` and Swagger 2.0's boolean exclusiveMinimum are
+        // the other two the AI review proved.
+        declaring("host_dangling_ref", {
+          type: "object",
+          properties: { id: { type: "string" }, parent: { $ref: "#/components/schemas/Account" } },
+        }),
+        declaring("host_bogus_type", { type: "object", properties: { x: { type: "bogus" } } }),
+        // Why the door asks the VALIDATOR rather than eyeballing the shape: a
+        // Python-style named group is ordinary in a generated OpenAPI spec and is
+        // a compile throw no hand-written check would ever have listed.
+        declaring("host_bad_pattern", {
+          type: "object",
+          properties: { id: { type: "string", pattern: "(?P<year>\\d{4})" } },
+        }),
+        declaring("host_draft4_bounds", {
+          type: "object",
+          properties: { n: { type: "number", minimum: 0, exclusiveMinimum: true } },
+        }),
+        // A schema that cannot even be serialized: an OpenAPI model inlined into
+        // itself. `JSON.stringify` threw inside the listing map.
+        declaring("host_cyclic", cyclicSchema()),
+      ],
+    });
+
+    // The listing PARSES — which is the finding: any one of these used to reject
+    // the whole tools/list result and leave the client with no tools at all.
+    const listed = await connected.client.listTools();
+    const byName = new Map(listed.tools.map((tool) => [tool.name, tool]));
+    expect([...byName.keys()]).toEqual([
+      "host_lookup",
+      "host_report",
+      "host_bool_property",
+      "host_array",
+      "host_huge",
+      "host_dangling_ref",
+      "host_bogus_type",
+      "host_bad_pattern",
+      "host_draft4_bounds",
+      "host_cyclic",
+    ]);
+    expect(byName.get("host_report")?.outputSchema).toBeDefined();
+    for (const name of [
+      "host_bool_property",
+      "host_array",
+      "host_huge",
+      "host_dangling_ref",
+      "host_bogus_type",
+      "host_bad_pattern",
+      "host_draft4_bounds",
+      "host_cyclic",
+    ]) {
+      expect(byName.get(name), name).not.toHaveProperty("outputSchema");
+    }
+    await connected.client.close();
+  });
+
+  it("caps the schema by BYTES on the wire, not by UTF-16 units", async () => {
+    // 20k CJK characters is 20k `.length` and ~60KB on the wire — the cap read
+    // `.length` and shipped it, ~3x over. Its ASCII twin of the same `.length`
+    // is genuinely small and keeps its schema, so this measures the COUNTING,
+    // not the cap.
+    const label = (character: string) => ({
+      type: "object",
+      properties: { note: { type: "string", description: character.repeat(20_000) } },
+    });
+    const { connected } = await open({
+      extraDescriptors: [declaring("host_cjk", label("経")), declaring("host_ascii", label("a"))],
+    });
+    const listed = await connected.client.listTools();
+    const byName = new Map(listed.tools.map((tool) => [tool.name, tool]));
+    expect(byName.get("host_cjk")).not.toHaveProperty("outputSchema");
+    expect(byName.get("host_ascii")?.outputSchema).toBeDefined();
+    await connected.client.close();
+  });
+
+  it("compiles a given schema ONCE, however many listings advertise it", async () => {
+    // Compiling is the expensive half of a listing and it is pure: 244ms for 35
+    // schemas, 1370ms for 301 (measured 2026-08-03), paid AGAIN on every
+    // `tools/list` — and this redesign re-lists on every `list_changed`. The
+    // verdict is cached on the serialized schema the pass already computes.
+    //
+    // Driven over raw JSON-RPC on purpose: the SDK client compiles every
+    // advertised schema too (`cacheToolMetadata`), and a counter that saw both
+    // sides could not say which one recompiled.
+    const probe = { type: "object", properties: { note: { type: "string", description: COMPILE_PROBE } } };
+    const harness = makeHarness({ extraDescriptors: [declaring("host_probe", probe)] });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const getValidator = vi.spyOn(AjvJsonSchemaValidator.prototype, "getValidator");
+    const compiles = () => getValidator.mock.calls
+      .filter(([schema]) => JSON.stringify(schema).includes(COMPILE_PROBE)).length;
+    try {
+      const initialized = await harness.door.handler(mcpRequest(tokens.access_token));
+      const sessionId = initialized.headers.get("mcp-session-id")!;
+      const list = async () => {
+        const response = await harness.door.handler(mcpRequest(tokens.access_token, sessionId));
+        expect(response.status).toBe(200);
+        return await response.text();
+      };
+
+      expect(await list()).toContain(COMPILE_PROBE);
+      expect(compiles()).toBe(1);
+      // The second listing still ADVERTISES the schema — the cached verdict is an
+      // answer, not a skip — and costs no compile.
+      expect(await list()).toContain(COMPILE_PROBE);
+      expect(compiles()).toBe(1);
+    } finally {
+      getValidator.mockRestore();
+    }
+  });
+
+  it("a malformed `required` no longer costs the tool its fields — it is dropped either way", async () => {
+    // `required: "id"` used to reject the whole schema, because the wire carried
+    // `required` and the client's ToolSchema wants an array. Nothing enforceable
+    // reaches the wire now, so the model still learns the field names.
+    const { connected } = await open({
+      extraDescriptors: [
+        declaring("host_bad_required", { type: "object", properties: { id: { type: "string" } }, required: "id" }),
+      ],
+    });
+    const listed = await connected.client.listTools();
+    expect(listed.tools.find((tool) => tool.name === "host_bad_required")?.outputSchema).toEqual({
+      type: "object",
+      properties: { id: { type: "string" } },
+      additionalProperties: true,
+    });
+    await connected.client.close();
+  });
+});
+
+/**
+ * 10-mcp §3b — the TURN path's results, measured through the real client.
+ *
+ * The door used to re-fetch the turn's listing after execution to decide whether
+ * to attach `structuredContent`. That question is now answered without asking:
+ * the wrapper rides unconditionally, so an already-committed write can never be
+ * turned into an error by a listing that throws.
+ */
+describe("createMcpDoor turn-credential results", () => {
+  const TOKEN = "vtk_live_turn";
+
+  function liveTurn(output: Json, onList: () => void) {
+    return {
+      ctx: { principal: { kind: "user" as const, subject: "user_1" }, venue: "chat" as const, presence: "present" as const },
+      tools: {
+        async call() {
+          return { status: "ok" as const, output };
+        },
+        async list() {
+          onList();
+          return [{
+            name: "host_lookup",
+            title: "Look something up",
+            description: "Look something up",
+            risk: "read" as const,
+            inputSchema: { type: "object", properties: {} },
+            outputSchema: { type: "object", properties: { rows: { type: "array" } }, required: ["rows"] },
+          }];
+        },
+      },
+    };
+  }
+
+  it("wraps a non-record ok output with NO tools/list in the call path", async () => {
+    const lists: number[] = [];
+    const harness = makeHarness({
+      turnCredentials: {
+        async resolve(token) {
+          return token === TOKEN ? liveTurn("just text", () => lists.push(1)) : null;
+        },
+      },
+    });
+    const connected = await connect(harness.door, TOKEN);
+
+    const listed = await connected.client.listTools();
+    expect(listed.tools[0]?.outputSchema).toEqual({
+      type: "object",
+      properties: { rows: { type: "array" } },
+      additionalProperties: true,
+    });
+    expect(lists.length).toBe(1);
+
+    // The tool declared a schema and answered with a bare string: without a
+    // wrapper the client throws "did not return structured content", and the
+    // model reads a completed call as a broken server.
+    const result = await connected.client.callTool({ name: "host_lookup", arguments: {} });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toEqual({ vendo_value: "just text" });
+    // The listing is not consulted by the call path at all — which is the fix:
+    // it ran AFTER the write, unguarded.
+    expect(lists.length).toBe(1);
+    await connected.client.close();
+  });
+
+  it("grades the LIVE-TURN listing by the same rule — ungraded says nothing there either", async () => {
+    // The turn surface is a second place that builds MCP `Tool` objects, so a
+    // claim deleted from the OAuth listing has to be deleted here too or the two
+    // drift and a claudeCode() box reads the guess the outside agent no longer does.
+    const harness = makeHarness({
+      turnCredentials: {
+        async resolve(token) {
+          if (token !== TOKEN) return null;
+          const turn = liveTurn("x", () => {});
+          return {
+            ...turn,
+            tools: {
+              ...turn.tools,
+              list: async () => [
+                { name: "host_lookup", description: "Look something up", risk: "read" as const, inputSchema: { type: "object", properties: {} } },
+                { name: "host_wipe", description: "Delete everything", risk: "destructive" as const, inputSchema: { type: "object", properties: {} } },
+                { name: "host_maybe", description: "Nobody graded this", risk: "ungraded" as const, inputSchema: { type: "object", properties: {} } },
+              ],
+            },
+          };
+        },
+      },
+    });
+    const connected = await connect(harness.door, TOKEN);
+    const listed = await connected.client.listTools();
+    const byName = new Map(listed.tools.map((tool) => [tool.name, tool]));
+
+    expect(byName.get("host_lookup")?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false });
+    expect(byName.get("host_wipe")?.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
+    expect(byName.get("host_maybe")?.annotations).toEqual({});
+    await connected.client.close();
+  });
+
+  it("still answers when the turn's listing THROWS after the write", async () => {
+    const harness = makeHarness({
+      turnCredentials: {
+        async resolve(token) {
+          if (token !== TOKEN) return null;
+          const turn = liveTurn(["a", "b"], () => {});
+          return { ...turn, tools: { ...turn.tools, list: async () => { throw new Error("turn closed"); } } };
+        },
+      },
+    });
+    const connected = await connect(harness.door, TOKEN);
+    const result = await connected.client.callTool({ name: "host_lookup", arguments: {} });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toEqual({ vendo_value: ["a", "b"] });
+    await connected.client.close();
+  });
+});
+
+/**
+ * ADVERSARIAL: `withholdTools` on the TURN-bearing leg (risk round, 2026-08-06).
+ *
+ * `withholdTools` is documented as "names this door NEVER offers, whatever else
+ * says otherwise" and as "what THIS door, as deployed, does not do" — a
+ * deployment fact, not a menu fact, which is why it is checked ahead of the
+ * `vendo_` prefix bypass.
+ *
+ * A door with `turnCredentials` (every `createVendo({ mcp: true })` composition
+ * has them — server.ts passes them to the outside door too) has a SECOND
+ * credential space on the SAME mount. `#handleMcp` resolves a turn bearer
+ * before anything else, and from there `#registerHandlers` lists
+ * `turnTools(state.turn)` and `#callTool` hands the name straight to
+ * `turn.tools.call` — neither consults `#withheld`. So a name this deployment
+ * said it does not do is both advertised and callable on the other leg of the
+ * same door.
+ */
+describe("createMcpDoor withholdTools on a turn-bearing session", () => {
+  const TOKEN = "vtk_withhold_turn";
+  const WITHHELD = "vendo_apps_pin";
+
+  function harnessFor(calls: string[]) {
+    return makeHarness({
+      withholdTools: [WITHHELD],
+      turnCredentials: {
+        async resolve(token) {
+          if (token !== TOKEN) return null;
+          return {
+            ctx: {
+              principal: { kind: "user" as const, subject: "user_1" },
+              venue: "chat" as const,
+              presence: "present" as const,
+            },
+            tools: {
+              async call(name: string) {
+                calls.push(name);
+                return { status: "ok" as const, output: { placed: true } };
+              },
+              async list() {
+                return [
+                  { name: "host_lookup", description: "Look something up", risk: "read" as const, inputSchema: { type: "object", properties: {} } },
+                  { name: WITHHELD, description: "Pin an app", risk: "write" as const, inputSchema: { type: "object", properties: {} } },
+                ];
+              },
+            },
+          };
+        },
+      },
+    });
+  }
+
+  it("does not advertise the withheld name to a live turn either", async () => {
+    const connected = await connect(harnessFor([]).door, TOKEN);
+
+    const listed = (await connected.client.listTools()).tools.map((tool) => tool.name);
+
+    expect(listed).toContain("host_lookup");
+    expect(listed).not.toContain(WITHHELD);
+    await connected.client.close();
+  });
+
+  it("refuses the withheld name on a turn-bearing call, as the OAuth leg does", async () => {
+    const calls: string[] = [];
+    const connected = await connect(harnessFor(calls).door, TOKEN);
+
+    const refused = await connected.client.callTool({ name: WITHHELD, arguments: { app: "app_1", slot: "hero" } });
+
+    expect(refused).toMatchObject({
+      isError: true,
+      content: [{ type: "text", text: expect.stringContaining("not-found") }],
+    });
+    // Not offered has to mean not callable — on BOTH legs of one mount, or the
+    // withhold is a listing cosmetic with a documented security posture.
+    expect(calls).toEqual([]);
+    await connected.client.close();
+  });
+});
+
+describe("createMcpDoor MCP Apps on a turn-bearing session", () => {
+  const TOKEN = "vtk_apps_turn";
+
+  /** The umbrella composes ONE door with both `apps` and `turnCredentials`, and
+   *  the turn's registry owns `vendo_apps_open` (apps.agentTools). Whatever the
+   *  OAuth leg does to make an app render, this leg has to do too — it is the
+   *  same mount and the same feature. */
+  function harnessFor(payload: Record<string, unknown>) {
+    const apps: AppsPort = {
+      async list() { return []; },
+      async open() { return { kind: "http", url: "https://app.example" }; },
+      async call() { return null; },
+    };
+    return makeHarness({
+      apps,
+      turnCredentials: {
+        async resolve(token) {
+          if (token !== TOKEN) return null;
+          return {
+            ctx: {
+              principal: { kind: "user" as const, subject: "user_1" },
+              venue: "chat" as const,
+              presence: "present" as const,
+            },
+            tools: {
+              async call() {
+                return { status: "ok" as const, output: { kind: "tree", payload } };
+              },
+              async list() {
+                return [
+                  { name: "host_lookup", description: "Look something up", risk: "read" as const, inputSchema: { type: "object", properties: {} } },
+                  { name: "vendo_apps_open", description: "Open a saved app", risk: "read" as const, inputSchema: { type: "object", properties: {} } },
+                ];
+              },
+            },
+          };
+        },
+      },
+    });
+  }
+
+  it("advertises the shim on the turn leg's apps listing", async () => {
+    const connected = await connect(harnessFor({}).door, TOKEN);
+
+    const listed = (await connected.client.listTools()).tools;
+    expect(listed.find((tool) => tool.name === "vendo_apps_open")?._meta).toEqual({
+      ui: { resourceUri: "ui://vendo/tree-shim.html" },
+      "ui/resourceUri": "ui://vendo/tree-shim.html",
+    });
+    // Only the app-viewer names get it; a host tool is untouched.
+    expect(listed.find((tool) => tool.name === "host_lookup")?._meta).toBeUndefined();
+    await connected.client.close();
+  });
+
+  it("unwraps the OpenSurface envelope and strips the already-resolved queries", async () => {
+    const payload = {
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [],
+      data: { via: "turn" },
+      queries: [{ name: "via", tool: "host_source" }],
+    };
+    const connected = await connect(harnessFor(payload).door, TOKEN);
+
+    const result = await connected.client.callTool({ name: "vendo_apps_open", arguments: { appId: "app_1" } });
+
+    // The shim renders a bare format-tagged UIPayload, and the turn's runtime
+    // already resolved every query into `data` — forwarding the declarations
+    // would execute them a second time.
+    expect(result.structuredContent).toEqual({
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [],
+      data: { via: "turn" },
+    });
+    await connected.client.close();
+  });
+});
+
+describe("createMcpDoor first-party service auth", () => {
+  const AS_URL = "https://product.example/.well-known/oauth-authorization-server/api/vendo/mcp";
+
+  it("exchanges a key and a user id for a short-lived token that works on a real tools/call", async () => {
+    const harness = makeHarness({ serviceAuth: { keys: [SERVICE_KEY] } });
+
+    const response = await serviceExchange(harness.door);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const body = await response.json() as TokenResponse & { issued_token_type: string };
+    expect(body.access_token).toMatch(/^vmat_[A-Za-z0-9_-]{43}$/);
+    expect(body).toMatchObject({
+      token_type: "Bearer",
+      expires_in: 600,
+      scope: "read write",
+      issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+    });
+    // No refresh token — and none of the machinery behind one. A backend that
+    // holds the key exchanges again; there is nothing outstanding to rotate.
+    expect(Object.keys(body).sort()).toEqual([
+      "access_token", "expires_in", "issued_token_type", "scope", "token_type",
+    ]);
+    const grants = harness.store.rows("vendo_mcp_grants");
+    expect(grants).toHaveLength(1);
+    expect(grants[0]!.data).toMatchObject({
+      kind: "access",
+      subject: "user_1",
+      clientId: SERVICE_CLIENT,
+      resource: BASE,
+      scopes: ["read", "write"],
+    });
+    const expiresAt = Date.parse((grants[0]!.data as { expiresAt: string }).expiresAt);
+    expect(expiresAt - Date.now()).toBeLessThanOrEqual(600_000);
+    expect(JSON.stringify(grants)).not.toContain(body.access_token);
+    expect(JSON.stringify(grants)).not.toContain(SERVICE_KEY);
+    expect(harness.audits.at(-1)).toMatchObject({
+      kind: "door-auth",
+      detail: { clientId: SERVICE_CLIENT, event: "exchange" },
+    });
+
+    const connected = await connect(harness.door, body.access_token);
+    const result = await connected.client.callTool({ name: "host_lookup", arguments: { query: "balance" } });
+    expect(textOf(result)).toContain("42");
+    // The service key is the CLIENT on every row the call leaves behind.
+    expect((harness.executions[0]?.ctx as { mcpConsent?: unknown }).mcpConsent).toEqual({
+      clientId: SERVICE_CLIENT,
+      scopes: ["read", "write"],
+    });
+    await connected.client.close();
+  });
+
+  it("answers every bad exchange with one OAuth error, and never says which key exists", async () => {
+    const harness = makeHarness({ serviceAuth: { keys: [SERVICE_KEY] } });
+    const rows: Array<[string, Record<string, string | null>, string]> = [
+      ["an unknown key", { client_secret: SERVICE_KEY_B }, "invalid_client"],
+      ["a string that is not a key at all", { client_secret: "not-a-service-key" }, "invalid_client"],
+      ["a near miss on a listed key", { client_secret: `${SERVICE_KEY}x` }, "invalid_client"],
+      ["another client_id", { client_id: "mcpc_000000000000" }, "invalid_client"],
+      ["no client_secret", { client_secret: null }, "invalid_request"],
+      ["no subject_token", { subject_token: null }, "invalid_request"],
+      ["an empty subject_token", { subject_token: "" }, "invalid_request"],
+      ["no subject_token_type", { subject_token_type: null }, "invalid_request"],
+      ["a subject_token_type this door does not speak", { subject_token_type: "urn:ietf:params:oauth:token-type:jwt" }, "invalid_request"],
+      ["another server's resource", { resource: "https://other.example/mcp" }, "invalid_target"],
+      ["a grant_type nobody serves", { grant_type: "client_credentials" }, "unsupported_grant_type"],
+    ];
+    const refusals: string[] = [];
+    for (const [name, overrides, error] of rows) {
+      const response = await serviceExchange(harness.door, overrides);
+      expect(response.status, name).toBe(400);
+      const body = await response.json() as { error: string };
+      expect(body, name).toMatchObject({ error });
+      if (error === "invalid_client") refusals.push(JSON.stringify(body));
+    }
+    // Indistinguishable is the whole claim, and the `error` code alone does not
+    // carry it: a description that named the failing half would be an oracle
+    // while every assertion above still passed. The BODIES must be identical.
+    expect(new Set(refusals).size, refusals.join("\n")).toBe(1);
+
+    const wrongType = await serviceExchange(harness.door, {}, "application/json");
+    expect(wrongType.status).toBe(400);
+    expect(await wrongType.json()).toMatchObject({ error: "invalid_request" });
+
+    // Nothing was minted and nothing was audited along the way.
+    expect(harness.store.rows("vendo_mcp_grants")).toEqual([]);
+    expect(harness.audits).toEqual([]);
+  });
+
+  it("serves both keys through a rotation, and refuses one the door no longer lists", async () => {
+    const rotating = makeHarness({ serviceAuth: { keys: [SERVICE_KEY, SERVICE_KEY_B] } });
+    for (const [key, client] of [[SERVICE_KEY, SERVICE_CLIENT], [SERVICE_KEY_B, SERVICE_CLIENT_B]] as const) {
+      expect((await serviceExchange(rotating.door, { client_secret: key })).status, key).toBe(200);
+      // Each key wears its OWN label — the hash of the key that matched.
+      expect(rotating.audits.at(-1), key).toMatchObject({ detail: { clientId: client, event: "exchange" } });
+    }
+
+    const retired = makeHarness({ serviceAuth: { keys: [SERVICE_KEY] } });
+    const refused = await serviceExchange(retired.door, { client_secret: SERVICE_KEY_B });
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toMatchObject({ error: "invalid_client" });
+  });
+
+  it("does not serve the grant at all on a door with no keys", async () => {
+    const response = await serviceExchange(makeHarness().door);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "unsupported_grant_type" });
+  });
+
+  it("advertises the exchange and client_secret_post only when keys are configured", async () => {
+    const off = await makeHarness().door.handler(new Request(AS_URL));
+    expect(await off.json()).toMatchObject({
+      grant_types_supported: ["authorization_code", "refresh_token"],
+      token_endpoint_auth_methods_supported: ["none"],
+    });
+
+    const on = await makeHarness({ serviceAuth: { keys: [SERVICE_KEY] } }).door.handler(new Request(AS_URL));
+    expect(await on.json()).toMatchObject({
+      grant_types_supported: [
+        "authorization_code",
+        "refresh_token",
+        "urn:ietf:params:oauth:grant-type:token-exchange",
+      ],
+      token_endpoint_auth_methods_supported: ["none", "client_secret_post"],
+    });
+  });
+
+  it("refuses a key list that cannot ever match, LOUDLY, by index and never by value", () => {
+    // A key the door can never match is not a security posture, it is a
+    // deployment that advertises the grant and answers every exchange with
+    // `invalid_client` — the most expensive possible way to learn about an unset
+    // env var, which is the realistic spelling of the mistake.
+    const bad: Array<[label: string, keys: readonly string[], names: RegExp]> = [
+      // An empty list is the same failure with nothing to point at.
+      ["an empty list", [], /serviceAuth\.keys is empty/],
+      ["a hole where an env var should be", [undefined as unknown as string], /serviceAuth\.keys\[0\]/],
+      ["a blank first entry", ["", SERVICE_KEY], /serviceAuth\.keys\[0\]/],
+      // A good key beside a blank one still fails, and the message names WHICH
+      // entry: a rotation list with a dead slot strands whoever holds that key.
+      ["a dead slot in a rotation list", [SERVICE_KEY, "   "], /serviceAuth\.keys\[1\]/],
+    ];
+    for (const [label, keys, names] of bad) {
+      expect(() => makeHarness({ serviceAuth: { keys } }), label).toThrow(names);
+      // Every one of these lists still holds LIVE keys. Naming the index is
+      // enough to fix the deployment; echoing a value writes a live credential
+      // into whatever collects the crash.
+      try {
+        makeHarness({ serviceAuth: { keys } });
+      } catch (error) {
+        expect((error as Error).message, label).not.toContain(SERVICE_KEY);
+        expect((error as Error).message, label).not.toContain(SERVICE_KEY.slice(13));
+      }
+    }
+    // Anything non-empty is a key. There is no shape to get wrong.
+    expect(() => makeHarness({ serviceAuth: { keys: ["not-a-service-key"] } })).not.toThrow();
+  });
+});
+
+/** A host response model that references itself by OBJECT — what an inliner
+ *  produces for a recursive OpenAPI model. `JSON.stringify` throws on it. */
+function cyclicSchema(): Record<string, unknown> {
+  const schema: Record<string, unknown> = { type: "object", properties: {} };
+  (schema.properties as Record<string, unknown>).parent = schema;
+  return schema;
+}
+
+/** Comfortably past the door's ~32KiB serialized-schema cap. */
+function hugeProperties(): Record<string, unknown> {
+  return Object.fromEntries(Array.from({ length: 800 }, (_, index) => [
+    `field_${index}`,
+    { type: "string", description: "x".repeat(64) },
+  ]));
+}
 
 interface HarnessOptions {
   store?: MemoryStore;
   menuTools?: string[] | (() => string[] | undefined | Promise<string[] | undefined>);
+  /** 10-mcp — names this door never offers, whatever the menu says. */
+  withholdTools?: string[];
   productName?: string;
   state?: McpDoorState;
-  getOutcome?: () => ToolOutcome;
+  /** The call is passed so one harness can answer several tools differently. */
+  getOutcome?: (call: ToolCall) => ToolOutcome;
   principal?: (subject: string) => Principal | null;
   apps?: AppsPort;
-  /** A function form lets a test GROW the surface mid-session (lazy connector
-   *  expansion), which is exactly what a memoized door menu would miss. */
-  extraDescriptors?: Awaited<ReturnType<ToolRegistry["descriptors"]>> | (() => Awaited<ReturnType<ToolRegistry["descriptors"]>>);
+  /** A function form lets a test GROW the surface mid-session, which is exactly
+   *  what a memoized door menu would miss. */
+  extraDescriptors?:
+    | Awaited<ReturnType<ToolRegistry["descriptors"]>>
+    | (() => Awaited<ReturnType<ToolRegistry["descriptors"]>>);
   check?: Guard["check"];
   mount?: string;
   baseUrl?: string;
@@ -1865,8 +3148,16 @@ interface HarnessOptions {
    * a test mint tokens for two different subjects against one door (FIX G). */
   authorizeSubject?: () => string;
   oauth?: HostOAuthAdapter;
+  /** 10-mcp §3b — ask for a door that serves ONLY live turns. */
+  internal?: boolean;
   /** Override the guard's audit sink (e.g. to simulate a failing store write). */
   report?: Guard["report"];
+  /** Build contract §9.1 — the host's org query, keyed on Principal. */
+  memberships?: (principal: Principal) => Promise<Membership[]>;
+  /** 10-mcp §3b — a live turn behind a per-turn bearer. */
+  turnCredentials?: TurnCredentialPort;
+  /** First-party service keys the door accepts at its token endpoint. */
+  serviceAuth?: { keys: readonly string[] };
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -1892,7 +3183,7 @@ function makeHarness(options: HarnessOptions = {}) {
     },
     async execute(call, ctx) {
       executions.push({ id: call.id, ctx });
-      return options.getOutcome?.() ?? { status: "ok", output: { answer: 42 } };
+      return options.getOutcome?.(call) ?? { status: "ok", output: { answer: 42 } };
     },
   };
   const config = {
@@ -1901,12 +3192,17 @@ function makeHarness(options: HarnessOptions = {}) {
     store,
     apps: options.apps,
     ...(options.menuTools === undefined ? {} : { menuTools: options.menuTools }),
+    ...(options.withholdTools === undefined ? {} : { withholdTools: options.withholdTools }),
     ...(options.productName === undefined ? {} : { productName: options.productName }),
     ...(options.mount === undefined ? {} : { mount: options.mount }),
     ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
     ...(options.remoteAs === undefined ? {} : { remoteAs: options.remoteAs }),
     ...(options.federation === undefined ? {} : { federation: options.federation }),
     ...(options.theme === undefined ? {} : { theme: options.theme }),
+    ...(options.memberships === undefined ? {} : { memberships: options.memberships }),
+    ...(options.internal === undefined ? {} : { internal: options.internal }),
+    ...(options.turnCredentials === undefined ? {} : { turnCredentials: options.turnCredentials }),
+    ...(options.serviceAuth === undefined ? {} : { serviceAuth: options.serviceAuth }),
     oauth: options.oauth ?? {
       async authorize(_req, ctx) {
         authorizeContexts.push(ctx);
@@ -2010,6 +3306,29 @@ async function exchange(door: McpDoor, values: Record<string, string>, base = BA
   }));
 }
 
+/** A valid service-key exchange at the token endpoint. An override of `null`
+ *  DROPS that field, which is how the missing-field rows are driven. */
+async function serviceExchange(
+  door: McpDoor,
+  overrides: Record<string, string | null> = {},
+  contentType = "application/x-www-form-urlencoded",
+) {
+  const fields: Record<string, string | null> = {
+    grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+    client_id: "vendo-service",
+    client_secret: SERVICE_KEY,
+    subject_token: "user_1",
+    subject_token_type: "urn:vendo:params:oauth:token-type:user-id",
+    resource: BASE,
+    ...overrides,
+  };
+  const body = new URLSearchParams();
+  for (const [name, value] of Object.entries(fields)) {
+    if (value !== null) body.set(name, value);
+  }
+  return door.handler(new Request(`${BASE}/token`, { method: "POST", headers: { "content-type": contentType }, body }));
+}
+
 async function issue(door: McpDoor, clientId: string, base = BASE): Promise<TokenResponse> {
   const auth = await authorize(door, clientId, {}, base);
   const code = new URL(auth.headers.get("location")!).searchParams.get("code")!;
@@ -2077,6 +3396,19 @@ function mcpRequest(accessToken: string, sessionId?: string, resource = BASE) {
   });
 }
 
+/** The standalone SSE stream a client opens for server-initiated notifications.
+ *  `accept` is a parameter so a test can send the GET the transport REJECTS. */
+function sseRequest(accessToken: string, sessionId: string, accept = "text/event-stream") {
+  return new Request(BASE, {
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      accept,
+      "mcp-session-id": sessionId,
+      "mcp-protocol-version": "2025-11-25",
+    },
+  });
+}
+
 async function pkceChallenge(verifier: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
   return Buffer.from(digest).toString("base64url");
@@ -2095,19 +3427,19 @@ interface RemoteTokenOverrides {
   expiresAt?: number;
 }
 
-async function generateSigningKey(kid: string) {
-  const pair = await generateKeyPair("ES256");
-  return { ...pair, kid };
+async function generateSigningKey(kid: string, alg = "ES256") {
+  const pair = await generateKeyPair(alg);
+  return { ...pair, kid, alg };
 }
 
 async function mintRemoteToken(
   privateKey: KeyLike,
   kid: string,
-  options: { issuer: string; audience: string } & RemoteTokenOverrides,
+  options: { issuer: string; audience: string; alg?: string } & RemoteTokenOverrides,
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1_000);
   return new SignJWT({})
-    .setProtectedHeader({ alg: "ES256", kid })
+    .setProtectedHeader({ alg: options.alg ?? "ES256", kid })
     .setIssuer(options.issuer)
     .setAudience(options.audience)
     .setSubject(options.sub ?? "external_user")
@@ -2116,11 +3448,11 @@ async function mintRemoteToken(
     .sign(privateKey);
 }
 
-async function remoteAsFixture() {
+async function remoteAsFixture(alg = "ES256") {
   const issuer = "https://as.example";
   const jwksUri = `${issuer}/jwks`;
-  let key = await generateSigningKey("initial");
-  let jwks = { keys: [{ ...(await exportJWK(key.publicKey)), alg: "ES256", use: "sig", kid: key.kid }] };
+  let key = await generateSigningKey("initial", alg);
+  let jwks = { keys: [{ ...(await exportJWK(key.publicKey)), alg, use: "sig", kid: key.kid }] };
   const fetch = vi.fn(async (input: string | URL | Request) => {
     const url = input instanceof Request ? input.url : input.toString();
     if (url === `${issuer}/.well-known/oauth-authorization-server`) {
@@ -2133,16 +3465,19 @@ async function remoteAsFixture() {
     issuer,
     jwksUri,
     fetch,
+    publicJwk: async () => await exportJWK(key.publicKey),
+    kid: () => key.kid,
     async mint(overrides: RemoteTokenOverrides = {}) {
       return mintRemoteToken(key.privateKey, key.kid, {
         issuer: overrides.issuer ?? issuer,
         audience: overrides.audience ?? BASE,
+        alg,
         ...overrides,
       });
     },
     async rotate(kid: string) {
-      key = await generateSigningKey(kid);
-      jwks = { keys: [{ ...(await exportJWK(key.publicKey)), alg: "ES256", use: "sig", kid: key.kid }] };
+      key = await generateSigningKey(kid, alg);
+      jwks = { keys: [{ ...(await exportJWK(key.publicKey)), alg, use: "sig", kid: key.kid }] };
     },
   };
 }

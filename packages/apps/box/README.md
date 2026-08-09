@@ -17,7 +17,14 @@ code, runs it, curls its own endpoints, and reports a structured result.
   npm-installed into `/opt/vendo-box/node_modules` at **template-build time**,
   so install size is a template concern, never a wake concern.
 - `build-template.mjs` — the e2b template builder (the recipe).
-- `scaffold/` — the pre-baked served-app scaffold layer-3 builds copy and edit.
+- The universal app template — Vite + React 19 with `@vendoai/ui` installed —
+  is baked from `packages/box-template` (staged in here at bake time, for the
+  same e2b `copy()` reason as `claude-turn.mjs`). It lands at
+  `/opt/vendo-box/template`, its deps at `/opt/vendo-box/deps` with the
+  template's `node_modules` a symlink to them, so `cp -a template/. /app/` is a
+  warm start that copies a link rather than hundreds of megabytes. ONE universal
+  template, baked once per Vendo release: nothing company-specific is baked, and
+  the host's brand and components arrive as files under `/app/.vendo/host/`.
 
 ## The two ports
 
@@ -26,7 +33,10 @@ code, runs it, curls its own endpoints, and reports a structured result.
 - **`8811`** (`VENDO_CONTROL_PORT`) — the **harness** control port, the host's
   door to the agent (reached via `SandboxMachine.request({ port: 8811 })`):
   - `GET  /agent/health`
-  - `POST /agent/env { env }` — persist re-injected boundary env + restart app
+  - `POST /agent/env { env }` — persist re-injected boundary env + restart app.
+    The set is the WHOLE boundary and it replaces the provision-time one: the app
+    and the agent get it plus the machine's own vars (`PATH`, `HOME`, …), so a
+    secret the owner revoked is gone from the box at the next restart.
   - `POST /agent/task { prompt, context? }` → `202 { taskId }` (one at a time)
   - `GET  /agent/task/<id>` → `{ status, result?, log }`
   - `POST /agent/restart-app`

@@ -33,7 +33,7 @@ const UNWRAPPED_LAYOUT = [
 
 const WRAPPED_LAYOUT = UNWRAPPED_LAYOUT.replace(
   "{children}",
-  "<VendoRoot>{children}</VendoRoot>",
+  "<VendoProvider>{children}</VendoProvider>",
 );
 
 // Spaceless destructure: `{children}` appears in the function signature
@@ -56,20 +56,26 @@ const UNWRAPPED_LAYOUT_SPACELESS_DESTRUCTURE = [
   "",
 ].join("\n");
 
-// The exact shape `vendo init` prints today (init.ts's vendoRootPasteLines +
-// the "Last steps are yours:" preamble output.log wraps it in) — the harness
-// paste helper reads THIS, it does not regenerate its own copy of it.
+const WRAP = '<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}</VendoProvider>';
+
+// The exact shape `vendo init` prints today: its STEPS-LEFT frame (init.ts's
+// mountStep lines, printed under a `File:` header) — the harness paste helper
+// reads THIS, it does not regenerate its own copy of it.
 const INIT_STDOUT = [
   "some other init noise",
   "",
-  "Last steps are yours:",
-  "  In app/layout.tsx:",
-  '    import { VendoRoot } from "@vendoai/vendo/react";',
+  "────────────────────────────────────────────────────────────────",
+  "ONE STEP LEFT — paste this yourself (init never edits your files)",
+  "",
+  "  File: app/layout.tsx",
+  '    import { VendoProvider } from "@vendoai/vendo/react";',
   '    import theme from "../vendo/theme";',
   '    import type { VendoTheme } from "@vendoai/vendo";',
-  "    … then wrap: <VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>",
+  `    … then wrap: ${WRAP}`,
   "",
-  "Then start your dev server — the agent is live in your app.",
+  "  <VendoProvider> is what the @vendoai/ui hooks and embeds read.",
+  "  Then confirm it landed: npx vendo doctor",
+  "────────────────────────────────────────────────────────────────",
 ].join("\n");
 
 describe("applyVendoRootPaste", () => {
@@ -82,10 +88,10 @@ describe("applyVendoRootPaste", () => {
 
     expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
-    expect(layout).toContain('import { VendoRoot } from "@vendoai/vendo/react";');
+    expect(layout).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
     expect(layout).toContain('import theme from "../vendo/theme";');
     expect(layout).toContain('import type { VendoTheme } from "@vendoai/vendo";');
-    expect(layout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
+    expect(layout).toContain(WRAP);
   });
 
   it("wraps the JSX {children}, not a spaceless {children} destructure in the function signature", async () => {
@@ -100,9 +106,7 @@ describe("applyVendoRootPaste", () => {
     // Signature destructure left untouched.
     expect(layout).toContain("function RootLayout({children}: { children: ReactNode }) {");
     // JSX usage wrapped instead.
-    expect(layout).toContain(
-      "<body><VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot></body>",
-    );
+    expect(layout).toContain(`<body>${WRAP}</body>`);
   });
 
   it("keeps a leading 'use client' directive first — pasted imports go after it", async () => {
@@ -118,8 +122,8 @@ describe("applyVendoRootPaste", () => {
     // pasted ahead of it would silently demote the layout to a server
     // component and break its hooks/browser APIs.
     expect(layout.split(/\r?\n/)[0]).toBe('"use client";');
-    expect(layout.indexOf('"use client";')).toBeLessThan(layout.indexOf('import { VendoRoot }'));
-    expect(layout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
+    expect(layout.indexOf('"use client";')).toBeLessThan(layout.indexOf('import { VendoProvider }'));
+    expect(layout).toContain(WRAP);
   });
 
   it("keeps a comment-prefixed 'use client' directive ahead of the pasted imports", async () => {
@@ -140,7 +144,7 @@ describe("applyVendoRootPaste", () => {
     expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
     expect(layout.startsWith("/* Copyright (c) Fixture Corp.")).toBe(true);
-    expect(layout.indexOf('"use client";')).toBeLessThan(layout.indexOf('import { VendoRoot }'));
+    expect(layout.indexOf('"use client";')).toBeLessThan(layout.indexOf('import { VendoProvider }'));
   });
 
   it("recognizes a 'use client' directive carrying a trailing comment", async () => {
@@ -156,7 +160,7 @@ describe("applyVendoRootPaste", () => {
     expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
     expect(layout.split(/\r?\n/)[0]).toBe('"use client"; // needed for the theme hooks');
-    expect(layout.indexOf('"use client";')).toBeLessThan(layout.indexOf('import { VendoRoot }'));
+    expect(layout.indexOf('"use client";')).toBeLessThan(layout.indexOf('import { VendoProvider }'));
   });
 
   it("preserves CRLF line endings when inserting imports", async () => {
@@ -168,7 +172,7 @@ describe("applyVendoRootPaste", () => {
 
     expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
-    expect(layout).toContain('import { VendoRoot } from "@vendoai/vendo/react";');
+    expect(layout).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
     // Every newline is still CRLF — no mixed endings after the paste.
     expect(layout.replaceAll("\r\n", "")).not.toContain("\n");
   });
@@ -197,9 +201,7 @@ describe("applyVendoRootPaste", () => {
 
     expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
-    expect(layout).toContain(
-      "<body><VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot></body>",
-    );
+    expect(layout).toContain(`<body>${WRAP}</body>`);
   });
 
   it("fails when vendo init's stdout did not print the paste instructions", async () => {
@@ -208,7 +210,7 @@ describe("applyVendoRootPaste", () => {
     await writeFile(path.join(repoDir, "app/layout.tsx"), UNWRAPPED_LAYOUT);
 
     await expect(applyVendoRootPaste(repoDir, "next", "vendo init finished with no summary"))
-      .rejects.toThrow(/Last steps are yours/);
+      .rejects.toThrow(/did not print a "File: app\/layout\.tsx" paste step/);
 
     // Untouched — the failed assertion must not half-apply the paste.
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");

@@ -79,6 +79,11 @@ export function VendoActivities({ pollMs = 5000, maxItems = 8 }: VendoActivities
   const index = Math.min(rawIndex, Math.max(0, queue.length - 1));
   const current = queue[index];
   const paged = queue.length > 1;
+  // The byline can only NAME the app when this surface already knows it (the ask
+  // carries an id); without a match the card says the bare venue phrase.
+  const currentAppName = current?.kind === "single"
+    ? automations.automations.find(entry => entry.app.id === current.ask.ctx.appId)?.app.name
+    : undefined;
   const afterDecide = () => setRawIndex(value => Math.min(value, Math.max(0, queue.length - 2)));
 
   return (
@@ -112,13 +117,16 @@ export function VendoActivities({ pollMs = 5000, maxItems = 8 }: VendoActivities
               <div key={current.id} className="fl-approvals-slide">
                 {current.kind === "set" ? (() => {
                   const entry = automations.automations.find(candidate => candidate.app.id === current.appId);
+                  // Grant sets are minted per (app, TRIGGER), and the pending
+                  // queue names only the app — so the set id comes from the one
+                  // trigger of that app that is actually waiting on permissions.
+                  const waiting = entry?.triggers.find(row => (row.pendingGrants ?? 0) > 0);
                   return (
                     <GrantSetCard
                       name={entry?.app.name ?? "This automation"}
                       permissions={current.asks.map(ask => ({
                         approvalId: ask.id,
                         tool: ask.call.tool,
-                        ...(ask.descriptor.description.length > 0 ? { description: ask.descriptor.description } : {}),
                         risk: ask.descriptor.risk,
                       }))}
                       state="parked"
@@ -128,7 +136,7 @@ export function VendoActivities({ pollMs = 5000, maxItems = 8 }: VendoActivities
                         await decide(
                           current.asks.map(ask => ask.id),
                           { approve },
-                          entry?.grantSetId === undefined ? undefined : { grantSetId: entry.grantSetId },
+                          waiting?.grantSetId === undefined ? undefined : { grantSetId: waiting.grantSetId },
                         );
                         afterDecide();
                       }}
@@ -137,6 +145,7 @@ export function VendoActivities({ pollMs = 5000, maxItems = 8 }: VendoActivities
                 })() : (
                   <ApprovalCard
                     approval={current.ask}
+                    {...(currentAppName === undefined ? {} : { venueName: currentAppName })}
                     onDecide={async decision => {
                       await decide(current.ask.id, decision);
                       afterDecide();

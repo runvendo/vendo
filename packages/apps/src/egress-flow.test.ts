@@ -50,7 +50,6 @@ const setup = async (options: {
     guard,
     tools,
     catalog: [],
-    experimentalMachines: true,
     machine: {
       sandbox,
       buildEnv: () => ({ PORT: "8080" }),

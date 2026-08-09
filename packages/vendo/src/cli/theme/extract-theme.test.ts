@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { applyThemeDraft, extractTheme, validateSlotValue, type ThemeSummary } from "./extract-theme.js";
 
 const cleanup: string[] = [];
-const appsDir = fileURLToPath(new URL("../../../../../apps/", import.meta.url));
+const examplesDir = fileURLToPath(new URL("../../../../../examples/", import.meta.url));
 
 afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true, force: true })));
@@ -120,6 +120,24 @@ describe("extractTheme allowlist fast-path", () => {
     });
     expect(result.matched["accentText"]).toBe("(contrast) accent");
     expect(result.usedModel).toBe(false);
+  });
+
+  it("lets the IMPORTING sheet win over the sheet it imports, like the real cascade", async () => {
+    // `@import` must precede other rules, so an imported declaration behaves as
+    // if inserted at the import point — the importer's own later declaration
+    // wins at equal specificity. Reading the imported file last inverts that and
+    // reports the wrong brand colour as an EXACT read, which is the one outcome
+    // the exact-then-staged design exists to prevent.
+    const root = await fixture({
+      "package.json": "{}\n",
+      "app/layout.tsx": 'import "./global.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n',
+      "app/global.css": '@import "./tokens.css";\n:root { --primary: #ff6600; }\n',
+      "app/tokens.css": ":root { --primary: #000000; }\n",
+    });
+
+    const result = await extractTheme(root);
+
+    expect(result.slots.accent).toBe("#ff6600");
   });
 
   it("derives accentText without any model involvement when every other core token is exact", async () => {
@@ -421,22 +439,11 @@ describe("extractTheme deterministic body-font-stack derivation (full source sta
 
 describe("extractTheme demo-app allowlist behavior (deterministic)", () => {
   it("Maple: exact reads claim only true conventional tokens — no wrong-brand exacts", async () => {
-    const result = await extractTheme(join(appsDir, "demo-bank"));
+    const result = await extractTheme(join(examplesDir, "demo-bank"));
     // Maple declares --color-border (allowlist) = #ECEBE8; its custom ink/bg
     // tokens are NOT claimed — they default without a model, visibly.
     expect(result.slots.border).toBe("#ecebe8");
     expect(result.matched["border"]).toBe("--color-border");
     expect(result.defaulted).toEqual(expect.arrayContaining(["accent", "background", "text", "mutedText"]));
-  });
-
-  it("Cadence: only the true conventional token is exact-claimed (--color-card), never --color-surface", async () => {
-    const result = await extractTheme(join(appsDir, "demo-accounting"));
-    // Cadence's --color-card #ffffff IS the shadcn card convention — a
-    // correct exact read. Its --color-surface is the PAGE background, and
-    // "surface" is not a shadcn name, so no exact pass may claim it: the
-    // background slot stays default (visible), not silently wrong.
-    expect(result.matched["surface"]).toBe("--color-card");
-    expect(result.slots.surface).toBe("#ffffff");
-    expect(result.defaulted).toEqual(expect.arrayContaining(["accent", "background", "text", "mutedText", "border"]));
   });
 });

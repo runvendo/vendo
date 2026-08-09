@@ -3,6 +3,7 @@ import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createMachineLifecycle, type LifecycleClock } from "./machine-lifecycle.js";
 import { documentFromRecord } from "./persistence.js";
+import { inMemoryBoxFiles } from "./testing/box-files.js";
 import { fakeStatefulSandbox, memoryStore, seedAppRow } from "./testing/index.js";
 
 const app = (id = "app_machine_test"): AppDocument => ({
@@ -52,7 +53,7 @@ const setup = async (options: {
   template?: string;
   idleMs?: number;
   withAdapter?: boolean;
-  allowedDomains?: (doc: AppDocument) => Promise<string[] | undefined> | string[] | undefined;
+  allowedDomains?: (doc: AppDocument) => Promise<string[]> | string[];
 } = {}) => {
   const store = memoryStore();
   const sandbox = fakeStatefulSandbox();
@@ -63,7 +64,9 @@ const setup = async (options: {
     store,
     sandbox: options.withAdapter === false ? undefined : sandbox,
     buildEnv: () => options.env ?? { PORT: "8080" },
-    allowedDomains: options.allowedDomains,
+    // Deny-all when a case names no policy: the seam requires one, and the
+    // fixture must not be the one place that can still say "unrestricted".
+    allowedDomains: options.allowedDomains ?? (() => []),
     template: options.template,
     idleMs: options.idleMs,
     clock: timers.clock,
@@ -263,6 +266,7 @@ describe("machine lifecycle: provider snapshot hygiene", () => {
     const lifecycle = createMachineLifecycle({
       store,
       sandbox,
+      allowedDomains: () => [],
       // Another app server wins the provision race while this one assembles env:
       // the store row already carries a machine by the time our CAS write runs.
       buildEnv: async () => {
@@ -317,6 +321,8 @@ describe("machine lifecycle: in-flight requests defer auto-sleep", () => {
             releaseRequest = () => resolve({ status: 200, headers: {}, body: new Uint8Array() });
           },
         ),
+      url: async () => "https://8080-slow.test",
+      files: inMemoryBoxFiles(new Map()),
       snapshot: async () => {
         snapshots += 1;
         return `slow:snap_${snapshots}`;
@@ -331,6 +337,7 @@ describe("machine lifecycle: in-flight requests defer auto-sleep", () => {
         resume: async () => slowMachine,
         destroy: async () => undefined,
       },
+      allowedDomains: () => [],
       idleMs: 5 * 60_000,
       clock: timers.clock,
     });
@@ -449,6 +456,7 @@ describe("machine lifecycle: env-stale wake rebuild (Wave 7)", () => {
     const lifecycle = createMachineLifecycle({
       store,
       sandbox,
+      allowedDomains: () => [],
       buildEnv: () => ({ PORT: "8080", FRESH: "yes" }),
       injectEnv: async () => {
         injections += 1;
@@ -489,6 +497,7 @@ describe("machine lifecycle: env-stale wake rebuild (Wave 7)", () => {
     const lifecycle = createMachineLifecycle({
       store,
       sandbox,
+      allowedDomains: () => [],
       buildEnv: () => ({ PORT: "8080", ...(secret === undefined ? {} : { STRIPE_KEY: secret }) }),
       injectEnv: async (_machine, env) => {
         injected.push(env);
@@ -589,10 +598,15 @@ describe("machine lifecycle: egress allowlist policy (Lane E)", () => {
     expect(sandbox.machines[0]?.allowedDomains).toEqual(["api.example.com", "host.vendo.test"]);
   });
 
-  it("provision without a policy callback creates unrestricted (pre-Lane-E behavior)", async () => {
+  // This assertion used to read `toBeUndefined()` — "provision without a policy
+  // callback creates unrestricted (pre-Lane-E behavior)". That is the fail-open
+  // itself, pinned as intended behavior: the seam reads an absent
+  // `allowedDomains` as the whole internet. A policy that resolves to nothing
+  // now sends an empty list on every path into the provider, never an absent one.
+  it("provision with a policy that names nothing sends an empty list, never unrestricted", async () => {
     const { sandbox, lifecycle, doc } = await setup();
     await lifecycle.provision(doc);
-    expect(sandbox.machines[0]?.allowedDomains).toBeUndefined();
+    expect(sandbox.machines[0]?.allowedDomains).toEqual([]);
   });
 
   it("wake applies the CURRENT policy over the snapshot-time allowlist", async () => {

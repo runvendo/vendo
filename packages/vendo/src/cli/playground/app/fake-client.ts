@@ -18,6 +18,8 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
     approvals: [...fixtures.approvals],
     approvalResolutions: new Map<string, ApprovalResolution>(),
     grants: [...fixtures.grants],
+    /** Placement rows (2026-08-05) — one per slot, as the wire keeps them. */
+    placements: [] as Array<{ slot: string; appId: string }>,
     runs: [...fixtures.runs],
   };
 
@@ -26,6 +28,12 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
     if (!found) throw new VendoError("not-found", `Unknown app ${id}`);
     return found;
   };
+
+  /** The mutable per-trigger arm state the enable/disable flows flip. */
+  const automationTrigger = (appId: string, triggerId: string) =>
+    state.automations
+      .find((candidate) => candidate.app.id === appId)
+      ?.triggers.find((candidate) => candidate.trigger.id === triggerId);
 
   return {
     baseUrl: "playground:fake",
@@ -110,6 +118,16 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
 
     apps: {
       list: async () => [...state.apps],
+      // Build contract §9.2-§9.6 — the playground is single-player, so the
+      // caller owns everything they can see and nothing is shared with anyone.
+      grants: async () => ({ level: "owner" as const, grants: [], personal: true }),
+      share: async () => ({ grants: [] }),
+      unshare: async () => ({ grants: [] }),
+      promote: async (id: string) => app(id),
+      // §9.1 companion — the playground has no host directory behind it, so it
+      // knows nobody. The dialog does not offer the person option here anyway
+      // (/status carries no `namesPeople`).
+      resolvePerson: async () => ({ person: null }),
       create: async ({ prompt }) => {
         const created: AppDocument = {
           format: "vendo/app@1",
@@ -135,7 +153,6 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
       pingMachine: async () => ({ state: "awake" }),
       edit: async (id) => ({ app: app(id), version: { at: new Date().toISOString(), intent: "edit", rung: 2 } }),
       history: async () => [{ at: "2026-07-18T09:05:30.000Z", intent: "create", rung: 2 }],
-      undo: async (id) => app(id),
       exportApp: async (id) => new TextEncoder().encode(JSON.stringify(app(id))),
       importApp: async (bytes) => {
         const imported = JSON.parse(new TextDecoder().decode(bytes)) as AppDocument;
@@ -187,18 +204,37 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
         baseHash: "sha256:playground",
         replayed: [],
       }),
+      // Placement (2026-08-05) — one app per slot, and every placed app in the
+      // playground is already built, so the status is always "ready".
+      place: async (id, slot) => {
+        const held = state.placements.find((row) => row.slot === slot);
+        state.placements = [...state.placements.filter((row) => row.slot !== slot), { slot, appId: id }];
+        return held === undefined || held.appId === id ? {} : { evicted: held.appId };
+      },
+      unplace: async (id, slot) => {
+        const held = state.placements.find((row) => row.slot === slot);
+        if (held?.appId === id) state.placements = state.placements.filter((row) => row.slot !== slot);
+      },
+      placements: async (slots) => state.placements
+        .filter((row) => slots === undefined || slots.length === 0 || slots.includes(row.slot))
+        .map((row) => ({
+          slot: row.slot,
+          app: row.appId,
+          title: state.apps.find((candidate) => candidate.id === row.appId)?.name ?? "",
+          status: "ready" as const,
+        })),
     },
 
     automations: {
-      list: async () => state.automations.map((entry) => ({ ...entry })),
-      enable: async (id) => {
-        const entry = state.automations.find((candidate) => candidate.app.id === id);
-        if (entry) entry.enabled = true;
+      list: async () => state.automations.map((entry) => ({ ...entry, triggers: entry.triggers.map((trigger) => ({ ...trigger })) })),
+      enable: async (id, triggerId) => {
+        const trigger = automationTrigger(id, triggerId);
+        if (trigger) trigger.enabled = true;
         return { enabled: true, missing: [] };
       },
-      disable: async (id) => {
-        const entry = state.automations.find((candidate) => candidate.app.id === id);
-        if (entry) entry.enabled = false;
+      disable: async (id, triggerId) => {
+        const trigger = automationTrigger(id, triggerId);
+        if (trigger) trigger.enabled = false;
       },
       dryRun: async () => ({
         steps: [
@@ -219,6 +255,10 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
         return found;
       },
       stop: async () => undefined,
+      // The playground fires nothing, so "run it again" hands back the run it
+      // was asked about rather than inventing a run id nothing will ever answer
+      // for.
+      rerun: async (id) => id,
     },
 
     activity: {

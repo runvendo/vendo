@@ -9,11 +9,10 @@ import {
   ApprovalCard,
   AutomationsPanel,
   NoPolicyNotice,
+  Remixable,
   VendoOverlay,
-  VendoPage,
   VendoPalette,
   VendoSlot,
-  VendoStage,
   VendoThread,
 } from "../src/chrome/index.js";
 import { AppFrame, PayloadView, TreeView } from "../src/tree/index.js";
@@ -28,11 +27,9 @@ import {
   useVendoStatus,
   useVendoTheme,
   useVendoThread,
-  useVoice,
 } from "../src/index.js";
 import * as rootEntry from "../src/index.js";
 import * as treeEntry from "../src/tree/index.js";
-import * as voiceEntry from "../src/voice/index.js";
 
 function EveryContractedHook() {
   const approvals = useApprovals();
@@ -43,7 +40,6 @@ function EveryContractedHook() {
   const activity = useActivity();
   const status = useVendoStatus();
   const thread = useVendoThread("thr_ssr");
-  const voice = useVoice();
   const theme = useVendoTheme();
   return (
     <span>
@@ -57,7 +53,6 @@ function EveryContractedHook() {
         activity.events.length,
         String(status.connected),
         thread.messages.length,
-        voice.state,
         theme.colors.background,
       ].join("|")}
     </span>
@@ -66,13 +61,12 @@ function EveryContractedHook() {
 
 describe("public source entries without a DOM", () => {
   it("server-renders every contracted hook from empty transport state", () => {
-    expect(rootEntry.useVoice).toBe(useVoice);
-    expect(chromeEntry.VendoPage).toBeTypeOf("function");
+    expect(rootEntry.useApps).toBe(useApps);
+    expect(chromeEntry.VendoOverlay).toBeTypeOf("function");
     expect(treeEntry.TreeView).toBeTypeOf("function");
-    expect(voiceEntry.useVoice).toBe(useVoice);
 
     const html = renderToString(<VendoProvider><EveryContractedHook /></VendoProvider>);
-    expect(html).toContain("0|0|0|undefined|undefined|0|0|false|0|unavailable|");
+    expect(html).toContain("0|0|0|undefined|undefined|0|0|false|0|");
   });
 });
 
@@ -87,6 +81,9 @@ describe("every chrome surface server-renders without a DOM", () => {
   };
   const noop = async () => ({ status: "ok", output: null } as const);
   const tree = { formatVersion: "vendo-genui/v2", root: "root", nodes: [{ id: "root", component: "Text", props: { text: "SSR tree" } }] } as const;
+  // A NAMED component child: the wrapper derives its slot from the child's
+  // identifier (2026-08-02 final shape — the `name` prop is gone).
+  const SsrCard = () => <span>original</span>;
 
   // Each entry is a surface that, without the effects/DOM a browser provides,
   // must still produce markup — proving no unguarded window/document access.
@@ -94,9 +91,8 @@ describe("every chrome surface server-renders without a DOM", () => {
     ["VendoThread", <VendoThread />],
     ["VendoOverlay", <VendoOverlay />],
     ["VendoSlot", <VendoSlot id="hero" appId="app_ssr"><span>original</span></VendoSlot>],
-    ["VendoPage", <VendoPage />],
+    ["Remixable", <Remixable><SsrCard /></Remixable>],
     ["VendoPalette", <VendoPalette />],
-    ["VendoStage", <VendoStage />],
     ["ApprovalCard", <ApprovalCard approval={approval} onDecide={() => undefined} />],
     ["ActivityPanel", <ActivityPanel />],
     ["AutomationsPanel", <AutomationsPanel />],

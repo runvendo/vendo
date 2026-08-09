@@ -10,8 +10,7 @@ import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
  * default.
  *
  * A cue's `chunk` is exactly one SSE `data:` payload of the live wire
- * (`UIMessageChunk`), so a recording of a real build replays verbatim — see
- * the recorder hook in `use-vendo-thread.ts` (`__vendoDirectorRecord`).
+ * (`UIMessageChunk`), so a capture of a real build replays verbatim.
  */
 export interface DirectorCue {
   /** Milliseconds to wait after the previous cue before emitting this chunk. */

@@ -74,8 +74,8 @@ describe("cloudConfig.fetch", () => {
   });
 
   it("defaults the base URL to the Vendo console", async () => {
-    const fetchImpl = vi.fn(async () => publishedResponse());
-    const client = cloudConfig({ apiKey: "vnd_secret", fetch: fetchImpl as unknown as typeof fetch });
+    const fetchImpl = vi.fn<typeof fetch>(async () => publishedResponse());
+    const client = cloudConfig({ apiKey: "vnd_secret", fetch: fetchImpl });
     await client.fetch();
     expect(String(fetchImpl.mock.calls[0]![0])).toBe("https://console.vendo.run/api/v1/config");
   });

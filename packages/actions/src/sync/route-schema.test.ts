@@ -1221,3 +1221,27 @@ export async function DELETE(req: Request) {
     expect(tool?.note).toBeUndefined();
   });
 });
+
+describe("input source markers", () => {
+  it("records zod as declared, and path-params-only as unknown", async () => {
+    const root = await temporaryRoot();
+    await write(root, "app/api/orders/route.ts", `
+import { z } from "zod";
+const Body = z.object({ merchant: z.string(), amountCents: z.number() });
+export async function POST(req: Request) {
+  const body = Body.parse(await req.json());
+  return Response.json({ ok: true, body });
+}
+`);
+    await write(root, "app/api/ping/route.ts", `
+export async function GET() { return Response.json({ ok: true }); }
+`);
+
+    const { tools } = await scanRoutes(root);
+    const orders = tools.find((tool) => tool.binding.kind === "route" && tool.binding.path === "/api/orders");
+    const ping = tools.find((tool) => tool.binding.kind === "route" && tool.binding.path === "/api/ping");
+    expect(orders?.inputSchemaSource).toBe("declared");
+    expect(ping?.inputSchemaSource).toBe("unknown");
+    expect(ping?.outputSchemaSource).toBe("unknown");
+  });
+});

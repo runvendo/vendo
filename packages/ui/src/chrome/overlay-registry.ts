@@ -2,8 +2,8 @@
  * generalized to the conversation surface (ui-usage-dx §2/§4).
  *
  * A mounted VendoOverlay registers an opener; any affordance that wants to
- * open the chat preloaded with a prompt (the Slot remix flag, a Trigger
- * button, palette default commands) calls `openVendoConversation` without
+ * open the chat preloaded with a prompt (a Trigger button, palette default
+ * commands, the ✦ remix popover) calls `openVendoConversation` without
  * needing a ref to the overlay. LIFO like the palette registries: the most
  * recently mounted overlay owns the call.
  *
@@ -21,6 +21,17 @@ import { createContext } from "react";
 export interface OpenConversationOptions {
   /** Text to preload into the conversation's composer. */
   prompt?: string;
+  /**
+   * Grounding the AGENT needs and the person does not — the app id behind a
+   * remix, the slot a view lives in. It rides the message the composer sends
+   * (so the model reads it) and appears nowhere a person looks: not the
+   * textarea, not the transcript bubble, not "edit last message".
+   *
+   * spec §16 law 3, LEAK 4's follow-up: the remix prefill used to read
+   * "Update my <slot> remix (app app_…): " — an id typed at a person — and
+   * removing it took the agent's grounding with it. This is the other half.
+   */
+  context?: string;
   /** Send the prompt immediately (default: leave it in the composer). */
   send?: boolean;
   /** Start a fresh conversation instead of resuming the current one. */
@@ -56,8 +67,7 @@ export function openVendoConversation(options?: OpenConversationOptions): boolea
 }
 
 /** One palette command — the shape hosts route in `VendoPalette.onCommand`.
- *  Lives here (not in vendo-palette) because the overlay renders these as its
- *  composer chip strip; the palette re-exports it for compatibility. */
+ *  The palette re-exports it. */
 export interface VendoCommand {
   id: string;
   label: string;
@@ -65,44 +75,35 @@ export interface VendoCommand {
   appId?: string;
 }
 
-/** The command set a (headless) VendoPalette publishes for the overlay's chip
- *  strip: the commands plus the palette's own routing (which folds in the host
- *  `onCommand` when supplied). LIFO like every registry here — the most
- *  recently mounted palette owns the strip. */
+/** The command set a (headless) VendoPalette publishes: the commands plus the
+ *  palette's own routing (which folds in the host `onCommand` when supplied).
+ *  LIFO like every registry here — the most recently mounted palette wins. */
 export interface ConversationCommandSet {
   commands: VendoCommand[];
   select(command: VendoCommand): void;
 }
 
 const commandSets: ConversationCommandSet[] = [];
-const commandListeners = new Set<() => void>();
 
 /** Publish a command set for the conversation surface; returns an unsubscribe. */
 export function registerConversationCommands(set: ConversationCommandSet): () => void {
   commandSets.push(set);
-  for (const listener of commandListeners) listener();
   return () => {
     const index = commandSets.lastIndexOf(set);
     if (index >= 0) commandSets.splice(index, 1);
-    for (const listener of commandListeners) listener();
   };
 }
 
-/** The active (most recently published) command set, or null. Stable reference
- *  between changes so it works as a useSyncExternalStore snapshot. */
+/** The active (most recently published) command set, or null. */
 export function getConversationCommands(): ConversationCommandSet | null {
   return commandSets[commandSets.length - 1] ?? null;
-}
-
-/** Subscribe to command-set changes (useSyncExternalStore-compatible). */
-export function subscribeConversationCommands(listener: () => void): () => void {
-  commandListeners.add(listener);
-  return () => commandListeners.delete(listener);
 }
 
 interface Prefill {
   prompt: string;
   send: boolean;
+  /** {@link OpenConversationOptions.context} — never rendered. */
+  context?: string;
 }
 
 /** Stamped by VendoOverlay around its thread so the composer registers its
