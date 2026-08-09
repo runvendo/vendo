@@ -125,7 +125,11 @@ describe("vendo doctor MCP discovery live", () => {
       liveTurn: async () => ({ attempted: true, ok: true, rung: "env-key", credential: "stub", reply: "ok", elapsedMs: 1 }),
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
     })).toBe(0);
-    expect(errors).toEqual([]);
+    // The npm `latest` lookup stays live, but its hint fires whenever the
+    // published version runs ahead of the workspace one — true on every
+    // release, and nothing to do with MCP discovery. Drop that one class only:
+    // `broken:` lines and every other `warning:` still have to be absent.
+    expect(errors.filter((line) => !/^warning: installed @vendoai\/vendo .+ is behind latest /.test(line))).toEqual([]);
     expect(logs).toContain("ok: server.json remote agrees with the live MCP door");
   }, 180_000);
 });
