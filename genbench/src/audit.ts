@@ -307,6 +307,9 @@ export async function audit(input: AuditInput, options: AuditOptions = {}): Prom
   return {
     pass: offenders.length === 0,
     offenders,
+    // Tier 2 only re-verdicts values tier 1 already examined — it discovers no
+    // new tokens — so the count carries over unchanged.
+    examined: input.tier1.examined,
     audited: [...records.values()],
     ...(error === undefined ? {} : { degraded: true, error }),
     ...(usage.calls === 0 ? {} : { cost: { usage, usd: usdFor(usage, AUDITOR_CONTRACT.model) } }),

@@ -176,7 +176,7 @@ const PASSING: FloorResult = {
   renders: true,
   valid: true,
   blocking: [],
-  honestData: { pass: true, offenders: [] },
+  honestData: { pass: true, offenders: [], examined: 0 },
   wiredActions: { pass: true, bindings: [] },
   pass: true,
 };

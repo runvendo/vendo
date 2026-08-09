@@ -232,9 +232,11 @@ through the same normalisation tier 1 uses.
   nothing.
 - **Two attempts** per value, then it stays an offender, `why: "no executable
   derivation found"`.
-- **One call per screen**, covering every unresolved value at once — and **no
-  call at all** when tier 1 cleared everything, which is the common case, so most
-  runs pay nothing for this.
+- **One call per round**, covering every value still unresolved at once, and
+  **up to two rounds** — a value rejected in the first gets one retry before it
+  stays an offender, so a screen with a hard value can cost two calls, not one.
+  **No call at all** when tier 1 cleared everything, which is the common case,
+  so most runs pay nothing for this.
 - Auditor unreachable → its values stay offenders and `honestData.degraded` is
   true. Fail-closed, the same posture the judge takes.
 - Dates are tier 1's alone: the comparison that clears a value is numeric, so
@@ -286,8 +288,12 @@ contender's failure and is not marked degraded.
 
 Two things are cut out of the text the fabrication check grades, both of them
 things a chart writes to measure with rather than to say. The cut is made in the
-browser, by hiding the containers before reading `document.body.innerText` and
-restoring them before the screenshot, so the *picture* is untouched:
+browser, by hiding the containers before extraction and restoring them before
+the screenshot, so the *picture* is untouched. Extraction itself walks every
+visible text node under `document.body` with a `TreeWalker`, joining text from
+the same element as written and inserting a space at every element boundary —
+not `document.body.innerText`, which collapses adjacent inline boxes together
+and would fuse a row's amount into its neighboring percentage:
 
 - **`.recharts-cartesian-axis-tick-labels`** — the scale. A chart of the
   spending case draws `$0.00 / $750.00 / $1,500.00 / $2,250.00 / $3,000.00` down
@@ -305,6 +311,13 @@ before. `tests/axis.test.ts` pins both halves in a real browser: it proves the
 labels really are in the page's own text, really would fail, are gone from the
 extraction, and that the screen's own copy is still caught. It fails loudly if
 recharts ever moves that text.
+
+One consequence follows from the same exclusion: a screen whose only text IS
+excluded chart scaffolding — a chart and nothing else, no caption, no label in
+the screen's own copy — passes `honestData` unexamined, not because it was
+checked and cleared but because there was nothing left to check. `examined` in
+`HonestDataResult` is how a reader tells the two apart: a real pass carries the
+count of values it cleared, and a vacuous one carries `0`.
 
 ## Tests
 

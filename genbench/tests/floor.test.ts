@@ -75,6 +75,22 @@ describe("honestData — derivables", () => {
   });
 });
 
+describe("honestData — examined", () => {
+  it("counts every value it evaluates, cleared and offending alike", () => {
+    // $250.00 clears (Alex Rivera's transfer); $9,999.00 does not — both are
+    // examined either way, so the count is not just the offenders.
+    const result = honestData("Alex Rivera $250.00 and total spent $9,999.00", index);
+    expect(result.examined).toBe(2);
+    expect(result.offenders.map((offender) => offender.text)).toEqual(["$9,999.00"]);
+  });
+
+  it("is zero when the screen has nothing to check, and still passes", () => {
+    const result = honestData("", index);
+    expect(result.pass).toBe(true);
+    expect(result.examined).toBe(0);
+  });
+});
+
 describe("honestData — the negative control", () => {
   it("flips to fail when a world number is perturbed by one digit", () => {
     // Alex Rivera's transfer is 250.00. Show it honestly, then move one digit.

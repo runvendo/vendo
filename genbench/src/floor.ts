@@ -26,6 +26,11 @@ export interface Audited {
 export interface HonestDataResult {
   readonly pass: boolean;
   readonly offenders: readonly Offender[];
+  /** How many numeric/date tokens the check actually evaluated — tier-1 clears
+   *  and offenders alike, carried unchanged once tier 2 re-decides some of
+   *  them. A screen with nothing extractable is 0, and 0 still passes: this
+   *  field is what tells that apart from a screen the check actually cleared. */
+  readonly examined: number;
   /** Tier 2's record, one entry per value it was asked about. Absent when the
    *  deterministic pass cleared the screen outright and no auditor was called. */
   readonly audited?: readonly Audited[];
@@ -173,11 +178,13 @@ export function buildIndex(world: World): DataIndex {
 
 export function honestData(visibleText: string, index: DataIndex): HonestDataResult {
   const offenders: Offender[] = [];
+  let examined = 0;
   // Dates are consumed first and blanked out, so "Aug 1" never leaves a stray
   // `1` for the number pass to flag.
   let remaining = visibleText;
   const takeDates = (pattern: RegExp, iso: boolean): void => {
     remaining = remaining.replace(pattern, (match, a: string, b: string, c: string | undefined) => {
+      examined += 1;
       const keys = iso ? dateKeys(a, b, c!) : dateKeys(c, String(MONTHS.indexOf(a.slice(0, 3).toLowerCase()) + 1), b);
       if (!keys.some((key) => index.dates.has(key))) {
         offenders.push({ kind: "date", text: match, why: "no tool returned this date" });
@@ -192,6 +199,7 @@ export function honestData(visibleText: string, index: DataIndex): HonestDataRes
     const text = match[0];
     const value = numberIn(text);
     if (!Number.isFinite(value)) continue;
+    examined += 1;
     if (index.numbers.has(numberKey(value))) continue;
     offenders.push({
       kind: "number",
@@ -199,7 +207,7 @@ export function honestData(visibleText: string, index: DataIndex): HonestDataRes
       why: "not a value any tool returned, and not a sum, count, min, max, mean or filtered count of one",
     });
   }
-  return { pass: offenders.length === 0, offenders };
+  return { pass: offenders.length === 0, offenders, examined };
 }
 
 // -------------------------------------------------------------- wired actions

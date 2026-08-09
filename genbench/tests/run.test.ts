@@ -112,7 +112,7 @@ const floorAt = (pass: boolean): FloorResult => ({
   renders: pass,
   valid: pass,
   blocking: [],
-  honestData: { pass, offenders: [] },
+  honestData: { pass, offenders: [], examined: 0 },
   wiredActions: { pass, bindings: [] },
   pass,
 });

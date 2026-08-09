@@ -13,6 +13,17 @@ const escape = (value: string): string =>
 const verdict = (ok: boolean): string =>
   `<span class="v ${ok ? "ok" : "no"}">${ok ? "✓" : "✕"} ${ok ? "pass" : "fail"}</span>`;
 
+/** honestData's own verdict: a fail reads exactly as any other failing check
+ *  does, but a pass splits in two. `examined` values cleared is what a real
+ *  pass earned; `examined` at 0 means the screen had nothing extractable to
+ *  check, so the floor cleared it trivially — muted, never the same clean
+ *  checkmark a screen that was actually examined gets. */
+const honestDataVerdict = (data: HonestDataResult): string => {
+  if (!data.pass) return verdict(false);
+  if (data.examined === 0) return `<span class="v muted">— nothing to check</span>`;
+  return `<span class="v ok">✓ · ${data.examined} value${data.examined === 1 ? "" : "s"} checked</span>`;
+};
+
 /** Every small list under a verdict — offenders, bindings, blocking findings —
  *  is this list. */
 const notes = (rows: readonly string[]): string => `<ul class="notes">${rows.join("")}</ul>`;
@@ -166,7 +177,12 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
   }
   ${result.failure === undefined ? "" : `<p class="failure">${escape(result.failure)}</p>`}
   ${consoleNote(result.consoleErrors)}
-  <dl class="floor">${scored.map((check) => `<div><dt>${check.name}</dt><dd>${verdict(check.pass)}</dd></div>`).join("")}</dl>
+  <dl class="floor">${scored
+    .map(
+      (check) =>
+        `<div><dt>${check.name}</dt><dd>${check.name === "honestData" ? honestDataVerdict(result.floor.honestData) : verdict(check.pass)}</dd></div>`,
+    )
+    .join("")}</dl>
   ${result.floor.blocking.length === 0 ? "" : notes(result.floor.blocking.map((why) => `<li><span>${escape(why)}</span></li>`))}
   ${result.floor.honestData.pass ? "" : offenderList(result.floor.honestData.offenders)}
   ${auditList(result.floor.honestData)}
@@ -304,6 +320,9 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
 .floor>div{padding:7px 0;border-bottom:1px solid var(--line)}
 .floor dt{font-size:13px;color:var(--sec)}
 .v{font:600 13px/1 ui-monospace,Menlo,monospace}.ok{color:var(--ok)}.no{color:var(--no)}
+/* A vacuous pass: nothing was extractable, so nothing was actually cleared.
+   Same weight as the labels around it, never the green a real pass earns. */
+.v.muted{color:var(--ter);font-weight:450}
 .notes{margin:10px 0 0;padding:0;list-style:none}
 .notes li{display:flex;gap:8px;align-items:baseline;padding:4px 0;font-size:12px;color:var(--ter)}
 .notes code{font:450 12px/1.4 ui-monospace,Menlo,monospace;color:var(--ink);background:var(--page);padding:1px 5px;border-radius:4px}

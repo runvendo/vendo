@@ -20,9 +20,16 @@ const PASSING: FloorResult = {
   renders: true,
   valid: true,
   blocking: [],
-  honestData: { pass: true, offenders: [] },
+  honestData: { pass: true, offenders: [], examined: 3 },
   wiredActions: { pass: true, bindings: [] },
   pass: true,
+};
+
+/** The vacuous pass: nothing on the screen was extractable, so the floor
+ *  cleared trivially rather than because anything was actually checked. */
+const NOTHING_TO_CHECK: FloorResult = {
+  ...PASSING,
+  honestData: { pass: true, offenders: [], examined: 0 },
 };
 
 /** One of each verdict, so a row that only handles two of them shows up. Two
@@ -208,5 +215,18 @@ describe("the preview page", () => {
     expect(html).toContain(`<ol id="feed">`);
     expect(html).toContain(`addEventListener("message"`);
     expect(html).toContain(`call.genbench !== "call"`);
+  });
+
+  it("shows a vacuous honestData pass as muted, not a clean checkmark", async () => {
+    const html = await preview(
+      [{ ...resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."), floor: NOTHING_TO_CHECK }],
+      { "pending-transfers": world },
+    );
+
+    expect(html).toContain("nothing to check");
+    expect(html).toContain(`<dd><span class="v muted">`);
+    // Not the same markup a real pass earns — a vacuous pass must not read as
+    // the check having found and cleared anything.
+    expect(html).not.toContain(`<dd><span class="v ok">✓ · 0 values checked</span></dd>`);
   });
 });
