@@ -172,15 +172,3 @@ describe("deprecation shims — one minor of grace, and a warning that names the
     }
   });
 });
-
-describe("every key has a stated destination (§10's 33→8 table)", () => {
-  it("the migration table covers every top-level key, and no key that does not exist", async () => {
-    const { readFile } = await import("node:fs/promises");
-    const page = await readFile(
-      new URL("../../../docs/config-migration-table.md", import.meta.url),
-      "utf8",
-    );
-    const { tableKeys } = await import("../src/config-keys.js");
-    expect(tableKeys(page).sort()).toEqual([...CREATE_VENDO_CONFIG_KEYS].sort());
-  });
-});

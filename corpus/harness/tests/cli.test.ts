@@ -3,8 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseKnowledgeEvalArgs, runCli, type CorpusCliDependencies } from "../src/cli.js";
-import type { KnowledgeEvalDeps, KnowledgeEvalOptions } from "../src/knowledge-eval/run.js";
+import { runCli, type CorpusCliDependencies } from "../src/cli.js";
 import { createRunContext } from "../src/run-context.js";
 import type { ManifestEntry } from "../src/manifest.js";
 import type { InitStepResult, RunVendoInitStepOptions } from "../src/init-step.js";
@@ -1245,40 +1244,5 @@ describe("runCli ai", () => {
 
     expect(exitCode).toBe(1);
     expect(stderr.join("\n")).toContain("ai-expected.json");
-  });
-});
-
-describe("runCli knowledge-eval", () => {
-  it("parses flags and dispatches with the shared deps", async () => {
-    const corpusRoot = await makeTempRoot();
-    const context = createRunContext({ corpusRoot });
-    const seen: { options?: KnowledgeEvalOptions; deps?: KnowledgeEvalDeps } = {};
-
-    const exitCode = await runCli(["knowledge-eval", "--engine", "memory", "--json", "--strict"], {
-      stdout: () => {},
-      stderr: () => {},
-      createContext: () => context,
-      runKnowledgeEval: async (options, deps) => {
-        seen.options = options;
-        seen.deps = deps;
-        return 0;
-      },
-    });
-
-    expect(exitCode).toBe(0);
-    expect(seen.options).toEqual({ engines: ["memory"], json: true, strict: true });
-    expect(seen.deps?.createContext?.()).toBe(context);
-  });
-
-  it("defaults to the memory engine and collects repeated --engine flags", () => {
-    expect(parseKnowledgeEvalArgs([])).toEqual({ engines: ["memory"], json: false, strict: false });
-    expect(parseKnowledgeEvalArgs(["--engine=lexical"])).toEqual({ engines: ["lexical"], json: false, strict: false });
-    expect(parseKnowledgeEvalArgs(["--engine", "memory", "--engine", "lexical"]))
-      .toEqual({ engines: ["memory", "lexical"], json: false, strict: false });
-  });
-
-  it("rejects unknown options and a missing engine value", () => {
-    expect(() => parseKnowledgeEvalArgs(["--nope"])).toThrow("Unknown knowledge-eval option");
-    expect(() => parseKnowledgeEvalArgs(["--engine"])).toThrow("--engine needs an engine name");
   });
 });

@@ -79,9 +79,6 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@vendoai/knowledge':
-        specifier: workspace:*
-        version: link:../../packages/knowledge
       '@vendoai/ui':
         specifier: workspace:*
         version: link:../../packages/ui
