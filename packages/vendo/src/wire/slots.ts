@@ -1,4 +1,9 @@
-import { VendoError } from "@vendoai/core";
+import {
+  SLOTS_REPORT_MAX,
+  SLOT_ID_MAX_CHARS,
+  SLOT_LABEL_MAX_CHARS,
+  VendoError,
+} from "@vendoai/core";
 import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 
 /** The slot REGISTRY — which slots this caller's surfaces mount, as opposed to
@@ -13,15 +18,14 @@ import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 
 /** Any page render writes here, so this is the widest unprivileged write on the
     wire and it is bounded like its neighbours (at most 200 tool names on
-    /sync/impact, a 1-256 character row id on /box). No page mounts more slots
-    than this, and no id or label a component carries is longer. */
-const MAX_SLOTS = 200;
-const MAX_TEXT = 256;
-
-const bounded = (value: unknown, label: string): string => {
+    /sync/impact, a 1-256 character row id on /box). The numbers live in
+    @vendoai/core because the UI client cleans a page's report to fit them
+    before it sends; this route is the strict backstop for every other caller,
+    so the two must never drift. */
+const bounded = (value: unknown, label: string, max: number): string => {
   const text = string(value, label);
-  if (text.length > MAX_TEXT) {
-    throw new VendoError("validation", `${label} must be 1-${MAX_TEXT} characters`);
+  if (text.length > max) {
+    throw new VendoError("validation", `${label} must be 1-${max} characters`);
   }
   return text;
 };
@@ -33,7 +37,10 @@ const descriptor = (value: unknown): { id: string; label: string } => {
     throw new VendoError("validation", "each slot must be an object");
   }
   const entry = value as Record<string, unknown>;
-  return { id: bounded(entry["id"], "slot id"), label: bounded(entry["label"], "slot label") };
+  return {
+    id: bounded(entry["id"], "slot id", SLOT_ID_MAX_CHARS),
+    label: bounded(entry["label"], "slot label", SLOT_LABEL_MAX_CHARS),
+  };
 };
 
 export const slotRoutes: RouteEntry[] = [
@@ -42,8 +49,8 @@ export const slotRoutes: RouteEntry[] = [
   route("POST", "/slots", async ({ request, deps, context }) => {
     const body = await requestJson(request);
     const reported = body["slots"];
-    if (!Array.isArray(reported) || reported.length > MAX_SLOTS) {
-      throw new VendoError("validation", `slots must be an array of at most ${MAX_SLOTS} entries`);
+    if (!Array.isArray(reported) || reported.length > SLOTS_REPORT_MAX) {
+      throw new VendoError("validation", `slots must be an array of at most ${SLOTS_REPORT_MAX} entries`);
     }
     const slots = reported.map(descriptor);
     const ctx = await context("app");
