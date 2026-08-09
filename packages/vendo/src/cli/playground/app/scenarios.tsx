@@ -5,14 +5,13 @@
  * scripted transport, and the auto-sent opening turn.
  */
 import type { DirectorScript } from "@vendoai/ui";
-import { ConnectedAccountsPanel, VendoActivities, VendoOverlay, VendoSlot, VendoThread } from "@vendoai/ui/chrome";
+import { VendoOverlay, VendoSlot, VendoThread } from "@vendoai/ui/chrome";
 import { useMemo, type ReactElement } from "react";
 import {
   approvalScript,
   automationScript,
   brokenViewPayload,
   connectScript,
-  emptyActivitiesFixtures,
   renewalsViewPayload,
   streamingScript,
   viewScript,
@@ -21,7 +20,7 @@ import {
 
 export interface PlaygroundScenario {
   id: string;
-  group: "Overlay" | "Thread" | "Approvals" | "Automations" | "Activities" | "Slot" | "Accounts" | "Mobile";
+  group: "Overlay" | "Thread" | "Approvals" | "Automations" | "Slot" | "Mobile";
   title: string;
   description: string;
   /** Scripted turns this scenario's sends play (ScriptedTransport). */
@@ -158,21 +157,6 @@ export const scenarios: PlaygroundScenario[] = [
     render: () => <ThreadPane />,
   },
   {
-    id: "activities",
-    group: "Activities",
-    title: "Approvals queue + activity feed",
-    description: "The shelf's VendoActivities piece: pending approvals as actionable cards on top, the humanized recent-activity feed below (ui-usage-dx §2).",
-    render: () => <VendoActivities pollMs={0} />,
-  },
-  {
-    id: "activities-empty",
-    group: "Activities",
-    title: "Empty state",
-    description: "The same piece before the agent has done anything: a quiet one-liner instead of an invisible component — hosts place this in their own pages.",
-    fixtures: emptyActivitiesFixtures,
-    render: () => <VendoActivities pollMs={0} />,
-  },
-  {
     id: "slot-empty",
     group: "Slot",
     title: "Empty ghost",
@@ -200,13 +184,6 @@ export const scenarios: PlaygroundScenario[] = [
         <HostOriginalCard />
       </VendoSlot>
     ),
-  },
-  {
-    id: "accounts",
-    group: "Accounts",
-    title: "Connected accounts",
-    description: "The settings-page counterpart to the in-thread connect card: the accounts this user has connected, and disconnecting one (with an undo window).",
-    render: () => <ConnectedAccountsPanel />,
   },
   {
     id: "mobile",

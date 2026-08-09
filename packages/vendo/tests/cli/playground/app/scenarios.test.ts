@@ -10,12 +10,9 @@ const REQUIRED = [
   "thread-view",
   "thread-connect",
   "approval-flow",
-  "activities",
-  "activities-empty",
   "slot-empty",
   "slot-filled",
   "slot-broken",
-  "accounts",
   "mobile",
 ];
 
@@ -70,17 +67,6 @@ describe("playground scenario registry", () => {
     const types = turns[0]!.cues.map((cue) => (cue.chunk as { type: string }).type);
     expect(types).toContain("tool-approval-request");
     expect(types).toContain("data-vendo-approval");
-  });
-
-  it("activities shows a populated queue+feed; activities-empty overrides both to empty", () => {
-    const populated = scenarios.find((scenario) => scenario.id === "activities")!;
-    const populatedFixtures = populated.fixtures?.();
-    expect(populatedFixtures, "activities uses the default populated fixtures").toBeUndefined();
-
-    const empty = scenarios.find((scenario) => scenario.id === "activities-empty")!;
-    const emptyFixtures = empty.fixtures!();
-    expect(emptyFixtures.approvals).toEqual([]);
-    expect(emptyFixtures.activity).toEqual([]);
   });
 
   it("the connect scenario ends with a connect-required tool outcome", () => {
