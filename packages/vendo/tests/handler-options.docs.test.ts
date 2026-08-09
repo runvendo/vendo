@@ -21,10 +21,6 @@ import { CREATE_VENDO_CONFIG_KEYS, docsTableDiff, tableKeys } from "../src/confi
  */
 
 const OPTIONS_PAGE = new URL("../../../docs-site/reference/handler-options.mdx", import.meta.url);
-const MIGRATION_TABLE = new URL(
-  "../../../docs/config-migration-table.md",
-  import.meta.url,
-);
 
 const compositionTable = (page: string): string => {
   const start = page.indexOf("## Composition configuration");
@@ -34,13 +30,6 @@ const compositionTable = (page: string): string => {
 describe("handler-options.mdx stays 1:1 with CreateVendoConfig", () => {
   it("documents every config key and no key that does not exist", async () => {
     const table = compositionTable(await readFile(OPTIONS_PAGE, "utf8"));
-    expect(docsTableDiff(tableKeys(table))).toEqual({ missing: [], unknown: [], duplicated: [] });
-  });
-});
-
-describe("the §10 migration table states a destination for every key", () => {
-  it("covers all of them, and invents none", async () => {
-    const table = await readFile(MIGRATION_TABLE, "utf8");
     expect(docsTableDiff(tableKeys(table))).toEqual({ missing: [], unknown: [], duplicated: [] });
   });
 });

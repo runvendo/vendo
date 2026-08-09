@@ -16,21 +16,10 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
-      // Scoped to the knowledge-eval module: the pre-existing ~3k-line
-      // harness joined CI without a coverage history, so a whole-src floor
-      // would either be meaninglessly low or force rewriting history. The
-      // ratchet gates what this gate was added for; widen the include (and
-      // re-measure the floor) when other modules want in.
-      include: ["src/knowledge-eval/**/*.ts"],
-      exclude: [
-        "src/**/*.test.ts",
-        "src/**/*.test-util.ts",
-        "src/**/*.live.test.ts",
-      ],
-      // Ratcheted line-coverage floor (guard convention): set at/just below
-      // the measured value (98.98 at introduction) so it can only rise;
-      // regression fails CI.
-      thresholds: { lines: 98 },
+      // No floor: the ratcheted gate covered only the knowledge-eval module,
+      // now removed, and no other module has a measured coverage history.
+      // CI still runs this package through test:coverage (test-rest group-b),
+      // so a floor can join here the day a module measures one.
     },
     environment: "node",
     // The harness exercises real git repositories and process trees. Those
