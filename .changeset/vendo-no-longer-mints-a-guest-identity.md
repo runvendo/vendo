@@ -22,7 +22,7 @@ Hosts that relied on the zero-config default (no `principal`, no `auth`)
 need one explicit line:
 
 ```ts
-principal: async () => ({ subject: "dev" })
+principal: async () => ({ kind: "user", subject: "dev" })
 ```
 
 The `sessions` option on `createVendo` is renamed to `sweep`. What is left

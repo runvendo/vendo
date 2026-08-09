@@ -102,7 +102,7 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   if (resolvePrincipal === undefined) {
     throw new VendoError(
       "validation",
-      "createVendo needs an identity: add `principal: () => ({ subject: \"dev\" })` "
+      "createVendo needs an identity: add `principal: async () => ({ kind: \"user\", subject: \"dev\" })` "
       + "(or an `auth` preset). Vendo no longer mints anonymous sessions.",
     );
   }

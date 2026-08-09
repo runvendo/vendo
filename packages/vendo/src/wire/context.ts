@@ -32,7 +32,7 @@ export function createContextResolver(
         "forbidden",
         "no identity for this request: the `principal:` resolver returned null. "
         + "Return a principal for every visitor this deployment serves — e.g. "
-        + "`principal: () => ({ subject: \"dev\" })`. Vendo no longer mints anonymous sessions.",
+        + "`principal: async () => ({ kind: \"user\", subject: \"dev\" })`. Vendo no longer mints anonymous sessions.",
       );
     }
     const parsed = principalSchema.safeParse(resolved);

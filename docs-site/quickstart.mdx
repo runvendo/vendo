@@ -101,7 +101,7 @@ one) — Vendo no longer mints an identity of its own, so a bare
 `createVendo()` throws, naming the missing line:
 
 ```ts
-principal: () => ({ subject: "dev" })
+principal: async () => ({ kind: "user", subject: "dev" })
 ```
 
 There is no `model` line on purpose: a bare `createVendo()` still resolves a

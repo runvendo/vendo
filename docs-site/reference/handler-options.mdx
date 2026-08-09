@@ -156,7 +156,7 @@ compose. The returned `Principal.subject` scopes threads, apps, approvals,
 grants, activity, and runs.
 
 ```ts
-createVendo({ principal: () => ({ subject: "dev" }) });
+createVendo({ principal: async () => ({ kind: "user", subject: "dev" }) });
 ```
 
 `principal(req)` must return `kind: "user"` (or `null`). Returning
