@@ -274,6 +274,10 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
         return readJson(`/activity${query.size > 0 ? `?${query.toString()}` : ""}`);
       },
     },
+    slots: {
+      list: () => readJson("/slots"),
+      report: slots => json("/slots", "POST", { slots }),
+    },
     status: () => readJson("/status"),
   };
 }

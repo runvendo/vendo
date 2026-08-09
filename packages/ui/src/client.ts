@@ -40,6 +40,7 @@ import type {
   RunRecord,
   RunStatus,
   ShipDiff,
+  SlotEntry,
   Thread,
   ThreadSummary,
   VendoStatus,
@@ -191,6 +192,16 @@ export interface VendoClient {
   activity: {
     /** GET /activity — self-scoped audit events; cursor = the id of the last seen event. */
     list(params?: { cursor?: string; limit?: number }): Promise<AuditEvent[]>;
+  };
+
+  /** The slot registry — where the "Add to…" picker's destinations come from.
+   *  A slot id lives in the host's markup and nowhere else, so a mounted
+   *  `VendoSlot` is the only thing that can say one exists. */
+  slots: {
+    /** GET /slots — every reported destination, newest first. */
+    list(): Promise<SlotEntry[]>;
+    /** POST /slots — mounted slots saying they exist; batched, idempotent. */
+    report(slots: readonly { id: string; label: string }[]): Promise<void>;
   };
 
   status(): Promise<VendoStatus>;

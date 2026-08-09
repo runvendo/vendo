@@ -16,6 +16,7 @@ export { useGrants } from "./use-grants.js";
 export { useApprovalSheetPresentation, useMobileTakeover, type MobileTakeover } from "./use-mobile-takeover.js";
 export { type PollOptions } from "./use-resource.js";
 export { useSlotApp } from "./use-slot-app.js";
+export { useSlots } from "./use-slots.js";
 export { useThreads } from "./use-threads.js";
 export { useVendoOverlay, type VendoOverlayController } from "./use-vendo-overlay.js";
 export { useVendoStatus } from "./use-vendo-status.js";

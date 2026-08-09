@@ -2,12 +2,12 @@
 // "Add to…" — the placement write from a surface that is NOT the host's page.
 // A BYO chat page renders a generated app inline; the app belongs on the
 // dashboard, and until now the only path there was a host-built pin control.
-// Destinations come from slot-notes (a mounted VendoSlot is the only thing that
-// knows a slot exists) and the write is awaited, so "Added" is a fact.
+// Destinations come from the slot registry (a mounted VendoSlot is the only
+// thing that knows a slot exists) and the write is awaited, so "Added" is a fact.
 import type { VendoAppRef } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VendoAppEmbed, VendoProvider, createVendoClient, noteSlot, type VendoClient } from "../../src/index.js";
+import { VendoAppEmbed, VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoSlot } from "../../src/chrome/index.js";
 import { ThreadPart } from "../../src/chrome/thread/parts.js";
 import { createWireServer } from "../wire-server.js";
@@ -17,12 +17,17 @@ import { createWireServer } from "../wire-server.js";
 // embed resolves its surface and the bar flips to the app's name.
 const ready: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_1", title: "Invoices", status: "building" };
 
+/** A slot already in the registry — reported by some page's VendoSlot before
+ *  this surface opened, which is the only way a picker ever sees one. */
+function known(id: string, label: string) {
+  return { id, label, lastSeen: "2026-07-11T12:00:00.000Z" };
+}
+
 describe("the Add to… picker", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
 
   beforeEach(async () => {
-    window.localStorage.clear();
     wire = await createWireServer();
     client = createVendoClient({ baseUrl: wire.url });
   });
@@ -37,15 +42,14 @@ describe("the Add to… picker", () => {
     <VendoProvider client={client}><VendoAppEmbed refValue={ready} /></VendoProvider>,
   );
 
-  it("offers nothing when this origin has never mounted a slot", async () => {
+  it("offers nothing when no slot has ever reported itself", async () => {
     embed();
     await screen.findByText("Invoices app surface");
     expect(screen.queryByRole("button", { name: /Add to/ })).toBeNull();
   });
 
-  it("lists the slots this origin has seen", async () => {
-    noteSlot({ id: "hero", label: "Hero" });
-    noteSlot({ id: "sidebar", label: "Sidebar" });
+  it("lists the slots the registry knows", async () => {
+    wire.state.slots = [known("hero", "Hero"), known("sidebar", "Sidebar")];
     embed();
     fireEvent.click(await screen.findByRole("button", { name: /Add to/ }));
     expect(screen.getByRole("menuitem", { name: "Hero" })).toBeTruthy();
@@ -53,7 +57,7 @@ describe("the Add to… picker", () => {
   });
 
   it("writes the placement over the wire and says where it landed", async () => {
-    noteSlot({ id: "hero", label: "Hero" });
+    wire.state.slots = [known("hero", "Hero")];
     embed();
     fireEvent.click(await screen.findByRole("button", { name: /Add to/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Hero" }));
@@ -65,6 +69,9 @@ describe("the Add to… picker", () => {
   });
 
   it("announces the placement so a slot on the page fills without waiting for its poll", async () => {
+    // The slot below reports itself too; seeded so the picker's first read is
+    // not racing that write.
+    wire.state.slots = [known("hero", "Hero")];
     render(
       <VendoProvider client={client}>
         <VendoSlot id="hero"><span>Original hero</span></VendoSlot>
@@ -78,7 +85,7 @@ describe("the Add to… picker", () => {
   });
 
   it("keeps the menu open with one honest line when the write does not go through", async () => {
-    noteSlot({ id: "hero", label: "Hero" });
+    wire.state.slots = [known("hero", "Hero")];
     vi.spyOn(client.apps, "place").mockRejectedValue(new Error("wire down"));
     embed();
     fireEvent.click(await screen.findByRole("button", { name: /Add to/ }));
@@ -90,7 +97,7 @@ describe("the Add to… picker", () => {
   });
 
   it("closes on Escape", async () => {
-    noteSlot({ id: "hero", label: "Hero" });
+    wire.state.slots = [known("hero", "Hero")];
     embed();
     fireEvent.click(await screen.findByRole("button", { name: /Add to/ }));
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
@@ -98,7 +105,7 @@ describe("the Add to… picker", () => {
   });
 
   it("stays out of the bar while the build is still streaming", async () => {
-    noteSlot({ id: "hero", label: "Hero" });
+    wire.state.slots = [known("hero", "Hero")];
     const building: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_never", title: "Weather board", status: "building" };
     render(<VendoProvider client={client}><VendoAppEmbed refValue={building} /></VendoProvider>);
     await screen.findByText(/Building/);
@@ -113,10 +120,10 @@ describe("the Add to… picker", () => {
  * in this repo mounts — so it passed its own suite while being dead in the
  * product: every real host renders its conversation through the overlay's
  * thread, and the thread's card offered one fixed pin. These cases walk the
- * whole chain the way a person does: REAL `VendoSlot`s note themselves into
- * slot-notes (the producer), the REAL in-thread card reads them (the consumer),
- * and the pick goes client → wire → placement row, which the slot on the page
- * then reads back.
+ * whole chain the way a person does: REAL `VendoSlot`s report themselves to the
+ * registry over the real wire (the producer), the REAL in-thread card reads
+ * them back over that same wire (the consumer), and the pick goes client → wire
+ * → placement row, which the slot on the page then reads back.
  *
  * The host wiring mirrors demo-bank exactly: `pinSlot` is the Home hero, and the
  * destination proven here is the OTHER one — the pick has to be able to beat the
@@ -127,7 +134,6 @@ describe("placing a generated view from the conversation the user is actually in
   let client: VendoClient;
 
   beforeEach(async () => {
-    window.localStorage.clear();
     wire = await createWireServer();
     client = createVendoClient({ baseUrl: wire.url });
   });
@@ -154,26 +160,33 @@ describe("placing a generated view from the conversation the user is actually in
     } as unknown as Parameters<typeof ThreadPart>[0]["part"];
   }
 
-  /** A host page carrying its own slots, with the conversation open over it —
-   *  demo-bank's shape. Nothing here calls `noteSlot`: the slots do. */
-  function host(appId: string, slots: string[]) {
-    return render(
+  /** A host page carrying its own slots, with the conversation opened over it —
+   *  demo-bank's shape, in the order a person meets it: the page renders and
+   *  its slots report themselves, THEN the conversation opens. Nothing here
+   *  writes to the registry; the slots do, over the wire. */
+  async function host(appId: string, slots: string[]) {
+    render(
       <VendoProvider client={client} pinSlot="home-hero">
         {slots.map(id => <VendoSlot key={id} id={id} />)}
+      </VendoProvider>,
+    );
+    await waitFor(() => expect(wire.state.slots).toHaveLength(slots.length));
+    render(
+      <VendoProvider client={client} pinSlot="home-hero">
         <ThreadPart part={view(appId)} partKey="p0" role="assistant" restored={false} />
       </VendoProvider>,
     );
   }
 
   it("offers every slot the host has mounted, named the way the page names them", async () => {
-    host("app_1", ["home-hero", "insights-custom-view"]);
+    await host("app_1", ["home-hero", "insights-custom-view"]);
     fireEvent.click(await screen.findByRole("button", { name: /Add to/ }));
     expect(screen.getByRole("menuitem", { name: "Home hero" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Insights custom view" })).toBeTruthy();
   });
 
   it("puts the view in the slot the person picked — not the host's default — and the slot reads it back", async () => {
-    host("app_1", ["home-hero", "insights-custom-view"]);
+    await host("app_1", ["home-hero", "insights-custom-view"]);
     fireEvent.click(await screen.findByRole("button", { name: /Add to/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Insights custom view" }));
 
@@ -185,8 +198,8 @@ describe("placing a generated view from the conversation the user is actually in
     expect(landed.closest("[data-vendo-slot]")?.getAttribute("data-vendo-slot")).toBe("insights-custom-view");
   });
 
-  it("keeps the one-click pin when the origin knows a single destination — a menu of one is not a choice", async () => {
-    host("app_2", ["home-hero"]);
+  it("keeps the one-click pin when the registry knows a single destination — a menu of one is not a choice", async () => {
+    await host("app_2", ["home-hero"]);
     expect(await screen.findByRole("button", { name: "Pin to dashboard" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Add to/ })).toBeNull();
   });

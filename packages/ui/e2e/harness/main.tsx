@@ -2017,8 +2017,8 @@ function SlotStatesScenario() {
 }
 
 /** "Add to…": a chat page's embed writing a placement into a slot mounted on the
- *  SAME page. The slot renders first so its note lands before the picker reads
- *  the list. */
+ *  SAME page. The slot renders first so its report lands before the picker reads
+ *  the registry. */
 function SlotPickerScenario() {
   return (
     <VendoProvider client={baseClient} components={components}>

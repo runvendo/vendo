@@ -49,13 +49,12 @@ const VALUE_EXPORTS = [
   // and the invitation are two halves of one affordance: a host that ejects the
   // template and keeps the pin needs both or its pin goes quiet.
   "usePinNudge",
-  // ⚠️ TEST EDIT — the "Add to…" picker and its destination read, public for the
-  // SAME reason `usePinNudge` is: the thread card now renders the picker in place
-  // of the fixed pin once the origin knows more than one slot, and every import in
-  // `thread/parts.tsx` is public API by construction. An ejected thread that keeps
-  // the placement affordance needs both or it silently loses the multi-slot half.
+  // ⚠️ TEST EDIT — the "Add to…" picker is public for the SAME reason
+  // `usePinNudge` is: the thread card renders it in place of the fixed pin once
+  // the registry knows more than one slot, and every import in
+  // `thread/parts.tsx` is public API by construction. (Its destinations come
+  // from `useSlots`, which the root surface exports.)
   "AddToPicker",
-  "useKnownSlots",
   "VendoTrigger",
   // Keystone graduates B7 — the remixable-surface affordance.
   "Remixable",

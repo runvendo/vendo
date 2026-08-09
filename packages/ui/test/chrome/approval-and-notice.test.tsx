@@ -144,7 +144,7 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     const surfaces: React.ReactNode[] = [
       <VendoThread threadId="thr_1" />,
       <VendoOverlay open />,
-      <VendoSlot appId="app_1" />,
+      <VendoSlot id="hero" appId="app_1" />,
       <ApprovalCard approval={approval} onDecide={() => undefined} />,
     ];
     for (const surface of surfaces) {

@@ -2,8 +2,8 @@ import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../context.js";
 import { announcePin } from "../pin-events.js";
-import { noteSlot } from "../slot-notes.js";
 import { useApp } from "../hooks/use-app.js";
+import { useReportSlot } from "../hooks/use-placements.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
@@ -208,8 +208,11 @@ export interface VendoSlotPin {
  *  the original `children` as the visible recovery path (06-apps §8). Without any
  *  of the three, the children render UNTOUCHED (no wrapper — hosts may inline
  *  slots anywhere). */
-export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true, emptyState, children }: {
+export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, discover = true, emptyState, children }: {
   id: string;
+  /** What a person choosing this slot in the "Add to…" picker reads. Defaults
+   *  to the id read as words ("net-worth-card" → "Net worth card"). */
+  label?: string;
   appId?: string;
   pin?: VendoSlotPin;
   /** Invoked when the empty-state CTA is activated — the seam to open a thread
@@ -253,13 +256,10 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true
 
   // A slot id lives in the host's markup and nowhere else, so a surface that is
   // not on this page (the embed's "Add to…" picker) can only learn this slot
-  // exists from here. Every state of a self-resolving slot notes it, including
+  // exists from here. Every state of a self-resolving slot reports it, including
   // the untouched-children one; a host-asserted one stays out of the picker
   // rather than promising a landing the person would never see.
-  useEffect(() => {
-    if (!resolvesItself) return;
-    noteSlot({ id, label: slotLabel(id) });
-  }, [id, resolvesItself]);
+  useReportSlot(id, label ?? slotLabel(id), resolvesItself);
 
   const author = () => {
     if (onAuthor) {
