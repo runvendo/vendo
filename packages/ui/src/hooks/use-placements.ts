@@ -63,8 +63,11 @@ function createPoller(client: VendoClient): Poller {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopPin: (() => void) | undefined;
 
-  /** Every (id, label) pair already sent to the registry — once per session, so
-   *  a page of slots re-rendering all day writes nothing after the first tick. */
+  /** Every (id, label) pair already sent to the registry — once per CLIENT, so a
+   *  page of slots re-rendering all day writes nothing after the first tick. A
+   *  host that mints a client per page (Maple does) starts a fresh set on every
+   *  one, so SPA back-navigation re-reports a slot; the write is idempotent, so
+   *  that costs one request and changes nothing. */
   const reported = new Set<string>();
   let queued: Array<{ id: string; label: string }> = [];
   let flushing = false;
