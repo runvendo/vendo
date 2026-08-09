@@ -187,6 +187,8 @@ read.
 | `/api/vendo/connections/:id?connector=` | GET | status; poll while connecting |
 | `/api/vendo/connections/:id?connector=` | DELETE | disconnect |
 
-Synthetic subjects (webhook principals, reserved `webhook:` and `vendo:`
-prefixes) cannot initiate a connection: there is no real user behind them
-for an external account to belong to.
+A principal marked `ephemeral: true` cannot initiate a connection: an
+external account would outlive it. Only a host resolver that sets the flag
+itself produces one now — Vendo no longer mints ephemeral principals on its
+own. Synthetic subjects (webhook principals, reserved `webhook:` and
+`vendo:` prefixes) are refused for the same reason.

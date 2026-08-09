@@ -60,7 +60,7 @@ and production is exactly where that answer matters.
 | `/activity` | GET | `AuditEvent[]`, self-scoped with `guard.audit.query({ principal })` |
 | `/connections` | GET | connected accounts owned by the caller |
 | `/connections/catalog` | GET | `{ available: { toolkit, connector, label?, description? }[] }` — the connectors this deployment advertises, wrapped in an envelope, not a bare array. What the connect dock resolves when the host passes no explicit `connectors` prop. An adapter that predates the catalog capability advertises `[]` rather than failing |
-| `/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, connector, redirectUrl }`; refused for synthetic (`webhook:` / `vendo:`) subjects |
+| `/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, connector, redirectUrl }`; refused for ephemeral and synthetic (`webhook:` / `vendo:`) subjects |
 | `/connections/:id?connector=` | GET · DELETE | status (poll while connecting) · disconnect through the broker |
 | `/orgs` · `/orgs/:id` and every other `/orgs/*` path | any | always `cloud-required` (`402`); organizations are a [Vendo Cloud](/deploy/vendo-cloud) capability, not an OSS wire route |
 | `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp` reporting the door posture (`"local"` when it serves its own OAuth surface, `"broker"` when an external authorization server fronts it, or `false` when the door is closed), `blocks.sandbox` reporting the execution venue (`"e2b"`, `"cloud"`, `"custom"`, or `false` when none is wired), and `blocks.connections` reporting the connected-accounts broker posture (`"byo"`, `"cloud"`, or `false`) |
@@ -69,9 +69,12 @@ and production is exactly where that answer matters.
 ## Development routes
 
 These routes answer only in a development composition
-(`createVendo({ development })`, which `NODE_ENV=development` enables); the
-review routes mask instead of erroring, answering an empty queue or
-`not-found` so no caller can probe another subject's pending work.
+(`createVendo({ development })`, which `NODE_ENV=development` enables).
+`/dev/inclient-approval` also refuses a principal marked `ephemeral: true`
+(`401`) — approving a host-page mount is a host trust decision, and the flag
+doesn't clear it even in dev. The review routes mask instead of erroring,
+answering an empty queue or `not-found` so no caller can probe another
+subject's pending work.
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
