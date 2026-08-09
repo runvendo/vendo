@@ -43,10 +43,6 @@
     "./kit": {
       "types": "./dist/kit/index.d.ts",
       "default": "./dist/kit/index.js"
-    },
-    "./client": {
-      "types": "./dist/client-impl.d.ts",
-      "default": "./dist/client-impl.js"
     }
   },
   "files": [

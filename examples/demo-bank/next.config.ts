@@ -27,7 +27,6 @@ const nextConfig: NextConfig = {
             "@vendoai/ui/chrome": "../../packages/ui/src/chrome/index.ts",
             "@vendoai/ui/tree": "../../packages/ui/src/tree/index.ts",
             "@vendoai/ui/kit": "../../packages/ui/src/kit/index.ts",
-            "@vendoai/ui/client": "../../packages/ui/src/client-impl.ts",
           },
         },
       }
