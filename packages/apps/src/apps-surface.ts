@@ -264,14 +264,14 @@ export const createAppsSurface = (
   deps: Pick<AppsRuntimeContext,
     "config" | "apps" | "caller" | "data" | "history" | "review" | "opener" | "interchange"
     | "inClientApprovals" | "egressApprovals" | "parkedActions" | "placementRows"
-    | "lifecycle" | "manifestTriggers" | "owned" | "requireOwned" | "requireMultiParty"
+    | "lifecycle" | "owned" | "requireOwned" | "requireMultiParty"
     | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
     | "runtime">,
 ): Pick<AppsRuntime,
   "get" | "list" | "delete" | "fork" | "promote" | "share" | "publish"
   | "exportApp" | "importApp" | "history" | "open" | "call" | "agentTools"> => {
   const { config, apps, data, history, review, inClientApprovals } = deps;
-  const { egressApprovals, parkedActions, placementRows, lifecycle, manifestTriggers } = deps;
+  const { egressApprovals, parkedActions, placementRows, lifecycle } = deps;
   const { requireOwned, reportLifecycle, claimSlot, markUnbuilt, runtime } = deps;
   return {
     ...createAppReadDoors(deps),
@@ -284,7 +284,6 @@ export const createAppsSurface = (
       // graduated tree's fn: refs would fail a machine-cleared re-validation
       // and otherwise strand the provider snapshot.
       await lifecycle.destroyResources(app);
-      await manifestTriggers.clearLegacyState(appId);
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
       await inClientApprovals.clear(appId);

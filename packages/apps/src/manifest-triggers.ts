@@ -3,7 +3,6 @@ import {
   type AppDocument,
   type AppId,
   type ApprovalRequest,
-  type Json,
   type RunContext,
   type StoreAdapter,
   type Trigger,
@@ -20,8 +19,6 @@ import { listAllRecords, rowFromRecord } from "./persistence.js";
  * scheduler — this module reads them over the box door and converts each one
  * into an ordinary doc trigger, so a manifest fire gets what only doc triggers
  * used to get: a run record, a trigger id, the kill switch, and a panel row.
- * (The second scheduler this replaced kept its own `vendo_app_schedules` cache
- * and its own tick; see the migration below for what remains of it.)
  */
 
 /**
@@ -37,30 +34,6 @@ import { listAllRecords, rowFromRecord } from "./persistence.js";
  * with `manifest_` has volunteered it to the converter.
  */
 const MANIFEST_TRIGGER_PREFIX = "manifest_";
-
-/** The retired second scheduler's per-app state cache. It is read exactly once
- *  per app — to carry `lastFiredAt` onto the new per-trigger cursor — and then
- *  deleted. Nothing writes it any more. */
-const LEGACY_SCHEDULE_STATE_COLLECTION = "vendo_app_schedules";
-
-/**
- * The automations engine's per-trigger schedule cursor, as the CUTOVER needs to
- * write it. Two facts have to agree byte for byte with automations
- * (`SCHEDULE` in `packages/automations/src/types.ts`, `triggerKey` in
- * `packages/automations/src/sponsorship.ts`) and are written down here because
- * this package cannot import that one (the dependency guard's layering:
- * apps → core only):
- *
- *   collection  "automations:schedule"
- *   row id      `<appId>:<triggerId>`
- *   data        { lastFiredAt: IsoDateTime }
- *
- * This is the ONLY place apps touches an automations-owned collection, it is
- * insert-if-absent (a live cursor is never overwritten), and it exists solely
- * so the cutover cannot re-fire or skip a window. It goes away with the
- * migration.
- */
-const SCHEDULE_CURSOR_COLLECTION = "automations:schedule";
 
 /** The trigger id a manifest `fn` converts to. `fn` admits `-` (it names a
  *  `POST /fn/<name>` route); a trigger id does not, so dashes fold to `_`. */
@@ -155,8 +128,6 @@ const declaredFn = (trigger: Trigger): string | undefined => {
 
 export const createManifestTriggers = (config: ManifestTriggerConfig) => {
   const apps = config.store.records("vendo_apps");
-  const legacy = config.store.records(LEGACY_SCHEDULE_STATE_COLLECTION);
-  const cursors = config.store.records(SCHEDULE_CURSOR_COLLECTION);
 
   /** The box's declared schedules. A 404 is a valid box that declares none. */
   const declaredSchedules = async (app: AppDocument): Promise<Array<{ cron: string; fn: string }>> => {
@@ -169,37 +140,6 @@ export const createManifestTriggers = (config: ManifestTriggerConfig) => {
       throw new VendoError("validation", `vendo.json read failed (${answer.status})`, { appId: app.id });
     }
     return parseVendoManifest(decoder.decode(answer.body)).schedules ?? [];
-  };
-
-  /**
-   * MIGRATION — carry the retired scheduler's `lastFiredAt` onto the new
-   * per-trigger cursor, then retire its row.
-   *
-   * The old row's `lastFiredAt` is the OCCURRENCE it already fired, which is
-   * exactly the baseline the new engine computes the next occurrence FROM, so a
-   * spent window is never re-fired. Anchoring the cursor at the cutover instant
-   * instead would silently skip a window the old scheduler had not reached yet,
-   * which is why this is not left to `enable()`'s own "cursor absent ⇒ now"
-   * seed. Insert-if-absent throughout: a cursor that already exists is live
-   * state and outranks anything this row remembers.
-   */
-  const carryLegacyCursors = async (appId: AppId): Promise<void> => {
-    const record = await legacy.get(appId).catch(() => null);
-    if (record === null) return;
-    const state = record.data as { schedules?: Array<{ fn?: unknown; lastFiredAt?: unknown }> } | null;
-    for (const schedule of state?.schedules ?? []) {
-      if (typeof schedule.fn !== "string" || typeof schedule.lastFiredAt !== "string") continue;
-      const input = {
-        id: `${appId}:${manifestTriggerId(schedule.fn)}`,
-        data: { lastFiredAt: schedule.lastFiredAt } as unknown as Json,
-      };
-      if (cursors.atomic !== undefined) {
-        await cursors.atomic.insertIfAbsent(input);
-      } else if (await cursors.get(input.id) === null) {
-        await cursors.put(input);
-      }
-    }
-    await legacy.delete(appId).catch(() => undefined);
   };
 
   return {
@@ -228,8 +168,6 @@ export const createManifestTriggers = (config: ManifestTriggerConfig) => {
         }
         converted.set(trigger.id, { trigger, cron, fn });
       }
-
-      await carryLegacyCursors(app.id);
 
       const before = new Map((app.triggers ?? []).filter(isManifestTrigger).map((trigger) => [trigger.id, JSON.stringify(trigger)]));
       const next = await config.updateDocument(app.id, (doc) => ({
@@ -266,11 +204,6 @@ export const createManifestTriggers = (config: ManifestTriggerConfig) => {
         });
       }
       return { app: next, triggers: results };
-    },
-
-    /** Retire an app's leftover legacy scheduler row (delete / de-graduation). */
-    async clearLegacyState(appId: AppId): Promise<void> {
-      await legacy.delete(appId).catch(() => undefined);
     },
 
     /** Dev-only doctor reporting: machine-bearing apps and what they schedule. */
