@@ -46,6 +46,11 @@ import {
 export interface CompactionState {
   version: 1;
   summary?: string;
+  /** Tools searched in over the life of this thread — vendo()'s loadout memory
+   *  (`find_tools` adds here; the loadout offers these on every later turn).
+   *  Additive: rows written before this field read fine without it, and it
+   *  rides the same slot so §1.3's clearing rules govern it too. */
+  loadedTools?: string[];
   /** `id` of the newest UIMessage {@link summary} ABSORBED. Everything after it is
    *  the verbatim tail, so the next turn rebuilds the same projection — summary,
    *  then the messages the summary never read — instead of re-summarizing the
@@ -87,6 +92,10 @@ export function readCompactionState(slot: string | undefined): CompactionState |
   if (raw["version"] !== 1) return undefined;
   const summary = raw["summary"];
   const boundary = raw["boundaryMessageId"];
+  const loadedRaw = raw["loadedTools"];
+  const loadedTools = Array.isArray(loadedRaw)
+    ? loadedRaw.filter((name): name is string => typeof name === "string")
+    : [];
   // Fields this build no longer knows about — `lastPromptTokens` and
   // `coveredThroughMessageId`, written by every build before this one — are simply
   // not read. A row missing `boundaryMessageId` therefore reads as a summary with
@@ -97,6 +106,7 @@ export function readCompactionState(slot: string | undefined): CompactionState |
     version: 1,
     ...(typeof summary === "string" ? { summary } : {}),
     ...(typeof boundary === "string" ? { boundaryMessageId: boundary } : {}),
+    ...(loadedTools.length > 0 ? { loadedTools } : {}),
   };
 }
 

@@ -3,26 +3,25 @@
  * it drives.
  *
  * One folder per harness, one subpath per harness: this mirrors
- * `../claude-code/`, so a harness's driver, its loop and its provider ladder sit
- * together and are imported together. The root barrel still exports `vendo()`
- * itself (the umbrella's `harness: vendo()` one-liner); everything the loop
- * exposes — `startTurn` and its knobs, the provider ladder — lives here.
+ * `../claude-code/`, so a harness's driver, its loop, its tool-search strategy
+ * and its provider ladder sit together and are imported together. The root
+ * barrel still exports `vendo()` itself (the umbrella's `harness: vendo()`
+ * one-liner); the knobs a host may reach live here.
+ *
+ * The loop itself (`startTurn` and its shapes) is deliberately NOT exported:
+ * it was public for "external drivers" that never came — zero importers outside
+ * this package's own tests, which reach it from source. A barrel export with no
+ * reader is surface nobody asked for.
  */
 export { vendo, type VendoHarnessDeps, type VendoHarnessOptions } from "./vendo.js";
+export { DEFAULT_MAX_RETRIES, DEFAULT_MAX_STEPS, type TurnContext } from "./loop.js";
+// vendo()'s tool-search strategy — the shape composition (or a host) hands
+// `vendo({ toolSearch })`, and the loadout knobs it carries.
 export {
-  startTurn,
-  providerHistory,
-  tokenBudgetStop,
-  turnModelMessages,
-  DEFAULT_MAX_RETRIES,
-  DEFAULT_MAX_STEPS,
-  type TurnContext,
-  type TurnLoop,
-  type TurnLoopOptions,
-  type TurnCompaction,
-  type TurnPrompt,
-  type TurnPromptInput,
-} from "./loop.js";
+  DEFAULT_MAX_INITIAL_TOOLS,
+  FIND_TOOLS_TOOL_NAME,
+  type VendoToolSearchConfig,
+} from "./tool-search.js";
 // The window table and its BYO override — the one new public knob of the
 // context shipment, and the only part of it a host is ever meant to touch.
 export {

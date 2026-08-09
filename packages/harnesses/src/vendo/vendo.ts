@@ -1,8 +1,9 @@
 /**
  * `vendo()` — the default harness. NOT a second loop: it drives `startTurn` from
- * ./loop.ts, the same call `createAgent` drives, so every rail in that loop
- * (the step cap, `buildFailedStop`, the history window, the cache breakpoints, the
- * tool-search loadout, the step-limit notice) is shared rather than re-derived.
+ * ./loop.ts — the one loop this package has, shared with its hired subagents and
+ * the screen agent — so every rail in it (the step cap, `buildFailedStop`, the
+ * history window, the cache breakpoints, the step-limit notice) is shared rather
+ * than re-derived.
  *
  * What the lift changes, and only this:
  * - tools execute through `turn.tools.call()`, which runs the SHIPPED guarded-call
@@ -17,12 +18,21 @@
  */
 import { z } from "zod";
 import { modelToolDescription, type Harness, type Json, type Turn } from "@vendoai/core";
-import { readCompactionState, writeCompactionState } from "./compaction.js";
+import { readCompactionState, writeCompactionState, type CompactionState } from "./compaction.js";
 import { startTurn, type TurnCompaction, type TurnContext } from "./loop.js";
 import { contextWindowTokens, rememberResolvedModelId } from "./model-windows.js";
 import { isContextOverflow } from "./overflow.js";
+import {
+  computeInitialLoadout,
+  FIND_TOOLS_DESCRIPTION,
+  FIND_TOOLS_TOOL_NAME,
+  isAlwaysActive,
+  searchListings,
+  type VendoToolSearchConfig,
+} from "./tool-search.js";
 import { wireErrorMessage } from "../wire-error.js";
-import { reportHire, type HireRecord, type UsageTotals } from "../runtime.js";
+import { harnessAdapters } from "../harness-sandbox.js";
+import type { UsageTotals } from "../runtime.js";
 import {
   jsonSchema,
   tool,
@@ -140,13 +150,14 @@ export interface VendoHarnessDeps {
    *  it is a fact about a model, not a product decision a host composes. */
   contextWindowTokens?: number;
   /**
-   * Called once per hired specialist. Defaults to the runtime's own
-   * {@link reportHire}, which writes the audit row and the transcript receipt — a
-   * hire is staffing the guard never sees (only the specialist's guarded CALLS
-   * reach it), so without this it would be invisible. Override only to observe it
-   * somewhere else too.
+   * vendo()'s tool-search strategy: the loadout cap and the `find_tools` hand
+   * ({@link VendoToolSearchConfig}). Composition passes it when it constructs
+   * the default harness; a host-constructed `vendo()` receives it through the
+   * composed adapter slot instead, like `claudeCode()`'s sandbox. Unset both
+   * ways = every projected tool offered and no search — the strategy is the
+   * brain's, so a brain given none has none.
    */
-  onHire?: (record: HireRecord) => void;
+  toolSearch?: VendoToolSearchConfig;
   /**
    * The CLOSED toolbox. Set, the equipped set is EXACTLY this list: a string
    * equips that registry tool (guarded, via `turn.tools.call`, same as today); a
@@ -347,8 +358,8 @@ async function runSubagent(
     system: SPECIALIST_SYSTEM,
     messages: [{ id: "hire-brief", role: "user", parts: [{ type: "text", text: brief }] }],
     tools,
-    // `attach` is a no-op for the resident's reason: the runtime owns `find_tools`.
-    toolSearch: { activeToolNames: () => [...equipped], attach: () => {} },
+    // The specialist picks only from the hands it was given at hire time.
+    activeTools: () => [...equipped],
     context: { maxSteps: SUBAGENT_MAX_STEPS },
     compaction,
     signal: turn.signal,
@@ -362,7 +373,7 @@ async function runSubagent(
 }
 
 export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions> {
-  return defineHarness<VendoHarnessOptions>({
+  const harness: Harness<VendoHarnessOptions> = defineHarness<VendoHarnessOptions>({
     name: "vendo",
     // Machine-less by design: in-process bash over the workspace is enough
     // (architecture §4, "Hands vary").
@@ -390,6 +401,15 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // What the thread already knows about its own size. An unreadable or
       // foreign slot reads as no state, which costs one un-compacted turn.
       const stored = readCompactionState(turn.state.get());
+      // …and what it searched in on earlier turns (the loadout memory). Read off
+      // `stored`, not the boundary-checked `carried` below: a stale summary
+      // boundary says nothing about which tools the thread loaded.
+      const loaded = new Set(stored?.loadedTools ?? []);
+      // The brain's strategy config: construction wins; the composed adapter
+      // slot (the same drawer `claudeCode()`'s sandbox rides) fills it for a
+      // host-constructed vendo().
+      const searchCfg = (deps.toolSearch
+        ?? harnessAdapters(harness).toolSearch) as VendoToolSearchConfig | undefined;
       // …and a slot the thread has OUTGROWN reads as no state too. §1.3 clears
       // the slot for an arbitrary edit and keeps it for a rewind, because a
       // harness with a native session rewinds that session itself. This one
@@ -421,6 +441,11 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // nothing to discover, so it fills the same object once and stops.)
       const residentTools: ToolSet = {};
       let equipped: string[] = [];
+      /** Each helper's spend, yielded as its own `usage` event after the stream
+       *  drains — the one metering channel every brain has. No receipt path:
+       *  per-hire audit rows are gone (Option 1, 2026-08-09), exactly matching
+       *  how claude-code's box reports (one blended usage stream). */
+      const hiredUsage: UsageTotals[] = [];
       const hireSubagent = tool({
         description:
           "Hire a specialist for one big job (building or editing an app, a long research pass). "
@@ -452,26 +477,11 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
             });
             return { error: "The specialist could not be reached for that job." };
           }
-          try {
-            // The ONLY place a hire's spend is reported. The turn's `usage` event
-            // stays the resident's own, so the run row and the hire rows partition
-            // the turn instead of overlapping — see `reportRun`.
-            (deps.onHire ?? reportHire)({
-              purpose: input.instructions,
-              ...(input.skill === undefined ? {} : { skill: input.skill }),
-              summary: report.summary,
-              usage: report.usage,
-            });
-          } catch (error) {
-            // The work is DONE and its tokens are already spent, so a receipt
-            // that cannot be booked must never read as a hire that failed: the
-            // resident's sane reply to a failed hire is to hire again, and the
-            // same job would then be paid for twice. `onHire` is a host's knob;
-            // its bugs cost the host a receipt, not a second specialist.
-            console.error("[vendo] harness: hire receipt failed to book", {
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
+          // The helper's spend joins the turn's own metering through the one
+          // channel every brain has: stashed here, yielded as a `usage` event
+          // after the stream drains, where the runtime's `addUsage` folds it
+          // into the run row.
+          hiredUsage.push(report.usage);
           return { summary: report.summary };
         },
       });
@@ -486,7 +496,45 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
         };
         await refresh();
         residentTools[HIRE_SUBAGENT] = hireSubagent;
-        activeToolNames = () => [...equipped, HIRE_SUBAGENT];
+        if (searchCfg !== undefined) {
+          // The starting toolbelt, computed once per turn over the projected
+          // listing; everything past it stays reachable through `find_tools`.
+          const initial = computeInitialLoadout(await turn.tools.list(), searchCfg);
+          residentTools[FIND_TOOLS_TOOL_NAME] = tool({
+            description: FIND_TOOLS_DESCRIPTION,
+            inputSchema: z.object({
+              query: z.string().min(1).max(200).describe("What you need to do."),
+              limit: z.number().int().min(1).max(25).optional(),
+            }),
+            execute: async ({ query, limit }) => {
+              const listings = await turn.tools.list();
+              let matches: readonly { name: string; description: string; score: number }[];
+              try {
+                matches = searchCfg.search !== undefined
+                  ? await searchCfg.search(query, limit === undefined ? undefined : { limit })
+                  : searchListings(listings, query, limit);
+              } catch {
+                // A broken registry seam degrades to local scoring, never to a
+                // dead search.
+                matches = searchListings(listings, query, limit);
+              }
+              for (const match of matches) loaded.add(match.name);
+              // The registry may have lazily expanded a toolkit during the
+              // search; re-reading the listing NOW is what makes a found tool
+              // callable on the very next step.
+              await refresh();
+              return { loaded: matches.map((match) => match.name), tools: matches };
+            },
+          });
+          activeToolNames = () => [
+            ...equipped.filter((name) =>
+              initial.has(name) || loaded.has(name) || isAlwaysActive(name)),
+            FIND_TOOLS_TOOL_NAME,
+            HIRE_SUBAGENT,
+          ];
+        } else {
+          activeToolNames = () => [...equipped, HIRE_SUBAGENT];
+        }
       } else {
         equipped = await equipClosedLoadout(turn, residentTools, deps.tools, hireSubagent);
         activeToolNames = () => equipped;
@@ -512,13 +560,12 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           // §3.5 — the runtime already minted it and put it on the Turn, so
           // passing it is simply true.
           turnId: turn.turnId,
-          // The loadout, in the shipped loop's own vocabulary: `prepareStep`
-          // re-reads this each step and restricts what the model may PICK, so a
-          // tool the runtime equipped mid-turn is choosable on the next step and a
-          // curated-off tool never is. `attach` is a no-op because the runtime —
-          // not the harness — owns `find_tools`: that is the dividing line, and it
-          // is what gives a third-party harness the same rail for free.
-          toolSearch: { activeToolNames, attach: () => {} },
+          // The loadout, in the loop's own vocabulary: `prepareStep` re-reads
+          // this each step and restricts what the model may PICK, so a tool
+          // searched in through `find_tools` is choosable on the next step and
+          // one outside the loadout never is. Gates CHOICE only — execution is
+          // always the guard-bound `turn.tools.call()`.
+          activeTools: activeToolNames,
           // How big this seat's window is, and what the thread remembers about
           // filling it. Always passed: a deployment that never set a knob is
           // exactly the deployment that has never had a context rail at all.
@@ -580,11 +627,10 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
                 // The caller hung up: stop cleanly, say nothing.
                 return;
               case "finish":
-                // The RESIDENT loop's own spend, and only it. Folding the hires in
-                // here too double-counted them: each hire is already its own audit
-                // row (`reportHire`), so a host summing the turn's rows paid for
-                // every specialist twice — and the cache split, which is the
-                // resident's, then described a total that was not.
+                // The RESIDENT loop's own spend. Each hire's spend is yielded as
+                // its own `usage` event after the drain (the receipt path and its
+                // per-hire audit rows are gone), so the events partition the turn
+                // and the runtime's `addUsage` sums them into the one run row.
                 yield { type: "usage", ...usageOf(part.totalUsage, model) };
                 break;
               default:
@@ -629,25 +675,41 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
         }
       }
 
+      // Each helper's spend, through the one metering channel every brain has.
+      // Yielded after the drain so the resident's own `finish` figure and the
+      // hires' figures partition the turn; the runtime's `addUsage` sums them.
+      for (const usage of hiredUsage) yield { type: "usage", ...usage };
+
       // §1.3's slot, which the runtime persists at turn end (`runtime.ts`
       // `onFinish` → `saveHarnessState`). Whatever the slot already carried
       // survives what this turn did not touch.
       //
       // What the slot holds is a SUMMARY and the boundary it absorbed, together or
       // not at all — half of that pair is not usable and the projection discards
-      // it. No measurement is carried. The provider's reported prompt count used to
-      // live here, and it was the wrong kind of fact to persist: it describes what
-      // a turn SENT while the next turn's trigger asks about what the thread
-      // STORES, and after a compaction those are different sizes. Every turn
-      // measures its own candidate prompt fresh instead (`compaction.ts`).
-      const state = loop.compacted ?? carried;
-      if (state !== undefined) turn.state.set(writeCompactionState(state));
+      // it — plus the loadout memory (`loadedTools`), which rides the same
+      // envelope. No measurement is carried. The provider's reported prompt count
+      // used to live here, and it was the wrong kind of fact to persist: it
+      // describes what a turn SENT while the next turn's trigger asks about what
+      // the thread STORES, and after a compaction those are different sizes.
+      // Every turn measures its own candidate prompt fresh instead
+      // (`compaction.ts`).
+      const compacted = loop.compacted ?? carried;
+      const next: CompactionState | undefined =
+        compacted !== undefined || loaded.size > 0
+          ? {
+              version: 1,
+              ...compacted,
+              ...(loaded.size > 0 ? { loadedTools: [...loaded] } : {}),
+            }
+          : undefined;
+      if (next !== undefined) turn.state.set(writeCompactionState(next));
       // …and a state this turn REFUSED is destroyed rather than left in the row.
       // Declining to overwrite it is not the same thing: the boundary it names
       // could be re-created by a later edit, and the summary would come back to
-      // life describing a branch nobody is on. This used to happen by accident —
-      // the turn always wrote its measurement, which overwrote the summary with
-      // it — so deleting the measurement is what made the clear load-bearing.
+      // life describing a branch nobody is on. (A refused SUMMARY dies here while
+      // the loadout memory survives — the write above carries `loadedTools`
+      // without the summary, which is exactly the split intended: a stale
+      // boundary says nothing about which tools the thread loaded.)
       else if (stored !== undefined) turn.state.clear();
 
       const stepLimit = await loop.stepLimitPart();
@@ -660,4 +722,5 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       }
     },
   });
+  return harness;
 }

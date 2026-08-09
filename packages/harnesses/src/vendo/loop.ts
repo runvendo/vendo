@@ -1,17 +1,15 @@
 /**
- * The turn loop — ONE implementation, every caller.
+ * The turn loop — ONE implementation, every caller in this package.
  *
- * This is the `streamText` call that used to live inside `createAgent`'s
- * `createUIMessageStream` closure, lifted out verbatim so it can also be driven
- * by a `Harness` (`vendo()`, its neighbour in this folder). Extracting it is what
- * makes the harness a genuine lift rather than a parallel reimplementation: every
- * rail here — the step cap, `buildFailedStop`, the history window, the cache
- * breakpoints, the abandoned-approval provider rewrite, the tool-search loadout —
- * is shared, so a rail can only be dropped by deleting it for BOTH callers.
+ * This is the `streamText` call the `vendo()` harness drives — and the same loop
+ * serves its hired subagents and the screen agent, so every rail here — the step
+ * cap, `buildFailedStop`, the history window, the cache breakpoints, the
+ * abandoned-approval provider rewrite, the `activeTools` gate — is shared: a
+ * rail can only drift by being changed for every caller at once.
  *
- * What is deliberately NOT here: how output reaches a consumer. `createAgent`
- * merges `result.toUIMessageStream()`; the harness reads `result.fullStream` and
- * yields events. Everything before that fork is identical.
+ * What is deliberately NOT here: how output reaches a consumer. The harness
+ * reads `result.fullStream` and yields the closed event vocabulary; the wire is
+ * the runtime's business.
  */
 import {
   ASK_USER_TOOL,
@@ -46,7 +44,6 @@ import {
   type CompactionState,
 } from "./compaction.js";
 import { failoverModel, type ResolvedModel } from "./failover.js";
-import type { ToolSearchSession } from "../tool-search.js";
 
 // AGENT-7: the default agent-loop step cap (unchanged from the previously
 // hardcoded value); hosts raise or lower it via context.maxSteps.
@@ -493,7 +490,10 @@ export interface TurnLoopOptions {
    *  fourth condition had nowhere to put it and would have had to grow a second
    *  stop mechanism beside this one. */
   stopWhen?: readonly StopCondition<ToolSet>[];
-  toolSearch?: ToolSearchSession;
+  /** Which tools the model may PICK this step — gates choice only; execution is
+   *  always the guard-bound path. Re-read each step via `prepareStep`, so a tool
+   *  the caller equips mid-turn is choosable on the very next step. */
+  activeTools?: () => string[];
   /** The window this turn has, and what the thread already remembers about
    *  filling it. Unset means no window awareness at all — the loop's behaviour
    *  before this shipment. */
@@ -502,9 +502,9 @@ export interface TurnLoopOptions {
   resume?: readonly ModelMessage[];
 }
 
-/** The per-turn knobs, one shape both callers pass so neither can carry half of
- *  them (`vendo()` used to pass `maxSteps` alone, which made every other knob
- *  structurally unreachable from the default harness). */
+/** The per-turn knobs, one shape for every drive of the loop so no caller can
+ *  carry half of them (`vendo()` used to pass `maxSteps` alone, which made every
+ *  other knob structurally unreachable from the default harness). */
 export interface TurnContext {
   maxOutputTokens?: number;
   /** Bound the messages re-sent per turn to the last N whole messages. */
@@ -560,7 +560,7 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     ...(options.resume === undefined ? {} : { resume: options.resume }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
-  const { toolSearch } = options;
+  const { activeTools } = options;
   const result = streamText({
     model: turnModel(options),
     messages: modelMessages,
@@ -569,20 +569,20 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     maxOutputTokens: options.context?.maxOutputTokens,
     // Stated rather than inherited — see DEFAULT_MAX_RETRIES.
     maxRetries: options.context?.maxRetries ?? DEFAULT_MAX_RETRIES,
-    // ENG-252 loadout: restrict what the model may pick to the current loadout.
-    // `prepareStep` re-reads it each step so a tool loaded via
-    // `vendo_tools_search` becomes callable on the very next step. This gates the
-    // model's CHOICE only — every tool still executes through the guard-bound
-    // registry, so there is no unguarded path.
-    ...(toolSearch === undefined ? {} : { activeTools: toolSearch.activeToolNames() }),
-    // One hook, two rails. `prepareStep` used to be built only when a tool-search
-    // session existed, which is why a step's growing tool results were never
-    // cached — the turn with the most to cache had no hook at all. It is returned
-    // on every turn now, and the loadout rides the same result rather than
-    // growing a second per-step hook beside it.
+    // The caller's loadout: restrict what the model may pick to the current
+    // offered set. `prepareStep` re-reads it each step so a tool the caller
+    // equips mid-turn (e.g. via vendo()'s `find_tools` hand) becomes choosable
+    // on the very next step. This gates the model's CHOICE only — every tool
+    // still executes through the guard-bound registry; there is no unguarded path.
+    ...(activeTools === undefined ? {} : { activeTools: activeTools() }),
+    // One hook, two rails. `prepareStep` used to be built only when a loadout
+    // existed, which is why a step's growing tool results were never cached —
+    // the turn with the most to cache had no hook at all. It is returned on
+    // every turn now, and the loadout rides the same result rather than growing
+    // a second per-step hook beside it.
     prepareStep: ({ messages }) => ({
       messages: advanceCacheBreakpoint(messages),
-      ...(toolSearch === undefined ? {} : { activeTools: toolSearch.activeToolNames() }),
+      ...(activeTools === undefined ? {} : { activeTools: activeTools() }),
     }),
     // AGENT-3: cancellation reaches the provider call itself; the loop never
     // starts another step once the signal fires.

@@ -69,6 +69,10 @@ export interface HarnessAdapters {
   sandbox?: unknown;
   /** The host's MCP door, for a harness whose thinker runs on a machine. */
   toolDoor?: ToolDoorPort;
+  /** vendo()'s tool-search strategy (`VendoToolSearchConfig` on the vendo
+   *  subpath); typed loosely for the same reason as `sandbox` — the slot is a
+   *  drawer, not a contract. */
+  toolSearch?: unknown;
 }
 
 const slots = new WeakMap<object, HarnessAdapters>();
