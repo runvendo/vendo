@@ -13,7 +13,7 @@ import type { InitTelemetryOptions, Telemetry } from "./index.js";
 export type { InitTelemetryOptions, RepoHost, Telemetry, TelemetryConfig };
 
 // Pure module (no imports at all) — shared with the Node build.
-export { envOptOut, resolveConsent } from "./consent.js";
+export { envOptOut } from "./consent.js";
 
 export function initTelemetry(_opts: InitTelemetryOptions): Telemetry {
   return { track: () => Promise.resolve() };
@@ -22,10 +22,6 @@ export function initTelemetry(_opts: InitTelemetryOptions): Telemetry {
 /** No disk on the edge: every deployment reads as opted out, nothing persists. */
 export function loadConfig(_home?: string, _env?: Record<string, string | undefined>): TelemetryConfig {
   return { anonymousId: "", optedOut: true, noticeShown: true };
-}
-
-export function saveConfig(_home: string, _config: TelemetryConfig): void {
-  // No disk on the edge; opt-out state is implicit (loadConfig above).
 }
 
 /** Git remotes are a working-copy concept; deployed edge bundles have none. */

@@ -16,12 +16,8 @@ describe("edge telemetry entry", () => {
   });
 
   it("reads as opted out with nothing persisted (no disk on the edge)", async () => {
-    const { loadConfig, saveConfig } = await import("../src/edge.js");
-    const config = loadConfig();
-    expect(config).toEqual({ anonymousId: "", optedOut: true, noticeShown: true });
-    // No disk: saving is a no-op and the next read stays opted out.
-    saveConfig("/nowhere", { anonymousId: "x", optedOut: false, noticeShown: false });
-    expect(loadConfig()).toEqual(config);
+    const { loadConfig } = await import("../src/edge.js");
+    expect(loadConfig()).toEqual({ anonymousId: "", optedOut: true, noticeShown: true });
   });
 
   it("reports no git remote host (deployed bundles have no working copy)", async () => {
@@ -34,6 +30,5 @@ describe("edge telemetry entry", () => {
     const edge = await import("../src/edge.js");
     const node = await import("../src/consent.js");
     expect(edge.envOptOut).toBe(node.envOptOut);
-    expect(edge.resolveConsent).toBe(node.resolveConsent);
   });
 });
