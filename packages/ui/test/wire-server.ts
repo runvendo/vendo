@@ -1352,6 +1352,17 @@ export async function createWireServer(options: WireServerOptions = {}) {
       if (url.pathname === "/slots") {
         if (method === "POST") {
           const reported = (parsedBody as { slots: Array<{ id: string; label: string }> }).slots;
+          // Mirrors the real route's caps (packages/vendo/src/wire/slots.ts):
+          // at most 200 entries, each id and label 1-256 characters, refused as
+          // `validation` before ANY row is written — the whole batch, because
+          // the route maps the array through its descriptor validator. A
+          // fixture without them cannot express what a real host page hits.
+          if (reported.length > 200) {
+            return wireError(response, "validation", "slots must be an array of at most 200 entries", 400);
+          }
+          if (reported.some(slot => slot.id.length > 256 || slot.label.length > 256)) {
+            return wireError(response, "validation", "slot label must be 1-256 characters", 400);
+          }
           for (const slot of reported) {
             state.slots = [
               { id: slot.id, label: slot.label, lastSeen: NOW },
