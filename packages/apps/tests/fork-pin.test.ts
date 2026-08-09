@@ -7,13 +7,11 @@ import type { AppDocument, RunContext, ScreenAssembler, StoreAdapter, ToolRegist
 import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime, type PinBaseline } from "../src/index.js";
 import { detectPinDrift, pinComponentName } from "../src/pins.js";
-import {
-  basicLanguageModel,
-  guardFixture,
-  memoryStore,
-  scriptedAssembler,
-  seedAppRow,
-} from "../src/testing/index.js";
+import { scriptedAssembler } from "../src/testing/authoring-assembler.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { basicLanguageModel } from "../src/testing/scripted-model.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_gesture" },

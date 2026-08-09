@@ -4,15 +4,12 @@ import { describe, expect, it } from "vitest";
 import { createMachineLane } from "../src/box-lane.js";
 import { createApps, type AppsConfig } from "../src/index.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "../src/redaction.js";
-import {
-  basicLanguageModel,
-  fakeBoxSandbox,
-  fakeStatefulSandbox,
-  guardFixture,
-  memoryStore,
-  seedAppRow,
-  type FakeBoxAgent,
-} from "../src/testing/index.js";
+import { fakeBoxSandbox, type FakeBoxAgent } from "../src/testing/fake-box.js";
+import { fakeStatefulSandbox } from "../src/testing/fake-sandbox-stateful.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { basicLanguageModel } from "../src/testing/scripted-model.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 const STRIPE_VALUE = "vendo_fixture_4eC39HqLyjWDarjtT1zdp7dc";
 

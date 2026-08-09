@@ -3,12 +3,10 @@ import { VENDO_APP_FORMAT } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createMachineLane } from "../src/box-lane.js";
 import { createApps, type AppsConfig } from "../src/index.js";
-import {
-  fakeStatefulSandbox,
-  guardFixture,
-  memoryStore,
-  seedAppRow,
-} from "../src/testing/index.js";
+import { fakeStatefulSandbox } from "../src/testing/fake-sandbox-stateful.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 /** execution-v2 Wave 2 Lane E — the grant flow end to end on the fake adapter:
     approve → the box door opens; unapproved → loud error; manifest growth

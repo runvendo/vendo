@@ -27,7 +27,9 @@ import {
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createApps } from "../../src/index.js";
-import { guardFixture, memoryStore, scriptedLanguageModel } from "../../src/testing/index.js";
+import { guardFixture } from "../../src/testing/guard-fixture.js";
+import { memoryStore } from "../../src/testing/memory-store.js";
+import { scriptedLanguageModel } from "../../src/testing/scripted-model.js";
 
 const TOOL = "host_getSpendingInsights";
 const CATEGORIES = ["dining", "groceries", "other"] as const;

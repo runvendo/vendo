@@ -16,7 +16,10 @@ import { describe, expect, it } from "vitest";
 import { createMachineLane } from "../src/box-lane.js";
 import { createMachineLifecycle } from "../src/machine-lifecycle.js";
 import type { SandboxAdapter } from "../src/sandbox.js";
-import { fakeStatefulSandbox, guardFixture, memoryStore, seedAppRow } from "../src/testing/index.js";
+import { fakeStatefulSandbox } from "../src/testing/fake-sandbox-stateful.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 type CreateSpec = { template?: string; env: Record<string, string>; allowedDomains?: string[] };
 

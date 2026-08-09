@@ -8,7 +8,9 @@ import {
 import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime, type BoxRequest } from "../src/index.js";
 import { fakeBoxSandbox } from "../src/testing/fake-box.js";
-import { guardFixture, memoryStore, seedAppRow } from "../src/testing/index.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 import { storeAccessFixture, seedGrantRows } from "./app-access-fixture.js";
 
 /**

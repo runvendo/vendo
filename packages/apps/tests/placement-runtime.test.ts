@@ -7,15 +7,11 @@ import {
   placementStore,
 } from "../src/placements.js";
 import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
-import {
-  authoringAssembler,
-  basicLanguageModel,
-  guardFixture,
-  memoryStore,
-  scriptedAssembler,
-  scriptedLanguageModel,
-  seedAppRow,
-} from "../src/testing/index.js";
+import { authoringAssembler, scriptedAssembler } from "../src/testing/authoring-assembler.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { basicLanguageModel, scriptedLanguageModel } from "../src/testing/scripted-model.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_ada" },

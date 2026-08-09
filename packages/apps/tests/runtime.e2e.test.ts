@@ -7,11 +7,9 @@ import {
 import { zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { createApps } from "../src/index.js";
-import {
-  guardFixture,
-  memoryStore,
-  seedAppRow,
-} from "../src/testing/index.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 /**
  * E2E of ownership/interchange authority (06-apps §7, 01-core §10), exercised

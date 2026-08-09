@@ -6,7 +6,9 @@ import {
   shareSnapshotSchema,
   type CloudAppsClient,
 } from "../src/index.js";
-import { guardFixture, memoryStore, seedAppRow } from "../src/testing/index.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 // ADAPTER RULE (see selectConnections in the umbrella's server.ts): the apps
 // block never reads the environment. Share/publish ride an INJECTED Cloud

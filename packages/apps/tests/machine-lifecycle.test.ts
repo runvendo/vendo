@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import { createMachineLifecycle, type LifecycleClock } from "../src/machine-lifecycle.js";
 import { documentFromRecord } from "../src/persistence.js";
 import { inMemoryBoxFiles } from "../src/testing/box-files.js";
-import { fakeStatefulSandbox, memoryStore, seedAppRow } from "../src/testing/index.js";
+import { fakeStatefulSandbox } from "../src/testing/fake-sandbox-stateful.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 const app = (id = "app_machine_test"): AppDocument => ({
   format: VENDO_APP_FORMAT,

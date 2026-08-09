@@ -36,14 +36,11 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { createApps, type AppsRuntime } from "../../src/index.js";
-import {
-  basicLanguageModel,
-  guardFixture,
-  memoryStore,
-  scriptedAssembler,
-  seedAppRow,
-  type AssemblerAnswer,
-} from "../../src/testing/index.js";
+import { scriptedAssembler, type AssemblerAnswer } from "../../src/testing/authoring-assembler.js";
+import { guardFixture } from "../../src/testing/guard-fixture.js";
+import { memoryStore } from "../../src/testing/memory-store.js";
+import { basicLanguageModel } from "../../src/testing/scripted-model.js";
+import { seedAppRow } from "../../src/testing/seed-app-row.js";
 import { blocks } from "../../src/checking/floor.js";
 
 const ctx: RunContext = {

@@ -25,13 +25,10 @@ import {
 } from "@vendoai/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApps, type AppsRuntime } from "../../src/index.js";
-import {
-  authoringAssembler,
-  guardFixture,
-  memoryStore,
-  scriptedLanguageModel,
-  type ScriptedModelCall,
-} from "../../src/testing/index.js";
+import { authoringAssembler } from "../../src/testing/authoring-assembler.js";
+import { guardFixture } from "../../src/testing/guard-fixture.js";
+import { memoryStore } from "../../src/testing/memory-store.js";
+import { scriptedLanguageModel, type ScriptedModelCall } from "../../src/testing/scripted-model.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_ada" },

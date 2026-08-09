@@ -2,7 +2,9 @@ import type { AppDocument, RunContext, ToolCall, ToolDescriptor, ToolRegistry } 
 import { VENDO_APP_FORMAT } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createApps } from "../src/index.js";
-import { guardFixture, memoryStore, seedAppRow } from "../src/testing/index.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 /**
  * A READ through `apps.call` takes the QUERY arm.

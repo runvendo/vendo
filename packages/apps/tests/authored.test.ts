@@ -23,12 +23,15 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { inMemoryBoxFiles } from "../src/testing/box-files.js";
+import { bindTools, guardFixture, type GuardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { scriptedLanguageModel } from "../src/testing/scripted-model.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 import { createAppHistory } from "../src/history.js";
 import { createApps, pinComponentName, type AppsRuntime, type PinBaseline } from "../src/index.js";
 import { detectPinDrift } from "../src/pins.js";
 import type { SandboxAdapter, SandboxMachine } from "../src/sandbox.js";
 import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
-import { bindTools, guardFixture, memoryStore, scriptedLanguageModel, seedAppRow, type GuardFixture } from "../src/testing/index.js";
 
 const APP_ID = "app_authored";
 

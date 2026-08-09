@@ -6,7 +6,7 @@ import {
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
-import { scriptedLanguageModel, type ScriptedModelCall } from "../../src/testing/index.js";
+import { scriptedLanguageModel, type ScriptedModelCall } from "../../src/testing/scripted-model.js";
 import type { GeneratedAppDocument, HostToolInfo } from "../../src/generation/engine.js";
 import {
   escalatedServer,

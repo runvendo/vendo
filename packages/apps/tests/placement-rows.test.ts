@@ -5,7 +5,7 @@ import {
   placementStore,
   type PlacementRow,
 } from "../src/placements.js";
-import { memoryStore } from "../src/testing/index.js";
+import { memoryStore } from "../src/testing/memory-store.js";
 
 const row = (slot: string, appId: string, placedAt = "2026-08-05T12:00:00.000Z"): PlacementRow =>
   ({ slot, appId, placedBy: "user_ada", placedAt });
