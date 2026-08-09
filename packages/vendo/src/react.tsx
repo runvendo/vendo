@@ -54,6 +54,10 @@ export {
   type MobileTakeover,
   type PollOptions,
   useSlotApp,
+  // The destinations a mounted VendoSlot has reported — the "Add to…" picker's
+  // only source of places to put a generated view.
+  useSlots,
+  type SlotEntry,
   useThreads,
   useVendoOverlay,
   type VendoOverlayController,
@@ -68,11 +72,6 @@ export {
   // own control instead of a Vendo surface.
   announcePin,
   onPinAnnounced,
-  // slot-notes.ts — the destinations the embed's "Add to…" picker offers; a
-  // mounted VendoSlot is the only thing that knows a slot exists.
-  knownSlots,
-  noteSlot,
-  type SlotNote,
   // theme.ts
   defaultVendoTheme,
   resolveTheme,

@@ -6,7 +6,7 @@
  * the ScriptedTransport at the provider seam.
  */
 import { VendoError, type AppDocument } from "@vendoai/core";
-import type { ApprovalResolution, VendoClient } from "@vendoai/ui";
+import type { ApprovalResolution, SlotEntry, VendoClient } from "@vendoai/ui";
 import type { PlaygroundFixtures } from "./fixtures.js";
 
 export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
@@ -20,6 +20,8 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
     grants: [...fixtures.grants],
     /** Placement rows (2026-08-05) — one per slot, as the wire keeps them. */
     placements: [] as Array<{ slot: string; appId: string }>,
+    /** Slot-registry rows (2026-08-09) — what the page's mounted slots reported. */
+    slots: [] as SlotEntry[],
     runs: [...fixtures.runs],
   };
 
@@ -262,6 +264,19 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
 
     activity: {
       list: async () => [...fixtures.activity],
+    },
+
+    // The slot registry (2026-08-09) — the playground's slots report themselves
+    // in exactly as a host's do, so the "Add to…" picker's destinations are the
+    // ones this page actually mounted. Newest first, one row per id.
+    slots: {
+      list: async () => [...state.slots],
+      report: async (reported) => {
+        const lastSeen = new Date().toISOString();
+        for (const { id, label } of reported) {
+          state.slots = [{ id, label, lastSeen }, ...state.slots.filter((row) => row.id !== id)];
+        }
+      },
     },
 
     status: async () => fixtures.status,
