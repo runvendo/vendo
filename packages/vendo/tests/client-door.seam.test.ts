@@ -260,11 +260,6 @@ describe("the shipped client against the shipped door", () => {
       ["apps.fork", () => client.apps.fork(app)],
       ["apps.forkPin", () => client.apps.forkPin({ appId: app, slot: "hero", instruction: "make it blue" })],
       ["apps.forkPin(slot only)", () => client.apps.forkPin({ slot: "hero" })],
-      ["apps.grants", () => client.apps.grants(app)],
-      ["apps.share", () => client.apps.share(app, "user_bo", "viewer")],
-      ["apps.unshare", () => client.apps.unshare(app, "user_bo")],
-      ["apps.promote", () => client.apps.promote(app, "org_1")],
-      ["apps.resolvePerson", () => client.apps.resolvePerson(app, "bo")],
       ["apps.shipDiff", () => client.apps.shipDiff(app)],
       ["apps.rebasePin", () => client.apps.rebasePin(app, "hero")],
       ["apps.pingMachine", () => client.apps.pingMachine(app)],
@@ -284,7 +279,7 @@ describe("the shipped client against the shipped door", () => {
     ];
 
     // Concurrently: each call is an independent lookup of an absent id, and
-    // 46 serial round trips through a real embedded Postgres is wall time this
+    // 41 serial round trips through a real embedded Postgres is wall time this
     // assertion does not need.
     const unrouted = (await Promise.all(calls.map(async ([name, call]) => {
       try {

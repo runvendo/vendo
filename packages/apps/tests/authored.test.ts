@@ -197,7 +197,7 @@ const stand = (options: {
     onDocumentEdit: async (previous, next, editor) => {
       edits.push({ previous, next, editor });
     },
-    ...(options.shared === true ? { appAccess: storeAccessFixture(store), multiParty: true } : {}),
+    ...(options.shared === true ? { appAccess: storeAccessFixture(store) } : {}),
     ...(options.box === true ? { machine: { sandbox: fnBox(seen) } } : {}),
     ...(options.pinBaselines === undefined ? {} : { pinBaselines: [...options.pinBaselines] }),
     ...(options.model === true ? { model: scriptedLanguageModel("<Cannot>the model was never asked anything.</Cannot>") } : {}),

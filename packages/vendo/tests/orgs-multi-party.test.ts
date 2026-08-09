@@ -3,10 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   VENDO_APP_FORMAT,
+  type AccessLevel,
   type AppDocument,
   type Membership,
   type Principal,
   type ResolvedPerson,
+  type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
 import { appAccess, createStore, workspaceStore, type VendoStore } from "@vendoai/store";
@@ -14,9 +16,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
 
 /**
- * Multi-party orgs over the REAL composition: `createVendo` fills `appAccess`,
- * `multiParty`, `promoteApp` and the memberships seam itself, and every
- * assertion below goes through the actual wire routes a browser calls.
+ * Multi-party orgs over the REAL composition: `createVendo` fills `appAccess`
+ * and the memberships seam itself, and every assertion below goes through the
+ * actual wire routes a browser calls.
+ *
+ * Grant ROWS are fixture, written through the same `appAccess(store)` seam the
+ * composition wires into the runtime — the Share dialog's own wire routes are
+ * gone, and what these tests are about is what every OTHER door does with a
+ * grant that exists.
  *
  * Two real people in one org: Dana (org admin) and Kim (ordinary member).
  * Seeded apps only — new-app GENERATION against a host catalog is a known
@@ -72,9 +79,9 @@ async function boot(
   store: VendoStore,
   opts: { key?: boolean; resolvePerson?: (query: string, asker: Principal) => Promise<ResolvedPerson | null> } = {},
 ): Promise<Vendo> {
-  // §9.6 — multiParty is filled from the SAME cloud-key read every other Cloud
-  // default uses, so this env stub is the whole difference between keyed and
-  // keyless. Nothing else in the composition changes.
+  // The key fills Cloud defaults for the adapter slots this composition leaves
+  // unset; `key: false` is how §9.6 boots a keyless deployment over the very
+  // same store, because enforcement may never be key-conditional.
   if (opts.key !== false) vi.stubEnv("VENDO_API_KEY", "vnd_orgs_key");
   const vendo = createVendo({
     store,
@@ -124,6 +131,19 @@ const seedApp = async (store: VendoStore, app: AppDocument, subject: string): Pr
   });
 };
 
+/** A request context for the grant seam, carrying the same memberships the
+    host asserts on the wire — `can()` reads them from the ctx and nowhere else. */
+const ctxFor = (principal: Principal): RunContext => ({
+  principal,
+  venue: "app",
+  presence: "present",
+  sessionId: `s_${principal.subject}`,
+  memberships: memberships[principal.subject] ?? [],
+});
+
+const share = (store: VendoStore, who: Principal, appId: string, principal: string, level: AccessLevel) =>
+  appAccess(store).grant(ctxFor(who), appId, principal, level);
+
 describe("two principals, one org, over the real composition", () => {
   let store: VendoStore;
   let vendo: Vendo;
@@ -133,21 +153,16 @@ describe("two principals, one org, over the real composition", () => {
     vendo = await boot(store);
   });
 
-  it("promote → both see ONE living app", async () => {
-    await seedApp(store, seeded("app_dash", "Team dashboard"), "dana");
+  it("one org app, two people: the granted member sees the SAME app, not a copy", async () => {
+    await seedApp(store, seeded("app_dash", "Team dashboard"), ORG);
 
-    // Kim cannot see Dana's personal app at all.
+    // Kim is an ordinary member, so the org app is masked until she is granted.
     expect((await call(vendo, kim, "GET", "/apps")).body).toEqual([]);
-
-    expect((await call(vendo, dana, "POST", "/apps/app_dash/promote", { orgId: ORG })).status).toBe(200);
-    // The row now belongs to the org, verbatim.
-    expect((await store.records("vendo_apps").get("app_dash"))?.refs?.["subject"]).toBe(ORG);
-
-    // Dana still reaches it (the owner grant promote minted), and Kim reaches it
-    // as an ordinary member once she is granted — one app, two people.
+    // Dana is the org's admin, so she is its apps' implicit owner (§9.3).
     expect((await call(vendo, dana, "GET", "/apps")).body.map((app: AppDocument) => app.id))
       .toEqual(["app_dash"]);
-    await call(vendo, dana, "POST", "/apps/app_dash/grants", { principal: "user:kim", level: "viewer" });
+
+    await share(store, dana, "app_dash", "user:kim", "viewer");
     expect((await call(vendo, kim, "GET", "/apps")).body.map((app: AppDocument) => app.id))
       .toEqual(["app_dash"]);
     // The SAME app id — not a copy.
@@ -158,7 +173,7 @@ describe("two principals, one org, over the real composition", () => {
     // The level belongs in the runtime, not only in this route, which is why
     // the runtime takes the ctx.
     await seedApp(store, seeded("app_hist", "Shared"), ORG);
-    await call(vendo, dana, "POST", "/apps/app_hist/grants", { principal: "user:kim", level: "viewer" });
+    await share(store, dana, "app_hist", "user:kim", "viewer");
 
     const listed = await call(vendo, kim, "GET", "/apps/app_hist/history");
     expect(listed.status).toBe(200);
@@ -184,118 +199,9 @@ describe("two principals, one org, over the real composition", () => {
     expect(await solo.readdir("/")).toEqual(["host", "user"]);
   });
 
-  it("removing your OWN last grant succeeds honestly — the work landed, so say so", async () => {
-    // The route read the grant list back to build its answer, and reading it is
-    // viewer-gated: a caller who just removed their own last grant got a 404 for
-    // a removal that had already happened, which the Share dialog renders as an
-    // error. A mutation that landed must never report failure.
-    await seedApp(store, seeded("app_selfrevoke", "Kim's own"), "kim");
-    expect((await call(vendo, kim, "POST", "/apps/app_selfrevoke/promote", { orgId: ORG })).status).toBe(200);
-
-    const removed = await call(vendo, kim, "DELETE", "/apps/app_selfrevoke/grants?principal=user%3Akim");
-    expect(removed.status).toBe(200);
-    // An empty list is the honest answer: it is what she can still legitimately
-    // see, not a fabricated list of who else reaches the app.
-    expect(removed.body.grants).toEqual([]);
-    // The removal really landed, and she really did give up her access.
-    expect((await store.records("vendo_app_grants").list({ refs: { app_id: "app_selfrevoke" } })).records)
-      .toEqual([]);
-    expect((await call(vendo, kim, "GET", "/apps/app_selfrevoke")).status).toBe(404);
-  });
-
-  it("a stranger's DELETE is masked and mutates NOTHING", async () => {
-    await seedApp(store, seeded("app_strangerdel", "Team app"), ORG);
-    await call(vendo, dana, "POST", "/apps/app_strangerdel/grants", { principal: "user:kim", level: "viewer" });
-
-    const stranger: Principal = { kind: "user", subject: "stranger" };
-    const refused = await call(vendo, stranger, "DELETE", "/apps/app_strangerdel/grants?principal=user%3Akim");
-    expect(refused.status).toBe(404);
-    expect(refused.body.error.code).toBe("not-found");
-    // The refusal happens at the owner gate, BEFORE the delete.
-    expect((await store.records("vendo_app_grants").list({ refs: { app_id: "app_strangerdel" } })).records)
-      .toHaveLength(1);
-    expect((await call(vendo, kim, "GET", "/apps/app_strangerdel")).status).toBe(200);
-  });
-
-  it("two simultaneous promotes: one wins, and the LOSER undoes nothing of the winner's", async () => {
-    // The dangerous shape is not the collision — it is the rollback. A promote
-    // that loses the row flip must not reverse the document move the winner made
-    // or revoke the grant the winner minted: doing either leaves the owner with
-    // a half-moved app she can no longer see (row in the org, documents back
-    // under /user, no grant to admit her).
-    await seedApp(store, seeded("app_race", "Race"), "dana");
-    const workspace = workspaceStore(store);
-    const mine = await workspace.open(dana);
-    await mine.writeFile("/user/apps/app_race/app.vendo", "page: v1");
-    await mine.commit();
-
-    const both = await Promise.all([
-      call(vendo, dana, "POST", "/apps/app_race/promote", { orgId: ORG }),
-      call(vendo, dana, "POST", "/apps/app_race/promote", { orgId: ORG }),
-    ]);
-    // At least one succeeds, and nothing 5xxes — a lost race is a `conflict`
-    // (409) or, if the loser starts after the winner finished, simply the app
-    // already in its org (200). Never a crash, never a raw database error.
-    expect(both.some((answer) => answer.status === 200)).toBe(true);
-    expect(both.every((answer) => answer.status < 500)).toBe(true);
-
-    // THE INVARIANT, whatever the interleaving was: one living app, wholly in
-    // the org, and its owner still reaches it.
-    expect((await store.records("vendo_apps").get("app_race"))?.refs?.["subject"]).toBe(ORG);
-    const rows = await (store.raw() as {
-      query(sql: string, params: unknown[]): Promise<{ rows: Array<{ path: string; owner: string }> }>;
-    }).query("SELECT path, owner FROM vendo_workspace_files WHERE path LIKE $1 ORDER BY path", ["%app_race%"]);
-    expect(rows.rows).toEqual([
-      { path: `/orgs/${ORG}/apps/app_race/app.vendo`, owner: ORG },
-    ]);
-    const grants = await call(vendo, dana, "GET", "/apps/app_race/grants");
-    expect(grants.body.level).toBe("owner");
-    expect(grants.body.grants.map((grant: { principal: string; level: string }) => grant))
-      .toEqual([expect.objectContaining({ principal: "user:dana", level: "owner" })]);
-    expect((await call(vendo, dana, "GET", "/apps/app_race")).status).toBe(200);
-  });
-
-  it("refuses a colliding promote in the consumer's voice, leaving the app WHOLLY personal", async () => {
-    // The org workspace already holds documents at this app's subtree. Promote
-    // is all-or-nothing: the documents move first and the row flips last, so a
-    // refusal here leaves nothing half-moved.
-    await seedApp(store, seeded("app_collide", "Mine"), "dana");
-    const workspace = workspaceStore(store);
-    const mine = await workspace.open(dana);
-    await mine.writeFile("/user/apps/app_collide/app.vendo", "page: mine");
-    await mine.commit();
-    await (store.raw() as { query(sql: string, params: unknown[]): Promise<unknown> }).query(
-      "INSERT INTO vendo_workspace_files (path, owner, content, bytes) VALUES ($1, $2, $3, $4)",
-      [`/orgs/${ORG}/apps/app_collide/app.vendo`, ORG, "someone else's", 14],
-    );
-
-    const refused = await call(vendo, dana, "POST", "/apps/app_collide/promote", { orgId: ORG });
-    expect(refused.status).toBe(409);
-    expect(refused.body.error.code).toBe("conflict");
-    // A typed refusal in the consumer's voice — never a raw database error.
-    expect(refused.body.error.message).not.toMatch(/duplicate key|constraint|SQLSTATE/i);
-
-    // The app is still entirely Dana's: row AND documents.
-    expect((await store.records("vendo_apps").get("app_collide"))?.refs?.["subject"]).toBe("dana");
-    const rows = await (store.raw() as {
-      query(sql: string, params: unknown[]): Promise<{ rows: Array<{ path: string; owner: string }> }>;
-    }).query("SELECT path, owner FROM vendo_workspace_files WHERE path LIKE $1 ORDER BY path", ["%app_collide%"]);
-    expect(rows.rows).toEqual([
-      { path: `/orgs/${ORG}/apps/app_collide/app.vendo`, owner: ORG },
-      { path: "/user/apps/app_collide/app.vendo", owner: "dana" },
-    ]);
-    // ...and its grant set too: the owner grant a promote mints goes back with
-    // the documents, so a refused promote leaves nothing behind at all.
-    expect((await call(vendo, dana, "GET", "/apps/app_collide/grants")).body).toEqual({
-      level: "owner",
-      grants: [],
-      personal: true,
-    });
-  });
-
   it("a viewer denied an edit gets forbidden (403) and can fork", async () => {
     await seedApp(store, seeded("app_view", "Shared view"), ORG);
-    await call(vendo, dana, "POST", "/apps/app_view/grants", { principal: "user:kim", level: "viewer" });
+    await share(store, dana, "app_view", "user:kim", "viewer");
 
     const denied = await call(vendo, kim, "POST", "/apps/app_view/edit", { instruction: "make it blue" });
     expect(denied.status).toBe(403);
@@ -320,11 +226,10 @@ describe("two principals, one org, over the real composition", () => {
 
   it("revoke → reads age, the next write fails against LIVE rows", async () => {
     await seedApp(store, seeded("app_rev", "Revocable"), ORG);
-    await call(vendo, dana, "POST", "/apps/app_rev/grants", { principal: "user:kim", level: "editor" });
+    await share(store, dana, "app_rev", "user:kim", "editor");
     expect((await call(vendo, kim, "GET", "/apps/app_rev")).status).toBe(200);
 
-    const revoked = await call(vendo, dana, "DELETE", "/apps/app_rev/grants?principal=user%3Akim");
-    expect(revoked.status).toBe(200);
+    await appAccess(store).revoke(ctxFor(dana), "app_rev", "user:kim");
 
     // The app is masked again, and a write is refused against live rows.
     expect((await call(vendo, kim, "GET", "/apps/app_rev")).status).toBe(404);
@@ -336,12 +241,12 @@ describe("two principals, one org, over the real composition", () => {
     expect(await workspace.canCommit({ principal: dana, memberships: memberships["dana"] }, path)).toBe(true);
   });
 
-  it("per-user app data inside a promoted app stays subject-partitioned", async () => {
+  it("per-user app data inside a shared org app stays subject-partitioned", async () => {
     await seedApp(store, seeded("app_data", "Shared with private state"), ORG);
-    await call(vendo, dana, "POST", "/apps/app_data/grants", { principal: "user:kim", level: "editor" });
+    await share(store, dana, "app_data", "user:kim", "editor");
 
-    // App storage is keyed (appId, subject) — promotion changes nothing about
-    // that, which is exactly why per-user data needs no new machinery.
+    // App storage is keyed (appId, subject) — sharing the app changes nothing
+    // about that, which is exactly why per-user data needs no new machinery.
     const state = store.records("vendo_state");
     await state.put({ id: "app_data:dana", data: { draft: "dana's numbers" } });
     await state.put({ id: "app_data:kim", data: { draft: "kim's numbers" } });
@@ -368,30 +273,9 @@ describe("two principals, one org, over the real composition", () => {
     expect(await theirs.commit()).toEqual({ status: "conflict", paths: [path] });
   });
 
-  it("refuses a level outside the closed vocabulary, and a missing principal", async () => {
-    await seedApp(store, seeded("app_vocab", "Vocabulary"), ORG);
-    // §9.3's level vocabulary is CLOSED: `operator` and friends are explicitly
-    // out of scope, so a typo (or an invented level) is refused at the door
-    // rather than landing a row `can()` cannot rank.
-    const bad = await call(vendo, dana, "POST", "/apps/app_vocab/grants", {
-      principal: "user:kim",
-      level: "operator",
-    });
-    expect(bad.status).toBe(400);
-    expect(bad.body.error.message).toContain("viewer, editor, or owner");
-
-    const noPrincipal = await call(vendo, dana, "POST", "/apps/app_vocab/grants", { level: "viewer" });
-    expect(noPrincipal.status).toBe(400);
-    // ...and the green half: a legal level goes straight through.
-    expect((await call(vendo, dana, "POST", "/apps/app_vocab/grants", {
-      principal: "user:kim",
-      level: "editor",
-    })).status).toBe(200);
-  });
-
   it("the memberships seam is asserted per request and never stored", async () => {
     await seedApp(store, seeded("app_asserted", "Asserted"), ORG);
-    await call(vendo, dana, "POST", "/apps/app_asserted/grants", { principal: `org:${ORG}`, level: "viewer" });
+    await share(store, dana, "app_asserted", `org:${ORG}`, "viewer");
     // The org-wide grant reaches Kim because the host asserts her membership.
     expect((await call(vendo, kim, "GET", "/apps/app_asserted")).status).toBe(200);
 
@@ -432,10 +316,7 @@ describe("§9.8: the served-app proxy is a wire door", () => {
     // door and fails on the absent machine instead. Asserting BOTH is what makes
     // this discriminating: an unmounted route would 404 everybody alike.
     await seedApp(store, { ...seeded("app_served_door", "Kanban"), ui: "http" }, ORG);
-    await call(vendo, dana, "POST", "/apps/app_served_door/grants", {
-      principal: "user:kim",
-      level: "viewer",
-    });
+    await share(store, dana, "app_served_door", "user:kim", "viewer");
 
     const masked = await call(vendo, { kind: "user", subject: "stranger" }, "GET", "/apps/app_served_door/serve/");
     expect(masked.status).toBe(404);
@@ -447,16 +328,13 @@ describe("§9.8: the served-app proxy is a wire door", () => {
 
   it("refuses the revoked viewer's next proxy request against live rows", async () => {
     await seedApp(store, { ...seeded("app_served_revoke", "Kanban"), ui: "http" }, ORG);
-    await call(vendo, dana, "POST", "/apps/app_served_revoke/grants", {
-      principal: "user:kim",
-      level: "viewer",
-    });
+    await share(store, dana, "app_served_revoke", "user:kim", "viewer");
     // Granted: the door lets her through to the machine layer (which then fails
     // on the absent machine — a 4xx/5xx that is NOT the access mask).
     const granted = await call(vendo, kim, "GET", "/apps/app_served_revoke/serve/");
     expect(granted.status).not.toBe(404);
 
-    await call(vendo, dana, "DELETE", "/apps/app_served_revoke/grants?principal=user%3Akim");
+    await appAccess(store).revoke(ctxFor(dana), "app_served_revoke", "user:kim");
     // Revoked: the very next request is masked again, decided on live rows.
     expect((await call(vendo, kim, "GET", "/apps/app_served_revoke/serve/")).status).toBe(404);
   });
@@ -498,7 +376,7 @@ describe("§9.8: open() hands a served app a RESOLVABLE url", () => {
       ui: "http",
       machine: { snapshotRef: "fakebox:none", provisionedAt: "2026-08-01T00:00:00.000Z" },
     }, ORG);
-    await call(vendo, dana, "POST", "/apps/app_abs/grants", { principal: "user:kim", level: "viewer" });
+    await share(store, dana, "app_abs", "user:kim", "viewer");
 
     const opened = await call(vendo, kim, "GET", "/apps/app_abs/open");
     expect(opened.status).toBe(200);
@@ -510,133 +388,29 @@ describe("§9.8: open() hands a served app a RESOLVABLE url", () => {
 });
 
 /**
- * Build contract §9.1 companion (ratified 2026-08-01) — a person-share needs the
- * HOST to name the person. The dialog used to encode what was typed VERBATIM as
- * the subject, so a share with "Mia" wrote `user:Mia` — a row that matched
- * nobody, after the app had already been moved into the team to make room for it.
+ * Build contract §9.1 companion (ratified 2026-08-01) — Vendo holds no
+ * directory, so only the HOST can turn a typed name into a subject. `/status`
+ * reports whether it can: a surface without that answer would encode what was
+ * typed VERBATIM as the subject, writing `user:Mia` — a row matching nobody.
+ * What the seam ANSWERS is `auth-presets/resolve-person.test.ts`'s; this is the
+ * one bit of it the composition puts on the wire.
  */
-describe("§9.1 companion: only the host can name a person", () => {
-  const roster: Record<string, ResolvedPerson> = {
-    "kim": { subject: "kim", display: "Kim Alvarez" },
-    "kim@maple.test": { subject: "kim", display: "Kim Alvarez" },
-  };
-  /** Every asker the host was handed, in order — the seam is only useful if the
-      host is told WHO is asking. */
-  let askers: Principal[] = [];
-  beforeEach(() => { askers = []; });
-  const resolvePerson = async (query: string, asker: Principal): Promise<ResolvedPerson | null> => {
-    askers.push(asker);
-    return roster[query.trim().toLowerCase()] ?? null;
-  };
+describe("§9.1 companion: /status says whether the host can name a person", () => {
+  /** Never called here — `/status` reports the seam's PRESENCE, which is the
+      whole question a surface asks before offering to share with one person. */
+  const resolvePerson = async (): Promise<ResolvedPerson | null> => null;
 
-  it("says on /status that it has no directory, and refuses the lookup, when the seam is unset", async () => {
+  it("says nothing when the seam is unset, and true when the host wired one", async () => {
     const store = await tempStore();
-    const vendo = await boot(store);
-    await seedApp(store, seeded("app_nodir", "Team pulse"), ORG);
-
     // The surface learns from the SAME per-request answer everything else uses.
-    expect((await call(vendo, dana, "GET", "/status")).body.namesPeople).toBeUndefined();
-    const refused = await call(vendo, dana, "POST", "/apps/app_nodir/grants/resolve", { query: "kim" });
-    expect(refused.status).toBe(501);
-    // Teams and orgs are untouched by the absence.
-    expect((await call(vendo, dana, "POST", "/apps/app_nodir/grants", {
-      principal: `team:${ORG}/support`,
-      level: "viewer",
-    })).status).toBe(200);
-  });
-
-  it("resolves a typed name to the host's own subject, and writes the grant for THAT", async () => {
-    const store = await tempStore();
-    const vendo = await boot(store, { resolvePerson });
-    await seedApp(store, seeded("app_named", "Team pulse"), ORG);
-
-    expect((await call(vendo, dana, "GET", "/status")).body.namesPeople).toBe(true);
-    const found = await call(vendo, dana, "POST", "/apps/app_named/grants/resolve", {
-      query: "Kim@Maple.test",
-    });
-    expect(found.body).toEqual({ person: { subject: "kim", display: "Kim Alvarez" } });
-
-    // The grant is written for the RESOLVED subject. The typed string never
-    // becomes a principal.
-    expect((await call(vendo, dana, "POST", "/apps/app_named/grants", {
-      principal: `user:${found.body.person.subject}`,
-      level: "editor",
-    })).status).toBe(200);
-    expect((await call(vendo, kim, "GET", "/apps/app_named")).status).toBe(200);
-  });
-
-  it("answers null for a name the host does not know, and refuses the typed string as a principal", async () => {
-    const store = await tempStore();
-    const vendo = await boot(store, { resolvePerson });
-    await seedApp(store, seeded("app_unknown", "Team pulse"), ORG);
-
-    const missing = await call(vendo, dana, "POST", "/apps/app_unknown/grants/resolve", { query: "Mia" });
-    expect(missing.status).toBe(200);
-    expect(missing.body).toEqual({ person: null });
-
-    // And the old behaviour — encode what was typed — is refused at the door,
-    // whatever store is under it (§9.2).
-    const bare = await call(vendo, dana, "POST", "/apps/app_unknown/grants", {
-      principal: "Mia",
-      level: "viewer",
-    });
-    expect(bare.status).toBe(400);
-    expect((await store.records("vendo_app_grants").list({ refs: { app_id: "app_unknown" } })).records)
-      .toEqual([]);
-  });
-
-  it("hands the host the ASKER, through the real composition", async () => {
-    // The seam exists so a host can scope its OWN directory ("only people in the
-    // asker's org"). It cannot, if it is never told who asked — and the runtime
-    // thread is the half a preset-level test cannot see, because presets forward
-    // the callback by reference.
-    const store = await tempStore();
-    const vendo = await boot(store, { resolvePerson });
-    await seedApp(store, seeded("app_asker", "Team pulse"), ORG);
-
-    expect((await call(vendo, dana, "POST", "/apps/app_asker/grants/resolve", { query: "kim" })).status)
-      .toBe(200);
-    expect(askers).toEqual([dana]);
-  });
-
-  it("refuses a caller in NO org before the host's directory is ever consulted", async () => {
-    // The checker's attack: a signed-in user with zero memberships owns their own
-    // personal app, so they are its owner — and were handed the host's real
-    // subjects and display names at HTTP 200, from a share they could never
-    // complete (a person-share implies an org workspace, §9.5).
-    const store = await tempStore();
-    const vendo = await boot(store, { resolvePerson });
-    const loner: Principal = { kind: "user", subject: "loner" };
-    await seedApp(store, seeded("app_loner", "Just mine"), loner.subject);
-
-    // They really do own it — this is not a masking case.
-    expect((await call(vendo, loner, "GET", "/apps/app_loner/grants")).body.level).toBe("owner");
-    const probe = await call(vendo, loner, "POST", "/apps/app_loner/grants/resolve", { query: "kim" });
-    expect(probe.status).toBe(403);
-    expect(probe.body.error.code).toBe("forbidden");
-    // The host's directory was never touched, so nothing leaked to be filtered.
-    expect(askers).toEqual([]);
-  });
-
-  it("keeps the directory behind the SAME gate that writes the grant", async () => {
-    // Whoever may ask "who is this person" can enumerate the host's own users.
-    const store = await tempStore();
-    const vendo = await boot(store, { resolvePerson });
-    await seedApp(store, seeded("app_gated", "Team pulse"), ORG);
-    await call(vendo, dana, "POST", "/apps/app_gated/grants", { principal: "user:kim", level: "editor" });
-
-    // Kim is an EDITOR — she sees the app and cannot share it, so she cannot ask.
-    const asEditor = await call(vendo, kim, "POST", "/apps/app_gated/grants/resolve", { query: "kim" });
-    expect(asEditor.status).toBe(403);
-    // A stranger is masked exactly as they are everywhere else.
-    const stranger: Principal = { kind: "user", subject: "stranger" };
-    expect((await call(vendo, stranger, "POST", "/apps/app_gated/grants/resolve", { query: "kim" })).status)
-      .toBe(404);
+    expect((await call(await boot(store), dana, "GET", "/status")).body.namesPeople).toBeUndefined();
+    expect((await call(await boot(store, { resolvePerson }), dana, "GET", "/status")).body.namesPeople)
+      .toBe(true);
   });
 });
 
-describe("§9.6: the key gates the WRITES, never the enforcement", () => {
-  it("refuses grant and promote with no key, while can() answers identically", async () => {
+describe("§9.6: enforcement is never key-conditional", () => {
+  it("resolves an existing grant identically with no key at all", async () => {
     const store = await tempStore();
     const vendo = await boot(store, { key: false });
     await seedApp(store, seeded("app_keyless", "Keyless"), ORG);
@@ -648,29 +422,10 @@ describe("§9.6: the key gates the WRITES, never the enforcement", () => {
       refs: { app_id: "app_keyless", principal: "user:kim", level: "viewer" },
     });
 
-    const share = await call(vendo, dana, "POST", "/apps/app_keyless/grants", {
-      principal: "user:sam",
-      level: "viewer",
-    });
-    expect(share.status).toBe(402);
-    expect(share.body.error.code).toBe("cloud-required");
-
-    await seedApp(store, seeded("app_keyless_own", "Mine"), "dana");
-    const promote = await call(vendo, dana, "POST", "/apps/app_keyless_own/promote", { orgId: ORG });
-    expect(promote.status).toBe(402);
-
-    // ...and `can()` is untouched by the key: the existing row still grants.
     const access = appAccess(store);
-    const ctx = {
-      principal: kim,
-      venue: "app" as const,
-      presence: "present" as const,
-      sessionId: "s",
-      memberships: memberships["kim"]!,
-    };
-    expect(await access.levelFor(ctx, "app_keyless")).toBe("viewer");
+    expect(await access.levelFor(ctxFor(kim), "app_keyless")).toBe("viewer");
     expect((await call(vendo, kim, "GET", "/apps/app_keyless")).status).toBe(200);
     // Reading the grant list stays OSS too.
-    expect((await call(vendo, kim, "GET", "/apps/app_keyless/grants")).body.grants).toHaveLength(1);
+    expect(await access.list(ctxFor(kim), "app_keyless")).toHaveLength(1);
   });
 });

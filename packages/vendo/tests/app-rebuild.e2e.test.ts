@@ -209,6 +209,9 @@ async function harness() {
   const guard = createGuard({ store, policy: "autopilot" });
   const blobs = memoryBlobs();
   const sandbox = snapshotHoldingSandbox();
+  // The ONE `AppAccess` this harness has: the runtime resolves levels through
+  // it, and the grant whose survival this test asserts is written through it.
+  const access = appAccess(store);
   const apps = createApps({
     store,
     guard,
@@ -217,10 +220,7 @@ async function harness() {
     } }),
     catalog: [],
     files: blobs,
-    appAccess: appAccess(store),
-    // Sharing's WRITES are Cloud-gated; the grant this test asserts survives a
-    // rebuild has to be creatable, and `can()` behind it is never key-conditional.
-    multiParty: true,
+    appAccess: access,
     machine: { sandbox },
   });
 
@@ -237,7 +237,7 @@ async function harness() {
     },
   );
 
-  return { store, apps, blobs, sandbox, open };
+  return { store, apps, access, blobs, sandbox, open };
 }
 
 /** A stored app carrying everything §2.4 promises survives an escalation: a
@@ -269,7 +269,7 @@ describe.sequential("an app rebuilds from its row onto a fresh box, with its sna
    * permission instead of ownership used to drop every edit silently.
    */
   it("comes back byte for byte — inline files and the blob-spilled one alike", async () => {
-    const { store, apps, sandbox, blobs, open } = await harness();
+    const { store, apps, access, sandbox, blobs, open } = await harness();
     await seedApp(store, ORG);
     const root = `/orgs/${ORG}/apps/${APP}`;
 
@@ -292,7 +292,7 @@ describe.sequential("an app rebuilds from its row onto a fresh box, with its sna
     expect(stored!.source!["src/App.tsx"]!.text).toBe(SOURCE["src/App.tsx"]);
 
     // A grant, so the rebuild can be asked whether sharing survived it.
-    await apps.access.grant(APP, `user:${READER.subject}`, "viewer", orgCtx);
+    await access.grant(orgCtx, APP, `user:${READER.subject}`, "viewer");
 
     // ── 2. THE BOX. A machine is minted and its ref stored, which is the state
     // that used to be the app's ONLY home. Written onto the row directly rather
@@ -346,7 +346,7 @@ describe.sequential("an app rebuilds from its row onto a fresh box, with its sna
     expect(after!.id).toBe(APP);
     expect(after!.triggers).toEqual(TRIGGERS);
     expect(after!.placements).toEqual(["dashboard.main"]);
-    expect((await apps.access.list(APP, orgCtx)).map((grant) => grant.principal))
+    expect((await access.list(orgCtx, APP)).map((grant) => grant.principal))
       .toEqual([`user:${READER.subject}`]);
   }, 120_000);
 

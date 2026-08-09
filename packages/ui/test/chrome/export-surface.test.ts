@@ -19,8 +19,7 @@ const VALUE_EXPORTS = [
   "AutomationCard",
   "ConnectCard",
   "GrantSetCard",
-  // Build contract §9.2-§9.6 — the share surface and the viewer fork offer.
-  "ShareDialog",
+  // Build contract §9.4 — the viewer fork offer.
   "ForkOffer",
   "encodeGrantPrincipal",
   "NoPolicyNotice",
@@ -111,7 +110,6 @@ const TYPE_EXPORTS = [
   "ConnectCardProps",
   "GrantSetCardProps",
   "GrantSetPermission",
-  "ShareDialogProps",
   "ForkOfferProps",
   "VendoOverlayProps",
   "VendoCommand",

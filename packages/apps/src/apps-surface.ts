@@ -1,19 +1,14 @@
 /**
  * The doors over the app RECORD itself: reading it, listing it, opening it,
  * calling into it, its history, and the four ways a copy of it travels
- * (fork/export/import/share/publish) plus the one way the canonical app does
- * (promote).
+ * (fork/export/import/share/publish).
  *
  * Lifted out of `createApps` unchanged.
  */
-import {
-  VendoError,
-  encodeGrantPrincipal,
-  type AppDocument,
-} from "@vendoai/core";
+import { VendoError, type AppDocument } from "@vendoai/core";
 import { createAgentTools } from "./agent-tools.js";
 import { allRecords } from "./access-checks.js";
-import { appRecordInput, documentFromRecord, rowFromRecord, withoutSession } from "./persistence.js";
+import { appRecordInput, documentFromRecord, withoutSession } from "./persistence.js";
 import type { AppsRuntimeContext } from "./runtime-context.js";
 import type { AppsRuntime } from "./types.js";
 
@@ -176,99 +171,16 @@ const createAppCopyDoors = (
   };
 };
 
-const createPromoteDoor = (
-  deps: Pick<AppsRuntimeContext, "config" | "apps" | "requireOwned" | "requireMultiParty" | "reportLifecycle">,
-): AppsRuntime["promote"] => {
-  const { config, apps, requireOwned, requireMultiParty, reportLifecycle } = deps;
-  return async (appId, orgId, ctx) => {
-    requireMultiParty("promote");
-    const app = await requireOwned(appId, ctx, "owner");
-    // The host asserted this request's orgs; promoting into one you are not
-    // in is the same refusal shape as any other over-reach on a visible app.
-    if (!(ctx.memberships ?? []).some((membership) => membership.org === orgId)) {
-      throw new VendoError(
-        "forbidden",
-        `you are not a member of ${orgId}, so this app cannot be promoted into it`,
-      );
-    }
-    const from = (await apps.get(appId))?.refs?.subject;
-    if (from === undefined) throw new VendoError("not-found", `app not found: ${appId}`);
-    if (from === orgId) return withoutSession(structuredClone(app));
-    if (config.promoteApp === undefined) {
-      // Build contract §9.5, ruled 2026-08-01: promote is BYO-store-only for
-      // now. A promote crosses subjects AND moves workspace rows, which needs
-      // a local engine handle the Cloud-hosted store does not have — a
-      // hosted-store promote door is Cloud-console work. The refusal stays
-      // LOUD and never half-moves an app; it names the limit and the fix so
-      // nobody has to read this comment to get unstuck.
-      throw new VendoError(
-        "cloud-required",
-        "moving an app into a team workspace isn't available on the hosted store yet — "
-        + "wire your own Postgres with createVendo({ store: createStore({ url }) }) to move it, "
-        + "or share a copy with fork instead",
-      );
-    }
-    // "Share implies promote", so the promoter must not lock themselves out
-    // of the app they just handed over. Minted BEFORE the flip, because
-    // afterwards the row belongs to the org and the owner gate on `grant`
-    // would have nothing to admit them by — the promoter is not necessarily
-    // an org admin.
-    const promoter = encodeGrantPrincipal({ kind: "user", subject: ctx.principal.subject });
-    // Mint-then-KNOW: what the promoter held BEFORE this call, so a failure
-    // takes back exactly what this call added and nothing else. Inferring it
-    // afterwards cannot tell "I minted this" from "someone else did".
-    const heldBefore = (await config.appAccess?.list(ctx, appId))
-      ?.find((row) => row.principal === promoter)?.level;
-    await config.appAccess?.grant(ctx, appId, promoter, "owner");
-    // The row's subject becomes the org id VERBATIM — the same convention the
-    // workspace `owner` column uses (contract §3.3), so one id names the app's
-    // rows and its documents alike, and the documents move with it.
-    try {
-      await config.promoteApp(appId, from, orgId);
-    } catch (failure) {
-      // All-or-nothing means undoing what THIS call did — and only that. If
-      // the row no longer names `from`, a concurrent promote won: the grant
-      // now admits the promoter to the app that just moved, and revoking it
-      // would lock her out of her own app.
-      if ((await apps.get(appId))?.refs?.subject === from && config.appAccess !== undefined) {
-        const undo = heldBefore === undefined
-          ? config.appAccess.revoke(ctx, appId, promoter)
-          : config.appAccess.grant(ctx, appId, promoter, heldBefore);
-        await undo.catch(() => undefined);
-      }
-      throw failure;
-    }
-    // Re-stamped now that the row names the org, so the grant's `org_id`
-    // records the org that actually holds the app (one row per (app,
-    // principal), so this updates in place rather than accreting).
-    await config.appAccess?.grant(ctx, appId, promoter, "owner");
-    // An automation runs with a PERSON's access — their connections, their
-    // secrets, their name in the audit log — and there is no org principal to
-    // run as (inventing one would run it as a synthetic user named after the
-    // org). The person who armed it may not even be in the team. So the move
-    // DISARMS it, the same law an edited trigger already follows; re-enabling
-    // mints a fresh sponsorship under whoever turns it back on.
-    const moved = await apps.get(appId);
-    const movedRow = moved === null ? null : rowFromRecord(moved);
-    const disarmed = movedRow?.enabled === true;
-    if (disarmed) {
-      await apps.put(appRecordInput(movedRow.doc, orgId, false));
-    }
-    await reportLifecycle("promote", appId, ctx, { orgId, from, ...(disarmed ? { disarmed } : {}) });
-    return withoutSession(structuredClone(app));
-  };
-};
-
 /** The app-record slice of `AppsRuntime`. */
 export const createAppsSurface = (
   deps: Pick<AppsRuntimeContext,
     "config" | "apps" | "caller" | "data" | "history" | "review" | "opener" | "interchange"
     | "inClientApprovals" | "egressApprovals" | "parkedActions" | "placementRows"
-    | "lifecycle" | "owned" | "requireOwned" | "requireMultiParty"
+    | "lifecycle" | "owned" | "requireOwned"
     | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
     | "runtime">,
 ): Pick<AppsRuntime,
-  "get" | "list" | "delete" | "fork" | "promote" | "share" | "publish"
+  "get" | "list" | "delete" | "fork" | "share" | "publish"
   | "exportApp" | "importApp" | "history" | "open" | "call" | "agentTools"> => {
   const { config, apps, data, history, review, inClientApprovals } = deps;
   const { egressApprovals, parkedActions, placementRows, lifecycle } = deps;
@@ -276,7 +188,6 @@ export const createAppsSurface = (
   return {
     ...createAppReadDoors(deps),
     ...createAppCopyDoors(deps),
-    promote: createPromoteDoor(deps),
     async delete(appId, ctx) {
       const app = await requireOwned(appId, ctx, "owner");
       // execution-v2 — deleting the app reaps its machine (live sandbox +

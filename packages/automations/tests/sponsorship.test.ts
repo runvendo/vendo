@@ -878,9 +878,9 @@ describe("sponsorship — what the stopped run row is allowed to say", () => {
 
 /** The two ways an automation became BUILT BUT UNREACHABLE. `list` is the only surface that mentions an
  *  automation outside the app itself, so anything it hides is, in practice, gone:
- *  promote deliberately disarms the automation and the Share dialog promises it
- *  "stays off until someone turns it back on", and an invalidated sponsorship
- *  used to leave no mention anywhere. */
+ *  a cross-workspace move deliberately disarms the automation ("stays off until
+ *  someone turns it back on"), and an invalidated sponsorship used to leave no
+ *  mention anywhere. */
 describe("sponsorship — an automation the caller can edit is an automation they can SEE", () => {
   const withOrg = (subject: string, org = "maple"): RunContext =>
     ({ ...ctx(subject), memberships: [{ org }] }) as RunContext;

@@ -268,10 +268,10 @@ describe("headless hooks", () => {
       return null;
     }
 
-    // `namesPeople` is §9.1's companion: the host wired `resolvePerson`, so the
-    // Share dialog may offer to share with one person. This wire asserts none,
-    // which is the single-player answer — false, exactly like an empty
-    // memberships list.
+    // `namesPeople` is §9.1's companion: the host wired `resolvePerson`, so a
+    // surface may offer to name one person. This wire asserts none, which is
+    // the single-player answer — false, exactly like an empty memberships
+    // list.
     const offline = { posture: "unconfigured", connected: false, memberships: [], namesPeople: false };
     const view = render(<Probe value={client} />);
     expect(latest).toEqual(offline);

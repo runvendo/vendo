@@ -1,16 +1,6 @@
-import { VendoError, type AccessLevel, type Json, type RunContext } from "@vendoai/core";
+import { VendoError, type Json, type RunContext } from "@vendoai/core";
 import type { VendoStore } from "@vendoai/store";
 import { json, requestJson, route, string, type RouteEntry, type WireContext } from "./shared.js";
-
-/** Build contract §9.3 — the level vocabulary is CLOSED, so the wire refuses
-    anything outside it instead of letting a typo reach the store. */
-function accessLevel(value: unknown): AccessLevel {
-  const level = string(value, "level");
-  if (level !== "viewer" && level !== "editor" && level !== "owner") {
-    throw new VendoError("validation", "level must be viewer, editor, or owner");
-  }
-  return level;
-}
 
 /** What the ?pending=1 disambiguation learned about a record open() refused
     to serve this caller. */
@@ -133,88 +123,6 @@ async function handleHistory(wire: WireContext, appId: string, ctx: RunContext):
   // The door still masks an app this caller cannot see at all.
   if (await deps.apps.get(appId, ctx) === null) throw new VendoError("not-found", `app not found: ${appId}`);
   if (request.method === "GET") return json(await deps.apps.history(appId, ctx).list());
-  return undefined;
-}
-
-/** Owner-gated on purpose: whoever may ask this may enumerate the host's own
-    directory, so the gate is the same one that writes the grant. A caller who
-    cannot see the app at all stays masked (§9.4). */
-async function resolvePersonForShare(wire: WireContext, appId: string, ctx: RunContext): Promise<Response> {
-  const { request, deps } = wire;
-  const level = await deps.apps.access.levelFor(appId, ctx);
-  if (level === null) throw new VendoError("not-found", `app not found: ${appId}`);
-  if (level !== "owner") throw new VendoError("forbidden", `owner access is required for ${appId}`);
-  // ...and an owner with NO asserted org, on top of that. A person-share
-  // implies an org workspace (§9.5), so a caller in no org can never complete
-  // the share this lookup exists for — answering them is nothing but
-  // directory exposure. A signed-in stranger probing from their own personal
-  // app was handed the host's real subjects and display names at HTTP 200.
-  if ((ctx.memberships ?? []).length === 0) {
-    throw new VendoError(
-      "forbidden",
-      `no org is asserted for this caller, so a person-share on ${appId} could never be completed`,
-    );
-  }
-  if (deps.resolvePerson === undefined) {
-    throw new VendoError(
-      "not-implemented",
-      "sharing with one person needs the auth preset's `resolvePerson` seam:"
-      + " Vendo has no directory, so only your identity system can turn a typed"
-      + " name into one of your subjects",
-    );
-  }
-  const body = await requestJson(request);
-  // The asker rides along: only the host knows which part of its own
-  // directory this person may see.
-  return json({ person: await deps.resolvePerson(string(body["query"], "query"), ctx.principal) });
-}
-
-async function handleGrants(wire: WireContext, appId: string, ctx: RunContext): Promise<Response | undefined> {
-  const { request, deps } = wire;
-  if (request.method === "GET") {
-    return json({
-      level: await deps.apps.access.levelFor(appId, ctx),
-      grants: await deps.apps.access.list(appId, ctx),
-      // §9.5 — "share implies promote" needs to know whether this is still
-      // the caller's own copy. Derived from who HOLDS the row, so the
-      // dialog never has to guess from an empty grant list.
-      personal: await deps.apps.access.holder(appId, ctx) === ctx.principal.subject,
-    });
-  }
-  if (request.method === "POST") {
-    const body = await requestJson(request);
-    await deps.apps.access.grant(
-      appId,
-      string(body["principal"], "principal"),
-      accessLevel(body["level"]),
-      ctx,
-    );
-    return json({ grants: await deps.apps.access.list(appId, ctx) });
-  }
-  if (request.method === "DELETE") {
-    const principal = wire.url.searchParams.get("principal");
-    await deps.apps.access.revoke(appId, string(principal, "principal"), ctx);
-    // The revoke LANDED. Reading the list back is a courtesy for the dialog,
-    // and a caller who just removed their OWN last grant may no longer read
-    // it — that is §9.4's masking answering a different question, not a
-    // failed removal, and reporting it as one told them to retry work that
-    // was already done. Answer with what they can still legitimately see:
-    // nothing.
-    //
-    // Only `can()` may be forgiven here, and `can()` always refuses with a
-    // VendoError — so the TYPE is half the test. A hosted store carries a
-    // misbehaving console's failure on a plain Error with the server's code
-    // attached (hosted-store.ts), and "the console said not-found" is not
-    // "the caller may no longer look": that, and every other failure,
-    // surfaces.
-    const remaining = await deps.apps.access.list(appId, ctx).catch((reason: unknown) => {
-      const masked = reason instanceof VendoError
-        && (reason.code === "not-found" || reason.code === "forbidden");
-      if (masked) return [];
-      throw reason;
-    });
-    return json({ grants: remaining });
-  }
   return undefined;
 }
 
@@ -422,28 +330,6 @@ export const appRoutes: RouteEntry[] = [
     }
     if (op(wire, "POST", "fork")) {
       return json(await deps.apps.fork(appId, ctx));
-    }
-    // Build contract §9.1 companion — the host names the person. Vendo holds no
-    // directory, so the dialog cannot resolve "Mia" and must not pretend to; it
-    // asks here, and the grant is written for the SUBJECT that comes back.
-    //
-    // Owner-gated on purpose: whoever may ask this may enumerate the host's own
-    // directory, so the gate is the same one that writes the grant. A caller who
-    // cannot see the app at all stays masked (§9.4).
-    if (op(wire, "POST", "grants", 4) && segments[3] === "resolve") {
-      return resolvePersonForShare(wire, appId, ctx);
-    }
-    // Build contract §9.2–§9.6 — the Share dialog's door. Reading the grant
-    // list is viewer-gated and OSS; writing one is owner-gated AND
-    // Cloud-gated, and the runtime (not this route) is where both are decided,
-    // so the MCP door inherits the same rules without a second copy.
-    if (operation === "grants" && segments.length === 3) {
-      const answer = await handleGrants(wire, appId, ctx);
-      if (answer !== undefined) return answer;
-    }
-    if (op(wire, "POST", "promote")) {
-      const body = await requestJson(request);
-      return json(await deps.apps.promote(appId, string(body["orgId"], "orgId"), ctx));
     }
     return undefined;
   }),

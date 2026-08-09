@@ -1,5 +1,6 @@
 import {
   VENDO_APP_FORMAT,
+  type AppAccess,
   type AppDocument,
   type RunContext,
   type ToolRegistry,
@@ -51,16 +52,19 @@ const setup = async (over: Partial<AppsConfig> = {}, guard = guardFixture()): Pr
   /** A served app the fake box can actually resume, seeded under `subject`. */
   seed(id: string, subject: string, egress?: string[]): Promise<void>;
   sandbox: ReturnType<typeof fakeBoxSandbox>;
+  /** The same seam the runtime reads through, handed back so a case can take a
+      grant away mid-session — the runtime has only the READ half. */
+  access: AppAccess;
 }> => {
   const store = memoryStore();
   const sandbox = fakeBoxSandbox();
+  const access = storeAccessFixture(store);
   const runtime = createApps({
     store,
     guard,
     tools,
     catalog: [],
-    appAccess: storeAccessFixture(store),
-    multiParty: true,
+    appAccess: access,
     machine: { sandbox },
     // The wire fills this with its own base path; the runtime never invents it.
     servedProxyPath: (appId) => `/api/vendo/apps/${appId}/serve/`,
@@ -71,6 +75,7 @@ const setup = async (over: Partial<AppsConfig> = {}, guard = guardFixture()): Pr
     store,
     guard,
     sandbox,
+    access,
     async seed(id, subject, egress) {
       const box = await sandbox.create({ env: {}, template: "node" });
       const snapshotRef = await box.snapshot();
@@ -191,7 +196,7 @@ describe("§9.8 — serve() checks can(viewer) against live rows, every request"
 
   // The red half of the gate: a mid-session revoke bites the NEXT request.
   it("refuses the next request after the viewer's grant is revoked", async () => {
-    const { runtime, store, seed } = await setup();
+    const { runtime, store, seed, access } = await setup();
     await seed("app_revoke_serve", "acme");
     await seedGrantRows(store, "app_revoke_serve", { "user:kim": "viewer" });
     const kim = ctx("kim", ["acme"]);
@@ -199,7 +204,7 @@ describe("§9.8 — serve() checks can(viewer) against live rows, every request"
 
     // The owner takes the grant away; nothing about kim's session changes.
     const admin: RunContext = { ...ctx("dana"), memberships: [{ org: "acme", admin: true }] };
-    await runtime.access.revoke("app_revoke_serve", "user:kim", admin);
+    await access.revoke(admin, "app_revoke_serve", "user:kim");
 
     await expect(runtime.serve("app_revoke_serve", GET, kim))
       .rejects.toMatchObject({ code: "not-found" });

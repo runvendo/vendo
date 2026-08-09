@@ -21,14 +21,12 @@ import {
   type RunContext,
   type WorkspaceFs,
 } from "@vendoai/core";
-import { appAccess, appStore, workspaceStore } from "@vendoai/store";
+import { appAccess } from "@vendoai/store";
 import { askUserRegistry } from "./ask-user.js";
 import { searchRuntimeCatalog } from "./catalog.js";
 import { cloudApps } from "./cloud-apps.js";
 import { cloudKeyOptions, positiveIntegerEnv } from "./compose-selection.js";
 import type { VendoComposition } from "./compose-context.js";
-import { isHostedStore } from "./compose-store.js";
-import { createPromoteApp } from "./promote-app.js";
 import { vendoVerbsRegistry } from "./vendo-verbs.js";
 import { BASE_PATH, environment } from "./wire/shared.js";
 
@@ -101,8 +99,6 @@ interface AppsSeams {
   boxEditTimeoutMs: number | undefined;
   boxEditPollMs: number | undefined;
   appsCloud: ReturnType<typeof cloudKeyOptions>;
-  multiParty: boolean;
-  promoteRows: { readonly rows: ReturnType<typeof appStore>; readonly workspace: ReturnType<typeof workspaceStore> } | undefined;
   screenWorkspace: (screenCtx: RunContext) => Promise<WorkspaceFs>;
   access: ReturnType<typeof appAccess>;
 }
@@ -150,7 +146,7 @@ const machineEnvFor = (
  *  writes THROUGH. */
 const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partial<AppsConfig> => {
   const { store, guard, boundTools, inference, catalog, pinBaselines, files } = composition;
-  const { access, multiParty, promoteRows } = seams;
+  const { access } = seams;
   return {
     store,
     guard,
@@ -162,17 +158,11 @@ const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partia
     // `selectFiles` answer, above), so an app's source past the inline cap uses the
     // spill that already exists instead of inventing a second one.
     files,
-    // Build contract §9 — the multi-party half. `can()` over whatever store the
-    // host wired (OSS, unconditional); `multiParty` is the Cloud gate on the
-    // three writes that create sharing; `promoteApp` is the store's sanctioned
-    // cross-subject door. (§9.1's `memberships` left this seam with the
+    // Build contract §9 — `can()` over whatever store the host wired (OSS,
+    // unconditional). (§9.1's `memberships` left this seam with the
     // machine-app scheduler: the ONE unattended firing path is the automations
     // engine, which is handed the same seam below.)
     appAccess: access,
-    multiParty,
-    // §9.5's order and its rollback rule live in promote-app.ts, where the
-    // failure interleavings are testable; the getters keep `dbFor` lazy.
-    ...(promoteRows === undefined ? {} : { promoteApp: createPromoteApp(promoteRows) }),
   };
 };
 
@@ -359,7 +349,7 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
  *  tool registry the moment it exists. */
 export const composeApps = (composition: VendoComposition): Pick<VendoComposition,
   "appTokens" | "access" | "apps" | "appsRuntime" | "resolveAppToolRisk"> => {
-  const { store, actions, catalog, files, capability } = composition;
+  const { store, actions, catalog, capability } = composition;
   // execution-v2 Lane C — the per-app box bearer store (hash rows are the
   // authority) shared by the machine-env assembler below (mint at provision)
   // and the wire's /box verification.
@@ -372,22 +362,6 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
   // environment — VENDO_API_KEY fills its CloudAppsClient slot HERE, at the
   // composition seam; unfilled, share/publish refuse with cloud-required.
   const appsCloud = cloudKeyOptions();
-  // ADAPTER RULE, multi-party seam (build contract §9.6): sharing is
-  // multi-party coordination, so the WRITES that create it need a key —
-  // filled HERE, from the same one read every other Cloud default uses. The
-  // enforcement half below (`appAccess`) is OSS and never key-conditional:
-  // with no key no grant row can exist, so `can()` degenerates to ownership.
-  const multiParty = appsCloud !== undefined;
-  // §9.5's promote crosses subjects and moves workspace rows — raw-row work
-  // that needs a local engine handle. A Cloud-hosted store answers through the
-  // wire door instead and has none, so the seam stays unset there and promote
-  // refuses loudly rather than half-moving an app. Resolved on FIRST PROMOTE,
-  // never at compose: a host-passed store that is not a local engine handle
-  // must not take down createVendo for a verb it may never call.
-  const promoteRows = isHostedStore(store) ? undefined : {
-    get rows() { return appStore(store); },
-    get workspace() { return workspaceStore(store, { files }); },
-  };
   // Wave 9 — `composition.automationsForArming` is the arming seam for
   // ladder-authored automations: filled with the automations engine composed
   // BELOW (arming only happens inside requests, which run after createVendo
@@ -418,8 +392,6 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
     boxEditTimeoutMs,
     boxEditPollMs,
     appsCloud,
-    multiParty,
-    promoteRows,
     screenWorkspace,
     access,
   };

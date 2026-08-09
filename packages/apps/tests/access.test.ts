@@ -1,7 +1,5 @@
 import {
   VENDO_APP_FORMAT,
-  VendoError,
-  type AccessLevel,
   type AppAccess,
   type AppDocument,
   type AppId,
@@ -49,8 +47,11 @@ const screenFor = (runtime: () => AppsRuntime) =>
 
 const setup = (
   over: Partial<AppsConfig> = {},
-): { runtime: AppsRuntime; store: ReturnType<typeof memoryStore> } => {
+): { runtime: AppsRuntime; store: ReturnType<typeof memoryStore>; access: AppAccess } => {
   const store = memoryStore();
+  // The same seam the runtime is wired with, handed back so a case can write
+  // the grant rows a world needs — the runtime has only the READ half.
+  const access = storeAccess(store);
   let runtime: AppsRuntime;
   runtime = createApps({
     store,
@@ -58,24 +59,10 @@ const setup = (
     tools,
     catalog: [],
     screen: screenFor(() => runtime),
-    appAccess: storeAccess(store),
-    multiParty: true,
-    // The umbrella fills this with `appStore().promote` + the workspace move
-    // (both raw-row work only the store can do, proven in @vendoai/store's own
-    // promote suite); here it is the same subject flip through the door.
-    promoteApp: async (appId, _from, orgId) => {
-      const record = await store.records("vendo_apps").get(appId);
-      if (record === null) return;
-      await store.records("vendo_apps").delete(appId);
-      await store.records("vendo_apps").put({
-        id: appId,
-        data: { ...record.data as object, subject: orgId },
-        refs: { subject: orgId },
-      });
-    },
+    appAccess: access,
     ...over,
   });
-  return { runtime, store };
+  return { runtime, store, access };
 };
 
 // The SHARED rule (core's conformance kit), mounted against the stand-in these
@@ -133,10 +120,14 @@ describe("§9.3 — reads need viewer, edits editor, delete owner", () => {
   });
 
   it("keeps ownership working with no appAccess wired at all (OSS default)", async () => {
-    const { runtime, store } = setup({ appAccess: undefined, multiParty: undefined });
+    const { runtime, store } = setup({ appAccess: undefined });
     await seedAppRow(store, doc("app_solo"), "dana");
     expect((await runtime.get("app_solo", ctx("dana")))?.id).toBe("app_solo");
     expect(await runtime.get("app_solo", ctx("kim"))).toBeNull();
+    // `levelFor` answers from the same absence rather than failing the read:
+    // with no seam no grant row can exist, so ownership is the only level.
+    expect(await runtime.access.levelFor("app_solo", ctx("dana"))).toBe("owner");
+    expect(await runtime.access.levelFor("app_solo", ctx("kim"))).toBeNull();
   });
 
   it("lets an org admin edit an org app with no grant row at all", async () => {
@@ -210,181 +201,18 @@ describe("§9.5 — fork needs viewer, and grants never travel", () => {
   });
 });
 
-describe("§9.5–§9.6 — promote", () => {
-  it("moves the row subject to the org verbatim and grants the promoter owner", async () => {
-    const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_promote"), "dana");
-    const withOrg: RunContext = { ...ctx("dana"), memberships: [{ org: "acme" }] };
-
-    await runtime.promote("app_promote", "acme", withOrg);
-
-    expect((await store.records("vendo_apps").get("app_promote"))?.refs?.["subject"]).toBe("acme");
-    expect(await runtime.access.levelFor("app_promote", withOrg)).toBe("owner");
-    // The promoter still reaches it after promotion — through the grant, not
-    // through ownership of the row (which is the org's now).
-    expect(await runtime.access.levelFor("app_promote", ctx("dana"))).toBe("owner");
-  });
-
-  it("keeps an org app editable by its editors after promotion", async () => {
-    const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_promoted_edit"), "dana");
-    const dana: RunContext = { ...ctx("dana"), memberships: [{ org: "acme" }] };
-    await runtime.promote("app_promoted_edit", "acme", dana);
-    await runtime.access.grant("app_promoted_edit", "user:kim", "editor", dana);
-    // An org-owned row is pinned WHERE id AND subject: the write must carry the
-    // ORG as the row subject, not the editor, or it silently lands nowhere.
-    await runtime.schedule("app_promoted_edit", "0 9 * * *", ctx("kim")).catch(() => undefined);
-    expect((await store.records("vendo_apps").get("app_promoted_edit"))?.refs?.["subject"]).toBe("acme");
-  });
-
-  it("DISARMS an enabled automation, because automations run with a person's access", async () => {
-    // There is no org principal to run as: the sponsor is a person who may not
-    // even be in the team. Leaving it armed would run it as a synthetic user
-    // named after the org — no connections, no secrets, audit attributed to
-    // nobody. Re-enabling later mints a fresh sponsorship under a real person.
-    const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_armed"), "dana", true);
-    const withOrg: RunContext = { ...ctx("dana"), memberships: [{ org: "acme" }] };
-
-    await runtime.promote("app_armed", "acme", withOrg);
-
-    const row = await store.records("vendo_apps").get("app_armed");
-    expect((row?.data as { enabled: boolean }).enabled).toBe(false);
-    // The document itself is untouched — only the arming bit moved.
-    expect((row?.data as { doc: AppDocument }).doc.name).toBe("Dash");
-  });
-
-  it("leaves an app that was already off exactly as it was", async () => {
-    const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_unarmed"), "dana", false);
-    await runtime.promote("app_unarmed", "acme", { ...ctx("dana"), memberships: [{ org: "acme" }] });
-    const row = await store.records("vendo_apps").get("app_unarmed");
-    expect((row?.data as { enabled: boolean }).enabled).toBe(false);
-  });
-
-  it("restores the promoter's PREVIOUS level when the move fails, never deleting the grant", async () => {
-    // "Undo only what THIS call did" has two halves, and this is the one no
-    // integration test reaches: the promoter already held a grant, so a failed
-    // promote must put that level back rather than take the grant away. Reading
-    // the level AFTER the mint cannot tell "I made this" from "it was already
-    // here", which is why `heldBefore` is read first.
-    const { runtime, store } = setup({
-      promoteApp: async () => { throw new VendoError("conflict", "the move refused"); },
-    });
-    await seedAppRow(store, doc("app_prior_level"), "dana");
-    await seedGrants(store, "app_prior_level", { "user:dana": "viewer" });
-
-    await expect(runtime.promote("app_prior_level", "acme", { ...ctx("dana"), memberships: [{ org: "acme" }] }))
-      .rejects.toMatchObject({ code: "conflict" });
-
-    const rows = await store.records("vendo_app_grants").list({ refs: { app_id: "app_prior_level" } });
-    expect(rows.records).toHaveLength(1);
-    expect((rows.records[0]?.data as { level: AccessLevel }).level).toBe("viewer");
-  });
-
-  it("keeps the grant when another promote flipped the row before this one failed", async () => {
-    // The lost race, at the runtime level: the row no longer names `from`, so
-    // the grant now admits the promoter to the app that just moved. Revoking it
-    // would lock her out of her own app — the round-2 blocker.
-    const { runtime, store } = setup({
-      promoteApp: async (appId, _from, orgId) => {
-        // The winner's flip, exactly as the store's own door does it (rows never
-        // cross subjects, so the row is replaced, not updated in place)...
-        const record = await store.records("vendo_apps").get(appId);
-        await store.records("vendo_apps").delete(appId);
-        await store.records("vendo_apps").put({
-          id: appId,
-          data: { ...record?.data as object, subject: orgId },
-          refs: { subject: orgId },
-        });
-        // ...and then THIS call's own flip losing to it.
-        throw new VendoError("conflict", `app ${appId} belongs to another subject`);
-      },
-    });
-    await seedAppRow(store, doc("app_lost_race"), "dana");
-
-    await expect(runtime.promote("app_lost_race", "acme", { ...ctx("dana"), memberships: [{ org: "acme" }] }))
-      .rejects.toMatchObject({ code: "conflict" });
-
-    const rows = await store.records("vendo_app_grants").list({ refs: { app_id: "app_lost_race" } });
-    expect(rows.records.map((row) => (row.data as { principal: string }).principal)).toEqual(["user:dana"]);
-    // ...and she still reaches the app the winner moved.
-    expect(await runtime.access.levelFor("app_lost_race", ctx("dana"))).toBe("owner");
-  });
-
-  it("requires an asserted membership in the target org", async () => {
-    const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_promote2"), "dana");
-    await expect(runtime.promote("app_promote2", "acme", ctx("dana")))
-      .rejects.toMatchObject({ code: "forbidden" });
-  });
-
-  it("requires ownership of the app", async () => {
-    const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_promote3"), "dana");
-    await seedGrants(store, "app_promote3", { "user:kim": "editor" });
-    const kim: RunContext = { ...ctx("kim"), memberships: [{ org: "acme" }] };
-    await expect(runtime.promote("app_promote3", "acme", kim))
-      .rejects.toMatchObject({ code: "forbidden" });
-  });
-
-  it("refuses when no store-backed promote seam is wired", async () => {
-    const { runtime, store } = setup({ promoteApp: undefined });
-    await seedAppRow(store, doc("app_promote4"), "dana");
-    await expect(runtime.promote("app_promote4", "acme", { ...ctx("dana"), memberships: [{ org: "acme" }] }))
-      .rejects.toMatchObject({ code: "cloud-required" });
-  });
-});
-
-describe("§9.6 — cloud gating", () => {
-  it("refuses grant, revoke, and promote with no key", async () => {
-    const { runtime, store } = setup({ multiParty: false });
-    await seedAppRow(store, doc("app_gate"), "dana");
-    const withOrg: RunContext = { ...ctx("dana"), memberships: [{ org: "acme" }] };
-
-    await expect(runtime.access.grant("app_gate", "user:kim", "viewer", ctx("dana")))
-      .rejects.toMatchObject({ code: "cloud-required" });
-    await expect(runtime.access.revoke("app_gate", "user:kim", ctx("dana")))
-      .rejects.toMatchObject({ code: "cloud-required" });
-    await expect(runtime.promote("app_gate", "acme", withOrg))
-      .rejects.toMatchObject({ code: "cloud-required" });
-  });
-
-  it("still ENFORCES can() with no key — reading the grant list is OSS", async () => {
-    const { runtime, store } = setup({ multiParty: false });
-    await seedAppRow(store, doc("app_gate2"), "acme");
-    await seedGrants(store, "app_gate2", { "user:kim": "viewer" });
-    expect((await runtime.get("app_gate2", ctx("kim")))?.id).toBe("app_gate2");
-    expect(await runtime.access.list("app_gate2", ctx("kim"))).toHaveLength(1);
-  });
-
-  it("answers the grant LIST from an unwired seam the way levelFor already does — never 402 on a read", async () => {
-    // `levelFor` degenerates to ownership when no app-access seam is wired (the
-    // OSS single-player default); `list` threw `cloud-required` from the same
-    // absence, so the Share dialog's FIRST READ 402'd on every keyless
-    // deployment and the two doors disagreed about the same fact.
-    const { runtime, store } = setup({ appAccess: undefined, multiParty: false });
-    await seedAppRow(store, doc("app_noseam"), "dana");
-    expect(await runtime.access.levelFor("app_noseam", ctx("dana"))).toBe("owner");
-    // With no seam no grant row can exist (§9.6), so the empty list is the
-    // honest answer — and it stays viewer-gated.
-    expect(await runtime.access.list("app_noseam", ctx("dana"))).toEqual([]);
-    await expect(runtime.access.list("app_noseam", ctx("mal")))
-      .rejects.toMatchObject({ code: "not-found" });
-  });
-
-  // The green half: with a key the same three writes go through.
-  it("allows them once the key filled the seam", async () => {
-    const { runtime, store } = setup();
+describe("§9.3 — levelFor answers from LIVE grant rows", () => {
+  it("reflects a grant the moment it is written, and its revoke", async () => {
+    const { runtime, store, access } = setup();
     // Held by the ORG: sharing implies the org workspace, so a live person
     // grant only exists on an app that has already moved there.
     await seedAppRow(store, doc("app_keyed"), "acme");
     const admin: RunContext = { ...ctx("dana"), memberships: [{ org: "acme", admin: true }] };
-    await runtime.access.grant("app_keyed", "user:kim", "editor", admin);
-    expect(await runtime.access.list("app_keyed", admin)).toHaveLength(1);
+
+    await access.grant(admin, "app_keyed", "user:kim", "editor");
     expect(await runtime.access.levelFor("app_keyed", ctx("kim"))).toBe("editor");
-    await runtime.access.revoke("app_keyed", "user:kim", admin);
-    expect(await runtime.access.list("app_keyed", admin)).toHaveLength(0);
+
+    await access.revoke(admin, "app_keyed", "user:kim");
     expect(await runtime.access.levelFor("app_keyed", ctx("kim"))).toBeNull();
   });
 });
@@ -527,7 +355,6 @@ describe("§9.3 — the permission check costs what it claims to cost", () => {
       tools,
       catalog: [],
       appAccess: access,
-      multiParty: true,
       ...over,
     });
     return {
@@ -569,21 +396,6 @@ describe("§9.3 — the permission check costs what it claims to cost", () => {
     await runtime.serve("app_serve_once", { method: "GET", path: "/" }, ctx("kim"))
       .catch(() => undefined);
     expect(canCalls()).toBe(1);
-  });
-});
-
-describe("§9.5 — the hosted-store promote limitation speaks plainly", () => {
-  it("names what is unavailable AND the fix, in one consumer-safe sentence", async () => {
-    const { runtime, store } = setup({ promoteApp: undefined });
-    await seedAppRow(store, doc("app_hosted"), "dana");
-    await expect(runtime.promote("app_hosted", "acme", { ...ctx("dana"), memberships: [{ org: "acme" }] }))
-      .rejects.toMatchObject({
-        code: "cloud-required",
-        // Consumer-safe: it says what cannot happen, not which seam is unwired.
-        message: "moving an app into a team workspace isn't available on the hosted store yet — "
-          + "wire your own Postgres with createVendo({ store: createStore({ url }) }) to move it, "
-          + "or share a copy with fork instead",
-      });
   });
 });
 

@@ -37,7 +37,6 @@ export {
   // hooks/*
   useActivity,
   useApp,
-  useAppGrants,
   useApps,
   useApprovals,
   // spec §4 (N1) — the one attention source (askCount + unseen results), and

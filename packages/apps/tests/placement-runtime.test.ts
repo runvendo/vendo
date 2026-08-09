@@ -115,7 +115,6 @@ describe("AppsRuntime placement verbs", () => {
       tools,
       catalog: [],
       appAccess: storeAccessFixture(store),
-      multiParty: true,
     });
     await runtime.place({ app: "app_mia", slot: "home-hero" }, ctx);
 

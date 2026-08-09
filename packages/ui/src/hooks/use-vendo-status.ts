@@ -11,8 +11,8 @@ interface StatusState {
       when the deployment is single-player. */
   memberships: Membership[];
   /** Build contract §9.1 companion — the host can name a person from a typed
-      query (`resolvePerson`). False ⇒ the Share dialog does not offer to share
-      with one person at all. */
+      query (`resolvePerson`). False ⇒ no surface may offer to name one person:
+      Vendo holds no directory, and encoding what was typed named nobody. */
   namesPeople: boolean;
 }
 

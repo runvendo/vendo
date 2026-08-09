@@ -115,8 +115,8 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   const membershipsSeam = config.auth?.memberships;
   // Build contract §9.1 companion — the fifth seam, on the same preset and for
   // the same reason: Vendo holds no directory, so only the host can turn what
-  // someone typed into the Share dialog into one of its own subjects. Unset, the
-  // dialog does not offer to share with one person at all.
+  // someone typed into one of its own subjects. Unset, /status reports
+  // `namesPeople: false` and no surface may offer to name one person.
   const resolvePersonSeam = config.auth?.resolvePerson;
   // Spec 2026-08-05 §1 — the [User] facts seam rides the preset only (decision
   // 5: no seam for raw principal-trio hosts — a hand-rolled `principal` has no

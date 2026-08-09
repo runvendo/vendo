@@ -288,8 +288,8 @@ export interface VendoStatus {
       request. Absent on a single-player deployment; never stored anywhere. */
   memberships?: Membership[];
   /** Build contract §9.1 companion — the host wired `resolvePerson`, so it can
-      turn a typed name into one of its own subjects. Absent ⇒ the Share dialog
-      does not offer to share with one person (Vendo has no directory of its
-      own, and encoding what was typed wrote a grant that matched nobody). */
+      turn a typed name into one of its own subjects. Absent ⇒ no surface may
+      offer to name one person (Vendo has no directory of its own, and encoding
+      what was typed named nobody). */
   namesPeople?: boolean;
 }

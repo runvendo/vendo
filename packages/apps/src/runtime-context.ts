@@ -12,7 +12,6 @@
  */
 import type {
   AccessLevel,
-  AppAccess,
   AppDocument,
   AppId,
   AppPlan,
@@ -109,10 +108,6 @@ export interface AppsRuntimeContext {
   owned(appId: AppId, ctx: RunContext, level?: AccessLevel): Promise<AppDocument | null>;
   /** §9.4's posture: unviewable stays `not-found`, a denied viewer gets `forbidden`. */
   requireOwned(appId: AppId, ctx: RunContext, level?: AccessLevel): Promise<AppDocument>;
-  /** Build contract §9.6 — the ONE Cloud gate on this block. */
-  requireMultiParty(what: string): void;
-  /** The app-access seam, or a loud refusal when the host wired none. */
-  requireAccess(): AppAccess;
   /** The app rows this caller reaches WITHOUT owning them (§9.3). */
   grantedRecords(ctx: RunContext, already: Set<string>): Promise<VendoRecord[]>;
   /** Whether the host's `apps.review.reviewer` assertion covers this caller. */
@@ -126,11 +121,9 @@ export interface AppsRuntimeContext {
     ctx: Pick<RunContext, "venue" | "presence" | "trigger" | "turnId">,
     detail: Record<string, Json>,
   ): Promise<void>;
-  /** The `share` audit kind. */
-  reportShare(appId: AppId, ctx: RunContext, detail: Record<string, Json>): Promise<void>;
   /** The `app-lifecycle` audit kind, under the calling principal. */
   reportLifecycle(
-    operation: "create" | "delete" | "fork" | "promote" | "in-client-approve" | "pin-fork" | "pin-rebase" | "machine-provision" | "place" | "unplace",
+    operation: "create" | "delete" | "fork" | "in-client-approve" | "pin-fork" | "pin-rebase" | "machine-provision" | "place" | "unplace",
     appId: AppId,
     ctx: RunContext,
     extra?: Record<string, Json>,

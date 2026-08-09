@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VENDO_APP_FORMAT, type AppDocument, type Membership, type Principal } from "@vendoai/core";
-import { createStore, type VendoStore } from "@vendoai/store";
+import { appAccess, createStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
 
@@ -185,10 +185,14 @@ describe("F4 — a team app is reachable over MCP, not only over the wire", () =
     });
     // Dana (org admin ⇒ implicit owner of every org app) shares it with the
     // support TEAM — the encoding that only an asserted membership can match.
-    expect((await call(vendo, dana, "POST", "/apps/app_team/grants", {
-      principal: `team:${ORG}/support`,
-      level: "viewer",
-    })).status).toBe(200);
+    // The row is fixture, written through the same `appAccess(store)` seam the
+    // door reads: no wire route writes one.
+    await appAccess(store).grant(
+      { principal: dana, venue: "app", presence: "present", sessionId: "s_dana", memberships: memberships["dana"] },
+      "app_team",
+      `team:${ORG}/support`,
+      "viewer",
+    );
 
     // The wire already answers correctly for Kim; that is the control.
     expect((await call(vendo, kim, "GET", "/apps")).body.map((app: AppDocument) => app.id))

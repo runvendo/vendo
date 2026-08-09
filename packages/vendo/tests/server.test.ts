@@ -401,7 +401,7 @@ describe("09 §3 public wire", () => {
     // app — and a failed build is still an existence proof, so a caller who
     // cannot view it hears pending like anyone asking after an app that isn't
     // there (wave-3 finding F3). The owner-side half of D2 is unchanged and is
-    // pinned in wire/apps.grants.test.ts. The record shape mirrors the
+    // pinned in wire/apps.pending-probe.test.ts. The record shape mirrors the
     // runtime's #532 write exactly (records-door put; a failed doc has no ui
     // payload).
     const store = await tempStore("vendo-wire-d2-");
@@ -433,7 +433,7 @@ describe("09 §3 public wire", () => {
     // The cross-seam pin this file lost. Both real-store cases above were
     // correctly re-pointed to `pending` because their caller is a non-viewer, so
     // the only test left asserting `{kind:"failed"}` hand-stubs
-    // `store.records().get()` (wire/apps.grants.test.ts) — nothing proved that a
+    // `store.records().get()` (wire/apps.pending-probe.test.ts) — nothing proved that a
     // REAL row's `doc.buildFailed` still reaches the embed. Renaming that field
     // would have broken every failed build's surface with the suite green.
     //
