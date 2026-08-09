@@ -6,8 +6,10 @@
  * purpose:
  *
  *   - inside the box, copied into the template as `/opt/vendo-box/claude-turn.mjs`
- *     (`build-template.mjs`), driven by the supervisor's session routes;
- *   - on the host, imported from `dist` for `machine: "local"`.
+ *     (`packages/apps/box/build-template.mjs` stages this package's compiled
+ *     `dist/claude-code/claude-turn.js`), driven by the supervisor's session
+ *     routes (`packages/harnesses/box/turn-routes.mjs`);
+ *   - on the host, imported by `claude-code/local.ts` for `machine: "local"`.
  *
  * **The tools are the HOST's own MCP door now.** They used to be an in-process
  * MCP server this file BUILT — every handler round-tripping to the host over an
@@ -24,14 +26,15 @@
  * itself (the door lists LIVE, so a tool `find_tools` equips mid-conversation
  * needs no session reopen), and the `callTool` port in both drivers.
  *
- * It therefore imports NOTHING from the workspace, and — the rule that matters —
- * it never NAMES the Agent SDK. Whoever supplies the machine supplies the SDK:
- * the box door loads it from the machine image, `machine: "local"` loads it from
- * the optional peer that `@vendoai/harnesses` declares. A module that named the
- * package itself was reachable from every composed host's build graph, and a
- * bundler that folds `import(CONST)` then refused to build a host that has no
- * reason to install a ~250MB platform binary. Keep it that way — the emitted
- * `dist/claude-turn.js` is copied verbatim into a machine image.
+ * It therefore imports NOTHING — not even a sibling in this package — and, the
+ * rule that matters, it never NAMES the Agent SDK. Whoever supplies the machine
+ * supplies the SDK: the box door loads it from the machine image, `machine:
+ * "local"` loads it from the optional peer that `@vendoai/harnesses` declares.
+ * A module that named the package itself was reachable from every composed
+ * host's build graph, and a bundler that folds `import(CONST)` then refused to
+ * build a host that has no reason to install a ~250MB platform binary. Keep it
+ * that way — the emitted `dist/claude-code/claude-turn.js` is copied verbatim
+ * into a machine image.
  *
  * There is no local permission system left (design §3, "claudeCode() specifics";
  * harness-redesign D1). The session runs in `bypassPermissions` because the two
@@ -330,8 +333,8 @@ const PLANNING_TOOL = "TodoWrite";
 /**
  * Everything `query()` is told, once, for the life of the session.
  *
- * A sibling function rather than a sibling MODULE: `dist/claude-turn.js` is
- * copied verbatim into the machine image (module header), so this file has no
+ * A sibling function rather than a sibling MODULE: `dist/claude-code/claude-turn.js`
+ * is copied verbatim into the machine image (module header), so this file has no
  * relative imports to give it.
  */
 function sessionOptions(

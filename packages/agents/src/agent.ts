@@ -3,7 +3,14 @@
  * slot left unset (adapter rule, no second code paths), an explicit adapter
  * always wins, and every failure is a boot error with a way out.
  */
-import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
+import {
+  HOT_PATH_WATCH,
+  hotPathAppId,
+  repairInstruction,
+  validateWrittenApps,
+  type SandboxAdapter,
+  type SandboxMachine,
+} from "@vendoai/apps";
 import { e2bSandbox } from "@vendoai/apps/e2b";
 import { selectSandbox } from "@vendoai/apps/sandbox-ladder";
 import {
@@ -261,6 +268,14 @@ export function agent(config: AgentConfig): VendoAgent {
   provideHarnessAdapters(config.harness, {
     ...(sandbox === undefined ? {} : { sandbox }),
     ...(door === undefined ? {} : { toolDoor: door.port }),
+    // The app-document vocabulary a machine-backed driver needs (the hot-path
+    // watch set and the validate gate) — injected because `@vendoai/harnesses`
+    // no longer imports `@vendoai/apps`. Same fill as the umbrella's
+    // (`packages/vendo/src/harness-turn.ts`), so both composed paths stay
+    // byte-identical to when the driver imported these itself.
+    hotPaths: { watch: HOT_PATH_WATCH, appId: hotPathAppId },
+    validateApps: validateWrittenApps,
+    repairInstruction,
   });
   const liveTurn: SessionDeps["liveTurn"] = door === undefined
     ? undefined

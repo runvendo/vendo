@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 // The box door is plain JS shipped into the machine image; the tests drive the
 // real module, with only the SDK session injected.
-import { createSessionRoutes } from "../box/turn-routes.mjs";
+import { createSessionRoutes } from "../../box/turn-routes.mjs";
 
 const TOKEN = "bxt_test";
 const roots: string[] = [];

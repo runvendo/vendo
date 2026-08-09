@@ -12,7 +12,7 @@
  */
 import { describe, expect, test } from "vitest";
 import { disposeLocalSessions, localMachine } from "../../src/claude-code/local.js";
-import type { ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
+import type { ClaudeTurnEvent } from "../../src/claude-code/claude-turn.js";
 
 /** Records the input of every session OPEN — the only channel a system prompt
  *  travels on, exactly as the real SDK session does. */

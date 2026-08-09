@@ -19,7 +19,7 @@
  * survive `createUIMessageStream`'s deferral of `execute`, and a slot that is
  * silently empty is exactly the failure mode this file exists to close.
  */
-import type { Harness } from "@vendoai/core";
+import type { AppId, Finding, Harness, TurnTools, WorkspaceFs } from "@vendoai/core";
 
 /**
  * The host's own MCP door, as a harness that runs a MACHINE needs it.
@@ -61,6 +61,34 @@ export interface ToolDoorPort {
   revoke(token: string): void;
 }
 
+/**
+ * The hot-path vocabulary, as a machine-backed driver needs it: which shapes to
+ * watch on the machine's disk mid-turn, and which paths count as hot when the
+ * collected files come home.
+ *
+ * Injected — this package no longer depends on `@vendoai/apps`, where the real
+ * vocabulary (`HOT_PATH_WATCH`, `hotPathAppId`) lives. Composition hands the
+ * driver the real one; a bare host-driven runtime without it simply has no
+ * mid-turn hot sync, and the driver says so once.
+ */
+export interface HotPathsPort {
+  /** Watch shapes for the machine's mid-turn collect (`*` = one segment). */
+  watch: readonly string[];
+  /** The appId a hot-path write belongs to, or undefined if this is not one. */
+  appId(path: string): string | undefined;
+}
+
+/** One app document that did not pass the validate gate — a structural mirror
+ *  of `AppValidationFailure` in `@vendoai/apps` (validate-gate.ts). Restated
+ *  because this package no longer imports apps; the composition site assigns
+ *  the real functions into {@link HarnessAdapters}, so drift between the two
+ *  shapes fails to compile there, by name. */
+export interface AppValidationFailureLike {
+  path: string;
+  appId: AppId;
+  findings: readonly Finding[];
+}
+
 /** The composed adapters a harness may be handed. Mirrors `ComposedAdapters`
  *  (the boot gate's view), plus the MCP door a machine-backed harness needs. */
 export interface HarnessAdapters {
@@ -73,6 +101,19 @@ export interface HarnessAdapters {
    *  subpath); typed loosely for the same reason as `sandbox` — the slot is a
    *  drawer, not a contract. */
   toolSearch?: unknown;
+  /** The hot-path vocabulary (`HOT_PATH_WATCH` + `hotPathAppId` in apps). */
+  hotPaths?: HotPathsPort;
+  /** The builder's validate gate (`validateWrittenApps` in apps). Property
+   *  style, not method style, so `strictFunctionTypes` checks the assignment
+   *  at the composition site in both directions. */
+  validateApps?: (input: {
+    tools: Pick<TurnTools, "call">;
+    workspace: Pick<WorkspaceFs, "readFile">;
+    paths: readonly string[];
+    review?: boolean;
+  }) => Promise<readonly AppValidationFailureLike[]>;
+  /** The gate's failures as one instruction (`repairInstruction` in apps). */
+  repairInstruction?: (failures: readonly AppValidationFailureLike[]) => string | undefined;
 }
 
 const slots = new WeakMap<object, HarnessAdapters>();

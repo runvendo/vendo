@@ -14,7 +14,7 @@
  */
 import { describe, expect, test } from "vitest";
 import { localMachine, disposeLocalSessions } from "../../src/claude-code/local.js";
-import type { ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
+import type { ClaudeTurnEvent } from "../../src/claude-code/claude-turn.js";
 
 /** A session double that captures the sinks it was OPENED with, and replays each
  *  `send()` through them — exactly what the real SDK session does. */

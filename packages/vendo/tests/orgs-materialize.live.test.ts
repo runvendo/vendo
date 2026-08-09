@@ -16,7 +16,7 @@
  * is exactly the deployment shape a workspace-only host has.
  *
  * **The template matters here**, because this lane changes the box IMAGE (the
- * `/session/collect` walk in `packages/apps/box/turn-routes.mjs`): a run against
+ * `/session/collect` walk in `packages/harnesses/box/turn-routes.mjs`): a run against
  * an image baked before the change collects `/user/` paths only and the team
  * file's edit never leaves the box. Proven on `vendo-box-orgs`
  * (`cnbt9dwz9ktvlplqhlq1`), a LANE-named template — never the shared `vendo-box`

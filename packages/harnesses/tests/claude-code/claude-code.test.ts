@@ -11,13 +11,13 @@ import {
 } from "@vendoai/core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 // The REAL box door, driven over a fake transport — see the block comment below.
-// A package subpath, not a relative climb: the door is the wire contract between
-// these two blocks, and `harnesses → apps` is a layer-legal edge.
-import { createSessionRoutes } from "@vendoai/apps/box-door";
+// A sibling of the driver since the claude-turn rehome: this package owns the
+// box-side half of the session protocol it speaks.
+import { createSessionRoutes } from "../../box/turn-routes.mjs";
 import { assertHarnessComposable } from "../../src/compose.js";
 import { createTurnState } from "../../src/harness-state.js";
 import { provideHarnessAdapters } from "../../src/harness-sandbox.js";
-import { testWorkspace, unusedModels, userMessage } from "../../src/test-doubles.test-util.js";
+import { testAppsHooks, testWorkspace, unusedModels, userMessage } from "../../src/test-doubles.test-util.js";
 import { boxEgress, claudeCode, inferenceEnv, promptFor, truncated } from "../../src/claude-code/index.js";
 import { boxMachine, disposeSessionMachines, type SandboxAdapterLike, type SandboxMachineLike } from "../../src/claude-code/box.js";
 
@@ -26,14 +26,14 @@ const encoder = new TextEncoder();
 
 /**
  * A stand-in for a REAL box: it speaks the same control-port wire the machine
- * image speaks (`packages/apps/box/turn-routes.mjs`), so what is under test is
+ * image speaks (`packages/harnesses/box/turn-routes.mjs`), so what is under test is
  * our driver and our sync-back — never a mock of our own code. The SDK loop is
  * the one thing scripted, because a unit test cannot run a model.
  */
 /**
  * A stand-in for a real box that speaks the REAL protocol: the fake machine's
  * `request()` is a thin transport adapter over the ACTUAL box door
- * (`packages/apps/box/turn-routes.mjs`), with only the SDK session scripted.
+ * (`packages/harnesses/box/turn-routes.mjs`), with only the SDK session scripted.
  *
  * A hand-written fake let a live BLOCKER hide: it accepted `hello`
  * unconditionally, so it modelled a protocol the real box does not implement.
@@ -1046,7 +1046,10 @@ describe("a turn on a real box wire", () => {
       if (commit !== undefined) { landed = commit.changed; release(); }
     }, 20);
     const guard = setTimeout(release, 8_000);
-    await drain(claudeCode({ sandbox }), turn);
+    // The hot-path vocabulary arrives injected now (composition's job); the
+    // doubles' copy is what makes the mid-turn sync live in this harness-only
+    // suite. The REAL vocabulary joined to the driver: packages/vendo/tests.
+    await drain(claudeCode({ sandbox, ...testAppsHooks() }), turn);
     clearInterval(watcher);
     clearTimeout(guard);
     // ONLY the hot path: the mid-turn sync never drags the rest of the tree along.
@@ -1073,7 +1076,7 @@ describe("a turn on a real box wire", () => {
       if (commit !== undefined) { landed = commit.changed; release(); }
     }, 20);
     const guard = setTimeout(release, 8_000);
-    await drain(claudeCode({ sandbox }), turn);
+    await drain(claudeCode({ sandbox, ...testAppsHooks() }), turn);
     clearInterval(watcher);
     clearTimeout(guard);
     expect(landed).toEqual(["/user/apps/app_brandnew/plan.vendo"]);

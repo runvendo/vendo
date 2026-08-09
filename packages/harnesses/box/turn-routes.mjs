@@ -32,6 +32,12 @@
  * Everything interesting about the SDK loop lives in `claude-turn.mjs`, which is
  * the SAME module `machine: "local"` runs on the host — one implementation, two
  * homes.
+ *
+ * This file lives in `@vendoai/harnesses` (the claude-code driver's package —
+ * the box-side half of the session protocol the driver speaks), but it RUNS in
+ * the box: `packages/apps/box/build-template.mjs` stages it into the machine
+ * image beside the supervisor, which delegates every `/session/*` request here.
+ * It imports nothing but node builtins, so it works from either home.
  */
 import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";

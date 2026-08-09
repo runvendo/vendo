@@ -47,20 +47,21 @@ import { chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { VendoError } from "@vendoai/core";
-import type { ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
+import type { ClaudeTurnEvent } from "./claude-turn.js";
 import type { SyncFile, TreeState } from "../materialize.js";
 import { emptyTree, inWritableMount } from "../materialize.js";
 import { MESSAGE_BUDGET_MS, type SessionMachine, type SessionMessage } from "./machine.js";
 
-/** The session runner is shared with the box — one implementation, two homes. Its
- *  OWN subpath, so importing it never drags the render seam's `./internal` in,
- *  and `./internal` never drags this in. */
-const RUNNER = "@vendoai/apps/claude-turn";
+/** The session runner is shared with the box — one implementation, two homes.
+ *  A sibling module in this package now; still loaded lazily below, so a host
+ *  that never opts into `machine: "local"` never evaluates it. */
+const RUNNER = "./claude-turn.js";
 
 /**
  * The SDK, from HERE, because this package declares the optional peer
- * (`@vendoai/apps` declares it too, for the box door) — and this function is
- * the ONLY place in the shipped packages that names it on a host path.
+ * (`@vendoai/apps` declares it too, for the box's layer-3 agent engine) — and
+ * this function is the ONLY place in the shipped packages that names it on a
+ * host path.
  *
  * `turbopackIgnore`/`webpackIgnore` keep it out of a host's BUILD: a bundler
  * that resolves this specifier refuses to build a Next.js host that has not

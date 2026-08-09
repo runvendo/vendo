@@ -67,4 +67,11 @@ export {
 // relatively. A barrel export with no reader is surface nobody asked for.
 // `harnessAdapters` is the READ side: a harness constructed at boot (the host
 // wrote `harness: claudeCode()`) collects the composed slots at turn time.
-export { harnessAdapters, provideHarnessAdapters, type HarnessAdapters, type ToolDoorPort } from "./harness-sandbox.js";
+export {
+  harnessAdapters,
+  provideHarnessAdapters,
+  type AppValidationFailureLike,
+  type HarnessAdapters,
+  type HotPathsPort,
+  type ToolDoorPort,
+} from "./harness-sandbox.js";

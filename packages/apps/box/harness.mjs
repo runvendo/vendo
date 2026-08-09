@@ -35,7 +35,6 @@ import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from
 import http from "node:http";
 import path from "node:path";
 import { runAgentTask as defaultRunAgentTask } from "./agent-sdk.mjs";
-import { createSessionRoutes } from "./turn-routes.mjs";
 
 const RESPAWN_DELAY_MS = 1_000;
 const RUN_WATCH_INTERVAL_MS = 2_000;
@@ -242,12 +241,26 @@ export const createHarness = (options = {}) => {
 
   // Wave 2 lane E — the conversational door beside the layer-3 builder's. Same
   // control port, same supervisor, a different kind of turn.
-  const turnRoutes = options.turnRoutes ?? createSessionRoutes({ env: boundaryEnv() });
+  //
+  // Loaded LAZILY, on the first /session request, because the module's repo home
+  // is `@vendoai/harnesses` (the claude-code driver owns its box-side half) and
+  // `build-template.mjs` stages it in beside this file only at image bake. A
+  // static import would fail in the monorepo, where this supervisor's own tests
+  // run; in the image the file is always there, staged by the same build that
+  // staged this one. The "/session" prefix mirrors the module's own `owns()`.
+  let turnRoutes = options.turnRoutes;
+  const sessionRoutes = async () => {
+    if (turnRoutes === undefined) {
+      const { createSessionRoutes } = await import("./turn-routes.mjs");
+      turnRoutes = createSessionRoutes({ env: boundaryEnv() });
+    }
+    return turnRoutes;
+  };
 
   const handle = async (request, response) => {
     const url = new URL(request.url ?? "/", "http://box.internal");
     const route = `${request.method} ${url.pathname}`;
-    if (turnRoutes.owns(url.pathname)) {
+    if (url.pathname.startsWith("/session")) {
       let payload;
       try {
         const body = await readBody(request);
@@ -256,7 +269,7 @@ export const createHarness = (options = {}) => {
         sendJson(response, 400, { error: "body must be JSON" });
         return;
       }
-      const answer = await turnRoutes.handle(request.method, url.pathname, request.headers, payload);
+      const answer = await (await sessionRoutes()).handle(request.method, url.pathname, request.headers, payload);
       sendJson(response, answer.status, answer.body);
       return;
     }

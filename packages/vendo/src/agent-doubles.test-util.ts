@@ -14,15 +14,19 @@ import type {
   Guard,
   GuardDecision,
   Json,
+  Principal,
   ResolvedModels,
   RunContext,
+  SeatModels,
+  SkillListing,
+  ThreadId,
   ToolCall,
   ToolDescriptor,
   ToolOutcome,
   ToolRegistry,
   WorkspaceFs,
 } from "@vendoai/core";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, UIMessage } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { InMemoryFs } from "just-bash";
 export type TestGuard = Guard & {
@@ -331,4 +335,62 @@ export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
 /** `ResolvedModels` whose every seat is one scripted model. */
 export function seats(model: LanguageModel): ResolvedModels<LanguageModel> {
   return { default: model, reviewer: model, judge: model, fill: model };
+}
+
+// ─── the harness-runtime doubles, mirrored from `@vendoai/harnesses`
+//     (test-doubles.test-util.ts) for the cross-block seam tests that live in
+//     THIS package because they need both blocks (the claude-code live box
+//     proofs, the render-seam wrapWorkspace slot) ────────────────────────────
+
+export function userMessage(id: string, text: string): UIMessage {
+  return { id, role: "user", parts: [{ type: "text", text }] };
+}
+
+/** No seats at all — for suites where the harness under test is scripted or a
+ *  real external loop rather than a seat-reading `vendo()`. */
+export function unusedModels(): SeatModels<LanguageModel> {
+  return {};
+}
+
+export function testSkills(entries: Array<SkillListing & { body: string }> = []) {
+  return {
+    async list(): Promise<SkillListing[]> {
+      return entries.map(({ name, description }) => ({ name, description }));
+    },
+    async load(name: string): Promise<string> {
+      const entry = entries.find((candidate) => candidate.name === name);
+      if (entry === undefined) throw new Error(`no such skill: ${name}`);
+      return entry.body;
+    },
+  };
+}
+
+/** Lane D's `threadMessageStore(store)` return value, in memory: one row per
+ *  message, reassembled by seq. */
+export function testTranscript() {
+  const rows = new Map<string, Array<{ id: string; seq: number; message: UIMessage }>>();
+  return {
+    rows,
+    async upsert(_principal: Principal, threadId: ThreadId, message: UIMessage, seq: number): Promise<void> {
+      const thread = rows.get(threadId) ?? [];
+      const existing = thread.findIndex((row) => row.id === message.id);
+      const row = { id: message.id, seq, message: structuredClone(message) };
+      if (existing === -1) thread.push(row);
+      else thread[existing] = row;
+      rows.set(threadId, thread);
+    },
+    async list(_principal: Principal, threadId: ThreadId): Promise<UIMessage[]> {
+      return [...(rows.get(threadId) ?? [])]
+        .sort((left, right) => left.seq - right.seq)
+        .map((row) => structuredClone(row.message));
+    },
+  };
+}
+
+export async function readSse(response: Response): Promise<Array<Record<string, unknown>>> {
+  const raw = await response.text();
+  const blocks = raw.slice(0, -2).split("\n\n");
+  return blocks
+    .filter((block) => block.startsWith("data: ") && block !== "data: [DONE]")
+    .map((block) => JSON.parse(block.slice("data: ".length)) as Record<string, unknown>);
 }

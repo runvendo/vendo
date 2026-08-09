@@ -334,6 +334,32 @@ export function seats(model: LanguageModel): ResolvedModels<LanguageModel> {
   return { default: model, reviewer: model, judge: model, fill: model };
 }
 
+/**
+ * The apps hooks a composed deployment injects into `claudeCode()`
+ * (`provideHarnessAdapters` — see `HarnessAdapters`), as this package's suites
+ * need them: the hot-path vocabulary restated (`HOT_PATH_WATCH` /
+ * `hotPathAppId` in `@vendoai/apps`, which this package no longer imports),
+ * and a validate gate that always passes. The REAL vocabulary and gate joined
+ * to the driver are covered in `packages/vendo/tests/`, where both blocks are
+ * legal.
+ */
+export function testAppsHooks() {
+  const APP_PATH = /^\/(?:user|orgs\/[^/]+)\/apps\/([^/]+)\/(?:app|plan)\.vendo$/;
+  return {
+    hotPaths: {
+      watch: [
+        "/user/apps/*/app.vendo",
+        "/user/apps/*/plan.vendo",
+        "/orgs/*/apps/*/app.vendo",
+        "/orgs/*/apps/*/plan.vendo",
+      ] as readonly string[],
+      appId: (path: string): string | undefined => APP_PATH.exec(path)?.[1],
+    },
+    validateApps: async (): Promise<never[]> => [],
+    repairInstruction: (): string | undefined => undefined,
+  };
+}
+
 export async function readSse(response: Response): Promise<Array<Record<string, unknown>>> {
   const raw = await response.text();
   const blocks = raw.slice(0, -2).split("\n\n");

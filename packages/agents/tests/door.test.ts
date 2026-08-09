@@ -7,7 +7,7 @@
  * door port existing at all. Anything that mocks one side of that reproduces
  * the bug with a green suite, so the seam is driven whole here: the REAL
  * `agent()`, the REAL `claudeCode()` driver, the REAL box control-port wire
- * (`@vendoai/apps/box-door`), the REAL MCP door this package mounts, and the
+ * (`@vendoai/harnesses/box-door`), the REAL MCP door this package mounts, and the
  * REAL `createClaudeSession` the box hands the credential to. The two things
  * scripted are the ones a unit test genuinely cannot run: the e2b provider and
  * the Agent SDK.
@@ -18,8 +18,8 @@ import path from "node:path";
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
 // The REAL box door and the REAL in-box session opener, over a fake transport:
 // what the box does with `toolDoor` is the other half of this seam.
-import { createSessionRoutes } from "@vendoai/apps/box-door";
-import { createClaudeSession, VENDO_MCP_SERVER } from "@vendoai/apps/claude-turn";
+import { createSessionRoutes } from "@vendoai/harnesses/box-door";
+import { createClaudeSession, VENDO_MCP_SERVER } from "@vendoai/harnesses/claude-turn";
 import { harnessAdapters } from "@vendoai/harnesses";
 import { createStore } from "@vendoai/store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

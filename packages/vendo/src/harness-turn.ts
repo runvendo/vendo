@@ -31,7 +31,14 @@ import {
   type WorkspaceFs,
 } from "@vendoai/core";
 import { ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
-import { wrapWorkspaceForRender, type RenderSeamOptions } from "@vendoai/apps";
+import {
+  HOT_PATH_WATCH,
+  hotPathAppId,
+  repairInstruction,
+  validateWrittenApps,
+  wrapWorkspaceForRender,
+  type RenderSeamOptions,
+} from "@vendoai/apps";
 import type { VendoGuard } from "@vendoai/guard";
 import { harnessStateStore, threadMessageStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import {
@@ -243,6 +250,17 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
   if (config.toolSearch !== undefined) {
     provideHarnessAdapters(config.harness, { toolSearch: config.toolSearch });
   }
+  // The app-document vocabulary a machine-backed driver needs: the hot-path
+  // watch set, and the finish-line validate gate. `@vendoai/harnesses` no
+  // longer imports `@vendoai/apps`, so composition hands the driver the REAL
+  // implementations here — which is what keeps the composed path byte-identical
+  // to when the driver imported them itself. Filled unconditionally: the slots
+  // are inert on a harness that never reads them.
+  provideHarnessAdapters(config.harness, {
+    hotPaths: { watch: HOT_PATH_WATCH, appId: hotPathAppId },
+    validateApps: validateWrittenApps,
+    repairInstruction,
+  });
 
   /** The thread's harness-state slot, when this store can hold one. The slot
    *  carries a native session ref and vendo()'s searched-in loadout, so it has

@@ -7,10 +7,12 @@
  * the two together cover the seam end to end:
  *
  *   scripted SDK stream
- *     → the REAL `createClaudeSession` loop, imported from `dist` — the very file
- *       `build-template.mjs` copies into the machine image
- *     → the REAL box door (`packages/apps/box/turn-routes.mjs`), over a transport
- *       adapter instead of a socket
+ *     → the REAL `createClaudeSession` loop (`src/claude-code/claude-turn.ts`,
+ *       whose compiled dist is what `build-template.mjs` copies into the machine
+ *       image — that the built artifact still imports and exports the loop is
+ *       pinned by `sdk-absent.e2e.test.ts`'s runner probe)
+ *     → the REAL box door (`packages/harnesses/box/turn-routes.mjs`), over a
+ *       transport adapter instead of a socket
  *     → the REAL `box.ts` poll loop and its `message.emit` forward
  *     → the REAL `claude-code/index.ts` queue passthrough
  *     → the REAL harness runtime and the REAL wire writer
@@ -26,8 +28,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import type { ThreadId } from "@vendoai/core";
-import { createSessionRoutes } from "@vendoai/apps/box-door";
-import { createClaudeSession } from "@vendoai/apps/claude-turn";
+import { createSessionRoutes } from "../../box/turn-routes.mjs";
+import { createClaudeSession } from "../../src/claude-code/claude-turn.js";
 import { createHarnessRuntime } from "../../src/runtime.js";
 import { VENDO_STATUS_PART } from "../../src/wire.js";
 import {

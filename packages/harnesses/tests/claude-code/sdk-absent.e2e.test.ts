@@ -70,7 +70,7 @@ describe("D1 · a host that never installed the Agent SDK", () => {
     const output = runProbe(`
       const apps = await import(${JSON.stringify(appsDist("dist/index.js"))});
       const internal = await import(${JSON.stringify(appsDist("dist/internal.js"))});
-      const runner = await import(${JSON.stringify(appsDist("dist/claude-turn.js"))});
+      const runner = await import(${JSON.stringify(dist("dist/claude-code/claude-turn.js"))});
       if (typeof apps.createApps !== "function") throw new Error("apps did not load");
       if (typeof internal.assembleTree !== "function") throw new Error("internals did not load");
       if (typeof runner.createClaudeSession !== "function") throw new Error("runner did not load");

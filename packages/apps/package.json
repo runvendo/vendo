@@ -50,13 +50,6 @@
     "./internal": {
       "types": "./dist/internal.d.ts",
       "default": "./dist/internal.js"
-    },
-    "./claude-turn": {
-      "types": "./dist/claude-turn.d.ts",
-      "default": "./dist/claude-turn.js"
-    },
-    "./box-door": {
-      "default": "./box/turn-routes.mjs"
     }
   },
   "files": [

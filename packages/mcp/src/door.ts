@@ -1561,8 +1561,8 @@ async function turnTools(
 }
 
 /**
- * Contract §1.1's three statuses onto the MCP wire — the SAME mapping the
- * in-process projection uses (`guardedProjection` in `apps/src/claude-turn.ts`):
+ * Contract §1.1's three statuses onto the MCP wire — the same mapping the
+ * (now-retired) in-process projection used before door-ctx moved tools here:
  * a denial is text the model narrates, never a protocol error it reads as a bug.
  */
 function turnResult(result: ToolResult): CallToolResult {

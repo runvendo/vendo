@@ -16,7 +16,7 @@ import {
   createClaudeSession,
   type BeatPhase,
   type ClaudeTurnEvent,
-} from "../src/claude-turn.js";
+} from "../../src/claude-code/claude-turn.js";
 
 /** One step of a scripted turn: prose, a tool the model used, or both. */
 interface ScriptStep {
@@ -272,14 +272,11 @@ describe("a beat is our copy, never the model's", () => {
  * THE MIRROR SEAM — and where its teeth actually are.
  *
  * `claude-turn.ts` restates core's `BeatPhase` instead of importing it, because
- * that file imports NOTHING (module header: the emitted `dist/claude-turn.js` is
- * copied verbatim into a machine image).
+ * that file imports NOTHING (module header: the emitted
+ * `dist/claude-code/claude-turn.js` is copied verbatim into a machine image).
  *
- * The COMPILE-TIME half of that seam deliberately does not live here. Nothing in
- * this repo typechecks a test file — `packages/apps/tsconfig.json` excludes
- * `src/**` + `*.test.ts`, no package defines a `lint` script, and vitest is not
- * run with `--typecheck` — so a type-level assertion in this file would be pure
- * decoration. It lives in gated production code instead: `BEAT_PHASES` in
+ * The COMPILE-TIME half of that seam deliberately does not live here. It lives
+ * in gated production code instead: `BEAT_PHASES` in
  * `harnesses/src/claude-code/index.ts` fails when CORE gains a phase the mirror
  * lacks, and the `yield` beside it fails in the other direction. Both were
  * verified red by adding a seventh phase to each side in turn.

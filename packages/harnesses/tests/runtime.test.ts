@@ -4,7 +4,6 @@
  * EXISTING ai-SDK UIMessage stream, persists the transcript, and enforces the
  * frozen routing table. Harness adapters contain no persistence and no wire code.
  */
-import { wrapWorkspaceForRender } from "@vendoai/apps";
 import { defineHarness } from "../src/define.js";
 import { SSE_KEEPALIVE_FRAME, type Harness, type HarnessEvent, type ThreadId, type Turn } from "@vendoai/core";
 import type { UIMessage } from "ai";
@@ -46,10 +45,11 @@ function fixture(options: {
   /** Composition's publish hook — how the process's own doors (and the steer
    *  route) reach the turn in flight. */
   liveTurn?: Parameters<typeof createHarnessRuntime>[0]["liveTurn"];
-  /** Fill the runtime's generic `wrapWorkspace` slot with the REAL render seam,
-   *  exactly as composition does (harness-turn.ts) — the runtime itself no
-   *  longer wraps anything on its own. */
-  seam?: boolean;
+  /** Fill the runtime's generic `wrapWorkspace` slot — the runtime itself no
+   *  longer wraps anything on its own. The REAL render seam joined to this slot
+   *  is pinned in `packages/vendo/tests/render-wrap-slot.test.ts`, where both
+   *  blocks are legal; here a fake wrap pins the slot's own mechanics. */
+  wrapWorkspace?: Parameters<typeof createHarnessRuntime>[0]["wrapWorkspace"];
 } = {}) {
   const guard = options.guard ?? testGuard();
   const registry = boundRegistry(
@@ -72,12 +72,7 @@ function fixture(options: {
     transcript: countingTranscript,
     harnessState: options.harnessState ?? memoryHarnessStateStore(),
     ...(options.liveTurn === undefined ? {} : { liveTurn: options.liveTurn }),
-    ...(options.seam === true ? {
-      wrapWorkspace: (workspace, opts) => wrapWorkspaceForRender(workspace, {
-        turnId: opts.turnId,
-        emit: opts.emit,
-      }),
-    } : {}),
+    ...(options.wrapWorkspace === undefined ? {} : { wrapWorkspace: options.wrapWorkspace }),
   });
   /** Run a turn AND drain the response, exactly as a host route does. The
    *  stream's onFinish (persistence, state, audit) only fires on consumption —
@@ -544,35 +539,57 @@ describe("turn.state across turns (§1.3)", () => {
   });
 });
 
-describe("the render seam rides the wrapWorkspace slot (§1.6)", () => {
-  // The runtime no longer imports the seam: composition injects it through the
-  // generic `wrapWorkspace` slot, which `seam: true` reproduces here. What these
-  // pin is the SLOT — the wrap sees every commit, and its `emit` reaches the
-  // wire's view channel.
-  it("a harness writing plan.vendo puts the skeleton on screen", async () => {
-    const f = fixture({ seam: true });
+describe("the wrapWorkspace slot (§1.6)", () => {
+  // The runtime knows nothing about apps: composition injects the render seam
+  // through this generic slot, and the REAL seam joined to it is pinned in
+  // `packages/vendo/tests/render-wrap-slot.test.ts` (both blocks are legal
+  // there). What THESE pin is the SLOT itself — the wrap sees every commit,
+  // and its `emit` reaches the wire as a data part — with a fake wrap, so the
+  // mechanics stay covered where they live.
+  const commitEmittingWrap: NonNullable<Parameters<typeof createHarnessRuntime>[0]["wrapWorkspace"]> =
+    (workspace, opts) => {
+      const wrapped = Object.create(workspace) as typeof workspace;
+      wrapped.commit = async (commitOpts?: { message?: string }) => {
+        const result = await workspace.commit(commitOpts);
+        if (result.status === "ok" && result.changed.length > 0) {
+          // A view-shaped part (the slot's emit feeds the wire's view channel),
+          // carrying the commit's own changed set so the assertion can see it.
+          opts.emit("vendo-view:app_7", {
+            type: "data-vendo-view",
+            appId: "app_7",
+            payload: {},
+            changed: result.changed,
+          });
+        }
+        return result;
+      };
+      return wrapped;
+    };
+
+  it("the wrap sees the turn-end commit and its emit reaches the wire", async () => {
+    const f = fixture({ wrapWorkspace: commitEmittingWrap });
     const harness = defineHarness({
       name: "builder",
       async *run(turn) {
         yield { type: "status", label: "Sketching the layout" };
-        await turn.workspace.writeFile(
-          "/user/apps/app_7/plan.vendo",
-          `<Plan name="Invoices"><Group title="Unpaid"><Leaf component="DataTable" /></Group></Plan>`,
-        );
+        await turn.workspace.writeFile("/user/apps/app_7/plan.vendo", "<Plan name=\"Invoices\" />");
       },
     });
     const parts = await f.run(harness);
     const view = parts.find((part) => part.type === "data-vendo-view");
     expect(view).toBeDefined();
-    expect(view).toMatchObject({ id: "vendo-view:app_7", data: { appId: "app_7" } });
+    expect(view).toMatchObject({
+      id: "vendo-view:app_7",
+      data: { changed: ["/user/apps/app_7/plan.vendo"] },
+    });
   });
 
-  it("an unparseable write puts nothing on screen", async () => {
-    const f = fixture({ seam: true });
+  it("a wrap that emits nothing puts nothing on the wire", async () => {
+    const f = fixture({ wrapWorkspace: commitEmittingWrap });
     const harness = defineHarness({
-      name: "builder",
-      async *run(turn) {
-        await turn.workspace.writeFile("/user/apps/app_7/app.vendo", "half-written garba");
+      name: "reader",
+      async *run() {
+        yield { type: "text", delta: "read-only turn" };
       },
     });
     const parts = await f.run(harness);
@@ -587,7 +604,6 @@ describe("write = commit for in-process hands (§3.5 + the commit-cadence seam)"
     const workspace = testWorkspace();
     // Stands in for lane D's workspace_write: the tool stages, the runtime lands it.
     const f = fixture({
-      seam: true,
       tools: {
         workspace_write: {
           descriptor: readTool("workspace_write", "write"),
@@ -602,15 +618,18 @@ describe("write = commit for in-process hands (§3.5 + the commit-cadence seam)"
       name: "editor",
       async *run(turn) {
         await turn.tools.call("workspace_write", {});
-        // The commit already happened, so the view is on the wire BEFORE the
-        // harness says anything.
+        // The commit already happened — mid-turn, on the tool's own call, which
+        // is what puts a view on the wire BEFORE the harness says anything
+        // (the wire half: render-wrap-slot.test.ts in the umbrella).
         expect(workspace.commits).toHaveLength(1);
         expect(workspace.commits[0]!.changed).toEqual(["/user/apps/app_9/plan.vendo"]);
         yield { type: "text", delta: "Done." };
       },
     });
     const parts = await f.run(harness, { workspace });
-    expect(parts.some((part) => part.type === "data-vendo-view")).toBe(true);
+    // The expects above ran inside the harness, where a throw becomes an error
+    // part — so the proof the turn got past them is the delta after them.
+    expect(JSON.stringify(parts)).toContain("Done.");
   });
 
   it("turn end lands whatever the harness staged and never committed", async () => {

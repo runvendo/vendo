@@ -18,7 +18,7 @@ export { stripServerAuthoritativeFields } from "./open.js";
 export { createAppFloor, type AppFloorOptions } from "./checking/floor.js";
 
 /**
- * The Claude Agent SDK turn lives at `@vendoai/apps/claude-turn`, NOT here.
+ * The Claude Agent SDK turn lives at `@vendoai/harnesses/claude-turn`, NOT here.
  *
  * This subpath rides every composed host's server path (the render seam and
  * this file share a module graph). Re-exporting the SDK turn from

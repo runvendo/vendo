@@ -22,7 +22,7 @@ import type { SessionMachine, SessionMessage } from "../../src/claude-code/machi
 import { emptyTree } from "../../src/materialize.js";
 import { createTurnState } from "../../src/harness-state.js";
 import { provideHarnessAdapters } from "../../src/harness-sandbox.js";
-import { testWorkspace, unusedModels, userMessage } from "../../src/test-doubles.test-util.js";
+import { testAppsHooks, testWorkspace, unusedModels, userMessage } from "../../src/test-doubles.test-util.js";
 
 /** Every message the doubled local machine was sent, in order. */
 const sent: SessionMessage[] = [];
@@ -96,7 +96,7 @@ const doorWarnings = (): string[] => errors.filter((line) => line.includes("[ven
  */
 describe("machine: \"local\" and the MCP door's origin", () => {
   test("a REACHABLE door is handed over, and nothing is said", async () => {
-    const harness = claudeCode({ machine: "local" });
+    const harness = claudeCode({ machine: "local", ...testAppsHooks() });
     provideHarnessAdapters(harness, {
       toolDoor: { url: "http://127.0.0.1:3000/api/vendo/mcp", mint: () => "vtk_ok", revoke: () => undefined },
     });
@@ -108,7 +108,7 @@ describe("machine: \"local\" and the MCP door's origin", () => {
   });
 
   test("NO origin: the operator is warned ONCE, naming the fix, and the turn still runs", async () => {
-    const harness = claudeCode({ machine: "local" });
+    const harness = claudeCode({ machine: "local", ...testAppsHooks() });
     provideHarnessAdapters(harness, {
       toolDoor: { url: undefined, mint: () => "vtk_x", revoke: () => undefined },
     });

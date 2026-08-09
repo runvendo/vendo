@@ -5,14 +5,23 @@
  * Gated on `E2B_API_KEY` + `ANTHROPIC_API_KEY` + `VENDO_BOX_TEMPLATE` (the
  * template `packages/apps/box/build-template.mjs` bakes — it carries the turn
  * door and `claude-turn.mjs`). Skipped otherwise, like every `.live.test.ts`.
+ *
+ * It lives in the UMBRELLA's suite because it needs both blocks — the real e2b
+ * adapter (`@vendoai/apps/e2b`) driving the harness driver (`@vendoai/harnesses`)
+ * — and harnesses no longer depends on apps.
  */
 import { e2bSandbox } from "@vendoai/apps/e2b";
 import type { Json, ToolResult, Turn } from "@vendoai/core";
 import { afterAll, describe, expect, test } from "vitest";
-import { createTurnState } from "../../src/harness-state.js";
-import { testWorkspace, unusedModels, userMessage } from "../../src/test-doubles.test-util.js";
-import { boxEgress, claudeCode } from "../../src/claude-code/index.js";
-import { boxMachine, disposeSessionMachines, type SandboxAdapterLike } from "../../src/claude-code/box.js";
+import { createTurnState } from "@vendoai/harnesses";
+import {
+  boxEgress,
+  boxMachine,
+  claudeCode,
+  disposeSessionMachines,
+  type SandboxAdapterLike,
+} from "@vendoai/harnesses/claude-code";
+import { testWorkspace, unusedModels, userMessage } from "../src/agent-doubles.test-util.js";
 
 const ready = process.env["E2B_API_KEY"] !== undefined
   && process.env["ANTHROPIC_API_KEY"] !== undefined

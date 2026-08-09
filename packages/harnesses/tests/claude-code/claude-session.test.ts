@@ -17,7 +17,7 @@ import {
   VENDO_MCP_SERVER,
   type ClaudeSession,
   type ClaudeTurnEvent,
-} from "../src/claude-turn.js";
+} from "../../src/claude-code/claude-turn.js";
 
 interface ScriptedTurn {
   say?: string;

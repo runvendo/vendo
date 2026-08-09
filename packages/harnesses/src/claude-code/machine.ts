@@ -13,7 +13,7 @@
  * created — materialize it and re-seed the thread from our transcript) or WARM
  * (its disk already carries both the files and the native session).
  */
-import type { ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
+import type { ClaudeTurnEvent } from "./claude-turn.js";
 import type { CheckoutFile, SyncFile, TreeState } from "../materialize.js";
 
 /**

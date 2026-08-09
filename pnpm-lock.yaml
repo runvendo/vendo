@@ -1086,9 +1086,6 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: '>=0.3.0 <1'
         version: 0.3.214(@anthropic-ai/sdk@0.112.3(zod@3.25.76))(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@3.25.76))(zod@3.25.76)
-      '@vendoai/apps':
-        specifier: workspace:*
-        version: link:../apps
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core

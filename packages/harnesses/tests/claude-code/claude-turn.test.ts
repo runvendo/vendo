@@ -6,7 +6,7 @@ import {
   createClaudeSession,
   VENDO_MCP_SERVER,
   type ClaudeTurnEvent,
-} from "../src/claude-turn.js";
+} from "../../src/claude-code/claude-turn.js";
 
 /**
  * A stand-in for the SDK's own stream: it yields the message shapes the real one

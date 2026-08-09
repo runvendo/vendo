@@ -41,10 +41,17 @@ const PKG_DIR = "/opt/vendo-box/pkg";
 // e2b resolves every copy() source against THIS SCRIPT's directory, and a
 // source that climbs out of it fails the build before it starts (measured
 // 2026-08-01: `../dist/...` → TemplateError; chdir does not move the base).
-// The compiled turn runner is therefore STAGED in beside the harness files and
-// removed again below — it is a build artifact, and .gitignore says so.
+// The session-door files are therefore STAGED in beside the harness files and
+// removed again below — build artifacts, and .gitignore says so. Both live in
+// `@vendoai/harnesses` (the claude-code driver owns its box-side half): the
+// runner is that package's compiled `dist/claude-code/claude-turn.js`, the
+// session routes its shipped `box/turn-routes.mjs`. Run `pnpm build` before
+// this script so harnesses' dist is current — the same precondition the
+// `pnpm pack` of core and ui below already imposes.
 process.chdir(here);
 const STAGED_RUNNER = "claude-turn.mjs";
+const STAGED_SESSION_ROUTES = "turn-routes.mjs";
+const HARNESSES_DIR = path.join(here, "../../harnesses");
 
 // ─── the app template, staged in for the same e2b reason ─────────────────────
 //
@@ -60,15 +67,17 @@ const stagedTemplate = path.join(here, STAGED_TEMPLATE);
 const stagedPkg = path.join(here, STAGED_PKG);
 const cleanStaged = () => {
   rmSync(path.join(here, STAGED_RUNNER), { force: true });
+  rmSync(path.join(here, STAGED_SESSION_ROUTES), { force: true });
   rmSync(stagedTemplate, { recursive: true, force: true });
   rmSync(stagedPkg, { recursive: true, force: true });
 };
 
 cleanStaged();
-// Stage the compiled turn runner AFTER cleanStaged() — it removes STAGED_RUNNER,
-// so staging it before the clean (as this script originally did) left the build
-// with no claude-turn.mjs to copy.
-copyFileSync(path.join(here, "../dist/claude-turn.js"), path.join(here, STAGED_RUNNER));
+// Stage the session-door files AFTER cleanStaged() — it removes them, so staging
+// before the clean (as this script originally did) left the build with no
+// claude-turn.mjs to copy.
+copyFileSync(path.join(HARNESSES_DIR, "dist/claude-code/claude-turn.js"), path.join(here, STAGED_RUNNER));
+copyFileSync(path.join(HARNESSES_DIR, "box/turn-routes.mjs"), path.join(here, STAGED_SESSION_ROUTES));
 const skipped = new Set(["node_modules", "dist", "package-lock.json"]);
 cpSync(SOURCE_TEMPLATE, stagedTemplate, {
   recursive: true,
@@ -137,11 +146,11 @@ const template = Template()
   .copy("harness.mjs", "/opt/vendo-box/harness.mjs", { user: "root" })
   .copy("agent-sdk.mjs", "/opt/vendo-box/agent-sdk.mjs", { user: "root" })
   .copy("bootstrap.mjs", "/opt/vendo-box/bootstrap.mjs", { user: "root" })
-  // Wave 2 lane E — the conversational turn door and the SDK loop behind it.
-  // `claude-turn.mjs` is the COMPILED `packages/apps/src/claude-turn.ts`, the
-  // same module `machine: "local"` runs on the host: one implementation, two
-  // homes. Run `pnpm build` before this script so dist/ is current.
-  .copy("turn-routes.mjs", "/opt/vendo-box/turn-routes.mjs", { user: "root" })
+  // Wave 2 lane E — the conversational turn door and the SDK loop behind it,
+  // both staged in from `@vendoai/harnesses` above. `claude-turn.mjs` is the
+  // COMPILED `packages/harnesses/src/claude-code/claude-turn.ts`, the same
+  // module `machine: "local"` runs on the host: one implementation, two homes.
+  .copy(STAGED_SESSION_ROUTES, "/opt/vendo-box/turn-routes.mjs", { user: "root" })
   .copy(STAGED_RUNNER, "/opt/vendo-box/claude-turn.mjs", { user: "root" })
   // The materialized workspace's home. It is emptied and rewritten every turn,
   // so the SDK's session deliberately stays at its $HOME default — the snapshot

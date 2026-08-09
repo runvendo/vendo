@@ -21,16 +21,26 @@ import {
   type HarnessEvent,
   type Turn,
 } from "@vendoai/core";
-import type { BeatPhase as LoopBeatPhase, ClaudeTurnEvent } from "@vendoai/apps/claude-turn";
+import type { BeatPhase as LoopBeatPhase, ClaudeTurnEvent } from "./claude-turn.js";
 import type { UIMessage } from "ai";
 import { z } from "zod";
 import { defineHarness } from "../define.js";
-import { harnessAdapters, type ToolDoorPort } from "../harness-sandbox.js";
+import { harnessAdapters, type HarnessAdapters } from "../harness-sandbox.js";
 import { checkoutWorkspace, type SyncFile } from "../materialize.js";
-import { HOT_PATH_WATCH, repairInstruction, validateWrittenApps } from "@vendoai/apps";
 import type { SessionMachine } from "./machine.js";
 import { localMachine } from "./local.js";
 import { boxMachine, type SandboxAdapterLike } from "./box.js";
+
+// The session machine's own seams, re-exported for the callers that drive it
+// directly rather than through `claudeCode()`: the umbrella's live box proofs,
+// and a host process that wants to reap idle conversation boxes on shutdown
+// (`disposeLocalSessions` in ./local.js is the `machine: "local"` counterpart).
+export {
+  boxMachine,
+  disposeSessionMachines,
+  type SandboxAdapterLike,
+  type SandboxMachineLike,
+} from "./box.js";
 
 /** The knobs a TURN may still carry (harness-declared; see optionsSchema). */
 export interface ClaudeCodeTurnOptions {
@@ -121,8 +131,14 @@ const optionsSchema = z.object({
 
 /** Host-side dependencies arrive by factory closure (design §3), which is how a
  *  host who did not wire `createVendo({ sandbox })` hands one straight to the
- *  harness. Composition fills the same slot through `provideHarnessAdapters`. */
-export interface ClaudeCodeDeps {
+ *  harness. Composition fills the same slots through `provideHarnessAdapters`;
+ *  an explicitly passed value always wins (the adapter rule). The three apps
+ *  hooks are the app-document vocabulary this package no longer imports —
+ *  `HOT_PATH_WATCH`/`hotPathAppId`, `validateWrittenApps`, `repairInstruction`
+ *  in `@vendoai/apps`. Without them the driver still runs, minus the mid-turn
+ *  hot-path sync and the validate gate ({@link warnNoAppsHooksOnce}). */
+export interface ClaudeCodeDeps
+  extends Pick<HarnessAdapters, "hotPaths" | "validateApps" | "repairInstruction"> {
   sandbox?: SandboxAdapterLike;
 }
 
@@ -341,6 +357,26 @@ function warnNoOriginOnce(): void {
   );
 }
 
+/**
+ * A runtime driven BARE — no composition filled the apps hooks and the host
+ * passed none — loses the mid-turn hot-path sync (skeletons paint at turn end
+ * instead of in seconds) and the end-of-turn validate gate. A deployment fact,
+ * said once, same shape as {@link warnNoOriginOnce}: composed paths always
+ * inject the real implementations, so this only reaches a host driving the
+ * runtime directly.
+ */
+let noAppsHooksWarned = false;
+function warnNoAppsHooksOnce(): void {
+  if (noAppsHooksWarned) return;
+  noAppsHooksWarned = true;
+  console.error(
+    "[vendo] claudeCode() is running without the apps hooks (hotPaths / validateApps / "
+    + "repairInstruction), so mid-turn hot-path sync and the finish-line validate gate are "
+    + "OFF. Compose through createVendo/createAgent to get them, or pass them to claudeCode() "
+    + "directly.",
+  );
+}
+
 /** A callback-driven producer, consumed by the generator that must `yield`. */
 function eventQueue<T>() {
   const buffered: T[] = [];
@@ -395,12 +431,25 @@ export function claudeCode(
         ...(turn.options?.maxTurns === undefined ? {} : { maxTurns: turn.options.maxTurns }),
       };
       const state = readState(turn.state.get());
+      const composed = harnessAdapters(harness);
+
+      // The apps hooks — the hot-path vocabulary and the validate gate, which
+      // used to be value imports from `@vendoai/apps` and now arrive injected:
+      // the constructor's own arg wins, composition fills what the host left
+      // unset (the adapter rule). A runtime driven bare has neither, keeps
+      // running, and the operator hears exactly what it lost, once.
+      const hotPaths = options.hotPaths ?? composed.hotPaths;
+      const validateApps = options.validateApps ?? composed.validateApps;
+      const repairInstruction = options.repairInstruction ?? composed.repairInstruction;
+      if (hotPaths === undefined || validateApps === undefined || repairInstruction === undefined) {
+        warnNoAppsHooksOnce();
+      }
 
       // The DOOR is resolved before the machine, because its origin is part of
       // the box's network boundary and that is fixed at create. Only its
       // deployment half is read here; the per-conversation credential is minted
       // below, once there is a machine to say whether it is carrying a session.
-      const doorPort = harnessAdapters(harness).toolDoor as ToolDoorPort | undefined;
+      const doorPort = composed.toolDoor;
       const doorUrl = doorPort?.url;
       if (doorPort !== undefined && doorUrl === undefined
         && doorPort.autoMounted !== true && resolved.machine !== "local") {
@@ -443,7 +492,7 @@ export function claudeCode(
       if (resolved.machine === "local") {
         machine = await localMachine({ threadId: threadOf(turn), env: boxEnv });
       } else {
-        const sandbox = (options.sandbox ?? harnessAdapters(harness).sandbox) as
+        const sandbox = (options.sandbox ?? composed.sandbox) as
           | SandboxAdapterLike
           | undefined;
         if (sandbox === undefined) {
@@ -479,6 +528,9 @@ export function claudeCode(
         turn.workspace,
         machine.tree,
         !machine.carriesSession,
+        // The injected hot-path vocabulary decides what `syncHot` may land; no
+        // vocabulary, nothing is hot — and nothing collects mid-turn either.
+        (path) => hotPaths?.appId(path) !== undefined,
       );
 
       // The host's MCP door — the ONLY way this harness reaches the world now
@@ -537,9 +589,11 @@ export function claudeCode(
 
         /** Sync on WRITE, not on a tick — the native PostToolUse hook drives this.
          *  Still by SHAPE, because the app whose plan lands first may have an id
-         *  the turn only just invented. */
+         *  the turn only just invented. A no-op on the bare path: no vocabulary,
+         *  no hot set to collect. */
         const syncHot = async (): Promise<void> => {
-          const hot = await machine.collect(HOT_PATH_WATCH);
+          if (hotPaths === undefined) return;
+          const hot = await machine.collect(hotPaths.watch);
           for (const path of await checkout.syncHot(hot)) landed.add(path);
         };
 
@@ -590,7 +644,9 @@ export function claudeCode(
               ? {}
               : { pluginPath: machine.pluginPath, skillNames }),
             emit: (event) => events.push(event),
-            onFileWritten: () => syncHotNow(),
+            // No hook without a vocabulary: a wrote-event with nothing to
+            // collect would round-trip the machine for an empty diff.
+            ...(hotPaths === undefined ? {} : { onFileWritten: () => syncHotNow() }),
             signal: turn.signal,
           }).then(() => events.close(), (error: unknown) => {
             // The thinker failed; the user hears one plain sentence and the turn
@@ -626,10 +682,14 @@ export function claudeCode(
          * not at all, and a second round is the person waiting longer for the same
          * answer. Whatever survives it is reported as it stands — the seam already
          * refuses to paint a lie, so an unfixed app costs a screen, never the truth.
+         *
+         * The gate itself is INJECTED (`validateApps` + `repairInstruction`) —
+         * every composed path supplies the real one; a bare runtime has none,
+         * skips the round, and was warned above.
          */
-        if (!turn.signal.aborted) {
+        if (!turn.signal.aborted && validateApps !== undefined && repairInstruction !== undefined) {
           await serialize(syncHot).catch(() => undefined);
-          const failures = await validateWrittenApps({
+          const failures = await validateApps({
             tools: turn.tools,
             workspace: turn.workspace,
             paths: [...landed],

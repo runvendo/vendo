@@ -26,7 +26,6 @@
  * view, so this file never speaks about views.
  */
 import { createHash } from "node:crypto";
-import { hotPathAppId } from "@vendoai/apps";
 import type { WorkspaceFs } from "@vendoai/core";
 
 /** §3.1's frozen mounts: `/host`, `/user`, and one `/orgs/<org>` per asserted
@@ -41,7 +40,7 @@ const IN_MOUNT = /^\/(?:host|user|orgs\/[^/]+)(?:\/|$)/;
  * A SHAPE, and deliberately not a permission — it is the only question a walk of
  * a real disk can answer, because a disk has no store to ask. Both machines ask
  * it: `claude-code/local.ts` here, and the box door's own copy in
- * `packages/apps/box/turn-routes.mjs`. Whether a carried path may LAND is
+ * `packages/harnesses/box/turn-routes.mjs`. Whether a carried path may LAND is
  * `canCommit`'s, per file, against live rows.
  */
 export const inWritableMount = (path: string): boolean =>
@@ -141,7 +140,7 @@ export interface WorkspaceCheckout {
 
 /**
  * The box door's whole-tree walk skips files over this to protect the proxy's
- * body limit (`packages/apps/box/turn-routes.mjs`), so a machine can report a
+ * body limit (`packages/harnesses/box/turn-routes.mjs`), so a machine can report a
  * checked-out file ABSENT while still holding it. Under the default files
  * store (5 MiB cap) no checked-out file reaches this size; a BYO adapter (s3)
  * has no cap. Absent-means-deleted must not apply to such a file: keeping a
@@ -165,6 +164,13 @@ export async function checkoutWorkspace(
    * the newer state. That is the whole stale-clobber fix.
    */
   reseed = true,
+  /**
+   * Which paths `syncHot` may land — the hot-path vocabulary, injected because
+   * this package no longer imports `@vendoai/apps` (composition hands the driver
+   * `hotPathAppId`; see `HotPathsPort`). Omitted, `syncHot` lands nothing, which
+   * is exactly the bare-runtime deployment where nobody watches hot paths.
+   */
+  isHot: (path: string) => boolean = () => false,
 ): Promise<WorkspaceCheckout> {
   const files: CheckoutFile[] = [];
   const { hashes, oversized } = tree;
@@ -221,7 +227,7 @@ export async function checkoutWorkspace(
       // this is the backstop that makes it true, and it stays a skip so one
       // refused org path can never take the caller's own work down with it.
       if (!(await syncable(path))) continue;
-      if (options.hotOnly && hotPathAppId(path) === undefined) continue;
+      if (options.hotOnly && !isHot(path)) continue;
       const hash = contentHash(entry.bytes);
       if (hashes.get(path) === hash) continue;
       await workspace.writeFile(path, entry.bytes);

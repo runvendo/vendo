@@ -6,7 +6,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    // Two tests import `@vendoai/apps/box-door`, whose export map points at the
+    // Two tests import `@vendoai/harnesses/box-door`, whose export map points at the
     // zero-dependency `box/turn-routes.mjs` control-port runtime and carries no
     // `types`. Reading the JS gives them the real inferred signature instead of
     // an ambient re-declaration that could drift from it. There is no `.js`

@@ -17,6 +17,13 @@ code, runs it, curls its own endpoints, and reports a structured result.
   npm-installed into `/opt/vendo-box/node_modules` at **template-build time**,
   so install size is a template concern, never a wake concern.
 - `build-template.mjs` — the e2b template builder (the recipe).
+- The conversational session door and its SDK loop — `turn-routes.mjs` and
+  `claude-turn.mjs` — are baked from `@vendoai/harnesses` (the claude-code
+  driver owns its box-side half): the routes from that package's
+  `box/turn-routes.mjs`, the runner from its compiled
+  `dist/claude-code/claude-turn.js`, both staged in here at bake time for the
+  e2b `copy()` reason below. The supervisor delegates every `/session/*`
+  request to them.
 - The universal app template — Vite + React 19 with `@vendoai/ui` installed —
   is baked from `packages/box-template` (staged in here at bake time, for the
   same e2b `copy()` reason as `claude-turn.mjs`). It lands at

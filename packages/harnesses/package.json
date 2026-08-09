@@ -38,10 +38,18 @@
     "./claude-code": {
       "types": "./dist/claude-code/index.d.ts",
       "default": "./dist/claude-code/index.js"
+    },
+    "./claude-turn": {
+      "types": "./dist/claude-code/claude-turn.d.ts",
+      "default": "./dist/claude-code/claude-turn.js"
+    },
+    "./box-door": {
+      "default": "./box/turn-routes.mjs"
     }
   },
   "files": [
     "dist",
+    "box",
     "README.md"
   ],
   "scripts": {
@@ -51,7 +59,6 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@vendoai/apps": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
     "zod": "^3.25.0"

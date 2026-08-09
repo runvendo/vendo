@@ -3,16 +3,16 @@
  * with FEWER results than the session counted wedged the whole thread.
  *
  * **The seam, and why this file doubles the SDK rather than the session.**
- * `createClaudeSession` (`@vendoai/apps/claude-turn`) counts the extra `result`
+ * `createClaudeSession` (`claude-code/claude-turn.ts`) counts the extra `result`
  * messages a steer is expected to produce, and `local.ts` awaits `send()` until
  * one of them settles the turn. Those are a producer and a consumer of the same
  * invariant, and every existing test doubles one of them:
  *
  *   - `local-session.test.ts` doubles the whole `ClaudeSession`, so its `steer`
  *     has no counter at all;
- *   - `claude-session.test.ts` (in `@vendoai/apps`) doubles the SDK with a loop
- *     that yields exactly one `result` per user message it reads — which IS the
- *     counter's assumption, so the double can never disagree with it.
+ *   - `claude-session.test.ts` doubles the SDK with a loop that yields exactly
+ *     one `result` per user message it reads — which IS the counter's
+ *     assumption, so the double can never disagree with it.
  *
  * So the counter's one-sidedness had no honest test anywhere. Here the session is
  * REAL and only the SDK — genuinely a third party — is a double, and it answers
@@ -29,7 +29,7 @@
  * the message budget". The box rung HAS that budget. This rung did not.
  */
 import { describe, expect, test } from "vitest";
-import { createClaudeSession } from "@vendoai/apps/claude-turn";
+import { createClaudeSession } from "../../src/claude-code/claude-turn.js";
 import { disposeLocalSessions, localMachine } from "../../src/claude-code/local.js";
 
 /** Well under the test timeout below: a budget is the hang-detector here, not a

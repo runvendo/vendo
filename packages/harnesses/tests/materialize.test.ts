@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 import { checkoutWorkspace, contentHash, inWritableMount } from "../src/materialize.js";
-import { testWorkspace } from "../src/test-doubles.test-util.js";
+import { testAppsHooks, testWorkspace } from "../src/test-doubles.test-util.js";
+
+/** The injected hot-path predicate, exactly as the driver passes it
+ *  (claude-code/index.ts): a path the vocabulary maps to an appId is hot. */
+const isHot = (path: string): boolean => testAppsHooks().hotPaths.appId(path) !== undefined;
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 const file = (path: string, text: string) => ({ path, bytes: bytes(text) });
@@ -206,7 +210,7 @@ describe("syncAll — diff-based per file, never wholesale (§3.5)", () => {
 describe("syncHot — the skeleton renders mid-turn (§3.5)", () => {
   test("commits ONLY the hot paths, leaving the rest for turn end", async () => {
     const workspace = testWorkspace({});
-    const checkout = await checkoutWorkspace(workspace);
+    const checkout = await checkoutWorkspace(workspace, undefined, true, isHot);
     const files = [
       file("/user/apps/app_1/plan.vendo", "plan"),
       file("/user/memory/notes.md", "later"),
@@ -217,7 +221,7 @@ describe("syncHot — the skeleton renders mid-turn (§3.5)", () => {
 
   test("a hot path already synced and unchanged is not committed twice", async () => {
     const workspace = testWorkspace({});
-    const checkout = await checkoutWorkspace(workspace);
+    const checkout = await checkoutWorkspace(workspace, undefined, true, isHot);
     const files = [file("/user/apps/app_1/app.vendo", "<App/>")];
     expect(await checkout.syncHot(files)).toEqual(["/user/apps/app_1/app.vendo"]);
     expect(await checkout.syncHot(files)).toEqual([]);
@@ -226,7 +230,7 @@ describe("syncHot — the skeleton renders mid-turn (§3.5)", () => {
 
   test("a hot path that changed again after a mid-turn sync lands again", async () => {
     const workspace = testWorkspace({});
-    const checkout = await checkoutWorkspace(workspace);
+    const checkout = await checkoutWorkspace(workspace, undefined, true, isHot);
     await checkout.syncHot([file("/user/apps/app_1/app.vendo", "<App/>")]);
     expect(await checkout.syncHot([file("/user/apps/app_1/app.vendo", "<App>2</App>")])).toEqual([
       "/user/apps/app_1/app.vendo",
@@ -235,7 +239,7 @@ describe("syncHot — the skeleton renders mid-turn (§3.5)", () => {
 
   test("a TEAM app's hot path syncs mid-turn too — the skeleton paints either way", async () => {
     const workspace = testWorkspace({});
-    const checkout = await checkoutWorkspace(workspace);
+    const checkout = await checkoutWorkspace(workspace, undefined, true, isHot);
     expect(await checkout.syncHot([file("/orgs/acme/apps/app_1/plan.vendo", "plan")])).toEqual([
       "/orgs/acme/apps/app_1/plan.vendo",
     ]);
@@ -243,7 +247,7 @@ describe("syncHot — the skeleton renders mid-turn (§3.5)", () => {
 
   test("syncHot never deletes — a partial view of the disk is not a deletion", async () => {
     const workspace = testWorkspace({ "/user/memory/keep.md": "keep" });
-    const checkout = await checkoutWorkspace(workspace);
+    const checkout = await checkoutWorkspace(workspace, undefined, true, isHot);
     expect(await checkout.syncHot([])).toEqual([]);
     expect(await workspace.exists("/user/memory/keep.md")).toBe(true);
   });
