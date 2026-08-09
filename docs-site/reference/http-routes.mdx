@@ -69,16 +69,17 @@ and production is exactly where that answer matters.
 ## Development routes
 
 These routes answer only in a development composition
-(`createVendo({ development })`, which `NODE_ENV=development` enables), and
-only for a host-resolved principal — an anonymous session is not a host trust
-decision, even locally. `/dev/inclient-approval` says so out loud (`401`); the
-review routes mask instead, answering an empty queue or `not-found` so no
-caller can probe another subject's pending work.
+(`createVendo({ development })`, which `NODE_ENV=development` enables).
+`/dev/inclient-approval` also refuses a principal marked `ephemeral: true`
+(`401`) — approving a host-page mount is a host trust decision, and the flag
+doesn't clear it even in dev. The review routes mask instead of erroring,
+answering an empty queue or `not-found` so no caller can probe another
+subject's pending work.
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
 | `/dev/inclient-approval` | POST | `{ appId, approvedBy? }` → the minted `InClientApproval` record. Pins the app's *current* `versionHash` as an in-client approval for the resolved principal; `approvedBy` defaults to `"local-dev"`. Production returns `404`. The Cloud console mints approvals in production; this route is the documented stand-in for local demos. See [In-client venue and approvals](/concepts/in-client-venue). |
-| `/apps/review-queue` | GET | review-kind versions awaiting a reviewer, with requester, slot, version hash, submission time, resubmission count, and the ship-diff payload. Outside a development composition — or for an anonymous caller — it answers an empty array, never an error. Without `createVendo({ apps: { review: { reviewer } } })` a caller sees only their own submissions |
+| `/apps/review-queue` | GET | review-kind versions awaiting a reviewer, with requester, slot, version hash, submission time, resubmission count, and the ship-diff payload. Outside a development composition it answers an empty array, never an error. Without `createVendo({ apps: { review: { reviewer } } })` a caller sees only their own submissions |
 | `/apps/:id/reject-review` | POST | `{ note }` → the rejection. The note is required (the user's panel renders it) and the work is not deleted; a new version supersedes the rejection. Takes the same reviewer assertion; every other caller gets the `not-found` an unowned app answers |
 
 ### Doctor probes
