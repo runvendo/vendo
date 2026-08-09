@@ -41,6 +41,7 @@ import {
   type WireContext,
   type WireDeps,
 } from "./wire/shared.js";
+import { slotRoutes } from "./wire/slots.js";
 import { threadRoutes } from "./wire/threads.js";
 
 // 09-vendo §2 — the composition's own type surface, re-exported from the entry
@@ -264,6 +265,9 @@ const wireRoutesFor = (deps: WireDeps): readonly RouteEntry[] => [
       // the fn proxy is: /apps/:id/serve/** must resolve here, not fall through it.
       ...servedProxyRoutes,
       ...appRoutes,
+      // The slot registry rides the same mount: with `apps: false` nothing can
+      // be built for a slot, so there is nothing to register one for either.
+      ...slotRoutes,
     ]
     : []),
   ...(deps.mounted.automations ? [...automationRoutes, ...runRoutes] : []),

@@ -56,6 +56,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     ...createPlacementSurface(ctx),
     ...createServedDoors(ctx),
     access: createAccessSurface(ctx),
+    slots: ctx.slots,
     inClient: createInClientSurface(ctx),
     review: createReviewSurface(ctx),
     pins: createPinsSurface(ctx),

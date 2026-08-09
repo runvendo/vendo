@@ -47,6 +47,7 @@ import type { InClientApproval, PinBaseline, PinDrift } from "./pins.js";
 import type { RemixRejection, ReviewQueueEntry } from "./review.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import type { ShipDiff } from "./ship-diff.js";
+import type { SlotRegistry } from "./slots.js";
 
 /** 06-apps §1 plus block-plan decisions 3–4. */
 export interface AppsConfig {
@@ -556,6 +557,16 @@ export interface AppsRuntime {
   /** What is in the caller's slots. `slots` narrows the answer to the slots a
    *  surface actually has mounted; omitted, every placement the caller holds. */
   placements(input: { slots?: readonly string[] }, ctx: RunContext): Promise<PlacementEntry[]>;
+  /**
+   * The slot REGISTRY — which slots this caller's surfaces mount, as opposed to
+   * which app sits in one (`placements` above).
+   *
+   * Written by the surfaces themselves: a slot exists because a page renders
+   * it, so every render reports it and the read ages out whatever stopped being
+   * reported (slots.ts). Nothing else can know the list — a slot is a prop on a
+   * host's own component, invisible to the server until it renders.
+   */
+  slots: SlotRegistry;
   /**
    * Build contract §9.5 — the second of sharing's two verbs. Moves the
    * canonical app into an org the caller is asserted a member of: the row

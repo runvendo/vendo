@@ -29,6 +29,14 @@ export type {
   PlacementRow,
   PlacementStore,
 } from "./placements.js";
+// The slot registry — which slots a host's surfaces mount, reported by the
+// surfaces that render them. `AppsRuntime.slots` speaks these shapes, so a
+// caller must be able to name them.
+export type {
+  SlotDescriptor,
+  SlotRecord,
+  SlotRegistry,
+} from "./slots.js";
 export type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "./sandbox.js";
 // execution-v2 skin contract (Lane C): the manifest shapes, the per-app box
 // token, and the box env assembly Lane B consumes at provision.

@@ -49,6 +49,7 @@ import { placementStore, type PlacementRow, type PlacementStore } from "./placem
 import { createPlacementRows } from "./placement-surface.js";
 import { createEgressApprovals } from "./egress-approval.js";
 import { createReviewLifecycle, type ReviewLifecycle } from "./review.js";
+import { createSlotRegistry, type SlotRegistry } from "./slots.js";
 import { VendoError } from "@vendoai/core";
 import type {
   AppsConfig,
@@ -66,6 +67,10 @@ export interface AppsRuntimeContext {
   apps: RecordStore;
   /** Placement rows — "show this app in that slot" (placements.ts). */
   placementRows: PlacementStore;
+  /** The host's mounted slots, reported by the surfaces that render them
+   *  (slots.ts). Beside placementRows because it answers the other half of the
+   *  same question: which slots EXIST, not which app is in one. */
+  slots: SlotRegistry;
   /** The app's own workspace documents (app-data.ts). */
   data: AppDataAccess;
   /** The capped version log and its pin-intent trail (history.ts). */
@@ -248,10 +253,11 @@ export interface AppsRuntimeContext {
 const createStores = (
   config: AppsConfig,
 ): Pick<AppsRuntimeContext,
-  "apps" | "placementRows" | "data" | "history" | "egressApprovals"
+  "apps" | "placementRows" | "slots" | "data" | "history" | "egressApprovals"
   | "parkedActions" | "inClientApprovals"> => {
   const apps = config.store.records("vendo_apps");
   const placementRows = placementStore(config.store);
+  const slots = createSlotRegistry(config.store);
   const data = createAppData(config.store);
   const history = createAppHistory(config.store);
   // Lane E — parked egress approvals (approved state lives on the document's
@@ -263,7 +269,7 @@ const createStores = (
   // undecided actions; both decisions clear it.
   const parkedActions = createParkedActions(config.store);
   const inClientApprovals = createInClientApprovals(config.store);
-  return { apps, placementRows, data, history, egressApprovals, parkedActions, inClientApprovals };
+  return { apps, placementRows, slots, data, history, egressApprovals, parkedActions, inClientApprovals };
 };
 
 /** The composed seams the doors call through: interchange, the review-kind
