@@ -393,7 +393,7 @@ async function enableAutomation(
 }
 
 /** The WHOLE automation card, in-thread: the `data-vendo-automation` part the
- *  chrome renders with the same card vocabulary as the AutomationsPanel.
+ *  chrome renders with the shared card vocabulary.
  *  Streamed under a stable reconciliation id, so the approval resume's
  *  re-emission flips the SAME card from "waiting on N permissions" to live. */
 async function automationCardPart(writer: Writer, ctx: RunContext, key: AutomationKey): Promise<void> {

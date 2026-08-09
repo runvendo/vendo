@@ -38,7 +38,7 @@ export const stopFor = (
 /** §9.9 — what a run says when the identity checks could not ANSWER (the
  *  host's memberships callback or access seam threw). The raw failure is a host
  *  system's error text — a DSN, a stack, a driver message — and the run row is
- *  rendered verbatim to consumers (`automations-panel.tsx` prints `summary` and
+ *  rendered verbatim to consumers (the chrome prints `summary` and
  *  `error.message`), so it says what happened and nothing about how. The raw
  *  detail goes to the audit row, which is where an operator looks. */
 export const IDENTITY_UNAVAILABLE = (name: string): string =>

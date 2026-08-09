@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { VendoThread, VendoToasts, WaitingQueue, dismissAllVendoToasts, vendoToast } from "../../src/chrome/index.js";
+import { VendoThread, VendoToasts, dismissAllVendoToasts, vendoToast } from "../../src/chrome/index.js";
 import { Markdown } from "../../src/chrome/markdown.js";
 import { createWireServer } from "../wire-server.js";
 
@@ -119,28 +119,6 @@ describe("drag-drop attach + previews (ENG-225)", () => {
     // The sent turn renders the image beside the bubble (.fl-turn-user-att).
     await waitFor(() => expect(view.container.querySelector(".fl-turn-user-att .fl-msg-img img")).toBeTruthy());
     await screen.findByText("here is the chart");
-  });
-});
-
-describe("waiting-on-you queue (ENG-225)", () => {
-  it("lists pending approvals and empties after a decision", async () => {
-    const wire = await createWireServer();
-    const client = createVendoClient({ baseUrl: wire.url });
-    const view = render(<VendoProvider client={client}><WaitingQueue pollMs={0} /></VendoProvider>);
-
-    const region = await screen.findByRole("region", { name: "Waiting on you" });
-    within(region).getByText(/Waiting on you ·/);
-    // No host metadata in this render → the ENG-216 prettified-id fallback.
-    within(region).getByText("Email send");
-    // spec §16.2 — the row humanizes the REAL args (dt "To" / dd the address);
-    // the server's own preview string is never what an end user reads.
-    within(region).getByText("a@example.com");
-    expect(region.textContent).not.toContain("to a@example.com");
-    within(region).getByText(/^Asked /);
-
-    fireEvent.click(within(region).getByRole("button", { name: "Approve" }));
-    await waitFor(() => expect(view.container.querySelector(".fl-waiting")).toBeNull());
-    await wire.close();
   });
 });
 

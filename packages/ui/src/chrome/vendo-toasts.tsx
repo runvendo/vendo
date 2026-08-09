@@ -131,8 +131,8 @@ function useToastQueue(): ToastRecord[] {
 }
 
 /** Opt-in approval feed: raises a toast for every approval that parks AFTER
-    mount (the pre-existing backlog belongs to the WaitingQueue, not to a toast
-    storm on page load), and withdraws it once decided elsewhere. */
+    mount (the pre-existing backlog is the activity surface's to show, not a
+    toast storm on page load), and withdraws it once decided elsewhere. */
 function ApprovalToasts({ pollMs }: { pollMs: number }) {
   const { tools } = useVendoProvider();
   const { pending, isLoading, decide } = useApprovals({ pollMs });

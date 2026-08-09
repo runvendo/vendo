@@ -12,7 +12,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ApprovalRequest } from "@vendoai/core";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import {
@@ -21,9 +21,7 @@ import {
   ConnectCard,
   GrantSetCard,
   NoPolicyNotice,
-  WaitingQueue,
 } from "../../src/chrome/index.js";
-import { CARD_EYEBROWS } from "../../src/chrome/card-shell.js";
 import { CHROME_CSS } from "../../src/chrome/chrome-css.js";
 import { createWireServer } from "../wire-server.js";
 
@@ -115,39 +113,13 @@ describe("one card shell, three laws", () => {
     }
   });
 
-  it("M31 — announces a raised ask through a region that was mounted before it", async () => {
-    const view = render(provider(<WaitingQueue pollMs={0} />));
-    // The live region exists independent of the strip, so its text CHANGES
-    // (which is what a screen reader announces) rather than appearing with its
-    // content, which is announced by nothing.
-    const region = view.container.querySelector('[role="status"]')!;
-    expect(region).not.toBeNull();
-    await waitFor(() => expect(region.textContent).toBe("1 thing needs you."));
-    expect(region.className).toContain("fl-sr-only");
-  });
-
-  it("expands the count-first waiting strip in place and clears when the queue empties", async () => {
-    const view = render(provider(<WaitingQueue pollMs={0} />));
-    const strip = await waitFor(() => {
-      const found = view.container.querySelector("details.fl-waiting-strip");
-      expect(found).not.toBeNull();
-      return found!;
-    });
-    // Count first, collapsed, and the cards are the same shell underneath.
-    expect(strip.hasAttribute("open")).toBe(false);
-    expect(strip.querySelector("summary")?.textContent).toBe(`${CARD_EYEBROWS.waiting} · 1`);
-    expect(strip.querySelector(".fl-cardshell")).not.toBeNull();
-    // The row says what KIND of ask it is; the summary carries the count.
-    expect(strip.querySelector(".fl-card-eyebrow")?.textContent).toBe(CARD_EYEBROWS.approval);
-  });
-
   it("never renders a refusal's developer sentence — the consumer-voice law", () => {
     // §16.3: every sentence the wire throws is written for the host developer
     // (one names an env var, another carries an app id). A card shows what it
     // means for the PERSON — `refusalCopy` in grant-set-card is the pattern.
     // This is a source grep, so it proves the shape the audit caught is gone,
     // not that every string is consumer-voiced.
-    const CARDS = /^(approval-card|approval-sheet|automation-card|connect-card|grant-set-card|embeds|waiting-queue|card-shell|morph-toast)\.tsx$/;
+    const CARDS = /^(approval-card|approval-sheet|automation-card|connect-card|grant-set-card|embeds|card-shell|morph-toast)\.tsx$/;
     const files = [
       ...readdirSync("src/chrome").filter(name => CARDS.test(name)).map(name => join("src/chrome", name)),
       // Added at integration: the slot is the most PUBLIC surface we have (it

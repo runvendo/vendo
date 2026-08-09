@@ -5,7 +5,7 @@
  * scripted transport, and the auto-sent opening turn.
  */
 import type { DirectorScript } from "@vendoai/ui";
-import { AutomationsPanel, ConnectedAccountsPanel, VendoActivities, VendoOverlay, VendoSlot, VendoThread } from "@vendoai/ui/chrome";
+import { ConnectedAccountsPanel, VendoActivities, VendoOverlay, VendoSlot, VendoThread } from "@vendoai/ui/chrome";
 import { useMemo, type ReactElement } from "react";
 import {
   approvalScript,
@@ -156,13 +156,6 @@ export const scenarios: PlaygroundScenario[] = [
     script: automationScript(),
     autoSend: "Every morning, flag any renewal account that has gone quiet.",
     render: () => <ThreadPane />,
-  },
-  {
-    id: "automations-panel",
-    group: "Automations",
-    title: "Automations panel",
-    description: "Where an armed automation lives afterwards: its trigger, the standing permissions it holds, a dry run, and the last ten runs. Hosts mount this piece on their own settings route.",
-    render: () => <AutomationsPanel pollMs={0} />,
   },
   {
     id: "activities",

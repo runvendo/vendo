@@ -9,7 +9,6 @@ const shots = [
   { scenario: "thread-humanized", file: "thread-humanized", ready: 'article[aria-label="Approval for Transfer funds"]' },
   { scenario: "thread-citations", file: "thread-citations", ready: "[data-vendo-citations]" },
   { scenario: "activity", file: "activity", ready: 'table[aria-describedby], table' },
-  { scenario: "automations", file: "automations", ready: '[role="switch"]' },
   { scenario: "notice", file: "notice", ready: '[role="region"][aria-label="Vendo is running without a policy"]' },
   { scenario: "stage", file: "stage", ready: '[aria-label="Voice transcript"]' },
   { scenario: "tree", file: "tree", ready: '[data-dangling-node="not-yet-streamed"]' },

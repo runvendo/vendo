@@ -14,8 +14,8 @@ test("thread is keyboard-complete with visible focus", async ({ page }) => {
       + "chrome-css suppresses its outline and draws the keyboard ring on the "
       + "composer CARD instead (.fl-composer:has(:focus-visible), a 3px accent "
       + "halo). Every other fl-* interactive in thread/overlay/page/approval/"
-      + "automations/activity/waiting/affordances DOES ring (probed, all eight "
-      + "scenarios). Spec §9 freezes the composer's furniture, so the fix is in "
+      + "activity/affordances DOES ring (probed across the scenarios). "
+      + "Spec §9 freezes the composer's furniture, so the fix is in "
       + "expectFocusIndicator — accept a ring drawn by the control's own container "
       + "— not in the CSS. Needs a design call, so it stays quarantined.",
   );
@@ -64,31 +64,6 @@ test("⌘K toggles the one conversation surface by keyboard alone", async ({ pag
   await expect(dialog).toBeHidden();
   await page.keyboard.press("Control+K");
   await expect(dialog).toBeVisible();
-});
-
-test("automation controls are all keyboard reachable and execute by Enter", async ({ page }) => {
-  await openScenario(page, "automations");
-  await expect(page.getByRole("switch")).toBeVisible();
-  await expectKeyboardReachability(page, 'main[data-scenario="automations"]');
-  await tabTo(page, async () => page.evaluate(() => document.activeElement?.getAttribute("role") === "switch"));
-  const before = await page.getByRole("switch").getAttribute("aria-checked");
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("switch")).toHaveAttribute("aria-checked", before === "true" ? "false" : "true");
-  await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Dry run"));
-  await page.keyboard.press("Enter");
-  await expect(page.getByLabel("Dry run for Invoice watcher")).toBeVisible();
-});
-
-test("a running automation is killed by keyboard from run history", async ({ page }) => {
-  await openScenario(page, "automations");
-  await expect(page.getByRole("switch")).toBeVisible();
-  await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Run history"));
-  await page.keyboard.press("Enter");
-  const history = page.getByLabel("Run history for Invoice watcher");
-  await expect(history.getByText("running")).toBeVisible();
-  await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Stop"));
-  await page.keyboard.press("Enter");
-  await expect(history.getByText("stopped")).toBeVisible();
 });
 
 test("activity load-more is keyboard reachable and appends a page", async ({ page }) => {

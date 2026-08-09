@@ -27,34 +27,6 @@ async function send(scope: Page | Locator, text: string): Promise<void> {
 }
 
 /**
- * ONE ask waiting, served to whatever surface asks for it, and gone the moment
- * it is decided. Stubbed here rather than driven off the wire's own queue: every
- * spec in the run shares one wire server, so a fixture ask a neighbouring spec
- * already approved would make this test order-dependent.
- */
-async function oneAskWaiting(page: Page): Promise<void> {
-  let decided = false;
-  await page.route("**/api/vendo/approvals", async (route) => {
-    if (route.request().method() !== "GET") return await route.fallback();
-    await route.fulfill({ json: decided ? [] : [WAITING_ASK] });
-  });
-  await page.route("**/api/vendo/approvals/decide", async (route) => {
-    decided = true;
-    await route.fulfill({ json: { resolved: [{ id: WAITING_ASK.id, approved: true }] } });
-  });
-}
-
-/** The wire fixture's own pending ask, shape for shape (`approval()`). */
-const WAITING_ASK = {
-  id: "apr_smoke",
-  call: { id: "call_smoke_ask", tool: "host_email_send", args: { to: "a@example.com" } },
-  descriptor: { name: "host_email_send", description: "Send email", inputSchema: { type: "object" }, risk: "write" },
-  inputPreview: "to a@example.com",
-  ctx: { principal: { kind: "user", subject: "user_1" }, venue: "chat", presence: "present" },
-  createdAt: "2026-07-11T12:00:00.000Z",
-};
-
-/**
  * Every element inside `scope` that is running a LOOPING animation, itself or
  * through a pseudo-element. §8's "the build animates ONE thing" is a claim about
  * exactly this set, and nothing else can measure it. Names carry the pseudo
@@ -220,18 +192,6 @@ test("the launcher pill works while the panel is closed, then offers the result"
   const toast = page.locator(".fl-launcher-toast");
   await expect(toast).toContainText("Your spending board is ready.", { timeout: 20_000 });
   await expect(toast.getByRole("button", { name: "View" })).toBeVisible();
-});
-
-test("the waiting strip counts the asks and clears when they are decided", async ({ page }) => {
-  await oneAskWaiting(page);
-  await openScenario(page, "waiting");
-  const strip = page.getByRole("group", { name: "Waiting on you" }).or(page.locator(".fl-waiting"));
-  await expect(page.getByText("Waiting on you · 1")).toBeVisible();
-  await page.locator(".fl-waiting-strip > summary").click();
-  await page.getByRole("button", { name: "Approve" }).first().click();
-  // Nothing waiting means the strip is not there at all.
-  await expect(page.getByText("Waiting on you · 1")).toHaveCount(0);
-  await expect(strip.first()).toHaveCount(0);
 });
 
 test("§15 — a turn whose stream died offers no Retry component", async ({ page }) => {

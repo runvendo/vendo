@@ -14,11 +14,10 @@ import * as chrome from "../../src/chrome/index.js";
 
 const VALUE_EXPORTS = [
   "ActivityPanel",
-  // The window label the panel and the automation card share.
+  // The window label the automation card shares with the automations wire.
   "sponsorLabel",
   "ApprovalCard",
   "AutomationCard",
-  "AutomationsPanel",
   "ConnectCard",
   "ConnectedAccountsPanel",
   "GrantSetCard",
@@ -38,7 +37,6 @@ const VALUE_EXPORTS = [
   "VendoToasts",
   "vendoToast",
   "dismissAllVendoToasts",
-  "WaitingQueue",
   // Shelf Task 4 — the conversation-opening registry seam (slot remix,
   // triggers, palette defaults all route through it).
   "openVendoConversation",
@@ -135,7 +133,6 @@ const TYPE_EXPORTS = [
   "VendoToastsProps",
   "VendoToastInput",
   "VendoToastAction",
-  "WaitingQueueProps",
   "OpenConversationOptions",
   "VendoActivitiesProps",
   "VendoTriggerProps",

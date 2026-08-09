@@ -793,8 +793,8 @@ describe("sponsorship — the window label", () => {
 /** What a STOPPED run is allowed to leave behind. Two constraints meet on the
  *  same row:
  *
- *  1. It is read by people: `automations-panel.tsx` renders `summary` and
- *     `error.message` verbatim.
+ *  1. It is read by people: the chrome renders `summary` and `error.message`
+ *     verbatim.
  *  2. It is not reachable by a subject erase. `vendo_runs` has no subject column
  *     (02-store §2), so the cascade reaches run rows only through the apps the
  *     subject OWNS — and for an ORG-owned automation the owner is the org, which

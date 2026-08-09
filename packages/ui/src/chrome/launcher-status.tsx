@@ -27,8 +27,8 @@ import {
     (§3 — "an ignored toast withdraws"; the quiet dot survives it). */
 const TOAST_MS = 6_000;
 
-/** Ask-count cadence, matching the WaitingQueue and the toast feed so the
-    badge and the strip can never be a poll apart. */
+/** Ask-count cadence, matching the toast feed so the badge and the toasts can
+    never be a poll apart. */
 const ASK_POLL_MS = 5_000;
 
 export interface LauncherStatus {

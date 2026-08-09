@@ -6,7 +6,6 @@ export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./embeds.js"
 export { ApprovalSheet } from "./approval-sheet.js";
 export { AutomationCard, sponsorLabel, type AutomationCardProps } from "./automation-card.js";
 export { GrantSetCard, type GrantSetCardProps, type GrantSetPermission } from "./grant-set-card.js";
-export { AutomationsPanel } from "./automations-panel.js";
 export { ConnectCard, type ConnectCardProps } from "./connect-card.js";
 export { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
 // Build contract §9.2-§9.6 — the one surface that writes app-access grants,
@@ -33,7 +32,6 @@ export { type HotkeyChord, type PaletteHotkey } from "./palette-hotkey.js";
 export { VendoSlot } from "./vendo-slot.js";
 export { VendoThread, type VendoThreadProps } from "./thread/index.js";
 export { VendoToasts, vendoToast, dismissAllVendoToasts, type VendoToastsProps, type VendoToastInput, type VendoToastAction } from "./vendo-toasts.js";
-export { WaitingQueue, type WaitingQueueProps } from "./waiting-queue.js";
 
 /** The eject surface: internals the ejected thread compiles against
     (scripts/eject-templates-lib.mjs enforces this list at build). Exported

@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /** ui-lane-cards converged picks: 1-A consequence-first, 1-H approval sheet,
-    2-A brand-forward connect, 3-A′ tray marks, 4-C activity dock, 7-A liveness. */
+    2-A brand-forward connect, 3-A′ tray marks, 4-C activity dock. */
 import type { ApprovalRequest } from "@vendoai/core";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { ApprovalCard, ApprovalSheet, AutomationsPanel, ConnectCard } from "../../src/chrome/index.js";
+import { ApprovalCard, ApprovalSheet, ConnectCard } from "../../src/chrome/index.js";
 import { toolPresentation } from "../../src/chrome/build-beat.js";
 import { ACTIVITY_ANCHOR_ATTRIBUTE, ACTIVITY_BUMP_EVENT, MorphToast } from "../../src/chrome/morph-toast.js";
 import { toolkitDisplayName } from "../../src/chrome/humanize.js";
@@ -137,46 +137,6 @@ describe("lane-cards picks", () => {
       </VendoProvider>,
     );
     expect(screen.getByRole("button", { name: "Connect Google Mail" })).toBeTruthy();
-  });
-
-  it("7-A: a running run swaps the state line to step N/M and puts the runner on the arrow", async () => {
-    wire.state.automations[0]!.triggers[0]!.trigger = {
-      id: "main",
-      on: { kind: "host-event", event: "invoice.created" },
-      run: { kind: "steps", steps: [{ id: "load", tool: "host_invoices_list" }, { id: "send", tool: "host_email_send" }] },
-    };
-    wire.state.runs = [{
-      id: "run_live",
-      appId: "app_auto",
-      trigger: { kind: "host-event", event: "invoice.created" },
-      status: "running",
-      startedAt: new Date(Date.now() - 5_000).toISOString(),
-      steps: [{ id: "load", tool: "host_invoices_list", outcome: "ok", at: new Date().toISOString() }],
-    }];
-    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    await waitFor(() => expect(screen.getByText(/running now · step 2\/2/)).toBeTruthy());
-    expect(document.querySelector(".fl-auto-runner")).not.toBeNull();
-  });
-
-  it("7-A: an enabled schedule carries the next-run countdown in the state line", async () => {
-    wire.state.automations[0]!.triggers[0]!.enabled = true;
-    wire.state.automations[0]!.triggers[0]!.trigger = {
-      id: "main",
-      on: { kind: "schedule", every: "6h" },
-      run: { kind: "steps", steps: [{ id: "load", tool: "host_invoices_list" }] },
-    };
-    wire.state.runs = [{
-      id: "run_done",
-      appId: "app_auto",
-      trigger: { kind: "schedule" },
-      status: "ok",
-      startedAt: new Date(Date.now() - 30.5 * 60_000).toISOString(),
-      finishedAt: new Date(Date.now() - 30 * 60_000).toISOString(),
-      steps: [],
-    }];
-    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    await waitFor(() => expect(screen.getByText(/next run in 5 h (29|30) m/)).toBeTruthy());
-    expect(document.querySelector(".fl-auto-runner")).toBeNull();
   });
 
   it("4-C: the morph docks into the activity anchor and fires the bump event", () => {

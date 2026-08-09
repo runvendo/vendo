@@ -136,8 +136,7 @@ export function ActivityLedger({ events, tools }: { events: AuditEvent[]; tools?
       {events.map(event => {
         const { kindLabel, action } = describeActivity(event, tools);
         const { label, tone } = eventOutcomeLabel(event);
-        // The server's own preview is a debugging aid, not consumer copy
-        // (waiting-queue.tsx keeps it the same way).
+        // The server's own preview is a debugging aid, not consumer copy.
         const detail = developmentMode() ? event.inputPreview : activityDetail(event);
         return (
           <li className="fl-act-led-row" key={event.id}>

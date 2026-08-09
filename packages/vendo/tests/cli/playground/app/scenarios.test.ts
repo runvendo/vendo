@@ -10,7 +10,6 @@ const REQUIRED = [
   "thread-view",
   "thread-connect",
   "approval-flow",
-  "automations-panel",
   "activities",
   "activities-empty",
   "slot-empty",

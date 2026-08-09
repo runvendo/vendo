@@ -147,7 +147,7 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
   // named differently from the call printed two different sentences for one
   // ask — and the card additionally missed the host's `ToolMeta`, which is
   // keyed by the WIRE tool id. `call.tool` is what will actually run, so it is
-  // the field; waiting-queue.tsx reads the same one.
+  // the field every surface reads.
   const tool = approval.call.tool;
   const meta = useVendoTools()[tool];
   const presentation = toolPresentation(
