@@ -54,9 +54,8 @@ export interface MachineEnvGrants {
  * accident was the one that removed the filter. An app with nothing to reach
  * gets `[]`, the strictest policy this seam can express.
  *
- * How strong that actually is: `docs/verification/box-egress/README.md`. Short
- * version — the provider filters by DOMAIN, which holds against ordinary
- * clients and not against one that omits SNI.
+ * How strong that actually is, measured: the provider filters by DOMAIN, which
+ * holds against ordinary clients and not against one that omits SNI.
  */
 export type BuildMachineAllowlist = (
   app: AppDocument,

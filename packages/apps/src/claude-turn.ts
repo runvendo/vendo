@@ -46,8 +46,7 @@
  *
  * The egress half is weaker than it sounds: the provider filters by DOMAIN, so
  * an ordinary client is held to the allowlist and a client that omits SNI is
- * not (`docs/verification/box-egress/README.md`). The box is filtered, not
- * jailed.
+ * not (measured). The box is filtered, not jailed.
  *
  * And the containment is about a BOX at all, which this module's other home —
  * `machine: "local"` — does not have: there the same bypass is a real shell on
@@ -137,7 +136,7 @@ export type ClaudeTurnEvent =
   | { type: "session"; sessionId: string }
   ;
 
-export interface ClaudeSessionInput {
+interface ClaudeSessionInput {
   /** `Turn.system` — appended to the SDK's own claude_code preset, never replacing
    *  it: the co-training is the reason this harness exists. */
   systemPrompt?: string;
@@ -238,7 +237,7 @@ interface SessionUserMessage {
 
 /** The bits of the SDK this file uses. Narrow on purpose: the real message union
  *  has ~40 members and this file branches on four. */
-export interface SdkModule {
+interface SdkModule {
   query(params: {
     prompt: string | AsyncIterable<SessionUserMessage>;
     options: Record<string, unknown>;

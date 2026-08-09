@@ -13,9 +13,9 @@ import {
 
 /**
  * The name half of core's 01 §8 `fn:<name>` grammar, bounded at 64 characters
- * — the bound `docs/machine-model.md` publishes for `POST /fn/<name>`, and the
- * one the manifest parser and the HTTP wire route already enforce. Unbounded
- * here meant a long name dispatched in-process and 400'd over the wire.
+ * — the documented bound for `POST /fn/<name>`, and the one the manifest parser
+ * and the HTTP wire route already enforce. Unbounded here meant a long name
+ * dispatched in-process and 400'd over the wire.
  */
 export const FN_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
 

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ambientKitEquivalent, prepareIslands } from "../src/checking/islands.js";
 
 /**
- * Rematch gate 2026-07-25 (docs/eval/runs/2026-07-25-rematch): 17+ Cadence
- * and several Maple creates burned every repair round on islands referencing
+ * Rematch gate 2026-07-25: 17+ Cadence and several Maple creates burned every
+ * repair round on islands referencing
  * host catalog components (<CadenceStatusBadge>, <MapleSparkline>,
  * <MapleSkeleton>) that can never resolve in the sandbox. (V4 removed the
  * second source of these — the non-ambient legacy primitives — by making the

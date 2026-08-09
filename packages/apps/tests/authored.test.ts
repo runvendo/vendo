@@ -26,7 +26,7 @@ import { inMemoryBoxFiles } from "../src/testing/box-files.js";
 import { createAppHistory } from "../src/history.js";
 import { createApps, pinComponentName, type AppsRuntime, type PinBaseline } from "../src/index.js";
 import type { SandboxAdapter, SandboxMachine } from "../src/sandbox.js";
-import { seedGrantRows, storeAccessFixture } from "../src/testing/app-access-fixture.js";
+import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
 import { bindTools, guardFixture, memoryStore, scriptedLanguageModel, seedAppRow, type GuardFixture } from "../src/testing/index.js";
 
 const APP_ID = "app_authored";

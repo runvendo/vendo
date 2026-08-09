@@ -6,7 +6,7 @@ import {
   PLACEMENT_SLOTS_COLLECTION,
   placementStore,
 } from "../src/placements.js";
-import { seedGrantRows, storeAccessFixture } from "../src/testing/app-access-fixture.js";
+import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
 import {
   authoringAssembler,
   basicLanguageModel,

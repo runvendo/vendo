@@ -93,9 +93,9 @@ describe("isWorkerLoadablePath", () => {
   });
 
   it("rejects NON-STRING resolve results — the Turbopack production numeric module id", () => {
-    // Rematch gate 2026-07-25 (docs/eval/runs/2026-07-25-rematch): under a
-    // Turbopack-bundled `next start` server, createRequire().resolve("react")
-    // returned Turbopack's NUMERIC module id (constant 429302 on both hosts);
+    // Rematch gate 2026-07-25: under a Turbopack-bundled `next start` server,
+    // createRequire().resolve("react") returned Turbopack's NUMERIC module id
+    // (constant 429302 on both hosts);
     // require(429302) in the worker crashed EVERY island-bearing app and
     // 65/90 creates were refused. A non-string is never a loadable path.
     expect(isWorkerLoadablePath(429302)).toBe(false);

@@ -11,7 +11,7 @@ import {
   type AppId,
   type RunContext,
 } from "@vendoai/core";
-import type { memoryStore } from "./memory-store.js";
+import type { memoryStore } from "../src/testing/memory-store.js";
 
 /**
  * A stand-in for `appAccess(store)` over the same rows: the real function lives

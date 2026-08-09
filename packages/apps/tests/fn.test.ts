@@ -121,9 +121,9 @@ describe("createFnCaller (execution-v2 fn resolution over the box door)", () => 
   });
 
   it("rejects an over-long fn name, like the manifest gate and the HTTP wire do", async () => {
-    // The documented name grammar is bounded at 64 characters (docs/machine-model.md),
-    // and both the manifest parser and the wire's POST /apps/:id/fn/:name refuse a
-    // longer one. This gate accepting it meant the same app worked in-process and
+    // The documented name grammar is bounded at 64 characters, and both the
+    // manifest parser and the wire's POST /apps/:id/fn/:name refuse a longer
+    // one. This gate accepting it meant the same app worked in-process and
     // 400'd over HTTP.
     const { wake } = boxWake(() => ({ status: 200 }));
     const outcome = await createFnCaller({ wake }).callFn(machineApp(), "f".repeat(65), {}, ctx);

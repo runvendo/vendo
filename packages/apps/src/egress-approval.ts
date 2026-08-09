@@ -10,8 +10,8 @@ import {
 import { listAllRecords } from "./persistence.js";
 
 /**
- * execution-v2 Wave 2 Lane E — grant-style egress approval
- * (spec "Secrets and egress", docs/superpowers/specs/2026-07-19-execution-v2-design.md).
+ * execution-v2 Wave 2 Lane E — grant-style egress approval (the design's
+ * "Secrets and egress").
  *
  * The app's `egress` declaration (mirroring `vendo.json`) is an ASK, not an
  * authority: each declared domain needs a one-time owner approval before a
@@ -72,10 +72,9 @@ export const unapprovedEgress = (app: AppDocument): string[] => {
  * This used to be described here as "the SSRF and exfil answer". It is not, and
  * nothing downstream should be built as if it were: the provider matches on the
  * requested server name, so an ordinary client is held to the list and a client
- * that omits SNI is not (measured — `docs/verification/box-egress/README.md`).
- * It answers SSRF from ORDINARY app code, which is the common case and worth
- * having; it does not contain a hostile process, including in the
- * BYO-model-key case.
+ * that omits SNI is not (measured). It answers SSRF from ORDINARY app code,
+ * which is the common case and worth having; it does not contain a hostile
+ * process, including in the BYO-model-key case.
  */
 export const boxAllowlist = (app: AppDocument, implicitDomains: readonly string[]): string[] => {
   const unapproved = unapprovedEgress(app);

@@ -7,8 +7,8 @@
  * box. This file pins every such path shut.
  *
  * Scope: these assert WHAT WE SEND the provider. How strongly the provider then
- * enforces it is a separate question with a measured gap —
- * `docs/verification/box-egress/README.md`.
+ * enforces it is a separate question with a measured gap (the domain filter is
+ * bypassed by a client that omits SNI).
  */
 import type { AppDocument } from "@vendoai/core";
 import { VENDO_APP_FORMAT } from "@vendoai/core";

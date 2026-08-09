@@ -19,7 +19,7 @@ import {
   seedAppRow,
 } from "../src/testing/index.js";
 // One copy of the AppAccess stand-in, shared with served-orgs.test.ts.
-import { seedGrantRows as seedGrants, storeAccessFixture as storeAccess } from "../src/testing/app-access-fixture.js";
+import { seedGrantRows as seedGrants, storeAccessFixture as storeAccess } from "./app-access-fixture.js";
 
 /** Build contract §9.3–§9.6 — the apps runtime is level-aware through ONE
     `can()`; the wire and the MCP door inherit it rather than re-deriving it. */

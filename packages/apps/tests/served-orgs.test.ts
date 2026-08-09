@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime, type BoxRequest } from "../src/index.js";
 import { fakeBoxSandbox } from "../src/testing/fake-box.js";
 import { guardFixture, memoryStore, seedAppRow } from "../src/testing/index.js";
-import { storeAccessFixture, seedGrantRows } from "../src/testing/app-access-fixture.js";
+import { storeAccessFixture, seedGrantRows } from "./app-access-fixture.js";
 
 /**
  * Build contract §9.8 — served ORG apps are a wire door, not a snapshot with

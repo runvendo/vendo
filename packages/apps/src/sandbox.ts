@@ -1,14 +1,12 @@
 /**
- * execution-v2 Wave 1 Lane A — the sandbox seam
- * (docs/superpowers/specs/2026-07-19-execution-v2-design.md).
+ * execution-v2 Wave 1 Lane A — the sandbox seam.
  *
  * The whole public contract between Vendo and a sandbox provider. The coding
  * agent lives INSIDE the box (Wave 3), so outside-the-box `exec` dropped out of
  * this seam; a provider adapter may keep it adapter-private for bootstrap and
  * diagnostics. `files` came BACK: a built app's source has to leave the box,
  * and every adapter had grown its own private copy of the same three
- * operations. The v1 seam this replaces is in git history
- * (docs/archive/contracts/06-apps.md §3-4).
+ * operations. The v1 seam this replaces is in git history.
  */
 export interface SandboxAdapter {
   /** Create a machine, optionally from a provider template, with its boundary env. */
@@ -24,9 +22,8 @@ export interface SandboxAdapter {
      *
      * This states what the provider is ASKED for, not what it guarantees. e2b
      * matches on the requested server name, so the filter holds against
-     * ordinary clients and is bypassed by one that omits SNI
-     * (`docs/verification/box-egress/README.md`). Callers should treat it as
-     * defence in depth, not as containment.
+     * ordinary clients and is bypassed by one that omits SNI. Callers should
+     * treat it as defence in depth, not as containment.
      */
     allowedDomains?: string[];
   }): Promise<SandboxMachine>;

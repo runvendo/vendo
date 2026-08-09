@@ -94,7 +94,7 @@ const sdkEngine = async ({ prompt, systemAppend, model, url, key, env, appDir, l
     // The box IS the sandbox: every tool is pre-approved, and the provider's
     // domain-filtered egress is the boundary. That boundary is real against
     // ordinary clients and bypassable by one that omits SNI, so it is defence
-    // in depth rather than containment — docs/verification/box-egress/README.md.
+    // in depth rather than containment.
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
     // Web tools have no allowlisted host to reach; subagents and

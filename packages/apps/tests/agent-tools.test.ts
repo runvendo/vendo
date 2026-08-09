@@ -21,7 +21,7 @@ import {
   seedAppRow,
   scriptedLanguageModel,
 } from "../src/testing/index.js";
-import { seedGrantRows, storeAccessFixture } from "../src/testing/app-access-fixture.js";
+import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_tools" },
