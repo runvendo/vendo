@@ -21,7 +21,6 @@ const CONTRACT_COLUMNS: Record<string, string[]> = {
   vendo_secrets: ["name", "ciphertext", "created_at"],
   vendo_mcp_clients: ["id", "data", "refs", "created_at", "updated_at"],
   vendo_mcp_grants: ["id", "data", "refs", "created_at", "updated_at"],
-  vendo_sessions: ["subject", "touched_at"],
   vendo_knowledge_docs: ["id", "data", "refs", "created_at", "updated_at"],
   vendo_knowledge_chunks: ["id", "data", "refs", "created_at", "updated_at"],
   vendo_workspace_files: ["path", "owner", "content", "blob_ref", "bytes", "revision", "created_at", "updated_at"],
@@ -109,7 +108,7 @@ for (const backend of backends()) {
       await made.sql("DELETE FROM vendo_records WHERE collection = 'vendo_state' AND id = 'app_live:subject_live'");
     });
 
-    it("creates all 21 contract tables with every contracted key column", async () => {
+    it("creates all 20 contract tables with every contracted key column", async () => {
       const rows = await made.sql(
         "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'vendo_%'",
       );
@@ -124,8 +123,9 @@ for (const backend of backends()) {
       // and vendo_effects + lane B's vendo_workspace_files and
       // vendo_workspace_history. Each lane asserted 18 counting only its own
       // pair; the merged v6 carries all four. v7 (wave 3, build contract §9.2)
-      // adds vendo_app_grants — the only multi-party rows Vendo stores.
-      expect(actual.size).toBe(21);
+      // adds vendo_app_grants — the only multi-party rows Vendo stores. Guest
+      // sessions were then deleted, taking vendo_sessions back out.
+      expect(actual.size).toBe(20);
       for (const [table, columns] of Object.entries(CONTRACT_COLUMNS)) {
         expect(actual.has(table), table).toBe(true);
         for (const column of columns) expect(actual.get(table)?.has(column), `${table}.${column}`).toBe(true);

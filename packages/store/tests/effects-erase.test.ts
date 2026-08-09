@@ -1,16 +1,15 @@
 import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
-import { adoptEphemeralSubject, eraseStore, storeFiles } from "../src/index.js";
+import { eraseStore, storeFiles } from "../src/index.js";
 
 /**
  * Build-contract amendment 2026-07-30 — `vendo_effects.outcome` holds real tool
- * output, so the ledger has to be reachable by the erase cascade and travel with
- * an anon→signed-in adoption. Before the amendment the frozen shape had no
- * subject column and receipts survived an erase forever.
+ * output, so the ledger has to be reachable by the erase cascade. Before the
+ * amendment the frozen shape had no subject column and receipts survived an
+ * erase forever.
  */
 const alice: Principal = { kind: "user", subject: "user_alice" };
-const anon: Principal = { kind: "user", subject: "anonymous_visitor" };
 
 /** Seed through the store's own door — the same write path the guard uses —
  *  never raw SQL: a raw INSERT would keep these tests green even if routing
@@ -56,23 +55,6 @@ for (const backend of backends()) {
       expect(report.vendo_effects).toBe(2);
       const left = await made.sql("SELECT key FROM vendo_effects ORDER BY key");
       expect(left.map((row) => row["key"])).toEqual(["eff_bystander"]);
-    });
-
-    it("moves effect receipts onto the signed-in subject on adoption", async () => {
-      // Otherwise a re-run after sign-in would re-charge: the receipts proving
-      // the work already happened would be stranded under the retired anon id.
-      await seedEffect(made, "eff_anon_1", anon.subject);
-      // Adoption claims the session row first, so the visitor must be registered.
-      await made.sql(
-        "INSERT INTO vendo_sessions (subject, touched_at) VALUES ($1, now())",
-        [anon.subject],
-      );
-
-      const report = await adoptEphemeralSubject(made.store, anon.subject, "user_signed_in", { files: storeFiles(made.store) });
-
-      expect(report?.effects).toBe(1);
-      const rows = await made.sql("SELECT subject FROM vendo_effects WHERE key = 'eff_anon_1'");
-      expect(rows[0]!["subject"]).toBe("user_signed_in");
     });
   });
 }

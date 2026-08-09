@@ -1,11 +1,9 @@
 import { storeFiles } from "../src/files-store.js";
-import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { ERASE_TABLES, eraseStore } from "../src/erase.js";
 import { DDL } from "../src/schema.js";
 import { appFixture, approvalFixture, auditFixture, grantFixture } from "../src/fixtures.test-util.js";
-import { appStore, grantStore, registerEphemeralSubject } from "../src/index.js";
 
 // 02-store §5: "A store-level erase API ... erases by subject (full erasure)
 // or by app, cascading the matching data across every table of §2's map, and is
@@ -134,7 +132,6 @@ for (const backend of backends()) {
         vendo_secrets: 0,
         vendo_mcp_clients: 0,
         vendo_mcp_grants: 1,
-        vendo_sessions: 0, // durable subject — never registered as a session
         vendo_knowledge_docs: 1,
         vendo_knowledge_chunks: 1,
         vendo_app_grants: 0, // ...and holds no app-access grant (§9.2)
@@ -161,32 +158,6 @@ for (const backend of backends()) {
       expect(await store.records(`app:${bystanderDoc.id}:notes`).get("note_bystander")).not.toBeNull();
       expect(await store.records("vendo_threads").get("thr_erase_bystander")).not.toBeNull();
       expect(await store.records("vendo_audit").get(bystanderEvent.id)).not.toBeNull();
-    });
-
-    it("erases an ephemeral subject's rows and its session registration (02 §4) all the same", async () => {
-      const store = made.store;
-      const anon: Principal = { kind: "user", subject: "anon_erase", ephemeral: true };
-      await registerEphemeralSubject(store, anon.subject);
-      const doc = appFixture("app_erase_anon");
-      await appStore(store).put(anon, doc);
-      await store.records(`app:${doc.id}:notes`).put({ id: "note_anon", data: { body: "mine" } });
-      await store.records("vendo_threads").put({ id: "thr_erase_anon", data: { subject: anon.subject, messages: [] } });
-      await grantStore(store).create(anon, grantFixture("grt_erase_anon", { subject: anon.subject }));
-      const event = auditFixture("aud_erase_anon", { principal: anon });
-      await store.records("vendo_audit").put({ id: event.id, data: event });
-
-      const report = await eraseStore(store, { files: storeFiles(store) }).bySubject(anon.subject);
-      expect(report.vendo_apps).toBe(1);
-      expect(report.vendo_records).toBe(1);
-      expect(report.vendo_threads).toBe(1);
-      expect(report.vendo_grants).toBe(1);
-      expect(report.vendo_audit).toBe(1);
-      expect(report.vendo_sessions).toBe(1);
-
-      expect(await appStore(store).get(doc.id)).toBeNull();
-      expect(await store.records("vendo_threads").get("thr_erase_anon")).toBeNull();
-      expect(await store.records("vendo_audit").get(event.id)).toBeNull();
-      expect(await grantStore(store).get("grt_erase_anon")).toBeNull();
     });
 
     it("takes the departing person out of vendo_app_grants — the row they hold AND their name on the rows they wrote", async () => {

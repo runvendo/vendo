@@ -3,13 +3,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { eraseStore } from "../src/erase.js";
 import { storeFiles } from "../src/files-store.js";
-import { adoptEphemeralSubject } from "../src/helpers/subjects.js";
-import { registerEphemeralSubject } from "../src/sessions.js";
 import { WORKSPACE_INLINE_MAX_BYTES, workspaceStore } from "../src/workspace.js";
 
-// Build contract §3.3: "Both join ERASE_TABLES and the anon→signed-in adoption
-// path, keyed on `owner`." These tests are that sentence, run against both
-// tables AND the blobs the store-backed files adapter holds for them.
+// Build contract §3.3: "Both join ERASE_TABLES ... keyed on `owner`." These
+// tests are that sentence, run against both tables AND the blobs the
+// store-backed files adapter holds for them.
 
 const seed = async (
   store: MadeBackend["store"],
@@ -26,7 +24,7 @@ const seed = async (
 };
 
 for (const backend of backends()) {
-  describe(`${backend.name} workspace erase + adoption`, () => {
+  describe(`${backend.name} workspace erase`, () => {
     let made: MadeBackend;
 
     beforeAll(async () => {
@@ -116,26 +114,6 @@ for (const backend of backends()) {
       expect(await count("vendo_workspace_files", "path = '/user/apps/app_root2'", [])).toBe(1);
     });
 
-    it("adopts an anonymous session's workspace into the signed-in subject", async () => {
-      const anon: Principal = { kind: "user", subject: "anon_ws_adopt", ephemeral: true };
-      const signedIn: Principal = { kind: "user", subject: "user_ws_adopter" };
-      await registerEphemeralSubject(made.store, anon.subject);
-      await seed(made.store, anon, "/user/apps/app_anon/app.vendo", ["made while anonymous", "then edited"]);
-
-      const report = await adoptEphemeralSubject(made.store, anon.subject, signedIn.subject, { files: storeFiles(made.store) });
-      expect(report?.files).toBe(1);
-
-      // The signed-in subject opens the workspace and finds their own work.
-      const fs = await workspaceStore(made.store).open(signedIn);
-      expect(await fs.readFile("/user/apps/app_anon/app.vendo")).toBe("then edited");
-      // History travelled with the file, so the trail is still readable after
-      // signing in — under the new owner, not the anonymous one.
-      expect(await workspaceStore(made.store)
-        .history({ principal: signedIn }, "/user/apps/app_anon/app.vendo")).toHaveLength(1);
-
-      expect(await count("vendo_workspace_files", "owner = $1", [anon.subject])).toBe(0);
-    });
-
     // N3b (verifier): with blob deletion moved behind the adapter, EraseReport
     // stopped counting workspace content in EITHER configuration — a GDPR erase
     // has to be auditable, so the report carries its own count.
@@ -180,48 +158,6 @@ for (const backend of backends()) {
       expect(held.size).toBe(0);
     });
 
-    // F1 (verifier): blob keys embedded the owner while adoption flips only the
-    // owner COLUMN, so erasing the signed-in subject missed the adopted blobs —
-    // an erased user's file content survived. The row is the pointer now.
-    it("erases blobs that arrived through adoption, keyed by the row and not the owner", async () => {
-      const anon: Principal = { kind: "user", subject: "anon_ws_blob", ephemeral: true };
-      const signedIn: Principal = { kind: "user", subject: "user_ws_blob_adopter" };
-      const path = "/user/files/adopted-big.txt";
-      const big = "z".repeat(WORKSPACE_INLINE_MAX_BYTES + 1);
-      await registerEphemeralSubject(made.store, anon.subject);
-      const before = await workspaceBlobs();
-      await seed(made.store, anon, path, [big]);
-      expect(await workspaceBlobs()).toBe(before + 1);
-
-      expect((await adoptEphemeralSubject(made.store, anon.subject, signedIn.subject, { files: storeFiles(made.store) }))?.files).toBe(1);
-      // The blob still reads through the new owner's workspace...
-      expect(await (await workspaceStore(made.store).open(signedIn)).readFile(path)).toBe(big);
-
-      // ...and erasing that owner must take the content with them.
-      await eraseStore(made.store, { files: storeFiles(made.store) }).bySubject(signedIn.subject);
-      expect(await workspaceBlobs()).toBe(before);
-    });
-
-    // F2 (verifier): the skip path is the COMMON sign-in path, and its DELETEs
-    // never called files.delete — every collided blob orphaned.
-    it("deletes the blobs of adopted rows it drops on a collision", async () => {
-      const anon: Principal = { kind: "user", subject: "anon_ws_blob_skip", ephemeral: true };
-      const signedIn: Principal = { kind: "user", subject: "user_ws_blob_skipper" };
-      const path = "/user/files/collides.txt";
-      await registerEphemeralSubject(made.store, anon.subject);
-      const before = await workspaceBlobs();
-      await seed(made.store, anon, path, ["a".repeat(WORKSPACE_INLINE_MAX_BYTES + 1)]);
-      await seed(made.store, signedIn, path, ["b".repeat(WORKSPACE_INLINE_MAX_BYTES + 1)]);
-      expect(await workspaceBlobs()).toBe(before + 2);
-
-      const report = await adoptEphemeralSubject(made.store, anon.subject, signedIn.subject, { files: storeFiles(made.store) });
-      expect(report?.files).toBe(0);
-      // The dropped anonymous copy takes its blob with it; the survivor keeps its own.
-      expect(await workspaceBlobs()).toBe(before + 1);
-      expect(await (await workspaceStore(made.store).open(signedIn)).readFile(path))
-        .toBe("b".repeat(WORKSPACE_INLINE_MAX_BYTES + 1));
-    });
-
     // F3 (verifier): erase.byApp deleted rows with no blob cascade at all.
     it("deletes an app's blobs when the app is erased", async () => {
       const owner: Principal = { kind: "user", subject: "user_ws_blob_app" };
@@ -253,24 +189,6 @@ for (const backend of backends()) {
         expect(ref).not.toContain(secret);
         expect(ref).not.toContain(Buffer.from(secret, "utf8").toString("base64url"));
       }
-    });
-
-    it("never lets an adopted file overwrite one the signed-in subject already owns", async () => {
-      const anon: Principal = { kind: "user", subject: "anon_ws_collide", ephemeral: true };
-      const signedIn: Principal = { kind: "user", subject: "user_ws_collider" };
-      const path = "/user/memory/notes.md";
-      await registerEphemeralSubject(made.store, anon.subject);
-      await seed(made.store, anon, path, ["anonymous notes"]);
-      await seed(made.store, signedIn, path, ["my real notes"]);
-
-      const report = await adoptEphemeralSubject(made.store, anon.subject, signedIn.subject, { files: storeFiles(made.store) });
-      expect(report?.files).toBe(0);
-      expect(report?.skipped).toBeGreaterThan(0);
-
-      const fs = await workspaceStore(made.store).open(signedIn);
-      expect(await fs.readFile(path)).toBe("my real notes");
-      expect(await count("vendo_workspace_files", "owner = $1", [anon.subject])).toBe(0);
-      expect(await count("vendo_workspace_history", "owner = $1", [anon.subject])).toBe(0);
     });
   });
 }

@@ -40,12 +40,6 @@ export {
   type ReservedCollection,
 } from "./routing.js";
 export { eraseStore, type EraseReport, type EraseTable } from "./erase.js";
-export {
-  claimEphemeralSubject,
-  listStaleEphemeralSubjects,
-  registerEphemeralSubject,
-  sweepEphemeralSubjects,
-} from "./sessions.js";
 export { envSecrets, secretStore, storeSecrets } from "./secrets.js";
 export { appStore, type AppRow } from "./helpers/apps.js";
 // Build contract §9.3 — `can()`, the one permission function every door reaches.
@@ -63,10 +57,6 @@ export { threadMessageStore, type ThreadMessageLike } from "./helpers/thread-mes
 export { grantStore } from "./helpers/grants.js";
 export { auditStore, type AuditQuery } from "./helpers/audit.js";
 export { runStore, type RunRow } from "./helpers/runs.js";
-export {
-  adoptEphemeralSubject,
-  type SubjectMergeReport,
-} from "./helpers/subjects.js";
 export {
   workspaceStore,
   WORKSPACE_HISTORY_LIMIT,

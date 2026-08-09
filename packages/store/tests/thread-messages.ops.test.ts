@@ -10,7 +10,7 @@
  * The three:
  *  - `sql`         — the store's own Postgres, the shipped path;
  *  - `memory-ops`  — `memoryStoreOps()`, core's reference StoreOps;
- *  - `local-ops`   — `createStoreOps(store)`, the 31-op contract served off the
+ *  - `local-ops`   — `createStoreOps(store)`, the 27-op contract served off the
  *                    same real database, which is the closest offline stand-in
  *                    for the console's own implementation.
  *

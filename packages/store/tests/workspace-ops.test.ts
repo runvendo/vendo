@@ -7,7 +7,7 @@ import type { VendoStore as StoreHandle } from "../src/store.js";
 import { workspaceStore } from "../src/workspace.js";
 
 /**
- * T1/D3 — the workspace façade over the 31-op contract instead of a SQL handle.
+ * T1/D3 — the workspace façade over the 27-op contract instead of a SQL handle.
  *
  * The seam is real on both sides: the PRODUCER is `WorkspaceStoreFs` driving
  * `workspaceOpsRows`, and the CONSUMER is `createStoreOps` writing this store's
@@ -20,7 +20,7 @@ const dana: Principal = { kind: "user", subject: "dana" };
 const kim: Principal = { kind: "user", subject: "kim" };
 const acme: Membership[] = [{ org: "acme" }];
 
-/** A store handle with NO local database and the 31 ops instead — exactly the
+/** A store handle with NO local database and the 27 ops instead — exactly the
     shape a hosted store presents. The record/blob doors still delegate to the
     real store, because that is what the hosted store's own doors do. */
 const opsBacked = (store: StoreHandle): StoreHandle => ({
@@ -45,7 +45,7 @@ for (const backend of backends()) {
     /** The façade a hosted deployment gets. */
     const hosted = () => workspaceStore(opsBacked(made.store));
     /** The SAME façade over the SAME rows with a database handle instead of
-        the 31 ops — the local answer every hosted answer is compared against. */
+        the 27 ops — the local answer every hosted answer is compared against. */
     const local = () => workspaceStore(made.store);
 
     it("commits through the ops backend into the ordinary workspace rows", async () => {
@@ -132,7 +132,7 @@ for (const backend of backends()) {
     /** S3 — the path leg of history. The claim is not "history works over the
         wire" but "the hosted façade answers what the SQL façade answers", so
         every assertion here is checked against `local()`, the same façade over
-        the same rows with a database handle instead of the 31 ops. */
+        the same rows with a database handle instead of the 27 ops. */
     it("reports one path's version trail, exactly as the SQL façade does", async () => {
       const path = "/user/notes/history.md";
       for (const content of ["v1", "v2", "v3"]) {

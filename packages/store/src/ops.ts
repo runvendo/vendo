@@ -12,15 +12,9 @@ import { eraseStore } from "./erase.js";
 import { storeFiles, storeFilesForDb } from "./files-store.js";
 import { harnessStateKey } from "./harness-state.js";
 import { putStateRow, putThreadRow, THREAD_MESSAGES_AGGREGATE, threadFromRow } from "./helpers/rows.js";
-import { adoptEphemeralSubject } from "./helpers/subjects.js";
 import { iso, pageLimit, text } from "./helpers/utils.js";
 import { createRecordStore } from "./records.js";
 import { createReservedRecordStore, threadRecord } from "./routing.js";
-import {
-  claimEphemeralSubject,
-  listStaleEphemeralSubjects,
-  registerEphemeralSubject,
-} from "./sessions.js";
 import { dbFor, type VendoStore } from "./store.js";
 import { invalid, parseThreadData, requireJson } from "./validate.js";
 import { workspaceRows, type PreparedWrite } from "./workspace-rows.js";
@@ -97,10 +91,10 @@ const decoder = new TextDecoder();
 
 /**
  * 02-store — the LOCAL backend of the StoreOps named-operation contract
- * (core/store.ts): the 31 ops served straight off this store's own Postgres,
- * through the EXISTING helpers — routing doors, thread rows, workspace rows,
- * erase/adopt cascades, session registry. Logic unchanged; what this layer
- * adds is the atomic scope: every multi-statement verb runs inside ONE
+ * (core/store.ts): the 27 ops served straight off this store's own Postgres,
+ * through the EXISTING helpers — routing doors, thread rows, workspace rows, the
+ * erase cascade. Logic unchanged; what this layer adds is the atomic scope:
+ * every multi-statement verb runs inside ONE
  * `Db.transaction()`, so the operation manifest's verb boundaries hold under
  * a crash (F4's orphaned thread messages being the founding example).
  */
@@ -567,36 +561,13 @@ export function createStoreOps(
     // lifecycle
     // -----------------------------------------------------------------------
     lifecycle: {
-      /** The 21-table erase saga, as-is: re-runnable, real-deletion report.
+      /** The 20-table erase saga, as-is: re-runnable, real-deletion report.
        *  Deliberately NOT one transaction — blob deletion is external work. */
       async erase(target) {
         const doors = eraseStore(store, { files });
         if (target.subject !== undefined) return await doors.bySubject(target.subject);
         if (target.appId !== undefined) return await doors.byApp(target.appId);
         invalid("lifecycle.erase needs a subject or an appId");
-      },
-      /** Session-claim linearizes (inside adoptEphemeralSubject), then merge.
-       *  The contract moves the WHOLE identity, so the two axes the BYO helper
-       *  leaves alone follow here: generic door rows keyed by a subject ref,
-       *  and the session registration itself (it re-registers under `to` at
-       *  the original touch time). */
-      async adopt(from, to) {
-        const touched = await db.query(
-          "SELECT touched_at FROM vendo_sessions WHERE subject = $1",
-          [from],
-        );
-        const report = await adoptEphemeralSubject(store, from, to, { files });
-        if (report === null) return null;
-        await db.query(
-          `UPDATE vendo_records SET refs = refs || jsonb_build_object('subject', $2::text)
-           WHERE refs @> jsonb_build_object('subject', $1::text)`,
-          [from, to],
-        );
-        const touchedAt = touched.rows[0]?.["touched_at"];
-        if (touchedAt !== undefined) {
-          await registerEphemeralSubject(store, to, Date.parse(iso(touchedAt)));
-        }
-        return report;
       },
       /** §9.5 — the app row flip and the workspace document move, which the
        *  umbrella ran as a two-step seam, are ONE transaction here. */
@@ -626,25 +597,10 @@ export function createStoreOps(
           }
         });
       },
-      async sessionRegister(subject, now) {
-        await registerEphemeralSubject(store, subject, now);
-      },
-      async sessionStale(idleMs, now) {
-        return await listStaleEphemeralSubjects(store, {
-          idleMs,
-          ...(now === undefined ? {} : { now }),
-        });
-      },
-      async sessionClaim(subject, idleMs, now) {
-        return await claimEphemeralSubject(store, subject, {
-          idleMs,
-          ...(now === undefined ? {} : { now }),
-        });
-      },
     },
 
     async status() {
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 31 };
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 27 };
     },
   };
 }
