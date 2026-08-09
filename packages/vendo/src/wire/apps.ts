@@ -359,14 +359,10 @@ export const appRoutes: RouteEntry[] = [
     if (op(wire, "GET", "ship-diff")) {
       return json(await deps.apps.inClient.shipDiff(appId, ctx));
     }
-    // 06-apps §8 — additive drift→rebase surface. `drift` only reads, so it is
-    // viewer-scoped; a rebase rewrites content and is editor-scoped. The
-    // runtime owns both levels. A rebase is only ever invoked
-    // explicitly here or via the vendo_apps_rebase_pin agent tool — drift
-    // detection never auto-rebases.
-    if (op(wire, "GET", "pin-drift")) {
-      return json(await deps.apps.pins.drift(appId, ctx));
-    }
+    // 06-apps §8 — additive rebase surface. A rebase rewrites content and is
+    // editor-scoped; the runtime owns the level. It is only ever invoked
+    // explicitly here or via the vendo_apps_rebase_pin agent tool — the drift
+    // report open() carries never auto-rebases.
     if (op(wire, "POST", "rebase-pin")) {
       const body = await requestJson(request);
       return json(await deps.apps.pins.rebase({ appId, slot: string(body["slot"], "slot") }, ctx));

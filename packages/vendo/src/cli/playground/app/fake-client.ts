@@ -166,7 +166,6 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
         return fork;
       },
       shipDiff: async (id) => ({ appId: id, versionHash: "sha256:playground", pins: [], generated: [] }),
-      pinDrift: async () => [],
       forkPin: async ({ appId, slot }) => {
         // Persist like the real runtime: the fork must land in the store so
         // slot discovery (apps.list) can mount it. An empty-slot gesture

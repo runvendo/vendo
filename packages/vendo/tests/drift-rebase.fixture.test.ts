@@ -217,23 +217,18 @@ export default function Page() {
       reason: "baseline-changed",
     };
 
-    // 1. The dedicated wire route reports the drift.
-    const driftResponse = await redeployed.handler(request("GET", `/apps/${appId}/pin-drift`));
-    expect(driftResponse.status).toBe(200);
-    expect(await driftResponse.json()).toEqual([expectedDrift]);
-
-    // 2. open() rides the drift report on the payload (the renderer's notice)
+    // 1. open() rides the drift report on the payload (the renderer's notice)
     //    while the untouched version keeps its hash-pinned approval.
     const drifted = await (await redeployed.handler(request("GET", `/apps/${appId}/open`))).json();
     expect(drifted.kind).toBe("tree");
     expect(drifted.payload.pinDrift).toEqual([expectedDrift]);
     expect(drifted.payload.inClient).toMatchObject({ granted: true });
 
-    // 3. The ship-diff fail-closes review with its drifted flag (M4).
+    // 2. The ship-diff fail-closes review with its drifted flag (M4).
     const shipDiff = await (await redeployed.handler(request("GET", `/apps/${appId}/ship-diff`))).json();
     expect(shipDiff.pins).toEqual([expect.objectContaining({ slot, drifted: true })]);
 
-    // 4. The rebase re-forks the NEW baseline and replays the recorded intent.
+    // 3. The rebase re-forks the NEW baseline and replays the recorded intent.
     const rebaseResponse = await redeployed.handler(request("POST", `/apps/${appId}/rebase-pin`, { slot }));
     expect(rebaseResponse.status).toBe(200);
     const rebase = await rebaseResponse.json();
@@ -247,7 +242,7 @@ export default function Page() {
     expect(rebase.app.components[componentName]).toContain("Total net worth");
     expect(rebase.app.components[componentName]).toContain("— remixed");
 
-    // 5. Drift is gone — and the rebase minted a NEW version, so the old
+    // 4. Drift is gone — and the rebase minted a NEW version, so the old
     //    in-client approval no longer grants: back to the sandbox, loudly.
     const afterRebase = await (await redeployed.handler(request("GET", `/apps/${appId}/open`))).json();
     expect(afterRebase.payload.pinDrift).toBeUndefined();
@@ -258,7 +253,7 @@ export default function Page() {
     });
     expect(afterRebase.payload.inClient.versionHash).not.toBe(approval.versionHash);
 
-    // 6. The rebase version sits on the public history like any edit.
+    // 5. The rebase version sits on the public history like any edit.
     const history = await (await redeployed.handler(request("GET", `/apps/${appId}/history`))).json();
     expect(history[0].intent).toContain(`Rebase remixed ${slot}`);
   }, 120_000);

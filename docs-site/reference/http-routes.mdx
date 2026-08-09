@@ -43,7 +43,6 @@ and production is exactly where that answer matters.
 | `/apps/:id/fn/:name` | POST | proxies one `fn:` call into the app's machine and relays its status, body, and `content-type`. No cookies or authorization cross the skin; a call that outruns the budget answers `504` while the box keeps working |
 | `/apps/:id/machine/ping` | POST | → `{ state: "awake" \| "woke" }`. Re-arms the machine's idle timer for an embedded served app; `"woke"` tells the embed its URL is stale — re-open |
 | `/apps/:id/fork` | POST | → `AppDocument` |
-| `/apps/:id/pin-drift` | GET | `PinDrift[]`, pins whose captured baseline no longer matches |
 | `/apps/:id/rebase-pin` | POST | `{ slot }` → `PinRebaseResult`, re-fork from the new baseline and replay recorded intents, all-or-nothing |
 | `/apps/fork-pin` | POST | `{ slot, instruction?, props? }` → `PinForkResult`, the Remix gesture on an empty slot (`props` is the wrapper's serializable live props at fork time, stored on the fork as its dashboard seed): deterministic engine fork of the captured slot into a freshly minted app (no model call); an optional instruction then rides the ordinary edit path scoped to the fork |
 | `/apps/:id/fork-pin` | POST | `{ slot, instruction? }` → `PinForkResult`, the same gesture fork landing in an existing app |

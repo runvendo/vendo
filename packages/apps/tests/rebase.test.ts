@@ -2,7 +2,7 @@ import { compileWire, type AppDocument, type RunContext, type StoreAdapter, type
 import { describe, expect, it } from "vitest";
 import { createAppHistory } from "../src/history.js";
 import { createApps, type AppsRuntime, type PinBaseline } from "../src/index.js";
-import { pinComponentName } from "../src/pins.js";
+import { detectPinDrift, pinComponentName } from "../src/pins.js";
 import { appVersionHash } from "../src/version-hash.js";
 import {
   basicLanguageModel,
@@ -190,7 +190,7 @@ const rebasedRuntime = (
 ): AppsRuntime => runtimeOn(store, { ...options, captured: NEW_BASELINE() });
 
 describe("06-apps §8 — drift surfacing", () => {
-  it("reports drift on pins.drift, open() payloads, and edit results after a host resync", async () => {
+  it("reports drift on detectPinDrift, open() payloads, and edit results after a host resync", async () => {
     const store = memoryStore();
     const appId = await seedForkedHistory(store);
     const runtime = rebasedRuntime(store);
@@ -202,7 +202,7 @@ describe("06-apps §8 — drift surfacing", () => {
       baselineHash: "sha256:maple-new",
       reason: "baseline-changed",
     }];
-    await expect(runtime.pins.drift(appId, ctx)).resolves.toEqual(expectedDrift);
+    expect(detectPinDrift((await runtime.get(appId, ctx))!, [NEW_BASELINE()])).toEqual(expectedDrift);
 
     const surface = await runtime.open(appId, ctx);
     if (surface.kind !== "tree") throw new Error("expected tree surface");
@@ -226,15 +226,16 @@ describe("06-apps §8 — drift surfacing", () => {
       { id: "worth", component: COMPONENT, source: "generated" },
     ];
     await seedAppRow(store, forged, ctx.principal.subject);
+    const captured = OLD_BASELINE();
     const runtime = createApps({
       store,
       guard: guardFixture(),
       tools,
       catalog: [],
-      pinBaselines: [baseline(OLD_SOURCE, "sha256:maple-old")],
+      pinBaselines: [captured],
     });
 
-    await expect(runtime.pins.drift(forged.id, ctx)).resolves.toEqual([]);
+    expect(detectPinDrift(forged, [captured])).toEqual([]);
     const surface = await runtime.open(forged.id, ctx);
     if (surface.kind !== "tree") throw new Error("expected tree surface");
     expect("pinDrift" in (surface.payload as object)).toBe(false);
@@ -274,7 +275,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     // The rebase persisted a NEW version: content hash moved, drift cleared.
     expect(appVersionHash(result.app)).not.toBe(appVersionHash(before!));
     await expect(runtime.get(appId, ctx)).resolves.toEqual(result.app);
-    await expect(runtime.pins.drift(appId, ctx)).resolves.toEqual([]);
+    expect(detectPinDrift(result.app, [NEW_BASELINE()])).toEqual([]);
     const versions = await runtime.history(appId, ctx).list();
     // Four writes, because a replay is a REAL write through the one builder now:
     // the mechanical re-fork, one per replayed intent, and the rebase's own
@@ -320,7 +321,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     expect(result.app.components?.[COMPONENT]).toBe(NEW_SOURCE);
     // The non-pin edit rode through untouched.
     expect(result.app.name).toBe("Maple overview (renamed)");
-    await expect(runtime.pins.drift(app.id, ctx)).resolves.toEqual([]);
+    expect(detectPinDrift(result.app, [NEW_BASELINE()])).toEqual([]);
   });
 
   it("re-forks a host update that switched to a named export with a synthesized default export (ENG-348)", async () => {
@@ -356,13 +357,19 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     const store = memoryStore();
     const appId = await seedForkedHistory(store);
     const runtime = rebasedRuntime(store);
+    /** The verdict where the client actually reads it: on the open() payload. */
+    const venue = async (): Promise<unknown> => {
+      const surface = await runtime.open(appId, ctx);
+      if (surface.kind !== "tree") throw new Error("expected tree surface");
+      return (surface.payload as { inClient?: unknown }).inClient;
+    };
     await runtime.inClient.approve({ appId, approvedBy: "host-review" }, ctx);
-    await expect(runtime.inClient.verdict(appId, ctx)).resolves.toMatchObject({ granted: true });
+    expect(await venue()).toMatchObject({ granted: true });
 
     const result = await runtime.pins.rebase({ appId, slot: SLOT }, ctx);
 
     expect(result.status).toBe("rebased");
-    await expect(runtime.inClient.verdict(appId, ctx)).resolves.toEqual({
+    expect(await venue()).toEqual({
       granted: false,
       versionHash: appVersionHash((result as { app: AppDocument }).app),
       reason: "version-changed",
@@ -392,7 +399,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     // The app is exactly as it was: the abandoned rebase put the document back,
     // so the person keeps their remix on the old baseline and stays drifted.
     await expect(runtime.get(appId, ctx)).resolves.toEqual(before);
-    await expect(runtime.pins.drift(appId, ctx)).resolves.toMatchObject([{ slot: SLOT }]);
+    expect(detectPinDrift(before!, [NEW_BASELINE()])).toMatchObject([{ slot: SLOT }]);
   });
 
   it("fails closed when a replayed trail intent does not produce a valid document", async () => {
@@ -472,7 +479,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
   <Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island>
 </App>`,
     });
-    await expect(resynced.pins.drift(app.id, ctx)).resolves.toMatchObject([{ slot: SLOT }]);
+    expect(detectPinDrift((await resynced.get(app.id, ctx))!, [NEW_BASELINE()])).toMatchObject([{ slot: SLOT }]);
 
     // The refusal is the only honest answer: a save receipt is not an
     // instruction, and the change it stands for cannot be replayed onto the new
@@ -489,7 +496,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     expect(after?.components?.[COMPONENT]).toContain("Ada's own remix");
     expect(after?.pins).toEqual([{ slot: SLOT, base: "sha256:maple-old" }]);
     // …and the pin stays honestly drifted, which is what offers the remix again.
-    await expect(resynced.pins.drift(app.id, ctx)).resolves.toMatchObject([{ slot: SLOT }]);
+    expect(detectPinDrift(after!, [NEW_BASELINE()])).toMatchObject([{ slot: SLOT }]);
   });
 
   it("fails closed on a legacy trail row that cannot say what it is", async () => {
@@ -571,7 +578,9 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     await expect(runtime.pins.rebase({ appId, slot: SLOT }, stranger)).rejects.toMatchObject({
       code: "not-found",
     });
-    await expect(runtime.pins.drift(appId, stranger)).rejects.toMatchObject({ code: "not-found" });
+    // The drift report reaches a caller on the open() payload and nowhere else,
+    // so that is the door the masking has to hold on.
+    await expect(runtime.open(appId, stranger)).rejects.toMatchObject({ code: "not-found" });
 
     const result = await runtime.pins.rebase({ appId, slot: SLOT }, ctx);
     expect(result.status).toBe("rebased");

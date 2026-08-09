@@ -18,7 +18,6 @@ import {
 import { applyPinFork } from "./generation/engine.js";
 import { appRecordInput, rowFromRecord } from "./persistence.js";
 import {
-  detectPinDrift,
   hasDefaultExport,
   pinComponentName,
   pinForkSource,
@@ -419,10 +418,6 @@ const rebasePin = async (
 };
 
 export const createPinsSurface = (deps: PinsSurfaceDeps): AppsRuntime["pins"] => ({
-  async drift(appId, ctx) {
-    const app = await deps.requireOwned(appId, ctx, "viewer");
-    return detectPinDrift(app, deps.config.pinBaselines ?? []);
-  },
   fork: (input, ctx) => forkPin(deps, input, ctx),
   rebase: (input, ctx) => rebasePin(deps, input, ctx),
 });

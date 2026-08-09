@@ -6,7 +6,7 @@
 import type { AppDocument, RunContext, ScreenAssembler, StoreAdapter, ToolRegistry, Tree } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime, type PinBaseline } from "../src/index.js";
-import { pinComponentName } from "../src/pins.js";
+import { detectPinDrift, pinComponentName } from "../src/pins.js";
 import {
   basicLanguageModel,
   guardFixture,
@@ -265,13 +265,14 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
 
     // The host updates the component and resyncs: same store, new baseline.
     const NEW_SOURCE = SOURCE.replace("NetWorthCard()", "NetWorthCard() /* v2 */");
+    const newBaseline: PinBaseline = { ...baseline, source: NEW_SOURCE, hash: "sha256:maple-new" };
     let rebaseRuntime: AppsRuntime;
     rebaseRuntime = runtimeWith(store, {
-      pinBaselines: [{ ...baseline, source: NEW_SOURCE, hash: "sha256:maple-new" }],
+      pinBaselines: [newBaseline],
       model: basicLanguageModel(),
       screen: relabelScreen(() => rebaseRuntime),
     });
-    await expect(rebaseRuntime.pins.drift(app.id, ctx)).resolves.toEqual([
+    expect(detectPinDrift((await rebaseRuntime.get(app.id, ctx))!, [newBaseline])).toEqual([
       expect.objectContaining({ slot: SLOT, reason: "baseline-changed" }),
     ]);
     const rebase = await rebaseRuntime.pins.rebase({ appId: app.id, slot: SLOT }, ctx);

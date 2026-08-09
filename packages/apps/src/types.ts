@@ -732,7 +732,6 @@ export interface AppsRuntime {
    * and the new version drops in-client approval by construction (§9).
    */
   pins: {
-    drift(appId: AppId, ctx: RunContext): Promise<PinDrift[]>;
     rebase(input: { appId: AppId; slot: string }, ctx: RunContext): Promise<PinRebaseResult>;
     /**
      * Gesture-owned forking (2026-07-21) — the deterministic fork the user's

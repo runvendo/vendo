@@ -33,7 +33,6 @@ import type {
   InitiatedConnection,
   OpenSurface,
   PendingSurface,
-  PinDrift,
   PinForkResult,
   PinRebaseResult,
   PlacementEntry,
@@ -132,8 +131,6 @@ export interface VendoClient {
     resolvePerson(id: AppId, query: string): Promise<{ person: ResolvedPerson | null }>;
     /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
     shipDiff(id: AppId): Promise<ShipDiff>;
-    /** GET /apps/:id/pin-drift — the pins whose captured host baseline changed under the fork (06 §8). */
-    pinDrift(id: AppId): Promise<PinDrift[]>;
     /** POST /apps/:id/rebase-pin — re-fork one drifted pin from the new baseline and replay its recorded intents (06 §8). */
     rebasePin(id: AppId, slot: string): Promise<PinRebaseResult>;
     /**

@@ -25,6 +25,7 @@ import { describe, expect, it, vi } from "vitest";
 import { inMemoryBoxFiles } from "../src/testing/box-files.js";
 import { createAppHistory } from "../src/history.js";
 import { createApps, pinComponentName, type AppsRuntime, type PinBaseline } from "../src/index.js";
+import { detectPinDrift } from "../src/pins.js";
 import type { SandboxAdapter, SandboxMachine } from "../src/sandbox.js";
 import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
 import { bindTools, guardFixture, memoryStore, scriptedLanguageModel, seedAppRow, type GuardFixture } from "../src/testing/index.js";
@@ -547,12 +548,13 @@ describe("a save whose text left a pinned component out", () => {
     expect((await rowOf(first.store))?.doc?.components?.[name]).toContain("Ada's own remix");
 
     // The host ships a new version of that component and re-syncs: drift.
+    const hostNew = captured(HOST_NEW, "sha256:host-new");
     const resynced = stand({
       store: first.store,
-      pinBaselines: [captured(HOST_NEW, "sha256:host-new")],
+      pinBaselines: [hostNew],
       model: true,
     });
-    await expect(resynced.runtime.pins.drift(APP_ID, ctx())).resolves.toMatchObject([{ slot }]);
+    expect(detectPinDrift((await rowOf(first.store))!.doc!, [hostNew])).toMatchObject([{ slot }]);
 
     // A trail whose first row is not the fork cannot vouch for what the pinned
     // component holds, and a mechanical re-fork would overwrite the remix with
@@ -563,7 +565,7 @@ describe("a save whose text left a pinned component out", () => {
       message: expect.stringContaining("no recorded edit trail"),
     });
     expect((await rowOf(first.store))?.doc?.components?.[name]).toContain("Ada's own remix");
-    await expect(resynced.runtime.pins.drift(APP_ID, ctx())).resolves.toMatchObject([{ slot }]);
+    expect(detectPinDrift((await rowOf(first.store))!.doc!, [hostNew])).toMatchObject([{ slot }]);
   });
 });
 
