@@ -20,8 +20,6 @@ import type {
   Json,
   RecordStore,
   RunContext,
-  ToolCall,
-  ToolDescriptor,
   VendoRecord,
 } from "@vendoai/core";
 import { createAccessChecks } from "./access-checks.js";
