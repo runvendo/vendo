@@ -21,8 +21,6 @@ export {
   type PinForkInput,
   type PinForkResult,
   type PinRebaseResult,
-  type SecretExposureState,
-  type SetExposureResult,
   type VersionEntry,
 } from "./runtime.js";
 // Placement rows — "show this app in that slot", off the document and in the

@@ -32,7 +32,6 @@ import { parseVendoManifest } from "./manifest.js";
 import { stripServerAuthoritativeFields } from "./open.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
 import type { AppsRuntimeContext } from "./runtime-context.js";
-import type { SecretExposure } from "./secret-exposure.js";
 import type { AppsConfig, BoxRequest, BoxResponse, EditResult, VersionEntry } from "./types.js";
 
 /** The skin-contract summary carried to the in-box agent as task context.
@@ -75,7 +74,7 @@ const landVersion = (document: AppDocument, request: string): VersionEntry => ({
 
 /** execution-v2 — the machine lifecycle (provision/wake/sleep/destroy) and the
  *  two box-edit timings the host may tune beside it. */
-export const createMachineLane = (config: AppsConfig, exposure: SecretExposure) => {
+export const createMachineLane = (config: AppsConfig) => {
   // execution-v2 — the machine lifecycle (provision/wake/sleep/destroy);
   // the v1 MachineSessions cache is deleted.
   const {
@@ -91,15 +90,14 @@ export const createMachineLane = (config: AppsConfig, exposure: SecretExposure) 
   const lifecycle = createMachineLifecycle({
     store: config.store,
     ...machineConfig,
-    // Lane E — the runtime resolves the app's active secret grants at every
-    // env assembly, so the host's buildEnv injects ONLY declared ∩ granted
-    // secrets (per-app grants decide which keys enter the box).
+    // Secrets enter the box as opaque aliases and are substituted at the egress
+    // proxy (06-apps §4.3), so the host's buildEnv assembles the boundary env
+    // from the document alone — nothing resolves a real value into it.
     ...(hostBuildEnv === undefined ? {} : {
-      buildEnv: async (doc: AppDocument) =>
-        hostBuildEnv(doc, { grantedSecrets: await exposure.activeNames(doc.id) }),
-      // Wave 7 — the wake-time env rebuild for grant changes (machine.envStaleAt)
-      // rides the same box control-port door the pre-edit re-injection uses;
-      // the in-box harness restarts the app with the new boundary set.
+      buildEnv: hostBuildEnv,
+      // The wake-time env rebuild rides the same box control-port door the
+      // pre-edit re-injection uses; the in-box harness restarts the app with
+      // the new boundary set.
       injectEnv: pushBoxEnv,
     }),
     // Lane E — the egress policy EVERY provision and wake consults (including

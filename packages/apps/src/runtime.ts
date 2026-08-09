@@ -7,7 +7,6 @@ import { createPinsSurface } from "./pins-surface.js";
 import { createPlacementSurface } from "./placement-surface.js";
 import { createReviewSurface } from "./review-surface.js";
 import { createRuntimeContext } from "./runtime-context.js";
-import { createSecretsSurface } from "./secrets-surface.js";
 import { createWriteSurface } from "./write-surface.js";
 import type { AppsConfig, AppsRuntime } from "./types.js";
 
@@ -27,8 +26,6 @@ export type {
   PinForkResult,
   PinRebaseResult,
   PlacementEntry,
-  SecretExposureState,
-  SetExposureResult,
   VersionEntry,
 } from "./types.js";
 // …and the values, for the same reason: the build sentences and the failure
@@ -63,7 +60,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     review: createReviewSurface(ctx),
     pins: createPinsSurface(ctx),
     machine: createMachineSurface(ctx),
-    secrets: createSecretsSurface(ctx),
   };
   return runtime;
 };

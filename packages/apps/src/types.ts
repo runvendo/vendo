@@ -320,24 +320,6 @@ export interface BoxResponse {
 }
 
 /**
- * ENG-345 — the in-sandbox status of one declared secret for one app.
- * `handle` is the Option B default; `exposed` means an active owner-approved
- * grant places its real value in the sandbox env; `pending` means a flip-on is
- * parked awaiting the high-risk guard approval.
- */
-export interface SecretExposureState {
-  secretName: string;
-  status: "handle" | "pending" | "exposed";
-  approvalId?: ApprovalId;
-}
-
-/** ENG-345 — the outcome of a setExposure() call. */
-export type SetExposureResult =
-  | { status: "handles" }
-  | { status: "exposed" }
-  | { status: "pending-approval"; approvalId: ApprovalId };
-
-/**
  * 06-apps §8 — the outcome of one pin rebase. `failed` persists NOTHING: the
  * pre-rebase version stays live, and the report says which recorded intents
  * replayed cleanly, which one failed, and which were never attempted.
@@ -819,29 +801,5 @@ export interface AppsRuntime {
     /** Dev-only reporting for the doctor: which apps carry a machine, whether
      *  they are awake, and what their manifests schedule. */
     report(): Promise<AppMachineStatus[]>;
-  };
-  /**
-   * ENG-345 — additive guarded per-secret in-sandbox exposure surface (same
-   * additive precedent as `inClient`/`pins`, not part of the frozen §1 method
-   * table). Option B (handles + egress substitution) stays the default; this is
-   * the exception path, off by default, per-secret × per-app, OWNER-ONLY, and
-   * gated by the guard's existing high-risk approval flow. The grant NEVER
-   * travels with a copy: it lives in its own store collection keyed by the app
-   * id, so exportApp/importApp/fork/share/publish (all of which mint or copy a
-   * fresh app id) can never carry it. Requires a 06-apps §4.3 contract
-   * amendment (parked, Yousef-gated).
-   */
-  secrets: {
-    /** Current in-sandbox status of every declared secret for one app (owner-only). */
-    exposure(appId: AppId, ctx: RunContext): Promise<SecretExposureState[]>;
-    /**
-     * Flip one secret's in-sandbox exposure. Turning ON routes through the
-     * guard's high-risk approval flow and returns `pending-approval` until the
-     * owner decides it; turning OFF reverts to handles immediately.
-     */
-    setExposure(
-      input: { appId: AppId; secretName: string; expose: boolean },
-      ctx: RunContext,
-    ): Promise<SetExposureResult>;
   };
 }

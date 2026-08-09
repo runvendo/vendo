@@ -13,9 +13,9 @@ import { e2bSandbox } from "../../src/e2b/index.js";
 // execution-v2 Lane E LIVE gate — real E2B, real network policy, real secrets.
 // Gated on E2B_API_KEY + VENDO_LIVE_SANDBOX=1 (never runs in CI).
 // Proves, on a real box: the approved allowlist lets example.com through and
-// blocks an unlisted domain; a granted secret is visible in the box env; and
-// the value never appears in any host-side artifact (app document, store
-// rows, audit events, fn responses). Every machine/snapshot is destroyed.
+// blocks an unlisted domain; a secret injected into the box env is visible
+// there; and the value never appears in any host-side artifact (app document,
+// store rows, audit events, fn responses). Every machine/snapshot is destroyed.
 // ============================================================================
 
 const LIVE = process.env.E2B_API_KEY !== undefined && process.env.VENDO_LIVE_SANDBOX === "1";
@@ -118,8 +118,8 @@ describe.skipIf(!LIVE)("Lane E live gate: secrets + egress allowlist on real E2B
         return name === SECRET_NAME ? SECRET_VALUE : undefined;
       },
     };
-    // The REAL env assembler (Lane C's buildEnv), driven by the grant set the
-    // runtime resolves — exactly the host wiring in @vendoai/vendo's server.
+    // The REAL env assembler (Lane C's buildEnv) — exactly the host wiring in
+    // @vendoai/vendo's server.
     const hostBuildEnv: BuildMachineEnv = async (doc, grants) => (await buildEnv(doc, {
       granted: grants?.grantedSecrets ?? new Set<string>(),
       secrets: secretsProvider,
@@ -158,17 +158,7 @@ describe.skipIf(!LIVE)("Lane E live gate: secrets + egress allowlist on real E2B
     let seeded: SandboxMachine | undefined;
     let seededRef: string | undefined;
     try {
-      // 1. Grant the secret through the ENG-345 exposure flow.
-      const exposure = await runtime.secrets.setExposure(
-        { appId: doc.id, secretName: SECRET_NAME, expose: true },
-        ada,
-      );
-      if (exposure.status !== "pending-approval") throw new Error(`unexpected ${exposure.status}`);
-      guard.decide(exposure.approvalId, true);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      log(`secret grant → ${SECRET_NAME} approved for injection`);
-
-      // 2. The egress grant flow: provision refuses, the card is approved.
+      // 1. The egress grant flow: provision refuses, the card is approved.
       await expect(runtime.machine.provision(doc.id, ada)).rejects.toMatchObject({
         code: "blocked",
         detail: expect.objectContaining({ unapprovedDomains: [ALLOWED_DOMAIN] }),
@@ -181,8 +171,8 @@ describe.skipIf(!LIVE)("Lane E live gate: secrets + egress allowlist on real E2B
       expect(approved.egressApproved).toEqual([ALLOWED_DOMAIN]);
       log(`egress grant → ${ALLOWED_DOMAIN} approved (declared in vendo.json terms)`);
 
-      // 3. Boot a real box exactly the way the lifecycle would: the policy
-      //    allowlist + the grant-resolved env, then install the probe app and
+      // 2. Boot a real box exactly the way the lifecycle would: the policy
+      //    allowlist + the assembled env, then install the probe app and
       //    snapshot it as the app's machine (the in-box agent's role here).
       const allowlist = boxAllowlist(approved, [IMPLICIT_DOMAIN]);
       expect(allowlist).toEqual([ALLOWED_DOMAIN, IMPLICIT_DOMAIN]);
@@ -191,7 +181,8 @@ describe.skipIf(!LIVE)("Lane E live gate: secrets + egress allowlist on real E2B
       log(`create → machine ${seeded.id} with allowOut ${JSON.stringify(allowlist)}`);
       await bootstrap(seeded);
 
-      // Secret IS in the box env (raw, adapter-level probe).
+      // The secret IS in the box env (raw, adapter-level probe) — the premise
+      // the host-side redaction sweep below is measured against.
       const inBox = await seeded.request({ method: "GET", path: `/conformance/env/${SECRET_NAME}` });
       expect(decoder.decode(inBox.body)).toBe(SECRET_VALUE);
       log("box env → granted secret visible inside the box");
@@ -210,7 +201,7 @@ describe.skipIf(!LIVE)("Lane E live gate: secrets + egress allowlist on real E2B
       seeded = undefined;
       log("snapshot → stored as the app's machine; source destroyed");
 
-      // 4. The fn door wakes the machine through the lifecycle (resume carries
+      // 3. The fn door wakes the machine through the lifecycle (resume carries
       //    the CURRENT policy) and every probe crosses the host seam.
       const allowedProbe = await runtime.box.request(doc.id, {
         method: "GET",
@@ -235,7 +226,7 @@ describe.skipIf(!LIVE)("Lane E live gate: secrets + egress allowlist on real E2B
       expect(decoder.decode(throughHost.body)).toBe(`[redacted:${SECRET_NAME}]`);
       log("fn door → response redacted host-side");
 
-      // 5. Host-side artifact sweep: the value appears NOWHERE the host keeps.
+      // 4. Host-side artifact sweep: the value appears NOWHERE the host keeps.
       const finalDoc = await storedDoc();
       expect(JSON.stringify(finalDoc)).not.toContain(SECRET_VALUE);
       expect(finalDoc.secrets).toEqual([SECRET_NAME]); // the NAME is declared…

@@ -51,7 +51,6 @@ import { placementStore, type PlacementRow, type PlacementStore } from "./placem
 import { createPlacementRows } from "./placement-surface.js";
 import { createEgressApprovals } from "./egress-approval.js";
 import { createReviewLifecycle, type ReviewLifecycle } from "./review.js";
-import { createSecretExposure, type SecretExposure } from "./secret-exposure.js";
 import { VendoError } from "@vendoai/core";
 import type {
   AppsConfig,
@@ -73,8 +72,6 @@ export interface AppsRuntimeContext {
   data: AppDataAccess;
   /** The capped version log and its pin-intent trail (history.ts). */
   history: AppHistoryAccess;
-  /** ENG-345 — per-secret × per-app in-sandbox exposure grants. */
-  exposure: SecretExposure;
   /** Lane E — the undecided egress approval cards (egress-approval.ts). */
   egressApprovals: EgressApprovals;
   /** W0 — the undecided in-app actions the guard parked (parked-action.ts). */
@@ -142,8 +139,6 @@ export interface AppsRuntimeContext {
   ): Promise<void>;
 
   // ── approval-flow.ts ───────────────────────────────────────────────────────
-  /** Wave 7 — mark a provisioned machine's env stale after a grant change. */
-  markMachineEnvStale(appId: AppId): Promise<void>;
   /** Lane E — ask for the app's declared-but-unapproved egress, without throwing. */
   requestEgressApproval(
     app: AppDocument,
@@ -155,10 +150,6 @@ export interface AppsRuntimeContext {
   >;
   /** Lane E — the ctx-carrying pre-flight every provision/wake/box surface runs. */
   ensureEgressApproved(app: AppDocument, ctx: RunContext): Promise<void>;
-  /** ENG-345 — the high-risk descriptor turning a secret on is checked against. */
-  exposureDescriptor(): ToolDescriptor;
-  /** The stable call id the park/approve phases both match on. */
-  exposureCall(appId: AppId, secretName: string): ToolCall;
 
   // ── edit-journal.ts ────────────────────────────────────────────────────────
   /** The layer ladder, derived from the document (never a stored rung). */
@@ -259,15 +250,12 @@ export interface AppsRuntimeContext {
 const createStores = (
   config: AppsConfig,
 ): Pick<AppsRuntimeContext,
-  "apps" | "placementRows" | "data" | "history" | "exposure" | "egressApprovals"
+  "apps" | "placementRows" | "data" | "history" | "egressApprovals"
   | "parkedActions" | "inClientApprovals"> => {
   const apps = config.store.records("vendo_apps");
   const placementRows = placementStore(config.store);
   const data = createAppData(config.store);
   const history = createAppHistory(config.store);
-  // ENG-345 — per-secret × per-app in-sandbox exposure grants. A dedicated store
-  // collection, NEVER part of the app document, so no copy path can carry it.
-  const exposure = createSecretExposure(config.store);
   // Lane E — parked egress approvals (approved state lives on the document's
   // egressApproved field; this collection holds only undecided cards).
   const egressApprovals = createEgressApprovals(config.store);
@@ -277,7 +265,7 @@ const createStores = (
   // undecided actions; both decisions clear it.
   const parkedActions = createParkedActions(config.store);
   const inClientApprovals = createInClientApprovals(config.store);
-  return { apps, placementRows, data, history, exposure, egressApprovals, parkedActions, inClientApprovals };
+  return { apps, placementRows, data, history, egressApprovals, parkedActions, inClientApprovals };
 };
 
 /** The composed seams the doors call through: interchange, the review-kind
@@ -389,7 +377,7 @@ export const createRuntimeContext = (
   const stores = createStores(config);
   const audit = createAuditReporters(config);
   const access = createAccessChecks({ config, apps: stores.apps });
-  const machine = createMachineLane(config, stores.exposure);
+  const machine = createMachineLane(config);
   const updateAppDocument = (
     appId: AppId,
     mutate: (doc: AppDocument) => AppDocument,

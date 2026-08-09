@@ -264,14 +264,14 @@ const createPromoteDoor = (
 export const createAppsSurface = (
   deps: Pick<AppsRuntimeContext,
     "config" | "apps" | "caller" | "data" | "history" | "review" | "opener" | "interchange"
-    | "inClientApprovals" | "exposure" | "egressApprovals" | "parkedActions" | "placementRows"
+    | "inClientApprovals" | "egressApprovals" | "parkedActions" | "placementRows"
     | "lifecycle" | "manifestTriggers" | "owned" | "requireOwned" | "requireMultiParty"
     | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
     | "runtime">,
 ): Pick<AppsRuntime,
   "get" | "list" | "delete" | "fork" | "promote" | "share" | "publish"
   | "exportApp" | "importApp" | "history" | "open" | "call" | "agentTools"> => {
-  const { config, apps, data, history, review, inClientApprovals, exposure } = deps;
+  const { config, apps, data, history, review, inClientApprovals } = deps;
   const { egressApprovals, parkedActions, placementRows, lifecycle, manifestTriggers } = deps;
   const { requireOwned, reportLifecycle, claimSlot, markUnbuilt, runtime } = deps;
   return {
@@ -290,7 +290,6 @@ export const createAppsSurface = (
       await history.clear(appId);
       await inClientApprovals.clear(appId);
       await review.clear(appId);
-      await exposure.clearForApp(appId);
       await egressApprovals.clearForApp(appId);
       await parkedActions.clearForApp(appId);
       await apps.delete(appId);

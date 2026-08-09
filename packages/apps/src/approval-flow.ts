@@ -1,8 +1,7 @@
 /**
- * ENG-345 + Lane E — turning a secret's real value on inside a box, and
- * approving an app's declared egress. Both ride the guard's existing
- * confirmEach-approval flow, and both commit from the one
- * `onApprovalDecision` subscription below.
+ * Lane E — approving an app's declared egress. It rides the guard's existing
+ * confirmEach-approval flow and commits from the `onApprovalDecision`
+ * subscription below.
  *
  * Lifted out of `createApps` unchanged.
  */
@@ -16,41 +15,15 @@ import {
   type ToolDescriptor,
 } from "@vendoai/core";
 import { normalizeEgressDomain, unapprovedEgress } from "./egress-approval.js";
-import { nextEnvStaleAt } from "./persistence.js";
 import type { AppsRuntimeContext } from "./runtime-context.js";
-import type { SecretExposureGrant } from "./secret-exposure.js";
 
-// ENG-345 — turning a secret ON is a HIGH-RISK approval reusing the guard's
-// existing confirmEach-approval flow: check() with a confirmEach descriptor parks an
-// approval, and this subscription commits the parked exposure grant only when
-// that approval is decided approved. Denial (or any non-approval) reverts it.
-// This is the SAME onApprovalDecision seam automations use to resume a parked
-// run — no parallel approval mechanism is introduced.
-const EXPOSURE_TOOL = "vendo_secret_expose";
-const exposureDescriptor = (): ToolDescriptor => ({
-  name: EXPOSURE_TOOL,
-  description: "Expose a declared secret's real value inside this app's sandbox (high-risk, owner-only).",
-  inputSchema: {
-    type: "object",
-    properties: { appId: { type: "string" }, secretName: { type: "string" } },
-    required: ["appId", "secretName"],
-  },
-  risk: "destructive",
-  confirmEach: true,
-});
-// Stable across the park/approve phases so the real guard's approved-replay
-// match (subject + call id + args + descriptor + venue/presence/app) lines up.
-const exposureCall = (appId: AppId, secretName: string): ToolCall => ({
-  id: `call_expose_${appId}_${secretName}`,
-  tool: EXPOSURE_TOOL,
-  args: { appId, secretName },
-});
-
-// Lane E — approving an app's declared egress reuses the SAME high-risk
-// confirmEach-approval flow (approval card in-client, no new ceremony types):
-// check() with this descriptor parks an approval, and the shared
+// Lane E — approving an app's declared egress is a HIGH-RISK approval reusing
+// the guard's existing confirmEach-approval flow (approval card in-client, no
+// new ceremony types): check() with this descriptor parks an approval, and the
 // onApprovalDecision subscription below commits the parked domains onto the
-// app document's egressApproved field only when the owner approves.
+// app document's egressApproved field only when the owner approves. This is the
+// SAME onApprovalDecision seam automations use to resume a parked run — no
+// parallel approval mechanism is introduced.
 const EGRESS_TOOL = "vendo_egress_allow";
 const egressDescriptor = (): ToolDescriptor => ({
   name: EGRESS_TOOL,
@@ -73,51 +46,6 @@ const egressCall = (appId: AppId, domains: string[]): ToolCall => ({
   tool: EGRESS_TOOL,
   args: { appId, domains },
 });
-
-const createExposureGrants = (
-  deps: Pick<AppsRuntimeContext, "exposure" | "lifecycle" | "updateAppDocument" | "reportGuard">,
-) => {
-  const { exposure, lifecycle, updateAppDocument, reportGuard } = deps;
-  /**
-   * Wave 7 — a grant change while a machine exists: resumes restore the
-   * SNAPSHOT's env on every provider, so mark the machine env-stale (the next
-   * wake rebuilds the boundary env through the box control port and the
-   * harness restarts the app) and put a RUNNING box to sleep so its next
-   * request takes that wake path. No machine → nothing to mark; an app
-   * deleted between park and decision is a no-op.
-   */
-  const markMachineEnvStale = async (appId: AppId): Promise<void> => {
-    let marked: AppDocument;
-    try {
-      marked = await updateAppDocument(appId, (doc) => doc.machine === undefined
-        ? doc
-        // Strictly-increasing marker (nextEnvStaleAt): same-millisecond flips
-        // must not mint equal values, or a concurrent wake's guarded clear
-        // would erase the newer flip after injecting the older env.
-        : { ...doc, machine: { ...doc.machine, envStaleAt: nextEnvStaleAt(doc.machine.envStaleAt) } });
-    } catch (error) {
-      if (error instanceof VendoError && error.code === "not-found") return;
-      throw error;
-    }
-    if (marked.machine === undefined) return;
-    await lifecycle.sleep(marked).catch(() => undefined);
-  };
-
-  const commitExposure = async (grant: SecretExposureGrant): Promise<void> => {
-    await exposure.activate(grant.appId, grant.secretName);
-    // A machine PROVISIONED before this grant keeps its provision-time env —
-    // mark it stale so the next wake's control-port rebuild (and the pre-edit
-    // re-injection) lands the new value.
-    await markMachineEnvStale(grant.appId);
-    await reportGuard(grant.owner, grant.appId, { venue: "app", presence: "present" }, {
-      operation: "secret-exposure-set",
-      secretName: grant.secretName,
-      expose: true,
-    });
-  };
-
-  return { markMachineEnvStale, commitExposure };
-};
 
 const createEgressGrants = (
   deps: Pick<AppsRuntimeContext,
@@ -222,23 +150,12 @@ const createEgressGrants = (
 };
 
 const subscribeApprovalDecisions = (
-  deps: Pick<AppsRuntimeContext, "config" | "exposure" | "egressApprovals" | "parkedActions" | "reportGuard">
-    & Pick<ReturnType<typeof createExposureGrants>, "commitExposure">
+  deps: Pick<AppsRuntimeContext, "config" | "egressApprovals" | "parkedActions" | "reportGuard">
     & Pick<ReturnType<typeof createEgressGrants>, "commitEgressApproval">,
 ): void => {
-  const { config, exposure, egressApprovals, parkedActions, reportGuard } = deps;
-  const { commitExposure, commitEgressApproval } = deps;
+  const { config, egressApprovals, parkedActions, reportGuard } = deps;
+  const { commitEgressApproval } = deps;
   const onApprovalDecision = async (id: ApprovalId, approved: boolean): Promise<void> => {
-    const parked = await exposure.byApproval(id);
-    for (const grant of parked) {
-      if (grant.status !== "pending") continue;
-      if (approved) {
-        await commitExposure(grant);
-      } else {
-        // Denied high-risk approval leaves the secret a handle (fail closed).
-        await exposure.revoke(grant.appId, grant.secretName);
-      }
-    }
     // Lane E — parked egress domains riding this approval commit or clear as
     // one batch per app (a card's call pins a single appId, but group anyway).
     const parkedEgress = await egressApprovals.byApproval(id);
@@ -289,20 +206,16 @@ const subscribeApprovalDecisions = (
   config.guard.onApprovalDecision((id, approved) => onApprovalDecision(id, approved));
 };
 
-/** The exposure + egress approval slice of `createApps`' closure. */
+/** The egress approval slice of `createApps`' closure. */
 export const createApprovalFlow = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "apps" | "exposure" | "egressApprovals" | "parkedActions"
+    "config" | "apps" | "egressApprovals" | "parkedActions"
     | "holds" | "lifecycle" | "updateAppDocument" | "reportGuard">,
 ) => {
-  const exposureGrants = createExposureGrants(deps);
   const egressGrants = createEgressGrants(deps);
-  subscribeApprovalDecisions({ ...deps, ...exposureGrants, ...egressGrants });
+  subscribeApprovalDecisions({ ...deps, ...egressGrants });
   return {
-    markMachineEnvStale: exposureGrants.markMachineEnvStale,
     requestEgressApproval: egressGrants.requestEgressApproval,
     ensureEgressApproved: egressGrants.ensureEgressApproved,
-    exposureDescriptor,
-    exposureCall,
   };
 };
