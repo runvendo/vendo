@@ -1,5 +1,26 @@
 # @vendoai/vendo
 
+## 0.9.0
+
+### Patch Changes
+
+- Updated dependencies [7207bb6]
+- Updated dependencies [7207bb6]
+- Updated dependencies [4fa477a]
+- Updated dependencies [18c77cd]
+  - @vendoai/ui@0.9.0
+  - @vendoai/telemetry@0.5.0
+  - @vendoai/core@0.9.0
+  - @vendoai/actions@0.9.0
+  - @vendoai/agents@0.9.0
+  - @vendoai/apps@0.9.0
+  - @vendoai/automations@0.9.0
+  - @vendoai/guard@0.9.0
+  - @vendoai/harnesses@0.9.0
+  - @vendoai/knowledge@0.9.0
+  - @vendoai/mcp@0.9.0
+  - @vendoai/store@0.9.0
+
 ## 0.8.1
 
 ### Patch Changes

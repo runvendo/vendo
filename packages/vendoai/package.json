@@ -1,6 +1,6 @@
 {
   "name": "vendoai",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "Thin compatibility alias for @vendoai/vendo.",
   "keywords": [
     "ai",
