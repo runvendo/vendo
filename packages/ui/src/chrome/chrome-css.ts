@@ -508,7 +508,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   border-radius: var(--vendo-radius-card); padding: 16px;
   background: var(--vendo-surface);
   max-width: 88%; min-width: min(360px, 88%); }
-.fl-automation-approval-slot { align-self: flex-start; width: 100%; display: flex; }
 .fl-approval-fields { margin: 12px 0 0; padding: 10px 0 2px; border-top: 1px solid var(--vendo-border);
   display: flex; flex-direction: column; gap: 7px; }
 .fl-approval-field { display: grid; grid-template-columns: minmax(88px, auto) 1fr; gap: 12px;
@@ -561,24 +560,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-auto-details summary { color: var(--vendo-fg-muted); font-size: 11px; cursor: pointer; }
 .fl-auto-details pre { margin: 7px 0 0; max-height: 180px; overflow: auto; white-space: pre-wrap;
   font: 11px/1.35 var(--vendo-font-mono); color: var(--vendo-fg-muted); }
-/* "Automation is live" toast — floats, so it keeps a shadow. */
-.fl-auto-created-toast { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 58px;
-  box-sizing: border-box; padding: 11px 12px; border: 1px solid var(--vendo-border);
-  border-radius: var(--vendo-radius-card); color: var(--vendo-fg); background: var(--vendo-surface);
-  box-shadow: var(--vendo-shadow-float); }
-.fl-auto-created-live { position: relative; width: 9px; height: 9px; flex: 0 0 9px; border-radius: 999px;
-  background: var(--vendo-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--vendo-accent) 15%, transparent); }
-.fl-auto-created-live::after { position: absolute; inset: -4px; border: 1px solid color-mix(in srgb, var(--vendo-accent) 24%, transparent);
-  border-radius: inherit; content: ""; animation: fl-auto-created-pulse 1.7s ease-out infinite; }
-.fl-auto-created-copy { min-width: 0; flex: 1; }
-.fl-auto-created-title { overflow: hidden; color: var(--vendo-fg); font-size: 13px; font-weight: 720;
-  line-height: 1.18; text-overflow: ellipsis; white-space: nowrap; }
-.fl-auto-created-sub { overflow: hidden; margin-top: 3px; color: var(--vendo-fg-muted); font-size: 12px;
-  line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
-@keyframes fl-auto-created-pulse {
-  0% { opacity: .52; transform: scale(.7); }
-  100% { opacity: 0; transform: scale(1.9); }
-}
 .fl-approval-batch-list { list-style: none; margin: 12px 0 0; padding: 10px 0 2px;
   border-top: 1px solid var(--vendo-border); display: flex; flex-direction: column; gap: 7px; }
 .fl-approval-batch-row label { display: flex; align-items: center; gap: 9px;
@@ -614,11 +595,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-btn-quiet { border-color: transparent; background: transparent;
   color: var(--vendo-fg-muted); padding: 8px 10px; }
 .fl-btn-quiet:hover { background: var(--vendo-accent-soft); border-color: transparent; color: var(--vendo-fg); }
-/* Inline button spinner (Reconnect) — tinted for a filled primary button. */
-.fl-btn-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
-  border: 2px solid color-mix(in srgb, var(--vendo-accent-fg) 35%, transparent);
-  border-top-color: var(--vendo-accent-fg); animation: fl-spin .7s linear infinite; }
-.fl-approval-consequence { margin-top: 10px; font: 500 12px/1.4 var(--vendo-font); color: var(--vendo-warn-text); }
 
 /* ---------- waiting list ("waiting on you", ENG-193 §4.6) ---------- */
 /* Height-capped with internal scroll: an unbounded inbox (verified live with
@@ -709,54 +685,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   border: 1px solid var(--vendo-border); background: var(--vendo-surface); font-size: 12.5px; color: var(--vendo-fg);
   text-decoration: none; max-width: 200px; }
 .fl-msg-file .fl-att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* ---------- activity panel ---------- */
-.fl-act { align-self: flex-start; width: 100%; max-width: 92%; border: 1px solid var(--vendo-border);
-  border-radius: var(--vendo-radius-card); background: var(--vendo-surface); overflow: hidden; }
-.fl-act-head { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 13px; cursor: pointer;
-  border: 0; background: transparent; font: 600 12.5px/1.2 var(--vendo-font); color: var(--vendo-fg); text-align: left; }
-.fl-act-head:hover { background: var(--vendo-accent-soft); }
-.fl-act-head-lbl { font-weight: 600; }
-.fl-act-head-err { color: var(--vendo-danger); }
-.fl-act-now { color: var(--vendo-fg-muted); font-weight: 500; }
-.fl-act-chev { margin-left: auto; color: var(--vendo-fg-muted); font-size: 13px; transition: transform .15s; }
-.fl-act-chev-open { transform: rotate(90deg); }
 .fl-act-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--vendo-accent); flex-shrink: 0;
   animation: fl-pulse 1.2s ease infinite; }
-.fl-act-body { border-top: 1px solid var(--vendo-border); padding: 3px 0; }
-.fl-act-row { display: flex; align-items: center; gap: 9px; padding: 8px 13px; font-size: 12.5px; }
-.fl-act-lbl { font-weight: 550; }
-.fl-act-sub { margin-left: auto; color: var(--vendo-fg-muted); font-size: 11.5px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
-.fl-act-err { color: var(--vendo-danger); }
-.fl-act-ic { display: grid; place-items: center; width: 14px; height: 14px; font-size: 11px; flex-shrink: 0; }
-.fl-act-tick { color: var(--vendo-ok); }
-.fl-act-x { color: var(--vendo-danger); }
-.fl-act-denied { color: var(--vendo-fg-muted); }
-.fl-act-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
-  border: 2px solid var(--vendo-border-strong); border-top-color: var(--vendo-fg-muted); animation: fl-spin .8s linear infinite; }
-.fl-act-cap { display: block; width: 100%; padding: 9px 13px 3px; text-align: left;
-  color: var(--vendo-fg-muted); font-weight: 500; font-size: 11.5px; }
-.fl-act-th { text-align: left; font-weight: 600; font-size: 10.5px; letter-spacing: .05em;
-  text-transform: uppercase; color: var(--vendo-fg-muted); }
-.fl-act-cell { min-width: 0; font-size: 12.5px; }
-.fl-act-kind { display: inline-block; margin-right: 7px; padding: 1px 7px; border-radius: 999px;
-  background: var(--vendo-accent-soft); border: 1px solid var(--vendo-border); color: var(--vendo-fg-muted);
-  font-size: 10px; font-weight: 600; letter-spacing: .02em; vertical-align: 1px; }
-.fl-act-action { font-weight: 550; }
-.fl-act-detail { color: var(--vendo-fg-muted); font-size: 11.5px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fl-act-when { color: var(--vendo-fg-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.fl-act-outcome { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
-.fl-act-by { margin-top: 2px; color: var(--vendo-fg-muted); font-size: 10.5px; }
-.fl-act-foot { display: flex; align-items: center; padding: 10px 13px; }
-.fl-act-end { margin: 0; color: var(--vendo-fg-muted); font-size: 11.5px; }
-.fl-act-peek { margin: -2px 13px 9px 36px; border: 1px solid var(--vendo-border); border-radius: 9px; overflow: hidden; }
-.fl-act-peek-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; font-size: 11.5px;
-  border-bottom: 1px solid var(--vendo-border); }
-.fl-act-peek-row:last-child { border-bottom: 0; }
-.fl-act-peek-k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fl-act-peek-v { color: var(--vendo-fg-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 
 /* ---------- turn actions ---------- */
 .fl-turn-actions { display: flex; align-items: center; gap: 2px; margin-top: 6px;
@@ -892,25 +822,12 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 /* ---------- automation card ---------- */
 .fl-automation { align-self: flex-start; width: 100%; border-radius: var(--vendo-radius); overflow: hidden;
   border: 1px solid var(--vendo-border); background: var(--vendo-surface); box-shadow: var(--vendo-shadow-float); }
-.fl-auto-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
-.fl-auto-ic { width: 34px; height: 34px; border-radius: 10px; background: var(--vendo-accent);
-  color: var(--vendo-accent-fg); display: grid; place-items: center; flex-shrink: 0; }
-.fl-auto-title { font-weight: 600; font-size: 14px; letter-spacing: -.01em; }
 .fl-auto-sub { font-size: 11.5px; color: var(--vendo-fg-muted); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
 .fl-auto-live { width: 6px; height: 6px; border-radius: 50%; background: var(--vendo-ok);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-ok) 16%, transparent); }
 /* Grant-set wait state (mockup §2): enabled but permissions outstanding. */
 .fl-auto-wait { background: var(--vendo-warn);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-warn) 18%, transparent); }
-/* §9.9 — why a stopped automation stopped. An accent border rather than another
-   badge: it is one sentence of explanation, and the row above already carries
-   the state word. Warn, not danger — nothing is broken, it is waiting. */
-.fl-auto-stopped { border-left: 2px solid var(--vendo-warn); padding-left: 8px; margin-top: 6px;
-  color: var(--vendo-fg); }
-.fl-auto-toggle { margin-left: auto; width: 40px; height: 23px; border-radius: 999px; background: var(--vendo-accent);
-  position: relative; flex-shrink: 0; border: 0; cursor: pointer; }
-.fl-auto-toggle::after { content: ""; position: absolute; top: 2.5px; right: 2.5px; width: 18px; height: 18px;
-  border-radius: 50%; background: var(--vendo-accent-fg); box-shadow: 0 1px 3px rgba(0,0,0,.22); }
 .fl-auto-flow { display: flex; align-items: center; padding: 14px 16px 16px; border-top: 1px solid var(--vendo-border); }
 .fl-auto-node { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px;
   background: var(--vendo-bg); border: 1px solid var(--vendo-border); }
@@ -1070,8 +987,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   /* Silence every looping loader for vestibular-sensitive users. */
   .fl-caret, .fl-md--streaming > :last-child::after { animation: none; opacity: 1; }
   .fl-typing span, .fl-skeleton-bar,
-  .fl-act-pulse, .fl-act-spin, .fl-connect-spin,
-  .fl-auto-created-live::after { animation: none; }
+  .fl-act-pulse, .fl-connect-spin { animation: none; }
   .fl-picker-item.is-just-connected, .fl-picker-item.is-just-connected .fl-picker-on { animation: none; }
   .fl-msglist-wrap, .fl-jump, .fl-md--streaming > * { animation: none; opacity: 1; }
   /* The launcher blob rests as a plain circle; the panel resize snaps. */
@@ -1200,10 +1116,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   background: var(--vendo-surface);
   color: var(--vendo-fg-muted); text-align: left; transition: border-color .14s, box-shadow .14s; }
 .fl-slot-ghost:hover { border-color: var(--vendo-border-strong); box-shadow: var(--vendo-shadow-float); }
-/* The empty-state ghost is a real button (ENG-223): strip the UA button chrome
-   so it reads exactly like the div variant, and give the CTA a visible focus ring. */
-.fl-slot-ghost-cta { font: inherit; appearance: none; -webkit-appearance: none; }
-.fl-slot-ghost-cta:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
 .fl-slot-skel { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 118px;
   opacity: .5; filter: blur(.3px); -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
   mask-image: linear-gradient(180deg, #000 30%, transparent); }
@@ -1230,10 +1142,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-slot-invite:hover { border-color: color-mix(in srgb, var(--vendo-accent) 40%, var(--vendo-border)); }
 .fl-slot-invite .fl-slot-skel { opacity: .35; }
 .fl-slot-invite .fl-slot-cta { gap: 8px; background: none; cursor: default; }
-.fl-invite-mark { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
-  color: var(--vendo-fg); opacity: .85; }
-.fl-invite-mark-tile { background: var(--vendo-accent); color: var(--vendo-accent-fg);
-  opacity: 1; box-shadow: var(--vendo-shadow-float); }
 .fl-invite-title { font: 600 14px/1 var(--vendo-font); color: var(--vendo-fg); }
 .fl-invite-sub { font-weight: 400; font-size: 11.5px; color: var(--vendo-fg-muted); text-align: center;
   max-width: 82%; line-height: 1.4; }
@@ -1319,12 +1227,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   color: var(--vendo-danger); font-size: 12.5px;
   display: flex; align-items: center; gap: 10px; }
 .fl-error-detail { display: block; margin-top: 3px; font-size: 12px; opacity: 0.85; overflow-wrap: anywhere; }
-.fl-error-retry { margin-left: auto; flex-shrink: 0; padding: 4px 11px; border-radius: 8px;
-  border: 1px solid var(--vendo-danger-border); background: transparent;
-  color: var(--vendo-danger); font: 600 12px/1.2 var(--vendo-font); cursor: pointer; }
-/* Hover fill: page-bg text reads on the danger fill in light; on a dark theme
-   the page bg is near-black on red, so the dark branch pins white (ENG-226). */
-.fl-error-retry:hover { background: var(--vendo-danger); color: light-dark(var(--vendo-bg, #fff), #fff); }
 
 /* ---------- VendoToasts (2026-07-04): automation delivery surface ---------- */
 .fl-toasts { position: fixed; z-index: 2147483100; display: flex; flex-direction: column; gap: 10px;
@@ -1373,107 +1275,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   color: var(--vendo-warn-on-fill); }
 .fl-btn-ceremony:hover { opacity: .92; background: var(--vendo-warn); }
 
-/* ==================== panel surfaces ====================
-   The converged picks, recorded here:
-   activity B (icon ledger) · vendo-activities B (approval queue pager) ·
-   automations B (run-dot strip) · connected-accounts A+D+F (identity rows,
-   two-step disconnect + undo, connect-ahead empty state).
-   Every value derives from the existing --vendo-* tokens. */
-
-/* ---- activity icon ledger (shared by ActivityPanel + VendoActivities) ---- */
-.fl-act-led { list-style: none; margin: 0; padding: 0; }
-.fl-act-led-row { display: grid; grid-template-columns: 26px minmax(0, 1.9fr) 1fr auto; gap: 10px;
-  align-items: center; padding: 8px 13px; border-bottom: 1px solid var(--vendo-border); }
-.fl-act-led-row:last-child { border-bottom: 0; }
-.fl-act-led-row:hover { background: var(--vendo-accent-soft); }
-.fl-act-led-ic { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center;
-  background: var(--vendo-accent-soft); border: 1px solid var(--vendo-border); color: var(--vendo-fg);
-  flex-shrink: 0; }
-.fl-act-led-ic svg { width: 13px; height: 13px; }
-.fl-act-led-main { min-width: 0; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; }
-.fl-act-led-main b { font-weight: 550; }
-.fl-act-led-det { color: var(--vendo-fg-muted); font-size: 11.5px; }
-.fl-act-led-out { min-width: 0; }
-.fl-act-led-by { color: var(--vendo-fg-muted); font-size: 10.5px; }
-/* Narrow viewports (375px hosts): result wraps under the action so the
-   outcome and timestamp never collide. */
-@media (max-width: 480px) {
-  .fl-act-led-row { grid-template-columns: 26px minmax(0, 1fr) auto;
-    grid-template-areas: "ic main when" "ic out out"; row-gap: 3px; }
-  .fl-act-led-ic { grid-area: ic; }
-  .fl-act-led-main { grid-area: main; }
-  .fl-act-led-out { grid-area: out; }
-  .fl-act-led-row > .fl-act-when { grid-area: when; }
-}
-
-/* ---- vendo-activities approval queue pager ---- */
-.fl-approvals-pager { display: flex; align-items: center; gap: 8px; }
-.fl-approvals-dots { display: flex; gap: 4px; margin-left: auto; }
-.fl-approvals-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--vendo-border-strong); }
-.fl-approvals-dot--on { background: var(--vendo-accent); }
-.fl-approvals-stack { position: relative; }
-.fl-approvals-stack .fl-approval { width: 100%; max-width: 100%; }
-.fl-approvals-slide { animation: fl-approval-enter .32s var(--vendo-motion-easing) both; }
-@keyframes fl-approval-enter { from { opacity: 0; transform: translateX(14px) scale(.985); } }
-.fl-approvals-ghost { position: absolute; inset: 6px -5px auto auto; width: 96%; height: 100%;
-  border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
-  background: var(--vendo-surface); z-index: -1; }
-
-/* ---- automations run-dot history strip ---- */
-.fl-auto-runs { display: flex; align-items: center; gap: 4px; padding: 12px 16px 14px;
-  border-top: 1px solid var(--vendo-border); }
-.fl-auto-runs-lbl { font-size: 11px; color: var(--vendo-fg-muted); margin-right: 6px; white-space: nowrap; }
-.fl-auto-runs-dot { width: 14px; height: 7px; border-radius: 3px; background: var(--vendo-ok);
-  opacity: .85; animation: fl-auto-runs-pop .3s var(--vendo-motion-easing) both; cursor: default; }
-.fl-auto-runs-dot[data-status="error"] { background: var(--vendo-danger); }
-.fl-auto-runs-dot[data-status="stopped"] { background: var(--vendo-border-strong); }
-.fl-auto-runs-dot[data-status="running"] { background: var(--vendo-accent); }
-.fl-auto-runs-dot:hover { transform: scaleY(1.4); }
-@keyframes fl-auto-runs-pop { from { opacity: 0; transform: scaleY(.2); } }
-.fl-auto-runs-sum { margin-left: auto; font-size: 11px; color: var(--vendo-fg-muted);
-  white-space: nowrap; }
-
-/* ---- connected accounts: identity rows + disconnect ceremony + empty ---- */
-.fl-acct-logo { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
-  background: var(--vendo-surface); border: 1px solid var(--vendo-border); flex-shrink: 0;
-  box-shadow: inset 0 1px 0 light-dark(rgba(255,255,255,.58), rgba(255,255,255,.08)); }
-.fl-acct-title { display: flex; align-items: center; gap: 8px; }
-.fl-acct-chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px;
-  padding: 3px 9px; font: 600 10.5px/1.2 var(--vendo-font); }
-.fl-acct-chip i { width: 5px; height: 5px; border-radius: 999px; background: currentColor; }
-.fl-acct-chip--ok { color: var(--vendo-ok); background: color-mix(in srgb, var(--vendo-ok) 11%, transparent); }
-.fl-acct-chip--warn { color: var(--vendo-warn-text); background: color-mix(in srgb, var(--vendo-warn-tint) 14%, transparent); }
-.fl-acct-chip--danger { color: var(--vendo-danger); background: color-mix(in srgb, var(--vendo-danger) 11%, transparent); }
-.fl-acct-chip--off { color: var(--vendo-fg-muted); background: color-mix(in srgb, var(--vendo-fg) 7%, transparent); }
-.fl-acct-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.fl-acct-actions .fl-btn { display: inline-flex; align-items: center; gap: 6px; }
-.fl-acct-confirm { overflow: hidden; max-height: 0; transition: max-height .3s var(--vendo-motion-easing); }
-.fl-acct-confirm--open { max-height: 150px; }
-.fl-acct-confirm-inner { border-top: 1px solid var(--vendo-warn-border); background: var(--vendo-warn-bg);
-  padding: 11px 16px; font-size: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.fl-acct-confirm-inner b { font-weight: 600; }
-.fl-acct-confirm-sub { display: block; color: var(--vendo-fg-muted); font-size: 11.5px; margin-top: 2px; }
-.fl-acct-confirm-actions { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
-.fl-acct-confirm-actions .fl-btn { padding: 5px 12px; font-size: 11.5px; }
-.fl-acct-severed { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
-  border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
-  background: color-mix(in srgb, var(--vendo-fg) 3%, transparent); font-size: 12.5px;
-  color: var(--vendo-fg-muted); animation: fl-item-in .3s ease-out both; }
-.fl-acct-undo { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; }
-.fl-acct-undo .fl-btn { padding: 5px 12px; font-size: 11.5px; }
-.fl-acct-undo-count { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--vendo-fg-muted); }
-.fl-acct-ghost { border: 1.5px dashed var(--vendo-border-strong); border-radius: var(--vendo-radius);
-  padding: 18px; display: flex; flex-direction: column; gap: 10px; }
-.fl-acct-ghost-title { font-weight: 600; font-size: 13.5px; }
-.fl-acct-ghost-copy { margin: 0; color: var(--vendo-fg-muted); font-size: 12.5px; line-height: 1.55; }
-.fl-acct-connect-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.fl-acct-connect-chip { display: inline-flex; align-items: center; gap: 8px;
-  border: 1.5px dashed var(--vendo-border-strong); border-radius: 999px; background: transparent;
-  color: var(--vendo-fg); padding: 6px 13px 6px 7px; font: 600 12px/1.2 var(--vendo-font); cursor: pointer; }
-.fl-acct-connect-chip:hover { background: var(--vendo-accent-soft); border-style: solid; }
-.fl-acct-connect-chip:disabled { opacity: .6; cursor: default; }
-.fl-acct-connect-chip .fl-acct-logo { width: 24px; height: 24px; border-radius: 999px; }
 
 /* ---- share dialog + fork offer (build contract §9.2-§9.6) ---- */
 .fl-share { display: flex; flex-direction: column; gap: 12px; padding: 16px;
@@ -1508,7 +1309,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-share-fork-copy { margin: 0; }
 .fl-share-fork-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* ================== end panel surfaces ================== */
 
 /* ====================================================================
    thread surfaces — the converged picks (C5 bar pin,
@@ -1709,8 +1509,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-tr-forming .fl-skeleton-bar { display: block; height: 9px; width: 62%; border-radius: 5px; }
 
 /* ================= card surfaces ================= */
-/* 1-A · consequence-first approval. Distinct from .fl-approval-consequence
-   (the amber voice-register line) — this is the neutral leading sentence. */
+/* 1-A · consequence-first approval: the neutral leading sentence. */
 .fl-approval-consequence-line { margin: 10px 0 0; font: 500 13px/1.5 var(--vendo-font);
   color: var(--vendo-fg); }
 .fl-approval-consequence-line strong { font-weight: 650; }
@@ -1754,30 +1553,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 
 /* 3-A′ · real brand marks in the tray rows (monogram = fallback). */
 .fl-picker-ic img { width: 15px; height: 15px; object-fit: contain; display: block; }
-
-/* 4-C · the morph docks into the Activity anchor; the anchor answers. */
-@media (prefers-reduced-motion: no-preference) {
-  .fl-tab--bump { animation: fl-tab-bump .55s cubic-bezier(.22,1,.36,1); }
-}
-@keyframes fl-tab-bump {
-  0% { transform: scale(1); }
-  40% { transform: scale(1.1); color: var(--vendo-fg); }
-  100% { transform: scale(1); }
-}
-
-/* 7-A · automation liveness: countdown + the run dot traveling the arrow. */
-.fl-auto-nextrun { font-variant-numeric: tabular-nums; }
 .fl-automation .fl-auto-arrow { position: relative; }
-.fl-auto-runner { position: absolute; top: -4.5px; left: 0; width: 8px; height: 8px;
-  border-radius: 50%; background: var(--vendo-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-accent) 18%, transparent); }
-@media (prefers-reduced-motion: no-preference) {
-  .fl-auto-runner { animation: fl-auto-travel 1.5s ease-in-out infinite; }
-}
-@keyframes fl-auto-travel { from { left: -2%; } to { left: 98%; } }
 @media (prefers-reduced-motion: reduce) {
-  /* The runner rests mid-arrow; the sheet arrives without motion. */
-  .fl-auto-runner { animation: none; left: 46%; }
   .fl-approval-sheet { animation: fl-fade-in .18s ease both; }
 }
 
@@ -1787,8 +1564,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    users. (The data-vendo-motion="reduced" root rule already covers theme-level
    reduction; this covers the OS preference.) */
 @media (prefers-reduced-motion: reduce) {
-  .fl-overlay-scrim, .fl-toasts-card,
-  .fl-approvals-slide, .fl-auto-runs-dot, .fl-acct-severed { animation: none; opacity: 1; }
+  .fl-overlay-scrim, .fl-toasts-card { animation: none; opacity: 1; }
 }
 
 /* Knowledge K1 — the turn's knowledge trust surface (signed mockups,
@@ -1958,12 +1734,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   transform: rotate(45deg); transition: transform var(--vendo-duration) var(--vendo-ease); }
 .fl-waiting-strip[open] > summary { margin-bottom: 10px; }
 .fl-waiting-strip[open] > summary::after { transform: rotate(225deg); }
-.fl-waiting-cards { display: flex; flex-direction: column; gap: 8px; }
 /* Law 1 — the ancestors that size the shell (width only, never its dress):
    the strip, the mobile sheet, and the activities stack. */
-.fl-waiting-cards > .fl-cardshell,
-.fl-approval-sheet .fl-cardshell,
-.fl-approvals-stack .fl-cardshell { width: 100%; max-width: none; min-width: 0; }
+.fl-approval-sheet .fl-cardshell { width: 100%; max-width: none; min-width: 0; }
 /* The automation card's flow nodes are CONTENTS now: the panel's padded block
    loses its own box because the shell owns the padding. */
 .fl-cardshell > .fl-auto-flow { margin-top: 12px; padding: 12px 0 0; }
@@ -2027,7 +1800,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    target the pin ceremony flies to when one is on the page. */
 .fl-shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;
   margin: 0 auto; padding: 0 30px 4px; width: 100%; max-width: 660px; }
-.fl-shelf--grid { max-width: none; padding: 0; gap: 18px; }
 /* A tile is a CONTROL (its whole face opens the app), so its edge is the thing
    that says where the control is — the 8% hairline left that at ~1.15:1. */
 .fl-tile { position: relative; display: flex; flex-direction: column; overflow: hidden; text-align: left;
@@ -2036,44 +1808,11 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   transition: transform var(--vendo-duration) var(--vendo-ease), box-shadow var(--vendo-duration) var(--vendo-ease); }
 /* Hover-lift is one of the two places shadow is allowed to appear (S1). */
 .fl-tile:hover { transform: translateY(-2px); box-shadow: var(--vendo-shadow-float); }
-/* The preview is the app's REAL surface, scaled down and made unreachable: a
-   tile's affordance is "open this", never "use this at 40%". */
-.fl-tile-view { position: relative; height: 124px; overflow: hidden; pointer-events: none;
-  border-bottom: 1px solid var(--vendo-border); }
-.fl-tile-scale { display: block; width: 250%; height: 250%; transform: scale(.4); transform-origin: top left; }
-.fl-tile-hit { position: absolute; inset: 0; border: 0; background: transparent; cursor: pointer; }
-.fl-tile-cap { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 7px;
-  padding: 10px 12px; }
-.fl-tile-name { font: 550 13.5px/1.35 var(--vendo-heading-font); color: var(--vendo-fg);
-  overflow-wrap: anywhere; }
-.fl-tile-hint { color: var(--vendo-fg-muted); font-size: 11.5px; line-height: 1.45; }
-/* The faint "a view goes here" ground, shared by a loading tile and a ghost. */
-.fl-tile-skel { display: block; height: 124px;
-  background: repeating-linear-gradient(180deg, transparent 0 16px,
-    color-mix(in srgb, var(--vendo-fg) 5%, transparent) 16px 23px); }
 /* §14 CS2 — day zero the shelf ADVERTISES: dashed ghosts naming what to build,
    retired for good the moment a real app exists. */
 .fl-tile--ghost { cursor: pointer; padding: 0; border-style: dashed; background: transparent; }
 .fl-tile--ghost:hover { transform: translateY(-2px); box-shadow: none;
   border-color: var(--vendo-border-strong); }
-.fl-tile--ghost .fl-tile-skel { height: 92px; opacity: .8; }
-
-/* Room to breathe (§10 "with room to breathe"): the per-app verbs are ONE quiet
-   line of text under the name — four bordered pills wrapped onto two rows and
-   turned every tile into a toolbar, and hiding them until hover only traded the
-   clutter for a dead band of reserved space. */
-.fl-tile-acts { display: flex; flex-wrap: wrap; gap: 12px; }
-/* An app with no view of its own (an automation) says so, rather than resting
-   forever on a skeleton that pretends one is coming. */
-.fl-tile-none { display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 7px; height: 100%; color: var(--vendo-fg-muted); font-size: 11.5px; }
-.fl-tile-act { border: 0; padding: 0; background: transparent; color: var(--vendo-fg-muted);
-  font: 500 11.5px/1.4 var(--vendo-font); cursor: pointer; transition: color .14s; }
-.fl-tile-act:hover { color: var(--vendo-fg); }
-.fl-tile-act--ceremony:hover { color: var(--vendo-warn); }
-.fl-tile-act:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
-.fl-tile-form { display: flex; align-items: center; gap: 6px; }
-.fl-tile-form .fl-picker-search { margin-bottom: 0; }
 /* M2 respects the OS (spec §6): the tile hover-lift and the waiting strip's
    disclosure chevron are off under prefers-reduced-motion. The hover SHADOW
    stays: it is depth, not motion. */
