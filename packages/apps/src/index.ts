@@ -23,19 +23,9 @@ export {
   type PinRebaseResult,
   type VersionEntry,
 } from "./runtime.js";
-// Placement rows — "show this app in that slot", off the document and in the
-// generic records collection.
-export type {
-  PlacementRow,
-  PlacementStore,
-} from "./placements.js";
 export type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "./sandbox.js";
-// execution-v2 skin contract (Lane C): the manifest shapes, the per-app box
-// token, and the box env assembly Lane B consumes at provision.
-export type {
-  VendoManifest,
-  VendoManifestSchedule,
-} from "./manifest.js";
+// execution-v2 skin contract (Lane C): the per-app box token and the box env
+// assembly Lane B consumes at provision.
 export {
   createAppTokens,
   type AppTokens,
@@ -46,15 +36,10 @@ export {
   type BuiltBoxEnv,
   type InferenceResolver,
 } from "./box-env.js";
-// A machine app's vendo.json schedules are doc triggers: the shapes
-// `AppsRuntime.machine`'s syncManifest and report answer with. The converter's
-// own constants stay internal to it — nothing outside needs them yet, and an
-// export is additive the day something does.
-export type {
-  AppMachineStatus,
-  ManifestTriggerResult,
-  ManifestTriggerSync,
-} from "./manifest-triggers.js";
+// The doctor's view of a machine-bearing app — what `AppsRuntime.machine.report`
+// answers with. The converter's own shapes stay internal to it: no public door
+// hands one out, and an export is additive the day one does.
+export type { AppMachineStatus } from "./manifest-triggers.js";
 export {
   shareSnapshotSchema,
   publishRecordSchema,
@@ -90,14 +75,6 @@ export {
 // HostToolInfo is the tool slice GenerationDependencies (and external
 // harnesses) speak.
 export type { HostToolInfo } from "./generation/engine.js";
-// The checking layer's contract: the shape a host writes an AppsConfig.checks
-// entry in, and the finding shape every check reports (checking/types.ts).
-export type {
-  Check,
-  CheckInput,
-  CheckingLayer,
-  Finding,
-} from "./checking/types.js";
 // The plan→layout function. The exports map closes deep imports, and this is a
 // pure, deterministic function of the public AppPlan — so a demo or harness
 // surface can render a plan's skeleton without booting the engine.
@@ -115,10 +92,8 @@ export {
   acceptsSamplingParams,
   UNKNOWN_MODEL_MAX_OUTPUT_TOKENS,
 } from "./model-params.js";
-export {
-  type GeneratedAppDocument,
-  type GenerationDependencies,
-} from "./generation/engine.js";
+// The generation seam AppsConfig.pipeline is a slice of.
+export type { GenerationDependencies } from "./generation/engine.js";
 // What app generation mounts itself with: the tools it declares and the skill
 // it teaches the pattern with. The umbrella composes them (`server.ts`), which
 // is the only layer holding both these values and the live runtime they act

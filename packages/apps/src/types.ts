@@ -153,7 +153,8 @@ export interface AppsConfig {
   /** The island smoke-render gate (on unless explicitly `false`): every
    *  generated island renders once headless before it can reach a screen. */
   pipeline?: GenerationDependencies["pipeline"];
-  /** The host's own checks over a generated app (checking/types.ts). APPENDED
+  /** The host's own checks over a generated app (`Check` is `@vendoai/core`'s —
+   *  a pack is authorable without depending on this block). APPENDED
    *  to the built-in fact checks and the reviewer — a host can add findings,
    *  never remove or replace a built-in one. */
   checks?: readonly Check[];
