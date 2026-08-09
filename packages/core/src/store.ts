@@ -88,7 +88,7 @@ export interface StoreAdapter {
 }
 
 // ---------------------------------------------------------------------------
-// StoreOps — the named-operation contract for the 31-op / 7-family store.
+// StoreOps — the named-operation contract for the 27-op / 7-family store.
 // Both the local backend (store/ops.ts) and the cloud client
 // (hosted-store.ts) implement this interface.
 // ---------------------------------------------------------------------------
@@ -102,7 +102,7 @@ export type EraseTarget =
   | { subject: string; appId?: never }
   | { appId: string; subject?: never };
 
-/** The typed contract for all 31 store operations across 7 families.
+/** The typed contract for all 27 store operations across 7 families.
     Lean by design — this is the CONTRACT interface, not the implementation. */
 export interface StoreOps {
   records: {
@@ -156,11 +156,7 @@ export interface StoreOps {
   };
   lifecycle: {
     erase(target: EraseTarget): Promise<unknown>;
-    adopt(from: string, to: string): Promise<unknown>;
     promote(appId: string, orgId: string): Promise<void>;
-    sessionRegister(subject: string, now?: number): Promise<void>;
-    sessionStale(idleMs: number, now?: number): Promise<string[]>;
-    sessionClaim(subject: string, idleMs: number, now?: number): Promise<boolean>;
   };
   status(): Promise<StoreWireStatus>;
 }

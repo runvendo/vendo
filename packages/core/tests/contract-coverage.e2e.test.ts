@@ -605,7 +605,7 @@ describe("amended public export surface — root utilities and /conformance inve
       "runConformance",
       "secretsProviderConformance",
       "storeAdapterConformance",
-      // Store design v1: the 31-op / 7-family StoreOps contract, mounted by the
+      // Store design v1: the 27-op / 7-family StoreOps contract, mounted by the
       // local backend and the cloud client so neither can drift from it.
       "storeOpsConformance",
       "toolRegistryConformance",

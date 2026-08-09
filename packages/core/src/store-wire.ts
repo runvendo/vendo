@@ -44,13 +44,9 @@ export const STORE_WIRE_PATHS = {
   "workspace.read": "/workspace/read",
   "workspace.commit": "/workspace/commit",
   "workspace.history": "/workspace/history",
-  // lifecycle (6)
+  // lifecycle (2)
   "lifecycle.erase": "/lifecycle/erase",
-  "lifecycle.adopt": "/lifecycle/adopt",
   "lifecycle.promote": "/lifecycle/promote",
-  "lifecycle.session.register": "/lifecycle/session/register",
-  "lifecycle.session.stale": "/lifecycle/session/stale",
-  "lifecycle.session.claim": "/lifecycle/session/claim",
   // status (1)
   status: "/status",
 } as const;
@@ -264,30 +260,9 @@ export const storeWireLifecycleEraseRequestSchema = z.object({
   ),
 }).passthrough();
 
-export const storeWireLifecycleAdoptRequestSchema = z.object({
-  from: z.string().min(1),
-  to: z.string().min(1),
-}).passthrough();
-
 export const storeWireLifecyclePromoteRequestSchema = z.object({
   appId: z.string().min(1),
   orgId: z.string().min(1),
-}).passthrough();
-
-export const storeWireSessionRegisterRequestSchema = z.object({
-  subject: z.string().min(1),
-  now: z.number().optional(),
-}).passthrough();
-
-export const storeWireSessionStaleRequestSchema = z.object({
-  idleMs: z.number().int().min(1),
-  now: z.number().optional(),
-}).passthrough();
-
-export const storeWireSessionClaimRequestSchema = z.object({
-  subject: z.string().min(1),
-  idleMs: z.number().int().min(1),
-  now: z.number().optional(),
 }).passthrough();
 
 // ---------------------------------------------------------------------------

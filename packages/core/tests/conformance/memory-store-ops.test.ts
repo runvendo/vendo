@@ -27,7 +27,7 @@ describe("StoreOps conformance kit against the memory reference", () => {
 
   it("mounts at least one case per op", () => {
     expect(suite.seam).toBe("StoreOps");
-    expect(suite.cases.length).toBeGreaterThanOrEqual(32);
+    expect(suite.cases.length).toBeGreaterThanOrEqual(28);
   });
 
   for (const conformanceCase of suite.cases) {

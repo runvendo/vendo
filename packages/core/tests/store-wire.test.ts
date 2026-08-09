@@ -33,23 +33,19 @@ import {
   storeWireWorkspaceCommitRequestSchema,
   storeWireWorkspaceHistoryRequestSchema,
   storeWireLifecycleEraseRequestSchema,
-  storeWireLifecycleAdoptRequestSchema,
   storeWireLifecyclePromoteRequestSchema,
-  storeWireSessionRegisterRequestSchema,
-  storeWireSessionStaleRequestSchema,
-  storeWireSessionClaimRequestSchema,
   type EraseTarget,
   type StoreWireStatus,
 } from "../src/index.js";
 
 describe("vendo/store-wire@1", () => {
-  it("exposes the format constant and 31+1 mount-relative paths", () => {
+  it("exposes the format constant and 27 mount-relative paths", () => {
     expect(VENDO_STORE_WIRE_FORMAT).toBe("vendo/store-wire@1");
-    // 7 families: records(7) + blobs(4) + transcripts(6) + harness(3) + workspace(4) + lifecycle(6) + status(1) = 31
-    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(31);
+    // 7 families: records(7) + blobs(4) + transcripts(6) + harness(3) + workspace(4) + lifecycle(2) + status(1) = 27
+    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(27);
     expect(STORE_WIRE_PATHS.status).toBe("/status");
     expect(STORE_WIRE_PATHS["records.get"]).toBe("/records/get");
-    expect(STORE_WIRE_PATHS["lifecycle.session.claim"]).toBe("/lifecycle/session/claim");
+    expect(STORE_WIRE_PATHS["lifecycle.promote"]).toBe("/lifecycle/promote");
   });
 
   it("parses records request DTOs and rejects invalid ones", () => {
@@ -147,13 +143,7 @@ describe("vendo/store-wire@1", () => {
       target: { subject: "sub_1", appId: "app_1" },
     }).success).toBe(false);
     expect(storeWireLifecycleEraseRequestSchema.safeParse({ target: { subject: "" } }).success).toBe(false);
-    expect(storeWireLifecycleAdoptRequestSchema.parse({ from: "sub_anon", to: "sub_real" }).from).toBe("sub_anon");
-    expect(storeWireLifecycleAdoptRequestSchema.safeParse({ from: "", to: "x" }).success).toBe(false);
     expect(storeWireLifecyclePromoteRequestSchema.parse({ appId: "app_1", orgId: "org_1" }).orgId).toBe("org_1");
-    expect(storeWireSessionRegisterRequestSchema.parse({ subject: "sub_1", now: 1000 }).now).toBe(1000);
-    expect(storeWireSessionStaleRequestSchema.parse({ idleMs: 60000 }).idleMs).toBe(60000);
-    expect(storeWireSessionStaleRequestSchema.safeParse({ idleMs: 0 }).success).toBe(false);
-    expect(storeWireSessionClaimRequestSchema.parse({ subject: "sub_1", idleMs: 5000 }).subject).toBe("sub_1");
   });
 
   it("the erase target is a compile-time discriminated selector", () => {
@@ -169,9 +159,9 @@ describe("vendo/store-wire@1", () => {
   it("status doubles as the discovery handshake: format + ops count", () => {
     const status: StoreWireStatus = {
       format: VENDO_STORE_WIRE_FORMAT,
-      ops: 31,
+      ops: 27,
     };
-    expect(storeWireStatusSchema.parse(status).ops).toBe(31);
+    expect(storeWireStatusSchema.parse(status).ops).toBe(27);
     expect(storeWireStatusSchema.safeParse({ ...status, format: "vendo/store-wire@2" }).success).toBe(false);
   });
 

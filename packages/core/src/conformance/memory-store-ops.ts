@@ -96,9 +96,6 @@ export function memoryStoreOps(): StoreOps {
   // a reuse of the key for different entries.
   const wsIdempotencyKeys = new Map<string, string>();
 
-  // lifecycle sessions
-  const sessions = new Map<string, number>(); // subject -> registered-at ms
-
   // ---------------------------------------------------------------------------
   // records family
   // ---------------------------------------------------------------------------
@@ -452,8 +449,6 @@ export function memoryStoreOps(): StoreOps {
         for (const k of harnessState.keys()) {
           if (k.endsWith(`:${target.subject}`)) harnessState.delete(k);
         }
-        // Clear sessions
-        sessions.delete(target.subject);
       }
       if (target.appId) {
         for (const k of harnessState.keys()) {
@@ -462,57 +457,11 @@ export function memoryStoreOps(): StoreOps {
       }
       return { erased: true };
     },
-    async adopt(from, to) {
-      // Move records from one subject to another
-      for (const [, m] of collections) {
-        for (const [, r] of m) {
-          if (r.refs?.["subject"] === from) {
-            r.refs["subject"] = to;
-          }
-        }
-      }
-      for (const [, entry] of threads) {
-        if (entry.thread.subject === from) {
-          entry.thread.subject = to;
-          entry.record.refs = { subject: to };
-          (entry.record.data as Record<string, unknown>)["subject"] = to;
-        }
-      }
-      // Move harness state
-      for (const [k, v] of harnessState) {
-        if (k.endsWith(`:${from}`)) {
-          const appId = k.slice(0, k.length - from.length - 1);
-          harnessState.delete(k);
-          harnessState.set(`${appId}:${to}`, v);
-        }
-      }
-      // Move session
-      const ts = sessions.get(from);
-      if (ts !== undefined) { sessions.delete(from); sessions.set(to, ts); }
-      return { adopted: true };
-    },
     async promote(appId, orgId) {
       // §9.5: the org becomes the app row's owning subject.
       const app = col("vendo_apps").get(appId);
       if (!app) throw new VendoError("not-found", `app ${appId} not found`);
       app.refs = { ...app.refs, subject: orgId };
-    },
-    async sessionRegister(subject, now) {
-      sessions.set(subject, now ?? Date.now());
-    },
-    async sessionStale(idleMs, now) {
-      const cutoff = (now ?? Date.now()) - idleMs;
-      return [...sessions.entries()]
-        .filter(([, ts]) => ts <= cutoff)
-        .map(([s]) => s);
-    },
-    async sessionClaim(subject, idleMs, now) {
-      const ts = sessions.get(subject);
-      if (ts === undefined) return false;
-      const cutoff = (now ?? Date.now()) - idleMs;
-      if (ts > cutoff) return false;
-      sessions.delete(subject);
-      return true;
     },
   };
 
@@ -528,7 +477,7 @@ export function memoryStoreOps(): StoreOps {
     workspace,
     lifecycle,
     async status(): Promise<StoreWireStatus> {
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 31 };
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 27 };
     },
   };
 }
