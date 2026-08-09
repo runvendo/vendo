@@ -83,9 +83,12 @@ async function compose(): Promise<{ vendo: Vendo; seen: string[] }> {
     model: recordingModel(seen),
     auth: jwt({
       secret: SECRET,
+      // A user the host knows but asserts NO facts about — the surviving
+      // "no [User] block" case now that a request with no identity at all is
+      // refused outright.
       user: (subject) => subject === "host_mia"
         ? { display: "Mia Nakamura", email: "mia@host.test", facts: { name: "Mia Nakamura", plan: "Pro", accounts: 2 } }
-        : null,
+        : { display: "Someone" },
     }),
     store,
   });
@@ -110,9 +113,10 @@ describe("[User] facts — real preset through real wire into the real prompt", 
     expect(seen[0]).toContain("[User]\nname: Mia Nakamura\nplan: Pro\naccounts: 2");
   });
 
-  it("renders no [User] block for an anonymous visitor", async () => {
+  it("renders no [User] block when the seam asserts nothing about the user", async () => {
     const { vendo, seen } = await compose();
-    await (await post(vendo, { threadId: "thr_facts_2", message: userMessage("m2", "hello") })).text();
+    const headers = await bearer("host_other");
+    await (await post(vendo, { threadId: "thr_facts_2", message: userMessage("m2", "hello") }, headers)).text();
     expect(seen[0]).not.toContain("[User]");
   });
 });

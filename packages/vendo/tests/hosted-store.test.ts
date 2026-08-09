@@ -150,44 +150,6 @@ describe("hostedStore wire", () => {
     expect(await blobs.list("")).toEqual(["images/a b.png"]);
   });
 
-  it("speaks the session wire: register/adopt/stale/claim, millisecond clocks on the body", async () => {
-    const console_ = fakeConsole();
-    const store = hosted(console_);
-    const base = Date.parse("2026-01-01T00:00:00Z");
-
-    await store.sessions.register("anonymous_1", base);
-    expect(console_.requests[0]).toMatchObject({
-      method: "POST",
-      url: "https://cloud.test/api/v1/store/sessions/register",
-      json: { subject: "anonymous_1", now: base },
-    });
-    expect(console_.sessions.get("anonymous_1")).toBe(base);
-
-    expect(await store.sessions.stale(30_000, base + 60_000)).toEqual(["anonymous_1"]);
-    expect(console_.requests[1]).toMatchObject({
-      url: "https://cloud.test/api/v1/store/sessions/stale",
-      json: { idleMs: 30_000, now: base + 60_000 },
-    });
-
-    expect(await store.sessions.claim("anonymous_1", 30_000, base + 60_000)).toBe(true);
-    expect(console_.requests[2]).toMatchObject({
-      url: "https://cloud.test/api/v1/store/sessions/claim",
-      json: { subject: "anonymous_1", idleMs: 30_000, now: base + 60_000 },
-    });
-    expect(await store.sessions.claim("anonymous_1", 30_000, base + 60_000)).toBe(false);
-
-    await store.sessions.register("anonymous_2", base);
-    expect(await store.sessions.adopt("anonymous_2", "user_signed")).toEqual({
-      apps: 0, threads: 0, states: 0, skipped: 0,
-    });
-    expect(console_.requests.at(-1)).toMatchObject({
-      url: "https://cloud.test/api/v1/store/sessions/adopt",
-      json: { from: "anonymous_2", to: "user_signed" },
-    });
-    // A replay finds nothing to merge — null, not an error.
-    expect(await store.sessions.adopt("anonymous_2", "user_signed")).toBeNull();
-  });
-
   it("speaks the erase wire: one POST per cascade, subject or app scoped", async () => {
     const console_ = fakeConsole();
     const store = hosted(console_);
@@ -315,14 +277,6 @@ describe("hostedStore error mapping", () => {
       .rejects.toThrow(/invalid erase/);
     await expect(adapterFor(vi.fn(async () => Response.json({ keys: [1] }))).blobs("files").list())
       .rejects.toThrow(/invalid blob list/);
-    const hostedFor = (fetchImpl: unknown) =>
-      hostedStore({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: fetchImpl as typeof fetch });
-    await expect(hostedFor(vi.fn(async () => Response.json({}))).sessions.stale(1_000))
-      .rejects.toThrow(/invalid stale/);
-    await expect(hostedFor(vi.fn(async () => Response.json({ claimed: "yes" }))).sessions.claim("s", 1_000))
-      .rejects.toThrow(/invalid claim/);
-    await expect(hostedFor(vi.fn(async () => Response.json({ report: "moved" }))).sessions.adopt("a", "b"))
-      .rejects.toThrow(/invalid adopt/);
   });
 });
 
@@ -511,7 +465,7 @@ describe("demo-host journey through the store seam", () => {
 });
 
 // ---------------------------------------------------------------------------
-// hostedStoreOps — the 31-op client over `vendo/store-wire@1`.
+// hostedStoreOps — the 27-op client over `vendo/store-wire@1`.
 //
 // Unit tests over an injected fake fetch: they pin the route, the request body
 // and the response decoding for every op — records and blobs against the
@@ -537,8 +491,8 @@ const wireRecord = {
  * store-wire v1 contract (STORE_WIRE_PATHS, collection/namespace/key on the
  * body, blob bytes base64); transcripts, harness, workspace,
  * lifecycle.promote and /status answer at their STORE_WIRE_PATHS path too;
- * erase + the session verbs keep the console's own routes. `keyed` marks the
- * 20 mutations that carry an Idempotency-Key. */
+ * erase keeps the console's own route. `keyed` marks the mutations that carry
+ * an Idempotency-Key. */
 const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   "records.get": { method: "POST", path: P["records.get"] },
   "records.put": { method: "POST", path: P["records.put"], keyed: true },
@@ -565,11 +519,7 @@ const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   "workspace.commit": { method: "POST", path: P["workspace.commit"], keyed: true },
   "workspace.history": { method: "POST", path: P["workspace.history"] },
   "lifecycle.erase": { method: "POST", path: "/erase", keyed: true },
-  "lifecycle.adopt": { method: "POST", path: "/sessions/adopt", keyed: true },
   "lifecycle.promote": { method: "POST", path: P["lifecycle.promote"], keyed: true },
-  "lifecycle.session.register": { method: "POST", path: "/sessions/register", keyed: true },
-  "lifecycle.session.stale": { method: "POST", path: "/sessions/stale" },
-  "lifecycle.session.claim": { method: "POST", path: "/sessions/claim", keyed: true },
   status: { method: "GET", path: P.status },
 };
 
@@ -631,12 +581,8 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("workspace.commit")]: { ok: true, commitId: "wsc_1" },
   [door("workspace.history")]: { entries: [{ commitId: "wsc_1" }] },
   [door("lifecycle.erase")]: { report: { vendo_apps: 1 } },
-  [door("lifecycle.adopt")]: { report: null },
   [door("lifecycle.promote")]: { ok: true },
-  [door("lifecycle.session.register")]: { ok: true },
-  [door("lifecycle.session.stale")]: { subjects: ["sub_1"] },
-  [door("lifecycle.session.claim")]: { claimed: false },
-  [door("status")]: { format: "vendo/store-wire@1", ops: 31 },
+  [door("status")]: { format: "vendo/store-wire@1", ops: 27 },
 };
 
 const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<void> => {
@@ -665,32 +611,28 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.workspace.commit([{ path: "/a.md", data: "hi" }]);
   await ops.workspace.history();
   await ops.lifecycle.erase({ subject: "sub_1" });
-  await ops.lifecycle.adopt("sub_anon", "sub_real");
   await ops.lifecycle.promote("app_1", "org_1");
-  await ops.lifecycle.sessionRegister("sub_1");
-  await ops.lifecycle.sessionStale(30_000);
-  await ops.lifecycle.sessionClaim("sub_1", 30_000);
   await ops.status();
 };
 
-describe("hostedStoreOps — the 31-op wire client", () => {
-  it("routes all 31 ops to the console's real door, with a key on exactly the mutations", async () => {
+describe("hostedStoreOps — the 27-op wire client", () => {
+  it("routes all 27 ops to the console's real door, with a key on exactly the mutations", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
     await driveEveryOp(ops);
 
     const expected = Object.values(DOORS);
-    expect(calls).toHaveLength(31);
+    expect(calls).toHaveLength(27);
     expect(calls.map((call) => `${call.method} ${call.path}`))
       .toEqual(expected.map((route) => `${route.method} ${route.path}`));
     expect(calls.map((call) => call.idempotencyKey === null ? "read" : "keyed"))
       .toEqual(expected.map((route) => route.keyed === true ? "keyed" : "read"));
-    // 19 mutations, 12 reads — and the /status handshake is the one GET with
+    // 16 mutations, 11 reads — and the /status handshake is the one GET with
     // no body at all.
-    expect(expected.filter((route) => route.keyed === true)).toHaveLength(19);
+    expect(expected.filter((route) => route.keyed === true)).toHaveLength(16);
     expect(calls.at(-1)).toMatchObject({ path: P.status, method: "GET", body: undefined });
     // Distinct keys across distinct operations (one per logical mutation).
     const keys = calls.map((call) => call.idempotencyKey).filter((key) => key !== null);
-    expect(new Set(keys).size).toBe(19);
+    expect(new Set(keys).size).toBe(16);
   });
 
   it("records: seven ops on the wire door, collection on the body, records/cursor decoded", async () => {
@@ -909,37 +851,22 @@ describe("hostedStoreOps — the 31-op wire client", () => {
     expect(calls[0]!.body).toEqual({ path: "/a.md", owner: "own_1" });
   });
 
-  it("lifecycle: erase/adopt/promote plus the three session doors", async () => {
+  it("lifecycle: erase and promote on their own doors", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
 
     // The erase door takes the target FLAT (exactly one of subject/appId).
     expect(await ops.lifecycle.erase({ subject: "sub_1" })).toEqual({ vendo_apps: 1 });
     expect(calls[0]).toMatchObject({ path: "/erase", body: { subject: "sub_1" } });
 
-    // A replayed adoption finds nothing to merge — null, not an error.
-    expect(await ops.lifecycle.adopt("sub_anon", "sub_real")).toBeNull();
-    expect(calls[1]).toMatchObject({ path: "/sessions/adopt", body: { from: "sub_anon", to: "sub_real" } });
-
     await ops.lifecycle.promote("app_1", "org_1");
-    expect(calls[2]).toMatchObject({ path: "/lifecycle/promote", body: { appId: "app_1", orgId: "org_1" } });
-
-    // Millisecond clocks ride the wire so an injected session clock stays
-    // authoritative, exactly as on the StoreAdapter session doors.
-    await ops.lifecycle.sessionRegister("sub_1", 1_000);
-    expect(calls[3]).toMatchObject({ path: "/sessions/register", body: { subject: "sub_1", now: 1_000 } });
-
-    expect(await ops.lifecycle.sessionStale(30_000, 61_000)).toEqual(["sub_1"]);
-    expect(calls[4]).toMatchObject({ path: "/sessions/stale", body: { idleMs: 30_000, now: 61_000 } });
-
-    expect(await ops.lifecycle.sessionClaim("sub_1", 30_000)).toBe(false);
-    expect(calls[5]).toMatchObject({ path: "/sessions/claim", body: { subject: "sub_1", idleMs: 30_000 } });
+    expect(calls[1]).toMatchObject({ path: "/lifecycle/promote", body: { appId: "app_1", orgId: "org_1" } });
   });
 
   it("status: the GET handshake, parsed as vendo/store-wire@1", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
-    expect(await ops.status()).toMatchObject({ format: "vendo/store-wire@1", ops: 31 });
+    expect(await ops.status()).toMatchObject({ format: "vendo/store-wire@1", ops: 27 });
     expect(calls[0]).toMatchObject({ path: "/status", method: "GET" });
-    await expect(wireFake({ [door("status")]: { format: "vendo/store-wire@2", ops: 31 } }).ops.status())
+    await expect(wireFake({ [door("status")]: { format: "vendo/store-wire@2", ops: 27 } }).ops.status())
       .rejects.toThrow(/invalid status/);
   });
 
@@ -1076,10 +1003,6 @@ describe("hostedStoreOps — the 31-op wire client", () => {
       code: "not-implemented",
       message: expect.stringContaining('"blobs.put"'),
     });
-    await expect(notImplemented(null).lifecycle.sessionStale(1_000)).rejects.toMatchObject({
-      code: "not-implemented",
-      message: expect.stringContaining('"lifecycle.session.stale"'),
-    });
   });
 
   it("treats a malformed 2xx as service misbehavior, never the caller's fault", async () => {
@@ -1098,18 +1021,16 @@ describe("hostedStoreOps — the 31-op wire client", () => {
     await expect(answering({}).workspace.index()).rejects.toThrow(/invalid entries/);
     await expect(answering({ files: [] }).workspace.read(["/a.md"])).rejects.toThrow(/invalid workspace read/);
     await expect(answering({}).lifecycle.erase({ subject: "s" })).rejects.toThrow(/invalid report/);
-    await expect(answering({ subjects: [1] }).lifecycle.sessionStale(1_000)).rejects.toThrow(/invalid stale/);
   });
 });
 
 describe("hostedStore keeps its StoreAdapter surface and gains the op surface", () => {
-  it("carries records/blobs/erase/sessions unchanged, plus ops on the same doors", async () => {
+  it("carries records/blobs/erase unchanged, plus ops on the same doors", async () => {
     const console_ = fakeConsole();
     const store = hosted(console_);
     expect(typeof store.records).toBe("function");
     expect(typeof store.blobs).toBe("function");
     expect(typeof store.erase.bySubject).toBe("function");
-    expect(typeof store.sessions.register).toBe("function");
     expect(Object.keys(store.ops).sort()).toEqual([
       "blobs", "harness", "lifecycle", "records", "status", "transcripts", "workspace",
     ]);
@@ -1132,15 +1053,10 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     await store.ops.blobs.put("uploads", "images/a.png", new Uint8Array([7]), { contentType: "image/png" });
     expect(await store.blobs("uploads").get("images/a.png")).toMatchObject({ contentType: "image/png" });
     expect(await store.ops.blobs.list("uploads", "images/")).toEqual(["images/a.png"]);
-
-    // And the session doors: register through the ops surface, sweep through
-    // the adapter's.
-    await store.ops.lifecycle.sessionRegister("anon_1", 1_000);
-    expect(await store.sessions.stale(1, 100_000)).toEqual(["anon_1"]);
   });
 
-  // 16 of the 32 ops have no door in the fake: all 6 transcripts, all 3
-  // harness, all 5 workspace, lifecycle.promote and /status. It used to answer
+  // 15 of the 27 ops have no door in the fake: all 6 transcripts, all 3
+  // harness, all 4 workspace, lifecycle.promote and /status. It used to answer
   // them with a `not-found` envelope — the SAME answer a live console sends
   // when it refuses — so a test exercising one of those families read a
   // plausible rejection and asserted nothing. The fake now throws out of

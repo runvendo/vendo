@@ -31,32 +31,17 @@ import { cloudSandbox } from "./sandbox.js";
 /** 09-vendo §2 — the adapter rule, applied at the one seam that may read the
  *  environment. */
 export const composeAdapters = (composition: VendoComposition): Pick<VendoComposition,
-  "store" | "sessionOps" | "files" | "sandbox" | "secrets" | "inference" | "configCloud"
+  "store" | "files" | "sandbox" | "secrets" | "inference" | "configCloud"
   | "surfaceRoot" | "readSurfaceFile" | "memoizeOnce"> => {
-  const { config, sessionsConfig, composed } = composition;
+  const { config, composed } = composition;
   // Persistence, selected by the adapter rule at this composition seam
   // (selectStore above): explicit store → VENDO_API_KEY hosted store → the
   // local createStore default (02-store §4 re-derived: encryption is
   // production-owned — VENDO_STORE_ENCRYPTION_KEY encrypts at rest; without
   // it dev stores locally unencrypted while production secret writes fail
-  // closed). The session doors travel with the store: SQL registry locally,
-  // the store wire when hosted.
-  // Touch-debounce window, clamped by BOTH knobs. INVARIANT: the window must
-  // sit well inside the TTL, so continuous traffic always refreshes
-  // touched_at before the sweep cutoff — with sweepIntervalMs/2 alone, a
-  // ttlMs shorter than the sweep interval would let an actively-used
-  // session's stamp go a full window stale, cross the cutoff, and the claim
-  // leg would re-read that SAME stale stamp and erase a live session
-  // mid-use. sweepIntervalMs/2 bounds the wire chatter; ttlMs/4 enforces the
-  // safety margin. ttlMs 0 disables the sweep entirely (runSweep), so the
-  // zero window it produces (every touch rides the wire) is merely
-  // conservative, never wrong.
-  const { store, sessions: sessionOps, files } = selectStore(
+  // closed).
+  const { store, files } = selectStore(
     composed?.store ?? config.store,
-    Math.min(
-      Math.floor(sessionsConfig.sweepIntervalMs / 2),
-      Math.floor(sessionsConfig.ttlMs / 4),
-    ),
     composed?.files ?? config.files,
   );
   // The sandbox seam, resolved by THE ladder — the one in @vendoai/apps that
@@ -125,7 +110,6 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
   };
   return {
     store,
-    sessionOps,
     files,
     sandbox,
     secrets,

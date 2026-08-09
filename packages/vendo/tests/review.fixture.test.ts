@@ -101,7 +101,8 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-/** `as` = a host-resolved principal subject; omit it for an anonymous caller. */
+/** `as` = a host-resolved principal subject; omit it for a caller the host
+ *  resolves to no identity at all (which the wire refuses outright). */
 const request = (method: string, path: string, options: { as?: string; body?: unknown } = {}): Request =>
   new Request(`https://host.test/api/vendo${path}`, {
     method,
@@ -161,8 +162,8 @@ export default function Page() {
     };
     const vendo = createVendo({
       model: screenModel(["Transfer remix v2", "Transfer remix v3"], asItStands),
-      // Host-resolved principal from the fixture header; absent = anonymous
-      // (the wire mints an ephemeral session — the "non-admin" caller).
+      // Host-resolved principal from the fixture header; absent = no identity,
+      // which the wire refuses with `forbidden`.
       principal: async (req): Promise<Principal | null> => {
         const subject = req.headers.get(USER_HEADER);
         return subject === null ? null : { kind: "user", subject };
@@ -212,9 +213,10 @@ export default function Page() {
       shipDiff: { appId, versionHash: v1Hash },
     });
     expect(queue[0].submittedAt).toEqual(expect.any(String));
-    const masked = await vendo.handler(request("GET", "/apps/review-queue"));
-    expect(masked.status).toBe(200);
-    expect(await masked.json()).toEqual([]);
+    // A caller the host resolves to NO identity is refused outright; the
+    // masked-out cases below are real, unrelated subjects.
+    const noIdentity = await vendo.handler(request("GET", "/apps/review-queue"));
+    expect(noIdentity.status).toBe(403);
     // A host-resolved NON-reviewer sees only their own submissions — the
     // owner their own item, anyone else nothing (never another user's fork
     // source) — and their reject is masked like any unowned app.
@@ -252,11 +254,11 @@ export default function Page() {
     expect(await (await production.handler(request("GET", "/apps/review-queue", { as: reviewer }))).json()).toEqual([]);
     expect((await production.handler(request("POST", `/apps/${appId}/reject-review`, { as: reviewer, body: { note: "nope" } }))).status).toBe(404);
 
-    // 4. Rejection: the note is required; an anonymous caller is masked out.
+    // 4. Rejection: the note is required; a caller with no identity is refused.
     const noteless = await vendo.handler(request("POST", `/apps/${appId}/reject-review`, { as: reviewer, body: {} }));
     expect(noteless.status).toBe(400);
-    const anonymous = await vendo.handler(request("POST", `/apps/${appId}/reject-review`, { body: { note: "nope" } }));
-    expect(anonymous.status).toBe(404);
+    const rejectNoIdentity = await vendo.handler(request("POST", `/apps/${appId}/reject-review`, { body: { note: "nope" } }));
+    expect(rejectNoIdentity.status).toBe(403);
     const rejected = await vendo.handler(request("POST", `/apps/${appId}/reject-review`, {
       as: reviewer,
       body: { note: "Keep the send button label exactly as shipped." },

@@ -58,12 +58,11 @@ import { composeGuard } from "./compose-guard.js";
 import { composeHarness } from "./compose-harness.js";
 import { composeMcp } from "./compose-mcp.js";
 import { composePrompt } from "./compose-prompt.js";
-import type { SessionOps } from "./compose-store.js";
 import { composeSurfaces } from "./compose-surfaces.js";
 import { composeSweep } from "./compose-sweep.js";
 import { composeTools } from "./compose-tools.js";
 import type { ConfigSurfaceName } from "./config-surface.js";
-import type { ResolvedSessions } from "./compose-config.js";
+import type { ResolvedSweep } from "./compose-config.js";
 import type { ConnectionsService } from "./connections.js";
 import type { HarnessTurns } from "./harness-turn.js";
 import type { resolveModels } from "./models-config.js";
@@ -119,12 +118,11 @@ export interface VendoComposition {
   membershipsSeam: HostAuthPreset["memberships"];
   resolvePersonSeam: HostAuthPreset["resolvePerson"];
   userFactsSeam: HostAuthPreset["facts"];
-  sessionsConfig: ResolvedSessions;
-  sessionNow: () => number;
+  sweepConfig: ResolvedSweep;
+  sweepNow: () => number;
 
   // ── compose-adapters.ts ────────────────────────────────────────────────────
   store: VendoStore;
-  sessionOps: SessionOps;
   /** THE files adapter for this deployment (build contract §3.4). */
   files: FilesAdapter;
   sandbox: ReturnType<typeof selectSandbox>;

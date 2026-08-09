@@ -9,18 +9,13 @@ import type { WireDeps } from "../../src/wire/shared.js";
 const request = (): Request => new Request("https://host.test/api/vendo/apps");
 
 const depsFor = (over: {
-  principal: Principal | null;
+  principal: Principal;
   memberships?: (principal: Principal) => Promise<Membership[]>;
 }): WireDeps => ({
   principal: async () => over.principal,
   ...(over.memberships === undefined ? {} : { memberships: over.memberships }),
   trustedBaseIsHttps: false,
   sessionId: "sess_wire",
-  sessions: { ttlMs: 1000, sweepIntervalMs: 1000, now: () => 0 },
-  sessionStore: {
-    async register() { /* no registry needed for these cases */ },
-    async adopt() { return null; },
-  },
 } as unknown as WireDeps);
 
 describe("contract §9.1 — memberships on the wire ctx", () => {
@@ -34,7 +29,6 @@ describe("contract §9.1 — memberships on the wire ctx", () => {
           return [{ org: "maple", display: "Maple", admin: principal.subject === "dana" }];
         },
       }),
-      {},
     );
     const ctx = await resolve(request(), "app");
     expect(ctx.memberships).toEqual([{ org: "maple", display: "Maple", admin: true }]);
@@ -42,14 +36,19 @@ describe("contract §9.1 — memberships on the wire ctx", () => {
   });
 
   it("leaves memberships absent when the host wired no seam", async () => {
-    const resolve = createContextResolver(depsFor({ principal: { kind: "user", subject: "dana" } }), {});
+    const resolve = createContextResolver(depsFor({ principal: { kind: "user", subject: "dana" } }));
     expect((await resolve(request(), "app")).memberships).toBeUndefined();
   });
 
-  it("asserts nothing for an anonymous visitor", async () => {
+  // A host resolver may still hand back an EPHEMERAL principal; Vendo just no
+  // longer mints one. Such a visitor belongs to no org by construction, so the
+  // seam is not even asked.
+  it("asserts nothing for a host-resolved ephemeral principal", async () => {
     const resolve = createContextResolver(
-      depsFor({ principal: null, memberships: async () => [{ org: "maple" }] }),
-      {},
+      depsFor({
+        principal: { kind: "user", subject: "visitor", ephemeral: true },
+        memberships: async () => [{ org: "maple" }],
+      }),
     );
     const ctx = await resolve(request(), "app");
     expect(ctx.principal.ephemeral).toBe(true);
@@ -61,7 +60,6 @@ describe("contract §9.1 — memberships on the wire ctx", () => {
   it("still refuses a kind:\"org\" principal from the host resolver", async () => {
     const resolve = createContextResolver(
       depsFor({ principal: { kind: "org", subject: "maple" }, memberships: async () => [] }),
-      {},
     );
     await expect(resolve(request(), "app")).rejects.toBeInstanceOf(VendoError);
   });

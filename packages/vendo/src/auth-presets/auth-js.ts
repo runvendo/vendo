@@ -52,8 +52,7 @@ const loadGetToken = lazyModule<AuthJsGetToken>(
     deployment is secure exactly when the operator-set VENDO_BASE_URL parses as
     an https URL — TLS terminates at a trusted proxy and Auth.js is using its
     `__Secure-` cookie names. Same trusted-origin channel the umbrella already
-    uses for anon-cookie hardening and door metadata; never derived from
-    forwarded headers. */
+    uses for door metadata; never derived from forwarded headers. */
 function isSecureDeployment(): boolean {
   const base = environment("VENDO_BASE_URL");
   if (base === undefined) return false;

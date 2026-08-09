@@ -157,8 +157,8 @@ export interface HarnessTurns {
      *  inherit stale tools — the cleanup stays glued to the delete. */
     delete(id: ThreadId, ctx: RunContext): Promise<void>;
   };
-  /** D6 — drop a subject's threads when its ephemeral session is swept, and
-   *  release each evicted thread's loadout with them. */
+  /** D6 — drop every thread a subject owns, releasing each evicted thread's
+   *  loadout with them. */
   evictSubject(subject: string): Promise<void>;
 }
 

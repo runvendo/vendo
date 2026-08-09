@@ -16,7 +16,6 @@ import {
   DEDICATED_RECORD_COLLECTIONS,
   RESERVED_COLLECTIONS,
   type EraseReport,
-  type SubjectMergeReport,
   type VendoStore,
 } from "@vendoai/store";
 import { consoleSender, raiseCloudError, toArrayBuffer } from "./cloud-console.js";
@@ -51,18 +50,7 @@ export interface HostedStore extends VendoStore {
     bySubject(subject: string): Promise<EraseReport>;
     byApp(appId: string): Promise<EraseReport>;
   };
-  /** The ephemeral-session doors (02-store §4, hosted): registration == touch
-   * on every ephemeral request, adoption on sign-in, and the list/claim legs
-   * of the HOST-driven TTL sweep — the sweep claims a stale subject, then
-   * finishes through `erase.bySubject` (hosted-store one-pager). Millisecond
-   * clocks ride the wire so an injected session clock stays authoritative. */
-  sessions: {
-    register(subject: string, now?: number): Promise<void>;
-    adopt(from: string, to: string): Promise<SubjectMergeReport | null>;
-    stale(idleMs: number, now?: number): Promise<string[]>;
-    claim(subject: string, idleMs: number, now?: number): Promise<boolean>;
-  };
-  /** The 31-op named-operation surface over the same mount and the same key —
+  /** The 27-op named-operation surface over the same mount and the same key —
    * `vendo/store-wire@1` (see {@link hostedStoreOps}). Additive: the
    * StoreAdapter doors above are unchanged and keep their own routes. */
   ops: StoreOps;
@@ -84,39 +72,6 @@ const raiseStoreError = (response: Response): Promise<never> =>
   raiseCloudError(response, "store", (code, message) => {
     throw Object.assign(new Error(message), { code: code ?? "unavailable" });
   });
-
-/** A console that is not serving the ephemeral-session op family
- * (/api/v1/store/sessions/*) answers Next.js's BARE 404 page, no error
- * envelope. Typed so the composition layer (hostedSessionOps in compose-store.ts)
- * can disable the session doors gracefully instead of failing anonymous
- * traffic; an ENVELOPED 404 is a live console answering "not-found" and keeps
- * the loud path, same for every other failure. Prod has served the doors
- * again since 2026-07-20 (vendo-web #88), so this is a guard, not a
- * description of today. */
-export class HostedSessionDoorsMissingError extends Error {
-  constructor() {
-    super(
-      "Vendo Cloud console did not serve /api/v1/store/sessions/* (bare 404)",
-    );
-    this.name = "HostedSessionDoorsMissingError";
-  }
-}
-
-/** The session doors' raise: a bare 404 (no envelope) is the one
- * removed-surface signal; everything else defers to the store mapping. */
-const raiseSessionsError = async (response: Response): Promise<never> => {
-  if (response.status === 404) {
-    let payload: unknown;
-    try {
-      payload = JSON.parse(await response.clone().text());
-    } catch {
-      payload = undefined;
-    }
-    const enveloped = typeof payload === "object" && payload !== null && "error" in payload;
-    if (!enveloped) throw new HostedSessionDoorsMissingError();
-  }
-  return raiseStoreError(response);
-};
 
 function parseRecord(value: unknown): VendoRecord {
   const parsed = vendoRecordSchema.safeParse(value);
@@ -164,17 +119,6 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
     raise: raiseStoreError,
   });
 
-  // Same wire, sessions-only raise — the doors are the one surface the prod
-  // console may legitimately not serve (vendo-web@7cd0a02).
-  const sendSessions = consoleSender({
-    base,
-    mountPath: CONSOLE_STORE_PATH,
-    apiKey: options.apiKey,
-    timeoutMs,
-    fetchImpl,
-    raise: raiseSessionsError,
-  });
-
   const postJson = (sender: typeof send) => async (path: string, body: unknown): Promise<unknown> => {
     const response = await sender(path, {
       method: "POST",
@@ -188,7 +132,6 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
     }
   };
   const sendJson = postJson(send);
-  const sendSessionsJson = postJson(sendSessions);
 
   const records = (collection: string): RecordStore => {
     const prefix = recordsPath(collection);
@@ -336,53 +279,12 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
     return report as EraseReport;
   };
 
-  const parseMergeReport = (payload: unknown): SubjectMergeReport | null => {
-    const report = typeof payload === "object" && payload !== null && "report" in payload
-      ? (payload as { report?: unknown }).report
-      : undefined;
-    if (report === null) return null;
-    if (
-      typeof report !== "object" || report === undefined || Array.isArray(report)
-      || !Object.values(report).every((count) => typeof count === "number")
-    ) {
-      invalidResponse("invalid adopt");
-    }
-    return report as SubjectMergeReport;
-  };
-
   return {
     records,
     blobs,
     ops: hostedStoreOps(options),
-    sessions: {
-      async register(subject, now) {
-        await sendSessionsJson("/sessions/register", { subject, ...(now === undefined ? {} : { now }) });
-      },
-      async adopt(from, to) {
-        return parseMergeReport(await sendSessionsJson("/sessions/adopt", { from, to }));
-      },
-      async stale(idleMs, now) {
-        const payload = await sendSessionsJson("/sessions/stale", {
-          idleMs,
-          ...(now === undefined ? {} : { now }),
-        }) as { subjects?: unknown };
-        if (!Array.isArray(payload.subjects) || !payload.subjects.every((subject) => typeof subject === "string")) {
-          invalidResponse("invalid stale");
-        }
-        return payload.subjects as string[];
-      },
-      async claim(subject, idleMs, now) {
-        const payload = await sendSessionsJson("/sessions/claim", {
-          subject,
-          idleMs,
-          ...(now === undefined ? {} : { now }),
-        }) as { claimed?: unknown };
-        if (typeof payload.claimed !== "boolean") invalidResponse("invalid claim");
-        return payload.claimed as boolean;
-      },
-    },
     // 02-store §5 — the subject/app cascade runs server-side with eraseStore
-    // parity; the host-side ephemeral TTL sweep is built on bySubject.
+    // parity.
     erase: {
       async bySubject(subject) {
         return parseReport(await sendJson("/erase", { subject }));
@@ -404,10 +306,10 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
 }
 
 // ---------------------------------------------------------------------------
-// The 31-op StoreOps client — store design v1, `vendo/store-wire@1`
+// The 27-op StoreOps client — store design v1, `vendo/store-wire@1`
 // ---------------------------------------------------------------------------
 
-/** The 31 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
+/** The 27 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
  * op names even where the console's door sits at a different path. */
 type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
 
@@ -446,7 +348,7 @@ const raiseWireError = async (response: Response): Promise<never> => {
 };
 
 /**
- * The Cloud client for the whole 31-op store contract, speaking
+ * The Cloud client for the whole 27-op store contract, speaking
  * `vendo/store-wire@1` over the console's store mount: bearer key, deployment
  * identity and per-request abort budget shared with {@link hostedStore}, the
  * same adapter rule (behavior comes ONLY from the constructor arguments),
@@ -458,9 +360,8 @@ const raiseWireError = async (response: Response): Promise<never> => {
  * body and blob bytes are base64 on the wire — so any conforming Store Wire v1
  * service (the console's wire mount, a BYO httpStore) accepts them verbatim.
  * Transcripts, harness, workspace, `lifecycle.promote` and `/status` answer at
- * their STORE_WIRE_PATHS path too. Erase keeps `/erase`, and adopt + the
- * session verbs keep `/sessions/*` — T5's own note: they "keep their existing
- * doors until the cloud client moves them".
+ * their STORE_WIRE_PATHS path too; erase keeps `/erase` — T5's own note: it
+ * "keeps its existing door until the cloud client moves it".
  */
 export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
@@ -696,41 +597,12 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
       },
     },
     lifecycle: {
-      // The erase door takes the target FLAT (exactly one of subject/appId);
-      // adopt and the session verbs are the console's registry doors.
+      // The erase door takes the target FLAT (exactly one of subject/appId).
       async erase(target) {
         return reportOf(await mutate("lifecycle.erase", "/erase", target));
       },
-      async adopt(from, to) {
-        return reportOf(await mutate("lifecycle.adopt", "/sessions/adopt", { from, to }));
-      },
       async promote(appId, orgId) {
         await mutate("lifecycle.promote", P["lifecycle.promote"], { appId, orgId });
-      },
-      async sessionRegister(subject, now) {
-        await mutate("lifecycle.session.register", "/sessions/register", {
-          subject,
-          ...(now === undefined ? {} : { now }),
-        });
-      },
-      async sessionStale(idleMs, now) {
-        const payload = await post("lifecycle.session.stale", "/sessions/stale", {
-          idleMs,
-          ...(now === undefined ? {} : { now }),
-        });
-        return field<string[]>(
-          payload,
-          "subjects",
-          "invalid stale",
-          (value) => Array.isArray(value) && value.every((subject) => typeof subject === "string"),
-        );
-      },
-      async sessionClaim(subject, idleMs, now) {
-        return claimedOf(await mutate("lifecycle.session.claim", "/sessions/claim", {
-          subject,
-          idleMs,
-          ...(now === undefined ? {} : { now }),
-        }));
       },
     },
     async status(): Promise<StoreWireStatus> {

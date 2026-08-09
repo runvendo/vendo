@@ -58,7 +58,7 @@ export const doctorBaseUrlRoutes: RouteEntry[] = [
 /** The doctor PROBE surface — `vendo doctor` targets a running dev server, so
     a composition that did not say it is development never gets these routes at
     all (server.ts mounts the group behind `deps.development`). Mounting is the
-    only thing standing between them and an anonymous caller: none takes a
+    only thing standing between them and an unauthenticated caller: none takes a
     principal, `/doctor/machines` reports every machine-bearing app in the
     deployment across every subject, and POST `/doctor/act-as` makes the
     composition mint host actAs material on demand. The gate this replaced was a

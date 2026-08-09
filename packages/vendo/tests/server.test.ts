@@ -140,10 +140,10 @@ async function screenModel(turns: ScreenTurn[], prompts?: string[]): Promise<Lan
 }
 
 async function setup(
-  // `null` is a real answer from this seam — it is how an anonymous session is
-  // expressed (`CreateVendoConfig["principal"]` is `=> Promise<Principal | null>`),
-  // and a dozen cases below pass exactly that. Inferring the parameter from the
-  // default would pin it to the non-null half.
+  // `null` is a real answer from this seam (`CreateVendoConfig["principal"]` is
+  // `=> Promise<Principal | null>`) — it says this visitor has no identity, and
+  // the request is refused. Inferring the parameter from the default would pin
+  // it to the non-null half.
   resolver: Mock<() => Promise<Principal | null>> = vi.fn(async () => principal),
   options: Pick<Partial<CreateVendoConfig>, "guard" | "development"> = {},
 ): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
@@ -1274,8 +1274,9 @@ describe("06-apps §9 in-client venue over the wire", () => {
     expect(dropped.payload.inClient.versionHash).not.toBe(approval.versionHash);
   });
 
-  it("rejects approval injection from an anonymous session", async () => {
-    const { vendo } = await setup(vi.fn(async () => null), { development: true });
+  it("rejects approval injection from an ephemeral principal", async () => {
+    const ephemeral: Principal = { kind: "user", subject: "visitor", ephemeral: true };
+    const { vendo } = await setup(vi.fn(async () => ephemeral), { development: true });
     const response = await vendo.handler(request("POST", "/dev/inclient-approval", {
       appId: "app_venue",
     }));
@@ -1581,292 +1582,19 @@ describe("09 §2 composition", () => {
     }, dataPut, chat)).resolves.toMatchObject({ action: "ask" });
   });
 
-  it("uses per-client session-scoped ephemeral principals when the resolver returns null", async () => {
+  // Vendo mints no principals: a resolver that answers null has said this
+  // visitor has no identity, so the REQUEST is refused (403) and the message
+  // names the one line that fixes it.
+  it("refuses the request with forbidden when the resolver returns null", async () => {
     const resolver = vi.fn(async () => null);
     const { vendo } = await setup(resolver);
-    await vendo.handler(request("GET", "/status"));
-    await vendo.handler(request("GET", "/status"));
-    expect(resolver).toHaveBeenCalledTimes(2);
-    const apps = await vendo.apps.list({
-      principal: { kind: "user", subject: "not-the-anonymous-session" },
-      venue: "app",
-      presence: "present",
-      sessionId: "x",
-    });
-    expect(apps).toEqual([]);
-  });
-});
-
-// Extract Set-Cookie attributes and the anon cookie value from a response.
-// Secure (https / TLS-terminated) requests carry the fixation-proof __Host-
-// name; insecure localhost http keeps the plain name.
-function setCookie(response: Response): string | null {
-  return response.headers.get("set-cookie");
-}
-function anonCookieValue(response: Response): string | null {
-  const header = setCookie(response);
-  if (header === null) return null;
-  const match = /(?:__Host-)?vendo_anon_session=([^;]+)/.exec(header);
-  return match?.[1] ?? null;
-}
-// Replay a Set-Cookie as the request Cookie header (browser cookie jar). The
-// request() helper builds https URLs, so the secure __Host- name applies.
-function cookieHeaderFrom(response: Response): Record<string, string> {
-  const value = anonCookieValue(response);
-  if (value === null) throw new Error("response carried no anon Set-Cookie");
-  return { cookie: `__Host-vendo_anon_session=${value}` };
-}
-
-describe("00 overview / 01-core §2 — per-client anonymous sessions", () => {
-  it("mints a distinct ephemeral principal + Set-Cookie for each cookieless client", async () => {
-    const seen: string[] = [];
-    const resolver = vi.fn(async () => null);
-    const { vendo } = await setup(resolver);
-    vi.spyOn(vendo.apps, "list").mockImplementation(async (ctx) => {
-      seen.push(ctx.principal.subject);
-      return [];
-    });
-
-    const first = await vendo.handler(request("GET", "/apps"));
-    const second = await vendo.handler(request("GET", "/apps"));
-
-    // Two cookieless clients → two different anonymous subjects.
-    expect(seen).toHaveLength(2);
-    expect(seen[0]).toMatch(/^anonymous_[0-9a-f]{32}$/);
-    expect(seen[1]).toMatch(/^anonymous_[0-9a-f]{32}$/);
-    expect(seen[0]).not.toBe(seen[1]);
-
-    // Each response carries a hardened Set-Cookie — https requests get the
-    // fixation-proof __Host- form (Secure + Path=/, no Domain).
-    for (const response of [first, second]) {
-      const header = setCookie(response);
-      expect(header).toContain("__Host-vendo_anon_session=");
-      expect(header).toContain("HttpOnly");
-      expect(header).toContain("SameSite=Lax");
-      expect(header).toContain("Path=/;");
-      expect(header).toContain("Secure");
-      expect(header).not.toContain("Domain");
-    }
-    // Distinct cookies for distinct clients.
-    expect(anonCookieValue(first)).not.toBe(anonCookieValue(second));
-  });
-
-  it("reuses the subject and mints no new cookie when a valid cookie is replayed", async () => {
-    const seen: string[] = [];
-    const resolver = vi.fn(async () => null);
-    const { vendo } = await setup(resolver);
-    vi.spyOn(vendo.apps, "list").mockImplementation(async (ctx) => {
-      seen.push(ctx.principal.subject);
-      return [];
-    });
-
-    const minted = await vendo.handler(request("GET", "/apps"));
-    const replayed = await vendo.handler(request("GET", "/apps", undefined, cookieHeaderFrom(minted)));
-
-    expect(seen[0]).toBe(seen[1]);            // same subject across the round-trip
-    expect(setCookie(replayed)).toBeNull();    // no new cookie on a valid replay
-  });
-
-  it("mints a fresh session when the cookie is not a well-formed session pointer", async () => {
-    const seen: string[] = [];
-    const resolver = vi.fn(async () => null);
-    const { vendo } = await setup(resolver);
-    vi.spyOn(vendo.apps, "list").mockImplementation(async (ctx) => {
-      seen.push(ctx.principal.subject);
-      return [];
-    });
-
-    const minted = await vendo.handler(request("GET", "/apps"));
-    const id = anonCookieValue(minted)!;
-
-    // The legacy signed form (`<id>.<sig>`), garbage, truncated, and non-hex
-    // values are not pointers into vendo_sessions — each gets a fresh mint.
-    for (const bad of [`${id}.deadbeef`, "not-a-valid-cookie", id.slice(0, 8), "Z".repeat(32)]) {
-      const response = await vendo.handler(request("GET", "/apps", undefined, { cookie: `__Host-vendo_anon_session=${bad}` }));
-      expect(setCookie(response)).toContain("__Host-vendo_anon_session="); // fresh mint
-    }
-    // Every malformed request got its own fresh subject, none equal to the original.
-    const original = seen[0];
-    for (const subject of seen.slice(1)) expect(subject).not.toBe(original);
-  });
-
-  it("treats any well-formed 128-bit id as the session pointer — the vendo_sessions row is the authority, not the cookie", async () => {
-    // Kill-list B3 server half: the cookie carries no signature. An id the
-    // server never minted (or one surviving a process restart) simply names
-    // its own — empty — session: nothing to steal, and no re-mint churn.
-    const seen: string[] = [];
-    const resolver = vi.fn(async () => null);
-    const { vendo } = await setup(resolver);
-    vi.spyOn(vendo.apps, "list").mockImplementation(async (ctx) => {
-      seen.push(ctx.principal.subject);
-      return [];
-    });
-
-    const foreign = "0123456789abcdef0123456789abcdef";
-    const response = await vendo.handler(request("GET", "/apps", undefined, {
-      cookie: `__Host-vendo_anon_session=${foreign}`,
-    }));
-    expect(seen[0]).toBe(`anonymous_${foreign}`); // the pointer is honored as-is
-    expect(setCookie(response)).toBeNull();        // no new cookie minted
-  });
-
-  it("uses Secure __Host- over https and the plain name over http — both Path=/", async () => {
-    const resolver = vi.fn(async () => null);
-    const { vendo } = await setup(resolver);
-    vi.spyOn(vendo.apps, "list").mockResolvedValue([]);
-
-    const https = await vendo.handler(request("GET", "/apps")); // request() builds https URLs
-    expect(setCookie(https)).toContain("__Host-vendo_anon_session=");
-    expect(setCookie(https)).toContain("Secure");
-    expect(setCookie(https)).toContain("Path=/;");
-
-    // Path=/ on http too (#693): the pointer must ride DOCUMENT requests so a
-    // host minting on its document response can see an existing one.
-    const httpReq = new Request("http://host.test/api/vendo/apps", { method: "GET" });
-    const http = await vendo.handler(httpReq);
-    expect(setCookie(http)).toContain("vendo_anon_session=");
-    expect(setCookie(http)).not.toContain("__Host-");
-    expect(setCookie(http)).not.toContain("Secure");
-    expect(setCookie(http)).toContain("Path=/;");
-  });
-
-  it("REGRESSION #693: a plain-http identity survives the host's document-response mint (path-scoped browser jar)", async () => {
-    // The blessed cold-load fix (anon-session-race.test.ts) has the HOST mint
-    // the pointer on its document response, mirroring the wire's own cookie
-    // contract: mint UNLESS the request already carries one. A document path
-    // lives outside BASE_PATH, so whether the browser presents the wire's
-    // cookie there is decided by the cookie's Path attribute alone. A
-    // BASE_PATH-scoped plain-http cookie is invisible on every document/page
-    // request, so the host re-mints per page load and poll — and the re-mint
-    // shares the cookie's one jar slot (same name/host/path), moving the
-    // visitor onto a fresh subject: list endpoints answer [], and the second
-    // message on any thread conflicts. https never had the bug because the
-    // __Host- form REQUIRES Path=/.
-    const seen: string[] = [];
-    const resolver = vi.fn(async () => null);
-    const { vendo } = await setup(resolver);
-    vi.spyOn(vendo.apps, "list").mockImplementation(async (ctx) => {
-      seen.push(ctx.principal.subject);
-      return [];
-    });
-
-    // A browser jar the way real jars work: one slot per name (RFC 6265 §5.3
-    // step 11 — same name/host/path overwrites), and a cookie rides a request
-    // only when the request path falls under its Path attribute (§5.1.4).
-    const jar = new Map<string, { value: string; path: string }>();
-    const storeSetCookie = (header: string | null): void => {
-      if (header === null) return;
-      const [pair, ...attrs] = header.split(";");
-      const eq = pair!.indexOf("=");
-      const path = attrs.map(attr => attr.trim()).find(attr => attr.toLowerCase().startsWith("path="))?.slice(5) ?? "/";
-      jar.set(pair!.slice(0, eq).trim(), { value: pair!.slice(eq + 1).trim(), path });
-    };
-    const cookiesFor = (requestPath: string): string =>
-      [...jar.entries()]
-        .filter(([, cookie]) =>
-          requestPath === cookie.path
-          || (cookie.path.endsWith("/") && requestPath.startsWith(cookie.path))
-          || requestPath.startsWith(`${cookie.path}/`))
-        .map(([name, cookie]) => `${name}=${cookie.value}`)
-        .join("; ");
-    const listApps = async (): Promise<Response> => {
-      const cookie = cookiesFor("/api/vendo/apps");
-      const response = await vendo.handler(new Request("http://localhost:3000/api/vendo/apps", {
-        headers: cookie === "" ? {} : { cookie },
-      }));
-      storeSetCookie(setCookie(response));
-      return response;
-    };
-
-    // 1. A plain-http wire request mints the pointer into the jar.
-    await listApps();
-    const wireCookie = jar.get("vendo_anon_session")!;
-
-    // 2. The host's document response runs mint-unless-present, mirroring the
-    //    wire's contract (name, attributes, and Path all taken from the wire's
-    //    own mint) — exactly what the demos host's middleware does.
-    if (!cookiesFor("/pricing").includes("vendo_anon_session=")) {
-      const raw = new Uint8Array(16);
-      globalThis.crypto.getRandomValues(raw);
-      const hostMinted = Array.from(raw, byte => byte.toString(16).padStart(2, "0")).join("");
-      storeSetCookie(`vendo_anon_session=${hostMinted}; Path=${wireCookie.path}; HttpOnly; SameSite=Lax`);
-    }
-
-    // 3. The next wire request is still the SAME visitor in the same browser.
-    await listApps();
-    expect(seen).toHaveLength(2);
-    expect(seen[1]).toBe(seen[0]);
-  });
-
-  it("ignores a valid cookie presented under the wrong name for the protocol", async () => {
-    const seen: string[] = [];
-    const resolver = vi.fn(async () => null);
-    const { vendo } = await setup(resolver);
-    vi.spyOn(vendo.apps, "list").mockImplementation(async (ctx) => {
-      seen.push(ctx.principal.subject);
-      return [];
-    });
-
-    // Mint over https (__Host- name), replay the VALID value under the PLAIN
-    // name on another https request → lookup misses, fresh session minted.
-    const minted = await vendo.handler(request("GET", "/apps"));
-    const value = anonCookieValue(minted)!;
-    const wrongName = await vendo.handler(request("GET", "/apps", undefined, {
-      cookie: `vendo_anon_session=${value}`,
-    }));
-    expect(setCookie(wrongName)).toContain("__Host-vendo_anon_session="); // fresh mint
-    expect(seen[1]).not.toBe(seen[0]);
-  });
-
-  it("treats requests as secure when the trusted VENDO_BASE_URL is https (TLS-terminating proxy)", async () => {
-    // Behind a TLS terminator the request reaches this process as http; the
-    // operator-set VENDO_BASE_URL (trusted origin channel, never x-forwarded-*)
-    // being https must still yield the Secure __Host- cookie.
-    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com");
-    const resolver = vi.fn(async () => null);
-    const { vendo } = await setup(resolver);
-    vi.spyOn(vendo.apps, "list").mockResolvedValue([]);
-
-    const httpReq = new Request("http://host.test/api/vendo/apps", { method: "GET" });
-    const response = await vendo.handler(httpReq);
-    expect(setCookie(response)).toContain("__Host-vendo_anon_session=");
-    expect(setCookie(response)).toContain("Secure");
-    expect(setCookie(response)).toContain("Path=/;");
-  });
-
-  it("mints no anonymous cookie when the host resolver returns a principal", async () => {
-    const { vendo } = await setup(); // resolver returns a real principal
-    vi.spyOn(vendo.apps, "list").mockResolvedValue([]);
     const response = await vendo.handler(request("GET", "/apps"));
-    expect(setCookie(response)).toBeNull();
-  });
-
-  it("REGRESSION: two independent anonymous clients never share a subject, and each request mints exactly one id", async () => {
-    // Guards the per-process bug (#130): one anonymous principal reused across
-    // the whole composition leaked threads/grants/apps between visitors.
-    const seen: string[] = [];
-    const resolver = vi.fn(async () => null);
-    const { vendo } = await setup(resolver);
-    vi.spyOn(vendo.apps, "list").mockImplementation(async (ctx) => {
-      seen.push(ctx.principal.subject);
-      return [];
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toMatchObject({
+      code: "forbidden",
+      message: expect.stringContaining("principal:"),
     });
-    const responses: Response[] = [];
-    for (let i = 0; i < 5; i++) responses.push(await vendo.handler(request("GET", "/apps")));
-    expect(new Set(seen).size).toBe(5);
-
-    // At-most-one-mint invariant: each response carries exactly ONE
-    // vendo_anon_session Set-Cookie, and its id is the SAME id embedded in the
-    // subject the route observed. A double mint within one request (context()
-    // resolved twice → second id overwrites the first's Set-Cookie) would make
-    // the cookie id diverge from the observed subject and fail this pin.
-    responses.forEach((response, i) => {
-      const header = setCookie(response) ?? "";
-      expect(header.match(/vendo_anon_session=/g)).toHaveLength(1);
-      const cookieId = anonCookieValue(response)!;
-      expect(cookieId).toMatch(/^[0-9a-f]{32}$/); // opaque pointer, no signature suffix
-      expect(seen[i]).toBe(`anonymous_${cookieId}`);
-    });
+    expect(resolver).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1911,18 +1639,20 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
     },
   );
 
-  it("boots anonymous ephemeral sessions when neither auth nor principal is configured", async () => {
+  it("refuses to compose when neither auth nor principal is configured", async () => {
     const store = await tempStore("vendo-auth-none-");
-    const vendo = createVendo({ model: {} as LanguageModel, store });
-    const seen: string[] = [];
-    vi.spyOn(vendo.apps, "list").mockImplementation(async (listCtx) => {
-      seen.push(listCtx.principal.subject);
-      return [];
-    });
-    const response = await vendo.handler(request("GET", "/apps"));
-    expect(response.status).toBe(200);
-    expect(seen[0]).toMatch(/^anonymous_[0-9a-f]{32}$/);
-    expect(setCookie(response)).toContain("vendo_anon_session=");
+    let thrown: unknown;
+    try {
+      createVendo({ model: {} as LanguageModel, store });
+    } catch (error) {
+      thrown = error;
+    } finally {
+      await store.close();
+    }
+    expect(thrown).toBeInstanceOf(VendoError);
+    expect((thrown as VendoError).code).toBe("validation");
+    expect((thrown as VendoError).message).toContain("createVendo needs an identity");
+    expect((thrown as VendoError).message).toContain("principal:");
   });
 
   it("auth fills the principal seam — one real wire request resolves the host session", async () => {
@@ -1939,7 +1669,6 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
     }));
     expect(response.status).toBe(200);
     expect(seen[0]).toEqual({ kind: "user", subject: "user_auth_wire", display: "Wire User" });
-    expect(setCookie(response)).toBeNull(); // a resolved host session mints no anon cookie
   });
 
   it("auth's oauth half opens the MCP door — mcp: true needs no separate oauth key", async () => {
@@ -1975,9 +1704,11 @@ describe("09 §2.1 — host-identity presets (auth)", () => {
 
     // Teach the zero-config route origin, then run the real away branch: the
     // probe mints through the preset's actAs and the echo route verifies the
-    // minted cookie through the preset's own principal resolver.
-    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
-    const probe = await vendo.handler(request("POST", "/doctor/act-as", {}));
+    // minted cookie through the preset's own principal resolver. Both requests
+    // carry a real session — the wire refuses a caller with no identity.
+    const session = { cookie: await mintSessionCookie("user_auth_actas") };
+    expect((await vendo.handler(request("GET", "/status", undefined, session))).status).toBe(200);
+    const probe = await vendo.handler(request("POST", "/doctor/act-as", {}, session));
     expect(await probe.json()).toEqual({ ok: true });
   });
 });
@@ -4145,12 +3876,13 @@ describe("execution-v2 — box-edit env knobs", () => {
     // runBoxEdit, where NaN defeats the ?? defaults: deadline = NaN makes
     // every box edit "time out after NaNs" instantly (and roll the edit
     // back), and pollIntervalMs = NaN hot-polls the box control port. Same
-    // posture as validateSessionsConfig: fail loudly at compose time.
+    // posture as validateSweepConfig: fail loudly at compose time.
     const store = await tempStore("vendo-box-env-");
+    const identity = { principal: async () => principal };
     vi.stubEnv("VENDO_BOX_EDIT_TIMEOUT_MS", "8m");
     let thrown: unknown;
     try {
-      createVendo({ model: {} as LanguageModel, store });
+      createVendo({ model: {} as LanguageModel, store, ...identity });
     } catch (error) {
       thrown = error;
     }
@@ -4160,12 +3892,12 @@ describe("execution-v2 — box-edit env knobs", () => {
 
     vi.stubEnv("VENDO_BOX_EDIT_TIMEOUT_MS", "480000");
     vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "0");
-    expect(() => createVendo({ model: {} as LanguageModel, store }))
+    expect(() => createVendo({ model: {} as LanguageModel, store, ...identity }))
       .toThrowError(/VENDO_BOX_EDIT_POLL_MS/);
 
     // Valid positive-integer values still compose.
     vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "2500");
-    expect(() => createVendo({ model: {} as LanguageModel, store })).not.toThrow();
+    expect(() => createVendo({ model: {} as LanguageModel, store, ...identity })).not.toThrow();
   });
 });
 

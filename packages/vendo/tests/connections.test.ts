@@ -4,7 +4,7 @@ import type { Connector, ConnectorAccount } from "@vendoai/actions";
 import { byoConnections, cloudConnections, unconfiguredConnections } from "../src/connections.js";
 
 const ada: Principal = { kind: "user", subject: "user_ada" };
-const anonymous: Principal = { kind: "user", subject: "anonymous_abc", ephemeral: true };
+const ephemeralVisitor: Principal = { kind: "user", subject: "visitor_abc", ephemeral: true };
 
 function fakeConnector(
   name: string,
@@ -63,7 +63,7 @@ describe("byoConnections", () => {
   });
 
   it("refuses to initiate for ephemeral principals", async () => {
-    await expect(service().initiate(anonymous, { toolkit: "gmail" })).rejects.toThrow(/sign/i);
+    await expect(service().initiate(ephemeralVisitor, { toolkit: "gmail" })).rejects.toThrow(/sign/i);
   });
 
   it("refuses to initiate for synthetic webhook subjects", async () => {

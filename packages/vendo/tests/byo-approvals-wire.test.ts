@@ -11,7 +11,7 @@ import { createVendo, type Vendo } from "../src/server.js";
 // `vendo.guardedTools` is the parking registry the tool pack executes through,
 // `GET /approvals/:id` answers <VendoApprovalEmbed>'s "what happened to
 // apr_x?", and the amortized on-request sweep expires orphaned parked calls on
-// the injected session clock.
+// the injected sweep clock.
 
 const principal: Principal = { kind: "user", subject: "user_byo_wire" };
 const ctx: RunContext = {
@@ -93,7 +93,7 @@ async function setup(options: { parkedCallTtlMs?: number; clock?: () => number }
     },
     ...(options.clock === undefined
       ? {}
-      : { sessions: { ttlMs: 0, sweepIntervalMs: 1, now: options.clock } }),
+      : { sweep: { intervalMs: 1, now: options.clock } }),
   });
   vendo.actions.add(host.tools);
   // The wire awaits schema readiness itself; the direct guardedTools park in
