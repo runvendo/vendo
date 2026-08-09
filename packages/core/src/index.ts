@@ -3,6 +3,7 @@ export * from "./agent-context.js";
 export * from "./app-access.js";
 export * from "./app-document.js";
 export * from "./app-floor.js";
+export * from "./app-surfaces.js";
 export * from "./audit.js";
 export * from "./build-deadlines.js";
 export * from "./catalog.js";

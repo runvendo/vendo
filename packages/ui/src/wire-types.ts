@@ -4,8 +4,11 @@
  *
  * ui depends on core only (00-overview dependency rule), so shapes that the
  * wire returns but core does not export are declared here, verbatim from the
- * frozen contract text. The wire is the contract: both sides derive from the
- * same frozen documents, so these cannot drift within the version train.
+ * frozen contract text. "Cannot drift because both sides copied the same frozen
+ * text" turned out to be a promise rather than a mechanism, so the shapes the
+ * producer and this consumer BOTH speak have moved to core
+ * (`core/src/app-surfaces.ts`) and are re-exported below — the client's public
+ * surface is unchanged, but there is now only one definition to drift from.
  */
 import type {
   AppDocument,
@@ -13,6 +16,8 @@ import type {
   ApprovalRequest,
   IsoDateTime,
   Membership,
+  PlacementEntry,
+  ReviewStanding,
   RunId,
   ThreadId,
   Trigger,
@@ -21,6 +26,8 @@ import type {
   UIPayload,
 } from "@vendoai/core";
 import type { UIMessage } from "ai";
+
+export type { PlacementEntry, ReviewStanding };
 
 /** 06-apps §1 — what `GET /apps/:id/open` returns. */
 export type OpenSurface =
@@ -43,25 +50,6 @@ export type OpenSurface =
 export interface PendingSurface {
   kind: "pending";
 }
-
-/** 06-apps — one row of `GET /apps/placements`: what is in a slot, and where
- *  that app's build stands. `title` is "" while a build has not landed. */
-export interface PlacementEntry {
-  slot: string;
-  app: AppId;
-  title: string;
-  status: "ready" | "building" | "failed";
-}
-
-/**
- * Remix final shape (2026-08-02) — where the CURRENT version of a review-kind
- * remix stands with the host reviewer, riding the venue verdict: "pending"
- * renders as "sent for review"; "rejected" carries the reviewer's note for
- * the user's panel.
- */
-export type ReviewStanding =
-  | { status: "pending"; versionHash: string }
-  | { status: "rejected"; versionHash: string; note: string; by: string; at: IsoDateTime };
 
 /**
  * 06-apps §9 — the additive in-client venue verdict riding a tree payload

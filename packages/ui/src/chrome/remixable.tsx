@@ -1,5 +1,5 @@
 import { isValidElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { sha256Hex, type AppDocument, type Json, type TreeNode } from "@vendoai/core";
+import { pinComponentName, type AppDocument, type Json, type TreeNode } from "@vendoai/core";
 import { useVendoProvider } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useResource } from "../hooks/use-resource.js";
@@ -93,16 +93,6 @@ function serializableProps(children: ReactNode): Record<string, Json> {
     Object.entries(props).filter(([, value]) => isSerializable(value)),
   ) as Record<string, Json>;
 }
-
-/** Structural copy of @vendoai/apps' pinComponentName (ui depends on core
- *  only — the JailFurnishing precedent): the stable generated-component name
- *  a fork ships under, needed to find the pinned node in the fork's tree. */
-const pinComponentName = (slot: string): string => {
-  const stem = (slot.match(/[A-Za-z0-9]+/g) ?? [])
-    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
-    .join("") || "Slot";
-  return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
-};
 
 const NO_APPS: AppDocument[] = [];
 

@@ -21,6 +21,7 @@ import type {
   IsoDateTime,
   Json,
   NormalizedCatalog,
+  PlacementEntry,
   RiskLabel,
   RunContext,
   ScreenAssembler,
@@ -391,17 +392,9 @@ export interface AuthoredAppResult {
   dataUnavailable?: true;
 }
 
-/** One slot's answer: what is in it, and where that app's build stands.
- *  `status` is derived from the app record every read — never stored, so a
- *  build that lands (or fails) needs no second write to correct the slot. */
-export interface PlacementEntry {
-  slot: string;
-  app: AppId;
-  /** The app's name, or "" while the build has not landed (there is no
-   *  document yet to take a title from). */
-  title: string;
-  status: "ready" | "building" | "failed";
-}
+/** One slot's answer. The CLIENT reads it off the wire too, so the shape itself
+ *  lives in core. */
+export type { PlacementEntry };
 
 /** 06-apps §1 */
 export interface AppsRuntime {
