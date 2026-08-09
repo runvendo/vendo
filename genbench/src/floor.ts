@@ -1,3 +1,4 @@
+import type { UsageTotals } from "./meter.js";
 import type { Probed } from "./probe.js";
 import type { Shot } from "./render.js";
 import type { World } from "./world.js";
@@ -8,9 +9,33 @@ export interface Offender {
   readonly why: string;
 }
 
+/** One value tier 1 could not clear, and what the auditor's code did about it.
+ *  The program and its executed result are kept because they ARE the finding:
+ *  a cleared value is only as good as the derivation anyone can re-run. */
+export interface Audited {
+  /** The value as it appeared on screen. */
+  readonly text: string;
+  /** The check program the auditor proposed, verbatim. */
+  readonly program: string;
+  /** What executing it returned, or why it was refused. */
+  readonly result: string;
+  readonly verdict: "cleared-by-audit" | "offender";
+  readonly attempts: number;
+}
+
 export interface HonestDataResult {
   readonly pass: boolean;
   readonly offenders: readonly Offender[];
+  /** Tier 2's record, one entry per value it was asked about. Absent when the
+   *  deterministic pass cleared the screen outright and no auditor was called. */
+  readonly audited?: readonly Audited[];
+  /** The auditor could not be reached, so the values it would have judged stay
+   *  offenders. Fail-closed, the same posture the judge takes. */
+  readonly degraded?: boolean;
+  readonly error?: string;
+  /** What AUDITING this screen spent, priced through the same table as the
+   *  contenders. Reported beside them and never added into one. */
+  readonly cost?: { usage: UsageTotals; usd: number };
 }
 
 export interface Binding {
@@ -44,16 +69,19 @@ export interface FloorResult {
 /** Money and counts collapse onto one key so "$2,850.00", "2850" and the raw
  *  2850 are the same fact. Sign is a display choice the style rubric owns, so
  *  the index compares magnitudes. */
-const numberKey = (value: number): string => String(Math.round(Math.abs(value) * 100) / 100);
+export const numberKey = (value: number): string => String(Math.round(Math.abs(value) * 100) / 100);
 
 /** The same amount authored in dollars may be shown in cents, and vice versa. */
-const numberKeys = (value: number): string[] => [numberKey(value), numberKey(value / 100), numberKey(value * 100)];
+export const numberKeys = (value: number): string[] => [numberKey(value), numberKey(value / 100), numberKey(value * 100)];
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const ISO_DATE = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
 const HUMAN_DATE =
   /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b/gi;
-const NUMBER = /-?\$?\d[\d,]*(?:\.\d+)?/g;
+export const NUMBER = /-?\$?\d[\d,]*(?:\.\d+)?/g;
+
+/** One number as the screen wrote it — "$2,850.00", "-1288.40" — as a number. */
+export const numberIn = (text: string): number => Number(text.replace(/[$,]/g, ""));
 
 /** A date is indexed at both precisions, because "Aug 1" carries no year. */
 const dateKeys = (year: string | undefined, month: string, day: string): string[] => {
@@ -162,7 +190,7 @@ export function honestData(visibleText: string, index: DataIndex): HonestDataRes
 
   for (const match of remaining.matchAll(NUMBER)) {
     const text = match[0];
-    const value = Number(text.replace(/[$,]/g, ""));
+    const value = numberIn(text);
     if (!Number.isFinite(value)) continue;
     if (index.numbers.has(numberKey(value))) continue;
     offenders.push({
@@ -234,6 +262,11 @@ export const checks = (floor: FloorResult): ReadonlyArray<{ name: string; pass: 
   { name: "wiredActions", pass: floor.wiredActions.pass },
 ];
 
+/** Every check has to hold. Written once because tier 2 re-decides it after the
+ *  auditor has run, and two spellings of the floor would eventually disagree. */
+export const passes = (floor: Omit<FloorResult, "pass">): boolean =>
+  floor.delivered && floor.renders && floor.valid && floor.honestData.pass && floor.wiredActions.pass;
+
 export function runFloor(input: {
   world: World;
   artifact: string | undefined;
@@ -247,13 +280,13 @@ export function runFloor(input: {
   const valid = delivered && input.blocking.length === 0;
   const data = honestData(input.shot?.visibleText ?? "", buildIndex(input.world));
   const actions = wiredActions(input.trace, input.world);
-  return {
+  const floor = {
     delivered,
     renders,
     valid,
     blocking: input.blocking,
     honestData: data,
     wiredActions: actions,
-    pass: delivered && renders && valid && data.pass && actions.pass,
   };
+  return { ...floor, pass: passes(floor) };
 }

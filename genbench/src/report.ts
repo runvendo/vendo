@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { checks, type Binding, type Offender } from "./floor.js";
+import { checks, type Binding, type HonestDataResult, type Offender } from "./floor.js";
 import type { JudgeResult, LineVerdict, Verdict } from "./judge.js";
+import type { UsageTotals } from "./meter.js";
 import type { CaseResult } from "./run.js";
 import { cannedResponse, type World } from "./world.js";
 
@@ -33,6 +34,43 @@ const bindingList = (bindings: readonly Binding[]): string =>
               .join(" — ")}</span> ${b.known && b.argsValid ? '<i class="ok">✓</i>' : '<i class="no">✕</i>'}</li>`,
         ),
   );
+
+/**
+ * Tier 2's evidence: the value, the program that was executed for it, and what
+ * that returned.
+ *
+ * On the page rather than behind a hover, for the same reason the judge's notes
+ * are — this verdict was reached by running code, and code nobody can see is a
+ * verdict you have to take on trust. The value stays the thing you scan for; the
+ * program is demoted to a muted well beneath it.
+ */
+const auditList = (data: HonestDataResult): string => {
+  const audited = data.audited ?? [];
+  if (audited.length === 0) return "";
+  const cleared = audited.filter((record) => record.verdict === "cleared-by-audit").length;
+  return `<section class="audit">
+  ${
+    data.degraded === true
+      ? `<p class="degraded">auditor degraded — these values were never audited${data.error === undefined ? "" : `: ${escape(data.error)}`}</p>`
+      : ""
+  }
+  <p class="half-head"><span>audit · only executed code clears a value</span><b>${cleared}/${audited.length}</b></p>
+  <ul class="lines">${audited
+    .map((record) => {
+      const ok = record.verdict === "cleared-by-audit";
+      return (
+        `<li class="${ok ? "pass" : "fail"}"><i aria-hidden="true">${ok ? "✓" : "✕"}</i><span class="what">` +
+        `<span class="line"><code>${escape(record.text)}</code></span>` +
+        (record.program.trim() === "" ? "" : `<pre class="program">${escape(record.program)}</pre>`) +
+        `<span class="note">${escape(
+          ok ? `cleared — executed to ${record.result}` : record.result,
+        )} · ${record.attempts} attempt${record.attempts === 1 ? "" : "s"}</span>` +
+        `</span></li>`
+      );
+    })
+    .join("")}</ul>
+</section>`;
+};
 
 /** `renders` can fail for a reason no screenshot shows, so the reason is on the
  *  page next to the verdict. */
@@ -131,6 +169,7 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
   <dl class="floor">${scored.map((check) => `<div><dt>${check.name}</dt><dd>${verdict(check.pass)}</dd></div>`).join("")}</dl>
   ${result.floor.blocking.length === 0 ? "" : notes(result.floor.blocking.map((why) => `<li><span>${escape(why)}</span></li>`))}
   ${result.floor.honestData.pass ? "" : offenderList(result.floor.honestData.offenders)}
+  ${auditList(result.floor.honestData)}
   ${bindingList(result.floor.wiredActions.bindings)}
   ${rubric(result.judged)}
   <dl class="metrics">
@@ -143,15 +182,20 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
 }
 
 /**
- * What GRADING this run cost, on its own line and in nobody's column.
+ * What one of the benchmark's OWN models cost, on its own line and in nobody's
+ * column.
  *
- * The judge is the benchmark's overhead, not a contender's bill: folding it into
- * a `cost` figure would quietly make every column more expensive than the thing
- * it measures, and two runs graded a different number of times would stop
- * comparing. So it is said here, once, and left out of every column.
+ * The judge and the auditor are the benchmark's overhead, not a contender's
+ * bill: folding either into a `cost` figure would quietly make every column more
+ * expensive than the thing it measures, and two runs graded a different number
+ * of times would stop comparing. So each is said here, once, and left out of
+ * every column.
  */
-const judgeSpend = (results: readonly CaseResult[]): string => {
-  const priced = results.flatMap((result) => (result.judged.cost === undefined ? [] : [result.judged.cost]));
+const spendLine = (
+  who: string,
+  did: string,
+  priced: ReadonlyArray<{ usage: UsageTotals; usd: number }>,
+): string => {
   if (priced.length === 0) return "";
   const tokens = priced.reduce(
     (total, { usage }) =>
@@ -159,10 +203,16 @@ const judgeSpend = (results: readonly CaseResult[]): string => {
     0,
   );
   const usd = priced.reduce((total, cost) => total + cost.usd, 0);
-  return `<p class="meta spend"><span>judge · ${priced.length} screen${priced.length === 1 ? "" : "s"} graded</span>` +
+  return `<p class="meta spend"><span>${who} · ${priced.length} screen${priced.length === 1 ? "" : "s"} ${did}</span>` +
     `<span>${tokens.toLocaleString("en-US")} tokens</span><span>$${usd.toFixed(4)}</span>` +
     `<span>not counted in any contender's cost</span></p>`;
 };
+
+const spent = <T,>(results: readonly CaseResult[], of: (result: CaseResult) => T | undefined): T[] =>
+  results.flatMap((result) => {
+    const cost = of(result);
+    return cost === undefined ? [] : [cost];
+  });
 
 /** The case's own truth, collapsed: every tool the screens could call, what it
  *  does, and the exact response it answers with — case overrides applied. It is
@@ -287,6 +337,16 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
 .degraded{margin:0 0 12px;padding:9px 12px;border-left:3px solid var(--no);border-radius:0 6px 6px 0;
   background:#fbeceb;font-size:12px;font-weight:600;color:var(--no)}
 
+/* ---- tier 2: the value, and the program that was executed to clear it ----
+   Same spacing step and the same verdict rows as the rubric above, because it
+   is the same kind of claim. The program is a filled well rather than a
+   bordered box — one less border in a column that already has plenty. */
+.audit{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.audit .line code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
+.program{margin:6px 0 0;padding:8px 10px;background:var(--page);border-radius:6px;
+  white-space:pre-wrap;overflow-wrap:anywhere;
+  font:450 11px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--sec)}
+
 /* ---- the world panel: closed by default, because it is the reference you
        reach for, not the thing you came to look at ---- */
 .world{margin:20px 0 0;background:var(--card);border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
@@ -404,7 +464,8 @@ export async function writePreview(input: {
 <style>${CSS}</style></head><body><div class="wrap">
 <h1>genbench</h1>
 <p class="meta"><span>${escape(input.runId)}</span><span>world ${escape(first?.world ?? "")}</span><span>${escape(first?.lane ?? "screen")} lane</span></p>
-${judgeSpend(input.results)}
+${spendLine("judge", "graded", spent(input.results, (result) => result.judged.cost))}
+${spendLine("auditor", "audited", spent(input.results, (result) => result.floor.honestData.cost))}
 ${sections.join("")}
 </div>
 <aside class="feed"><p class="feed-label">tool calls</p><ol id="feed"></ol></aside>

@@ -64,7 +64,7 @@ column's slug — `<harness>-<model>`, e.g. `vendo-sonnet`, `diy-opus`,
 | `artifact.vendo` | the document the contender actually saved (vendo only — a contender whose outcome says `format: "html"` has already delivered a document, and it lands once, as `page.html`) |
 | `page.html` | the real screen: for vendo a root, the payload and the product's own renderer bundled in; for `diy` and `claude-code` the document each wrote. This is the only way pixels are made |
 | `screenshot.png` | that page, shot once it has settled |
-| `result.json` | the five floor verdicts, the judge's verdict for every rubric line and the contract it graded under, the click trace, console errors, timings, tokens and dollars |
+| `result.json` | the five floor verdicts and any check programs tier 2 executed, the judge's verdict for every rubric line and the contract it graded under, the click trace, console errors, timings, tokens and dollars |
 
 and one `runs/<run>/preview.html`, which is where a person actually looks:
 
@@ -77,6 +77,9 @@ and one `runs/<run>/preview.html`, which is where a person actually looks:
   tally per half. A line the screen has no subject for is `na` and sits out of
   the denominator; a judge that could not grade says so instead of printing a
   tally that would read as the contender's score
+- **the audit block**, on any column where tier 1 could not clear a value: the
+  value, the check program that was executed for it and what that returned, so a
+  number cleared by tier 2 can be re-checked by hand
 - **the world-data panel** — collapsed: every tool the case's screens could
   call, what it does, and the exact response it answers with, overrides
   applied. It is what makes any number on any screen checkable by eye
@@ -187,19 +190,61 @@ Five deterministic checks, no model involved:
   step has nothing to block, so for `diy` and `claude-code` this check collapses
   onto `delivered` — the checks that do the work on a hand-written page are `renders`,
   `honestData` and `wiredActions`, and all three are the same code
-- **honestData** — every number and date on screen traces back to the tools.
-  The closed set, in full — a contender may show any literal number or date a
-  tool returned; the **row count** of one tool; the **sum, mean, min or max** of
-  one numeric field across one tool's rows; and the **count of one tool's rows
-  filtered to one field equalling one value** ("2 pending transfers" — two of
-  `list_transfers`' four rows carry `status: "pending"`). Money is matched at
-  either scale, because the same amount may be authored in cents and shown in
-  dollars; a count is matched at its own magnitude only, since two transfers is
-  never $0.02 or 200 of anything. Nothing else is allowed
+- **honestData** — every number and date on screen traces back to the tools, in
+  two tiers. **Tier 1** is deterministic, runs first and decides most screens on
+  its own: a contender may show any literal number or date a tool returned; the
+  **row count** of one tool; the **sum, mean, min or max** of one numeric field
+  across one tool's rows; and the **count of one tool's rows filtered to one
+  field equalling one value** ("2 pending transfers" — two of `list_transfers`'
+  four rows carry `status: "pending"`). Money is matched at either scale, because
+  the same amount may be authored in cents and shown in dollars; a count is
+  matched at its own magnitude only, since two transfers is never $0.02 or 200 of
+  anything. Whatever tier 1 cannot clear goes to **tier 2**, below
 - **wiredActions** — the probe pressed every control on the page and every call
   that fired names a real tool with schema-valid arguments. A control that fires
   nothing fails: naming a tool in a document is not being wired to it, which is
   the difference `tests/probe.test.ts` exists to keep honest
+
+### Tier 2: only executed code clears a value
+
+A closed allowlist cannot express every honest arithmetic a screen might do — a
+percentage was the case that proved it. "Housing is 67.2% of my spending" is
+derived from the data by any reasonable reading, and tier 1 has no rule that
+reaches it, so it called an honest screen a liar. Widening the allowlist is how
+that ends badly: every rule added to it is a rule a *fabricated* number can also
+satisfy. So tier 2 moves the burden instead of relaxing it.
+
+Values tier 1 could not clear go to a pinned auditor (`AUDITOR_CONTRACT` in
+`src/audit.ts` — model, `auditVersion`, and a hash of its prompt, stamped the
+same way the judge's is) along with the screen text around each value and the
+case's tool data. It may **see** the data, and it may answer with only one thing:
+a **check program**, the body of a JavaScript function over one variable per
+tool. The harness runs that program in a `node:vm` sandbox — no imports, no
+`require`, no I/O, no globals beyond the tools' own data, code generation off,
+250 ms deadline — and compares what it returned against the number on screen
+through the same normalisation tier 1 uses.
+
+**Only that comparison clears a value. The auditor's prose is never read.**
+
+- A program containing the value it is meant to derive — at any scale, in any
+  notation, so `9999`, `9999.00` and `999900 / 100` all count — is rejected
+  before it runs, and the attempt is spent. Writing the answer down proves
+  nothing.
+- **Two attempts** per value, then it stays an offender, `why: "no executable
+  derivation found"`.
+- **One call per screen**, covering every unresolved value at once — and **no
+  call at all** when tier 1 cleared everything, which is the common case, so most
+  runs pay nothing for this.
+- Auditor unreachable → its values stay offenders and `honestData.degraded` is
+  true. Fail-closed, the same posture the judge takes.
+- Dates are tier 1's alone: the comparison that clears a value is numeric, so
+  there is nothing here that could execute against one.
+
+Every audited value is recorded in `result.json` under `honestData.audited` —
+the value, the program verbatim, what executing it returned, the verdict and the
+attempt count — and shown in that column in the preview with its program on the
+page. What auditing cost is its own line under the run header, priced through
+the same table as everything else, and never added into a contender's `cost`.
 
 ## The judge
 

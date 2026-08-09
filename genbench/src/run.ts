@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { auditFloor } from "./audit.js";
 import { claudeCodeDriver, WALL_CLOCK_MS } from "./claude-code.js";
 import { diyDriver } from "./diy.js";
 import { checks, runFloor, type FloorResult } from "./floor.js";
@@ -342,7 +343,15 @@ async function main(argv: readonly string[]): Promise<number> {
     const shot: Shot | undefined = done?.shot;
     const trace = done?.trace ?? [];
     const artifact = outcome?.artifact;
-    const floor = runFloor({ world: scoped, artifact, blocking: outcome?.blocking ?? [], trace, shot });
+    // Tier 2 of the fabrication check, and outside the contender's budget for
+    // the same reason the judge is: the wait is the benchmark's, not the
+    // column's. A screen the deterministic pass cleared outright — the common
+    // case — calls nobody and costs nothing.
+    const floor = await auditFloor(
+      runFloor({ world: scoped, artifact, blocking: outcome?.blocking ?? [], trace, shot }),
+      scoped,
+      shot?.visibleText ?? "",
+    );
 
     // Outside the contender's budget: the wait is the grader's, and charging it
     // to the column would report a timeout the contender never had. `judge`
@@ -389,10 +398,17 @@ async function main(argv: readonly string[]): Promise<number> {
     };
     await writeCase(runDir, { outcome, html: done?.html, shot, result });
     const scored = checks(floor);
+    const audited = floor.honestData.audited ?? [];
     console.log(
       `· ${contender.slug} / ${testCase.id} · floor ${scored.filter((check) => check.pass).length}/${scored.length}` +
         ` · judged ${judged.degraded ? "—" : tally(judged.lines)}` +
         ` · ${result.timing.settledMs}ms · $${result.cost.usd.toFixed(4)}` +
+        // A second model call is never silent: say what it was asked and what it
+        // cleared, or the run's spend gains a line nobody can account for.
+        (audited.length === 0
+          ? ""
+          : ` · audited ${audited.filter((one) => one.verdict === "cleared-by-audit").length}/${audited.length}`) +
+        (floor.honestData.degraded === true ? ` · AUDITOR DEGRADED: ${floor.honestData.error ?? ""}` : "") +
         (judged.degraded ? ` · JUDGE DEGRADED: ${judged.error ?? ""}` : ""),
     );
     return result;
