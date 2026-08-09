@@ -5,6 +5,7 @@
  */
 import type { ThreadId, TurnState } from "@vendoai/core";
 import type { UIMessage } from "ai";
+import { jsonEqual } from "./json-equal.js";
 
 /**
  * Where an opaque `turn.state` lives between turns.
@@ -81,26 +82,6 @@ export function createTurnState(initial: string | undefined): TurnState & { pend
  */
 export type HistoryChange = "append" | "prefix-truncation" | "arbitrary-edit";
 
-/** Structural JSON equality, key-order independent (both sides are
- *  wire-serializable UIMessage parts, and the wire drops undefined props). */
-function jsonEqual(left: unknown, right: unknown): boolean {
-  if (left === right) return true;
-  if (Array.isArray(left) || Array.isArray(right)) {
-    return Array.isArray(left)
-      && Array.isArray(right)
-      && left.length === right.length
-      && left.every((item, index) => jsonEqual(item, right[index]));
-  }
-  if (typeof left !== "object" || typeof right !== "object" || left === null || right === null) {
-    return false;
-  }
-  const leftRecord = left as Record<string, unknown>;
-  const rightRecord = right as Record<string, unknown>;
-  const keys = Object.keys(leftRecord).filter((key) => leftRecord[key] !== undefined);
-  const rightKeys = Object.keys(rightRecord).filter((key) => rightRecord[key] !== undefined);
-  return keys.length === rightKeys.length && keys.every((key) => jsonEqual(leftRecord[key], rightRecord[key]));
-}
-
 export function classifyHistory(
   persisted: readonly UIMessage[],
   incoming: readonly UIMessage[],
@@ -109,7 +90,7 @@ export function classifyHistory(
   for (let index = 0; index < overlap; index += 1) {
     const before = persisted[index]!;
     const after = incoming[index]!;
-    if (before.id !== after.id || before.role !== after.role || !jsonEqual(before.parts, after.parts)) {
+    if (before.id !== after.id || before.role !== after.role || !jsonEqual(before.parts, after.parts, true)) {
       return "arbitrary-edit";
     }
   }

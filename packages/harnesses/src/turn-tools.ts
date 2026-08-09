@@ -29,7 +29,7 @@ export const APPROVAL_WAIT_MS = 90_000;
  * yielded"). This is the ai-SDK tool-part mirror ONLY — the `data-vendo-*` parts
  * (view, approval, connect, build-failed, citations) are written by the SHIPPED
  * bridge inside `guardedCall`/`previewApproval`, so a harness produces the
- * identical wire a `createAgent` turn does.
+ * identical wire the legacy agent path produced.
  */
 export type MirrorEvent = ({
   /** The turn that made this call, stamped once by {@link createTurnTools} from

@@ -62,13 +62,11 @@ export interface ToolDoorPort {
 }
 
 /** The composed adapters a harness may be handed. Mirrors `ComposedAdapters`
- *  (the boot gate's view) plus the blob door session artifacts need. */
+ *  (the boot gate's view), plus the MCP door a machine-backed harness needs. */
 export interface HarnessAdapters {
   /** `SandboxAdapter` from `@vendoai/apps`; typed loosely so the root entry of
    *  this package never pulls a provider SDK into scope. */
   sandbox?: unknown;
-  /** `FilesAdapter` — where a harness parks an artifact too big for `turn.state`. */
-  files?: unknown;
   /** The host's MCP door, for a harness whose thinker runs on a machine. */
   toolDoor?: ToolDoorPort;
 }

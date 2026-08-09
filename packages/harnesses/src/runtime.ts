@@ -523,8 +523,8 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
                   // said "something went wrong". Claiming the slot first is what
                   // keeps the two the same sentence.
                   recordTurnError(event.message, (part) => writer.write(part as never));
-                  // …and the SCREEN's — the same ai-SDK error chunk `createAgent`
-                  // raised, so the host renders its banner, its Retry and its
+                  // …and the SCREEN's — the same ai-SDK error chunk the legacy
+                  // agent path raised, so the host renders its banner, its Retry and its
                   // detail line. Splicing the sentence into the assistant's prose
                   // instead would read as the agent talking and would offer the
                   // user nothing to act on.
@@ -643,12 +643,6 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
 }
 
 /**
- * Build contract §6 + the store write law: one row per NEW OR EDITED message,
- * ordered by `seq`, never by timestamp. Re-sending an untouched history costs
- * nothing, so a turn lands O(messages changed) rows — not O(thread), and never
- * O(tokens).
- */
-/**
  * States that mean "the call was announced and never resolved". A turn that ended
  * mid-call (an abort inside a tool, a harness that stopped awaiting) leaves one,
  * and `convertToModelMessages` turns it into an assistant tool-call with no
@@ -688,6 +682,12 @@ const PERSIST_RETRY_DELAYS_MS = [100, 500] as const;
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Build contract §6 + the store write law: one row per NEW OR EDITED message,
+ * ordered by `seq`, never by timestamp. Re-sending an untouched history costs
+ * nothing, so a turn lands O(messages changed) rows — not O(thread), and never
+ * O(tokens).
+ */
 async function persistTurn(
   transcript: TranscriptStore,
   input: TurnRunInput<unknown>,
@@ -809,7 +809,7 @@ async function reportRun(
 /**
  * Flip stale `approval-requested` parts and resolve their guard-side approvals —
  * the shipped `abandonPendingApprovals` semantics, applied by the runtime so a
- * harness turn leaves the same paired history a `createAgent` turn does.
+ * harness turn leaves the same paired history the legacy agent path produced.
  */
 async function abandonStaleApprovals(
   guard: Guard,

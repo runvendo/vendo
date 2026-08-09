@@ -8,7 +8,7 @@
  * The `data-vendo-*` parts are NOT written here: the view channel, the approval
  * card, the connect card, the build-failed banner and the citations part all come
  * from the shipped bridge (`guardedCall`/`previewApproval` in ./tool-bridge.ts),
- * so a harness turn produces the identical wire a `createAgent` turn does.
+ * so a harness turn produces the identical wire the legacy agent path produced.
  *
  * ONE addition, and deliberately NOT in core's stream-parts.ts: `status` (§1.5)
  * has no existing part and must be screen-only. The ai-SDK's own
@@ -107,8 +107,8 @@ export function writeView(writer: Writer, part: VendoViewPart): void {
 /**
  * §1.5 `error` → the screen's failure affordance. The ai-SDK error chunk is what
  * the thread UI renders as a banner with Retry and (for a Vendo-shaped message) a
- * detail line — the same affordance `createAgent`'s `onError` produces, carrying
- * the same `wireErrorMessage` string, meter-exhausted sentence included.
+ * detail line — the same affordance the legacy agent path's `onError` produced,
+ * carrying the same `wireErrorMessage` string, meter-exhausted sentence included.
  */
 export function writeError(writer: Writer, message: string): void {
   writer.write({ type: "error", errorText: message });

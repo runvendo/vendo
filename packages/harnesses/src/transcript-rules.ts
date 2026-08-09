@@ -3,13 +3,14 @@
  * what a client may change about stored history, and how a superseded approval
  * resolves.
  *
- * They live beside the runtime rather than inside a door because two doors read
- * them (the harness runtime and, until it is deleted, `createAgent`), and a
- * second copy of "may a client rewrite this message?" is a security answer that
- * could drift.
+ * They live beside the runtime rather than inside a door because more than one
+ * door reads them (the harness runtime here, and the umbrella's thread door in
+ * `@vendoai/vendo`), and a second copy of "may a client rewrite this message?"
+ * is a security answer that could drift.
  */
 import { VendoError, type ApprovalId } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
+import { jsonEqual } from "./json-equal.js";
 
 // System-role messages are rejected: the system prompt is assembled server-side
 // (03 §3); accepting one from the client would be a prompt-injection channel.
@@ -27,25 +28,6 @@ export function upsertMessage(messages: UIMessage[], message: UIMessage): void {
   const index = messages.findIndex((candidate) => candidate.id === message.id);
   if (index === -1) messages.push(message);
   else messages[index] = message;
-}
-
-/** Structural JSON equality, key-order independent (both sides are
- *  wire-serializable UIMessage parts). */
-function jsonEqual(left: unknown, right: unknown): boolean {
-  if (left === right) return true;
-  if (Array.isArray(left) || Array.isArray(right)) {
-    return Array.isArray(left) && Array.isArray(right)
-      && left.length === right.length
-      && left.every((item, index) => jsonEqual(item, right[index]));
-  }
-  if (typeof left !== "object" || typeof right !== "object" || left === null || right === null) {
-    return false;
-  }
-  const leftRecord = left as Record<string, unknown>;
-  const rightRecord = right as Record<string, unknown>;
-  const keys = Object.keys(leftRecord);
-  return keys.length === Object.keys(rightRecord).length
-    && keys.every((key) => jsonEqual(leftRecord[key], rightRecord[key]));
 }
 
 /** AGENT-12: is `incoming` the one client-writable change to a stored part —
