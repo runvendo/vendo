@@ -274,7 +274,16 @@ jobs:
           RESULTS: ${{ toJSON(needs.*.result) }}
         run: |
           echo "$RESULTS"
-          [[ "$RESULTS" != *failure* && "$RESULTS" != *cancelled* ]]
+          # Whitelist: every needed lane must report exactly `success`. GitHub
+          # reports infrastructural kills (outage, concurrency cancellation)
+          # as `abandoned` or `skipped`, which the old blacklist let through —
+          # a green required check while lanes never ran a line of code (#924).
+          bad="$(printf '%s' "$RESULTS" | grep -oE '"[a-z_]+"|null' | grep -v '"success"' || true)"
+          if [ -n "$bad" ]; then
+            echo "gate failed: lanes did not all report success: $bad"
+            exit 1
+          fi
+          echo "all lanes succeeded"
 
   integration:
     runs-on: ubuntu-latest
