@@ -4,14 +4,11 @@ import { createAppHistory } from "../src/history.js";
 import { createApps, type AppsRuntime, type PinBaseline } from "../src/index.js";
 import { detectPinDrift, pinComponentName } from "../src/pins.js";
 import { appVersionHash } from "../src/version-hash.js";
-import {
-  basicLanguageModel,
-  guardFixture,
-  memoryStore,
-  scriptedAssembler,
-  seedAppRow,
-  type AssemblerAnswer,
-} from "../src/testing/index.js";
+import { scriptedAssembler, type AssemblerAnswer } from "../src/testing/authoring-assembler.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { basicLanguageModel } from "../src/testing/scripted-model.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_rebase" },

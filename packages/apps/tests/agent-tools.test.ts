@@ -10,17 +10,12 @@ import {
 import { describe, expect, it } from "vitest";
 import { agentToolDescriptors } from "../src/agent-tools.js";
 import { createApps, type AppsRuntime, type PlacementEntry } from "../src/index.js";
-import {
-  authoringAssembler,
-  basicLanguageModel,
-  bindTools,
-  fakeBoxSandbox,
-  guardFixture,
-  memoryStore,
-  scriptedAssembler,
-  seedAppRow,
-  scriptedLanguageModel,
-} from "../src/testing/index.js";
+import { authoringAssembler, scriptedAssembler } from "../src/testing/authoring-assembler.js";
+import { fakeBoxSandbox } from "../src/testing/fake-box.js";
+import { bindTools, guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { basicLanguageModel, scriptedLanguageModel } from "../src/testing/scripted-model.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
 
 const ctx: RunContext = {

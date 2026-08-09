@@ -31,7 +31,7 @@ export function useChromeRootPresence(): boolean {
  * THE DEFECT this default closes: `automaticPolicyNotice` defaulted to TRUE, so
  * the banner auto-prepended itself inside every chrome boundary that didn't
  * think to opt out — the thread, the overlay, the host's pinned slot, a BYO
- * embed, the voice stage, the share dialog. A bank customer read "Vendo is
+ * embed, the voice stage. A bank customer read "Vendo is
  * running without a policy · Configure `.vendo/policy.json`" mid-conversation.
  * It is now opt-IN: a developer/console surface asks for it, and any host that
  * wants the banner mounts the exported {@link NoPolicyNotice} itself.

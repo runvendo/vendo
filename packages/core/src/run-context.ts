@@ -36,7 +36,7 @@ const mcpConsentSchema = z.object({
     member an implicit owner of every app the org holds. */
 export interface Membership {
   org: string;
-  /** Consumer-voice org name (what the Share dialog shows). */
+  /** Consumer-voice org name, so a surface names the org instead of its id. */
   display?: string;
   /** Host-issued team ids within this org (grant principal `team:<org>/<id>`). */
   teams?: string[];

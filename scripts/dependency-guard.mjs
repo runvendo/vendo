@@ -75,9 +75,23 @@ const LAYERS = {
   "@vendoai/automations": ["@vendoai/core", "@vendoai/apps"],
   // the harness runtime (build contract 2026-07-30 §2): the second multi-block
   // package after the umbrella. It runs any Harness — building the Turn, mapping
-  // the guard's outcomes, mirroring onto today's wire, and emitting hot-path
-  // views — and since the engine fold it OWNS the turn loop too, so it reaches
-  // core (the contract), apps (the plan skeleton) and guard, and nothing else.
+  // the guard's outcomes, mirroring onto today's wire — and since the engine
+  // fold it OWNS the turn loop too. The runtime's ROOT ENTRY reaches core (the
+  // contract) and guard only: the render seam, validate gate and screen agent
+  // moved out (apps, apps, and the umbrella respectively), and hot-path views
+  // ride the runtime's generic `wrapWorkspace` slot. The apps edges that REMAIN
+  // are the DRIVER-SIDE ones, none of them on the root entry's module graph:
+  //   - `claude-code/local.ts` loads the session runner for `machine: "local"`
+  //     (`@vendoai/apps/claude-turn`), and the driver imports that module's
+  //     event types (`machine.ts`, `index.ts`);
+  //   - `claude-code/index.ts` value-imports `HOT_PATH_WATCH`,
+  //     `repairInstruction` and `validateWrittenApps` from the apps root (the
+  //     mid-turn hot sync and the builder's validate gate);
+  //   - `materialize.ts` value-imports `hotPathAppId` from the apps root (the
+  //     sync-back seam's hot-path filter — reached by the drivers only);
+  //   - the claude-code tests drive the real box-door/claude-turn/e2b seams.
+  // Severing the edge means rehoming claude-turn and the hot-path vocabulary,
+  // which is its own decision, not a side effect.
   // It is NOT the umbrella: no store, no actions.
   "@vendoai/harnesses": ["@vendoai/core", "@vendoai/apps", "@vendoai/guard"],
   // the standalone agent runtime (agents-v0 spec, 2026-08-04): the open-source

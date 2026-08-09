@@ -19,9 +19,9 @@ import { createStore, storeFiles, type VendoStore } from "@vendoai/store";
 import { randomUUID } from "node:crypto";
 import { resolveDoor, type DoorConfig } from "./door.js";
 import { withEgress, type EgressConfig } from "./egress.js";
-import type { McpServerConfig } from "./mcp.js";
+import type { SystemPromptHook } from "./prompt.js";
 import { createSession, type AgentSession, type SessionDeps, type SessionOptions } from "./session.js";
-import { mergeSources, type ToolSource } from "./tools.js";
+import { mergeSources, type McpServerConfig, type ToolSource } from "./tools.js";
 import { loadSkillFolders } from "./skills.js";
 
 export interface AgentConfig {
@@ -49,6 +49,18 @@ export interface AgentConfig {
   door?: DoorConfig;
   /** The host's prompt block. */
   instructions?: string;
+  /**
+   * The last word on the per-turn system prompt. Called once per turn with the
+   * ctx and this package's own assembly; a returned string is used VERBATIM
+   * (even `""`), `undefined` means the default assembly.
+   *
+   * ONE hook, both venues — `ctx.venue` says which — so a chat turn and an away
+   * firing cannot drift into two agents wearing one name. `undefined` meaning
+   * "the default" is what keeps a conditional that falls through from silently
+   * stripping the rules; replacing wholesale hands the base rules and the
+   * forgery-safe `[User]`/`[Situation]` blocks to the host, to keep or to drop.
+   */
+  system?: SystemPromptHook;
 }
 
 export interface VendoAgent {
@@ -82,6 +94,9 @@ export interface AgentComposition {
   /** Present only for a harness that thinks on a machine. */
   sandbox?: SandboxAdapter;
   instructions?: string;
+  /** Carried so `awayRunner(agentComposition(agent))` speaks in the same voice
+   *  the agent's own turns do. */
+  system?: SystemPromptHook;
 }
 
 const compositions = new WeakMap<VendoAgent, AgentComposition>();
@@ -260,6 +275,7 @@ export function agent(config: AgentConfig): VendoAgent {
     tools: bound,
     skills,
     ...(config.instructions === undefined ? {} : { instructions: config.instructions }),
+    ...(config.system === undefined ? {} : { system: config.system }),
     // The other half of the door: a credential the harness minted resolves to
     // NOTHING until the turn it points at is published, so without this line a
     // mounted door 401s every tool call the box makes.

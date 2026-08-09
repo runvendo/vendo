@@ -6,7 +6,7 @@ import {
 } from "ai";
 import {
   DEFAULT_TRIGGER_ID,
-  sha256Hex,
+  pinComponentName,
   type AppDocument,
   type ApprovalRequest,
   type AuditEvent,
@@ -56,16 +56,6 @@ const SMOKE_VIEW = {
     { id: "line", component: "Text", props: { text: "$1,240 this month across 4 categories." } },
   ],
 };
-
-/** Mirror of the runtime's stable generated-component name for one captured
- *  slot (`pinComponentName` in @vendoai/apps) — the fixture's forked trees
- *  must carry the REAL name so the wrapper's in-place mount finds the node. */
-function pinComponentName(slot: string): string {
-  const stem = (slot.match(/[A-Za-z0-9]+/g) ?? [])
-    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
-    .join("") || "Slot";
-  return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
-}
 
 function app(id: string, name: string, automation = false): AppDocument {
   return {

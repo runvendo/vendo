@@ -16,7 +16,7 @@
  * WHERE THE GATE LIVES NOW. There is one engine, and it commits through the
  * paint seam — so the floor is `AppsRuntime.floor(ctx)`, handed to whoever writes
  * `app.vendo` (`checking/floor.ts`; the seam's own refusal is proven end to end in
- * `@vendoai/harnesses`' render-seam-floor suite). This file pins the two halves
+ * the render-seam-floor suite beside this one). This file pins the two halves
  * this block still owns: the floor's own verdict (what blocks, what only warns,
  * and that a HOST's rule is enforceable through it), and what create and edit do
  * when a commit is refused — nothing written, and the reason said in the person's
@@ -36,14 +36,11 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { createApps, type AppsRuntime } from "../../src/index.js";
-import {
-  basicLanguageModel,
-  guardFixture,
-  memoryStore,
-  scriptedAssembler,
-  seedAppRow,
-  type AssemblerAnswer,
-} from "../../src/testing/index.js";
+import { scriptedAssembler, type AssemblerAnswer } from "../../src/testing/authoring-assembler.js";
+import { guardFixture } from "../../src/testing/guard-fixture.js";
+import { memoryStore } from "../../src/testing/memory-store.js";
+import { basicLanguageModel } from "../../src/testing/scripted-model.js";
+import { seedAppRow } from "../../src/testing/seed-app-row.js";
 import { blocks } from "../../src/checking/floor.js";
 
 const ctx: RunContext = {

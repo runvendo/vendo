@@ -7,7 +7,7 @@ import {
   normalizeEgressDomain,
   unapprovedEgress,
 } from "../src/egress-approval.js";
-import { memoryStore } from "../src/testing/index.js";
+import { memoryStore } from "../src/testing/memory-store.js";
 
 const app = (overrides: Partial<AppDocument> = {}): AppDocument => ({
   format: VENDO_APP_FORMAT,

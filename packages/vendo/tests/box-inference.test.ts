@@ -46,34 +46,57 @@ const BOX_CONTROL_PORT = 8811;
 
 const decoder = new TextDecoder();
 
-/** An already-graduated app whose boundary env is STALE — a secret grant moved
- *  while the box slept. The next wake rebuilds the env through the composition's
- *  own assembler (the same seam provisioning calls) and pushes it into the box,
- *  which is where this suite reads it. */
+/** An already-graduated SERVED app: its whole surface is the code in its box,
+ *  so every edit of it goes to the in-box agent — and every box edit re-injects
+ *  the CURRENT boundary env across the control port before the agent runs
+ *  (`editServerViaBox`, apps/src/box-lane.ts). That push is the production path
+ *  this suite reads the composition's assembled env off. The ref is the one this
+ *  suite's fake sandbox hands back from `snapshot()`, so `resume()` is given a
+ *  ref it really produced. */
 const doc = (id = "app_box"): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id,
   name: "Box app",
+  ui: "http",
   machine: {
     snapshotRef: "fake:snap",
     provisionedAt: "2026-07-12T00:00:00.000Z",
-    envStaleAt: "2026-07-12T01:00:00.000Z",
   },
+});
+
+const json = (status: number, value: unknown) => ({
+  status,
+  headers: { "content-type": "application/json" },
+  body: new TextEncoder().encode(JSON.stringify(value)),
 });
 
 /** A capture sandbox: records every boundary env pushed across the box's
  * control port, so the test can assert the machine env the composition
- * assembled. */
+ * assembled. It speaks just enough of the harness's control protocol
+ * (apps/src/box-agent.ts) for one edit task to start and finish. */
 function captureSandbox(pushed: Array<Record<string, string>>): SandboxAdapter {
   const machine: SandboxMachine = {
     id: "fake_box",
     async request(request) {
-      if (request.port === BOX_CONTROL_PORT && request.path === "/agent/env") {
-        const body = typeof request.body === "string"
-          ? request.body
-          : decoder.decode(request.body ?? new Uint8Array());
-        pushed.push((JSON.parse(body) as { env: Record<string, string> }).env);
+      if (request.port === BOX_CONTROL_PORT) {
+        if (request.path === "/agent/env") {
+          const body = typeof request.body === "string"
+            ? request.body
+            : decoder.decode(request.body ?? new Uint8Array());
+          pushed.push((JSON.parse(body) as { env: Record<string, string> }).env);
+          return json(200, { ok: true });
+        }
+        if (request.path === "/agent/task") return json(202, { taskId: "boxtask_1" });
+        if (request.path.startsWith("/agent/task/")) {
+          return json(200, {
+            status: "done",
+            result: { ok: true, summary: "edited", filesChanged: [], testsRun: 0 },
+          });
+        }
       }
+      // A box that declares no vendo.json — the manifest fold-in reads a 404 as
+      // "this box declares no schedules and no egress", which is the truth here.
+      if (request.path === "/vendo.json") return json(404, { error: "no manifest" });
       return { status: 200, headers: {}, body: new Uint8Array() };
     },
     async url() { return "https://fake_box.capture.test"; },
@@ -91,12 +114,14 @@ function captureSandbox(pushed: Array<Record<string, string>>): SandboxAdapter {
   };
 }
 
-/** Compose, wake the app's box through a real runtime door, and hand back the
+/** Compose, edit the app's box through a real runtime door, and hand back the
  * boundary env the composition assembled for it. Every ladder rung starts
  * cleared ("" reads as unset) so a key in the runner's own environment can
  * never leak into a rung assertion. */
 async function boxEnv(rungs: Record<string, string> = {}): Promise<Record<string, string>> {
   vi.stubEnv("VENDO_BASE_URL", "http://box-inference.test");
+  // The in-box edit is a long-poll loop; this suite drives it without real time.
+  vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "1");
   for (const name of ["VENDO_INFERENCE_URL", "VENDO_INFERENCE_KEY", "VENDO_INFERENCE_MODEL", "ANTHROPIC_API_KEY", "VENDO_API_KEY", "VENDO_CLOUD_URL"]) {
     vi.stubEnv(name, rungs[name] ?? "");
   }
@@ -114,12 +139,13 @@ async function boxEnv(rungs: Record<string, string> = {}): Promise<Record<string
     store,
     sandbox: captureSandbox(pushed),
   });
-  await vendo.apps.machine.ping("app_box", {
+  const edited = await vendo.apps.edit("app_box", "Tighten the invoice copy", {
     principal: ADA,
     venue: "app",
     presence: "present",
     sessionId: "session_box_inference",
   });
+  expect(edited.failure).toBeUndefined();
   expect(pushed).toHaveLength(1);
   return pushed[0]!;
 }

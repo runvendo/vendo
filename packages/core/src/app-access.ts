@@ -97,13 +97,14 @@ export function isGrantPrincipal(encoded: string): boolean {
 
 /**
  * Build contract §9.1 companion (ratified 2026-08-01) — what the HOST's own
- * identity system answers when someone types a name into the Share dialog.
+ * identity system answers when asked to turn a typed name into one of its own
+ * subjects.
  *
  * Vendo holds no directory (locked: the host's identity system IS the org), so
- * "Mia" cannot be resolved here and must not be pretended at: the dialog used to
- * encode whatever was typed VERBATIM as the subject, which wrote a `user:` grant
- * that matched nobody — after the app had already moved into the team. The
- * `user:` principal is minted from `subject`, never from the query.
+ * "Mia" cannot be resolved here and must not be pretended at: the surface that
+ * asked used to encode whatever was typed VERBATIM as the subject, which wrote a
+ * `user:` grant that matched nobody — after the app had already moved into the
+ * team. The `user:` principal is minted from `subject`, never from the query.
  *
  * The seam that produces this takes `(query, asker)`: only the host can scope its
  * own directory, and "people in the asker's own org" is unimplementable if the
@@ -113,7 +114,7 @@ export function isGrantPrincipal(encoded: string): boolean {
 export interface ResolvedPerson {
   /** The host's own stable subject — the one the grant is written for. */
   subject: string;
-  /** Consumer-voice name, so the dialog can confirm WHO it matched. */
+  /** Consumer-voice name, so the asking surface can confirm WHO it matched. */
   display?: string;
 }
 

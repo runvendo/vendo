@@ -20,11 +20,15 @@ export interface HostAuthPreset {
       ownership. Never persisted anywhere. */
   memberships?: (principal: Principal) => Promise<Membership[]>;
   /** Build contract §9.1 companion — the fifth seam: turn what someone TYPED
-      into the Share dialog ("Mia", "mia@work.com") into one of the host's own
-      subjects, or null. Vendo holds no directory, so a person-share cannot be
-      resolved here; the dialog used to encode the typed string verbatim and
-      write a grant that matched nobody. Absent → the dialog does not offer to
-      share with one person at all (teams, orgs and fork are unaffected).
+      ("Mia", "mia@work.com") into one of the host's own subjects, or null.
+      Vendo holds no directory, so a person cannot be resolved here; the surface
+      that asked used to encode the typed string verbatim and write a grant that
+      matched nobody. Absent → /status reports `namesPeople: false` and no
+      surface may offer to name one person.
+
+      NOTE: the Share dialog that consumed this was removed (it was never
+      mounted by any host). The seam stays because it is host-configured public
+      API on every preset, but nothing in this repo calls it today.
 
       `asker` is WHO is asking, so the host can scope its own directory — "only
       people in the asker's own org" is the common rule and it is unimplementable

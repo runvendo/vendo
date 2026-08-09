@@ -11,7 +11,7 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import { triggerKey } from "@vendoai/automations";
-import { createStore, eraseStore, storeFiles, type VendoStore } from "@vendoai/store";
+import { appAccess, createStore, eraseStore, storeFiles, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
 
@@ -90,7 +90,6 @@ const plainApp = (id: string): AppDocument => ({
   },
 });
 
-const ORIGIN = "https://maple.test";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -152,26 +151,6 @@ const ctxOf = (who: Principal): RunContext => ({
   memberships: memberships[who.subject] ?? [],
 });
 
-async function wire(
-  vendo: Vendo,
-  who: Principal,
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: any }> {
-  acting = who;
-  const response = await vendo.handler(new Request(`${ORIGIN}/api/vendo${path}`, {
-    method,
-    headers: {
-      origin: ORIGIN,
-      ...(method === "GET" ? {} : { "content-type": "application/json" }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  }));
-  const text = await response.text();
-  return { status: response.status, body: text === "" ? undefined : JSON.parse(text) };
-}
-
 const seedApp = async (store: VendoStore, app: AppDocument, subject: string): Promise<void> => {
   await store.records("vendo_apps").put({
     id: app.id,
@@ -194,14 +173,11 @@ async function sharedAutomation(
 ): Promise<AppDocument> {
   const app = automationApp(id);
   await seedApp(booted.store, app, ORG);
-  expect((await wire(booted.vendo, dana, "POST", `/apps/${id}/grants`, {
-    principal: "user:kim",
-    level: "editor",
-  })).status).toBe(200);
-  expect((await wire(booted.vendo, dana, "POST", `/apps/${id}/grants`, {
-    principal: "user:omar",
-    level: "viewer",
-  })).status).toBe(200);
+  // Grant ROWS are fixture here, written through the same `appAccess(store)`
+  // seam the runtime reads at fire time — the wire has no route that writes one.
+  const access = appAccess(booted.store);
+  await access.grant(ctxOf(dana), id, "user:kim", "editor");
+  await access.grant(ctxOf(dana), id, "user:omar", "viewer");
   const armed = await booted.vendo.automations.enable(id, DEFAULT_TRIGGER_ID, ctxOf(sponsor));
   expect(armed.enabled).toBe(true);
   return app;
@@ -244,8 +220,7 @@ describe("the automations engine's can(editor) is the real one", () => {
 
     // Revoke the grant that authorized her, and the next fire stops the run and
     // marks the sponsorship invalidated for a lost permission.
-    expect((await wire(booted.vendo, dana, "DELETE", `/apps/${app.id}/grants?principal=user%3Akim`)).status)
-      .toBe(200);
+    await appAccess(booted.store).revoke(ctxOf(dana), app.id, "user:kim");
     const later2 = new Date(Date.now() + 4 * 60 * 60 * 1000);
     expect(await booted.vendo.automations.tick(later2)).toHaveLength(1);
     expect(await sponsorship()).toMatchObject({ status: "invalidated", reason: "grants" });
@@ -305,10 +280,7 @@ describe("vendo.emit fires an ORG-owned automation for a member", () => {
     const booted = await boot();
     const app = eventAutomationApp("app_org_event");
     await seedApp(booted.store, app, ORG);
-    expect((await wire(booted.vendo, dana, "POST", `/apps/${app.id}/grants`, {
-      principal: "user:kim",
-      level: "editor",
-    })).status).toBe(200);
+    await appAccess(booted.store).grant(ctxOf(dana), app.id, "user:kim", "editor");
     // Kim takes it on, so the run's identity is hers and not the org's.
     expect((await booted.vendo.automations.enable(app.id, DEFAULT_TRIGGER_ID, ctxOf(kim))).enabled).toBe(true);
 

@@ -1,10 +1,10 @@
 /**
  * The host's tool sources: `tool()` (descriptor + execute, the host's own auth
  * model), `api()` (the existing actions registry over `.vendo/tools.json`),
- * and `mergeSources` — one registry the guard binds, where a name collision is
- * a boot error, never a silent shadow.
+ * `mcp` servers, and `mergeSources` — one registry the guard binds, where a
+ * name collision is a boot error, never a silent shadow.
  */
-import { createActions } from "@vendoai/actions";
+import { createActions, mcpConnector, type Connector, type McpHeadersResolver } from "@vendoai/actions";
 import {
   TOOL_NAME_PATTERN,
   VendoError,
@@ -19,7 +19,6 @@ import {
   type ToolOutcome,
   type ToolRegistry,
 } from "@vendoai/core";
-import { mcpSources, type McpServerConfig } from "./mcp.js";
 
 export interface ToolConfig {
   name: string;
@@ -78,6 +77,22 @@ export function api(options: ApiOptions = {}): ToolRegistry {
       : { untrustedOriginPolicy: options.untrustedOriginPolicy }),
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
   });
+}
+
+/**
+ * `agent({ mcp: [...] })` — external MCP servers as tool sources, through the
+ * existing outbound connector. Static headers = one shared identity for every
+ * user; a resolver function = per-user identity, resolved at call time.
+ */
+export interface McpServerConfig {
+  url: string;
+  headers?: Record<string, string> | McpHeadersResolver;
+  /** Tool-name prefix (`mcp_<name>_*`); defaults to "mcp". */
+  name?: string;
+}
+
+export function mcpSources(configs: readonly McpServerConfig[]): Connector[] {
+  return configs.map((config) => mcpConnector(config));
 }
 
 const isHostTool = (source: ToolSource): source is HostTool =>

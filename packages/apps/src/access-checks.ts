@@ -6,7 +6,6 @@ import {
   VendoError,
   encodeGrantPrincipal,
   type AccessLevel,
-  type AppAccess,
   type AppDocument,
   type AppId,
   type RecordStore,
@@ -74,29 +73,6 @@ export const createAccessChecks = (deps: { config: AppsConfig; apps: RecordStore
     return documentFromRecord(record);
   };
 
-  /** Build contract §9.6 — the ONE Cloud gate on this block. Sharing is
-      multi-party coordination, so the writes that create it need a key; the
-      enforcement half (`can()`) is OSS and never key-conditional, which is why
-      only these three verbs consult this. */
-  const requireMultiParty = (what: string): void => {
-    if (config.multiParty !== true) {
-      throw new VendoError(
-        "cloud-required",
-        `${what} needs Vendo Cloud: set VENDO_API_KEY (or pass a hosted store) — apps you own alone keep working without it`,
-      );
-    }
-  };
-
-  /** Only the WRITE verbs reach this: an unwired seam is an absence, and the
-      reads (`levelFor`, `list`) report it as ownership + an empty list rather
-      than as something to go buy. */
-  const requireAccess = (): AppAccess => {
-    if (config.appAccess === undefined) {
-      throw new VendoError("cloud-required", "this deployment has no app-access store wired");
-    }
-    return config.appAccess;
-  };
-
   /** The app rows this caller reaches WITHOUT owning them: their grant rows,
       plus every app held by an org they administer (implicit owner, §9.3).
       `can()` re-decides each one — this only narrows what to ask about. */
@@ -144,5 +120,5 @@ export const createAccessChecks = (deps: { config: AppsConfig; apps: RecordStore
     throw new VendoError("not-found", `app not found: ${appId}`);
   };
 
-  return { holds, owned, requireOwned, requireMultiParty, requireAccess, grantedRecords };
+  return { holds, owned, requireOwned, grantedRecords };
 };

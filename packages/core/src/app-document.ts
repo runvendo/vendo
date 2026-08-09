@@ -4,6 +4,7 @@ import { safeErrorMessage } from "./errors.js";
 import { FN_REFERENCE_PATTERN, collectActionReferences } from "./fn-references.js";
 import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "./formats.js";
 import { appIdSchema, isoDateTimeSchema, type AppId, type IsoDateTime } from "./ids.js";
+import { sha256Hex } from "./sha256.js";
 import { TOOL_NAME_PATTERN } from "./tools.js";
 import { validateTree } from "./genui/tree.js";
 import { DEFAULT_TRIGGER_ID, triggerSchema, type Trigger } from "./triggers.js";
@@ -127,6 +128,25 @@ export const pinSchema = z.object({
 }).passthrough() satisfies z.ZodType<Pin>;
 
 /**
+ * The stable generated-component name a fork of one captured host slot ships
+ * under — a pure function of {@link Pin}'s slot, so it belongs beside the pin.
+ *
+ * It lives in core because BOTH sides of the fork seam need the same answer and
+ * `ui → apps` is not an edge layering allows (dependency-guard): the runtime
+ * writes the node under this name, and the client's in-place mount finds it by
+ * this name. It was hand-copied three times before this (apps' pins.ts, ui's
+ * remixable wrapper, ui's wire fixture).
+ */
+export const pinComponentName = (slot: string): string => {
+  const stem = (slot.match(/[A-Za-z0-9]+/g) ?? [])
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join("") || "Slot";
+  // The hash suffix prevents punctuation-only normalization collisions while
+  // keeping the name a valid generated-component PascalCase identifier.
+  return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
+};
+
+/**
  * execution-v2 — the app's persistent machine. Presence means layer 2+; an app
  * with no machine is a layer-1 tree app. The layer itself is always derived
  * from presence (and, for layer 3, from what the box serves), never stored.
@@ -135,21 +155,12 @@ interface AppMachine {
   /** Provider-prefixed snapshot reference (e.g. "e2b:snap_x91"), opaque past the colon. */
   snapshotRef: string;
   provisionedAt: IsoDateTime;
-  /**
-   * Wave 7 — set when a secret grant changed after the last env injection
-   * (secrets are baked into the box at provision and at pre-edit
-   * re-injection; a resume restores the snapshot's env on every provider).
-   * The next wake rebuilds the boundary env through the box control port and
-   * clears this marker.
-   */
-  envStaleAt?: IsoDateTime;
 }
 
 /** execution-v2 */
 const appMachineSchema = z.object({
   snapshotRef: z.string(),
   provisionedAt: isoDateTimeSchema,
-  envStaleAt: isoDateTimeSchema.optional(),
 }).passthrough() satisfies z.ZodType<AppMachine>;
 
 /** 01-core §9 */

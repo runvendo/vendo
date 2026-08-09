@@ -4,13 +4,10 @@ import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { createMachineLane } from "../src/box-lane.js";
 import { createApps, type AppsConfig } from "../src/index.js";
-import {
-  fakeStatefulSandbox,
-  guardFixture,
-  memoryStore,
-  seedAppRow,
-  type FakeStatefulSandbox,
-} from "../src/testing/index.js";
+import { fakeStatefulSandbox, type FakeStatefulSandbox } from "../src/testing/fake-sandbox-stateful.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 const decoder = new TextDecoder();
 

@@ -27,7 +27,9 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createApps } from "../src/index.js";
-import { bindTools, guardFixture, memoryStore, seedAppRow } from "../src/testing/index.js";
+import { bindTools, guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 const APP_ID = "app_data_unavailable";
 

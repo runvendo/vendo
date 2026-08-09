@@ -1,6 +1,5 @@
 import {
   VendoError,
-  safeErrorMessage,
   type AppDocument,
   type AppId,
   type StoreAdapter,
@@ -74,17 +73,6 @@ export interface MachineLifecycleConfig {
    * so with a function returning `[]`.
    */
   allowedDomains: BuildMachineAllowlist;
-  /**
-   * Wave 7 — push a freshly assembled boundary env into a LIVE machine (the
-   * runtime wires the box control port's env door, which restarts the app).
-   * A wake of a machine whose document carries `machine.envStaleAt` (a secret
-   * grant changed while it slept — resumes restore the SNAPSHOT's env on
-   * every provider) rebuilds the env through this seam and clears the marker.
-   * Fail-closed: an injection failure destroys the resumed machine and fails
-   * the wake (a box we cannot re-police must not serve — a revoked secret
-   * would stay usable inside it); the marker and ref survive for the retry.
-   */
-  injectEnv?: (machine: SandboxMachine, env: Record<string, string>) => Promise<void>;
   /** Provider base template every provisioned machine boots from. */
   template?: string;
   idleMs?: number;
@@ -136,7 +124,7 @@ export interface MachineLifecycle {
   /**
    * issue #566 — the secret values that were successfully INJECTED into this
    * box, keyed by secret name, as last assembled by the buildEnv seam
-   * (provision, stale-rebuild, or pre-edit re-injection). The redaction guard
+   * (provision, or the pre-edit re-injection). The redaction guard
    * reuses these so a value that entered the box is always redactable WITHOUT a
    * refetch that could fail. In-memory and per-app: it is populated only for
    * apps this process built env for, dropped when the machine is destroyed, and
@@ -180,8 +168,8 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   const waking = new Map<AppId, Promise<SandboxMachine>>();
   const provisioning = new Map<AppId, Promise<AppDocument>>();
   // issue #566 — per-box cache of the secret values that entered the box, keyed
-  // by app id and refreshed on every env assembly (provision / stale-rebuild /
-  // pre-edit re-injection). Redaction reads it so a successfully injected value
+  // by app id and refreshed on every env assembly (provision / pre-edit
+  // re-injection). Redaction reads it so a successfully injected value
   // never depends on a refetch that could fail. In-memory and per-app: dropped
   // on machine destroy and never shared across apps, so it cannot outlive or
   // cross a box boundary.
@@ -395,41 +383,6 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
 
   const wake = async (app: AppDocument): Promise<SandboxMachine> => wakeById(app.id);
 
-  /**
-   * Wave 7 — rebuild a machine's boundary env when its document carries the
-   * env-stale marker (a secret grant changed after the last injection), then
-   * clear the marker. Clearing is guarded on the marker VALUE seen — a grant
-   * committed during the rebuild keeps its own fresher marker for the next
-   * wake (markers are strictly increasing, so values never collide). A failed
-   * clear is benign: the env is fresh and the re-push is idempotent. Throws
-   * on injection failure; the CALLER owns tearing the machine down (fail
-   * closed — a box we cannot re-police must not serve).
-   */
-  const rebuildStaleEnv = async (
-    appId: AppId,
-    doc: AppDocument,
-    machine: SandboxMachine,
-  ): Promise<void> => {
-    const staleAt = doc.machine?.envStaleAt;
-    if (staleAt === undefined || config.injectEnv === undefined) return;
-    try {
-      const env = await buildEnv(doc);
-      await config.injectEnv(machine, env);
-      rememberInjected(doc, env);
-    } catch (error) {
-      throw new VendoError(
-        "sandbox-unavailable",
-        `machine env rebuild failed for ${appId} after a grant change`,
-        { appId, reason: safeErrorMessage(error) },
-      );
-    }
-    await updateDocument(appId, (current) => {
-      if (current.machine === undefined || current.machine.envStaleAt !== staleAt) return current;
-      const { envStaleAt: _stale, ...rest } = current.machine;
-      return { ...current, machine: rest };
-    }).catch(() => undefined);
-  };
-
   const wakeById = async (appId: AppId): Promise<SandboxMachine> => {
     const entry = live.get(appId);
     if (entry !== undefined) {
@@ -440,20 +393,7 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       // sleep is the containment; the next wake re-applies the policy.)
       // Evaluated over the authoritative row, not the caller's copy — a
       // grant committed since the caller loaded its document must count.
-      {
-        const doc = await currentDocument(appId);
-        await allowlistFor(doc);
-        // Wave 7 — a durable env-stale marker written by ANOTHER process
-        // (whose grant commit cannot reach this process's live entry to
-        // sleep it) must not ride the warm entry until the idle sweep.
-        try {
-          await rebuildStaleEnv(appId, doc, entry.raw);
-        } catch (error) {
-          const taken = await takeLive(appId);
-          await taken?.raw.destroy().catch(() => undefined);
-          throw error;
-        }
-      }
+      await allowlistFor(await currentDocument(appId));
       armIdleTimer(appId);
       return entry.wrapped;
     }
@@ -474,18 +414,6 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       const raw = await adapter.resume(doc.machine.snapshotRef, {
         allowedDomains: await allowlistFor(doc),
       });
-      // Wave 7 — a grant changed while the machine slept: the resumed snapshot
-      // carries the OLD env (every provider restores snapshot env), so rebuild
-      // the boundary env through the control port before anything rides this
-      // wake. A failed rebuild fails the wake CLOSED — registering the machine
-      // live would let a revoked secret keep serving until the idle sweep. The
-      // marker and the document ref survive, so the next wake retries.
-      try {
-        await rebuildStaleEnv(appId, doc, raw);
-      } catch (error) {
-        await raw.destroy().catch(() => undefined);
-        throw error;
-      }
       const wrapped = withIdleTracking(appId, raw);
       live.set(appId, { raw, wrapped, inflight: 0 });
       armIdleTimer(appId);

@@ -2,7 +2,7 @@ import {
   VendoError,
   appIdSchema,
   isoDateTimeSchema,
-  sha256Hex,
+  pinComponentName,
   type AppDocument,
   type AppId,
   type IsoDateTime,
@@ -10,6 +10,11 @@ import {
   type Pin,
 } from "@vendoai/core";
 import { z } from "zod";
+
+/** The fork's generated-component name now lives in core, beside `Pin` — both
+ *  sides of the fork seam need it and `ui → apps` is not a legal edge. Kept on
+ *  this module's surface so every pin caller still has one import. */
+export { pinComponentName };
 
 /** 06-apps §8 — source captured from one host remixable component slot. */
 export interface PinBaseline {
@@ -64,16 +69,6 @@ export const pinBaselineSchema = z.object({
   sampleProps: z.record(z.unknown()).optional(),
   styles: z.array(pinStyleSchema).optional(),
 }).passthrough() satisfies z.ZodType<PinBaseline>;
-
-/** Internal stable generated-component name for one captured host slot. */
-export const pinComponentName = (slot: string): string => {
-  const stem = (slot.match(/[A-Za-z0-9]+/g) ?? [])
-    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
-    .join("") || "Slot";
-  // The hash suffix prevents punctuation-only normalization collisions while
-  // keeping the name a valid generated-component PascalCase identifier.
-  return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
-};
 
 /** Is this component name a captured host slot's? The counterpart of
  *  {@link pinComponentName}, for the seams that hold a document's components

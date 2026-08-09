@@ -3,7 +3,10 @@ import { VendoError } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { buildFailureReason } from "../src/build-messages.js";
 import { createApps, type AppsRuntime } from "../src/index.js";
-import { basicLanguageModel, guardFixture, memoryStore, scriptedAssembler } from "../src/testing/index.js";
+import { scriptedAssembler } from "../src/testing/authoring-assembler.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { basicLanguageModel } from "../src/testing/scripted-model.js";
 
 // Incident (runvendo/vendo#492): the pack's vendo_make returns fast with a
 // vendo/app-ref@1 while the build streams server-side. When the build turn

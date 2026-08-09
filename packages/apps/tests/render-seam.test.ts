@@ -12,8 +12,8 @@
  */
 import { vendoViewPartSchema, vendoViewStreamId, type Json, type UIPayload, type VendoViewPart } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { HOT_PATH_FILES, HOT_PATH_WATCH, hotPathAppId, wrapWorkspaceForRender } from "../src/render-seam.js";
-import { testWorkspace } from "../src/test-doubles.test-util.js";
+import { HOT_PATH_FILES, HOT_PATH_WATCH, hotPathAppId, viewForWrite, wrapWorkspaceForRender } from "../src/render-seam.js";
+import { testWorkspace } from "./test-doubles.test-util.js";
 
 const APP = "app_1";
 const APP_VENDO = `/user/apps/${APP}/app.vendo`;
@@ -672,5 +672,72 @@ describe("the wrapper", () => {
       changed: [],
     });
     expect(inner.commits).toEqual([{ message: "made the chart blue", changed: [] }]);
+  });
+});
+
+// The two blocks below moved here with the seam from
+// `@vendoai/harnesses`' parity suite (H3/H4 there): they exercise the seam
+// alone, and the seam lives in this package now.
+
+describe("the seam's payload streams, then settles", () => {
+  const APP_VENDO = "/user/apps/app_5/app.vendo";
+  const PLAN_VENDO = "/user/apps/app_5/plan.vendo";
+  const GOOD = `<App name="X"><Stack><Text value="Hi" /></Stack></App>`;
+  const PLAN = `<Plan name="X"><Group title="G"><Leaf component="DataTable" /></Group></Plan>`;
+
+  it("stamps streaming:true on the skeleton, so a mid-build tree is not read as a finished one", async () => {
+    const plan = await viewForWrite(PLAN_VENDO, PLAN, { emit: () => undefined });
+    expect((plan?.part.payload as { streaming?: boolean }).streaming).toBe(true);
+    const skeletons: boolean[] = [];
+    await viewForWrite(APP_VENDO, GOOD, {
+      emit: (_id, part) => skeletons.push((part.payload as { streaming?: boolean }).streaming === true),
+      authoredApp: async () => undefined,
+    });
+    expect(skeletons).toEqual([true]);
+  });
+
+  it("settles the finished paint, so the app leaves \"building\" and can reach a verdict", async () => {
+    const view = await viewForWrite(APP_VENDO, GOOD, { emit: () => undefined });
+    expect((view?.part.payload as { streaming?: boolean }).streaming).toBe(false);
+  });
+
+  it("awaits the async app half, so the real resolver can wire in", async () => {
+    const view = await viewForWrite(APP_VENDO, GOOD, {
+      emit: () => undefined,
+      authoredApp: async () => ({ data: { rows: [{ id: 1 }] } }),
+    });
+    expect((view?.part.payload as { data?: unknown }).data).toEqual({ rows: [{ id: 1 }] });
+  });
+});
+
+describe("the seam wrapper survives a real façade", () => {
+  it("does not break a class that uses private fields", async () => {
+    class PrivateFieldFs {
+      #files = new Map<string, string>();
+      #staged = new Set<string>();
+      async writeFile(path: string, content: string): Promise<void> {
+        this.#files.set(path, content);
+        this.#staged.add(path);
+      }
+      async readFile(path: string): Promise<string> {
+        const found = this.#files.get(path);
+        if (found === undefined) throw new Error("ENOENT");
+        return found;
+      }
+      async commit(): Promise<{ status: "ok"; changed: string[] }> {
+        const changed = [...this.#staged];
+        this.#staged.clear();
+        return { status: "ok", changed };
+      }
+    }
+    const emitted: string[] = [];
+    const workspace = wrapWorkspaceForRender(new PrivateFieldFs() as never, {
+      emit: (id) => emitted.push(id),
+    });
+    // `this` must be the real object, or every one of these throws
+    // "Cannot read private member from an object whose class did not declare it".
+    await workspace.writeFile("/user/apps/app_5/app.vendo", `<App name="X"><Stack><Text value="Hi" /></Stack></App>`);
+    await expect(workspace.commit()).resolves.toMatchObject({ status: "ok" });
+    expect(emitted).toEqual([vendoViewStreamId("app_5")]);
   });
 });

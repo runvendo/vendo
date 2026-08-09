@@ -10,7 +10,10 @@ import type { AppId, RunContext } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { APP_MEMORY_DECISIONS_MAX_BYTES, APP_MEMORY_MAX_ASKS } from "../src/app-memory.js";
 import { createApps, type AppsRuntime } from "../src/index.js";
-import { authoringAssembler, basicLanguageModel, guardFixture, memoryStore } from "../src/testing/index.js";
+import { authoringAssembler } from "../src/testing/authoring-assembler.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { basicLanguageModel } from "../src/testing/scripted-model.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_memory" },

@@ -171,8 +171,8 @@ export function appAccess(store: VendoStore): AppAccess {
       // still-personal app resolves to a real level and then finds nothing: the
       // app's documents live under the holder's `/user` mount, and no `/user`
       // path is ever another person's (core's `accessForPath`). The app has to
-      // move into an org first — which is what the Share dialog now does before
-      // it writes the grant. Two exceptions, both real: the holder's own row
+      // move into an org first — a sharing surface has to do that before it
+      // writes the grant. Two exceptions, both real: the holder's own row
       // (promote mints it BEFORE the flip, §9.5), and an app an asserted
       // membership says is already held by an org.
       if (named.kind === "user" && named.subject !== orgId && membershipIn(ctx, orgId ?? "") === undefined) {

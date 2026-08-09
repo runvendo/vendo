@@ -4,7 +4,8 @@ import { sandboxAdapterConformance, type SandboxConformanceHarness } from "../..
 import { requestAppWithBootRetry } from "../../src/box-agent.js";
 import { createMachineLifecycle } from "../../src/machine-lifecycle.js";
 import type { SandboxMachine } from "../../src/sandbox.js";
-import { memoryStore, seedAppRow } from "../../src/testing/index.js";
+import { memoryStore } from "../../src/testing/memory-store.js";
+import { seedAppRow } from "../../src/testing/seed-app-row.js";
 import { e2bSandbox } from "../../src/e2b/index.js";
 
 // ============================================================================

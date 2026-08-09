@@ -4,11 +4,9 @@ import { unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { createApps } from "../src/index.js";
 import { pinComponentName } from "../src/pins.js";
-import {
-  guardFixture,
-  memoryStore,
-  seedAppRow,
-} from "../src/testing/index.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

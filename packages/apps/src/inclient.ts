@@ -1,4 +1,4 @@
-import type { AppDocument, AppId, IsoDateTime, RecordStore, StoreAdapter } from "@vendoai/core";
+import type { AppDocument, AppId, RecordStore, ReviewStanding, StoreAdapter } from "@vendoai/core";
 import { listAllRecords } from "./persistence.js";
 import { inClientApprovalSchema, type InClientApproval } from "./pins.js";
 import { appVersionHash } from "./version-hash.js";
@@ -13,15 +13,9 @@ export type InClientVerdict =
   | { granted: true; versionHash: string; approval: InClientApproval }
   | { granted: false; versionHash: string; reason: "no-approval" | "version-changed" };
 
-/**
- * Remix final shape (2026-08-02) — where the CURRENT version of a review-kind
- * app stands with the host reviewer, riding the venue state so the user's
- * panel can say "sent for review" or surface the rejection note. Server-
- * authoritative like the rest of the venue field.
- */
-export type ReviewStanding =
-  | { status: "pending"; versionHash: string }
-  | { status: "rejected"; versionHash: string; note: string; by: string; at: IsoDateTime };
+/** The review standing rides this module's venue state, but the CLIENT reads it
+ *  off the wire too, so the shape itself lives in core. */
+export type { ReviewStanding };
 
 /**
  * The additive in-client venue state the opener rides inside the tree payload

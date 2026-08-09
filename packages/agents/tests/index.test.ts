@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import * as agents from "../src/index.js";
 import * as harnesses from "../src/harnesses.js";
-import { mcpSources } from "../src/mcp.js";
+import { mcpSources } from "../src/tools.js";
 
 describe("the package surface", () => {
   it("exports the spec's API from the root", () => {

@@ -16,7 +16,7 @@
  * validator sat callerless and is deleted, and with it its carried-issue filter
  * — an edit excused for a stale node the previous version already carried —
  * which production has never had on this architecture: a block is a block, from
- * every author, on every commit (`harnesses/render-seam.ts`).
+ * every author, on every commit (`../src/render-seam.ts`).
  *
  * These drive one deliberately-broken island through all three doors, each
  * through its own real entry point, and assert the SAME refusal at every one.
@@ -33,7 +33,10 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createApps } from "../src/index.js";
-import { guardFixture, memoryStore, scriptedLanguageModel, seedAppRow } from "../src/testing/index.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { scriptedLanguageModel } from "../src/testing/scripted-model.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 import type { FloorDependencies } from "../src/checking/deps.js";
 import { blocks } from "../src/checking/floor.js";
 import { wireCompileOptionsFor } from "../src/wire-options.js";

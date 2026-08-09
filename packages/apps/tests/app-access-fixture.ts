@@ -120,8 +120,8 @@ export function storeAccessFixture(store: ReturnType<typeof memoryStore>): AppAc
   return access;
 }
 
-/** Seed grants the way the Share dialog would, without going through the
-    owner gate (these cases set the world up, they do not test the setup). */
+/** Seed grants without going through the owner gate — these cases set the
+    world up, they do not test the setup. */
 export const seedGrantRows = async (
   store: ReturnType<typeof memoryStore>,
   appId: string,

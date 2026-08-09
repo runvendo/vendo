@@ -5,7 +5,7 @@
  *
  * There is no create/edit loop here, and no longer one anywhere in this package.
  * The ORDER of a build is the screen assembler's own loop
- * (`harnesses/screen-agent.ts`) and, when it escalates, the server lane in
+ * (the umbrella's `screen-agent.ts`) and, when it escalates, the server lane in
  * ./lanes.ts. What is ENFORCED lives in ./validation and ../checking.
  */
 import {

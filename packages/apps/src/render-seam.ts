@@ -48,10 +48,11 @@ import {
   type WireCompileResult,
   type WorkspaceFs,
 } from "@vendoai/core";
-// `skeletonFromPlan` was already public before this lane; the payload-assembly
-// pair is a cross-block internal.
-import { skeletonFromPlan } from "@vendoai/apps";
-import { assembleTree, stripServerAuthoritativeFields } from "@vendoai/apps/internal";
+// In-package since the seam moved home to @vendoai/apps: the plan skeleton,
+// the emitted-payload assembly and the field stripping that goes with it.
+import { skeletonFromPlan } from "./generation/skeleton.js";
+import { assembleTree } from "./runtime.js";
+import { stripServerAuthoritativeFields } from "./open.js";
 
 /** §1.6 — the two files that sync mid-turn. Everything else waits for turn end. */
 export const HOT_PATH_FILES = ["app.vendo", "plan.vendo"] as const;
@@ -144,11 +145,9 @@ export interface RenderSeamOptions {
    * deterministic fact checks over what it compiled.
    *
    * INJECTED rather than imported. The floor's implementation needs a catalog,
-   * tool shapes and a model, and pulling it in statically would put a pipeline
-   * body in `packages/harnesses`, which the layering forbids. Composition builds
-   * it — `AppsRuntime.floor(ctx)` — which is also the only layer that HAS those
-   * things. The pure tree-assembly edge to `@vendoai/apps` that already exists is
-   * deliberately not widened.
+   * tool shapes and a model, none of which a bare `WorkspaceFs` wrap can know.
+   * Composition builds it — `AppsRuntime.floor(ctx)` — which is the only layer
+   * that HAS those things.
    *
    * Unwired, the seam behaves exactly as it did before this option existed: a bare
    * `compileWire` and no checks. That is not a mode anyone should ship — it is

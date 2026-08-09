@@ -93,13 +93,7 @@ export const createMachineLane = (config: AppsConfig) => {
     // Secrets enter the box as opaque aliases and are substituted at the egress
     // proxy (06-apps §4.3), so the host's buildEnv assembles the boundary env
     // from the document alone — nothing resolves a real value into it.
-    ...(hostBuildEnv === undefined ? {} : {
-      buildEnv: hostBuildEnv,
-      // The wake-time env rebuild rides the same box control-port door the
-      // pre-edit re-injection uses; the in-box harness restarts the app with
-      // the new boundary set.
-      injectEnv: pushBoxEnv,
-    }),
+    ...(hostBuildEnv === undefined ? {} : { buildEnv: hostBuildEnv }),
     // Lane E — the egress policy EVERY provision and wake consults (including
     // ctx-less paths like an idle resume or a schedule fire): approved
     // declaration + implicit skin domains, or a loud refusal naming the

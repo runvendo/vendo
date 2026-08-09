@@ -2,7 +2,9 @@ import type { AppDocument, RunContext, ToolCall, ToolRegistry } from "@vendoai/c
 import { VENDO_APP_FORMAT } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createApps } from "../src/index.js";
-import { guardFixture, memoryStore, seedAppRow } from "../src/testing/index.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 
 // execution-v2 Wave 1.5 — the v1 MachineSessions fn: path is deleted. Until
 // the in-runtime v2 fn path lands (fn/schedules lane), an fn: ref settles as a

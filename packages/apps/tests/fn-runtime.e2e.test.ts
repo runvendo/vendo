@@ -8,9 +8,12 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { inMemoryBoxFiles } from "../src/testing/box-files.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { basicLanguageModel } from "../src/testing/scripted-model.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 import { createApps } from "../src/index.js";
 import type { SandboxAdapter, SandboxMachine } from "../src/sandbox.js";
-import { basicLanguageModel, guardFixture, memoryStore, seedAppRow } from "../src/testing/index.js";
 
 /**
  * execution-v2 Lane D gate (fake adapter): a tree whose query names

@@ -19,9 +19,17 @@ export {
 } from "./agent.js";
 export { awayRunner, type AwayRunnerDeps } from "./away.js";
 export { DOOR_PATH, type DoorConfig } from "./door.js";
+export { assemblePrompt, type PromptInput } from "./prompt.js";
 export type { AgentSession, ApprovalEvent, SessionOptions } from "./session.js";
-export { api, tool, type ApiOptions, type HostTool, type ToolConfig, type ToolSource } from "./tools.js";
-export type { McpServerConfig } from "./mcp.js";
+export {
+  api,
+  tool,
+  type ApiOptions,
+  type HostTool,
+  type McpServerConfig,
+  type ToolConfig,
+  type ToolSource,
+} from "./tools.js";
 export type { EgressConfig } from "./egress.js";
 export type { RunContext } from "@vendoai/core";
 

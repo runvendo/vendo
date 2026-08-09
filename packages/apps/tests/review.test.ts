@@ -4,7 +4,11 @@ import { createInClientApprovals } from "../src/inclient.js";
 import { createApps, type AppsRuntime } from "../src/index.js";
 import { pinComponentName, type PinBaseline } from "../src/pins.js";
 import { createReviewLifecycle } from "../src/review.js";
-import { basicLanguageModel, guardFixture, memoryStore, scriptedAssembler, seedAppRow } from "../src/testing/index.js";
+import { scriptedAssembler } from "../src/testing/authoring-assembler.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { basicLanguageModel } from "../src/testing/scripted-model.js";
+import { seedAppRow } from "../src/testing/seed-app-row.js";
 import { appVersionHash } from "../src/version-hash.js";
 
 const tools: ToolRegistry = {

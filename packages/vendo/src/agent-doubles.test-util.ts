@@ -10,15 +10,21 @@ import type {
   ApprovalId,
   ApprovalRequest,
   AuditEvent,
+  CommitResult,
   Guard,
   GuardDecision,
   Json,
+  ResolvedModels,
   RunContext,
   ToolCall,
   ToolDescriptor,
   ToolOutcome,
   ToolRegistry,
+  WorkspaceFs,
 } from "@vendoai/core";
+import type { LanguageModel } from "ai";
+import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import { InMemoryFs } from "just-bash";
 export type TestGuard = Guard & {
   events: AuditEvent[];
   directionValues: string[];
@@ -37,7 +43,7 @@ function deepFreeze<T>(value: T): T {
 }
 
 export function testGuard(
-  policy: Record<string, "run" | "ask" | "block">,
+  policy: Record<string, "run" | "ask" | "block"> = {},
   directions: string[] = [],
 ): TestGuard {
   const approvalsByCall = new Map<string, ApprovalRequest>();
@@ -190,4 +196,139 @@ export function ctx(overrides: Partial<RunContext> = {}): RunContext {
     sessionId: "s1",
     ...overrides,
   };
+}
+
+// ── The doubles the screen-agent suites arrived with (the agent moved home
+// here from `@vendoai/harnesses`, whose test-doubles file keeps the same set).
+
+export function readTool(name: string, risk: ToolDescriptor["risk"] = "read"): ToolDescriptor {
+  return {
+    name,
+    description: `the ${name} tool`,
+    inputSchema: { type: "object", properties: {}, additionalProperties: true },
+    risk,
+  };
+}
+
+/**
+ * just-bash's real in-memory filesystem plus the §3.2 `commit`, STAGING writes
+ * the way lane B's façade does: a write is visible to the façade's own reads
+ * immediately but does not reach the store until `commit()`, which reports
+ * exactly the changed paths. Never a home-rolled filesystem — the surface under
+ * test is the real `IFileSystem`.
+ */
+export type TestWorkspace = WorkspaceFs & {
+  commits: Array<{ message?: string; changed: string[] }>;
+  /** Force the next commit to answer `conflict` for these paths (a stale base). */
+  conflictOn?: string[];
+  /** Paths the caller may READ but not write — the shape a viewer-level grant on
+   *  an org app produces. */
+  readOnlyPaths?: string[];
+};
+
+export function testWorkspace(files: Record<string, string> = {}): TestWorkspace {
+  const fs = new InMemoryFs(files);
+  const workspace = fs as unknown as TestWorkspace;
+  const staged = new Set<string>();
+  workspace.commits = [];
+
+  /** The façade's own rule (`WorkspaceStoreFs.canCommit`): `/host` and anything
+   *  outside the mounts are never writable; inside them the caller's grants
+   *  decide, which `readOnlyPaths` stands in for. */
+  workspace.canCommit = async (path: string): Promise<boolean> =>
+    /^\/(?:user|orgs\/[^/]+)\//.test(path) && !(workspace.readOnlyPaths ?? []).includes(path);
+
+  for (const method of ["writeFile", "appendFile"] as const) {
+    const original = workspace[method].bind(workspace) as (...args: unknown[]) => Promise<void>;
+    (workspace as unknown as Record<string, unknown>)[method] = async (...args: unknown[]) => {
+      await original(...args);
+      staged.add(args[0] as string);
+    };
+  }
+
+  workspace.commit = async (opts?: { message?: string }): Promise<CommitResult> => {
+    const changed = [...staged];
+    if (workspace.conflictOn !== undefined && workspace.conflictOn.length > 0) {
+      const paths = workspace.conflictOn;
+      workspace.conflictOn = [];
+      return { status: "conflict", paths };
+    }
+    staged.clear();
+    workspace.commits.push({ ...(opts?.message === undefined ? {} : { message: opts.message }), changed });
+    return { status: "ok", changed };
+  };
+  return workspace;
+}
+
+export type StreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<
+  infer Part
+>
+  ? Part
+  : never;
+
+export const ZERO_USAGE = {
+  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 0, text: 0, reasoning: 0 },
+} as const;
+
+/** What a `finish` part carries. Named off the part rather than off
+ *  `ZERO_USAGE`, whose `as const` would pin every caller to zeros. */
+type StreamUsage = Extract<StreamPart, { type: "finish" }>["usage"];
+
+export function textTurn(text: string, usage: StreamUsage = ZERO_USAGE): StreamPart[] {
+  return [
+    { type: "text-start", id: "t1" },
+    { type: "text-delta", id: "t1", delta: text },
+    { type: "text-end", id: "t1" },
+    { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
+  ];
+}
+
+export function toolCallTurn(toolName: string, input: unknown, toolCallId = "call_1"): StreamPart[] {
+  return [
+    { type: "tool-call", toolCallId, toolName, input: JSON.stringify(input) },
+    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
+  ];
+}
+
+export type ScriptedModel = LanguageModel & {
+  toolNamesPerCall: string[][];
+  /** What each call actually SENT — the only place a suite can prove what the
+   *  loop's history assembly did or did not include. */
+  prompts: unknown[];
+  /** The system message of each call, so a suite can assert on the BRIEF a loop
+   *  assembled without reaching into the loop to get it. */
+  systemPrompts: string[];
+  calls: number;
+};
+
+/** A model that replays scripted provider chunks — so the loop under test, not
+ *  a real model, is what the suite measures. */
+export function scriptedModel(turns: StreamPart[][]): ScriptedModel {
+  const remaining = turns.map((turn) => [...turn]);
+  const toolNamesPerCall: string[][] = [];
+  const prompts: unknown[] = [];
+  const systemPrompts: string[] = [];
+  const model = new MockLanguageModelV3({
+    doStream: async (request) => {
+      toolNamesPerCall.push((request.tools ?? []).map((tool) => tool.name));
+      prompts.push(structuredClone(request.prompt));
+      const system = request.prompt.find((message) => message.role === "system");
+      systemPrompts.push(typeof system?.content === "string" ? system.content : "");
+      (model as ScriptedModel).calls += 1;
+      const chunks = remaining.shift();
+      if (chunks === undefined) throw new Error("scripted model exhausted");
+      return { stream: simulateReadableStream({ chunks }) };
+    },
+  }) as unknown as ScriptedModel;
+  model.toolNamesPerCall = toolNamesPerCall;
+  model.prompts = prompts;
+  model.systemPrompts = systemPrompts;
+  model.calls = 0;
+  return model;
+}
+
+/** `ResolvedModels` whose every seat is one scripted model. */
+export function seats(model: LanguageModel): ResolvedModels<LanguageModel> {
+  return { default: model, reviewer: model, judge: model, fill: model };
 }

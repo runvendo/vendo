@@ -5,15 +5,9 @@ export { ApprovalSheet } from "./approval-sheet.js";
 export { AutomationCard, sponsorLabel, type AutomationCardProps } from "./automation-card.js";
 export { GrantSetCard, type GrantSetCardProps, type GrantSetPermission } from "./grant-set-card.js";
 export { ConnectCard, type ConnectCardProps } from "./connect-card.js";
-// Build contract §9.2-§9.6 — the one surface that writes app-access grants,
-// and the consumer-voice fork offer a viewer sees instead of a refusal.
-export {
-  ForkOffer,
-  ShareDialog,
-  encodeGrantPrincipal,
-  type ForkOfferProps,
-  type ShareDialogProps,
-} from "./share-dialog.js";
+// Build contract §9.4 — the consumer-voice fork offer a viewer sees instead of
+// a refusal.
+export { ForkOffer, encodeGrantPrincipal, type ForkOfferProps } from "./fork-offer.js";
 export { NoPolicyNotice } from "./no-policy-notice.js";
 export { VendoOverlay, type VendoOverlayProps } from "./vendo-overlay.js";
 export { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";

@@ -6,7 +6,9 @@ import { boxAllowlist } from "../../src/egress-approval.js";
 import { createApps } from "../../src/index.js";
 import type { BuildMachineEnv } from "../../src/machine-lifecycle.js";
 import type { SandboxMachine } from "../../src/sandbox.js";
-import { guardFixture, memoryStore, seedAppRow } from "../../src/testing/index.js";
+import { guardFixture } from "../../src/testing/guard-fixture.js";
+import { memoryStore } from "../../src/testing/memory-store.js";
+import { seedAppRow } from "../../src/testing/seed-app-row.js";
 import { e2bSandbox } from "../../src/e2b/index.js";
 
 // ============================================================================

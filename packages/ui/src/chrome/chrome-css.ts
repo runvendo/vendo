@@ -1276,33 +1276,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-btn-ceremony:hover { opacity: .92; background: var(--vendo-warn); }
 
 
-/* ---- share dialog + fork offer (build contract §9.2-§9.6) ---- */
-.fl-share { display: flex; flex-direction: column; gap: 12px; padding: 16px;
-  border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
-  background: var(--vendo-surface); font: 400 13px/1.5 var(--vendo-font); color: var(--vendo-fg); }
-.fl-share-head { display: flex; align-items: center; gap: 10px; }
-.fl-share-title { font-weight: 600; font-size: 14px; }
-.fl-share-head .fl-btn { margin-left: auto; }
-.fl-share-note { margin: 0; color: var(--vendo-fg-muted); font-size: 12.5px; }
-.fl-share-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.fl-share-input { flex: 1 1 180px; min-width: 0; padding: 7px 11px; font: inherit;
-  border: 1px solid var(--vendo-border); border-radius: 9px; background: var(--vendo-bg); color: inherit; }
-.fl-share-level { padding: 7px 9px; font: inherit; border: 1px solid var(--vendo-border);
-  border-radius: 9px; background: var(--vendo-bg); color: inherit; }
-/* One labelled control that appears mid-task (who exactly, which team). Tighter
-   than the dialog's own 12px gap, so the label belongs to ITS field rather than
-   floating between two. The basis reset is load-bearing: .fl-share-input carries
-   flex-basis 180px for the horizontal row, which in a column would be a height. */
-.fl-share-field { display: flex; flex-direction: column; gap: 6px; }
-.fl-share-field .fl-share-input { flex: 0 0 auto; }
-.fl-share-error { margin: 0; color: var(--vendo-danger); font-size: 12.5px; }
-.fl-share-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.fl-share-empty { color: var(--vendo-fg-muted); font-size: 12.5px; padding: 6px 0; }
-.fl-share-row { display: flex; align-items: center; gap: 10px; padding: 8px 0;
-  border-top: 1px solid var(--vendo-border); }
-.fl-share-who { font-weight: 500; }
-.fl-share-lvl { color: var(--vendo-fg-muted); font-size: 12px; }
-.fl-share-revoke { margin-left: auto; }
+/* ---- viewer fork offer (build contract §9.4) ---- */
 .fl-share-fork { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px;
   border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
   background: var(--vendo-accent-soft); font: 400 13px/1.55 var(--vendo-font); color: var(--vendo-fg); }

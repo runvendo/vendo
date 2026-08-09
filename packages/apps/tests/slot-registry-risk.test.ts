@@ -8,7 +8,7 @@
 import type { RunContext } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SLOTS_COLLECTION, SLOT_DECAY_MS, createSlotRegistry } from "../src/slots.js";
-import { memoryStore } from "../src/testing/index.js";
+import { memoryStore } from "../src/testing/memory-store.js";
 
 const ada: RunContext = {
   principal: { kind: "user", subject: "user_ada" },

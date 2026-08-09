@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { memoryStore } from "../src/testing/index.js";
+import { memoryStore } from "../src/testing/memory-store.js";
 import { APP_TOKEN_COLLECTION, createAppTokens } from "../src/app-token.js";
 
 const APP = "app_box_1";

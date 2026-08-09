@@ -12,7 +12,6 @@ import type {
   AppAccess,
   AppDocument,
   AppFloor,
-  AppGrantRecord,
   AppId,
   ApprovalId,
   ApprovalRequest,
@@ -21,6 +20,7 @@ import type {
   IsoDateTime,
   Json,
   NormalizedCatalog,
+  PlacementEntry,
   RiskLabel,
   RunContext,
   ScreenAssembler,
@@ -84,26 +84,14 @@ export interface AppsConfig {
     boxEditTimeoutMs?: number;
   };
   /**
-   * Build contract §9.2–§9.6 — the multi-party half. `appAccess` is `can()`
-   * over whatever store the host wired (the umbrella composes it at the
-   * composition seam); `multiParty` is the Cloud gate, filled from
-   * `cloudKeyOptions() !== undefined` — sharing is multi-party coordination,
-   * so grant/revoke/promote refuse with `cloud-required` without it.
-   * `can()` itself is OSS and NEVER key-conditional: with no key no grant row
-   * can exist, so it degenerates to ownership.
+   * Build contract §9.2–§9.4 — `can()` over whatever store the host wired (the
+   * umbrella composes it at the composition seam). OSS and NEVER
+   * key-conditional: with no key no grant row can exist, so it degenerates to
+   * ownership.
    *
-   * `appAccess` unset ⇒ ownership only, exactly today's behavior.
+   * Unset ⇒ ownership only, exactly today's behavior.
    */
   appAccess?: AppAccess;
-  multiParty?: boolean;
-  /**
-   * Build contract §9.5 — promote's ROW half. A promote crosses subjects, which
-   * 02-store §2 otherwise forbids, and it moves the app's workspace documents
-   * with it; both are raw-row work the store owns, so the umbrella fills this
-   * seam (`appStore().promote` + `workspaceStore().promoteApp`). Unset, promote
-   * refuses rather than half-moving an app.
-   */
-  promoteApp?: (appId: AppId, fromSubject: string, orgId: string) => Promise<void>;
   /**
    * Build contract §9.8 — where this deployment serves the authenticated proxy
    * for an ORG-owned served app (`<wire base>/apps/<id>/serve/`). The wire owns
@@ -154,7 +142,8 @@ export interface AppsConfig {
   /** The island smoke-render gate (on unless explicitly `false`): every
    *  generated island renders once headless before it can reach a screen. */
   pipeline?: GenerationDependencies["pipeline"];
-  /** The host's own checks over a generated app (checking/types.ts). APPENDED
+  /** The host's own checks over a generated app (`Check` is `@vendoai/core`'s —
+   *  a pack is authorable without depending on this block). APPENDED
    *  to the built-in fact checks and the reviewer — a host can add findings,
    *  never remove or replace a built-in one. */
   checks?: readonly Check[];
@@ -391,17 +380,9 @@ export interface AuthoredAppResult {
   dataUnavailable?: true;
 }
 
-/** One slot's answer: what is in it, and where that app's build stands.
- *  `status` is derived from the app record every read — never stored, so a
- *  build that lands (or fails) needs no second write to correct the slot. */
-export interface PlacementEntry {
-  slot: string;
-  app: AppId;
-  /** The app's name, or "" while the build has not landed (there is no
-   *  document yet to take a title from). */
-  title: string;
-  status: "ready" | "building" | "failed";
-}
+/** One slot's answer. The CLIENT reads it off the wire too, so the shape itself
+ *  lives in core. */
+export type { PlacementEntry };
 
 /** 06-apps §1 */
 export interface AppsRuntime {
@@ -567,32 +548,11 @@ export interface AppsRuntime {
    * host's own component, invisible to the server until it renders.
    */
   slots: SlotRegistry;
-  /**
-   * Build contract §9.5 — the second of sharing's two verbs. Moves the
-   * canonical app into an org the caller is asserted a member of: the row
-   * subject becomes the org id verbatim, the app's workspace documents move to
-   * `/orgs/<orgId>/apps/<id>/**`, and the promoter keeps an `owner` grant.
-   * Requires ownership + an asserted membership + the Cloud key (§9.6);
-   * `promote` and `fork` are the only two ways an app crosses a workspace.
-   */
-  promote(appId: AppId, orgId: string, ctx: RunContext): Promise<AppDocument>;
-  /**
-   * Build contract §9.2–§9.3 — the Share dialog's door. `list` is viewer-gated
-   * and OSS; `grant`/`revoke` are owner-gated AND Cloud-gated (sharing is
-   * multi-party coordination). `can()` behind them is never key-conditional.
-   */
+  /** Build contract §9.3 — what level the CALLER holds. */
   access: {
-    list(appId: AppId, ctx: RunContext): Promise<AppGrantRecord[]>;
-    grant(appId: AppId, principal: string, level: AccessLevel, ctx: RunContext): Promise<void>;
-    revoke(appId: AppId, principal: string, ctx: RunContext): Promise<void>;
     /** The caller's own level, or null when they cannot see the app at all —
      *  what the surface reads to decide between "Edit" and the fork offer. */
     levelFor(appId: AppId, ctx: RunContext): Promise<AccessLevel | null>;
-    /** Who HOLDS the app: a person's subject, or an org id for a promoted one
-     *  (§9.5 — the row subject is the org verbatim). Null when the caller
-     *  cannot see the app. The Share dialog reads it to know whether sharing
-     *  has to promote first, and into which org. */
-    holder(appId: AppId, ctx: RunContext): Promise<string | null>;
   };
   edit(appId: AppId, instruction: string, ctx: RunContext): Promise<EditResult>;
   /**

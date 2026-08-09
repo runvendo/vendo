@@ -1,4 +1,4 @@
-import { VendoError, type Membership, type RunContext } from "@vendoai/core";
+import { VendoError, type AccessLevel, type Membership, type RunContext } from "@vendoai/core";
 import { appAccessConformance, memoryStoreAdapter } from "@vendoai/core/conformance";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appAccess } from "../src/helpers/app-access.js";
@@ -143,10 +143,23 @@ for (const backend of backends()) {
         .toEqual([]);
     });
 
+    it("refuses a level outside the closed vocabulary, and writes nothing", async () => {
+      // The wire route that used to reject an off-vocabulary level before the
+      // store ever saw one is gone with the Share dialog, so this floor is now
+      // the ONLY thing standing between a typo and a row `can()` cannot rank.
+      const app = "app_level_vocab";
+      await appStore(made.store).put({ kind: "user", subject: "acme" }, doc(app));
+      const owner = ctxFor("dana", [{ org: "acme", admin: true }]);
+      await expect(access().grant(owner, app, "user:kim", "admin" as AccessLevel))
+        .rejects.toThrow(/viewer, editor, or owner/);
+      expect((await made.store.records("vendo_app_grants").list({ refs: { app_id: app } })).records)
+        .toEqual([]);
+    });
+
     it("resolves EVERY grant on an app, past the page size", async () => {
       // One page was all `can()` ever read, so on a heavily shared app the
       // grants beyond it silently granted nothing: somebody's access vanished
-      // with no revoke, no audit row, and nothing to see in the Share dialog.
+      // with no revoke, no audit row, and no row anywhere to see it in.
       const app = "app_many";
       await appStore(made.store).put({ kind: "user", subject: "dana" }, doc(app));
       const owner = ctxFor("dana");

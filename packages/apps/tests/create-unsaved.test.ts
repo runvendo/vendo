@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import { createAgentTools } from "../src/agent-tools.js";
 import { createApps, type AppsRuntime } from "../src/index.js";
 import { assembleTree } from "../src/runtime.js";
+import { authoringAssembler } from "../src/testing/authoring-assembler.js";
 import { fakeBoxSandbox } from "../src/testing/fake-box.js";
-import { authoringAssembler, basicLanguageModel, guardFixture, memoryStore } from "../src/testing/index.js";
+import { guardFixture } from "../src/testing/guard-fixture.js";
+import { memoryStore } from "../src/testing/memory-store.js";
+import { basicLanguageModel } from "../src/testing/scripted-model.js";
 
 /**
  * Regression guard for the LIVE deployed-Maple failure (2026-07-27): the
