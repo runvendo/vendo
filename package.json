@@ -31,7 +31,7 @@
     "esbuild": "^0.25.12",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-sonarjs": "^3.0.7",
+    "eslint-plugin-sonarjs": "^4.2.0",
     "knip": "^5.88.1",
     "miniflare": "^4.20260714.0",
     "opentype.js": "^2.0.0",
