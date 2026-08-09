@@ -12,10 +12,10 @@ import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { claudeCodeDriver, type AgentSdk } from "./claude-code.js";
-import { meteredModel, MODEL_IDS, usdFor, type Meter } from "./meter.js";
-import { designRules, worldBlock } from "./vendo.js";
-import { cannedResponse, loadCases, loadWorld, worldForCase, type Case, type World } from "./world.js";
+import { claudeCodeDriver, type AgentSdk } from "../src/claude-code.js";
+import { meteredModel, MODEL_IDS, usdFor, type Meter } from "../src/meter.js";
+import { designRules, worldBlock } from "../src/vendo.js";
+import { cannedResponse, loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;

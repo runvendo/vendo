@@ -10,9 +10,9 @@ import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { Meter } from "./meter.js";
-import { vendoDriver } from "./vendo.js";
-import { loadWorld, type Case, type World } from "./world.js";
+import type { Meter } from "../src/meter.js";
+import { vendoDriver } from "../src/vendo.js";
+import { loadWorld, type Case, type World } from "../src/world.js";
 
 type StreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<infer Part>
   ? Part

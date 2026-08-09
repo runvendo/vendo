@@ -19,7 +19,7 @@ import { configDefaults, defineConfig } from "vitest/config";
  * promised`); its fifteen model-boundary tests ride along. Splitting that file
  * would let them run in CI too.
  */
-const BROWSER_SUITES = ["src/axis.test.ts", "src/diy.test.ts", "src/font.test.ts", "src/probe.test.ts", "src/seam.test.ts"];
+const BROWSER_SUITES = ["tests/axis.test.ts", "tests/diy.test.ts", "tests/font.test.ts", "tests/probe.test.ts", "tests/seam.test.ts"];
 
 export default defineConfig({
   test: {

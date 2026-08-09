@@ -9,11 +9,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { FloorResult } from "./floor.js";
-import { JudgeContract, type JudgeResult } from "./judge.js";
-import { writePreview } from "./report.js";
-import type { CaseResult } from "./run.js";
-import { loadCases, loadWorld, worldForCase, type World } from "./world.js";
+import type { FloorResult } from "../src/floor.js";
+import { JudgeContract, type JudgeResult } from "../src/judge.js";
+import { writePreview } from "../src/report.js";
+import type { CaseResult } from "../src/run.js";
+import { loadCases, loadWorld, worldForCase, type World } from "../src/world.js";
 
 const PASSING: FloorResult = {
   delivered: true,

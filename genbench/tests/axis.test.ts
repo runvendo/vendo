@@ -17,9 +17,9 @@ import type { UIPayload } from "@vendoai/core";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildIndex, honestData } from "./floor.js";
-import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "./render.js";
-import { loadWorld, type World } from "./world.js";
+import { buildIndex, honestData } from "../src/floor.js";
+import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "../src/render.js";
+import { loadWorld, type World } from "../src/world.js";
 
 /** The spending case's own rows, plotted. `format="money"` is what turns the
  *  scale into dollars, which is what makes the tick labels look like data. */

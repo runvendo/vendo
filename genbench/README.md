@@ -18,7 +18,7 @@ schemas and the same design brief, because that equivalence is the whole claim.
 
 All three are handed the same thing, and that is asserted rather than
 asserted-to-be. There is exactly **one world serializer** — `worldBlock` in
-`src/vendo.ts` — and both baselines send it. `src/diy.test.ts` then compares the
+`src/vendo.ts` — and both baselines send it. `tests/diy.test.ts` then compares the
 prompt each baseline really put on the wire (the model `diy` streamed through,
 the session `claude-code` opened) against the design brief the vendo driver
 composes (`hostDesignBrief`), the descriptors its registry serves, and the
@@ -35,7 +35,7 @@ so its file works opened straight off disk — has it **wrapped** rather than
 overwritten: the feed half of the recorder is installed once the page has
 loaded and delegates to whatever it finds, so every column's presses reach the
 preview's live feed and the calls the floor scores are the contender's own
-either way (`src/seam.test.ts`).
+either way (`tests/seam.test.ts`).
 
 Every contender for a case runs **at once**. They share the browser and nothing
 else — a page each, a meter each, a clock each — and one contender's crash or
@@ -143,7 +143,7 @@ the example rows.
 **Money is in integer cents**, as the Kit's `format="money"` and the demo host
 both expect. This is load-bearing: a world authored in dollars lets a 100×
 scale error slip past the fabrication check, which is exactly the bug the
-regression test in `src/floor.test.ts` pins down.
+regression test in `tests/floor.test.ts` pins down.
 
 `cases.json` holds the prompts. A case may override any tool's data — that is
 how the empty state is tested — and its `pass` lines are the correctness rubric
@@ -199,7 +199,7 @@ Five deterministic checks, no model involved:
 - **wiredActions** — the probe pressed every control on the page and every call
   that fired names a real tool with schema-valid arguments. A control that fires
   nothing fails: naming a tool in a document is not being wired to it, which is
-  the difference `src/probe.test.ts` exists to keep honest
+  the difference `tests/probe.test.ts` exists to keep honest
 
 ## The judge
 
@@ -256,7 +256,7 @@ restoring them before the screenshot, so the *picture* is untouched:
 category axis goes with the scale. A number or date that appears **only** on a
 chart axis and nowhere else on the screen is therefore not graded. Everything
 else still is — a fabricated number in the screen's own copy fails exactly as
-before. `src/axis.test.ts` pins both halves in a real browser: it proves the
+before. `tests/axis.test.ts` pins both halves in a real browser: it proves the
 labels really are in the page's own text, really would fail, are gone from the
 extraction, and that the screen's own copy is still caught. It fails loudly if
 recharts ever moves that text.
@@ -269,8 +269,8 @@ no Playwright browsers.
 
 Two tests spend real money, and both are gated twice — they need
 `GENBENCH_LIVE=1` **and** `ANTHROPIC_API_KEY`, so neither CI nor a stray
-`vitest` run can trigger them: the judge's live smoke test (`src/judge.test.ts`)
-and the Claude Code driver's (`src/claude-code.test.ts`).
+`vitest` run can trigger them: the judge's live smoke test (`tests/judge.test.ts`)
+and the Claude Code driver's (`tests/claude-code.test.ts`).
 
 ## Known limits
 

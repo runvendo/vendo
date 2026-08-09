@@ -12,10 +12,10 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { wiredActions } from "./floor.js";
-import { probe } from "./probe.js";
-import { openBrowser, type Shooter } from "./render.js";
-import { loadWorld, type World } from "./world.js";
+import { wiredActions } from "../src/floor.js";
+import { probe } from "../src/probe.js";
+import { openBrowser, type Shooter } from "../src/render.js";
+import { loadWorld, type World } from "../src/world.js";
 
 /** The recorder every real benchmark page carries, in its smallest honest form.
  *  `page.html` gets it from the bundled mount; this fixture declares it inline so

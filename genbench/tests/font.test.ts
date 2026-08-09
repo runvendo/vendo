@@ -14,8 +14,8 @@ import type { UIPayload } from "@vendoai/core";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { authoredPage, bundleMount, fontFace, openBrowser, pageHtml, type Shooter } from "./render.js";
-import { loadWorld, type World } from "./world.js";
+import { authoredPage, bundleMount, fontFace, openBrowser, pageHtml, type Shooter } from "../src/render.js";
+import { loadWorld, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;

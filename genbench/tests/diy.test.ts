@@ -22,12 +22,12 @@ import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { claudeCodeDriver, type AgentSdk } from "./claude-code.js";
-import { diyDriver, diySystemPrompt } from "./diy.js";
-import type { Meter } from "./meter.js";
-import { authoredPage, openBrowser } from "./render.js";
-import { designRules, worldRegistry } from "./vendo.js";
-import { cannedResponse, loadCases, loadWorld, worldForCase, type Case, type World } from "./world.js";
+import { claudeCodeDriver, type AgentSdk } from "../src/claude-code.js";
+import { diyDriver, diySystemPrompt } from "../src/diy.js";
+import type { Meter } from "../src/meter.js";
+import { authoredPage, openBrowser } from "../src/render.js";
+import { designRules, worldRegistry } from "../src/vendo.js";
+import { cannedResponse, loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
 
 type Sent = Parameters<MockLanguageModelV3["doStream"]>[0]["prompt"];
 

@@ -22,12 +22,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { FloorResult } from "./floor.js";
-import { JudgeContract, type JudgeResult } from "./judge.js";
-import { writePreview } from "./report.js";
-import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "./render.js";
-import { writeCase, type CaseResult } from "./run.js";
-import { loadWorld, type World } from "./world.js";
+import type { FloorResult } from "../src/floor.js";
+import { JudgeContract, type JudgeResult } from "../src/judge.js";
+import { writePreview } from "../src/report.js";
+import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "../src/render.js";
+import { writeCase, type CaseResult } from "../src/run.js";
+import { loadWorld, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;

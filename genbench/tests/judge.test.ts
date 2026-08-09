@@ -3,10 +3,10 @@ import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { judge, JudgeContract, SYSTEM_PROMPT, VERDICTS, type JudgeInput, type Verdict } from "./judge.js";
-import { probe, type Probed } from "./probe.js";
-import { authoredPage, openBrowser } from "./render.js";
-import { loadWorld } from "./world.js";
+import { judge, JudgeContract, SYSTEM_PROMPT, VERDICTS, type JudgeInput, type Verdict } from "../src/judge.js";
+import { probe, type Probed } from "../src/probe.js";
+import { authoredPage, openBrowser } from "../src/render.js";
+import { loadWorld } from "../src/world.js";
 
 // ------------------------------------------------------------------ fixtures
 

@@ -1,9 +1,9 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { buildIndex, honestData, wiredActions, type DataIndex } from "./floor.js";
-import type { Probed } from "./probe.js";
-import { loadWorld, type World } from "./world.js";
+import { buildIndex, honestData, wiredActions, type DataIndex } from "../src/floor.js";
+import type { Probed } from "../src/probe.js";
+import { loadWorld, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 

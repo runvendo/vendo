@@ -20,7 +20,7 @@ Case ids in `maple`: `spend-overview`, `spend-chart`, `pending-transfers`,
   `streamText` call) · `claude-code` (stock Agent SDK in a scratch dir).
   Byte-identical world info per contender: ONE serializer, `worldBlock` in
   `genbench/src/vendo.ts`, enforced by the fairness test in
-  `genbench/src/diy.test.ts` against what the vendo driver really receives.
+  `genbench/tests/diy.test.ts` against what the vendo driver really receives.
 - Worlds: `genbench/worlds/<name>/{world.json, cases.json}` plus an optional
   `font.woff2` the harness injects into every contender's page. `world.json` =
   tools + canned data + theme + style rubric; `cases.json` = prompt + `pass`

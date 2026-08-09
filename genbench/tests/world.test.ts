@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { caseHash, jsonSchemaFromExample, loadCases, loadWorld, riskOf, worldForCase, type Case } from "./world.js";
+import { caseHash, jsonSchemaFromExample, loadCases, loadWorld, riskOf, worldForCase, type Case } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const worldDir = join(root, "worlds", "maple");
@@ -135,7 +135,7 @@ describe("worldForCase", () => {
 
 describe("loadCases", () => {
   it("rejects a duplicate case id", async () => {
-    await expect(loadCases(join(root, "src", "fixtures", "duplicate-cases.json"))).rejects.toThrow(/duplicate case id/);
+    await expect(loadCases(join(root, "tests", "fixtures", "duplicate-cases.json"))).rejects.toThrow(/duplicate case id/);
   });
 });
 

@@ -6,9 +6,9 @@
  * report's column order the contender order, whatever order they finish in.
  */
 import { describe, expect, it, vi } from "vitest";
-import { WALL_CLOCK_MS } from "./claude-code.js";
-import type { FloorResult } from "./floor.js";
-import { JudgeContract, type JudgeResult } from "./judge.js";
+import { WALL_CLOCK_MS } from "../src/claude-code.js";
+import type { FloorResult } from "../src/floor.js";
+import { JudgeContract, type JudgeResult } from "../src/judge.js";
 import {
   attempt,
   CASE_TIMEOUT_MS,
@@ -19,7 +19,7 @@ import {
   ungraded,
   type Args,
   type CaseResult,
-} from "./run.js";
+} from "../src/run.js";
 
 describe("attempt", () => {
   it("hands back what the work returned", async () => {
