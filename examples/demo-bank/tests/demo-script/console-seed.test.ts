@@ -36,7 +36,13 @@ describe("console seed", () => {
     store = createStore({ dataDir });
     await store.ensureSchema();
     await seedConsoleData(store);
-    vendo = createVendo({ store });
+    // Construction needs an identity even though this suite drives the
+    // automations API directly with its own RunContext — the wire resolver is
+    // never reached here.
+    vendo = createVendo({
+      store,
+      principal: async () => ({ kind: "user", subject: mapleDemoUsers()[0]!.subject }),
+    });
   }, 120_000);
 
   afterAll(async () => {
