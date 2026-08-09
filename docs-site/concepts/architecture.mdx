@@ -19,6 +19,7 @@ does, which parts are yours, and how a request travels through them.
 | `@vendoai/automations` | triggers and away runs |
 | `@vendoai/mcp` | the MCP door for third-party agents |
 | `@vendoai/knowledge` | product knowledge ingestion and retrieval |
+| `@vendoai/agents` | the standalone agent runtime, without the umbrella |
 | `@vendoai/ui` | headless hooks and optional chrome |
 | `@vendoai/telemetry` | build and development telemetry |
 
@@ -62,12 +63,14 @@ through the guarded tool proxy.
 ## Dependency rule
 
 ```text
-core                                              -> nothing
-store, agent, actions, guard, ui, apps, mcp, knowledge -> core only
-automations                                       -> core, apps
-telemetry, engine                                 -> nothing
-vendo                                             -> every block
-vendoai                                           -> vendo only
+core, telemetry                                 -> nothing
+store, actions, guard, ui, apps, mcp, knowledge -> core only
+automations                                     -> core, apps
+harnesses                                       -> core, apps, guard
+agents                                          -> core, actions, apps, guard,
+                                                   harnesses, mcp, store
+vendo                                           -> every block
+vendoai                                         -> vendo only
 ```
 
 `pnpm lint` enforces this map in `scripts/dependency-guard.mjs`; a package

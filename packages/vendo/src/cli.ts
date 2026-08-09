@@ -290,9 +290,8 @@ export async function main(argv: string[]): Promise<number> {
     return 1;
   }
   if (command === "playground") {
-    // Retired: the playground's job moved into the hosted try surface
-    // (vendo.run/playground). The bundle machinery lives on in
-    // cli/playground.ts and cli/playground/.
+    // Retired, and the hosted surface behind it is gone too — this notice is
+    // all that is left, and it only catches the old command name.
     console.error("vendo playground was retired — set Vendo up in your own repo instead: `vendo init`, then `vendo doctor`. Docs: https://vendo.run/quickstart");
     return 1;
   }

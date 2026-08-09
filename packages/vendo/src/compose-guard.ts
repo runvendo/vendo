@@ -22,9 +22,9 @@ import { orgPolicyPath, orgPolicyResolver, workspacePolicySource } from "./org-p
 export const composeGuard = (composition: VendoComposition): Pick<VendoComposition,
   "guard" | "resolveRisk" | "warnPresentCredentialsNotForwarded"> => {
   const { config, store, configCloud, readSurfaceFile } = composition;
-  // Task 15a: profile.policy is the parsed policy.json document held in
-  // memory — the hosted try venue's demo policy, where the local venue
-  // writes the file instead (cli/try/extract.ts). Precedence keeps the
+  // profile.policy is the parsed policy.json document held in memory, for a
+  // deployment with no filesystem — `vendo init` writes the file instead
+  // (cli/init-scaffolds.ts). Precedence keeps the
   // sibling pieces' discipline: the longer-standing explicit `policy` knob
   // wins outright; otherwise the piece feeds the guard as inline rules +
   // directions (defaulted like an absent file key), which replace the
