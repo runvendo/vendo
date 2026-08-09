@@ -102,8 +102,8 @@ curl -X POST \
 returns the approval record, and follows the rules in
 [Dev route rules](#dev-route-rules); it never mounts in production.
 
-Approvals are audited through `guard.report`. Read the record store with
-`vendo.apps.inClient.approvals(appId, ctx)`.
+Approvals are audited through `guard.report`. The approved verdict reaches the
+client on the `open()` payload, as `inClient`.
 
 ## What runs in the host page
 

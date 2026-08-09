@@ -40,14 +40,6 @@ export const createInClientSurface = (deps: InClientSurfaceDeps): AppsRuntime["i
     const app = await requireOwned(appId, ctx, "viewer");
     return computeShipDiff(app, config.pinBaselines ?? []);
   },
-  async approvals(appId, ctx) {
-    await requireOwned(appId, ctx, "viewer");
-    return inClientApprovals.list(appId);
-  },
-  async verdict(appId, ctx) {
-    const app = await requireOwned(appId, ctx, "viewer");
-    return inClientApprovals.verdictFor(app);
-  },
   async approve(input, ctx) {
     // Round-2 hardening (2026-08-02) — a review-kind approval IS the
     // review, so it never comes from the remixing user themselves: the

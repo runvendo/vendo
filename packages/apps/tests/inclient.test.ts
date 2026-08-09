@@ -204,8 +204,9 @@ describe("runtime in-client surface", () => {
     const app = await seeded(store);
     const stranger = context("user_mallory");
     await expect(runtime.inClient.shipDiff(app.id, stranger)).rejects.toMatchObject({ code: "not-found" });
-    await expect(runtime.inClient.approvals(app.id, stranger)).rejects.toMatchObject({ code: "not-found" });
-    await expect(runtime.inClient.verdict(app.id, stranger)).rejects.toMatchObject({ code: "not-found" });
+    // The verdict reaches a caller on the open() payload and nowhere else, so
+    // that is the door the masking has to hold on.
+    await expect(runtime.open(app.id, stranger)).rejects.toMatchObject({ code: "not-found" });
     await expect(runtime.inClient.approve({ appId: app.id, approvedBy: "host" }, stranger))
       .rejects.toMatchObject({ code: "not-found" });
   });
@@ -231,7 +232,9 @@ describe("runtime in-client surface", () => {
       versionHash: appVersionHash(app),
       approvedBy: "host-console",
     });
-    expect(await runtime.inClient.verdict(app.id, ctx)).toMatchObject({ granted: true });
+    const surface = await runtime.open(app.id, ctx);
+    if (surface.kind !== "tree") throw new Error("expected tree surface");
+    expect((surface.payload as { inClient?: unknown }).inClient).toMatchObject({ granted: true });
     expect(guard.audit.some((event) =>
       event.kind === "app-lifecycle"
       && (event.detail as { operation?: string } | undefined)?.operation === "in-client-approve"

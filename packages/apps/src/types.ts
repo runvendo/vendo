@@ -41,7 +41,6 @@ import type { LanguageModel } from "ai";
 import type { Check, Finding } from "./checking/types.js";
 import type { CloudAppsClient, PublishRecord, ShareSnapshot } from "./cloud.js";
 import type { GenerationDependencies } from "./generation/engine.js";
-import type { InClientVerdict } from "./inclient.js";
 import type { BuildMachineEnv, LifecycleClock } from "./machine-lifecycle.js";
 import type { AppMachineStatus, ManifestTriggerSync } from "./manifest-triggers.js";
 import type { InClientApproval, PinBaseline, PinDrift } from "./pins.js";
@@ -696,8 +695,6 @@ export interface AppsRuntime {
    */
   inClient: {
     shipDiff(appId: AppId, ctx: RunContext): Promise<ShipDiff>;
-    approvals(appId: AppId, ctx: RunContext): Promise<InClientApproval[]>;
-    verdict(appId: AppId, ctx: RunContext): Promise<InClientVerdict>;
     approve(input: { appId: AppId; approvedBy: string }, ctx: RunContext): Promise<InClientApproval>;
   };
   /**
