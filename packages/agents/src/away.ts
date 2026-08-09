@@ -38,7 +38,7 @@ import { createHarnessRuntime, type HarnessRuntimeDeps } from "@vendoai/harnesse
 import { storeFiles, threadMessageStore, threadStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
-import { assemblePrompt } from "./prompt.js";
+import { assemblePrompt, type SystemPromptHook } from "./prompt.js";
 
 /** What a caller with no budget gets. The automations engine always passes its
  *  own (50), so this only bounds a host driving the seam directly. */
@@ -56,16 +56,17 @@ export interface AwayRunnerDeps {
   /** The host's prompt block. */
   instructions?: string;
   /**
-   * The assembled system prompt for the run, for a composition that already has
-   * one. Unset → this package's own assembly (`instructions`, the ctx's situation
-   * data, and the guard's directions).
+   * The run's system prompt, for a composition that already has one. Handed this
+   * package's own assembly (`instructions`, the ctx's situation data, and the
+   * guard's directions); a returned string is used verbatim, `undefined` is that
+   * default — never a promptless run.
    *
    * It exists because the prompt is VENUE-GATED and carries the guard's
    * directions, so it needs the ctx: the umbrella assembles a chat turn's brief
    * per turn, and an away firing that thought with a different brief than a chat
    * turn would be a second agent wearing the same name.
    */
-  system?: (ctx: RunContext) => Promise<string | undefined> | string | undefined;
+  system?: SystemPromptHook;
   /** The seats a harness that does NOT bring its own brain reads (`vendo()`). */
   models?: SeatModels<LanguageModel>;
   liveTurn?: HarnessRuntimeDeps["liveTurn"];
@@ -279,13 +280,15 @@ export function awayRunner(deps: AwayRunnerDeps): AgentRunner {
       ...(deps.liveTurn === undefined ? {} : { liveTurn: deps.liveTurn }),
     });
 
+    const directions = await deps.guard.directions(awayCtx);
+    const assembled = assemblePrompt({
+      ...(deps.instructions === undefined ? {} : { instructions: deps.instructions }),
+      ...(awayCtx.context === undefined ? {} : { situation: awayCtx.context }),
+      directions,
+    });
     const system = deps.system === undefined
-      ? assemblePrompt({
-        ...(deps.instructions === undefined ? {} : { instructions: deps.instructions }),
-        ...(awayCtx.context === undefined ? {} : { situation: awayCtx.context }),
-        directions: await deps.guard.directions(awayCtx),
-      })
-      : await deps.system(awayCtx);
+      ? assembled
+      : (await deps.system(awayCtx, { assembled, directions })) ?? assembled;
     const message: UIMessage = {
       id: `msg_${randomUUID()}`,
       role: "user",
@@ -303,7 +306,7 @@ export function awayRunner(deps: AwayRunnerDeps): AgentRunner {
         ctx: awayCtx,
         workspace,
         interactive: false,
-        ...(system === undefined ? {} : { system }),
+        system,
         ...(deps.models === undefined ? {} : { models: deps.models }),
         ...(task.abortSignal === undefined ? {} : { signal: task.abortSignal }),
       });

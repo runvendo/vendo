@@ -124,6 +124,65 @@ describe("session", () => {
     expect(system).toContain("page: /billing");
   });
 
+  it("hands the system hook the default assembly and the guard's directions, and uses its answer verbatim", async () => {
+    const store = memoryStore();
+    let system: string | undefined;
+    let handed: { assembled: string; directions: readonly string[] } | undefined;
+    let venue: string | undefined;
+    const peek = defineHarness({
+      name: "peek",
+      async *run(turn) {
+        system = turn.system;
+      },
+    });
+    const support = agent({
+      name: "support",
+      harness: peek,
+      store,
+      guard: createGuard({ store, policy: { directions: ["Prefer refunds under $50."] } }),
+      instructions: "Answer as the Acme desk.",
+      system: (ctx, prompt) => {
+        venue = ctx.venue;
+        handed = prompt;
+        return "Only these words.";
+      },
+    });
+
+    await (await (await support.session("u_42")).stream("hi")).text();
+
+    expect(system).toBe("Only these words.");
+    expect(venue).toBe("chat");
+    // The default it replaced, so a host can keep the parts it wants.
+    expect(handed?.assembled).toContain("You are an agent embedded in the host application");
+    expect(handed?.assembled).toContain("Answer as the Acme desk.");
+    expect(handed?.directions).toEqual(["Prefer refunds under $50."]);
+  });
+
+  it("falls back to the default assembly when the hook declines, so a conditional cannot strip the rules", async () => {
+    const store = memoryStore();
+    let system: string | undefined;
+    const peek = defineHarness({
+      name: "peek",
+      async *run(turn) {
+        system = turn.system;
+      },
+    });
+    const support = agent({
+      name: "support",
+      harness: peek,
+      store,
+      guard: createGuard({ store, policy: { directions: ["Prefer refunds under $50."] } }),
+      instructions: "Answer as the Acme desk.",
+      system: () => undefined,
+    });
+
+    await (await (await support.session("u_42")).stream("hi")).text();
+
+    expect(system).toContain("You are an agent embedded in the host application");
+    expect(system).toContain("Answer as the Acme desk.");
+    expect(system).toContain("Prefer refunds under $50.");
+  });
+
   it("builds the enriched RunContext the guard and tools see: user, context, headers", async () => {
     let seen: RunContext | undefined;
     const probe = tool({

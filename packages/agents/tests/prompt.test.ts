@@ -2,12 +2,11 @@ import { describe, expect, it } from "vitest";
 import { assemblePrompt } from "../src/prompt.js";
 
 describe("prompt assembly", () => {
-  it("orders sections: base rules, instructions, [User], [Situation], notes, directions", () => {
+  it("orders sections: base rules, instructions, [User], [Situation], directions", () => {
     const prompt = assemblePrompt({
       instructions: "Answer as the Acme support desk.",
       user: { name: "Dana", plan: "pro" },
       situation: { page: "/billing" },
-      sourceNotes: ["Knowledge: sources: handbook (files)."],
       directions: ["Prefer refunds under $50."],
     });
     const order = [
@@ -18,7 +17,6 @@ describe("prompt assembly", () => {
       "plan: pro",
       "[Situation]",
       "page: /billing",
-      "Knowledge: sources: handbook (files).",
       "Directions",
       "- Prefer refunds under $50.",
     ];

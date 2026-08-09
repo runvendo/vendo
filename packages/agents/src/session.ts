@@ -32,7 +32,7 @@ import {
 } from "@vendoai/store";
 import type { UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
-import { assemblePrompt } from "./prompt.js";
+import { assemblePrompt, type SystemPromptHook } from "./prompt.js";
 
 export interface SessionOptions {
   /** Server-trust identity facts, model-visible (`[User]`). */
@@ -77,6 +77,8 @@ export interface SessionDeps {
   tools: ToolRegistry;
   skills: readonly Skill[];
   instructions?: string;
+  /** The host's last word on the turn's prompt — see `AgentConfig.system`. */
+  system?: SystemPromptHook;
   /** Publish the turn in flight to the agent's own MCP door (`door.ts`). A
    *  harness that thinks outside this process mints a credential pointing at
    *  "the turn now live on thread T"; without this the pointer resolves to
@@ -130,10 +132,9 @@ export async function createSession(
   const transcript = threadMessageStore<UIMessage>(deps.store);
   const workspaces = workspaceStore(deps.store, { files: deps.files });
   // Opened once per turn, in `stream()` below, so a turn always sees a fresh
-  // path index. Nothing reads it before then: `runtime()` is only called inside
-  // `stream()`, after the open.
-  let workspace: Awaited<ReturnType<typeof workspaces.open>>;
-  const runtime = () =>
+  // path index — and passed in rather than held on the session, so two
+  // `stream()` calls in flight on one session cannot read each other's.
+  const runtime = (workspace: Awaited<ReturnType<typeof workspaces.open>>) =>
     createHarnessRuntime({
       tools: deps.tools,
       guard: deps.guard,
@@ -195,16 +196,19 @@ export async function createSession(
       // resolves the thread and freezes the canonical copy.
       const ctx = contextFor(streamOptions.context);
 
-      workspace = await workspaces.open(principal, { host: hostSkillFiles(deps.skills) });
+      const workspace = await workspaces.open(principal, { host: hostSkillFiles(deps.skills) });
       const directions = await deps.guard.directions(ctx);
-      const system = assemblePrompt({
+      const assembled = assemblePrompt({
         ...(deps.instructions === undefined ? {} : { instructions: deps.instructions }),
         ...(options.user === undefined ? {} : { user: options.user }),
         ...(ctx.context === undefined ? {} : { situation: ctx.context }),
         directions,
       });
+      const system = deps.system === undefined
+        ? assembled
+        : (await deps.system(ctx, { assembled, directions })) ?? assembled;
 
-      return runtime().run({
+      return runtime(workspace).run({
         harness: deps.harness,
         threadId,
         messages,

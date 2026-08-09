@@ -336,6 +336,57 @@ describe("awayRunner", () => {
     expect(seen).toBe("Brief for automation/away on app_digest");
   });
 
+  it("hands that hook the default assembly and the guard's directions", async () => {
+    const store = memoryStore();
+    let handed: { assembled: string; directions: readonly string[] } | undefined;
+    let seen: string | undefined;
+    const run = awayRunner({
+      store,
+      guard: createGuard({ store, policy: { directions: ["Never send anything unattended."] } }),
+      instructions: "Answer as the Acme desk.",
+      system: (ctx, prompt) => {
+        handed = prompt;
+        return `Brief for ${ctx.venue}`;
+      },
+      harness: defineHarness({
+        name: "peek",
+        async *run(turn) {
+          seen = turn.system;
+          yield { type: "text" as const, delta: "ok" };
+        },
+      }),
+    });
+
+    await run({ prompt: "go", tools: taskRegistry() }, fireCtx());
+
+    expect(seen).toBe("Brief for automation");
+    expect(handed?.assembled).toContain("Answer as the Acme desk.");
+    expect(handed?.directions).toEqual(["Never send anything unattended."]);
+  });
+
+  it("falls back to the default assembly when the hook declines — an away run is never promptless", async () => {
+    const store = memoryStore();
+    let seen: string | undefined;
+    const run = awayRunner({
+      store,
+      guard: createGuard({ store, policy: { directions: ["Never send anything unattended."] } }),
+      instructions: "Answer as the Acme desk.",
+      system: () => undefined,
+      harness: defineHarness({
+        name: "peek",
+        async *run(turn) {
+          seen = turn.system;
+          yield { type: "text" as const, delta: "ok" };
+        },
+      }),
+    });
+
+    await run({ prompt: "go", tools: taskRegistry() }, fireCtx());
+
+    expect(seen).toContain("Answer as the Acme desk.");
+    expect(seen).toContain("Never send anything unattended.");
+  });
+
   it("assembles its own brief when the host supplied none: instructions plus the guard's directions", async () => {
     const store = memoryStore();
     let seen: string | undefined;
