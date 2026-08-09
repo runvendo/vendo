@@ -76,10 +76,13 @@ export interface CreateVendoConfig {
       then VENDO_API_KEY → Vendo Cloud managed inference — and fails honestly
       with instructions when none exists (precedence: resolveModels). */
   model?: LanguageModel;
-  /** @deprecated Superseded by `models.paint`. The group fill workers it fed
-      are gone with the generation pipeline, so nothing reads this any more; it
-      is still accepted, and ignored, so a host config does not have to change
-      in the same release. */
+  /** @deprecated The `model` half is superseded by `models.fill` (spelled
+      `models.paint` in older configs); `disabled` has no replacement and is
+      still the only switch for the app-generation lane. Both halves are LIVE —
+      `resolveModels` throws `validation` when `paint.model` is set beside
+      `models.fill`, takes `paint.model` for the fill seat when the `models`
+      block leaves it unset, and turns the lane off on `disabled`. Still
+      accepted so a host config does not have to change in the same release. */
   paint?: ResolveModelsInput["paint"];
   /** Models spec 2026-07-22 (DX surface 3) — the models block, keyed by slot,
       valued by a model-name string (resolved through vendoModel's credential
