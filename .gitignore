@@ -63,13 +63,13 @@ examples/*/.vendo/data-*/
 fixtures/*/.vendo/data/
 # Same state, written by a package's own tests: the capability-miss sink resolves
 # its data dir from the cwd, so a real-path test of that rail
-# (packages/vendo/src/harness-wire.test.ts) lands misses.jsonl here.
+# (packages/vendo/tests/harness-wire.test.ts) lands misses.jsonl here.
 packages/*/.vendo/data/
 
 # wave-6 orchestration lane briefs/signals (never committed)
 .lanes/
 
-# type-surface test fixtures (packages/vendo/src/type-surface.test.ts) — cleaned
+# type-surface test fixtures (packages/vendo/tests/type-surface.test.ts) — cleaned
 # in afterEach; ignored so an interrupted run can never dirty a commit.
 packages/vendo/.type-surface.*.ts
 packages/vendo/.wire-parity.*.ts

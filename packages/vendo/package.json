@@ -94,7 +94,7 @@
     "build:embed": "node scripts/build-embed.mjs",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "conformance": "vitest run src/conformance.test.ts",
+    "conformance": "vitest run tests/conformance.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.docs-check.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test:coverage": "vitest run --coverage"
   },

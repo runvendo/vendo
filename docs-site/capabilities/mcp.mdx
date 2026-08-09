@@ -21,7 +21,7 @@ protocol-level e2e (`fixtures/mcp-e2e`), but it stays out of the main
 [quickstart](/quickstart) path until the attended live client matrix is
 demonstrably green: a real Claude, ChatGPT, and Cursor client each completing
 one real tool call against a running door.
-`fixtures/mcp-e2e/src/live-claude.e2e.test.ts` (env-gated behind
+`fixtures/mcp-e2e/tests/live-claude.e2e.test.ts` (env-gated behind
 `VENDO_LIVE_MCP=1`) is the harness for the Claude leg today; equivalent
 attended runs against ChatGPT and Cursor are still outstanding. The door
 graduates into the quickstart's main flow once all three are green and someone

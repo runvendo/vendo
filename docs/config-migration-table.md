@@ -9,7 +9,7 @@ key gets a stated destination; no key vanishes silently". The interface actually
 carries **33** keys, and the target shape is **8** named slots. This is that
 table, complete.
 
-It is **gated, not aspirational**: `packages/vendo/src/handler-options.docs.test.ts`
+It is **gated, not aspirational**: `packages/vendo/tests/handler-options.docs.test.ts`
 diffs the key column below against `CREATE_VENDO_CONFIG_KEYS`
 (`packages/vendo/src/config-keys.ts`), which is in turn asserted equal to
 `keyof CreateVendoConfig` in both directions at typecheck. A key added to the

@@ -24,7 +24,7 @@ export default defineConfig({
       // telemetry's, and invisible in percent. 91 tolerates 24.
       thresholds: { lines: 91 },
     },
-    include: ["src/**/*.test.ts"],
+    include: ["tests/**/*.test.ts"],
     environment: "node",
     testTimeout: 30_000,
   },

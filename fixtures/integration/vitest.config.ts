@@ -13,7 +13,7 @@ export default defineConfig({
       forks: { minForks: 1, maxForks: 2 },
       threads: { minThreads: 1, maxThreads: 2 },
     },
-    include: ["src/**/*.e2e.test.ts", "src/**/*.test.ts"],
+    include: ["tests/**/*.e2e.test.ts", "tests/**/*.test.ts"],
     globalSetup: ["./src/global-setup.ts"],
     // One shared fixture host-app server + suites that reset its seed data:
     // parallel files would race each other's resets. Also: each stack boots the

@@ -22,6 +22,6 @@ export default defineConfig({
       // value so it can only rise. Regression below this fails CI.
       thresholds: { lines: 91 },
     },
-    include: ["src/**/*.test.ts"],
+    include: ["tests/**/*.test.ts"],
   },
 });

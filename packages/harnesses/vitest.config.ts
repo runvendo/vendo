@@ -13,7 +13,7 @@ export default defineConfig({
       forks: { minForks: 1, maxForks: 2 },
       threads: { minThreads: 1, maxThreads: 2 },
     },
-    include: ["src/**/*.test.ts"],
+    include: ["tests/**/*.test.ts"],
     // The approval block waits on real timers up to APPROVAL_WAIT_MS; the
     // timeout tests drive it with a shrunk wait, but cross-package CI
     // parallelism still starves vitest's 5s default.

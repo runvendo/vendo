@@ -13,7 +13,7 @@
     // under `src`, so this widens nothing else.
     "allowJs": true
   },
-  "include": ["src", "vitest.setup.ts"],
+  "include": ["src", "tests", "vitest.setup.ts"],
   // The playground fixtures stay out, for the same reason `tsconfig.json` keeps
   // them out: `dirty/` and `typeonly/` are deliberately broken inputs that
   // `closure-guard.test.ts` feeds to a real `tsc` and asserts fail. Compiling

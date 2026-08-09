@@ -1,0 +1,172 @@
+/** B1 — vendo_threads never lets one subject take over another's thread row.
+ *
+ * vendo_threads is keyed by the bare id, so a naive upsert would let any caller
+ * flip the row's subject. The store refuses the cross-subject flip ATOMICALLY at
+ * the write door (03 §5) via the guarded SQL upsert — one disk path for durable
+ * and ephemeral subjects alike (kill-list B3). Same-subject re-puts still
+ * update in place.
+ */
+import { VendoError, type Principal } from "@vendoai/core";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { backends, type MadeBackend } from "../src/backends.test-util.js";
+import { threadStore } from "../src/index.js";
+
+const u1: Principal = { kind: "user", subject: "user_one" };
+const u2: Principal = { kind: "user", subject: "user_two" };
+
+for (const backend of backends()) {
+  describe(`${backend.name} vendo_threads cross-subject refusal (B1)`, () => {
+    let made: MadeBackend;
+    beforeAll(async () => {
+      made = await backend.make();
+      await made.store.ensureSchema();
+    });
+    afterAll(async () => { if (made) await made.cleanup(); });
+
+    it("refuses a cross-subject flip on the persistent SQL path, row intact", async () => {
+      const threads = threadStore(made.store);
+      await threads.put(u1, { id: "thr_sql", messages: [{ role: "user", text: "mine" }] });
+
+      // u2 trying to write the same id is a conflict — the guarded upsert's WHERE
+      // fails, RETURNING is empty, and nothing is written.
+      await expect(threads.put(u2, { id: "thr_sql", messages: [{ role: "user", text: "steal" }] }))
+        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+
+      // u1's row is byte-for-byte intact.
+      expect(await made.sql("SELECT t.id, t.subject, (SELECT jsonb_agg(m.message ORDER BY m.seq) FROM vendo_thread_messages m WHERE m.thread_id = t.id) AS messages FROM vendo_threads t WHERE t.id = 'thr_sql'"))
+        .toEqual([{ id: "thr_sql", subject: "user_one", messages: [{ role: "user", text: "mine" }] }]);
+
+      // Same-subject re-put still updates in place.
+      await threads.put(u1, { id: "thr_sql", messages: [{ role: "user", text: "updated" }] });
+      expect((await made.sql("SELECT (SELECT jsonb_agg(m.message ORDER BY m.seq) FROM vendo_thread_messages m WHERE m.thread_id = t.id) AS messages FROM vendo_threads t WHERE t.id = 'thr_sql'"))[0]?.["messages"])
+        .toEqual([{ role: "user", text: "updated" }]);
+    });
+
+    it("refuses a cross-subject flip on the routed seam (records vendo_threads)", async () => {
+      const seam = made.store.records("vendo_threads");
+      await seam.put({ id: "thr_seam", data: { subject: u1.subject, messages: [{ role: "user", text: "mine" }] } });
+      await expect(seam.put({ id: "thr_seam", data: { subject: u2.subject, messages: [] } }))
+        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+      expect(await made.sql("SELECT subject FROM vendo_threads WHERE id = 'thr_seam'"))
+        .toEqual([{ subject: "user_one" }]);
+    });
+
+    it("refuses a cross-subject flip for ephemeral principals through the same disk path (kill-list B3)", async () => {
+      const e1: Principal = { kind: "user", subject: "sess_one", ephemeral: true };
+      const e2: Principal = { kind: "user", subject: "sess_two", ephemeral: true };
+      const threads = threadStore(made.store);
+      await threads.put(e1, { id: "thr_anon_flip", messages: [{ role: "user", text: "mine" }] });
+      await expect(threads.put(e2, { id: "thr_anon_flip", messages: [] }))
+        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+      // The ephemeral thread is an ordinary disk row, and e1 still owns it.
+      expect(await made.sql(
+        "SELECT subject FROM vendo_threads WHERE id = 'thr_anon_flip'",
+      )).toEqual([{ subject: "sess_one" }]);
+      expect((await threads.get(e1, "thr_anon_flip"))?.subject).toBe("sess_one");
+      expect(await threads.get(e2, "thr_anon_flip")).toBeNull();
+    });
+  });
+
+  describe(`${backend.name} vendo_threads guarded writes (ENG-310)`, () => {
+    let made: MadeBackend;
+    beforeAll(async () => {
+      made = await backend.make();
+      await made.store.ensureSchema();
+    });
+    afterAll(async () => { if (made) await made.cleanup(); });
+
+    const threadData = (subject: string, text: string): { subject: string; messages: unknown[] } => ({
+      subject,
+      messages: [{ role: "user", text }],
+    });
+
+    it("exposes atomic on the routed seam: one insert winner, revision-guarded swaps", async () => {
+      const seam = made.store.records("vendo_threads");
+      expect(seam.atomic).toBeDefined();
+
+      // Exactly one concurrent first-persist lands; the loser gets null.
+      const [first, second] = await Promise.all([
+        seam.atomic!.insertIfAbsent({ id: "thr_cas", data: threadData(u1.subject, "one") }),
+        seam.atomic!.insertIfAbsent({ id: "thr_cas", data: threadData(u1.subject, "two") }),
+      ]);
+      const winners = [first, second].filter((record) => record !== null);
+      expect(winners).toHaveLength(1);
+      expect(winners[0]!.revision).toBe("1");
+
+      // Only the CURRENT revision swaps — and exactly one concurrent swapper wins.
+      const revision = winners[0]!.revision!;
+      const swaps = await Promise.all([
+        seam.atomic!.compareAndSwap({ id: "thr_cas", data: threadData(u1.subject, "swap a") }, revision),
+        seam.atomic!.compareAndSwap({ id: "thr_cas", data: threadData(u1.subject, "swap b") }, revision),
+      ]);
+      expect(swaps.filter((record) => record !== null)).toHaveLength(1);
+      const surviving = swaps[0] !== null ? "swap a" : "swap b";
+      expect((await seam.get("thr_cas"))?.data).toMatchObject({
+        messages: [{ role: "user", text: surviving }],
+      });
+      // The stale token keeps losing.
+      expect(await seam.atomic!.compareAndSwap(
+        { id: "thr_cas", data: threadData(u1.subject, "stale") },
+        revision,
+      )).toBeNull();
+      // A malformed token is refused outright, not treated as a miss.
+      await expect(seam.atomic!.compareAndSwap(
+        { id: "thr_cas", data: threadData(u1.subject, "junk token") },
+        "not-a-revision",
+      )).rejects.toMatchObject<VendoError>({ code: "validation" });
+      // Plain put still bumps the counter, so a pre-put token can no longer swap.
+      const bumped = await seam.put({ id: "thr_cas", data: threadData(u1.subject, "via put") });
+      expect(BigInt(bumped.revision!)).toBeGreaterThan(BigInt(revision));
+    });
+
+    it("a foreign subject can never land a guarded write, even with the current revision", async () => {
+      const seam = made.store.records("vendo_threads");
+      const mine = await seam.put({ id: "thr_cas_foreign", data: threadData(u1.subject, "mine") });
+
+      // insertIfAbsent: the id is taken → null, no takeover.
+      expect(await seam.atomic!.insertIfAbsent({
+        id: "thr_cas_foreign",
+        data: threadData(u2.subject, "steal by insert"),
+      })).toBeNull();
+      // compareAndSwap with the RIGHT revision but the WRONG subject → null, row intact.
+      expect(await seam.atomic!.compareAndSwap(
+        { id: "thr_cas_foreign", data: threadData(u2.subject, "steal by swap") },
+        mine.revision!,
+      )).toBeNull();
+      expect(await made.sql("SELECT t.subject, (SELECT jsonb_agg(m.message ORDER BY m.seq) FROM vendo_thread_messages m WHERE m.thread_id = t.id) AS messages FROM vendo_threads t WHERE t.id = 'thr_cas_foreign'"))
+        .toEqual([{ subject: u1.subject, messages: [{ role: "user", text: "mine" }] }]);
+    });
+
+    it("guards ephemeral-subject threads through the same single disk path (kill-list B3)", async () => {
+      const eSubject = "sess_cas";
+      const seam = made.store.records("vendo_threads");
+
+      const inserted = await seam.atomic!.insertIfAbsent({
+        id: "thr_cas_anon",
+        data: threadData(eSubject, "anon one"),
+      });
+      expect(inserted).not.toBeNull();
+      expect(inserted!.revision).toBe("1");
+      expect(await seam.atomic!.insertIfAbsent({
+        id: "thr_cas_anon",
+        data: threadData(eSubject, "anon dupe"),
+      })).toBeNull();
+
+      const swapped = await seam.atomic!.compareAndSwap(
+        { id: "thr_cas_anon", data: threadData(eSubject, "anon two") },
+        "1",
+      );
+      expect(swapped).not.toBeNull();
+      expect(swapped!.revision).toBe("2");
+      expect(await seam.atomic!.compareAndSwap(
+        { id: "thr_cas_anon", data: threadData(eSubject, "anon stale") },
+        "1",
+      )).toBeNull();
+
+      // One disk row, owned by the ephemeral subject like any other.
+      expect(await made.sql(
+        "SELECT subject FROM vendo_threads WHERE id = 'thr_cas_anon'",
+      )).toEqual([{ subject: eSubject }]);
+    });
+  });
+}

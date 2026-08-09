@@ -8,5 +8,5 @@
     "noEmit": true,
     "allowJs": true
   },
-  "include": ["src", "box"]
+  "include": ["src", "box", "tests"]
 }
