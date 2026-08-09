@@ -1,14 +1,14 @@
 ---
-title: "Principals: identity, anonymous sessions, vendo: namespace"
+title: "Principals: identity and the vendo: namespace"
 sidebarTitle: "Principals and orgs"
-description: "How Vendo resolves the Principal for each request, scopes threads and approvals to users, auto-merges anonymous sessions on sign-in, and reserves vendo:."
+description: "How Vendo resolves the Principal for each request, scopes threads and approvals to users, and reserves vendo:."
 ---
 
 Every wire request resolves a `Principal` through the `principal(req)` seam
-you pass to `createVendo`. The returned `subject` scopes threads, apps,
-approvals, grants, activity, and runs across the whole composition.
-Returning `null` starts an anonymous session that Vendo merges into the
-real account on sign-in.
+you pass to `createVendo` — required, since Vendo mints no identity of its
+own. The returned `subject` scopes threads, apps, approvals, grants,
+activity, and runs across the whole composition. Returning `null` refuses
+that request with `forbidden` (403): the visitor has no identity.
 
 ## Resolving a principal
 
@@ -19,10 +19,9 @@ principal: async (request) => {
 },
 ```
 
-Returning `null` gives the client an ephemeral session: see
-[Anonymous sessions](#anonymous-sessions) below. Anything else, a signed-in
-user's stable id, scopes that request's data to the returned subject for
-good.
+Returning `null` refuses the request with `forbidden` (403) — the visitor
+has no identity. Anything else, a signed-in user's stable id, scopes that
+request's data to the returned subject for good.
 
 ## Identity reference
 
@@ -54,50 +53,6 @@ Mint your own subjects under whatever prefix your product uses (for example
 If you have audit readers or dashboards that filter on webhook subjects,
 update them to match `vendo:webhook:<source>` instead of the bare
 `webhook:<source>` form.
-
-### Anonymous sessions
-
-When `principal(req)` returns `null`, Vendo mints an ephemeral session
-principal and carries it in an opaque cookie holding a random session id:
-`Path=/`, `HttpOnly`, `SameSite=Lax`, and over HTTPS the `Secure`,
-`__Host-`-prefixed form. `Path=/` is deliberate — the pointer has to be
-visible on document responses so a host can mint it on a cold load, and the
-`__Host-` prefix requires it. The cookie is just a pointer; the session row
-in the database is the authority, so a forged id merely names its own empty
-session. Ephemeral principals write ordinary rows under their anonymous
-subject; a TTL sweep erases sessions idle past `sessions.ttlMs` (default 30
-minutes), rows and all.
-
-#### Auto-merge on sign-in
-
-The first authenticated request that arrives with a valid anonymous cookie
-**adopts** the session's data into the real user subject and then retires
-the cookie (`Max-Age=0`). Users keep the conversation they started, the apps
-they built, and the state those apps wrote. The merge is idempotent and
-emits a `kind: "principal"` audit event.
-
-What is adopted:
-
-- Threads (including the message the user was mid-typing when they signed in)
-- Apps the anonymous session created, and their per-app records and blobs
-- State written by those apps
-
-What is **not** adopted (consent doesn't transfer identities):
-
-- Grants and approvals: the anonymous session's authority does not carry
-  over. The signed-in user re-approves on the next tool call.
-- Connected accounts: external providers key credentials by subject, so
-  users reconnect after signing in.
-- Audit and run history: kept intact under their original subject.
-
-Existing durable rows always win a collision. If the signed-in user already
-owns a thread or app with the same id, the anonymous copy is dropped rather
-than overwriting it. There is no configuration to turn auto-merge off; it is
-the default behavior of the wire.
-
-Nothing on the host side has to change to opt in: as long as
-`principal(req)` returns `null` before the user signs in and a real
-`Principal` afterward, Vendo does the rest.
 
 ### Organizations are a Vendo Cloud capability
 

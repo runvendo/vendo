@@ -49,8 +49,8 @@ Bearer request it has to verify.
 Both options are shared across every preset: `secret` overrides the
 provider's env-read secret, and `user(subject, claims)` swaps in custom
 subject→user resolution instead of the provider's claims defaults (returning
-`null` means "subject unknown to host": the principal resolves to anonymous
-and away/MCP minting for that subject declines).
+`null` means "subject unknown to host": away/MCP minting for that subject
+declines).
 
 ```ts
 export const vendo = createVendo({
