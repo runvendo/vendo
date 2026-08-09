@@ -11,9 +11,9 @@ import type { Db } from "./db-postgres.js";
     `vendo_org_members` keep those orphaned tables — erasing them is not
     required and this migration does not attempt it.
 
-    v4 (kill-list §B3) adds `vendo_sessions`: the ephemeral in-memory overlay is
-    gone, anonymous rows are ordinary disk rows, and this table is the session
-    registry the TTL sweep reads (02 §4).
+    v4 (kill-list §B3) added `vendo_sessions`, the guest-session registry. Guest
+    sessions are gone; the table's CREATE is removed here and databases that
+    already have it keep it as an orphan until the cleanup stage drops it.
 
     v5 (ENG-356, knowledge design v2 (2026-07-22) R1) adds the dedicated
     knowledge record collections `vendo_knowledge_docs` / `vendo_knowledge_chunks`.
@@ -132,12 +132,6 @@ export const DDL = [
     created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_mcp_grants_refs_idx ON vendo_mcp_grants USING GIN (refs jsonb_path_ops)",
-  // 02-store §4 (kill-list B3): the ephemeral-session registry. One row per
-  // live anonymous session; touched_at is the last-activity stamp the TTL
-  // sweep compares against. Registration == touch (upsert).
-  `CREATE TABLE IF NOT EXISTS vendo_sessions (
-    subject text PRIMARY KEY, touched_at timestamptz NOT NULL
-  )`,
   // 02-store §2 + knowledge design v2 (2026-07-22) R1 (ENG-356, v5): the
   // dedicated knowledge record collections. `vendo_knowledge_docs` is one row
   // per document-level corpus entry; `vendo_knowledge_chunks` is one row per
@@ -287,10 +281,6 @@ const ADDITIVE_DDL = [
   // Tracks the secret's last rewrite (rotation) separately from created_at;
   // set() stamps it. NULL on legacy rows means created_at IS the last write.
   "ALTER TABLE vendo_secrets ADD COLUMN IF NOT EXISTS updated_at timestamptz",
-  // The TTL sweep's stale scan and the host-driven claim both predicate on
-  // touched_at (sessions.ts); without this a busy anonymous host seq-scans
-  // the registry on every sweep interval.
-  "CREATE INDEX IF NOT EXISTS vendo_sessions_touched_idx ON vendo_sessions (touched_at)",
   // vendo_effects.subject arrived after the table did, both inside the
   // unreleased v6 train — so a development database created earlier in this
   // wave already has the table WITHOUT the column, and the version gate above

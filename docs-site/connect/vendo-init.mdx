@@ -108,9 +108,9 @@ no TTY) with no detected framework still errors and asks for an explicit
 Init reads `package.json` and detects one auth family: `next-auth`/`@auth/*`
 (authJs), `@clerk/*`, `@supabase/*`, or `@auth0/*`. In an interactive run a
 single detected family gets one `[Y/n]` confirm before anything is written;
-decline it, or have several or none detected, and init stays anonymous and
-prints the exact one-line `auth:` addition for your composition. Pass
-`--auth <preset>` to answer without the prompt. See
+decline it, or have several or none detected, and init leaves `principal`
+unwired and prints the exact one-line `auth:` addition for your composition.
+Pass `--auth <preset>` to answer without the prompt. See
 [Host auth](/agents/host-auth) for the presets and when to pick each.
 
 ## The model key

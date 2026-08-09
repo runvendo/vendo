@@ -14,7 +14,7 @@ export default defineConfig({
       forks: { minForks: 1, maxForks: 2 },
       threads: { minThreads: 1, maxThreads: 2 },
     },
-    environment: "node", include: ["src/**/*.test.ts", "src/**/*.test.tsx"] },
+    environment: "node", include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"] },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),

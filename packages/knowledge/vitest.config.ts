@@ -22,7 +22,7 @@ export default defineConfig({
       // 96.8% lines, sibling-package style — it can only rise.
       thresholds: { lines: 96 },
     },
-    include: ["src/**/*.test.ts"],
+    include: ["tests/**/*.test.ts"],
     testTimeout: 30_000,
   },
 });

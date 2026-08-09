@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "noEmit": true,
+    // Two claude-code tests import `@vendoai/apps/box-door`, whose export map
+    // points at the zero-dependency `box/turn-routes.mjs` control-port runtime
+    // and carries no `types` — same reason `vendo` and `apps` set this. There is
+    // no `.js` under `src` or `tests`, so it widens nothing else.
+    "allowJs": true
+  },
+  "include": ["src", "tests"]
+}

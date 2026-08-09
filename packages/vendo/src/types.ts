@@ -93,9 +93,12 @@ export interface CreateVendoConfig {
       oauth seams from one config key. Mutually exclusive with all three:
       mixing throws VendoError("validation") at compose time. */
   auth?: HostAuthPreset;
-  /** Per-seam escape hatch: host session → principal; null → the per-client
-      ephemeral anonymous principal. With neither `auth` nor `principal`, every
-      session is anonymous (the null path is the default resolver — 09 §2). */
+  /** Per-seam escape hatch: host session → principal. REQUIRED unless an
+      `auth` preset fills the same seam — Vendo mints no principals of its own,
+      so a deployment with neither refuses to compose (09 §2). Returning null
+      says this visitor has no identity, and the request is refused with
+      `forbidden`; give logged-out visitors a principal of your own choosing if
+      you want them served. */
   principal?: (req: Request) => Promise<Principal | null>;
   /** Architecture §10 — THE host's own tools, as `vendo init` / `vendo sync`
       extract them: the declarations `.vendo/tools.json` carries, passed in
@@ -313,18 +316,14 @@ export interface CreateVendoConfig {
       and the host tool surface (`.vendo/tools.json`). The agent's own guard and
       tools keep serving its own `session()` calls. */
   agent?: ComposedAgent;
-  /** 02-store §4 (kill-list B3) — ephemeral (anonymous) session lifecycle.
-      Anonymous visitors get a TTL-based session on disk: every request touches
-      it; an idle session is swept — its rows erased from the store and its
-      in-memory threads cascaded away. All optional.
-      - `ttlMs` idle timeout before a session is swept (default 30 min). `0`
-        disables TTL eviction.
-      - `sweepIntervalMs` how often the amortized on-request sweep and the
-        unref'd background timer run (default 60 s).
+  /** The TTL sweep's cadence. One pass expires orphaned parked BYO calls and
+      stranded approvals (both on `guard.approvals.parkedCallTtlMs`), so the
+      cadence belongs to the deployment rather than to either feature.
+      - `intervalMs` how often the amortized on-request sweep and the unref'd
+        background timer run (default 60 s).
       - `now` internal clock seam (tests only). */
-  sessions?: {
-    ttlMs?: number;
-    sweepIntervalMs?: number;
+  sweep?: {
+    intervalMs?: number;
     now?: () => number;
   };
   /** How much of one tool's response may reach the model, in characters

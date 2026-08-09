@@ -13,7 +13,7 @@ export default defineConfig({
       forks: { minForks: 1, maxForks: 2 },
       threads: { minThreads: 1, maxThreads: 2 },
     },
-    include: ["src/**/*.test.ts"],
+    include: ["tests/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],

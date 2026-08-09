@@ -1,0 +1,41 @@
+{
+  "name": "@vendoai/genbench",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Why not build this in-house? Runs hand-written prompts through the real Vendo pipeline and raw-Claude baselines against one fictional product, and scores them. Not published.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "genbench": "node --import tsx src/run.ts",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vendoai/apps": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/guard": "workspace:*",
+    "@vendoai/harnesses": "workspace:*",
+    "@vendoai/store": "workspace:*",
+    "@vendoai/ui": "workspace:*",
+    "@vendoai/vendo": "workspace:*"
+  },
+  "devDependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@ai-sdk/provider": "3.0.2",
+    "@anthropic-ai/claude-agent-sdk": ">=0.3.0 <1",
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "ai": "6.0.28",
+    "esbuild": "^0.25.12",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

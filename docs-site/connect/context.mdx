@@ -48,9 +48,9 @@ Facts come from the `user` resolver inside an
   </Step>
   <Step title="Return facts from the user resolver">
     Values are any JSON. Returning `null` still means "subject unknown to the
-    host" — the principal resolves to anonymous and no facts are asserted.
-    Edit the `auth:` line in the composition init already generated; keep its
-    other keys, such as `catalog`.
+    host" — no facts are asserted for that request. Edit the `auth:` line in
+    the composition init already generated; keep its other keys, such as
+    `catalog`.
 
     ```ts
     export const vendo = createVendo({
@@ -180,9 +180,10 @@ stops.
 
 - **`[User]` is server-trust and every turn.** It comes from your own resolver
   on the server; the client cannot set it.
-- **Anonymous visitors get no `[User]` block.** A visitor your host does not
-  recognize has no profile to assert, so the facts seam is not even asked. They
-  still send a situation.
+- **A request with no resolvable principal never reaches the model.**
+  `principal(req)` returning `null` refuses it with `forbidden` (403) before
+  either prompt block is built — there is no partial turn that carries a
+  situation but no user facts.
 - **`[Situation]` is one turn only, and is never stored.** It rides the request
   onto that turn's prompt. The next turn on the same thread carries no
   situation, and nothing situation-shaped is written to the transcript.

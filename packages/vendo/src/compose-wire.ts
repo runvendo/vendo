@@ -26,7 +26,7 @@ export const wireDepsFor = (composition: VendoComposition): WireDeps => {
   const { config, store, guard, apps, actionsConfig, appTokens, automations } = composition;
   const { boundTools, byoApprovals, connections, sandbox, inference, doctor, door } = composition;
   const { resolvePrincipal, membershipsSeam, resolvePersonSeam, userFactsSeam, ready } = composition;
-  const { appsMounted, automationsMounted, sessionsConfig, sessionNow, sessionOps } = composition;
+  const { appsMounted, automationsMounted } = composition;
   const { runSweep, sweepEnabled, hostedStoreComposed, doorWellKnown, harnessDoor } = composition;
   const { configuredBaseUrl, isDevelopmentEnv } = composition;
   // Minted on first request via the deps getter below — Workers forbids
@@ -34,10 +34,8 @@ export const wireDepsFor = (composition: VendoComposition): WireDeps => {
   // init in the edge wiring. Still one fallback id per process.
   let processSessionId: string | undefined;
   const sessionId = (): string => (processSessionId ??= `session_${globalThis.crypto.randomUUID()}`);
-  // Anonymous principals are minted per-CLIENT in the handler (opaque cookie
-  // pointer; the store's vendo_sessions row is the authority — kill-list B3).
-  // An https VENDO_BASE_URL means TLS terminates at a trusted proxy and requests
-  // arrive here as http — anon cookies must still be Secure/__Host- then.
+  // An https VENDO_BASE_URL means TLS terminates at a trusted proxy and
+  // requests arrive here as http.
   const trustedBaseIsHttps = ((): boolean => {
     if (configuredBaseUrl === undefined) return false;
     try {
@@ -82,14 +80,10 @@ export const wireDepsFor = (composition: VendoComposition): WireDeps => {
     doctor,
     get mcp() { return composition.mcpPosture; },
     development,
-    sessions: {
-      ttlMs: sessionsConfig.ttlMs,
-      sweepIntervalMs: sessionsConfig.sweepIntervalMs,
-      now: sessionNow,
-    },
-    sessionStore: sessionOps,
     sweep: runSweep,
     sweepEnabled,
+    sweepIntervalMs: composition.sweepConfig.intervalMs,
+    sweepNow: composition.sweepNow,
     // Serverless hosts (the hosted store's typical deployment) fire no
     // interval timer, so the authenticated tick carries the sweep for them.
     sweepOnTick: sweepEnabled && hostedStoreComposed,

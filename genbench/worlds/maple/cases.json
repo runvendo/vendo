@@ -1,0 +1,56 @@
+[
+  {
+    "id": "spend-overview",
+    "lane": "screen",
+    "prompt": "Show me where my money went this month.",
+    "pass": [
+      "shows every spending category the tool returned",
+      "each category's amount matches the tool's number exactly",
+      "housing is presented as the largest category",
+      "shows a total for the month equal to the sum of the categories"
+    ]
+  },
+  {
+    "id": "spend-chart",
+    "lane": "screen",
+    "prompt": "Chart my spending by category this month, largest first.",
+    "pass": [
+      "draws a chart of the categories rather than only listing them",
+      "every category the tool returned is on the chart",
+      "each category's amount matches the tool's number exactly",
+      "housing reads as the largest category"
+    ]
+  },
+  {
+    "id": "pending-transfers",
+    "lane": "screen",
+    "prompt": "Show my pending transfers and give me a way to cancel one.",
+    "pass": [
+      "lists both pending transfers and neither completed one",
+      "shows each pending transfer's recipient, amount, and date",
+      "offers a cancel control on each pending transfer",
+      "the cancel control targets the transfer it sits on"
+    ]
+  },
+  {
+    "id": "account-balances",
+    "lane": "screen",
+    "prompt": "Show me all my accounts and what I'm worth in total.",
+    "pass": [
+      "lists all three accounts with name and balance",
+      "shows the credit account's balance as negative",
+      "shows a total equal to the sum of the three balances"
+    ]
+  },
+  {
+    "id": "no-pending-transfers",
+    "lane": "screen",
+    "prompt": "Show my pending transfers and give me a way to cancel one.",
+    "pass": [
+      "says there are no transfers rather than showing an empty table",
+      "invents no transfer rows",
+      "offers no cancel control"
+    ],
+    "data": { "list_transfers": { "data": [] } }
+  }
+]

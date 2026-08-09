@@ -141,8 +141,8 @@ export class ThreadRepository {
     // would let persist() take it over. Free id → create; ours → return; anyone
     // else's (or unparseable) → conflict. The store's guarded upsert is the real,
     // atomic guarantee — this only surfaces the conflict early with a clear error.
-    // Ephemeral principals resolve through this exact path too (02-store §4: no
-    // overlay, ordinary rows under their subject) — nothing here is BYO-specific.
+    // Ephemeral principals resolve through this exact path too (no overlay,
+    // ordinary rows under their subject) — nothing here is BYO-specific.
     const record = await this.store.records(THREAD_COLLECTION).get(id);
     if (record === null) return this.create(ctx, id);
     const thread = threadFromRecord(record);

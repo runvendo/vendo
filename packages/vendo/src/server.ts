@@ -20,11 +20,7 @@ import { approvalRoutes, grantRoutes } from "./wire/approvals.js";
 import { automationRoutes, runRoutes } from "./wire/automations.js";
 import { boxRoutes, fnProxyRoutes, servedProxyRoutes } from "./wire/box.js";
 import { connectionRoutes } from "./wire/connections.js";
-import {
-  createContextResolver,
-  withAnonCookie,
-  type AnonSession,
-} from "./wire/context.js";
+import { createContextResolver } from "./wire/context.js";
 import { doctorBaseUrlRoutes, doctorRoutes } from "./wire/doctor.js";
 import {
   activityRoutes,
@@ -282,20 +278,20 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
   // Amortized on-request sweep bookkeeping — lives in the shared handler closure
   // (persists across requests), NOT per-invocation. The serverless-safe leg:
   // Next.js gives no timer guarantee, so every request may trigger the sweep.
-  // Awaited BEFORE the request is handled (evict-on-expiry): a request arriving
-  // past the TTL gets a fresh, empty session rather than racing its own sweep.
-  // A sweep failure is caught and logged, never surfaced to the innocent
-  // request that triggered it (same posture as the background timer leg) — a
-  // failed sweep just means idle sessions live until the next interval.
-  let lastSweepAt = deps.sessions.now();
+  // Awaited BEFORE the request is handled, so a request arriving past a TTL
+  // sees the swept state rather than racing its own sweep. A sweep failure is
+  // caught and logged, never surfaced to the innocent request that triggered
+  // it (same posture as the background timer leg) — a failed sweep just means
+  // expired rows live until the next interval.
+  let lastSweepAt = deps.sweepNow();
   /** Starts a sweep pass and books the cadence, or answers undefined when the
       interval has not elapsed. `force` is for a route that ASKED for the sweep
       (POST /tick): a serverless process re-seeds lastSweepAt on every
       invocation, so the interval gate would never let one of those through. */
   const startSweep = (force: boolean): Promise<void> | undefined => {
     if (!deps.sweepEnabled) return undefined;
-    const now = deps.sessions.now();
-    if (!force && now - lastSweepAt < deps.sessions.sweepIntervalMs) return undefined;
+    const now = deps.sweepNow();
+    if (!force && now - lastSweepAt < deps.sweepIntervalMs) return undefined;
     lastSweepAt = now;
     return deps.sweep();
   };
@@ -310,11 +306,8 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
   //   5. the CSRF json-mutation gate — before ANY route handler runs;
   //   6. await ready — schema before the first store touch;
   //   7. the route table (wireRoutes above; tick auth and the orgs seam are
-  //      ordinary entries at their old chain positions; the anon-session
-  //      touch happens inside each handler's context() call);
-  //   8. no match → not-found;
-  //   9. withAnonCookie at the single exit — the minted Set-Cookie rides
-  //      every response shape (JSON, error, SSE/stream).
+  //      ordinary entries at their old chain positions);
+  //   8. no match → not-found.
   return async (request) => {
     // ONE sweep pass per request, shared with any route that drives the sweep
     // itself (POST /tick) so a tick can never run two scans of the same
@@ -323,15 +316,11 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
     // rejection, so a route that asked for the sweep still answers with it.
     let sweepPass = startSweep(false);
     await sweepPass?.catch((error: unknown) => {
-      console.warn(`[vendo] session sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[vendo] TTL sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
     });
-    // Per-request anonymous-session state + the one shared context-resolution
-    // pass (see wire/shared.ts). Both MUST be minted per-invocation — the
-    // handler closure is shared across requests.
-    const anon: AnonSession = {};
-    const context = createContextResolver(deps, anon);
+    // The one shared context-resolution pass (see wire/shared.ts).
+    const context = createContextResolver(deps);
 
-    const respond = async (): Promise<Response> => {
     try {
       const url = new URL(request.url);
       // 10-mcp: hand the door its own paths BEFORE any wire machinery. It runs
@@ -385,10 +374,6 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
       console.error("[vendo] unhandled wire error:", error);
       return internalError();
     }
-    };
-    // Attach the anon Set-Cookie (if a session was minted this request) at the
-    // single exit — covering JSON, error, and SSE/stream responses alike.
-    return withAnonCookie(await respond(), anon.setCookie);
   };
 }
 

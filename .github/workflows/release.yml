@@ -104,4 +104,8 @@ jobs:
             fi
             echo "publish $name@$version"
             npm publish "$tarball" --access public --provenance
-          done < <(pnpm -r --filter './packages/*' exec node -e "process.stdout.write(require('./package.json').name+'\n')")
+          # Private packages are enumerated out here, not skipped in the loop:
+          # `npm publish` throws EPRIVATE before it ever reaches the registry
+          # (libnpmpublish/lib/publish.js), and under `set -e` that aborts the
+          # release partway through, after earlier packages are already live.
+          done < <(pnpm -r --filter './packages/*' exec node -e "const p=require('./package.json'); if (!p.private) process.stdout.write(p.name+'\n')")

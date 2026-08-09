@@ -569,9 +569,9 @@ describe("a void and a replay can never both win", () => {
 
   /**
    * The row can also be GONE. Subject erasure
-   * (02-store §5) and anonymous-subject adoption DELETE approval rows, so a
-   * replay that treated a missing row as "unchanged" would re-create an erased
-   * subject's approval and run the tool as them.
+   * (02-store §5) DELETEs approval rows, so a replay that treated a missing
+   * row as "unchanged" would re-create an erased subject's approval and run
+   * the tool as them.
    */
   it("never resurrects an approval erased mid-replay — no row, no run", async () => {
     const gate = once();

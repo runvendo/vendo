@@ -42,20 +42,19 @@ export interface Vendo {
 }
 ```
 
-Nothing in `CreateVendoConfig` is required (`oauth` becomes required when `mcp`
-is on): day one is `createVendo({ auth })`, and `.vendo/` — written by
-`vendo init` — supplies the rest. `createVendo({})` still boots, on an
-env-resolved model with anonymous ephemeral sessions and default persistence;
-`createVendo()` is a type error.
+One key in `CreateVendoConfig` is required — an identity, as either `principal`
+or an `auth` preset (`oauth` becomes required when `mcp` is on). Day one is
+`createVendo({ auth })`, and `.vendo/` — written by `vendo init` — supplies the
+rest. `createVendo({ principal: async () => ({ kind: "user", subject: "dev" }) })` boots on an
+env-resolved model and default persistence; `createVendo()` is a type error,
+and `createVendo({})` throws `VendoError("validation")` naming the missing
+identity.
 
-When `principal(req)` resolves null, each client gets its own ephemeral session
-principal, carried by an opaque httpOnly cookie set at `Path=/` — deliberately
-site-wide, not scoped to the wire base, so a host can mint the pointer on its
-own document response instead of re-minting a fresh subject on every page load.
-Over HTTPS the cookie takes the fixation-proof `__Host-` form, which requires
-`Path=/` anyway. The cookie is just a pointer; the session's `vendo_sessions`
-row is the authority. Sessions are per client, stored on disk like everything
-else, survive restarts, and expire through the idle-TTL sweep.
+When `principal(req)` resolves null, the request is refused with `forbidden`:
+Vendo mints no principals of its own. A host that wants logged-out visitors
+served resolves them to a principal of its own choosing — marking it
+`ephemeral: true` keeps that principal out of org membership and blocks it from
+connecting external accounts.
 
 The composition registers app capability tools in actions and guard-binds every
 tool registry passed to the harness, apps, and automations.
@@ -113,7 +112,7 @@ Types only; each key's behavior is documented once, on
 | `paint` | `{ model?: LanguageModel; disabled?: boolean }` | **deprecated**: the model half → `models.fill`; `disabled` remains the single-lane switch for app generation |
 | `models` | `ModelsConfig` | the model seats, keyed by JOB: `{ default?, reviewer?, judge?, fill? }`, each a model-name string (resolved through the credential ladder) or an explicit ai-SDK `LanguageModel` (wins as-is). Every unset seat borrows `default` |
 | `auth` | `HostAuthPreset` | one preset fills `principal` + `actAs` + `oauth`; mutually exclusive with all three — see [actAs presets](/connect/act-as-presets) |
-| `principal` | `(req: Request) => Promise<Principal \| null>` | escape hatch, mutually exclusive with `auth`; `null` → ephemeral anonymous session |
+| `principal` | `(req: Request) => Promise<Principal \| null>` | required unless `auth` fills the seam, and mutually exclusive with it; `null` → the request is refused with `forbidden` |
 | `tools` | `readonly (ExtractedTool \| ToolDefinition)[]` | host-tool declarations in memory (else `.vendo/tools.json`), and/or executable tools — the two shapes are told apart by `execute` |
 | `skills` | `readonly Skill[]` | SKILL.md values mounted at `/host/skills` for the harness to list cheaply and load on demand |
 | `catalog` | `ComponentCatalog \| ComponentRegistry` | host components exposed to the generation prompt; see [Host components](/connect/host-components) |
@@ -138,7 +137,7 @@ Types only; each key's behavior is documented once, on
 | `mcp` | `boolean \| { baseUrl?: string; remoteAs?: object; federation?: object }` | opens the [MCP door](/capabilities/mcp); off by default |
 | `oauth` | `HostOAuthAdapter` | escape hatch, mutually exclusive with `auth`; required when `mcp` is on and `auth` supplies no oauth half |
 | `agent` | `ComposedAgent` | a whole agent built by `agent()` from `@vendoai/agents` — see [above](#values-built-by-another-function) |
-| `sessions` | `{ ttlMs?: number; sweepIntervalMs?: number }` | anonymous-session lifecycle; defaults 30 min idle, 60 s sweep |
+| `sweep` | `{ intervalMs?: number }` | TTL-sweep cadence for expired parked BYO calls and stranded approvals; default 60 s |
 | `toolOutputCap` | `number` | how much of one tool result reaches the model, in characters (default `32000`; `0` disables) |
 | `maxInitialTools` | `number` | cap on the uncurated initial tool loadout (default `128`); the rest stay discoverable via `find_tools` |
 | `loadout` | `readonly string[]` | explicit curated initial loadout, by tool name |

@@ -127,7 +127,7 @@ export function hostAuthPresetConformance(opts: HostAuthPresetConformanceOptions
         },
       },
       {
-        name: "09 §2.1 — principal resolves a sessionless request to null (ephemeral anonymous)",
+        name: "09 §2.1 — principal resolves a sessionless request to null",
         async run(): Promise<void> {
           assert(
             await opts.preset.principal(anonymousRequest()) === null,

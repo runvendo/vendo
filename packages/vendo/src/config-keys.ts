@@ -59,7 +59,7 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "mcp",
   "oauth",
   "agent",
-  "sessions",
+  "sweep",
   "toolOutputCap",
   "maxInitialTools",
   "loadout",

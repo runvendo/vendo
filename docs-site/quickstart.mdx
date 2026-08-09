@@ -96,12 +96,19 @@ const vendo = createVendo({
 export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ```
 
-Every key is optional, and there is no `model` line on purpose: a bare
-`createVendo()` resolves a model from the environment and defaults to
-anonymous ephemeral sessions and PGlite persistence. The eight slots the
-surface is built from — `auth`, `tools`, `skills`, `harness`, `models`,
-`store`, `files`, `sandbox` — all default or degrade honestly, and every key
-lives in [Handler options](/reference/handler-options).
+Every key is optional except `principal` (or an `auth` preset, which supplies
+one) — Vendo no longer mints an identity of its own, so a bare
+`createVendo()` throws, naming the missing line:
+
+```ts
+principal: async () => ({ kind: "user", subject: "dev" })
+```
+
+There is no `model` line on purpose: a bare `createVendo()` still resolves a
+model from the environment and defaults to PGlite persistence. The eight
+slots the surface is built from — `auth`, `tools`, `skills`, `harness`,
+`models`, `store`, `files`, `sandbox` — all default or degrade honestly
+otherwise, and every key lives in [Handler options](/reference/handler-options).
 
 The handler takes a standard `Request` and returns a standard `Response`, so
 it runs in Next.js, Express, Fastify, Hono, Bun, or any Node-compatible

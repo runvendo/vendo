@@ -14,7 +14,7 @@ import {
 } from "@vendoai/core";
 import type { VendoGuard } from "@vendoai/guard";
 import type { McpDoor } from "@vendoai/mcp";
-import type { SubjectMergeReport, VendoStore } from "@vendoai/store";
+import type { VendoStore } from "@vendoai/store";
 import type { Telemetry } from "@vendoai/telemetry";
 import type { ByoApprovalResolution } from "../byo-approvals.js";
 import type { HarnessTurns } from "../harness-turn.js";
@@ -22,9 +22,8 @@ import type { ConnectionsService } from "../connections.js";
 
 /** The shared wire toolkit (kill-list B4): the route-table types and matcher,
     the JSON/error envelope helpers, and the param validators every wire area
-    shares. The anonymous-session + RunContext resolution lives in
-    wire/context.ts; server.ts assembles the table from the per-area modules
-    under src/wire/. */
+    shares. The per-request RunContext resolution lives in wire/context.ts;
+    server.ts assembles the table from the per-area modules under src/wire/. */
 
 export const VERSION = "0.8.1";
 export const BASE_PATH = "/api/vendo";
@@ -68,7 +67,8 @@ export interface WireDeps {
       to share with one person. */
   resolvePerson?: (query: string, asker: Principal) => Promise<ResolvedPerson | null>;
   ready: () => Promise<void>;
-  /** VENDO_BASE_URL is https → TLS terminates upstream; see secureRequest. */
+  /** VENDO_BASE_URL is https → TLS terminates upstream, so the request reaches
+      this process as http. */
   trustedBaseIsHttps: boolean;
   sessionId: string;
   store: VendoStore;
@@ -126,32 +126,26 @@ export interface WireDeps {
   /** True only in a development composition — gates the local injection seams. */
   development: boolean;
   onRequestOrigin?: (origin: string) => void;
-  /** 02-store §4 (kill-list B3) ephemeral-session policy. `now` reads the
-      (possibly injected) session clock; `sweep` runs the store TTL sweep and
-      cascades swept subjects into the agent. */
-  sessions: { ttlMs: number; sweepIntervalMs: number; now: () => number };
-  /** True when any sweep leg is active (session TTL, parked-approval TTL) —
+  /** True when any sweep leg is active (parked BYO calls, stranded approvals) —
       gates the amortized on-request sweep; each leg still no-ops itself. */
   sweepEnabled: boolean;
-  /** The session doors bound to the composed store (selectStore): the local
-      engine's SQL registry, or the hosted store's wire doors. */
-  sessionStore: {
-    register(subject: string, now: number): Promise<void>;
-    adopt(from: string, to: string): Promise<SubjectMergeReport | null>;
-  };
+  /** How often the amortized on-request sweep may fire, and the (possibly
+      injected) clock it books that cadence against. Same pair the background
+      timer runs on, so a serverless deployment and a long-lived one sweep at
+      the same rate. */
+  sweepIntervalMs: number;
+  sweepNow: () => number;
   sweep: () => Promise<void>;
-  /** True when the composed store carries the HOSTED session doors — the
-      authenticated /tick then drives `sweep` too. A serverless deployment
-      never fires the composition's interval timer, so the tick is the only
-      cadence its idle hosted sessions have. Safe against a timer that DOES
-      fire: the hosted claim leg is a single-winner election server-side. */
+  /** True when the composed store is the HOSTED one — the authenticated /tick
+      then drives `sweep` too. A serverless deployment (the hosted store's
+      typical home) never fires the composition's interval timer, so the tick
+      is the only cadence its TTL legs have. */
   sweepOnTick: boolean;
 }
 
 /** The per-request view a route handler receives: the raw request, its parsed
     URL, the wire-relative path, lazily decoded segments, the matched entry's
-    `:param` captures, the anon-session-aware RunContext resolver, and the
-    composed deps. */
+    `:param` captures, the RunContext resolver, and the composed deps. */
 export interface WireContext {
   request: Request;
   url: URL;
@@ -309,8 +303,7 @@ export function routeSegments(path: string): string[] {
   }
 }
 
-/** Bytes → lowercase hex. Used by wire/context.ts's session-id mint and
-    wire/misc.ts's timing-safe digest compare. */
+/** Bytes → lowercase hex. Used by wire/misc.ts's timing-safe digest compare. */
 export function hex(bytes: ArrayBuffer | Uint8Array): string {
   let out = "";
   for (const b of bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)) out += b.toString(16).padStart(2, "0");

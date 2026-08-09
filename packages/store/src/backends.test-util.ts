@@ -22,7 +22,6 @@ const TABLES = [
   "vendo_app_grants",
   "vendo_workspace_history",
   "vendo_workspace_files",
-  "vendo_sessions",
   "vendo_mcp_grants",
   "vendo_mcp_clients",
   "vendo_secrets",

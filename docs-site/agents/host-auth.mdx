@@ -36,9 +36,9 @@ Cross-check with env and file signals before passing `--auth`:
   `Authorization: Bearer` HS256 tokens with a shared secret.
 
 Exactly one detected family: pass its preset (interactive init would confirm
-it; `--auth` is that confirmation). Zero or several: init stays anonymous and
-prints one advisory line naming the exact line to add later; see "when to
-ask" below.
+it; `--auth` is that confirmation). Zero or several: init leaves `principal`
+unwired and prints one advisory line naming the exact line to add —
+`createVendo` throws until it lands; see "when to ask" below.
 
 ## What init scaffolds vs what you hand-wire
 
@@ -105,9 +105,10 @@ Relay the decision instead of guessing when:
 - **A secret has to be created** (`VENDO_AWAY_TOKEN_SECRET`, a `jwt` signing
   secret): confirm before generating and never invent values for provider
   keys.
-- **Anonymous is a real option.** `--auth none` is a valid ship for products
-  without login; confirm the host actually has no user identity before
-  settling for it.
+- **A shared demo principal is a real option.** `--auth none` is a valid
+  ship for products without login — every request resolves to the same
+  `demo-user` subject; confirm the host actually has no per-user identity to
+  distinguish before settling for it.
 
 Verification: `vendo doctor --json` probes both seams live: present
 credentials (`E-AUTH-001..003`) and the actAs mint + verify round-trip

@@ -73,7 +73,7 @@ const numberField = (entry: unknown, field: string, message: string): number => 
 
 /** A thread's harness state rides the harness slot under this synthetic appId
     (the store's `harnessStateKey`), which is what makes deleteThread's cascade
-    onto harness state observable through the 31 ops. */
+    onto harness state observable through the 27 ops. */
 const harnessSlot = (threadId: string): string => `harness_state:${threadId}`;
 
 // ---------------------------------------------------------------------------
@@ -738,13 +738,12 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
       // lifecycle
       // =====================================================================
 
-      opsCase(opts, "lifecycle.erase removes one subject's records, threads, harness state, and session", async (ops) => {
+      opsCase(opts, "lifecycle.erase removes one subject's records, threads, and harness state", async (ops) => {
         await ops.records.put("conf_erase", { id: "gone", data: {}, refs: { subject: "erase_me" } });
         await ops.records.put("conf_erase", { id: "keep", data: {}, refs: { subject: "other" } });
         await ops.transcripts.putThread({ id: "thr_erase", subject: "erase_me", messages: [] });
         await ops.transcripts.putThread({ id: "thr_keep", subject: "other", messages: [] });
         await ops.harness.set("app_erase", "erase_me", { v: 1 });
-        await ops.lifecycle.sessionRegister("erase_me", 1000);
 
         const report = await ops.lifecycle.erase({ subject: "erase_me" });
         assert(report !== null && report !== undefined, "erase must return a report");
@@ -753,40 +752,6 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(await ops.transcripts.getThread("thr_erase") === null, "erase left the subject's thread behind");
         assert(await ops.transcripts.getThread("thr_keep") !== null, "erase removed another subject's thread");
         assert(await ops.harness.get("app_erase", "erase_me") === null, "erase left the subject's harness state behind");
-        assertDeepEqual(await ops.lifecycle.sessionStale(1, 100000), [], "erase left the subject's session registered");
-      }),
-
-      opsCase(opts, "lifecycle.adopt moves records, threads, harness state, and the session", async (ops) => {
-        await ops.records.put("conf_adopt", { id: "moved", data: {}, refs: { subject: "anon_1" } });
-        await ops.transcripts.putThread({ id: "thr_adopt", subject: "anon_1", messages: [] });
-        await ops.harness.set("app_adopt", "anon_1", { v: 7 });
-        await ops.lifecycle.sessionRegister("anon_1", 1000);
-
-        const report = await ops.lifecycle.adopt("anon_1", "user_1");
-        assert(report !== null && report !== undefined, "adopt must return a report");
-        assertDeepEqual(
-          (await ops.records.list("conf_adopt", { refs: { subject: "user_1" } })).records.map((r) => r.id),
-          ["moved"],
-          "adopt did not move the record to the new subject",
-        );
-        assertDeepEqual(
-          (await ops.records.list("conf_adopt", { refs: { subject: "anon_1" } })).records.map((r) => r.id),
-          [],
-          "adopt left the record on the old subject",
-        );
-        assertDeepEqual(
-          (await ops.transcripts.listThreads({ subject: "user_1" })).records.map((r) => r.id),
-          ["thr_adopt"],
-          "adopt did not move the thread to the new subject",
-        );
-        assertDeepEqual(
-          (await ops.transcripts.listThreads({ subject: "anon_1" })).records.map((r) => r.id),
-          [],
-          "adopt left the thread on the old subject",
-        );
-        assertDeepEqual(await ops.harness.get("app_adopt", "user_1"), { v: 7 }, "adopt did not move harness state");
-        assert(await ops.harness.get("app_adopt", "anon_1") === null, "adopt left harness state on the old subject");
-        assertDeepEqual(await ops.lifecycle.sessionStale(1, 100000), ["user_1"], "adopt did not move the session registration");
       }),
 
       /** Promote hands the app to an org: the app record's owning subject
@@ -813,24 +778,6 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         await assertThrowsCode(() => ops.lifecycle.promote("app_absent", "org_1"), "not-found", "promoting an unknown app");
       }),
 
-      opsCase(opts, "lifecycle.sessionRegister and sessionStale work together", async (ops) => {
-        const now = 1000000;
-        await ops.lifecycle.sessionRegister("stale_1", now - 5000);
-        await ops.lifecycle.sessionRegister("fresh_1", now);
-        const stale = await ops.lifecycle.sessionStale(3000, now);
-        assert(stale.includes("stale_1"), "stale session not returned");
-        assert(!stale.includes("fresh_1"), "fresh session incorrectly returned as stale");
-      }),
-
-      opsCase(opts, "lifecycle.sessionClaim claims a stale subject", async (ops) => {
-        const now = 1000000;
-        await ops.lifecycle.sessionRegister("claim_1", now - 5000);
-        const claimed = await ops.lifecycle.sessionClaim("claim_1", 3000, now);
-        assert(claimed === true, "sessionClaim should return true for stale session");
-        const again = await ops.lifecycle.sessionClaim("claim_1", 3000, now);
-        assert(again === false, "sessionClaim should return false after already claimed");
-      }),
-
       // =====================================================================
       // status
       // =====================================================================
@@ -839,7 +786,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         const status = await ops.status();
         assert(status.format === VENDO_STORE_WIRE_FORMAT, `status.format should be ${VENDO_STORE_WIRE_FORMAT}`);
         assert(typeof status.ops === "number", "status.ops should be a number");
-        assert(status.ops === 31, `status.ops should be 31, got ${status.ops}`);
+        assert(status.ops === 27, `status.ops should be 27, got ${status.ops}`);
       }),
     ],
   };

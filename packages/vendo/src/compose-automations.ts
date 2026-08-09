@@ -22,7 +22,7 @@ export const composeAutomations = (composition: VendoComposition): Pick<VendoCom
   // scheduled or delivered, so there's nothing for Cloud to duplicate. One warn per
   // PROCESS (self-serve audit F7: a dev server recomposes on nearly every request,
   // so "once per composition" printed this paragraph 29 times in one short
-  // session), same latch posture as hostedSessionOps' door warn above.
+  // session).
   const hostedStoreComposed = isHostedStore(store);
   if (hostedStoreComposed) reportHostedStoreOnce();
   const automations = createAutomations({

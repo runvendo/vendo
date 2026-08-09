@@ -1,0 +1,66 @@
+{
+  "app": "Maple, a consumer banking app",
+  "theme": {
+    "colors": {
+      "background": "#FFFFFF",
+      "surface": "#FFFFFF",
+      "text": "#1A1A1A",
+      "muted": "#6B7280",
+      "accent": "#0F6B4E",
+      "accentText": "#FFFFFF",
+      "danger": "#C43E2F",
+      "border": "#E5E7EB"
+    },
+    "typography": { "fontFamily": "Onest, sans-serif", "baseSize": "14px" },
+    "radius": { "small": "8px", "medium": "8px", "large": "8px" },
+    "density": "comfortable",
+    "motion": "full"
+  },
+  "style": [
+    "uses the theme exactly: brand green, Onest, 8px corners — no invented colors or fonts",
+    "money always shows 2 decimals with currency symbol",
+    "destructive actions ask for confirmation",
+    "dates shown as 'Aug 1' style, never ISO"
+  ],
+  "tools": {
+    "list_accounts": {
+      "does": "Every account the signed-in customer holds. The rows are the `data` array. `balance` is in CENTS: 941220 is $9,412.20.",
+      "data": {
+        "data": [
+          { "id": "acc_checking", "name": "Maple Checking", "kind": "checking", "mask": "4471", "balance": 941220 },
+          { "id": "acc_savings", "name": "Maple Savings", "kind": "savings", "mask": "8820", "balance": 2814135 },
+          { "id": "acc_credit", "name": "Maple Credit", "kind": "credit", "mask": "0934", "balance": -128840 }
+        ]
+      }
+    },
+    "get_spending": {
+      "does": "This month's spending totalled per category, largest first. The rows are the `data` array. `amount` is in CENTS: 285000 is $2,850.00.",
+      "data": {
+        "data": [
+          { "category": "housing", "amount": 285000 },
+          { "category": "groceries", "amount": 61245 },
+          { "category": "dining", "amount": 43820 },
+          { "category": "subscriptions", "amount": 18441 },
+          { "category": "transport", "amount": 9675 },
+          { "category": "coffee", "amount": 6130 }
+        ]
+      }
+    },
+    "list_transfers": {
+      "does": "Recent transfers, newest first. The rows are the `data` array. `amount` is in CENTS: 25000 is $250.00.",
+      "takes": { "limit": "number" },
+      "data": {
+        "data": [
+          { "id": "tr_1", "to": "Alex Rivera", "amount": 25000, "date": "2026-08-01", "status": "pending" },
+          { "id": "tr_2", "to": "Jordan Avery", "amount": 6000, "date": "2026-07-30", "status": "pending" },
+          { "id": "tr_3", "to": "Mission St Property", "amount": 285000, "date": "2026-07-28", "status": "completed" },
+          { "id": "tr_4", "to": "Dana Whitfield", "amount": 12550, "date": "2026-07-24", "status": "completed" }
+        ]
+      }
+    },
+    "cancel_transfer": {
+      "does": "Cancel a pending transfer. The money is returned to the source account.",
+      "takes": { "id": "string" }
+    }
+  }
+}

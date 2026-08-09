@@ -15,7 +15,7 @@ export interface VendoStore extends StoreAdapter {
   ensureSchema(): Promise<void>;
   close(): Promise<void>;
   raw(): unknown;
-  /** The 31-op named-operation surface, when this store carries one (the Cloud
+  /** The 27-op named-operation surface, when this store carries one (the Cloud
    *  hosted store does; a local store's lives behind `createStoreOps`). It is
    *  what lets the helpers that need a transcript, a workspace or harness state
    *  serve a store with no SQL handle — see `backendOf`. */

@@ -1,7 +1,7 @@
 /**
  * `@vendoai/vendo/try` — the try surface's public entry (unified try surface,
  * Task 15a). The hosted try venue (the console's Cloudflare Worker) composes
- * `createVendo({ profile, fetch })` per anonymous session from IN-MEMORY
+ * `createVendo({ profile, fetch })` per try session from IN-MEMORY
  * artifacts, so the pieces it needs — the synthetic host-API stand-in and the
  * try artifact schemas/format constants — ship as package exports. This entry
  * only re-exports the cli/try modules; the schemas there ARE the contract (never a second copy of

@@ -1,9 +1,10 @@
 import { composioConnector } from "@vendoai/actions";
+import type { Principal } from "@vendoai/core";
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import { vendoAutoJudge } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
 import { authJs } from "@vendoai/vendo/auth/auth-js";
-import { createVendo, guard, vendoModel } from "@vendoai/vendo/server";
+import { createVendo, guard, vendoModel, type HostAuthPreset } from "@vendoai/vendo/server";
 import { authSecret, primaryMapleUser, resolveMaplePerson, resolveMapleSubject } from "@/server/users";
 import { mapleKnowledgeDocs } from "./knowledge";
 import { mapleMcpConfig } from "./mcp-config";
@@ -15,9 +16,9 @@ const composioApiKey = process.env.COMPOSIO_API_KEY;
 // One preset fills all three identity seams (09-vendo §2.1): the
 // request→Principal resolver, the away/MCP actAs seam, and the door's
 // OAuth adapter. `user` maps an Auth.js subject to the seeded Maple
-// identity; returning null means "not a Maple user" — the principal
-// resolves to anonymous and away/MCP minting for that subject declines.
-export const mapleAuth = authJs({
+// identity; returning null means "not a Maple user" — the preset resolves no
+// principal, and away/MCP minting for that subject declines.
+const mapleAuthJs = authJs({
   secret: authSecret,
   user: (subject) => {
     const user = resolveMapleSubject(subject);
@@ -64,6 +65,20 @@ export const mapleAuth = authJs({
     return user ? { subject: user.subject, display: user.display } : null;
   },
 });
+
+// Vendo mints no principals, so a logged-out visitor has no identity unless
+// MAPLE gives them one — that is the host's call, not Vendo's. Maple's demo is
+// browsable signed out, so it resolves those visitors to one shared ephemeral
+// guest: every logged-out visitor of this deployment is the SAME subject and
+// therefore sees the same threads and apps. Acceptable because the demo runs
+// locally; a real deployment would sign visitors in, or key the guest subject
+// off something of its own.
+const MAPLE_GUEST: Principal = { kind: "user", subject: "maple_guest", ephemeral: true };
+
+export const mapleAuth: HostAuthPreset = {
+  ...mapleAuthJs,
+  principal: async (request) => (await mapleAuthJs.principal(request)) ?? MAPLE_GUEST,
+};
 
 export const vendo = createVendo({
   // Model + store slots stay UNSET (demo-refresh Part 2): the env ladder

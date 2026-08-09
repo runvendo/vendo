@@ -63,13 +63,13 @@ examples/*/.vendo/data-*/
 fixtures/*/.vendo/data/
 # Same state, written by a package's own tests: the capability-miss sink resolves
 # its data dir from the cwd, so a real-path test of that rail
-# (packages/vendo/src/harness-wire.test.ts) lands misses.jsonl here.
+# (packages/vendo/tests/harness-wire.test.ts) lands misses.jsonl here.
 packages/*/.vendo/data/
 
 # wave-6 orchestration lane briefs/signals (never committed)
 .lanes/
 
-# type-surface test fixtures (packages/vendo/src/type-surface.test.ts) — cleaned
+# type-surface test fixtures (packages/vendo/tests/type-surface.test.ts) — cleaned
 # in afterEach; ignored so an interrupted run can never dirty a commit.
 packages/vendo/.type-surface.*.ts
 packages/vendo/.wire-parity.*.ts
@@ -102,7 +102,11 @@ packages/apps/box/claude-turn.mjs
 
 # Agent working notes and factory process exhaust — useful locally, not shipped.
 # Lane contracts, raw proof logs, and eval run dumps stay on their branches.
-.claude/
+# Skills are the exception: they are shared project tooling, so they are tracked.
+# `.claude/*` and not `.claude/`, because git never descends into an excluded
+# directory and the negation below would never be reached.
+.claude/*
+!.claude/skills/
 docs/verification/
 docs/eval/runs/
 
@@ -112,3 +116,4 @@ packages/vendo/.wire-parity.*
 # Harness/test run outputs — write-only sinks, never committed
 corpus/reports/
 fixtures/existing-agents-e2e/.artifacts/
+genbench/runs/

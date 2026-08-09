@@ -1,6 +1,6 @@
 /**
  * 09-vendo §2 — the first phase: read the host's config, refuse a miswired one,
- * and resolve the identity + session seams every later phase is handed.
+ * and resolve the identity seams every later phase is handed.
  *
  * Everything here runs BEFORE anything is constructed, so a config that fills a
  * slot twice leaks no resources on its way to the error.
@@ -38,35 +38,27 @@ function adoptAgent(config: CreateVendoConfig): AgentComposition | undefined {
   return composed;
 }
 
-/** ENG-237 recommended defaults (documented in the PR body; Yousef-gated as
+/** ENG-237 recommended default (documented in the PR body; Yousef-gated as
     09-vendo contract text). */
-const DEFAULT_SESSION_TTL_MS = 30 * 60_000;
-const DEFAULT_SESSION_SWEEP_INTERVAL_MS = 60_000;
-export interface ResolvedSessions {
-  ttlMs: number;
-  sweepIntervalMs: number;
+const DEFAULT_SWEEP_INTERVAL_MS = 60_000;
+export interface ResolvedSweep {
+  intervalMs: number;
   now?: () => number;
 }
 
-function validateSessionsConfig(sessions: CreateVendoConfig["sessions"]): ResolvedSessions {
-  const ttlMs = sessions?.ttlMs ?? DEFAULT_SESSION_TTL_MS;
-  const sweepIntervalMs = sessions?.sweepIntervalMs ?? DEFAULT_SESSION_SWEEP_INTERVAL_MS;
-  // ttlMs 0 (or negative) is the documented off switch. Any other value must
-  // be a non-negative integer; the sweep interval must be a positive integer.
-  if (!Number.isInteger(ttlMs) || ttlMs < 0) {
-    throw new VendoError("validation", "sessions.ttlMs must be a non-negative integer (0 disables TTL eviction)");
+function validateSweepConfig(sweep: CreateVendoConfig["sweep"]): ResolvedSweep {
+  const intervalMs = sweep?.intervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
+  if (!Number.isInteger(intervalMs) || intervalMs < 1) {
+    throw new VendoError("validation", "sweep.intervalMs must be a positive integer");
   }
-  if (!Number.isInteger(sweepIntervalMs) || sweepIntervalMs < 1) {
-    throw new VendoError("validation", "sessions.sweepIntervalMs must be a positive integer");
-  }
-  return { ttlMs, sweepIntervalMs, ...(sessions?.now === undefined ? {} : { now: sessions.now }) };
+  return { intervalMs, ...(sweep?.now === undefined ? {} : { now: sweep.now }) };
 }
 
-/** 09-vendo §2 — the config, the identity seams, and the session policy. */
+/** 09-vendo §2 — the config, the identity seams, and the sweep cadence. */
 export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   "appsMounted" | "automationsMounted" | "config" | "composed" | "resolvePrincipal"
   | "actAsSeam" | "oauthSeam" | "membershipsSeam" | "resolvePersonSeam" | "userFactsSeam"
-  | "sessionsConfig" | "sessionNow"> => {
+  | "sweepConfig" | "sweepNow"> => {
   // Whether each subsystem mounts, decided once. `apps: false` is folded away
   // here so the hundred reads below stay `config.apps?.x`: an unmounted
   // subsystem has no options, which is the same thing as none configured.
@@ -101,11 +93,19 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   // beside the auth mixing check and for the same reason: a slot filled twice
   // is a wiring mistake the host hears about before anything is constructed.
   const composed = adoptAgent(config);
-  // The three seams the identity story fills: from the preset, from the
-  // per-seam trio, or — with neither `auth` nor `principal` — the anonymous
-  // default resolver (every session ephemeral, 00 conventions "identity
-  // optional" / 02-store §4). Absent preset halves leave their seams unset.
-  const resolvePrincipal = config.auth?.principal ?? config.principal ?? (async () => null);
+  // The three seams the identity story fills: from the preset or from the
+  // per-seam trio. Absent preset halves leave their seams unset — but the
+  // principal is not optional. Vendo mints no principals of its own, so a
+  // deployment with neither `auth` nor `principal` has no one to serve and
+  // says so here, beside the other config refusals, before anything is built.
+  const resolvePrincipal = config.auth?.principal ?? config.principal;
+  if (resolvePrincipal === undefined) {
+    throw new VendoError(
+      "validation",
+      "createVendo needs an identity: add `principal: async () => ({ kind: \"user\", subject: \"dev\" })` "
+      + "(or an `auth` preset). Vendo no longer mints anonymous sessions.",
+    );
+  }
   const actAsSeam = config.auth === undefined ? config.actAs : config.auth.actAs;
   const oauthSeam = config.auth === undefined ? config.oauth : config.auth.oauth;
   // Build contract §9.1 — the fourth seam. It rides the preset (there is no
@@ -122,13 +122,12 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
   // 5: no seam for raw principal-trio hosts — a hand-rolled `principal` has no
   // facts channel).
   const userFactsSeam = config.auth?.facts;
-  // 02-store §4 (kill-list B3) — ephemeral session policy. Validated like the
-  // agent's context config; defaults are the recommended knobs. The store takes
-  // the clock per call (register/sweep), so one time source needs no seam.
-  // Validated FIRST because the hosted session ops derive their touch-debounce
-  // window from the sweep interval.
-  const sessionsConfig = validateSessionsConfig(config.sessions);
-  const sessionNow = sessionsConfig.now ?? Date.now;
+  // The TTL sweep's cadence and clock. One timer serves both surviving legs
+  // (expired parked BYO calls and stranded approvals), so the knob is the
+  // deployment's, not either feature's. `now` is the internal clock seam the
+  // TTL tests drive.
+  const sweepConfig = validateSweepConfig(config.sweep);
+  const sweepNow = sweepConfig.now ?? Date.now;
   return {
     appsMounted,
     automationsMounted,
@@ -140,7 +139,7 @@ export const composeConfig = (input: CreateVendoConfig): Pick<VendoComposition,
     membershipsSeam,
     resolvePersonSeam,
     userFactsSeam,
-    sessionsConfig,
-    sessionNow,
+    sweepConfig,
+    sweepNow,
   };
 };

@@ -30,11 +30,10 @@ For production, pass a Postgres connection string explicitly, for example `creat
 | `vendo_secrets` | `name, ciphertext, created_at` | optional encrypted secret values |
 | `vendo_mcp_clients` | `id, data, refs, created_at, updated_at` | door-owned MCP client state |
 | `vendo_mcp_grants` | `id, data, refs, created_at, updated_at` | door-owned MCP grant state |
-| `vendo_sessions` | `subject, touched_at` | ephemeral (anonymous) session registry: last-activity touch per session, read by the TTL sweep |
 | `vendo_knowledge_docs` | `id, data, refs, created_at, updated_at` | knowledge corpus documents (built-in local engine) |
 | `vendo_knowledge_chunks` | `id, data, refs, created_at, updated_at` | knowledge corpus chunks (built-in local engine index) |
 
-App storage uses `app:<appId>:<name>` by convention. App-scoped record and blob WRITES require an existing `vendo_apps` row and fail closed with `not-found` ("session may have expired") when there is none — the app never existed, or its ephemeral session was swept; reads on a missing app return empty. Except for the reserved names below, collection names remain opaque and use `vendo_records`; non-`app:`-prefixed collections and namespaces have no principal linkage.
+App storage uses `app:<appId>:<name>` by convention. App-scoped record and blob WRITES require an existing `vendo_apps` row and fail closed with `not-found` ("session may have expired") when there is none — the app never existed, or it was erased; reads on a missing app return empty. Except for the reserved names below, collection names remain opaque and use `vendo_records`; non-`app:`-prefixed collections and namespaces have no principal linkage.
 
 Generic record collections and the dedicated door-owned and knowledge tables
 expose the optional
@@ -63,19 +62,7 @@ Blocks receive core's plain `StoreAdapter`, so these exact `records()` collectio
 
 Typed reserved writes validate their data, require embedded ids to match the record id, and upsert the typed row — with two enforced exceptions. `vendo_audit` is append-only: `put` on an existing id and `delete` are both refused; audit rows are erased only through the erase API below. `vendo_apps`, `vendo_grants`, and `vendo_threads` refuse cross-subject flips atomically: a put whose id already belongs to another subject fails with a conflict. The data is authoritative: caller-supplied `refs` are ignored on write and synthesized from typed columns on read. Their routed `list({ refs })` accepts only the refs shown above. The door-owned and knowledge collections use generic record semantics in dedicated tables: the store does not validate their payloads, and refs filters accept arbitrary keys. Generic and routed record lists are uniformly newest-first by `(createdAt, id)`.
 
-Ephemeral principals take the SAME path as everyone else: their rows are ordinary disk rows under their subject. What makes a session ephemeral is its registration (`registerEphemeralSubject`); see the lifecycle section below.
-
-## Ephemeral session lifecycle
-
-Ephemeral (anonymous) principals write ordinary disk rows under their subject; the session itself is one row in `vendo_sessions`. `registerEphemeralSubject(store, subject, now?)` (async) upserts the touch row — registration == touch — and the umbrella calls it on every ephemeral-principal request, so idle time is measured from the last request, reads included. Data written for a subject that is never registered behaves like durable data (nothing sweeps it); the erase API below remains the cleanup path for such compositions.
-
-`sweepEphemeralSubjects(store, { idleMs, now? })` (async) erases every registered session idle for at least `idleMs` through the erase cascade — the subject's apps, records, blobs, state, threads, grants, approvals, audit, runs, and the session row itself — and returns the swept subjects so the caller can cascade further (the umbrella forwards them to `agent.evictSubject`). TTL policy is the caller's — the store stays config-free; `createVendo({ sessions })` owns the knobs and the sweep cadence.
-
-Writes after a sweep fail closed. App-scoped (`app:<appId>:<name>`) record and blob writes require an existing `vendo_apps` row; a write against a missing app — one that never existed or whose session was swept — throws `not-found` ("session may have expired") instead of recreating rows no cascade would reach again. Reads on missing apps return empty.
-
-Because the registry is a table in the same database, sessions survive restarts and are shared across instances — no sticky-session constraint. Anonymous audit events live in `vendo_audit` like any others and appear in `auditStore.export()` until their session is swept.
-
-`adoptEphemeralSubject(store, from, to)` is the anonymous-to-signed-in merge: threads, apps (with their app-scoped records/blobs), and state move to the signed-in subject; grants, approvals, audit, and the adopted apps' run history are deleted — consent and history do not transfer. Idempotent; nothing is ever stolen from an existing durable row.
+Ephemeral principals take the SAME path as everyone else: their rows are ordinary disk rows under their subject, and the erase API below is the cleanup path for them.
 
 ## Encryption
 
@@ -83,4 +70,4 @@ Because the registry is a table in the same database, sessions survive restarts 
 
 ## Retention and erasure
 
-`eraseStore(store)` is the store-level erase API — `bySubject(subject)` for full erasure and `byApp(appId)` — cascading the matching rows across all 16 tables (ephemeral subjects included — their rows are ordinary disk rows) and returning per-table deleted counts. It is the only sanctioned deletion path for `vendo_audit` rows. It is also re-exported from `@vendoai/vendo/server`. Host SQL remains available for everything else.
+`eraseStore(store)` is the store-level erase API — `bySubject(subject)` for full erasure and `byApp(appId)` — cascading the matching rows across all 20 tables (ephemeral subjects included — their rows are ordinary disk rows) and returning per-table deleted counts. It is the only sanctioned deletion path for `vendo_audit` rows. It is also re-exported from `@vendoai/vendo/server`. Host SQL remains available for everything else.

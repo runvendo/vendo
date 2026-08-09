@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignoreWorkspaces": ["examples/*", "fixtures/*", "corpus/harness", "corpus/hosts/*", "bench"],
+  "ignoreWorkspaces": ["examples/*", "fixtures/*", "corpus/harness", "corpus/hosts/*"],
   "workspaces": {
     ".": { "entry": [], "project": [], "ignoreDependencies": [".+"] }
   }

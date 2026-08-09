@@ -3,7 +3,7 @@
  * Dependency guard — the wave-3 CI gate.
  *
  * Enforces, for EVERY package in the workspace — the blocks under packages/ and
- * the consumers under fixtures/, examples/, corpus/ and bench/ alike:
+ * the consumers under fixtures/, examples/ and corpus/ alike:
  *
  *   1. LAYERING — the only allowed @vendoai/* edges are:
  *        core → (nothing)
@@ -245,7 +245,7 @@ const IMPORT_RE =
 /** Every package directory in the workspace, read out of pnpm-workspace.yaml.
  *
  * Derived, never hardcoded: the scan root used to be the literal `packages/`, so
- * fixtures/, examples/, corpus/ and bench/ were never looked at — and an
+ * fixtures/, examples/ and corpus/ were never looked at — and an
  * undeclared cross-package import had been sitting in fixtures/integration-browser
  * the whole time, breaking a rule that already existed and simply never ran there.
  * Reading the workspace's own definition is the only way that gap cannot reopen

@@ -13,7 +13,7 @@ export default defineConfig({
       forks: { minForks: 1, maxForks: 2 },
       threads: { minThreads: 1, maxThreads: 2 },
     },
-    include: ["src/**/*.e2e.test.ts", "src/**/*.test.ts"],
+    include: ["tests/**/*.e2e.test.ts", "tests/**/*.test.ts"],
     // Journeys pack the workspace once and boot real Next dev servers on fixed
     // ports: parallel files would race the pack cache and the ports.
     fileParallelism: false,

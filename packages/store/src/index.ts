@@ -3,7 +3,7 @@
  *  keep the PGlite wasm engine out of the bundle graph. */
 export { createStore } from "./create-store.js";
 export { type VendoStore } from "./store.js";
-// The StoreOps local backend (02-store): the 31-op named-operation contract
+// The StoreOps local backend (02-store): the 27-op named-operation contract
 // served off this store's own Postgres, transactions at verb boundaries.
 export { createStoreOps } from "./ops.js";
 // The reserved-collection map (02-store §2): exported so remote StoreAdapters
@@ -16,12 +16,6 @@ export {
   type ReservedCollection,
 } from "./routing.js";
 export { eraseStore, type EraseReport, type EraseTable } from "./erase.js";
-export {
-  claimEphemeralSubject,
-  listStaleEphemeralSubjects,
-  registerEphemeralSubject,
-  sweepEphemeralSubjects,
-} from "./sessions.js";
 export { envSecrets, secretStore, storeSecrets } from "./secrets.js";
 export { appStore, type AppRow } from "./helpers/apps.js";
 // Build contract §9.3 — `can()`, the one permission function every door reaches.
@@ -39,10 +33,6 @@ export { threadMessageStore, type ThreadMessageLike } from "./helpers/thread-mes
 export { grantStore } from "./helpers/grants.js";
 export { auditStore, type AuditQuery } from "./helpers/audit.js";
 export { runStore, type RunRow } from "./helpers/runs.js";
-export {
-  adoptEphemeralSubject,
-  type SubjectMergeReport,
-} from "./helpers/subjects.js";
 // The workspace (build contract §3): the agent's filesystem as a façade over
 // the two vendo_workspace_* tables, plus the blob seam under it.
 export {

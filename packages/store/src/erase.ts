@@ -30,7 +30,6 @@ export const ERASE_TABLES = [
   "vendo_secrets",
   "vendo_mcp_clients",
   "vendo_mcp_grants",
-  "vendo_sessions",
   "vendo_knowledge_docs",
   "vendo_knowledge_chunks",
   "vendo_workspace_files",
@@ -66,15 +65,12 @@ function emptyReport(): EraseReport {
  * lives in `ERASE_TABLES`, which the conformance suite pins to the DDL). It is
  * the ONLY sanctioned deletion path for `vendo_audit` rows — the routed door
  * refuses audit deletion (§2); this API reaches the tables directly.
- * Ephemeral subjects are erased the same way (their rows are ordinary disk
- * rows — kill-list B3); the TTL sweep (sessions.ts) is built on this cascade.
  * Policy engines and schedulers stay out of scope: hosts call this from their
  * own jobs, and host SQL remains available for everything else.
  */
 export function eraseStore(store: VendoStore, options: { files: FilesAdapter }): {
   /** Full erasure of one subject: their apps (and each app's records, blobs,
-      state, and runs), plus every subject-keyed or subject-ref'd row and the
-      subject's session registration (§4). */
+      state, and runs), plus every subject-keyed or subject-ref'd row. */
   bySubject(subject: string): Promise<EraseReport>;
   /** Erase one app: its row, record collections, blob namespaces, state, runs,
       app-scoped grants and audit rows, and app-ref'd generic/door rows.
@@ -209,8 +205,6 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       // and the identifier goes. A redaction, not a deletion — it is deliberately
       // absent from the report, which counts rows destroyed.
       await db.query("UPDATE vendo_app_grants SET created_by = '' WHERE created_by = $1", [subject]);
-      // The session registration (if any) is retired with the data (§4).
-      await del(report, "vendo_sessions", "subject = $1", [subject]);
       return report;
     },
 

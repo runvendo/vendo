@@ -179,46 +179,6 @@ async function blobsRestOp(
   return null;
 }
 
-/** The console's session-registry doors: register == touch, adopt retires the
- *  registration, stale/claim implement the host-driven sweep's list and
- *  mutual-exclusion legs with the engine's idleness predicate. */
-function sessionsOp(sessions: Map<string, number>, op: string, body: Body, miss: Miss): Response {
-  const now = typeof body.now === "number" ? body.now : Date.now();
-  const cutoff = now - (typeof body.idleMs === "number" ? body.idleMs : 0);
-  switch (op) {
-    case "register": {
-      // Mirrors the console's clamp (vendo-web session-registry.ts): touch
-      // never moves a subject's stamp BACKWARD.
-      const subject = body.subject as string;
-      sessions.set(subject, Math.max(sessions.get(subject) ?? now, now));
-      return json({ ok: true });
-    }
-    case "adopt": {
-      const from = body.from as string;
-      if (!sessions.has(from)) return json({ report: null });
-      sessions.delete(from);
-      // Data movement is the engine's job (console-side tests prove it with
-      // real per-org stores); the fake answers the report shape.
-      return json({ report: { apps: 0, threads: 0, states: 0, skipped: 0 } });
-    }
-    case "stale":
-      return json({
-        subjects: [...sessions.entries()]
-          .filter(([, touched]) => touched <= cutoff)
-          .map(([subject]) => subject),
-      });
-    case "claim": {
-      const subject = body.subject as string;
-      const touched = sessions.get(subject);
-      if (touched === undefined || touched > cutoff) return json({ claimed: false });
-      sessions.delete(subject);
-      return json({ claimed: true });
-    }
-    default:
-      return miss(`unknown session method: ${op}`);
-  }
-}
-
 /** Everything the handler learns from the request before routing: the recorded
  *  shape the caller asserts against, with the body parsed into it. */
 async function record(request: Request): Promise<RecordedRequest> {
@@ -244,14 +204,12 @@ async function record(request: Request): Promise<RecordedRequest> {
  * ride the reference memoryStoreAdapter, which already mirrors the store
  * engine's reserved-collection semantics (append-only audit, state id
  * grammar, cross-subject refusals), so parity failures surface as real
- * envelopes. Sessions mirror the console's registry doors. The erase cascade
- * itself is the console's concern (proven in the console repo against real
+ * envelopes. The erase cascade itself is the console's concern (proven in the console repo against real
  * per-org engines); here it answers the wire shape and records the call. */
 export function fakeConsole() {
   const adapter = memoryStoreAdapter();
   const requests: RecordedRequest[] = [];
   const eraseCalls: unknown[] = [];
-  const sessions = new Map<string, number>();
 
   const route = async (
     request: Request,
@@ -280,16 +238,12 @@ export function fakeConsole() {
     if (rest[0] === "records" && post) {
       return recordsOp(adapter.records(rest[1]!), rest.slice(2).join("/"), body, miss);
     }
-    if (rest[0] === "sessions" && post) {
-      return sessionsOp(sessions, rest[1]!, body, miss);
-    }
     if (rest[0] === "blobs") {
       const served = await blobsRestOp(adapter.blobs(rest[1]!), request, url, recorded, rest.slice(2));
       if (served !== null) return served;
     }
     if (rest[0] === "erase" && post) {
       eraseCalls.push(recorded.json);
-      if (typeof body.subject === "string") sessions.delete(body.subject);
       return json({ report: { vendo_apps: 1, vendo_threads: 2 } });
     }
     return miss();
@@ -313,5 +267,5 @@ export function fakeConsole() {
     }
   };
 
-  return { adapter, requests, eraseCalls, sessions, handler };
+  return { adapter, requests, eraseCalls, handler };
 }
