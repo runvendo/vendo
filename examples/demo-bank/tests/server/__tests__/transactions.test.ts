@@ -19,6 +19,20 @@ describe("listTransactions", () => {
     expect(listTransactions({ accountId: "acc_savings" }).data.every(t => t.accountId === "acc_savings")).toBe(true)
     expect(listTransactions({ min: 100000 }).data.every(t => Math.abs(t.amount) >= 100000)).toBe(true)
   })
+  it("treats a date-only `to` as through end of day, so a same-day window is not empty", () => {
+    // The planted charge lands at 01:14 local on the seeded day (08:14Z).
+    // `to` is documented as an inclusive date bound, so asking for that one
+    // day has to return it — a bare date parses to 00:00 UTC, which used to
+    // cut the whole day and hand the agent an empty 200 to narrate.
+    const sameDay = listTransactions({ from: "2026-06-29", to: "2026-06-29" })
+    expect(sameDay.total).toBeGreaterThan(0)
+    expect(sameDay.data.some(t => t.id === "txn_doordash_87")).toBe(true)
+    expect(listTransactions({ to: "2026-06-29" }).data.some(t => t.id === "txn_doordash_87")).toBe(true)
+  })
+  it("honours a full timestamp `to` exactly, without widening it", () => {
+    const untilMidnight = listTransactions({ from: "2026-06-29", to: "2026-06-29T00:00:00.000Z" })
+    expect(untilMidnight.data.some(t => t.id === "txn_doordash_87")).toBe(false)
+  })
 })
 
 describe("getTransaction", () => {

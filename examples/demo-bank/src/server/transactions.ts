@@ -8,6 +8,17 @@ export interface TxQuery {
 }
 export interface Page<T> { data: T[]; nextCursor?: string; total: number }
 
+/** `to` is documented as an inclusive "ISO date upper bound", but a bare
+ *  `YYYY-MM-DD` parses to 00:00 UTC — the START of that day — so an
+ *  inclusive-looking `to=2026-08-09` dropped every transaction ON Aug 9, and
+ *  `from=2026-08-09&to=2026-08-09` returned nothing at all. The agent reads
+ *  that empty 200 as "no spending", so a generated "last night" view renders
+ *  an empty table under prose that correctly names the charges. Widen a
+ *  date-only bound to the end of its day; a full timestamp is honoured as
+ *  given, so callers that want an exact instant still get one. */
+const upperBound = (to: string): number =>
+  /^\d{4}-\d{2}-\d{2}$/.test(to) ? +new Date(`${to}T23:59:59.999Z`) : +new Date(to)
+
 export function listTransactions(q: TxQuery = {}): Page<Transaction> {
   let rows = getStore().transactions.slice()
   if (q.search) {
@@ -19,7 +30,7 @@ export function listTransactions(q: TxQuery = {}): Page<Transaction> {
   if (q.cardId) rows = rows.filter(t => t.cardId === q.cardId)
   if (q.status) rows = rows.filter(t => t.status === q.status)
   if (q.from) rows = rows.filter(t => +new Date(t.timestamp) >= +new Date(q.from!))
-  if (q.to) rows = rows.filter(t => +new Date(t.timestamp) <= +new Date(q.to!))
+  if (q.to) rows = rows.filter(t => +new Date(t.timestamp) <= upperBound(q.to!))
   if (q.min != null) rows = rows.filter(t => Math.abs(t.amount) >= q.min!)
   if (q.max != null) rows = rows.filter(t => Math.abs(t.amount) <= q.max!)
 
