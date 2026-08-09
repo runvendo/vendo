@@ -34,7 +34,7 @@ import { createAppCaller, type AppCaller } from "./call.js";
 import type { Finding } from "./checking/types.js";
 import { createEditJournal } from "./edit-journal.js";
 import type { EgressApprovals } from "./egress-approval.js";
-import type { GenerationDependencies } from "./engine.js";
+import type { GenerationDependencies } from "./generation/engine.js";
 import { createFnCaller, type FnCaller } from "./fn.js";
 import { createGenerationContext } from "./generation-context.js";
 import { resolveProvider } from "./generation-context.js";

@@ -1,5 +1,5 @@
 /**
- * @vendoai/apps — the app artifact and engine (docs/contracts/06-apps.md).
+ * @vendoai/apps — the app artifact and engine.
  *
  * The package root is the 06 §1 public API and nothing else. Everything the
  * runtime uses to get its work done — the generation engine, interchange
@@ -8,7 +8,6 @@
  * "why is this public?" is the only question this file cannot answer itself.
  */
 export {
-  buildFailureReason,
   createApps,
   type AppsConfig,
   type AppsRuntime,
@@ -17,7 +16,6 @@ export {
   type BoxResponse,
   type EditFailure,
   type EditResult,
-  type MachineEditResult,
   type OpenSurface,
   type PlacementEntry,
   type PinForkInput,
@@ -29,20 +27,16 @@ export {
 } from "./runtime.js";
 // Placement rows — "show this app in that slot", off the document and in the
 // generic records collection.
-export {
-  placementStore,
-  PLACEMENTS_COLLECTION,
-  type PlacementRow,
-  type PlacementStore,
+export type {
+  PlacementRow,
+  PlacementStore,
 } from "./placements.js";
 export type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "./sandbox.js";
-// execution-v2 skin contract (Lane C): the manifest gate, the per-app box
+// execution-v2 skin contract (Lane C): the manifest shapes, the per-app box
 // token, and the box env assembly Lane B consumes at provision.
-export {
-  parseVendoManifest,
-  vendoManifestSchema,
-  type VendoManifest,
-  type VendoManifestSchedule,
+export type {
+  VendoManifest,
+  VendoManifestSchedule,
 } from "./manifest.js";
 export {
   createAppTokens,
@@ -71,8 +65,6 @@ export {
   type ShareSnapshot,
 } from "./cloud.js";
 export {
-  detectPinDrift,
-  inClientApprovalSchema,
   pinBaselineSchema,
   pinComponentName,
   type InClientApproval,
@@ -88,10 +80,9 @@ export {
 // The review-kind lifecycle vocabulary: the queue entry the console seam lists
 // and the rejection record the note surfaces from (AppsRuntime.review is the
 // behavior surface).
-export {
-  remixRejectionSchema,
-  type RemixRejection,
-  type ReviewQueueEntry,
+export type {
+  RemixRejection,
+  ReviewQueueEntry,
 } from "./review.js";
 export {
   type ShipDiff,
@@ -146,9 +137,7 @@ export { hostDesignBrief } from "./generation/contracts/sections.js";
 // never a store, so composition binds the store side once and hands these to
 // whoever is materializing an app.
 export {
-  appMountFor,
   checkoutApp,
   commitApp,
-  invalidSourcePath,
   type AppSourceSeam,
 } from "./app-source.js";

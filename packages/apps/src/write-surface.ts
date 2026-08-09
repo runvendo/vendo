@@ -17,7 +17,7 @@ import { rememberedMemory } from "./app-memory.js";
 import { commitApp } from "./app-source.js";
 import { NO_MACHINE } from "./build-messages.js";
 import { rungFor, touchedPinSlots } from "./edit-journal.js";
-import { asPayload } from "./engine.js";
+import { asPayload } from "./generation/engine.js";
 import { escalatedServer } from "./generation/lanes.js";
 import { findingLine } from "./build-messages.js";
 import { generationDependencies } from "./generation-context.js";
@@ -30,7 +30,7 @@ import {
 } from "./persistence.js";
 import { pinComponentName } from "./pins.js";
 import type { AppsRuntimeContext } from "./runtime-context.js";
-import { asTree } from "./engine.js";
+import { asTree } from "./generation/engine.js";
 import type { AppsRuntime, EditResult, VersionEntry } from "./types.js";
 
 /** The stored row as `authored` reads it, so the save below can be handed it. */

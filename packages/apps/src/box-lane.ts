@@ -25,7 +25,7 @@ import {
 import type { Finding } from "./checking/types.js";
 import { rungFor, withoutId } from "./edit-journal.js";
 import { boxAllowlist, normalizeEgressDomain } from "./egress-approval.js";
-import type { GenerationDependencies } from "./engine.js";
+import type { GenerationDependencies } from "./generation/engine.js";
 import { runServerLane, type BoxSeam, type ServerFunction } from "./generation/lanes.js";
 import { createMachineLifecycle } from "./machine-lifecycle.js";
 import { parseVendoManifest } from "./manifest.js";

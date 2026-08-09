@@ -13,7 +13,7 @@ import {
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { Cron } from "croner";
-import { askModel, distinctIssues, type HostToolInfo } from "./engine.js";
+import { askModel, distinctIssues, type HostToolInfo } from "./generation/engine.js";
 
 /**
  * execution-v2 Wave 9 — the escalation ladder's automation authoring: ONE

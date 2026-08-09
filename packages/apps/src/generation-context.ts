@@ -6,7 +6,7 @@
  */
 import { shapeFromJsonSchema, type RunContext, type ShapeType } from "@vendoai/core";
 import type { LanguageModel } from "ai";
-import { snapshotDesignRules, type GenerationDependencies } from "./engine.js";
+import { snapshotDesignRules, type GenerationDependencies } from "./generation/engine.js";
 import type { AppsConfig } from "./types.js";
 
 /** Resolve a value-or-provider config slot. The provider (function) form is

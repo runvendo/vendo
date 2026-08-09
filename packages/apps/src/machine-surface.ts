@@ -14,10 +14,9 @@ import type { AppsRuntime } from "./types.js";
 export const createMachineSurface = (
   deps: Pick<AppsRuntimeContext,
     "lifecycle" | "manifestTriggers" | "requireOwned" | "ensureEgressApproved"
-    | "requestEgressApproval" | "editServerViaBox" | "reportLifecycle">,
+    | "reportLifecycle">,
 ): AppsRuntime["machine"] => {
-  const { lifecycle, manifestTriggers, requireOwned, ensureEgressApproved } = deps;
-  const { requestEgressApproval, editServerViaBox, reportLifecycle } = deps;
+  const { lifecycle, manifestTriggers, requireOwned, ensureEgressApproved, reportLifecycle } = deps;
   return {
     available: () => lifecycle.available(),
     async provision(appId, ctx) {
@@ -47,28 +46,6 @@ export const createMachineSurface = (
     async sleep(appId, ctx) {
       const app = await requireOwned(appId, ctx);
       return lifecycle.sleep(app);
-    },
-    async editApp(appId, instruction, ctx) {
-      const app = await requireOwned(appId, ctx);
-      if (app.machine === undefined) {
-        throw new VendoError("validation", `app ${appId} has not graduated; use edit to graduate it first`);
-      }
-      // A pre-declared unapproved egress must clear (or park) before we wake
-      // the box — the wake would refuse it anyway (Lane E boxAllowlist).
-      await ensureEgressApproved(app, ctx);
-      const outcome = await editServerViaBox(app, instruction, ctx);
-      if (!outcome.ok) {
-        return { ok: false, summary: outcome.result.summary, filesChanged: outcome.result.filesChanged };
-      }
-      const pending = await requestEgressApproval(outcome.doc, ctx);
-      return {
-        ok: true,
-        summary: outcome.result.summary,
-        ...(outcome.result.fns === undefined ? {} : { fns: outcome.result.fns }),
-        filesChanged: outcome.result.filesChanged,
-        app: outcome.doc,
-        ...(pending.status === "pending" ? { pendingEgress: { approvalId: pending.approvalId, domains: pending.domains } } : {}),
-      };
     },
     async ping(appId, ctx) {
       const app = await requireOwned(appId, ctx, "viewer");

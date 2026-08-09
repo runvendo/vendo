@@ -143,19 +143,6 @@ export const distinctIssues = (current: string[], next: string[]): string[] => [
   ...new Set([...current, ...next]),
 ];
 
-/**
- * Page-open prewarm. Pays the provider import + TLS/keep-alive connection cost
- * up front with a throwaway 1-token generation, so the first real create reuses
- * a live socket instead of opening one cold. Best-effort: any failure (no key,
- * offline) is swallowed.
- */
-export const prewarmModels = async (models: readonly LanguageModel[]): Promise<void> => {
-  const { generateText } = await import("ai");
-  await Promise.all(
-    models.map((model) => generateText({ model, prompt: "ok", maxOutputTokens: 1, maxRetries: 0 }).then(() => undefined).catch(() => undefined)),
-  );
-};
-
 const insertChild = (parent: TreeNode, nodeId: string, index: unknown): void => {
   const children = parent.children ?? [];
   const position = typeof index === "number" && Number.isInteger(index)

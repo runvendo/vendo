@@ -15,7 +15,7 @@ import {
   type AppId,
   type RunContext,
 } from "@vendoai/core";
-import { applyPinFork } from "./engine.js";
+import { applyPinFork } from "./generation/engine.js";
 import { appRecordInput, rowFromRecord } from "./persistence.js";
 import {
   detectPinDrift,

@@ -22,7 +22,6 @@ export type {
   BoxResponse,
   EditFailure,
   EditResult,
-  MachineEditResult,
   OpenSurface,
   PinForkInput,
   PinForkResult,

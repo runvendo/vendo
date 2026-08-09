@@ -40,7 +40,7 @@ import type {
 import type { LanguageModel } from "ai";
 import type { Check, Finding } from "./checking/types.js";
 import type { CloudAppsClient, PublishRecord, ShareSnapshot } from "./cloud.js";
-import type { GenerationDependencies } from "./engine.js";
+import type { GenerationDependencies } from "./generation/engine.js";
 import type { InClientVerdict } from "./inclient.js";
 import type { BuildMachineEnv, LifecycleClock } from "./machine-lifecycle.js";
 import type { AppMachineStatus, ManifestTriggerSync } from "./manifest-triggers.js";
@@ -279,19 +279,6 @@ export interface EditFailure {
   code: "edit-rejected";
   retryable: boolean;
   message: string;
-}
-
-/** execution-v2 Wave 3 — the outcome of a machine.editApp() box edit. */
-export interface MachineEditResult {
-  ok: boolean;
-  /** The in-box agent's summary (data-only; carries no host authority). */
-  summary: string;
-  fns?: string[];
-  filesChanged?: string[];
-  /** The synced document after a successful edit (schedules + egress declaration). */
-  app?: AppDocument;
-  /** A parked egress-approval card for the domains the server code declared. */
-  pendingEgress?: { approvalId?: ApprovalId; domains: string[] };
 }
 
 /** 06-apps §1 */
@@ -569,10 +556,6 @@ export interface AppsRuntime {
    * model ends up binding to fields it invented.
    */
   toolShapeBrief(ctx: RunContext): Promise<string>;
-  /** Speed lane — best-effort page-open warm-up of the generation model(s)
-   *  (full + paint), so the first create reuses a live connection. Safe to
-   *  call on surface mount; never throws. */
-  prewarm(): Promise<void>;
   get(appId: AppId, ctx: RunContext): Promise<AppDocument | null>;
   list(ctx: RunContext): Promise<AppDocument[]>;
   delete(appId: AppId, ctx: RunContext): Promise<void>;
@@ -811,15 +794,6 @@ export interface AppsRuntime {
     wake(appId: AppId, ctx: RunContext): Promise<SandboxMachine>;
     /** Snapshot the live machine, store the new ref, stop it. No-op when not awake. */
     sleep(appId: AppId, ctx: RunContext): Promise<AppDocument>;
-    /**
-     * execution-v2 Wave 3 — send one edit instruction to the IN-BOX agent of
-     * an already-graduated app: wake the box, re-inject the current env, run
-     * the agent, and on success sync schedules + the egress declaration and
-     * snapshot. On failure the box is discarded and the app rolls back to its
-     * pre-edit snapshot. This edits the SERVER only; graduation (runtime.edit)
-     * is what also lands the tree's fn: bindings.
-     */
-    editApp(appId: AppId, instruction: string, ctx: RunContext): Promise<MachineEditResult>;
     /** Destroy the sandbox and clear the document's machine field (de-graduation). */
     destroy(appId: AppId, ctx: RunContext): Promise<AppDocument>;
     /**
@@ -854,7 +828,7 @@ export interface AppsRuntime {
    * gated by the guard's existing high-risk approval flow. The grant NEVER
    * travels with a copy: it lives in its own store collection keyed by the app
    * id, so exportApp/importApp/fork/share/publish (all of which mint or copy a
-   * fresh app id) can never carry it. Requires a docs/contracts/06-apps.md §4.3
+   * fresh app id) can never carry it. Requires a 06-apps §4.3 contract
    * amendment (parked, Yousef-gated).
    */
   secrets: {

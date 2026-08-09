@@ -1,13 +1,17 @@
 import type { AppDocument } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import {
-  detectPinDrift,
-  inClientApprovalSchema,
   pinBaselineSchema,
   pinComponentName,
   type PinBaseline,
 } from "../src/index.js";
-import { pinApprovalSchema, pinForkSource, pinShipRequestSchema } from "../src/pins.js";
+import {
+  detectPinDrift,
+  inClientApprovalSchema,
+  pinApprovalSchema,
+  pinForkSource,
+  pinShipRequestSchema,
+} from "../src/pins.js";
 
 const capturedAt = "2026-07-11T12:00:00.000Z";
 

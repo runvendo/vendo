@@ -1,6 +1,6 @@
 /**
  * The doors that BUILD an app, and the checks they can be asked to run on their
- * own: `create`, `validate`, `floor`, `toolShapeBrief`, and the model warm-up.
+ * own: `create`, `validate`, `floor`, and `toolShapeBrief`.
  *
  * Lifted out of `createApps` unchanged.
  */
@@ -37,7 +37,7 @@ import { queryEvidence } from "./checking/evidence.js";
 import { createAppFloor, floorChecks } from "./checking/floor.js";
 import { createCheckingLayer, judgmentRules } from "./checking/layer.js";
 import { reviewerCheck } from "./checking/reviewer.js";
-import { asPayload, prewarmModels } from "./engine.js";
+import { asPayload } from "./generation/engine.js";
 import { escalatedServer } from "./generation/lanes.js";
 import { skeletonFromPlan } from "./generation/skeleton.js";
 import { UNSTORED_APP_ID, validateCompiledCreate } from "./generation/validation/validate.js";
@@ -416,14 +416,11 @@ export const createBuildSurface = (
   deps: Pick<AppsRuntimeContext,
     "config" | "apps" | "caller" | "lifecycle" | "claimSlot" | "generationToolContext"
     | "reportLifecycle" | "runServerWork" | "requireOwned">,
-): Pick<AppsRuntime, "prewarm" | "create" | "toolShapeBrief" | "floor" | "agentToolRisk" | "validate"> => {
+): Pick<AppsRuntime, "create" | "toolShapeBrief" | "floor" | "agentToolRisk" | "validate"> => {
   const { config, generationToolContext } = deps;
   return {
     create: createCreateDoor(deps),
     validate: createValidateDoor(deps),
-    async prewarm() {
-      if (config.model !== undefined) await prewarmModels([config.model]);
-    },
 
     async toolShapeBrief(ctx) {
       // Re-resolved on every call, which is the whole contract: the provider form

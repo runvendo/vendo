@@ -1,7 +1,8 @@
 import type { RunContext, ScreenAssembler, ToolRegistry } from "@vendoai/core";
 import { VendoError } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { buildFailureReason, createApps, type AppsRuntime } from "../src/index.js";
+import { buildFailureReason } from "../src/build-messages.js";
+import { createApps, type AppsRuntime } from "../src/index.js";
 import { basicLanguageModel, guardFixture, memoryStore, scriptedAssembler } from "../src/testing/index.js";
 
 // Incident (runvendo/vendo#492): the pack's vendo_make returns fast with a

@@ -3,7 +3,7 @@
  *  - the jail runtime (`packages/ui/src/tree/jail/runtime-entry.tsx`), whose
  *    `JAIL_MODULES` require-table is typed `Record<JailModule, unknown>` so a
  *    drift is a compile error; and
- *  - the generation engine (`packages/apps/src/engine.ts`), which rejects any
+ *  - the generation engine (`packages/apps/src/generation/`), which rejects any
  *    island importing a specifier outside this set at create/edit → repair.
  *
  *  Islands render inside an opaque-origin, network-denied jail: only React and

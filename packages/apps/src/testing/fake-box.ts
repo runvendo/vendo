@@ -8,7 +8,7 @@ import { inMemoryBoxFiles } from "./box-files.js";
  * box faithfully: two listeners (the app's $PORT and the harness control port
  * 8811), an injectable in-box agent, a `vendo.json` manifest, POST /fn/<name>
  * handlers the agent installs, env re-injection, and snapshot/resume
- * persistence. It exists so graduation, editApp, schedule ticks, and the
+ * persistence. It exists so graduation, box edits, schedule ticks, and the
  * prompt-injection floor can be exercised without live e2b — the shared
  * single-listener fakeSandbox stays untouched.
  */
