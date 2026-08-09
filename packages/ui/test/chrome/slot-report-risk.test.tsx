@@ -1,16 +1,18 @@
 // @vitest-environment jsdom
 // RISK ROUND — the slot registry's once-per-session dedupe key.
 //
-// `report` in hooks/use-placements.ts joins the slot id and the label with a
-// SPACE (`${slot} ${label}`) and remembers that string for the life of the
-// client. A space is a legal character on both sides, so the join is not
-// injective: ("sales report", "Q3") and ("sales", "report Q3") produce the
-// same key. The second slot is then treated as already reported and never
-// reaches the registry — for the whole session, on every page that mounts it.
+// `report` in hooks/use-placements.ts remembers every (id, label) pair it has
+// sent for the life of the client. It used to build that memory by joining the
+// two with a SPACE (`${slot} ${label}`), and a space is legal on both sides, so
+// the join was not injective: ("sales report", "Q3") and ("sales", "report Q3")
+// produced the same key. The second slot was then treated as already reported
+// and never reached the registry — for the whole session, on every page that
+// mounted it.
 //
-// The consequence is not cosmetic: the registry is the ONLY source the
-// "Add to…" picker has for destinations, so the shadowed slot is a place the
-// person can never send a generated view, with nothing on screen to say why.
+// The consequence was not cosmetic: the registry is the ONLY source the
+// "Add to…" picker has for destinations, so the shadowed slot was a place the
+// person could never send a generated view, with nothing on screen to say why.
+// The key is the JSON of the pair now; these cases hold it there.
 //
 // Same seam discipline as slot-report.test.tsx: nothing is stubbed — the slots
 // write through the real client to the real wire fixture, and the assertion

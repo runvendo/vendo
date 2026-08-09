@@ -15,7 +15,9 @@
  * The same per-client scope carries the OUTBOUND half (`report`): a page of
  * slots telling the registry they exist, deduped and batched into one write.
  */
+import { SLOTS_REPORT_MAX, SLOT_ID_MAX_CHARS, SLOT_LABEL_MAX_CHARS } from "@vendoai/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { developmentMode } from "../chrome/dev-mode.js";
 import type { VendoClient } from "../client.js";
 // `useVendoProvider`, NOT `useVendoContext`: #852 renamed the provider-reading
 // hook and gave the old name to the host-facing `useVendoContext(data)` in
@@ -66,6 +68,15 @@ function createPoller(client: VendoClient): Poller {
   const reported = new Set<string>();
   let queued: Array<{ id: string; label: string }> = [];
   let flushing = false;
+
+  const keyOf = (id: string, label: string): string => JSON.stringify([id, label]);
+  /** Un-remember entries that never reached the registry. `reported` is keyed by
+   *  the CLIENT and outlives the React tree, so a key left behind here silences
+   *  that slot for the whole SESSION — which is what the source used to promise
+   *  it did not do ("another chance from the next page that mounts it"). */
+  const forget = (entries: readonly { id: string; label: string }[]): void => {
+    for (const { id, label } of entries) reported.delete(keyOf(id, label));
+  };
 
   const announce = (): void => {
     for (const set of [...listeners.values()]) for (const listener of [...set]) listener();
@@ -150,14 +161,26 @@ function createPoller(client: VendoClient): Poller {
     loading: () => !loaded,
     refresh: read,
     report(slot, label) {
+      // The route validates the batch ALL-OR-NOTHING, and a page reports every
+      // slot it mounts in one batch, so a single over-long host prop would take
+      // the whole page out of the "Add to…" picker. The client cleans its own
+      // report to fit instead; the route stays the strict backstop.
+      if (slot.length === 0 || slot.length > SLOT_ID_MAX_CHARS) {
+        if (developmentMode()) {
+          console.warn(`[vendo] VendoSlot id must be 1-${SLOT_ID_MAX_CHARS} characters — this slot is not reported, so nothing can offer it as a destination.`);
+        }
+        return;
+      }
+      // Clamped, not skipped: a verbose label is still a real destination.
+      const trimmed = label.slice(0, SLOT_LABEL_MAX_CHARS);
       // JSON, not a separator join: a space (or any other delimiter) is legal
       // in both halves, so `${slot} ${label}` merges ("sales report", "Q3")
       // with ("sales", "report Q3") and the second slot never reaches the
       // registry — it is a destination the picker can never offer.
-      const key = JSON.stringify([slot, label]);
+      const key = keyOf(slot, trimmed);
       if (reported.has(key)) return;
       reported.add(key);
-      queued.push({ id: slot, label });
+      queued.push({ id: slot, label: trimmed });
       if (flushing) return;
       flushing = true;
       // The same deferral the first placements read uses: every slot mounting in
@@ -166,11 +189,16 @@ function createPoller(client: VendoClient): Poller {
         flushing = false;
         const batch = queued;
         queued = [];
-        void client.slots.report(batch).catch(() => {
-          // The picker keeps whatever the registry already knows. Nothing on
-          // this page is waiting on the answer, and a slot that failed to
-          // report gets another chance from the next page that mounts it.
-        });
+        const sending = batch.slice(0, SLOTS_REPORT_MAX);
+        if (sending.length < batch.length) {
+          // Forgotten, not dropped: the overflow is reported by the next page
+          // that mounts it, once the slots already in the registry are quiet.
+          forget(batch.slice(SLOTS_REPORT_MAX));
+          if (developmentMode()) {
+            console.warn(`[vendo] a page may report at most ${SLOTS_REPORT_MAX} slots at once — ${batch.length - sending.length} were held back for a later render.`);
+          }
+        }
+        void client.slots.report(sending).catch(() => forget(sending));
       });
     },
   };

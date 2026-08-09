@@ -74,9 +74,10 @@ describe("a refused slot report must not silence the session", () => {
   it("keeps the rest of the page in the picker when one slot's label is over the cap", async () => {
     // One host prop — a label longer than the route's 256-character ceiling —
     // must not remove every OTHER slot on the page from the "Add to…" picker.
-    // WHERE that is answered is a spec decision (the client could skip or clamp
-    // the offending entry, or the route could accept the entries it can and
-    // report the rest); this case only asks that a neighbouring slot survives.
+    // WHERE that is answered was a spec decision, settled: the client CLAMPS an
+    // over-long label rather than dropping the entry, because a verbose label is
+    // still a real destination. (Skipping is reserved for an unusable id, which
+    // names nothing.) So both slots survive, and the long one arrives trimmed.
     render(
       <VendoProvider client={client}>
         <VendoSlot id="hero" label={"x".repeat(300)} />
@@ -84,6 +85,9 @@ describe("a refused slot report must not silence the session", () => {
       </VendoProvider>,
     );
 
-    await waitFor(() => expect(wire.state.slots.map(slot => slot.id)).toEqual(["sidebar"]));
+    await waitFor(() => expect(wire.state.slots.map(slot => slot.id).sort())
+      .toEqual(["hero", "sidebar"]));
+    // The clamp itself, not just survival: the route would have refused 300.
+    expect(wire.state.slots.find(slot => slot.id === "hero")?.label).toHaveLength(256);
   });
 });
