@@ -1,11 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { openScenario } from "./helpers.js";
 
-/** ENG-222 verification shots — committed under docs/verification/eng-222 and
- *  referenced from the PR body (UI LAW: real-browser proof, not just tests). */
-const shotPath = (file: string) =>
-  new URL(`../../../docs/verification/eng-222/${file}.png`, import.meta.url).pathname;
-
 test("palette opens via the keybinding (singleton)", async ({ page }) => {
   // The /palette scenario focuses a host button then dispatches ⌘K; the shared
   // singleton listener opens exactly one conversation surface (one-surface ⌘K —
@@ -15,7 +10,6 @@ test("palette opens via the keybinding (singleton)", async ({ page }) => {
   await openScenario(page, "palette");
   await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toHaveCount(1);
   await expect(page.getByRole("textbox", { name: "Message" })).toBeVisible();
-  await page.screenshot({ path: shotPath("palette-keybinding"), fullPage: true, animations: "disabled" });
 });
 
 test("palette does NOT hijack ⌘K while a host input is focused", async ({ page }) => {
@@ -25,5 +19,4 @@ test("palette does NOT hijack ⌘K while a host input is focused", async ({ page
   // The host keeps its own ⌘K — no Vendo surface appears, focus stays in the field.
   await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Host search" })).toBeFocused();
-  await page.screenshot({ path: shotPath("palette-no-hijack"), fullPage: true, animations: "disabled" });
 });

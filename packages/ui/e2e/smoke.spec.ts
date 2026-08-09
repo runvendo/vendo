@@ -93,7 +93,7 @@ test("landing renders its greeting, suggestions and composer", async ({ page }) 
   // it mounts a div rather than the `main[data-scenario]` openScenario expects.
   await page.goto("/thread-landing");
   // A first-ever visit shows the one-time greeting-as-tutorial instead of the
-  // host greeting (discoverability §6) — mark it seen, as eng-222 does.
+  // host greeting (discoverability §6) — mark it seen.
   await page.evaluate(() => localStorage.setItem("vendo:discoverability:greeting", "1"));
   await page.reload();
   await expect(page.locator('[data-scenario="thread-landing"]')).toBeVisible();
