@@ -8,7 +8,6 @@ const chromeScenarios = [
   "overlay",
   "palette",
   "approval",
-  "activity",
   "notice",
   "stage",
   "slot",
@@ -36,7 +35,6 @@ for (const scenario of chromeScenarios) {
     }
     if (scenario === "overlay") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
     if (scenario === "palette") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
-    if (scenario === "activity") await expect(page.getByText("Invoices list").first()).toBeVisible();
     if (scenario === "notice") await expect(page.getByRole("region", { name: "Vendo is running without a policy" })).toBeVisible();
     if (scenario === "stage") await expect(page.getByText("Revenue is ready")).toBeVisible();
     if (scenario === "slot") await expect(page.getByText("Invoices app surface")).toBeVisible();

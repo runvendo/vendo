@@ -13,13 +13,11 @@ import * as chrome from "../../src/chrome/index.js";
 // from the source chrome entry (a dropped type re-export emits TS2305).
 
 const VALUE_EXPORTS = [
-  "ActivityPanel",
   // The window label the automation card shares with the automations wire.
   "sponsorLabel",
   "ApprovalCard",
   "AutomationCard",
   "ConnectCard",
-  "ConnectedAccountsPanel",
   "GrantSetCard",
   // Build contract §9.2-§9.6 — the share surface and the viewer fork offer.
   "ShareDialog",
@@ -58,23 +56,12 @@ const VALUE_EXPORTS = [
   // the placement affordance needs both or it silently loses the multi-slot half.
   "AddToPicker",
   "useKnownSlots",
-  // Shelf Lane B — the two placeable pieces (ui-usage-dx §2).
-  "VendoActivities",
   "VendoTrigger",
   // Keystone graduates B7 — the remixable-surface affordance.
   "Remixable",
   // The eject surface (§4 customization ladder): internals the ejected
   // thread compiles against, exported deliberately so ejected chrome keeps
   // data/wire logic as a package dependency and only forks pixels.
-  "describeActivity",
-  "eventOutcomeLabel",
-  "formatAuditTime",
-  "outcomeLabel",
-  // ui-lane-panels pick B — the shared icon-ledger rows (ActivityPanel +
-  // VendoActivities render through them; ejected activities fork them).
-  "ActivityLedger",
-  "formatRelativeAuditTime",
-  "kindGlyph",
   "BuildBeat",
   // Spec §1 (2026-08-03) — the settled turn's summary row. Public because the
   // ejected thread template renders it (the eject standalone guard requires
@@ -134,7 +121,6 @@ const TYPE_EXPORTS = [
   "VendoToastInput",
   "VendoToastAction",
   "OpenConversationOptions",
-  "VendoActivitiesProps",
   "VendoTriggerProps",
   // 2026-08-02 final shape: RemixContext died with the context-chip behavior
   // (remix always means fork now) — deliberately absent.
@@ -142,8 +128,6 @@ const TYPE_EXPORTS = [
   // Eject surface types.
   "VendoThreadProps",
   "MorphToastProps",
-  "OutcomeTone",
-  "ActivityGlyph",
   // Discoverability (ui-usage-dx §6) — the dial + greeting config shapes.
   "VendoDiscoverability",
   "VendoGreeting",

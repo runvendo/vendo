@@ -4,7 +4,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import {
-  ActivityPanel,
   ApprovalCard,
   ChromeRoot,
   NoPolicyNotice,
@@ -147,7 +146,6 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
       <VendoOverlay open />,
       <VendoSlot appId="app_1" />,
       <ApprovalCard approval={approval} onDecide={() => undefined} />,
-      <ActivityPanel />,
     ];
     for (const surface of surfaces) {
       // The host's OWN explicit banner rides alongside: it renders only on a
@@ -170,23 +168,11 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     expect(await screen.findByRole("region", { name: "Vendo is running without a policy" })).toBeTruthy();
   });
 
-  // ⚠️ This used to pin the AUTOMATIC banner (C1's defect): it asserted that
-  // ActivityPanel grew the developer banner on its own, which is the same code
-  // path that put it on a customer's thread, slot and embed. It now pins the
-  // guarantee instead — no chrome surface renders it, the host's explicit mount
-  // does.
-  it("no workspace surface grows the banner on its own — the host's mount is the one source", async () => {
-    wire.state.posture = "unconfigured";
-    render(<VendoProvider client={client}><NoPolicyNotice /><ActivityPanel /></VendoProvider>);
-    await screen.findByRole("region", { name: "Vendo is running without a policy" });
-    expect(screen.getAllByRole("region", { name: "Vendo is running without a policy" })).toHaveLength(1);
-  });
-
   it("renders no notice on any chrome surface under rules posture", async () => {
     render(
       <VendoProvider client={client}>
         <NoPolicyNotice />
-        <ActivityPanel />
+        <VendoThread threadId="thr_1" />
         <VendoPalette />
       </VendoProvider>,
     );

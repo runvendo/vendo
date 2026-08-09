@@ -1,13 +1,10 @@
 /** @vendoai/ui/chrome — the shipped, theme-adopting surfaces (08-ui §4). */
-export { ActivityPanel } from "./activity-panel.js";
-export { VendoActivities, type VendoActivitiesProps } from "./vendo-activities.js";
 export { ApprovalCard, type ApprovalCardProps } from "./approval-card.js";
 export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./embeds.js";
 export { ApprovalSheet } from "./approval-sheet.js";
 export { AutomationCard, sponsorLabel, type AutomationCardProps } from "./automation-card.js";
 export { GrantSetCard, type GrantSetCardProps, type GrantSetPermission } from "./grant-set-card.js";
 export { ConnectCard, type ConnectCardProps } from "./connect-card.js";
-export { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
 // Build contract §9.2-§9.6 — the one surface that writes app-access grants,
 // and the consumer-voice fork offer a viewer sees instead of a refusal.
 export {
@@ -37,17 +34,6 @@ export { VendoToasts, vendoToast, dismissAllVendoToasts, type VendoToastsProps, 
     (scripts/eject-templates-lib.mjs enforces this list at build). Exported
     deliberately — ejected chrome keeps data/wire logic as a package
     dependency and only forks pixels (§4 customization ladder). */
-export { ActivityLedger } from "./activity-ledger.js";
-export {
-  describeActivity,
-  eventOutcomeLabel,
-  formatAuditTime,
-  formatRelativeAuditTime,
-  kindGlyph,
-  outcomeLabel,
-  type ActivityGlyph,
-  type OutcomeTone,
-} from "./activity-semantics.js";
 export { BeatSummary, BuildBeat, WorkingBeat, toolPresentation } from "./build-beat.js";
 export { ChromeRoot } from "./chrome-root.js";
 export { useCopyFeedback } from "./clipboard.js";

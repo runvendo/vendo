@@ -8,9 +8,10 @@ import { assistantText, collapseToolRuns, isAgentContext, toolCallIsContent, too
 import { ThreadPart } from "./parts.js";
 import { TurnCitations } from "./turn-citations.js";
 
-// 2026-07 demo feedback — the settled turn's "sources" chip row is GONE: the little read-call pills under assistant messages read as clutter
-// and duplicated the Activity panel, which remains the mechanical record.
-// The turn's work comes back as BEATS — a checklist
+// 2026-07 demo feedback — the settled turn's "sources" chip row is GONE: the
+// little read-call pills under assistant messages read as clutter and
+// duplicated the audit trail, which remains the mechanical record. The turn's
+// work comes back as BEATS — a checklist
 // line per call while the turn runs, folded into one reopenable summary row
 // ("Did 4 things · 7.1s") the moment it settles.
 

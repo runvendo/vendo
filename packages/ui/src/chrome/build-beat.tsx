@@ -14,7 +14,7 @@ import type { VendoBeat } from "./run-activity.js";
  * orb while working and a tick when done. Labels come from the ENG-216
  * humanization pipeline (host `ToolMeta` wins, else the prettified tool id —
  * never the raw slug or a lifecycle string). The mechanical record stays in
- * the Activity panel.
+ * the audit trail.
  */
 
 type AnyToolPart = ToolUIPart | DynamicToolUIPart;

@@ -184,8 +184,8 @@ export function VendoThread({
   // ThreadApprovals must skip it — and its resume matches on set membership.
   const grantSets = useMemo(() => grantSetByCall(thread.messages), [thread.messages]);
   // Approve-anywhere resume: a consent decided on ANY surface sharing the page
-  // (activity panel, workspace queue, voice stage — they all decide through
-  // client.approvals.decide, which announces the decided guard-approval ids)
+  // (a host's own queue, the workspace, the voice stage — they all decide
+  // through client.approvals.decide, which announces the decided ids)
   // must resume a thread parked on that approval, exactly like the in-thread
   // card's own Approve/Deny. When an announced id matches a still-parked
   // in-thread card, the same native approval response goes out — the server

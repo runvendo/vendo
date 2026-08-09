@@ -65,9 +65,9 @@ async function ensureOk(response: Response): Promise<Response> {
 }
 
 /** Browser event announced after approvals.decide lands, so EVERY consent
- *  surface sharing the page (activity panel, workspace queue, voice stage)
- *  resumes a thread parked on that approval — the thread chrome listens and
- *  settles its matching in-thread card. Guarded for SSR. */
+ *  surface sharing the page (a host's own queue, the workspace, the voice
+ *  stage) resumes a thread parked on that approval — the thread chrome listens
+ *  and settles its matching in-thread card. Guarded for SSR. */
 export const APPROVALS_DECIDED_EVENT = "vendo:approvals-decided";
 
 export interface ApprovalsDecidedDetail {

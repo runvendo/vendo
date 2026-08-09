@@ -11,10 +11,10 @@ import { ToolkitLogo } from "./card-shell.js";
  * surface is the same solid glass as the overlay (not a translucent liquid
  * blob), and it's inset from the corner so it's never clipped.
  *
- * The morph teaches the record: when an Activity anchor is
- * mounted (an element carrying `data-vendo-activity-anchor`, e.g. the
- * the Activity panel), the settled pill holds briefly and then shrinks
- * and docks INTO the anchor instead of fading in place, dispatching a
+ * The morph teaches the record: when an activity anchor is mounted (any
+ * element the host stamps with `data-vendo-activity-anchor`), the settled pill
+ * holds briefly and then shrinks and docks INTO it instead of fading in place,
+ * dispatching a
  * `vendo:activity-bump` event as it lands so the anchor can pulse. Without
  * an anchor (overlay/threads outside the page) the original hold-and-fade
  * behavior is unchanged. Reduced motion keeps the opacity-only exit.

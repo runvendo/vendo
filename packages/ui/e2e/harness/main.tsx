@@ -20,10 +20,8 @@ import {
   type VendoClient,
 } from "../../src/index.js";
 import {
-  ActivityPanel,
   ApprovalCard,
   ConnectCard,
-  ConnectedAccountsPanel,
   NoPolicyNotice,
   VendoOverlay,
   VendoPalette,
@@ -1109,10 +1107,7 @@ function TwoMoneyScenario() {
 function UnconfiguredPostureScenario() {
   return (
     <VendoProvider client={unconfiguredClient} components={components} theme={mapleTheme}>
-      <div style={{ display: "grid", gap: 18 }}>
-        <div style={{ height: 420, display: "flex" }}><VendoThread threadId="thr_1" /></div>
-        <ActivityPanel />
-      </div>
+      <div style={{ height: 420, display: "flex" }}><VendoThread threadId="thr_1" /></div>
     </VendoProvider>
   );
 }
@@ -2060,9 +2055,6 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/approval-descriptor": return { title: "Approval — model-instruction descriptor", content: <DescriptorHoleScenario />, ownProvider: true };
     case "/approval-two-money": return { title: "Approval — a fee beside the amount (C5)", content: <TwoMoneyScenario />, ownProvider: true };
     case "/unconfigured-posture": return { title: "Unconfigured posture — every consumer surface (C1)", content: <UnconfiguredPostureScenario />, ownProvider: true };
-    case "/accounts": return { title: "Connected accounts", theme: mapleTheme, content: <ConnectedAccountsPanel /> };
-    case "/activity": return { title: "Activity", content: <ActivityPanel /> };
-    case "/activity-dark": return { title: "Activity — dark", theme: darkTheme, content: <ActivityPanel /> };
     case "/notice": return { title: "Unconfigured policy", ownProvider: true, content: (<VendoProvider client={unconfiguredClient} components={components}><NoPolicyNotice /></VendoProvider>) };
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
@@ -2129,7 +2121,7 @@ function Harness() {
     );
   }
   return (
-    <main className={`harness-shell${globalThis.location.pathname === "/thread" || globalThis.location.pathname === "/activity-dark" ? " harness-dark" : ""}`} data-scenario={globalThis.location.pathname.slice(1)}>
+    <main className={`harness-shell${globalThis.location.pathname === "/thread" ? " harness-dark" : ""}`} data-scenario={globalThis.location.pathname.slice(1)}>
       <h1 className="harness-heading">{current.title}</h1>
       <div className="harness-surface">{content}</div>
     </main>

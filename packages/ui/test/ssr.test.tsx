@@ -5,7 +5,6 @@ import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import * as chromeEntry from "../src/chrome/index.js";
 import {
-  ActivityPanel,
   ApprovalCard,
   NoPolicyNotice,
   Remixable,
@@ -93,7 +92,6 @@ describe("every chrome surface server-renders without a DOM", () => {
     ["Remixable", <Remixable><SsrCard /></Remixable>],
     ["VendoPalette", <VendoPalette />],
     ["ApprovalCard", <ApprovalCard approval={approval} onDecide={() => undefined} />],
-    ["ActivityPanel", <ActivityPanel />],
     ["NoPolicyNotice", <NoPolicyNotice />],
     ["TreeView", <TreeView tree={tree} components={{}} onAction={noop} />],
     ["PayloadView", <PayloadView payload={tree} components={{}} onAction={noop} />],

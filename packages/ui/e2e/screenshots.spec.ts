@@ -8,7 +8,6 @@ const shots = [
   { scenario: "approval", file: "approval", ready: 'article[aria-label="Approval for Delete invoice"]' },
   { scenario: "thread-humanized", file: "thread-humanized", ready: 'article[aria-label="Approval for Transfer funds"]' },
   { scenario: "thread-citations", file: "thread-citations", ready: "[data-vendo-citations]" },
-  { scenario: "activity", file: "activity", ready: 'table[aria-describedby], table' },
   { scenario: "notice", file: "notice", ready: '[role="region"][aria-label="Vendo is running without a policy"]' },
   { scenario: "stage", file: "stage", ready: '[aria-label="Voice transcript"]' },
   { scenario: "tree", file: "tree", ready: '[data-dangling-node="not-yet-streamed"]' },
@@ -21,10 +20,6 @@ for (const shot of shots) {
   test(`captures ${shot.file}.png`, async ({ page }) => {
     // Quarantined 2026-08-03 (lane G triage); both fail identically on
     // rebuild/cutover — pre-existing, not redesign regressions.
-    test.fixme(
-      shot.scenario === "activity",
-      "the activity ledger is a <ul role=list>, not a <table> (ActivityLedger) — this readiness selector was never updated when the ledger was rewritten.",
-    );
     test.fixme(
       shot.scenario === "stage",
       "the voice stage no longer renders '[aria-label=\"Voice transcript\"]' inline (it moved behind the Transcript drawer); needs a voice-lane decision on the captured state.",

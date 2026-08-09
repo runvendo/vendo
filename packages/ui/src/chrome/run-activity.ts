@@ -214,9 +214,9 @@ export function publishThreadRun(key: symbol, snapshot: ThreadRunSnapshot): void
   // an approval is waiting, not finished (the badge already counts it).
   const settled = previous?.running === true && !next.running
     && next.status === "ready" && !next.waiting;
-  // A host may mount TWO thread surfaces on one conversation (VendoOverlay and
-  // an ActivityPanel): each hook publishes independently, so ONE turn settled twice and
-  // the user was told about it twice. The turn's identity is its conversation
+  // A host may mount TWO thread surfaces on one conversation (a VendoOverlay
+  // and an in-page thread): each hook publishes independently, so ONE turn
+  // settled twice and the user was told about it twice. Its identity is its
   // plus its last message, so a second surface reporting the same settle is the
   // same news — announced once (Round B's dual-surface finding).
   const identity = `${snapshot.threadId ?? ""}::${snapshot.messages.at(-1)?.id ?? ""}`;

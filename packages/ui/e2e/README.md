@@ -23,7 +23,6 @@ Anything else says so.
 | # | What it claims | Covered in a real browser? | Where |
 |---|---|---|---|
 | C1 | a conversation grows no policy banner of its own | **yes** (two-sided: absent on `/composer`, present on `/notice`) | `smoke.spec.ts` |
-| C2 | an activity row reads in the owner's words, not the guard's JSON | **no browser test** | jsdom only: `test/chrome/activity-semantics.test.ts`; plus the `postcheck-a/a2` screenshot (a one-shot record, not a gate) |
 | C5 | a two-money ask shows both amounts and no wrong money sentence | **no browser test** | jsdom only: `test/chrome/approval-money.test.tsx`, `nested-money.test.ts`; plus `postcheck-a/a3` |
 | H6 | the card and its queue row read from ONE ladder | **no browser test** | jsdom only: `test/chrome/card-shell.test.tsx` |
 | H9 | collapsing the workspace is final; the stage cannot re-open it | **yes** | `smoke.spec.ts` |
