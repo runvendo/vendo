@@ -150,7 +150,11 @@ function createPoller(client: VendoClient): Poller {
     loading: () => !loaded,
     refresh: read,
     report(slot, label) {
-      const key = `${slot} ${label}`;
+      // JSON, not a separator join: a space (or any other delimiter) is legal
+      // in both halves, so `${slot} ${label}` merges ("sales report", "Q3")
+      // with ("sales", "report Q3") and the second slot never reaches the
+      // registry — it is a destination the picker can never offer.
+      const key = JSON.stringify([slot, label]);
       if (reported.has(key)) return;
       reported.add(key);
       queued.push({ id: slot, label });
