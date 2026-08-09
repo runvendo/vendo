@@ -60,11 +60,11 @@ export const parts = [PayloadView, appTitle, toolName];
 `;
 
 // A single-file surface living in chrome/ itself: "./sibling.js" is a chrome
-// import and "../hooks/…" a root import (different from thread's shape).
-const TEMPLATE_ACTIVITIES = `import { describeActivity } from "./activity-semantics.js";
-import { ApprovalCard } from "./approval-card.js";
-import { useActivity } from "../hooks/use-activity.js";
-export function VendoActivities() {
+// import and "../hooks/…" a root import (different from thread's shape). No
+// shipped surface has this shape today; the rewrite path still does.
+const TEMPLATE_CHROME_ROOT = `import { ApprovalCard } from "./approval-card.js";
+import { useApprovals } from "../hooks/use-approvals.js";
+export function ChromeRootSurface() {
   return null;
 }
 `;
@@ -84,7 +84,7 @@ async function makeHost(options: { srcApp?: boolean } = {}): Promise<void> {
     JSON.stringify({ name: "@vendoai/ui", version: "0.9.9", main: "./dist/index.js" }),
   );
   await writeFile(join(uiDir, "dist", "index.js"), "export {};\n");
-  await mkdir(join(templatesDir, "activities"), { recursive: true });
+  await mkdir(join(templatesDir, "chrome-root"), { recursive: true });
   await writeFile(
     join(templatesDir, "templates.json"),
     JSON.stringify({
@@ -97,9 +97,9 @@ async function makeHost(options: { srcApp?: boolean } = {}): Promise<void> {
           sourceDir: "chrome/thread",
           files: ["composer.tsx", "index.tsx", "parts.tsx"],
         },
-        activities: {
-          description: "The placeable activity piece: approvals queue + recent-runs feed.",
-          component: "VendoActivities",
+        "chrome-root": {
+          description: "A single-file surface living in chrome/ itself.",
+          component: "ChromeRootSurface",
           sourceBase: "chrome",
           files: ["index.tsx"],
         },
@@ -109,7 +109,7 @@ async function makeHost(options: { srcApp?: boolean } = {}): Promise<void> {
   await writeFile(join(templatesDir, "thread", "index.tsx"), TEMPLATE_INDEX);
   await writeFile(join(templatesDir, "thread", "composer.tsx"), TEMPLATE_COMPOSER);
   await writeFile(join(templatesDir, "thread", "parts.tsx"), TEMPLATE_PARTS);
-  await writeFile(join(templatesDir, "activities", "index.tsx"), TEMPLATE_ACTIVITIES);
+  await writeFile(join(templatesDir, "chrome-root", "index.tsx"), TEMPLATE_CHROME_ROOT);
 }
 
 describe("runEject", () => {
@@ -188,13 +188,12 @@ describe("runEject", () => {
   it("rewrites a chrome-root single-file surface: siblings → chrome subpath, parent → root package", async () => {
     await makeHost();
     const { output, logs } = sink();
-    expect(await runEject({ targetDir: root, surface: "activities", output })).toBe(0);
-    const source = await readFileUtf8(join(root, "components", "vendo", "activities", "index.tsx"));
-    expect(source).toContain('import { describeActivity } from "@vendoai/ui/chrome";');
+    expect(await runEject({ targetDir: root, surface: "chrome-root", output })).toBe(0);
+    const source = await readFileUtf8(join(root, "components", "vendo", "chrome-root", "index.tsx"));
     expect(source).toContain('import { ApprovalCard } from "@vendoai/ui/chrome";');
-    expect(source).toContain('import { useActivity } from "@vendoai/ui";');
+    expect(source).toContain('import { useApprovals } from "@vendoai/ui";');
     // Swap instruction names the surface's component, not the thread's.
-    expect(logs.join("\n")).toContain("VendoActivities");
+    expect(logs.join("\n")).toContain("ChromeRootSurface");
   });
 
   it("refuses to overwrite an existing ejected dir without --force", async () => {
