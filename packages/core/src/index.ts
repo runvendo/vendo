@@ -85,7 +85,6 @@ export {
   type AppPlan,
   type PlanDisplay,
   type PlanGroup,
-  type PlanIsland,
   type PlanLeaf,
   type PlanQuery,
   type PlanServer,

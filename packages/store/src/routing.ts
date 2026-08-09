@@ -623,7 +623,7 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
         async put(record) {
           const { appId, subject } = splitStateId(record.id);
           const data = requireJson(record.data, "state data");
-          // Shared persistent write path with stateStore.put (helpers/rows).
+          // Shared persistent write path with the harness slot (helpers/rows).
           return stateRecord(await putStateRow(db, { appId, subject, data }));
         },
       };

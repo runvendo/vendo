@@ -86,7 +86,7 @@ export interface ClaudeCodeOptions extends ClaudeCodeTurnOptions {
    * The box's outbound traffic is filtered against this list at the provider's
    * DOMAIN layer, so a host whose agent legitimately needs a third party — their
    * own API on another origin, an allowed vendor — names it here. (What that
-   * filtering does and does not stop: `docs/verification/box-egress/README.md`.)
+   * filtering does and does not stop: see {@link boxEgress}.)
    * There is no approval flow on this list, unlike an app
    * document's `egress` (`egress-approval.ts`): that one is an ASK from generated
    * code, this one is the host developer's own source at boot, the same authority
@@ -188,8 +188,8 @@ const hostOf = (url: string | undefined): string | undefined => {
  * `egress-approval.ts`): the box's OWN skin rides unconditionally, and
  * everything else is filtered out at the provider's DOMAIN layer.
  *
- * Read `docs/verification/box-egress/README.md` before relying on that for
- * anything: the filtering is real against ordinary clients and is BYPASSABLE by
+ * Do not rely on that for anything: the filtering is real against ordinary
+ * clients and is BYPASSABLE by
  * a client that omits SNI (`openssl s_client -noservername` reaches arbitrary
  * IPs even under an empty list — measured). It is a provider-level gap this
  * repo cannot close. So this list raises the cost of exfiltration and stops
@@ -622,8 +622,7 @@ export function claudeCode(
          * which from the model's side is silence. So the loop asks, with the SAME
          * registered verb through the same guarded path.
          *
-         * ONE round, for the brain's own reason (the conductor's `FIX_ROUNDS`
-         * comment): being shown exactly what is wrong fixes it on the first try or
+         * ONE round: being shown exactly what is wrong fixes it on the first try or
          * not at all, and a second round is the person waiting longer for the same
          * answer. Whatever survives it is reported as it stands — the seam already
          * refuses to paint a lie, so an unfixed app costs a screen, never the truth.

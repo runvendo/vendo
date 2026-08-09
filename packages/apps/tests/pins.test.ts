@@ -8,9 +8,7 @@ import {
 import {
   detectPinDrift,
   inClientApprovalSchema,
-  pinApprovalSchema,
   pinForkSource,
-  pinShipRequestSchema,
 } from "../src/pins.js";
 
 const capturedAt = "2026-07-11T12:00:00.000Z";
@@ -24,19 +22,6 @@ describe("pin contract shapes", () => {
       exportable: true,
       capturedAt,
     })).toMatchObject({ slot: "invoice-card", exportable: true });
-    expect(pinShipRequestSchema.parse({
-      appId: "app_invoice",
-      slot: "invoice-card",
-      baseHash: "sha256:x",
-      diff: "--- a\n+++ b",
-    })).toMatchObject({ appId: "app_invoice", baseHash: "sha256:x" });
-    expect(pinApprovalSchema.parse({
-      slot: "invoice-card",
-      baseHash: "sha256:x",
-      approvedHash: "sha256:y",
-      approvedBy: "user_admin",
-      at: capturedAt,
-    })).toMatchObject({ approvedHash: "sha256:y" });
     expect(inClientApprovalSchema.parse({
       appId: "app_invoice",
       versionHash: "sha256:z",

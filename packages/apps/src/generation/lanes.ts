@@ -483,9 +483,9 @@ const runBoxArm = async (
   const where = "server (box)";
   const box = deps.box;
   if (box === undefined || !box.available()) {
-    // The plan should never have reached here — laneGates() states this host's
-    // missing lanes as fact before planning — so this is the backstop, and it
-    // still costs nothing: no machine is provisioned.
+    // The plan should never have reached here — the planner is told this host's
+    // missing lanes as fact — so this is the backstop, and it still costs
+    // nothing: no machine is provisioned.
     return {
       document,
       findings: [warn(where, "this app's plan asked for custom server code, but this host cannot provision a machine (no sandbox adapter, or machine-backed execution disabled) — the app stands without it.")],

@@ -56,10 +56,6 @@ export interface Skill {
   files?: Record<string, string>;
 }
 
-/** @deprecated renamed to {@link Skill} — packs are gone, and a skill was never
- *  a pack's to own. Kept for one release so an existing import keeps compiling. */
-export type PackSkill = Skill;
-
 /**
  * One thing wrong with an app.
  *

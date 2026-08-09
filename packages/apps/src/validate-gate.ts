@@ -29,7 +29,7 @@
 import { safeErrorMessage, type AppId, type Finding, type TurnTools, type WorkspaceFs } from "@vendoai/core";
 import { hotPathAppId } from "./render-seam.js";
 
-/** The verb's name on the one registry (`packages/agent/src/vendo-verbs.ts`). */
+/** The verb's name on the one registry (`@vendoai/vendo` `vendo-verbs.ts`). */
 export const VALIDATE_TOOL = "validate";
 
 /** One app document that did not pass, and why. */

@@ -1,7 +1,6 @@
 /** The public surface, pinned — what the spec promises a host can import. */
 import { describe, expect, it } from "vitest";
 import * as agents from "../src/index.js";
-import * as harnesses from "../src/harnesses.js";
 import { mcpSources } from "../src/tools.js";
 
 describe("the package surface", () => {
@@ -13,11 +12,6 @@ describe("the package surface", () => {
     expect(agents.e2b).toBeTypeOf("function");
     expect(agents.postgres).toBeTypeOf("function");
     expect(agents.provideCloudAdapters).toBeTypeOf("function");
-  });
-
-  it("exports the harness factories from ./harnesses", () => {
-    expect(harnesses.claudeCode).toBeTypeOf("function");
-    expect(harnesses.vendo).toBeTypeOf("function");
   });
 });
 

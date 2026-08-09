@@ -219,15 +219,10 @@ export interface AppDocument {
    */
   egressApproved?: string[];
   secrets?: string[];
+  /** Fork provenance ONLY (drift, ship-diff, rebase). "Show this app in that
+   *  slot" is a placement ROW, never a document field — see
+   *  `@vendoai/apps` `placements.ts`. */
   pins?: Pin[];
-  /**
-   * Remix final shape (2026-08-02) — "show this app in that slot". A placement
-   * is a host-authored slot name (a `VendoSlot` id) and feeds slot discovery
-   * ONLY; `pins` records fork provenance ONLY (drift, ship-diff, rebase). The
-   * pre-split rows that fabricated `Pin.base` hashes to land an app in a slot
-   * are classified into this field on read and normalized on the next write.
-   */
-  placements?: string[];
   forkedFrom?: AppId;
   /**
    * A terminal build failure. Present only on a record the runtime persisted
@@ -269,7 +264,6 @@ const appDocumentShapeSchema = z.object({
   egressApproved: z.array(z.string()).optional(),
   secrets: z.array(z.string()).optional(),
   pins: z.array(pinSchema).optional(),
-  placements: z.array(z.string()).optional(),
   forkedFrom: appIdSchema.optional(),
   buildFailed: appBuildFailureSchema.optional(),
   memory: appMemorySchema.optional(),
@@ -458,8 +452,8 @@ const storageError = (app: AppDocument): AppDocumentValidation | null => {
   return null;
 };
 
-/** The reference-shaped fields: the box the app runs on, its fork provenance,
- *  and its slot placements. */
+/** The reference-shaped fields: the box the app runs on and its fork
+ *  provenance. */
 const referenceFieldsError = (app: AppDocument): AppDocumentValidation | null => {
   if (app.machine !== undefined && !SERVER_REFERENCE_PATTERN.test(app.machine.snapshotRef)) {
     return fail("validation", `invalid machine snapshot reference "${app.machine.snapshotRef}"`);
@@ -470,11 +464,6 @@ const referenceFieldsError = (app: AppDocument): AppDocumentValidation | null =>
     }
     if (!pin.base.startsWith("sha256:")) {
       return fail("validation", `pin base "${pin.base}" must start with "sha256:"`);
-    }
-  }
-  for (const placement of app.placements ?? []) {
-    if (placement.length === 0) {
-      return fail("validation", "placement slot must be non-empty");
     }
   }
   return null;

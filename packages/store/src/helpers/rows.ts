@@ -207,8 +207,8 @@ export function stateRowFromRow(row: Record<string, unknown>): StateRow {
   };
 }
 
-/** The single persistent write path for vendo_state, shared by stateStore.put and
- *  the routed records("vendo_state").put so the two doors never drift. Writes
+/** The single persistent write path for vendo_state, shared by the routed
+ *  records("vendo_state").put and the harness slot so the doors never drift. Writes
  *  created_at once on insert and PRESERVES it on conflict (only data + updated_at
  *  change), so the seam's createdAt is stable across puts. Never writes the
  *  generated `id` column. */

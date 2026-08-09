@@ -384,7 +384,7 @@ const createValidateDoor = (
     // "validate after every edit — faster and surer than re-reading your own
     // work", so half a checker answering "ok" was the worst lie available here.
     //
-    // Composed exactly as `conductor.ts`'s `checkingFor` composes it, including
+    // Composed through the same `checkingFor` every other author uses, including
     // deriving the rubric with the same function the layer exposes it with, so the
     // rubric the reviewer reads and `layer.rubric` cannot diverge. Fail-open is
     // unchanged: silence, a refusal and a failed request all mean no findings.

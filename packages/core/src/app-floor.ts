@@ -12,7 +12,7 @@
  *
  *  - `compile` puts model wire through the PRODUCTION dialect. The seam used to
  *    call `compileWire(content)` with no options at all, so every files-first
- *    paint spoke a different dialect than `conductor.ts` — inline tool references
+ *    paint spoke a different dialect than the generation path — inline tool references
  *    did not expand (the failure recorded at `apps/generation/wire-options.ts`:
  *    "live 2026-07-23: one recompile that lacked these options failed EVERY app
  *    built on inline references") and `bindingErrors`, "the engine's unshippable

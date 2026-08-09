@@ -262,7 +262,7 @@ export async function viewForWrite(
     // `compile-failed` issue means it truly did not parse.
     //
     // Through the FLOOR, so this compile speaks the production dialect — the same
-    // one `conductor.ts`, `fill.ts` and `lanes.ts` speak. Bare, an inline tool
+    // one every other author speaks. Bare, an inline tool
     // reference does not expand (its binding is dropped and its query never
     // minted, and the tree still has children, so the seam paints an app with a
     // blank value) and `bindingErrors` is `[]` by construction.

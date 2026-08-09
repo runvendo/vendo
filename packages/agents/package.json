@@ -32,10 +32,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./harnesses": {
-      "types": "./dist/harnesses.d.ts",
-      "default": "./dist/harnesses.js"
     }
   },
   "files": [

@@ -2,9 +2,9 @@
  * The `building-apps` skill: the app-building pattern as a job description a
  * harness can hand to its own staff, rather than as a pipeline we run.
  *
- * The text is a re-expression of what today's generation prompts say
- * (`generation/prompts/brain.ts`, `worker.ts`) — the plan, the blinkered fill
- * groups, edit-like-a-file, never invent data, the honest cannot — restated for
+ * The text is a re-expression of what the generation prompts say — the plan, the
+ * blinkered fill groups, edit-like-a-file, never invent data, the honest
+ * cannot — restated for
  * a reader with hands and a workspace instead of a single scripted call.
  *
  * Four things it must carry and does:

@@ -25,7 +25,6 @@ const FULL_EXAMPLE = `Here is the plan.
   <Group tab="Payments" title="Payment history" waitsForServer>
     <Leaf component="DataTable" query="invoices" purpose="Every payment recorded against an invoice"/>
   </Group>
-  <Island name="RunwayDial" purpose="A cash dial no chart component can express"/>
   <Server kind="steps" schedule="fridays" why="Chasing overdue invoices has to happen when nobody has the app open."/>
   <Cannot>Your host has no way to send email, so reminders land in the app's own log instead.</Cannot>
   <Cannot>Nothing here can write an invoice off — that tool is read-only.</Cannot>
@@ -78,7 +77,6 @@ describe("compilePlan", () => {
           ],
         },
       ],
-      island: { name: "RunwayDial", purpose: "A cash dial no chart component can express" },
       server: {
         kind: "steps",
         schedule: "fridays",
@@ -167,7 +165,7 @@ describe("compilePlan", () => {
       FACTS,
     );
     expect(result.issues).toEqual([
-      'there is no component called "InvoiceGrid". The components you can use are: StatTile, BarChart, DataTable, PageHeader. Pick the closest fit, or declare an <Island> when none of them can express it.',
+      'there is no component called "InvoiceGrid". The components you can use are: StatTile, BarChart, DataTable, PageHeader. Pick the closest fit.',
     ]);
   });
 
@@ -447,41 +445,6 @@ describe("compilePlan", () => {
     expect(result.plan?.server).toBeUndefined();
   });
 
-  it("ignores an <Island> written with content instead of self-closing", () => {
-    const result = compilePlan(
-      `<Plan name="Island with content"><Group><Leaf component="StatTile" purpose="Total"/></Group>
-         <Island name="RunwayDial" purpose="A cash dial">oops</Island></Plan>`,
-      FACTS,
-    );
-    expect(result.issues).toContain(
-      "<Island> holds nothing here — the plan only names it; its content was ignored.",
-    );
-    expect(result.plan?.island).toStrictEqual({ name: "RunwayDial", purpose: "A cash dial" });
-  });
-
-  it("drops a second <Island> — a plan asks for one at most", () => {
-    const result = compilePlan(
-      `<Plan name="Two islands"><Group><Leaf component="StatTile" purpose="Total"/></Group>
-         <Island name="RunwayDial" purpose="A cash dial"/>
-         <Island name="BurnGauge" purpose="A burn gauge"/></Plan>`,
-      FACTS,
-    );
-    expect(result.issues).toEqual(["a plan asks for one island at most — the second <Island> was dropped."]);
-    expect(result.plan?.island?.name).toBe("RunwayDial");
-  });
-
-  it("drops an island missing a name or a purpose", () => {
-    const result = compilePlan(
-      `<Plan name="Bad island"><Group><Leaf component="StatTile" purpose="Total"/></Group>
-         <Island purpose="A cash dial no chart component can express"/></Plan>`,
-      FACTS,
-    );
-    expect(result.issues).toEqual([
-      'an <Island> needs a name and a purpose — <Island name="RunwayDial" purpose="..."/> — so it can be built and screened. It was dropped.',
-    ]);
-    expect(result.plan?.island).toBeUndefined();
-  });
-
   it("truncates a <Cannot> with no closing tag", () => {
     const result = compilePlan(
       `<Plan name="Unclosed cannot"><Group><Leaf component="StatTile" purpose="Total"/></Group>
@@ -544,7 +507,7 @@ describe("compilePlan", () => {
       FACTS,
     );
     expect(result.issues).toContain(
-      "<Foo> is not part of a plan, which holds <Query>, <Group> (of <Leaf> elements), <Server>, <Island> and <Cannot>. It was dropped.",
+      "<Foo> is not part of a plan, which holds <Query>, <Group> (of <Leaf> elements), <Server> and <Cannot>. It was dropped.",
     );
     expect(result.plan?.groups[0]?.leaves).toStrictEqual([{ component: "StatTile", purpose: "Total outstanding" }]);
   });

@@ -44,12 +44,6 @@ export interface PlanGroup {
   leaves: PlanLeaf[];
 }
 
-/** A custom component the plan asks for because no component can express it. */
-export interface PlanIsland {
-  name: string;
-  purpose: string;
-}
-
 /** Work that cannot happen in the browser: scheduled steps, an agentic run,
  *  or a backend the sandbox builds. `why` is the earned justification. */
 export interface PlanServer {
@@ -87,7 +81,6 @@ export interface AppPlan {
   /** Absent means inline — the default posture, and what every plan written
    *  before this field existed means. */
   display?: PlanDisplay;
-  island?: PlanIsland;
   server?: PlanServer;
   /** Honest refusals, verbatim user-facing. */
   cannot: string[];
