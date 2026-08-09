@@ -243,8 +243,40 @@ describe("call-time sampling params on the resolved rung", () => {
     });
     expect(await controller.doGenerate({ prompt: [], temperature: 0 })).toEqual({
       modelId: "gpt-5",
-      options: { prompt: [], temperature: 0 },
+      options: { prompt: [], temperature: 0, providerOptions: { openai: { store: false } } },
     });
+  });
+
+  it("sends store:false on every openai call, so a run never depends on OpenAI retaining items", async () => {
+    const controller = new DevModelController({
+      env: { OPENAI_API_KEY: "sk-o" },
+      importModule: optionsEcho("createOpenAI"),
+    });
+    const generated = await controller.doGenerate({ prompt: [] }) as { options: Record<string, unknown> };
+    expect(generated.options["providerOptions"]).toEqual({ openai: { store: false } });
+    const streamed = await controller.doStream({ prompt: [] }) as { options: Record<string, unknown> };
+    expect(streamed.options["providerOptions"]).toEqual({ openai: { store: false } });
+  });
+
+  it("lets a caller override the rung's call default rather than forcing it", async () => {
+    const controller = new DevModelController({
+      env: { OPENAI_API_KEY: "sk-o" },
+      importModule: optionsEcho("createOpenAI"),
+    });
+    const generated = await controller.doGenerate({
+      prompt: [],
+      providerOptions: { openai: { store: true } },
+    }) as { options: Record<string, unknown> };
+    expect(generated.options["providerOptions"]).toEqual({ openai: { store: true } });
+  });
+
+  it("adds no call defaults to a rung that has none — anthropic's wire is already stateless", async () => {
+    const controller = new DevModelController({
+      env: { ANTHROPIC_API_KEY: "sk-a" },
+      importModule: optionsEcho("createAnthropic"),
+    });
+    const generated = await controller.doGenerate({ prompt: [] }) as { options: Record<string, unknown> };
+    expect(generated.options["providerOptions"]).toBeUndefined();
   });
 
   it("leaves a sampling-era Claude resolution untouched", async () => {
