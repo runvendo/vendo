@@ -15,6 +15,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
+import { EmptyNote } from "../empty.js";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
@@ -82,7 +83,7 @@ export function DataTable(props: DataTableProps) {
     filterableBy,
     searchable = false,
     paginate,
-    emptyState = "No data",
+    emptyState = "Nothing to show yet",
     caption,
   } = props;
 
@@ -177,6 +178,13 @@ export function DataTable(props: DataTableProps) {
     columns.find((c) => c.key === key)?.label ?? humanizeEnum(key.split(".").pop() ?? key);
 
   const bodyRows = table.getRowModel().rows;
+
+  // The query came back with nothing, so the screen SAYS so and shows nothing
+  // else: a header row with one message under it still reads as a table waiting
+  // for data, and the search box and filter dropdowns above it have no rows to
+  // act on. A filter that matched nothing keeps the table, because there the way
+  // out is the control that emptied it.
+  if (rows.length === 0) return <EmptyNote>{emptyState}</EmptyNote>;
 
   return (
     <div data-kit="DataTable" style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}>

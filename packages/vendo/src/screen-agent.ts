@@ -68,6 +68,7 @@ import {
 } from "@vendoai/apps";
 import type { LanguageModel } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
+import type { ModelEffort } from "@vendoai/harnesses/vendo";
 
 /**
  * The whole budget for assembling one screen.
@@ -81,6 +82,27 @@ import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harn
  * for a BUILD, and `escalate` is the honest exit rather than a bigger number.
  */
 export const SCREEN_STEPS = 10;
+
+/**
+ * How hard the assembler may think (`vendo({ effort })`).
+ *
+ * `"low"`, for the same reason `SCREEN_STEPS` is 10: this loop is a SPECIALIST
+ * that must produce a document, not a resident reasoning about an open-ended
+ * ask. It is handed the briefing pack, a closed loadout and a job description —
+ * the work is writing the screen, and every token spent thinking about it is a
+ * token the person waits for and never sees.
+ *
+ * Unbounded is what the provider does when nobody says otherwise (extended
+ * thinking is on across the Claude 5 line), and it is not free. Measured live
+ * 2026-08-10 on `maple/spend-overview`, sonnet-5, one unbounded run: a single
+ * model call spent 240s and 13.7K output tokens to emit a 623-character
+ * `validate` argument — 83% of a 292s run inside reasoning nobody reads. The
+ * five-case genbench sweep behind this value is in the shipping PR: `low` was
+ * the fastest level that lost no floor verdict and no rubric line.
+ *
+ * A deployment that disagrees passes `ScreenAssemblerDeps.effort`.
+ */
+export const SCREEN_EFFORT: ModelEffort = "medium";
 
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
@@ -118,6 +140,9 @@ const ASSEMBLY_TOOLS: readonly string[] = [
  */
 export interface ScreenSurface {
   readonly models: SeatModels<LanguageModel>;
+  /** How hard the seat may think, when the deployment overrides
+   *  {@link SCREEN_EFFORT}. A fact about the brain, so it rides beside the seats. */
+  readonly effort?: ModelEffort;
   readonly tools: TurnTools;
   /** Wrapped by the render seam before it gets here, so `commit()` paints. */
   readonly workspace: WorkspaceFs;
@@ -482,6 +507,8 @@ export async function assembleScreen(
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
+    // Bounded thinking, on purpose — see SCREEN_EFFORT.
+    effort: surface.effort ?? SCREEN_EFFORT,
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
     // in as its first section, so letting the turn's copy through would say it
     // twice.
@@ -574,6 +601,10 @@ export async function assembleScreen(
 export interface ScreenAssemblerDeps {
   /** The seats, as `Turn.models` carries them. */
   models: SeatModels<LanguageModel>;
+  /** This deployment's thinking budget for assembly; unset means
+   *  {@link SCREEN_EFFORT}. The way out of the default, for a host whose screens
+   *  are worth the extra minutes. */
+  effort?: ModelEffort;
   /** The GUARD-BOUND registry (`VendoGuard.bind(hostTools)`) — the same choke
    *  point every harness's calls pass through. */
   tools: ToolRegistry;
@@ -643,6 +674,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
       const result = await assembleScreen(
         {
           models: deps.models,
+          ...(deps.effort === undefined ? {} : { effort: deps.effort }),
           tools: registryTools(deps.tools, ctx),
           workspace,
           // The front door owns cancellation: `vendo_make` resolves or it does

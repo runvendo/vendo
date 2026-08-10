@@ -1,4 +1,5 @@
 /** CardList — one branded card per record, semantically formatted (W2 §The Kit). */
+import { EmptyNote } from "../empty.js";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { EnumBadge } from "../values.js";
@@ -28,26 +29,10 @@ function resolve(row: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((acc, k) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[k] : undefined), row);
 }
 
-export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items" }: CardListProps) {
+export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "Nothing to show yet" }: CardListProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const items = Array.isArray(rawItems) ? rawItems : [];
-  if (items.length === 0) {
-    return (
-      <div
-        data-kit="CardList"
-        style={{
-          ...font,
-          color: t.muted,
-          textAlign: "center",
-          border: `1px dashed ${t.border}`,
-          borderRadius: t.radiusMedium,
-          padding: "calc(var(--vendo-font-size, 15px) * 1.6)",
-        }}
-      >
-        {emptyState}
-      </div>
-    );
-  }
+  if (items.length === 0) return <EmptyNote>{emptyState}</EmptyNote>;
   const gridTemplate = columns
     ? `repeat(${Math.max(1, Math.floor(columns))}, minmax(0, 1fr))`
     : "repeat(auto-fill, minmax(220px, 1fr))";

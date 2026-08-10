@@ -1,5 +1,6 @@
 /** Layout tier — themed containers (W2 §The Kit). */
 import type { CSSProperties, PropsWithChildren } from "react";
+import { ContainerBody } from "./nesting.js";
 import { font, t } from "./tokens.js";
 
 const gapVar = (gap: number | undefined): string =>
@@ -116,7 +117,7 @@ export function Surface({ title, children }: PropsWithChildren<SurfaceProps>) {
           {title}
         </div>
       ) : null}
-      {children}
+      <ContainerBody>{children}</ContainerBody>
     </section>
   );
 }
@@ -162,7 +163,7 @@ export function Card({ title, description, tone = "default", children }: PropsWi
       {description ? (
         <div style={{ color: t.muted, fontSize: "0.9em", lineHeight: 1.45 }}>{description}</div>
       ) : null}
-      {children}
+      <ContainerBody>{children}</ContainerBody>
     </article>
   );
 }

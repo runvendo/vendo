@@ -24,7 +24,17 @@ const tableColumn = z.object({
   align: align.optional(),
 });
 const cardField = z.object({ key: z.string(), label: z.string().optional(), format: valueFormat.optional() });
-const action = z.string().describe("names a host tool");
+/** An `on*` prop: a host tool's name, or that name WITH the arguments the tool
+ *  requires. The bare name calls the tool with nothing — no row, no field value
+ *  — so a tool that cannot run without an argument needs the second form, which
+ *  is the one the renderer has always dispatched (`{ action, payload }`,
+ *  `@vendoai/ui` tree/renderer.tsx). The wire could express it and the floor's
+ *  type check refused it, because this schema said `string`: every control bound
+ *  to a mutating tool was structurally dead. */
+const action = z.union([
+  z.string(),
+  z.object({ action: z.string(), payload: z.record(z.string(), z.unknown()).optional() }),
+]).describe("names a host tool, with the arguments it requires");
 
 // ---- specs ---------------------------------------------------------------
 export const KIT_SPECS: KitComponentSpec[] = [

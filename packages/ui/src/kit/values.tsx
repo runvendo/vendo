@@ -13,6 +13,7 @@ import {
   type DateTimeOptions,
   type MoneyOptions,
 } from "./format.js";
+import { useInsideContainer } from "./nesting.js";
 import { font, t } from "./tokens.js";
 
 const PLACEHOLDER = "—";
@@ -176,15 +177,28 @@ export interface TextProps {
   variant?: "body" | "heading" | "caption" | "label";
 }
 
-/** Themed text. Heading renders an <h3>; others render a <span>. */
+/**
+ * Themed text. Heading renders an <h3>; others render a <span>.
+ *
+ * The outermost heading is the screen's HEADLINE, and it is sized like one —
+ * bigger than every value on the page, including a Stat's figure (1.65em), so
+ * one thing leads without the model having to remember to say so. Inside a
+ * Card/Surface the same heading is a section title and stays near body scale.
+ */
 export function Text({ text, variant = "body" }: TextProps) {
+  const headline = !useInsideContainer();
   const style: CSSProperties = {
     color: variant === "caption" ? t.muted : t.text,
     fontFamily: variant === "heading" ? t.headingFamily : t.fontFamily,
-    fontSize: variant === "caption" ? "var(--vendo-font-size-caption, 12.5px)" : t.fontSize,
-    fontWeight: variant === "heading" ? 650 : variant === "label" ? 600 : 400,
-    letterSpacing: "-0.011em",
-    lineHeight: variant === "heading" ? 1.3 : 1.5,
+    fontSize:
+      variant === "caption"
+        ? "var(--vendo-font-size-caption, 12.5px)"
+        : variant === "heading"
+          ? `calc(var(--vendo-font-size, 15px) * ${headline ? 1.9 : 1.08})`
+          : t.fontSize,
+    fontWeight: variant === "heading" ? 700 : variant === "label" ? 600 : 400,
+    letterSpacing: variant === "heading" ? "-0.025em" : "-0.011em",
+    lineHeight: variant === "heading" ? 1.15 : 1.5,
     margin: 0,
   };
   if (variant === "heading") {
