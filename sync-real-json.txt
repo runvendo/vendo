@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "exitCode": 0,
+  "report": {
+    "tools": {
+      "added": [
+        "host_listStatements"
+      ],
+      "removed": [],
+      "changed": [
+        "host_listAccounts",
+        "host_transferMoney"
+      ]
+    },
+    "breaking": [
+      {
+        "tool": "host_listAccounts",
+        "change": "input-narrowed"
+      },
+      {
+        "tool": "host_transferMoney",
+        "change"

@@ -1,0 +1,4 @@
+{"version":3,"term":{"cols":110,"rows":40},"timestamp":1786386763,"command":"/bin/bash -c 'cd /tmp/wt-walk2/examples/demo-bank; ./node_modules/.bin/vendo sync --json | head -c 400; echo'","title":"vendo sync --json — one object, nothing else","env":{"SHELL":"/bin/zsh"}}
+[2.272, "o", "{\r\n  \"ok\": true,\r\n  \"exitCode\": 0,\r\n  \"report\": {\r\n    \"tools\": {\r\n      \"added\": [\r\n        \"host_listStatements\"\r\n      ],\r\n      \"removed\": [],\r\n      \"changed\": [\r\n        \"host_listAccounts\",\r\n        \"host_transferMoney\"\r\n      ]\r\n    },\r\n    \"breaking\": [\r\n      {\r\n        \"tool\": \"host_listAccounts\",\r\n        \"change\": \"input-narrowed\"\r\n      },\r\n      {\r\n        \"tool\": \"host_transferMoney\",\r\n        \"change\""]
+[0.323, "o", "\r\n"]
+[0.000, "x", "0"]

@@ -1,0 +1,235 @@
+
+                ▄▄█████▄
+   ████   ██████████████▄
+   ████▄▄▄██▀▀▀▀█████████
+       ███     ▄████████                                     ██
+ ▄▄▄▄  ▀▀▀ ▄▄▄█████████     ██    ██ ▄██████▄ ██▄████▄ ▄████▄██ ▄██████▄
+ ████      ███████████      ▀█▄  ▄█▀ ██▄▄▄▄██ ██    ██ ██    ██ ██    ██
+       ███    ▀████████▄     ██  ██  ██▀▀▀▀▀▀ ██    ██ ██    ██ ██    ██
+       ███  ▄▄▄█████████▄     ▀██▀    ▀████▀  ██    ██ ▀██████▀ ▀██████▀
+           ██████████████
+           ▀▀▀▀████████▀
+                 ▀▀▀▀
+
+ Customize your product with an embedded agent — docs.vendo.run
+
+┌  vendo sync
+│
+◆  Catalog
+│  tools: +1 -0 ~1 · tool schemas: inputs 19/23 · outputs 19/23 — blind: host_auth_create, host_auth_get,
+│  host_demo_reset_create, host_voice_create · pins: 0 captured, 2 drifted · catalog.json: 3 discovered, 3
+│  registered
+│  components: 0 captured, 3 updated
+│  drifted: NetWorthView, QuickActionsView — remixes of these stay on the old capture until each owner updates
+│  (POST /apps/:id/reseed or the vendo_apps_reseed agent tool). Updating replaces their changes with the new
+│  component.
+│
+◇  Theme
+│  1 slot re-read from your app (border) → .vendo/theme.json
+│
+◇  Let a coding agent read this codebase to draft tool descriptions, review risk, write the product brief, and
+│  fill unresolved theme slots? Source goes to the chosen provider under your account.
+│  ● your Claude Code login
+│
+◆  Judgment
+│  4 tools judged · hardened fields (8)
+│  Extraction root was /private/tmp/wt-walk2/examples/demo-bank (not the flowlet path). Focused judgment on
+│  the four catalog tools NOT already pinned by human overrides: getBudgets, getCashflowInsights,
+│  getRecurringInsights, listNotifications. All four routes are one-liners that call a helper and wrap the
+│  result in ok() = NextResponse.json({ data }). insights.ts (budgets/cashflow/recurring) only reads
+│  getStore() and does arithmetic/dedup — no store mutation — so all stay read; added envelope-aware semantics
+│  from types.ts (Category, Notification.kind, Recurring.cadence enums; money-in-cents fields). Confirmed the
+│  freeze/limit/reveal card controls (card-controls.tsx) are pure client-side 'Demo only' toasts with no
+│  server call, so there is no hidden mutation surface there. SUSPICIOUS: host_listStatements is a phantom —
+│  openapi.json declares GET /api/statements (operationId listStatements) but there is NO
+│  src/app/api/statements/route.ts. The only statements code is StatementsList (a client component that
+│  renders last-6-months and toasts 'Statements aren\'t generated in the demo'). I could not read a handler
+│  for it, so it remains ungraded — a live call would 404. Flagging for a human rather than inventing
+│  evidence.
+│  ⚠ missed surface (not extracted yet): openapi.json declares GET /api/statements (operationId
+│  listStatements) but there is no src/app/api/statements/route.ts — the tool host_listStatements binds to a
+│  spec entry with no implementation and cannot be graded from source (would 404 at runtime).
+│  impact unknown — dev server not reachable at http://localhost:3000/api/vendo
+│  baselines stay local — no Vendo Cloud key in this environment; Cloud's Remix reviews screen needs a keyed
+│  sync to diff forks
+│  components stay local — no Vendo Cloud key in this environment; the console needs a keyed sync to render
+│  your components instead of placeholders
+│
+└  Done in 313.0s — +1 tool · ~1 changed
+   Star us: vendo.run/star · docs.vendo.run
+(auto-social-media) (base) %n@%m %1~ %#
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

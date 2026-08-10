@@ -1,0 +1,113 @@
+{
+  "ok": true,
+  "exitCode": 0,
+  "report": {
+    "tools": {
+      "added": [
+        "host_listStatements"
+      ],
+      "removed": [],
+      "changed": [
+        "host_listAccounts",
+        "host_transferMoney"
+      ]
+    },
+    "breaking": [
+      {
+        "tool": "host_listAccounts",
+        "change": "input-narrowed"
+      },
+      {
+        "tool": "host_transferMoney",
+        "change": "input-narrowed"
+      }
+    ],
+    "toolSchemas": {
+      "total": 23,
+      "inputs": {
+        "known": 19,
+        "unknown": [
+          "host_auth_create",
+          "host_auth_get",
+          "host_demo_reset_create",
+          "host_voice_create"
+        ]
+      },
+      "outputs": {
+        "known": 19,
+        "unknown": [
+          "host_auth_create",
+          "host_auth_get",
+          "host_demo_reset_create",
+          "host_voice_create"
+        ]
+      }
+    },
+    "pins": {
+      "captured": [],
+      "drifted": [
+        "NetWorthView",
+        "QuickActionsView"
+      ]
+    },
+    "remixableErrors": [],
+    "catalog": {
+      "discovered": 3,
+      "registered": 3
+    },
+    "components": {
+      "captured": [],
+      "drifted": [
+        "MapleNetWorthCard",
+        "MapleSparkline",
+        "MapleSpendingDonut"
+      ]
+    },
+    "warnings": []
+  },
+  "impact": [
+    {
+      "tool": "host_listAccounts",
+      "apps": [],
+      "automations": [
+        {
+          "id": "app_seed_lowbalance500_maple-dana",
+          "title": "Balance below $500 alert"
+        },
+        {
+          "id": "app_seed_lowbalance500_maple-sam",
+          "title": "Balance below $500 alert"
+        },
+        {
+          "id": "app_seed_lowbalance500_maple-mia",
+          "title": "Balance below $500 alert"
+        },
+        {
+          "id": "app_seed_lowbalance500_vendo-demo",
+          "title": "Balance below $500 alert"
+        }
+      ],
+      "grants": 0
+    },
+    {
+      "tool": "host_transferMoney",
+      "apps": [],
+      "automations": [],
+      "grants": 0
+    }
+  ],
+  "notes": [
+    "theme: 1 slot re-read from your app (border) → .vendo/theme.json",
+    "judgment: skipped — this run cannot ask (pass `--ai` to judge non-interactively, `--no-ai` to say so explicitly)",
+    "baselines stay local — no Vendo Cloud key in this environment; Cloud's Remix reviews screen needs a keyed sync to diff forks",
+    "components stay local — no Vendo Cloud key in this environment; the console needs a keyed sync to render your components instead of placeholders"
+  ],
+  "theme": {
+    "updated": [
+      "border"
+    ],
+    "pinned": []
+  },
+  "baselines": null,
+  "components": null
+}

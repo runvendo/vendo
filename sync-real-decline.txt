@@ -1,0 +1,41 @@
+                ▄▄█████▄                                                
+   ████   ██████████████▄                                               
+   ████▄▄▄██▀▀▀▀█████████                                               
+       ███     ▄████████                                     ██         
+ ▄▄▄▄  ▀▀▀ ▄▄▄█████████     ██    ██ ▄██████▄ ██▄████▄ ▄████▄██ ▄██████▄
+ ████      ███████████      ▀█▄  ▄█▀ ██▄▄▄▄██ ██    ██ ██    ██ ██    ██
+       ███    ▀████████▄     ██  ██  ██▀▀▀▀▀▀ ██    ██ ██    ██ ██    ██
+       ███  ▄▄▄█████████▄     ▀██▀    ▀████▀  ██    ██ ▀██████▀ ▀██████▀
+           ██████████████                                               
+           ▀▀▀▀████████▀                                                
+                 ▀▀▀▀                                                   
+ Customize your product with an embedded agent — docs.vendo.run
+┌  vendo sync
+│
+⠙  Re-reading your product…⠹  Re-reading your product…⠸  Re-reading your product…⠼  Re-reading your product…⠴  Re-reading your product…◆  Catalog
+│  tools: +1 -0 ~1 · tool schemas: inputs 19/23 · outputs 19/23 — blind: host_auth_create, host_auth_get,
+│  host_demo_reset_create, host_voice_create · pins: 0 captured, 2 drifted · catalog.json: 3 discovered, 3
+│  registered
+│  components: 0 captured, 3 updated
+│  drifted: NetWorthView, QuickActionsView — remixes of these stay on the old capture until each owner updates
+│  (POST /apps/:id/reseed or the vendo_apps_reseed agent tool). Updating replaces their changes with the new
+│  component.
+│
+◇  Theme
+│  1 slot re-read from your app (border) → .vendo/theme.json
+│
+◇  Let a coding agent read this codebase to draft tool descriptions, review risk, write the product brief, and
+│  fill unresolved theme slots? Source goes to the chosen provider under your account.
+│  ● your Claude Code login (--engine claude)
+│  ○ your ChatGPT login (--engine codex)
+│  ○ Skip — keep extractor defaults
+│  ● Skip — keep extractor defaults
+│  Skipped — extractor defaults stand; re-run vendo init any time to add the AI polish.
+│  impact unknown — dev server not reachable at http://localhost:3000/api/vendo
+│  baselines stay local — no Vendo Cloud key in this environment; Cloud's Remix reviews screen needs a keyed
+│  sync to diff forks
+│  components stay local — no Vendo Cloud key in this environment; the console needs a keyed sync to render
+│  your components instead of placeholders
+│
+└  Done in 6.8s — +1 tool · ~1 changed
+   Star us: vendo.run/star · docs.vendo.run
