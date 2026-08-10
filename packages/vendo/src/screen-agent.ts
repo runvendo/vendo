@@ -66,7 +66,7 @@ import {
   wrapWorkspaceForRender,
   type RenderSeamOptions,
 } from "@vendoai/apps";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, UIMessage } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
 
 /**
@@ -303,6 +303,10 @@ interface RunRecord {
    *  exactly as the hand's own gate does. */
   painted: boolean;
   title?: string;
+  /** The exact bytes of the LAST landed save — the model's own last output, kept
+   *  so the repair round can be handed the save it made rather than a file quoted
+   *  back at it. */
+  document?: string;
   escalated?: string;
   /** The last non-empty `decisions` a save carried — this run's whole memory
    *  contribution, and what replaces the app's stored block. */
@@ -421,6 +425,7 @@ export async function assembleScreen(
       if (!record.assembled) fuse(SCREEN_POLISH_MS);
       record.assembled = true;
       record.title = nameOf(content) ?? record.title;
+      record.document = content;
       // The last save that had something to say wins the run. An omitted or blank
       // `decisions` on a later save is "nothing to add", not "forget the earlier
       // one" — a save-as-you-go loop would otherwise erase its own memory on the
@@ -598,18 +603,40 @@ export async function assembleScreen(
       }))
       : undefined;
     if (instruction !== undefined && !signal.aborted) {
-      // The document rides along: a drive starts from the messages it is given, so
-      // the repair round has none of the first one's context — and a repair with no
-      // document in front of it is a rewrite from scratch.
-      const saved = await turn.workspace.readFile(appPath).catch(() => undefined);
-      await drive([...turn.messages, {
+      /**
+       * The document rides along as the model's OWN last turn, not as a paste in
+       * ours (aider's reflection loop, `Coder.run_one`: a check failure is appended
+       * to the same conversation so the model edits its own last output). A drive
+       * starts from the messages it is given, so the repair round has none of the
+       * first one's context — and a repair with no document in front of it is a
+       * rewrite from scratch, which is the thing that spends a second full
+       * generation and loses the lines nothing was wrong with.
+       *
+       * `readFile` only where the run's own record has nothing: an unwrapped or
+       * re-entered workspace is still readable, and a repair with no document at
+       * all is the last resort.
+       */
+      const saved = record.document ?? await turn.workspace.readFile(appPath).catch(() => undefined);
+      const savedTurn: UIMessage[] = saved === undefined ? [] : [{
+        id: `saved_${input.appId}`,
+        role: "assistant",
+        parts: [{
+          type: `tool-${SAVE_APP_TOOL}`,
+          toolCallId: `save_${input.appId}`,
+          state: "output-available",
+          input: { content: saved },
+          output: { saved: true, note: "Run validate on it now." },
+        }],
+      }];
+      await drive([...turn.messages, ...savedTurn, {
         id: `repair_${input.appId}`,
         role: "user",
         parts: [{
           type: "text",
           text: saved === undefined
             ? instruction
-            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
+            : `${instruction}\n\nThis is the document you saved, in the save above. Fix only what is `
+              + "listed; leave every other line of the document you just saved unchanged.",
         }],
       }]);
     }
