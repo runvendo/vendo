@@ -7,6 +7,7 @@ import {
   type StoreOps,
   type VendoRecord,
 } from "@vendoai/core";
+import { appDataFiles, appDataRows } from "./app-data-rows.js";
 import type { Db, Query } from "./db.js";
 import { eraseStore } from "./erase.js";
 import { storeFiles, storeFilesForDb } from "./files-store.js";
@@ -91,7 +92,7 @@ const decoder = new TextDecoder();
 
 /**
  * 02-store — the LOCAL backend of the StoreOps named-operation contract
- * (core/store.ts): the 27 ops served straight off this store's own Postgres,
+ * (core/store.ts): the 35 ops served straight off this store's own Postgres,
  * through the EXISTING helpers — routing doors, thread rows, workspace rows, the
  * erase cascade. Logic unchanged; what this layer adds is the atomic scope:
  * every multi-statement verb runs inside ONE
@@ -238,6 +239,42 @@ export function createStoreOps(
       },
       async list(namespace, prefix) {
         return await store.blobs(namespace).list(prefix);
+      },
+    },
+
+    // -----------------------------------------------------------------------
+    // appData — everything generated apps invent. The composer
+    // (app-data-rows.ts) owns the naming, the owner stamp and the refusal of a
+    // caller-supplied one; this block only decides the transaction scope.
+    // -----------------------------------------------------------------------
+    appData: {
+      async put(target, record) {
+        return await db.transaction((q) => appDataRows(txDb(q), target).put(record));
+      },
+      async get(target, id) {
+        return await appDataRows(db, target).get(id);
+      },
+      async list(target, query) {
+        return await appDataRows(db, target).list(query);
+      },
+      /** The ownership read and the delete share ONE transaction (the rows door
+       *  gets the tx handle), so a row cannot change hands between them. */
+      async delete(target, id) {
+        await db.transaction((q) => appDataRows(txDb(q), target).delete(id));
+      },
+      /** The file twins are single-statement blob verbs, exactly like the blobs
+       *  family above, so none of them opens a transaction. */
+      async putFile(target, key, bytes, meta) {
+        await appDataFiles(store, target).put(key, bytes, meta);
+      },
+      async getFile(target, key) {
+        return await appDataFiles(store, target).get(key);
+      },
+      async listFiles(target, prefix) {
+        return await appDataFiles(store, target).list(prefix);
+      },
+      async deleteFile(target, key) {
+        await appDataFiles(store, target).delete(key);
       },
     },
 
@@ -600,7 +637,7 @@ export function createStoreOps(
     },
 
     async status() {
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 27 };
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 35 };
     },
   };
 }

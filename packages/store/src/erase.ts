@@ -181,6 +181,18 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
       await del(report, "vendo_audit", "subject = $1", [subject]);
       // Generic and door-owned rows carry the subject only as a ref (§2/§3).
       await del(report, "vendo_records", "refs @> $1::jsonb", [subjectRef]);
+      // An appData file twin carries no refs: its owner is the leading key leg
+      // (`<owner>/<key>`) inside the app's own namespace. For the subject's own
+      // apps the cascade above already took them with the namespace, but a
+      // PROMOTED org app belongs to the ORG (§9.7 — `subject = $1` never
+      // reaches it), so without this selector a departing member's files inside
+      // an org app would outlive them.
+      await del(
+        report,
+        "vendo_blobs",
+        "namespace LIKE 'app:%' AND key LIKE $1 ESCAPE '\\'",
+        [`${escapeLike(subject)}/%`],
+      );
       await del(report, "vendo_mcp_clients", "refs @> $1::jsonb", [subjectRef]);
       await del(report, "vendo_mcp_grants", "refs @> $1::jsonb", [subjectRef]);
       // Knowledge corpus rows the subject axis reaches carry the subject only as
