@@ -67,6 +67,15 @@ export {
   ScriptedTransport,
   type DirectorCue,
   type DirectorScript,
+  // chrome/dev-mode.ts + chrome/workbench-store.ts — the dev-only workbench
+  // rails: the check that decides whether such a surface renders at all, and
+  // the `data-vendo-debug` feed a host's pane reads.
+  developmentMode,
+  publishWorkbenchPart,
+  useWorkbenchFeed,
+  type WorkbenchEvent,
+  type WorkbenchPart,
+  type WorkbenchTurn,
   // pin-events.ts — the bus a slot re-reads on, for a host that pins from its
   // own control instead of a Vendo surface.
   announcePin,
