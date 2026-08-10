@@ -1,5 +1,26 @@
 # @vendoai/vendo
 
+## 0.12.0
+
+### Minor Changes
+
+- abe327f: `vendo init` and `vendo sync` redesigned — branded animated banner, five-question guided flow, labelled result blocks (Wired/Catalog/Judgment/Your brand/Impact), spinners on slow phases, timed footer; init scaffolds the MCP door end-to-end (`--use-case mcp`) and doctor gains `E-MCP-009` + `E-WIRE-011`; piped/CI/`--json`/`--agent` output stays byte-identical.
+
+### Patch Changes
+
+- Updated dependencies [0d67885]
+  - @vendoai/apps@0.12.0
+  - @vendoai/store@0.12.0
+  - @vendoai/actions@0.12.0
+  - @vendoai/agents@0.12.0
+  - @vendoai/automations@0.12.0
+  - @vendoai/mcp@0.12.0
+  - @vendoai/ui@0.12.0
+  - @vendoai/core@0.12.0
+  - @vendoai/guard@0.12.0
+  - @vendoai/harnesses@0.12.0
+  - @vendoai/knowledge@0.12.0
+
 ## 0.11.0
 
 ### Minor Changes
