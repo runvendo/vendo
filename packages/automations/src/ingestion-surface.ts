@@ -14,7 +14,6 @@ import { allRecords, appRef, id, message, parseAppRow } from "./rows.js";
 import { triggerKey } from "./sponsorship.js";
 import { durationMs, validateTrigger } from "./steps.js";
 import {
-  APPS,
   DELIVERIES,
   SCHEDULE,
   WEBHOOK,
@@ -255,10 +254,10 @@ const createWebhookRefusals = (
 const createWebhookDoor = (
   deps: Pick<
     IngestionSurfaceDeps,
-    "config" | "now" | "iso" | "firesLocally" | "armedTriggers" | "armedFor" | "startRun"
+    "config" | "now" | "iso" | "firesLocally" | "appsFiringOn" | "armedTriggers" | "armedFor" | "startRun"
   > & WebhookRefusals,
 ): Pick<AutomationsEngine, "webhook"> => {
-  const { config, now, iso, firesLocally, armedTriggers, armedFor, startRun } = deps;
+  const { config, now, iso, firesLocally, appsFiringOn, armedTriggers, armedFor, startRun } = deps;
   const { envelope, rejectWebhook } = deps;
   const inFlightDeliveries = new Set<string>();
   const webhook: AutomationsEngine["webhook"] = async (request) => {
@@ -296,7 +295,8 @@ const createWebhookDoor = (
       .filter((entry) => entry.startsWith("v1,"))
       .map((entry) => entry.slice(3));
     const signed = signedWebhookBytes(headerResult.data.id, headerResult.data.timestamp, rawBytes);
-    const appRecords = await allRecords(config.store.records(APPS));
+    // Indexed per-kind ref, same as the tick — never a scan of every app row.
+    const appRecords = await appsFiringOn("external");
     const rows = appRecords.map(parseAppRow);
     const armed = await armedFor(rows);
     // Verified per (app, TRIGGER): each external trigger holds its own secret, so

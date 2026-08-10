@@ -236,7 +236,9 @@ const createAgenticRunner = (
       await terminal(run, ctx, report.status, report.summary);
     } catch (error) {
       if (await finishStoppedIfNeeded(run)) return;
-      await terminal(run, ctx, "error", message(error), { code: "not-implemented", message: message(error) });
+      // "error", not "not-implemented": that code means "no runner configured"
+      // (above); a runner that crashed is an outage, not a missing feature.
+      await terminal(run, ctx, "error", message(error), { code: "error", message: message(error) });
     }
   };
 
