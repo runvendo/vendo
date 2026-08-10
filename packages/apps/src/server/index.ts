@@ -16,6 +16,7 @@ export {
   type AppsConfig,
   type AppsRuntime,
   type AuthoredAppResult,
+  type AutomationAuthorResult,
   type BoxRequest,
   type BoxResponse,
   type EditFailure,

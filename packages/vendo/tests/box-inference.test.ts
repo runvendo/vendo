@@ -18,7 +18,7 @@ import { createVendo } from "../src/server.js";
 // console's Anthropic-compatible model gateway. Before the Cloud rung landed,
 // a zero-key Cloud host provisioned billed machines whose in-box agent had no
 // model (the box harness refuses: "the box has no inference endpoint" —
-// Wave 8's agent-sdk.mjs maps VENDO_INFERENCE_URL/KEY onto
+// The box's task door maps VENDO_INFERENCE_URL/KEY onto
 // ANTHROPIC_BASE_URL/API_KEY for the Claude Agent SDK).
 
 const cleanups: Array<() => Promise<void>> = [];

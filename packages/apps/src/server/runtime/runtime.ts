@@ -1,4 +1,5 @@
 import { createAccessSurface } from "../doors/access-surface.js";
+import { createAutomationDoor } from "../automation/lane.js";
 import { createAppsSurface } from "../doors/apps-surface.js";
 import { createBuildSurface } from "../doors/build-surface.js";
 import { createInClientSurface } from "../doors/inclient-surface.js";
@@ -17,6 +18,7 @@ export type {
   AppsConfig,
   AppsRuntime,
   AuthoredAppResult,
+  AutomationAuthorResult,
   BoxRequest,
   BoxResponse,
   EditFailure,
@@ -56,6 +58,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     ...createPlacementSurface(ctx),
     ...createServedDoors(ctx),
     access: createAccessSurface(ctx),
+    automation: createAutomationDoor(ctx),
     slots: ctx.slots,
     inClient: createInClientSurface(ctx),
     review: createReviewSurface(ctx),

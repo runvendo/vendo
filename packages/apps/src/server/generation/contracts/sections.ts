@@ -56,8 +56,10 @@ export const hostThemeSection = (deps: Pick<GenerationDependencies, "theme">): G
 
 /**
  * The pair as ONE block, for a brief that has no section list to compose into:
- * the screen agent's, and the deployment prompt the `claudeCode()` builder
- * thinks with.
+ * the screen agent's, and the deployment prompt an escalated build thinks with
+ * inside the box. `claudeCode()` is the HARNESS that runs that box, never the
+ * thing that decides what an app is — the screen agent and its escalation are
+ * the one generation brain.
  *
  * The same two sections the fill worker reads, so the writers cannot be told
  * different things about the same host configuration.

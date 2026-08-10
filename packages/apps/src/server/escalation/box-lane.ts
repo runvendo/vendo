@@ -28,10 +28,10 @@ import type { Finding } from "../checking/types.js";
 import { rungFor, withoutId } from "../persistence/edit-journal.js";
 import { boxAllowlist, normalizeEgressDomain } from "./egress-approval.js";
 import type { GenerationDependencies } from "../generation/engine.js";
+import { automationInstruction, automationMode, createAutomationLane } from "../automation/lane.js";
 import { runServerLane, type BoxSeam, type ServerFunction } from "../generation/lanes.js";
 import { createMachineLifecycle } from "./machine-lifecycle.js";
 import { parseVendoManifest } from "./manifest.js";
-import { stripServerAuthoritativeFields } from "../persistence/open.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "../persistence/redaction.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsConfig, BoxRequest, BoxResponse, EditResult, VersionEntry } from "../runtime/types.js";
@@ -293,17 +293,22 @@ const createSurfaceFlip = (deps: Pick<AppsRuntimeContext, "requireOwned" | "pers
 };
 
 /**
- * Run the server work a plan declared, on an app that is already STORED — the
- * lane lands through the ordinary edit persist, and arming a trigger whose row
- * does not exist yet would enable an automation nobody has. steps/agentic
- * author an automation on the existing engine in seconds; box provisions a
- * machine and lets the in-box agent write real code against the plan itself.
+ * Run the server work a plan declared, on an app that is already STORED.
+ *
+ * The ONE place an escalated plan is routed: a plan that asked for an
+ * automation goes to the automation door (no machine, seconds), and everything
+ * else is the box — it provisions a machine and lets the in-box agent write
+ * real code against the plan itself.
  */
 const createServerWorkRunner = (
-  deps: Pick<AppsRuntimeContext, "config" | "requireOwned" | "persistEdit" | "assembleEdit" | "reportGuard">
-    & { boxSeamFor: ReturnType<typeof createBoxSeams>; applySurfaceFlip: ReturnType<typeof createSurfaceFlip> },
+  deps: Pick<AppsRuntimeContext, "config" | "requireOwned">
+    & {
+      boxSeamFor: ReturnType<typeof createBoxSeams>;
+      applySurfaceFlip: ReturnType<typeof createSurfaceFlip>;
+      authorAutomation: ReturnType<typeof createAutomationLane>;
+    },
 ) => {
-  const { config, requireOwned, persistEdit, assembleEdit, reportGuard, boxSeamFor, applySurfaceFlip } = deps;
+  const { config, requireOwned, boxSeamFor, applySurfaceFlip, authorAutomation } = deps;
   const runServerWork = async (
     input: {
       plan: AppPlan;
@@ -328,6 +333,29 @@ const createServerWorkRunner = (
     failed?: string[];
   }> => {
     const appId = input.document.id;
+    const server = input.plan.server;
+    // The automation DOOR, off the ladder: authoring a trigger never needed a
+    // machine, so it never travelled the rung built for one.
+    const mode = server === undefined ? undefined : automationMode(server);
+    if (server !== undefined && mode !== undefined) {
+      const authored = await authorAutomation({
+        appId,
+        instruction: automationInstruction(server, input.request),
+        mode,
+        request: input.request,
+        document: input.document,
+      }, ctx, deps, config.armAutomation);
+      return {
+        // Either the door wrote the row itself, so the pre-write copy would
+        // report an app without what it just gained.
+        document: authored.automation === undefined
+          ? { ...authored.document, id: appId }
+          : await requireOwned(appId, ctx),
+        findings: authored.findings,
+        ...(authored.automation === undefined ? {} : { automation: authored.automation }),
+        ...(authored.armingIssues === undefined ? {} : { issues: authored.armingIssues }),
+      };
+    }
     const wantsServed = input.plan.server?.served === true;
     const lane = await runServerLane(input.plan, withoutId(input.document), {
       ...deps,
@@ -339,34 +367,12 @@ const createServerWorkRunner = (
       request: input.request,
       ...(input.planText === undefined ? {} : { planText: input.planText }),
       box: boxSeamFor(appId, ctx, wantsServed),
-      ...(config.armAutomation === undefined ? {} : { armAutomation: config.armAutomation }),
-      land: async (document, options) => {
-        const previous = await requireOwned(appId, ctx);
-        const next: AppDocument = { ...document, id: appId };
-        if (next.tree !== undefined) stripServerAuthoritativeFields(next.tree);
-        await persistEdit(previous, next, landVersion(next, input.request), ctx.principal.subject, undefined, options);
-      },
-      // The board that shows an automation's results is a SCREEN, so the thing
-      // that writes every other screen writes this one: one assembler turn over
-      // the app as it stands. The row it saves is what the lane re-stamps the
-      // trigger onto, so the automation can never be lost to its own rewire.
-      rebind: async (instruction) => {
-        const rebound = await assembleEdit(appId, instruction, ctx);
-        if (rebound.kind === "assembled") return { document: withoutId(rebound.app), issues: [] };
-        return {
-          issues: rebound.kind === "escalate"
-            ? ["the assembler asked for a build rather than rewiring the board"]
-            : rebound.issues,
-        };
-      },
     });
     let document: AppDocument = { ...lane.document, id: appId };
     const findings = [...lane.findings];
-    if (lane.automation !== undefined || lane.server !== undefined) {
-      // Either lane already wrote the row itself — the automation lane landed
-      // its own persist, and provisioning the box wrote `machine` — so re-read:
-      // the pre-write copy would report an app without what the lane just gave
-      // it.
+    if (lane.server !== undefined) {
+      // Provisioning the box wrote `machine` onto the row, so re-read: the
+      // pre-write copy would report an app without what the lane just gave it.
       document = await requireOwned(appId, ctx);
     }
     // ── The 2→3 surface flip ────────────────────────────────────────────────
@@ -382,28 +388,11 @@ const createServerWorkRunner = (
     const flip = await applySurfaceFlip({ lane, document, appId, ctx, wantsServed, request: input.request });
     document = flip.document;
     issues.push(...flip.issues);
-    // Wave 9 — an edit that rode the ladder to an automation is an audit event
-    // in its own right (the row main has carried since the ladder shipped): the
-    // trigger now fires unattended, so the trail must say when it was authored.
-    if (lane.automation !== undefined) {
-      await reportGuard(ctx.principal.subject, appId, ctx, {
-        operation: "automation-created",
-        mode: lane.automation.mode,
-        triggerKind: lane.automation.trigger.on.kind,
-      });
-    }
-    // Arming's own sentences are the CALLER's, not just the log's: a trigger
-    // left disarmed is the person's to fix, and the sentence names the surface
-    // that fixes it. The rest of the lane's findings stay operator-side.
-    const armingIssues = lane.armingIssues ?? [];
     return {
       document,
       findings,
-      ...(lane.automation === undefined ? {} : { automation: lane.automation }),
       ...(lane.server === undefined ? {} : { graduated: true }),
-      ...(issues.length === 0 && armingIssues.length === 0
-        ? {}
-        : { issues: [...issues, ...armingIssues] }),
+      ...(issues.length === 0 ? {} : { issues }),
     };
   };
 
@@ -479,7 +468,8 @@ export const createBoxLane = (
   const editServerViaBox = createBoxEditor(deps);
   const boxSeamFor = createBoxSeams({ ...deps, editServerViaBox });
   const applySurfaceFlip = createSurfaceFlip(deps);
-  const runServerWork = createServerWorkRunner({ ...deps, boxSeamFor, applySurfaceFlip });
+  const authorAutomation = createAutomationLane(deps);
+  const runServerWork = createServerWorkRunner({ ...deps, boxSeamFor, applySurfaceFlip, authorAutomation });
   const forwardToBox = createBoxForwarder(deps);
-  return { editServerViaBox, runServerWork, forwardToBox };
+  return { editServerViaBox, runServerWork, authorAutomation, forwardToBox };
 };

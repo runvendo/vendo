@@ -20,7 +20,7 @@ import { commitApp } from "../persistence/app-source.js";
 import { NO_MACHINE } from "./build-messages.js";
 import { rungFor, touchedPinSlots } from "../persistence/edit-journal.js";
 import { asPayload } from "../generation/engine.js";
-import { escalatedServer } from "../generation/lanes.js";
+import { escalatedServer, escalationNeedsMachine } from "../generation/lanes.js";
 import { findingLine } from "./build-messages.js";
 import { generationDependencies } from "../runtime/generation-context.js";
 import {
@@ -375,7 +375,8 @@ const createEditDoor = (
       const base: AppPlan = compiled?.plan
         ?? { name: previous.name, groups: [], queries: [], cannot: [] };
       const planned = { ...base, server: escalatedServer(base, instruction) };
-      if (planned.server.kind === "box" && !lifecycle.available()) {
+      // The SAME expression create gates on — two rungs, one door, one test.
+      if (escalationNeedsMachine(planned.server) && !lifecycle.available()) {
         return failedEdit(previous, instruction, [NO_MACHINE], false);
       }
       try {

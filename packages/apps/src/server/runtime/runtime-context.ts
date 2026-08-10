@@ -28,6 +28,7 @@ import { createAccessChecks } from "../doors/access-checks.js";
 import type { AppDataAccess } from "../persistence/app-data.js";
 import { createAuditReporters } from "../persistence/audit-reports.js";
 import { createApprovalFlow } from "../persistence/approval-flow.js";
+import type { createAutomationLane } from "../automation/lane.js";
 import { createBoxLane, createMachineLane } from "../escalation/box-lane.js";
 import type { BoxEditResult } from "../escalation/box-agent.js";
 import { createAppCaller, type AppCaller } from "../persistence/call.js";
@@ -223,6 +224,9 @@ export interface AppsRuntimeContext {
     issues?: string[];
     failed?: string[];
   }>;
+  /** Author one automation onto a STORED app: plan, land, arm, audit. The ONE
+   *  wiring the public door and the escalated-plan path share. */
+  authorAutomation: ReturnType<typeof createAutomationLane>;
   /** Forward ONE already-authorized request into the app's machine. */
   forwardToBox(app: AppDocument, request: BoxRequest, ctx: RunContext): Promise<BoxResponse>;
 

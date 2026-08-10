@@ -386,6 +386,15 @@ export interface AuthoredAppResult {
  *  lives in core. */
 export type { PlacementEntry };
 
+/**
+ * What the automation door answers. A failure is a LIST of sentences, not a
+ * throw: an app whose automation could not be planned still stands, exactly as
+ * it did when this ran as a rung of the escalation ladder.
+ */
+export type AutomationAuthorResult =
+  | { ok: true; document: AppDocument; triggerId: string; armed: boolean }
+  | { ok: false; issues: readonly string[] };
+
 /** 06-apps §1 */
 export interface AppsRuntime {
   create(input: {
@@ -557,6 +566,20 @@ export interface AppsRuntime {
     levelFor(appId: AppId, ctx: RunContext): Promise<AccessLevel | null>;
   };
   edit(appId: AppId, instruction: string, ctx: RunContext): Promise<EditResult>;
+  /**
+   * Automation authoring, its own small door — OFF the escalation ladder.
+   *
+   * "Run this every morning" is not an escalation: it needs no machine and no
+   * sandbox, and it used to travel the rung built for work that does. The
+   * planner, the trigger-id rules, the results-board rewire and the arming are
+   * unchanged; only the way in is.
+   */
+  automation: {
+    author(
+      input: { appId: AppId; instruction: string; mode: "steps" | "agentic" },
+      ctx: RunContext,
+    ): Promise<AutomationAuthorResult>;
+  };
   /**
    * The app's memory, and the ONE door that writes it.
    *

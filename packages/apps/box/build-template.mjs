@@ -4,7 +4,7 @@
  * template.
  *
  * The template bakes Node + the in-box agent harness (bootstrap.mjs +
- * harness.mjs + agent-sdk.mjs) + the Claude Agent SDK (npm-installed into
+ * harness.mjs) + the Claude Agent SDK (npm-installed into
  * /opt/vendo-box at BUILD time — install size is a template concern, never a
  * wake concern) and a curl toolbelt into a reproducible e2b template. Its
  * start command runs the harness, which serves the control port (8811) and
@@ -136,20 +136,20 @@ const template = Template()
   // The sandbox runs as a non-root user, so create the dirs and land the
   // harness as root (the files stay world-readable for the start command).
   .runCmd("mkdir -p /app /app/.vendo /opt/vendo-box && chmod 777 /app /app/.vendo", { user: "root" })
-  // Wave 8 — the agent engine is the Claude Agent SDK, installed at BUILD
-  // time (the template bake has full network; the running box does not).
-  // agent-sdk.mjs resolves it from /opt/vendo-box/node_modules.
+  // The agent engine is the Claude Agent SDK, installed at BUILD time (the
+  // template bake has full network; the running box does not). Both doors of
+  // the control port resolve it from /opt/vendo-box/node_modules.
   .runCmd(
     `cd /opt/vendo-box && npm init -y >/dev/null && npm install --omit=dev @anthropic-ai/claude-agent-sdk@${AGENT_SDK_VERSION} && chmod -R a+rX /opt/vendo-box`,
     { user: "root" },
   )
   .copy("harness.mjs", "/opt/vendo-box/harness.mjs", { user: "root" })
-  .copy("agent-sdk.mjs", "/opt/vendo-box/agent-sdk.mjs", { user: "root" })
   .copy("bootstrap.mjs", "/opt/vendo-box/bootstrap.mjs", { user: "root" })
-  // Wave 2 lane E — the conversational turn door and the SDK loop behind it,
-  // both staged in from `@vendoai/harnesses` above. `claude-turn.mjs` is the
-  // COMPILED `packages/harnesses/src/claude-code/claude-turn.ts`, the same
-  // module `machine: "local"` runs on the host: one implementation, two homes.
+  // The conversational turn door and the SDK loop behind it, both staged in
+  // from `@vendoai/harnesses` above. `claude-turn.mjs` is the COMPILED
+  // `packages/harnesses/src/claude-code/claude-turn.ts`, the same module
+  // `machine: "local"` runs on the host and the same module BOTH doors of the
+  // control port drive: one implementation, three callers.
   .copy(STAGED_SESSION_ROUTES, "/opt/vendo-box/turn-routes.mjs", { user: "root" })
   .copy(STAGED_RUNNER, "/opt/vendo-box/claude-turn.mjs", { user: "root" })
   // The materialized workspace's home. It is emptied and rewritten every turn,

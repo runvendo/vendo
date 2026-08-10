@@ -70,7 +70,9 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
    *
    * The apps thunk seam below hands them to the fill worker; this hands them to
    * the two briefs assembled outside that seam — the screen agent's, and the
-   * deployment prompt a `claudeCode()` builder thinks with. Rendered by the apps
+   * deployment prompt an escalated build thinks with inside the box.
+   * `claudeCode()` is the HARNESS that runs that box, not a builder: the screen
+   * agent and its escalation are the one generation brain. Rendered by the apps
    * block's own sections either way, so the writers cannot be told different
    * things. Resolved per call for the same reason `designRules` is a provider.
    */

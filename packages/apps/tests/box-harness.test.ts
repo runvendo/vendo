@@ -35,14 +35,14 @@ const pollUntil = async (ready: () => boolean): Promise<void> => {
 
 /** Drive one harness on an ephemeral port against a scripted agent engine. */
 const withHarness = async (
-  runAgentTask: (input: { prompt: string; context?: string; env: Record<string, string> }) => Promise<unknown>,
+  runTask: (input: { prompt: string; context?: string; env: Record<string, string> }) => Promise<unknown>,
   body: (base: string, harness: ReturnType<typeof createHarness>) => Promise<void>,
 ): Promise<void> => {
   const appDir = boxDir("vendo-box-");
   const harness = createHarness({
     appDir,
     controlPort: 0,
-    runAgentTask: runAgentTask as never,
+    runTask: runTask as never,
     baseEnv: { VENDO_INFERENCE_URL: "http://model.test", VENDO_INFERENCE_KEY: "k" },
   });
   await harness.start();
@@ -161,7 +161,7 @@ describe("box control-port protocol", () => {
     const appDir = boxDir("vendo-box-");
     const marker = path.join(appDir, "started.txt");
     // createHarness() creates .vendo/; write the Procfile entry before start().
-    const harness = createHarness({ appDir, controlPort: 0, runAgentTask: (async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 })) as never });
+    const harness = createHarness({ appDir, controlPort: 0, runTask: (async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 })) as never });
     cleanups.push(() => harness.stop());
     writeFileSync(path.join(appDir, ".vendo", "run"), `printf ran > ${JSON.stringify(marker)}; sleep 30`);
     await harness.start();
@@ -193,7 +193,7 @@ describe("box control-port protocol", () => {
     const harness = createHarness({
       appDir,
       controlPort: 0,
-      runAgentTask: (async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 })) as never,
+      runTask: (async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 })) as never,
       baseEnv: { HOME: home },
     });
     cleanups.push(() => harness.stop());

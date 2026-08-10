@@ -40,7 +40,7 @@ import { createAppFloor, floorChecks } from "../checking/floor.js";
 import { createCheckingLayer, judgmentRules } from "../checking/layer.js";
 import { reviewerCheck } from "../checking/reviewer.js";
 import { asPayload } from "../generation/engine.js";
-import { escalatedServer } from "../generation/lanes.js";
+import { escalatedServer, escalationNeedsMachine } from "../generation/lanes.js";
 import { skeletonFromPlan } from "../generation/skeleton.js";
 import { UNSTORED_APP_ID, validateCompiledCreate } from "../generation/validation/validate.js";
 import { generationDependencies, resolveProvider } from "../runtime/generation-context.js";
@@ -262,13 +262,6 @@ const createCreateDoor = (
       if (routed.kind === "assembled") return routed.document;
       planText = routed.planText;
     }
-    // Sandbox-gated, exactly where §4.5 put the gate: the build IS the box, so
-    // a deployment with no machine says so instead of spending a build's
-    // latency to arrive at nothing.
-    if (!lifecycle.available()) {
-      return failBuild(NO_MACHINE, false, [NO_MACHINE], "not-implemented");
-    }
-
     // ── The plan is the brief ───────────────────────────────────────────────
     // No brain re-plans it: `<Server kind>` is the escalating agent's own
     // declaration (see `escalatedServer`), the skeleton is the outline already
@@ -283,6 +276,16 @@ const createCreateDoor = (
     const plan: AppPlan = compiled?.plan
       ?? { name: fallbackAppName(input.prompt), groups: [], queries: [], cannot: [] };
     const planned = { ...plan, server: escalatedServer(plan, input.prompt) };
+    // Sandbox-gated, exactly where §4.5 put the gate — and gated on the ONE
+    // expression `edit` reads (`escalationNeedsMachine`), which is the whole
+    // fix: this used to refuse EVERY escalation on a host with no sandbox,
+    // while edit refused only a box, so an automation you could ask for by
+    // editing an app you could not ask for by making one. A build that IS the
+    // box still says so up front rather than spending its latency to arrive at
+    // nothing; the plan compile above costs no model call.
+    if (escalationNeedsMachine(planned.server) && !lifecycle.available()) {
+      return failBuild(NO_MACHINE, false, [NO_MACHINE], "not-implemented");
+    }
     const skeleton = skeletonFromPlan(planned);
     let app: AppDocument = {
       format: "vendo/app@1",
