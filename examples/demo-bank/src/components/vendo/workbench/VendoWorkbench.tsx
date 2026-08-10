@@ -26,6 +26,16 @@ export function VendoWorkbench() {
   return developmentMode() ? <WorkbenchPane /> : null;
 }
 
+/**
+ * `inertBehind` (@vendoai/ui) inerts every body child while the overlay is open,
+ * and this pane is one — so with the chat up it was not merely dimmed by the
+ * scrim, it was `inert`: no clicks, no keyboard, no screen reader. The workbench
+ * reports on the turn THAT chat is running, which is exactly when it has to be
+ * live, so it declares itself the way the mechanism asks a Vendo surface to
+ * (`EXEMPT` in inert-behind.ts). The CSS raises it over the scrim to match.
+ */
+const ABOVE_MODAL = { "data-vendo-portal": "" };
+
 function WorkbenchPane() {
   const feed = useWorkbenchFeed();
   const [collapsed, setCollapsed] = useState(true);
@@ -34,7 +44,7 @@ function WorkbenchPane() {
 
   if (collapsed) {
     return (
-      <button type="button" className={styles.rail} onClick={() => setCollapsed(false)}>
+      <button type="button" className={styles.rail} onClick={() => setCollapsed(false)} {...ABOVE_MODAL}>
         workbench{feed.length === 0 ? "" : ` · ${feed.length}`}
       </button>
     );
@@ -45,13 +55,17 @@ function WorkbenchPane() {
   const status = turnStatus(parts);
   const loadout = eventsOf(parts, "loadout").at(-1)?.event;
   const steps = rows(parts).filter(row => row.kind === "step").length;
-  const contextPct = status.context === undefined
+  // The badge is one number, so it names the turn's own thinker: the resident is
+  // the first loop to measure its window, and a screen run's separate reading has
+  // its own gauge in the panel rather than overwriting this one.
+  const context = status.contexts[0]?.event;
+  const contextPct = context === undefined
     ? undefined
-    : share(status.context.estTokens, status.context.windowTokens);
+    : share(context.estTokens, context.windowTokens);
   const Panel = PANELS[tab];
 
   return (
-    <aside className={styles.pane} aria-label="Harness workbench">
+    <aside className={styles.pane} aria-label="Harness workbench" {...ABOVE_MODAL}>
       <header className={styles.head}>
         <div className={styles.headTop}>
           <h2 className={styles.title}>Harness Workbench</h2>

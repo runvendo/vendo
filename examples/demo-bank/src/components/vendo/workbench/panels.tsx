@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { useState } from "react";
 import type { WorkbenchEvent, WorkbenchPart } from "@vendoai/ui";
 import { Chevron, Chip, Disclosure, Empty, SectionHead } from "./parts";
-import { count, describe, duration, eventsOf, rows, share, TONES, type Tone } from "./model";
+import { contextByAgent, count, describe, duration, eventsOf, rows, share, TONES, type Of, type Tone } from "./model";
 import styles from "./workbench.module.css";
 
 type PanelProps = { parts: readonly WorkbenchPart[] };
@@ -86,7 +86,8 @@ export function TimelinePanel({ parts }: PanelProps) {
           );
         }
 
-        const id = `step:${row.step}`;
+        // The agent is part of the identity: two loops' step 1s are two rows.
+        const id = `step:${row.agent}:${row.step}`;
         const isOpen = open.has(id);
         const start = row.parts.find(part => part.event.kind === "step-start");
         const end = row.parts.find(part => part.event.kind === "step-end");
@@ -108,6 +109,7 @@ export function TimelinePanel({ parts }: PanelProps) {
                 head={(
                   <>
                     <Chevron open={isOpen} />
+                    <AgentTag agent={row.agent} />
                     <span className={styles.stepSum}>
                       <span className={styles.stepName}>{calls[0]?.event.name ?? "no tool calls"}</span>
                       {calls.length > 1 ? <span className={styles.stepExtra}>+{calls.length - 1} more</span> : null}
@@ -175,45 +177,59 @@ export function TimelinePanel({ parts }: PanelProps) {
 
 /* -------------------------------------------------------------- context */
 
-export function ContextPanel({ parts }: PanelProps) {
-  const [open, setOpen] = useState<number | undefined>(undefined);
-  const readings = eventsOf(parts, "context");
-  const latest = readings.at(-1)?.event;
-  const compactions = eventsOf(parts, "compaction");
-  const sheds = eventsOf(parts, "shed");
-  const pct = latest === undefined ? 0 : share(latest.estTokens, latest.windowTokens);
-  const triggerPct = latest === undefined ? 0 : share(latest.triggerTokens, latest.windowTokens);
+/** One agent's window, as THAT agent measured it. Each loop in a turn has its own
+ *  seat and its own window, so each gets its own gauge rather than the last
+ *  reading on the wire standing in for all of them. */
+function Gauge({ reading }: { reading: Of<"context"> }) {
+  const { estTokens, windowTokens, triggerTokens } = reading.event;
+  const pct = share(estTokens, windowTokens);
+  const triggerPct = share(triggerTokens, windowTokens);
   // Anchor the legend on whichever side keeps it inside the card, arrow on the
   // anchored edge — a legend that runs off the edge is worse than no legend.
   const flip = triggerPct > 50;
   return (
+    <div className={styles.gaugeCard}>
+      <div className={styles.gaugeTop}>
+        <span className={styles.big}>{count(estTokens)}</span>
+        <span className={styles.of}>/ {count(windowTokens)} tok</span>
+        <Chip tone={pct >= triggerPct ? "warn" : "info"}>{pct}%</Chip>
+        <AgentTag agent={reading.agent} />
+        <span className={styles.gaugeLab}>est. prompt tokens</span>
+      </div>
+      <div className={styles.gauge}>
+        <span className={styles.gaugeFill} style={{ width: `${pct}%` }} />
+        <span className={styles.gaugeTrigger} style={{ left: `${triggerPct}%` }} />
+      </div>
+      <div className={styles.gaugeLegend}>
+        <span
+          className={styles.gaugeMark}
+          style={flip ? { right: `${100 - triggerPct}%` } : { left: `${triggerPct}%` }}
+        >
+          {flip ? "" : "▲ "}compaction trigger · {triggerPct}% · {count(triggerTokens)}{flip ? " ▲" : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function ContextPanel({ parts }: PanelProps) {
+  const [open, setOpen] = useState<number | undefined>(undefined);
+  const readings = eventsOf(parts, "context");
+  const gauges = contextByAgent(parts);
+  // The turn's own thinker leads, so the compaction note below is about the
+  // prompt the RESIDENT measured and not about a screen run's separate window.
+  const lead = gauges[0]?.event;
+  const compactions = eventsOf(parts, "compaction");
+  const sheds = eventsOf(parts, "shed");
+  const pct = lead === undefined ? 0 : share(lead.estTokens, lead.windowTokens);
+  const triggerPct = lead === undefined ? 0 : share(lead.triggerTokens, lead.windowTokens);
+  return (
     <div>
-      {latest === undefined ? (
+      {gauges.length === 0 ? (
         <div className={styles.sec}>
           <Empty title="No context readings this turn" detail="The harness reports the window as it fills." />
         </div>
-      ) : (
-        <div className={styles.gaugeCard}>
-          <div className={styles.gaugeTop}>
-            <span className={styles.big}>{count(latest.estTokens)}</span>
-            <span className={styles.of}>/ {count(latest.windowTokens)} tok</span>
-            <Chip tone={pct >= triggerPct ? "warn" : "info"}>{pct}%</Chip>
-            <span className={styles.gaugeLab}>est. prompt tokens</span>
-          </div>
-          <div className={styles.gauge}>
-            <span className={styles.gaugeFill} style={{ width: `${pct}%` }} />
-            <span className={styles.gaugeTrigger} style={{ left: `${triggerPct}%` }} />
-          </div>
-          <div className={styles.gaugeLegend}>
-            <span
-              className={styles.gaugeMark}
-              style={flip ? { right: `${100 - triggerPct}%` } : { left: `${triggerPct}%` }}
-            >
-              {flip ? "" : "▲ "}compaction trigger · {triggerPct}% · {count(latest.triggerTokens)}{flip ? " ▲" : ""}
-            </span>
-          </div>
-        </div>
-      )}
+      ) : gauges.map(reading => <Gauge key={reading.agent} reading={reading} />)}
 
       {readings.length > 1 ? (
         <div className={styles.sec}>
@@ -223,7 +239,9 @@ export function ContextPanel({ parts }: PanelProps) {
               {readings.map(reading => (
                 <tr key={reading.seq}>
                   <td className={clsx(styles.tKey, styles.mono)} style={{ width: 64 }}>#{reading.seq}</td>
-                  <td className={styles.mono}>{count(reading.event.estTokens)} tok</td>
+                  <td className={styles.mono}>
+                    {count(reading.event.estTokens)} tok <AgentTag agent={reading.agent} />
+                  </td>
                   <td className={clsx(styles.r, styles.mono)}>
                     {share(reading.event.estTokens, reading.event.windowTokens)}%
                   </td>
@@ -239,7 +257,7 @@ export function ContextPanel({ parts }: PanelProps) {
         {compactions.length === 0 ? (
           <Empty
             title="No compaction this turn"
-            detail={latest === undefined
+            detail={lead === undefined
               ? "Nothing was folded — the harness reported no window pressure."
               : `The prompt sat at ${pct}% — the ${triggerPct}% trigger was never reached.`}
           />
@@ -288,6 +306,12 @@ export function ContextPanel({ parts }: PanelProps) {
 
 /* ---------------------------------------------------------------- tools */
 
+/** The name the harness mounts its search hand under (`FIND_TOOLS_TOOL_NAME`).
+ *  Whether it is in the loadout's `active` list is the only thing that says this
+ *  agent CAN search; an empty `searchedIn` on its own says only that it has not
+ *  searched yet. */
+const FIND_TOOLS = "find_tools";
+
 export function ToolsPanel({ parts }: PanelProps) {
   const loadout = eventsOf(parts, "loadout").at(-1)?.event;
   const subagents = eventsOf(parts, "subagent");
@@ -312,7 +336,7 @@ export function ToolsPanel({ parts }: PanelProps) {
           <div className={styles.sec}>
             <SectionHead label="always active" count={loadout.alwaysActive.length} />
             {loadout.alwaysActive.length === 0
-              ? <Empty title="Nothing is always active" detail="Every tool in this run had to be searched for." />
+              ? <Empty title="Nothing is always active" detail="Every tool on this loadout is one the harness curated." />
               : (
                 <div className={styles.pills}>
                   {loadout.alwaysActive.map(name => <span className={styles.pill} key={name}>{name}</span>)}
@@ -322,22 +346,27 @@ export function ToolsPanel({ parts }: PanelProps) {
 
           <div className={styles.sec}>
             <SectionHead label="searched in via find_tools" count={loadout.searchedIn.length} />
-            {loadout.searchedIn.length === 0
+            {/* `searchedIn` is what a search LOADED — tool names, not queries: the
+                query itself is a harness-hand argument and never reaches the wire. */}
+            {loadout.searchedIn.length > 0
               ? (
-                <Empty
-                  title="find_tools not in this loadout"
-                  detail="This agent runs closed — it cannot pull new tools mid-run."
-                />
-              )
-              : loadout.searchedIn.map(query => (
-                <div className={styles.query} key={query}>
-                  <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                    <circle cx="6" cy="6" r="4.2" />
-                    <path d="M9.2 9.2 12.5 12.5" />
-                  </svg>
-                  find_tools(<span className={styles.queryText}>&quot;{query}&quot;</span>)
+                <div className={styles.pills}>
+                  {loadout.searchedIn.map(name => <span className={styles.pill} key={name}>{name}</span>)}
                 </div>
-              ))}
+              )
+              : loadout.active.includes(FIND_TOOLS)
+                ? (
+                  <Empty
+                    title="No searches yet this turn"
+                    detail="find_tools is equipped — this agent can still pull tools in mid-run."
+                  />
+                )
+                : (
+                  <Empty
+                    title="find_tools not in this loadout"
+                    detail="This agent runs closed — it cannot pull new tools mid-run."
+                  />
+                )}
           </div>
         </>
       )}

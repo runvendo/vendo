@@ -36,7 +36,13 @@
 
   position: fixed;
   inset: 0 0 0 auto;
-  z-index: 60;
+  /* Over the overlay. `.fl-overlay-scrim` is a full-viewport click-to-dismiss
+     layer at 2147483000 (2147483002 in takeover) and the panel sits at
+     2147483001, so anything below is not merely dimmed: every click on this pane
+     landed on the scrim and closed the chat instead. The workbench reports on the
+     turn that chat is running, so it has to stay live while the chat is open —
+     and the scrim keeps its dismiss click everywhere the pane is not. */
+  z-index: 2147483003;
   display: flex;
   flex-direction: column;
   width: min(480px, 100vw);
@@ -74,7 +80,8 @@
   position: fixed;
   top: 50%;
   right: 0;
-  z-index: 60;
+  /* Same layer as `.pane` — a rail under the scrim cannot be clicked open. */
+  z-index: 2147483003;
   transform: translateY(-50%);
   display: flex;
   align-items: center;
@@ -531,7 +538,11 @@
 /* -------------------------------------------------------------- timeline */
 .node {
   display: grid;
-  grid-template-columns: 30px 1fr;
+  /* `minmax(0, 1fr)`, never `1fr`: a grid track's automatic minimum is its
+     content's, so a step row whose meta (tokens · duration · stop reason) is
+     wider than the 480px pane pushes the track past the pane instead of letting
+     the row's own ellipsis do the work — and the stop-reason chip clips off. */
+  grid-template-columns: 30px minmax(0, 1fr);
   column-gap: 10px;
 }
 
@@ -921,20 +932,6 @@ button.evt:hover {
   border: 1px solid var(--w-line);
   border-radius: 5px;
   padding: 3px 7px;
-}
-
-.query {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 10px 0 6px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--w-soft);
-}
-
-.queryText {
-  color: var(--info);
 }
 
 .subCard {

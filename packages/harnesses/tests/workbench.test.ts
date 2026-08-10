@@ -159,6 +159,67 @@ describe("with the flag set, the turn narrates itself", () => {
   });
 });
 
+describe("the two endings a turn can have that its steps do not say", () => {
+  it("names the step cap that stopped the turn", async () => {
+    process.env.VENDO_WORKBENCH = "1";
+    // One permitted step, and a model that still wanted a tool call after it: the
+    // turn ended because of the cap, not because the model was finished.
+    const f = fixture(scriptedModel([toolCallTurn("balance", { account: "checking" })]), balanceTool());
+    const parts = facts(await f.run({ options: { maxSteps: 1 } }));
+    expect(only(parts, "step-start").map((event) => event.maxSteps)).toEqual([1]);
+    expect(only(parts, "step-limit")).toEqual([{ kind: "step-limit", steps: 1 }]);
+    // …and it is the LAST thing the turn says: the cap is only knowable once the
+    // stream has drained.
+    expect(kinds(parts).at(-1)).toBe("step-limit");
+  });
+
+  it("puts a hired sub-run on the resident's own channel, under its own seat", async () => {
+    process.env.VENDO_WORKBENCH = "1";
+    // Three provider calls, in the order the turn makes them: the resident hires,
+    // the specialist answers, the resident answers. `hire_subagent` is the
+    // harness's own hand, so it is spelled here rather than imported.
+    const f = fixture(
+      scriptedModel([
+        toolCallTurn("hire_subagent", { instructions: "check the issuer rules" }),
+        textTurn("Rule R-118 rejects that category."),
+        textTurn("An issuer rule is blocking the card."),
+      ]),
+      balanceTool(),
+    );
+    const parts = facts(await f.run());
+
+    const hire = only(parts, "subagent");
+    expect(hire).toEqual([{
+      kind: "subagent",
+      label: "check the issuer rules",
+      steps: 1,
+      maxSteps: 12,
+      report: "Rule R-118 rejects that category.",
+    }]);
+
+    // One turn, one dense sequence — the hire's parts are interleaved with the
+    // resident's rather than carried on a channel of their own.
+    expect(new Set(parts.map((part) => part.turnId)).size).toBe(1);
+    expect(parts.map((part) => part.seq)).toEqual(parts.map((_part, index) => index));
+    const seats = parts.map((part) => part.agent);
+    expect(new Set(seats)).toEqual(new Set(["resident", "subagent"]));
+    // The hire's whole run is filed INSIDE a resident step: the resident is still
+    // speaking after the specialist has reported.
+    expect(seats.slice(seats.lastIndexOf("subagent") + 1)).toContain("resident");
+
+    // Each seat counts its OWN steps from zero, which is the only thing that keeps
+    // the resident's step 0 and the hire's step 0 apart on one stream.
+    const seat = (agent: WorkbenchPart["agent"]) => parts.filter((part) => part.agent === agent);
+    expect(only(seat("resident"), "step-start").map((event) => event.step)).toEqual([0, 1]);
+    expect(only(seat("subagent"), "step-start").map((event) => event.step)).toEqual([0]);
+    // The hire builds its own prompt, so it measures its own window too.
+    expect(only(seat("subagent"), "context")).toHaveLength(1);
+    // …and the hiring call itself never reaches the wire: a hand runs in-process
+    // and only `turn.tools.call()` is a `tool` fact.
+    expect(only(parts, "tool").map((event) => event.name)).not.toContain("hire_subagent");
+  });
+});
+
 /** A thread big enough that the tail alone exceeds the preserved budget, so the
  *  cut has something above it to summarize. */
 const hugeThread = (): UIMessage[] => [

@@ -8,10 +8,15 @@ export type Tone = "ok" | "warn" | "bad" | "info" | "sys" | "mute";
 /** Parts of one step, gathered: `step-start`, its `tool` calls, `step-end`.
  *  Everything else stands on its own line in the timeline. */
 export type Row =
-  | { kind: "step"; step: number; parts: WorkbenchPart[] }
+  | { kind: "step"; agent: WorkbenchPart["agent"]; step: number; parts: WorkbenchPart[] }
   | { kind: "event"; part: WorkbenchPart };
 
-type Of<K extends WorkbenchEvent["kind"]> = WorkbenchPart & { event: Extract<WorkbenchEvent, { kind: K }> };
+export type Of<K extends WorkbenchEvent["kind"]> = WorkbenchPart & { event: Extract<WorkbenchEvent, { kind: K }> };
+
+/** A step belongs to the loop that took it. The resident, the screen agent and a
+ *  hire share one turn and one channel, and each counts its own steps from zero —
+ *  so the step NUMBER alone names three different steps. */
+const stepKey = (part: WorkbenchPart, step: number): string => `${part.agent}:${step}`;
 
 export function eventsOf<K extends WorkbenchEvent["kind"]>(
   parts: readonly WorkbenchPart[],
@@ -22,17 +27,18 @@ export function eventsOf<K extends WorkbenchEvent["kind"]>(
 
 export function rows(parts: readonly WorkbenchPart[]): Row[] {
   const out: Row[] = [];
-  const steps = new Map<number, Extract<Row, { kind: "step" }>>();
+  const steps = new Map<string, Extract<Row, { kind: "step" }>>();
   for (const part of parts) {
     if (!("step" in part.event)) {
       out.push({ kind: "event", part });
       continue;
     }
     const { step } = part.event;
-    let group = steps.get(step);
+    const key = stepKey(part, step);
+    let group = steps.get(key);
     if (group === undefined) {
-      group = { kind: "step", step, parts: [] };
-      steps.set(step, group);
+      group = { kind: "step", agent: part.agent, step, parts: [] };
+      steps.set(key, group);
       out.push(group);
     }
     group.parts.push(part);
@@ -40,25 +46,43 @@ export function rows(parts: readonly WorkbenchPart[]): Row[] {
   return out;
 }
 
+/** The latest window reading EACH agent took, in the order the agents first
+ *  measured. A window is a fact about one loop's seat: the screen agent's 200k
+ *  reading says nothing about the resident's 32k one, and reading the last one on
+ *  the wire just reports whichever loop happened to measure most recently. */
+export function contextByAgent(parts: readonly WorkbenchPart[]): Of<"context">[] {
+  const latest = new Map<WorkbenchPart["agent"], Of<"context">>();
+  for (const part of eventsOf(parts, "context")) latest.set(part.agent, part);
+  return [...latest.values()];
+}
+
 export interface TurnStatus {
-  /** A step opened and never closed — the only running signal the feed gives. */
   running: boolean;
   step?: number;
   maxSteps?: number;
   elapsedMs: number;
   agents: WorkbenchPart["agent"][];
   outcome?: { label: string; tone: Tone };
-  context?: Extract<WorkbenchEvent, { kind: "context" }>;
+  /** One reading per agent that measured its window — see {@link contextByAgent}. */
+  contexts: Of<"context">[];
 }
 
-export function turnStatus(parts: readonly WorkbenchPart[]): TurnStatus {
+/** How long a quiet feed still counts as work in progress. A turn's first facts —
+ *  the window reading, the summarizer's compaction — land BEFORE step 0 opens, so
+ *  there is no step boundary to read yet and "no open step" is not the same thing
+ *  as "over". Recency is what separates the two, and once a step has closed the
+ *  boundaries are authoritative again. */
+const RECENT_MS = 2_000;
+
+export function turnStatus(parts: readonly WorkbenchPart[], now = Date.now()): TurnStatus {
   const starts = eventsOf(parts, "step-start");
-  const ended = new Set(eventsOf(parts, "step-end").map(part => part.event.step));
+  const ended = new Set(eventsOf(parts, "step-end").map(part => stepKey(part, part.event.step)));
   const last = starts.at(-1);
   const error = eventsOf(parts, "error").at(-1);
   const limit = eventsOf(parts, "step-limit").at(-1);
-  const context = eventsOf(parts, "context").at(-1);
-  const running = starts.some(part => !ended.has(part.event.step));
+  const latest = parts.at(-1);
+  const running = starts.some(part => !ended.has(stepKey(part, part.event.step)))
+    || (ended.size === 0 && latest !== undefined && now - latest.at < RECENT_MS);
   return {
     running,
     ...(last === undefined ? {} : { step: last.event.step, maxSteps: last.event.maxSteps }),
@@ -71,7 +95,7 @@ export function turnStatus(parts: readonly WorkbenchPart[]): TurnStatus {
         : running
           ? {}
           : { outcome: { label: "settled", tone: "ok" as const } }),
-    ...(context === undefined ? {} : { context: context.event }),
+    contexts: contextByAgent(parts),
   };
 }
 
