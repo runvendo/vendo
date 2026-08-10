@@ -99,12 +99,24 @@ import type { StoreWireStatus } from "./store-wire.js";
     a short slug, optionally `box:`-prefixed. */
 export const APP_DATA_COLLECTION_PATTERN = /^(box:)?[A-Za-z0-9_-]{1,64}$/;
 
+/** The grammar an appData owner must satisfy: non-empty and free of "/".
+    Deliberately NOT a slug — a subject is the host's own user id in the host's
+    own spelling, and `auth0|64f…`, `user:with:colons` and
+    `https://idp.example/u/1` are all contract elsewhere in this repo. "/" is
+    the one character that cannot be allowed here, because appData files carry
+    their owner as the first path segment of the blob key (`<owner>/<key>`):
+    owner `a/b` and owner `a` writing `b/…` are the same key, so a "/" in an
+    owner is a silent cross-user file read. Refused, never rewritten — a
+    sanitised owner would map two people onto one drawer. */
+export const APP_DATA_OWNER_PATTERN = /^[^/]+$/;
+
 /** Where one appData op lands. */
 export interface AppDataTarget {
   appId: string;
   collection: string;
   /** Stamped by the RUNTIME from the host's login session — generated code has
-      no field for it, and a caller that supplies `refs.subject` is refused. */
+      no field for it, and a caller that supplies `refs.subject` is refused.
+      Must satisfy {@link APP_DATA_OWNER_PATTERN}. */
   owner: string;
 }
 

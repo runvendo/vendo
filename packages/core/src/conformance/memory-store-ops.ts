@@ -3,6 +3,7 @@ import type { IsoDateTime } from "../ids.js";
 import { VENDO_STORE_WIRE_FORMAT, type StoreWireStatus } from "../store-wire.js";
 import {
   APP_DATA_COLLECTION_PATTERN,
+  APP_DATA_OWNER_PATTERN,
   type AppDataTarget,
   type RecordInput,
   type RecordQuery,
@@ -204,10 +205,20 @@ export function memoryStoreOps(): StoreOps {
   // appData family
   // ---------------------------------------------------------------------------
 
+  /** The owner leg is fenced for the reason `ownedKey` shows: it is the first
+      path segment of every file key, so owner "a/b" and owner "a" writing
+      "b/…" would be one and the same key. */
+  const appOwner = (target: AppDataTarget): string => {
+    if (!APP_DATA_OWNER_PATTERN.test(target.owner)) {
+      throw new VendoError("validation", `app data owner "${target.owner}" must be non-empty and free of "/"`);
+    }
+    return target.owner;
+  };
+
   /** The reference's own copy of the naming grammar — rows land in one
       collection per app+collection, files in the blob namespace of the same
       name. The real backend composes both in one place, which core cannot
-      import. */
+      import. Every verb goes through here, so the owner fence rides along. */
   const appCollection = (target: AppDataTarget): string => {
     if (target.appId === "" || target.appId.includes(":")) {
       throw new VendoError("validation", `app data appId "${target.appId}" must be non-empty and free of ":"`);
@@ -215,12 +226,13 @@ export function memoryStoreOps(): StoreOps {
     if (!APP_DATA_COLLECTION_PATTERN.test(target.collection)) {
       throw new VendoError("validation", `app data collection "${target.collection}" is not a legal name`);
     }
+    appOwner(target);
     return `app:${target.appId}:${target.collection}`;
   };
 
   /** Files are scoped by key prefix rather than by a stamp, so the owner leg
       never reaches the caller — `listFiles` strips it back off. */
-  const ownedKey = (target: AppDataTarget, key: string): string => `${target.owner}/${key}`;
+  const ownedKey = (target: AppDataTarget, key: string): string => `${appOwner(target)}/${key}`;
 
   const refuseSubject = (refs: Record<string, string> | undefined, verb: string): void => {
     if (refs !== undefined && "subject" in refs) {

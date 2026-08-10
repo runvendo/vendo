@@ -149,6 +149,30 @@ describe("vendo/store-wire@1", () => {
     }).success).toBe(false);
   });
 
+  /** The owner is the first path segment of every appData file key, so a "/"
+      in it is a second key segment: owner "sub_1/scan" reading "png" is owner
+      "sub_1" reading "scan/png". Not a slug grammar though — a subject is the
+      host's own user id in the host's own spelling, and "auth0|…" and
+      "user:with:colons" are contract elsewhere in this repo. */
+  it("refuses an appData owner containing a slash, and keeps every other spelling", () => {
+    const target = { appId: "app_1", collection: "invoices", owner: "sub_1" };
+    for (const owner of ["sub_1/scan", "/sub_1", "sub_1/", "a/b/c"]) {
+      expect(
+        storeWireAppDataGetRequestSchema.safeParse({ target: { ...target, owner }, id: "inv1" }).success,
+        `owner ${JSON.stringify(owner)} should be refused`,
+      ).toBe(false);
+      expect(
+        storeWireAppDataPutFileRequestSchema.safeParse({ target: { ...target, owner }, key: "scan.png", bytes: btoa("x") }).success,
+        `owner ${JSON.stringify(owner)} should be refused on putFile`,
+      ).toBe(false);
+    }
+    for (const owner of ["auth0|64f0", "user:with:colons", "person@example.com", "own_a"]) {
+      expect(
+        storeWireAppDataGetRequestSchema.parse({ target: { ...target, owner }, id: "inv1" }).target.owner,
+      ).toBe(owner);
+    }
+  });
+
   it("parses transcripts request DTOs", () => {
     expect(storeWireTranscriptsPutThreadRequestSchema.parse({
       thread: { id: "t1", subject: "sub_user1", messages: [{ role: "user", content: "hi" }] },

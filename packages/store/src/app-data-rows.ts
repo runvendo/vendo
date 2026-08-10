@@ -1,5 +1,6 @@
 import {
   APP_DATA_COLLECTION_PATTERN,
+  APP_DATA_OWNER_PATTERN,
   VendoError,
   type AppDataTarget,
   type BlobStore,
@@ -45,9 +46,21 @@ export function appDataNamespace(target: AppDataTarget): string {
   return appDataCollection(target);
 }
 
-/** Files carry no refs, so their owner rides the key instead of a stamp. */
+/** The owner leg of a target, checked. Every verb composes it, because an
+ *  owner outside the grammar is refused rather than repaired: rewriting one
+ *  would land two different people in one drawer. */
+export function appDataOwner(owner: string): string {
+  if (!APP_DATA_OWNER_PATTERN.test(owner)) {
+    invalid(`app data owner ${JSON.stringify(owner)} must be non-empty and free of "/"`);
+  }
+  return owner;
+}
+
+/** Files carry no refs, so their owner rides the key instead of a stamp — which
+ *  is exactly why {@link appDataOwner} exists: `<owner>/<key>` cannot tell
+ *  owner "a/b" apart from owner "a" writing "b/…". */
 export function appDataFileKey(owner: string, key: string): string {
-  return `${owner}/${key}`;
+  return `${appDataOwner(owner)}/${key}`;
 }
 
 /** A caller who supplies `refs.subject` is writing (or reading) as someone
@@ -75,7 +88,7 @@ export interface AppDataRows {
 export function appDataRows(db: Db, target: AppDataTarget): AppDataRows {
   const collection = appDataCollection(target);
   const records = createRecordStore(db, collection);
-  const stamp = { [APP_DATA_OWNER_REF]: target.owner };
+  const stamp = { [APP_DATA_OWNER_REF]: appDataOwner(target.owner) };
 
   return {
     /** An id another owner holds is a `conflict`, not an overwrite:
@@ -149,7 +162,8 @@ export function appDataRows(db: Db, target: AppDataTarget): AppDataRows {
  *  onto the owner leg before the query, not filtered after the strip. */
 export function appDataFiles(store: VendoStore, target: AppDataTarget): BlobStore {
   const blobs = store.blobs(appDataNamespace(target));
-  const owned = (key: string): string => appDataFileKey(target.owner, key);
+  const owner = appDataOwner(target.owner);
+  const owned = (key: string): string => appDataFileKey(owner, key);
 
   return {
     async put(key, bytes, meta) {
@@ -163,7 +177,7 @@ export function appDataFiles(store: VendoStore, target: AppDataTarget): BlobStor
     },
     async list(prefix = "") {
       const keys = await blobs.list(owned(prefix));
-      return keys.map((key) => key.slice(target.owner.length + 1));
+      return keys.map((key) => key.slice(owner.length + 1));
     },
   };
 }

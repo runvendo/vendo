@@ -437,6 +437,56 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
       }),
 
+      /** The owner is the FIRST PATH SEGMENT of every appData file key
+          (`<owner>/<key>`), so an owner holding "/" is not a name, it is a
+          second key segment: owner "own_a/sub" reading "x.bin" reads owner
+          "own_a"'s "sub/x.bin". Hosts pick their own subject spelling and
+          path-like ones are ordinary, so the fence is the grammar and the
+          answer is a refusal — a sanitised owner would land two people in one
+          drawer. Every verb, because every verb composes the key. */
+      opsCase(opts, "appData refuses an owner outside the grammar", async (ops) => {
+        await seedApp(ops, "app_owner");
+        const owner = { appId: "app_owner", collection: "notes", owner: "own_a" };
+        await ops.appData.put(owner, { id: "n1", data: { v: 1 } });
+        await ops.appData.putFile(owner, "sub/x.bin", new Uint8Array([9]));
+
+        const crafted = { appId: "app_owner", collection: "notes", owner: "own_a/sub" };
+        const verbs: [string, () => Promise<unknown>][] = [
+          ["put", () => ops.appData.put(crafted, { id: "n2", data: {} })],
+          ["get", () => ops.appData.get(crafted, "n1")],
+          ["list", () => ops.appData.list(crafted)],
+          ["delete", () => ops.appData.delete(crafted, "n1")],
+          ["putFile", () => ops.appData.putFile(crafted, "y.bin", new Uint8Array([1]))],
+          ["getFile", () => ops.appData.getFile(crafted, "x.bin")],
+          ["listFiles", () => ops.appData.listFiles(crafted)],
+          ["deleteFile", () => ops.appData.deleteFile(crafted, "x.bin")],
+        ];
+        for (const [verb, run] of verbs) {
+          await assertThrowsCode(run, "validation", `appData.${verb} with an owner containing "/"`);
+        }
+        // A refusal, not a no-op that quietly worked on the foreign drawer.
+        assert(
+          await ops.appData.getFile(owner, "sub/x.bin") !== null,
+          "a crafted owner reached the real owner's file",
+        );
+        await assertThrowsCode(
+          () => ops.appData.get({ ...owner, owner: "" }, "n1"),
+          "validation",
+          "an empty appData owner",
+        );
+
+        // NOT a slug grammar: a subject is the host's own user id in the host's
+        // own spelling, and "auth0|…" and "user:with:colons" are contract
+        // elsewhere in this repo. Only "/" is refused.
+        for (const [index, exotic] of ["auth0|64f0", "user:with:colons", "person@example.com"].entries()) {
+          const target = { appId: "app_owner", collection: "notes", owner: exotic };
+          const put = await ops.appData.put(target, { id: `ok_${index}`, data: { who: exotic } });
+          assert(put.refs?.["subject"] === exotic, `the owner ${exotic} was not stamped`);
+          await ops.appData.putFile(target, "f.bin", new Uint8Array([2]));
+          assertDeepEqual(await ops.appData.listFiles(target), ["f.bin"], `listFiles broke for owner ${exotic}`);
+        }
+      }),
+
       opsCase(opts, "appData refuses a collection name outside the grammar", async (ops) => {
         await seedApp(ops, "app_grammar");
         const legal = { appId: "app_grammar", collection: "box:inbox", owner: "own_a" };

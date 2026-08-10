@@ -2,6 +2,7 @@ import { z } from "zod";
 import { VendoError, safeErrorMessage, vendoErrorCodeSchema, type VendoErrorCode } from "./errors.js";
 import {
   APP_DATA_COLLECTION_PATTERN,
+  APP_DATA_OWNER_PATTERN,
   recordQuerySchema,
 } from "./store.js";
 
@@ -152,11 +153,13 @@ export const storeWireBlobsListRequestSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /** The owner on the target is the runtime's stamp from the host's login
-    session, never something generated code names. */
+    session, never something generated code names. Fenced by
+    `APP_DATA_OWNER_PATTERN` because it is the first path segment of every
+    appData file key, so a "/" in it crosses into another owner's drawer. */
 export const appDataTargetSchema = z.object({
   appId: z.string().min(1),
   collection: z.string().regex(APP_DATA_COLLECTION_PATTERN),
-  owner: z.string().min(1),
+  owner: z.string().regex(APP_DATA_OWNER_PATTERN),
 }).passthrough();
 
 export const storeWireAppDataPutRequestSchema = z.object({
