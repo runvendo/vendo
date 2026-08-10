@@ -416,12 +416,31 @@ const createValidateDoor = (
     // that read it treat that as "no carve-out", which is the conservative
     // direction.
     const plugged = config.checks ?? [];
+    // The host's OWN design rules, as rubric lines. The writer is told them up
+    // front (`briefing.designRules`) and until now nothing that reads the
+    // FINISHED document could tell whether they were kept. Only `- ` bullets,
+    // capped: a page of brand prose must not become a page of blocks.
+    const pack = await config.briefing?.(ctx).catch(() => undefined);
+    const ownerRules = (pack?.designRules ?? "").split("\n")
+      .flatMap((line) => {
+        const bullet = line.trim();
+        const rule = bullet.replace(/^[-*]\s+/, "");
+        return /^[-*]\s/.test(bullet) && rule !== "" ? [rule.slice(0, 200)] : [];
+      })
+      .slice(0, 12);
+    const brandRule = pack?.theme === undefined ? [] : [
+      `the only colours, corner radius and font on this screen are the brand tokens ${JSON.stringify(pack.theme)} — any other hex, radius or font family is invented`,
+    ];
     const samples = await queryEvidence(document, config.tools, ctx);
     const findings = await createCheckingLayer({
       deps,
       // The thorough door: the shared floor AND the reviewer. Off the
       // scripted-create hot path, so the tsc pass is affordable here (§7.1).
-      checks: [...floorChecks(deps), reviewerCheck(deps, samples, judgmentRules(plugged)), ...plugged],
+      checks: [
+        ...floorChecks(deps),
+        reviewerCheck(deps, samples, [...ownerRules, ...brandRule, ...judgmentRules(plugged)]),
+        ...plugged,
+      ],
     }).run({ document, request: "" });
     return { ok: !findings.some(({ severity }) => severity === "block"), findings };
   };

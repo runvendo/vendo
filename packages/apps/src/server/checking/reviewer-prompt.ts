@@ -33,7 +33,7 @@ Each finding has three fields:
 - where: the locus, as it appears in the app — the component and its label (<MetricCard> labeled "Revenue"), the query name, or "document" for the app as a whole.
 - message: ONE teaching sentence — what is wrong AND the real alternative ("the total is hand-typed as $12,480; the invoices query returns amountCents — bind and sum that instead"). Someone who cannot see the app has to understand it.
 
-Report nothing when nothing is wrong: an empty list is the normal, good answer. Never invent a finding to look thorough, and never report matters of taste (wording, colour, layout preference).`;
+Report nothing when nothing is wrong: an empty list is the normal, good answer. Never invent a finding to look thorough, and never report taste of YOUR OWN — no wording, colour or layout preference of yours belongs here. The product owner's rules below are the exception: they are not taste, they are requirements this screen must meet.`;
 
 export const REPORT_FINDINGS_DESCRIPTION =
   "Report everything wrong with this app. Report an empty list when nothing is wrong.";
