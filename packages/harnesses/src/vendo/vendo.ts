@@ -55,6 +55,16 @@ const SPECIALIST_SYSTEM =
 const HIRE_SUBAGENT = "hire_subagent";
 
 /**
+ * What a turn cut off mid-flight says.
+ *
+ * Consumer voice, and deliberately true of BOTH reasons a live signal fires —
+ * the person pressed stop, and the caller's own budget ran out — because nothing
+ * at this layer can tell those apart, and a sentence that named one would be
+ * wrong half the time.
+ */
+const TURN_CUT_SHORT = "I stopped before I could finish this.";
+
+/**
  * What a specialist is handed instead of the skill it was hired with, when that
  * skill could not be loaded. Written for the SPECIALIST, not the user: like
  * `SPECIALIST_SYSTEM`, this text is read by another agent.
@@ -657,7 +667,21 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
                 yield { type: "error", message: wireErrorMessage(part.error), code: "model" };
                 break;
               case "abort":
-                // The caller hung up: stop cleanly, say nothing.
+                // The caller hung up MID-TURN, so there is no answer — and a bare
+                // `return` here said nothing at all: no error event, so the runtime
+                // recorded a turn that succeeded with a blank reply, and whoever set
+                // the budget was never told it had been spent. Measured on genbench's
+                // harness lane (2026-08-10): a turn whose `vendo_make` outran the
+                // lane's per-turn budget came back with no reply, no failure and no
+                // recorded reason, and the case was simply lost.
+                //
+                // Reported on the ONE channel a caller can see, which is also the one
+                // that reaches the person: the runtime routes an `error` event to the
+                // screen's banner AND to the transcript's failed-turn record, so a
+                // reload shows why the reply stops instead of an empty answer under
+                // the question. `return` still, immediately after — the signal has
+                // fired, so there is nothing left this turn may do.
+                yield { type: "error", message: TURN_CUT_SHORT, code: "aborted" };
                 return;
               case "finish":
                 // The RESIDENT loop's own spend. Each hire's spend is yielded as
