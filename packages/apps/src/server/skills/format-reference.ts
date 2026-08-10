@@ -231,17 +231,19 @@ the centre is always a query or \`state\` read.
 | \`pick\` | one or more field names | keep only those fields (per row, over rows) |
 | \`rename\` | old/new pairs | rename fields |
 | \`asPoints\` | label field, value field | rows to \`{label, value}\` points |
-| \`format\` | \`"number"\` / \`"currency"\` / \`"percent"\` / \`"date"\` | format the value |
-| \`format\` | field, kind | format that field in every row |
+| \`format\` | \`"number"\` / \`"percent"\` / \`"date"\` | format the value |
+
+There is no money kind: a reshape would have to guess the scale, so money is the
+component's job, always.
 
 \`\`\`
 points={asPoints(invoices.data, "month", "total_cents")}
-rows={format(pick(invoices.data, "client", "amount_cents"), "amount_cents", "currency")}
+rows={rename(pick(invoices.data, "client", "amount_cents"), "amount_cents", "amount")}
 note={format(state.rate, "percent")}
 \`\`\`
 
 Reading the nesting from the inside out reads the steps in order: \`pick\` first,
-then \`format\`.
+then \`rename\`.
 
 ### Calculating: functions and arithmetic
 
@@ -281,11 +283,21 @@ rather than rendered as nonsense.
 
 There is exactly one \`sum\`, one \`count\`, one \`average\`, one \`min\` and one
 \`max\`, and each takes rows. A reshape works on what a query read, so the value at
-the centre of the nesting is a path — \`format(sum(invoices.data, "amount_cents"),
-"currency")\` is refused, because \`sum(...)\` already produced a number and there
-is nothing left to reshape. Let the component format it: \`Stat\` takes
-\`format="money"\`, \`Money\` takes \`cents\`, a \`DataTable\` column takes
-\`format:"money"\`.
+the centre of the nesting is a path — \`format(sum(invoices.data, "ratio"),
+"percent")\` is refused, because \`sum(...)\` already produced a number and there
+is nothing left to reshape.
+
+### Money is integer cents, everywhere, and the component scales it
+
+Every host money field is an integer number of CENTS, and every money slot turns
+cents into \`$1,234.56\` itself. So you bind the cents total raw and let the slot
+format it: \`Stat\` takes \`format="money"\`, \`Money\` takes \`cents\`, a
+\`DataTable\` or \`CardList\` entry takes \`format:"money"\`.
+
+Never divide by 100 on the way in. \`value={sum(spending.data, "amount")}\` with
+\`format="money"\` is the whole answer; \`value={sum(spending.data, "amount") / 100}\`
+divides twice and shows one hundredth of the real total, which is the single most
+expensive mistake you can make on a money screen.
 
 ---
 

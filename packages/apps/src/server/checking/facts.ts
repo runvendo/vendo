@@ -27,10 +27,12 @@ import {
   checkBindingShapes,
   checkExpr,
   kitSpec,
+  parseExpr,
   printWire,
   isExprBinding,
   validateAppDocument,
   validateTree,
+  type ExprNode,
   type NormalizedCatalog,
   type Tree,
 } from "../../contract/index.js";
@@ -233,6 +235,68 @@ export const kitSlotIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] 
       if (!propSpec.schema.safeParse(probe).success) {
         issues.push(atProp(node.id, prop, `on <${node.component}> binds ${value.$path}, a ${bound.kind} field, but this slot takes a different RAW type (${propSpec.doc}) — bind the raw field with that type (e.g. the integer-cents field, not a pre-formatted display string).`));
       }
+    }
+  }
+  return issues;
+};
+
+/** Does this computed value scale a number down by 100 anywhere inside it? */
+const scalesDownByHundred = (node: ExprNode): boolean => {
+  switch (node.kind) {
+    case "binary":
+      if (node.op === "/" && node.right.kind === "number" && node.right.value === 100) return true;
+      if (node.op === "*" && [node.left, node.right].some((side) => side.kind === "number" && side.value === 0.01)) return true;
+      return scalesDownByHundred(node.left) || scalesDownByHundred(node.right);
+    case "negate":
+      return scalesDownByHundred(node.operand);
+    case "call":
+    case "reshape":
+      return node.args.some(scalesDownByHundred);
+    default:
+      return false;
+  }
+};
+
+/** The slots that read integer CENTS: `<Money cents>`, and a `<Stat value>` the
+ *  node itself formats as money. */
+const centsProps = (node: TreeNode): readonly string[] =>
+  node.component === "Money"
+    ? ["cents"]
+    : node.component === "Stat" && node.props?.format === "money" ? ["value"] : [];
+
+/**
+ * Law 1 SCALE — money is integer cents end to end, and every money slot scales
+ * to major units itself (`formatMoney` in `@vendoai/ui`). Two spellings are
+ * therefore exactly 100x wrong, and {@link kitSlotIssues} cannot see either
+ * because it reads a slot's raw TYPE and a number is a number:
+ *
+ * - `<Stat format="money" value={sum(rows,"amount") / 100}/>` divides twice, so
+ *   a $3,626.50 net worth renders as $36.26;
+ * - `format(rows, "balance", "currency")` formats a cents field as whole
+ *   DOLLARS (reshape.ts's `CURRENCY_FORMAT.format(value)` does not scale), so
+ *   -$1,288.40 renders as -$128,840.00 — and the number becomes a string, which
+ *   kills the column's own `format:"money"`, its sort and its decimal alignment.
+ *
+ * Both are decidable by looking at the slot and the expression, so both are
+ * facts rather than judgement.
+ */
+export const moneyScaleIssues = (tree: Tree): FactIssue[] => {
+  const issues: FactIssue[] = [];
+  for (const node of tree.nodes) {
+    if (node.source === "host" || node.source === "generated" || node.props === undefined) continue;
+    for (const prop of centsProps(node)) {
+      const value = node.props[prop];
+      if (!isExprBinding(value)) continue;
+      const parsed = parseExpr(value.$expr);
+      if (!parsed.ok || !scalesDownByHundred(parsed.node)) continue;
+      issues.push(atProp(node.id, prop, `computes {${value.$expr}}, but this slot takes integer CENTS and scales them itself — dividing by 100 renders one hundredth of the real amount. Bind the cents total directly: {${value.$expr.replace(/\s*(?:\/\s*100|\*\s*0\.01)\s*/g, "")}}.`));
+    }
+    for (const [prop, value] of Object.entries(node.props)) {
+      if (!isRecord(value)) continue;
+      const steps = (value as unknown as { $reshape?: Array<{ op?: string; args?: string[] }> }).$reshape;
+      if (!Array.isArray(steps)) continue;
+      if (!steps.some((step) => step?.op === "format" && step.args?.at(-1) === "currency")) continue;
+      issues.push(atProp(node.id, prop, 'reshapes with format(…, "currency"), which reads the number as whole DOLLARS — host money fields are integer cents, so every amount renders 100x too big, and the formatted string can no longer sort or align. Drop the reshape and let the component format the raw cents: a DataTable/CardList entry takes {key:"amount_cents",format:"money"}, a Stat takes format="money", and <Money cents={…}/> takes cents.'));
     }
   }
   return issues;
@@ -555,6 +619,7 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
   treeCheck("bindings-fit", (tree) => [
     ...bindingShapeIssues(tree, deps),
     ...kitSlotIssues(tree, deps),
+    ...moneyScaleIssues(tree),
     ...hostReshapeIssues(tree, deps),
   ]),
   treeCheck("expressions-compute", (tree) => exprIssues(tree, deps)),
