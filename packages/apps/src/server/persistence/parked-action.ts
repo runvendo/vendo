@@ -2,11 +2,11 @@ import {
   type AppId,
   type ApprovalId,
   type RunContext,
-  type StoreAdapter,
   type ToolCall,
   type VendoRecord,
 } from "@vendoai/core";
-import { listAllRecords } from "./persistence.js";
+import type { EngineOps } from "./engine.js";
+import { listAllEngineRecords } from "./persistence.js";
 
 /**
  * W0 — parked in-app actions (the approve→resume engine seam).
@@ -51,8 +51,8 @@ const COLLECTION = "vendo_parked_action";
 
 const parkedData = (record: VendoRecord): ParkedAction => record.data as ParkedAction;
 
-const listAll = (store: StoreAdapter, refs: Record<string, string>): Promise<VendoRecord[]> =>
-  listAllRecords(store.records(COLLECTION), { refs });
+const listAll = (engine: EngineOps, refs: Record<string, string>): Promise<VendoRecord[]> =>
+  listAllEngineRecords(engine, COLLECTION, { refs });
 
 export interface ParkedActions {
   /** Park one in-app action on its guard approval (re-parking overwrites). */
@@ -65,26 +65,25 @@ export interface ParkedActions {
   clearForApp(appId: AppId): Promise<void>;
 }
 
-export const createParkedActions = (store: StoreAdapter): ParkedActions => {
-  const collection = store.records(COLLECTION);
+export const createParkedActions = (engine: EngineOps): ParkedActions => {
   return {
     async put(action) {
-      await collection.put({
+      await engine.put(COLLECTION, {
         id: action.approvalId,
         data: action,
         refs: { subject: action.owner, app_id: action.appId, approval: action.approvalId },
       });
     },
     async byApproval(approvalId) {
-      const record = await collection.get(approvalId);
+      const record = await engine.get(COLLECTION, approvalId);
       return record === null ? null : parkedData(record);
     },
     async remove(approvalId) {
-      await collection.delete(approvalId);
+      await engine.delete(COLLECTION, approvalId);
     },
     async clearForApp(appId) {
-      for (const record of await listAll(store, { app_id: appId })) {
-        await collection.delete(record.id);
+      for (const record of await listAll(engine, { app_id: appId })) {
+        await engine.delete(COLLECTION, record.id);
       }
     },
   };

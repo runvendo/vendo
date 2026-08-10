@@ -211,7 +211,7 @@ const subscribeApprovalDecisions = (
 /** The egress approval slice of `createApps`' closure. */
 export const createApprovalFlow = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "apps" | "egressApprovals" | "parkedActions"
+    "config" | "engine" | "egressApprovals" | "parkedActions"
     | "holds" | "lifecycle" | "updateAppDocument" | "reportGuard">,
 ) => {
   const egressGrants = createEgressGrants(deps);

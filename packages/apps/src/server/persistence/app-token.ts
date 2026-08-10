@@ -1,4 +1,5 @@
-import { sha256Hex, type AppId, type StoreAdapter } from "@vendoai/core";
+import { sha256Hex, type AppId } from "@vendoai/core";
+import type { EngineOps } from "./engine.js";
 
 /** execution-v2 skin contract — the per-app bearer the box calls back with.
  * Minted at provision (Lane B) and presented on every callback-surface request
@@ -27,17 +28,16 @@ export interface AppTokens {
   revoke(appId: AppId): Promise<void>;
 }
 
-export const createAppTokens = (store: StoreAdapter): AppTokens => {
-  const records = store.records(APP_TOKEN_COLLECTION);
+export const createAppTokens = (engine: EngineOps): AppTokens => {
 
   const revoke = async (appId: AppId): Promise<void> => {
     // Re-list from the start after each deleted page instead of following the
     // cursor: deleting mid-pagination can skip rows under an offset-shaped
     // cursor. Terminates because every pass deletes everything it saw.
     for (;;) {
-      const page = await records.list({ refs: { app_id: appId } });
+      const page = await engine.list(APP_TOKEN_COLLECTION, { refs: { app_id: appId } });
       if (page.records.length === 0) return;
-      for (const record of page.records) await records.delete(record.id);
+      for (const record of page.records) await engine.delete(APP_TOKEN_COLLECTION, record.id);
       if (page.cursor === undefined) return;
     }
   };
@@ -53,7 +53,7 @@ export const createAppTokens = (store: StoreAdapter): AppTokens => {
       await revoke(appId);
       const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
       const token = `vat_${[...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-      await records.put({
+      await engine.put(APP_TOKEN_COLLECTION, {
         id: sha256Hex(token),
         data: { mintedAt: new Date().toISOString() },
         refs: { app_id: appId, subject },
@@ -64,7 +64,7 @@ export const createAppTokens = (store: StoreAdapter): AppTokens => {
       if (!TOKEN_PATTERN.test(token)) return null;
       // Constant-work by construction: the hash lookup is a store key equality
       // on a value the caller cannot choose collisions for (cf. run-token HMAC).
-      const record = await records.get(sha256Hex(token));
+      const record = await engine.get(APP_TOKEN_COLLECTION, sha256Hex(token));
       const appId = record?.refs?.["app_id"];
       const subject = record?.refs?.["subject"];
       if (typeof appId !== "string" || typeof subject !== "string") return null;

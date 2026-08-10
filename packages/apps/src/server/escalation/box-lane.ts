@@ -18,6 +18,7 @@ import {
   type AppPlan,
 } from "../../contract/index.js";
 import { appMemoryBrief } from "../persistence/app-memory.js";
+import { engineOf } from "../persistence/engine.js";
 import {
   pushBoxEnv,
   readBoxManifest,
@@ -91,7 +92,7 @@ export const createMachineLane = (config: AppsConfig) => {
     .map(normalizeEgressDomain)
     .filter((domain) => domain !== "");
   const lifecycle = createMachineLifecycle({
-    store: config.store,
+    engine: engineOf(config.ops),
     ...machineConfig,
     // Secrets enter the box as opaque aliases and are substituted at the egress
     // proxy (06-apps §4.3), so the host's buildEnv assembles the boundary env

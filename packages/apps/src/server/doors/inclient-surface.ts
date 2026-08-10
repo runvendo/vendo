@@ -6,7 +6,7 @@
  * verdict `open()` rides to the client.
  */
 import { VendoError } from "@vendoai/core";
-import { rowFromRecord } from "../persistence/persistence.js";
+import { APPS_COLLECTION, rowFromRecord } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import { computeShipDiff } from "../remix/ship-diff.js";
 import type { AppsRuntime } from "../runtime/types.js";
@@ -15,7 +15,7 @@ import { appVersionHash } from "../remix/version-hash.js";
 export type InClientSurfaceDeps = Pick<
   AppsRuntimeContext,
   | "config"
-  | "apps"
+  | "engine"
   | "inClientApprovals"
   | "review"
   | "holds"
@@ -27,7 +27,7 @@ export type InClientSurfaceDeps = Pick<
 export const createInClientSurface = (deps: InClientSurfaceDeps): AppsRuntime["inClient"] => {
   const {
     config,
-    apps,
+    engine,
     inClientApprovals,
     review,
     holds,
@@ -47,7 +47,7 @@ export const createInClientSurface = (deps: InClientSurfaceDeps): AppsRuntime["i
     // (apps.review.reviewer) covers them, and an asserted reviewer may
     // approve across the owner boundary (that is the reviewer's job).
     // Instant-kind keeps the plain access scoping unchanged.
-    const record = await apps.get(input.appId);
+    const record = await engine.get(APPS_COLLECTION, input.appId);
     if (record === null) throw new VendoError("not-found", `app not found: ${input.appId}`);
     const row = rowFromRecord(record);
     const app = row.doc;

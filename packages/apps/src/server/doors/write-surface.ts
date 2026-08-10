@@ -31,11 +31,7 @@ import {
   type AppPlan,
 } from "../../contract/index.js";
 import { createProgressiveQueryResolver } from "../persistence/open.js";
-import {
-  appRecordInput,
-  enabledAfterDocumentEdit,
-  rowFromRecord,
-} from "../persistence/persistence.js";
+import { APPS_COLLECTION, appRecordInput, enabledAfterDocumentEdit, rowFromRecord } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import { asTree } from "../generation/engine.js";
 import type { AppsRuntime, EditResult, VersionEntry } from "../runtime/types.js";
@@ -130,10 +126,10 @@ const createRefusedSaveRecorder = (
 
 const createAuthoredSaver = (
   deps: Pick<AppsRuntimeContext,
-    "apps" | "history" | "pruneHistory" | "reportLifecycle" | "reportDocumentEdit"
+    "engine" | "history" | "pruneHistory" | "reportLifecycle" | "reportDocumentEdit"
     | "editIntents" | "editVersions" | "discardVersion" | "editRefusals">,
 ) => {
-  const { apps, history, pruneHistory, reportLifecycle, reportDocumentEdit } = deps;
+  const { engine, history, pruneHistory, reportLifecycle, reportDocumentEdit } = deps;
   const { editIntents, editVersions } = deps;
   const recordRefusedSave = createRefusedSaveRecorder(deps);
   return async (
@@ -159,7 +155,7 @@ const createAuthoredSaver = (
         // re-reads its own baseline. Only ever re-reads a row this caller was
         // already authorized to read.
         const assertCurrent = async (): Promise<boolean> => {
-          const current = await apps.get(input.appId);
+          const current = await engine.get(APPS_COLLECTION, input.appId);
           const stored = current === null ? null : rowFromRecord(current);
           if (stored === null
             // The subject too, for persistEdit's reason: a promote that landed
@@ -206,7 +202,7 @@ const createAuthoredSaver = (
         enabled,
         "box",
       );
-      await apps.put(appRow);
+      await engine.put(APPS_COLLECTION, appRow);
       // The write landed, so the version above is real history now: whatever
       // the announcements below do, it must not be cleaned up — and the cap
       // applies to it (pruneHistory).
@@ -234,13 +230,13 @@ const createAuthoredSaver = (
 };
 
 const createAuthoredDoor = (
-  deps: Pick<AppsRuntimeContext, "apps" | "caller" | "holds"> & {
+  deps: Pick<AppsRuntimeContext, "engine" | "caller" | "holds"> & {
     saveAuthoredDocument: ReturnType<typeof createAuthoredSaver>;
   },
 ): AppsRuntime["authored"] => {
-  const { apps, caller, holds, saveAuthoredDocument } = deps;
+  const { engine, caller, holds, saveAuthoredDocument } = deps;
   return async (input, ctx) => {
-    const record = await apps.get(input.appId);
+    const record = await engine.get(APPS_COLLECTION, input.appId);
     const row = record === null ? null : rowFromRecord(record);
     // A row that already exists belongs to whoever holds it. `/user/**` is its
     // subject's at EVERY level (core `accessForPath`), so a harness can write
@@ -423,13 +419,13 @@ const createEditDoor = (
 /** The write slice of `AppsRuntime`. */
 export const createWriteSurface = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "apps" | "caller" | "history" | "holds" | "lifecycle" | "requireOwned"
+    "config" | "engine" | "caller" | "history" | "holds" | "lifecycle" | "requireOwned"
     | "updateAppDocument" | "assembleEdit" | "failedEdit" | "takeEditVersion"
     | "generationToolContext" | "runServerWork" | "editServerViaBox" | "pruneHistory"
     | "reportLifecycle" | "reportDocumentEdit" | "discardVersion"
     | "editIntents" | "editVersions" | "editRefusals">,
 ): Pick<AppsRuntime, "authored" | "commitSource" | "edit" | "remember" | "schedule"> => {
-  const { config, apps, requireOwned, updateAppDocument } = deps;
+  const { config, engine, requireOwned, updateAppDocument } = deps;
   const saveAuthoredDocument = createAuthoredSaver(deps);
   const editServedApp = createServedAppEditor(deps);
   return {
@@ -445,7 +441,7 @@ export const createWriteSurface = (
         // address, because an org app's editor can usually write their own `/user`
         // mount too.
         ownerOf: async (appId) => {
-          const subject = (await apps.get(appId))?.refs?.subject;
+          const subject = (await engine.get(APPS_COLLECTION, appId))?.refs?.subject;
           if (subject === undefined) {
             throw new VendoError("not-found", `${appId} has no row to hold its source`);
           }

@@ -17,13 +17,7 @@ import {
   type AdmissionOrigin,
 } from "../../contract/index.js";
 import { appMemoryBrief } from "./app-memory.js";
-import {
-  appRecordInput,
-  enabledAfterDocumentEdit,
-  rowFromRecord,
-  withoutSession,
-  type AppRecordWrite,
-} from "./persistence.js";
+import { APPS_COLLECTION, appRecordInput, enabledAfterDocumentEdit, rowFromRecord, type AppRecordWrite, withoutSession } from "./persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import { NO_ASSEMBLER, NOTHING_RENDERABLE } from "../doors/build-messages.js";
 import type { EditResult, VersionEntry } from "../runtime/types.js";
@@ -126,10 +120,10 @@ const createEditNotices = (deps: Pick<AppsRuntimeContext, "config" | "history">)
 };
 
 const createEditPersist = (
-  deps: Pick<AppsRuntimeContext, "apps" | "history">
+  deps: Pick<AppsRuntimeContext, "engine" | "history">
     & Pick<ReturnType<typeof createEditNotices>, "reportDocumentEdit" | "discardVersion" | "pruneHistory">,
 ) => {
-  const { apps, history, reportDocumentEdit, discardVersion, pruneHistory } = deps;
+  const { engine, history, reportDocumentEdit, discardVersion, pruneHistory } = deps;
   const persistEdit = async (
     previous: AppDocument,
     app: AppDocument,
@@ -151,13 +145,13 @@ const createEditPersist = (
     // org id, not the editor. The routing door pins `WHERE id AND subject`, so
     // writing the editor here would silently lose every org edit; `can(editor)`
     // upstream is what authorized this write, and the row keeps its owner.
-    const rowSubject = (await apps.get(previous.id))?.refs?.subject ?? subject;
+    const rowSubject = (await engine.get(APPS_COLLECTION, previous.id))?.refs?.subject ?? subject;
     // Best-effort optimistic concurrency. The core StoreAdapter seam (01-core §12) has
     // no compare-and-swap or transactions, so a narrow TOCTOU window between the final
     // check and the put remains — closing it fully needs a store-level revision column
     // (a store-block follow-up). This catches the common double-edit races.
     const assertCurrent = async (): Promise<boolean> => {
-      const current = await apps.get(previous.id);
+      const current = await engine.get(APPS_COLLECTION, previous.id);
       const row = current === null ? null : rowFromRecord(current);
       if (row === null
         || row.subject !== rowSubject
@@ -193,7 +187,7 @@ const createEditPersist = (
         ? true
         : enabledAfterDocumentEdit(previous, app, wasEnabled);
       appRow = appRecordInput(app, rowSubject, enabled, options.origin);
-      await apps.put(appRow);
+      await engine.put(APPS_COLLECTION, appRow);
     } catch (error) {
       // The version above records a state that never became the past — see
       // discardVersion. The refusal is re-thrown unchanged.
@@ -291,11 +285,11 @@ const createEditIntents = () => {
 };
 
 const createEditAssembler = (
-  deps: Pick<AppsRuntimeContext, "config" | "apps" | "requireOwned">
+  deps: Pick<AppsRuntimeContext, "config" | "engine" | "requireOwned">
     & Pick<ReturnType<typeof createEditIntents>,
       "editIntents" | "editVersions" | "editRefusals" | "takeEditRefusal">,
 ) => {
-  const { config, apps, requireOwned } = deps;
+  const { config, engine, requireOwned } = deps;
   const { editIntents, editVersions, editRefusals, takeEditRefusal } = deps;
   /**
    * ONE instruction through the ONE builder.
@@ -328,7 +322,7 @@ const createEditAssembler = (
     // which of its shapes were asked for and which are incidental, so an editor
     // that never read it "fixes" the filter the person asked for. Composed here
     // rather than duplicated — `appMemoryBrief` is the one writer of this block.
-    const before = await apps.get(appId).catch(() => null);
+    const before = await engine.get(APPS_COLLECTION, appId).catch(() => null);
     const memory = appMemoryBrief(before === null ? undefined : rowFromRecord(before).doc.memory);
     editIntents.set(appId, instruction);
     // Kept even though `takeEditVersion` matches on the words: an entry no edit
@@ -370,7 +364,7 @@ const createEditAssembler = (
 
 /** The edit-journal slice of `createApps`' closure. */
 export const createEditJournal = (
-  deps: Pick<AppsRuntimeContext, "config" | "apps" | "history" | "requireOwned">,
+  deps: Pick<AppsRuntimeContext, "config" | "engine" | "history" | "requireOwned">,
 ) => {
   const results = createEditResults();
   const notices = createEditNotices(deps);

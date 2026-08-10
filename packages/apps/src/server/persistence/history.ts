@@ -1,16 +1,16 @@
 import {
   VendoError,
+  engineAppHistory,
   isoDateTimeSchema,
   type AppId,
-  type RecordStore,
-  type StoreAdapter,
   type VendoRecord,
 } from "@vendoai/core";
 import {
   type AppDocument,
 } from "../../contract/index.js";
 import { z } from "zod";
-import { documentFromRecord, listAllRecords, validateDocument } from "./persistence.js";
+import type { EngineOps } from "./engine.js";
+import { APPS_COLLECTION, documentFromRecord, listAllEngineRecords, validateDocument } from "./persistence.js";
 import type { VersionEntry } from "../runtime/runtime.js";
 
 const HISTORY_LIMIT = 50;
@@ -26,8 +26,6 @@ interface HistorySnapshot {
   entry: VersionEntry;
   seq: number;
 }
-
-const allRecords = (records: RecordStore): Promise<VendoRecord[]> => listAllRecords(records);
 
 const snapshotFromRecord = (record: VendoRecord, appId: AppId): HistorySnapshot => {
   if (typeof record.data !== "object" || record.data === null || Array.isArray(record.data)) {
@@ -80,28 +78,28 @@ export interface AppHistoryAccess {
 }
 
 /** 06-apps §1 — persisted capped history, kept outside the app artifact. */
-export const createAppHistory = (store: StoreAdapter): AppHistoryAccess => {
-  const collection = (appId: AppId): RecordStore => store.records(`vendo:app-history:${appId}`);
-  const ordered = async (appId: AppId): Promise<VendoRecord[]> => (await allRecords(collection(appId)))
+export const createAppHistory = (engine: EngineOps): AppHistoryAccess => {
+  const allRecords = (appId: AppId): Promise<VendoRecord[]> =>
+    listAllEngineRecords(engine, engineAppHistory(appId));
+  const ordered = async (appId: AppId): Promise<VendoRecord[]> => (await allRecords(appId))
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt)
       || sequenceFromRecord(left) - sequenceFromRecord(right)
       || left.id.localeCompare(right.id));
   const deleteVersion = async (appId: AppId, versionId: string): Promise<void> => {
-    await collection(appId).delete(versionId);
+    await engine.delete(engineAppHistory(appId), versionId);
   };
 
   return {
     async append(appId, doc, entry) {
       const validated = validateDocument(doc, appId);
       const parsedEntry = versionEntrySchema.parse(entry);
-      const records = collection(appId);
-      const existing = await allRecords(records);
+      const existing = await allRecords(appId);
       const seq = existing.reduce(
         (highest, record) => Math.max(highest, sequenceFromRecord(record)),
         0,
       ) + 1;
       const versionId = `ver_${crypto.randomUUID()}`;
-      await records.put({
+      await engine.put(engineAppHistory(appId), {
         id: versionId,
         data: { doc: validated, entry: parsedEntry, seq },
       });
@@ -120,20 +118,20 @@ export const createAppHistory = (store: StoreAdapter): AppHistoryAccess => {
     },
     discard: deleteVersion,
     async prune(appId) {
-      const records = collection(appId);
       const entries = await ordered(appId);
       for (const expired of entries.slice(0, Math.max(0, entries.length - HISTORY_LIMIT))) {
-        await records.delete(expired.id);
+        await engine.delete(engineAppHistory(appId), expired.id);
       }
     },
     async clear(appId) {
-      const records = collection(appId);
-      for (const record of await allRecords(records)) await records.delete(record.id);
+      for (const record of await allRecords(appId)) {
+        await engine.delete(engineAppHistory(appId), record.id);
+      }
     },
     surface(appId) {
       return {
         async list() {
-          const appRow = await store.records("vendo_apps").get(appId);
+          const appRow = await engine.get(APPS_COLLECTION, appId);
           if (appRow === null) throw new VendoError("not-found", `app not found: ${appId}`);
           documentFromRecord(appRow);
           const entries: VersionEntry[] = [];
