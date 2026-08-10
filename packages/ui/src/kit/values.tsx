@@ -176,12 +176,22 @@ export interface TextProps {
   variant?: "body" | "heading" | "caption" | "label";
 }
 
-/** Themed text. Heading renders an <h3>; others render a <span>. */
+/** Themed text. Heading renders an <h3>; others render a <span>.
+ *
+ *  A heading is SIZED like one. It used to render at the body size with only
+ *  extra weight, so a screen's title came out the same height as a field label
+ *  and no element led the page. Scaled off the theme's base size, the way
+ *  Stat's value is. */
 export function Text({ text, variant = "body" }: TextProps) {
   const style: CSSProperties = {
     color: variant === "caption" ? t.muted : t.text,
     fontFamily: variant === "heading" ? t.headingFamily : t.fontFamily,
-    fontSize: variant === "caption" ? "var(--vendo-font-size-caption, 12.5px)" : t.fontSize,
+    fontSize:
+      variant === "caption"
+        ? "var(--vendo-font-size-caption, 12.5px)"
+        : variant === "heading"
+          ? "calc(var(--vendo-font-size, 15px) * 1.32)"
+          : t.fontSize,
     fontWeight: variant === "heading" ? 650 : variant === "label" ? 600 : 400,
     letterSpacing: "-0.011em",
     lineHeight: variant === "heading" ? 1.3 : 1.5,

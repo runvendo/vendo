@@ -21,6 +21,12 @@ const STAT_VALUE_MAX_CHARS = 40;
 
 export function Stat({ label, value, format = "text", trend, tone = "default" }: StatProps) {
   const emphasis = tone === "accent" ? t.accent : tone === "danger" ? t.danger : t.text;
+  /** The rule is a BRAND MARK, and the host's accent is the only thing it may
+   *  be: a default-tone Stat painted it in the TEXT color, so the commonest
+   *  Vendo screen — one Stat over one table — spent the theme accent nowhere
+   *  and rendered entirely in grey. The value keeps the text tone; only the
+   *  3px rule carries the brand. */
+  const rule = tone === "danger" ? t.danger : t.accent;
   const formatted = applyFormat(value, format);
   const empty = formatted === null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;
@@ -40,7 +46,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         flexDirection: "column",
         gap: "var(--vendo-density-field-gap, 6px)",
         minWidth: 0,
-        borderLeft: `3px solid ${emphasis}`,
+        borderLeft: `3px solid ${rule}`,
         borderRadius: t.radiusSmall,
         background: `color-mix(in srgb, ${t.surface} 90%, ${t.background})`,
         padding: "var(--vendo-density-stat-padding, 12px 14px)",
