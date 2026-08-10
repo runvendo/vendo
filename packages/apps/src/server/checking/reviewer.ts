@@ -140,7 +140,7 @@ const sampleLines = (samples: Readonly<Record<string, unknown>>): string => {
  */
 const rubricSection = (rubric: readonly string[]): string => (rubric.length === 0 ? "" : `
 
-ALSO REJECT anything that breaks one of these rules, which this product's owner set. Judge them exactly like the five above, and quote the rule you applied in your message:
+ALSO REJECT anything that breaks one of these rules, which this product's owner set. Judge them exactly like the five above, and quote the rule you applied in your message. A breach of one of these rules is a "block":
 ${rubric.map((rule) => `- ${rule}`).join("\n")}`);
 
 /**
