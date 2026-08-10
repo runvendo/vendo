@@ -303,13 +303,14 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Select",
     group: "forms",
-    summary: "A dropdown over a RAW array of tool output. Map objects with labelField/valueField — no reshaping. multiple selects several.",
+    summary: "A dropdown over a RAW array of tool output. Map objects with labelField/valueField — no reshaping. multiple selects several. With nothing to choose it states that in words instead of rendering a blank control, and its Form withholds the submit.",
     props: {
       options: data(z.array(z.union([z.string(), z.number(), z.record(z.string(), z.unknown())])), "raw items", { required: true }),
       label: copy(z.string(), "field label"),
       labelField: config(z.string(), "object field for the visible label"),
       valueField: config(z.string(), "object field for the value"),
       placeholder: copy(z.string(), "empty-choice text"),
+      emptyState: copy(z.string(), "words shown instead of the dropdown when there is nothing to choose"),
       multiple: config(z.boolean(), "allow several values"),
       onChange: config(action, "bound change handler"),
     },
@@ -367,7 +368,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Form",
     group: "forms",
-    summary: "Groups fields with a submit action. onSubmit names a host tool.",
+    summary: "Groups fields with a submit action. onSubmit names a host tool. While a field inside it has nothing to offer — a dropdown over an empty query — it offers no submit, because there is nothing to send.",
     props: {
       onSubmit: config(action, "the host tool to run on submit"),
       submitLabel: copy(z.string(), "submit button text"),
