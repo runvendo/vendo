@@ -2,16 +2,28 @@
 
 import clsx from "clsx";
 import { useState } from "react";
-import type { WorkbenchPart } from "@vendoai/ui";
+import type { WorkbenchEvent, WorkbenchPart } from "@vendoai/ui";
 import { Chevron, Chip, Disclosure, Empty, SectionHead } from "./parts";
 import { count, describe, duration, eventsOf, rows, share, TONES, type Tone } from "./model";
 import styles from "./workbench.module.css";
 
 type PanelProps = { parts: readonly WorkbenchPart[] };
 
-const GUARD_TONE: Record<string, Tone> = { run: "ok", ask: "warn", block: "bad" };
-const STATUS_TONE: Record<string, Tone> = { ok: "mute", denied: "bad", error: "bad" };
-const APPROVAL_TONE: Record<string, Tone> = { auto: "mute", approved: "ok", "timed-out": "bad", denied: "bad" };
+/** Keyed by the union itself, so a new guard decision or approval outcome in
+ *  `@vendoai/ui` is a build error here rather than an uncoloured cell. */
+type Call = Extract<WorkbenchEvent, { kind: "tool" }>;
+const GUARD_TONE: Record<NonNullable<Call["guard"]>, Tone> = { run: "ok", ask: "warn", block: "bad" };
+const STATUS_TONE: Record<Call["status"], Tone> = { ok: "mute", denied: "bad", error: "bad" };
+const APPROVAL_TONE: Record<NonNullable<Call["approval"]>, Tone> = {
+  auto: "mute", approved: "ok", "timed-out": "bad", denied: "bad",
+};
+
+/** Membership, flipped into a NEW set — React state is never mutated in place. */
+const toggled = (set: ReadonlySet<string>, key: string): Set<string> => {
+  const next = new Set(set);
+  if (!next.delete(key)) next.add(key);
+  return next;
+};
 
 /** Which agent spoke — only worth saying when it is not the turn's own. */
 function AgentTag({ agent }: { agent: WorkbenchPart["agent"] }) {
@@ -23,12 +35,7 @@ function AgentTag({ agent }: { agent: WorkbenchPart["agent"] }) {
 
 export function TimelinePanel({ parts }: PanelProps) {
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const toggle = (id: string) =>
-    setOpen(current => {
-      const next = new Set(current);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+  const toggle = (id: string) => setOpen(current => toggled(current, id));
   const list = rows(parts);
   if (list.length === 0) {
     return <Empty title="Nothing on the wire yet" detail="Diagnostics appear here the moment a turn starts." />;
@@ -130,14 +137,14 @@ export function TimelinePanel({ parts }: PanelProps) {
                         <AgentTag agent={call.agent} />
                         {call.event.guard === undefined
                           ? null
-                          : <Chip tone={GUARD_TONE[call.event.guard] ?? "mute"}>{call.event.guard}</Chip>}
+                          : <Chip tone={GUARD_TONE[call.event.guard]}>{call.event.guard}</Chip>}
                         {/* The approval only earns a chip when it says something
                             the status does not — "denied · denied" is one fact. */}
                         {call.event.approval === undefined || call.event.approval === "auto"
                           || call.event.approval === call.event.status
                           ? null
-                          : <Chip tone={APPROVAL_TONE[call.event.approval] ?? "mute"}>{call.event.approval}</Chip>}
-                        <Chip tone={STATUS_TONE[call.event.status] ?? "mute"}>{call.event.status}</Chip>
+                          : <Chip tone={APPROVAL_TONE[call.event.approval]}>{call.event.approval}</Chip>}
+                        <Chip tone={STATUS_TONE[call.event.status]}>{call.event.status}</Chip>
                         <span className={styles.dur}>{duration(call.event.durationMs)}</span>
                       </span>
                     </div>
@@ -176,6 +183,9 @@ export function ContextPanel({ parts }: PanelProps) {
   const sheds = eventsOf(parts, "shed");
   const pct = latest === undefined ? 0 : share(latest.estTokens, latest.windowTokens);
   const triggerPct = latest === undefined ? 0 : share(latest.triggerTokens, latest.windowTokens);
+  // Anchor the legend on whichever side keeps it inside the card, arrow on the
+  // anchored edge — a legend that runs off the edge is worse than no legend.
+  const flip = triggerPct > 50;
   return (
     <div>
       {latest === undefined ? (
@@ -195,15 +205,12 @@ export function ContextPanel({ parts }: PanelProps) {
             <span className={styles.gaugeTrigger} style={{ left: `${triggerPct}%` }} />
           </div>
           <div className={styles.gaugeLegend}>
-            {triggerPct > 50 ? (
-              <span className={styles.gaugeMark} style={{ right: `${100 - triggerPct}%` }}>
-                compaction trigger · {triggerPct}% · {count(latest.triggerTokens)} ▲
-              </span>
-            ) : (
-              <span className={styles.gaugeMark} style={{ left: `${triggerPct}%` }}>
-                ▲ compaction trigger · {triggerPct}% · {count(latest.triggerTokens)}
-              </span>
-            )}
+            <span
+              className={styles.gaugeMark}
+              style={flip ? { right: `${100 - triggerPct}%` } : { left: `${triggerPct}%` }}
+            >
+              {flip ? "" : "▲ "}compaction trigger · {triggerPct}% · {count(latest.triggerTokens)}{flip ? " ▲" : ""}
+            </span>
           </div>
         </div>
       )}
@@ -364,6 +371,11 @@ export function ToolsPanel({ parts }: PanelProps) {
 
 /* ---------------------------------------------------------------- guard */
 
+/** Only the outcomes worth colouring; `auto` and no-approval stay plain. */
+const APPROVAL_CLASS: Record<string, string | undefined> = {
+  approved: styles.gApprovalOk, "timed-out": styles.gApprovalBad, denied: styles.gApprovalBad,
+};
+
 export function GuardPanel({ parts }: PanelProps) {
   const calls = eventsOf(parts, "tool");
   if (calls.length === 0) {
@@ -400,20 +412,14 @@ export function GuardPanel({ parts }: PanelProps) {
               <td>
                 {call.event.guard === undefined
                   ? <span className={styles.e2}>—</span>
-                  : <Chip tone={GUARD_TONE[call.event.guard] ?? "mute"}>{call.event.guard}</Chip>}
+                  : <Chip tone={GUARD_TONE[call.event.guard]}>{call.event.guard}</Chip>}
               </td>
               {/* Plain words, not a chip: most rows say "auto", and a column of
                   identical badges is noise the eye has to step over. */}
-              <td
-                className={clsx(
-                  styles.gApproval,
-                  APPROVAL_TONE[call.event.approval ?? ""] === "ok" && styles.gApprovalOk,
-                  APPROVAL_TONE[call.event.approval ?? ""] === "bad" && styles.gApprovalBad,
-                )}
-              >
+              <td className={clsx(styles.gApproval, APPROVAL_CLASS[call.event.approval ?? ""])}>
                 {call.event.approval ?? "—"}
               </td>
-              <td><Chip tone={STATUS_TONE[call.event.status] ?? "mute"}>{call.event.status}</Chip></td>
+              <td><Chip tone={STATUS_TONE[call.event.status]}>{call.event.status}</Chip></td>
               <td className={clsx(styles.r, styles.dur)}>{duration(call.event.durationMs)}</td>
             </tr>
           ))}
@@ -461,11 +467,7 @@ export function RawPanel({ parts }: PanelProps) {
             key={kind}
             className={clsx(styles.fchip, !off.has(kind) && styles.fchipOn)}
             aria-pressed={!off.has(kind)}
-            onClick={() => setOff(current => {
-              const next = new Set(current);
-              if (!next.delete(kind)) next.add(kind);
-              return next;
-            })}
+            onClick={() => setOff(current => toggled(current, kind))}
           >
             {kind}
           </button>

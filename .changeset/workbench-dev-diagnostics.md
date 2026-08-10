@@ -1,6 +1,7 @@
 ---
 "@vendoai/harnesses": minor
 "@vendoai/ui": minor
+"@vendoai/vendo": minor
 ---
 
 A dev-only workbench diagnostics channel behind `VENDO_WORKBENCH`, and the feed
@@ -15,3 +16,5 @@ reach the wire and nothing is ever persisted.
 `@vendoai/ui` gains the receiving half: `publishWorkbenchPart` files a chunk,
 `useWorkbenchFeed` reads the turns back in the producer's own `seq` order, and
 `developmentMode` decides whether such a surface renders at all.
+`@vendoai/vendo/react` re-exports all three, so a host on the umbrella package
+can build the pane without reaching for `@vendoai/ui` directly.

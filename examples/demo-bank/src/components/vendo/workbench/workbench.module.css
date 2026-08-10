@@ -680,11 +680,6 @@ button.evt:hover {
   white-space: nowrap;
 }
 
-.evtText b {
-  font-weight: 500;
-  color: var(--w-text);
-}
-
 .call {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -816,8 +811,6 @@ button.evt:hover {
   margin-top: 9px;
 }
 
-/* Anchored to the trigger line, and on whichever side keeps it inside the
-   card — a legend that runs off the edge is worse than no legend. */
 .gaugeMark {
   position: absolute;
   white-space: nowrap;
@@ -829,17 +822,6 @@ button.evt:hover {
 .t {
   width: 100%;
   border-collapse: collapse;
-}
-
-.t th {
-  text-align: left;
-  font-size: 9.5px;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--w-muted);
-  font-weight: 500;
-  padding: 0 10px 7px 0;
-  border-bottom: 1px solid var(--w-line);
 }
 
 .t td {
@@ -939,12 +921,6 @@ button.evt:hover {
   border: 1px solid var(--w-line);
   border-radius: 5px;
   padding: 3px 7px;
-}
-
-.pillOff {
-  color: var(--w-faint);
-  background: transparent;
-  border-style: dashed;
 }
 
 .query {

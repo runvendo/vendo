@@ -113,16 +113,13 @@ function notify(): void {
 export function publishWorkbenchPart(chunk: { type: string; data?: unknown }): void {
   const part = workbenchPart(chunk);
   if (part === undefined) return;
-  const parts = byTurn.get(part.turnId);
-  if (parts === undefined) {
-    byTurn.set(part.turnId, [part]);
-  } else {
-    const at = parts.findIndex(existing => existing.seq > part.seq);
-    if (at === -1) parts.push(part);
-    else parts.splice(at, 0, part);
-  }
-  // Turns keep the order their first part arrived in; every snapshot is fresh
-  // so a reader can compare identities to spot new news.
+  const parts = byTurn.get(part.turnId) ?? [];
+  const at = parts.findIndex(existing => existing.seq > part.seq);
+  parts.splice(at === -1 ? parts.length : at, 0, part);
+  // `set` on a key the map already holds leaves its position alone, so turns
+  // keep the order their first part arrived in; every snapshot is fresh so a
+  // reader can compare identities to spot new news.
+  byTurn.set(part.turnId, parts);
   feed = [...byTurn].map(([turnId, list]) => ({ turnId, parts: [...list] }));
   notify();
 }

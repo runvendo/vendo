@@ -1,12 +1,9 @@
 /**
  * The workbench — a DEV-ONLY diagnostics channel for one turn.
  *
- * A turn's loop already holds every fact a developer wants while watching it
- * think: which step it is on, what it may pick from, what the guard said about a
- * call, how big the prompt got, what it summarized away. None of it is a product
- * surface — it is the machine talking about itself — so it rides the wire the
- * same way `status` does: a TRANSIENT `data-vendo-debug` part, which the ai-SDK
- * delivers to the client and never adds to message history (see
+ * The machine talking about itself is never a product surface, so it rides the
+ * wire the way `status` does: a TRANSIENT `data-vendo-debug` part, which the
+ * ai-SDK delivers to the client and never adds to message history (see
  * `VENDO_STATUS_PART` in ./wire.ts). Nothing here is ever persisted.
  *
  * The whole gate is `VENDO_WORKBENCH=1` on the SERVER, read once per turn by
@@ -116,10 +113,9 @@ export function emitWorkbench(
 /**
  * Where the turn is standing right now, for a call site that holds no step of its
  * own — the guarded-call path serves the resident, the screen agent and a hire
- * through one function and cannot tell them apart.
- *
- * Read at the START of a call, so a hire's own tool events carry the hire while
- * the `hire_subagent` call that is still open above them carries the resident.
+ * through one function and cannot tell them apart. Read at the START of a call,
+ * so a hire's own tool events carry the hire while the `hire_subagent` call still
+ * open above them carries the resident.
  */
 export function workbenchCursor(turnId: TurnId | undefined): { agent: WorkbenchAgent; step: number } {
   const channel = turnId === undefined ? undefined : channels.get(turnId);

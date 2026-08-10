@@ -260,9 +260,7 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
     async call(name, args): Promise<ToolResult> {
       const toolCallId = mintToolCallId();
       const startedAt = Date.now();
-      // Where the turn is standing when the call BEGINS. A hire runs nested
-      // inside the resident's still-open `hire_subagent` call, so reading the
-      // cursor at the end would file that call under the hire it made.
+      // Read BEFORE the call runs, not after — see `workbenchCursor`.
       const at = workbenchCursor(options.ctx.turnId);
       let guard: ToolFact["guard"];
       let approval: ToolFact["approval"];

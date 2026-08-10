@@ -629,9 +629,6 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
         ...(active === undefined ? {} : { activeTools: active }),
       };
     },
-    // The other half of the workbench's step boundary — the SDK's own per-step
-    // hook, so the loop keeps no bookkeeping of its own beyond the two lines
-    // above.
     onStepFinish: (finished) => {
       debug({
         kind: "step-end",

@@ -5,15 +5,15 @@ import type { ReactNode } from "react";
 import type { Tone } from "./model";
 import styles from "./workbench.module.css";
 
-export function Chip({ tone = "mute", children }: { tone?: Tone; children: ReactNode }) {
+export function Chip({ tone, children }: { tone: Tone; children: ReactNode }) {
   return <span className={clsx(styles.chip, styles[tone])}>{children}</span>;
 }
 
-export function SectionHead({ label, count }: { label: string; count?: ReactNode }) {
+export function SectionHead({ label, count }: { label: string; count: ReactNode }) {
   return (
     <div className={styles.secHead}>
       {label}
-      {count === undefined ? null : <span className={styles.secN}>{count}</span>}
+      <span className={styles.secN}>{count}</span>
       <span className={styles.rule} />
     </div>
   );
@@ -43,7 +43,7 @@ export function Chevron({ open }: { open: boolean }) {
  *  together. */
 export function Disclosure(
   { open, onToggle, head, className, children }:
-  { open: boolean; onToggle: () => void; head: ReactNode; className?: string; children: ReactNode },
+  { open: boolean; onToggle: () => void; head: ReactNode; className: string; children: ReactNode },
 ) {
   return (
     <>
