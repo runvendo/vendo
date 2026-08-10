@@ -238,11 +238,26 @@ export const kitSlotIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] 
   return issues;
 };
 
+/** A money slot renders integer CENTS — `formatMoney` divides by 100 itself —
+ *  so a computed money value that divides by 100 first prints one hundredth of
+ *  the real amount. `sum(accounts.data, "balance") / 100` shipped a $36,265.00
+ *  net worth as $362.65 on screen after screen, beside a table that showed the
+ *  same cents correctly. Cents in, cents out: rescaling is the component's job
+ *  and never the expression's, which makes the shape decidable here instead of
+ *  a number the reviewer has to re-derive. Narrow on purpose — only the two
+ *  slots that are money BY DECLARATION, and only a literal ÷100. */
+const CENTS_RESCALE = /\/\s*100(?![\d.])|\*\s*0?\.01(?!\d)/;
+
+const isMoneySlot = (node: TreeNode, prop: string): boolean =>
+  (prop === "value" && node.props?.format === "money") ||
+  (prop === "cents" && node.component === "Money");
+
 /** A computed value (`{ $expr }`) is evaluated live in the renderer, so a bad
  *  expression is a blank stat rather than a crash — exactly the silent-breakage
- *  class facts exist to catch. Three kinds are decidable by looking things up:
+ *  class facts exist to catch. Four kinds are decidable by looking things up:
  *  the expression parses, its field paths reach fields the tool shapes really
- *  expose, and every slot's type can compute (sum over a string cannot).
+ *  expose, every slot's type can compute (sum over a string cannot), and a
+ *  money slot is fed cents rather than cents rescaled twice.
  *  Whether the number MEANS anything is the reviewer's judgement, not a fact. */
 export const exprIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
@@ -270,7 +285,12 @@ export const exprIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => 
     }
   };
   for (const node of tree.nodes) {
-    for (const [prop, value] of Object.entries(node.props ?? {})) walk(node.id, prop, value);
+    for (const [prop, value] of Object.entries(node.props ?? {})) {
+      if (isExprBinding(value) && isMoneySlot(node, prop) && CENTS_RESCALE.test(value.$expr)) {
+        issues.push(atProp(node.id, prop, `computes {${value.$expr}}, but this slot takes integer CENTS and divides by 100 itself — dividing again prints one hundredth of the real amount. Drop the /100 and let the component format the cents.`));
+      }
+      walk(node.id, prop, value);
+    }
   }
   return issues;
 };

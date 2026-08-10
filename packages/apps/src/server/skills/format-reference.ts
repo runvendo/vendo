@@ -287,6 +287,12 @@ is nothing left to reshape. Let the component format it: \`Stat\` takes
 \`format="money"\`, \`Money\` takes \`cents\`, a \`DataTable\` column takes
 \`format:"money"\`.
 
+Every one of those money slots takes integer CENTS and divides by 100 itself, so
+a computed total stays in cents — write \`value={sum(accounts.data, "balance")}\`
+with \`format="money"\`, never \`value={sum(accounts.data, "balance") / 100}\`. The
+\`/ 100\` prints one hundredth of the amount ($36,265.00 as $362.65) and is
+refused.
+
 ---
 
 ## Changing an app that already exists
