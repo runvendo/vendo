@@ -165,8 +165,8 @@ async function readTurnStream(
  *  may contain "; " — that is the separator every caller joins and the
  *  renderer splits on. */
 export const CLOUD_UNLOCKS: readonly string[] = [
-  "a free API key — starter model allowance, no card",
-  "hosted automations, sharing, and the console",
+  "a free starter model allowance — no card, no model key of your own",
+  "hosted automations, team sharing, and the console",
 ];
 
 export interface CloudDoctorResult {

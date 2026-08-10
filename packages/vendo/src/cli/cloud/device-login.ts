@@ -39,8 +39,9 @@ export interface DeviceLoginOptions {
   /** Injectable pacing seam — tests run the ceremony in microseconds. */
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
-  /** TTY seam — a watching human gets the browser opened for them; a non-TTY
-      (agent) caller keeps the URL + code contract untouched. */
+  /** TTY seam — a watching human gets the browser opened for them. What the
+      ceremony PRINTS is `pretty`'s call, not this one: the numbered URL + code
+      contract holds on every non-pretty path, TTY or not. */
   isTty?: boolean;
   openBrowser?: (url: string) => void;
   /** init runs the ceremony inline and picks the key up in the same run —
@@ -242,6 +243,9 @@ export async function runDeviceLogin(
     let verificationUriComplete: string;
     if (resume !== null) {
       output.log(`Resuming pending approval — code ${resume.user_code}, approve at ${resume.verification_uri_complete}`);
+      if (options.pretty !== true) {
+        output.log(`Waiting for approval (the code expires in ${Math.max(1, Math.round((resume.expires_at - now()) / 60_000))} minutes)…`);
+      }
       claimToken = resume.claim_token;
       deadline = resume.expires_at;
       intervalMs = Math.max(resume.interval, 1) * 1000;
@@ -272,16 +276,28 @@ export async function runDeviceLogin(
 
       const approvalUrl = ceremony.verification_uri_complete ?? ceremony.verification_uri;
       const tty = options.isTty ?? (process.stdout.isTTY === true);
-      if (tty) {
-        // One line. The browser is already opening, so the code IS the whole
-        // instruction; the URL is not lost — the stall notice below carries it
-        // as the recovery path if the browser never came up.
-        output.log(`Opening your browser — approve the code ${ceremony.user_code} there…`);
-        (options.openBrowser ?? defaultOpenBrowser)(approvalUrl);
+      if (options.pretty === true) {
+        if (tty) {
+          // One line. The browser is already opening, so the code IS the whole
+          // instruction; the URL is not lost — the stall notice below carries
+          // it as the recovery path if the browser never came up.
+          output.log(`Opening your browser — approve the code ${ceremony.user_code} there…`);
+          (options.openBrowser ?? defaultOpenBrowser)(approvalUrl);
+        } else {
+          output.log(`Vendo Cloud device login — approve the code ${ceremony.user_code} at ${approvalUrl}`);
+        }
       } else {
-        // The agent path: a human is being told what to do by proxy, so the
-        // URL and the code both have to be on screen.
-        output.log(`Vendo Cloud device login — approve the code ${ceremony.user_code} at ${approvalUrl}`);
+        // Everything else — piped, --agent, CI, standalone `vendo login` —
+        // keeps the numbered ceremony byte for byte. Something parses each of
+        // those, so the collapse above is the rail's alone.
+        output.log("Vendo Cloud device login — ask your human to approve this request:");
+        output.log(`  1. Open ${approvalUrl}`);
+        output.log(`  2. Confirm the code: ${ceremony.user_code}`);
+        if (tty) {
+          output.log("Opening your browser… (approve there, then come back here)");
+          (options.openBrowser ?? defaultOpenBrowser)(approvalUrl);
+        }
+        output.log(`Waiting for approval (the code expires in ${Math.round(ceremony.expires_in / 60)} minutes)…`);
       }
 
       claimToken = ceremony.claim_token;
@@ -304,14 +320,15 @@ export async function runDeviceLogin(
       }, pendingHome);
     }
 
-    // The expiry sentence used to lead the wait, where it is pure noise — an
-    // approval that lands in ten seconds never needed it. It arrives when it
-    // becomes relevant instead: once, after the ceremony has visibly stalled,
-    // carrying the URL as the recovery path a TTY run no longer prints up top.
+    // Pretty only, and the other half of the collapse above: the rail states
+    // the expiry when it becomes relevant — once, after the ceremony has
+    // visibly stalled — instead of leading with it, carrying the URL as the
+    // recovery path the collapsed line no longer prints up top. Every other
+    // path already printed the expiry up front, exactly as it always did.
     const ceremonyStarted = now();
     let stallNoted = false;
     const noteStall = (): void => {
-      if (stallNoted || now() - ceremonyStarted < STALL_MS) return;
+      if (options.pretty !== true || stallNoted || now() - ceremonyStarted < STALL_MS) return;
       stallNoted = true;
       output.log(
         `Still waiting — the code expires in ${Math.max(1, Math.round((deadline - now()) / 60_000))} minutes. `
