@@ -66,7 +66,7 @@ import {
   wrapWorkspaceForRender,
   type RenderSeamOptions,
 } from "@vendoai/apps";
-import type { LanguageModel } from "ai";
+import { streamText, type LanguageModel } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
 
 /**
@@ -307,6 +307,75 @@ const runState = (): TurnState => {
 };
 
 /**
+ * What the repair call is told it is doing — and nothing more.
+ *
+ * Deliberately NOT the assembly brief. The old repair round was handed that whole
+ * job description again, with the loadout and a fresh step budget behind it, and a
+ * writer told "you may search the catalog, save as you go, validate, escalate" does
+ * all of that a second time. This call has no tools, one input and one output.
+ */
+const REPAIR_SYSTEM = `You are correcting ONE app document in the .vendo format. It has already painted
+on the person's screen, and the reviewer found something wrong with it.
+
+Answer with the corrected document and NOTHING else — no explanation, no code
+fence, no preamble. Start at \`<App\` and give the file WHOLE: what you answer
+replaces the document.
+
+Fix exactly what the findings name and change nothing else. If no edit to this
+document could fix them, answer \`NO_CHANGE\` and nothing else.`;
+
+/** The corrected document inside the answer: from `<App` to the last `>`, so a
+ *  fence or a stray sentence around it does not cost the fix, while `NO_CHANGE`
+ *  and any other prose read as "nothing to save" rather than as a document. */
+const documentIn = (answer: string): string | undefined => {
+  const start = answer.indexOf("<App");
+  const end = answer.lastIndexOf(">");
+  return start === -1 || end <= start ? undefined : answer.slice(start, end + 1);
+};
+
+/**
+ * THE REPAIR ROUND — one scoped call with no tools, not a second agent.
+ *
+ * It used to be a fresh drive of the assembly loop: the whole brief again, the whole
+ * loadout, its own {@link SCREEN_STEPS} budget, and it fired AFTER the screen had
+ * already painted, so the person sat watching a finished screen while a second agent
+ * re-did the first one's work. Over the 34 delivered screens on record the reviewer
+ * finds something on 3 of them (9%), so the loop was the price of a round that
+ * usually has one edit to make and often none.
+ *
+ * The work itself is one call's worth: the finding names the fix in the floor's own
+ * words ("`sum(bills.data, "amount_cents")` alone is the real total") and the
+ * document it applies to rides along, so what is left is a rewrite of one file.
+ * Anything the writer would need a tool for — a query re-read, another catalog
+ * search — is a rewrite rather than a repair, and the reviewer did not ask for one.
+ *
+ * FAIL-OPEN, like the reviewer that summoned it: a call that throws or answers with
+ * prose returns nothing, and the screen the person already has stands.
+ */
+async function repairedDocument(input: {
+  model: LanguageModel;
+  /** `repairInstruction`'s text, verbatim — the findings teach the fix. */
+  instruction: string;
+  /** What actually landed, read back off the workspace. */
+  document: string;
+  signal: AbortSignal;
+}): Promise<string | undefined> {
+  const result = streamText({
+    model: input.model,
+    system: REPAIR_SYSTEM,
+    messages: [{
+      role: "user",
+      content: `${input.instruction}\n\nThis is the document you saved. Answer with the whole corrected version:\n${input.document}`,
+    }],
+    abortSignal: input.signal,
+  });
+  const repaired = documentIn(await result.text.catch(() => ""));
+  // An answer identical to the input is the model's other way of saying NO_CHANGE,
+  // and a save that changes nothing is a commit and a repaint for no reason.
+  return repaired === input.document ? undefined : repaired;
+}
+
+/**
  * ONE assembly run, over any surface a `Turn` satisfies.
  *
  * Every host effect goes through `surface.tools.call()` and every file write
@@ -323,7 +392,8 @@ export async function assembleScreen(
   // and the screen agent thinks with `default`, so a turn without it is the
   // caller's composition bug, named loudly rather than limped past. Same posture
   // as `vendo()`, which reads the same seat.
-  if (surface.models.default === undefined) {
+  const model = surface.models.default;
+  if (model === undefined) {
     throw new Error("the screen agent thinks with `turn.models.default`, and this turn carries no default seat");
   }
 
@@ -488,21 +558,14 @@ export async function assembleScreen(
     system: () => screenBrief(input, listings),
   });
   /**
-   * One drive of the loop. The events MUST be drained or nothing runs. Nothing is
-   * teed and nothing is buffered: this loop produces no prose for a person — the
-   * screen is the answer and the front door speaks the receipt.
-   *
-   * It takes the messages because the review below needs a SECOND drive, and a
-   * repair round that went through different code than the turn would be a second
-   * way to drive the same loop (`claude-code/index.ts`'s `round` for the same
-   * reason).
+   * THE drive of the loop — there is exactly one. The events MUST be drained or
+   * nothing runs. Nothing is teed and nothing is buffered: this loop produces no
+   * prose for a person — the screen is the answer and the front door speaks the
+   * receipt.
    */
-  const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
-    for await (const event of harness.run({ ...turn, messages })) {
-      if (event.type === "error") failure ??= event.message;
-    }
-  };
-  await drive(turn.messages);
+  for await (const event of harness.run(turn)) {
+    if (event.type === "error") failure ??= event.message;
+  }
 
   if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
   // Escalation wins over a partial paint: the builder is finishing this app, and
@@ -523,11 +586,12 @@ export async function assembleScreen(
      * it never ran, because it fires only when the writing model volunteers to
      * call `validate({appId})`. So the gate asks, once, at the end.
      *
-     * ONE repair round, for the brain's own reason (`claude-code/index.ts`): being
-     * shown exactly what is wrong fixes it on the first try or not at all, and a
-     * second round is the person waiting longer for the same answer. Whatever
-     * survives it stands — the screen has already painted, and the honest thing is
-     * to leave it rather than take it away.
+     * ONE repair CALL, not a second loop ({@link repairedDocument}): the finding and
+     * the document are the whole input, a corrected document is the whole output, and
+     * being shown exactly what is wrong fixes it on the first try or not at all
+     * (`claude-code/index.ts`, for the brain's own reason). Whatever survives it
+     * stands — the screen has already painted, and the honest thing is to leave it
+     * rather than take it away.
      *
      * `record.painted` is the gate, not `record.assembled`. A save that landed bytes
      * the seam declined to paint is not a finished screen: the hand already handed
@@ -545,20 +609,23 @@ export async function assembleScreen(
       }))
       : undefined;
     if (instruction !== undefined && !surface.signal.aborted) {
-      // The document rides along: a drive starts from the messages it is given, so
-      // the repair round has none of the first one's context — and a repair with no
-      // document in front of it is a rewrite from scratch.
+      // The document is what the call corrects, so a document it cannot read is no
+      // repair at all rather than a repair with nothing in front of it — that was
+      // always a rewrite from scratch, and the reviewer never asked for one.
       const saved = await turn.workspace.readFile(appPath).catch(() => undefined);
-      await drive([...turn.messages, {
-        id: `repair_${input.appId}`,
-        role: "user",
-        parts: [{
-          type: "text",
-          text: saved === undefined
-            ? instruction
-            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
-        }],
-      }]);
+      const repaired = saved === undefined
+        ? undefined
+        : await repairedDocument({ model, instruction, document: saved, signal: surface.signal });
+      if (saved !== undefined && repaired !== undefined) {
+        const committed = await save(turn, APP_FILE, repaired);
+        // The seam has the last word here as it does on every other save — nothing
+        // is claimed where it says nothing (`paintedIn` on an unwrapped workspace).
+        // A correction it will not paint is not a correction, so the bytes on disk
+        // go back to being the ones the person is looking at.
+        if (committed.status !== "ok" || paintedIn(committed)?.includes(input.appId) === false) {
+          await save(turn, APP_FILE, saved);
+        }
+      }
     }
     return {
       kind: "assembled",
