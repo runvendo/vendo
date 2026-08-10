@@ -275,6 +275,75 @@ export const exprIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => 
   return issues;
 };
 
+/** A literal ÷100 (or ×0.01) inside an expression. Anywhere else it is ordinary
+ *  arithmetic; in a money slot it is the second conversion. */
+const SCALES_BY_100 = /\/\s*100(?:\.0+)?(?![\d.])|\*\s*0\.0+1(?![\d.])/;
+
+/** Does this reshape chain format a value as whole-dollar `"currency"`? */
+const formatsAsDollars = (value: Record<string, unknown>): boolean => {
+  const reshape = value["$reshape"];
+  if (!Array.isArray(reshape)) return false;
+  return reshape.some((step) => {
+    if (!isRecord(step) || step["op"] !== "format") return false;
+    const args = step["args"];
+    return Array.isArray(args) && args.includes("currency");
+  });
+};
+
+/**
+ * ONE money conversion, enforced rather than documented.
+ *
+ * Every money surface this product renders reads the host's raw integer MINOR
+ * units and divides by the currency's minor unit itself — `formatMoney`
+ * (`packages/ui/src/kit/format.ts`) is the only place a money number is ever
+ * scaled, and `format="money"`, a `format:"money"` column and `<Money cents/>`
+ * all go through it. So a screen that scales the number too is off by exactly
+ * 100×, which is the one money error a page cannot show as suspicious: "$362.65"
+ * for $36,265.15 reads as money.
+ *
+ * Both of those second conversions are decidable from the tree alone, with no
+ * host semantics needed, and both were measured on the same bench screen (a
+ * "$362.65" net-worth headline over rows reading "$941,220.00" for $9,412.20):
+ *
+ * - an expression in a money-formatted slot that divides by 100 — 100× too
+ *   small, and `format="money"` had already done that division;
+ * - a `format(…, "currency")` reshape — `reshape.ts`'s `currency` kind is the one
+ *   money formatter in the product that reads its input as whole DOLLARS, so on a
+ *   cents field it renders 100× too much. `currencyCents` is the kind that
+ *   scales, and it is retired; the Kit's own money tokens replace both.
+ *
+ * Documentation was already there and lost: the Kit spec says "money takes
+ * cents" and the reference still showed `format(…, "amount_cents", "currency")`.
+ */
+export const moneyScaleIssues = (tree: Tree): FactIssue[] => {
+  const issues: FactIssue[] = [];
+  const walk = (nodeId: string, prop: string, value: unknown, moneySlot: boolean): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(nodeId, prop, item, moneySlot);
+      return;
+    }
+    if (!isRecord(value)) return;
+    if (formatsAsDollars(value)) {
+      issues.push(atProp(nodeId, prop, 'formats money with the "currency" reshape, which reads its input as whole DOLLARS — a host money field is integer cents, so every amount renders 100x too large. Drop that reshape and let the component convert once: a DataTable column takes format:"money", Stat takes format="money", and <Money cents/> takes the raw field.'));
+    }
+    if (moneySlot && isExprBinding(value) && SCALES_BY_100.test(value.$expr)) {
+      issues.push(atProp(nodeId, prop, `computes {${value.$expr}} for a money slot, which divides by 100 a second time — a money slot takes the host's raw integer cents and format="money" does that division itself, so this shows one hundredth of the real amount. Bind the cents expression as it stands.`));
+      return;
+    }
+    for (const child of Object.values(value)) walk(nodeId, prop, child, moneySlot);
+  };
+  for (const node of tree.nodes) {
+    const props = node.props ?? {};
+    // `format="money"` marks the node's value slots as money (Stat and every
+    // chart); `<Money>` has one, named `cents`.
+    const money = props["format"] === "money" || node.component === "Money";
+    for (const [prop, value] of Object.entries(props)) {
+      walk(node.id, prop, value, money && prop !== "format");
+    }
+  }
+  return issues;
+};
+
 /** Models write "Total: {metric.total}" inside STRING attributes; the wire
  *  has no string interpolation, so the braces render literally. Any string
  *  prop embedding a declared query reference is a repair-routed error. */
@@ -558,6 +627,7 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
     ...hostReshapeIssues(tree, deps),
   ]),
   treeCheck("expressions-compute", (tree) => exprIssues(tree, deps)),
+  treeCheck("money-scale", (tree) => moneyScaleIssues(tree)),
   treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
   treeCheck("no-string-interpolation", (tree) => interpolationIssues(tree)),
 ];

@@ -32,6 +32,7 @@ import {
   hostReshapeIssues,
   interpolationIssues,
   kitSlotIssues,
+  moneyScaleIssues,
   queryInputIssues,
   unknownToolIssues,
 } from "../../checking/facts.js";
@@ -99,6 +100,7 @@ export const validateCompiledCreate = async (
   issues.push(...kitSlotIssues(tree, deps).map(factIssueLine));
   issues.push(...hostReshapeIssues(tree, deps).map(factIssueLine));
   issues.push(...exprIssues(tree, deps).map(factIssueLine));
+  issues.push(...moneyScaleIssues(tree).map(factIssueLine));
   issues.push(...queryInputIssues(tree).map(factIssueLine));
   issues.push(...interpolationIssues(tree).map(factIssueLine));
   issues.push(...(await catalogIssues(tree, components, deps.catalog)).map(factIssueLine));

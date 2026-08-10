@@ -231,14 +231,22 @@ the centre is always a query or \`state\` read.
 | \`pick\` | one or more field names | keep only those fields (per row, over rows) |
 | \`rename\` | old/new pairs | rename fields |
 | \`asPoints\` | label field, value field | rows to \`{label, value}\` points |
-| \`format\` | \`"number"\` / \`"currency"\` / \`"percent"\` / \`"date"\` | format the value |
+| \`format\` | \`"number"\` / \`"percent"\` / \`"date"\` | format the value |
 | \`format\` | field, kind | format that field in every row |
 
 \`\`\`
 points={asPoints(invoices.data, "month", "total_cents")}
-rows={format(pick(invoices.data, "client", "amount_cents"), "amount_cents", "currency")}
+rows={format(pick(invoices.data, "client", "issued_at"), "issued_at", "date")}
 note={format(state.rate, "percent")}
 \`\`\`
+
+Money is NOT one of those kinds, and it is the one value you never scale
+yourself. A host money field is a whole number of minor units (cents), and the
+components divide by 100 exactly once, on their own: \`Stat\` with
+\`format="money"\`, a \`DataTable\` column with \`format:"money"\`, a chart with
+\`format="money"\`, \`<Money cents/>\`. Hand any of them the raw cents field or a
+cents calculation — a \`/ 100\` of your own, or a second currency formatter, makes
+every amount on the screen a hundred times wrong, and \`validate\` refuses both.
 
 Reading the nesting from the inside out reads the steps in order: \`pick\` first,
 then \`format\`.
@@ -282,7 +290,7 @@ rather than rendered as nonsense.
 There is exactly one \`sum\`, one \`count\`, one \`average\`, one \`min\` and one
 \`max\`, and each takes rows. A reshape works on what a query read, so the value at
 the centre of the nesting is a path — \`format(sum(invoices.data, "amount_cents"),
-"currency")\` is refused, because \`sum(...)\` already produced a number and there
+"number")\` is refused, because \`sum(...)\` already produced a number and there
 is nothing left to reshape. Let the component format it: \`Stat\` takes
 \`format="money"\`, \`Money\` takes \`cents\`, a \`DataTable\` column takes
 \`format:"money"\`.
