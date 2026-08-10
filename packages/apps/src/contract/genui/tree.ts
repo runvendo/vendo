@@ -48,6 +48,21 @@ export interface Tree {
   nodes: TreeNode[];
   data?: Record<string, Json>;
   queries?: TreeQuery[];
+  /**
+   * The actions on this screen a person must confirm before they fire.
+   *
+   * The COMPILER writes it, from the host's own risk grading (`ToolDescriptor.risk`
+   * — anything above `read`, the same line the guard asks on, policy.ts:18-21), so
+   * a confirmation is a property of the tool rather than something the author
+   * remembered. The renderer stands one dialog in front of every name here
+   * (packages/ui `tree/confirm.tsx`), which is why it is a document field and not a
+   * prop: an action fires from a wire prop, a host-mounted island and a jailed one,
+   * and all three funnel through the one dispatch that reads this.
+   *
+   * Not server-authoritative: the list can only ADD a confirmation, never remove
+   * one, so a stored or imported document carrying its own is harmless.
+   */
+  confirmActions?: string[];
 }
 
 /**
@@ -63,6 +78,7 @@ export const treeSchema = z.object({
   nodes: z.array(treeNodeSchema),
   data: z.record(z.unknown()).optional(),
   queries: z.array(treeQuerySchema).optional(),
+  confirmActions: z.array(z.string()).optional(),
 }).passthrough() satisfies z.ZodType<Tree>;
 
 type TreeValidation =

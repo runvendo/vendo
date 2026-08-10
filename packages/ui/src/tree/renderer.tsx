@@ -21,10 +21,12 @@ import { convertPayload } from "./convert-payload.js";
 import {
   useCallback,
   useMemo,
+  useRef,
   useState,
   type ComponentType,
   type ReactNode,
 } from "react";
+import { ActionConfirm, type ConfirmRequest } from "./confirm.js";
 import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
 import type { InClientVenue, SeedDrift } from "../wire-types.js";
@@ -567,7 +569,39 @@ function StatefulTreeView({
   const [viewState, updateState] = useKeyedState(onStateChange);
   const [outcomes, setOutcomes] = useState<Record<string, ToolOutcome | undefined>>({});
 
+  // The actions this document may not fire without asking first — written by the
+  // compiler off the host's own risk grading (`Tree.confirmActions`). Read like
+  // every other payload extra: a malformed field says nothing rather than throwing.
+  const confirmActions = useMemo(() => {
+    const declared = (tree as WalkTree & { confirmActions?: unknown }).confirmActions;
+    return new Set(Array.isArray(declared) ? declared.filter((name): name is string => typeof name === "string") : []);
+  }, [(tree as WalkTree & { confirmActions?: unknown }).confirmActions]);
+  const [asking, setAsking] = useState<ConfirmRequest | undefined>(undefined);
+  // The awaiting caller lives in a ref rather than in the state: `runAction` has
+  // to keep its own `await` open across the render that draws the dialog, and a
+  // resolver stored in state would be a side effect inside an updater.
+  const decide = useRef<((confirmed: boolean) => void) | undefined>(undefined);
+  const ask = useCallback((request: ConfirmRequest) => new Promise<boolean>((resolve) => {
+    // A second ask supersedes the first, and superseding IS a decline: leaving
+    // the earlier promise unsettled would hang that control's pending state.
+    decide.current?.(false);
+    decide.current = resolve;
+    setAsking(request);
+  }), []);
+  const answer = useCallback((confirmed: boolean) => {
+    const resolve = decide.current;
+    decide.current = undefined;
+    setAsking(undefined);
+    resolve?.(confirmed);
+  }, []);
+
   const runAction = useCallback(async (nodeId: string, action: string, payload?: Json) => {
+    if (confirmActions.has(action)) {
+      const confirmed = await ask({ action, ...(payload === undefined ? {} : { payload }) });
+      // Backing out is a normal answer, not a failure, so it records NO outcome:
+      // the node must not wear a red notice for a person who changed their mind.
+      if (!confirmed) return { status: "blocked", reason: "not confirmed" } as const;
+    }
     let outcome: ToolOutcome;
     try {
       outcome = await onAction({ nodeId, action, ...(payload === undefined ? {} : { payload }) });
@@ -582,7 +616,7 @@ function StatefulTreeView({
     }
     setOutcomes((current) => ({ ...current, [nodeId]: outcome.status === "ok" ? undefined : outcome }));
     return outcome;
-  }, [onAction]);
+  }, [onAction, ask, confirmActions]);
 
   const nodes = useMemo(
     () => new Map(validation.ok ? validation.tree.nodes.map((node) => [node.id, node]) : []),
@@ -702,6 +736,7 @@ function StatefulTreeView({
         runAction={runAction}
         setViewState={updateState}
       />
+      {asking === undefined ? null : <ActionConfirm request={asking} onAnswer={answer} />}
     </NodeErrorBoundary>
   );
 }

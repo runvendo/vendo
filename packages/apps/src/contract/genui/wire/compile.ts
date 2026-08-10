@@ -65,6 +65,11 @@ export interface WireCompileOptions {
    *  single-segment inline heads (production extraction names like
    *  `host_listTransactions`). */
   inlineTools?: readonly string[];
+  /** The host tools graded above `read` — the same line the guard asks on
+   *  (guard policy.ts:18-21). Every one of them this document NAMES lands in
+   *  `Tree.confirmActions`, so the renderer confirms it before it fires whether
+   *  or not the author wrote a dialog. Absent → nothing is stamped. */
+  writeTools?: readonly string[];
 }
 
 /** v2 spec §2 / plan D6 — the compile result. */
@@ -516,11 +521,28 @@ export const prescanDeclarations = (wire: string, rootTag = "App"): { queryNames
 const determineComplete = (state: CompileState): boolean =>
   state.appClosed && !state.eofTruncated && !state.droppedTrailing;
 
+/**
+ * The write-graded tools this document NAMES, for `Tree.confirmActions`.
+ *
+ * Every way to bind an action spells the tool inside double quotes — the markup
+ * form (`onClick="cancel_transfer"`), the canonical object
+ * (`{ action: "cancel_transfer" }`) and an island's own TSX, which the compiler
+ * carries as opaque source and could not walk anyway. So the quoted name is the
+ * one test that sees all three, and it is safe in both directions: a name this
+ * document never spells cannot fire, and a stray mention (a `<Query tool="…">`)
+ * adds an entry no press can reach.
+ */
+const confirmActionsIn = (
+  source: string,
+  writeTools: readonly string[] | undefined,
+): string[] => (writeTools ?? []).filter((tool) => source.includes(`"${tool}"`));
+
 const finishResult = (
   state: CompileState,
   name: string | undefined,
-  toolShapes: Readonly<Record<string, ShapeType>> | undefined,
+  options: WireCompileOptions | undefined,
 ): WireCompileResult => {
+  const toolShapes = options?.toolShapes;
   // Dangling-generated reconciliation: the pre-scan marks nodes "generated"
   // cap-blind, but admitIslandSource may then drop the island (§8 size/count
   // caps, malformed UTF-16). A generated node with no components entry fails
@@ -538,6 +560,8 @@ const finishResult = (
     nodes: state.nodes,
   };
   if (state.queries.length > 0) tree.queries = state.queries;
+  const confirmActions = confirmActionsIn(state.source, options?.writeTools);
+  if (confirmActions.length > 0) tree.confirmActions = confirmActions;
   // v2 spec §3 — the binding shape check runs as a post-pass over the
   // emitted nodes, only when the caller supplied tool shapes. Shape errors
   // are repairable, not structural: the binding stays in the tree (repair
@@ -573,14 +597,14 @@ const compileWireUnsafe = (rawWire: string, options: WireCompileOptions | undefi
   // all, or garbage before it) degrades to the empty valid tree.
   if (!opensApp(state)) {
     issue(state, "missing-app", "expected a single <App ...>...</App> element");
-    return finishResult(state, undefined, options?.toolShapes);
+    return finishResult(state, undefined, options);
   }
   state.index += 4; // consume "<App"
   const app = parseAttributes(state, "app");
   if (app === FAILED) {
     state.eofTruncated = true;
     issue(state, "truncated-tag", "<App ...> tag was truncated at end of input");
-    return finishResult(state, undefined, options?.toolShapes);
+    return finishResult(state, undefined, options);
   }
   // D3 — only App's name attribute means anything; the rest are discarded.
   const name = typeof app.props?.name === "string" ? app.props.name : undefined;
@@ -596,7 +620,7 @@ const compileWireUnsafe = (rawWire: string, options: WireCompileOptions | undefi
       issue(state, "trailing-content", "content after </App> was dropped");
     }
   }
-  return finishResult(state, name, options?.toolShapes);
+  return finishResult(state, name, options);
 };
 
 /**

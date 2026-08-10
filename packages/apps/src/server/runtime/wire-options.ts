@@ -23,6 +23,13 @@ export const wireCompileOptionsFor = (
 ): Parameters<typeof compileWire>[1] => ({
   hostComponents: deps.catalog.map(({ name }) => name),
   inlineRefs: true,
-  ...(deps.tools === undefined ? {} : { inlineTools: deps.tools.map(({ name }) => name) }),
+  ...(deps.tools === undefined ? {} : {
+    inlineTools: deps.tools.map(({ name }) => name),
+    // Anything the host did not grade `read` — the guard's own line (policy.ts:18-21,
+    // where `write`, `destructive` and `ungraded` all ask and only `read` runs). The
+    // compiler stamps `Tree.confirmActions` from it, so a screen cannot bind a
+    // mutating tool to a control that fires without asking, whoever wrote the screen.
+    writeTools: deps.tools.filter(({ risk }) => risk !== "read").map(({ name }) => name),
+  }),
   ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
 });
