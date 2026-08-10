@@ -44,6 +44,7 @@ import {
   type CompactionState,
 } from "./compaction.js";
 import { failoverModel, type ResolvedModel } from "./failover.js";
+import { emitWorkbench, type WorkbenchAgent, type WorkbenchEvent } from "../workbench.js";
 
 // AGENT-7: the default agent-loop step cap (unchanged from the previously
 // hardcoded value); hosts raise or lower it via context.maxSteps.
@@ -280,6 +281,9 @@ export interface TurnPromptInput {
    *  summarizer pass is a provider call, and a caller that hung up before the
    *  first token must not keep paying for one (AGENT-3). */
   signal?: AbortSignal;
+  /** The workbench's ear, already bound to the turn and the agent (dev-only; see
+   *  `../workbench.ts`). Unset — every caller but `startTurn` — is silence. */
+  workbench?: (event: WorkbenchEvent) => void;
 }
 
 export interface TurnPrompt {
@@ -355,10 +359,20 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
   // never shrinks — in the one conversion every rail here shares.
   const promptTokens = (): number =>
     estimatePromptTokens({ system, messages: projected(), tools: input.tools ?? {} });
+  /** Shed, and tell the workbench what it cost: whole messages the provider will
+   *  not see. Reasoning and old tool payloads go first and are not counted — a
+   *  message that lost its payload is still a message. */
+  const shed = (budget: number, prompt: number): ModelMessage[] => {
+    const kept = shedToBudget(converted, budget, prompt);
+    if (kept.length < converted.length) {
+      input.workbench?.({ kind: "shed", dropped: converted.length - kept.length });
+    }
+    return kept;
+  };
   // Budgeting runs on the CONVERTED form because that is the form the provider
   // bills, and it runs before the breakpoints below because shedding changes
   // which message is the stable prefix's last one.
-  if (tokenBudget !== undefined) converted = shedToBudget(converted, tokenBudget, promptTokens());
+  if (tokenBudget !== undefined) converted = shed(tokenBudget, promptTokens());
   // The window the model actually has, against the prompt this turn is actually
   // sending. The host's own `historyWindow` slice is already applied above and is
   // not negotiable (Q2b): what the host cut is gone, and this decides about what
@@ -366,6 +380,12 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
   let compacted: CompactionState | undefined;
   if (compaction !== undefined) {
     const tripped = promptTokens();
+    input.workbench?.({
+      kind: "context",
+      estTokens: tripped,
+      windowTokens: compaction.contextWindowTokens,
+      triggerTokens: triggerTokens(compaction),
+    });
     // `force` is the overflow retry's re-entry: the provider has already said no,
     // so the estimate has nothing left to decide.
     if (compaction.force === true || shouldCompact(tripped, compaction)) {
@@ -392,7 +412,7 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
         // caused sheds the history and then stops, still over budget — the old
         // floor charged the messages against the WHOLE window and so quietly shed
         // nothing at all in that case, which is the same blindness one layer down.
-        converted = shedToBudget(converted, triggerTokens(compaction), tripped);
+        converted = shed(triggerTokens(compaction), tripped);
       } else {
         // One pass folded `tail[0..cut)` into whatever the summary already held, so
         // the boundary moves to the newest message that pass read.
@@ -401,6 +421,13 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
         tail = tail.slice(cut);
         converted = await convert(tail);
         compacted = { version: 1, summary: result.summary, boundaryMessageId: absorbed };
+        input.workbench?.({
+          kind: "compaction",
+          // `force` is only ever set by the overflow retry, so it is exactly the
+          // difference between "the estimate said so" and "the provider did".
+          reason: compaction.force === true ? "overflow-retry" : "trigger",
+          summary: result.summary,
+        });
       }
     }
   }
@@ -500,6 +527,10 @@ export interface TurnLoopOptions {
   compaction?: TurnCompaction;
   /** Model messages this turn already produced, for a retry that continues it. */
   resume?: readonly ModelMessage[];
+  /** Which of the turn's loops this drive is, for the workbench's diagnostics
+   *  only (dev-only; see `../workbench.ts`). Defaults to the resident, because a
+   *  caller that has never heard of the workbench is the turn's own thinker. */
+  workbenchAgent?: WorkbenchAgent;
 }
 
 /** The per-turn knobs, one shape for every drive of the loop so no caller can
@@ -548,6 +579,13 @@ function turnModel(options: TurnLoopOptions): LanguageModel {
 
 export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   const maxSteps = options.context?.maxSteps ?? DEFAULT_MAX_STEPS;
+  /** The workbench's ear for this drive. Off (every production turn) this is a
+   *  map miss and returns; see `../workbench.ts`. */
+  const debug = (event: WorkbenchEvent): void =>
+    emitWorkbench(options.turnId, options.workbenchAgent ?? "resident", event);
+  /** The step the loop is on and when it began — the workbench's only state. */
+  let step = 0;
+  let stepStartedAt = Date.now();
   const { messages: modelMessages, compacted } = await turnModelMessages({
     messages: options.messages,
     system: options.system,
@@ -559,6 +597,7 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     ...(options.compaction === undefined ? {} : { compaction: options.compaction }),
     ...(options.resume === undefined ? {} : { resume: options.resume }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
+    workbench: debug,
   });
   const { activeTools } = options;
   const result = streamText({
@@ -580,10 +619,28 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     // the turn with the most to cache had no hook at all. It is returned on
     // every turn now, and the loadout rides the same result rather than growing
     // a second per-step hook beside it.
-    prepareStep: ({ messages }) => ({
-      messages: advanceCacheBreakpoint(messages),
-      ...(activeTools === undefined ? {} : { activeTools: activeTools() }),
-    }),
+    prepareStep: ({ messages, stepNumber }) => {
+      const active = activeTools?.();
+      step = stepNumber;
+      stepStartedAt = Date.now();
+      debug({ kind: "step-start", step, maxSteps, activeTools: active ?? [] });
+      return {
+        messages: advanceCacheBreakpoint(messages),
+        ...(active === undefined ? {} : { activeTools: active }),
+      };
+    },
+    // The other half of the workbench's step boundary — the SDK's own per-step
+    // hook, so the loop keeps no bookkeeping of its own beyond the two lines
+    // above.
+    onStepFinish: (finished) => {
+      debug({
+        kind: "step-end",
+        step,
+        stopReason: finished.finishReason,
+        durationMs: Date.now() - stepStartedAt,
+        usage: { inputTokens: finished.usage.inputTokens, outputTokens: finished.usage.outputTokens },
+      });
+    },
     // AGENT-3: cancellation reaches the provider call itself; the loop never
     // starts another step once the signal fires.
     abortSignal: options.signal,
@@ -598,6 +655,7 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
       try {
         const [finishReason, steps] = await Promise.all([result.finishReason, result.steps]);
         if (finishReason !== "tool-calls" || steps.length < maxSteps) return undefined;
+        debug({ kind: "step-limit", steps: steps.length });
         return {
           type: "data-vendo-step-limit",
           limit: maxSteps,

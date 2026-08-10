@@ -27,6 +27,7 @@ import {
 } from "@vendoai/core";
 import type { UIMessage, UIMessageStreamWriter } from "ai";
 import type { MirrorEvent } from "./turn-tools.js";
+import type { WorkbenchPart } from "./workbench.js";
 
 /**
  * The one wire name this lane adds. Transient, so it is screen-only by the SDK's
@@ -34,6 +35,15 @@ import type { MirrorEvent } from "./turn-tools.js";
  * for. It lives here rather than in core because §1.6 freezes stream-parts.ts.
  */
 export const VENDO_STATUS_PART = "data-vendo-status" as const;
+
+/**
+ * The workbench's part — dev-only diagnostics (`VENDO_WORKBENCH=1`), on the same
+ * transient mechanism and for the same reason: a fact about how the turn is
+ * thinking is screen-only by definition, and persisting one would put the
+ * machine's internals in the user's history forever. Off, nothing opens a channel
+ * and none of these are ever written (see ./workbench.ts).
+ */
+export const VENDO_DEBUG_PART = "data-vendo-debug" as const;
 
 /** The effective thread id every turn response carries (03 §1), so a caller
  *  that began without one can adopt it. Every door that serves a turn stamps the
@@ -97,6 +107,11 @@ export function writeStatus(writer: Writer, beat: { label: string; phase?: BeatP
     },
     transient: true,
   } as never);
+}
+
+/** One workbench fact, on the same transient mechanism as `status` above. */
+export function writeDebug(writer: Writer, part: WorkbenchPart): void {
+  writer.write({ type: VENDO_DEBUG_PART, data: part, transient: true } as never);
 }
 
 /** §1.6 hot-path render seam — today's part, today's stable per-app stream id. */

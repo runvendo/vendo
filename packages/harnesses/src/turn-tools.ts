@@ -14,6 +14,7 @@ import type {
 } from "@vendoai/core";
 import type { CapabilityMissReporter } from "./capability-miss.js";
 import { guardedCall, previewApproval, type ToolBridgeOptions } from "./tool-bridge.js";
+import { emitWorkbench, workbenchCursor, type WorkbenchEvent } from "./workbench.js";
 
 /**
  * Build contract §1.4 — the frozen bound on an interactive approval wait. A
@@ -74,6 +75,16 @@ export interface TurnToolsOptions {
 
 let counter = 0;
 const mintToolCallId = (): string => `hcall_${(counter += 1)}_${globalThis.crypto.randomUUID()}`;
+
+/** The workbench's account of one call (dev-only; see ./workbench.ts). */
+type ToolFact = Extract<WorkbenchEvent, { kind: "tool" }>;
+
+/** Enough of the arguments to recognize the call and no more — a diagnostics
+ *  part must never become a second copy of a 300KB input. */
+const argsPreview = (args: Json): string => {
+  const text = JSON.stringify(args) ?? "";
+  return text.length <= 200 ? text : `${text.slice(0, 200)}…`;
+};
 
 /**
  * §1.4's race: the approvalId only exists once the guard has been consulted, but
@@ -248,9 +259,28 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
 
     async call(name, args): Promise<ToolResult> {
       const toolCallId = mintToolCallId();
+      const startedAt = Date.now();
+      // Where the turn is standing when the call BEGINS. A hire runs nested
+      // inside the resident's still-open `hire_subagent` call, so reading the
+      // cursor at the end would file that call under the hire it made.
+      const at = workbenchCursor(options.ctx.turnId);
+      let guard: ToolFact["guard"];
+      let approval: ToolFact["approval"];
       mirror({ kind: "call", toolCallId, name, args });
       const finish = (result: ToolResult, outcome?: ToolOutcome): ToolResult => {
         mirror({ kind: "result", toolCallId, name, result, ...(outcome === undefined ? {} : { outcome }) });
+        if (outcome?.status === "blocked") guard = "block";
+        emitWorkbench(options.ctx.turnId, at.agent, {
+          kind: "tool",
+          step: at.step,
+          toolCallId,
+          name,
+          argsPreview: argsPreview(args),
+          status: result.status,
+          ...(guard === undefined ? {} : { guard }),
+          ...(approval === undefined ? {} : { approval }),
+          durationMs: Date.now() - startedAt,
+        });
         return result;
       };
 
@@ -286,6 +316,8 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
         const ask = await previewApproval(descriptor, bridge, args, { toolCallId }, (id) => {
           approvalId = id;
         });
+        guard = ask ? "ask" : "run";
+        approval = ask ? undefined : "auto";
 
         if (ask) {
           if (approvalId !== undefined) {
@@ -313,6 +345,7 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
           // only come from a surface that knows the call is parked.
           mirror({ kind: "approval", toolCallId, approvalId });
           const approved = await waiter.wait(approvalId, approvalWaitMs);
+          approval = approved === undefined ? "timed-out" : approved ? "approved" : "denied";
           if (approved === undefined) {
             return finish({
               status: "denied",

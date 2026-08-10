@@ -46,7 +46,11 @@ export {
   type HarnessStateStore,
   type HistoryChange,
 } from "./harness-state.js";
-export { THREAD_ID_HEADER, VENDO_STATUS_PART } from "./wire.js";
+export { THREAD_ID_HEADER, VENDO_DEBUG_PART, VENDO_STATUS_PART } from "./wire.js";
+// The dev-only workbench channel's vocabulary (`VENDO_WORKBENCH=1`). Types only:
+// a diagnostics pane has to be able to NAME what it reads off the part, and a
+// wire shape a consumer cannot name is one it has to re-declare and drift from.
+export type { WorkbenchAgent, WorkbenchEvent, WorkbenchPart } from "./workbench.js";
 // The engine the doors share. These used to live in `@vendoai/agent`; they are
 // here because the runtime above is their only long-term caller, and a rail can
 // only drift by being changed for every door at once.
