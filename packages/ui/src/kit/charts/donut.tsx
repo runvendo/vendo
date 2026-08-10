@@ -1,7 +1,7 @@
 /** DonutChart — recharts Pie internals, data props only (W2 §The Kit). */
 import { Cell, Pie, PieChart as RPieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { isRenderableNumber, applyFormat, type ValueFormat } from "../format.js";
-import { seriesColor, t } from "../tokens.js";
+import { font, seriesColor, t } from "../tokens.js";
 import { ChartEmpty, ChartFrame } from "./sanitize.js";
 
 export interface DonutChartProps {
@@ -29,12 +29,14 @@ export function DonutChart({
 }: DonutChartProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined),
   // the same guard the other Kit charts get via sanitizeSeries.
-  const slices = (Array.isArray(data) ? data : [])
-    .map((row) => ({ name: String(row[categoryKey] ?? ""), value: row[valueKey] }))
-    .filter((s) => isRenderableNumber(s.value) && (s.value as number) > 0) as Array<{ name: string; value: number }>;
+  const rows = (Array.isArray(data) ? data : []).map((row) => ({ name: String(row[categoryKey] ?? ""), value: row[valueKey] }));
+  const slices = rows.filter((s) => isRenderableNumber(s.value) && (s.value as number) > 0) as Array<{ name: string; value: number }>;
   if (slices.length === 0) {
     return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
   }
+  // A zero slice draws nothing, so name it instead of deleting the category silently.
+  const zeroNames = rows.filter((s) => s.name !== "" && s.value === 0).map((s) => s.name);
+  const shown = zeroNames.length > 4 ? [...zeroNames.slice(0, 4), `+${zeroNames.length - 4} more`] : zeroNames;
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (
     <div data-kit="DonutChart">
@@ -60,6 +62,9 @@ export function DonutChart({
           </RPieChart>
         </ResponsiveContainer>
       </ChartFrame>
+      {shown.length > 0 && (
+        <div style={{ ...font, color: t.muted, fontSize: "0.85em", padding: "var(--vendo-density-field-gap, 6px) 0 0" }}>{`None: ${shown.join(", ")}`}</div>
+      )}
     </div>
   );
 }

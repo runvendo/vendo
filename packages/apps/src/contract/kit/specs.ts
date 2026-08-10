@@ -239,7 +239,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "DonutChart",
     group: "charts",
-    summary: "A donut/pie of category shares. Zero and invalid slices are dropped.",
+    summary: "A donut/pie of category shares. Invalid slices are dropped; zero-valued categories are named in a line beneath the ring.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       categoryKey: config(z.string(), "slice-label field", { required: true }),
