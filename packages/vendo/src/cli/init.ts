@@ -240,39 +240,15 @@ export interface InitOptions {
 
 const THEME_PALETTE_SLOTS = ["accent", "background", "surface", "text", "mutedText", "border", "danger"] as const;
 
-/** The four slots a person recognises as "our brand". Surface, mutedText and
-    border are still captured and still written — they are just not what the
-    payoff shot of the install is for. */
-const BRAND_SLOTS = ["accent", "background", "text", "danger"] as const;
-
-/** ANSI truecolor swatch, PRETTY-ONLY: usePrettyOutput already excludes
-    NO_COLOR / CI / TERM=dumb, so the escape can only reach a terminal that
-    asked for colour. The old TTY-only gate leaked it under NO_COLOR. */
-function brandSwatch(hex: string): string {
-  const match = /^#([0-9a-f]{6})$/i.exec(hex);
-  if (match === null) return "  ";
-  const [r, g, b] = [0, 2, 4].map((index) => parseInt(match[1]!.slice(index, index + 2), 16));
-  return `\u001b[48;2;${r};${g};${b}m  \u001b[0m`;
-}
-
 /** One-glance confirm (§B2): the extracted palette, where each slot came
     from is visible in defaulted/errors, and theme.json stays the editable
-    source of truth. A human terminal gets the payoff shot of the whole
-    install instead — the four brand slots, swatch first; every other run
-    keeps the plain lines byte for byte. */
-function printThemeSummary(summary: ThemeSummary, output: Output, pretty: PrettyOutput | null): void {
+    source of truth. One emission, plain — the renderer's `Theme:` rule turns
+    it into the ◆ block. Nothing here may carry colour: an ANSI swatch written
+    at this layer is exactly the escape that leaked under NO_COLOR. */
+function printThemeSummary(summary: ThemeSummary, output: Output): void {
   const headings = summary.slots.headingFamily === summary.slots.fontFamily
     ? ""
     : ` · headings ${summary.slots.headingFamily}`;
-  if (pretty !== null) {
-    pretty.block("Your brand, captured", [
-      BRAND_SLOTS.map((slot) => `${brandSwatch(summary.slots[slot])} ${summary.slots[slot]} ${slot}`).join("   "),
-      `${summary.slots.fontFamily}${headings} · radius ${summary.slots.radius}`,
-      ".vendo/theme.json — yours to edit anytime",
-    ]);
-    for (const error of summary.errors) output.error(`warning: ${error}`);
-    return;
-  }
   const palette = THEME_PALETTE_SLOTS
     .map((slot) => `${slot} ${summary.slots[slot]}`)
     .join(" · ");
@@ -717,14 +693,14 @@ export function runStats(input: {
   brandCaptured: boolean;
   handSteps: number;
   checkPassed: boolean;
-}): string[] {
+}): string {
   return [
     `${input.toolCount} tool${input.toolCount === 1 ? "" : "s"}`,
     ...(input.brandCaptured ? ["brand captured"] : []),
     input.handSteps > 0
       ? `${input.handSteps} paste${input.handSteps === 1 ? "" : "s"} left`
       : input.checkPassed ? "agent live" : "wired",
-  ];
+  ].join(" · ");
 }
 
 /** Variant B — the user's own agent loop. Which snippet prints is read off
@@ -1240,9 +1216,8 @@ async function finalizeTheme(input: {
   themePath: string;
   options: InitOptions;
   output: Output;
-  pretty: PrettyOutput | null;
 }): Promise<void> {
-  const { themeSummary, themeDraft, themePath, options, output, pretty } = input;
+  const { themeSummary, themeDraft, themePath, options, output } = input;
   const summary = themeDraft === null ? themeSummary : applyThemeDraft(themeSummary, themeDraft);
   // --theme answers land first; the review prompt then covers only the
   // uncertain slots the flags left unanswered (non-interactive runs keep
@@ -1259,44 +1234,7 @@ async function finalizeTheme(input: {
   }
   if (Object.keys(answers).length > 0) applyThemeAnswers(summary, answers, output);
   await writeText(themePath, `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
-  printThemeSummary(summary, output, pretty);
-}
-
-/** The per-router mount wording the terminal snippet cannot carry: the child
-    expression genuinely differs ({children} in app/layout.tsx, <Component
-    {...pageProps} /> in a pages-only _app.tsx), so one literal would be wrong
-    for half of hosts. */
-const DOCS_MOUNT = "docs.vendo.run/quickstart#the-client-mount";
-
-/** The same closing steps for a human terminal: on the rail as a ◇ section
-    rather than inside two 64-dash rules that break it, the code indented so
-    it reads as code, and "init never edits your files" demoted from a shout
-    to the dim why-line under it. */
-function printPrettyClosingSteps(pretty: PrettyOutput, handSteps: ManualEdit[], manualSteps: string[]): void {
-  if (handSteps.length > 0) {
-    const numbered = handSteps.length > 1;
-    pretty.block(
-      handSteps.length === 1 ? `One paste left — ${handSteps[0]!.file}` : `${handSteps.length} pastes left`,
-      [
-        ...handSteps.flatMap((step, at) => [
-          ...(numbered ? [`${at + 1} · ${step.file}`] : []),
-          ...step.lines.map((line) => `  ${line}`),
-          // The child expression genuinely differs by router, so the mount
-          // snippet is not blind-paste-complete; the docs carry both.
-          ...(step.lines.some((line) => line.includes("VendoProvider")) ? [`  ${DOCS_MOUNT}`] : []),
-          `  ${step.why}`,
-          "",
-        ]),
-        "init never edits your files.",
-        "then: npx vendo doctor — verifies the paste and runs a live turn",
-      ],
-      "◇",
-    );
-    return;
-  }
-  // Express and custom hosts have no single host file to name, so their
-  // wiring keeps the compact list, restyled to match.
-  if (manualSteps.length > 0) pretty.block("Last steps are yours", manualSteps, "◇");
+  printThemeSummary(summary, output);
 }
 
 /** Done — the pastes init cannot take (it only ever CREATES files in your
@@ -1305,18 +1243,13 @@ function printPrettyClosingSteps(pretty: PrettyOutput, handSteps: ManualEdit[], 
  *  can see, or server-action tools that silently fail closed. */
 function printClosingSteps(input: {
   output: Output;
-  pretty: PrettyOutput | null;
   handSteps: ManualEdit[];
   manualSteps: string[];
   credential: DevCredential;
   cloud: { keyValid: boolean };
   compositionPath: string | null;
 }): void {
-  const { output, pretty, handSteps, manualSteps, credential, cloud, compositionPath } = input;
-  if (pretty !== null) {
-    printPrettyClosingSteps(pretty, handSteps, manualSteps);
-    return;
-  }
+  const { output, handSteps, manualSteps, credential, cloud, compositionPath } = input;
   if (handSteps.length > 0) {
     const rule = "─".repeat(64);
     output.log(`\n${rule}`);
@@ -1423,14 +1356,15 @@ async function resolveModelCredential(input: {
   }
   let credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
   if (credential.rung === "env-key") {
-    // Their key is a decision already made, so there is no prompt either way
-    // — but a human terminal still learns the door exists, which the plain
-    // line never says.
-    if (pretty === null) {
-      output.log(`Model: ${describeDevCredential(credential)} — production uses this same key server-side.`);
-    } else {
-      output.log(`Models: your ${credential.envVar} · Vendo Cloud adds hosted automations + console — \`vendo login\` anytime`);
-    }
+    // Their key is a decision already made, so this stays a statement and
+    // never a prompt — but it now names the door. A BYO user used to finish
+    // init without learning Vendo Cloud exists at all, because the offer
+    // vanishes entirely on this branch. The renderer's CTA rule picks the
+    // command out; the copy is written once, here.
+    output.log(
+      `Model: ${describeDevCredential(credential)} — Vendo Cloud adds hosted automations + the console; `
+      + "run `vendo login` anytime.",
+    );
   }
   const cloud = await runCloudStep({
     root,
@@ -1733,7 +1667,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // finally the uncertain-slot review. Skipped entirely when theme.json
     // pre-existed this run (the flow reconciles that one instead).
     if (themeSummary !== null) {
-      await finalizeTheme({ themeSummary, themeDraft: flow.themeDraft, themePath, options, output, pretty });
+      await finalizeTheme({ themeSummary, themeDraft: flow.themeDraft, themePath, options, output });
     }
 
     // Judgment state, one line: a pass that ran already narrated itself (it
@@ -1795,7 +1729,7 @@ export async function runInit(options: InitOptions): Promise<number> {
       ...edits,
       ...(useCase === "agent-loop" ? await agentLoopSteps(root) : []),
     ];
-    printClosingSteps({ output, pretty, handSteps, manualSteps, credential, cloud, compositionPath });
+    printClosingSteps({ output, handSteps, manualSteps, credential, cloud, compositionPath });
     if (mcp !== null) {
       const lines = [...mcp.steps, ...mcp.envLines];
       if (pretty === null) for (const line of lines) output.log(`  ${line}`);
