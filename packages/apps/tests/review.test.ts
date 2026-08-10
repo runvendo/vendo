@@ -304,7 +304,7 @@ describe("rejection", () => {
       runtime.review.reject({ appId: app.id, note: "Second racer." }, reviewer),
     ]);
     expect(results.some((result) => result.status === "fulfilled")).toBe(true);
-    const rows = (await store.records("vendo_remix_rejections").list({ refs: { appId: app.id } })).records;
+    const rows = (await store.records("vendo_remix_rejections").list({ refs: { app_id: app.id } })).records;
     expect(rows).toHaveLength(1);
     expect(await runtime.review.queue(reviewer)).toEqual([]);
   });
@@ -383,7 +383,7 @@ describe("rejection", () => {
     await seedAppRow(store, app, owner.principal.subject);
     await runtime.review.reject({ appId: app.id, note: "Nope." }, reviewer);
     await runtime.delete(app.id, owner);
-    expect((await store.records("vendo_remix_rejections").list({ refs: { appId: app.id } })).records).toEqual([]);
+    expect((await store.records("vendo_remix_rejections").list({ refs: { app_id: app.id } })).records).toEqual([]);
   });
 });
 
