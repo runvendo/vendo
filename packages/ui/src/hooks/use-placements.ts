@@ -15,7 +15,12 @@
  * The same per-client scope carries the OUTBOUND half (`report`): a page of
  * slots telling the registry they exist, deduped and batched into one write.
  */
-import { SLOTS_REPORT_MAX, SLOT_ID_MAX_CHARS, SLOT_LABEL_MAX_CHARS } from "@vendoai/core";
+import {
+  SLOTS_REPORT_MAX,
+  SLOT_ID_MAX_CHARS,
+  SLOT_LABEL_MAX_CHARS,
+  SLOT_REPORT_REFRESH_MS,
+} from "@vendoai/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { developmentMode } from "../chrome/dev-mode.js";
 import type { VendoClient } from "../client.js";
@@ -63,19 +68,22 @@ function createPoller(client: VendoClient): Poller {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopPin: (() => void) | undefined;
 
-  /** Every (id, label) pair already sent to the registry — once per CLIENT, so a
-   *  page of slots re-rendering all day writes nothing after the first tick. A
-   *  host that mints a client per page (Maple does) starts a fresh set on every
-   *  one, so SPA back-navigation re-reports a slot; the write is idempotent, so
-   *  that costs one request and changes nothing. */
-  const reported = new Set<string>();
+  /** Every (id, label) pair already sent to the registry, and WHEN — once per
+   *  client per {@link SLOT_REPORT_REFRESH_MS}, so a page of slots re-rendering
+   *  all day writes nothing after the first tick, but a client that outlives the
+   *  registry's decay window renews its slots instead of watching them age out
+   *  from under a surface that is still mounting them. A host that mints a
+   *  client per page (Maple does) starts a fresh map on every one, so SPA
+   *  back-navigation re-reports a slot; the write is idempotent, so that costs
+   *  one request and changes nothing. */
+  const reported = new Map<string, number>();
   let queued: Array<{ id: string; label: string }> = [];
   let flushing = false;
 
   const keyOf = (id: string, label: string): string => JSON.stringify([id, label]);
   /** Un-remember entries that never reached the registry. `reported` is keyed by
    *  the CLIENT and outlives the React tree, so a key left behind here silences
-   *  that slot for the whole SESSION — which is what the source used to promise
+   *  that slot until the refresh window — which is what the source used to promise
    *  it did not do ("another chance from the next page that mounts it"). */
   const forget = (entries: readonly { id: string; label: string }[]): void => {
     for (const { id, label } of entries) reported.delete(keyOf(id, label));
@@ -181,8 +189,9 @@ function createPoller(client: VendoClient): Poller {
       // with ("sales", "report Q3") and the second slot never reaches the
       // registry — it is a destination the picker can never offer.
       const key = keyOf(slot, trimmed);
-      if (reported.has(key)) return;
-      reported.add(key);
+      const at = reported.get(key);
+      if (at !== undefined && Date.now() - at < SLOT_REPORT_REFRESH_MS) return;
+      reported.set(key, Date.now());
       queued.push({ id: slot, label: trimmed });
       if (flushing) return;
       flushing = true;

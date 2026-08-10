@@ -11,7 +11,9 @@ destination is usually a different page, and often a different device, which
 `localStorage` could never reach.
 
 A mounted `VendoSlot` now reports itself through `POST /slots` (batched: a whole
-page of slots is one request, deduped per session), and `GET /slots` answers the
+page of slots is one request, and a client repeats a slot at most once a day, so
+one long-lived tab renews its slots instead of watching them age out), and
+`GET /slots` answers the
 caller's own slots, most recently seen first. Rows age out
 30 days after the last render that reported them, so a slot deleted from the
 codebase stops being offered on its own. The rows live in the generic records

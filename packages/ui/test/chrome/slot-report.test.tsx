@@ -4,6 +4,7 @@
 // the host's own markup untouched. Nothing below stubs the report path: the
 // slots write through the real client to the real wire fixture, and the
 // assertions read that server's own state back.
+import { SLOT_REPORT_REFRESH_MS } from "@vendoai/core";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
@@ -73,7 +74,7 @@ describe("a mounted VendoSlot reports itself to the registry", () => {
     });
   });
 
-  it("says a given (id, label) once a session, however often the slot mounts", async () => {
+  it("says a given (id, label) once per refresh window, however often the slot mounts", async () => {
     const page = () => (
       <VendoProvider client={client}><VendoSlot id="hero"><span>Original hero</span></VendoSlot></VendoProvider>
     );
@@ -85,6 +86,22 @@ describe("a mounted VendoSlot reports itself to the registry", () => {
     // A remount re-runs the effect; the registry hears nothing new.
     await waitFor(() => expect(wire.state.slots).toHaveLength(1));
     expect(reports()).toHaveLength(1);
+  });
+
+  it("renews a slot the client already reported once the refresh window passes", async () => {
+    // The registry drops a row SLOT_DECAY_MS after its last report. A client
+    // that lives longer than that — one tab, open for weeks — would watch its
+    // own mounted slot age out and stop being offered as a destination, so the
+    // dedupe note expires well before the row does.
+    const page = () => <VendoProvider client={client}><VendoSlot id="hero" /></VendoProvider>;
+    const first = render(page());
+    await waitFor(() => expect(reports()).toHaveLength(1));
+    first.unmount();
+
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + SLOT_REPORT_REFRESH_MS + 1);
+    render(page());
+    await waitFor(() => expect(reports()).toHaveLength(2));
+    expect(reports()[1]?.body).toEqual({ slots: [{ id: "hero", label: "Hero" }] });
   });
 
   it("re-reports the same slot under a NEW label", async () => {

@@ -17,16 +17,15 @@
  * (`vendo_records WHERE refs @> '{"subject": …}'::jsonb`, `packages/store/src/
  * erase.ts`), and the only query this surface ever makes.
  */
-import type { RunContext, StoreAdapter, VendoRecord } from "@vendoai/core";
+import { SLOT_DECAY_MS, type RunContext, type StoreAdapter, type VendoRecord } from "@vendoai/core";
 import { listAllRecords } from "./persistence.js";
 
 /** The generic collection the slot rows live in (never a dedicated table). */
 export const SLOTS_COLLECTION = "vendo_slots";
 
-/** How long a slot stays in the registry after the last render that reported
- *  it. Long enough that a page nobody visited for a month still counts, short
- *  enough that a slot deleted from the codebase stops being offered. */
-export const SLOT_DECAY_MS = 30 * 24 * 60 * 60 * 1000;
+// The window itself lives in core with the rest of the registry's numbers: the
+// client refreshes a still-mounted slot against it, so the two must not drift.
+export { SLOT_DECAY_MS };
 
 /** One slot, as the host's surface reports it. */
 export interface SlotDescriptor {
