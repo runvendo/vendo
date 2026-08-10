@@ -8,7 +8,7 @@ import {
 } from "@vendoai/core";
 import { createAppTokens, type SandboxAdapter, type SandboxMachine } from "@vendoai/apps";
 import { inMemoryBoxFiles } from "@vendoai/apps/testing";
-import { createStore, type VendoStore } from "@vendoai/store";
+import { createStore, createStoreOps, storeFiles, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../src/server.js";
@@ -238,6 +238,104 @@ describe("the /box callback surface (app-token bearer)", () => {
       body: JSON.stringify({ data: { blob: "x".repeat(300 * 1024) } }),
     }));
     expect(response.status).toBe(400);
+  });
+
+  /** The SAME appData surface the door writes through — no stub on either side
+   *  of the seam, so the stamp a PUT lands is read back the way it was written. */
+  const opsOver = (store: VendoStore) => createStoreOps(store, { files: storeFiles(store) });
+  const target = (owner: string) => ({ appId: "app_skin", collection: "box:notes", owner });
+
+  it("rows: a PUT is owner-stamped with the app token's subject", async () => {
+    const { vendo, store, token } = await setup();
+
+    const put = await vendo.handler(wireRequest("/box/rows/notes/note_1", {
+      method: "PUT",
+      headers: { ...bearer(token), "content-type": "application/json" },
+      body: JSON.stringify({ data: { text: "chase inv_1" } }),
+    }));
+    expect(put.status).toBe(200);
+    // The box named no owner — it cannot; the door stamped the token's subject.
+    expect(await put.json()).toMatchObject({ refs: { subject: ADA.subject } });
+
+    const row = await opsOver(store).appData.get(target(ADA.subject), "note_1");
+    expect(row?.refs?.["subject"]).toBe(ADA.subject);
+    expect(row?.data).toEqual({ text: "chase inv_1" });
+  });
+
+  it("rows: OWNER is the fence, not the app — two subjects on ONE app see only their own", async () => {
+    const { vendo, store, token } = await setup();
+    // The grant row a shared app carries (the shape appAccess.grant writes), so
+    // user_bob's token clears the door's viewer check on the SAME app — which
+    // is what makes the owner, and only the owner, the thing separating them.
+    await store.records("vendo_app_grants").put({
+      id: "ag_app_skin_user:user_bob",
+      data: {
+        appId: "app_skin",
+        orgId: ADA.subject,
+        principal: "user:user_bob",
+        level: "viewer",
+        createdBy: ADA.subject,
+      },
+      refs: { app_id: "app_skin", org_id: ADA.subject, principal: "user:user_bob", level: "viewer" },
+    });
+    const write = (bearerToken: string, id: string, text: string): Promise<Response> =>
+      vendo.handler(wireRequest(`/box/rows/notes/${id}`, {
+        method: "PUT",
+        headers: { ...bearer(bearerToken), "content-type": "application/json" },
+        body: JSON.stringify({ data: { text } }),
+      }));
+    const read = (bearerToken: string, id: string): Promise<Response> =>
+      vendo.handler(wireRequest(`/box/rows/notes/${id}`, { headers: bearer(bearerToken) }));
+    const listed = async (bearerToken: string): Promise<string[]> => {
+      const response = await vendo.handler(wireRequest("/box/rows/notes", { headers: bearer(bearerToken) }));
+      const body = await response.json() as { records: Array<{ id: string }> };
+      return body.records.map((record) => record.id);
+    };
+
+    expect((await write(token, "note_1", "ada's note")).status).toBe(200);
+
+    // Minting ROTATES — one live token per app (app-token.ts) — so the two
+    // subjects hold the app's bearer in turn rather than at once. Same app,
+    // same collection, same ids throughout: the subject is the only variable.
+    const bobToken = await createAppTokens(store).mint("app_skin", "user_bob");
+    expect((await read(bobToken, "note_1")).status).toBe(404);
+    expect(await listed(bobToken)).toEqual([]);
+    // Ada's row is UNWRITABLE to bob, not merely unreadable: he can neither
+    // read it nor destroy it by re-putting the id he cannot see.
+    expect((await write(bobToken, "note_1", "bob's overwrite")).status).toBe(409);
+    expect((await write(bobToken, "note_2", "bob's note")).status).toBe(200);
+    expect(await listed(bobToken)).toEqual(["note_2"]);
+
+    const adaAgain = await createAppTokens(store).mint("app_skin", ADA.subject);
+    expect(await (await read(adaAgain, "note_1")).json()).toMatchObject({ data: { text: "ada's note" } });
+    expect((await read(adaAgain, "note_2")).status).toBe(404);
+    expect(await listed(adaAgain)).toEqual(["note_1"]);
+  });
+
+  it("rows: a PUT supplying refs.subject is refused — the door owns the stamp", async () => {
+    const { vendo, token } = await setup();
+    const response = await vendo.handler(wireRequest("/box/rows/notes/note_1", {
+      method: "PUT",
+      headers: { ...bearer(token), "content-type": "application/json" },
+      body: JSON.stringify({ data: { text: "as someone else" }, refs: { subject: "user_bob" } }),
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "validation" } });
+  });
+
+  it("rows: a deleted app's token is refused 401 before any row is written", async () => {
+    const { vendo, store, token } = await setup();
+    await store.records("vendo_apps").delete("app_skin");
+
+    const put = await vendo.handler(wireRequest("/box/rows/notes/note_1", {
+      method: "PUT",
+      headers: { ...bearer(token), "content-type": "application/json" },
+      body: JSON.stringify({ data: { text: "after the app is gone" } }),
+    }));
+    expect(put.status).toBe(401);
+    // No row anywhere means the refusal landed before the store was touched.
+    expect(await opsOver(store).appData.get(target(ADA.subject), "note_1")).toBeNull();
+    expect(await store.records("app:app_skin:box:notes").get("note_1")).toBeNull();
   });
 
   it("tools: relays the guard-bound outcome as the app's owner", async () => {

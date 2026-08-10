@@ -195,15 +195,26 @@ function rowsQuery(url: URL): RecordQuery {
   };
 }
 
-async function handleRows(wire: WireContext, appId: string): Promise<Response | undefined> {
+async function handleRows(wire: WireContext, appId: string, owner: string): Promise<Response | undefined> {
   const { request, url, segments, deps } = wire;
   const collection = segments[2];
   if (collection === undefined || !COLLECTION_PATTERN.test(collection)) {
     throw new VendoError("validation", "rows collection must match [A-Za-z0-9_-]{1,64}");
   }
-  // The app-scoped store namespace: the box: infix keeps box rows apart from
-  // the host-declared v1 storage collections sharing the app:<id> prefix.
-  const records = deps.store.records(`app:${appId}:box:${collection}`);
+  if (deps.ops === undefined) {
+    throw new VendoError(
+      "not-implemented",
+      "A box row is owner-stamped app data, so this door needs the store's named-operation surface: "
+      + "it needs a SQL-backed store (`store: postgres(url)`, or the local default) or a "
+      + "StoreOps-capable store (the Cloud hosted store). The configured store is neither.",
+    );
+  }
+  // The app-scoped, owner-scoped drawer: the box: infix keeps box rows apart
+  // from the host-declared v1 storage collections sharing the app:<id> prefix,
+  // and the owner is the app token's subject — stamped here, on the box's
+  // behalf, because the box is never told who the user is.
+  const target = { appId, collection: `box:${collection}`, owner };
+  const records = deps.ops.appData;
 
   // Lane E redaction guard — nothing a box writes or reads through this door
   // may carry a known secret value into a store row or a response body.
@@ -212,7 +223,7 @@ async function handleRows(wire: WireContext, appId: string): Promise<Response | 
 
   if (segments.length === 3) {
     if (request.method !== "GET") return undefined;
-    return json(await scrub(await records.list(rowsQuery(url))));
+    return json(await scrub(await records.list(target, rowsQuery(url))));
   }
   if (segments.length !== 4) return undefined;
   const id = segments[3]!;
@@ -220,12 +231,12 @@ async function handleRows(wire: WireContext, appId: string): Promise<Response | 
     throw new VendoError("validation", "row id must be 1-256 characters");
   }
   if (request.method === "GET") {
-    const record = await records.get(id);
+    const record = await records.get(target, id);
     if (record === null) throw new VendoError("not-found", `row not found: ${id}`);
     return json(await scrub(record));
   }
   if (request.method === "DELETE") {
-    await records.delete(id);
+    await records.delete(target, id);
     return json({ status: "ok" });
   }
   if (request.method === "PUT") {
@@ -247,7 +258,7 @@ async function handleRows(wire: WireContext, appId: string): Promise<Response | 
     }
     // Scrub BEFORE persisting: a secret value must never land in a store row,
     // even when the box itself sent it.
-    return json(await records.put(await scrub({
+    return json(await records.put(target, await scrub({
       id,
       data: body["data"] as Json,
       ...(body["refs"] === undefined ? {} : { refs: body["refs"] as Record<string, string> }),
@@ -308,7 +319,7 @@ export const boxRoutes: RouteEntry[] = [
     }
     const area = segments[1];
     if (area === "rows") {
-      const handled = await handleRows(wire, identity.appId);
+      const handled = await handleRows(wire, identity.appId, identity.subject);
       if (handled !== undefined) return handled;
     }
     if (area === "tools") {

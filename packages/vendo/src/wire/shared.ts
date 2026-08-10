@@ -7,6 +7,7 @@ import {
   type Membership,
   type Principal,
   type RunContext,
+  type StoreOps,
   type ToolOutcome,
   type ToolRegistry,
   type VendoErrorCode,
@@ -66,6 +67,12 @@ export interface WireDeps {
   trustedBaseIsHttps: boolean;
   sessionId: string;
   store: VendoStore;
+  /** The SAME 35-op surface `selectStoreOps` chose for this deployment, over
+      that same store and files adapter — the owner-stamped appData family is
+      only reachable here. Absent when the store offers neither its own ops nor
+      a SQL handle; the routes that need it refuse THAT REQUEST, naming both
+      ways to give the deployment one. */
+  ops: StoreOps | undefined;
   telemetry?: Telemetry;
   /** Architecture §3 — the composed `Harness` door, and the ONLY one: every
       chat turn is served here — `harness:` when the host named one, `vendo()`

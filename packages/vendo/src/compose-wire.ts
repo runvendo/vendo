@@ -23,7 +23,7 @@ const telemetryClient = (enabled: boolean | undefined): Telemetry | undefined =>
 
 /** Everything the wire handler reads off this composition. */
 export const wireDepsFor = (composition: VendoComposition): WireDeps => {
-  const { config, store, guard, apps, actionsConfig, appTokens, automations } = composition;
+  const { config, store, ops, guard, apps, actionsConfig, appTokens, automations } = composition;
   const { boundTools, byoApprovals, connections, sandbox, inference, doctor, door } = composition;
   const { resolvePrincipal, membershipsSeam, userFactsSeam, ready } = composition;
   const { appsMounted, automationsMounted } = composition;
@@ -55,6 +55,7 @@ export const wireDepsFor = (composition: VendoComposition): WireDeps => {
     trustedBaseIsHttps,
     get sessionId() { return sessionId(); },
     store,
+    ops,
     telemetry: telemetryClient(config.telemetry),
     // Every chat turn goes through the harness runtime — `harness:` when the
     // host named one, `vendo()` when they did not. There is no second engine to
