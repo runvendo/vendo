@@ -45,8 +45,8 @@ export interface AppValidationFailure {
   /** The workspace path the document was read back from. */
   path: string;
   appId: AppId;
-  /** Everything `validate` reported — warnings included. Only a `block` is what
-   *  made this a failure, but the builder is told all of it. */
+  /** Everything `validate` reported — warnings included. Mid-write only a `block`
+   *  makes this a failure; at the reviewer door a warn does too. */
   findings: readonly Finding[];
 }
 
@@ -83,7 +83,12 @@ async function askValidate(
     console.error(`[vendo] validate answered in a shape the gate cannot read, so ${appId} was not gated`);
     return undefined;
   }
-  if (output["ok"]) return [];
+  // Read the findings whatever `ok` says. `ok` is block-only
+  // (`doors/build-surface.ts`), and the reviewer's own rubric hands `block` to just
+  // two of its five items — so returning early on `ok` threw away every DEAD
+  // CONTROL, SECTION THAT DOESN'T ANSWER THE ASK and WORK QUIETLY DROPPED the
+  // model call had already paid for. Which of those a caller acts on is the
+  // caller's rule, below.
   return Array.isArray(output["findings"]) ? output["findings"].filter(isFinding) : [];
 }
 
@@ -131,11 +136,18 @@ export async function validateWrittenApps(input: {
       const document = await input.workspace.readFile(path);
       const mechanical = await askValidate(input.tools, appId, { document });
       if (mechanical === undefined) continue;
-      if (mechanical.length > 0) {
+      // MID-WRITE, a block is the bar: the mechanical door fires on every save, and
+      // a warn there is a check that could not run (`checking/layer.ts`), which
+      // fail-open says is not a finding. The builder still sees the whole list.
+      if (mechanical.some(({ severity }) => severity === "block")) {
         failures.push({ path, appId, findings: mechanical });
         continue;
       }
       if (input.review !== true) continue;
+      // At the END of a finished screen, a warn is worth the one repair round: the
+      // reviewer marks a dead control, an unasked section and dropped work "warn"
+      // because a person would spot them — but there is no person here, only this
+      // loop, and it is about to call the screen done.
       const judged = await askValidate(input.tools, appId, { appId });
       if (judged !== undefined && judged.length > 0) failures.push({ path, appId, findings: judged });
     } catch (error) {
