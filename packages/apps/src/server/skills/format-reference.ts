@@ -236,9 +236,13 @@ the centre is always a query or \`state\` read.
 
 \`\`\`
 points={asPoints(invoices.data, "month", "total_cents")}
-rows={format(pick(invoices.data, "client", "amount_cents"), "amount_cents", "currency")}
+rows={rename(pick(invoices.data, "client", "amount_cents"), "client", "customer")}
 note={format(state.rate, "percent")}
 \`\`\`
+
+Never reshape a money field: \`format\` turns it into TEXT, so \`sortBy\` then orders
+it alphabetically ("$9,675.00" above "$61,245.00") and the column can no longer
+be right-aligned on the decimal point. Money is the component's job — see below.
 
 Reading the nesting from the inside out reads the steps in order: \`pick\` first,
 then \`format\`.
@@ -286,6 +290,22 @@ the centre of the nesting is a path — \`format(sum(invoices.data, "amount_cent
 is nothing left to reshape. Let the component format it: \`Stat\` takes
 \`format="money"\`, \`Money\` takes \`cents\`, a \`DataTable\` column takes
 \`format:"money"\`.
+
+### Money: \`format="money"\` IS the cents conversion
+
+Every money format in the Kit takes **minor units** — cents, paisa, fils — and
+divides by them itself. Pass the tool's number through untouched, whatever the
+field is called. \`/ 100\` is the single most common way to ship a screen that is
+100x wrong: \`value={sum(accounts.data, "balance") / 100} format="money"\` divides
+twice and reads \`$362.65\` for \`$36,265.15\`.
+
+\`\`\`
+value={sum(accounts.data, "balance")} format="money"          the whole rule
+columns={[{key:"balance", label:"Balance", format:"money", align:"end"}]}
+\`\`\`
+
+One screen, one money path: a headline and a column over the same field must both
+be \`money\`, or they will disagree by 100x in front of the person reading them.
 
 ---
 
