@@ -612,6 +612,34 @@ export async function assembleScreen(
             : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
         }],
       }]);
+      /**
+       * THE REPAIR MUST PROVE ITSELF — ported from gemini-cli's
+       * `ChatCompressionService.tryCompressChat`, which re-counts tokens after
+       * compressing and, when the new history is not smaller, returns
+       * `newHistory: null` and keeps the original untouched
+       * (`COMPRESSION_FAILED_INFLATED_TOKEN_COUNT`).
+       *
+       * A repair round is a self-improvement pass, and a self-improvement pass that
+       * cannot pass the floor the first document already passed is the compression
+       * that inflated the token count: the honest answer is the original. So the
+       * repaired document faces the MECHANICAL half only — `review` omitted, so this
+       * costs no model call — and a document that broke the floor is restored
+       * through the same `save`, which re-commits and therefore repaints the bytes
+       * that actually painted.
+       *
+       * It only catches mechanical regressions; a repair that is valid but
+       * semantically worse would need a second reviewer call, which is the person
+       * waiting longer for a verdict they already have a screen for.
+       */
+      const after = await turn.workspace.readFile(appPath).catch(() => undefined);
+      if (saved !== undefined && after !== undefined && after !== saved) {
+        const broke = (await validateWrittenApps({
+          tools: turn.tools,
+          workspace: turn.workspace,
+          paths: [appPath],
+        })).length > 0;
+        if (broke) await save(turn, APP_FILE, saved);
+      }
     }
     return {
       kind: "assembled",
