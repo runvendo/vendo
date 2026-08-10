@@ -51,9 +51,16 @@ const hosted = () => {
   return { console_, store };
 };
 
+/** Grant writes ride the ENGINE door now — `vendo_app_grants` is one of Vendo's
+ *  own collections, and since the generic records family left the wire the
+ *  collection rides the BODY instead of the path. Matching on the path alone
+ *  would silently match nothing and make the refusal case below pass no matter
+ *  what was written, so the collection is part of the predicate. */
 const grantPuts = (console_: ReturnType<typeof fakeConsole>): unknown[] =>
   console_.requests
-    .filter((entry) => entry.url.endsWith("/records/vendo_app_grants/put"))
+    .filter((entry) =>
+      entry.url.endsWith("/engine/put")
+      && (entry.json as { collection?: string } | undefined)?.collection === "vendo_app_grants")
     .map((entry) => entry.json);
 
 describe("§9.2 — an unparseable principal is refused on the HOSTED store too", () => {

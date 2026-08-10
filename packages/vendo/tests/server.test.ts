@@ -1080,9 +1080,14 @@ describe("09 §3 public wire", () => {
     // ensureSchema is a client no-op — the service owns its migrations.
     const hosted = compose({});
     cleanups.push(async () => { await hosted.store.close(); });
-    expect(await hosted.store.records("invoices").get("inv_1")).toBeNull();
+    // An ENGINE collection, not a host-invented one: since the generic records
+    // family left the wire the hosted façade has two doors, and a name outside
+    // the allowlist has no home on that mount at all. The probe has to be a
+    // call the live console would actually serve, or it proves the seam is
+    // wired by exercising something that could only ever be refused.
+    expect(await hosted.store.records("vendo_apps").get("app_1")).toBeNull();
     expect(consoleCalls).toEqual([{
-      url: "https://cloud-store.test/api/v1/store/records/invoices/get",
+      url: "https://cloud-store.test/api/v1/store/engine/get",
       authorization: "Bearer vnd_store_key",
     }]);
     expect(() => hosted.store.raw()).toThrow(/no local database/);
