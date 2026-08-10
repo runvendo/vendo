@@ -48,6 +48,20 @@ export interface Tree {
   nodes: TreeNode[];
   data?: Record<string, Json>;
   queries?: TreeQuery[];
+  /**
+   * The host tools that MUTATE — every tool the host graded anything but
+   * `read` — stamped by the compiler from the host's own risk grading
+   * (`wireCompileOptionsFor`). The renderer asks the person before it sends a
+   * call to one of them, so a control that changes or destroys something
+   * confirms BY CONSTRUCTION rather than because whoever wrote the screen
+   * remembered a dialog.
+   *
+   * The whole graded set, not the subset this document appears to reach: an
+   * island calls its tools from its own code, so a reachability guess would
+   * drop a confirmation silently, and a safety gate that fails silently is
+   * worse than a few extra names on the wire.
+   */
+  writeTools?: string[];
 }
 
 /**
@@ -63,6 +77,7 @@ export const treeSchema = z.object({
   nodes: z.array(treeNodeSchema),
   data: z.record(z.unknown()).optional(),
   queries: z.array(treeQuerySchema).optional(),
+  writeTools: z.array(z.string()).optional(),
 }).passthrough() satisfies z.ZodType<Tree>;
 
 type TreeValidation =

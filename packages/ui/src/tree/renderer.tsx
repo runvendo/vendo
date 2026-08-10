@@ -17,6 +17,7 @@ import {
   evaluateExpr,
   isExprBinding,
 } from "@vendoai/apps/contract";
+import { ConfirmAction, type PendingConfirm } from "./confirm-action.js";
 import { convertPayload } from "./convert-payload.js";
 import {
   useCallback,
@@ -566,8 +567,28 @@ function StatefulTreeView({
   // `useVendoState` (kit/state.ts) — one implementation, two venues.
   const [viewState, updateState] = useKeyedState(onStateChange);
   const [outcomes, setOutcomes] = useState<Record<string, ToolOutcome | undefined>>({});
+  const [confirming, setConfirming] = useState<PendingConfirm | null>(null);
+  // The host's mutating tools, as the compiler stamped them (a payload extra,
+  // like furnishings). Tolerate a malformed field: only real names ask.
+  const writeTools = useMemo(() => {
+    const declared = (tree as WalkTree & { writeTools?: unknown }).writeTools;
+    return new Set<string>(
+      Array.isArray(declared) ? declared.filter((name): name is string => typeof name === "string") : [],
+    );
+  }, [tree]);
 
-  const runAction = useCallback(async (nodeId: string, action: string, payload?: Json) => {
+  const runAction = useCallback(async (nodeId: string, action: string, payload?: Json): Promise<ToolOutcome> => {
+    // Every press and every in-jail `tools.*` call lands here, so this is the one
+    // place a mutating action can be held until the person has said yes.
+    if (writeTools.has(action)) {
+      const send = await new Promise<boolean>((answer) => {
+        setConfirming({ action, payload, answer });
+      });
+      setConfirming(null);
+      // Answering "no" is not a failure the screen has to report: the person
+      // already knows what they just chose, so no notice is left behind.
+      if (!send) return { status: "blocked", reason: "You chose not to run this." };
+    }
     let outcome: ToolOutcome;
     try {
       outcome = await onAction({ nodeId, action, ...(payload === undefined ? {} : { payload }) });
@@ -582,7 +603,7 @@ function StatefulTreeView({
     }
     setOutcomes((current) => ({ ...current, [nodeId]: outcome.status === "ok" ? undefined : outcome }));
     return outcome;
-  }, [onAction]);
+  }, [onAction, writeTools]);
 
   const nodes = useMemo(
     () => new Map(validation.ok ? validation.tree.nodes.map((node) => [node.id, node]) : []),
@@ -702,6 +723,7 @@ function StatefulTreeView({
         runAction={runAction}
         setViewState={updateState}
       />
+      {confirming === null ? null : <ConfirmAction pending={confirming} />}
     </NodeErrorBoundary>
   );
 }

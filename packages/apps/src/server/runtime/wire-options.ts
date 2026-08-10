@@ -25,4 +25,12 @@ export const wireCompileOptionsFor = (
   inlineRefs: true,
   ...(deps.tools === undefined ? {} : { inlineTools: deps.tools.map(({ name }) => name) }),
   ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
+  // The host's own risk grading, forwarded to the tree so the renderer confirms
+  // before it sends a mutating call (`Tree.writeTools`). Anything not graded
+  // `read` counts, `ungraded` included — the guard treats an ungraded tool like a
+  // destructive one, and a surface that asked less than the guard would be
+  // promising safety it does not have.
+  ...(deps.tools === undefined
+    ? {}
+    : { writeTools: deps.tools.filter(({ risk }) => risk !== "read").map(({ name }) => name) }),
 });
