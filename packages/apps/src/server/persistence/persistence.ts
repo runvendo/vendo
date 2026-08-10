@@ -15,23 +15,41 @@ import {
   type AppData,
   type AppDocument,
 } from "../../contract/index.js";
+import type { EngineOps } from "./engine.js";
+
+/** The app row's drawer. A literal per file was fine while each file bound one
+ *  handle; it is an ARGUMENT on every engine verb now, so it has a name. */
+export const APPS_COLLECTION = "vendo_apps";
 
 /** Drain a cursor-paginated listing. A page that repeats its cursor (or drops
  *  it) terminates the loop, so a misbehaving adapter cannot spin forever. */
-export const listAllRecords = async (
-  records: RecordStore,
-  query: Omit<RecordQuery, "cursor"> = {},
+const drain = async (
+  list: (query: RecordQuery) => Promise<{ records: VendoRecord[]; cursor?: string }>,
+  query: Omit<RecordQuery, "cursor">,
 ): Promise<VendoRecord[]> => {
   const found: VendoRecord[] = [];
   let cursor: string | undefined;
   do {
-    const page = await records.list(cursor === undefined ? query : { ...query, cursor });
+    const page = await list(cursor === undefined ? query : { ...query, cursor });
     found.push(...page.records);
     if (page.cursor === undefined || page.cursor === cursor) break;
     cursor = page.cursor;
   } while (cursor !== undefined);
   return found;
 };
+
+/** Drain an app-data (or host-façade) collection. */
+export const listAllRecords = (
+  records: RecordStore,
+  query: Omit<RecordQuery, "cursor"> = {},
+): Promise<VendoRecord[]> => drain((page) => records.list(page), query);
+
+/** Drain one of Vendo's own drawers, by name. */
+export const listAllEngineRecords = (
+  engine: EngineOps,
+  collection: string,
+  query: Omit<RecordQuery, "cursor"> = {},
+): Promise<VendoRecord[]> => drain((page) => engine.list(collection, page), query);
 
 /** A document coming back OUT of the store. It passed admission on the way in;
  *  this is the read-side integrity check, and it runs admission's inner half
@@ -159,24 +177,24 @@ export const appRecordInput = (
 };
 
 /** Bounded read-mutate-CAS on the app row; the store's revision receipt
- *  arbitrates racers (adapters without atomic/revision fall back to put). */
+ *  arbitrates racers (a row that carries no revision falls back to put). */
 export const updateAppRow = async (
-  records: RecordStore,
+  engine: EngineOps,
   appId: AppId,
   mutate: (doc: AppDocument) => AppDocument,
   origin: AdmissionOrigin,
 ): Promise<AppDocument> => {
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const record = await records.get(appId);
+    const record = await engine.get(APPS_COLLECTION, appId);
     if (record === null) throw new VendoError("not-found", `app not found: ${appId}`, { appId });
     const row = rowFromRecord(record);
     const next = mutate(structuredClone(row.doc));
     const input = appRecordInput(next, row.subject, row.enabled, origin);
-    if (records.atomic === undefined || record.revision === undefined) {
-      await records.put(input);
+    if (record.revision === undefined) {
+      await engine.put(APPS_COLLECTION, input);
       return next;
     }
-    if (await records.atomic.compareAndSwap(input, record.revision) !== null) return next;
+    if (await engine.compareAndSwap(APPS_COLLECTION, input, record.revision) !== null) return next;
   }
   throw new VendoError("conflict", `app ${appId} was concurrently modified`, { appId });
 };
