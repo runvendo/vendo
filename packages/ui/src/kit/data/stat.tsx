@@ -19,8 +19,16 @@ export interface StatProps {
  *  so longer text renders truncated with the full text in the tooltip. */
 const STAT_VALUE_MAX_CHARS = 40;
 
+/** Past this length the hero size is dropped: a tile clips rather than wraps
+ *  (above), and a clipped number is a wrong answer, not a loud one. */
+const STAT_HERO_MAX_CHARS = 11;
+
 export function Stat({ label, value, format = "text", trend, tone = "default" }: StatProps) {
   const emphasis = tone === "accent" ? t.accent : tone === "danger" ? t.danger : t.text;
+  // A tone is the EXCEPTION, so only a toned tile carries a colored edge. Every
+  // tile used to draw a 3px text-colored bar, which made three tiles in a row
+  // shout equally loudly and left the toned one no way to stand out.
+  const edge = tone === "default" ? t.border : emphasis;
   const formatted = applyFormat(value, format);
   const empty = formatted === null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;
@@ -29,6 +37,13 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
     : overflow
       ? `${formatted.slice(0, STAT_VALUE_MAX_CHARS - 1).trimEnd()}…`
       : formatted;
+  // The number a screen exists to report has to be the LARGEST thing on it, so a
+  // Stat that owns its row takes the hero size. `--vendo-stat-scale` is how
+  // Row/Grid tell a tile it is sharing the row and must fit its share; a
+  // placeholder is not an answer and never gets the hero size.
+  const scale = !empty && display.length <= STAT_HERO_MAX_CHARS
+    ? "var(--vendo-stat-scale, 2.2)"
+    : "1.65";
   return (
     <article
       data-kit="Stat"
@@ -40,7 +55,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         flexDirection: "column",
         gap: "var(--vendo-density-field-gap, 6px)",
         minWidth: 0,
-        borderLeft: `3px solid ${emphasis}`,
+        borderLeft: `3px solid ${edge}`,
         borderRadius: t.radiusSmall,
         background: `color-mix(in srgb, ${t.surface} 90%, ${t.background})`,
         padding: "var(--vendo-density-stat-padding, 12px 14px)",
@@ -52,7 +67,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         style={{
           color: empty ? t.muted : emphasis,
           fontFamily: t.headingFamily,
-          fontSize: "calc(var(--vendo-font-size, 15px) * 1.65)",
+          fontSize: `calc(var(--vendo-font-size, 15px) * ${scale})`,
           fontWeight: 700,
           letterSpacing: "-0.025em",
           lineHeight: 1.12,

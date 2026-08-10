@@ -94,7 +94,10 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Text",
     group: "values",
-    summary: "Themed text. Use variant=heading for section titles.",
+    // heading is the screen's LEAD, not a section label: it renders a step up the
+    // type scale, so one per screen leads and three compete. A titled block uses
+    // Card/Surface's own `title`.
+    summary: "Themed text. variant=heading is the screen's lead line — one per screen; a titled block uses Card/Surface title instead.",
     props: {
       // string | number, matching the implementation (`text: ReactNode`, which
       // renders a number verbatim). The spec said `string` only, which never

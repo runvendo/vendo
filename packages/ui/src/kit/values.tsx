@@ -176,15 +176,24 @@ export interface TextProps {
   variant?: "body" | "heading" | "caption" | "label";
 }
 
-/** Themed text. Heading renders an <h3>; others render a <span>. */
+/** Themed text. Heading renders an <h3>; others render a <span>.
+ *
+ *  A heading is a STEP up the scale, not bold body: it used to render at the base
+ *  size, so a screen whose lead was its title had nothing on it larger than the
+ *  table underneath, and the title could not lead by looking like one. */
 export function Text({ text, variant = "body" }: TextProps) {
   const style: CSSProperties = {
     color: variant === "caption" ? t.muted : t.text,
     fontFamily: variant === "heading" ? t.headingFamily : t.fontFamily,
-    fontSize: variant === "caption" ? "var(--vendo-font-size-caption, 12.5px)" : t.fontSize,
-    fontWeight: variant === "heading" ? 650 : variant === "label" ? 600 : 400,
-    letterSpacing: "-0.011em",
-    lineHeight: variant === "heading" ? 1.3 : 1.5,
+    fontSize:
+      variant === "caption"
+        ? "var(--vendo-font-size-caption, 12.5px)"
+        : variant === "heading"
+          ? "calc(var(--vendo-font-size, 15px) * 1.35)"
+          : t.fontSize,
+    fontWeight: variant === "heading" ? 700 : variant === "label" ? 600 : 400,
+    letterSpacing: variant === "heading" ? "-0.02em" : "-0.011em",
+    lineHeight: variant === "heading" ? 1.25 : 1.5,
     margin: 0,
   };
   if (variant === "heading") {

@@ -9,7 +9,10 @@ import { font, t } from "../tokens.js";
 export type CalloutTone = "info" | "accent" | "success" | "warning" | "danger";
 
 const TONE: Record<CalloutTone, { accent: string; icon: string }> = {
-  info: { accent: t.accent, icon: "ⓘ" },
+  // `info` is the DEFAULT tone and every untoned notice took it, so an ordinary
+  // aside was painted in the host's brand color — the accent spent on a remark.
+  // Neutral here; a notice that wants the brand asks for tone="accent" below.
+  info: { accent: t.muted, icon: "ⓘ" },
   // "accent" is the tone the sibling vocabularies teach (Badge/EnumBadge/
   // Stat/Progress), so generated code reaches for it constantly — re-gate
   // 2026-07-26 arm C crashed on it four times. First-class, brand-accented.

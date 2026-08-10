@@ -52,13 +52,21 @@ export const control: CSSProperties = {
   padding: "var(--vendo-density-control-padding, 9px 12px)",
 };
 
-/** Recharts-friendly categorical palette derived from the host accent. */
+/**
+ * Recharts-friendly categorical palette: a NEUTRAL ramp off the text color.
+ *
+ * It used to start at the host accent, which made every bar, slice and line on
+ * every generated screen brand-colored — the accent was being spent on
+ * decoration, so it no longer marked the one primary action that should own it.
+ * A chart is data; the accent belongs to the button. Mixing toward `background`
+ * rather than `surface` keeps the ramp legible on a dark theme too.
+ */
 export const chartSeries = [
-  t.accent,
-  `color-mix(in srgb, ${t.accent} 55%, ${t.surface})`,
-  `color-mix(in srgb, ${t.accent} 30%, ${t.surface})`,
-  t.muted,
-  `color-mix(in srgb, ${t.danger} 70%, ${t.accent})`,
+  `color-mix(in srgb, ${t.text} 76%, ${t.background})`,
+  `color-mix(in srgb, ${t.text} 54%, ${t.background})`,
+  `color-mix(in srgb, ${t.text} 38%, ${t.background})`,
+  `color-mix(in srgb, ${t.text} 26%, ${t.background})`,
+  `color-mix(in srgb, ${t.text} 16%, ${t.background})`,
 ] as const;
 
 /** Nth series color, wrapping. */
