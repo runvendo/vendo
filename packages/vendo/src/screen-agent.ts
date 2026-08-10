@@ -22,6 +22,16 @@
  * - **`vendo_make` is withheld, not merely unused.** The screen agent IS what
  *   `vendo_make` calls, so leaving it callable is a loop. The closed loadout
  *   excludes it by omission.
+ * - **The common case is ONE writing call, and the loop is the fallback.** A
+ *   screen is a document; writing a document is one act. Everything a writer used
+ *   to spend steps finding out is knowable before it is invoked — every tool's
+ *   input and output schema (`toolBrief`), the theme, the rules and the whole
+ *   catalog (the briefing pack), and what this product's argument-free reads
+ *   answer right now (`resolvedReads`) — so the write gets all of it, two hands
+ *   and one step ({@link WRITE_STEPS}). A write that does not reach the person's
+ *   screen goes back to the loop with the floor's own words and every one of
+ *   {@link SCREEN_STEPS}. Both drives are the same `vendo()` and the same brief;
+ *   only the loadout and the budget differ.
  * - **The job description is the shipped skill.** `buildingAppsSkill` plus its
  *   `references/format.md` are the same text `claudeCode()` reads. This file adds
  *   one short block that corrects the ENVIRONMENT (no disk, no delegation, two
@@ -71,7 +81,8 @@ import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harn
 import type { ModelEffort } from "@vendoai/harnesses/vendo";
 
 /**
- * The whole budget for assembling one screen.
+ * The whole budget for the FALLBACK loop — a screen the one-call write could not
+ * finish ({@link WRITE_STEPS}).
  *
  * Sized off the work, not off a round number: learn a shape or search the
  * catalog (1–2), save the app (1–3, because saving as you go is what makes it
@@ -82,6 +93,52 @@ import type { ModelEffort } from "@vendoai/harnesses/vendo";
  * for a BUILD, and `escalate` is the honest exit rather than a bigger number.
  */
 export const SCREEN_STEPS = 10;
+
+/**
+ * The whole budget for the WRITE, which is one model call.
+ *
+ * A screen is a document, and writing a document is one act. The loop above is
+ * what a writer needs when it has to go and FIND something first — a shape it
+ * cannot read, a component it does not know, a value it has to see — and
+ * everything on that list is knowable before the model is invoked: the tool
+ * brief prints every input and output schema, the briefing pack carries the
+ * theme, the design rules and the whole catalog, and {@link resolvedReads}
+ * answers this product's argument-free reads. So the common case is handed all
+ * of it, given two hands — write it, or hand it over — and one step.
+ *
+ * Measured 2026-08-10 over 38 genbench screen runs: the median run is 10 model
+ * calls and 137s settled, and the runs that were already ONE writing call
+ * (`top-3-spend`, `transfer-dates-shuffled`, `spend-chart`) settled in 32–36s
+ * with the same floor verdict. The rest spend the budget on `search_components`
+ * excursions that find nothing and on re-saving a document that already painted.
+ * A loop spends whatever budget it has, so the budget for the common case is one.
+ *
+ * The loop is the FALLBACK, not the retirement: a write that does not reach the
+ * person's screen goes back to it with the floor's own words, its full loadout
+ * and every one of its {@link SCREEN_STEPS}.
+ */
+const WRITE_STEPS = 1;
+
+/** Which of the two drives a brief is written for. The knowledge is identical —
+ *  same skill, same manual, same briefing pack, same tool shapes — and what
+ *  differs is what the reader may DO next, which is the only thing a prompt is
+ *  allowed to disagree about between the two. */
+type WritingPass = "write" | "loop";
+
+/**
+ * How many argument-free reads are answered before the first token.
+ *
+ * A screen reads a handful of queries. This is the bound that keeps a host with
+ * fifty read tools from spending fifty live calls to write one of them — and it
+ * costs nothing when it bites, because the fallback loop still has every read by
+ * name and can call the one it actually wants.
+ */
+const PREFETCH_READS = 8;
+
+/** How much of one read's answer rides in the brief. Enough to see the shape, the
+ *  scale (is money in cents?) and whether there are any rows at all — which is
+ *  the whole reason a writer calls a query it has already read the schema of. */
+const RESOLVED_CHARS = 4000;
 
 /**
  * How hard the assembler may think (`vendo({ effort })`).
@@ -229,6 +286,58 @@ export function toolBrief(listings: readonly ToolListing[]): string {
 }
 
 /**
+ * What this product's reads answer RIGHT NOW, before the first token.
+ *
+ * The shipped skill tells a writer to "call the query once … when the actual
+ * values matter (what a status string really says, whether money is cents)", and
+ * that call is a whole round trip the person waits for — on a loop, one per
+ * query, serially. Every read that needs no arguments can be answered in
+ * parallel before the model is invoked, which is the difference between a writer
+ * that has to go and look and a writer that can just write.
+ *
+ * Reads only, and only the ones whose input schema is DECLARED and requires
+ * nothing: a blind schema is not a no-argument tool (`UNKNOWN_INPUT_SCHEMA_NOTE`)
+ * and a required argument is a value only the writer can choose, so both stay the
+ * fallback loop's to call. Assembly verbs are excluded — `validate` and
+ * `search_components` answer about a document that does not exist yet.
+ *
+ * A read that fails, is denied or is not connected simply does not appear. It is
+ * knowledge, not a gate: the writer still has the tool's schema and the loop
+ * still has the tool.
+ */
+async function resolvedReads(tools: TurnTools, listings: readonly ToolListing[]): Promise<string | undefined> {
+  const answerable = listings.filter((listing) =>
+    listing.risk === "read"
+    && !ASSEMBLY_TOOLS.includes(listing.name)
+    && listing.name !== VENDO_MAKE_TOOL
+    && !inputSchemaIsBlind(listing.inputSchema)
+    && (listing.inputSchema?.required as unknown[] | undefined ?? []).length === 0
+  ).slice(0, PREFETCH_READS);
+  if (answerable.length === 0) return undefined;
+  const answers = await Promise.all(answerable.map(async (listing) => {
+    const result = await tools.call(listing.name, {}).catch(() => undefined);
+    if (result?.status !== "ok") return undefined;
+    // `Json` is `unknown`, so a host that answers `ok` with nothing at all
+    // stringifies to `undefined` — which is a fact about that tool, not a reason
+    // for the screen to fail.
+    const json = JSON.stringify(result.output) ?? "nothing";
+    const shown = json.length > RESOLVED_CHARS ? `${json.slice(0, RESOLVED_CHARS)}… (truncated)` : json;
+    return `- \`${listing.name}\` answered: ${shown}`;
+  }));
+  const lines = answers.filter((line): line is string => line !== undefined);
+  if (lines.length === 0) return undefined;
+  return `# What this product's reads answer right now
+
+Real answers, read for you just now, so you never have to spend a call learning a
+field name, a scale or whether there is anything in there at all. They are TODAY's
+answer and nothing more: bind the query and let it compute fresh on every render.
+A figure pasted off this list is right on the screen you built it on and wrong
+every day after.
+
+${lines.join("\n")}`;
+}
+
+/**
  * The environment correction, and only that.
  *
  * The shipped skill is written for a reader with a machine: a `Task` tool, a
@@ -272,17 +381,53 @@ deliberate.
 
 ${toolBrief(listings)}`;
 
+/**
+ * What is different about the ONE-CALL write, and only that.
+ *
+ * It is the LAST section of the brief and it overrides the ones above it, for the
+ * same reason `environmentNote` overrides the shipped skill: the knowledge is
+ * shared and what a reader may DO next is this rung's own. Saying it here rather
+ * than threading a mode through the note above is what keeps the fallback loop's
+ * brief byte-for-byte the brief it has always had.
+ */
+const writePassNote = `# This pass: one call
+
+Everything above is what you know. This is what you may do.
+
+You have ONE model call — this one — and two hands: \`${SAVE_APP_TOOL}\` and
+\`${ESCALATE_TOOL}\`. There is nothing here to search the catalog with, no
+\`validate\` to call and no second step to spend, so the lines above about saving
+as you go, about validating what you saved and about a ${SCREEN_STEPS}-step budget
+describe a loop you are not in.
+
+**Write the whole document now and save it once.** Everything a call could have
+told you is already above: every tool's arguments and result shape, the components
+and the theme, and whatever this product's reads could be asked without arguments.
+
+If what you save does not reach the person's screen you get it back with the
+floor's own words and the whole loop to fix it in. That is your second chance and
+it is the only one, so spend this call writing the real thing rather than a sketch
+to check. Escalate instead when assembly genuinely cannot serve the ask — that
+door and its plan work exactly as described above.`;
+
 /** The full brief: the shipped job description, the shipped syntax manual, the
  *  briefing pack, then what is different here. The manual and the environment
  *  note are this rung's own INSTRUCTIONS — the box is told a different job in
  *  its own words; the pack between them is the product knowledge both rungs
  *  read byte for byte (`contract/briefing.ts`). */
-function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): string {
+function screenBrief(
+  input: ScreenInput,
+  listings: readonly ToolListing[],
+  pass: WritingPass,
+  resolved: string | undefined,
+): string {
   return [
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
     input.briefing,
     environmentNote(input.appId, listings),
+    resolved,
+    pass === "write" ? writePassNote : undefined,
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
     .join("\n\n---\n\n");
@@ -305,6 +450,11 @@ interface RunRecord {
   /** The last non-empty `decisions` a save carried — this run's whole memory
    *  contribution, and what replaces the app's stored block. */
   decisions?: string;
+  /** What the last save that went WRONG was told, in the floor's own words. The
+   *  one-call write hears its own tool result only if it has a step left to read
+   *  it in, and it does not — so the sentence is kept here and handed to the
+   *  fallback loop instead of being computed a second time. */
+  note?: string;
 }
 
 /** Nothing to hire and nothing to load: the job description is already the whole
@@ -373,8 +523,8 @@ export async function assembleScreen(
   const saveApp: HarnessHand = {
     name: SAVE_APP_TOOL,
     description:
-      "Save this app's whole document. The person's screen repaints on every save that parses, so save "
-      + "as you go rather than once at the end. Returns whether the save landed.",
+      "Save this app's whole document. The person's screen repaints on every save that parses. Returns "
+      + "whether the save landed.",
     inputSchema: {
       type: "object",
       properties: {
@@ -394,7 +544,8 @@ export async function assembleScreen(
       const { content, decisions } = args as { content: string; decisions?: string };
       const committed = await save(turn, APP_FILE, content);
       if (committed.status !== "ok") {
-        return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
+        record.note = "The save did not land — someone else changed this app. Save again.";
+        return { saved: false, note: record.note };
       }
       record.assembled = true;
       record.title = nameOf(content) ?? record.title;
@@ -435,11 +586,11 @@ export async function assembleScreen(
         // hand cannot say which happened, and claiming the first told the loop its
         // document had been checked when nothing had checked it. The failed paint
         // is the fact this hand does have, and it is enough to act on.
-        return {
-          saved: true,
-          note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.",
-        };
+        record.note = instruction
+          ?? "That save landed but did not reach the person's screen. Save a simpler document.";
+        return { saved: true, note: record.note };
       }
+      record.note = undefined;
       return { saved: true, note: "Run validate on it now." };
     },
   };
@@ -504,32 +655,87 @@ export async function assembleScreen(
   /** The first thing that went wrong, in the shipped loop's own words
    *  (`wireErrorMessage`, applied inside `vendo()`). */
   let failure: string | undefined;
+  // The real answers, read in parallel before the first token — so the writer has
+  // no reason left to spend a call finding something out (see `resolvedReads`).
+  const resolved = await resolvedReads(surface.tools, listings);
+  /**
+   * THE WRITE: two hands, one step, and everything already in front of it.
+   *
+   * The same `vendo()` and the same brief as the loop below, so nothing about the
+   * seat, the cache breakpoints, `wireErrorMessage` or the system precedence can
+   * differ between the two drives. What differs is the loadout — a writer with
+   * nothing to search cannot search — and the budget.
+   */
+  const writeOnce = vendo({
+    tools: [saveApp, escalate],
+    maxSteps: WRITE_STEPS,
+    // Bounded thinking, on purpose — see SCREEN_EFFORT.
+    effort: surface.effort ?? SCREEN_EFFORT,
+    system: () => screenBrief(input, listings, "write", resolved),
+  });
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
-    // Bounded thinking, on purpose — see SCREEN_EFFORT.
     effort: surface.effort ?? SCREEN_EFFORT,
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
     // in as its first section, so letting the turn's copy through would say it
     // twice.
-    system: () => screenBrief(input, listings),
+    system: () => screenBrief(input, listings, "loop", resolved),
   });
   /**
-   * One drive of the loop. The events MUST be drained or nothing runs. Nothing is
-   * teed and nothing is buffered: this loop produces no prose for a person — the
+   * One drive of a loop. The events MUST be drained or nothing runs. Nothing is
+   * teed and nothing is buffered: neither drive produces prose for a person — the
    * screen is the answer and the front door speaks the receipt.
    *
-   * It takes the messages because the review below needs a SECOND drive, and a
-   * repair round that went through different code than the turn would be a second
-   * way to drive the same loop (`claude-code/index.ts`'s `round` for the same
-   * reason).
+   * It takes the harness and the messages because there are up to three drives —
+   * the write, the fallback, the repair — and a round that went through different
+   * code than the turn would be a second way to drive the same loop
+   * (`claude-code/index.ts`'s `round` for the same reason).
    */
-  const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
-    for await (const event of harness.run({ ...turn, messages })) {
+  const drive = async (
+    loop: typeof harness,
+    messages: Turn<VendoHarnessOptions>["messages"],
+  ): Promise<void> => {
+    for await (const event of loop.run({ ...turn, messages })) {
       if (event.type === "error") failure ??= event.message;
     }
   };
-  await drive(turn.messages);
+  await drive(writeOnce, turn.messages);
+
+  /**
+   * THE LOOP IS THE FALLBACK — for a write that did not reach the person's screen.
+   *
+   * A painted document is a finished screen and there is nothing left to find out
+   * about it; the reviewer below is what still judges it. Anything else — bytes the
+   * seam declined, a commit that did not land, a call that produced no document at
+   * all — is the case the loop exists for, and it re-enters with its full loadout,
+   * its full budget, and (when there is one) the draft plus the floor's own words
+   * about it. Without the draft the fallback is a rewrite from scratch, which is
+   * the person paying twice for the same screen.
+   *
+   * `record.painted` absent (an unwrapped workspace, so nothing known) reads as
+   * not painted, which is what makes a caller outside the render seam behave
+   * exactly as it did before this pass existed: the loop runs.
+   */
+  if (record.escalated === undefined && !record.painted && !surface.signal.aborted) {
+    const note = record.note;
+    const draft = note === undefined
+      ? undefined
+      : await turn.workspace.readFile(`${directory}/${APP_FILE}`).catch(() => undefined);
+    const messages: Turn<VendoHarnessOptions>["messages"] = note === undefined
+      ? turn.messages
+      : [...turn.messages, {
+        id: `fallback_${input.appId}`,
+        role: "user",
+        parts: [{
+          type: "text",
+          text: draft === undefined
+            ? note
+            : `${note}\n\nThis is the document you wrote. Fix it and save the whole corrected version:\n${draft}`,
+        }],
+      }];
+    await drive(harness, messages);
+  }
 
   if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
   // Escalation wins over a partial paint: the builder is finishing this app, and
@@ -576,7 +782,7 @@ export async function assembleScreen(
       // the repair round has none of the first one's context — and a repair with no
       // document in front of it is a rewrite from scratch.
       const saved = await turn.workspace.readFile(appPath).catch(() => undefined);
-      await drive([...turn.messages, {
+      await drive(harness, [...turn.messages, {
         id: `repair_${input.appId}`,
         role: "user",
         parts: [{
