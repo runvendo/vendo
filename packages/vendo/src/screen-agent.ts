@@ -32,6 +32,7 @@
  * schema-validated, and the kit treats them as inert. There is no box here.
  */
 import {
+  ASK_USER_TOOL,
   VENDO_MAKE_TOOL,
   mintTurnId,
   type AppId,
@@ -277,6 +278,13 @@ interface RunRecord {
   painted: boolean;
   title?: string;
   escalated?: string;
+  /** Did a question reach the person (`ask_user`, `status: "ok"`)? A landed
+   *  question is turn-ending by design (`ask-user.ts`, `askedUserStop`), so an
+   *  asked run that saved nothing is FINISHED, not stalled — the answer arrives as
+   *  the next turn's message. Nothing else in this file may push such a run
+   *  further, or it would guess the answer, which is the invention `ask_user`
+   *  exists to prevent. */
+  asked?: boolean;
   /** The last non-empty `decisions` a save carried — this run's whole memory
    *  contribution, and what replaces the app's stored block. */
   decisions?: string;
@@ -462,7 +470,16 @@ export async function assembleScreen(
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: {
+      // Straight through to the guarded registry, and one fact noted on the way
+      // back: a question that LANDED is an honest end of this run.
+      call: async (name, args) => {
+        const result = await surface.tools.call(name, args);
+        if (name === ASK_USER_TOOL && result.status === "ok") record.asked = true;
+        return result;
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
@@ -479,6 +496,10 @@ export async function assembleScreen(
   /** The first thing that went wrong, in the shipped loop's own words
    *  (`wireErrorMessage`, applied inside `vendo()`). */
   let failure: string | undefined;
+  /** What the LAST drive said in prose, kept for exactly one reader: the check
+   *  below, which has to hand a prose answer back to be saved. Reset per drive so
+   *  it is never a transcript. */
+  let spoke = "";
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
@@ -489,8 +510,9 @@ export async function assembleScreen(
   });
   /**
    * One drive of the loop. The events MUST be drained or nothing runs. Nothing is
-   * teed and nothing is buffered: this loop produces no prose for a person — the
-   * screen is the answer and the front door speaks the receipt.
+   * teed and nothing leaves: this loop produces no prose for a person — the screen
+   * is the answer and the front door speaks the receipt. The text is held for this
+   * function's own use only (`spoke`), never forwarded.
    *
    * It takes the messages because the review below needs a SECOND drive, and a
    * repair round that went through different code than the turn would be a second
@@ -498,11 +520,49 @@ export async function assembleScreen(
    * reason).
    */
   const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
+    spoke = "";
     for await (const event of harness.run({ ...turn, messages })) {
       if (event.type === "error") failure ??= event.message;
+      // Kept, not forwarded: see `spoke`.
+      if (event.type === "text") spoke += event.delta;
     }
   };
   await drive(turn.messages);
+  /**
+   * A BARE TEXT END-OF-TURN IS NOT AN ASSEMBLY.
+   *
+   * `vendo()` ends a turn when the model stops calling tools, which is right for a
+   * resident: its text IS its answer. This specialist has no such channel — the
+   * drive above drops every delta because nothing it writes as prose reaches
+   * anybody — so a run that answers in prose delivers nothing, and the run before
+   * this line could end that way in two steps and be reported as an assembly
+   * failure the model never knew it had. Measured 2026-08-10 on the screen lane: 4
+   * of 39 runs that were not cut off ended with one read call, some prose, and no
+   * save.
+   *
+   * So the loop declines the ending rather than a sentence asking it not to: the
+   * turn continues, with the model's own answer handed back as the thing to save.
+   * Once, and only from a genuine dead stop — a landed save, an escalation, a
+   * question put to the person, a model failure and a hang-up are all endings this
+   * loop accepts, and re-driving any of them would be a second answer to a
+   * question already answered.
+   */
+  if (!record.assembled && record.escalated === undefined && record.asked !== true
+    && failure === undefined && !turn.signal.aborted) {
+    await drive([...turn.messages, {
+      id: `undelivered_${input.appId}`,
+      role: "user",
+      parts: [{
+        type: "text",
+        text: spoke.trim() === ""
+          ? `You ended without saving anything, so this ask has no answer yet. Save the document with `
+            + `${SAVE_APP_TOOL}, or ${ESCALATE_TOOL} if assembly genuinely cannot express it.`
+          : `Text does not reach this person: this surface shows saved documents and nothing else, so what `
+            + `you just wrote was delivered to nobody. Save it as a document with ${SAVE_APP_TOOL} — or `
+            + `${ESCALATE_TOOL} if assembly genuinely cannot express it. This is what you wrote:\n${spoke}`,
+      }],
+    }]);
+  }
 
   if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
   // Escalation wins over a partial paint: the builder is finishing this app, and
