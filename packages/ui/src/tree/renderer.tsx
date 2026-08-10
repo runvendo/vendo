@@ -680,9 +680,23 @@ function StatefulTreeView({
     )
     : null;
 
+  // A plan leaf the fill never reached is a region with no content. The screen
+  // says that once, in words, instead of leaving the reader to read blank boxes.
+  // Gated on `pending` (the skeleton's per-leaf marker, :364-377) and not on
+  // `streaming`, which is true for every mid-stream frame. The copy promises
+  // nothing: on an escalated screen the fill is never coming.
+  const unfilledNotice = validation.tree.nodes.some((node) => node.props?.pending === true)
+    ? (
+      <ContainedNotice label="Still loading">
+        {"Some parts of this screen haven't loaded yet — the blank areas below have no data in them."}
+      </ContainedNotice>
+    )
+    : null;
+
   return (
     <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
       {dataNotice}
+      {unfilledNotice}
       {dropBackNotice}
       {driftNotice}
       <NodeRenderer
