@@ -1,6 +1,7 @@
 import { PassThrough, Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPrettyOutput, plainSelect, usePrettyOutput, type SelectInput } from "../../src/cli/pretty.js";
+import { plainSecret, plainText } from "../../src/cli/pretty.js";
 
 const ESC = "\u001b";
 
@@ -85,16 +86,37 @@ describe("usePrettyOutput (selection)", () => {
 describe("createPrettyOutput (visual system)", () => {
   it("opens with the vendo init header exactly once", () => {
     const out = sink();
-    const pretty = createPrettyOutput(out.write);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
     pretty.log("hello");
     pretty.log("again");
     expect(out.plain()).toContain("┌  vendo init");
     expect(out.plain().match(/┌ {2}vendo init/g)).toHaveLength(1);
   });
 
+  it("names the command it was created for", () => {
+    const out = sink();
+    createPrettyOutput({ write: out.write, banner: false, command: "vendo sync" }).log("hello");
+    expect(out.plain()).toContain("┌  vendo sync");
+  });
+
+  it("prints the settled banner and the tagline above the header, and skips both when asked", () => {
+    const withBanner = sink();
+    createPrettyOutput({ write: withBanner.write, env: { COLORTERM: "truecolor" } }).log("hello");
+    const plain = withBanner.plain();
+    expect(plain).toContain("▄▄█████▄");
+    expect(plain).toContain("Customize your product with an embedded agent");
+    expect(plain.indexOf("▄▄█████▄")).toBeLessThan(plain.indexOf("┌  vendo init"));
+    // Truecolor terminals get the real brand ramp.
+    expect(withBanner.raw()).toContain(`${ESC}[38;2;`);
+
+    const without = sink();
+    createPrettyOutput({ write: without.write, banner: false }).log("hello");
+    expect(without.plain()).not.toContain("▄▄█████▄");
+  });
+
   it("renders the wired section with colored diff markers and bar-prefixed paths", () => {
     const out = sink();
-    const pretty = createPrettyOutput(out.write);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
     pretty.log("\nWired (3 files):");
     pretty.log("  + vendo/registry.tsx");
     pretty.log("  + app/api/vendo/[...vendo]/route.ts");
@@ -103,15 +125,15 @@ describe("createPrettyOutput (visual system)", () => {
     expect(plain).toContain("◆  Wired (3 files)");
     expect(plain).toContain("│  + vendo/registry.tsx");
     expect(plain).toContain("│  ~ package.json");
-    // + green, ~ yellow, paths dimmed-cyan.
+    // + green, ~ yellow, paths dimmed in the accent.
     expect(out.raw()).toContain(`${ESC}[32m+${ESC}[39m`);
     expect(out.raw()).toContain(`${ESC}[33m~${ESC}[39m`);
-    expect(out.raw()).toContain(`${ESC}[36mpackage.json${ESC}[39m`);
+    expect(out.raw()).toContain(`${ESC}[95mpackage.json${ESC}[39m`);
   });
 
   it("renders Vendo Cloud as the emphasized section: header, ✦ bullets, → CTA", () => {
     const out = sink();
-    const pretty = createPrettyOutput(out.write);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
     pretty.log("\nVendo Cloud (optional): not configured. A key unlocks team sharing & org governance; hosted automations; the MCP broker.");
     pretty.log("Run `vendo login` to claim a free API key; it lands in .env.local.");
     const plain = out.plain();
@@ -122,35 +144,90 @@ describe("createPrettyOutput (visual system)", () => {
     // The CTA line gets the arrow treatment and keeps the command visible.
     expect(plain).toContain("→ ");
     expect(plain).toContain("vendo login");
-    // The header is bold + brand blue (the most prominent block on screen).
-    expect(out.raw()).toContain(`${ESC}[34mVendo Cloud${ESC}[39m`);
+    // The header is bold + the brand accent (the most prominent block on screen).
+    expect(out.raw()).toContain(`${ESC}[95mVendo Cloud${ESC}[39m`);
     expect(out.raw()).toContain(`${ESC}[1m`);
   });
 
   it("renders a configured Vendo Cloud key under the same emphasized header", () => {
     const out = sink();
-    const pretty = createPrettyOutput(out.write);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
     pretty.log("\nVendo Cloud: VENDO_API_KEY present and well-formed.");
     const plain = out.plain();
     expect(plain).toContain("◆  Vendo Cloud");
     expect(plain).toContain("✦ VENDO_API_KEY present and well-formed.");
   });
 
-  it("renders the theme summary as a captured section", () => {
+  it("renders the theme summary as the brand payoff block", () => {
     const out = sink();
-    const pretty = createPrettyOutput(out.write);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
     pretty.log("Theme: accent #2b7fff · background #fafafa");
     pretty.log("Type: Inter · radius 8px");
     pretty.log("Theme lives in .vendo/theme.json — edit it anytime; it is the source of truth.");
     const plain = out.plain();
-    expect(plain).toContain("◇  Theme captured");
+    expect(plain).toContain("◆  Your brand");
     expect(plain).toContain("│  accent #2b7fff · background #fafafa");
     expect(plain).toContain("│  Type: Inter · radius 8px");
   });
 
+  it("collapses sync's five catalog lines into one ◆ Catalog block of two lines", () => {
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.log("tools: +2 -0 ~1");
+    pretty.log("tool schemas: inputs 11/13 · outputs 11/13");
+    pretty.log("pins: 3 captured, 1 drifted");
+    pretty.log("catalog.json: 5 discovered, 5 registered");
+    pretty.log("components: 2 captured, 1 updated");
+    pretty.done(4200, true);
+    const block = out.plain().split("\n").filter((entry) => entry.includes("Catalog")
+      || entry.includes("tools:") || entry.includes("components:"));
+    expect(block[0]).toContain("◆  Catalog");
+    expect(block[1]).toBe("│  tools: +2 -0 ~1 · tool schemas: inputs 11/13 · outputs 11/13 · pins: 3 captured, 1 drifted · catalog.json: 5 discovered, 5 registered");
+    expect(block[2]).toBe("│  components: 2 captured, 1 updated");
+    expect(block).toHaveLength(3);
+  });
+
+  it("collapses the judgment narrative to its counts plus the line that needs the user", () => {
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.log("judgment (claude-code): 12 tools judged");
+    pretty.log("  hardened (3): createInvoice, sendEmail, refund");
+    pretty.log("  schemas inferred (4): createInvoice.input, refund.output");
+    pretty.log("  2 loosenings queued — review with `vendo sync --review`");
+    pretty.log("  rejected by the skeptic (1): deleteAccount");
+    pretty.log("\nTheme: accent #7c3bed");
+    const plain = out.plain();
+    expect(plain).toContain("◆  Judgment");
+    expect(plain).toContain("│  12 tools judged · hardened (3) · schemas inferred (4) · rejected by the skeptic (1)");
+    expect(plain).toContain("│  2 loosenings queued — review with vendo sync --review");
+    // The long name lists are gone; --json and `vendo sync` still carry them.
+    expect(plain).not.toContain("createInvoice, sendEmail, refund");
+    // The block settles before the next section opens.
+    expect(plain.indexOf("◆  Judgment")).toBeLessThan(plain.indexOf("◆  Your brand"));
+  });
+
+  it("turns the 64-dash paste frame into a ◇ section with an indented code block", () => {
+    const out = sink();
+    const rule = "─".repeat(64);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.log(`\n${rule}`);
+    pretty.log("ONE STEP LEFT — paste this yourself (init never edits your files)");
+    pretty.log("\n  File: app/layout.tsx");
+    pretty.log("    import { VendoProvider } from \"@vendoai/vendo/react\";");
+    pretty.log("\n  Without it, nothing on the page can reach Vendo.");
+    pretty.log("  Then confirm it landed: npx vendo doctor");
+    pretty.log(rule);
+    const plain = out.plain();
+    expect(plain).toContain("◇  One paste left — app/layout.tsx");
+    expect(plain).toContain("│    import { VendoProvider } from \"@vendoai/vendo/react\";");
+    expect(plain).toContain("│  init never edits your files");
+    expect(plain).not.toContain(rule);
+    expect(plain).not.toContain("ONE STEP LEFT");
+  });
+
   it("renders warnings yellow with ⚠ and other errors red with ✖", () => {
     const out = sink();
-    const pretty = createPrettyOutput(out.write);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
     pretty.error("warning: extraction skipped app/broken.ts");
     pretty.error("vendo init failed");
     const plain = out.plain();
@@ -160,9 +237,55 @@ describe("createPrettyOutput (visual system)", () => {
     expect(out.raw()).toContain(`${ESC}[31m✖ vendo init failed${ESC}[39m`);
   });
 
+  // BUG 1. The `code` span closes with a foreground reset, so without the
+  // re-arm every character after the first span in a warning printed white —
+  // the loudest half of the most security-sensitive line in the install.
+  it("keeps a warning yellow past an inline code span", () => {
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.error("warning: .env.local holds a secret — add it to `.gitignore` before you commit");
+    expect(out.raw()).toContain(`${ESC}[39m${ESC}[22m${ESC}[33m before you commit`);
+    // Same for a red error line.
+    pretty.error("cannot read `package.json` — is this a project root?");
+    expect(out.raw()).toContain(`${ESC}[39m${ESC}[22m${ESC}[31m — is this a project root?`);
+  });
+
+  // BUG 2. The rail may absorb the FIRST indent level, and only inside a
+  // section; under a narrative line the indent IS the hierarchy.
+  it("absorbs a section's first indent level but keeps a narrative's sub-lines indented", () => {
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.log("brief: drafting from 12 judged tools");
+    pretty.log("  theme: filling brand slots");
+    pretty.log("\nLast steps are yours:");
+    pretty.log("  In app/layout.tsx:");
+    pretty.log("    import { VendoRoot } from \"@vendoai/vendo/react\";");
+    const plain = out.plain();
+    expect(plain).toContain("│  brief: drafting from 12 judged tools");
+    expect(plain).toContain("│    theme: filling brand slots");
+    expect(plain).toContain("◇  Last steps are yours");
+    expect(plain).toContain("│  In app/layout.tsx:");
+    expect(plain).toContain("│    import { VendoRoot }");
+  });
+
+  // BUG 3. The CTA decorates the trimmed text; the kept indent goes back in
+  // front, so the arrow lands on the siblings' column instead of shoving the
+  // line three spaces right of them.
+  it("aligns a CTA line with its siblings in the agent tail", () => {
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.log("\nAgent tail:");
+    pretty.log("  auth: none wired");
+    pretty.log("  cloud key: none — fetch https://vendo.run/auth.md and run `vendo login`, then re-run init");
+    const lines = out.plain().split("\n");
+    const sibling = lines.find((entry) => entry.includes("auth: none wired"))!;
+    const cta = lines.find((entry) => entry.includes("cloud key: none"))!;
+    expect(cta.indexOf("→")).toBe(sibling.indexOf("auth:"));
+  });
+
   it("renders the last-steps section and closes with the done footer", () => {
     const out = sink();
-    const pretty = createPrettyOutput(out.write);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
     pretty.log("\nLast steps are yours:");
     pretty.log("  In app/layout.tsx:");
     pretty.log("    import { VendoRoot } from \"@vendoai/vendo/react\";");
@@ -177,19 +300,37 @@ describe("createPrettyOutput (visual system)", () => {
     expect(plain).toContain("└  Done in 4.2s");
   });
 
+  it("carries what the run achieved in the footer", () => {
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.done(12400, true, "14 tools · brand captured · 1 paste left");
+    expect(out.plain()).toContain("└  Done in 12.4s — 14 tools · brand captured · 1 paste left");
+  });
+
   it("closes with a red failure footer when init fails", () => {
     const out = sink();
-    const pretty = createPrettyOutput(out.write);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
     pretty.error("boom");
     pretty.done(900, false);
     expect(out.plain()).toContain("└  Failed after 0.9s");
     expect(out.raw()).toContain(`${ESC}[31mFailed after 0.9s${ESC}[39m`);
   });
 
+  it("block: a pretty-only result block on the rail", () => {
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.block("Your stack", ["Next.js · App Router · TypeScript · pnpm", "Clerk auth (@clerk/nextjs)"]);
+    pretty.block("Where will this deploy?", ["https://app.acme.com"], "◇");
+    const plain = out.plain();
+    expect(plain).toContain("◆  Your stack");
+    expect(plain).toContain("│  Next.js · App Router · TypeScript · pnpm");
+    expect(plain).toContain("◇  Where will this deploy?");
+  });
+
   it("select: arrow keys move the selection, Enter accepts, list collapses to the answer", async () => {
     const out = sink();
     const keys = fakeInput();
-    const pretty = createPrettyOutput(out.write, keys.input);
+    const pretty = createPrettyOutput({ write: out.write, input: keys.input, banner: false });
     const choice = pretty.select("Which auth should Vendo wire?", [
       { value: "none", label: "none — stay anonymous, add it later" },
       { value: "clerk", label: "clerk() — Clerk", hint: "detected @clerk/nextjs" },
@@ -209,7 +350,7 @@ describe("createPrettyOutput (visual system)", () => {
   it("select: number keys pick directly without Enter", async () => {
     const out = sink();
     const keys = fakeInput();
-    const pretty = createPrettyOutput(out.write, keys.input);
+    const pretty = createPrettyOutput({ write: out.write, input: keys.input, banner: false });
     const choice = pretty.select("Which auth should Vendo wire?", [
       { value: "none", label: "none" },
       { value: "authJs", label: "authJs()" },
@@ -224,17 +365,26 @@ describe("createPrettyOutput (visual system)", () => {
     // vitest's stdin is not a TTY: the styled confirm must never block
     // readline — the default stands (stdout-TTY selection is stdout-only).
     const out = sink();
-    const pretty = createPrettyOutput(out.write);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
     await expect(pretty.confirm("Wire auth: authJs()?", true)).resolves.toBe(true);
     await expect(pretty.confirm("Log in to Vendo Cloud now?", false)).resolves.toBe(false);
     expect(out.plain()).not.toContain("Wire auth");
     expect(out.plain()).not.toContain("Log in");
   });
 
+  it("text and secret return the empty skip without prompting when stdin is not a TTY", async () => {
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    await expect(pretty.text("Where will this deploy?")).resolves.toBe("");
+    await expect(pretty.secret("Paste your provider key")).resolves.toBe("");
+    expect(out.plain()).not.toContain("Where will this deploy?");
+    expect(out.plain()).not.toContain("Paste your provider key");
+  });
+
   it("select: one pasted chunk containing '2\\r' picks option 2", async () => {
     const out = sink();
     const keys = fakeInput();
-    const pretty = createPrettyOutput(out.write, keys.input);
+    const pretty = createPrettyOutput({ write: out.write, input: keys.input, banner: false });
     const choice = pretty.select("Which auth should Vendo wire?", [
       { value: "none", label: "none" },
       { value: "authJs", label: "authJs()" },
@@ -247,7 +397,7 @@ describe("createPrettyOutput (visual system)", () => {
   it("select: several keys in one chunk are all consumed (two arrow-downs move twice)", async () => {
     const out = sink();
     const keys = fakeInput();
-    const pretty = createPrettyOutput(out.write, keys.input);
+    const pretty = createPrettyOutput({ write: out.write, input: keys.input, banner: false });
     const choice = pretty.select("Which auth should Vendo wire?", [
       { value: "none", label: "none" },
       { value: "authJs", label: "authJs()" },
@@ -261,7 +411,7 @@ describe("createPrettyOutput (visual system)", () => {
   it("select: an escape sequence split across chunks still moves", async () => {
     const out = sink();
     const keys = fakeInput();
-    const pretty = createPrettyOutput(out.write, keys.input);
+    const pretty = createPrettyOutput({ write: out.write, input: keys.input, banner: false });
     const choice = pretty.select("Which auth should Vendo wire?", [
       { value: "none", label: "none" },
       { value: "authJs", label: "authJs()" },
@@ -274,10 +424,10 @@ describe("createPrettyOutput (visual system)", () => {
 
   it("select returns the default option without prompting when stdin is not a TTY", async () => {
     const out = sink();
-    const pretty = createPrettyOutput(out.write, {
-      isTTY: false,
-      on: () => undefined,
-      off: () => undefined,
+    const pretty = createPrettyOutput({
+      write: out.write,
+      banner: false,
+      input: { isTTY: false, on: () => undefined, off: () => undefined },
     });
     await expect(pretty.select("Which auth should Vendo wire?", [
       { value: "none", label: "none — stay anonymous" },
@@ -293,10 +443,20 @@ describe("createPrettyOutput (visual system)", () => {
     ])).toBe("none");
   });
 
+  it("plainText and plainSecret answer the empty skip without prompting when not a TTY", async () => {
+    expect(await plainText("Where will this deploy?")).toBe("");
+    expect(await plainSecret("Paste your provider key")).toBe("");
+  });
+
   it("confirm parses y / n / Enter-default / other text through a real readline", async () => {
     const out = sink();
     const io = promptStreams();
-    const pretty = createPrettyOutput(out.write, io.input, io.output);
+    const pretty = createPrettyOutput({
+      write: out.write,
+      input: io.input,
+      promptOutput: io.output,
+      banner: false,
+    });
 
     const enterAccepts = pretty.confirm("Wire auth: authJs()?", true);
     io.input.write("\n");
@@ -319,6 +479,53 @@ describe("createPrettyOutput (visual system)", () => {
     expect(plain).toContain("◇  Wire auth: authJs()?");
     expect(plain).toContain("● Yes");
     expect(plain).toContain("● No");
+  });
+
+  it("text asks on the rail, echoes the answer, and calls an empty answer a skip", async () => {
+    const out = sink();
+    const io = promptStreams();
+    const pretty = createPrettyOutput({
+      write: out.write,
+      input: io.input,
+      promptOutput: io.output,
+      banner: false,
+    });
+
+    const answered = pretty.text("Where will this deploy?", "e.g. https://app.acme.com — Enter to skip");
+    io.input.write("https://app.acme.com\n");
+    expect(await answered).toBe("https://app.acme.com");
+
+    const skipped = pretty.text("Where will this deploy?");
+    io.input.write("\n");
+    expect(await skipped).toBe("");
+
+    const plain = out.plain();
+    expect(plain).toContain("◇  Where will this deploy?");
+    expect(plain).toContain("│  e.g. https://app.acme.com — Enter to skip");
+    expect(plain).toContain("● https://app.acme.com");
+    expect(plain).toContain("● skipped");
+  });
+
+  it("secret echoes a masked receipt and never the value", async () => {
+    const out = sink();
+    const io = promptStreams();
+    (io.input as PassThrough & { setRawMode?: (mode: boolean) => void }).setRawMode = () => undefined;
+    const pretty = createPrettyOutput({
+      write: out.write,
+      input: io.input,
+      promptOutput: io.output,
+      banner: false,
+    });
+
+    const answered = pretty.secret("Paste your provider key", "ANTHROPIC_API_KEY");
+    io.input.write("sk-ant-secret-a41c\n");
+    expect(await answered).toBe("sk-ant-secret-a41c");
+
+    const plain = out.plain();
+    expect(plain).toContain("◇  Paste your provider key");
+    expect(plain).toContain("● •••••••• (…a41c)");
+    expect(plain).not.toContain("sk-ant-secret-a41c");
+    expect(io.echoed()).not.toContain("sk-ant-secret-a41c");
   });
 
   it("plainSelect drives the numbered list: pick, Enter-default, out-of-range and garbage settle on the default", async () => {
@@ -353,10 +560,27 @@ describe("createPrettyOutput (visual system)", () => {
     expect(await text).toBe("none");
   });
 
+  it("plainText and plainSecret drive a real readline, and only plainSecret hides the typing", async () => {
+    const asked = promptStreams();
+    const answer = plainText("Where will this deploy?", "Enter to skip", asked.input, asked.output);
+    asked.input.write("https://app.acme.com\n");
+    expect(await answer).toBe("https://app.acme.com");
+    expect(asked.echoed()).toContain("Where will this deploy?");
+    expect(asked.echoed()).toContain("  Enter to skip");
+
+    const secret = promptStreams();
+    (secret.input as PassThrough & { setRawMode?: (mode: boolean) => void }).setRawMode = () => undefined;
+    const key = plainSecret("Paste your provider key", undefined, secret.input, secret.output);
+    secret.input.write("sk-ant-secret-a41c\n");
+    expect(await key).toBe("sk-ant-secret-a41c");
+    expect(secret.echoed()).toContain("•••••••• (…a41c)");
+    expect(secret.echoed()).not.toContain("sk-ant-secret-a41c");
+  });
+
   it("spins during slow phases and clears the frame before any log line", () => {
     vi.useFakeTimers();
     const out = sink();
-    const pretty = createPrettyOutput(out.write);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
     pretty.spin("Capturing your theme");
     vi.advanceTimersByTime(300);
     expect(out.plain()).toContain("Capturing your theme");

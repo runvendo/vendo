@@ -1,19 +1,24 @@
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
+import { Writable } from "node:stream";
+import { BANNER_COMPACT, BANNER_TAGLINE, bannerColorMode, renderBanner } from "./banner.js";
 import type { Output } from "./shared.js";
 
 /**
  * The vendo CLI's TTY visual system (init first; doctor/sync can adopt the
- * same primitives later). Clack-style vertical-bar layout: one `┌ vendo init`
- * header, `◇`/`◆` section markers on a dim `│` rail, colored diff markers,
- * a dots spinner for the slow phases, and ONE deliberately emphasized block —
- * Vendo Cloud — in the brand accent (blue/cyan family, calm not neon).
+ * same primitives later). Clack-style vertical-bar layout: the banner, one
+ * `┌ vendo init` header, `◇`/`◆` section markers on a dim `│` rail, colored
+ * diff markers, a braille spinner for the slow phases, and ONE deliberately
+ * emphasized block — Vendo Cloud. The accent is the brand purple family;
+ * green, yellow and red keep their meanings: added, changed, broken.
  *
  * Degradation contract: this module is only selected when stdout is a real
  * TTY and none of NO_COLOR / CI / TERM=dumb opt out (see usePrettyOutput).
  * Every other run — tests, pipes, CI — keeps today's exact plain strings,
  * because runInit's emissions are unchanged: this is a renderer over the
- * existing Output seam, not a second copy of the copy.
+ * existing Output seam, not a second copy of the copy. The collapse rules
+ * below are pure string rules over those exact plain strings; the renderer
+ * restyles and groups, and never writes copy of its own.
  */
 
 const ESC = "\u001b";
@@ -25,9 +30,12 @@ const dim = style("2", "22");
 const red = style("31", "39");
 const green = style("32", "39");
 const yellow = style("33", "39");
-const blue = style("34", "39");
-const cyan = style("36", "39");
-const brightCyan = style("96", "39");
+/** The accent — brand lilac. Truecolor terminals get the real ramp in the
+    banner; the rail's markers stay ANSI so they follow the user's theme. */
+const lilac = style("95", "39");
+/** Re-arm sequences for the two colors that can wrap a whole line. */
+const REOPEN_YELLOW = `${ESC}[33m`;
+const REOPEN_RED = `${ESC}[31m`;
 
 /** TTY + no opt-outs → the pretty renderer; anything else keeps plain output.
     NO_COLOR and CI follow the "present and non-empty" convention. */
@@ -61,7 +69,7 @@ export interface SelectInput {
 }
 
 export interface PrettyOutput extends Output {
-  /** Dots spinner for a slow phase; any log/error line clears the frame. */
+  /** Braille spinner for a slow phase; any log/error line clears the frame. */
   spin(label: string): void;
   stopSpin(): void;
   /** The styled [Y/n] confirm — Enter accepts the default, answer echoed. */
@@ -71,17 +79,48 @@ export interface PrettyOutput extends Output {
       1-9 only: keep lists at nine options or fewer (a longer list stays
       arrow-navigable, but two-digit entry is deliberately not built). */
   select(question: string, options: SelectOption[], defaultIndex?: number): Promise<string>;
-  /** The `└ Done in Xs` footer (red `Failed` when init exits non-zero). */
-  done(durationMs: number, ok: boolean): void;
+  /** A free-text answer; Enter returns "" and the caller decides what a skip
+      means. Non-TTY stdin never prompts — "" stands. */
+  text(question: string, hint?: string): Promise<string>;
+  /** A secret: the typing is not echoed and only a masked receipt reaches the
+      transcript. The value itself is NEVER written to the terminal. */
+  secret(question: string, hint?: string): Promise<string>;
+  /** A pretty-only result block. It has no plain sibling on purpose: callers
+      keep emitting their plain lines, and this restyles nothing — it is for
+      blocks the pretty run composes itself. */
+  block(title: string, lines: string[], marker?: "◆" | "◇"): void;
+  /** The `└ Done in Xs` footer (red `Failed` when the command exits non-zero);
+      `stats` is the dim tail that says what the run actually achieved. */
+  done(durationMs: number, ok: boolean, stats?: string): void;
 }
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const BAR = dim("│");
 const CLEAR_LINE = `\r${ESC}[2K`;
 
-/** Inline `code spans` in the calm command color. */
-function styleInline(text: string): string {
-  return text.replace(/`([^`]+)`/g, (_match, code: string) => bold(cyan(code)));
+/** The five always-printed catalog lines, collapsed into one block. */
+const CATALOG_PREFIXES = ["tools: ", "tool schemas: ", "pins: ", "catalog.json: ", "components: "];
+const CATALOG_COMPONENTS = "components: ";
+const JUDGMENT_HEAD = /^judgment \(.+\): (.+)$/;
+const JUDGMENT_QUEUED = "loosenings queued";
+/** The paste block's ASCII frame — dropped; the block rides the rail instead. */
+const PASTE_RULE = "─".repeat(64);
+const PASTE_HEAD = /^(ONE|\d+) STEPS? LEFT — paste th(?:is|ese) yourself \((.+)\)$/;
+const PASTE_FILE = /^ {2}File: (.+)$/;
+const WIRED = /^(Wired \(\d+ files?\)):$/;
+const DIFF_MARKER = /^ {2}([+~]) (.+)$/;
+const THEME = /^Theme: (.*)$/;
+const SYNC_THEME = /^theme: (.+)$/;
+const CLOUD_ABSENT = /^Vendo Cloud \(optional\): not configured\. A key unlocks (.+)\.$/;
+const CLOUD_PRESENT = /^Vendo Cloud: (.+)$/;
+const CTA = /`?vendo (cloud )?login`?/;
+const CTA_ALL = /`?vendo (cloud )?login`?/g;
+
+/** Inline `code spans` in the accent color. The span's close resets the
+    foreground to default, so a span inside a colored line bleaches everything
+    after it — `reopen` re-arms the enclosing color (error() passes it). */
+function styleInline(text: string, reopen = ""): string {
+  return text.replace(/`([^`]+)`/g, (_match, code: string) => `${bold(lilac(code))}${reopen}`);
 }
 
 /** The plain-terminal select for non-pretty interactive runs: numbered list +
@@ -114,33 +153,291 @@ export async function plainSelect(
   }
 }
 
-export function createPrettyOutput(
-  write: (chunk: string) => void = (chunk) => { stdout.write(chunk); },
-  input: SelectInput = stdin,
-  promptOutput: NodeJS.WritableStream & { isTTY?: boolean } = stdout,
-): PrettyOutput {
+/** The plain-terminal free-text prompt — plainSelect's sibling, same non-TTY
+    guard: a piped run never prompts and answers "". */
+export async function plainText(
+  question: string,
+  hint?: string,
+  input: NodeJS.ReadableStream & { isTTY?: boolean } = stdin,
+  output: NodeJS.WritableStream & { isTTY?: boolean } = stdout,
+): Promise<string> {
+  if (input.isTTY !== true || output.isTTY !== true) return "";
+  output.write(`${question}\n`);
+  if (hint !== undefined) output.write(`  ${hint}\n`);
+  const prompt = createInterface({ input, output });
+  try {
+    return (await prompt.question("> ")).trim();
+  } finally {
+    prompt.close();
+  }
+}
+
+/** Readline's echo goes here so a typed secret never reaches the terminal. */
+const MUTED = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+
+/** What is safe to put in a transcript: proof the value arrived, never the
+    value. Anything short enough for the tail to BE the secret shows dots only. */
+function maskedReceipt(value: string): string {
+  if (value === "") return "skipped";
+  return value.length > 8 ? `•••••••• (…${value.slice(-4)})` : "•".repeat(value.length);
+}
+
+/** The plain-terminal secret prompt — same non-TTY guard as plainSelect; the
+    typing is swallowed and only the masked receipt is echoed. */
+export async function plainSecret(
+  question: string,
+  hint?: string,
+  input: NodeJS.ReadableStream & { isTTY?: boolean } = stdin,
+  output: NodeJS.WritableStream & { isTTY?: boolean } = stdout,
+): Promise<string> {
+  if (input.isTTY !== true || output.isTTY !== true) return "";
+  output.write(`${question}\n`);
+  if (hint !== undefined) output.write(`  ${hint}\n`);
+  output.write("> ");
+  const prompt = createInterface({ input, output: MUTED, terminal: true });
+  try {
+    const answer = (await prompt.question("")).trim();
+    output.write(`${maskedReceipt(answer)}\n`);
+    return answer;
+  } finally {
+    prompt.close();
+  }
+}
+
+/** What the string rules below are allowed to draw on. */
+interface Rail {
+  bar(): void;
+  body(text: string, reopen?: string): void;
+  section(marker: string, title: string): void;
+}
+
+/** What a collapse rule is still holding, and how much leading indent the rail
+    is currently absorbing. */
+interface RenderState {
+  /** Leading spaces the rail swallows: the first level inside a section, and
+      nothing at all under a plain narrative line (whose sub-lines are its
+      hierarchy, not the rail's). */
+  absorb: number;
+  catalog: string[];
+  judgment: { summary: string; details: string[] } | null;
+  paste: { count: number; why: string; titled: boolean } | null;
+}
+
+function flushCatalog(state: RenderState, rail: Rail): void {
+  if (state.catalog.length === 0) return;
+  const lines = state.catalog;
+  state.catalog = [];
+  rail.section(lilac("◆"), bold("Catalog"));
+  const counts = lines.filter((entry) => !entry.startsWith(CATALOG_COMPONENTS));
+  if (counts.length > 0) rail.body(counts.join(" · "));
+  for (const entry of lines.filter((line) => line.startsWith(CATALOG_COMPONENTS))) rail.body(entry);
+}
+
+function flushJudgment(state: RenderState, rail: Rail): void {
+  if (state.judgment === null) return;
+  const { summary, details } = state.judgment;
+  state.judgment = null;
+  rail.section(lilac("◆"), bold("Judgment"));
+  const queued = details.filter((detail) => detail.includes(JUDGMENT_QUEUED));
+  // Every detail line keeps its own count clause; the long name lists behind
+  // the colon are what --json and `vendo sync` are for.
+  const counted = details
+    .filter((detail) => !detail.includes(JUDGMENT_QUEUED))
+    .map((detail) => detail.trim().split(": ")[0]!);
+  rail.body([summary, ...counted].join(" · "));
+  for (const entry of queued) rail.body(entry.trim());
+}
+
+/** The exact-shape rules: one plain string in, one styled section out. */
+function renderNamed(raw: string, rail: Rail): boolean {
+  const wired = WIRED.exec(raw);
+  if (wired !== null) {
+    rail.section(lilac("◆"), bold(wired[1]!));
+    return true;
+  }
+  if (raw === "Already wired — nothing to change.") {
+    rail.section(lilac("◇"), `${bold("Already wired")} — nothing to change`);
+    return true;
+  }
+  const marker = DIFF_MARKER.exec(raw);
+  if (marker !== null) {
+    rail.body(`${marker[1] === "+" ? green("+") : yellow("~")} ${dim(lilac(marker[2]!))}`);
+    return true;
+  }
+  const theme = THEME.exec(raw);
+  if (theme !== null) {
+    rail.section(lilac("◆"), bold("Your brand"));
+    rail.body(theme[1]!);
+    return true;
+  }
+  const syncTheme = SYNC_THEME.exec(raw);
+  if (syncTheme !== null) {
+    rail.section(lilac("◇"), bold("Theme"));
+    rail.body(syncTheme[1]!);
+    return true;
+  }
+  if (raw.startsWith("Theme lives in ")) {
+    rail.body(dim(raw));
+    return true;
+  }
+  if (raw === "Last steps are yours:") {
+    rail.section(lilac("◇"), bold("Last steps are yours"));
+    return true;
+  }
+  return renderCloud(raw, rail);
+}
+
+/** The one emphasized block: brand header + ✦ bullets + the → CTA. */
+function renderCloud(raw: string, rail: Rail): boolean {
+  const absent = CLOUD_ABSENT.exec(raw);
+  if (absent !== null) {
+    rail.section(lilac("◆"), bold(lilac("Vendo Cloud")));
+    for (const bullet of absent[1]!.split("; ")) rail.body(`${lilac("✦")} ${lilac(bullet)}`);
+    return true;
+  }
+  const present = CLOUD_PRESENT.exec(raw);
+  if (present !== null) {
+    rail.section(lilac("◆"), bold(lilac("Vendo Cloud")));
+    rail.body(`${lilac("✦")} ${lilac(present[1]!)}`);
+    return true;
+  }
+  return false;
+}
+
+/** Generic detail lines. The rail absorbs the first indent level only, so the
+    narrative keeps its hierarchy; the CTA decorates the TRIMMED text and the
+    kept indent goes back in front, so the arrow never pushes a line right of
+    its siblings. */
+function renderIndented(raw: string, state: RenderState, rail: Rail): void {
+  const indent = raw.length - raw.trimStart().length;
+  const rest = raw.slice(indent);
+  const keep = " ".repeat(Math.max(0, indent - state.absorb));
+  if (indent === 0) state.absorb = 0;
+  if (CTA.test(rest)) {
+    const cta = rest.replace(CTA_ALL, (match) => bold(lilac(match.replaceAll("`", ""))));
+    rail.body(`${keep}${bold(lilac("→"))} ${cta}`);
+    return;
+  }
+  rail.body(`${keep}${rest}`);
+}
+
+/** The 64-dash paste frame becomes a ◇ section on the rail. */
+function renderPaste(raw: string, state: RenderState, rail: Rail): void {
+  const open = state.paste;
+  if (raw === PASTE_RULE) {
+    if (open === null) state.paste = { count: 0, why: "", titled: false };
+    else {
+      if (open.why !== "") rail.body(dim(open.why));
+      state.paste = null;
+    }
+    return;
+  }
+  const head = PASTE_HEAD.exec(raw);
+  if (head !== null) {
+    state.paste = { count: head[1] === "ONE" ? 1 : Number(head[1]), why: head[2]!, titled: false };
+    return;
+  }
+  const file = open === null ? null : PASTE_FILE.exec(raw);
+  if (file !== null && open !== null) {
+    if (open.titled) rail.bar();
+    else {
+      open.titled = true;
+      rail.section(lilac("◇"), bold(open.count === 1 ? `One paste left — ${file[1]}` : `${open.count} pastes left`));
+      if (open.count === 1) return;
+    }
+    rail.body(bold(file[1]!));
+    return;
+  }
+  renderIndented(raw, state, rail);
+}
+
+function renderRaw(raw: string, state: RenderState, rail: Rail): void {
+  if (raw === "") {
+    flushCatalog(state, rail);
+    flushJudgment(state, rail);
+    rail.bar();
+    return;
+  }
+  if (state.paste !== null || raw === PASTE_RULE) {
+    renderPaste(raw, state, rail);
+    return;
+  }
+  if (CATALOG_PREFIXES.some((prefix) => raw.startsWith(prefix))) {
+    flushJudgment(state, rail);
+    state.catalog.push(raw);
+    return;
+  }
+  flushCatalog(state, rail);
+  const judged = JUDGMENT_HEAD.exec(raw);
+  if (judged !== null) {
+    state.judgment = { summary: judged[1]!, details: [] };
+    return;
+  }
+  if (state.judgment !== null) {
+    if (raw.startsWith("  ")) {
+      state.judgment.details.push(raw);
+      return;
+    }
+    flushJudgment(state, rail);
+  }
+  if (renderNamed(raw, rail)) return;
+  renderIndented(raw, state, rail);
+}
+
+export interface PrettyOptions {
+  /** The header command — `┌  vendo init`. */
+  command?: string;
+  write?: (chunk: string) => void;
+  input?: SelectInput;
+  promptOutput?: NodeJS.WritableStream & { isTTY?: boolean };
+  /** The settled banner above the header. */
+  banner?: boolean;
+  env?: Record<string, string | undefined>;
+}
+
+export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
+  const {
+    command = "vendo init",
+    write = (chunk: string): void => { stdout.write(chunk); },
+    input = stdin as SelectInput,
+    promptOutput = stdout,
+    banner = true,
+    env = process.env,
+  } = options;
   let headerPrinted = false;
   let lastWasBar = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   let frame = 0;
+  const state: RenderState = { absorb: 0, catalog: [], judgment: null, paste: null };
 
   const line = (text: string): void => {
     write(`${text}\n`);
     lastWasBar = text === BAR;
   };
-  const bar = (): void => {
-    if (!lastWasBar) line(BAR);
+  const rail: Rail = {
+    bar: (): void => {
+      if (!lastWasBar) line(BAR);
+    },
+    body: (text: string, reopen = ""): void => line(`${BAR}  ${styleInline(text, reopen)}`),
+    section: (marker: string, title: string): void => {
+      rail.bar();
+      line(`${marker}  ${title}`);
+      state.absorb = 2;
+    },
   };
   const ensureHeader = (): void => {
     if (headerPrinted) return;
     headerPrinted = true;
-    line(`${dim("┌")}  ${bold("vendo init")}`);
+    if (banner) {
+      write(`${renderBanner(BANNER_COMPACT, bannerColorMode(env))}\n\n${dim(BANNER_TAGLINE)}\n\n`);
+    }
+    line(`${dim("┌")}  ${bold(command)}`);
     line(BAR);
   };
-  const body = (text: string): void => line(`${BAR}  ${styleInline(text)}`);
-  const section = (marker: string, title: string): void => {
-    bar();
-    line(`${marker}  ${title}`);
+  /** Nothing may be printed on top of a half-collapsed block. */
+  const flush = (): void => {
+    flushCatalog(state, rail);
+    flushJudgment(state, rail);
   };
 
   const clearFrame = (): void => {
@@ -152,111 +449,62 @@ export function createPrettyOutput(
     timer = null;
     write(CLEAR_LINE);
   };
-
-  /** The emphasized block: brand-blue header + ✦ bullets. */
-  const cloudHeader = (): void => section(blue("◆"), bold(blue("Vendo Cloud")));
-  const cloudBullet = (text: string): void => body(`${blue("✦")} ${blue(text)}`);
-
-  const render = (raw: string): void => {
-    if (raw === "") {
-      bar();
-      return;
-    }
-    const wired = raw.match(/^(Wired \(\d+ files?\)):$/);
-    if (wired !== null) {
-      section(cyan("◆"), bold(wired[1]!));
-      return;
-    }
-    if (raw === "Already wired — nothing to change.") {
-      section(cyan("◇"), `${bold("Already wired")} — nothing to change`);
-      return;
-    }
-    const marker = raw.match(/^ {2}([+~]) (.+)$/);
-    if (marker !== null) {
-      body(`${marker[1] === "+" ? green("+") : yellow("~")} ${dim(cyan(marker[2]!))}`);
-      return;
-    }
-    const theme = raw.match(/^Theme: (.*)$/);
-    if (theme !== null) {
-      section(cyan("◇"), bold("Theme captured"));
-      body(theme[1]!);
-      return;
-    }
-    if (raw.startsWith("Theme lives in ")) {
-      body(dim(raw));
-      return;
-    }
-    const cloudAbsent = raw.match(/^Vendo Cloud \(optional\): not configured\. A key unlocks (.+)\.$/);
-    if (cloudAbsent !== null) {
-      cloudHeader();
-      for (const bullet of cloudAbsent[1]!.split("; ")) cloudBullet(bullet);
-      return;
-    }
-    const cloud = raw.match(/^Vendo Cloud: (.+)$/);
-    if (cloud !== null) {
-      cloudHeader();
-      cloudBullet(cloud[1]!);
-      return;
-    }
-    if (/`?vendo (cloud )?login`?/.test(raw)) {
-      // The CTA: bright, factual, pointing at the free Cloud key.
-      body(`${bold(brightCyan("→"))} ${raw.replace(/`?vendo (cloud )?login`?/g, (m) => bold(brightCyan(m.replaceAll("`", ""))))}`);
-      return;
-    }
-    if (raw === "Last steps are yours:") {
-      section(cyan("◇"), bold("Last steps are yours"));
-      return;
-    }
-    // Generic indented detail (paste steps, progress lines): the plain
-    // two-space indent becomes the rail; deeper nesting is preserved.
-    const indented = raw.match(/^ {2}(.*)$/);
-    if (indented !== null) {
-      body(indented[1]!);
-      return;
-    }
-    body(raw);
+  /** Every prompt interrupts the transcript: settle what is buffered first. */
+  const settle = (): void => {
+    stopSpin();
+    ensureHeader();
+    flush();
   };
 
   return {
     log(message) {
       clearFrame();
       ensureHeader();
-      if (message.startsWith("\n")) bar();
-      for (const raw of message.replace(/^\n+/, "").split("\n")) render(raw);
+      if (message.startsWith("\n")) {
+        flush();
+        rail.bar();
+      }
+      for (const raw of message.replace(/^\n+/, "").split("\n")) renderRaw(raw, state, rail);
     },
     error(message) {
       clearFrame();
       ensureHeader();
-      if (message.startsWith("\n")) bar();
+      flush();
+      if (message.startsWith("\n")) rail.bar();
       for (const raw of message.replace(/^\n+/, "").split("\n")) {
         const warning = raw.match(/^\s*warning: (.*)$/);
-        if (warning !== null) body(yellow(`⚠ ${warning[1]!}`));
+        if (warning !== null) rail.body(yellow(`⚠ ${warning[1]!}`), REOPEN_YELLOW);
         else if (raw.startsWith("Vendo Cloud: ")) {
-          cloudHeader();
-          body(yellow(`⚠ ${raw.slice("Vendo Cloud: ".length)}`));
-        } else body(red(`✖ ${raw}`));
+          rail.section(lilac("◆"), bold(lilac("Vendo Cloud")));
+          rail.body(yellow(`⚠ ${raw.slice("Vendo Cloud: ".length)}`), REOPEN_YELLOW);
+        } else rail.body(red(`✖ ${raw}`), REOPEN_RED);
       }
     },
     spin(label) {
       stopSpin();
       ensureHeader();
+      flush();
       const draw = (): void => {
         frame = (frame + 1) % FRAMES.length;
-        write(`${CLEAR_LINE}${cyan(FRAMES[frame]!)}  ${dim(label)}`);
+        write(`${CLEAR_LINE}${lilac(FRAMES[frame]!)}  ${dim(label)}`);
       };
       timer = setInterval(draw, 80);
       timer.unref?.();
       draw();
     },
     stopSpin,
+    block(title, lines, marker = "◆") {
+      settle();
+      rail.section(lilac(marker), bold(title));
+      for (const text of lines) rail.body(text);
+    },
     async confirm(question, defaultYes = false) {
       // usePrettyOutput gates on stdout only; a piped/closed stdin can still
       // reach here (vendo init < file). Never block readline on a non-TTY —
       // the default stands, mirroring the plain askYesNo guard.
       if (input.isTTY !== true) return defaultYes;
-      stopSpin();
-      ensureHeader();
-      section(cyan("◇"), bold(question));
+      settle();
+      rail.section(lilac("◇"), bold(question));
       // SelectInput is the raw-key slice of the same real stream readline
       // needs; the default (stdin) satisfies both.
       const prompt = createInterface({
@@ -268,8 +516,49 @@ export function createPrettyOutput(
           `${BAR}  ${dim(defaultYes ? "Y/n" : "y/N")} ${dim("›")} `,
         )).trim().toLowerCase();
         const accepted = answer === "" ? defaultYes : ["y", "yes"].includes(answer);
-        line(`${BAR}  ${cyan("●")} ${accepted ? "Yes" : "No"}`);
+        line(`${BAR}  ${lilac("●")} ${accepted ? "Yes" : "No"}`);
         return accepted;
+      } finally {
+        prompt.close();
+      }
+    },
+    async text(question, hint) {
+      // Same stdin guard as confirm: no keypress source → no question, and ""
+      // is the skip the caller already has to handle.
+      if (input.isTTY !== true) return "";
+      settle();
+      rail.section(lilac("◇"), bold(question));
+      if (hint !== undefined) line(`${BAR}  ${dim(hint)}`);
+      const prompt = createInterface({
+        input: input as unknown as NodeJS.ReadableStream,
+        output: promptOutput,
+      });
+      try {
+        const answer = (await prompt.question(`${BAR}  ${dim("›")} `)).trim();
+        line(`${BAR}  ${lilac("●")} ${answer === "" ? dim("skipped") : answer}`);
+        return answer;
+      } finally {
+        prompt.close();
+      }
+    },
+    async secret(question, hint) {
+      if (input.isTTY !== true) return "";
+      settle();
+      rail.section(lilac("◇"), bold(question));
+      if (hint !== undefined) line(`${BAR}  ${dim(hint)}`);
+      write(`${BAR}  ${dim("›")} `);
+      // The echo goes to a sink, so the secret is never drawn; the receipt
+      // below is the only trace it leaves.
+      const prompt = createInterface({
+        input: input as unknown as NodeJS.ReadableStream,
+        output: MUTED,
+        terminal: true,
+      });
+      try {
+        const answer = (await prompt.question("")).trim();
+        write("\n");
+        line(`${BAR}  ${lilac("●")} ${dim(maskedReceipt(answer))}`);
+        return answer;
       } finally {
         prompt.close();
       }
@@ -277,12 +566,11 @@ export function createPrettyOutput(
     async select(question, options, defaultIndex = 0) {
       // Same stdin guard as confirm: no keypress source → the default option.
       if (input.isTTY !== true) return (options[defaultIndex] ?? options[0])!.value;
-      stopSpin();
-      ensureHeader();
-      section(cyan("◇"), bold(question));
+      settle();
+      rail.section(lilac("◇"), bold(question));
       let index = defaultIndex;
       const optionLine = (option: SelectOption, at: number): string => {
-        const marker = at === index ? cyan("●") : dim("○");
+        const marker = at === index ? lilac("●") : dim("○");
         const label = at === index ? option.label : dim(option.label);
         const hint = option.hint === undefined ? "" : ` ${dim(`(${option.hint})`)}`;
         return `${BAR}  ${marker} ${label}${hint}`;
@@ -354,15 +642,15 @@ export function createPrettyOutput(
       });
       // Collapse the option list to the chosen answer.
       write(`${ESC}[${options.length}A${ESC}[0J`);
-      line(`${BAR}  ${cyan("●")} ${options[chosen]!.label}`);
+      line(`${BAR}  ${lilac("●")} ${options[chosen]!.label}`);
       return options[chosen]!.value;
     },
-    done(durationMs, ok) {
-      stopSpin();
-      ensureHeader();
-      bar();
+    done(durationMs, ok, stats) {
+      settle();
+      rail.bar();
       const seconds = `${(durationMs / 1000).toFixed(1)}s`;
-      line(`${dim("└")}  ${ok ? green(`Done in ${seconds}`) : red(`Failed after ${seconds}`)}`);
+      const tail = stats === undefined ? "" : ` ${dim(`— ${stats}`)}`;
+      line(`${dim("└")}  ${ok ? green(`Done in ${seconds}`) : red(`Failed after ${seconds}`)}${tail}`);
     },
   };
 }
