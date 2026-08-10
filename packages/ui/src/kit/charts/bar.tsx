@@ -3,6 +3,7 @@ import {
   Bar,
   BarChart as RBarChart,
   CartesianGrid,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -53,15 +54,20 @@ export function BarChart({
     <div data-kit="BarChart">
       <ChartFrame height={height}>
         <ResponsiveContainer width="100%" height="100%">
-          <RBarChart data={clean} layout={horizontal ? "vertical" : "horizontal"} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
-            <CartesianGrid stroke={t.border} strokeDasharray="3 3" vertical={horizontal} horizontal={!horizontal} />
+          <RBarChart
+            data={clean}
+            layout={horizontal ? "vertical" : "horizontal"}
+            margin={horizontal ? { top: 4, right: 56, bottom: 4, left: 4 } : { top: 8, right: 12, bottom: 4, left: 4 }}
+          >
             {horizontal ? (
               <>
-                <XAxis type="number" tick={axisTick} tickLine={false} axisLine={false} tickFormatter={fmt} />
+                {/* Hidden, not absent: the number axis is what scales the bars, but each bar prints its own value so its ticks are noise. */}
+                <XAxis type="number" hide />
                 <YAxis type="category" dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} width={96} />
               </>
             ) : (
               <>
+                <CartesianGrid stroke={t.border} strokeDasharray="3 3" vertical={false} horizontal />
                 <XAxis dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} />
                 <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={fmt} width={56} />
               </>
@@ -76,7 +82,11 @@ export function BarChart({
                 radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
                 stackId={stacked ? "stack" : undefined}
                 isAnimationActive={false}
-              />
+              >
+                {horizontal && !stacked ? (
+                  <LabelList dataKey={c.key} position="right" formatter={fmt} style={{ fill: t.muted, fontSize: 11 }} />
+                ) : null}
+              </Bar>
             ))}
           </RBarChart>
         </ResponsiveContainer>

@@ -223,7 +223,8 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "BarChart",
     group: "charts",
-    summary: "A bar chart. Set horizontal for ranked lists, stacked to combine series.",
+    summary:
+      "A bar chart. Named categories go horizontal (the default shape for them — each bar prints its value beside it); leave it off only for a time axis. stacked combines series.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category field", { required: true }),
@@ -234,7 +235,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
     },
-    examples: ['<BarChart data={sales.byRegion} xKey="region" series={["unitsSold"]} horizontal/>'],
+    examples: ['<BarChart data={spend.byCategory({}).data} xKey="category" series={["amountCents"]} format="money" horizontal/>'],
   },
   {
     name: "DonutChart",
