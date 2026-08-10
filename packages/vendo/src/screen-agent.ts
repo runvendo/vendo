@@ -83,6 +83,20 @@ import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harn
 export const SCREEN_STEPS = 10;
 
 /**
+ * The most one host read may put in front of the writer.
+ *
+ * `guardedCall`'s `DEFAULT_TOOL_OUTPUT_CAP` (32k) is a RESIDENT's budget — that
+ * loop is answering about the data, so it needs the values. This loop needs the
+ * SHAPE: the render seam resolves the real query when the screen paints, so a
+ * full page of rows is context spent on values no binding will ever read, and
+ * every extra thousand characters is time the person spends waiting for the first
+ * paint. Tight, not minimal (`arxiv.org/abs/2405.15793` §3): the first 4k keeps
+ * the field names and the shape of a row, which is the part the writer binds
+ * against, and the listing's declared `outputSchema` already carries the rest.
+ */
+export const SCREEN_OUTPUT_CAP = 4_000;
+
+/**
  * The same budget in seconds, because a step count does not bound a step.
  *
  * `SCREEN_STEPS` says how many times this loop may think and nothing said how
@@ -770,7 +784,25 @@ function registryTools(registry: ToolRegistry, ctx: RunContext): TurnTools {
         { id: `call_${globalThis.crypto.randomUUID()}`, tool: name, args },
         ctx,
       );
-      if (outcome.status === "ok") return { status: "ok", output: outcome.output };
+      if (outcome.status === "ok") {
+        // `validate`'s findings ARE the instruction the loop acts on, so they are
+        // never cut mid-finding. Every other read is data, and this path is the
+        // one that bypasses `guardedCall`'s `toolOutputCap` — so it carries core's
+        // own truncation envelope, key for key (`tool-bridge.ts`'s `capOutcome`),
+        // and the door's sanitizer and every reader of a cut answer keep working.
+        if (name === "validate") return { status: "ok", output: outcome.output };
+        const serialized = JSON.stringify(outcome.output);
+        if (serialized.length <= SCREEN_OUTPUT_CAP) return { status: "ok", output: outcome.output };
+        return {
+          status: "ok",
+          output: {
+            vendo_truncated: true,
+            vendo_chars: serialized.length,
+            vendo_preview: serialized.slice(0, SCREEN_OUTPUT_CAP),
+            vendo_note: "Ask again with a smaller limit or a filter if you need the rest.",
+          },
+        };
+      }
       if (outcome.status === "error") return { status: "error", error: outcome.error };
       if (outcome.status === "blocked") return { status: "denied", reason: outcome.reason };
       if (outcome.status === "connect-required") {
