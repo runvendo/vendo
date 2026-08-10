@@ -27,7 +27,7 @@ export type DedicatedRecordTable =
   | "vendo_knowledge_docs"
   | "vendo_knowledge_chunks";
 
-function recordFromRow(row: Record<string, unknown>): VendoRecord {
+export function recordFromRow(row: Record<string, unknown>): VendoRecord {
   const refs = row["refs"] as Record<string, string> | null;
   const revision = row["revision"];
   if (revision !== undefined && !(typeof revision === "string" || typeof revision === "number" || typeof revision === "bigint")) {
