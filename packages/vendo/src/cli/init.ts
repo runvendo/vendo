@@ -806,24 +806,37 @@ async function planMcpScaffold(input: {
     cloudKey,
     posture,
     serviceKey,
-    ...(baseUrl === null ? {} : { baseUrl }),
+    // Not optional: a null base URL is an ANSWER the plan reads, and it is
+    // what makes steps[] lead with the recoverable version of E-MCP-009's
+    // failure instead of assuming an origin.
+    baseUrl,
   });
   if (mcp.blocked !== undefined) {
+    // Nothing MCP was written and the reason says what to do about it. The
+    // rest of the install stands — this is an advisory, not a failure.
     output.error(`warning: ${mcp.blocked}`);
     return null;
   }
-  // The composition init is already CREATING becomes the MCP one — same file,
-  // mcp: true — and the origin-root discovery route joins the change set. A
-  // composition init did not write this run is left alone, as always.
-  const composition = changes.find((change) => change.before === null && change.path.endsWith("route.ts"));
-  if (composition !== undefined) {
-    composition.after = mcp.routeSource;
-    composition.diff = diff(composition.path, null, mcp.routeSource);
+  // The route init is already CREATING becomes the MCP one — same file, the
+  // thin body over the composition module. The planner cannot know whether
+  // that file exists, so it hands back the source and the caller pushes it
+  // with the `before` it already read; a route init did not write this run
+  // has no planned change here and is left alone, as always.
+  const route = changes.find((change) => change.before === null && change.path.endsWith(`${sep}route.ts`));
+  if (route !== undefined && mcp.routeSource !== null) {
+    route.after = mcp.routeSource;
+    route.diff = diff(route.path, null, mcp.routeSource);
   }
+  // The composition module and the origin-root discovery route are both new.
   for (const change of mcp.changes) {
     if (changes.some((planned) => planned.absolute === change.absolute)) continue;
-    const path = relative(root, change.absolute);
-    changes.push({ absolute: change.absolute, path, before: null, after: change.after, diff: diff(path, null, change.after) });
+    changes.push({
+      absolute: change.absolute,
+      path: change.path,
+      before: null,
+      after: change.after,
+      diff: diff(change.path, null, change.after),
+    });
   }
   if (mcp.serviceKeyValue !== undefined) {
     await upsertEnvLocal(root, "VENDO_SERVICE_KEY", mcp.serviceKeyValue);
@@ -1388,7 +1401,11 @@ async function resolveModelCredential(input: {
     select: pretty === null ? plainSelect : pretty.select,
     askSecret: pretty === null ? plainSecret : pretty.secret,
     ...(pretty === null ? {} : { confirm: pretty.confirm }),
-    ...(options.cloudKey !== undefined ? { models: "cloud" as const } : {}),
+    // --byo is an ANSWER to the models question, so it rides `models`.
+    // --cloud-key is not: it lands the key in .env.local before this step
+    // runs, so the probe finds it and the question never gets asked. Passing
+    // "cloud" here instead would send a run that ALREADY HAS a key into the
+    // mint ceremony — a live device login for a key the user just supplied.
     ...(options.byo === true ? { models: "byo" as const } : {}),
     ...(options.cloud ?? {}),
   });
@@ -1544,6 +1561,83 @@ async function ensureHostDeps(input: {
   });
 }
 
+/** The run's ending, as its own phase — the same reason wireAndScaffold and
+ *  resolveModelCredential are their own functions. The last question, then
+ *  everything still the user's to paste, then the live check on the runs that
+ *  owe nothing, and finally the stats the footer carries. Returns those stats;
+ *  it never decides the exit code. */
+async function finishRun(input: {
+  root: string;
+  options: InitOptions;
+  output: Output;
+  pretty: PrettyOutput | null;
+  interactive: boolean;
+  useCase: InitUseCase;
+  mcp: ReturnType<typeof planMcp> | null;
+  mount: ManualEdit | null;
+  edits: ManualEdit[];
+  manualSteps: string[];
+  credential: DevCredential;
+  cloud: { keyValid: boolean };
+  compositionPath: string | null;
+  framework: Exclude<HostFramework, "unknown"> | "custom";
+  authWired: AuthMatch | null;
+  layout: LayoutWiring;
+  toolCount: number;
+  brandCaptured: boolean;
+}): Promise<string> {
+  const {
+    root, options, output, pretty, interactive, useCase, mcp, mount, edits, manualSteps,
+    credential, cloud, compositionPath, framework, authWired, layout, toolCount, brandCaptured,
+  } = input;
+
+  // Where will this deploy? — every path but MCP, which needed the answer
+  // before it wrote. One Enter declines and the placeholder stands. The answer
+  // is written to .env.example inside, so there is nothing to read back here.
+  if (useCase !== "mcp") await captureBaseUrl({ root, options, output, pretty, interactive });
+
+  // Variant B: the wired route stays (it serves apps and approvals to the
+  // embeds) — what is added is the one snippet for their own loop.
+  const handSteps = [
+    ...(mount === null ? [] : [mount]),
+    ...edits,
+    ...(useCase === "agent-loop" ? await agentLoopSteps(root) : []),
+  ];
+  printClosingSteps({ output, handSteps, manualSteps, credential, cloud, compositionPath });
+  if (mcp !== null) {
+    const lines = [...mcp.steps, ...mcp.envLines];
+    if (pretty === null) for (const line of lines) output.log(`  ${line}`);
+    else pretty.block("Steps that are yours", lines, "◇");
+  }
+
+  // The live check offers itself ONLY when nothing is left to paste: doctor
+  // grades the paste, and the paste happens after init exits.
+  const checkPassed = handSteps.length === 0
+    && await offerLiveCheck({ root, options, output, pretty, interactive });
+
+  // Agent tail (agent-install-dx): the --yes-or-non-TTY path is agent-driven
+  // — the run's FINAL block is the repo-specific pointers an agent parses.
+  // Interactive human runs keep the clack-style output untouched; --agent
+  // never reaches here (its read-only JSON plan returned above).
+  if (options.yes === true || !interactive) {
+    output.log("\nAgent tail:");
+    const tail = await agentTailLines({ root, framework, compositionPath, authWired, layout, edits, cloudKeyMissing: credential.rung === "none" });
+    for (const line of tail) output.log(`  ${line}`);
+  }
+  // The run's LAST word is the outstanding paste (self-serve audit F5: the
+  // one step that matters used to scroll off-screen). The frame itself stays
+  // up-screen — the agent tail's "the lines above" pointers depend on that
+  // order — so the closer is a one-line echo of it, not a second copy. A human
+  // terminal has the paste block six lines up and legible, and gets the count
+  // in the footer instead.
+  if (handSteps.length > 0 && pretty === null) {
+    output.log(handSteps.length === 1
+      ? `\n→ Don't forget the paste in ${handSteps[0]!.file} (frame above)`
+      : `\n→ Don't forget the ${handSteps.length} pastes above (frame above)`);
+  }
+  return runStats({ toolCount, brandCaptured, handSteps: handSteps.length, checkPassed });
+}
+
 export async function runInit(options: InitOptions): Promise<number> {
   // The clack-style renderer rides the SAME Output seam: it restyles the
   // exact plain messages below, and is selected only for a human terminal
@@ -1620,10 +1714,9 @@ export async function runInit(options: InitOptions): Promise<number> {
     // extra answers change the composition's own source, so that path needs
     // all three BEFORE it writes. Every other path asks the URL at the end,
     // where it is one Enter to decline.
-    let baseUrl: string | null = null;
     let mcp: ReturnType<typeof planMcp> | null = null;
     if (useCase === "mcp") {
-      baseUrl = await captureBaseUrl({ root, options, output, pretty, interactive });
+      const baseUrl = await captureBaseUrl({ root, options, output, pretty, interactive });
       mcp = await planMcpScaffold({
         root, options, output, pretty, interactive, changes, baseUrl,
         framework: plan.framework, authWired, cloudKey: cloud.keyValid,
@@ -1718,55 +1811,15 @@ export async function runInit(options: InitOptions): Promise<number> {
       output.error(`warning: installed ai@${aiVersion} is unsupported — Vendo supports ai@6; downgrade (npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3) or track github.com/runvendo/vendo/issues/478`);
     }
 
-    // Where will this deploy? — every path but MCP, which needed the answer
-    // before it wrote. One Enter declines and the placeholder stands.
-    if (useCase !== "mcp") baseUrl = await captureBaseUrl({ root, options, output, pretty, interactive });
-
-    // Variant B: the wired route stays (it serves apps and approvals to the
-    // embeds) — what is added is the one snippet for their own loop.
-    const handSteps = [
-      ...(mount === null ? [] : [mount]),
-      ...edits,
-      ...(useCase === "agent-loop" ? await agentLoopSteps(root) : []),
-    ];
-    printClosingSteps({ output, handSteps, manualSteps, credential, cloud, compositionPath });
-    if (mcp !== null) {
-      const lines = [...mcp.steps, ...mcp.envLines];
-      if (pretty === null) for (const line of lines) output.log(`  ${line}`);
-      else pretty.block("Steps that are yours", lines, "◇");
-    }
-
-    // The live check offers itself ONLY when nothing is left to paste: doctor
-    // grades the paste, and the paste happens after init exits.
-    const checkPassed = handSteps.length === 0
-      && await offerLiveCheck({ root, options, output, pretty, interactive });
-
-    // Agent tail (agent-install-dx): the --yes-or-non-TTY path is agent-driven
-    // — the run's FINAL block is the repo-specific pointers an agent parses.
-    // Interactive human runs keep the clack-style output untouched; --agent
-    // never reaches here (its read-only JSON plan returned above).
-    if (options.yes === true || !interactive) {
-      output.log("\nAgent tail:");
-      const tail = await agentTailLines({ root, framework: plan.framework, compositionPath, authWired, layout, edits, cloudKeyMissing: credential.rung === "none" });
-      for (const line of tail) output.log(`  ${line}`);
-    }
-    // The run's LAST word is the outstanding paste (self-serve audit F5: the
-    // one step that matters used to scroll off-screen). The frame itself
-    // stays up-screen — the agent tail's "the lines above" pointers depend on
-    // that order — so the closer is a one-line echo of it, not a second copy.
-    // A human terminal has the paste block six lines up and legible, and gets
-    // the count in the footer instead.
-    if (handSteps.length > 0 && pretty === null) {
-      output.log(handSteps.length === 1
-        ? `\n→ Don't forget the paste in ${handSteps[0]!.file} (frame above)`
-        : `\n→ Don't forget the ${handSteps.length} pastes above (frame above)`);
-    }
-    pretty?.done(Date.now() - started, true, runStats({
-      toolCount,
-      brandCaptured: themeSummary !== null,
-      handSteps: handSteps.length,
-      checkPassed,
-    }));
+    // Called on its OWN line, never inside `pretty?.done(…)`: optional
+    // chaining short-circuits its arguments, so a null `pretty` — every
+    // non-TTY run — would skip the entire ending without a trace.
+    const stats = await finishRun({
+      root, options, output, pretty, interactive, useCase, mcp, mount, edits, manualSteps,
+      credential, cloud, compositionPath, framework: plan.framework, authWired, layout,
+      toolCount, brandCaptured: themeSummary !== null,
+    });
+    pretty?.done(Date.now() - started, true, stats);
     return 0;
   } catch (error) {
     await telemetry.track("init_failed", {
