@@ -31,6 +31,7 @@ import {
   type VendoToolSearchConfig,
 } from "./tool-search.js";
 import { wireErrorMessage } from "../wire-error.js";
+import { emitWorkbench, type WorkbenchAgent } from "../workbench.js";
 import { harnessAdapters } from "../harness-sandbox.js";
 import type { UsageTotals } from "../runtime.js";
 import {
@@ -364,12 +365,24 @@ async function runSubagent(
     compaction,
     signal: turn.signal,
     turnId: turn.turnId,
+    // A hire shares the resident's turn, so it shares its workbench channel; the
+    // tag is the only thing that tells the two loops apart on it.
+    workbenchAgent: "subagent",
   });
-  const [text, usage] = await Promise.all([loop.result.text, loop.result.totalUsage]);
-  return {
-    summary: text.trim() || "The specialist finished without a summary.",
-    usage: usageOf(usage, model),
-  };
+  const [text, usage, steps] = await Promise.all([
+    loop.result.text,
+    loop.result.totalUsage,
+    loop.result.steps,
+  ]);
+  const summary = text.trim() || "The specialist finished without a summary.";
+  emitWorkbench(turn.turnId, "subagent", {
+    kind: "subagent",
+    label: skill ?? input.instructions.slice(0, 60),
+    steps: steps.length,
+    maxSteps: SUBAGENT_MAX_STEPS,
+    report: summary,
+  });
+  return { summary, usage: usageOf(usage, model) };
 }
 
 export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions> {
@@ -441,6 +454,11 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // nothing to discover, so it fills the same object once and stops.)
       const residentTools: ToolSet = {};
       let equipped: string[] = [];
+      // Which loop this drive is, for the workbench only. A CLOSED loadout is the
+      // screen agent's shape (`vendo({ tools, maxSteps })` — packages/vendo's
+      // screen-agent.ts) and an open one is the thread's resident thinker; the
+      // two share a turn and a channel, so something has to name them apart.
+      const workbenchAgent: WorkbenchAgent = deps.tools === undefined ? "resident" : "screen";
       /** Each helper's spend, yielded as its own `usage` event after the stream
        *  drains — the one metering channel every brain has. No receipt path:
        *  per-hire audit rows are gone (Option 1, 2026-08-09), exactly matching
@@ -490,6 +508,18 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // included only if it is named. The open path keeps the discovery rail — the
       // listing re-read after every call — and hires by default.
       let activeToolNames: () => string[];
+      /** What the model may pick right now, and what it may not — a fact only
+       *  this file holds, because the loadout is the brain's own strategy. */
+      const emitLoadout = (): void => {
+        const active = activeToolNames();
+        emitWorkbench(turn.turnId, workbenchAgent, {
+          kind: "loadout",
+          active,
+          searchedIn: [...loaded],
+          alwaysActive: active.filter(isAlwaysActive),
+          withheldCount: equipped.filter((name) => !active.includes(name)).length,
+        });
+      };
       if (deps.tools === undefined) {
         const refresh = async (): Promise<void> => {
           equipped = await refreshEquipped(turn, residentTools, refresh);
@@ -523,6 +553,7 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
               // search; re-reading the listing NOW is what makes a found tool
               // callable on the very next step.
               await refresh();
+              emitLoadout();
               return { loaded: matches.map((match) => match.name), tools: matches };
             },
           });
@@ -539,6 +570,7 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
         equipped = await equipClosedLoadout(turn, residentTools, deps.tools, hireSubagent);
         activeToolNames = () => equipped;
       }
+      emitLoadout();
 
       // ONE attempt at the turn. The overflow retry re-enters through the same
       // function so the two attempts cannot drift on any input but the two the
@@ -560,6 +592,7 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           // §3.5 — the runtime already minted it and put it on the Turn, so
           // passing it is simply true.
           turnId: turn.turnId,
+          workbenchAgent,
           // The loadout, in the loop's own vocabulary: `prepareStep` re-reads
           // this each step and restricts what the model may PICK, so a tool
           // searched in through `find_tools` is choosable on the next step and

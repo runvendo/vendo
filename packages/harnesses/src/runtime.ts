@@ -54,7 +54,8 @@ import {
 } from "./harness-state.js";
 import { createTurnTools, type MirrorEvent } from "./turn-tools.js";
 import { specificWireErrorMessage } from "./wire-error.js";
-import { TextChannel, writeError, writeMirror, writeStatus, writeTurnError, writeView } from "./wire.js";
+import { emitWorkbench, openWorkbench } from "./workbench.js";
+import { TextChannel, writeDebug, writeError, writeMirror, writeStatus, writeTurnError, writeView } from "./wire.js";
 
 /**
  * `turn.messages` is OURS and read-only (§1). A frozen array still hands out live
@@ -367,6 +368,10 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
         generateId: () => assistantMessageId,
         execute: async ({ writer }) => {
           turnWriter = writer;
+          // The dev-only diagnostics channel, open for exactly this turn. Off
+          // (the production case) this registers nothing and every emit below —
+          // here, in the loop, in the guarded-call path — is a map miss.
+          const closeWorkbench = openWorkbench(turnId, (part) => writeDebug(writer, part));
           const text = new TextChannel(writer);
           const mirror = (event: MirrorEvent): void => {
             // Close the open text part first, so a reply that spans tool calls
@@ -477,6 +482,11 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
                   break;
                 case "error":
                   failure = { message: event.message, ...(event.code === undefined ? {} : { code: event.code }) };
+                  emitWorkbench(turnId, "resident", {
+                    kind: "error",
+                    code: event.code ?? "harness",
+                    message: event.message,
+                  });
                   text.break();
                   surfaced = event.message;
                   // The TRANSCRIPT's failure affordance, and it goes FIRST. The
@@ -522,6 +532,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             // this path lost the one sentence that said what to do about it.
             const message = specificWireErrorMessage(error) ?? HARNESS_FAILED;
             failure = { message, code: "harness" };
+            emitWorkbench(turnId, "resident", { kind: "error", code: "harness", message });
             // Same two carriers as a reported `error` event above — the screen's
             // banner/Retry and the transcript's record. A thrown failure used to
             // be spoken as prose instead, which read as the agent talking, gave
@@ -547,6 +558,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             // approvals a fresh user turn supersedes.
             await abandonUnanswered(deps.guard, input, tools.unansweredApprovals());
             tools.dispose();
+            closeWorkbench();
           }
         },
         onFinish: async ({ messages }) => {
