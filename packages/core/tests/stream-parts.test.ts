@@ -219,6 +219,41 @@ describe("vendoAutomationPartSchema", () => {
       enabled: true,
     }).success).toBe(false);
   });
+
+  /** The automation's terms ride the TRIGGER (`Trigger.rules`) — the document's
+   *  own field, forwarded whole by every producer that already forwards a
+   *  trigger — so this part has no second copy of them to disagree with.
+   *
+   *  A blank sentence must cost that sentence and nothing else. This part is
+   *  `safeParse`d at the bridge before the thread ever sees it, so a `min(1)`
+   *  on the array would have made one empty string from a sloppy author delete
+   *  the entire automation card; the renderer is the one place that decides
+   *  what is renderable (`@vendoai/ui`'s automation card trims, drops, clamps
+   *  and caps). */
+  it("carries the trigger's rule sentences, and one blank never fails the part", () => {
+    const withRules = (rules: unknown) => vendoAutomationPartSchema.safeParse({
+      type: "data-vendo-automation",
+      appId: "app_auto",
+      name: "PG&E autopay",
+      enabled: true,
+      trigger: {
+        id: "main",
+        on: { kind: "external", connector: "gmail", event: "new_bill_email" },
+        run: { kind: "steps", steps: [{ id: "pay", tool: "host_transferMoney" }] },
+        rules,
+      },
+    });
+    const kept = withRules(["Caps at $200 a bill — anything higher asks you first", "  "]);
+    expect(kept.success).toBe(true);
+    expect(kept.data!.trigger!.rules).toEqual([
+      "Caps at $200 a bill — anything higher asks you first",
+      "  ",
+    ]);
+    expect(withRules([]).success).toBe(true);
+    // A rule that is not a string at all is a broken producer, not a sloppy
+    // author: the array's element type still holds the line.
+    expect(withRules([{ text: "nope" }]).success).toBe(false);
+  });
 });
 
 /** demo-live-readiness 2026-07 (additive): the grant-set consent card part. */

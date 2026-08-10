@@ -143,6 +143,18 @@ export interface Trigger {
   id: string;
   on: TriggerSource;
   run: RunModel;
+  /**
+   * The automation's terms, in the sentences its author wrote — "Caps at $200 a
+   * bill — anything higher asks you first". DISPLAY ONLY: nothing here gates a
+   * run (`on` and `run` are the behavior), so a reader can trust that the words
+   * came from whoever authored the automation rather than from a renderer.
+   *
+   * It lives on the trigger because the trigger IS the automation the words
+   * describe, which is what carries them the whole way with no second wire:
+   * every surface that already forwards a trigger (the `data-vendo-automation`
+   * part in `make-tool.ts`) forwards these with it.
+   */
+  rules?: string[];
 }
 
 /** 01-core §11 */
@@ -150,6 +162,12 @@ export const triggerSchema = z.object({
   id: z.string().regex(TRIGGER_ID_PATTERN, "trigger id must match /^[A-Za-z_][A-Za-z0-9_]*$/"),
   on: triggerSourceSchema,
   run: runModelSchema,
+  // Deliberately NOT `.min(1)`: this validates a whole automation — and through
+  // `vendoAutomationPartSchema`, a whole card — so one empty sentence from a
+  // sloppy author must cost that sentence, never the automation it describes.
+  // The renderer is the one place that decides what is renderable (trim, drop,
+  // clamp, cap — `automationRules` in @vendoai/ui's automation card).
+  rules: z.array(z.string()).optional(),
 }).passthrough() satisfies z.ZodType<Trigger>;
 
 /** The id a legacy single-`trigger` document's one trigger takes on read.

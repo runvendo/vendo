@@ -246,10 +246,6 @@ export interface VendoAutomationPart {
   trigger?: Trigger;
   /** The document's one-line description, when it has one. */
   description?: string;
-  /** The rule in the agent's own sentences, one per constraint ("Caps at $200 a
-   *  bill — anything higher asks you first"). The card lists them under the
-   *  status line; a producer with nothing to say omits the field. */
-  rules?: string[];
   /** Standing-grant asks still undecided: the card reads
    *  "Enabled · waiting on N permissions" until the set is granted. */
   pendingGrants?: number;
@@ -260,9 +256,10 @@ export const vendoAutomationPartSchema = z.object({
   appId: appIdSchema,
   name: z.string().min(1),
   enabled: z.boolean(),
+  // The trigger carries the automation's terms as words (`Trigger.rules`) — the
+  // card lists them, and no second field on this part can disagree with it.
   trigger: triggerSchema.optional(),
   description: z.string().optional(),
-  rules: z.array(z.string().min(1)).optional(),
   pendingGrants: z.number().int().nonnegative().optional(),
 }).passthrough() satisfies z.ZodType<VendoAutomationPart>;
 

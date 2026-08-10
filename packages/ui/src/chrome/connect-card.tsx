@@ -193,17 +193,27 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
     : [fragment(message), fragment(accessCopy), "Secured with OAuth"];
 
   // Every phase says what it is doing in ONE status voice under the row, so a
-  // screen reader has exactly one live region per state to read.
+  // screen reader has exactly one live region per state to read. The blocked
+  // phase carries its recovery link INSIDE that region, under the sentence that
+  // explains it: an "Open sign-in in a new tab" button reached before the words
+  // "your browser blocked the sign-in window" is an instruction with no reason.
   const status = connected || phase === "idle" || phase === "failed" ? null : (
-    <span role="status" className="fl-approval-more fl-connect-note">
-      {phase === "connecting"
-        ? `Finish signing in, then come back.${waitedSeconds >= 3 ? ` Still waiting · ${waitedSeconds}s` : ""}`
-        : phase === "popup-blocked"
-          // The window never opened, but the connect did: the poll is running on
-          // the same account, so the same URL in a tab finishes it.
-          ? "Your browser blocked the sign-in window. Open it yourself — we’ll pick it up from here."
-          : "Nothing changed — the sign-in never finished."}
-    </span>
+    <div role="status" className={phase === "popup-blocked" ? "fl-connect-blocked fl-connect-note" : "fl-approval-more fl-connect-note"}>
+      {phase === "connecting" ? (
+        `Finish signing in, then come back.${waitedSeconds >= 3 ? ` Still waiting · ${waitedSeconds}s` : ""}`
+      ) : phase === "popup-blocked" ? (
+        <>
+          {/* The window never opened, but the connect did: the poll is running
+              on the same account, so the same URL in a tab finishes it. */}
+          <span>Your browser blocked the sign-in window. Open it yourself — we’ll pick it up from here.</span>
+          {redirectUrl === undefined ? null : (
+            <a className="fl-btn fl-btn-primary" href={redirectUrl} target="_blank" rel="noreferrer">
+              Open sign-in in a new tab
+            </a>
+          )}
+        </>
+      ) : "Nothing changed — the sign-in never finished."}
+    </div>
   );
 
   return (
@@ -215,13 +225,17 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
       >
         <div className="fl-connect-row">
           {/* RAW, at its own aspect ratio: the 28px well cropped the Gmail M. */}
-          <ToolkitLogo src={toolkitLogoUrl(toolkit)} fallback={LINK_GLYPH} className="fl-connect-mark" />
+          <ToolkitLogo src={toolkitLogoUrl(toolkit)} fallback={LINK_GLYPH} className="fl-mark-raw" />
           <div className="fl-connect-copy">
             <div className="fl-connect-name">{displayName}</div>
             {/* Law 3's line, drawn the way the approval card draws its notes:
                 ONE line to the eye, a LIST to a screen reader, with the " · "
-                between items in CSS so it is never announced. */}
-            <ul className="fl-card-line fl-approval-sub" aria-label={`What connecting ${displayName} does`}>
+                between items in CSS so it is never announced. Named for what it
+                holds: the ask's terms before, the account's receipt after. */}
+            <ul
+              className="fl-card-line fl-approval-sub"
+              aria-label={connected ? `What ${displayName} can now do` : `What connecting ${displayName} does`}
+            >
               {notes.map((item, index) => <li key={index}>{item}</li>)}
             </ul>
           </div>
@@ -235,11 +249,9 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
                 Connected
               </span>
             ) : phase === "popup-blocked" ? (
-              redirectUrl === undefined ? null : (
-                <a className="fl-btn fl-btn-primary" href={redirectUrl} target="_blank" rel="noreferrer">
-                  Open sign-in in a new tab
-                </a>
-              )
+              // The recovery link rides the status region below, under the
+              // sentence that explains why it is there.
+              null
             ) : phase === "timed-out" ? (
               <button className="fl-btn fl-btn-primary" type="button" onClick={() => void connect()}>Try again</button>
             ) : (

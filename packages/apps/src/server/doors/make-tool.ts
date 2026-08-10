@@ -244,6 +244,11 @@ const changeExistingApp = async (
   // Wave 9 — a ladder-authored automation raises its own card. Published
   // HERE, by the side that knows, rather than duck-typed out of this tool's
   // return value at the bridge: the receipt carries words only.
+  //
+  // The trigger goes over WHOLE, which is what carries the automation's terms
+  // (`Trigger.rules` — the sentences its author wrote) to the card with no
+  // second field to disagree with the document. The document's trigger is the
+  // one this edit authored and landed, so what the card lists is what runs.
   if (result.automation !== undefined && stream !== undefined) {
     stream({
       id: `vendo-automation-${result.app.id}`,

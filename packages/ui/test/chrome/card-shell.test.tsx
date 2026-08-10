@@ -121,8 +121,11 @@ describe("one card shell, three laws", () => {
   });
 
   it("keeps one icon-well size and one primary-button style in the sheet itself", () => {
-    // Law 2, at the source: the shell owns 28px, and the only other well sizes
-    // left in the stylesheet belong to non-card furniture (rows, docks, pills).
+    // Law 2, at the source: the shell owns ONE well size, 28px, and the cards
+    // that kept a head use it. The sentence family's cards have no well at all;
+    // where they show a brand's logo they show it raw (`.fl-mark-raw`, 26px, no
+    // fill and no radius), because a well is drawn for a glyph and cropped the
+    // real marks — see connect.test.tsx and approval-degraded.test.tsx.
     expect(CHROME_CSS).toContain(".fl-card-ic { display: grid; place-items: center; width: 28px; height: 28px;");
     // Law 1: the ancestors that touch a shell may only size it.
     const ancestorRules = CHROME_CSS.split("\n").filter(line => /\.fl-\S+ (?:>\s*)?\.fl-cardshell/.test(line));

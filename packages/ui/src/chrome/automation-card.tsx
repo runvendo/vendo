@@ -39,11 +39,18 @@ export function humanizeCron(cron: string): string | null {
   return `${day} at ${clock}`;
 }
 
-export function triggerLabel(trigger: Trigger): { title: string; sub: string } {
+/** One clause of the card, at the length a card can hold. The rule sentence's
+    action half has always clamped here (an agentic prompt is arbitrarily long);
+    the authored rule list clamps the same way, so no producer can push the card
+    past its own geometry. */
+const clamp = (text: string): string =>
+  text.length > 68 ? `${text.slice(0, 67).trimEnd()}…` : text;
+
+export function triggerLabel(trigger: Trigger): string {
   const source = trigger.on;
   if (source.kind === "schedule") {
-    if (source.every) return { title: `Every ${source.every}`, sub: "Schedule" };
-    if (source.at) return { title: source.at, sub: "Scheduled once" };
+    if (source.every) return `Every ${source.every}`;
+    if (source.at) return source.at;
     // The zone is named because the automation does not fire in the reader's:
     // the engine builds every cron with `{ timezone: "UTC" }`, so an 8 AM
     // Pacific request is stored as 16:00 and an unlabelled "Mondays at 4:00 PM"
@@ -53,41 +60,41 @@ export function triggerLabel(trigger: Trigger): { title: string; sub: string } {
     // carries its own zone.
     if (source.cron) {
       const clock = humanizeCron(source.cron);
-      return { title: clock === null ? source.cron : `${clock} UTC`, sub: "Schedule" };
+      return clock === null ? source.cron : `${clock} UTC`;
     }
-    return { title: "Scheduled", sub: "Schedule" };
+    return "Scheduled";
   }
-  if (source.kind === "external") {
-    return { title: humanizeToolName(source.event), sub: humanizeToolName(source.connector) };
-  }
-  return { title: humanizeToolName(source.event), sub: "Host event" };
+  return humanizeToolName(source.event);
 }
 
-export function automationFlow(trigger: Trigger | undefined): {
-  trigger: { title: string; sub: string };
-  action: { title: string; sub: string };
-} | undefined {
+/** The rule this automation runs by, as one sentence: what starts it → what it
+    then does. The card's title when the document wrote no description of its
+    own. (It replaced a two-box `trigger → action` diagram, whose second labels
+    — "Schedule", "1 action", "N steps" — named the boxes, not the rule, and
+    went with them.) */
+export function automationRule(trigger: Trigger | undefined): string | undefined {
   if (!trigger) return undefined;
-  if (trigger.run.kind === "agentic") {
-    const prompt = trigger.run.prompt.trim();
-    if (!prompt) return undefined;
-    return {
-      trigger: triggerLabel(trigger),
-      action: {
-        title: prompt.length > 68 ? `${prompt.slice(0, 67).trimEnd()}…` : prompt,
-        sub: "Agent run",
-      },
-    };
-  }
-  const firstStep = trigger.run.steps[0];
-  if (!firstStep) return undefined;
-  return {
-    trigger: triggerLabel(trigger),
-    action: {
-      title: humanizeToolName(firstStep.tool),
-      sub: trigger.run.steps.length === 1 ? "1 action" : `${trigger.run.steps.length} steps`,
-    },
-  };
+  const action = trigger.run.kind === "agentic"
+    ? trigger.run.prompt.trim()
+    : trigger.run.steps[0] === undefined ? "" : humanizeToolName(trigger.run.steps[0].tool);
+  return action.length === 0 ? undefined : `${triggerLabel(trigger)} → ${clamp(action)}`;
+}
+
+/** How many of an automation's terms a CARD shows, and how long each may be.
+    A card is the moment's record, not the settings page — the Automations panel
+    owns the full list — so the render is bounded no matter what the document
+    says. Blanks and non-strings drop here rather than upstream: the schema lets
+    them through on purpose, so one sloppy sentence can never cost the whole
+    automation card (see `Trigger.rules`). */
+const MAX_RULES = 6;
+
+function automationRules(rules: readonly string[]): string[] {
+  return rules
+    .filter((rule): rule is string => typeof rule === "string")
+    .map(rule => rule.trim())
+    .filter(rule => rule.length > 0)
+    .slice(0, MAX_RULES)
+    .map(clamp);
 }
 
 export interface AutomationCardProps {
@@ -95,14 +102,18 @@ export interface AutomationCardProps {
   name: string;
   /** Whether the automations engine reports it enabled. */
   enabled: boolean;
-  /** The document's trigger, for the flow nodes; omitted → identity only. */
+  /** The document's trigger: the source of the rule sentence AND of the terms
+   *  it runs by (`Trigger.rules`). Omitted → the name is all this card has. */
   trigger?: Trigger;
   /** The document's one-line description. Preferred over the composed
    *  `trigger → action` title: it is the human phrasing of the same rule. */
   description?: string;
-  /** E3 — the rule, as the agent wrote it: one plain sentence per constraint
-   *  ("Caps at $200 a bill — anything higher asks you first"). Rendered as a
-   *  tick list under the status line; omitted entirely when there are none. */
+  /** E3 — the automation's terms, one sentence each ("Caps at $200 a bill —
+   *  anything higher asks you first"), as a tick list under the status line;
+   *  omitted entirely when there are none. Defaults to the trigger's own
+   *  `rules`, which is where the document carries them and how the wire's
+   *  automation part delivers them — a host mounting this card from its own
+   *  data passes them here instead. */
   rules?: string[];
   /** Standing-grant asks still undecided (grant sets): the state line reads
    *  "Enabled · waiting on N permissions" until the set is granted. */
@@ -127,14 +138,17 @@ export function sponsorLabel(
 }
 
 /** The read-only automation card (the thread's record of a live automation). */
-export function AutomationCard({ name, enabled, trigger, description, rules = [], pendingGrants = 0, sponsor, editors }: AutomationCardProps) {
-  const flow = automationFlow(trigger);
+export function AutomationCard({ name, enabled, trigger, description, rules, pendingGrants = 0, sponsor, editors }: AutomationCardProps) {
   const waiting = enabled && pendingGrants > 0;
   // Law 3 and the title are ONE line now: the rule itself. The description is
-  // the human phrasing of that rule and wins when the document has one; the
+  // the human phrasing of that rule and wins when the document wrote one — a
+  // BLANK one is not a phrasing, and as the card's 14px title an empty string
+  // is a headless card, where as the old quiet line it was merely a gap. The
   // composed trigger → action is the honest fallback, and a document with
   // neither is only its name. The NAME is still the card's accessible name.
-  const rule = description ?? (flow ? `${flow.trigger.title} → ${flow.action.title}` : name);
+  const described = (description ?? "").trim();
+  const rule = described.length > 0 ? described : automationRule(trigger) ?? name;
+  const terms = automationRules(rules ?? trigger?.rules ?? []);
   // Whether it is on, and whose access it runs with — the state chip and the
   // byline row, folded into one quiet line. " · " is literal here (unlike the
   // approval notes) because these are clauses of one sentence about one thing.
@@ -150,13 +164,13 @@ export function AutomationCard({ name, enabled, trigger, description, rules = []
         <CardLine className="fl-auto-sentence">{rule}</CardLine>
         <div className="fl-auto-state">
           {enabled ? <span className={`fl-auto-live${waiting ? " fl-auto-wait" : ""}`} aria-hidden="true" /> : null}
-          {state}
+          <span className="fl-auto-state-copy">{state}</span>
         </div>
         {/* A real list: these are N distinct promises about how the automation
             behaves, and a reader has to be able to step through them. */}
-        {rules.length === 0 ? null : (
+        {terms.length === 0 ? null : (
           <ul className="fl-auto-rules" aria-label={`Rules for ${name}`}>
-            {rules.map((sentence, index) => <li key={index}>{TICK_GLYPH}{sentence}</li>)}
+            {terms.map((sentence, index) => <li key={index}>{TICK_GLYPH}{sentence}</li>)}
           </ul>
         )}
       </CardShell>
