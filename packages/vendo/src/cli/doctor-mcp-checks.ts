@@ -20,14 +20,46 @@ const COMPOSITION_PATHS: readonly string[][] = [
   ["src", "vendo", "server.mjs"],
 ];
 
+/**
+ * The `mcp: { … }` object with every NESTED object and array removed, so a
+ * top-level key can be matched without a nested one shadowing it. Null when
+ * `mcp` is absent or is the boolean form.
+ *
+ * Balanced braces, not a character class: `[^}]*` cannot cross a closing brace,
+ * so it stopped at the first nested option's `}` and never reached a `baseUrl`
+ * declared after it. `serviceAuth`, `remoteAs` and `federation` all nest — and
+ * the local service-key path scaffolds one — so the old scan hard-failed
+ * E-MCP-009 on a correctly configured deployment purely because of the order
+ * the author wrote their properties in.
+ */
+function mcpObjectTopLevel(code: string): string | null {
+  const opened = /\bmcp\s*:\s*\{/.exec(code);
+  if (opened === null) return null;
+  let depth = 0;
+  let top = "";
+  // Start ON the opening brace so the first step takes depth to 1.
+  for (let index = opened.index + opened[0].length - 1; index < code.length; index += 1) {
+    const char = code[index]!;
+    if (char === "{" || char === "[") depth += 1;
+    else if (char === "}" || char === "]") depth -= 1;
+    else if (depth === 1) top += char;
+    if (depth === 0) return top;
+  }
+  return top;
+}
+
 /** Does this composition open the MCP door, and does it name its own public
     base URL while doing it? `mcp: { baseUrl }` is host config that beats the
     environment default, so a composition carrying one needs no variable. */
 function mcpComposition(source: string): { wired: boolean; baseUrl: boolean } {
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  // A line comment is `//` that is NOT the `//` in a URL scheme. Stripping every
+  // `//` truncated the line at the first `https://` — which both hid a `baseUrl`
+  // written after one and left the braces unbalanced for the walk below, failing
+  // E-MCP-009 on a correct composition. Every value this checker reads is a URL.
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
   return {
     wired: /\bcreateVendo\s*\(/.test(code) && /(^|[\s{,])mcp\s*:/.test(code),
-    baseUrl: /\bmcp\s*:\s*\{[^}]*\bbaseUrl\b/.test(code),
+    baseUrl: /\bbaseUrl\s*:/.test(mcpObjectTopLevel(code) ?? ""),
   };
 }
 

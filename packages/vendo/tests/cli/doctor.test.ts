@@ -1679,6 +1679,35 @@ describe("vendo doctor error codes + fix_refs", () => {
       const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: successfulProbeFetch() });
       expect(report.checks.some((entry) => entry.id === "mcp/base-url")).toBe(false);
     });
+
+    // Regression (Greptile P1 on #1142): the scan was `mcp:\s*\{[^}]*baseUrl`,
+    // and a character class cannot cross a closing brace — so a NESTED option
+    // written before baseUrl (serviceAuth, remoteAs, federation; the local
+    // service-key path scaffolds one) ended the window at its own `}` and
+    // baseUrl was never seen. E-MCP-009 is a hard FAIL, so that rejected a
+    // correctly configured deployment over property ORDER alone.
+    it.each([
+      ["a nested option BEFORE baseUrl", '{ serviceAuth: { keys: ["k1", "k2"] }, baseUrl: "https://app.acme.com" }'],
+      ["a nested option AFTER baseUrl", '{ baseUrl: "https://app.acme.com", serviceAuth: { keys: ["k1"] } }'],
+      ["two nested options around it", '{ federation: { secret: "s" }, baseUrl: "https://app.acme.com", remoteAs: { issuer: "https://i", audience: "https://a" } }'],
+    ])("passes with %s — order must not decide the verdict", async (_label, mcp) => {
+      const { report } = await jsonChecks({
+        targetDir: await mcpHost(`import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ mcp: ${mcp} });\n`),
+        fetchImpl: successfulProbeFetch(),
+      });
+      expect(report.checks.find((entry) => entry.id === "mcp/base-url")).toMatchObject({ status: "ok" });
+    });
+
+    // …and the nested option must not smuggle a pass either: a baseUrl that is
+    // not the door's own top-level option leaves the deployment unconfigured.
+    it("still fails when the only baseUrl sits inside a nested option", async () => {
+      const { report } = await jsonChecks({
+        targetDir: await mcpHost('import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ mcp: { remoteAs: { issuer: "https://i", audience: "https://a", baseUrl: "https://nope" } } });\n'),
+        fetchImpl: successfulProbeFetch(),
+      });
+      expect(report.checks.find((entry) => entry.id === "mcp/base-url"))
+        .toMatchObject({ status: "broken", error_code: "E-MCP-009" });
+    });
   });
 
   // Regression (review 4): a tool a human disabled is one the runtime never
