@@ -55,9 +55,7 @@ export type {
   InClientVenue,
   OpenSurface,
   PendingSurface,
-  PinDrift,
-  PinForkResult,
-  PinRebaseResult,
+  SeedDrift,
   ShipDiff,
   VersionEntry,
 } from "@vendoai/apps/contract";

@@ -30,8 +30,6 @@ import type {
   InitiatedConnection,
   OpenSurface,
   PendingSurface,
-  PinForkResult,
-  PinRebaseResult,
   PlacementEntry,
   RunPlan,
   RunRecord,
@@ -111,19 +109,17 @@ export interface VendoClient {
     fork(id: AppId): Promise<AppDocument>;
     /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
     shipDiff(id: AppId): Promise<ShipDiff>;
-    /** POST /apps/:id/rebase-pin — re-fork one drifted pin from the new baseline and replay its recorded intents (06 §8). */
-    rebasePin(id: AppId, slot: string): Promise<PinRebaseResult>;
+    /** POST /apps/:id/reseed — swap the seeded component for the host's current
+     *  version (06 §8). It REPLACES that component, so whatever the person
+     *  changed about it is gone; the surface that offers it says so. */
+    reseed(id: AppId): Promise<AppDocument>;
     /**
-     * POST /apps/fork-pin (no appId) or /apps/:id/fork-pin — the gesture-owned
-     * DETERMINISTIC fork of a remixable host slot (06 §8): the engine copies
-     * the captured baseline and records the pin with no model call. Without an
-     * appId a minimal app is minted around the fork (the `<Remixable>` ✦
-     * gesture). `props` — the wrapper's serializable live props at fork time —
-     * is stored on the fork as its dashboard seed (2026-08-02 final shape). An
-     * optional instruction rides the ordinary edit path afterwards, already
-     * scoped to the forked component.
+     * POST /apps/seed — the ✦ gesture's DETERMINISTIC path (06 §8): the engine
+     * copies the captured baseline into a new app's seeded seat with no model
+     * call, and the model never decides to seed. An `instruction` then runs as
+     * an ordinary edit on the new app.
      */
-    forkPin(input: { appId?: AppId; slot: string; props?: Record<string, Json>; instruction?: string }): Promise<PinForkResult>;
+    seedFrom(input: { component: string; slot?: string; instruction?: string }): Promise<AppDocument>;
     /**
      * POST /apps/:id/machine/ping — the embed surface's keepalive:
      * user activity on an embedded served app rides one host-proxied HEAD

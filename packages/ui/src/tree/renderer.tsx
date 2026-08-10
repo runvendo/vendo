@@ -27,7 +27,7 @@ import {
 } from "react";
 import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
-import type { InClientVenue, PinDrift } from "../wire-types.js";
+import type { InClientVenue, SeedDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
@@ -542,10 +542,11 @@ function StatefulTreeView({
   const inClient = (tree as WalkTree & { inClient?: InClientVenue }).inClient;
   // Tolerate a malformed field (like every other payload extra): only an
   // array of well-formed entries renders the notice.
-  const pinDriftRaw = (tree as WalkTree & { pinDrift?: unknown }).pinDrift;
-  const pinDrift = (Array.isArray(pinDriftRaw) ? pinDriftRaw : [])
-    .filter((entry): entry is PinDrift =>
-      typeof entry === "object" && entry !== null && typeof (entry as PinDrift).slot === "string");
+  const seedDriftRaw = (tree as WalkTree & { seedDrift?: unknown }).seedDrift;
+  const seedDrift = typeof seedDriftRaw === "object" && seedDriftRaw !== null
+    && typeof (seedDriftRaw as SeedDrift).component === "string"
+    ? seedDriftRaw as SeedDrift
+    : null;
   // The host-page mount unlocks on EXACTLY `granted === true` — the value only
   // the server's hash-pin verification writes. Everything else stays jailed.
   const inClientGranted = inClient?.granted === true;
@@ -649,13 +650,15 @@ function StatefulTreeView({
     )
     : null;
 
-  // 06-apps §8 — a host update under a remixed pin must be LOUD too: the fork
-  // keeps rendering (nothing is mutated without the user), but the surface
-  // says the host component moved on and a rebase is available.
-  const driftNotice = pinDrift.length > 0
+  // 06-apps §8 — the host moved on under a remix. This has to be LOUD and it has
+  // to be HONEST: updating no longer replays what the person changed on top of
+  // the new version (that machinery is gone), it hands them the fresh copy
+  // instead. So the notice says what the update costs, in those words, and
+  // nothing happens until they ask for it.
+  const driftNotice = seedDrift !== null
     ? (
-      <ContainedNotice label="Remixed component out of date">
-        {`The host updated ${pinDrift.map((pin) => `"${pin.slot}"`).join(", ")} since ${pinDrift.length === 1 ? "it was" : "they were"} remixed here. Ask the agent to rebase the remix onto the updated component.`}
+      <ContainedNotice label="Newer version available">
+        {`"${seedDrift.component}" has changed in the app since you made this. You can switch to the new version, but it comes as a fresh copy — the changes you made here would be replaced. Nothing happens until you ask for it.`}
       </ContainedNotice>
     )
     : null;
@@ -663,7 +666,7 @@ function StatefulTreeView({
   // The view settled without the data it asked for (render-seam.ts writes this when
   // a query fails). Every unresolved binding renders "—" or an empty state, so a
   // silent settle reads as "you have no spending". SERVER-AUTHORITATIVE like
-  // `inClient` and `pinDrift`: a document-carried value is stripped, and only
+  // `inClient` and `seedDrift`: a document-carried value is stripped, and only
   // exactly `true` speaks.
   //
   // The marker fires when ANY query failed, so the copy has to hold when the rest

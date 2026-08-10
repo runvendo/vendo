@@ -22,7 +22,7 @@ import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";
 import { captureHostComponents } from "./components.js";
 import { runExtractors } from "./extractors.js";
-import { capturePins } from "./pins.js";
+import { capturePins } from "./seeds.js";
 
 export type SyncReportWithWarnings = SyncReport & {
   warnings: string[];

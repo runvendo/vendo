@@ -17,6 +17,7 @@
  * The chat / connections / automations / status shapes stay in `@vendoai/ui` —
  * they are not app-generation vocabulary and have no producer here.
  */
+import type { SeedDrift } from "./seed.js";
 import {
   type AppDocument,
   type AppId,
@@ -64,21 +65,6 @@ export type InClientVenue =
   | { granted: false; versionHash: string; reason: "version-changed" }
   | { granted: false; versionHash: string; reason: "pending-review"; review: ReviewStanding };
 
-/**
- * 06-apps §8 — one drifted pin riding a tree payload (`payload.pinDrift`):
- * the host updated (or removed) the captured component this fork was remixed
- * from. SERVER-AUTHORITATIVE: only the runtime's baseline comparison writes
- * it. Informational — the renderer says so loudly but never mutates content;
- * a rebase is always user-invoked.
- */
-export interface PinDrift {
-  slot: string;
-  component: string;
-  baseHash: string;
-  baselineHash?: string;
-  reason: "baseline-changed" | "baseline-missing";
-}
-
 /** 06-apps §8–§9 — what `GET /apps/:id/ship-diff` returns. */
 export interface ShipDiff {
   appId: AppId;
@@ -99,8 +85,9 @@ export interface EditResult {
   app: AppDocument;
   version: VersionEntry;
   issues?: string[];
-  /** Additive 06 §8 drift report: present when the edited app has drifted pins. */
-  driftedPins?: PinDrift[];
+  /** Additive 06 §8 drift report: present when the host component this app was
+   *  seeded from has moved on. A warning — acting on it is the person's call. */
+  seedDrift?: SeedDrift;
 }
 
 /**
