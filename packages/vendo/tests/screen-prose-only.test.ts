@@ -5,9 +5,9 @@
  * for the resident — its text IS the answer — and wrong for this specialist: the
  * drive drops every delta because nothing it writes reaches a person, so a run
  * that talks instead of saving delivers nothing at all. Measured on the screen
- * lane (2026-08-10): 4 of the 39 runs that were not cut off ended with one read
- * call, some prose, and no save, and each was reported as an assembly that
- * "produced nothing that renders".
+ * lane (2026-08-10): of the 39 runs that were not cut off, 3 ended after one read
+ * call with prose and no save — each reported as an assembly that "produced
+ * nothing that renders".
  *
  * A seam test like `screen-agent.test.ts` beside it: the real workspace, the real
  * render seam, and the MODEL as the only double.

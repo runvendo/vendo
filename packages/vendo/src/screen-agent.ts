@@ -536,9 +536,10 @@ export async function assembleScreen(
    * drive above drops every delta because nothing it writes as prose reaches
    * anybody — so a run that answers in prose delivers nothing, and the run before
    * this line could end that way in two steps and be reported as an assembly
-   * failure the model never knew it had. Measured 2026-08-10 on the screen lane: 4
-   * of 39 runs that were not cut off ended with one read call, some prose, and no
-   * save.
+   * failure the model never knew it had. Measured 2026-08-10 over the screen lane's
+   * 39 runs that were not cut off: 3 ended after ONE read call with prose and no
+   * save, and a fourth ground through fourteen searches and validates without one —
+   * all four reported as "assembly produced nothing that renders".
    *
    * So the loop declines the ending rather than a sentence asking it not to: the
    * turn continues, with the model's own answer handed back as the thing to save.
