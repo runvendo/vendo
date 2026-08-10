@@ -327,8 +327,6 @@ async function detectTypecheckCommand(repoDir: string): Promise<string | undefin
   return `${runner} typecheck`;
 }
 
-
-
 function commandLogLabel(command: string, index: number): string {
   const orderedLabels = ["typecheck", "build"];
   if (orderedLabels[index]) return orderedLabels[index];
@@ -468,10 +466,6 @@ async function runRepoThroughLayerOne(
     };
     const firstInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.first" });
     logPaths.push(...artifactPaths(firstInit.artifacts));
-    // init no longer codemods the layout (it only prints the paste — see
-    // vendoRootPasteLines in packages/vendo/src/cli/init.ts); the harness
-    // plays the human it printed those instructions for, so "files.expected"
-    // below still means the app is wired end to end, not just that init ran.
     if (firstInit.exitCode === 0) {
       await deps.applyVendoRootPaste(appRoot, repo.framework);
     }

@@ -129,9 +129,6 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
     ? `Corpus harness normalized bootstrap install command from "${repo.bootstrap.installCommand}" to "${installCommand.command}" so lockfile updates are allowed.\n`
     : "";
 
-  // ONE bounded retry for transient-looking registry/resolver failures.
-  // Anything else fails immediately — this is not a general flaky-install
-  // workaround.
   let retryNote = "";
   if (result.code !== 0 && isTransientBootstrapFailure(`${result.stdout}\n${result.stderr}`)) {
     const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;

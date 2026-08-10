@@ -80,8 +80,7 @@ export async function loadRepoAiExpectations(
 
 const safeRepoNamePattern = /^[a-z0-9][a-z0-9-]*$/;
 
-/** Repos with an ai-expected.json are the default AI-matrix set, mirroring
- * gallery.json discovery. */
+/** Repos with an ai-expected.json are the default AI-matrix set. */
 export async function discoverAiConfiguredRepoNames(expectationsRoot: string): Promise<string[]> {
   const entries = await readdir(expectationsRoot, { withFileTypes: true });
   const configured: string[] = [];

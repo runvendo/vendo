@@ -4,10 +4,9 @@ import { runCommand } from "./process.js";
 import { isRecord, pathExists, readOptional } from "./util.js";
 
 // Direct dependencies every injected fixture gets. @vendoai/ui rides along
-// because the corpus e2e prep mounts the shipped chat chrome
-// (@vendoai/ui/chrome VendoOverlay) exactly like a real host would — init
-// wires the provider only, and pnpm's strict node_modules make transitive
-// packages unimportable.
+// because a host may mount the shipped chat chrome itself (@vendoai/ui/chrome
+// VendoOverlay — express-host does) while init wires the provider only, and
+// pnpm's strict node_modules make transitive packages unimportable.
 export const LOCAL_DIRECT_DEPENDENCIES = ["@vendoai/vendo", "@vendoai/ui"] as const;
 
 export const LOCAL_VENDO_PACKAGE_NAMES = [
