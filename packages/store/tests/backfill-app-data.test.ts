@@ -134,6 +134,37 @@ for (const backend of backends()) {
       }
     });
 
+    /** `/` is what separates the owner leg from the caller's key, so an owner
+        carrying one writes a file key another owner can read back — owner
+        `own_a/sub` and owner `own_a`'s key `sub/x.bin` spell the same row.
+        `vendo_apps.subject` is host-chosen, so that owner is reachable here; an
+        owner this backfill cannot USE safely is reported exactly like one it
+        cannot determine, because no later door fix can unbend data already
+        written under an ambiguous key. */
+    it("reports an app whose subject carries a slash, stamping nothing and moving nothing", async () => {
+      const made = await make();
+      try {
+        await appStore(made.store).put({ kind: "user", subject: "own_a/sub" }, appFixture("app_slash"));
+        await seedLegacy(made, "app:app_slash:notes", ["s1"]);
+        await made.store.blobs("app:app_slash:docs").put("x.bin", new Uint8Array([1]));
+
+        expect(await backfillAppDataStamps(made.store)).toEqual({
+          apps: 0,
+          rowsStamped: 0,
+          rowsSkipped: 0,
+          filesMoved: 0,
+          orphanCollections: ["app:app_slash:notes", "app:app_slash:docs"],
+        });
+
+        expect(await made.sql("SELECT refs FROM vendo_records WHERE collection = $1", ["app:app_slash:notes"]))
+          .toEqual([{ refs: null }]);
+        expect(await made.sql("SELECT key FROM vendo_blobs WHERE namespace = $1", ["app:app_slash:docs"]))
+          .toEqual([{ key: "x.bin" }]);
+      } finally {
+        await made.cleanup();
+      }
+    });
+
     it("re-keys legacy files under the owner leg exactly once", async () => {
       const made = await make();
       try {

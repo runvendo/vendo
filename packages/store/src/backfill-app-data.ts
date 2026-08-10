@@ -148,9 +148,16 @@ export async function backfillAppDataOnDb(
   const worked = new Set<string>();
   for (const [name, appId] of new Map([...collections, ...namespaces])) {
     const subject = subjects.get(appId);
-    // No app row, or an app row whose subject is empty: an owner that cannot be
-    // determined is never guessed at. Reported, and left completely untouched.
-    if (subject === undefined || subject === "") {
+    // No app row, an empty subject, or a subject carrying the `/` that
+    // separates the owner leg from the caller's key: an owner that cannot be
+    // determined — or cannot be USED safely — is never guessed at. Reported,
+    // and left completely untouched. `vendo_apps.subject` is host-chosen, and
+    // an owner with a slash writes a key another owner can read back (owner
+    // `own_a/sub` and owner `own_a`'s key `sub/x.bin` spell the same row), so
+    // stamping one bends data no later door fix can unbend. Neither sanitised
+    // nor rewritten: `/` is the only thing matched here, because the owner
+    // grammar itself is being decided elsewhere.
+    if (subject === undefined || subject === "" || subject.includes("/")) {
       report.orphanCollections.push(name);
       continue;
     }
