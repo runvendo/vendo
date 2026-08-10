@@ -9,13 +9,18 @@ import { font, t } from "../tokens.js";
 export type CalloutTone = "info" | "accent" | "success" | "warning" | "danger";
 
 const TONE: Record<CalloutTone, { accent: string; icon: string }> = {
-  info: { accent: t.accent, icon: "ⓘ" },
+  // `info` is the DEFAULT tone, so it is the notice that appears most, and a
+  // notice is not an action: tinting it with the brand accent spent the host's
+  // one loud colour on a paragraph. It reads in the theme's own text tone.
+  info: { accent: `color-mix(in srgb, ${t.text} 55%, ${t.surface})`, icon: "ⓘ" },
   // "accent" is the tone the sibling vocabularies teach (Badge/EnumBadge/
   // Stat/Progress), so generated code reaches for it constantly — re-gate
   // 2026-07-26 arm C crashed on it four times. First-class, brand-accented.
   accent: { accent: t.accent, icon: "●" },
-  success: { accent: "#1e7f53", icon: "✓" },
-  warning: { accent: "#b8860b", icon: "▲" },
+  // Tints of the theme's two loud colours, not the fixed green/amber these
+  // hardcoded: a host whose palette has no green got one anyway.
+  success: { accent: `color-mix(in srgb, ${t.accent} 82%, ${t.text})`, icon: "✓" },
+  warning: { accent: `color-mix(in srgb, ${t.danger} 70%, ${t.text})`, icon: "▲" },
   danger: { accent: t.danger, icon: "✕" },
 };
 

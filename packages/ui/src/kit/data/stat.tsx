@@ -1,6 +1,6 @@
 /** Stat — a KPI/metric summary with semantic formatting (W2 §The Kit). */
 import { applyFormat, type ValueFormat } from "../format.js";
-import { font, t } from "../tokens.js";
+import { amountColor, font, t } from "../tokens.js";
 
 export interface StatProps {
   /** Metric name. */
@@ -20,7 +20,15 @@ export interface StatProps {
 const STAT_VALUE_MAX_CHARS = 40;
 
 export function Stat({ label, value, format = "text", trend, tone = "default" }: StatProps) {
-  const emphasis = tone === "accent" ? t.accent : tone === "danger" ? t.danger : t.text;
+  // A negative sum of money is a loss whether or not the writer said so.
+  const resolvedTone = tone === "default" && amountColor(value, format) ? "danger" : tone;
+  const emphasis = resolvedTone === "accent" ? t.accent : resolvedTone === "danger" ? t.danger : t.text;
+  // The rail is DECORATION, so an untoned tile draws it as a hairline in the
+  // theme's border colour — the same default `Card` already uses for its own
+  // border. Painting it `t.text` made a 3px near-black bar the loudest thing on
+  // an otherwise neutral screen, so it read as an accent colour the host never
+  // chose, while the host's real accent went unused.
+  const rail = resolvedTone === "default" ? t.border : emphasis;
   const formatted = applyFormat(value, format);
   const empty = formatted === null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;
@@ -32,7 +40,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
   return (
     <article
       data-kit="Stat"
-      data-tone={tone}
+      data-tone={resolvedTone}
       aria-label={label}
       style={{
         ...font,
@@ -40,7 +48,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         flexDirection: "column",
         gap: "var(--vendo-density-field-gap, 6px)",
         minWidth: 0,
-        borderLeft: `3px solid ${emphasis}`,
+        borderLeft: `3px solid ${rail}`,
         borderRadius: t.radiusSmall,
         background: `color-mix(in srgb, ${t.surface} 90%, ${t.background})`,
         padding: "var(--vendo-density-stat-padding, 12px 14px)",
