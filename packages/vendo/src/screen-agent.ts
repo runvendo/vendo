@@ -46,6 +46,7 @@ import {
   type TurnTools,
   type WorkspaceFs,
   type Turn,
+  type VendoViewPart,
   inputSchemaIsBlind,
   modelToolDescription,
   UNKNOWN_INPUT_SCHEMA_NOTE,
@@ -124,6 +125,11 @@ export interface ScreenSurface {
   readonly signal: AbortSignal;
   readonly threadId?: string;
   readonly turnId?: TurnId;
+  /** The last view the render seam emitted for this workspace — whatever the
+   *  wrapper's own `emit` saw. Optional so a caller inside a turn still passes its
+   *  turn verbatim; absent means nothing is known about the page, and nothing is
+   *  claimed. */
+  readonly lastView?: () => VendoViewPart | undefined;
 }
 
 export interface ScreenInput {
@@ -173,6 +179,33 @@ export const escalatedPlanPath = (appId: AppId): string => `${appDirectory(appId
 const nameOf = (content: string): string | undefined => {
   const match = /<App\b[^>]*\bname="([^"]+)"/.exec(content);
   return match?.[1]?.trim() || undefined;
+};
+
+/**
+ * A finished screen, read off the ARTIFACT — never off anything the model says
+ * about it. Three facts, all of them from machinery that already ran.
+ *
+ * **It cleared the checks floor and it painted.** The seam emits nothing at all
+ * for bytes the floor blocks ("nothing painted and the last good view stays",
+ * `render-seam.ts`), so a view existing IS the floor's verdict; `streaming:
+ * false` is the seam's own settle flag, set only on the final paint, after the
+ * app half has run.
+ *
+ * **The paint was not vacuous.** A document with no query, or one whose queries
+ * all failed, still compiles and still paints — chrome over "—" — and would
+ * satisfy a paint test with nothing on the page that any check could examine
+ * (genbench calls that `examined: 0`). The product's checking floor reports
+ * FINDINGS and never a count of what it cleared, so there is no `examined` to
+ * read; the strictest thing it does have is the app half's own answer, which
+ * rides the payload: the resolved query data the paint carried, and the
+ * `dataUnavailable` marker that says a query did not answer.
+ */
+const finishedScreen = (view: VendoViewPart | undefined): boolean => {
+  const payload = view?.payload;
+  if (payload === undefined) return false;
+  if (payload["streaming"] !== false || payload["dataUnavailable"] === true) return false;
+  const data = payload["data"];
+  return typeof data === "object" && data !== null && Object.keys(data).length > 0;
 };
 
 /**
@@ -415,6 +448,22 @@ export async function assembleScreen(
           note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.",
         };
       }
+      /**
+       * THE STOP. A screen that cleared the floor, reached the page and carries
+       * the host's own data is finished, and every step after it is a REVISION of
+       * something already good.
+       *
+       * Measured 2026-08-10 (genbench `maple/account-balances`): the first paint
+       * landed at 19.3s and the run went on to 104.7s — 82% of its wall clock
+       * spent revising — and came back with a fabricated total the first document
+       * did not have. So the drive ends here, and the mandatory reviewer below is
+       * what still gets to judge what stands.
+       *
+       * The model has no say in it: `record.painted` is the seam's own emit and
+       * the view is the payload the seam put on the page. There is no flag, no
+       * argument and no sentence in the brief about being done.
+       */
+      if (record.painted && finishedScreen(surface.lastView?.())) stop?.abort();
       return { saved: true, note: "Run validate on it now." };
     },
   };
@@ -479,6 +528,9 @@ export async function assembleScreen(
   /** The first thing that went wrong, in the shipped loop's own words
    *  (`wireErrorMessage`, applied inside `vendo()`). */
   let failure: string | undefined;
+  /** The drive in flight, so `save_app` can end it. Per drive, never per run: the
+   *  repair round below is its own drive and must start unaborted. */
+  let stop: AbortController | undefined;
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
@@ -498,7 +550,12 @@ export async function assembleScreen(
    * reason).
    */
   const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
-    for await (const event of harness.run({ ...turn, messages })) {
+    stop = new AbortController();
+    // The loop never starts another step once the signal fires, and the drain
+    // reads the SDK's `abort` part as "stop cleanly, say nothing" — so a drive
+    // ended here is not a failed turn and yields no error event.
+    const signal = AbortSignal.any([surface.signal, stop.signal]);
+    for await (const event of harness.run({ ...turn, messages, signal })) {
       if (event.type === "error") failure ??= event.message;
     }
   };
@@ -634,10 +691,17 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
       // ONE wrap for the whole screen path, here: composition hands the seam's
       // options and never has to know that a workspace must be wrapped before an
       // assembly writes to it.
+      /** What the seam last put on the page, kept where the seam's own `emit`
+       *  already passes: the assembly loop reads it to tell a finished screen from
+       *  a landed save. */
+      let lastView: VendoViewPart | undefined;
       const workspace = wrapWorkspaceForRender(base, {
         ...deps.render?.(ctx),
         ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
-        emit: (_streamId, part) => request.onView?.(part),
+        emit: (_streamId, part) => {
+          lastView = part;
+          request.onView?.(part);
+        },
       });
       const pack = await deps.briefing?.(ctx);
       const result = await assembleScreen(
@@ -645,6 +709,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
           models: deps.models,
           tools: registryTools(deps.tools, ctx),
           workspace,
+          lastView: () => lastView,
           // The front door owns cancellation: `vendo_make` resolves or it does
           // not, and the tool bridge is what a caller aborts.
           signal: new AbortController().signal,

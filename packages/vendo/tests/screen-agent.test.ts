@@ -112,6 +112,9 @@ function harness(options: {
   /** Force every commit to answer `conflict`, so nothing lands. */
   conflict?: boolean;
   authoredApp?: boolean;
+  /** What the app half answers with — the resolved query data the paint carries.
+   *  Empty by default, which is what a document with no `<Query>` really gets. */
+  authoredData?: Record<string, Json>;
   /** Guard verdicts by tool name, so a test can take a verb away from the loop. */
   guardPolicy?: Record<string, "run" | "ask" | "block">;
 }): Harness {
@@ -141,7 +144,7 @@ function harness(options: {
       ...(options.authoredApp === false ? {} : {
         authoredApp: async (input) => {
           authoredCalls.push(input);
-          return { data: {} };
+          return { data: options.authoredData ?? {} };
         },
       }),
     }),
@@ -331,5 +334,60 @@ describe("the guard is the same guard, whichever door", () => {
     });
     await screen.assemble("show me my spending");
     expect(screen.invocations["maple_spend_summary"]).toBe(1);
+  });
+});
+
+/**
+ * THE ARTIFACT ENDS THE DRIVE, NOT THE MODEL.
+ *
+ * Measured 2026-08-10 (genbench `maple/account-balances`): the first paint landed
+ * at 19.3s and the run went on to 104.7s, spending 82% of its wall clock revising
+ * a screen it already had — and the revision came back with a fabricated total the
+ * first document did not carry.
+ *
+ * Every case here is scripted with MORE turns than it should need, so the count of
+ * model calls is the assertion: a loop that kept going would consume them.
+ */
+describe("the run stops on a finished screen", () => {
+  /** Non-empty, because that is what a document with a `<Query>` really paints
+   *  with — and an empty answer is the vacuous paint the stop must refuse. */
+  const ROWS: Record<string, Json> = { accounts: [{ id: "acc_1", balance: 12_345 }] };
+
+  it("ends the drive on a save that cleared the floor, painted, and carried data", async () => {
+    const screen = harness({
+      turns: [saveApp(GOOD_APP), saveApp(GOOD_APP), textTurn("done")],
+      authoredData: ROWS,
+    });
+    const result = await screen.assemble("show me my spending");
+
+    expect(result.kind).toBe("assembled");
+    // ONE model call: the save. The second save and the closing sentence were
+    // scripted and never asked for.
+    expect(screen.model.calls).toBe(1);
+    expect(screen.workspace.commits).toHaveLength(1);
+    // The screen the person keeps is the one that painted.
+    expect(screen.emitted.at(-1)?.payload.streaming).toBe(false);
+  });
+
+  it("keeps going on a paint with nothing on it — a screen with no data is not finished", async () => {
+    // Same document, same floor, same paint. The only difference is that the app
+    // half resolved nothing, which is `examined: 0`: there is no value on that
+    // screen any check could have cleared.
+    const screen = harness({ turns: [saveApp(GOOD_APP), saveApp(GOOD_APP), textTurn("done")] });
+    await screen.assemble("show me my spending");
+    expect(screen.model.calls).toBe(3);
+    expect(screen.workspace.commits).toHaveLength(2);
+  });
+
+  it("keeps going on a save that never reached the screen, however much data it would have had", async () => {
+    // The floor's refusal leaves the previous view standing, so there is no paint
+    // to stop on — the fact the hand already reports back to the model.
+    const screen = harness({
+      turns: [saveApp(BROKEN_APP), saveApp(BROKEN_APP), textTurn("done")],
+      authoredData: ROWS,
+    });
+    await screen.assemble("show me my spending");
+    expect(screen.emitted).toHaveLength(0);
+    expect(screen.model.calls).toBe(3);
   });
 });
