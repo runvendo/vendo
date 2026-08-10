@@ -194,6 +194,67 @@ variables and the ambient Kit: no hex colours, no gradients, no named or importe
 fonts, no emoji standing in for an icon. An island that invents a palette is the
 one thing on the screen that looks like it came from somewhere else.
 
+## This product's design rules are choices you make here
+
+This product writes down how its screens should look, in its own words — the
+block headed HOST DESIGN RULES in this brief. Read it before you write anything,
+and read it again before you report done: your screen gets read back against
+those lines one at a time. They are written as outcomes a person can see ("one
+thing leads", "amounts line up on the decimal point", "a list row is one line
+tall"), and every one of them is decided here, by which part you name and which
+props you set on it. The translation, whatever the rules turn out to say:
+
+**A rule about what LEADS.** The screen opens with a title —
+\`<Text variant="heading">\` — and under it the one value that answers the ask, as
+a single \`Stat\`. A \`Stat\`'s value is the biggest text the Kit renders, so three
+\`Stat\`s side by side are three headlines and nothing leads. Put the answer in
+one, and let the figures that support it live as columns of the table underneath,
+or as a \`CardList\`'s \`fields\`.
+
+**A rule about amounts LINING UP.** A column of amounts only exists in a column:
+a \`DataTable\` column, or a \`CardList\`'s \`fields\`, which already put the label
+left and the value right on every card. In a table column write both —
+\`format:"money"\` renders the digits fixed-width so the decimals stack, and
+\`align:"end"\` right-aligns the column against them — and leave the label column
+on its default left. Amounts side by side in a \`Row\` of \`Stat\`s are not a column,
+and no prop turns them into one.
+
+**A rule about DENSITY or row height.** A row is one line tall until something in
+it wraps, and no prop shortens a cell — so give the column less to say.
+\`format:"date"\` renders "Mar 14, 2026" where the raw field is a full timestamp,
+a short \`label\` keeps a header off two lines, \`badgeField\` on a \`CardList\` turns
+a status into a pill instead of a sentence, and four columns that fit beat seven
+that wrap. A column whose content wraps is a column to cut, or one to feed a
+shorter field.
+
+**A rule about TEXT TONES.** The parts' own slots already carry the tones: a
+\`Stat\`'s \`label\` is muted and its \`value\` full strength, a \`DataTable\` header is
+muted and its cells are not, a \`CardList\` field's \`label\` is muted and its value
+is not. Put the label in the \`label\` slot rather than writing your own text
+beside the value, and where a line really is yours, \`<Text variant="caption">\` is
+the muted one.
+
+**A rule about the ACCENT or the brand colour.** You never write the colour; you
+name the role and the theme paints it. The accent belongs to the primary action —
+\`<Button label="…" variant="primary" onClick="…"/>\` — and to at most one leading
+part, \`tone="accent"\` on the \`Stat\` or \`Card\` that IS the answer. A destructive
+control is \`variant="danger"\`; a bad status is \`tones={{ overdue: "danger" }}\` on
+an \`EnumBadge\`. A screen where every part is left on its default tone is a screen
+with none of this product's own colour anywhere on it.
+
+**A rule about EMPTY, zero or still-loading results.** Every part that can come
+back with nothing takes the sentence it shows instead — \`emptyState\` on
+\`DataTable\`, \`CardList\` and every chart. Write it in this product's words,
+"Nothing overdue this month" and never "No data", because that string IS the
+screen on the day the query returns no rows.
+
+**A rule about SPACING.** Every card, tile and table pads itself from the theme,
+and \`Stack\`, \`Row\` and \`Grid\` already carry the gap between siblings — so leave
+\`gap\` off rather than pick a number, and never wrap a part in another container
+to push it around. And a \`display="stage"\` app is a tall canvas: three tiles
+across the top with blank space under them is a failed screen. What fills it is
+the rows behind those numbers, as the table or the chart in the same group.
+
 ## 3. When part of it has to happen while they are away
 
 Some asks are not only a view. "Check every morning", "whenever an invoice comes
