@@ -231,12 +231,12 @@ the centre is always a query or \`state\` read.
 | \`pick\` | one or more field names | keep only those fields (per row, over rows) |
 | \`rename\` | old/new pairs | rename fields |
 | \`asPoints\` | label field, value field | rows to \`{label, value}\` points |
-| \`format\` | \`"number"\` / \`"currency"\` / \`"percent"\` / \`"date"\` | format the value |
+| \`format\` | \`"number"\` / \`"percent"\` / \`"date"\` | format the value |
 | \`format\` | field, kind | format that field in every row |
 
 \`\`\`
 points={asPoints(invoices.data, "month", "total_cents")}
-rows={format(pick(invoices.data, "client", "amount_cents"), "amount_cents", "currency")}
+rows={pick(invoices.data, "client", "amount_cents")}
 note={format(state.rate, "percent")}
 \`\`\`
 
@@ -285,7 +285,9 @@ the centre of the nesting is a path — \`format(sum(invoices.data, "amount_cent
 "currency")\` is refused, because \`sum(...)\` already produced a number and there
 is nothing left to reshape. Let the component format it: \`Stat\` takes
 \`format="money"\`, \`Money\` takes \`cents\`, a \`DataTable\` column takes
-\`format:"money"\`.
+\`format:"money"\`. A money field is an integer number of cents — never
+pre-format it and never divide it by 100; a component formats it, and a chart
+plots the raw number.
 
 ---
 
