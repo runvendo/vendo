@@ -14,7 +14,7 @@ import type { ThemeStageInput } from "./extract/stages.js";
 import { runProseStages } from "./init-judgment.js";
 import { selectJudgmentEngines, type AvailableEngine } from "./judge/engine.js";
 import { runJudgmentPass, type JudgmentPassOptions } from "./judge/pass.js";
-import { plainSelect, type SelectOption } from "./pretty.js";
+import { plainSelect, type PrettyOutput, type SelectOption } from "./pretty.js";
 import {
   extractTheme,
   toVendoTheme,
@@ -79,6 +79,21 @@ export interface SyncFlowOptions {
   spinner?: { spin: (label: string) => void; stopSpin: () => void };
   /** Test seam: the wall-clock budget for each Cloud reconcile. */
   baselineBudgetMs?: number;
+}
+
+/** Everything a renderer contributes to a flow run: the questions AND the
+    spinner. ONE spelling for both commands on purpose — `vendo sync` passed the
+    spinner from day one and `vendo init` never did, so the slowest phases of
+    every install ran against a dead screen (#1163). A caller that overrides one
+    of these spreads its own value after this. */
+export function rendererFlowOptions(
+  pretty: Pick<PrettyOutput, "confirm" | "select" | "spin" | "stopSpin"> | null,
+): Pick<SyncFlowOptions, "confirm" | "choose" | "spinner"> {
+  return pretty === null ? {} : {
+    confirm: pretty.confirm,
+    choose: pretty.select,
+    spinner: { spin: pretty.spin, stopSpin: pretty.stopSpin },
+  };
 }
 
 /** A slow phase under the caller's spinner, when it supplied one. */
@@ -511,16 +526,23 @@ async function runGradingStages(input: {
   // The prose stages — the product brief and the theme fill — read the GRADED
   // catalog, so they run after the pass. Full mode only: `vendo sync` in
   // predev must not redraft a brief on every dev-server start.
+  //
+  // Under the spinner, and this is the phase that most needs it: the pass above
+  // answers in milliseconds when nothing changed, so its `finally` stopped the
+  // spinner right before the two model calls that own MINUTES of the run. That
+  // left the longest stretch of the install as a dead screen (#1163).
   if (mode === "full" && selection.engine !== undefined) {
-    const stages = await runProseStages({
+    const { harness } = selection.engine;
+    const tools = await exists(join(vendoDir, "tools.json"));
+    const stages = await withSpin(options.spinner, spinLabel, () => runProseStages({
       root,
       output,
       env,
-      harness: selection.engine.harness,
-      tools: await exists(join(vendoDir, "tools.json")),
+      harness,
+      tools,
       ...(options.force === true ? { force: true } : {}),
       ...(themeSummary === null ? {} : { theme: themeStageInput(themeSummary) }),
-    });
+    }));
     themeDraft = stages.theme ?? null;
   }
   return { judged, themeDraft };

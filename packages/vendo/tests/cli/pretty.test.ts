@@ -2,6 +2,7 @@ import { PassThrough, Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPrettyOutput, displayWidth, plainSelect, usePrettyOutput, type SelectInput } from "../../src/cli/pretty.js";
 import { plainSecret, plainText } from "../../src/cli/pretty.js";
+import { BANNER_COMPACT, BANNER_CONCEPT, bannerFrames } from "../../src/cli/banner.js";
 
 const ESC = "\u001b";
 
@@ -114,9 +115,88 @@ describe("createPrettyOutput (visual system)", () => {
     expect(without.plain()).not.toContain("▄▄█████▄");
   });
 
-  it("renders the wired section with colored diff markers and bar-prefixed paths", () => {
+  it("the banner ARRIVES: the flow plays in place, once, and settles into the mark", async () => {
+    vi.useFakeTimers();
+    const out = sink();
+    const frames = bannerFrames(BANNER_COMPACT, "truecolor", BANNER_CONCEPT);
+    const pretty = createPrettyOutput({ write: out.write, env: { COLORTERM: "truecolor" } });
+    // Construction starts it, so the arrival plays over the stack detection the
+    // run does before its first line. Frame one is NOT the mark yet.
+    expect(out.raw()).toBe(`${frames[0]!}\n`);
+    expect(out.plain()).not.toContain(BANNER_COMPACT.join("\n"));
+
+    await vi.advanceTimersByTimeAsync(90 * frames.length);
+    // One cursor-up redraw per frame after the first — in place, no alternate
+    // screen buffer, and it ends on the settled frame.
+    expect(out.raw().split(`${ESC}[${BANNER_COMPACT.length}A`)).toHaveLength(frames.length);
+    expect(out.raw()).not.toContain("?1049h");
+    expect(out.plain()).toContain(BANNER_COMPACT.join("\n"));
+
+    // Played once: the frames stop, and the header lands under the settled mark.
+    await pretty.arrived;
+    const settled = out.raw();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(out.raw()).toBe(settled);
+    pretty.log("hello");
+    const plain = out.plain();
+    expect(plain).toContain("Customize your product with an embedded agent");
+    expect(plain.lastIndexOf(BANNER_COMPACT.join("\n"))).toBeLessThan(plain.indexOf("┌  vendo init"));
+  });
+
+  it("a line printed mid-arrival settles the mark first — the header never lands on a half-drawn one", () => {
+    const out = sink();
+    const frames = bannerFrames(BANNER_COMPACT, "truecolor", BANNER_CONCEPT);
+    const pretty = createPrettyOutput({ write: out.write, env: { COLORTERM: "truecolor" } });
+    // Not one frame has had time to tick; the run wants the screen anyway.
+    expect(out.raw()).toBe(`${frames[0]!}\n`);
+    pretty.log("hello");
+    const plain = out.plain();
+    // The mark is whole, and everything else is under it: the animation can
+    // never delay a line, and never costs one either.
+    expect(plain).toContain(BANNER_COMPACT.join("\n"));
+    expect(plain.indexOf(BANNER_COMPACT.join("\n")))
+      .toBeLessThan(plain.indexOf("Customize your product with an embedded agent"));
+    expect(plain.indexOf("Customize your product")).toBeLessThan(plain.indexOf("┌  vendo init"));
+  });
+
+  it("banner: false starts no arrival — no frames, no cursor games, and nothing to await", async () => {
     const out = sink();
     const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.log("hello");
+    expect(out.raw()).not.toContain(`${ESC}[${BANNER_COMPACT.length}A`);
+    await expect(pretty.arrived).resolves.toBeUndefined();
+  });
+
+  // `arrived` is what init awaits before its first block. It must settle on a
+  // run that never let the arrival finish too, or the wait becomes a hang.
+  it("arrived settles even when a line cut the arrival short", async () => {
+    vi.useFakeTimers();
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, env: { COLORTERM: "truecolor" } });
+    pretty.log("hello");
+    const waited = pretty.arrived;
+    await vi.advanceTimersByTimeAsync(90);
+    await expect(waited).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["non-TTY stdout", { isTTY: false }, {}],
+    ["NO_COLOR set", { isTTY: true }, { NO_COLOR: "1" }],
+    ["CI set", { isTTY: true }, { CI: "true" }],
+    ["TERM=dumb", { isTTY: true }, { TERM: "dumb" }],
+  ] as const)("never animates under %s — today's exact plain line, byte for byte", (_name, stream, env) => {
+    const out = sink();
+    const message = "Wired (1 file):";
+    if (usePrettyOutput(stream, env)) createPrettyOutput({ write: out.write, env }).log(message);
+    else out.write(`${message}\n`);
+    expect(out.raw()).toBe(`${message}\n`);
+  });
+
+  it("renders the wired section with colored diff markers and bar-prefixed paths", () => {
+    const out = sink();
+    // env pinned: the accent follows the terminal's colour depth now, so a bare
+    // process.env would make this assert whatever the machine happens to be.
+    const pretty = createPrettyOutput({ write: out.write, banner: false, env: {} });
     pretty.log("\nWired (3 files):");
     pretty.log("  + vendo/registry.tsx");
     pretty.log("  + app/api/vendo/[...vendo]/route.ts");
@@ -133,7 +213,7 @@ describe("createPrettyOutput (visual system)", () => {
 
   it("renders Vendo Cloud as the emphasized section: header, ✦ bullets, → CTA", () => {
     const out = sink();
-    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    const pretty = createPrettyOutput({ write: out.write, banner: false, env: {} });
     pretty.log("\nVendo Cloud (optional): not configured. A key unlocks team sharing & org governance; hosted automations; the MCP broker.");
     pretty.log("Run `vendo login` to claim a free API key; it lands in .env.local.");
     const plain = out.plain();
@@ -147,6 +227,28 @@ describe("createPrettyOutput (visual system)", () => {
     // The header is bold + the brand accent (the most prominent block on screen).
     expect(out.raw()).toContain(`${ESC}[95mVendo Cloud${ESC}[39m`);
     expect(out.raw()).toContain(`${ESC}[1m`);
+  });
+
+  // The rail's accent shipped as ANSI magenta on every terminal while the mark
+  // right above it drew the real ramp, so the two were a shade apart (#1166).
+  it("takes the brand's truecolor accent where the terminal can show it, ANSI magenta where it cannot", () => {
+    const lines = (env: Record<string, string | undefined>): string => {
+      const out = sink();
+      const pretty = createPrettyOutput({ write: out.write, banner: false, env });
+      pretty.log("\nWired (1 file):");
+      pretty.log("  ~ package.json");
+      pretty.log("\nVendo Cloud: keyed");
+      return out.raw();
+    };
+    // #a78bfa — the colour the banner's ramp ends on, not a second purple.
+    const truecolor = lines({ COLORTERM: "truecolor" });
+    expect(truecolor).toContain(`${ESC}[38;2;167;139;250m◆`);
+    expect(truecolor).toContain(`${ESC}[38;2;167;139;250mkeyed${ESC}[39m`);
+    expect(truecolor).not.toContain(`${ESC}[95m`);
+
+    const ansi = lines({ TERM: "xterm-256color" });
+    expect(ansi).toContain(`${ESC}[95m◆`);
+    expect(ansi).not.toContain("38;2;167;139;250");
   });
 
   it("renders a configured Vendo Cloud key under the same emphasized header", () => {
@@ -350,6 +452,48 @@ describe("createPrettyOutput (visual system)", () => {
     // Right under the wrap line it explains, and dim.
     expect(plain.indexOf("</VendoProvider>")).toBeLessThan(plain.indexOf("docs.vendo.run/quickstart"));
     expect(out.raw()).toContain(`${ESC}[2mdocs.vendo.run/quickstart#the-client-mount`);
+  });
+
+  it("prints the mount paste as real JSX, with a dim … for the app tree already there", () => {
+    const out = sink();
+    const rule = "─".repeat(64);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.log(`\n${rule}`);
+    pretty.log("ONE STEP LEFT — paste this yourself (init never edits your files)");
+    pretty.log("\n  File: app/layout.tsx");
+    pretty.log("    import { VendoProvider } from \"@vendoai/vendo/react\";");
+    pretty.log("    import theme from \"../.vendo/theme.json\";");
+    pretty.log("    import type { VendoTheme } from \"@vendoai/vendo\";");
+    pretty.log("    … then wrap: <VendoProvider baseUrl=\"/api/vendo\" theme={theme as VendoTheme}>{children}</VendoProvider>");
+    pretty.log(rule);
+    const plain = out.plain();
+    // The prose instruction is gone; what is left reads as the code it is.
+    expect(plain).not.toContain("… then wrap:");
+    expect(plain).not.toContain("{children}");
+    expect(plain).toContain("│    <VendoProvider baseUrl=\"/api/vendo\" theme={theme as VendoTheme}>");
+    expect(plain).toContain("│      …");
+    expect(plain).toContain("│    </VendoProvider>");
+    // A blank rail line sets the wrap apart from the imports above it.
+    expect(plain).toContain("│    import type { VendoTheme } from \"@vendoai/vendo\";\n│\n│    <VendoProvider");
+    // The app tree is a dim PLACEHOLDER, not code to paste…
+    expect(out.raw()).toContain(`${ESC}[2m…${ESC}[22m`);
+    // …which is exactly what the docs pointer under it exists to resolve.
+    expect(plain.indexOf("│    </VendoProvider>")).toBeLessThan(plain.indexOf("docs.vendo.run/quickstart"));
+  });
+
+  it("keeps the real JSX when the host is a pages `_app` — the child expression differs, the shape does not", () => {
+    const out = sink();
+    const rule = "─".repeat(64);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.log(`\n${rule}`);
+    pretty.log("ONE STEP LEFT — paste this yourself (init never edits your files)");
+    pretty.log("\n  File: pages/_app.tsx");
+    pretty.log("    … then wrap: <VendoProvider baseUrl=\"/api/vendo\"><Component {...pageProps} /></VendoProvider>");
+    pretty.log(rule);
+    const plain = out.plain();
+    expect(plain).toContain("│    <VendoProvider baseUrl=\"/api/vendo\">");
+    expect(plain).toContain("│      …");
+    expect(plain).not.toContain("pageProps");
   });
 
   it("leaves a paste block with no mount snippet without the docs pointer", () => {

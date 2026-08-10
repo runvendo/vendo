@@ -11,7 +11,7 @@ import { AUTH_MD_URL, ensureEnvLocalIgnored, runCloudStep, upsertEnvLocal, type 
 import { runDoctor } from "./doctor.js";
 import type { InitPolishSeam } from "./init-judgment.js";
 import { planMcp, type McpPosture } from "./init-mcp.js";
-import { runSyncFlow, type SyncFlowResult } from "./sync-flow.js";
+import { rendererFlowOptions, runSyncFlow, type SyncFlowResult } from "./sync-flow.js";
 import { BRIEF_TEMPLATE } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, workspaceHostCandidates, type HostFramework } from "./framework.js";
@@ -263,6 +263,33 @@ function printThemeSummary(summary: ThemeSummary, output: Output): void {
   }
   for (const error of summary.errors) output.error(`warning: ${error}`);
   output.log("Theme lives in .vendo/theme.json — edit it anytime; it is the source of truth.");
+}
+
+/** The model writes these notes, at whatever length it likes, in its own first
+    person — one ran to ~450 characters. On the rail the whole thing is a dim
+    hint, so the FIRST sentence is the share that earns the space: it is the
+    reading it chose, and the rest is the alternative it rejected (#1165). */
+export function firstSentence(note: string): string {
+  const end = /[.;](?:\s|$)/.exec(note);
+  const head = (end === null ? note : note.slice(0, end.index)).trim();
+  return head.length > 160 ? `${head.slice(0, 159).trimEnd()}…` : head;
+}
+
+/** The same review on the rail: a `◇` question per slot, the model's reasoning
+    as a dim hint under it, and the `●` receipt — instead of a 450-character
+    unstyled line at column 0, the one place the rail used to die (#1165). */
+export function prettyThemeReview(pretty: Pick<PrettyOutput, "text">) {
+  return async (summary: ThemeSummary): Promise<Record<string, string>> => {
+    const overrides: Record<string, string> = {};
+    for (const { slot, note } of summary.uncertain) {
+      const answer = await pretty.text(
+        `Theme ${slot} is uncertain — extracted ${summary.slots[slot]}. Replacement value, or Enter to keep`,
+        firstSentence(note),
+      );
+      if (answer !== "") overrides[slot] = answer;
+    }
+    return overrides;
+  };
 }
 
 /** Interactive review of model-flagged uncertain slots (the ONLY theme question). */
@@ -1231,8 +1258,9 @@ async function finalizeTheme(input: {
   themePath: string;
   options: InitOptions;
   output: Output;
+  pretty: PrettyOutput | null;
 }): Promise<void> {
-  const { themeSummary, themeDraft, themePath, options, output } = input;
+  const { themeSummary, themeDraft, themePath, options, pretty, output } = input;
   const summary = themeDraft === null ? themeSummary : applyThemeDraft(themeSummary, themeDraft);
   // --theme answers land first; the review prompt then covers only the
   // uncertain slots the flags left unanswered (non-interactive runs keep
@@ -1240,7 +1268,9 @@ async function finalizeTheme(input: {
   const answers: Record<string, string> = { ...(options.themeAnswers ?? {}) };
   const unanswered = summary.uncertain.filter((entry) => !Object.hasOwn(answers, entry.slot));
   if (unanswered.length > 0 && options.yes !== true) {
-    const reviewed = await (options.themeReview ?? defaultThemeReview)(
+    const review = options.themeReview
+      ?? (pretty === null ? defaultThemeReview : prettyThemeReview(pretty));
+    const reviewed = await review(
       unanswered.length === summary.uncertain.length ? summary : { ...summary, uncertain: unanswered },
     );
     for (const [slot, raw] of Object.entries(reviewed)) {
@@ -1276,7 +1306,9 @@ function printClosingSteps(input: {
       for (const line of step.lines) output.log(`    ${line}`);
       output.log(`\n  ${step.why}`);
     }
-    output.log("  Then confirm it landed: npx vendo doctor");
+    // No `Then confirm it landed: npx vendo doctor` here: the ending below
+    // already names doctor, six lines down, and saying it twice is the
+    // duplication the redesign set out to remove (#1164).
     output.log(rule);
   }
   // Express and custom hosts have no single host file to name, so their
@@ -1517,7 +1549,10 @@ async function runInstallSyncFlow(input: {
     ...(ai === undefined ? {} : { ai }),
     ...(options.force === true ? { force: true } : {}),
     ...(engine === undefined ? {} : { engine }),
-    ...(pretty === null ? {} : { confirm: pretty.confirm, choose: pretty.select }),
+    // The questions AND the spinner, in the one spelling sync uses: passing
+    // only the questions is what left every slow phase of an install frozen
+    // (#1163).
+    ...rendererFlowOptions(pretty),
     ...(extract.choose === undefined ? {} : { choose: extract.choose }),
     judge: {
       ...(extract.harnesses === undefined ? {} : { harnesses: extract.harnesses }),
@@ -1687,7 +1722,15 @@ export async function runInit(options: InitOptions): Promise<number> {
 
   // The read-back first: every fact below is already detected for other
   // reasons, and showing it is the moment the tool proves it looked.
-  if (pretty !== null) pretty.block("Your stack", await stackLines(root, await resolveFramework(root, options)));
+  if (pretty !== null) {
+    // Detect FIRST, print second: the banner's arrival plays over this work.
+    // It reads a handful of files, though, so the arrival is the longer of the
+    // two — awaiting the remainder is what makes it an arrival instead of a
+    // flash, and it is bounded by the frame budget (~1.3s), not by this run.
+    const stack = await stackLines(root, await resolveFramework(root, options));
+    await pretty.arrived;
+    pretty.block("Your stack", stack);
+  }
   const useCase = await resolveUseCase({ options, pretty, interactive });
 
   // (No stdin-TTY guard on these defaults: an unshown auth confirm resolving
@@ -1773,7 +1816,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // finally the uncertain-slot review. Skipped entirely when theme.json
     // pre-existed this run (the flow reconciles that one instead).
     if (themeSummary !== null) {
-      await finalizeTheme({ themeSummary, themeDraft: flow.themeDraft, themePath, options, output });
+      await finalizeTheme({ themeSummary, themeDraft: flow.themeDraft, themePath, options, output, pretty });
     }
 
     // Judgment state, one line: a pass that ran already narrated itself (it

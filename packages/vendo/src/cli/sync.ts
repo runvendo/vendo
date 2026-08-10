@@ -5,7 +5,7 @@ import type { ToolImpact } from "../sync-impact.js";
 import { pushSyncReport } from "./cloud/services.js";
 import type { JudgmentPassOptions } from "./judge/pass.js";
 import { createPrettyOutput, usePrettyOutput, type PrettyOutput } from "./pretty.js";
-import { runSyncFlow, type SyncFlowResult } from "./sync-flow.js";
+import { rendererFlowOptions, runSyncFlow, type SyncFlowResult } from "./sync-flow.js";
 import { applyThemeDraft, toVendoTheme } from "./theme/extract-theme.js";
 import { consoleOutput, invokedByPackageScript, withCommandRun, writeText, type Output, type TelemetryOptions } from "./shared.js";
 
@@ -223,12 +223,8 @@ async function sync(options: SyncOptions): Promise<number> {
       ...(options.url === undefined ? {} : { url: options.url }),
       ...(options.sync === undefined ? {} : { sync: options.sync }),
       ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-      ...(options.confirm === undefined
-        ? (pretty === null ? {} : { confirm: pretty.confirm })
-        : { confirm: options.confirm }),
-      ...(pretty === null
-        ? {}
-        : { choose: pretty.select, spinner: { spin: pretty.spin, stopSpin: pretty.stopSpin } }),
+      ...rendererFlowOptions(pretty),
+      ...(options.confirm === undefined ? {} : { confirm: options.confirm }),
       ...(options.judge === undefined ? {} : { judge: options.judge }),
       ...(options.pushComponents === undefined ? {} : { pushComponents: options.pushComponents }),
       ...(options.baselineBudgetMs === undefined ? {} : { baselineBudgetMs: options.baselineBudgetMs }),

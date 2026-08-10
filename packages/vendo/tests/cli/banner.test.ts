@@ -123,6 +123,11 @@ describe("bannerFrames", () => {
   });
 });
 
+/** One in-place frame redraw, exactly as playBanner writes it. */
+function redraw(frame: string): string {
+  return `${ESC}[${BANNER_COMPACT.length}A${frame.split("\n").map((row) => `${ESC}[2K${row}`).join("\n")}\n`;
+}
+
 describe("playBanner", () => {
   it("redraws in place, plays once, and ends on the settled frame", async () => {
     const chunks: string[] = [];
@@ -146,5 +151,33 @@ describe("playBanner", () => {
     const chunks: string[] = [];
     await playBanner((chunk) => { chunks.push(chunk); }, [], 0);
     expect(chunks).toHaveLength(0);
+  });
+
+  it("an abort mid-arrival settles INSIDE abort(), then stops", async () => {
+    const chunks: string[] = [];
+    const frames = bannerFrames(BANNER_COMPACT, "ansi", BANNER_CONCEPT);
+    const arrival = new AbortController();
+    const played = playBanner((chunk) => { chunks.push(chunk); }, frames, 5, arrival.signal);
+    expect(chunks.join("")).toBe(`${frames[0]!}\n`);
+
+    arrival.abort();
+    // Synchronously, before abort() returned: whatever the caller prints on the
+    // very next statement lands under the FINISHED mark, never a half-drawn one.
+    expect(chunks.join("")).toBe(`${frames[0]!}\n${redraw(frames.at(-1)!)}`);
+
+    const settled = chunks.length;
+    await played;
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    expect(chunks).toHaveLength(settled);
+  });
+
+  it("an abort after it already settled redraws nothing", async () => {
+    const chunks: string[] = [];
+    const frames = bannerFrames(BANNER_COMPACT, "ansi", BANNER_CONCEPT);
+    const arrival = new AbortController();
+    await playBanner((chunk) => { chunks.push(chunk); }, frames, 0, arrival.signal);
+    const settled = chunks.join("");
+    arrival.abort();
+    expect(chunks.join("")).toBe(settled);
   });
 });

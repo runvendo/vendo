@@ -7,7 +7,7 @@ import { claudeCliHarness } from "../../src/cli/extract/claude-cli-harness.js";
 import type { ExtractionHarness } from "../../src/cli/extract/harness.js";
 import { npxEngineHarness } from "../../src/cli/extract/npx-engine-harness.js";
 import type { Output } from "../../src/cli/shared.js";
-import { readEnvFiles, runSyncFlow, type SyncFlowOptions, type SyncFlowResult } from "../../src/cli/sync-flow.js";
+import { readEnvFiles, rendererFlowOptions, runSyncFlow, type SyncFlowOptions, type SyncFlowResult } from "../../src/cli/sync-flow.js";
 
 /**
  * The ONE flow `vendo init` (mode "full") and `vendo sync` (mode "incremental")
@@ -182,6 +182,24 @@ describe("the slow phases spin when the caller supplies one", () => {
     run: async () => "```json\n" + JSON.stringify({ tools: [], narrative: "" }) + "\n```",
   };
 
+  // Cause one of #1163: init handed the flow its questions and NOT its spinner,
+  // so `withSpin` was a no-op for every install. Both commands now build these
+  // options the same way, which is the only thing that keeps them in step.
+  it("a renderer contributes its spinner, not just its questions", () => {
+    const pretty = {
+      confirm: async () => true,
+      select: async () => "",
+      spin: () => {},
+      stopSpin: () => {},
+    };
+    const wired = rendererFlowOptions(pretty);
+    expect(wired.spinner).toBeDefined();
+    expect(wired.confirm).toBe(pretty.confirm);
+    expect(wired.choose).toBe(pretty.select);
+    // No renderer → the flow keeps today's plain behaviour, nothing added.
+    expect(rendererFlowOptions(null)).toEqual({});
+  });
+
   it("labels extraction and the judgment pass in both modes", async () => {
     const seen: Record<string, { labels: string[]; stops: number; logs: string[] }> = {};
     for (const mode of ["full", "incremental"] as const) {
@@ -197,11 +215,17 @@ describe("the slow phases spin when the caller supplies one", () => {
       });
       seen[mode] = { labels, stops, logs };
     }
+    // THREE phases in full mode, and the third is the one that matters: the
+    // judgment pass answers in milliseconds when nothing changed, so its
+    // `finally` used to stop the spinner right before the prose stages — the
+    // two model calls that own minutes of the run — leaving the longest stretch
+    // of an install as a dead screen (#1163).
     expect(seen.full!.labels).toEqual([
       "Re-reading your product…",
       "Reading your product (a scripted engine)…",
+      "Reading your product (a scripted engine)…",
     ]);
-    expect(seen.full!.stops).toBe(2);
+    expect(seen.full!.stops).toBe(3);
     // The line became the label; it is not ALSO printed.
     expect(seen.full!.logs.join("\n")).not.toContain("Reading your product");
     expect(seen.incremental!.labels).toEqual([

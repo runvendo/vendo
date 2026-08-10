@@ -7,7 +7,7 @@ import { createGuard } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtractionHarness } from "../../src/cli/extract/harness.js";
-import { runInit } from "../../src/cli/init.js";
+import { firstSentence, prettyThemeReview, runInit } from "../../src/cli/init.js";
 import { CLI_VERSION, type Output } from "../../src/cli/shared.js";
 
 const cleanup: string[] = [];
@@ -1673,7 +1673,10 @@ describe("the mount paste (init never edits user-authored source)", () => {
     expect(logs).toContain(`File: ${join("app", "layout.tsx")}`);
     expect(logs).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
     expect(logs).toContain('<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}</VendoProvider>');
-    expect(logs).toContain("Then confirm it landed: npx vendo doctor");
+    // Doctor is named ONCE, at the ending — never a second time inside the
+    // paste frame (#1164).
+    expect(logs).not.toContain("Then confirm it landed: npx vendo doctor");
+    expect(logs.match(/npx vendo doctor/g)).toHaveLength(1);
     // No layout diff is even proposed.
     expect(logs).not.toContain("~ " + join("app", "layout.tsx"));
   });
@@ -2036,5 +2039,51 @@ describe("the five questions", () => {
       runCheck: async () => { throw new Error("doctor exploded"); },
     })).toBe(0);
     expect(asked).toEqual(["Start your dev server and run a live check now?"]);
+  });
+});
+
+/**
+ * #1165 — the uncertain-slot review used to hand a raw readline prompt a
+ * ~450-character string, so it landed at column 0 with no rail, no wrapping and
+ * the model's first person intact: the only place in the run where the rail
+ * died. On the rail it is a `◇` question with the reasoning as a dim hint.
+ */
+describe("the uncertain-theme-slot review", () => {
+  const NOTE = "app/page.module.css defines two neutrals: `--background: #fafafa` on the "
+    + "full-height `.page` wrapper and `--foreground: #fff` painting the `.main` content "
+    + "panel. I picked #fafafa because it is the only neutral distinct from the "
+    + "already-fixed background (#ffffff); a literal cards/panels reading of `.main` would "
+    + "instead give #ffffff, identical to background.";
+  const summary = {
+    slots: { surface: "#fafafa" },
+    uncertain: [{ slot: "surface", note: NOTE }],
+  } as unknown as Parameters<ReturnType<typeof prettyThemeReview>>[0];
+
+  it("asks through the renderer, with the model's reasoning trimmed to the reading it chose", async () => {
+    const asked: { question: string; hint?: string }[] = [];
+    const review = prettyThemeReview({
+      text: async (question: string, hint?: string) => { asked.push({ question, hint }); return ""; },
+    });
+    await expect(review(summary)).resolves.toEqual({});
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.question).toBe(
+      "Theme surface is uncertain — extracted #fafafa. Replacement value, or Enter to keep",
+    );
+    // The hint is the reading it CHOSE. The rejected alternative and the "I
+    // picked…" first person behind it are what made the line a wall.
+    expect(asked[0]!.hint!.length).toBeLessThan(NOTE.length / 2);
+    expect(asked[0]!.hint).not.toContain("I picked");
+    expect(asked[0]!.hint).toContain("app/page.module.css defines two neutrals");
+  });
+
+  it("keeps a typed replacement and treats Enter as keep", async () => {
+    await expect(prettyThemeReview({ text: async () => "#ffffff" })(summary))
+      .resolves.toEqual({ surface: "#ffffff" });
+    await expect(prettyThemeReview({ text: async () => "" })(summary)).resolves.toEqual({});
+  });
+
+  it("firstSentence caps a note that never ends a sentence", () => {
+    expect(firstSentence("x".repeat(400))).toHaveLength(160);
+    expect(firstSentence("Short and done. And more.")).toBe("Short and done");
   });
 });

@@ -1,7 +1,7 @@
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
-import { BANNER_COMPACT, BANNER_TAGLINE, bannerColorMode, renderBanner } from "./banner.js";
+import { BANNER_COMPACT, BANNER_CONCEPT, BANNER_TAGLINE, bannerColorMode, bannerFrames, playBanner, type BannerColorMode } from "./banner.js";
 import type { Output } from "./shared.js";
 
 /**
@@ -32,9 +32,12 @@ const dim = style("2", "22");
 const red = style("31", "39");
 const green = style("32", "39");
 const yellow = style("33", "39");
-/** The accent — brand lilac. Truecolor terminals get the real ramp in the
-    banner; the rail's markers stay ANSI so they follow the user's theme. */
-const lilac = style("95", "39");
+/** The accent — brand lilac, the colour the banner's ramp ends on. A truecolor
+    terminal gets the real `#a78bfa`, so the rail matches the mark above it
+    instead of sitting a shade off in ANSI magenta (#1166); everything else
+    keeps bright magenta, which is what the fallback was always for. */
+const accentStyle = (mode: BannerColorMode): ((text: string) => string) =>
+  style(mode === "truecolor" ? "38;2;167;139;250" : "95", "39");
 /** Re-arm sequences for the two colors that can wrap a whole line. */
 const REOPEN_YELLOW = `${ESC}[33m`;
 const REOPEN_RED = `${ESC}[31m`;
@@ -95,6 +98,11 @@ export interface PrettyOutput extends Output {
       `stats` is the dim tail that says what the run actually achieved, and a
       dim star line closes the run. */
   done(durationMs: number, ok: boolean, stats?: string): void;
+  /** Settles when the banner has finished arriving. Printing never waits on it
+      — the first line cuts the arrival to the settled mark — so this is for the
+      one caller that wants the arrival SEEN: it awaits whatever is left of it
+      after its own detection work, and pays nothing it did not already spend. */
+  arrived: Promise<void>;
 }
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -152,13 +160,18 @@ function judgmentTally(text: string): string | null {
 const PASTE_RULE = "─".repeat(64);
 const PASTE_HEAD = /^(ONE|\d+) STEPS? LEFT — paste th(?:is|ese) yourself \((.+)\)$/;
 const PASTE_FILE = /^ {2}File: (.+)$/;
-/** The mount snippet elides the child expression, and it genuinely differs by
-    router — `{children}` in an app-router layout, `<Component {...pageProps} />`
-    in a pages `_app` — so the block owes the exact per-router wording. This
-    pointer is the renderer's and not the caller's: init's `mount.lines` is
+/** The caller's one-line wrap instruction — `… then wrap: <VendoProvider …>
+    {children}</VendoProvider>` — destructured so the block can print the real
+    JSX instead of the prose: the open tag, a dim `…` for the app tree that is
+    already there, the close tag. The children capture is deliberately dropped;
+    the child expression genuinely differs by router (`{children}` in an
+    app-router layout, `<Component {...pageProps} />` in a pages `_app`), so one
+    literal in the terminal would be wrong for half of hosts and the docs
+    pointer below carries the exact per-router wording instead. */
+const MOUNT_WRAP = /^… then wrap: (<VendoProvider\b[^>]*>).*<\/VendoProvider>$/;
+/** This pointer is the renderer's and not the caller's: init's `mount.lines` is
     pinned byte-for-byte by the --agent plan, and a line added there would
     change that JSON. Emitted here, the --agent path never sees it. */
-const MOUNT_WRAP = "… then wrap: <VendoProvider";
 const MOUNT_DOCS = "docs.vendo.run/quickstart#the-client-mount — exact wording for layout.tsx and _app.tsx";
 const WIRED = /^(Wired \(\d+ files?\)):$/;
 const DIFF_MARKER = /^ {2}([+~]) (.+)$/;
@@ -183,8 +196,8 @@ const CTA_ALL = /`?vendo (cloud )?login`?/g;
 /** Inline `code spans` in the accent color. The span's close resets the
     foreground to default, so a span inside a colored line bleaches everything
     after it — `reopen` re-arms the enclosing color (error() passes it). */
-function styleInline(text: string, reopen = ""): string {
-  return text.replace(/`([^`]+)`/g, (_match, code: string) => `${bold(lilac(code))}${reopen}`);
+function styleInline(text: string, accent: (text: string) => string, reopen = ""): string {
+  return text.replace(/`([^`]+)`/g, (_match, code: string) => `${bold(accent(code))}${reopen}`);
 }
 
 /** Invisible code points: combining marks (Mn/Me — the accent in a decomposed
@@ -426,11 +439,14 @@ export async function plainSecret(
   }
 }
 
-/** What the string rules below are allowed to draw on. */
+/** What the string rules below are allowed to draw on. The accent rides the
+    rail rather than sitting in a module constant, because which purple it is
+    depends on the terminal this renderer was built for. */
 interface Rail {
   bar(): void;
   body(text: string, reopen?: string): void;
   section(marker: string, title: string): void;
+  accent(text: string): string;
 }
 
 /** What a collapse rule is still holding, and how much leading indent the rail
@@ -450,7 +466,7 @@ function flushCatalog(state: RenderState, rail: Rail): void {
   if (state.catalog.length === 0) return;
   const lines = state.catalog;
   state.catalog = [];
-  rail.section(lilac("◆"), bold("Catalog"));
+  rail.section(rail.accent("◆"), bold("Catalog"));
   const counts = lines.filter((entry) => !entry.startsWith(CATALOG_COMPONENTS));
   if (counts.length > 0) rail.body(counts.join(" · "));
   for (const entry of lines.filter((line) => line.startsWith(CATALOG_COMPONENTS))) rail.body(entry);
@@ -460,7 +476,7 @@ function flushImpact(state: RenderState, rail: Rail): void {
   if (state.impact.length === 0) return;
   const lines = state.impact;
   state.impact = [];
-  rail.section(lilac("◇"), bold("Impact"));
+  rail.section(rail.accent("◇"), bold("Impact"));
   for (const entry of lines) {
     const breaks = IMPACT_BREAKS.exec(entry);
     rail.body(breaks === null ? entry : `${breaks[1]!}${bold(breaks[2]!)}`);
@@ -471,7 +487,7 @@ function flushJudgment(state: RenderState, rail: Rail): void {
   if (state.judgment === null) return;
   const { summary, details } = state.judgment;
   state.judgment = null;
-  rail.section(lilac("◆"), bold("Judgment"));
+  rail.section(rail.accent("◆"), bold("Judgment"));
   // Three populations at one indent: the tallies, the one line that needs the
   // user, and the model's prose. Only tallies join the summary — splitting a
   // sentence on ": " both put free-text in a counts line and cut it mid-token.
@@ -519,27 +535,27 @@ function brandLine(palette: string): string {
 function renderNamed(raw: string, rail: Rail): boolean {
   const wired = WIRED.exec(raw);
   if (wired !== null) {
-    rail.section(lilac("◆"), bold(wired[1]!));
+    rail.section(rail.accent("◆"), bold(wired[1]!));
     return true;
   }
   if (raw === "Already wired — nothing to change.") {
-    rail.section(lilac("◇"), `${bold("Already wired")} — nothing to change`);
+    rail.section(rail.accent("◇"), `${bold("Already wired")} — nothing to change`);
     return true;
   }
   const marker = DIFF_MARKER.exec(raw);
   if (marker !== null) {
-    rail.body(`${marker[1] === "+" ? green("+") : yellow("~")} ${dim(lilac(marker[2]!))}`);
+    rail.body(`${marker[1] === "+" ? green("+") : yellow("~")} ${dim(rail.accent(marker[2]!))}`);
     return true;
   }
   const theme = THEME.exec(raw);
   if (theme !== null) {
-    rail.section(lilac("◆"), bold("Your brand, captured"));
+    rail.section(rail.accent("◆"), bold("Your brand, captured"));
     rail.body(brandLine(theme[1]!));
     return true;
   }
   const syncTheme = SYNC_THEME.exec(raw);
   if (syncTheme !== null) {
-    rail.section(lilac("◇"), bold("Theme"));
+    rail.section(rail.accent("◇"), bold("Theme"));
     rail.body(syncTheme[1]!);
     return true;
   }
@@ -548,7 +564,7 @@ function renderNamed(raw: string, rail: Rail): boolean {
     return true;
   }
   if (raw === "Last steps are yours:") {
-    rail.section(lilac("◇"), bold("Last steps are yours"));
+    rail.section(rail.accent("◇"), bold("Last steps are yours"));
     return true;
   }
   return renderCloud(raw, rail);
@@ -558,14 +574,14 @@ function renderNamed(raw: string, rail: Rail): boolean {
 function renderCloud(raw: string, rail: Rail): boolean {
   const absent = CLOUD_ABSENT.exec(raw);
   if (absent !== null) {
-    rail.section(lilac("◆"), bold(lilac("Vendo Cloud")));
-    for (const bullet of absent[1]!.split("; ")) rail.body(`${lilac("✦")} ${lilac(bullet)}`);
+    rail.section(rail.accent("◆"), bold(rail.accent("Vendo Cloud")));
+    for (const bullet of absent[1]!.split("; ")) rail.body(`${rail.accent("✦")} ${rail.accent(bullet)}`);
     return true;
   }
   const present = CLOUD_PRESENT.exec(raw);
   if (present !== null) {
-    rail.section(lilac("◆"), bold(lilac("Vendo Cloud")));
-    rail.body(`${lilac("✦")} ${lilac(present[1]!)}`);
+    rail.section(rail.accent("◆"), bold(rail.accent("Vendo Cloud")));
+    rail.body(`${rail.accent("✦")} ${rail.accent(present[1]!)}`);
     return true;
   }
   return false;
@@ -581,8 +597,8 @@ function renderIndented(raw: string, state: RenderState, rail: Rail): void {
   const keep = " ".repeat(Math.max(0, indent - state.absorb));
   if (indent === 0) state.absorb = 0;
   if (CTA.test(rest)) {
-    const cta = rest.replace(CTA_ALL, (match) => bold(lilac(match.replaceAll("`", ""))));
-    rail.body(`${keep}${bold(lilac("→"))} ${cta}`);
+    const cta = rest.replace(CTA_ALL, (match) => bold(rail.accent(match.replaceAll("`", ""))));
+    rail.body(`${keep}${bold(rail.accent("→"))} ${cta}`);
     return;
   }
   rail.body(`${keep}${rest}`);
@@ -609,18 +625,24 @@ function renderPaste(raw: string, state: RenderState, rail: Rail): void {
     if (open.titled) rail.bar();
     else {
       open.titled = true;
-      rail.section(lilac("◇"), bold(open.count === 1 ? `One paste left — ${file[1]}` : `${open.count} pastes left`));
+      rail.section(rail.accent("◇"), bold(open.count === 1 ? `One paste left — ${file[1]}` : `${open.count} pastes left`));
       if (open.count === 1) return;
     }
     rail.body(bold(file[1]!));
     return;
   }
-  renderIndented(raw, state, rail);
-  // Under the snippet it explains, at the snippet's own indent.
-  if (raw.trimStart().startsWith(MOUNT_WRAP)) {
-    const indent = raw.length - raw.trimStart().length;
-    rail.body(`${" ".repeat(Math.max(0, indent - state.absorb))}${dim(MOUNT_DOCS)}`);
+  const wrap = MOUNT_WRAP.exec(raw.trimStart());
+  if (wrap !== null) {
+    // The snippet's own indent, with the docs pointer under the JSX it explains.
+    const keep = " ".repeat(Math.max(0, raw.length - raw.trimStart().length - state.absorb));
+    rail.bar();
+    rail.body(`${keep}${wrap[1]!}`);
+    rail.body(`${keep}  ${dim("…")}`);
+    rail.body(`${keep}</VendoProvider>`);
+    rail.body(`${keep}${dim(MOUNT_DOCS)}`);
+    return;
   }
+  renderIndented(raw, state, rail);
 }
 
 function renderRaw(raw: string, state: RenderState, rail: Rail): void {
@@ -670,7 +692,7 @@ export interface PrettyOptions {
   write?: (chunk: string) => void;
   input?: SelectInput;
   promptOutput?: NodeJS.WritableStream & { isTTY?: boolean };
-  /** The settled banner above the header. */
+  /** The banner above the header — it arrives as an animation and settles. */
   banner?: boolean;
   env?: Record<string, string | undefined>;
   /** Terminal width to wrap to. Unset follows the real stdout, and an unknown
@@ -692,6 +714,9 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
   let timer: ReturnType<typeof setInterval> | null = null;
   let frame = 0;
   const state: RenderState = { absorb: 0, catalog: [], impact: [], judgment: null, paste: null };
+  /** Same capability probe the banner uses, so the rail and the mark above it
+      are the same purple on the same terminal. */
+  const lilac = accentStyle(bannerColorMode(env));
 
   /** True when this renderer draws on the real terminal. Only then does it
       follow stdout's width and answer the interrupt signal; an injected
@@ -716,19 +741,36 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
       if (!lastWasBar) line(BAR);
     },
     body: (text: string, reopen = ""): void => {
-      line(`${BAR}  ${styleInline(text, reopen)}`);
+      line(`${BAR}  ${styleInline(text, lilac, reopen)}`);
     },
     section: (marker: string, title: string): void => {
       rail.bar();
       line(`${marker}  ${title}`);
       state.absorb = 2;
     },
+    accent: lilac,
   };
+  /** The arrival, started at construction — so the frames play over the stack
+      detection the run does before its first line, and cost nothing. It is
+      never awaited: ensureHeader settles it, so the animation can only ever be
+      a faster way to arrive at the banner that printed here before. */
+  const arrival = banner ? new AbortController() : null;
+  const arrived = arrival === null
+    ? Promise.resolve()
+    : playBanner(
+      write,
+      bannerFrames(BANNER_COMPACT, bannerColorMode(env), BANNER_CONCEPT),
+      undefined,
+      arrival.signal,
+    );
   const ensureHeader = (): void => {
     if (headerPrinted) return;
     headerPrinted = true;
-    if (banner) {
-      write(`${renderBanner(BANNER_COMPACT, bannerColorMode(env))}\n\n${dim(BANNER_TAGLINE)}\n\n`);
+    // The mark is already on screen (abort settles it if it is still moving);
+    // this only adds the gap and the tagline under it.
+    if (arrival !== null) {
+      arrival.abort();
+      write(`\n${dim(BANNER_TAGLINE)}\n\n`);
     }
     line(`${dim("┌")}  ${bold(command)}`);
     line(BAR);
@@ -773,6 +815,7 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
   }
 
   return {
+    arrived,
     log(message) {
       clearFrame();
       ensureHeader();

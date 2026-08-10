@@ -184,19 +184,35 @@ export function bannerColorMode(
  * alternate screen buffer — the settled banner stays in the scrollback as the
  * top of the transcript. A resize mid-play costs one ragged frame, then the
  * settled one.
+ *
+ * `signal` cuts it short, and the settled frame is drawn INSIDE abort() —
+ * synchronously, before abort() returns — so a caller that needs the screen
+ * mid-arrival prints its next line under the finished mark and never on top of
+ * a half-drawn one. That is what lets the arrival play over work the run was
+ * doing anyway without ever delaying a line.
  */
 export async function playBanner(
   write: (chunk: string) => void,
   frames: readonly string[],
   frameMs = 90,
+  signal?: AbortSignal,
 ): Promise<void> {
   const [first, ...rest] = frames;
   if (first === undefined) return;
   const rows = first.split("\n").length;
-  write(`${first}\n`);
-  for (const frame of rest) {
-    await new Promise<void>((settle) => { setTimeout(settle, frameMs); });
+  const redraw = (frame: string): void => {
     write(`${ESC}[${rows}A`);
     write(`${frame.split("\n").map((row) => `${ESC}[2K${row}`).join("\n")}\n`);
+  };
+  write(`${first}\n`);
+  let playing = true;
+  signal?.addEventListener("abort", () => {
+    if (playing) redraw(frames.at(-1)!);
+  }, { once: true });
+  for (const frame of rest) {
+    await new Promise<void>((settle) => { setTimeout(settle, frameMs); });
+    if (signal?.aborted === true) return;
+    redraw(frame);
   }
+  playing = false;
 }
