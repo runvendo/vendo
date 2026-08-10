@@ -69,7 +69,7 @@ const alignCss = (a: DataTableColumn["align"]): CSSProperties["textAlign"] =>
  * "Mar 14, 2026". Unrenderable cells (the "—" placeholder) filter as empty.
  */
 function displayText(row: Record<string, unknown>, column: DataTableColumn): string {
-  return applyFormat(resolvePath(row, column.key), column.format ?? "text") ?? "";
+  return applyFormat(resolvePath(row, column.key), column.format) ?? "";
 }
 
 const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
@@ -119,7 +119,7 @@ export function DataTable(props: DataTableProps) {
         header: col.label ?? humanizeEnum(col.key.split(".").pop() ?? col.key),
         cell: (ctx) => {
           const raw = ctx.getValue();
-          const formatted = applyFormat(raw, col.format ?? "text");
+          const formatted = applyFormat(raw, col.format);
           if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
           return formatted;
         },

@@ -86,7 +86,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
               </div>
             )}
             {fields.map((f) => {
-              const formatted = applyFormat(resolve(item, f.key), f.format ?? "text");
+              const formatted = applyFormat(resolve(item, f.key), f.format);
               return (
                 <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
                   <span style={{ color: t.muted }}>{f.label ?? f.key}</span>

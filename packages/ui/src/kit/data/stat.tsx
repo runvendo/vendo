@@ -19,7 +19,7 @@ export interface StatProps {
  *  so longer text renders truncated with the full text in the tooltip. */
 const STAT_VALUE_MAX_CHARS = 40;
 
-export function Stat({ label, value, format = "text", trend, tone = "default" }: StatProps) {
+export function Stat({ label, value, format, trend, tone = "default" }: StatProps) {
   const emphasis = tone === "accent" ? t.accent : tone === "danger" ? t.danger : t.text;
   const formatted = applyFormat(value, format);
   const empty = formatted === null;

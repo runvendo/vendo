@@ -228,8 +228,28 @@ export function formatDateTime(value: DateInput, options: DateTimeOptions = {}):
 /** The value-tier `format` union — the same tokens a DataTable column accepts. */
 export type ValueFormat = "money" | "date" | "datetime" | "time" | "percent" | "number" | "text";
 
-/** Apply a `ValueFormat` token to a raw value, returning `null` when unrenderable. */
-export function applyFormat(value: unknown, format: ValueFormat = "text"): string | null {
+/** A bare calendar day, the shape a host's date field ships in: `2026-08-01`. */
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+function asText(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value);
+  // An empty/whitespace field is unrenderable like NaN is: `null` here is
+  // what turns a bare "Bank:" label into "Bank: —" everywhere the data
+  // tier renders label/value pairs (Stat, CardList, DataTable cells).
+  return text.trim() === "" ? null : text;
+}
+
+/**
+ * Apply a `ValueFormat` token to a raw value, returning `null` when unrenderable.
+ *
+ * With NO token, a value that is a bare ISO day formats as a date anyway: the
+ * host's `2026-08-01` is a machine's spelling of a calendar day, and a screen
+ * that shows it raw has leaked the wire format. Forgetting `format` is the easy
+ * mistake, so the default is the designed reading; `"text"` is how a caller
+ * explicitly asks for the string verbatim.
+ */
+export function applyFormat(value: unknown, format?: ValueFormat): string | null {
   switch (format) {
     case "money":
       return typeof value === "number" ? formatMoney(value) : null;
@@ -244,14 +264,11 @@ export function applyFormat(value: unknown, format: ValueFormat = "text"): strin
         ? formatDateTime(value as DateInput, { mode: format })
         : null;
     case "text":
-    default: {
-      if (value === null || value === undefined) return null;
-      const text = String(value);
-      // An empty/whitespace field is unrenderable like NaN is: `null` here is
-      // what turns a bare "Bank:" label into "Bank: —" everywhere the data
-      // tier renders label/value pairs (Stat, CardList, DataTable cells).
-      return text.trim() === "" ? null : text;
-    }
+      return asText(value);
+    default:
+      return typeof value === "string" && ISO_DAY.test(value.trim())
+        ? formatDateTime(value.trim(), { mode: "date" })
+        : asText(value);
   }
 }
 
