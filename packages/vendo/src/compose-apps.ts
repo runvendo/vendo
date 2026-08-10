@@ -23,7 +23,7 @@ import {
 } from "@vendoai/core";
 import { appAccess } from "@vendoai/store";
 import { askUserRegistry } from "./ask-user.js";
-import { searchRuntimeCatalog } from "./catalog.js";
+import { searchCatalogResult } from "./catalog.js";
 import { cloudApps } from "./cloud-apps.js";
 import { cloudKeyOptions, positiveIntegerEnv } from "./compose-selection.js";
 import type { VendoComposition } from "./compose-context.js";
@@ -429,8 +429,10 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
       },
       ctx,
     ),
+    // The envelope, not the bare list: a miss that says why it missed (and names
+    // what the catalog does hold) is what stops the search-again grind.
     searchComponents: async (query, limit) =>
-      searchRuntimeCatalog(catalog, query, limit) as unknown as Json,
+      searchCatalogResult(catalog, query, limit) as unknown as Json,
     schedule: async ({ appId, cron }, ctx) =>
       await apps.schedule(appId as AppId, cron, ctx) as unknown as Json,
   }));
