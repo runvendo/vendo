@@ -220,8 +220,8 @@ export function formatDateTime(value: DateInput, options: DateTimeOptions = {}):
     mode === "time"
       ? { hour: "numeric", minute: "2-digit" }
       : mode === "datetime"
-        ? { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
-        : { year: "numeric", month: "short", day: "numeric" };
+        ? { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
+        : { month: "short", day: "numeric" };
   return new Intl.DateTimeFormat(locale, { ...base, ...parts }).format(date);
 }
 
@@ -250,7 +250,13 @@ export function applyFormat(value: unknown, format: ValueFormat = "text"): strin
       // An empty/whitespace field is unrenderable like NaN is: `null` here is
       // what turns a bare "Bank:" label into "Bank: —" everywhere the data
       // tier renders label/value pairs (Stat, CardList, DataTable cells).
-      return text.trim() === "" ? null : text;
+      if (text.trim() === "") return null;
+      // An ISO date the writer forgot to tag `format: "date"` must not reach
+      // pixels raw, so "text" catches it here rather than trusting the caller.
+      if (/^\d{4}-\d{2}-\d{2}(T|$)/.test(text)) {
+        return formatDateTime(text, { mode: text.length > 10 ? "datetime" : "date" }) ?? text;
+      }
+      return text;
     }
   }
 }

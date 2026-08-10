@@ -64,9 +64,9 @@ const alignCss = (a: DataTableColumn["align"]): CSSProperties["textAlign"] =>
 /**
  * The text a cell actually SHOWS, which is the only thing a filter may compare
  * against: the person filters on what is in front of them. Filtering the raw
- * field instead meant "$2,500.00" and "Mar 14, 2026" were unsearchable, while
- * the dropdown offered "2026-03-14" as an option for a column reading
- * "Mar 14, 2026". Unrenderable cells (the "—" placeholder) filter as empty.
+ * field instead meant "$2,500.00" and "Mar 14" were unsearchable, while the
+ * dropdown offered "2026-03-14" as an option for a column reading "Mar 14".
+ * Unrenderable cells (the "—" placeholder) filter as empty.
  */
 function displayText(row: Record<string, unknown>, column: DataTableColumn): string {
   return applyFormat(resolvePath(row, column.key), column.format ?? "text") ?? "";

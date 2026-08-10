@@ -47,7 +47,7 @@ export interface DateTimeProps extends DateTimeOptions {
   value: DateInput;
 }
 
-/** A date/time. `<DateTime value="2026-03-14" mode="date"/>` → "Mar 14, 2026". */
+/** A date/time. `<DateTime value="2026-03-14" mode="date"/>` → "Mar 14". */
 export function DateTime({ value, mode, locale, timeZone }: DateTimeProps) {
   const formatted = formatDateTime(value, { mode, locale, timeZone });
   if (formatted === null) return <Placeholder />;

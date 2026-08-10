@@ -47,7 +47,7 @@ export function LineChart({ data, xKey, series, format = "number", height = 220,
         <ResponsiveContainer width="100%" height="100%">
           <RLineChart data={clean} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
             <CartesianGrid stroke={t.border} strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} />
+            <XAxis dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} tickFormatter={(v) => applyFormat(v, "text") ?? ""} />
             <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={fmt} width={56} />
             <Tooltip formatter={(v) => fmt(v)} contentStyle={{ borderRadius: 8, border: `1px solid ${t.border}`, fontSize: 12 }} />
             {cols.map((c, i) => (

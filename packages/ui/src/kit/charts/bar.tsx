@@ -49,6 +49,7 @@ export function BarChart({
     return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
+  const cat = (v: unknown) => applyFormat(v, "text") ?? "";
   return (
     <div data-kit="BarChart">
       <ChartFrame height={height}>
@@ -58,11 +59,11 @@ export function BarChart({
             {horizontal ? (
               <>
                 <XAxis type="number" tick={axisTick} tickLine={false} axisLine={false} tickFormatter={fmt} />
-                <YAxis type="category" dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} width={96} />
+                <YAxis type="category" dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} width={96} tickFormatter={cat} />
               </>
             ) : (
               <>
-                <XAxis dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} />
+                <XAxis dataKey={xKey} tick={axisTick} tickLine={false} axisLine={{ stroke: t.border }} tickFormatter={cat} />
                 <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={fmt} width={56} />
               </>
             )}
