@@ -33,6 +33,16 @@ export const t = {
   motionEasing: "var(--vendo-motion-easing, cubic-bezier(0.2, 0.8, 0.2, 1))",
 } as const;
 
+/** A radius as a NUMBER, for the few consumers (recharts `radius`) that cannot
+ * take a `var()` string. Reads the live custom property when there is a DOM. */
+export function radiusPx(name: "small" | "medium" | "large"): number {
+  const raw = typeof document !== "undefined"
+    ? getComputedStyle(document.documentElement).getPropertyValue(`--vendo-radius-${name}`)
+    : "";
+  const v = parseFloat(raw || d.radius[name]);
+  return Number.isFinite(v) ? v : 4;
+}
+
 /** Base text style shared by every Kit component. */
 export const font: CSSProperties = {
   color: t.text,

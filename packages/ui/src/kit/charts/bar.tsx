@@ -9,7 +9,7 @@ import {
   YAxis,
 } from "recharts";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { seriesColor, t } from "../tokens.js";
+import { radiusPx, seriesColor, t } from "../tokens.js";
 import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty } from "./sanitize.js";
 import type { SeriesInput } from "./line.js";
 
@@ -49,6 +49,7 @@ export function BarChart({
     return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
+  const r = radiusPx("small");
   return (
     <div data-kit="BarChart">
       <ChartFrame height={height}>
@@ -66,14 +67,14 @@ export function BarChart({
                 <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={fmt} width={56} />
               </>
             )}
-            <Tooltip formatter={(v) => fmt(v)} contentStyle={{ borderRadius: 8, border: `1px solid ${t.border}`, fontSize: 12 }} cursor={{ fill: `color-mix(in srgb, ${t.muted} 10%, transparent)` }} />
+            <Tooltip formatter={(v) => fmt(v)} contentStyle={{ borderRadius: t.radiusMedium, border: `1px solid ${t.border}`, fontSize: 12 }} cursor={{ fill: `color-mix(in srgb, ${t.muted} 10%, transparent)` }} />
             {cols.map((c, i) => (
               <Bar
                 key={c.key}
                 dataKey={c.key}
                 name={c.label}
                 fill={seriesColor(i)}
-                radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+                radius={horizontal ? [0, r, r, 0] : [r, r, 0, 0]}
                 stackId={stacked ? "stack" : undefined}
                 isAnimationActive={false}
               />

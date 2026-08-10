@@ -56,7 +56,7 @@ export function DonutChart({
                 <Cell key={i} fill={seriesColor(i)} />
               ))}
             </Pie>
-            <Tooltip formatter={(v) => fmt(v)} contentStyle={{ borderRadius: 8, border: `1px solid ${t.border}`, fontSize: 12 }} />
+            <Tooltip formatter={(v) => fmt(v)} contentStyle={{ borderRadius: t.radiusMedium, border: `1px solid ${t.border}`, fontSize: 12 }} />
           </RPieChart>
         </ResponsiveContainer>
       </ChartFrame>

@@ -157,7 +157,7 @@ export function EnumBadge({ value, labels, tones, tone = "neutral" }: EnumBadgeP
         width: "fit-content",
         minHeight: "var(--vendo-density-badge-height, 24px)",
         border: `1px solid ${style.border}`,
-        borderRadius: "999px",
+        borderRadius: t.radiusSmall,
         color: style.color,
         background: style.background,
         fontSize: "0.78em",

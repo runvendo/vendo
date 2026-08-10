@@ -43,13 +43,13 @@ export function Progress({ value, max, label, showValue = false, tone = "accent"
         aria-valuenow={Math.round(clamped * 100)}
         aria-valuemin={0}
         aria-valuemax={100}
-        style={{ width: "100%", height: 8, borderRadius: 999, background: `color-mix(in srgb, ${t.muted} 18%, ${t.surface})`, overflow: "hidden" }}
+        style={{ width: "100%", height: 8, borderRadius: t.radiusSmall, background: `color-mix(in srgb, ${t.muted} 18%, ${t.surface})`, overflow: "hidden" }}
       >
         <div
           style={{
             width: pct,
             height: "100%",
-            borderRadius: 999,
+            borderRadius: t.radiusSmall,
             background: TONE_FILL[tone],
             transition: `width ${t.motionDuration} ${t.motionEasing}`,
           }}
