@@ -92,6 +92,12 @@ export const ESCALATE_TOOL = "escalate";
  *  write outside it. */
 export const SAVE_APP_TOOL = "save_app";
 
+/** The repair round's hand, and ONLY the repair round's (see the second drive
+ *  below). A general edit-in-place save was measured over every save and came
+ *  back a wash; the rewrite the measurement actually shows is the one paid to
+ *  answer a finding, and that is the round this hand is dealt into. */
+const REPAIR_APP_TOOL = "repair_app";
+
 /**
  * The assembly verbs, by NAME rather than by risk.
  *
@@ -221,7 +227,8 @@ through two tools.
 - **\`${SAVE_APP_TOOL}\`** saves this app's whole document. The app is
   \`${appId}\`; you never name a path. Every save that parses repaints the person's
   screen, so save as you go — a save is cheap and silence is not. There is no
-  edit-in-place tool: save the full document each time.
+  edit-in-place tool while you are writing: save the full document each time. A
+  repair round, if one comes, hands you one.
   Its \`decisions\` is this app's MEMORY, and the only thing the next editor will
   have besides the document. Record what reading the document could not tell
   them — why you narrowed something, a constraint the tools imposed, a shape you
@@ -419,6 +426,54 @@ export async function assembleScreen(
     },
   };
 
+  /**
+   * The repair hand: one exact stretch of the SAVED document, replaced.
+   *
+   * A finding names a few lines, and `save_app` charges a whole document to answer
+   * it — the document is re-emitted at output-token speed, which is where the tail
+   * of a slow screen lives (spend-overview, 2026-08-10: 118s of model time between
+   * `validate` and the save that answered it, for a fix of a couple of lines).
+   *
+   * It commits through `save_app` itself rather than beside it, so the render seam,
+   * the paint verdict, the failed-paint floor and this run's record are the SAME
+   * ones a full save goes through — a second writer with its own commit is how the
+   * two disagree.
+   */
+  const repairApp: HarnessHand = {
+    name: REPAIR_APP_TOOL,
+    description:
+      "Fix the saved document by replacing one exact stretch of it. `find` must appear in the document "
+      + "EXACTLY once, copied verbatim including whitespace; `replace` takes its place and nothing else moves. "
+      + `One call per finding. ${SAVE_APP_TOOL} is still there when a fix is too broad to name a stretch for.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        find: { type: "string", description: "The exact text to replace, copied out of the document." },
+        replace: { type: "string", description: "What takes its place." },
+      },
+      required: ["find", "replace"],
+      additionalProperties: false,
+    },
+    execute: async (args, turn) => {
+      const { find, replace } = args as { find: string; replace: string };
+      const current = await turn.workspace.readFile(`${directory}/${APP_FILE}`).catch(() => undefined);
+      if (current === undefined) {
+        return { saved: false, note: `Nothing is saved yet, so there is nothing to repair — use ${SAVE_APP_TOOL}.` };
+      }
+      const hits = current.split(find).length - 1;
+      if (hits !== 1) {
+        return {
+          saved: false,
+          note: hits === 0
+            ? "That text is not in the saved document. Copy it verbatim out of the document above, "
+              + `or save the whole corrected document with ${SAVE_APP_TOOL}.`
+            : `That text appears ${hits} times. Include enough around it to name one place.`,
+        };
+      }
+      return await saveApp.execute({ content: current.replace(find, replace) }, turn);
+    },
+  };
+
   const escalate: HarnessHand = {
     name: ESCALATE_TOOL,
     description:
@@ -479,8 +534,11 @@ export async function assembleScreen(
   /** The first thing that went wrong, in the shipped loop's own words
    *  (`wireErrorMessage`, applied inside `vendo()`). */
   let failure: string | undefined;
-  const harness = vendo({
-    tools: loadout,
+  /** The same loop, dealt a different hand. The writing round has no `repair_app`
+   *  because there is nothing saved to repair when it starts, and a stretch-replace
+   *  offered over every save was measured and came back a wash. */
+  const loop = (hands: readonly HarnessHand[]) => vendo({
+    tools: [...loadout, ...hands],
     maxSteps: SCREEN_STEPS,
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
     // in as its first section, so letting the turn's copy through would say it
@@ -497,12 +555,15 @@ export async function assembleScreen(
    * way to drive the same loop (`claude-code/index.ts`'s `round` for the same
    * reason).
    */
-  const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
+  const drive = async (
+    harness: ReturnType<typeof loop>,
+    messages: Turn<VendoHarnessOptions>["messages"],
+  ): Promise<void> => {
     for await (const event of harness.run({ ...turn, messages })) {
       if (event.type === "error") failure ??= event.message;
     }
   };
-  await drive(turn.messages);
+  await drive(loop([]), turn.messages);
 
   if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
   // Escalation wins over a partial paint: the builder is finishing this app, and
@@ -549,14 +610,18 @@ export async function assembleScreen(
       // the repair round has none of the first one's context — and a repair with no
       // document in front of it is a rewrite from scratch.
       const saved = await turn.workspace.readFile(appPath).catch(() => undefined);
-      await drive([...turn.messages, {
+      // …and `repair_app` rides with it, because the answer to a finding is a few
+      // lines: re-emitting the whole document to change them is the slowest step
+      // of a slow screen, and the person is waiting through it.
+      await drive(loop([repairApp]), [...turn.messages, {
         id: `repair_${input.appId}`,
         role: "user",
         parts: [{
           type: "text",
           text: saved === undefined
             ? instruction
-            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
+            : `${instruction}\n\nThis is the document you saved. Repair it with \`${REPAIR_APP_TOOL}\` — `
+              + `one call per finding, replacing only the text that has to change:\n${saved}`,
         }],
       }]);
     }
