@@ -470,6 +470,23 @@ describe("a save whose text left a seeded component out", () => {
     expect(doc?.components?.Extra).toBeUndefined();
   });
 
+  it("keeps a LEGACY remix's bare-string source — the shape every older fork is stored in", async () => {
+    const { runtime, store } = stand();
+    await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
+    // `componentEntrySchema` still accepts a bare source string, and that is how
+    // every remix forked before the seeded bundle existed sits in the store.
+    // `bundleOf` reads it as `authored`, so a carry keyed on the origin drops it.
+    await seedAppRow(store, {
+      ...(await rowOf(store))!.doc!,
+      seed: { component: slot, baseline: "sha256:hostsource" },
+      components: { [name]: "export default () => null;" },
+    }, "u1");
+
+    await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
+
+    expect(bundleOf((await rowOf(store))!.doc!.components![name]!).source).toBe("export default () => null;");
+  });
+
   it("still lets the file EDIT a seeded component, exactly as an engine edit may", async () => {
     const { runtime, store } = stand();
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());

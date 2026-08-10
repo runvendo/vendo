@@ -37,6 +37,7 @@ export type SeedSurfaceDeps = Pick<
   AppsRuntimeContext,
   | "config"
   | "apps"
+  | "history"
   | "placementRows"
   | "requireOwned"
   | "persistEdit"
@@ -105,6 +106,16 @@ const seedFrom = async (
   const seeded = seedOnto(minted, baseline);
   if (input.slot !== undefined) seeded.seed = { ...seeded.seed!, slot: input.slot };
   await deps.apps.put(appRecordInput(seeded, ctx.principal.subject, false, "seed"));
+  // The version that says where this app came from. `seed.from` is the one
+  // create that does not go through `persistEdit`, so it is the one create that
+  // has to append its own — without it a remix arrives with no history at all,
+  // and a review-kind remix fails closed to pending the moment its current
+  // version stops being approved (`serveDocFor`, remix/review.ts).
+  await deps.history.append(seeded.id, seeded, {
+    at: new Date().toISOString(),
+    intent: `Remix the host component "${baseline.slot}"`,
+    rung: deps.rungFor(seeded),
+  });
   if (input.slot !== undefined) {
     // "Show the remix in THIS slot" is a placement ROW. The seed on the
     // document is provenance, never location.

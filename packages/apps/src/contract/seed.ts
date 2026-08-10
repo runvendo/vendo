@@ -199,9 +199,11 @@ export const seedForkSource = (source: string): string => {
  * components but not its `seed` — a checkout prints seeded sources into
  * `app.vendo` alongside the model's islands.
  *
- * It does NOT buy an admission exemption. Seeded source used to skip the island
- * gate entirely; it now faces the same floor as anything else, because a bundle
- * a host captured is still a bundle this runtime is about to render.
+ * The NAME is the signal every one of those seams has to use — a bare source
+ * string reads back as `origin: "authored"`, so `bundleOf` cannot tell a printed
+ * seeded seat from a model island. The island gate's exemption
+ * (`server/checking/floor.ts`) and the file save's carry-forward
+ * (`server/doors/write-surface.ts`) both key on it for that reason.
  */
 export const isSeedComponentName = (name: string): boolean =>
   /^Pinned[A-Za-z0-9]*[0-9a-f]{8}$/.test(name);

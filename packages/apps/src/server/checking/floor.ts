@@ -24,6 +24,7 @@ import {
 import {
   bundleOf,
   compileWire,
+  isSeedComponentName,
   type AppDocument,
   type Check,
   type Finding,
@@ -57,17 +58,27 @@ const documentOf = (appId: AppId, compiled: WireCompileResult): AppDocument => (
  * (`smokeRenderIslands`) — the same two the create validator runs, ordered the
  * same way, so a cheap failure never pays for a render.
  *
- * EVERY seat faces it, seeded ones included. Seeded source used to be skipped
- * here on the grounds that it was host source rather than a model island — but
- * the floor is what stands between a document and a screen, and a bundle this
- * runtime is about to render is a bundle whichever side wrote it. A capture
- * that cannot pass the gate is a capture that cannot render.
+ * SEEDED seats are skipped. These rules are the GENERATED-island contract — no
+ * imports, ambient Kit only, no hand-typed constant feeding displayed math — and
+ * captured HOST source cannot satisfy them by construction: it brings its own
+ * imports and its numbers are the host's own (the real Maple capture blocks on
+ * `pad = 6`, SVG chart padding). Every block reaches the builder verbatim as a
+ * repair instruction, and on source the person did not write the only edit that
+ * clears it is to stop rendering the island — so the fork is silently replaced
+ * by plain host components. A capture missing a default export is refused at the
+ * seed doors themselves (generation/engine.ts, remix/seed-surface.ts).
+ *
+ * By NAME, never by `origin`: this check also runs over a compiled `app.vendo`,
+ * whose components are bare source strings, and `bundleOf` reads those as
+ * `authored` — an origin test would silently do nothing on exactly the path
+ * that matters.
  */
 const islandsCheck = (deps: FloorDependencies): Check => ({
   name: "islands-render",
   kind: "fact",
   run: async ({ document, request }) => {
     const components = Object.fromEntries(Object.entries(document.components ?? {})
+      .filter(([name]) => !isSeedComponentName(name))
       .map(([name, entry]) => [name, bundleOf(entry).source]));
     if (Object.keys(components).length === 0) return [];
     const prepared = await prepareIslands(

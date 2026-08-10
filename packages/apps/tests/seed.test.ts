@@ -8,11 +8,10 @@
  * The two that were broken have their own proofs below, and each one is written
  * so that putting the old code back turns the assertion around:
  *
- *  1. SEEDED BUNDLES FACE ADMISSION. The checking floor used to filter seeded
- *     components out of the island gate entirely, on the grounds that captured
- *     host source is not a model island. That meant a capture the jail could
- *     never render was admitted without complaint. Restore the filter and the
- *     bad document below is admitted.
+ *  1. A SEEDED SEAT SKIPS THE ISLAND GATE, BY NAME. The gate's rules are the
+ *     generated-island contract, which captured host source cannot satisfy by
+ *     construction — running it over a real capture blocks a remix the person
+ *     can see on screen. Drop the filter and the real capture below is refused.
  *
  *  2. THE SEAT HOLDS ITS OWN CONTENTS. The jail furnishings used to be
  *     hash-matched against the live host baseline at open time, so the moment
@@ -20,6 +19,7 @@
  *     no imports, no sub-modules and no styles — silently, with nothing on the
  *     payload to say anything was missing. Now they live in the stored bundle.
  */
+import { readFileSync } from "node:fs";
 import {
   VENDO_APP_FORMAT,
   seedComponentName,
@@ -225,17 +225,30 @@ describe("seed.reseed — a plain swap for the pristine new component", () => {
 });
 
 // ===========================================================================
-// PROOF 1 — the admission skip is GONE, not merely deleted.
+// PROOF 1 — a seeded seat is exempt from the island gate, BY NAME.
 //
-// The floor used to drop every seeded component before the island gate ran:
+// This block used to be written the other way round: a seeded bundle with no
+// default export was expected to come back blocked, and restoring the floor's
+// `.filter(([name]) => !isSeedComponentName(name))` was called the regression.
+// That was a proof of a premise that is false, and its fixture is why it looked
+// true — three hand-typed lines that happen to obey the generated-island
+// contract. The contract is written for source a MODEL wrote: no imports,
+// ambient Kit only, no hand-typed constant feeding displayed math. Captured host
+// source obeys none of it (the capture below blocks on `pad = 6`, SVG chart
+// padding), and every block reaches the builder verbatim as a repair
+// instruction — so on source the person did not write, the only edit that clears
+// it is to stop rendering the remix.
 //
-//     .filter(([name]) => !isSeedComponentName(name))
-//
-// Put that line back in `server/checking/floor.ts` and this test goes GREEN in
-// the wrong direction: the findings list comes back empty and the bad document
-// below is admitted. That is the whole reason this is written as a refusal and
-// not as a happy path.
+// What is true is asserted below, against the capture the demo host actually
+// ships rather than a toy: the seat is admitted, the SAME source under an
+// ordinary name is still gated, and a capture the jail could not render is
+// refused at the seed door itself.
 // ===========================================================================
+
+/** The host's own capture, read rather than retyped. */
+const CAPTURE = (JSON.parse(
+  readFileSync("../../examples/demo-bank/.vendo/remixable/NetWorthView.json", "utf8"),
+) as SeedBaseline).source;
 
 const floorDeps = (): FloorDependencies => ({
   model: scriptedLanguageModel(() => '<App name="unused"/>'),
@@ -244,11 +257,7 @@ const floorDeps = (): FloorDependencies => ({
   toolShapes: {} as Record<string, ShapeType>,
 });
 
-/** A seeded seat whose source the jail could never render: no default export,
- *  which is the component-bundle rule every island has to satisfy. */
-const BAD_SEEDED_SOURCE = "export const NetWorthCard = () => <strong>$1.2M</strong>;";
-
-const seededDocument = (source: string): AppDocument => ({
+const documentWith = (name: string, source: string): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id: "app_admission",
   name: "Seeded",
@@ -258,35 +267,43 @@ const seededDocument = (source: string): AppDocument => ({
     root: "root",
     nodes: [
       { id: "root", component: "Stack", source: "prewired", children: ["seat"] },
-      { id: "seat", component: COMPONENT, source: "generated" },
+      { id: "seat", component: name, source: "generated" },
     ],
   },
   seed: { component: SLOT, baseline: "sha256:maple-base" },
-  components: { [COMPONENT]: { source, origin: "seeded" } },
+  // Tagged `seeded` in BOTH cases, so the only difference between the two tests
+  // below is the component's name.
+  components: { [name]: { source, origin: "seeded" } },
 } as AppDocument);
 
-describe("PROOF — a seeded bundle faces admission like anything else", () => {
-  it("REFUSES a seeded bundle that violates a component-bundle rule", async () => {
-    const deps = floorDeps();
-    const layer = createCheckingLayer({ deps, checks: floorChecks(deps) });
+const blocksOn = async (document: AppDocument): Promise<string[]> => {
+  const deps = floorDeps();
+  const findings = await createCheckingLayer({ deps, checks: floorChecks(deps) }).run({ document, request: "" });
+  return findings.filter(({ severity }) => severity === "block").map(({ message }) => message);
+};
 
-    const findings = await layer.run({ document: seededDocument(BAD_SEEDED_SOURCE), request: "" });
-
-    // The name really is a seeded one — so the old skip would really have
-    // caught it, which is what makes this a proof rather than a coincidence.
+describe("PROOF — the island gate skips a seeded seat, and skips it by name", () => {
+  it("admits a seat holding the host's real captured source", async () => {
     expect(isSeedComponentName(COMPONENT)).toBe(true);
-    const blocks = findings.filter(({ severity }) => severity === "block");
-    expect(blocks.length).toBeGreaterThan(0);
-    expect(blocks.map(({ message }) => message).join("\n")).toMatch(/export default/);
+
+    expect(await blocksOn(documentWith(COMPONENT, CAPTURE))).toEqual([]);
   });
 
-  it("admits the same seat once its source satisfies the rule", async () => {
-    const deps = floorDeps();
-    const layer = createCheckingLayer({ deps, checks: floorChecks(deps) });
+  it("still gates the SAME source under a name that is not a seeded one", async () => {
+    const blocks = await blocksOn(documentWith("Ordinary", CAPTURE));
 
-    const findings = await layer.run({ document: seededDocument(SOURCE), request: "" });
+    // The `origin: "seeded"` tag is identical in both documents: it is the name
+    // that buys the exemption, and it has to be — a compiled `app.vendo` prints
+    // its components as bare source strings, which all read back as `authored`.
+    expect(blocks.length).toBeGreaterThan(0);
+  });
 
-    expect(findings.filter(({ severity }) => severity === "block")).toEqual([]);
+  it("refuses a capture the jail could never render at the seed door itself", async () => {
+    const runtime = runtimeWith(memoryStore(), {
+      seedBaselines: [{ ...baseline(), source: "export const total = 1;" }],
+    });
+
+    await expect(runtime.seed.from({ component: SLOT }, owner)).rejects.toThrow(/no default export/);
   });
 });
 
