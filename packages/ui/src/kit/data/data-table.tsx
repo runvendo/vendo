@@ -74,6 +74,22 @@ function displayText(row: Record<string, unknown>, column: DataTableColumn): str
 
 const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
 
+/**
+ * Widest render of each value tier, in `ch`. Under `tableLayout: fixed` a
+ * value column gets exactly its content's width and the text columns share
+ * what is left, so the table can never grow past its container and scroll a
+ * money column's decimals out of sight. `+ 26px` is the 24px of horizontal
+ * cell padding plus slack.
+ */
+const formatChars: Partial<Record<ValueFormat, number>> = {
+  money: 12,
+  date: 12,
+  datetime: 16,
+  time: 8,
+  percent: 7,
+  number: 9,
+};
+
 export function DataTable(props: DataTableProps) {
   const {
     rows: rawRows,
@@ -237,16 +253,22 @@ export function DataTable(props: DataTableProps) {
       <div
         style={{
           width: "100%",
-          overflowX: "auto",
+          overflow: "hidden",
           border: `1px solid ${t.border}`,
           borderRadius: t.radiusMedium,
           background: t.surface,
         }}
       >
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
           {caption ? (
             <caption style={{ padding: cellPad, textAlign: "left", fontWeight: 650 }}>{caption}</caption>
           ) : null}
+          <colgroup>
+            {columns.map((col) => {
+              const chars = col.format ? formatChars[col.format] : undefined;
+              return <col key={col.key} style={chars ? { width: `calc(${chars}ch + 26px)` } : undefined} />;
+            })}
+          </colgroup>
           <thead>
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id} style={{ background: `color-mix(in srgb, ${t.background} 72%, ${t.surface})` }}>
@@ -295,14 +317,22 @@ export function DataTable(props: DataTableProps) {
                 <tr key={row.id}>
                   {row.getVisibleCells().map((cell) => {
                     const col = columns.find((c) => c.key === cell.column.id);
+                    // Only text clips: a value column too narrow for its
+                    // content overflows visibly rather than truncating a
+                    // number into a different number.
+                    const isText = !col?.format || col.format === "text";
                     return (
                       <td
                         key={cell.id}
+                        title={isText && col ? displayText(row.original, col) : undefined}
                         style={{
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
                           padding: cellPad,
                           textAlign: alignCss(col?.align),
                           fontVariantNumeric: col?.format && col.format !== "text" ? "tabular-nums" : undefined,
+                          whiteSpace: "nowrap",
+                          overflow: isText ? "hidden" : undefined,
+                          textOverflow: isText ? "ellipsis" : undefined,
                         }}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
