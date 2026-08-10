@@ -40,14 +40,24 @@ const DESCRIPTOR: ToolDescriptor = {
     "Ask the user a question when you genuinely cannot proceed without something only they know — "
     + "never to confirm work you can simply do, and never to guess out loud. This ENDS your turn: "
     + "put the question to them in your own words as your final message, and their reply arrives as "
-    + "the next thing you read.",
+    + "the next thing you read. Put the choices to the user by name in your final message.",
   inputSchema: {
     type: "object",
     properties: {
       question: { type: "string", minLength: 1 },
-      choices: { type: "array", items: { type: "string" } },
+      choices: {
+        type: "array",
+        items: { type: "string", minLength: 1 },
+        minItems: 2,
+        maxItems: 4,
+        description:
+          "The 2-4 concrete answers you actually found. Each one must be a complete answer the user "
+          + "can pick as-is — a real payee name, a real amount, a real date — never a placeholder or "
+          + "a category. If you cannot name two real candidates, you have not looked yet: read first, "
+          + "then ask.",
+      },
     },
-    required: ["question"],
+    required: ["question", "choices"],
     additionalProperties: false,
   },
   risk: "read",
@@ -98,14 +108,29 @@ export function askUserRegistry(): ToolRegistry {
         };
       }
       const choices = Array.isArray(args.choices)
-        ? args.choices.filter((choice): choice is string => typeof choice === "string")
-        : undefined;
+        ? args.choices.filter((choice): choice is string => typeof choice === "string" && choice.trim() !== "")
+        : [];
+      // A question is only askable once the model has resolved real candidate
+      // answers, so the choices are the contract, not an ornament. This is an
+      // `error`, not an `ok`, which is what lets the turn continue (`askedUserStop`
+      // fires on `ok` only): the model goes and reads, then asks again.
+      if (choices.length < 2) {
+        return {
+          status: "error",
+          error: {
+            code: "validation",
+            message:
+              "ask_user needs 2-4 concrete answers the user can pick as-is. "
+              + "Read the data first and name the real candidates, then ask again.",
+          },
+        };
+      }
       // The question is echoed back deliberately: the mirrored tool part is the
       // record, and a record carrying the question is what makes the transcript
       // and the audit row readable without a renderer.
       return {
         status: "ok",
-        output: { asked: question, ...(choices === undefined ? {} : { choices }), next: NEXT_STEP },
+        output: { asked: question, choices, next: NEXT_STEP },
       };
     },
   };
