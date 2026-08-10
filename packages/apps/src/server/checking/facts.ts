@@ -27,10 +27,12 @@ import {
   checkBindingShapes,
   checkExpr,
   kitSpec,
+  parseExpr,
   printWire,
   isExprBinding,
   validateAppDocument,
   validateTree,
+  type ExprNode,
   type NormalizedCatalog,
   type Tree,
 } from "../../contract/index.js";
@@ -271,6 +273,53 @@ export const exprIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => 
   };
   for (const node of tree.nodes) {
     for (const [prop, value] of Object.entries(node.props ?? {})) walk(node.id, prop, value);
+  }
+  return issues;
+};
+
+/** A money slot converts to major units ITSELF — `formatMoney` divides by the
+ *  currency's minor unit (ui/kit/format.ts) — so a computed value that has
+ *  already divided by 100 is converted twice and prints a hundredth of the
+ *  amount. Live 2026-08-10 (genbench `spend-dashboard`):
+ *  `<Stat value={sum(spending.data, "amount") / 100} format="money"/>` over
+ *  424311 cents printed $42.43 where the tool said $4,243.11. Nothing mechanical
+ *  saw it — a scale error is not a shape error — and the reviewer, the only
+ *  reader that could, let all three of that screen's headline figures through.
+ *
+ *  The divisor is a LITERAL in the tree, so this is decidable by looking, which
+ *  makes it a fact. Only the exact hundred: a divisor the app computes could be
+ *  anything, and guessing at one is how a check starts refusing honest apps. */
+const scaledDownByHundred = (node: ExprNode): boolean => {
+  if (node.kind === "binary") {
+    if (node.op === "/" && node.right.kind === "number" && node.right.value === 100) return true;
+    if (node.op === "*" && [node.left, node.right].some((side) => side.kind === "number" && side.value === 0.01)) return true;
+    return scaledDownByHundred(node.left) || scaledDownByHundred(node.right);
+  }
+  if (node.kind === "negate") return scaledDownByHundred(node.operand);
+  if (node.kind === "call" || node.kind === "reshape") return node.args.some(scaledDownByHundred);
+  return false;
+};
+
+/** The props whose value the money tier reads: `<Money cents={…}/>`, and every
+ *  prop of a Kit node that declares `format="money"` — one node formats one
+ *  value, so which prop carries it is the component's business, not this
+ *  check's. A HOST component formats its own props however it likes, and a
+ *  column/field `format` inside an array names a row FIELD, never a computed
+ *  value, so neither is in scope. */
+const readsMoney = (node: TreeNode, prop: string): boolean => {
+  if (node.source === "host" || node.source === "generated" || !KIT_WIRE_SET.has(node.component)) return false;
+  return node.component === "Money" ? prop === "cents" : node.props?.["format"] === "money";
+};
+
+export const moneyScaleIssues = (tree: Tree): FactIssue[] => {
+  const issues: FactIssue[] = [];
+  for (const node of tree.nodes) {
+    for (const [prop, value] of Object.entries(node.props ?? {})) {
+      if (!isExprBinding(value) || !readsMoney(node, prop)) continue;
+      const parsed = parseExpr(value.$expr);
+      if (!parsed.ok || !scaledDownByHundred(parsed.node)) continue;
+      issues.push(atProp(node.id, prop, `computes {${value.$expr}} into a money slot, but a money slot converts to major units itself — scaling here converts twice and prints a hundredth of the real figure. Money slots take INTEGER CENTS: drop the /100 and bind the amount as the tool returns it.`));
+    }
   }
   return issues;
 };
@@ -556,6 +605,7 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
     ...bindingShapeIssues(tree, deps),
     ...kitSlotIssues(tree, deps),
     ...hostReshapeIssues(tree, deps),
+    ...moneyScaleIssues(tree),
   ]),
   treeCheck("expressions-compute", (tree) => exprIssues(tree, deps)),
   treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
