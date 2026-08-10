@@ -92,6 +92,10 @@ describe("apps agent tools", () => {
     // the id, or the name the person said. A model that only knows the name
     // reached for open() first and gave up there.
     expect(make?.description).toMatch(/its id, or its name/i);
+    // my changes
+    expect(make?.description).toMatch(/invent arbitrary/i);
+    expect(make?.description).toMatch(/change colors/i);
+    // my changes
     const open = descriptors.find(({ name }) => name === "vendo_apps_open");
     expect(open?.description).toMatch(/name/i);
   });
