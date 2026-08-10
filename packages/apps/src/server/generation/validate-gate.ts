@@ -122,18 +122,34 @@ export async function validateWrittenApps(input: {
    * spent exactly once, on exactly the screens a person is about to keep.
    */
   review?: boolean;
+  /**
+   * These bytes have ALREADY been through the mechanical half, so skip it and ask
+   * only for judgment. Only meaningful with `review`.
+   *
+   * For the caller that holds a PAINTED save: the render seam runs
+   * `AppsRuntime.floor` — the fact checks plus the compiler static half and the
+   * island gates, the same layer `validate` runs (`checking/floor.ts`) — on every
+   * `app.vendo` commit, and a document that blocks paints nothing
+   * (`render-seam.ts`). So the paint IS the mechanical verdict, and asking
+   * `validate({document})` for it again spins a second `tsc` program and a second
+   * smoke render to hear the same thing. Default off: a builder writing files has
+   * no paint verdict to stand on, which is why this leg exists at all.
+   */
+  alreadyFloored?: boolean;
 }): Promise<AppValidationFailure[]> {
   const failures: AppValidationFailure[] = [];
   for (const path of input.paths) {
     const appId = appDocumentAt(path);
     if (appId === undefined) continue;
     try {
-      const document = await input.workspace.readFile(path);
-      const mechanical = await askValidate(input.tools, appId, { document });
-      if (mechanical === undefined) continue;
-      if (mechanical.length > 0) {
-        failures.push({ path, appId, findings: mechanical });
-        continue;
+      if (input.alreadyFloored !== true) {
+        const document = await input.workspace.readFile(path);
+        const mechanical = await askValidate(input.tools, appId, { document });
+        if (mechanical === undefined) continue;
+        if (mechanical.length > 0) {
+          failures.push({ path, appId, findings: mechanical });
+          continue;
+        }
       }
       if (input.review !== true) continue;
       const judged = await askValidate(input.tools, appId, { appId });
