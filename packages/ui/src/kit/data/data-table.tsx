@@ -285,7 +285,7 @@ export function DataTable(props: DataTableProps) {
               <tr>
                 <td
                   colSpan={Math.max(1, columns.length)}
-                  style={{ color: t.muted, padding: "calc(var(--vendo-font-size, 15px) * 1.6) 12px", textAlign: "center" }}
+                  style={{ color: t.muted, padding: cellPad, textAlign: "center" }}
                 >
                   {emptyState}
                 </td>
@@ -295,6 +295,7 @@ export function DataTable(props: DataTableProps) {
                 <tr key={row.id}>
                   {row.getVisibleCells().map((cell) => {
                     const col = columns.find((c) => c.key === cell.column.id);
+                    const isText = !col?.format || col.format === "text";
                     return (
                       <td
                         key={cell.id}
@@ -302,7 +303,15 @@ export function DataTable(props: DataTableProps) {
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
                           padding: cellPad,
                           textAlign: alignCss(col?.align),
-                          fontVariantNumeric: col?.format && col.format !== "text" ? "tabular-nums" : undefined,
+                          fontVariantNumeric: isText ? undefined : "tabular-nums",
+                          // A row is one line tall. nowrap alone makes the table
+                          // wider than its scroll container (a 3-column table
+                          // measured 663px inside 480px), so free text also gets
+                          // a cap and an ellipsis; formatted cells are short.
+                          whiteSpace: "nowrap",
+                          ...(isText
+                            ? { overflow: "hidden", textOverflow: "ellipsis", maxWidth: "22ch" }
+                            : {}),
                         }}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
