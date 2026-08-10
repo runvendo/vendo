@@ -87,10 +87,17 @@ const parseExpressionAttribute = (state: CompileState): Json | Dropped | Failed 
  *  reference; it compiles to the v1 canonical action prop shape. Anything
  *  else is dropped. Expression-form `on*` attributes never come through
  *  here — a hand-written `{ action: ... }` object passes through as-is
- *  (validateTree's props walk checks fn: grammar anywhere). */
+ *  (validateTree's props walk checks fn: grammar anywhere).
+ *
+ *  `confirm: true` is stamped from the host's OWN risk grading
+ *  (`state.mutatingTools`, filled by `wireCompileOptionsFor` from each
+ *  descriptor's `risk`): a control bound to a tool that changes the world asks
+ *  before it fires, whether or not the writer remembered to ask. The renderer
+ *  reads the flag (packages/ui tree/renderer.tsx); nothing about the tool name
+ *  or the fn: grammar changes. */
 const compileActionValue = (state: CompileState, name: string, value: string): Json | Dropped => {
   if (TOOL_NAME_PATTERN.test(value) || FN_REFERENCE_PATTERN.test(value)) {
-    return { action: value };
+    return state.mutatingTools.has(value) ? { action: value, confirm: true } : { action: value };
   }
   issue(
     state,

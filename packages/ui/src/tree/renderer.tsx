@@ -17,6 +17,7 @@ import {
   evaluateExpr,
   isExprBinding,
 } from "@vendoai/apps/contract";
+import { ConfirmDialog } from "./confirm.js";
 import { convertPayload } from "./convert-payload.js";
 import {
   useCallback,
@@ -179,6 +180,9 @@ export function PayloadView(props: PayloadRendererProps) {
 interface ActionBinding {
   $action: string;
   payload?: Json;
+  /** The compiler's stamp from the host's own risk grading: this action names a
+   *  tool graded anything but `read`, so it asks before it fires. */
+  confirm?: boolean;
 }
 
 /** 08-ui §5 — renderer-owned additive binding; action names stay opaque. */
@@ -213,7 +217,7 @@ function bindValue(
   mode: BoundMode,
   data: Record<string, Json>,
   state: Record<string, Json>,
-  action: (name: string, payload?: Json) => Promise<ToolOutcome>,
+  action: (name: string, payload?: Json, confirm?: boolean) => Promise<ToolOutcome>,
   onMismatch?: (reason: string) => void,
 ): unknown {
   if (isPathBinding(value)) return resolveReshaped(resolvePointer(data, value.$path), value.$reshape, onMismatch);
@@ -234,7 +238,11 @@ function bindValue(
     if (mode === "jail") {
       return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
     }
-    return () => action(value.$action, value.payload === undefined ? undefined : payload);
+    return () => action(
+      value.$action,
+      value.payload === undefined ? undefined : payload,
+      value.confirm === true,
+    );
   }
   if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, onMismatch));
   if (typeof value === "object" && value !== null) {
@@ -253,7 +261,7 @@ function bindProps(
   mode: BoundMode,
   data: Record<string, Json>,
   state: Record<string, Json>,
-  action: (name: string, payload?: Json) => Promise<ToolOutcome>,
+  action: (name: string, payload?: Json, confirm?: boolean) => Promise<ToolOutcome>,
 ): { bound: Record<string, unknown> | undefined; mismatch: string | null } {
   if (props === undefined) return { bound: undefined, mismatch: null };
   let mismatch: string | null = null;
@@ -320,9 +328,25 @@ interface NodeRendererProps {
   state: Record<string, Json>;
   streaming: boolean;
   outcomes: Record<string, ToolOutcome | undefined>;
-  runAction(nodeId: string, action: string, payload?: Json): Promise<ToolOutcome>;
+  /** `confirmWith` present means the press must be confirmed first, in those
+   *  words — the control's own label (see {@link controlWords}). */
+  runAction(nodeId: string, action: string, payload?: Json, confirmWith?: string): Promise<ToolOutcome>;
   setViewState(key: string, value: Json): void;
 }
+
+/**
+ * The words a confirmation asks its question in: the control's own label, so
+ * "Cancel transfer" is answered with "Cancel transfer?" rather than with a tool
+ * name nobody has seen. Only a LITERAL label counts — a bound one is a value,
+ * not a name for the act — and a control with none falls back to plain English.
+ */
+const controlWords = (node: TreeNode): string => {
+  for (const key of ["label", "submitLabel", "title"] as const) {
+    const value = node.props?.[key];
+    if (typeof value === "string" && value.trim() !== "") return value.trim();
+  }
+  return "Continue";
+};
 
 const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid"]);
 
@@ -378,7 +402,12 @@ function NodeRenderer(props: NodeRendererProps) {
 
   const ancestry = new Set(props.ancestry);
   ancestry.add(node.id);
-  const invoke = (action: string, payload?: Json) => props.runAction(node.id, action, payload);
+  const invoke = (action: string, payload?: Json, confirm?: boolean) => props.runAction(
+    node.id,
+    action,
+    payload,
+    confirm === true ? controlWords(node) : undefined,
+  );
   const children = node.children?.map((childId) => (
     <NodeErrorBoundary key={childId} nodeId={childId} retryKey={props.data} streaming={props.streaming}>
       <NodeRenderer {...props} nodeId={childId} ancestry={ancestry} />
@@ -566,8 +595,26 @@ function StatefulTreeView({
   // `useVendoState` (kit/state.ts) — one implementation, two venues.
   const [viewState, updateState] = useKeyedState(onStateChange);
   const [outcomes, setOutcomes] = useState<Record<string, ToolOutcome | undefined>>({});
+  /** The confirmation on screen, and the promise the press is parked on. One at
+   *  a time: a modal is modal, so a second ask replaces the first. */
+  const [ask, setAsk] = useState<{ words: string; answer: (proceed: boolean) => void } | undefined>(undefined);
 
-  const runAction = useCallback(async (nodeId: string, action: string, payload?: Json) => {
+  const runAction = useCallback(async (
+    nodeId: string,
+    action: string,
+    payload?: Json,
+    confirmWith?: string,
+  ): Promise<ToolOutcome> => {
+    // The gate a generated screen cannot forget: the compiler stamped this
+    // action as world-changing from the host's own risk grading, so nothing
+    // reaches the host until a person says yes. Declining is not a failure —
+    // it records no outcome, so the screen shows no error for a press the
+    // person deliberately took back.
+    if (confirmWith !== undefined) {
+      const proceed = await new Promise<boolean>((answer) => setAsk({ words: confirmWith, answer }));
+      setAsk(undefined);
+      if (!proceed) return { status: "blocked", reason: "You kept it — nothing was sent." };
+    }
     let outcome: ToolOutcome;
     try {
       outcome = await onAction({ nodeId, action, ...(payload === undefined ? {} : { payload }) });
@@ -702,6 +749,7 @@ function StatefulTreeView({
         runAction={runAction}
         setViewState={updateState}
       />
+      {ask === undefined ? null : <ConfirmDialog words={ask.words} onAnswer={ask.answer} />}
     </NodeErrorBoundary>
   );
 }

@@ -26,9 +26,12 @@ import {
  * This module is a PURE converter.
  */
 
-/** The canonical action prop shape `{ action: "tool" | "fn:..." }`. */
-const isActionProp = (value: Record<string, unknown>): value is { action: string; payload?: Json } =>
-  typeof value.action === "string";
+/** The canonical action prop shape `{ action: "tool" | "fn:..." }`. `confirm` is
+ *  the compiler's stamp from the host's risk grading (wire/attributes.ts): this
+ *  action changes the world, so the renderer asks before it fires. */
+const isActionProp = (
+  value: Record<string, unknown>,
+): value is { action: string; payload?: Json; confirm?: boolean } => typeof value.action === "string";
 
 const convertPropValue = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(convertPropValue);
@@ -38,6 +41,7 @@ const convertPropValue = (value: unknown): unknown => {
     return {
       $action: record.action,
       ...(record.payload === undefined ? {} : { payload: convertPropValue(record.payload) }),
+      ...(record.confirm === true ? { confirm: true } : {}),
     };
   }
   return Object.fromEntries(Object.entries(record).map(([key, child]) => [key, convertPropValue(child)]));

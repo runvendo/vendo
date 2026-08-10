@@ -38,6 +38,10 @@ export interface CompileState {
   readonly islandNames: ReadonlySet<string>;
   /** D3 — the host catalog names (compiler option) for source resolution. */
   readonly hostComponents: ReadonlySet<string>;
+  /** The tools the host graded as anything but `read` (compiler option) — an
+   *  action naming one of them compiles with `confirm: true`. Empty when the
+   *  caller passed no grading, which is the pre-existing behaviour. */
+  readonly mutatingTools: ReadonlySet<string>;
   /** D3 — hoisted `<Query>` declarations in document order. */
   readonly queries: TreeQuery[];
   /** The hoisted queries' names, kept beside {@link queries} so the

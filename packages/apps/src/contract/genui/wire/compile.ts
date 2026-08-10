@@ -65,6 +65,13 @@ export interface WireCompileOptions {
    *  single-segment inline heads (production extraction names like
    *  `host_listTransactions`). */
   inlineTools?: readonly string[];
+  /** The tools this host graded as anything but `read` — write, destructive, or
+   *  `ungraded`, which the guard already treats like destructive (01-core §4).
+   *  An `on*` action naming one of them compiles with `confirm: true`, so a
+   *  control that changes the world asks first BY CONSTRUCTION rather than
+   *  because the writer remembered a dialog. Absent → nothing is stamped, which
+   *  is what every caller without a tool grading already got. */
+  mutatingTools?: readonly string[];
 }
 
 /** v2 spec §2 / plan D6 — the compile result. */
@@ -112,6 +119,7 @@ export const makeState = (
   queryNames: ReadonlySet<string>,
   islandNames: ReadonlySet<string>,
   hostComponents: ReadonlySet<string>,
+  mutatingTools: ReadonlySet<string> = NO_NAMES,
 ): CompileState => ({
   source: wire,
   index: 0,
@@ -121,6 +129,7 @@ export const makeState = (
   queryNames,
   islandNames,
   hostComponents,
+  mutatingTools,
   queries: [],
   hoistedQueryNames: new Set(),
   components: {},
@@ -564,7 +573,13 @@ const compileWireUnsafe = (rawWire: string, options: WireCompileOptions | undefi
     ? expandInlineRefs(rawWire, options.inlineTools === undefined ? undefined : { tools: options.inlineTools }).wire
     : rawWire;
   const declared = prescanDeclarations(wire);
-  const state = makeState(wire, declared.queryNames, declared.islandNames, new Set(options?.hostComponents ?? []));
+  const state = makeState(
+    wire,
+    declared.queryNames,
+    declared.islandNames,
+    new Set(options?.hostComponents ?? []),
+    new Set(options?.mutatingTools ?? []),
+  );
   const root: TreeNode = { id: "root", component: "Stack", source: "prewired" };
   state.nodes.push(root);
 
