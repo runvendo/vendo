@@ -108,7 +108,7 @@ export function Surface({ title, children }: PropsWithChildren<SurfaceProps>) {
         <div
           style={{
             fontFamily: t.headingFamily,
-            fontSize: "calc(var(--vendo-font-size, 15px) * 1.05)",
+            fontSize: "var(--vendo-font-size, 15px)",
             fontWeight: 650,
             letterSpacing: "-0.015em",
           }}
@@ -150,7 +150,7 @@ export function Card({ title, description, tone = "default", children }: PropsWi
         <div
           style={{
             fontFamily: t.headingFamily,
-            fontSize: "calc(var(--vendo-font-size, 15px) * 1.08)",
+            fontSize: "var(--vendo-font-size, 15px)",
             fontWeight: 650,
             letterSpacing: "-0.015em",
             lineHeight: 1.3,
