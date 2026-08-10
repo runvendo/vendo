@@ -206,6 +206,16 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
     options.mirror(options.ctx.turnId === undefined ? event : { ...event, turnId: options.ctx.turnId });
   };
 
+  /**
+   * How many times this turn has already answered one exact call (`name` plus
+   * its verbatim arguments) — the graded loop recovery gemini-cli's
+   * LoopDetectionService runs: recover on the first detection, refuse on the
+   * second. `capability-miss.ts:150` already counts a tool failing twice, but it
+   * only emits a fire-and-forget telemetry row; the model never sees it, so
+   * nothing about the turn changes and the thrash continues.
+   */
+  const repeats = new Map<string, number>();
+
   const descriptorFor = async (name: string): Promise<ToolDescriptor | undefined> => {
     try {
       return (await options.registry.descriptors()).find((descriptor) => descriptor.name === name);
@@ -264,8 +274,14 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
       const at = workbenchCursor(options.ctx.turnId);
       let guard: ToolFact["guard"];
       let approval: ToolFact["approval"];
+      /** Set once the descriptor is resolved below — read by `finish`. */
+      let risk: ToolDescriptor["risk"] | undefined;
       mirror({ kind: "call", toolCallId, name, args });
       const finish = (result: ToolResult, outcome?: ToolOutcome): ToolResult => {
+        // A successful write changed the world, so every earlier answer is
+        // legitimately re-askable: gemini's own carve-out that re-running
+        // something after a real change is not a loop.
+        if (outcome?.status === "ok" && risk !== "read") repeats.clear();
         mirror({ kind: "result", toolCallId, name, result, ...(outcome === undefined ? {} : { outcome }) });
         if (outcome?.status === "blocked") guard = "block";
         emitWorkbench(options.ctx.turnId, at.agent, {
@@ -305,6 +321,23 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
             error: { code: "not-found", message: `Unknown tool: ${name}` },
           });
         }
+        risk = descriptor.risk;
+
+        // Twice already answered the same way, with these exact arguments: a
+        // third is a loop, not progress. Refused WITHOUT executing and without a
+        // cached payload — a stale answer handed back as a fresh one is a lie.
+        const repeatKey = `${name}:${JSON.stringify(args ?? {})}`;
+        const seen = repeats.get(repeatKey) ?? 0;
+        if (seen >= 2) {
+          return finish({
+            status: "error",
+            error: {
+              code: "repeated-call",
+              message: `${name} has already been called twice with these exact arguments and answered the same way. Do not call it again — say plainly what could not be done, or use different arguments or a different tool.`,
+            },
+          });
+        }
+        repeats.set(repeatKey, seen + 1);
 
         // §1.4: PREVIEW first, exactly as the ai-SDK path's needsApproval hook
         // does. A preview never spends the write-budget/call-rate breakers and
