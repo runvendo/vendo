@@ -430,6 +430,61 @@ export const unknownToolIssues = (tree: Tree, tools: readonly HostToolInfo[] | u
     }));
 };
 
+/** The SAME two facts about an `on*` action that {@link unknownToolIssues}
+ *  decides about a query — the name is real, and the call can actually be made.
+ *  A query got both from the start; an action got neither, so a control could
+ *  name a tool the host does not have (nothing fires) or name a real tool and
+ *  supply none of its required arguments (the call is rejected). Both paint as a
+ *  dead button, which is the one failure a person discovers by pressing it.
+ *
+ *  A `<Form>`'s fields are NOT its submit arguments — Form calls the bound
+ *  action with whatever `payload` the prop declared and nothing else
+ *  (`@vendoai/ui` kit/forms/form.tsx), so `<Form onSubmit="cancel_transfer">`
+ *  around a `<Select>` ships a control that can never work. The legal move is
+ *  the one `queryInputIssues` already names: an `<Island>` whose handler holds
+ *  the value and calls `tools.cancel_transfer({ id })` itself.
+ *
+ *  Conservative on purpose (a check that blocks a GOOD screen is worse than no
+ *  check): `fn:` actions are the app's own server code, a payload that is itself
+ *  a binding is unknowable, and a tool with no required arguments is silent. */
+export const actionWiringIssues = (tree: Tree, tools: readonly HostToolInfo[] | undefined): FactIssue[] => {
+  if (tools === undefined) return [];
+  const known = new Map(tools.map((tool) => [tool.name, tool]));
+  const issues: FactIssue[] = [];
+  const walk = (nodeId: string, prop: string, value: unknown): void => {
+    if (isActionBinding(value)) {
+      const { action, payload } = value as { action: string; payload?: unknown };
+      if (action.startsWith("fn:")) return;
+      const tool = known.get(action);
+      if (tool === undefined) {
+        issues.push(atProp(nodeId, prop, `wires unknown tool "${action}"; the host tools are: ${[...known.keys()].join(", ")}`));
+        return;
+      }
+      const declared = tool.inputSchema?.required;
+      const required = Array.isArray(declared) ? declared.filter((name): name is string => typeof name === "string") : [];
+      if (required.length === 0 || isRuntimeBound(payload)) return;
+      const supplied = isRecord(payload) ? payload : {};
+      const missing = required.filter((name) => !(name in supplied));
+      const first = missing[0];
+      if (first !== undefined) {
+        issues.push(atProp(nodeId, prop, `wires "${action}", which requires ${missing.map((name) => `"${name}"`).join(", ")}, but the action carries no such argument — an \`on*\` action calls its tool with nothing a field or a row holds (a <Form>'s inputs never become its submit's arguments), so this control cannot work. Call the tool from an <Island> that holds the value (\`tools.${action}({ ${first}: … })\`), or leave the control off the screen and say what is missing.`));
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(nodeId, prop, item);
+      return;
+    }
+    if (isRecord(value)) {
+      for (const child of Object.values(value)) walk(nodeId, prop, child);
+    }
+  };
+  for (const node of tree.nodes) {
+    for (const [prop, value] of Object.entries(node.props ?? {})) walk(node.id, prop, value);
+  }
+  return issues;
+};
+
 /** Every `$path` binding resolved query → tool → response shape by the wire
  *  compiler's own checker. A miss carries the fields that ARE there, so the
  *  message can teach instead of only refusing.
@@ -551,6 +606,7 @@ const screenTypeFindings = (tree: Tree, document: AppDocument, deps: FloorDepend
 export const factChecks = (deps: FloorDependencies): Check[] => [
   { name: "document", kind: "fact", run: async ({ document }) => blocking(documentIssues(document)) },
   treeCheck("tools-exist", (tree) => unknownToolIssues(tree, deps.tools)),
+  treeCheck("actions-wired", (tree) => actionWiringIssues(tree, deps.tools)),
   treeCheck("components-exist", (tree, document) => catalogIssues(tree, document.components, deps.catalog)),
   treeCheck("bindings-fit", (tree) => [
     ...bindingShapeIssues(tree, deps),

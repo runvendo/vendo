@@ -25,6 +25,7 @@ import {
 } from "../../../contract/index.js";
 import {
   APP_NAME_MAX_CHARS,
+  actionWiringIssues,
   bindingKindIssues,
   catalogIssues,
   exprIssues,
@@ -93,6 +94,7 @@ export const validateCompiledCreate = async (
   const components = Object.keys(prepared.components).length === 0 ? undefined : prepared.components;
   issues.push(...prepared.issues);
   issues.push(...unknownToolIssues(tree, deps.tools).map(factIssueLine));
+  issues.push(...actionWiringIssues(tree, deps.tools).map(factIssueLine));
   issues.push(...compiled.bindingErrors.map((error) =>
     `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`));
   issues.push(...bindingKindIssues(tree, deps).map(factIssueLine));
