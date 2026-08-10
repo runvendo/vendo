@@ -16,7 +16,6 @@
     "deps:guard": "node scripts/dependency-guard.mjs",
     "corpus": "pnpm --filter @vendoai/corpus-harness corpus",
     "genbench": "pnpm --filter @vendoai/genbench genbench",
-    "corpus:ui-parity": "pnpm --filter @vendoai/corpus-harness ui-parity",
     "test:coverage": "VITEST_MIN_FORKS=1 VITEST_MAX_FORKS=2 VITEST_MIN_THREADS=1 VITEST_MAX_THREADS=2 turbo run test:coverage --continue --concurrency=4",
     "changeset": "changeset",
     "changeset:status": "changeset status --since=origin/main",

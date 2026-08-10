@@ -8,11 +8,6 @@ import {
 } from "./bootstrap.js";
 import { resolveAppRoot } from "./app-root.js";
 import {
-  bootRepo as defaultBootRepo,
-  type BootHandle,
-  type BootRepoOptions,
-} from "./boot.js";
-import {
   ensureRepoCheckout as defaultEnsureRepoCheckout,
   type CloneRepo,
   type EnsureRepoCheckoutOptions,
@@ -29,17 +24,6 @@ import {
   type InitStepResult,
   type RunVendoInitStepOptions,
 } from "./init-step.js";
-import { prepareE2eRepo as defaultPrepareE2eRepo } from "./e2e-prep.js";
-import {
-  runLiveDoctor as defaultRunLiveDoctor,
-  type LiveDoctorResult,
-  type RunLiveDoctorOptions,
-} from "./doctor-live.js";
-import {
-  runE2eLayer as defaultRunE2eLayer,
-  type E2eLayerContext,
-  type E2eLayerRunResult,
-} from "./layers/e2e.js";
 import {
   runScoredLayer as defaultRunScoredLayer,
   type ScoredLayerContext,
@@ -56,14 +40,6 @@ import {
 } from "./layers/structural.js";
 import { loadManifest as defaultLoadManifest, type CorpusManifest, type ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
-import {
-  captureGalleryRepo as defaultCaptureGalleryRepo,
-  discoverConfiguredGalleryRepoNames as defaultDiscoverConfiguredGalleryRepoNames,
-  writeGalleryHtml as defaultWriteGalleryHtml,
-  type CaptureGalleryRepoOptions,
-  type GalleryRepoResult,
-  type WriteGalleryHtmlOptions,
-} from "./gallery.js";
 import {
   buildScorecard,
   renderScorecardMarkdown,
@@ -87,13 +63,6 @@ import {
 } from "./ai/matrix.js";
 import type { ExtractionHarness } from "@vendoai/vendo/extract";
 import {
-  INSTALL_EVAL_DEFAULTS,
-  runInstallEvalCommand as defaultRunInstallEvalCommand,
-  type InstallEvalCommandOptions,
-  type InstallEvalDeps,
-} from "./install-eval/run.js";
-import { INSTALL_EVAL_FIXTURES } from "./install-eval/fixtures.js";
-import {
   applyVendoRootPaste as defaultApplyVendoRootPaste,
   type VendoRootPasteResult,
 } from "./vendo-root-paste.js";
@@ -104,26 +73,15 @@ const usage = `Usage:
   pnpm corpus --help
   pnpm corpus validate
   pnpm corpus list
-  pnpm corpus run [repo...] --layer <1|2|3> [--json] [--strict]
-  pnpm corpus boot <repo> [--timeout-ms <ms>]
-  pnpm corpus gallery [repo...]
+  pnpm corpus run [repo...] --layer <1|2> [--json] [--strict]
   pnpm corpus ai [repo...] [--model <id>]... [--json] [--strict]
-  pnpm corpus install-eval [fixture...] [--model <id>] [--dry-run] [--json] [--strict]
-                           [--turn-budget <n>] [--time-budget-ms <ms>] [--max-budget-usd <usd>]
 
 Commands:
   validate  Load and validate corpus/manifest.json.
   list      Print manifest repo names with tier and source revision/path.
   run       Clone, bootstrap, inject local Vendo, run init, and execute selected layers.
-  boot      Clone, bootstrap, inject local Vendo, run init, boot one deep-tier app, and wait for Ctrl-C.
-  gallery   Boot configured deep-tier repos and capture native/generated screenshots, GIFs, and timings.
   ai        Run the judgment-channel matrix (repo × model) and score against ai-expected.json labels.
             Needs a real model credential (ANTHROPIC_API_KEY or a Claude Code login); never part of pnpm test.
-  install-eval  Prove a real coding agent installs Vendo from the docs' copy-paste prompt alone:
-            clean fixture copies (${INSTALL_EVAL_FIXTURES.map((fixture) => fixture.name).join(", ")}),
-            headless Claude Code, machine scoring, report under corpus/reports/.
-            Spends real model money per live run; never part of pnpm test or CI. --dry-run scores a
-            canned transcript without invoking the agent.
 `;
 
 const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
@@ -148,22 +106,13 @@ export interface CorpusCliDependencies {
     framework: "next" | "express" | undefined,
     initStdout: string,
   ) => Promise<VendoRootPasteResult>;
-  bootRepo?: (repo: ManifestEntry, options?: BootRepoOptions) => Promise<BootHandle>;
-  waitForBootShutdown?: (handle: BootHandle, repo: ManifestEntry) => Promise<void>;
   runStructuralLayer?: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
   runScoredLayer?: (ctx: ScoredLayerContext) => Promise<ScoredLayerRunResult>;
-  prepareE2eRepo?: (repo: ManifestEntry, appRoot: string, logsDir: string) => Promise<string[]>;
-  runE2eLayer?: (ctx: E2eLayerContext) => Promise<E2eLayerRunResult>;
-  runLiveDoctor?: (options: RunLiveDoctorOptions) => Promise<LiveDoctorResult>;
-  discoverConfiguredGalleryRepoNames?: (expectationsRoot: string) => Promise<string[]>;
-  captureGalleryRepo?: (options: CaptureGalleryRepoOptions) => Promise<GalleryRepoResult>;
-  writeGalleryHtml?: (options: WriteGalleryHtmlOptions) => Promise<string>;
   commandRunner?: StructuralCommandRunner;
   discoverAiConfiguredRepoNames?: (expectationsRoot: string) => Promise<string[]>;
   ensureAgentSdk?: (sdkDir: string) => Promise<void>;
   createExtractionHarness?: (sdkDir: string) => ExtractionHarness;
   runAiRepoMatrix?: (options: RunAiRepoMatrixOptions) => Promise<AiRepoResult>;
-  runInstallEval?: (options: InstallEvalCommandOptions, deps: InstallEvalDeps) => Promise<number>;
 }
 
 interface ResolvedDeps {
@@ -183,38 +132,20 @@ interface ResolvedDeps {
     framework: "next" | "express" | undefined,
     initStdout: string,
   ) => Promise<VendoRootPasteResult>;
-  bootRepo: (repo: ManifestEntry, options?: BootRepoOptions) => Promise<BootHandle>;
-  waitForBootShutdown: (handle: BootHandle, repo: ManifestEntry) => Promise<void>;
   runStructuralLayer: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
   runScoredLayer: (ctx: ScoredLayerContext) => Promise<ScoredLayerRunResult>;
-  prepareE2eRepo: (repo: ManifestEntry, appRoot: string, logsDir: string) => Promise<string[]>;
-  runE2eLayer: (ctx: E2eLayerContext) => Promise<E2eLayerRunResult>;
-  runLiveDoctor: (options: RunLiveDoctorOptions) => Promise<LiveDoctorResult>;
-  discoverConfiguredGalleryRepoNames: (expectationsRoot: string) => Promise<string[]>;
-  captureGalleryRepo: (options: CaptureGalleryRepoOptions) => Promise<GalleryRepoResult>;
-  writeGalleryHtml: (options: WriteGalleryHtmlOptions) => Promise<string>;
   commandRunner: StructuralCommandRunner;
   discoverAiConfiguredRepoNames: (expectationsRoot: string) => Promise<string[]>;
   ensureAgentSdk: (sdkDir: string) => Promise<void>;
   createExtractionHarness: (sdkDir: string) => ExtractionHarness;
   runAiRepoMatrix: (options: RunAiRepoMatrixOptions) => Promise<AiRepoResult>;
-  runInstallEval: (options: InstallEvalCommandOptions, deps: InstallEvalDeps) => Promise<number>;
 }
 
 interface RunCommandOptions {
   repoNames: string[];
-  layer: 1 | 2 | 3;
+  layer: 1 | 2;
   json: boolean;
   strict: boolean;
-}
-
-interface BootCommandOptions {
-  repoName: string;
-  timeoutMs?: number;
-}
-
-interface GalleryCommandOptions {
-  repoNames: string[];
 }
 
 interface LoggedCommandRunner {
@@ -236,33 +167,24 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     createInjector: deps.createInjector ?? createLocalVendoInjector,
     runInit: deps.runInit ?? runVendoInitStep,
     applyVendoRootPaste: deps.applyVendoRootPaste ?? defaultApplyVendoRootPaste,
-    bootRepo: deps.bootRepo ?? defaultBootRepo,
-    waitForBootShutdown: deps.waitForBootShutdown ?? waitForBootShutdownSignal,
     runStructuralLayer: deps.runStructuralLayer ?? defaultRunStructuralLayer,
     runScoredLayer: deps.runScoredLayer ?? defaultRunScoredLayer,
-    prepareE2eRepo: deps.prepareE2eRepo ?? defaultPrepareE2eRepo,
-    runE2eLayer: deps.runE2eLayer ?? defaultRunE2eLayer,
-    runLiveDoctor: deps.runLiveDoctor ?? defaultRunLiveDoctor,
-    discoverConfiguredGalleryRepoNames: deps.discoverConfiguredGalleryRepoNames ?? defaultDiscoverConfiguredGalleryRepoNames,
-    captureGalleryRepo: deps.captureGalleryRepo ?? defaultCaptureGalleryRepo,
-    writeGalleryHtml: deps.writeGalleryHtml ?? defaultWriteGalleryHtml,
     commandRunner: deps.commandRunner ?? runHostCommand,
     discoverAiConfiguredRepoNames: deps.discoverAiConfiguredRepoNames ?? defaultDiscoverAiConfiguredRepoNames,
     ensureAgentSdk: deps.ensureAgentSdk ?? defaultEnsureAgentSdk,
     createExtractionHarness: deps.createExtractionHarness ?? corpusExtractionHarness,
     runAiRepoMatrix: deps.runAiRepoMatrix ?? defaultRunAiRepoMatrix,
-    runInstallEval: deps.runInstallEval ?? defaultRunInstallEvalCommand,
   };
 }
 
-function parseLayer(value: string | undefined): 1 | 2 | 3 {
-  if (value === "1" || value === "2" || value === "3") return Number(value) as 1 | 2 | 3;
-  throw new Error(`--layer must be one of 1, 2, or 3; got ${value ?? "nothing"}`);
+function parseLayer(value: string | undefined): 1 | 2 {
+  if (value === "1" || value === "2") return Number(value) as 1 | 2;
+  throw new Error(`--layer must be one of 1 or 2; got ${value ?? "nothing"}`);
 }
 
 function parseRunArgs(args: readonly string[]): RunCommandOptions {
   const repoNames: string[] = [];
-  let layer: 1 | 2 | 3 = 1;
+  let layer: 1 | 2 = 1;
   let json = false;
   let strict = false;
 
@@ -288,42 +210,6 @@ function parseRunArgs(args: readonly string[]): RunCommandOptions {
   }
 
   return { repoNames, layer, json, strict };
-}
-
-function parsePositiveInt(value: string | undefined, label: string): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${label} must be a positive integer; got ${value ?? "nothing"}`);
-  }
-  return parsed;
-}
-
-function parseBootArgs(args: readonly string[]): BootCommandOptions {
-  const repoNames: string[] = [];
-  let timeoutMs: number | undefined;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (!arg) continue;
-    if (arg === "--timeout-ms") {
-      timeoutMs = parsePositiveInt(args[index + 1], "--timeout-ms");
-      index += 1;
-    } else if (arg.startsWith("--timeout-ms=")) {
-      timeoutMs = parsePositiveInt(arg.slice("--timeout-ms=".length), "--timeout-ms");
-    } else if (arg === "--help" || arg === "-h") {
-      throw new Error(usage);
-    } else if (arg.startsWith("-")) {
-      throw new Error(`Unknown boot option: ${arg}`);
-    } else {
-      repoNames.push(arg);
-    }
-  }
-
-  if (repoNames.length !== 1) {
-    throw new Error(`boot expects exactly one repo name; got ${repoNames.length}`);
-  }
-
-  return { repoName: repoNames[0] ?? "", timeoutMs };
 }
 
 interface AiCommandOptions {
@@ -371,67 +257,6 @@ function parseAiArgs(args: readonly string[]): AiCommandOptions {
   };
 }
 
-export function parseInstallEvalArgs(args: readonly string[]): InstallEvalCommandOptions {
-  const fixtureNames: string[] = [];
-  let model: string = INSTALL_EVAL_DEFAULTS.model;
-  let dryRun = false;
-  let json = false;
-  let strict = false;
-  let turnBudget: number = INSTALL_EVAL_DEFAULTS.turnBudget;
-  let timeBudgetMs: number = INSTALL_EVAL_DEFAULTS.timeBudgetMs;
-  let maxBudgetUsd: number = INSTALL_EVAL_DEFAULTS.maxBudgetUsd;
-
-  const valueOf = (arg: string, next: string | undefined, label: string): string => {
-    if (arg.includes("=")) return arg.slice(arg.indexOf("=") + 1);
-    if (!next || next.startsWith("-")) throw new Error(`${label} needs a value`);
-    return next;
-  };
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (!arg) continue;
-    if (arg === "--model" || arg.startsWith("--model=")) {
-      model = valueOf(arg, args[index + 1], "--model");
-      if (!arg.includes("=")) index += 1;
-    } else if (arg === "--turn-budget" || arg.startsWith("--turn-budget=")) {
-      turnBudget = parsePositiveInt(valueOf(arg, args[index + 1], "--turn-budget"), "--turn-budget");
-      if (!arg.includes("=")) index += 1;
-    } else if (arg === "--time-budget-ms" || arg.startsWith("--time-budget-ms=")) {
-      timeBudgetMs = parsePositiveInt(valueOf(arg, args[index + 1], "--time-budget-ms"), "--time-budget-ms");
-      if (!arg.includes("=")) index += 1;
-    } else if (arg === "--max-budget-usd" || arg.startsWith("--max-budget-usd=")) {
-      const value = Number(valueOf(arg, args[index + 1], "--max-budget-usd"));
-      if (!Number.isFinite(value) || value <= 0) throw new Error(`--max-budget-usd must be a positive number; got ${value}`);
-      maxBudgetUsd = value;
-      if (!arg.includes("=")) index += 1;
-    } else if (arg === "--dry-run") {
-      dryRun = true;
-    } else if (arg === "--json") {
-      json = true;
-    } else if (arg === "--strict") {
-      strict = true;
-    } else if (arg === "--help" || arg === "-h") {
-      throw new Error(usage);
-    } else if (arg.startsWith("-")) {
-      throw new Error(`Unknown install-eval option: ${arg}`);
-    } else {
-      fixtureNames.push(arg);
-    }
-  }
-
-  return { fixtureNames, model, dryRun, json, strict, turnBudget, timeBudgetMs, maxBudgetUsd };
-}
-
-function parseGalleryArgs(args: readonly string[]): GalleryCommandOptions {
-  const repoNames: string[] = [];
-  for (const arg of args) {
-    if (arg === "--help" || arg === "-h") throw new Error(usage);
-    if (arg.startsWith("-")) throw new Error(`Unknown gallery option: ${arg}`);
-    repoNames.push(arg);
-  }
-  return { repoNames };
-}
-
 function selectedRepos(manifest: CorpusManifest, names: readonly string[]): ManifestEntry[] {
   if (names.length === 0) return [...manifest];
   const byName = new Map(manifest.map((repo) => [repo.name, repo]));
@@ -446,11 +271,6 @@ function selectedRepos(manifest: CorpusManifest, names: readonly string[]): Mani
 
 function artifactPaths(artifacts: InitStepArtifacts): string[] {
   return [artifacts.log, artifacts.diff, artifacts.tokenCost].filter((value): value is string => Boolean(value));
-}
-
-function bootHandleLogPaths(handle: BootHandle): string[] {
-  return [handle.logPaths.server, handle.logPaths.seed, handle.logPaths.database]
-    .filter((value): value is string => Boolean(value));
 }
 
 function failureLayer(
@@ -468,16 +288,6 @@ function failureLayer(
     logPaths,
     hardFailure: true,
   };
-}
-
-function requestedLayers(layer: 1 | 2 | 3): number[] {
-  return Array.from({ length: layer }, (_value, index) => index + 1);
-}
-
-function layerName(layer: number): string {
-  if (layer === 1) return "structural";
-  if (layer === 2) return "scored";
-  return "e2e";
 }
 
 function printBaselineUpdate(
@@ -695,7 +505,7 @@ async function runRepoThroughLayerOne(
       },
     ];
 
-    if (requestedLayers(options.layer).includes(2)) {
+    if (options.layer === 2) {
       try {
         const scored = await deps.runScoredLayer({
           repoName: repo.name,
@@ -707,69 +517,6 @@ async function runRepoThroughLayerOne(
         printBaselineUpdate(repo, scored.baselineUpdate, context, deps, options);
       } catch (error) {
         layers.push(failureLayer(2, "scored", "scored layer", error, logPaths));
-      }
-    }
-
-    if (requestedLayers(options.layer).includes(3)) {
-      if (repo.tier !== "deep") {
-        layers.push({
-          layer: 3,
-          name: layerName(3),
-          status: "skip",
-          detail: "Layer 3 is deep-tier only.",
-          logPaths,
-          hardFailure: false,
-        });
-      } else {
-        let handle: BootHandle | undefined;
-        let layer: ScorecardLayerInput | undefined;
-        const layerLogPaths = [...logPaths];
-        try {
-          layerLogPaths.push(...await deps.prepareE2eRepo(repo, appRoot, context.logsDir(repo.name)));
-          handle = await deps.bootRepo(repo, {
-            context,
-            env: deps.env,
-          });
-          layerLogPaths.push(...bootHandleLogPaths(handle));
-          const doctor = repo.framework === "express"
-            ? await deps.runLiveDoctor({
-                workspaceRoot: deps.workspaceRoot ?? defaultWorkspaceRoot,
-                appRoot,
-                readinessUrl: handle.readinessUrl,
-                logsDir: context.logsDir(repo.name),
-                env: deps.env,
-              })
-            : undefined;
-          if (doctor) layerLogPaths.push(doctor.logPath);
-          const e2e = await deps.runE2eLayer({
-            repoName: repo.name,
-            repoDir: appRoot,
-            readinessUrl: handle.readinessUrl,
-            expectationsRoot: path.join(context.corpusRoot, "expectations"),
-            logsDir: context.logsDir(repo.name),
-            now: deps.now,
-          });
-          layer = {
-            ...e2e.layer,
-            ...(doctor && !doctor.check.pass ? { status: "fail" as const, hardFailure: true } : {}),
-            checks: [...(e2e.layer.checks ?? []), ...(doctor ? [doctor.check] : [])],
-            logPaths: [...layerLogPaths, ...(e2e.layer.logPaths ?? [])],
-          };
-        } catch (error) {
-          layer = failureLayer(3, "e2e", "e2e layer", error, layerLogPaths);
-        } finally {
-          if (handle) {
-            try {
-              await handle.teardown();
-            } catch (error) {
-              layer = failureLayer(3, "e2e", "e2e teardown", error, layerLogPaths);
-            }
-          }
-        }
-        if (!layer) {
-          layer = failureLayer(3, "e2e", "e2e layer", "Layer 3 did not produce a result.", layerLogPaths);
-        }
-        layers.push(layer);
       }
     }
 
@@ -807,124 +554,6 @@ async function runSweep(options: RunCommandOptions, deps: ResolvedDeps): Promise
   }
 
   return scorecardExitCode(scorecard);
-}
-
-async function runBootCommand(options: BootCommandOptions, deps: ResolvedDeps): Promise<number> {
-  const manifest = await deps.loadManifest();
-  const repo = selectedRepos(manifest, [options.repoName])[0];
-  if (!repo) throw new Error(`Unknown corpus repo "${options.repoName}"`);
-
-  const context = deps.createContext();
-  const injector = deps.createInjector({ context, workspaceRoot: deps.workspaceRoot });
-  const { appRoot } = await prepareRepo(repo, context, injector, deps);
-  const init = await runCheckedInit(repo, context, deps, "boot.init");
-  await deps.applyVendoRootPaste(appRoot, repo.framework, await readOptional(init.artifacts.log) ?? "");
-  await deps.prepareE2eRepo(repo, appRoot, context.logsDir(repo.name));
-
-  const handle = await deps.bootRepo(repo, {
-    context,
-    env: deps.env,
-    readinessTimeoutMs: options.timeoutMs,
-  });
-
-  deps.stdout(`Booted ${repo.name} at ${handle.readinessUrl}`);
-  deps.stdout(`Server log: ${path.relative(context.corpusRoot, handle.logPaths.server)}`);
-  try {
-    await deps.waitForBootShutdown(handle, repo);
-  } finally {
-    await handle.teardown();
-  }
-
-  return 0;
-}
-
-async function runGalleryCommand(options: GalleryCommandOptions, deps: ResolvedDeps): Promise<number> {
-  const manifest = await deps.loadManifest();
-  const context = deps.createContext();
-  const expectationsRoot = path.join(context.corpusRoot, "expectations");
-  const repoNames = options.repoNames.length > 0
-    ? options.repoNames
-    : await deps.discoverConfiguredGalleryRepoNames(expectationsRoot);
-  if (repoNames.length === 0) {
-    throw new Error("No corpus gallery configs found. Add corpus/expectations/<repo>/gallery.json or pass repo names explicitly.");
-  }
-  const repos = selectedRepos(manifest, repoNames);
-  for (const repo of repos) {
-    if (repo.tier !== "deep") {
-      throw new Error(`gallery requires a deep-tier boot recipe; ${repo.name} is ${repo.tier}-tier.`);
-    }
-  }
-
-  const generatedAt = deps.now().toISOString();
-  const runId = generatedAt.replaceAll(":", "-").replace(".", "-");
-  const runRoot = path.join(context.reposDir, ".gallery", runId);
-  await mkdir(runRoot, { recursive: true });
-  const injector = deps.createInjector({ context, workspaceRoot: deps.workspaceRoot });
-  const results: GalleryRepoResult[] = [];
-
-  for (const repo of repos) {
-    let handle: BootHandle | undefined;
-    let result: GalleryRepoResult | undefined;
-    let failure: string | undefined;
-    try {
-      const { appRoot } = await prepareRepo(repo, context, injector, deps);
-      const init = await runCheckedInit(repo, context, deps, "gallery.init");
-      await deps.applyVendoRootPaste(appRoot, repo.framework, await readOptional(init.artifacts.log) ?? "");
-      await deps.prepareE2eRepo(repo, appRoot, context.logsDir(repo.name));
-      // Build only when the dev server serves prebuilt output (manifest
-      // devServer.requiresBuild). Self-compiling dev servers boot without a
-      // production build — same seam `corpus boot` and Layer 3 have always
-      // used — and papermark's upstream baseline build is broken at the pin
-      // (layers 1-2 record it as skipped-baseline-broken).
-      if (repo.bootstrap.buildCommand && repo.bootstrap.devServer?.requiresBuild === true) {
-        const build = createLoggedCommandRunner(
-          context.logsDir(repo.name),
-          "gallery.build",
-          deps.commandRunner,
-        );
-        const buildResult = await build.runner(repo.bootstrap.buildCommand, {
-          cwd: appRoot,
-          env: deps.env,
-        });
-        if (buildResult.code !== 0) {
-          throw new Error(
-            `gallery build failed for ${repo.name} with exit code ${buildResult.code ?? "unknown"}; see ${build.logPaths.join(", ")}`,
-          );
-        }
-      }
-      handle = await deps.bootRepo(repo, { context, env: deps.env });
-      result = await deps.captureGalleryRepo({
-        repoName: repo.name,
-        readinessUrl: handle.readinessUrl,
-        expectationsRoot,
-        runRoot,
-      });
-    } catch (error) {
-      failure = errorMessage(error);
-      deps.stderr(`Gallery capture failed for ${repo.name}: ${failure}`);
-    } finally {
-      if (handle) {
-        try {
-          await handle.teardown();
-        } catch (error) {
-          failure = `teardown failed: ${errorMessage(error)}`;
-          deps.stderr(`Gallery teardown failed for ${repo.name}: ${errorMessage(error)}`);
-        }
-      }
-    }
-    results.push(failure
-      ? { repoName: repo.name, nativeScreens: [], prompts: [], error: failure }
-      : result ?? { repoName: repo.name, nativeScreens: [], prompts: [], error: "capture produced no result" });
-  }
-
-  const galleryPath = await deps.writeGalleryHtml({
-    runId,
-    runRoot,
-    generatedAt,
-    repos: results,
-  });
-  deps.stdout(`Gallery: ${galleryPath}`);
-  return results.some((result) => result.error) ? 1 : 0;
 }
 
 async function runAiCommand(options: AiCommandOptions, deps: ResolvedDeps): Promise<number> {
@@ -997,21 +626,6 @@ async function runAiCommand(options: AiCommandOptions, deps: ResolvedDeps): Prom
   return options.strict && scoreboard.summary.failedRuns > 0 ? 1 : 0;
 }
 
-function waitForBootShutdownSignal(): Promise<void> {
-  return new Promise((resolve) => {
-    const cleanup = () => {
-      process.off("SIGINT", onSignal);
-      process.off("SIGTERM", onSignal);
-    };
-    const onSignal = () => {
-      cleanup();
-      resolve();
-    };
-    process.once("SIGINT", onSignal);
-    process.once("SIGTERM", onSignal);
-  });
-}
-
 export async function runCli(args = process.argv.slice(2), providedDeps: CorpusCliDependencies = {}): Promise<number> {
   const deps = resolveDeps(providedDeps);
   const command = args[0];
@@ -1040,28 +654,8 @@ export async function runCli(args = process.argv.slice(2), providedDeps: CorpusC
       return await runSweep(parseRunArgs(args.slice(1)), deps);
     }
 
-    if (command === "boot") {
-      return await runBootCommand(parseBootArgs(args.slice(1)), deps);
-    }
-
-    if (command === "gallery") {
-      return await runGalleryCommand(parseGalleryArgs(args.slice(1)), deps);
-    }
-
     if (command === "ai") {
       return await runAiCommand(parseAiArgs(args.slice(1)), deps);
-    }
-
-    if (command === "install-eval") {
-      const options = parseInstallEvalArgs(args.slice(1));
-      return await deps.runInstallEval(options, {
-        stdout: deps.stdout,
-        stderr: deps.stderr,
-        now: deps.now,
-        env: (deps.env ?? process.env) as NodeJS.ProcessEnv,
-        workspaceRoot: deps.workspaceRoot ?? defaultWorkspaceRoot,
-        context: deps.createContext(),
-      });
     }
 
     deps.stderr(`Unknown corpus command: ${command}`);
