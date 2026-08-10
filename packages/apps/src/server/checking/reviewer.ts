@@ -49,7 +49,7 @@ const REPORT_FINDINGS_SCHEMA: Record<string, unknown> = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["severity", "where", "message"],
+        required: ["severity", "where", "message", "confidence", "priority"],
         properties: {
           severity: {
             type: "string",
@@ -64,6 +64,16 @@ const REPORT_FINDINGS_SCHEMA: Record<string, unknown> = {
             type: "string",
             description: "One sentence: what is wrong AND the real alternative.",
           },
+          confidence: {
+            type: "number",
+            description:
+              "0.0-1.0: how sure you are this is really wrong, judged against the data you were shown.",
+          },
+          priority: {
+            type: "integer",
+            description:
+              "the author would fix it now (0), soon (1), eventually (2), never (3).",
+          },
         },
       },
     },
@@ -73,16 +83,28 @@ const REPORT_FINDINGS_SCHEMA: Record<string, unknown> = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** A block the reviewer is not sure about is only a warn: a block costs a whole
+ *  second model drive, so it is spent on findings the reviewer itself says the
+ *  author would fix now and is sure about. An unreadable or missing certainty
+ *  stays a block — fail closed, the same way a reviewer that could not judge
+ *  reports nothing. */
+const CERTAIN_ENOUGH_TO_BLOCK = 0.8;
+
 /** The reported findings, keeping only entries that really are {@link Finding}s
- *  — a malformed entry is dropped, never coerced and never thrown. */
+ *  — a malformed entry is dropped, never coerced and never thrown. The
+ *  self-reported certainty is read here and then dropped: the shape that leaves
+ *  is exactly a {@link Finding}. */
 const findingsFrom = (reported: unknown): Finding[] => {
   if (!Array.isArray(reported)) return [];
   return reported.flatMap((entry) => {
     if (!isRecord(entry)) return [];
-    const { severity, where, message } = entry;
+    const { severity, where, message, confidence, priority } = entry;
     if (severity !== "block" && severity !== "warn") return [];
     if (typeof where !== "string" || typeof message !== "string") return [];
-    return [{ severity, where, message }];
+    const unsure =
+      (typeof confidence === "number" && confidence < CERTAIN_ENOUGH_TO_BLOCK) ||
+      (typeof priority === "number" && priority > 1);
+    return [{ severity: severity === "block" && unsure ? "warn" : severity, where, message }];
   });
 };
 
