@@ -13,6 +13,7 @@ import {
   type RunContext,
 } from "@vendoai/core";
 import {
+  renderBriefingPack,
   type AppDocument,
   type AppPlan,
 } from "../../contract/index.js";
@@ -108,9 +109,9 @@ export const createMachineLane = (config: AppsConfig) => {
 
 const createBoxEditor = (
   deps: Pick<AppsRuntimeContext,
-    "lifecycle" | "manifestTriggers" | "updateAppDocument" | "boxEditPollMs" | "boxEditTimeoutMs">,
+    "config" | "lifecycle" | "manifestTriggers" | "updateAppDocument" | "boxEditPollMs" | "boxEditTimeoutMs">,
 ) => {
-  const { lifecycle, manifestTriggers, updateAppDocument, boxEditPollMs, boxEditTimeoutMs } = deps;
+  const { config, lifecycle, manifestTriggers, updateAppDocument, boxEditPollMs, boxEditTimeoutMs } = deps;
   /**
    * The box server-edit primitive: wake the (already-provisioned) machine,
    * re-inject the current boundary env (grant-flip restart loop), send the
@@ -134,9 +135,19 @@ const createBoxEditor = (
       ? `${skinContractPrompt(app)}\n${servedAppContractPrompt()}`
       : skinContractPrompt(app);
     const memory = appMemoryBrief(app.memory);
+    // THE briefing pack, rendered once by the one assembly point (contract
+    // §2.5) — the same bytes the screen agent reads. Everything above it is
+    // INSTRUCTION and stays this rung's own: the skin contract is a job
+    // description for a machine with a shell, which the screen agent does not
+    // have. Knowledge identical, instructions not.
+    const briefing = config.briefing === undefined
+      ? undefined
+      : renderBriefingPack(await config.briefing(ctx));
     const result = await runBoxEdit(machine, {
       prompt: instruction,
-      context: memory === undefined ? contract : `${memory}\n\n${contract}`,
+      context: [briefing, memory, contract]
+        .filter((section): section is string => section !== undefined && section.trim() !== "")
+        .join("\n\n---\n\n"),
       ...(boxEditPollMs === undefined ? {} : { pollIntervalMs: boxEditPollMs }),
       ...(boxEditTimeoutMs === undefined ? {} : { timeoutMs: boxEditTimeoutMs }),
     });

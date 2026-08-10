@@ -52,6 +52,8 @@ import {
   UNKNOWN_OUTPUT_SHAPE_NOTE,
 } from "@vendoai/core";
 import {
+  renderBriefingPack,
+  type BriefingPack,
   type ScreenAssembler,
   type ScreenOutcome,
   type ScreenRequest,
@@ -130,13 +132,11 @@ export interface ScreenInput {
   appId: AppId;
   /** The person's ask, verbatim. */
   request: string;
-  /** The deployment's assembled prompt, when there is one — prepended, so the
-   *  host's voice and the guard's directions are not lost to the job description. */
-  system?: string;
-  /** The host's own theme tokens and design rules (`hostDesignBrief`), when
-   *  composition has them. House rules for the WRITER, so they sit with the job
-   *  description rather than with the deployment's voice. */
-  design?: string;
+  /** THE briefing pack, already rendered (`renderBriefingPack`) — the host's
+   *  theme, design rules, product brief, component catalog and tool shape card,
+   *  in the same bytes the box rung is handed. Knowledge, not instruction, so it
+   *  sits with the job description rather than with the deployment's voice. */
+  briefing?: string;
 }
 
 /** What one assembly run answers. `ScreenOutcome` plus the title an assembled
@@ -247,16 +247,16 @@ deliberate.
 
 ${toolBrief(listings)}`;
 
-/** The full brief: the deployment's own prompt, the shipped job description, the
- *  shipped syntax manual, the host's own house rules, then what is different
- *  here. The design brief sits with the job rather than with the deployment's
- *  voice — it is configuration the writer obeys, not a thing to say. */
+/** The full brief: the shipped job description, the shipped syntax manual, the
+ *  briefing pack, then what is different here. The manual and the environment
+ *  note are this rung's own INSTRUCTIONS — the box is told a different job in
+ *  its own words; the pack between them is the product knowledge both rungs
+ *  read byte for byte (`contract/briefing.ts`). */
 function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): string {
   return [
-    input.system,
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
-    input.design,
+    input.briefing,
     environmentNote(input.appId, listings),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
@@ -585,12 +585,18 @@ export interface ScreenAssemblerDeps {
    *  compiles in the production dialect and passes the same floor, or it does not
    *  paint. */
   render?: (ctx: RunContext) => Omit<RenderSeamOptions, "emit">;
-  /** The deployment's assembled prompt for this ctx, when composition has one. */
-  system?: (ctx: RunContext) => Promise<string | undefined>;
-  /** The host's theme tokens and design rules (`hostDesignBrief` in
-   *  `@vendoai/apps`). A thunk, not a value: `designRules` resolves per
-   *  generation so a console publish applies to the next screen. */
-  design?: () => string | undefined;
+  /**
+   * THE briefing pack (`AppsConfig.briefing`, assembled in
+   * `compose-surfaces.ts`) — everything this host's writers are told about the
+   * product. Two slots collapsed into one on purpose: the theme and design
+   * rules and the tool shape card were two seams with two owners and two
+   * arrival routes, which is how the box rung ended up with neither.
+   *
+   * Per call and ctx-taking: `designRules` re-resolves per generation so a
+   * console publish applies to the next screen, and the shape card is projected
+   * for THIS caller's tools.
+   */
+  briefing?: (ctx: RunContext) => Promise<BriefingPack>;
   /**
    * Where a run's `decisions` land: the runtime's one memory door
    * (`AppsRuntime.remember`), which this file deliberately does not reach for
@@ -633,8 +639,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
         ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
         emit: (_streamId, part) => request.onView?.(part),
       });
-      const system = await deps.system?.(ctx);
-      const design = deps.design?.();
+      const pack = await deps.briefing?.(ctx);
       const result = await assembleScreen(
         {
           models: deps.models,
@@ -648,8 +653,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
         {
           appId: request.appId,
           request: request.request,
-          ...(system === undefined ? {} : { system }),
-          ...(design === undefined ? {} : { design }),
+          ...(pack === undefined ? {} : { briefing: renderBriefingPack(pack) }),
         },
       );
       if (result.kind !== "assembled") return result;

@@ -113,11 +113,6 @@ export type { GenerationDependencies } from "./generation/engine.js";
 // through.
 export { agentToolDescriptors } from "./doors/agent-tools.js";
 export { buildingAppsSkill } from "./skills/building-apps.js";
-// The host's own theme and design rules, as the writers read them. Public
-// because both briefs that carry them are assembled outside this package — the
-// builder's in composition — and a second rendering of the same two config keys
-// is how they start to disagree.
-export { hostDesignBrief } from "./generation/contracts/sections.js";
 // Contract §3.2 — the checkout/commit seam. Public because the workspace half of
 // it lives outside this package: a sandboxed harness holds a `WorkspaceFs` and
 // never a store, so composition binds the store side once and hands these to

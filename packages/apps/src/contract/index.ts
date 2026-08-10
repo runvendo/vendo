@@ -81,6 +81,8 @@ export * from "./genui/screen.js";
 export * from "./kit/index.js";
 // catalog + theme — one catalog shape, one summary
 export * from "./catalog.js";
+// the briefing pack — one assembly, both rungs
+export * from "./briefing.js";
 export * from "./theme.js";
 // screen + floor + checking contract
 export * from "./screen.js";

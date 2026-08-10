@@ -6,13 +6,13 @@
  */
 import { shapeFromJsonSchema, type RunContext, type ShapeType } from "@vendoai/core";
 import type { LanguageModel } from "ai";
-import { snapshotDesignRules, type GenerationDependencies } from "../generation/engine.js";
+import type { GenerationDependencies } from "../generation/engine.js";
 import type { AppsConfig } from "./types.js";
 
 /** Resolve a value-or-provider config slot. The provider (function) form is
- *  called ONCE here — generationDependencies runs once per create/edit — so
- *  theme/semantics match designRules' "re-read per generation" contract
- *  and a first-request cloud-backed provider never does I/O at compose time. */
+ *  called ONCE here — generationDependencies runs once per create/edit — so a
+ *  slot matches the "re-read per generation" contract and a first-request
+ *  cloud-backed provider never does I/O at compose time. */
 export const resolveProvider = <T>(slot: T | (() => T | undefined) | undefined): T | undefined =>
   typeof slot === "function" ? (slot as () => T | undefined)() : slot;
 
@@ -21,18 +21,15 @@ export const generationDependencies = (
   model: LanguageModel,
   toolContext: Pick<GenerationDependencies, "tools" | "toolShapes">,
 ): GenerationDependencies => {
-  const theme = resolveProvider(config.theme);
   const semantics = resolveProvider(config.semantics);
-  return snapshotDesignRules({
+  return {
     model,
     catalog: config.catalog,
-    ...(theme === undefined ? {} : { theme }),
-    designRules: config.designRules,
     pinBaselines: config.pinBaselines,
     ...(semantics === undefined ? {} : { semantics }),
     ...toolContext,
     ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),
-  });
+  };
 };
 
 export const createGenerationContext = (config: AppsConfig) => {

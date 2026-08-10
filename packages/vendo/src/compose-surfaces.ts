@@ -5,12 +5,15 @@
  * arrives through, and the component catalog.
  */
 import { mergedHostSemantics, VENDO_TOOLS_FORMAT } from "@vendoai/actions";
-import { agentToolDescriptors, buildingAppsSkill, hostDesignBrief } from "@vendoai/apps";
+import { agentToolDescriptors, buildingAppsSkill } from "@vendoai/apps";
 import {
   VendoError,
+  type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
 import {
+  catalogSummaryEntries,
+  type BriefingPack,
   type VendoTheme,
 } from "@vendoai/apps/contract";
 import {
@@ -39,7 +42,7 @@ import {
 /** cse lane 3 — the config surfaces, resolved to the shapes app generation and
  *  the system prompt read them through. */
 export const composeSurfaces = (composition: VendoComposition): Pick<VendoComposition,
-  "theme" | "themeProvider" | "designRules" | "writerDesignBrief" | "pinBaselines"
+  "theme" | "themeProvider" | "designRules" | "briefing" | "pinBaselines"
   | "hostSemanticsProvider" | "capability" | "catalog"> => {
   const { config, configCloud, readSurfaceFile, surfaceRoot, memoizeOnce } = composition;
   // Theme surface (cse lane 3, boot-once/next-load STRUCTURAL): explicit config
@@ -66,17 +69,43 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
     ? configDesignRules
     : () => selectConfigSurface("design-rules.md", { readFile: readSurfaceFile, cloud: configCloud }).value;
   /**
-   * The same two config keys, for whoever WRITES the app.
+   * THE briefing pack, and the ONLY place one is assembled (contract §2.5).
    *
-   * The apps thunk seam below hands them to the fill worker; this hands them to
-   * the two briefs assembled outside that seam — the screen agent's, and the
-   * deployment prompt an escalated build thinks with inside the box.
-   * `claudeCode()` is the HARNESS that runs that box, not a builder: the screen
-   * agent and its escalation are the one generation brain. Rendered by the apps
-   * block's own sections either way, so the writers cannot be told different
-   * things. Resolved per call for the same reason `designRules` is a provider.
+   * Everything a writer is told about this product, in one object: the theme
+   * verbatim, the host's design rules, `.vendo/brief.md`, the component catalog
+   * one line at a time, and the semantics-annotated tool shape card. Both rungs
+   * — the screen agent here in the umbrella, and the in-box builder through
+   * `AppsConfig.briefing` — render these same bytes. `claudeCode()` is the
+   * HARNESS that runs that box, not a builder: the screen agent and its
+   * escalation are the one generation brain.
+   *
+   * Assembled per call, for the reason `designRules` is a provider: the rules
+   * re-resolve per generation, and the shape card is projected for THIS caller.
+   *
+   * `brief` reads the SAME resolution the deployment's own prompt does
+   * (`compose-prompt.ts`'s `product` — explicit `instructions`, then the
+   * in-memory profile, then `.vendo/brief.md` file → cloud). A second reader of
+   * that file is how the two would start to disagree about what the product is.
+   * Read lazily because compose-prompt runs after this lane, exactly as the
+   * apps-runtime thunk below is.
    */
-  const writerDesignBrief = (): string => hostDesignBrief({ theme: themeProvider(), designRules });
+  const briefing = async (ctx: RunContext): Promise<BriefingPack> => {
+    const theme = themeProvider();
+    const rules = (typeof designRules === "function" ? designRules() : designRules)?.trim();
+    const product = composition.system?.product;
+    const brief = (typeof product === "function" ? product() : product)?.trim();
+    const appsRuntime = composition.appsRuntime;
+    return {
+      ...(theme === undefined ? {} : { theme }),
+      ...(rules === undefined || rules === "" ? {} : { designRules: rules }),
+      ...(brief === undefined || brief === "" ? {} : { brief }),
+      catalog: catalogSummaryEntries(composition.catalog),
+      // The one rendering of the shape card there is (`AppsRuntime.toolShapeBrief`).
+      // Absent before the apps runtime is composed, which only a boot-time
+      // caller could see — every real read happens inside a request.
+      hostSemantics: appsRuntime === undefined ? "" : await appsRuntime.toolShapeBrief(ctx),
+    };
+  };
   const pinBaselines = dotVendoPinBaselines(config.profileDir);
   // W3 + cse lane 3 — field semantics from the merged .vendo
   // pair (generated tools.json overlaid by overrides.json). The OVERRIDES
@@ -118,7 +147,7 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
     theme,
     themeProvider,
     designRules,
-    writerDesignBrief,
+    briefing,
     pinBaselines,
     hostSemanticsProvider,
     ...capabilityAndCatalog(composition),

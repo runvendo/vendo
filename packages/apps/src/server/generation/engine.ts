@@ -15,7 +15,6 @@ import {
 import {
   type AppDocument,
   type Tree,
-  type VendoTheme,
 } from "../../contract/index.js";
 import type { LanguageModel, ModelMessage } from "ai";
 import type { FloorDependencies } from "../checking/deps.js";
@@ -37,11 +36,6 @@ export interface GenerationDependencies extends FloorDependencies {
   /** Narrowed to REQUIRED: the floor can run its deterministic half without a
    *  model, but a generation cannot happen without one. */
   model: LanguageModel;
-  theme?: VendoTheme;
-  /** Host design rules for the generation prompt. The function form is resolved
-   *  ONCE per generation (see {@link snapshotDesignRules}), so the prompts
-   *  within one create never mix rule sets. */
-  designRules?: string | (() => string | undefined);
   pinBaselines?: readonly PinBaseline[];
   /** Per-tool field semantics from `.vendo/semantics.json`: annotated shape
    *  cards and Kit format defaults. Keyed by tool name. */
@@ -89,12 +83,6 @@ export const cacheableGenerationMessages = (system: string, prompt: string): Mod
   { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
   { role: "user", content: prompt },
 ];
-
-/** A provider-form `designRules` is resolved ONCE per generation, so every
- *  prompt within one create/edit sees the same rules; the next generation
- *  re-resolves. */
-export const snapshotDesignRules = (deps: GenerationDependencies): GenerationDependencies =>
-  typeof deps.designRules === "function" ? { ...deps, designRules: deps.designRules() } : deps;
 
 /**
  * One model call, text accumulated off the stream — the answer lands whole or

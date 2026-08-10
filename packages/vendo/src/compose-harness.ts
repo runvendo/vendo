@@ -159,7 +159,7 @@ const harnessTurnConfig = (
 ): Parameters<typeof createHarnessTurns>[0] => {
   const { harness, sandbox, store, files, guard, boundTools, capability, catalog } = composition;
   const { inference, system, toolSearch, capabilityMiss } = composition;
-  const { serviceCatalog, toolOutputCap, connectGate, membershipsSeam, writerDesignBrief } = composition;
+  const { serviceCatalog, toolOutputCap, connectGate, membershipsSeam } = composition;
   // The host's `surfaces.agent` menu, bound at the harness door's registry
   // handle so it curates EVERY brain's `turn.tools.list()` — see withAgentMenu.
   // `agentMenu` is composed after this phase (compose-discovery.ts) and only
@@ -184,13 +184,14 @@ const harnessTurnConfig = (
     // can never name different sets.
     catalog,
     models: inference.seats,
-    // The host's house rules ride HERE rather than inside `claudeCode()`: that
-    // harness thinks with `turn.system` whole and alone, and lines it appends
-    // after the host's prompt seam are exactly what it refuses to invent
-    // (`claude-code/index.ts`). It writes `app.vendo` with its own hands, so
-    // without this the theme and `apps.designRules` reach the fill worker and
-    // the screen agent and never reach the builder.
-    system: async (ctx, opts) => `${await assembleSystemPrompt(
+    // The CONVERSATIONAL prompt, and only that. The host's theme and design
+    // rules used to be appended here too, on the belief that `claudeCode()` was
+    // the builder; it is the HARNESS that runs a box, and the two rungs that
+    // really write apps read the briefing pack (compose-surfaces.ts). A thinker
+    // that talks to the person is told what the product is and what its screens
+    // look like by `assembleSystemPrompt` itself — appending the pack on top
+    // would repeat the brief and the catalog it already carries.
+    system: async (ctx, opts) => await assembleSystemPrompt(
       guard,
       ctx,
       system,
@@ -202,7 +203,7 @@ const harnessTurnConfig = (
       // teaching it would name a tool that is not there.
       true,
       opts?.discovery ?? "find-tools",
-    )}\n\n${writerDesignBrief()}`,
+    ),
     // vendo()'s tool-search strategy (for the composed adapter slot) and the
     // honest-refusal rail, defined once (compose-prompt.ts).
     toolSearch,

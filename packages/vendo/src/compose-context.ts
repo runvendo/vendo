@@ -39,6 +39,7 @@ import type {
   ToolRegistry,
 } from "@vendoai/core";
 import type {
+  BriefingPack,
   VendoTheme,
 } from "@vendoai/apps/contract";
 import type { VendoGuard, RiskResolver } from "@vendoai/guard";
@@ -168,7 +169,9 @@ export interface VendoComposition {
   theme: VendoTheme | undefined;
   themeProvider: () => VendoTheme | undefined;
   designRules: string | (() => string | undefined);
-  writerDesignBrief: () => string;
+  /** THE briefing pack — assembled once (compose-surfaces.ts), read by both
+   *  generation rungs. */
+  briefing: (ctx: RunContext) => Promise<BriefingPack>;
   pinBaselines: PinBaseline[];
   hostSemanticsProvider: () => ReturnType<typeof mergedHostSemantics>;
   capability: MergedCapability;

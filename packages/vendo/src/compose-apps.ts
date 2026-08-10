@@ -236,7 +236,7 @@ const appsHostSeams = (composition: VendoComposition, seams: AppsSeams): Partial
 /** THE SEAM (blueprint §1 point 2) — the screen agent in front of the
  *  conductor, joined here because composition is what holds every half. */
 const appsScreenSeam = (composition: VendoComposition, seams: AppsSeams): AppsConfig["screen"] => {
-  const { inference, boundTools, writerDesignBrief } = composition;
+  const { inference, boundTools, briefing } = composition;
   const { screenWorkspace } = seams;
   return screenAssembler({
       // The SAME seats every other thinker runs on.
@@ -271,29 +271,20 @@ const appsScreenSeam = (composition: VendoComposition, seams: AppsSeams): AppsCo
       // talking to the PERSON, and this loop talks to nobody — the front door
       // speaks its one-line receipt.
       //
-      // What a writer does need is the host's own configuration, and it arrives on
-      // two slots because it is two different things with two different owners:
-      //
-      //  - `design` — `apps.designRules` and the theme tokens. Documented seams a
-      //    host sets and expects a generated screen to obey, rendered by
-      //    `hostDesignBrief` so this loop and the `claudeCode()` builder cannot be
-      //    taught different design.
-      //  - `system` — the semantics-annotated SHAPE CARD for every tool a binding
-      //    may name (`.vendo/semantics.json` plus the cloud-owned overrides). A
-      //    different fact about a different key: what a tool really returns, and
-      //    in what units. It reached the fill worker and nothing else, and the
-      //    fill worker is gone, so without this the `:money.cents` annotations a
-      //    host authored would silently stop reaching the only thing that writes
-      //    bindings. Read off the runtime per call, so a local `tools.json` edit
-      //    and a cloud override both apply without a restart.
-      design: writerDesignBrief,
-      system: (screenCtx) => composition.apps.toolShapeBrief(screenCtx),
+      // What a writer does need is the host's own configuration, and it arrives
+      // as ONE briefing pack (compose-surfaces.ts) — theme tokens, design rules,
+      // the product brief, the component catalog and the semantics-annotated
+      // tool SHAPE CARD. It used to arrive on two slots with two owners, and the
+      // second rung got neither: the in-box builder was told nothing about the
+      // brand, and `.vendo/brief.md` reached no writer at all. One assembly, both
+      // rungs, same bytes — the instructions around it stay per-rung.
+      briefing,
   });
 };
 
 /** The host's own knobs, the config-surface providers, and the machine lane. */
 const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial<AppsConfig> => {
-  const { config, automationsMounted, themeProvider, designRules, hostSemanticsProvider } = composition;
+  const { config, automationsMounted, themeProvider, briefing, hostSemanticsProvider } = composition;
   const { secrets, sandbox } = composition;
   const { appsCloud, machineEnv, boxTemplate, boxEditTimeoutMs, boxEditPollMs } = seams;
   return {
@@ -324,8 +315,12 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
     // resolves live per generation (picks up cloud overrides as the snapshot warms);
     // theme is boot-once via memoizeOnce (structural, next-load). Each returns
     // undefined when unset, which the engine treats exactly as an omitted value.
+    // `theme` here is the SERVED-app handoff (the `?vendoTheme=` query param);
+    // what a writer is told about the brand rides the briefing pack below.
     theme: themeProvider,
-    designRules,
+    // THE briefing pack, for the OTHER rung: the in-box builder reads it through
+    // `box-lane.ts`, in the same bytes the screen agent above is handed.
+    briefing,
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
     semantics: hostSemanticsProvider,
     secrets,

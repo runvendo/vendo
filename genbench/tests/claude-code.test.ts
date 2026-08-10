@@ -6,7 +6,7 @@
  * cleanup are the driver's own behaviour and not a fixture's.
  */
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { hostDesignBrief } from "@vendoai/apps";
+import { renderBriefingPack } from "@vendoai/apps/contract";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { claudeCodeDriver, type AgentSdk } from "../src/claude-code.js";
 import { meteredModel, MODEL_IDS, usdFor, type Meter } from "../src/meter.js";
-import { designRules, worldBlock } from "../src/vendo.js";
+import { worldBlock, worldBriefing } from "../src/vendo.js";
 import { cannedResponse, loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -88,7 +88,7 @@ const workspaceOf = (seen: Seen): string => seen.options!["cwd"] as string;
 
 describe("the world block", () => {
   it("is the product's own design brief, byte for byte", async () => {
-    const brief = hostDesignBrief({ theme: world.theme, designRules: designRules(world) });
+    const brief = renderBriefingPack(worldBriefing(world));
 
     // Not a vacuous containment: the brief carries the theme the screen agent is
     // handed and the host's own rules, or the two contenders are told different

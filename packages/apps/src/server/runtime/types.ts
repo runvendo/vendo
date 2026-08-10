@@ -33,6 +33,7 @@ import type {
 } from "@vendoai/core";
 import type {
   AppDocument,
+  BriefingPack,
   NormalizedCatalog,
   ScreenAssembler,
   VendoTheme,
@@ -150,16 +151,30 @@ export interface AppsConfig {
    *  never remove or replace a built-in one. */
   checks?: readonly Check[];
   /** The composition-normalized catalog (01 §14): derived schemas included.
-   *  The provider (function) form of theme/semantics below mirrors
-   *  designRules: it is resolved lazily per create/edit (in
-   *  generationDependencies), never eagerly, so the umbrella can back it with a
-   *  first-request cloud read without doing I/O at compose time. */
+   *  The provider (function) form of theme/semantics below is resolved lazily
+   *  per create/edit (in generationDependencies), never eagerly, so the
+   *  umbrella can back it with a first-request cloud read without doing I/O at
+   *  compose time. */
   catalog: NormalizedCatalog;
+  /** The host's brand, for the SERVED-app handoff alone: a machine-served app
+   *  is themed through the `?vendoTheme=` query param the proxy forwards
+   *  (runtime-context.ts). What a WRITER is told about the brand rides
+   *  {@link briefing} with everything else it must know. */
   theme?: VendoTheme | (() => VendoTheme | undefined);
   secrets?: SecretsProvider;
-  /** Host design rules for generation prompts; the function form is re-read
-   *  per create/edit (engine.ts GenerationDependencies). */
-  designRules?: string | (() => string | undefined);
+  /**
+   * THE briefing pack — everything a writer is told about the product, in one
+   * slot because there is one assembly point (`compose-surfaces.ts`) and both
+   * rungs must receive the same bytes. It was three slots across two packages,
+   * which is how the box ended up knowing nothing about the brand and the
+   * screen agent never saw `.vendo/brief.md`.
+   *
+   * Per call and ctx-taking, exactly as `toolShapeBrief` is: the design rules
+   * re-resolve per generation and the shape card is projected for THIS caller.
+   * Unset, a writer is told nothing about the host — which is what an apps
+   * runtime composed without the umbrella already was.
+   */
+  briefing?: (ctx: RunContext) => Promise<BriefingPack>;
   pinBaselines?: PinBaseline[];
   /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
    *  assertion for the review-kind lifecycle. Reviewing crosses owner
@@ -511,15 +526,10 @@ export interface AppsRuntime {
    * A documented host seam (`.vendo/semantics.json` plus the cloud-owned
    * overrides) that used to reach the model through the fill worker's query
    * brief and nowhere else. The fill worker is gone, so this is how the
-   * annotations reach the one thing that writes bindings now. Composition reads
-   * it off the runtime and fills the assembler's `system` slot, the same shape as
-   * every other seam here — this block depends on `core` alone and cannot reach
-   * a harness.
-   *
-   * The host's DESIGN configuration is a different key with a different owner:
-   * `apps.designRules` and the theme ride `hostDesignBrief` into the assembler's
-   * `design` slot and the `claudeCode()` builder's prompt, so both writers read
-   * one rendering of them. Nothing about design belongs here.
+   * annotations reach the one thing that writes bindings now. It is the
+   * `hostSemantics` half of the briefing pack composition assembles, so both
+   * rungs read one rendering of it — this block depends on `core` alone and
+   * cannot reach a harness.
    *
    * Resolved PER CALL, never memoized: the semantics provider is re-resolved so a
    * local `tools.json` edit and the cloud-owned overrides both keep merging live.
