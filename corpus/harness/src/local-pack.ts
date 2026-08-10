@@ -30,6 +30,13 @@ export const LOCAL_VENDO_PACKAGE_NAMES = [
   "vendoai",
 ] as const;
 
+// Workspace roots a corpus target's `workspace:` dependency may resolve to:
+// the publishable blocks under packages/, plus the private fixtures a corpus
+// host declares (express-host's @vendoai-fixtures/test-kit).
+const WORKSPACE_PACKAGE_ROOTS = ["packages", "fixtures"] as const;
+
+const DEPENDENCY_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
+
 type PackageJson = Record<string, unknown>;
 export type LocalPackageManager = "pnpm" | "npm" | "yarn-classic" | "yarn-berry";
 
@@ -96,6 +103,14 @@ function isVendoResolutionSelector(name: string): boolean {
   return name === "vendoai" || name.startsWith("vendoai@") || name.startsWith("@vendoai/");
 }
 
+/** The tarball a declared dependency is rewritten to, if the injection vendors
+ * it. The bare `vendoai` alias is excluded on purpose: a target never keeps it
+ * as a direct dependency (the umbrella arrives as @vendoai/vendo) — the alias is
+ * pinned through the overrides map alone. */
+function vendoredTarball(byName: Map<string, LocalTarball>, name: string): LocalTarball | undefined {
+  return name === "vendoai" ? undefined : byName.get(name);
+}
+
 function withoutVendoPackages(record: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(record).filter(([name]) => !isVendoPackageName(name)));
 }
@@ -108,30 +123,49 @@ async function readJsonFile(file: string): Promise<PackageJson> {
   return JSON.parse(await fs.readFile(file, "utf8")) as PackageJson;
 }
 
-async function discoverLocalPackages(repoDir: string): Promise<WorkspacePackage[]> {
-  const wanted = new Set<string>(LOCAL_VENDO_PACKAGE_NAMES);
-  const found = new Map<string, WorkspacePackage>();
-  const entries = await fs.readdir(path.join(repoDir, "packages"), { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const dir = path.join(repoDir, "packages", entry.name);
-    let pkg: PackageJson;
-    try {
-      pkg = await readJsonFile(path.join(dir, "package.json"));
-    } catch {
-      continue;
+/** Names the target declares with the `workspace:` protocol. The injected copy
+ * is standalone — it has no workspace for pnpm to resolve them against — so the
+ * ones this monorepo owns ride along as tarballs like the Vendo packages do.
+ * Names it does not own belong to the target's OWN workspace (a cloned monorepo
+ * resolves them inside its checkout) and are left untouched. */
+function workspaceProtocolDependencies(pkg: PackageJson): string[] {
+  const names = new Set<string>();
+  for (const field of DEPENDENCY_SECTIONS) {
+    for (const [name, spec] of Object.entries(stringRecord(pkg[field]))) {
+      if (spec.startsWith("workspace:")) names.add(name);
     }
-    const name = pkg["name"];
-    const version = pkg["version"];
-    if (typeof name !== "string" || !wanted.has(name) || typeof version !== "string") continue;
-    found.set(name, { name, version, dir });
+  }
+  return [...names];
+}
+
+async function discoverLocalPackages(repoDir: string, extraNames: readonly string[] = []): Promise<WorkspacePackage[]> {
+  const vendoNames = new Set<string>(LOCAL_VENDO_PACKAGE_NAMES);
+  const order = [...LOCAL_VENDO_PACKAGE_NAMES, ...extraNames.filter((name) => !vendoNames.has(name))];
+  const wanted = new Set<string>(order);
+  const found = new Map<string, WorkspacePackage>();
+  for (const root of WORKSPACE_PACKAGE_ROOTS) {
+    const entries = await fs.readdir(path.join(repoDir, root), { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const dir = path.join(repoDir, root, entry.name);
+      let pkg: PackageJson;
+      try {
+        pkg = await readJsonFile(path.join(dir, "package.json"));
+      } catch {
+        continue;
+      }
+      const name = pkg["name"];
+      const version = pkg["version"];
+      if (typeof name !== "string" || !wanted.has(name) || typeof version !== "string") continue;
+      found.set(name, { name, version, dir });
+    }
   }
 
   const missing = LOCAL_VENDO_PACKAGE_NAMES.filter((name) => !found.has(name));
   if (missing.length > 0) {
     throw new Error(`local Vendo monorepo is missing publishable workspace package${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}`);
   }
-  return LOCAL_VENDO_PACKAGE_NAMES.map((name) => found.get(name)!);
+  return order.filter((name) => found.has(name)).map((name) => found.get(name)!);
 }
 
 async function defaultPackRunner(
@@ -266,9 +300,8 @@ export function rewritePackageJsonForLocalVendo(
   // (for example @vendoai/ui chrome). Keep those declared at the same direct
   // dependency level while replacing workspace:/registry specs with tarballs.
   for (const name of Object.keys(originalDependencies)) {
-    if (name.startsWith("@vendoai/") && byName.has(name)) {
-      dependencies[name] = fileSpec(byName.get(name)!.fileName);
-    }
+    const tarball = vendoredTarball(byName, name);
+    if (tarball) dependencies[name] = fileSpec(tarball.fileName);
   }
   for (const name of LOCAL_DIRECT_DEPENDENCIES) dependencies[name] = fileSpec(byName.get(name)!.fileName);
   // Force the ai peer + init's starter provider onto the v6 train the umbrella
@@ -283,9 +316,8 @@ export function rewritePackageJsonForLocalVendo(
     const values = withoutVendoPackages(original);
     if (field === "devDependencies") {
       for (const name of Object.keys(original)) {
-        if (name.startsWith("@vendoai/") && byName.has(name)) {
-          values[name] = fileSpec(byName.get(name)!.fileName);
-        }
+        const tarball = vendoredTarball(byName, name);
+        if (tarball) values[name] = fileSpec(tarball.fileName);
       }
     }
     for (const name of Object.keys(AI_TRAIN_OVERRIDES)) delete values[name];
@@ -350,11 +382,11 @@ export async function installLocalVendoPackages(
   const target = path.resolve(targetDir);
   const workspace = path.resolve(repoDir);
   const vendorDir = path.join(target, "vendor");
-  const packages = await discoverLocalPackages(workspace);
-  const tarballs = packages.map((pkg) => ({ name: pkg.name, fileName: npmPackFileName(pkg.name, pkg.version) }));
   const packageJsonPath = path.join(target, "package.json");
   const source = await fs.readFile(packageJsonPath, "utf8");
   const pkg = JSON.parse(source) as PackageJson;
+  const packages = await discoverLocalPackages(workspace, workspaceProtocolDependencies(pkg));
+  const tarballs = packages.map((pkgEntry) => ({ name: pkgEntry.name, fileName: npmPackFileName(pkgEntry.name, pkgEntry.version) }));
   const detected = await detectPackageManager(target, pkg, opts.packageManagerRoot);
   const rewritten = rewritePackageJsonForLocalVendo(source, tarballs, detected.packageManager);
   const rootPackageJsonPath = path.join(detected.installDir, "package.json");
