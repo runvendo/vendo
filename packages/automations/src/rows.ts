@@ -5,8 +5,8 @@
  *
  * Lifted out of engine.ts unchanged.
  */
-import { VendoError, type VendoRecord } from "@vendoai/core";
-import type { AutomationsConfig, RunRecord, RunStatus } from "./index.js";
+import { VendoError, type StoreOps, type VendoRecord } from "@vendoai/core";
+import type { RunRecord, RunStatus } from "./index.js";
 import { appRowSchema, runRowDataSchema, type AppData, type InternalRunRecord } from "./types.js";
 
 /** Every engine-owned generic row belongs to ONE app, and the 02-store §5 erase
@@ -20,14 +20,19 @@ export const clone = <T>(value: T): T => globalThis.structuredClone(value);
 export const id = (prefix: string): string => `${prefix}${globalThis.crypto.randomUUID()}`;
 export const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
+/** The seven verbs this engine reaches Vendo's own drawers through. Named once
+ *  here because every module holds one and none of them holds a store. */
+export type EngineOps = StoreOps["engine"];
+
 export const allRecords = async (
-  records: ReturnType<AutomationsConfig["store"]["records"]>,
+  engine: EngineOps,
+  collection: string,
   query: { refs?: Record<string, string>; ids?: string[] } = {},
 ): Promise<VendoRecord[]> => {
   const found: VendoRecord[] = [];
   let cursor: string | undefined;
   do {
-    const page = await records.list({ ...query, ...(cursor === undefined ? {} : { cursor }) });
+    const page = await engine.list(collection, { ...query, ...(cursor === undefined ? {} : { cursor }) });
     found.push(...page.records);
     if (page.cursor === undefined || page.cursor === cursor) break;
     cursor = page.cursor;

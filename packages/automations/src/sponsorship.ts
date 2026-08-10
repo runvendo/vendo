@@ -5,10 +5,10 @@ import {
   type AppIntent,
   type IsoDateTime,
   type Json,
-  type RecordStore,
   type Trigger,
 } from "@vendoai/core";
 import { z } from "zod";
+import type { EngineOps } from "./rows.js";
 
 /** Build contract §9.9 — sponsorship lives in its OWN routed collection, never
  *  on the app row: the row is the automation's declaration, this is who it runs
@@ -120,11 +120,11 @@ export const currentIntentHash = (doc: AppDocument, trigger: Trigger | undefined
  *  to running as the app's owner. That is the intended answer: an unreadable
  *  sponsorship is not evidence that nobody took the automation on. */
 export const readSponsorship = async (
-  records: RecordStore,
+  engine: EngineOps,
   appId: string,
   triggerId: string,
 ): Promise<{ row: Sponsorship; revision?: string } | undefined> => {
-  const record = await records.get(triggerKey(appId, triggerId));
+  const record = await engine.get(SPONSORSHIPS, triggerKey(appId, triggerId));
   if (record === null) return undefined;
   const parsed = sponsorshipSchema.safeParse(record.data);
   if (!parsed.success) return undefined;
@@ -138,8 +138,8 @@ export const readSponsorship = async (
 const sponsorshipRefs = (row: Sponsorship): Record<string, string> =>
   ({ subject: row.sponsor, app_id: row.appId });
 
-export const writeSponsorship = async (records: RecordStore, row: Sponsorship): Promise<void> => {
-  await records.put({
+export const writeSponsorship = async (engine: EngineOps, row: Sponsorship): Promise<void> => {
+  await engine.put(SPONSORSHIPS, {
     id: triggerKey(row.appId, row.triggerId),
     data: { ...row },
     refs: sponsorshipRefs(row),
@@ -148,20 +148,20 @@ export const writeSponsorship = async (records: RecordStore, row: Sponsorship): 
 
 /** Record that this trigger is sponsored, without recording WHO. Idempotent. */
 export const markSponsored = async (
-  records: RecordStore,
+  engine: EngineOps,
   appId: string,
   triggerId: string,
   at: IsoDateTime,
 ): Promise<void> => {
   const id = triggerKey(appId, triggerId);
-  if (await records.get(id) !== null) return;
-  await records.put({ id, data: { appId, triggerId, since: at }, refs: { app_id: appId } });
+  if (await engine.get(SPONSORED, id) !== null) return;
+  await engine.put(SPONSORED, { id, data: { appId, triggerId, since: at }, refs: { app_id: appId } });
 };
 
 /** Has this trigger ever been sponsored? A `false` here is what keeps automations
  *  armed before this lane shipped running as their owner. */
 export const wasSponsored = async (
-  records: RecordStore,
+  engine: EngineOps,
   appId: string,
   triggerId: string,
-): Promise<boolean> => await records.get(triggerKey(appId, triggerId)) !== null;
+): Promise<boolean> => await engine.get(SPONSORED, triggerKey(appId, triggerId)) !== null;

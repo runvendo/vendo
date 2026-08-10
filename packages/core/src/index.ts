@@ -39,6 +39,7 @@ export * from "./sse-keepalive.js";
 export * from "./store.js";
 export * from "./store-wire.js";
 export * from "./engine-collections.js";
+export * from "./engine-over-adapter.js";
 export * from "./stream-parts.js";
 export * from "./tool-envelopes.js";
 export * from "./tools.js";

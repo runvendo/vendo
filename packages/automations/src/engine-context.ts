@@ -10,11 +10,13 @@
  *
  * Internal — not exported from the package root.
  */
+import { engineOverAdapter } from "@vendoai/core";
 import { createAppRows, type AppRowsAccess } from "./app-rows.js";
 import { createArmed, type ArmedAccess } from "./armed.js";
 import { createConsent, type ConsentAccess } from "./consent.js";
 import { createGrants, type GrantsAccess } from "./grants.js";
 import { createRunExecution, type RunExecutionAccess } from "./run-execution.js";
+import type { EngineOps } from "./rows.js";
 import { createRunRows, type RunRowsAccess } from "./run-rows.js";
 import { createSponsorshipGate, type SponsorshipGateAccess } from "./sponsorship-gate.js";
 import type { AutomationsConfig } from "./index.js";
@@ -22,6 +24,10 @@ import type { AutomationsConfig } from "./index.js";
 /** The closure primitives every module reads. */
 export interface EngineBase {
   config: AutomationsConfig;
+  /** Vendo's OWN drawers, through the named `engine` family — the allowlist
+   *  gate sits on every verb, so nothing outside it can be reached from here.
+   *  Host and generated-app data is not this door's business. */
+  engine: EngineOps;
   /** The clock, through the testability seam. */
   now(): Date;
   /** The same clock, as the ISO string every row and event is stamped with. */
@@ -59,7 +65,12 @@ export const createEngineModules = (config: AutomationsConfig): EngineModules =>
   const firesLocally = (kind: "schedule" | "external"): boolean =>
     config.localTriggerKinds === undefined || config.localTriggerKinds.has(kind);
 
-  const base: EngineBase = { config, now, iso, stopped, active, abortControllers, firesLocally };
+  // The composition's own 42-op surface when it resolved one; otherwise the
+  // same seven verbs over the adapter the host handed us. An unset slot is a
+  // route, not a downgrade.
+  const engine = config.ops?.engine ?? engineOverAdapter(config.store);
+
+  const base: EngineBase = { config, engine, now, iso, stopped, active, abortControllers, firesLocally };
   const appRows = createAppRows({ base });
   const armed = createArmed({ base, appRows });
   const grants = createGrants({ base });

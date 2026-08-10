@@ -7,7 +7,6 @@
  */
 import {
   type AppDocument,
-  type RecordStore,
   type RunContext,
   type Trigger,
 } from "@vendoai/core";
@@ -18,7 +17,6 @@ import { allRecords } from "./rows.js";
 import {
   currentIntentHash,
   readSponsorship,
-  SPONSORED,
   SPONSORSHIPS,
   sponsorshipSchema,
   triggerKey,
@@ -32,10 +30,6 @@ import type { AppData, InternalRunRecord } from "./types.js";
 export type SponsorshipGateDeps = { base: EngineBase; appRows: AppRowsAccess };
 
 export interface SponsorshipGateAccess {
-  /** The sponsorship collection. */
-  sponsorships(): RecordStore;
-  /** The era markers that outlive an erase of the sponsor. */
-  sponsoredEra(): RecordStore;
   /** The ONE sponsorship read every gate goes through. */
   sponsorshipState(
     doc: AppDocument,
@@ -55,18 +49,12 @@ export interface SponsorshipGateAccess {
   ): Promise<{ reason: NonNullable<Sponsorship["reason"]>; summary: string } | undefined>;
 }
 
-type SponsorshipReader = Pick<
-  SponsorshipGateAccess,
-  "sponsorships" | "sponsoredEra" | "sponsorshipState" | "sponsorshipsFor"
->;
+type SponsorshipReader = Pick<SponsorshipGateAccess, "sponsorshipState" | "sponsorshipsFor">;
 
 /** The sponsorship rows, and the ONE read every gate goes through. */
 const createSponsorshipReader = (
-  { base: { config } }: Pick<SponsorshipGateDeps, "base">,
+  { base: { engine } }: Pick<SponsorshipGateDeps, "base">,
 ): SponsorshipReader => {
-  const sponsorships = (): RecordStore => config.store.records(SPONSORSHIPS);
-  const sponsoredEra = (): RecordStore => config.store.records(SPONSORED);
-
   /** The sponsorship as the gates see it: the row, or — when the row is gone but
    *  the app was sponsored once — the fact that its sponsor was ERASED.
    *
@@ -80,9 +68,9 @@ const createSponsorshipReader = (
     | { kind: "row"; row: Sponsorship; revision?: string }
   > => {
     const appId = doc.id;
-    const found = await readSponsorship(sponsorships(), appId, triggerId);
+    const found = await readSponsorship(engine, appId, triggerId);
     if (found !== undefined) return { kind: "row", ...found };
-    return await wasSponsored(sponsoredEra(), appId, triggerId) ? { kind: "erased" } : { kind: "none" };
+    return await wasSponsored(engine, appId, triggerId) ? { kind: "erased" } : { kind: "none" };
   };
 
   /** Every sponsorship row for these apps' triggers, in ONE query. */
@@ -91,21 +79,21 @@ const createSponsorshipReader = (
       triggersOf(row.doc).map((trigger) => triggerKey(row.doc.id, trigger.id)));
     if (keys.length === 0) return new Map();
     const byTrigger = new Map<string, Sponsorship>();
-    for (const record of await allRecords(sponsorships(), { ids: keys })) {
+    for (const record of await allRecords(engine, SPONSORSHIPS, { ids: keys })) {
       const parsed = sponsorshipSchema.safeParse(record.data);
       if (parsed.success) byTrigger.set(triggerKey(parsed.data.appId, parsed.data.triggerId), parsed.data);
     }
     return byTrigger;
   };
 
-  return { sponsorships, sponsoredEra, sponsorshipState, sponsorshipsFor };
+  return { sponsorshipState, sponsorshipsFor };
 };
 
 /** §9.9 — who a firing runs as, and whether it may run at all. */
 const createRunIdentity = (
-  deps: SponsorshipGateDeps & Pick<SponsorshipReader, "sponsorships" | "sponsorshipState">,
+  deps: SponsorshipGateDeps & Pick<SponsorshipReader, "sponsorshipState">,
 ): Pick<SponsorshipGateAccess, "baseRunContext" | "runContext" | "sponsorshipRefusal"> => {
-  const { base: { config, iso }, appRows, sponsorships, sponsorshipState } = deps;
+  const { base: { config, engine, iso }, appRows, sponsorshipState } = deps;
   /** The run's context before any seam is consulted — a pure function of the run
    *  and a subject, so it cannot fail. It is what a failed identity resolution
    *  still audits under: a fire that cannot even resolve who it runs as must
@@ -174,7 +162,7 @@ const createRunIdentity = (
     const refusal = (reason: NonNullable<Sponsorship["reason"]>) => stopFor(reason, app.doc.name);
     if (row.status !== "active") return refusal(row.reason ?? "edit");
     const invalidate = async (reason: NonNullable<Sponsorship["reason"]>) => {
-      await writeSponsorship(sponsorships(), {
+      await writeSponsorship(engine, {
         ...row,
         status: "invalidated",
         reason,

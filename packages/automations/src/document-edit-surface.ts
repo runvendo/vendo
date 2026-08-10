@@ -14,7 +14,7 @@ import { currentIntentHash, triggersOf, writeSponsorship } from "./sponsorship.j
 export type DocumentEditSurfaceDeps = { base: EngineBase; sponsorship: SponsorshipGateAccess };
 
 export const createDocumentEditSurface = (
-  { base: { iso }, sponsorship }: DocumentEditSurfaceDeps,
+  { base: { engine, iso }, sponsorship }: DocumentEditSurfaceDeps,
 ): Pick<AutomationsEngine, "onDocumentEdit"> => {
   const onTriggerEdit = async (next: AppDocument, trigger: Trigger, editor: string): Promise<void> => {
     // Through the migrating door: an edit is the other way a pre-list row can be
@@ -24,7 +24,7 @@ export const createDocumentEditSurface = (
     if (state.kind !== "row" || state.row.status !== "active") return;
     const row = state.row;
     if (editor !== row.sponsor) {
-      await writeSponsorship(sponsorship.sponsorships(), {
+      await writeSponsorship(engine, {
         ...row,
         status: "invalidated",
         reason: "edit",
@@ -41,7 +41,7 @@ export const createDocumentEditSurface = (
     // card rather than here.
     const hash = currentIntentHash(next, trigger);
     if (hash !== row.intentHash) {
-      await writeSponsorship(sponsorship.sponsorships(), { ...row, intentHash: hash });
+      await writeSponsorship(engine, { ...row, intentHash: hash });
     }
   };
 
