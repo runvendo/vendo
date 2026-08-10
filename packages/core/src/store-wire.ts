@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { VendoError, safeErrorMessage, vendoErrorCodeSchema, type VendoErrorCode } from "./errors.js";
 import {
+  APP_DATA_COLLECTION_PATTERN,
   recordQuerySchema,
 } from "./store.js";
 
@@ -28,6 +29,15 @@ export const STORE_WIRE_PATHS = {
   "blobs.get": "/blobs/get",
   "blobs.delete": "/blobs/delete",
   "blobs.list": "/blobs/list",
+  // appData (8)
+  "appData.put": "/app-data/put",
+  "appData.get": "/app-data/get",
+  "appData.list": "/app-data/list",
+  "appData.delete": "/app-data/delete",
+  "appData.putFile": "/app-data/putFile",
+  "appData.getFile": "/app-data/getFile",
+  "appData.listFiles": "/app-data/listFiles",
+  "appData.deleteFile": "/app-data/deleteFile",
   // transcripts (6)
   "transcripts.putThread": "/transcripts/putThread",
   "transcripts.getThread": "/transcripts/getThread",
@@ -135,6 +145,61 @@ export const storeWireBlobsDeleteRequestSchema = z.object({
 export const storeWireBlobsListRequestSchema = z.object({
   namespace: z.string().min(1),
   prefix: z.string().optional(),
+}).passthrough();
+
+// ---------------------------------------------------------------------------
+// appData
+// ---------------------------------------------------------------------------
+
+/** The owner on the target is the runtime's stamp from the host's login
+    session, never something generated code names. File bytes are base64 on the
+    wire, exactly like `blobs.put`. */
+export const appDataTargetSchema = z.object({
+  appId: z.string().min(1),
+  collection: z.string().regex(APP_DATA_COLLECTION_PATTERN),
+  owner: z.string().min(1),
+}).passthrough();
+
+export const storeWireAppDataPutRequestSchema = z.object({
+  target: appDataTargetSchema,
+  record: recordInputSchema,
+}).passthrough();
+
+export const storeWireAppDataGetRequestSchema = z.object({
+  target: appDataTargetSchema,
+  id: z.string().min(1),
+}).passthrough();
+
+export const storeWireAppDataListRequestSchema = z.object({
+  target: appDataTargetSchema,
+  query: recordQuerySchema.optional(),
+}).passthrough();
+
+export const storeWireAppDataDeleteRequestSchema = z.object({
+  target: appDataTargetSchema,
+  id: z.string().min(1),
+}).passthrough();
+
+export const storeWireAppDataPutFileRequestSchema = z.object({
+  target: appDataTargetSchema,
+  key: z.string().min(1),
+  bytes: z.string().min(1), // base64
+  contentType: z.string().optional(),
+}).passthrough();
+
+export const storeWireAppDataGetFileRequestSchema = z.object({
+  target: appDataTargetSchema,
+  key: z.string().min(1),
+}).passthrough();
+
+export const storeWireAppDataListFilesRequestSchema = z.object({
+  target: appDataTargetSchema,
+  prefix: z.string().optional(),
+}).passthrough();
+
+export const storeWireAppDataDeleteFileRequestSchema = z.object({
+  target: appDataTargetSchema,
+  key: z.string().min(1),
 }).passthrough();
 
 // ---------------------------------------------------------------------------
@@ -275,12 +340,15 @@ export interface StoreWireStatus {
   format: typeof VENDO_STORE_WIRE_FORMAT;
   minClientVersion?: string;
   ops: number;
+  /** Op names this mount still serves but is retiring. */
+  deprecated?: readonly string[];
 }
 
 export const storeWireStatusSchema = z.object({
   format: z.literal(VENDO_STORE_WIRE_FORMAT),
   minClientVersion: z.string().optional(),
   ops: z.number(),
+  deprecated: z.array(z.string()).optional(),
 }).passthrough() satisfies z.ZodType<StoreWireStatus>;
 
 // ---------------------------------------------------------------------------

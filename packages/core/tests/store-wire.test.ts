@@ -19,6 +19,14 @@ import {
   storeWireBlobsGetRequestSchema,
   storeWireBlobsDeleteRequestSchema,
   storeWireBlobsListRequestSchema,
+  storeWireAppDataPutRequestSchema,
+  storeWireAppDataGetRequestSchema,
+  storeWireAppDataListRequestSchema,
+  storeWireAppDataDeleteRequestSchema,
+  storeWireAppDataPutFileRequestSchema,
+  storeWireAppDataGetFileRequestSchema,
+  storeWireAppDataListFilesRequestSchema,
+  storeWireAppDataDeleteFileRequestSchema,
   storeWireTranscriptsPutThreadRequestSchema,
   storeWireTranscriptsGetThreadRequestSchema,
   storeWireTranscriptsListThreadsRequestSchema,
@@ -39,12 +47,13 @@ import {
 } from "../src/index.js";
 
 describe("vendo/store-wire@1", () => {
-  it("exposes the format constant and 27 mount-relative paths", () => {
+  it("exposes the format constant and 35 mount-relative paths", () => {
     expect(VENDO_STORE_WIRE_FORMAT).toBe("vendo/store-wire@1");
-    // 7 families: records(7) + blobs(4) + transcripts(6) + harness(3) + workspace(4) + lifecycle(2) + status(1) = 27
-    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(27);
+    // 8 families: records(7) + blobs(4) + appData(8) + transcripts(6) + harness(3) + workspace(4) + lifecycle(2) + status(1) = 35
+    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(35);
     expect(STORE_WIRE_PATHS.status).toBe("/status");
     expect(STORE_WIRE_PATHS["records.get"]).toBe("/records/get");
+    expect(STORE_WIRE_PATHS["appData.put"]).toBe("/app-data/put");
     expect(STORE_WIRE_PATHS["lifecycle.promote"]).toBe("/lifecycle/promote");
   });
 
@@ -103,6 +112,43 @@ describe("vendo/store-wire@1", () => {
     expect(storeWireBlobsListRequestSchema.parse({ namespace: "avatars", prefix: "u1" }).prefix).toBe("u1");
   });
 
+  it("parses appData request DTOs — the collection grammar and the owner stamp bite", () => {
+    const target = { appId: "app_1", collection: "invoices", owner: "sub_1" };
+
+    expect(storeWireAppDataPutRequestSchema.parse({
+      target,
+      record: { id: "inv1", data: { total: 42 } },
+    }).record.id).toBe("inv1");
+    expect(storeWireAppDataGetRequestSchema.parse({ target, id: "inv1" }).id).toBe("inv1");
+    expect(storeWireAppDataListRequestSchema.parse({
+      target: { ...target, collection: "box:notes" },
+      query: { limit: 50 },
+    }).query?.limit).toBe(50);
+    expect(storeWireAppDataDeleteRequestSchema.parse({ target, id: "inv1" }).target.appId).toBe("app_1");
+
+    expect(storeWireAppDataPutFileRequestSchema.parse({
+      target,
+      key: "sub_1/scan.png",
+      bytes: btoa("fake-image"),
+      contentType: "image/png",
+    }).contentType).toBe("image/png");
+    expect(storeWireAppDataGetFileRequestSchema.parse({ target, key: "sub_1/scan.png" }).key).toBe("sub_1/scan.png");
+    expect(storeWireAppDataListFilesRequestSchema.parse({ target, prefix: "sub_1/" }).prefix).toBe("sub_1/");
+    expect(storeWireAppDataDeleteFileRequestSchema.parse({ target, key: "sub_1/scan.png" }).key).toBe("sub_1/scan.png");
+
+    // Generated code invents collection names, so the grammar is the fence.
+    expect(storeWireAppDataGetRequestSchema.safeParse({
+      target: { ...target, collection: "has spaces" }, id: "inv1",
+    }).success).toBe(false);
+    expect(storeWireAppDataGetRequestSchema.safeParse({
+      target: { ...target, collection: "a/b" }, id: "inv1",
+    }).success).toBe(false);
+    // The runtime always stamps an owner; an unstamped target is not a request.
+    expect(storeWireAppDataGetRequestSchema.safeParse({
+      target: { ...target, owner: "" }, id: "inv1",
+    }).success).toBe(false);
+  });
+
   it("parses transcripts request DTOs", () => {
     expect(storeWireTranscriptsPutThreadRequestSchema.parse({
       thread: { id: "t1", subject: "sub_user1", messages: [{ role: "user", content: "hi" }] },
@@ -159,9 +205,10 @@ describe("vendo/store-wire@1", () => {
   it("status doubles as the discovery handshake: format + ops count", () => {
     const status: StoreWireStatus = {
       format: VENDO_STORE_WIRE_FORMAT,
-      ops: 27,
+      ops: 35,
     };
-    expect(storeWireStatusSchema.parse(status).ops).toBe(27);
+    expect(storeWireStatusSchema.parse(status).ops).toBe(35);
+    expect(storeWireStatusSchema.parse({ ...status, deprecated: ["records.put"] }).deprecated).toEqual(["records.put"]);
     expect(storeWireStatusSchema.safeParse({ ...status, format: "vendo/store-wire@2" }).success).toBe(false);
   });
 

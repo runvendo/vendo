@@ -88,12 +88,25 @@ export interface StoreAdapter {
 }
 
 // ---------------------------------------------------------------------------
-// StoreOps — the named-operation contract for the 27-op / 7-family store.
+// StoreOps — the named-operation contract for the 35-op / 8-family store.
 // Both the local backend (store/ops.ts) and the cloud client
 // (hosted-store.ts) implement this interface.
 // ---------------------------------------------------------------------------
 
 import type { StoreWireStatus } from "./store-wire.js";
+
+/** The grammar a collection name invented by generated code must satisfy:
+    a short slug, optionally `box:`-prefixed. */
+export const APP_DATA_COLLECTION_PATTERN = /^(box:)?[A-Za-z0-9_-]{1,64}$/;
+
+/** Where one appData op lands. */
+export interface AppDataTarget {
+  appId: string;
+  collection: string;
+  /** Stamped by the RUNTIME from the host's login session — generated code has
+      no field for it, and a caller that supplies `refs.subject` is refused. */
+  owner: string;
+}
 
 /** The scope of a destructive erase: exactly ONE of subject or appId.
     A union (not two optionals) so `erase({})` and a both-set target are
@@ -102,7 +115,7 @@ export type EraseTarget =
   | { subject: string; appId?: never }
   | { appId: string; subject?: never };
 
-/** The typed contract for all 27 store operations across 7 families.
+/** The typed contract for all 35 store operations across 8 families.
     Lean by design — this is the CONTRACT interface, not the implementation. */
 export interface StoreOps {
   records: {
@@ -119,6 +132,18 @@ export interface StoreOps {
     get(namespace: string, key: string): Promise<{ bytes: Uint8Array; contentType?: string } | null>;
     delete(namespace: string, key: string): Promise<void>;
     list(namespace: string, prefix?: string): Promise<string[]>;
+  };
+  /** Everything generated apps invent. Reads are auto-scoped to the target's
+      owner and writes are stamped with it, so no verb here takes a subject. */
+  appData: {
+    put(target: AppDataTarget, record: RecordInput): Promise<VendoRecord>;
+    get(target: AppDataTarget, id: string): Promise<VendoRecord | null>;
+    list(target: AppDataTarget, query?: RecordQuery): Promise<{ records: VendoRecord[]; cursor?: string }>;
+    delete(target: AppDataTarget, id: string): Promise<void>;
+    putFile(target: AppDataTarget, key: string, bytes: Uint8Array, meta?: { contentType?: string }): Promise<void>;
+    getFile(target: AppDataTarget, key: string): Promise<{ bytes: Uint8Array; contentType?: string } | null>;
+    listFiles(target: AppDataTarget, prefix?: string): Promise<string[]>;
+    deleteFile(target: AppDataTarget, key: string): Promise<void>;
   };
   transcripts: {
     putThread(thread: { id: string; subject: string; messages: unknown[]; title?: string }): Promise<VendoRecord>;
