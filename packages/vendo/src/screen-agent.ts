@@ -82,6 +82,27 @@ import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harn
  */
 export const SCREEN_STEPS = 10;
 
+/**
+ * The repair round's budget: save the corrected document, hear the floor if it
+ * refused, save again.
+ *
+ * The mandatory reviewer pass (below) used to hand its findings to a full
+ * `SCREEN_STEPS` drive, so a screen the person is ALREADY LOOKING AT could buy a
+ * second search-learn-save loop — ten more round trips and as many
+ * whole-document emissions, all of them after they stopped waiting for anything.
+ * A repair does not need that budget: the finding names the fix in its own
+ * sentence, the saved document rides along with it, and the only move left is to
+ * write the file again.
+ *
+ * Three rather than one, and the third step is the reason: `save_app` answers a
+ * save the seam would not paint with the floor's own sentences, so a repair whose
+ * first attempt does not compile gets exactly one chance to hear that and land a
+ * second — and a repair that never lands leaves the person the screen the
+ * reviewer objected to, which is the outcome this pass exists to avoid. Beyond
+ * that, whatever survives stands, exactly as it did before.
+ */
+export const REPAIR_STEPS = 3;
+
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
  *  agent's own, not a product capability anybody else may reach. */
@@ -495,10 +516,18 @@ export async function assembleScreen(
    * It takes the messages because the review below needs a SECOND drive, and a
    * repair round that went through different code than the turn would be a second
    * way to drive the same loop (`claude-code/index.ts`'s `round` for the same
-   * reason).
+   * reason). It takes the step budget for the same reason: the repair round is
+   * `REPAIR_STEPS` rather than `SCREEN_STEPS` (see there), and a knob is the one
+   * difference that does not need a second loop to express — `turn.options` is the
+   * shipped per-turn override the loop already reads
+   * (`vendo/vendo.ts`'s `CONTEXT_KNOBS` resolution).
    */
-  const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
-    for await (const event of harness.run({ ...turn, messages })) {
+  const drive = async (
+    messages: Turn<VendoHarnessOptions>["messages"],
+    maxSteps?: number,
+  ): Promise<void> => {
+    const options = maxSteps === undefined ? turn.options : { maxSteps };
+    for await (const event of harness.run({ ...turn, messages, options })) {
       if (event.type === "error") failure ??= event.message;
     }
   };
@@ -523,9 +552,10 @@ export async function assembleScreen(
      * it never ran, because it fires only when the writing model volunteers to
      * call `validate({appId})`. So the gate asks, once, at the end.
      *
-     * ONE repair round, for the brain's own reason (`claude-code/index.ts`): being
-     * shown exactly what is wrong fixes it on the first try or not at all, and a
-     * second round is the person waiting longer for the same answer. Whatever
+     * ONE repair round, of `REPAIR_STEPS` and not a second full drive, for the
+     * brain's own reason (`claude-code/index.ts`): being shown exactly what is
+     * wrong fixes it on the first try or not at all, and a second round is the
+     * person waiting longer for the same answer. Whatever
      * survives it stands — the screen has already painted, and the honest thing is
      * to leave it rather than take it away.
      *
@@ -558,7 +588,7 @@ export async function assembleScreen(
             ? instruction
             : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
         }],
-      }]);
+      }], REPAIR_STEPS);
     }
     return {
       kind: "assembled",
