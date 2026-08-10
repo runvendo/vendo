@@ -219,7 +219,7 @@ export const composeActions = (composition: VendoComposition): Pick<VendoComposi
   "configuredBaseUrl" | "urls" | "isDevelopmentEnv" | "connectorToolkits" | "resolvedConnectors"
   | "actionsConfig" | "actions" | "doctor" | "connectGate" | "boundTools" | "byoApprovals"
   | "parkedCallTtlMs"> => {
-  const { config, guard, store } = composition;
+  const { config, guard, store, ops } = composition;
   const posture = baseUrlPosture();
   // Connectors seam (adapter rule): explicit array wins, VENDO_API_KEY
   // defaults the Cloud tools connector for a wholly unset slot.
@@ -263,7 +263,7 @@ export const composeActions = (composition: VendoComposition): Pick<VendoComposi
   // parking registry the BYO tool pack executes through (guardedTools below),
   // the resume-on-decide subscriber (same onApprovalDecision seam apps and
   // automations ride), the wire's per-approval read, and the TTL sweep leg.
-  const byoApprovals = createByoApprovals({ guard, tools: boundTools, store });
+  const byoApprovals = createByoApprovals({ guard, tools: boundTools, store, ops });
   // The guard owns its approval lifecycle: whether the rules arrived as a spec
   // this composition completed or as a built instance, the number is read off
   // the guard, so a host that brings its own never loses the knob.

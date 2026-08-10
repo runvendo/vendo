@@ -10,7 +10,7 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import { createGuard, type VendoGuard } from "@vendoai/guard";
-import { createStore } from "@vendoai/store";
+import { createStore, createStoreOps } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createByoApprovals } from "../src/byo-approvals.js";
 
@@ -106,6 +106,9 @@ async function harness(options: { hideAbandonApprovals?: boolean } = {}) {
     guard: options.hideAbandonApprovals === true ? withoutAbandonApprovals(guard) : guard,
     tools: guard.bind(host.tools),
     store,
+    // The named-operation surface over the SAME handle, as the composition
+    // hands it down (compose-actions passes `composition.ops`).
+    ops: createStoreOps(store),
   });
   return { guard, store, host, byo };
 }
@@ -240,7 +243,7 @@ describe.sequential("existing-agents — parked BYO guarded calls", () => {
         return { status: "ok", output: {} };
       },
     };
-    const byo = createByoApprovals({ guard, tools: guard.bind(flaky), store });
+    const byo = createByoApprovals({ guard, tools: guard.bind(flaky), store, ops: createStoreOps(store) });
 
     const parked = await byo.registry.execute({ id: "call_6", tool: "host_flaky", args: {} }, ctx);
     if (parked.status !== "pending-approval") throw new Error("expected the mutation to park");
@@ -289,7 +292,7 @@ describe.sequential("existing-agents — parked BYO guarded calls", () => {
         return { status: "ok", output: { delivered: true } };
       },
     };
-    const byo = createByoApprovals({ guard, tools: guard.bind(slow), store });
+    const byo = createByoApprovals({ guard, tools: guard.bind(slow), store, ops: createStoreOps(store) });
 
     const parked = await byo.registry.execute({ id: "call_7", tool: "host_slowSend", args: {} }, ctx);
     if (parked.status !== "pending-approval") throw new Error("expected the mutation to park");

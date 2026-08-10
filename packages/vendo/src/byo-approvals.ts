@@ -7,6 +7,7 @@ import {
   type RecordStore,
   type RunContext,
   type StoreAdapter,
+  type StoreOps,
   type ToolCall,
   type ToolOutcome,
   type ToolRegistry,
@@ -104,6 +105,12 @@ export interface ByoApprovalsConfig {
    *  execute through) — both the parked call and its resume dispatch ride it. */
   tools: ToolRegistry;
   store: StoreAdapter;
+  /** THE named-operation surface for this deployment, beside the store it runs
+   *  over — `undefined` when the configured store offers neither its own `ops`
+   *  nor a SQL handle, exactly as `selectStoreOps` reports it. Threaded here
+   *  ahead of the parked-call drawers moving onto the `engine` family; the
+   *  drawers still reach the store through the record façade below. */
+  ops: StoreOps | undefined;
 }
 
 function now(): IsoDateTime {

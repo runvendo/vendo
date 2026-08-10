@@ -2,9 +2,10 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { STORE_WIRE_PATHS } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runSync } from "../../../src/cli/sync.js";
-import { pushHostComponents, readPushComponents } from "../../../src/cli/cloud/host-components.js";
+import { HOST_COMPONENTS_COLLECTION, pushHostComponents, readPushComponents } from "../../../src/cli/cloud/host-components.js";
 
 const roots: string[] = [];
 
@@ -64,6 +65,30 @@ const remoteRow = (id: string, data?: unknown): [string, unknown] => [id, data !
   modules: { "src/lib/format.ts": hex("shared") },
 }];
 
+const VERBS = ["list", "put", "delete"] as const;
+
+/**
+ * Which record verb a request is, across BOTH spellings of the door.
+ *
+ * The façade (`store.records(collection)`) addresses a per-collection path,
+ * `/records/<collection>/<verb>`; the named-operation surface (`ops.engine.*`)
+ * addresses the verb and carries the collection in the body. The engine routes
+ * are read off `STORE_WIRE_PATHS` rather than written out here, so this double
+ * cannot drift from the contract the client actually routes by — the literal 42
+ * paths stay pinned in `packages/core/tests/store-wire.test.ts`, which is where
+ * a path belongs. The per-collection door has no entry in that map (it is not
+ * part of the wire contract), so it stays spelled out.
+ */
+function recordVerb(pathname: string, body: { collection?: string }): typeof VERBS[number] | undefined {
+  for (const verb of VERBS) {
+    if (pathname.endsWith(`/records/${HOST_COMPONENTS_COLLECTION}/${verb}`)) return verb;
+    if (pathname.endsWith(STORE_WIRE_PATHS[`engine.${verb}`]) && body.collection === HOST_COMPONENTS_COLLECTION) {
+      return verb;
+    }
+  }
+  return undefined;
+}
+
 /** The console store wire, as a fake: blob keys, blob bodies, and rows. */
 function fakeCloud(seed: { blobs?: string[]; records?: Array<[string, unknown]> } = {}) {
   const blobs = new Set(seed.blobs ?? []);
@@ -81,26 +106,31 @@ function fakeCloud(seed: { blobs?: string[]; records?: Array<[string, unknown]> 
       if (method === "DELETE") blobs.delete(blob[1]!);
       return json({});
     }
-    if (url.pathname.endsWith("/records/vendo_host_components/list")) {
-      return json({
-        records: [...records].map(([id, data]) => ({
-          id,
-          data,
-          createdAt: "2026-08-02T00:00:00.000Z",
-          updatedAt: "2026-08-02T00:00:00.000Z",
-        })),
-      });
+    // Past the blob branches every remaining body is the door's JSON.
+    const body = (init?.body === undefined || init.body === null
+      ? {}
+      : JSON.parse(String(init.body))) as { collection?: string; record?: { id: string; data: unknown }; id?: string };
+    switch (recordVerb(url.pathname, body)) {
+      case "list":
+        return json({
+          records: [...records].map(([id, data]) => ({
+            id,
+            data,
+            createdAt: "2026-08-02T00:00:00.000Z",
+            updatedAt: "2026-08-02T00:00:00.000Z",
+          })),
+        });
+      case "put": {
+        const record = body.record!;
+        records.set(record.id, record.data);
+        return json({ record: { ...record, createdAt: "2026-08-02T00:00:00.000Z", updatedAt: "2026-08-02T00:00:00.000Z" } });
+      }
+      case "delete":
+        records.delete(body.id!);
+        return json({});
+      default:
+        return json({ records: [] });
     }
-    if (url.pathname.endsWith("/records/vendo_host_components/put")) {
-      const record = (JSON.parse(String(init?.body)) as { record: { id: string; data: unknown } }).record;
-      records.set(record.id, record.data);
-      return json({ record: { ...record, createdAt: "2026-08-02T00:00:00.000Z", updatedAt: "2026-08-02T00:00:00.000Z" } });
-    }
-    if (url.pathname.endsWith("/records/vendo_host_components/delete")) {
-      records.delete((JSON.parse(String(init?.body)) as { id: string }).id);
-      return json({});
-    }
-    return json({ records: [] });
   }) as unknown as typeof fetch;
   return { fetchImpl, calls, blobs, records };
 }
