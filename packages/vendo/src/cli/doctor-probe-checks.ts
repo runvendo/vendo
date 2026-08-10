@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { stdin, stdout } from "node:process";
+import { STORE_WIRE_DEPRECATED_REMOVED_IN } from "@vendoai/core";
 import { startDevServerForProbe } from "./doctor-live.js";
 import { CLI_VERSION, askYesNo } from "./shared.js";
 import { probeBody, type DoctorRun } from "./doctor-report.js";
@@ -136,6 +137,19 @@ function checkVersionSkew(run: DoctorRun, wireVersion: string): void {
   }
 }
 
+/** The store wire announces its own retirements on the handshake
+ *  (`StoreWireStatus.deprecated`), and a deprecation nobody reads is a
+ *  deprecation that becomes an outage. This is ADVERTISEMENT only: every named
+ *  op still answers today, so it is a warning and never a failure — doctor is
+ *  passing the mount's notice along, not refusing anything. A mount that
+ *  announces nothing (older wire, or one that already dropped them) is silent. */
+function checkStoreDeprecations(run: DoctorRun, deprecated: unknown): void {
+  if (!Array.isArray(deprecated)) return;
+  const ops = deprecated.filter((op): op is string => typeof op === "string" && op !== "");
+  if (ops.length === 0) return;
+  run.warn("live/store", "E-LIVE-008", `the store wire still serves ${ops.join(", ")}, but it has deprecated them and removes them in ${STORE_WIRE_DEPRECATED_REMOVED_IN}. Move an app's own rows and files to the appData ops (owner-stamped for you) and Vendo's own collections to the engine ops (same seven verbs, behind an allowlist); calls left on the deprecated ops start failing at that release`);
+}
+
 export interface LiveComposition {
   /** 10-mcp §1 — the door flag lives under blocks.mcp. Since the broker
    *  seam it is a posture ("local" | "broker" | false); older wires still
@@ -153,6 +167,7 @@ export async function checkLiveStatus(run: DoctorRun, e2bResolvable: ((root: str
     const body = await response.json() as {
       posture?: unknown;
       version?: unknown;
+      deprecated?: unknown;
       blocks?: { mcp?: unknown; sandbox?: unknown } | null;
     };
     if (!response.ok || typeof body.posture !== "string" || typeof body.version !== "string"
@@ -166,6 +181,7 @@ export async function checkLiveStatus(run: DoctorRun, e2bResolvable: ((root: str
       : body.blocks.mcp === true || body.blocks.mcp === "local" ? "local"
       : false;
     checkVenue(run, body.blocks.sandbox, e2bResolvable);
+    checkStoreDeprecations(run, body.deprecated);
     return { mcpPosture, live: true };
   } catch {
     run.fail("live/status", "E-LIVE-002", `/status is unreachable at ${statusUrl}/status — doctor expects the WIRE BASE (your app origin plus the mount path, e.g. http://localhost:3000/api/vendo); a bare site origin passed to --url is missing the /api/vendo part`);

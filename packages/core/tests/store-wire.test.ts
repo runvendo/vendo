@@ -1,5 +1,9 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import {
+  STORE_WIRE_DEPRECATED_OPS,
+  STORE_WIRE_DEPRECATED_REMOVED_IN,
+  STORE_WIRE_MIN_CLIENT_VERSION,
   STORE_WIRE_PATHS,
   STORE_WIRE_STATUS_BY_CODE,
   VENDO_STORE_WIRE_FORMAT,
@@ -78,6 +82,34 @@ describe("vendo/store-wire@1", () => {
       .map(([, path]) => path);
     expect(enginePaths).toHaveLength(7);
     expect(enginePaths.every((path) => path.startsWith("/engine/"))).toBe(true);
+  });
+
+  it("names every records.* op as deprecated, and nothing else", () => {
+    expect([...STORE_WIRE_DEPRECATED_OPS].sort()).toEqual([
+      "records.claim",
+      "records.compareAndSwap",
+      "records.delete",
+      "records.get",
+      "records.insertIfAbsent",
+      "records.list",
+      "records.put",
+    ]);
+    // Advertised only — every deprecated op is still a served path.
+    for (const op of STORE_WIRE_DEPRECATED_OPS) {
+      expect(Object.keys(STORE_WIRE_PATHS)).toContain(op);
+    }
+    // The removal release must be a real version, not a placeholder.
+    expect(STORE_WIRE_DEPRECATED_REMOVED_IN).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it("advertises the release it ships in as minClientVersion", async () => {
+    // scripts/sync-version-constants.mjs rewrites the constant at release cut,
+    // the same invariant cli/shared.test.ts pins for CLI_VERSION — so the
+    // handshake can never name a release this build did not ship in.
+    const pkg = JSON.parse(
+      await readFile(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { version: string };
+    expect(STORE_WIRE_MIN_CLIENT_VERSION).toBe(pkg.version);
   });
 
   it("the storeWireRecords* names are aliases of the shared collection bodies", () => {

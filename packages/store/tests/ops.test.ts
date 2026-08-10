@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { auditFixture } from "../src/fixtures.test-util.js";
 import { createStoreOps } from "../src/index.js";
-import type { StoreOps } from "@vendoai/core";
+import { STORE_WIRE_MIN_CLIENT_VERSION, type StoreOps } from "@vendoai/core";
 
 // The local backend's OWN laws, beyond the shared conformance suite: the F4
 // cascade proven at the rows, and the per-collection policies the routed
@@ -68,6 +68,30 @@ for (const backend of backends()) {
         expect(replayed.data).toMatchObject({ outcome: { sent: true } });
         await expect(ops.records.compareAndSwap("vendo_effects", { id: "fx_1", data: receipt }, "1"))
           .rejects.toMatchObject({ code: "blocked" });
+      } finally {
+        await made.cleanup();
+      }
+    });
+
+    it("status() advertises the records.* retirement while still serving it", async () => {
+      const { made, ops } = await makeOps();
+      try {
+        const status = await ops.status();
+        expect(status.ops).toBe(42);
+        expect(status.minClientVersion).toBe(STORE_WIRE_MIN_CLIENT_VERSION);
+        expect([...status.deprecated ?? []].sort()).toEqual([
+          "records.claim",
+          "records.compareAndSwap",
+          "records.delete",
+          "records.get",
+          "records.insertIfAbsent",
+          "records.list",
+          "records.put",
+        ]);
+        // Advertised, not enforced: the announcement must not have taken the
+        // door out from under anyone.
+        await ops.records.put("vendo_threads", { id: "thr_dep", data: { subject: "user_dep", messages: [] } });
+        expect((await ops.records.get("vendo_threads", "thr_dep"))?.id).toBe("thr_dep");
       } finally {
         await made.cleanup();
       }

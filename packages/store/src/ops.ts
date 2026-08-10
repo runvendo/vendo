@@ -1,5 +1,7 @@
 import {
   assertEngineCollection,
+  STORE_WIRE_DEPRECATED_OPS,
+  STORE_WIRE_MIN_CLIENT_VERSION,
   VENDO_STORE_WIRE_FORMAT,
   VendoError,
   type FilesAdapter,
@@ -723,8 +725,16 @@ export function createStoreOps(
       },
     },
 
+    // The retirement of `records.*` is ADVERTISED here and nowhere else: every
+    // op below still serves it. A client learns from the handshake instead of
+    // from a 501 the day it goes.
     async status() {
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 42 };
+      return {
+        format: VENDO_STORE_WIRE_FORMAT,
+        minClientVersion: STORE_WIRE_MIN_CLIENT_VERSION,
+        ops: 42,
+        deprecated: STORE_WIRE_DEPRECATED_OPS,
+      };
     },
   };
 }

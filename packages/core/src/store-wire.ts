@@ -70,6 +70,25 @@ export const STORE_WIRE_PATHS = {
   status: "/status",
 } as const;
 
+/** The release this build of the wire ships in, advertised as
+    `StoreWireStatus.minClientVersion`. Rewritten from the published package
+    version by `scripts/sync-version-constants.mjs` at release cut, exactly like
+    the CLI and wire VERSION constants — so it always names the release that
+    carried this contract and there is no number to remember. */
+export const STORE_WIRE_MIN_CLIENT_VERSION = "0.10.0";
+
+/** The release that DROPS the ops below. Announced now, enforced there; this
+    constant is the one place to change when the removal slice is cut. */
+export const STORE_WIRE_DEPRECATED_REMOVED_IN = "0.13.0";
+
+/** Ops this wire still serves but is retiring: the generic `records.*` family,
+    superseded by `appData.*` (owner-stamped rows generated apps invent) and
+    `engine.*` (Vendo's own collections, behind an allowlist). Read off the path
+    table so it cannot claim an op that does not exist — and so it empties
+    itself the day `records.*` leaves. */
+export const STORE_WIRE_DEPRECATED_OPS: readonly string[] =
+  Object.keys(STORE_WIRE_PATHS).filter((op) => op.startsWith("records."));
+
 // ---------------------------------------------------------------------------
 // Shared schemas
 // ---------------------------------------------------------------------------

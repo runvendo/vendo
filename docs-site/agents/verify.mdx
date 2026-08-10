@@ -440,6 +440,22 @@ project env. To use the managed Cloud sandbox instead, remove `E2B_API_KEY`
 from the server env and keep `VENDO_API_KEY` set. Restart the dev server and
 re-run `vendo doctor`.
 
+### E-LIVE-008 {#E-LIVE-008}
+
+**Symptom (warning):** `/status` lists store ops the wire has deprecated. The
+named ops still work today; the warning names the release that removes them.
+
+**Cause:** The generic `records.*` family is being retired in favour of two
+named families: `appData.*` for the rows and files an app invents (owner-stamped
+for you) and `engine.*` for Vendo's own collections (the same seven verbs behind
+an allowlist). The mount advertises the retirement on its handshake so callers
+find out before the removal, not after.
+
+**Fix:** Move each `records.*` call to the family that owns the data: app data
+to `appData.*`, Vendo's own collections to `engine.*`. Nothing breaks until the
+release named in the warning; after it, the deprecated ops answer
+`not-implemented`.
+
 ## Auth probes
 
 ### E-AUTH-001 {#E-AUTH-001}
