@@ -15,6 +15,13 @@ import {
   storeWireRecordsClaimRequestSchema,
   storeWireRecordsInsertIfAbsentRequestSchema,
   storeWireRecordsCompareAndSwapRequestSchema,
+  storeWireCollectionGetRequestSchema,
+  storeWireCollectionPutRequestSchema,
+  storeWireCollectionDeleteRequestSchema,
+  storeWireCollectionListRequestSchema,
+  storeWireCollectionClaimRequestSchema,
+  storeWireCollectionInsertIfAbsentRequestSchema,
+  storeWireCollectionCompareAndSwapRequestSchema,
   storeWireBlobsPutRequestSchema,
   storeWireBlobsGetRequestSchema,
   storeWireBlobsDeleteRequestSchema,
@@ -47,14 +54,42 @@ import {
 } from "../src/index.js";
 
 describe("vendo/store-wire@1", () => {
-  it("exposes the format constant and 35 mount-relative paths", () => {
+  it("exposes the format constant and 42 mount-relative paths", () => {
     expect(VENDO_STORE_WIRE_FORMAT).toBe("vendo/store-wire@1");
-    // 8 families: records(7) + blobs(4) + appData(8) + transcripts(6) + harness(3) + workspace(4) + lifecycle(2) + status(1) = 35
-    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(35);
+    // 9 families: records(7) + engine(7) + blobs(4) + appData(8) + transcripts(6) + harness(3) + workspace(4) + lifecycle(2) + status(1) = 42
+    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(42);
     expect(STORE_WIRE_PATHS.status).toBe("/status");
     expect(STORE_WIRE_PATHS["records.get"]).toBe("/records/get");
+    expect(STORE_WIRE_PATHS["engine.get"]).toBe("/engine/get");
+    expect(STORE_WIRE_PATHS["engine.compareAndSwap"]).toBe("/engine/compareAndSwap");
     expect(STORE_WIRE_PATHS["appData.put"]).toBe("/app-data/put");
     expect(STORE_WIRE_PATHS["lifecycle.promote"]).toBe("/lifecycle/promote");
+  });
+
+  it("every engine door is its own path, distinct from its records twin", () => {
+    const verbs = ["get", "put", "delete", "list", "claim", "insertIfAbsent", "compareAndSwap"] as const;
+    for (const verb of verbs) {
+      const engine = STORE_WIRE_PATHS[`engine.${verb}`];
+      expect(engine).toBe(`/engine/${verb}`);
+      expect(engine).not.toBe(STORE_WIRE_PATHS[`records.${verb}`]);
+    }
+    const enginePaths = Object.entries(STORE_WIRE_PATHS)
+      .filter(([op]) => op.startsWith("engine."))
+      .map(([, path]) => path);
+    expect(enginePaths).toHaveLength(7);
+    expect(enginePaths.every((path) => path.startsWith("/engine/"))).toBe(true);
+  });
+
+  it("the storeWireRecords* names are aliases of the shared collection bodies", () => {
+    // Same shape serves /records/* and /engine/*; the old names stay exported
+    // until the removal slice, so they must BE the renamed schemas, not copies.
+    expect(storeWireRecordsGetRequestSchema).toBe(storeWireCollectionGetRequestSchema);
+    expect(storeWireRecordsPutRequestSchema).toBe(storeWireCollectionPutRequestSchema);
+    expect(storeWireRecordsDeleteRequestSchema).toBe(storeWireCollectionDeleteRequestSchema);
+    expect(storeWireRecordsListRequestSchema).toBe(storeWireCollectionListRequestSchema);
+    expect(storeWireRecordsClaimRequestSchema).toBe(storeWireCollectionClaimRequestSchema);
+    expect(storeWireRecordsInsertIfAbsentRequestSchema).toBe(storeWireCollectionInsertIfAbsentRequestSchema);
+    expect(storeWireRecordsCompareAndSwapRequestSchema).toBe(storeWireCollectionCompareAndSwapRequestSchema);
   });
 
   it("parses records request DTOs and rejects invalid ones", () => {
@@ -205,9 +240,9 @@ describe("vendo/store-wire@1", () => {
   it("status doubles as the discovery handshake: format + ops count", () => {
     const status: StoreWireStatus = {
       format: VENDO_STORE_WIRE_FORMAT,
-      ops: 35,
+      ops: 42,
     };
-    expect(storeWireStatusSchema.parse(status).ops).toBe(35);
+    expect(storeWireStatusSchema.parse(status).ops).toBe(42);
     expect(storeWireStatusSchema.parse({ ...status, deprecated: ["records.put"] }).deprecated).toEqual(["records.put"]);
     expect(storeWireStatusSchema.safeParse({ ...status, format: "vendo/store-wire@2" }).success).toBe(false);
   });

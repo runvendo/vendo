@@ -1,3 +1,4 @@
+import { assertEngineCollection } from "../engine-collections.js";
 import { VendoError } from "../errors.js";
 import type { IsoDateTime } from "../ids.js";
 import { VENDO_STORE_WIRE_FORMAT, type StoreWireStatus } from "../store-wire.js";
@@ -173,6 +174,60 @@ export function memoryStoreOps(): StoreOps {
       const prev = col(collection).get(record.id);
       if (!prev || prev.revision !== expectedRevision) return null;
       return putRecord(collection, record);
+    },
+  };
+
+  // ---------------------------------------------------------------------------
+  // engine family — `records`, behind the allowlist gate
+  // ---------------------------------------------------------------------------
+
+  /** MIRRORS the per-collection policy the real backend enforces in its typed
+      doors (packages/store/src/routing.ts), which the generic records table has
+      no idea about. Only the policy the conformance suite pins lives here — the
+      reference exists to prove the contract, not to re-implement routing. */
+  const APPEND_ONLY = new Set(["vendo_audit", "vendo_effects"]);
+  const INSERT_ONCE = new Set(["vendo_effects"]);
+
+  const engine: StoreOps["engine"] = {
+    async get(collection, id) {
+      assertEngineCollection(collection);
+      return records.get(collection, id);
+    },
+    async put(collection, record) {
+      assertEngineCollection(collection);
+      if (INSERT_ONCE.has(collection)) {
+        // A receipt that already exists is the truth about what executed, so a
+        // second put hands back the RECORDED row rather than overwriting it.
+        const held = await records.get(collection, record.id);
+        if (held) return held;
+      }
+      return records.put(collection, record);
+    },
+    async delete(collection, id) {
+      assertEngineCollection(collection);
+      if (APPEND_ONLY.has(collection)) {
+        throw new VendoError(
+          "blocked",
+          `${collection} is append-only; rows are erased only via the store erase API (02-store §5)`,
+        );
+      }
+      await records.delete(collection, id);
+    },
+    async list(collection, query) {
+      assertEngineCollection(collection);
+      return records.list(collection, query);
+    },
+    async claim(collection, expected, replacement) {
+      assertEngineCollection(collection);
+      return records.claim(collection, expected, replacement);
+    },
+    async insertIfAbsent(collection, record) {
+      assertEngineCollection(collection);
+      return records.insertIfAbsent(collection, record);
+    },
+    async compareAndSwap(collection, record, expectedRevision) {
+      assertEngineCollection(collection);
+      return records.compareAndSwap(collection, record, expectedRevision);
     },
   };
 
@@ -540,6 +595,7 @@ export function memoryStoreOps(): StoreOps {
 
   return {
     records,
+    engine,
     blobs,
     appData,
     transcripts,
@@ -547,7 +603,7 @@ export function memoryStoreOps(): StoreOps {
     workspace,
     lifecycle,
     async status(): Promise<StoreWireStatus> {
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 35 };
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 42 };
     },
   };
 }

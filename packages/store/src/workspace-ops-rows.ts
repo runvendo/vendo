@@ -7,7 +7,7 @@ import type {
 } from "./workspace-rows.js";
 
 /**
- * The workspace pair over the 35-op contract instead of this store's own
+ * The workspace pair over the 42-op contract instead of this store's own
  * Postgres — what makes a hosted store (a key, no database) serve the same
  * `WorkspaceStoreFs` a local one does, byte for byte. The façade above
  * (workspace.ts) is unchanged, and so are its permission checks: `can()` reads

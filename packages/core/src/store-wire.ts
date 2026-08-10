@@ -24,6 +24,14 @@ export const STORE_WIRE_PATHS = {
   "records.claim": "/records/claim",
   "records.insertIfAbsent": "/records/insertIfAbsent",
   "records.compareAndSwap": "/records/compareAndSwap",
+  // engine (7)
+  "engine.get": "/engine/get",
+  "engine.put": "/engine/put",
+  "engine.delete": "/engine/delete",
+  "engine.list": "/engine/list",
+  "engine.claim": "/engine/claim",
+  "engine.insertIfAbsent": "/engine/insertIfAbsent",
+  "engine.compareAndSwap": "/engine/compareAndSwap",
   // blobs (4)
   "blobs.put": "/blobs/put",
   "blobs.get": "/blobs/get",
@@ -77,30 +85,35 @@ const cursorQuerySchema = z.object({
 }).passthrough();
 
 // ---------------------------------------------------------------------------
-// records
+// records + engine — one collection-addressed body shape serves both
+//
+// The two families take the same seven verbs over the same `collection` + args
+// bodies; only the allowlist behind the door differs (engine names are gated by
+// assertEngineCollection). So the bodies are named for their SHAPE, not for one
+// family — a second copy would only be a copy that could drift.
 // ---------------------------------------------------------------------------
 
-export const storeWireRecordsGetRequestSchema = z.object({
+export const storeWireCollectionGetRequestSchema = z.object({
   collection: z.string().min(1),
   id: z.string().min(1),
 }).passthrough();
 
-export const storeWireRecordsPutRequestSchema = z.object({
+export const storeWireCollectionPutRequestSchema = z.object({
   collection: z.string().min(1),
   record: recordInputSchema,
 }).passthrough();
 
-export const storeWireRecordsDeleteRequestSchema = z.object({
+export const storeWireCollectionDeleteRequestSchema = z.object({
   collection: z.string().min(1),
   id: z.string().min(1),
 }).passthrough();
 
-export const storeWireRecordsListRequestSchema = z.object({
+export const storeWireCollectionListRequestSchema = z.object({
   collection: z.string().min(1),
   query: recordQuerySchema.optional(),
 }).passthrough();
 
-export const storeWireRecordsClaimRequestSchema = z.object({
+export const storeWireCollectionClaimRequestSchema = z.object({
   collection: z.string().min(1),
   expected: recordInputSchema,
   replacement: z.object({
@@ -109,16 +122,33 @@ export const storeWireRecordsClaimRequestSchema = z.object({
   }).passthrough().optional(),
 }).passthrough();
 
-export const storeWireRecordsInsertIfAbsentRequestSchema = z.object({
+export const storeWireCollectionInsertIfAbsentRequestSchema = z.object({
   collection: z.string().min(1),
   record: recordInputSchema,
 }).passthrough();
 
-export const storeWireRecordsCompareAndSwapRequestSchema = z.object({
+export const storeWireCollectionCompareAndSwapRequestSchema = z.object({
   collection: z.string().min(1),
   record: recordInputSchema,
   expectedRevision: z.string().min(1),
 }).passthrough();
+
+/** @deprecated Renamed to storeWireCollection*RequestSchema — one
+    collection-addressed body shape now serves both /records/* and /engine/*.
+    Removed in a later slice; nothing new should import these. */
+export const storeWireRecordsGetRequestSchema = storeWireCollectionGetRequestSchema;
+/** @deprecated Use storeWireCollectionPutRequestSchema. */
+export const storeWireRecordsPutRequestSchema = storeWireCollectionPutRequestSchema;
+/** @deprecated Use storeWireCollectionDeleteRequestSchema. */
+export const storeWireRecordsDeleteRequestSchema = storeWireCollectionDeleteRequestSchema;
+/** @deprecated Use storeWireCollectionListRequestSchema. */
+export const storeWireRecordsListRequestSchema = storeWireCollectionListRequestSchema;
+/** @deprecated Use storeWireCollectionClaimRequestSchema. */
+export const storeWireRecordsClaimRequestSchema = storeWireCollectionClaimRequestSchema;
+/** @deprecated Use storeWireCollectionInsertIfAbsentRequestSchema. */
+export const storeWireRecordsInsertIfAbsentRequestSchema = storeWireCollectionInsertIfAbsentRequestSchema;
+/** @deprecated Use storeWireCollectionCompareAndSwapRequestSchema. */
+export const storeWireRecordsCompareAndSwapRequestSchema = storeWireCollectionCompareAndSwapRequestSchema;
 
 // ---------------------------------------------------------------------------
 // blobs

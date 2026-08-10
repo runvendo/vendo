@@ -120,7 +120,7 @@ export function selectStore(
   store: VendoStore;
   /** THE files adapter for this deployment. Every consumer takes it from here. */
   files: FilesAdapter;
-  /** THE 35-op surface for this deployment, over that same store and adapter —
+  /** THE 42-op surface for this deployment, over that same store and adapter —
       absent when the store offers neither its own ops nor a SQL handle. */
   ops: StoreOps | undefined;
 } {

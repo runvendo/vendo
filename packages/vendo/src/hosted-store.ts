@@ -50,7 +50,7 @@ export interface HostedStore extends VendoStore {
     bySubject(subject: string): Promise<EraseReport>;
     byApp(appId: string): Promise<EraseReport>;
   };
-  /** The 35-op named-operation surface over the same mount and the same key —
+  /** The 42-op named-operation surface over the same mount and the same key —
    * `vendo/store-wire@1` (see {@link hostedStoreOps}). Additive: the
    * StoreAdapter doors above are unchanged and keep their own routes. */
   ops: StoreOps;
@@ -306,10 +306,10 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
 }
 
 // ---------------------------------------------------------------------------
-// The 35-op StoreOps client — store design v1, `vendo/store-wire@1`
+// The 42-op StoreOps client — store design v1, `vendo/store-wire@1`
 // ---------------------------------------------------------------------------
 
-/** The 35 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
+/** The 42 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
  * op names even where the console's door sits at a different path. */
 type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
 
@@ -348,7 +348,7 @@ const raiseWireError = async (response: Response): Promise<never> => {
 };
 
 /**
- * The Cloud client for the whole 35-op store contract, speaking
+ * The Cloud client for the whole 42-op store contract, speaking
  * `vendo/store-wire@1` over the console's store mount: bearer key, deployment
  * identity and per-request abort budget shared with {@link hostedStore}, the
  * same adapter rule (behavior comes ONLY from the constructor arguments),
@@ -512,6 +512,44 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
       async compareAndSwap(collection, record, expectedRevision) {
         return nullableRecordOf(
           await mutate("records.compareAndSwap", P["records.compareAndSwap"], {
+            collection,
+            record,
+            expectedRevision,
+          }),
+        );
+      },
+    },
+    // Vendo's OWN engine drawers, over the same collection-addressed bodies as
+    // `records` — a separate door so the service can gate the collection name
+    // (the allowlist) without gating the host's own `records` traffic.
+    engine: {
+      async get(collection, id) {
+        return nullableRecordOf(await post("engine.get", P["engine.get"], { collection, id }));
+      },
+      async put(collection, record) {
+        return recordOf(await mutate("engine.put", P["engine.put"], { collection, record }));
+      },
+      async delete(collection, id) {
+        await mutate("engine.delete", P["engine.delete"], { collection, id });
+      },
+      async list(collection, query) {
+        return listOf(await post("engine.list", P["engine.list"], { collection, query: query ?? {} }));
+      },
+      async claim(collection, expected, replacement) {
+        return claimedOf(await mutate("engine.claim", P["engine.claim"], {
+          collection,
+          expected,
+          ...(replacement === undefined ? {} : { replacement }),
+        }));
+      },
+      async insertIfAbsent(collection, record) {
+        return nullableRecordOf(
+          await mutate("engine.insertIfAbsent", P["engine.insertIfAbsent"], { collection, record }),
+        );
+      },
+      async compareAndSwap(collection, record, expectedRevision) {
+        return nullableRecordOf(
+          await mutate("engine.compareAndSwap", P["engine.compareAndSwap"], {
             collection,
             record,
             expectedRevision,

@@ -1,3 +1,4 @@
+import { ENGINE_ALLOWLIST_VERSION, engineAppHistory } from "../engine-collections.js";
 import type { VendoErrorCode } from "../errors.js";
 import { isoDateTimeSchema } from "../ids.js";
 import { VENDO_STORE_WIRE_FORMAT } from "../store-wire.js";
@@ -73,7 +74,7 @@ const numberField = (entry: unknown, field: string, message: string): number => 
 
 /** A thread's harness state rides the harness slot under this synthetic appId
     (the store's `harnessStateKey`), which is what makes deleteThread's cascade
-    onto harness state observable through the 35 ops. */
+    onto harness state observable through the 42 ops. */
 const harnessSlot = (threadId: string): string => `harness_state:${threadId}`;
 
 /** appData rows live in the app's own drawer, and the local backend fails an
@@ -245,6 +246,140 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assertDeepEqual(swapped!.data, { v: 2 }, "compareAndSwap did not update data");
         const stale = await ops.records.compareAndSwap("conf_cas", { id: "cas1", data: { v: 3 } }, created.revision!);
         assert(stale === null, "compareAndSwap should return null on stale revision");
+      }),
+
+      // =====================================================================
+      // engine
+      // =====================================================================
+
+      opsCase(opts, "engine round-trips a record on an engine collection", async (ops) => {
+        const put = await ops.engine.put("vendo_workspace_commits", { id: "wc_1", data: { v: 1 }, refs: { subject: "user_1" } });
+        const got = await ops.engine.get("vendo_workspace_commits", "wc_1");
+        assertDeepEqual(got, put, "engine.get did not round-trip the stored record");
+        const listed = await ops.engine.list("vendo_workspace_commits", { ids: ["wc_1"] });
+        assertDeepEqual(listed.records.map((r) => r.id), ["wc_1"], "engine.list did not find the record it just stored");
+        await ops.engine.delete("vendo_workspace_commits", "wc_1");
+        assert(await ops.engine.get("vendo_workspace_commits", "wc_1") === null, "the deleted record remained readable");
+      }),
+
+      /** The deliveries dedupe the ingestion surface depends on
+          (packages/automations/src/ingestion-surface.ts): a redelivered webhook
+          must lose, and lose without touching what the first one recorded. */
+      opsCase(opts, "engine.insertIfAbsent returns record on first call, null on second", async (ops) => {
+        const first = await ops.engine.insertIfAbsent("automations:deliveries", { id: "dlv_1", data: { n: 1 } });
+        assert(first !== null, "engine.insertIfAbsent first call should return a record");
+        assert(first!.id === "dlv_1", "engine.insertIfAbsent did not echo id");
+        const second = await ops.engine.insertIfAbsent("automations:deliveries", { id: "dlv_1", data: { n: 2 } });
+        assert(second === null, "engine.insertIfAbsent second call should return null");
+        const got = await ops.engine.get("automations:deliveries", "dlv_1");
+        assertDeepEqual(got?.data, { n: 1 }, "engine.insertIfAbsent overwrote the recorded delivery");
+      }),
+
+      /** The schedule cursor claim: a runner holding a revision the schedule has
+          moved past may not write its stale cursor back over the live one. */
+      opsCase(opts, "engine.compareAndSwap succeeds on matching revision, null on stale", async (ops) => {
+        const created = await ops.engine.put("automations:schedule", { id: "sch_1", data: { cursor: 1 } });
+        assert(created.revision, "engine.put must return a revision for CAS");
+        const swapped = await ops.engine.compareAndSwap("automations:schedule", { id: "sch_1", data: { cursor: 2 } }, created.revision!);
+        assert(swapped !== null, "engine.compareAndSwap should succeed on matching revision");
+        assertDeepEqual(swapped!.data, { cursor: 2 }, "engine.compareAndSwap did not update data");
+        const stale = await ops.engine.compareAndSwap("automations:schedule", { id: "sch_1", data: { cursor: 3 } }, created.revision!);
+        assert(stale === null, "engine.compareAndSwap should return null on stale revision");
+      }),
+
+      /** Sequential, not concurrent: two callers read the same slot and both try
+          to take it, and the loser must be told the row moved on rather than
+          stamping its own claim over the winner's. */
+      opsCase(opts, "engine.claim lets exactly one of two callers win", async (ops) => {
+        await ops.engine.put("vendo_placement_slots", { id: "slot_1", data: { holder: null }, refs: { o: "a" } });
+        const expected = { id: "slot_1", data: { holder: null }, refs: { o: "a" } };
+        const first = await ops.engine.claim("vendo_placement_slots", expected, { data: { holder: "run_1" }, refs: { o: "a" } });
+        assert(first === true, "the first claim on a matching row should win");
+        const second = await ops.engine.claim("vendo_placement_slots", expected, { data: { holder: "run_2" }, refs: { o: "a" } });
+        assert(second === false, "the second claim on the same stale expectation should lose");
+        const after = await ops.engine.get("vendo_placement_slots", "slot_1");
+        assertDeepEqual(after?.data, { holder: "run_1" }, "the winner's replacement did not land");
+      }),
+
+      opsCase(opts, "engine refuses a collection outside the allowlist on every verb", async (ops) => {
+        await assertThrowsCode(
+          () => ops.engine.put("host_invoices", { id: "inv_1", data: { total: 1 } }),
+          "blocked",
+          "a non-engine collection on engine.put",
+        );
+        // A read verb too: the gate is on every verb, not just the writes.
+        await assertThrowsCode(
+          () => ops.engine.get("host_invoices", "inv_1"),
+          "blocked",
+          "a non-engine collection on engine.get",
+        );
+
+        // "blocked" with no explanation reads as a bug in Vendo, so the refusal
+        // must name the allowlist version it judged against and the door the
+        // caller actually wanted.
+        const refusal = await ops.engine.get("host_invoices", "inv_1").then(() => null, (error: unknown) => error);
+        const message = String((refusal as { message?: unknown } | null)?.message ?? refusal);
+        assert(message.includes(`v${ENGINE_ALLOWLIST_VERSION}`), `the refusal should name the allowlist version, got ${message}`);
+        assert(message.includes("appData"), `the refusal should point at the appData family, got ${message}`);
+
+        // A gate that throws after writing is not a gate.
+        assert(await ops.records.get("host_invoices", "inv_1") === null, "the refused put wrote its row anyway");
+      }),
+
+      /** `engine` is a NEW door onto the same routed doors the local backend
+          already had, so it inherits their per-collection law. A door that
+          quietly bypassed it would make the audit log deletable and the effect
+          ledger re-writable — the two things neither is allowed to be. */
+      opsCase(opts, "engine does not bypass the routed doors' append-only and insert-once policy", async (ops) => {
+        // Shape-valid rows: both collections are TYPED doors in the real
+        // backend, which refuses malformed data as `validation` long before
+        // policy is reached.
+        const audit = {
+          id: "aud_engine_policy",
+          at: new Date().toISOString(),
+          kind: "tool-call",
+          principal: { kind: "user", subject: "user_1" },
+          venue: "chat",
+          presence: "present",
+        };
+        await ops.engine.put("vendo_audit", { id: audit.id, data: audit });
+        await assertThrowsCode(
+          () => ops.engine.delete("vendo_audit", audit.id),
+          "blocked",
+          "deleting an audit event through the engine door",
+        );
+        assert(await ops.engine.get("vendo_audit", audit.id) !== null, "the refused delete erased the audit event anyway");
+
+        const first = await ops.engine.put("vendo_effects", { id: "eff_engine_policy", data: { subject: "user_1", outcome: { sent: 1 } } });
+        assertDeepEqual((first.data as Record<string, unknown>)["outcome"], { sent: 1 }, "the first receipt did not record its outcome");
+        const second = await ops.engine.put("vendo_effects", { id: "eff_engine_policy", data: { subject: "user_1", outcome: { sent: 2 } } });
+        assertDeepEqual(
+          (second.data as Record<string, unknown>)["outcome"],
+          { sent: 1 },
+          "the second put overwrote a receipt instead of returning the recorded one",
+        );
+        const held = await ops.engine.get("vendo_effects", "eff_engine_policy");
+        assertDeepEqual(
+          (held?.data as Record<string, unknown> | undefined)?.["outcome"],
+          { sent: 1 },
+          "the effect ledger kept the second outcome",
+        );
+      }),
+
+      /** There is exactly ONE dynamic engine collection and ONE builder for it.
+          Pin intents are rows INSIDE the app-history collection, not a second
+          drawer — a second pattern is how an allowlist rots into a wildcard. */
+      opsCase(opts, "engine accepts the one dynamic app-history pattern and refuses an illegal app id", async (ops) => {
+        const collection = engineAppHistory("app_x");
+        const put = await ops.engine.put(collection, { id: "ver_1", data: { version: 1 } });
+        const got = await ops.engine.get(collection, "ver_1");
+        assertDeepEqual(got, put, "the composed app-history collection did not round-trip");
+
+        await assertThrowsCode(
+          async () => engineAppHistory(""),
+          "validation",
+          "an empty app id handed to the app-history builder",
+        );
       }),
 
       // =====================================================================
@@ -989,7 +1124,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         const status = await ops.status();
         assert(status.format === VENDO_STORE_WIRE_FORMAT, `status.format should be ${VENDO_STORE_WIRE_FORMAT}`);
         assert(typeof status.ops === "number", "status.ops should be a number");
-        assert(status.ops === 35, `status.ops should be 35, got ${status.ops}`);
+        assert(status.ops === 42, `status.ops should be 42, got ${status.ops}`);
       }),
     ],
   };

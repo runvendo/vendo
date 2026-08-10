@@ -16,7 +16,7 @@ type StoreBackend =
  * "Unknown VendoStore handle" for anything this package did not mint — which is
  * every hosted deployment, and is why a key-only host could not serve a harness
  * turn. The rows exist either way; only the road to them differs. So: the SQL
- * handle when there is one, the store's own 35-op surface when there is not, and
+ * handle when there is one, the store's own 42-op surface when there is not, and
  * a named refusal only when the store offers neither.
  *
  * SQL wins when both are present. It is the same database, one hop shorter.

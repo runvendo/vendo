@@ -17,6 +17,13 @@ import {
   storeWireBlobsGetRequestSchema,
   storeWireBlobsListRequestSchema,
   storeWireBlobsPutRequestSchema,
+  storeWireCollectionClaimRequestSchema,
+  storeWireCollectionCompareAndSwapRequestSchema,
+  storeWireCollectionDeleteRequestSchema,
+  storeWireCollectionGetRequestSchema,
+  storeWireCollectionInsertIfAbsentRequestSchema,
+  storeWireCollectionListRequestSchema,
+  storeWireCollectionPutRequestSchema,
   storeWireRecordsClaimRequestSchema,
   storeWireRecordsCompareAndSwapRequestSchema,
   storeWireRecordsDeleteRequestSchema,
@@ -473,7 +480,7 @@ describe("demo-host journey through the store seam", () => {
 });
 
 // ---------------------------------------------------------------------------
-// hostedStoreOps — the 35-op client over `vendo/store-wire@1`.
+// hostedStoreOps — the 42-op client over `vendo/store-wire@1`.
 //
 // Unit tests over an injected fake fetch: they pin the route, the request body
 // and the response decoding for every op — records and blobs against the
@@ -509,6 +516,13 @@ const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   "records.claim": { method: "POST", path: P["records.claim"], keyed: true },
   "records.insertIfAbsent": { method: "POST", path: P["records.insertIfAbsent"], keyed: true },
   "records.compareAndSwap": { method: "POST", path: P["records.compareAndSwap"], keyed: true },
+  "engine.get": { method: "POST", path: P["engine.get"] },
+  "engine.put": { method: "POST", path: P["engine.put"], keyed: true },
+  "engine.delete": { method: "POST", path: P["engine.delete"], keyed: true },
+  "engine.list": { method: "POST", path: P["engine.list"] },
+  "engine.claim": { method: "POST", path: P["engine.claim"], keyed: true },
+  "engine.insertIfAbsent": { method: "POST", path: P["engine.insertIfAbsent"], keyed: true },
+  "engine.compareAndSwap": { method: "POST", path: P["engine.compareAndSwap"], keyed: true },
   "blobs.put": { method: "POST", path: P["blobs.put"], keyed: true },
   "blobs.get": { method: "POST", path: P["blobs.get"] },
   "blobs.delete": { method: "POST", path: P["blobs.delete"], keyed: true },
@@ -579,6 +593,13 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("records.claim")]: { claimed: true },
   [door("records.insertIfAbsent")]: { record: wireRecord },
   [door("records.compareAndSwap")]: { record: null },
+  [door("engine.get")]: { record: wireRecord },
+  [door("engine.put")]: { record: wireRecord },
+  [door("engine.delete")]: { ok: true },
+  [door("engine.list")]: { records: [wireRecord], cursor: "cur_engine" },
+  [door("engine.claim")]: { claimed: true },
+  [door("engine.insertIfAbsent")]: { record: wireRecord },
+  [door("engine.compareAndSwap")]: { record: null },
   [door("blobs.put")]: { ok: true },
   [door("blobs.get")]: { blob: { bytes: btoa("blob bytes"), contentType: "text/plain" } },
   [door("blobs.delete")]: { ok: true },
@@ -606,12 +627,16 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("workspace.history")]: { entries: [{ commitId: "wsc_1" }] },
   [door("lifecycle.erase")]: { report: { vendo_apps: 1 } },
   [door("lifecycle.promote")]: { ok: true },
-  [door("status")]: { format: "vendo/store-wire@1", ops: 35 },
+  [door("status")]: { format: "vendo/store-wire@1", ops: 42 },
 };
 
 /** Where an appData op lands: the app, the collection it invented, and the
  * owner the runtime stamped — never a subject the caller names. */
 const APP_DATA_TARGET = { appId: "app_1", collection: "invoices", owner: "sub_1" };
+
+/** A real name from the engine allowlist (core's ENGINE_COLLECTIONS) — the gate
+ * is server-side, but a made-up name would read as if any name were allowed. */
+const ENGINE_COLLECTION = "vendo_workspace_commits";
 
 const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<void> => {
   await ops.records.get("invoices", "inv_1");
@@ -621,6 +646,13 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.records.claim("invoices", { id: "inv_1", data: { total: 5 } });
   await ops.records.insertIfAbsent("invoices", { id: "inv_2", data: {} });
   await ops.records.compareAndSwap("invoices", { id: "inv_2", data: {} }, "1");
+  await ops.engine.get(ENGINE_COLLECTION, "wsc_1");
+  await ops.engine.put(ENGINE_COLLECTION, { id: "wsc_1", data: { paths: 1 } });
+  await ops.engine.delete(ENGINE_COLLECTION, "wsc_1");
+  await ops.engine.list(ENGINE_COLLECTION);
+  await ops.engine.claim(ENGINE_COLLECTION, { id: "wsc_1", data: { paths: 1 } });
+  await ops.engine.insertIfAbsent(ENGINE_COLLECTION, { id: "wsc_2", data: {} });
+  await ops.engine.compareAndSwap(ENGINE_COLLECTION, { id: "wsc_2", data: {} }, "1");
   await ops.blobs.put("uploads", "a.png", new Uint8Array([1]));
   await ops.blobs.get("uploads", "a.png");
   await ops.blobs.delete("uploads", "a.png");
@@ -651,24 +683,24 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.status();
 };
 
-describe("hostedStoreOps — the 35-op wire client", () => {
-  it("routes all 35 ops to the console's real door, with a key on exactly the mutations", async () => {
+describe("hostedStoreOps — the 42-op wire client", () => {
+  it("routes all 42 ops to the console's real door, with a key on exactly the mutations", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
     await driveEveryOp(ops);
 
     const expected = Object.values(DOORS);
-    expect(calls).toHaveLength(35);
+    expect(calls).toHaveLength(42);
     expect(calls.map((call) => `${call.method} ${call.path}`))
       .toEqual(expected.map((route) => `${route.method} ${route.path}`));
     expect(calls.map((call) => call.idempotencyKey === null ? "read" : "keyed"))
       .toEqual(expected.map((route) => route.keyed === true ? "keyed" : "read"));
-    // 20 mutations, 15 reads — and the /status handshake is the one GET with
+    // 25 mutations, 17 reads — and the /status handshake is the one GET with
     // no body at all.
-    expect(expected.filter((route) => route.keyed === true)).toHaveLength(20);
+    expect(expected.filter((route) => route.keyed === true)).toHaveLength(25);
     expect(calls.at(-1)).toMatchObject({ path: P.status, method: "GET", body: undefined });
     // Distinct keys across distinct operations (one per logical mutation).
     const keys = calls.map((call) => call.idempotencyKey).filter((key) => key !== null);
-    expect(new Set(keys).size).toBe(20);
+    expect(new Set(keys).size).toBe(25);
   });
 
   it("records: seven ops on the wire door, collection on the body, records/cursor decoded", async () => {
@@ -781,7 +813,7 @@ describe("hostedStoreOps — the 35-op wire client", () => {
     await expect(bare.blobs.get("uploads", "gone.png")).rejects.toMatchObject({ code: "not-implemented" });
   });
 
-  it("records and blobs requests validate against the EXPORTED store-wire v1 request schemas", async () => {
+  it("records, engine and blobs requests validate against the EXPORTED store-wire v1 request schemas", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
     await ops.records.get("invoices", "inv_1");
     await ops.records.put("invoices", { id: "inv_1", data: { total: 5 } });
@@ -790,6 +822,13 @@ describe("hostedStoreOps — the 35-op wire client", () => {
     await ops.records.claim("invoices", { id: "inv_1", data: { total: 5 } }, { data: { total: 6 } });
     await ops.records.insertIfAbsent("invoices", { id: "inv_2", data: {} });
     await ops.records.compareAndSwap("invoices", { id: "inv_2", data: {} }, "1");
+    await ops.engine.get(ENGINE_COLLECTION, "wsc_1");
+    await ops.engine.put(ENGINE_COLLECTION, { id: "wsc_1", data: { paths: 1 } });
+    await ops.engine.delete(ENGINE_COLLECTION, "wsc_1");
+    await ops.engine.list(ENGINE_COLLECTION, { limit: 10 });
+    await ops.engine.claim(ENGINE_COLLECTION, { id: "wsc_1", data: { paths: 1 } }, { data: { paths: 2 } });
+    await ops.engine.insertIfAbsent(ENGINE_COLLECTION, { id: "wsc_2", data: {} });
+    await ops.engine.compareAndSwap(ENGINE_COLLECTION, { id: "wsc_2", data: {} }, "1");
     await ops.blobs.put("uploads", "a.bin", new Uint8Array([7]), { contentType: "application/octet-stream" });
     await ops.blobs.get("uploads", "a.bin");
     await ops.blobs.delete("uploads", "a.bin");
@@ -803,6 +842,16 @@ describe("hostedStoreOps — the 35-op wire client", () => {
       ["records.claim", storeWireRecordsClaimRequestSchema],
       ["records.insertIfAbsent", storeWireRecordsInsertIfAbsentRequestSchema],
       ["records.compareAndSwap", storeWireRecordsCompareAndSwapRequestSchema],
+      // ONE collection-addressed body shape, two doors: the engine ops send
+      // exactly what /records/* sends, so they validate against the same
+      // schema objects (the storeWireRecords* names above are its aliases).
+      ["engine.get", storeWireCollectionGetRequestSchema],
+      ["engine.put", storeWireCollectionPutRequestSchema],
+      ["engine.delete", storeWireCollectionDeleteRequestSchema],
+      ["engine.list", storeWireCollectionListRequestSchema],
+      ["engine.claim", storeWireCollectionClaimRequestSchema],
+      ["engine.insertIfAbsent", storeWireCollectionInsertIfAbsentRequestSchema],
+      ["engine.compareAndSwap", storeWireCollectionCompareAndSwapRequestSchema],
       ["blobs.put", storeWireBlobsPutRequestSchema],
       ["blobs.get", storeWireBlobsGetRequestSchema],
       ["blobs.delete", storeWireBlobsDeleteRequestSchema],
@@ -933,9 +982,9 @@ describe("hostedStoreOps — the 35-op wire client", () => {
 
   it("status: the GET handshake, parsed as vendo/store-wire@1", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
-    expect(await ops.status()).toMatchObject({ format: "vendo/store-wire@1", ops: 35 });
+    expect(await ops.status()).toMatchObject({ format: "vendo/store-wire@1", ops: 42 });
     expect(calls[0]).toMatchObject({ path: "/status", method: "GET" });
-    await expect(wireFake({ [door("status")]: { format: "vendo/store-wire@2", ops: 35 } }).ops.status())
+    await expect(wireFake({ [door("status")]: { format: "vendo/store-wire@2", ops: 42 } }).ops.status())
       .rejects.toThrow(/invalid status/);
   });
 
@@ -1101,7 +1150,7 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     expect(typeof store.blobs).toBe("function");
     expect(typeof store.erase.bySubject).toBe("function");
     expect(Object.keys(store.ops).sort()).toEqual([
-      "appData", "blobs", "harness", "lifecycle", "records", "status", "transcripts", "workspace",
+      "appData", "blobs", "engine", "harness", "lifecycle", "records", "status", "transcripts", "workspace",
     ]);
 
     // The op surface rides the SAME mount, key and identity headers as the
@@ -1124,8 +1173,8 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     expect(await store.ops.blobs.list("uploads", "images/")).toEqual(["images/a.png"]);
   });
 
-  // 23 of the 35 ops have no door in the fake: all 8 appData, all 6
-  // transcripts, all 3 harness, all 4 workspace, lifecycle.promote and
+  // 30 of the 42 ops have no door in the fake: all 7 engine, all 8 appData,
+  // all 6 transcripts, all 3 harness, all 4 workspace, lifecycle.promote and
   // /status. It used to answer
   // them with a `not-found` envelope — the SAME answer a live console sends
   // when it refuses — so a test exercising one of those families read a

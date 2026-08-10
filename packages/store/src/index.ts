@@ -3,7 +3,7 @@
  *  keep the PGlite wasm engine out of the bundle graph. */
 export { createStore } from "./create-store.js";
 export { maybeDbFor, type VendoStore } from "./store.js";
-// The StoreOps local backend (02-store): the 35-op named-operation contract
+// The StoreOps local backend (02-store): the 42-op named-operation contract
 // served off this store's own Postgres, transactions at verb boundaries.
 export { createStoreOps } from "./ops.js";
 // The one composer of appData names and the owner stamp: everything that
