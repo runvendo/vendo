@@ -86,6 +86,12 @@ export const SCREEN_STEPS = 10;
 /**
  * How hard the assembler may think (`vendo({ effort })`).
  *
+* OPT-IN, not a default. Measured 2026-08-10: setting this to "medium" cut the
+ * screen loop's wall clock hard (paired speed ratio against the `diy` baseline
+ * went 2.86x -> 1.72x) and cost quality (paired floor gap against the same
+ * baseline went -15pp -> -30pp, n=10). That trade is a product decision with too
+ * few samples behind it to bake in, so the knob ships and the default does not.
+ *
  * `"low"`, for the same reason `SCREEN_STEPS` is 10: this loop is a SPECIALIST
  * that must produce a document, not a resident reasoning about an open-ended
  * ask. It is handed the briefing pack, a closed loadout and a job description —
@@ -102,7 +108,7 @@ export const SCREEN_STEPS = 10;
  *
  * A deployment that disagrees passes `ScreenAssemblerDeps.effort`.
  */
-export const SCREEN_EFFORT: ModelEffort = "medium";
+export const SCREEN_EFFORT: ModelEffort | undefined = undefined;
 
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
