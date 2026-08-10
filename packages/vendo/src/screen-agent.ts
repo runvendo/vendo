@@ -62,6 +62,7 @@ import {
   buildingAppsSkill,
   paintedIn,
   repairInstruction,
+  SCREEN_REMINDER,
   validateWrittenApps,
   wrapWorkspaceForRender,
   type RenderSeamOptions,
@@ -506,7 +507,14 @@ export async function assembleScreen(
   loadout.push(saveApp, escalate);
 
   const turn: Turn<VendoHarnessOptions> = {
-    messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
+    // The ask, then the reminder at its TAIL. The brief above is a long cached
+    // prefix the model read once; the handful of rules a screen actually fails on
+    // arrive a second time, last, where the ask is.
+    messages: [{
+      id: `screen_${input.appId}`,
+      role: "user",
+      parts: [{ type: "text", text: `${input.request}\n\n${SCREEN_REMINDER}` }],
+    }],
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
@@ -608,8 +616,8 @@ export async function assembleScreen(
         parts: [{
           type: "text",
           text: saved === undefined
-            ? instruction
-            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
+            ? `${instruction}\n\n${SCREEN_REMINDER}`
+            : `${instruction}\n\n${SCREEN_REMINDER}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
         }],
       }]);
     }

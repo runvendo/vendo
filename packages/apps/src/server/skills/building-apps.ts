@@ -334,6 +334,23 @@ a plan in it, and does not want to.
   "this product can't send email" beats anything that sounds like it worked.
 `;
 
+/**
+ * The few rules whose violation breaks the artifact, for the TAIL of the ask.
+ *
+ * No new doctrine: every line is already in the body above, in
+ * `references/format.md`, or in the reviewer's own five judgments
+ * (`../checking/reviewer-prompt.ts`) — which is the point. The job description is
+ * a long, cached prefix and these are the things a screen actually fails on, so
+ * they get a second delivery channel with recency instead of a longer prompt.
+ */
+export const SCREEN_REMINDER = `Before you save, the few things a screen actually fails on:
+
+- Every number, name and date on screen comes from a query result. Text you typed yourself is for labels and headings, never for data.
+- \`format="money"\` already converts minor units, so never divide by 100 yourself.
+- A row action carries that row's own id, or it is a dead control.
+- Answer exactly the ask and nothing more: no section they never asked for, and nothing they did ask for quietly dropped.
+- Save the complete document, then run \`validate\` once. You are not done until it comes back clean.`;
+
 export const buildingAppsSkill: Skill = {
   name: "building-apps",
   description: "Build or change an app for someone out of the product's own components and live data: plan it, fill it in, validate it, and say what you did in their words.",
