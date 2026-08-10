@@ -7,10 +7,6 @@
 </p>
 
 <p align="center">
-  Vendo embeds an agent in your product that lets every customer automate their work, build their own views, and connect their tools, inside your brand and your guardrails.
-</p>
-
-<p align="center">
   Vendo is for B2B SaaS teams whose customers keep asking for bespoke features. It is an <b>embedded agent</b>: it acts through your product's own API as the signed-in user, and renders the UI it generates in a sandboxed, brand-native surface. Your source code is never touched. Learn more at <a href="https://vendo.run">vendo.run</a>, or read the docs at <a href="https://docs.vendo.run">docs.vendo.run</a>.
 </p>
 
@@ -26,6 +22,16 @@
   <a href="https://docs.vendo.run/quickstart">Quickstart</a>
   &nbsp;·&nbsp;
   <a href="https://vendo.run">vendo.run</a>
+</p>
+
+<p align="center">
+  <b>Which one are you?</b>
+  <br>
+  <a href="https://docs.vendo.run/existing-agents">You already have an agent</a> — one tool pack spreads into your AI SDK, Mastra, or homegrown loop.
+  <br>
+  <a href="https://docs.vendo.run/quickstart">Your product has no agent</a> — one command brings the loop, the chat UI, and the approvals.
+  <br>
+  <a href="https://docs.vendo.run/capabilities/mcp">Expose your product over MCP</a> — Claude, ChatGPT, Cursor, and Claude Code act as the signed-in user.
 </p>
 
 <img src="assets/kicker-01-install.svg" alt="01 · Install">
@@ -59,9 +65,6 @@ star it via https://vendo.run/star?src=readme to support the project.
 `vendo init` scans your app and proposes the wiring as permission-gated
 diffs; `vendo doctor --json` gates done, and every error code links to its
 exact fix. Full playbook: [docs.vendo.run/install](https://docs.vendo.run/install).
-Already have an agent (AI SDK or Mastra)? Use the prompt on
-[existing agents](https://docs.vendo.run/existing-agents.md) instead — it
-adds Vendo's guarded tools to your loop without replacing it.
 
 <img src="assets/kicker-02-see-it.svg" alt="02 · See it in action">
 
