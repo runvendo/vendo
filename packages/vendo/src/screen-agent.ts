@@ -236,17 +236,22 @@ export function toolBrief(listings: readonly ToolListing[]): string {
  * in place". None of those exist here. So these lines say what is different and
  * the skill says what the job is — which is the difference between deriving a
  * brief and forking one.
+ *
+ * NOTHING per-run goes in here. This text is the whole system prompt and it is
+ * ONE cache breakpoint, so a single interpolated app id would make every run's
+ * ~47k prefix a cache miss for the sake of a value the loop never needs to act:
+ * `save_app` takes no path. The id rides in the first message instead.
  */
-const environmentNote = (appId: AppId, listings: readonly ToolListing[]): string => `# In this loop
+const environmentNote = (listings: readonly ToolListing[]): string => `# In this loop
 
 You have no machine: no shell, no \`Task\`, no files on disk. Everything the skill
 above tells you to read is already below, and everything it tells you to write goes
 through two tools.
 
-- **\`${SAVE_APP_TOOL}\`** saves this app's whole document. The app is
-  \`${appId}\`; you never name a path. Every save that parses repaints the person's
-  screen, so save as you go — a save is cheap and silence is not. There is no
-  edit-in-place tool: save the full document each time.
+- **\`${SAVE_APP_TOOL}\`** saves THIS app's whole document — you never name a path
+  or an id. Every save that parses repaints the person's screen, so save as you go
+  — a save is cheap and silence is not. There is no edit-in-place tool: save the
+  full document each time.
   Its \`decisions\` is this app's MEMORY, and the only thing the next editor will
   have besides the document. Record what reading the document could not tell
   them — why you narrowed something, a constraint the tools imposed, a shape you
@@ -284,7 +289,7 @@ function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): stri
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
     input.briefing,
-    environmentNote(input.appId, listings),
+    environmentNote(listings),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
     .join("\n\n---\n\n");
@@ -506,7 +511,13 @@ export async function assembleScreen(
   loadout.push(saveApp, escalate);
 
   const turn: Turn<VendoHarnessOptions> = {
-    messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
+    // The ask, then the one per-run fact — here rather than in the brief, which is
+    // the cached prefix and must be the same bytes for every app.
+    messages: [{
+      id: `screen_${input.appId}`,
+      role: "user",
+      parts: [{ type: "text", text: `${input.request}\n\nApp: ${input.appId}` }],
+    }],
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
