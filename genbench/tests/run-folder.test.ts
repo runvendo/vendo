@@ -38,11 +38,26 @@ const PNG = Buffer.from(
   "base64",
 );
 
+/** A DIFFERENT real 1x1 PNG, standing in for the shrunken copy the judge is
+ *  sent. It has to differ from `PNG`: the run folder keeps the full-resolution
+ *  shot, and a fixture whose two images are the same bytes could not notice a
+ *  writer that put the judge's copy on disk instead. */
+const SCALED = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQcukAAAF6AO9aV4ywAAAAAElFTkSuQmCC",
+  "base64",
+);
+
 /** The contender boundary, and the only thing stubbed here: what a driver hands
  *  back, and what the browser shot of it. */
 const OUTCOME: RunOutcome = { artifact: `<screen id="transfers"/>`, blocking: [], snapshots: [], settledMs: 2_000 };
 
-const SHOT: Shot = { png: PNG, visibleText: "3 pending transfers", renders: true, consoleErrors: [] };
+const SHOT: Shot = {
+  png: PNG,
+  evidence: SCALED,
+  visibleText: "3 pending transfers",
+  renders: true,
+  consoleErrors: [],
+};
 
 const PASSING: FloorResult = {
   delivered: true,

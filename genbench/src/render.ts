@@ -153,8 +153,32 @@ ${seam(world, contender)}
  */
 const CHART_SCAFFOLDING = ".recharts-cartesian-axis-tick-labels, #recharts_measurement_span";
 
+/**
+ * The longest edge the judge's model accepts on an image.
+ *
+ * Past it the provider rejects the request outright, and a 400 is not something
+ * the judge can retry its way out of: every rubric line came back failed with
+ * "the judge did not grade this screen". That is a measurement artifact, and a
+ * biased one — it lands on whichever contender draws the DENSEST screen. Vendo's
+ * pages ran ~8770px tall against baselines' ~5200-5760, so the product was the
+ * only column being failed on image transport rather than on quality.
+ */
+const EVIDENCE_MAX_PX = 8000;
+
+/** A PNG's IHDR carries its dimensions, big-endian, at a fixed offset. Reading
+ *  eight bytes beats decoding the image to ask how big it is. */
+export const pngSize = (png: Buffer): { readonly width: number; readonly height: number } => ({
+  width: png.readUInt32BE(16),
+  height: png.readUInt32BE(20),
+});
+
 export interface Shot {
   readonly png: Buffer;
+  /** The same screenshot, resampled to fit `EVIDENCE_MAX_PX` — the copy the
+   *  JUDGE is sent. `png` stays full resolution and is what the run folder
+   *  keeps, because a person reading the evidence has no such limit. A page
+   *  short enough to send as-is gets these same bytes. */
+  readonly evidence: Buffer;
   /** The page's visible text minus chart axis ticks — the same extraction for
    *  every contender, which is what makes the fabrication check comparable
    *  across artifact formats. */
@@ -183,6 +207,44 @@ export interface Shooter {
 /** One browser for the whole run; every case reuses it. */
 export async function openBrowser(): Promise<Shooter> {
   const browser: Browser = await chromium.launch();
+
+  /**
+   * A tall shot, resampled to what the judge's model will accept — aspect
+   * preserved, so the screen the judge grades is the screen that was drawn.
+   *
+   * Resampled in a blank page of the HARNESS's own rather than the one just
+   * shot: a contender writes its own document, and a page that had replaced
+   * `createImageBitmap` or `OffscreenCanvas` would be editing its own evidence.
+   * The browser is already open, so this costs no dependency and no process.
+   */
+  const evidenceOf = async (png: Buffer): Promise<Buffer> => {
+    const { width, height } = pngSize(png);
+    const factor = EVIDENCE_MAX_PX / Math.max(width, height);
+    if (factor >= 1) return png;
+    const scratch = await browser.newPage();
+    try {
+      // Nothing here may be a NAMED function, for the reason spelled out in the
+      // extraction below: keepNames wraps one in a helper the page lacks.
+      const url = await scratch.evaluate(async (input: { png: string; factor: number }) => {
+        const source = await createImageBitmap(await (await fetch(`data:image/png;base64,${input.png}`)).blob());
+        const canvas = new OffscreenCanvas(
+          Math.round(source.width * input.factor),
+          Math.round(source.height * input.factor),
+        );
+        canvas.getContext("2d")!.drawImage(source, 0, 0, canvas.width, canvas.height);
+        const blob = await canvas.convertToBlob({ type: "image/png" });
+        const reader = new FileReader();
+        return await new Promise<string>((settle) => {
+          reader.onload = () => settle(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+      }, { png: png.toString("base64"), factor });
+      return Buffer.from(url.slice(url.indexOf(",") + 1), "base64");
+    } finally {
+      await scratch.close();
+    }
+  };
+
   return {
     async visit(html, options) {
       const scaffolding = options?.authored === true ? "" : CHART_SCAFFOLDING;
@@ -259,8 +321,10 @@ export async function openBrowser(): Promise<Shooter> {
               }),
             };
           }, scaffolding);
+          const png = await page.screenshot({ fullPage: true });
           return {
-            png: await page.screenshot({ fullPage: true }),
+            png,
+            evidence: await evidenceOf(png),
             visibleText,
             renders: mounted && consoleErrors.length === 0,
             consoleErrors: [...consoleErrors],
