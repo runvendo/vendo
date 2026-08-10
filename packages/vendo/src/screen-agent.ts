@@ -416,9 +416,6 @@ export async function assembleScreen(
       if (committed.status !== "ok") {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
       }
-      // The FIRST landed save is when the person stops waiting and starts
-      // looking, so it is what starts the short clock.
-      if (!record.assembled) fuse(SCREEN_POLISH_MS);
       record.assembled = true;
       record.title = nameOf(content) ?? record.title;
       // The last save that had something to say wins the run. An omitted or blank
@@ -444,7 +441,15 @@ export async function assembleScreen(
        * workspace — nothing known, so nothing claimed.
        */
       const painted = paintedIn(committed);
-      record.painted = painted?.includes(input.appId) ?? false;
+      const paintedNow = painted?.includes(input.appId) ?? false;
+      // The FIRST landed PAINT is when the person stops waiting and starts
+      // looking, so it is what starts the short clock. A save that ASSEMBLED but
+      // painted nothing has started nobody looking: the checks floor blocked it
+      // and the seam kept the older screen, so arming the polish fuse there gave
+      // the loop 30s to recover from a floor failure and then aborted it with no
+      // screen at all (measured 2026-08-10: 5 of 8 runs delivered nothing).
+      if (paintedNow && !record.painted) fuse(SCREEN_POLISH_MS);
+      record.painted = paintedNow;
       if (painted !== undefined && !record.painted) {
         const instruction = repairInstruction(await validateWrittenApps({
           tools: turn.tools,
