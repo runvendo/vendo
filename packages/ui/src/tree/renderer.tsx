@@ -194,12 +194,14 @@ type BoundMode = "host" | "jail";
 /** The Kit `Form`'s branded field carrier (kit/forms/form.tsx), picked out of
  *  whatever a component handed the bound action. Branded on purpose: `Select`'s
  *  `onChange` hands over a string and `Button`'s `onClick` hands over nothing,
- *  so an unbranded object argument would be a guess. */
+ *  so an unbranded object argument would be a guess. An EMPTY carrier is no
+ *  carrier — a form whose fields are unnamed leaves the call exactly as the
+ *  document wrote it, `payload` and all. */
 const submittedFields = (args: readonly unknown[]): Record<string, Json> | undefined => {
   for (const arg of args) {
     if (!isPlainObject(arg)) continue;
     const carried = (arg as { $fields?: unknown }).$fields;
-    if (isPlainObject(carried)) return carried as Record<string, Json>;
+    if (isPlainObject(carried) && Object.keys(carried).length > 0) return carried as Record<string, Json>;
   }
   return undefined;
 };

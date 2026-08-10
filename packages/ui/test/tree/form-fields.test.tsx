@@ -133,7 +133,7 @@ describe("a Kit Form's fields are the submit tool's arguments", () => {
     expect((onAction.mock.calls[0]?.[0] as { payload: Record<string, Json> }).payload).not.toHaveProperty("body");
   });
 
-  it("sends nothing for a field with no name, so the missing argument is visible", async () => {
+  it("leaves the call exactly as before when no field is named", async () => {
     const onAction = mount(
       `<App name="Cancel a transfer">
         <Query id="transfers" tool="list_transfers"/>
@@ -146,6 +146,8 @@ describe("a Kit Form's fields are the submit tool's arguments", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel transfer" }));
     await waitFor(() => expect(onAction).toHaveBeenCalledOnce());
+    // Not even an empty `{}`: an unnamed form contributes nothing, so the call
+    // is byte-identical to the one this document made before fields existed.
     expect(onAction.mock.calls[0]?.[0]).not.toHaveProperty("payload");
   });
 

@@ -511,7 +511,9 @@ function hydrate(value: unknown): unknown {
     // argument, authored payload still winning. Mirrored so one document does
     // not mean two things depending on which venue it mounted in.
     return (...args: unknown[]) => {
-      const fields = args.map((arg) => plainObject(arg)?.$fields).map(plainObject).find(Boolean);
+      const fields = args
+        .map((arg) => plainObject(plainObject(arg)?.$fields))
+        .find((carried) => carried !== undefined && Object.keys(carried).length > 0);
       const authored = plainObject(payload);
       const merged = fields === undefined ? payload : { ...fields, ...authored };
       return requestAction(record.$action as string, merged);
