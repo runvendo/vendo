@@ -158,16 +158,48 @@ describe("createPrettyOutput (visual system)", () => {
     expect(plain).toContain("✦ VENDO_API_KEY present and well-formed.");
   });
 
-  it("renders the theme summary as the brand payoff block", () => {
+  it("renders the theme summary as the brand payoff block: four slots, swatch first", () => {
     const out = sink();
     const pretty = createPrettyOutput({ write: out.write, banner: false });
-    pretty.log("Theme: accent #2b7fff · background #fafafa");
-    pretty.log("Type: Inter · radius 8px");
+    pretty.log("Theme: accent #7c3bed · background #ffffff · surface #f8fafc · text #0f172a"
+      + " · mutedText #64748b · border #e2e8f0 · danger #dc2626");
+    pretty.log("Type: Inter · headings Sora · radius 12px");
     pretty.log("Theme lives in .vendo/theme.json — edit it anytime; it is the source of truth.");
     const plain = out.plain();
-    expect(plain).toContain("◆  Your brand");
-    expect(plain).toContain("│  accent #2b7fff · background #fafafa");
-    expect(plain).toContain("│  Type: Inter · radius 8px");
+    expect(plain).toContain("◆  Your brand, captured");
+    for (const slot of ["#7c3bed accent", "#ffffff background", "#0f172a text", "#dc2626 danger"]) {
+      expect(plain).toContain(slot);
+    }
+    expect(plain.indexOf("#7c3bed accent")).toBeLessThan(plain.indexOf("#dc2626 danger"));
+    expect(plain).toContain("│  Type: Inter · headings Sora · radius 12px");
+    // The caller still emits all seven — the block shows the four a person
+    // recognises as "our brand".
+    expect(plain).not.toContain("surface");
+    expect(plain).not.toContain("mutedText");
+    expect(plain).not.toContain("border");
+    // Each shown slot is a truecolor swatch, and it is the extracted colour.
+    expect(out.raw()).toContain(`${ESC}[48;2;124;59;237m  ${ESC}[49m #7c3bed accent`);
+    expect(out.raw()).toContain(`${ESC}[48;2;220;38;38m  ${ESC}[49m #dc2626 danger`);
+  });
+
+  /** The regression this rule exists for: init's own swatch() wrote a
+      truecolor escape whenever stdout was a TTY, which leaked under NO_COLOR.
+      The escape now lives behind usePrettyOutput, so the gate is the fix. */
+  it.each([
+    ["NO_COLOR on a TTY", { isTTY: true }, { NO_COLOR: "1" }],
+    ["CI on a TTY", { isTTY: true }, { CI: "true" }],
+    ["TERM=dumb on a TTY", { isTTY: true }, { TERM: "dumb" }],
+    ["piped stdout", { isTTY: false }, {}],
+  ] as const)("emits no escape at all for the brand block under %s", (_name, stream, env) => {
+    const out = sink();
+    // The real call site's shape (init.ts): the gate picks the renderer, and
+    // the plain path just writes the caller's string.
+    const message = "Theme: accent #7c3bed · background #ffffff · surface #f8fafc · text #0f172a"
+      + " · mutedText #64748b · border #e2e8f0 · danger #dc2626";
+    if (usePrettyOutput(stream, env)) createPrettyOutput({ write: out.write, banner: false }).log(message);
+    else out.write(`${message}\n`);
+    expect(out.raw()).not.toContain(ESC);
+    expect(out.raw()).toContain("accent #7c3bed");
   });
 
   it("collapses sync's five catalog lines into one ◆ Catalog block of two lines", () => {
@@ -223,6 +255,36 @@ describe("createPrettyOutput (visual system)", () => {
     expect(plain).toContain("│  init never edits your files");
     expect(plain).not.toContain(rule);
     expect(plain).not.toContain("ONE STEP LEFT");
+  });
+
+  it("points the mount paste at the docs for the child expression it elides", () => {
+    const out = sink();
+    const rule = "─".repeat(64);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.log(`\n${rule}`);
+    pretty.log("ONE STEP LEFT — paste this yourself (init never edits your files)");
+    pretty.log("\n  File: app/layout.tsx");
+    pretty.log("    import { VendoProvider } from \"@vendoai/vendo/react\";");
+    pretty.log("    … then wrap: <VendoProvider baseUrl=\"/api/vendo\" theme={theme as VendoTheme}>{children}</VendoProvider>");
+    pretty.log("\n  Without it, nothing on the page can reach Vendo.");
+    pretty.log(rule);
+    const plain = out.plain();
+    expect(plain).toContain("docs.vendo.run/quickstart#the-client-mount — exact wording for layout.tsx and _app.tsx");
+    // Right under the wrap line it explains, and dim.
+    expect(plain.indexOf("</VendoProvider>")).toBeLessThan(plain.indexOf("docs.vendo.run/quickstart"));
+    expect(out.raw()).toContain(`${ESC}[2mdocs.vendo.run/quickstart#the-client-mount`);
+  });
+
+  it("leaves a paste block with no mount snippet without the docs pointer", () => {
+    const out = sink();
+    const rule = "─".repeat(64);
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.log(`\n${rule}`);
+    pretty.log("ONE STEP LEFT — paste this yourself (init never edits your files)");
+    pretty.log("\n  File: app/actions.ts");
+    pretty.log("    export const runtime = \"nodejs\";");
+    pretty.log(rule);
+    expect(out.plain()).not.toContain("docs.vendo.run/quickstart");
   });
 
   it("renders warnings yellow with ⚠ and other errors red with ✖", () => {

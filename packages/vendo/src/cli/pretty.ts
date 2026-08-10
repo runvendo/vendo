@@ -18,7 +18,9 @@ import type { Output } from "./shared.js";
  * because runInit's emissions are unchanged: this is a renderer over the
  * existing Output seam, not a second copy of the copy. The collapse rules
  * below are pure string rules over those exact plain strings; the renderer
- * restyles and groups, and never writes copy of its own.
+ * restyles and groups. The copy it owns is the block TITLES and the one docs
+ * pointer (MOUNT_DOCS) that cannot live in the caller without changing the
+ * --agent plan's pinned JSON; every fact on screen is still the caller's.
  */
 
 const ESC = "\u001b";
@@ -111,9 +113,24 @@ const JUDGMENT_QUEUED = "loosenings queued";
 const PASTE_RULE = "─".repeat(64);
 const PASTE_HEAD = /^(ONE|\d+) STEPS? LEFT — paste th(?:is|ese) yourself \((.+)\)$/;
 const PASTE_FILE = /^ {2}File: (.+)$/;
+/** The mount snippet elides the child expression, and it genuinely differs by
+    router — `{children}` in an app-router layout, `<Component {...pageProps} />`
+    in a pages `_app` — so the block owes the exact per-router wording. This
+    pointer is the renderer's and not the caller's: init's `mount.lines` is
+    pinned byte-for-byte by the --agent plan, and a line added there would
+    change that JSON. Emitted here, the --agent path never sees it. */
+const MOUNT_WRAP = "… then wrap: <VendoProvider";
+const MOUNT_DOCS = "docs.vendo.run/quickstart#the-client-mount — exact wording for layout.tsx and _app.tsx";
 const WIRED = /^(Wired \(\d+ files?\)):$/;
 const DIFF_MARKER = /^ {2}([+~]) (.+)$/;
 const THEME = /^Theme: (.*)$/;
+/** The four slots the brand block shows. The caller keeps emitting all seven:
+    that same line is what drives init's "No host evidence for…" report, so
+    narrowing it would silently stop reporting surface/mutedText/border. */
+const BRAND_SLOTS = ["accent", "background", "text", "danger"] as const;
+const PALETTE_ENTRY = /(\w+) (#[0-9a-fA-F]{6})$/;
+/** Any SGR the caller already wrote — stripped before the hexes are parsed. */
+const SGR = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
 const SYNC_THEME = /^theme: (.+)$/;
 const CLOUD_ABSENT = /^Vendo Cloud \(optional\): not configured\. A key unlocks (.+)\.$/;
 const CLOUD_PRESENT = /^Vendo Cloud: (.+)$/;
@@ -252,6 +269,27 @@ function flushJudgment(state: RenderState, rail: Rail): void {
   for (const entry of queued) rail.body(entry.trim());
 }
 
+/** A block of the extracted colour. The truecolor escape lives HERE, never in
+    a caller: this renderer is only built when usePrettyOutput() is true, so a
+    NO_COLOR / CI / TERM=dumb / piped run can never reach it. */
+function swatch(hex: string): string {
+  const [r, g, b] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
+  return `${ESC}[48;2;${r};${g};${b}m  ${ESC}[49m`;
+}
+
+/** Swatch first, four slots, from the hexes already in the caller's line. */
+function brandLine(palette: string): string {
+  const slots = new Map<string, string>();
+  for (const entry of palette.replace(SGR, "").split(" · ")) {
+    const pair = PALETTE_ENTRY.exec(entry.trim());
+    if (pair !== null) slots.set(pair[1]!, pair[2]!);
+  }
+  const shown = BRAND_SLOTS
+    .filter((slot) => slots.has(slot))
+    .map((slot) => `${swatch(slots.get(slot)!)} ${slots.get(slot)!} ${slot}`);
+  return shown.length === 0 ? palette : shown.join("   ");
+}
+
 /** The exact-shape rules: one plain string in, one styled section out. */
 function renderNamed(raw: string, rail: Rail): boolean {
   const wired = WIRED.exec(raw);
@@ -270,8 +308,8 @@ function renderNamed(raw: string, rail: Rail): boolean {
   }
   const theme = THEME.exec(raw);
   if (theme !== null) {
-    rail.section(lilac("◆"), bold("Your brand"));
-    rail.body(theme[1]!);
+    rail.section(lilac("◆"), bold("Your brand, captured"));
+    rail.body(brandLine(theme[1]!));
     return true;
   }
   const syncTheme = SYNC_THEME.exec(raw);
@@ -353,6 +391,11 @@ function renderPaste(raw: string, state: RenderState, rail: Rail): void {
     return;
   }
   renderIndented(raw, state, rail);
+  // Under the snippet it explains, at the snippet's own indent.
+  if (raw.trimStart().startsWith(MOUNT_WRAP)) {
+    const indent = raw.length - raw.trimStart().length;
+    rail.body(`${" ".repeat(Math.max(0, indent - state.absorb))}${dim(MOUNT_DOCS)}`);
+  }
 }
 
 function renderRaw(raw: string, state: RenderState, rail: Rail): void {
