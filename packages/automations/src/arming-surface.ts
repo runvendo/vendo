@@ -13,7 +13,6 @@ import type { EngineBase } from "./engine-context.js";
 import type { GrantsAccess } from "./grants.js";
 import type { AutomationsEngine, RunPlan } from "./index.js";
 import { appRef } from "./rows.js";
-import type { SponsorshipGateAccess } from "./sponsorship-gate.js";
 import { currentIntentHash, markSponsored, triggerKey, writeSponsorship } from "./sponsorship.js";
 import { evaluate, stepArgs, validateForEachItems } from "./steps.js";
 import { SCHEDULE, WEBHOOK } from "./types.js";
@@ -24,14 +23,13 @@ export type ArmingSurfaceDeps = {
   appRows: AppRowsAccess;
   armed: ArmedAccess;
   grants: GrantsAccess;
-  sponsorship: SponsorshipGateAccess;
   consent: ConsentAccess;
 };
 
 /** 07 §3's arm/disarm pair. */
 const createArmDoors = (deps: ArmingSurfaceDeps): Pick<AutomationsEngine, "enable" | "disable"> => {
   const { base: { engine, iso, firesLocally }, appRows, armed } = deps;
-  const { grants, sponsorship, consent } = deps;
+  const { grants, consent } = deps;
   const enable: AutomationsEngine["enable"] = async (appId, triggerId, ctx) => {
     const found = await appRows.editableApp(appId, ctx);
     const trigger = appRows.declaredTrigger(found.row.doc, triggerId);
