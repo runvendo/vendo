@@ -55,13 +55,6 @@ const SPECIALIST_SYSTEM =
 
 const HIRE_SUBAGENT = "hire_subagent";
 
-/** What an aborted turn says, on BOTH carriers (see the `abort` case). Written
- *  for the person, and it claims nothing it cannot know: a signal says the turn
- *  was stopped, never by whom or why, and work already committed through
- *  `turn.tools.call()` stays committed — so it must not promise that nothing
- *  happened. */
-const TURN_ABORTED = "This turn was stopped before it finished, so what I was doing may be incomplete.";
-
 /**
  * What a specialist is handed instead of the skill it was hired with, when that
  * skill could not be loaded. Written for the SPECIALIST, not the user: like
@@ -655,9 +648,6 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
 
       /** The turn's single retry, spent. */
       let retried = false;
-      /** Whether anything has reached the screen yet — so the sentences this
-       *  function appends below join prose instead of colliding with it. */
-      let spoke = false;
       for (;;) {
         /** Set when THIS attempt died on a prompt that did not fit. */
         let overflowed = false;
@@ -665,7 +655,6 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           for await (const part of loop.result.fullStream) {
             switch (part.type) {
               case "text-delta":
-                if (part.text !== "") spoke = true;
                 yield { type: "text", delta: part.text };
                 break;
               case "finish-step":
@@ -695,21 +684,7 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
                 yield { type: "error", message: wireErrorMessage(part.error), code: "model" };
                 break;
               case "abort":
-                // Stopping cleanly is not the same thing as stopping SILENTLY,
-                // which is what this used to do. A turn cut short mid-work is
-                // the one outcome nobody can see from the outside: the caller
-                // read a finished stream with no failure on it and could not
-                // tell a silent success from a dead turn, and the person waiting
-                // watched the chat go quiet under a half-finished job. So both
-                // carriers say so, in the ONE sentence, and neither can drift:
-                // the assistant's own voice closes the message it was writing…
-                yield { type: "text", delta: spoke ? `\n\n${TURN_ABORTED}` : TURN_ABORTED };
-                // …and an `error` is the failure the caller sees (the runtime's
-                // `failure` on the audit row, the host's banner). The signal's
-                // own `reason` is deliberately not repeated: it is a
-                // DOMException message, i.e. an internal, and §1.5's `error` is
-                // consumer-voice.
-                yield { type: "error", message: TURN_ABORTED, code: "aborted" };
+                // The caller hung up: stop cleanly, say nothing.
                 return;
               case "finish":
                 // The RESIDENT loop's own spend. Each hire's spend is yielded as
@@ -796,18 +771,6 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // without the summary, which is exactly the split intended: a stale
       // boundary says nothing about which tools the thread loaded.)
       else if (stored !== undefined) turn.state.clear();
-
-      // The question `askedUserStop` ended the turn on, delivered as the reply.
-      // `ask_user` instructs the model to ask in its own words as its final
-      // message and the stop condition removes that message, so without this the
-      // turn ends wordless on the one occasion the user is being asked for
-      // something. It costs no round-trip — the loop reads the model's own
-      // argument back off the step that stopped the turn — and it is skipped
-      // whenever that step spoke, so nothing is ever asked twice.
-      const question = await loop.unspokenQuestion();
-      if (question !== undefined) {
-        yield { type: "text", delta: spoke ? `\n\n${question}` : question };
-      }
 
       const stepLimit = await loop.stepLimitPart();
       if (stepLimit !== undefined) {
