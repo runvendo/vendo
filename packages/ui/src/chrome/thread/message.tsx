@@ -63,12 +63,10 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
     && message.parts.every(part => part.type === "file" || isAgentContext(part));
   // Every settled turn carries a Copy action (hover-
   // revealed, see chrome-css); Edit stays on the last user turn and
-  // Regenerate on the last assistant turn. The actively
-  // streaming turn gets no actions — its text is still arriving.
+  // Regenerate on the last assistant turn.
   const streamingTurn = busy && message.role === "assistant" && message.id === activeAssistantId;
   const showEdit = !busy && message.role === "user" && message.id === lastUserId;
   const showRegenerate = !busy && message.role === "assistant" && message.id === lastAssistantId;
-  const showActions = !streamingTurn && (bubbleText.length > 0 || showEdit || showRegenerate);
   // The turn's beats fold into ONE summary row once the whole turn
   // has settled: while any call is still working (or parked on an approval)
   // every beat stays open, and the fold waits. Restored history arrives folded,
@@ -76,6 +74,12 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
   const items = collapseToolRuns(message.parts);
   const calls = items.filter(item => isToolUIPart(item.part));
   const pending = streamingTurn || calls.some(item => toolCallPending(item.part));
+  // An UNFINISHED turn gets no actions — not while its text is arriving, and not
+  // while a call is still working or parked on an approval. The row was
+  // invisible in that state anyway (opacity 0 until hover/last-child), but it
+  // still reserved 33px between the "waiting for your approval" beat and the
+  // consent card under it, which broke them into two separate moments.
+  const showActions = !pending && (bubbleText.length > 0 || showEdit || showRegenerate);
   // A failed or declined call is not one of the "things I did", and its ✕ beat
   // never folds — so the count is the work that actually landed, and
   // the failure keeps its own line right where it happened.

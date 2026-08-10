@@ -164,9 +164,16 @@ describe("composer: type-while-streaming, queued send, edit, regenerate (ENG-215
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     await screen.findByText("Existing thread");
 
-    type("Answer me");
+    // ⚠️ TEST EDIT (waiting-beat spacing): this used the DEFAULT fixture turn,
+    // which parks a consent ask and never answers it — so the turn never
+    // finishes. An unfinished turn no longer reserves its hover actions row (it
+    // was invisible there anyway, and its 33px split the "waiting for your
+    // approval" beat from the card under it). `[settled-gap]` is the fixture's
+    // genuinely COMPLETE turn, which is what "the last assistant response"
+    // meant all along; the contract asserted below is unchanged.
+    type("[settled-gap] Answer me");
     fireEvent.keyDown(composer(), { key: "Enter" });
-    await screen.findByText("Turn complete");
+    await screen.findByText("All done.");
     expect(threadPosts(wire)).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));

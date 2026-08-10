@@ -81,8 +81,11 @@ describe("existing-agents embeds", () => {
       mount(<VendoApprovalEmbed refValue={approvalRef} />);
 
       // The pending request feeds the existing ApprovalCard machinery.
+      // ⚠️ TEST EDIT (M1 · Sentence): the recipient used to be a field-table dd
+      // of its own. It is now one of the labelled notes on the card's quiet
+      // line — still displayed, still verbatim.
       const approve = await screen.findByRole("button", { name: "Approve" });
-      expect(screen.getByText("a@example.com")).toBeDefined();
+      expect(document.querySelector(".fl-approval-sub")!.textContent).toContain("To: a@example.com");
 
       fireEvent.click(approve);
 

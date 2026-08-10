@@ -50,17 +50,21 @@ function transfer(args: Record<string, unknown>, inputSchema: JsonSchema): Appro
   } as ApprovalRequest;
 }
 
-function rowsOf(approval: ApprovalRequest): Array<[string | null | undefined, string | null | undefined]> {
-  render(
+/** ⚠️ TEST EDIT (M1 · Sentence): the card no longer has a field TABLE. Every
+    real input still shows, always — the ones the question names are in the
+    question, and the rest are the dot-separated notes on the one quiet line
+    under it. The money rule this file exists for is unchanged; only where the
+    formatted value lands moved. */
+function cardOf(approval: ApprovalRequest): { question: string; notes: string[] } {
+  const { container } = render(
     <VendoProvider client={client}>
       <ApprovalCard approval={approval} onDecide={() => undefined} />
     </VendoProvider>,
   );
-  const fields = screen.getByLabelText("Real tool inputs");
-  return [...fields.querySelectorAll(".fl-approval-field")].map((row) => [
-    row.querySelector("dt")?.textContent,
-    row.querySelector("dd")?.textContent,
-  ]);
+  return {
+    question: container.querySelector(".fl-approval-ask")!.textContent!,
+    notes: container.querySelector(".fl-approval-sub")!.textContent!.split(" · "),
+  };
 }
 
 const CENTS_SCHEMA: JsonSchema = {
@@ -73,49 +77,51 @@ const CENTS_SCHEMA: JsonSchema = {
 };
 
 // Labels are the humanized form (#698, "labels prettified for reading"); the
-// VALUE column is what this file is about. The raw value still rides the dd
-// tooltip, so nothing about the honesty contract is traded for the prettier dt.
+// VALUE is what this file is about.
 describe("the consent card's money rendering", () => {
   it("renders a host-declared cents amount as money, never as its raw integer", () => {
-    const rows = rowsOf(transfer(
+    const card = cardOf(transfer(
       { memo: "July water bill", amount: 4750, recipient_name: "Acme Utilities" },
       CENTS_SCHEMA,
     ));
-    expect(rows).toEqual([
-      ["Memo", "July water bill"],
-      ["Amount", "$47.50"],
-      ["Recipient name", "Acme Utilities"],
-    ]);
+    // The amount and the counterparty ARE the question; the memo is the one
+    // input left, so it leads the quiet line.
+    expect(card.question).toBe("Send $47.50 to Acme Utilities?");
+    expect(card.notes[0]).toBe("Memo: July water bill");
     // The exact misread the proof caught: 4750 must not survive anywhere on the
-    // card's fields.
-    expect(screen.getByLabelText("Real tool inputs").textContent).not.toContain("4750");
+    // card.
+    expect(screen.getByRole("article").textContent).not.toContain("4750");
   });
 
   it("reads a unit stated by the field's own name, with no schema description", () => {
-    const rows = rowsOf(transfer(
+    const card = cardOf(transfer(
       { amountCents: 4750 },
       { type: "object", properties: { amountCents: { type: "integer" } } },
     ));
-    expect(rows).toEqual([["Amount cents", "$47.50"]]);
+    // No counterparty in the inputs, so nothing supports a synthesized
+    // question — the amount rides the notes, formatted the same way.
+    expect(card.notes[0]).toBe("Amount cents: $47.50");
   });
 
   it("renders a host-declared dollars amount as money too", () => {
-    const rows = rowsOf(transfer(
+    const card = cardOf(transfer(
       { amount: 47.5 },
       { type: "object", properties: { amount: { type: "number", description: "Amount in dollars" } } },
     ));
-    expect(rows).toEqual([["Amount", "$47.50"]]);
+    expect(card.notes[0]).toBe("Amount: $47.50");
   });
 
   it("says the unit is unspecified rather than letting an undeclared amount read as dollars", () => {
     // The in-thread card synthesizes an EMPTY descriptor schema, so this is the
     // real state of a live surface, not a hypothetical.
-    const rows = rowsOf(transfer({ amount: 4750 }, {}));
-    expect(rows).toEqual([["Amount", "4750 (unit not specified)"]]);
+    const card = cardOf(transfer({ amount: 4750 }, {}));
+    expect(card.notes[0]).toBe("Amount: 4750 (unit not specified)");
+    // …and an amount we cannot state honestly never reaches the question.
+    expect(card.question).toBe("Send money?");
   });
 
   it("leaves every non-money value exactly as it was — no currency guessing", () => {
-    const rows = rowsOf(transfer(
+    const card = cardOf(transfer(
       { invoiceId: "inv_42", count: 4750, permanent: true, quantity: 2 },
       {
         type: "object",
@@ -127,12 +133,12 @@ describe("the consent card's money rendering", () => {
         },
       },
     ));
-    expect(rows).toEqual([
-      ["Invoice id", "inv_42"],
-      ["Count", "4750"],
+    expect(card.notes.slice(0, 4)).toEqual([
+      "Invoice id: inv_42",
+      "Count: 4750",
       // Not currency guessing, but not the literal either (used to pin "true").
-      ["Permanent", "Yes"],
-      ["Quantity", "2"],
+      "Permanent: Yes",
+      "Quantity: 2",
     ]);
   });
 });

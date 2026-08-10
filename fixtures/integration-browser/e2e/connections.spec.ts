@@ -61,10 +61,11 @@ test("in-flow connect card: connect-required → connect → retry asks → appr
   // moment a person should see the recipient.
   const approval = page.getByRole("article", { name: /^Approval for/ });
   await expect(approval).toBeVisible({ timeout: 20_000 });
-  await expect(approval).toContainText("Needs your approval");
-  // "Not reviewed" is the ungraded chip in the user's words, and the real
-  // payload is on the card — not a summary of it.
-  await expect(approval).toContainText("Not reviewed");
+  // ⚠️ TEST EDIT (M1 · Sentence): the eyebrow and the risk chip are gone — the
+  // card is a question plus one quiet line. The ungraded grade now says itself in
+  // plain words there, and the real payload is still on the card, not a summary
+  // of it.
+  await expect(approval).toContainText("Nobody has checked what this changes");
   await expect(approval).toContainText("ada@example.test");
   await page.screenshot({ path: "e2e/artifacts/connect-card-retry-asks.png", fullPage: false });
 

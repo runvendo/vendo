@@ -68,9 +68,10 @@ test("⌘K toggles the one conversation surface by keyboard alone", async ({ pag
 
 test("a destructive approval can be denied entirely by keyboard", async ({ page }) => {
   await openScenario(page, "approval");
-  // Inputs render as humanized label/value rows (`flatFields`), not the raw
-  // `key=value` server preview.
-  await expect(page.getByLabel("Real tool inputs")).toContainText("Permanent");
+  // ⚠️ TEST EDIT (M1 · Sentence): inputs used to be a labelled field table. They
+  // are humanized `Label: value` notes on the ask's one quiet line now — still
+  // every real input, still never the raw `key=value` server preview.
+  await expect(page.locator(".fl-approval-sub")).toContainText("Permanent: Yes");
   // Reach the disclosure, Approve, and Deny by keyboard; deny with Enter.
   await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Approve"));
   await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Deny"));

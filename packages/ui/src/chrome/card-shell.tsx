@@ -2,14 +2,20 @@
  *
  *  Every consent/status card in the product is this shell with different
  *  CONTENTS: eyebrow · one-size icon well · title · the mandatory plain-words
- *  line · field rows or a list · actions · byline. Approval, connect,
- *  standing-access, automation and the resolved record are
- *  contents only, and every surface that shows one (thread, waiting strip,
- *  activities, mobile sheet, voice, embeds) renders the SAME shell.
+ *  line · field rows or a list · actions · byline. Connect, standing-access,
+ *  automation and the resolved record are contents only, and every surface that
+ *  shows one (thread, waiting strip, activities, mobile sheet, voice, embeds)
+ *  renders the SAME shell.
+ *
+ *  The APPROVAL ask (M1 · Sentence) is the one card with no head and no rows:
+ *  the ask itself is a bold question, and one quiet line under it carries every
+ *  real input the question doesn't name plus what approving does. It is still
+ *  this shell, and law 3 lives across that pair.
  *
  *  1. Ancestors may set width/max-width on `.fl-cardshell` — never undress it.
  *  2. ONE icon well (28px), ONE primary button (`.fl-btn-primary`), ONE
- *     ceremony button (`.fl-btn-ceremony`).
+ *     ceremony button (`.fl-btn-ceremony`). No card wears the ceremony register
+ *     today: the approval ask carries irreversibility in plain words instead.
  *  3. The plain-words line is mandatory: a card always says what it DOES.
  *
  *  Geometry lives in the `.fl-card-*` CSS. Some elements also
@@ -27,11 +33,9 @@ import { developmentMode } from "./dev-mode.js";
 import type { CardFieldRow } from "./field-rows.js";
 
 /** The eyebrow strings, once (six were hardcoded across the card files). The
-    approval eyebrow itself stays with `toolPresentation` — it is the single
-    humanization source and knows when an ask is an automation. */
+    approval ASK has no eyebrow: its question is the whole card (M1 · Sentence),
+    so the two approval entries are gone with it. */
 export const CARD_EYEBROWS = {
-  approval: "Needs your approval",
-  automationApproval: "Automation · needs your approval",
   connect: "Connect",
   standingAccess: "Standing access",
   automationStatus: "Automation",

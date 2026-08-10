@@ -38,21 +38,24 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     await wire.close();
   });
 
-  it("shows the real inputs as fields and emits basic approve and deny decisions", async () => {
+  it("shows the real inputs on the ask's one quiet line and emits basic approve and deny decisions", async () => {
     const onDecide = vi.fn();
-    render(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={onDecide} /></VendoProvider>);
-    // Flat args render as aligned key→value rows — labels prettified for
-    // reading, values verbatim unless the host formats them (then the raw
-    // value rides the dd tooltip — the consent honesty contract).
-    const fields = screen.getByLabelText("Real tool inputs");
-    const rows = [...fields.querySelectorAll(".fl-approval-field")].map(row => [
-      row.querySelector("dt")?.textContent,
-      row.querySelector("dd")?.textContent,
-    ]);
+    const { container } = render(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={onDecide} /></VendoProvider>);
+    // ⚠️ TEST EDIT (M1 · Sentence): this pinned the field TABLE's dt/dd rows and
+    // the risk PILL, both of which the card no longer has. The honesty contract
+    // is unchanged and asserted below — every real input is displayed, visible
+    // by default: the question names the key ones, the quiet line under it
+    // carries the rest, what approving does, and who asked.
+    expect(container.querySelector(".fl-approval-ask")!.textContent).toBe("Delete invoice?");
     // A boolean is an answer, not a literal (this line used to pin "true").
-    expect(rows).toEqual([["Invoice id", "inv_42"], ["Permanent", "Yes"]]);
-    // The risk chip speaks the user's language; the data attr keeps the slug.
-    expect(screen.getByText("Irreversible").getAttribute("data-risk")).toBe("destructive");
+    expect(container.querySelector(".fl-approval-sub")!.textContent).toBe(
+      "Invoice id: inv_42 · Permanent: Yes · This makes a change you can’t undo, as you. · asked in an app",
+    );
+    // No amber and no pill: the grade is a machine affordance on the shell, and
+    // its plain words are in the line above.
+    expect(screen.queryByText("Irreversible")).toBeNull();
+    expect(container.querySelector(".fl-cardshell--ceremony")).toBeNull();
+    expect(container.querySelector(".fl-cardshell")!.getAttribute("data-risk")).toBe("destructive");
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() => expect((screen.getByRole("button", { name: "Deny" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Deny" }));

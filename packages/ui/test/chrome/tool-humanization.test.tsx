@@ -143,10 +143,14 @@ describe("ApprovalCard humanization", () => {
     await wire.close();
   });
 
-  it("humanizes the descriptor name into the title and aria-label", () => {
+  // ⚠️ TEST EDIT (M1 · Sentence), in this describe: the card's TITLE element is
+  // gone — the humanized label is what the card ASKS ("Delete invoice?"), and
+  // the aria-label is unchanged. Every expectation below is the same string with
+  // its question mark.
+  it("humanizes the descriptor name into the question and aria-label", () => {
     render(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={() => undefined} /></VendoProvider>);
     const card = screen.getByLabelText("Approval for Delete invoice");
-    expect(within(card).getByText("Delete invoice")).toBeTruthy();
+    expect(within(card).getByText("Delete invoice?")).toBeTruthy();
     expect(screen.queryByText("host_delete_invoice")).toBeNull();
   });
 
@@ -166,8 +170,8 @@ describe("ApprovalCard humanization", () => {
     };
     render(<VendoProvider client={client}><ApprovalCard approval={titled} onDecide={() => undefined} /></VendoProvider>);
     const card = screen.getByLabelText("Approval for Delete this invoice for good");
-    expect(within(card).getByText("Delete this invoice for good")).toBeTruthy();
-    expect(screen.queryByText("Delete invoice")).toBeNull();
+    expect(within(card).getByText("Delete this invoice for good?")).toBeTruthy();
+    expect(screen.queryByText("Delete invoice?")).toBeNull();
   });
 
   it("still lets a host-supplied label win over the authored title", () => {
@@ -183,13 +187,17 @@ describe("ApprovalCard humanization", () => {
     expect(screen.getByLabelText("Approval for Remove invoice")).toBeTruthy();
   });
 
-  it("shows the humanized context byline by default and hides it when showContext is false", () => {
+  it("shows the humanized context note by default and drops it when showContext is false", () => {
+    // ⚠️ TEST EDIT (M1 · Sentence): the byline ROW became one of the quiet notes
+    // under the question, and "runs as you" is already the agency note there, so
+    // only the venue phrase itself rides along. This line used to pin the app id
+    // INTO the byline (`· app_1`) — still the point, still asserted.
     const view = render(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={() => undefined} /></VendoProvider>);
-    // This line used to pin the app id INTO the byline (`· app_1`).
-    expect(screen.getByText("Runs as you · asked in an app")).toBeTruthy();
+    const sub = () => document.querySelector(".fl-approval-sub")!.textContent!;
+    expect(sub()).toContain("asked in an app");
     expect(screen.queryByText(/app_1/)).toBeNull();
     view.rerender(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={() => undefined} showContext={false} /></VendoProvider>);
-    expect(screen.queryByText(/Runs as you/)).toBeNull();
+    expect(sub()).not.toContain("asked in an app");
   });
 });
 

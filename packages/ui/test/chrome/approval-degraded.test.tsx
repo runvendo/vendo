@@ -13,8 +13,9 @@ import type { ApprovalRequest, JsonSchema } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { ApprovalCard } from "../../src/chrome/index.js";
-import { venueByline } from "../../src/chrome/approval-card.js";
+import { ApprovalCard, GrantSetCard } from "../../src/chrome/index.js";
+import { CardFields } from "../../src/chrome/card-shell.js";
+import { venuePhrase } from "../../src/chrome/approval-card.js";
 import { fieldRows } from "../../src/chrome/field-rows.js";
 import { buildApprovalRequest } from "../../src/chrome/thread/approval-wire.js";
 import { createWireServer } from "../wire-server.js";
@@ -52,19 +53,28 @@ const show = (approval: ApprovalRequest, tools?: Record<string, { label?: string
     </VendoProvider>,
   ).container;
 
+/** ⚠️ TEST EDIT (M1 · Sentence), applied throughout this file: the card's field
+    TABLE is gone. Every real input is still displayed and still formatted by the
+    same seam — as `Label: value` notes on the one quiet line under the question,
+    visible by default. `rowsOf` reads those notes; the input-formatting
+    expectations below are byte-for-byte the ones the table carried. */
 const rowsOf = (container: HTMLElement): Array<[string, string]> =>
-  [...container.querySelectorAll(".fl-card-field")].map(row => [
-    row.querySelector("dt")!.textContent!,
-    row.querySelector("dd")!.textContent!,
-  ]);
+  notesOf(container)
+    .filter(note => note.includes(": "))
+    .map(note => [note.slice(0, note.indexOf(": ")), note.slice(note.indexOf(": ") + 2)]);
+
+const notesOf = (container: HTMLElement): string[] =>
+  container.querySelector(".fl-approval-sub")!.textContent!.split(" · ");
 
 describe("degraded data never changes the card", () => {
   it("keeps the mandatory line with an empty schema, no description and no host metadata", () => {
     const container = show(ask({ args: { note: "hi" } }));
-    // Law 3 — no described tool still gets a sentence, not a blank card. It
-    // used to pin "Vendo will run Thing do as you." — the tool's label read
-    // back at the user; now it is the consequence CLASS.
-    expect(container.querySelector(".fl-card-line")!.textContent).toBe("This changes something in your account, as you.");
+    // Law 3 — no described tool still gets a sentence, not a blank card. With
+    // nothing to synthesize a question from, the ask asks with its own
+    // humanized label (what the card's title always read) and the consequence
+    // CLASS says what approving DOES — that half still never names the tool.
+    expect(container.querySelector(".fl-approval-ask")!.textContent).toBe("Thing do?");
+    expect(notesOf(container)).toContain("This changes something in your account, as you.");
     expect(rowsOf(container)).toEqual([["Note", "hi"]]);
     // The prettified id, never the raw slug (ENG-216).
     expect(screen.queryByText("host_thing_do")).toBeNull();
@@ -86,15 +96,24 @@ describe("degraded data never changes the card", () => {
     const container = show(ask({ args }));
     expect(container.querySelector("pre")).toBeNull();
     expect(rowsOf(container)).toHaveLength(12);
-    expect(screen.getByLabelText("Real tool inputs").textContent).not.toContain("{");
+    expect(container.querySelector(".fl-approval-sub")!.textContent).not.toContain("{");
   });
 
   it("brands a connector ask by its toolkit and survives a logo 404", () => {
-    const container = show(ask({
-      call: { id: "call_slack", tool: "slack_SLACK_SEND_MESSAGE", args: { channel: "#ops" } },
-      descriptor: { name: "slack_SLACK_SEND_MESSAGE", description: "", inputSchema: {}, risk: "write" },
-    }));
-    const well = container.querySelector(".fl-card-ic")!;
+    // ⚠️ TEST EDIT (M1 · Sentence): the approval card has no icon well any more —
+    // the question is the whole card — so the toolkit mark and its 404 fallback
+    // are asserted where the ONE 28px well still lives: the standing-access
+    // card's permission rows. Nothing about the fallback changed.
+    const grants = render(
+      <VendoProvider client={client}>
+        <GrantSetCard
+          name="Renewal digest"
+          permissions={[{ approvalId: "apr_1", tool: "slack_SLACK_SEND_MESSAGE", description: "Post digests.", risk: "write" }]}
+          state="parked"
+        />
+      </VendoProvider>,
+    ).container;
+    const well = grants.querySelector(".fl-grant .fl-card-ic")!;
     const logo = well.querySelector("img")!;
     expect(logo.getAttribute("src")).toContain("logos.composio.dev");
     // The CDN fails (unknown slug, offline, blocked): the well keeps a glyph
@@ -102,20 +121,26 @@ describe("degraded data never changes the card", () => {
     fireEvent.error(logo);
     expect(well.querySelector("img")).toBeNull();
     expect(well.querySelector("svg")).not.toBeNull();
-    // The slug never reads as the title.
+    cleanup();
+
+    // The slug never reads as the ask.
+    const container = show(ask({
+      call: { id: "call_slack", tool: "slack_SLACK_SEND_MESSAGE", args: { channel: "#ops" } },
+      descriptor: { name: "slack_SLACK_SEND_MESSAGE", description: "", inputSchema: {}, risk: "write" },
+    }));
     expect(screen.queryByText("slack_SLACK_SEND_MESSAGE")).toBeNull();
-    expect(container.querySelector(".fl-card-title")!.textContent).toBe("Slack send message");
+    expect(container.querySelector(".fl-approval-ask")!.textContent).toBe("Slack send message?");
   });
 
   it("prefers host ToolMeta when it exists and degrades cleanly when it does not", () => {
     const withMeta = show(ask({ args: { amount: 12 } }), {
       host_thing_do: { label: "Do the thing", description: "Runs the thing once." },
     });
-    expect(withMeta.querySelector(".fl-card-title")!.textContent).toBe("Do the thing");
-    expect(withMeta.querySelector(".fl-card-line")!.textContent).toBe("Runs the thing once.");
+    expect(withMeta.querySelector(".fl-approval-ask")!.textContent).toBe("Do the thing?");
+    expect(notesOf(withMeta)).toContain("Runs the thing once.");
     cleanup();
     const without = show(ask({ args: { amount: 12 } }));
-    expect(without.querySelector(".fl-card-title")!.textContent).toBe("Thing do");
+    expect(without.querySelector(".fl-approval-ask")!.textContent).toBe("Thing do?");
   });
 
   it("formats an undeclared number honestly and a declared one as money", () => {
@@ -145,8 +170,8 @@ describe("a boolean field is an answer, never the literal", () => {
       ["Permanent", "Yes"],
       ["Notify owner", "No"],
     ]);
-    expect(screen.getByLabelText("Real tool inputs").textContent).not.toContain("true");
-    expect(screen.getByLabelText("Real tool inputs").textContent).not.toContain("false");
+    expect(container.querySelector(".fl-approval-sub")!.textContent).not.toContain("true");
+    expect(container.querySelector(".fl-approval-sub")!.textContent).not.toContain("false");
   });
 
   it("keeps the raw literal for dev mode, on the dd tooltip", () => {
@@ -156,19 +181,23 @@ describe("a boolean field is an answer, never the literal", () => {
     // name always said "for dev mode", and now the code agrees. A `title` is an
     // end-user surface (it put raw JSON and developer literals one hover from a
     // bank customer, invisible to every audit because the law excluded `title`).
+    //
+    // ⚠️ TEST EDIT (M1 · Sentence): asserted against `CardFields` itself now.
+    // The approval card renders its inputs as plain notes, so the dd — and the
+    // tooltip this law is about — lives only on the cards that still use rows.
     const previous = process.env.NODE_ENV;
     process.env.NODE_ENV = "development";
     try {
-      const dev = show(ask({ args: { permanent: true } }));
+      const dev = render(<CardFields rows={rows} />).container;
       expect(dev.querySelector(".fl-card-field dd")!.getAttribute("title")).toBe("true");
     } finally {
       process.env.NODE_ENV = previous;
     }
     cleanup();
-    const container = show(ask({ args: { permanent: true } }));
-    expect(container.querySelector(".fl-card-field dd")!.getAttribute("title")).toBeNull();
-    // The honesty contract lives in the ROW, which always shows every input.
-    expect(rowsOf(container)).toEqual([["Permanent", "Yes"]]);
+    expect(render(<CardFields rows={rows} />).container.querySelector(".fl-card-field dd")!.getAttribute("title")).toBeNull();
+    cleanup();
+    // The honesty contract lives in the DISPLAY, which always shows every input.
+    expect(rowsOf(show(ask({ args: { permanent: true } })))).toEqual([["Permanent", "Yes"]]);
   });
 
   it("reads a declared boolean and a NESTED boolean the same way", () => {
@@ -201,22 +230,33 @@ describe("the plain-words line says what happens, not which tool", () => {
     },
   } as Partial<ApprovalRequest>);
 
-  const line = (container: HTMLElement): string => container.querySelector(".fl-card-line")!.textContent!;
+  /** ⚠️ TEST EDIT (M1 · Sentence) throughout this block: the ONE plain-words
+      line became a PAIR — the question (`.fl-approval-ask`) and the quiet notes
+      under it. The question names the action and its key values; the notes say
+      what approving DOES. Every expectation below moved to whichever half now
+      carries it; the ladder itself is unchanged. */
+  const question = (container: HTMLElement): string =>
+    container.querySelector(".fl-approval-ask")!.textContent!;
+  const does = (container: HTMLElement): string => notesOf(container).join(" · ");
 
   it("tier 1 — the host's own description wins over anything synthesized", () => {
     const container = show(money(), {
       host_transferMoney: { label: "Send money", description: "Pays your water bill from checking." },
     });
-    expect(line(container)).toBe("Pays your water bill from checking.");
+    expect(notesOf(container)).toContain("Pays your water bill from checking.");
   });
 
-  it("tier 2 — synthesizes one truthful sentence from the REAL inputs", () => {
+  it("tier 2 — synthesizes one truthful question from the REAL inputs", () => {
     const container = show(money());
-    expect(line(container)).toBe("Sends $47.50 to Acme Utilities — now, as you.");
-    // A destructive ask gets the sentence AND keeps every input in plain sight:
-    // the sentence is the meaning, the fold is a separate (non-critical) call.
+    expect(question(container)).toBe("Send $47.50 to Acme Utilities?");
+    // …and the destructive grade says so in plain words, with no amber and no
+    // pill to carry it.
+    expect(notesOf(container)).toContain("Sends now, as you");
+    expect(notesOf(container)).toContain("Can’t be undone");
+    // Every input is still in plain sight: the two the question names, plus the
+    // memo on the quiet line. Nothing folds anywhere on this card any more.
+    expect(rowsOf(container)).toEqual([["Memo", "July water bill"]]);
     expect(container.querySelector(".fl-approval-details")).toBeNull();
-    expect(rowsOf(container)).toHaveLength(3);
   });
 
   it("tier 2 — works off the host's field formatter when no schema rides along", () => {
@@ -225,26 +265,26 @@ describe("the plain-words line says what happens, not which tool", () => {
     const container = show(money({ schema: false }), {
       host_transferMoney: { label: "Send money", formatField: (key, value) => key === "amount" && typeof value === "number" ? `$${(value / 100).toFixed(2)}` : undefined },
     });
-    expect(line(container)).toBe("Sends $47.50 to Acme Utilities — now, as you.");
+    expect(question(container)).toBe("Send $47.50 to Acme Utilities?");
   });
 
   it("tier 3 — falls back to the consequence CLASS, never the tool name", () => {
     // Nothing to synthesize from: no description, no declared money.
     const bare = show(money({ schema: false }));
-    // The GRADE says it, not the name (Yousef's D1). This read "This moves
-    // money, as you." only because the tool id contains "transfer".
-    expect(line(bare)).toBe("This makes a change you can’t undo, as you.");
-    expect(line(bare)).not.toContain("Send money");
-    expect(line(bare)).not.toContain("Vendo will run");
+    // The GRADE says what it does, not the name (Yousef's D1). This read "This
+    // moves money, as you." only because the tool id contains "transfer".
+    expect(notesOf(bare)).toContain("This makes a change you can’t undo, as you.");
+    expect(does(bare)).not.toContain("Send money");
+    expect(does(bare)).not.toContain("Vendo will run");
     cleanup();
     // A tool whose words name no known verb still never reads its own label
-    // back at the person: the risk class carries the sentence.
+    // back at the person on the what-it-DOES half: the risk class carries it.
     const unknown = show(ask({ args: { note: "hi" } }));
-    expect(line(unknown)).toBe("This changes something in your account, as you.");
-    expect(line(unknown)).not.toContain("Thing do");
+    expect(notesOf(unknown)).toContain("This changes something in your account, as you.");
+    expect(does(unknown)).not.toContain("Thing do");
   });
 
-  it("C5 — two declared money fields synthesize NO sentence, and nothing folds", () => {
+  it("C5 — two declared money fields synthesize NO question, and nothing folds", () => {
     // The live shape: a fee beside the amount. The old rule took the FIRST
     // numeric field whose display changed, so this read "Sends $1.99 to Acme
     // Utilities" — the wrong number — and the card then folded the true rows
@@ -257,9 +297,9 @@ describe("the plain-words line says what happens, not which tool", () => {
       },
       descriptor: { name: "host_transferMoney", title: "Send money", description: "", inputSchema: {}, risk: "write" },
     } as Partial<ApprovalRequest>));
-    expect(container.querySelector(".fl-approval-consequence-line")).toBeNull();
-    expect(line(container)).toBe("This changes something in your account, as you.");
-    expect(line(container)).not.toContain("$1.99");
+    expect(question(container)).toBe("Send money?");
+    expect(question(container)).not.toContain("$1.99");
+    expect(notesOf(container)).toContain("This changes something in your account, as you.");
     // Never fold on uncertainty: both amounts stay in plain sight.
     expect(container.querySelector(".fl-approval-details")).toBeNull();
     expect(rowsOf(container)).toEqual([
@@ -281,13 +321,13 @@ describe("the plain-words line says what happens, not which tool", () => {
       } as Partial<ApprovalRequest>),
       { host_transferMoney: { formatField: (key, value) => key === "rate" ? `${String(value)}%` : undefined } },
     );
-    // "Sends 5% to Acme Utilities" was a real possible sentence here.
-    expect(container.querySelector(".fl-approval-consequence-line")).toBeNull();
-    expect(line(container)).toBe("This changes something in your account, as you.");
+    // "Send 5% to Acme Utilities?" was a real possible question here.
+    expect(question(container)).toBe("Send money?");
+    expect(notesOf(container)).toContain("This changes something in your account, as you.");
     expect(rowsOf(container)).toEqual([["Rate", "5%"], ["Recipient name", "Acme Utilities"]]);
   });
 
-  it("H-7 — money NESTED in the args blocks the sentence and the fold", () => {
+  it("H-7 — money NESTED in the args blocks the question and the fold", () => {
     // `moneyValue` counted top-level fields only, while `field-rows`' `display`
     // formats money at any depth. So this read "Sends $47.50 to Acme
     // Utilities — now, as you." and then folded the rows behind Details,
@@ -301,8 +341,8 @@ describe("the plain-words line says what happens, not which tool", () => {
       },
       descriptor: { name: "host_transferMoney", title: "Send money", description: "", inputSchema: {}, risk: "write" },
     } as Partial<ApprovalRequest>));
-    expect(container.querySelector(".fl-approval-consequence-line")).toBeNull();
-    expect(line(container)).toBe("This changes something in your account, as you.");
+    expect(question(container)).toBe("Send money?");
+    expect(notesOf(container)).toContain("This changes something in your account, as you.");
     // Both amounts stay in plain sight, formatted, with nothing folded.
     expect(container.querySelector(".fl-approval-details")).toBeNull();
     expect(rowsOf(container)).toEqual([
@@ -312,7 +352,7 @@ describe("the plain-words line says what happens, not which tool", () => {
     ]);
   });
 
-  it("H-7 — one amount, however deep, still earns its sentence", () => {
+  it("H-7 — one amount, however deep, still earns its question", () => {
     const container = show(ask({
       call: {
         id: "call_send",
@@ -321,27 +361,36 @@ describe("the plain-words line says what happens, not which tool", () => {
       },
       descriptor: { name: "host_transferMoney", title: "Send money", description: "", inputSchema: {}, risk: "write" },
     } as Partial<ApprovalRequest>));
-    expect(line(container)).toBe("Sends $18.50 to Acme Utilities — now, as you.");
+    expect(question(container)).toBe("Send $18.50 to Acme Utilities?");
   });
 
-  it("keeps folding the fields behind Details on an ORDINARY consequence ask", () => {
+  it("an ORDINARY ask hides nothing either — the fold is gone from every grade", () => {
+    // ⚠️ TEST EDIT (M1 · Sentence): this pinned the Details fold on a
+    // non-critical consequence ask. M1 retired the fold outright — the honesty
+    // law is satisfied by SHOWING, and a disclosure is not showing — so the
+    // ordinary ask now reads exactly like the destructive one, minus the grade's
+    // warning.
     const container = show(money({ critical: false }));
-    expect(line(container)).toBe("Sends $47.50 to Acme Utilities — now, as you.");
-    expect(container.querySelector(".fl-approval-details")).not.toBeNull();
+    expect(question(container)).toBe("Send $47.50 to Acme Utilities?");
+    expect(container.querySelector(".fl-approval-details")).toBeNull();
+    expect(rowsOf(container)).toEqual([["Memo", "July water bill"]]);
+    expect(notesOf(container)).not.toContain("Can’t be undone");
   });
 
-  it("UNGRADED never folds and never loses the ceremony (ruling 15, second half)", () => {
+  it("UNGRADED says so in plain words and still hides nothing (ruling 15, second half)", () => {
     // The wire graded nothing. Ruling 15 made the DISPLAY grade a write; the
     // card then treated the ask as ordinary — `critical` false — so the
     // consequence sentence folded the real inputs behind Details and the
     // ceremony edge was dropped. Scrutiny must not be reduced on a grade
     // nobody supplied.
     //
-    // ⚠️ TEST EDIT (#747): the ceremony is unchanged and still asserted below.
-    // What changed is where it comes from. The wave approximated the state as
-    // `write` + `critical: true`; `ungraded` is a first-class RiskLabel now, so
-    // the wire carries it as itself and each card derives ceremony from the
-    // GRADE. The old assertion pinned the approximation.
+    // ⚠️ TEST EDIT (#747): `ungraded` is a first-class RiskLabel now, so the
+    // wire carries it as itself instead of the old `write` + `critical: true`
+    // approximation.
+    //
+    // ⚠️ TEST EDIT (M1 · Sentence): the amber ceremony register left this card
+    // — there is no amber anywhere on it — so the extra scrutiny is carried by
+    // the plain words the grade earns, and by the fact that nothing folds.
     const approval = buildApprovalRequest({
       approvalId: "apr_ungraded",
       toolCallId: "call_ungraded",
@@ -350,13 +399,14 @@ describe("the plain-words line says what happens, not which tool", () => {
     }, {});
     expect(approval.descriptor.risk).toBe("ungraded");
     const container = show(approval);
-    expect(line(container)).toBe("Sends $47.50 to Acme Utilities — now, as you.");
+    expect(question(container)).toBe("Send $47.50 to Acme Utilities?");
+    expect(notesOf(container)).toContain("Nobody has checked what this changes");
     expect(container.querySelector(".fl-approval-details")).toBeNull();
-    expect(container.querySelector(".fl-cardshell--ceremony")).not.toBeNull();
-    expect(container.querySelector(".fl-btn-ceremony")).not.toBeNull();
+    expect(container.querySelector(".fl-cardshell--ceremony")).toBeNull();
+    expect(container.querySelector(".fl-btn-ceremony")).toBeNull();
   });
 
-  it("a GRADED ask is untouched — it still folds", () => {
+  it("a GRADED ask is untouched — no warning it did not earn", () => {
     const graded = buildApprovalRequest({
       approvalId: "apr_graded",
       toolCallId: "call_graded",
@@ -365,40 +415,46 @@ describe("the plain-words line says what happens, not which tool", () => {
       risk: "write",
     }, {});
     expect(graded.descriptor.critical).toBeUndefined();
-    expect(show(graded).querySelector(".fl-approval-details")).not.toBeNull();
+    const notes = notesOf(show(graded));
+    expect(notes).not.toContain("Nobody has checked what this changes");
+    expect(notes).not.toContain("Can’t be undone");
   });
 });
 
-describe("the venue byline never prints an id", () => {
+/** ⚠️ TEST EDIT (M1 · Sentence): the byline ROW is gone — who asked is one of the
+    quiet notes under the question, and "runs as you" is already the agency note
+    there, so only the venue phrase itself rides along (`venuePhrase`). The
+    never-print-an-id contract is unchanged. */
+describe("the venue note never prints an id", () => {
   const inApp = (over: Partial<ApprovalRequest["ctx"]>): ApprovalRequest => ask({
     ctx: { principal: { kind: "user", subject: "user_1" }, venue: "app", presence: "present", ...over },
   } as Partial<ApprovalRequest>);
 
   it("says the bare phrase when the only thing known about the app is its id", () => {
     const container = show(inApp({ appId: "app_1" }));
-    const byline = container.querySelector(".fl-card-byline")!.textContent!;
-    expect(byline).toBe("Runs as you · asked in an app");
-    expect(byline).not.toContain("app_1");
+    const notes = notesOf(container);
+    expect(notes.at(-1)).toBe("asked in an app");
+    expect(container.textContent).not.toContain("app_1");
   });
 
   it("uses a human venue name when the surface knows one", () => {
-    render(
+    const { container } = render(
       <VendoProvider client={client}>
         <ApprovalCard approval={inApp({ appId: "app_1" })} onDecide={() => undefined} venueName="Money HQ" />
       </VendoProvider>,
     );
-    expect(screen.getByText("Runs as you · asked in Money HQ")).toBeTruthy();
+    expect(notesOf(container).at(-1)).toBe("asked in Money HQ");
   });
 
   it("refuses an id-shaped token from ANY source, and never reads a raw venue slug", () => {
     for (const token of ["app_1", "apr_9", "thr_x", "grt_7", "run_2"]) {
-      expect(venueByline("app", token)).toBe("Runs as you · asked in an app");
-      expect(venueByline("automation", token)).toBe("Runs as you · asked by an automation");
+      expect(venuePhrase("app", token)).toBe("asked in an app");
+      expect(venuePhrase("automation", token)).toBe("asked by an automation");
     }
-    expect(venueByline("automation", "Weekly digest")).toBe("Runs as you · asked by Weekly digest");
-    // An unknown venue prints the one thing still true, never the slug.
-    expect(venueByline("app_1")).toBe("Runs as you");
-    expect(venueByline("some-new-venue")).toBe("Runs as you");
+    expect(venuePhrase("automation", "Weekly digest")).toBe("asked by Weekly digest");
+    // An unknown venue says nothing at all, never its slug.
+    expect(venuePhrase("app_1")).toBeUndefined();
+    expect(venuePhrase("some-new-venue")).toBeUndefined();
   });
 });
 
@@ -421,13 +477,12 @@ describe("the in-thread approval carries the real descriptor", () => {
     };
     const container = show(buildApprovalRequest(part, {}));
     // The wave-1 live proof E2c defect, on the surface it actually happened on.
-    expect(rowsOf(container)).toEqual([["Amount", "$47.50"], ["Recipient name", "Acme Utilities"]]);
-    expect(screen.getByLabelText("Real tool inputs").textContent).not.toContain("4750");
-    expect(container.querySelector(".fl-card-title")!.textContent).toBe("Send money");
-    // This line used to pin the authored descriptor sentence. The consequence
-    // synthesized from the real inputs is MORE specific (it names the money and
-    // the counterparty), so it now leads — see the plain-words precedence.
-    expect(container.querySelector(".fl-card-line")!.textContent).toBe("Sends $47.50 to Acme Utilities — now, as you.");
+    // Both inputs are now IN the question — the amount formatted, the raw
+    // integer nowhere on the card.
+    expect(container.querySelector(".fl-approval-ask")!.textContent)
+      .toBe("Send $47.50 to Acme Utilities?");
+    expect(container.textContent).not.toContain("4750");
+    expect(rowsOf(container)).toEqual([]);
   });
 
   it("still builds a usable ask when the wire carries no descriptor at all", () => {
@@ -452,6 +507,6 @@ describe("the in-thread approval carries the real descriptor", () => {
     // Never the server's `tool slug + canonical JSON`.
     expect(approval.inputPreview).toBe("To: a@example.com");
     const container = show(approval, tools);
-    expect(container.querySelector(".fl-card-line")!.textContent).toBe("Send an email as you.");
+    expect(notesOf(container)).toContain("Send an email as you.");
   });
 });

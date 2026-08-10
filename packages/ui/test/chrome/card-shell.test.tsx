@@ -50,6 +50,13 @@ afterEach(async () => {
 const provider = (node: React.ReactNode) => <VendoProvider client={client}>{node}</VendoProvider>;
 
 /** Every card kind, as a host actually mounts it. */
+/** ⚠️ TEST EDIT (M1 · Sentence): the approval card is the one kind with no HEAD.
+    Its ask is the card — a bold question plus one quiet line — so it wears no
+    eyebrow, no icon well and no title, and law 2's ONE-well rule is asserted
+    over the kinds that still have one. Law 1 (one shell, no bespoke geometry)
+    and law 3 (it always says what it does) still cover every kind. */
+const HEADLESS = new Set(["approval"]);
+
 const KINDS: Array<[string, React.ReactNode]> = [
   ["approval", <ApprovalCard approval={approval} onDecide={() => undefined} />],
   [
@@ -75,17 +82,24 @@ describe("one card shell, three laws", () => {
       expect(shell.getAttribute("aria-label"), kind).toBeTruthy();
       // Law 3 — it always says what it does.
       expect(shell.querySelectorAll(".fl-card-line").length, kind).toBeGreaterThanOrEqual(1);
-      // Law 2 — one icon well, one size, on every kind.
-      expect(shell.querySelectorAll(".fl-card-ic"), kind).not.toHaveLength(0);
-      expect(shell.querySelector(".fl-card-eyebrow")?.textContent, kind).toBeTruthy();
-      expect(shell.querySelector(".fl-card-title")?.textContent, kind).toBeTruthy();
+      if (!HEADLESS.has(kind)) {
+        // Law 2 — one icon well, one size, on every kind that has a head.
+        expect(shell.querySelectorAll(".fl-card-ic"), kind).not.toHaveLength(0);
+        expect(shell.querySelector(".fl-card-eyebrow")?.textContent, kind).toBeTruthy();
+        expect(shell.querySelector(".fl-card-title")?.textContent, kind).toBeTruthy();
+      }
       // The three retired bodies: no card picks a raw <pre> any more.
       expect(shell.querySelector("pre"), kind).toBeNull();
       cleanup();
     }
   });
 
-  it("dresses a destructive ask in the ceremony register with the ONE ceremony button", () => {
+  it("carries a destructive ask in plain words, with no amber and one filled button", () => {
+    // ⚠️ TEST EDIT (M1 · Sentence): this pinned the amber ceremony register on a
+    // destructive approval. The approved design carries irreversibility in
+    // WORDS on the quiet line ("Can't be undone") and keeps the card neutral —
+    // there is no amber anywhere on it, and Approve is the host's own accent
+    // fill. The ceremony register stays the SHELL's vocabulary; no card uses it.
     render(provider(
       <ApprovalCard
         approval={{ ...approval, descriptor: { ...approval.descriptor, risk: "destructive" } }}
@@ -93,8 +107,10 @@ describe("one card shell, three laws", () => {
       />,
     ));
     const shell = document.querySelector(".fl-cardshell")!;
-    expect(shell.classList.contains("fl-cardshell--ceremony")).toBe(true);
-    expect(screen.getByRole("button", { name: "Approve" }).classList.contains("fl-btn-ceremony")).toBe(true);
+    expect(shell.classList.contains("fl-cardshell--ceremony")).toBe(false);
+    expect(shell.querySelector(".fl-approval-sub")!.textContent).toContain("can’t undo");
+    expect(screen.getByRole("button", { name: "Approve" }).classList.contains("fl-btn-primary")).toBe(true);
+    expect(document.querySelector(".fl-btn-ceremony")).toBeNull();
     // One ceremony name only — the .fl-btn-critical alias is retired, markup
     // and stylesheet (its dead token is pinned by theme-tokens.test.tsx).
     expect(document.querySelector(".fl-btn-critical")).toBeNull();

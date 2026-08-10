@@ -474,6 +474,16 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-beat-orb { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
   background: radial-gradient(circle at 35% 35%,
     color-mix(in srgb, var(--vendo-accent) 55%, var(--vendo-surface) 45%), var(--vendo-accent)); }
+/* …with ONE exception: a beat parked on the USER. Nothing on our side is moving
+   there, so the marker itself carries the progress — the launcher's
+   indeterminate arc (\`fl-ring-turn\`, defined with it), on the same element at
+   the orb's size. Waiting only; every other beat keeps its dot. */
+.fl-beat-ring { background: conic-gradient(var(--vendo-accent) 0 22%, var(--vendo-border-strong) 22% 100%);
+  mask: radial-gradient(closest-side, transparent 54%, #000 57%);
+  -webkit-mask: radial-gradient(closest-side, transparent 54%, #000 57%); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-beat-ring { animation: fl-ring-turn 1.4s linear infinite; }
+}
 .fl-beat-ic { display: grid; place-items: center; width: 12px; height: 12px; flex-shrink: 0; }
 /* The in-flight beat keeps full-strength text; settled ones quiet to muted. */
 .fl-beat-working { color: var(--vendo-fg); }
@@ -1490,16 +1500,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-tr-forming .fl-skeleton-bar { display: block; height: 9px; width: 62%; border-radius: 5px; }
 
 /* ================= card surfaces ================= */
-/* 1-A · consequence-first approval: the neutral leading sentence. */
-.fl-approval-consequence-line { margin: 10px 0 0; font: 500 13px/1.5 var(--vendo-font);
-  color: var(--vendo-fg); }
-.fl-approval-consequence-line strong { font-weight: 650; }
-.fl-approval-details { margin-top: 2px; }
-.fl-approval-details summary { color: var(--vendo-fg-muted); font-size: 11px; cursor: pointer;
-  margin-top: 8px; }
-.fl-approval-details summary:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
-.fl-approval-details[open] summary { margin-bottom: 2px; }
-
 /* 1-H · mobile approval sheet. A consent surface: the scrim does NOT dismiss
    and Esc is a no-op (enforced in approval-sheet.tsx) — deciding is the only
    way out. Sits above the takeover panel and the palette scrim.
@@ -1631,6 +1631,25 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 /* The mandatory plain-words line: what this DOES, in the user's language. */
 .fl-card-line { margin: 10px 0 0; font: 500 13px/1.5 var(--vendo-font); color: var(--vendo-fg); }
 .fl-card-line strong { font-weight: 650; }
+
+/* M1 · Sentence — the approval card's own two lines, declared after
+   .fl-card-line so the ask wins on source order. The question IS the interface:
+   no eyebrow, no icon well, no risk pill, no field table, no amber. The quiet
+   line under it carries every real input the question doesn't already name plus
+   what approving does, so nothing is ever a disclosure away (the honesty law).
+   \`color: inherit\` keeps the settled receipt muted from the shell. */
+.fl-approval-ask { margin: 0; font: 550 14px/1.45 var(--vendo-font); letter-spacing: -.012em;
+  color: inherit; overflow-wrap: anywhere; }
+/* pre-line: a flattened object/array input keeps its one-per-line shape
+   (field-rows.ts), exactly as it did in the retired dd. */
+.fl-approval-sub { margin: 4px 0 0; font: 400 12px/1.5 var(--vendo-font);
+  color: var(--vendo-fg-muted); overflow-wrap: anywhere; white-space: pre-line; }
+/* The remember disclosure is not part of the ask, so it rides the actions row
+   as the quiet trailing control and drops to its own full-width line only once
+   opened — the card at rest is the question, the line, and two buttons. */
+.fl-approval .fl-card-actions { flex-wrap: wrap; }
+.fl-approval-remember { margin: 0 0 0 auto; }
+.fl-approval-remember[open] { flex-basis: 100%; margin: 0; }
 
 .fl-card-fields { margin: 12px 0 0; padding: 10px 0 2px; border-top: 1px solid var(--vendo-border);
   display: flex; flex-direction: column; gap: 7px; }

@@ -60,50 +60,47 @@ describe("lane-cards picks", () => {
       .toBe("Vendo will post to #renewals on your behalf, running as you.");
   });
 
-  it("1-A: synthesizes a structured consequence from the real Slack inputs", () => {
+  /** ⚠️ TEST EDIT (M1 · Sentence): 1-A's structured `consequence` (pre/artifact/
+      mid/target/post) existed so the card could BOLD the artifact and target.
+      The approved design's question line is uniformly semibold, so the structure
+      is gone: `toolPresentation` now yields the question itself plus the agency
+      phrase under it. Same inputs, same authority, same truth conditions. */
+  it("1-A: synthesizes a question from the real Slack inputs", () => {
     const presentation = toolPresentation("slack_SLACK_SEND_MESSAGE", slackApproval.call.args);
-    expect(presentation.consequence).toEqual({
-      pre: "Vendo will post ",
-      artifact: "“Morning digest: 7 renewals in the next 30 days, 2 at risk.”",
-      mid: " to ",
-      target: "#renewals",
-      post: " — now, as you.",
-    });
-    // Unknown toolkits synthesize nothing — the card keeps its fields layout.
-    expect(toolPresentation("host_delete_invoice", { invoiceId: "inv_42" }).consequence).toBeUndefined();
-    // Gmail synthesizes nothing either (PR #391 P1): a sentence naming only
-    // `to` would fold the subject/body/copied recipients out of sight, so the
-    // card keeps every input in plain view.
+    expect(presentation.question)
+      .toBe("Post “Morning digest: 7 renewals in the next 30 days, 2 at risk.” to #renewals?");
+    expect(presentation.agency).toBe("Posts now, as you");
+    // Unknown toolkits synthesize nothing — the card asks with the tool's label.
+    expect(toolPresentation("host_delete_invoice", { invoiceId: "inv_42" }).question).toBeUndefined();
+    // Gmail used to synthesize nothing (PR #391 P1) because a sentence naming
+    // only `to` would have FOLDED the subject/body/copied recipients out of
+    // sight. M1 retired the fold, so it names the recipient and the rest stays
+    // visible on the quiet line.
     expect(toolPresentation("gmail_GMAIL_SEND_EMAIL", {
       to: "alice@example.com",
       subject: "Q3 renewals digest",
       body: "Northwind and Contoso renew this month.",
-    }).consequence).toBeUndefined();
+    }).question).toBe("Send an email to alice@example.com?");
   });
 
-  it("1-A: leads with the consequence and folds the real inputs behind Details", () => {
-    render(<VendoProvider client={client}><ApprovalCard approval={slackApproval} onDecide={() => undefined} /></VendoProvider>);
-    const sentence = document.querySelector(".fl-approval-consequence-line");
-    expect(sentence?.textContent).toContain("Vendo will post");
-    expect(sentence?.textContent).toContain("#renewals");
-    // The fields never leave the DOM — folded, same a11y name.
-    const details = document.querySelector("details.fl-approval-details");
-    expect(details).not.toBeNull();
-    expect(screen.getByLabelText("Real tool inputs").closest("details")).toBe(details);
+  it("1-A: leads with the question and keeps every remaining input in plain sight", () => {
+    const { container } = render(<VendoProvider client={client}><ApprovalCard approval={slackApproval} onDecide={() => undefined} /></VendoProvider>);
+    expect(container.querySelector(".fl-approval-ask")!.textContent).toContain("#renewals");
+    expect(container.querySelector(".fl-approval-ask")!.textContent).toContain("Morning digest");
+    // Nothing folds: the fields disclosure is gone from the card entirely.
+    expect(container.querySelector("details.fl-approval-details")).toBeNull();
+    expect(container.querySelector(".fl-approval-sub")!.textContent).toContain("Posts now, as you");
   });
 
-  it("1-A: a destructive ask keeps every input in plain sight (no fold) — and still says what it does", () => {
+  it("1-A: a destructive ask reads the same, plus the grade's plain warning", () => {
     const critical: ApprovalRequest = {
       ...slackApproval,
       descriptor: { ...slackApproval.descriptor, risk: "destructive" },
     };
-    render(<VendoProvider client={client}><ApprovalCard approval={critical} onDecide={() => undefined} /></VendoProvider>);
-    // This used to assert NO consequence line on a critical ask, which left the
-    // money card with the robotic fallback. The exemption is about the FOLD, not
-    // the sentence: maximum scrutiny means the sentence AND the open fields.
-    expect(document.querySelector(".fl-approval-consequence-line")?.textContent).toContain("#renewals");
-    expect(document.querySelector("details.fl-approval-details")).toBeNull();
-    expect(screen.getByLabelText("Real tool inputs")).toBeTruthy();
+    const { container } = render(<VendoProvider client={client}><ApprovalCard approval={critical} onDecide={() => undefined} /></VendoProvider>);
+    expect(container.querySelector(".fl-approval-ask")!.textContent).toContain("#renewals");
+    expect(container.querySelector(".fl-approval-sub")!.textContent).toContain("Can’t be undone");
+    expect(container.querySelector("details.fl-approval-details")).toBeNull();
   });
 
   it("1-H: the sheet is a decide-only dialog — Esc does not dismiss", () => {
