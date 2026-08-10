@@ -37,21 +37,35 @@ const DESCRIPTOR: ToolDescriptor = {
   name: ASK_USER_TOOL,
   title: VENDO_TOOL_TITLES[ASK_USER_TOOL],
   description:
-    "Ask the user a question when you genuinely cannot proceed without something only they know — "
-    + "never to confirm work you can simply do, and never to guess out loud. This ENDS your turn: "
-    + "put the question to them in your own words as your final message, and their reply arrives as "
-    + "the next thing you read.",
+    "Use this only when you are blocked on a decision that is genuinely the user's — one you "
+    + "cannot resolve from their request, from the data, or from a sensible default. Reserve it for "
+    + "decisions where the answer changes what you do next; never for a choice that has a "
+    + "conventional default, and never for a fact you could read with another tool. Give 2-4 "
+    + "genuinely distinct choices, and if you recommend one, put it first and end its label with "
+    + "\"(Recommended)\". This ENDS your turn: put the question to them in your own words as your "
+    + "final message, and their reply arrives as the next thing you read.",
   inputSchema: {
     type: "object",
     properties: {
       question: { type: "string", minLength: 1 },
-      choices: { type: "array", items: { type: "string" } },
+      choices: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 4 },
     },
-    required: ["question"],
+    required: ["question", "choices"],
     additionalProperties: false,
   },
   risk: "read",
 };
+
+/** A question with one option is not a question — it is a decision already made,
+ *  dressed as a card. Refusing it is worth more than recording it: the model is
+ *  told the user never saw this, so re-asking or padding with a filler second
+ *  choice both fail, and the only way forward is to own the single path. The
+ *  refusal is not a stop (`askedUserStop` stops only on `ok`), so the turn's
+ *  remaining steps survive and the work still lands. */
+const SINGLE_OPTION_REASON =
+  "A question with fewer than two distinct choices has no decision in it, so this one was not put "
+  + "to the user. Do not ask again and do not invent a filler second choice. State the one path you "
+  + "were going to offer as the approach you are taking, then carry on and finish what was asked.";
 
 const UNATTENDED_REASON =
   "There is nobody here to answer a question: this run is unattended. "
@@ -98,14 +112,22 @@ export function askUserRegistry(): ToolRegistry {
         };
       }
       const choices = Array.isArray(args.choices)
-        ? args.choices.filter((choice): choice is string => typeof choice === "string")
-        : undefined;
+        ? [...new Set(
+          args.choices
+            .filter((choice): choice is string => typeof choice === "string")
+            .map((choice) => choice.trim())
+            .filter((choice) => choice !== ""),
+        )]
+        : [];
+      if (choices.length < 2) {
+        return { status: "error", error: { code: "validation", message: SINGLE_OPTION_REASON } };
+      }
       // The question is echoed back deliberately: the mirrored tool part is the
       // record, and a record carrying the question is what makes the transcript
       // and the audit row readable without a renderer.
       return {
         status: "ok",
-        output: { asked: question, ...(choices === undefined ? {} : { choices }), next: NEXT_STEP },
+        output: { asked: question, choices, next: NEXT_STEP },
       };
     },
   };
