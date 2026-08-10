@@ -62,6 +62,20 @@ const alignCss = (a: DataTableColumn["align"]): CSSProperties["textAlign"] =>
   a === "end" ? "right" : a === "center" ? "center" : "left";
 
 /**
+ * A non-`text` format token says the value is ONE indivisible token — a
+ * formatted date, amount, percentage or count. Those get tabular figures, and
+ * they must never break across lines: the header row already declares itself
+ * unbreakable, but a `width: 100%` auto-layout table hands surplus width to the
+ * widest free-text column and then squeezes the rest BELOW their max-content,
+ * which is how "Aug 1, 2026" shipped as "Aug 1," / "2026" and a four-row
+ * transfer table became eight lines tall. The column descriptor has no width or
+ * wrap prop and should not grow one — the format token already carries the fact.
+ * Free text still wraps; it is the only cell with a legitimate break point.
+ */
+const isAtomicFormat = (format: DataTableColumn["format"]): boolean =>
+  format !== undefined && format !== "text";
+
+/**
  * The text a cell actually SHOWS, which is the only thing a filter may compare
  * against: the person filters on what is in front of them. Filtering the raw
  * field instead meant "$2,500.00" and "Mar 14, 2026" were unsearchable, while
@@ -295,6 +309,7 @@ export function DataTable(props: DataTableProps) {
                 <tr key={row.id}>
                   {row.getVisibleCells().map((cell) => {
                     const col = columns.find((c) => c.key === cell.column.id);
+                    const atomic = isAtomicFormat(col?.format);
                     return (
                       <td
                         key={cell.id}
@@ -302,7 +317,8 @@ export function DataTable(props: DataTableProps) {
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
                           padding: cellPad,
                           textAlign: alignCss(col?.align),
-                          fontVariantNumeric: col?.format && col.format !== "text" ? "tabular-nums" : undefined,
+                          fontVariantNumeric: atomic ? "tabular-nums" : undefined,
+                          whiteSpace: atomic ? "nowrap" : undefined,
                         }}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}

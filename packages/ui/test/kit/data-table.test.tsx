@@ -101,4 +101,17 @@ describe("DataTable", () => {
     expect(screen.getByText("Hartwell")).toBeTruthy();
     expect(screen.queryByText("Acme")).toBeNull();
   });
+
+  // A formatted value is ONE token. `width: 100%` with auto table-layout hands
+  // surplus width to the widest free-text column and squeezes the rest below
+  // their max-content, so "Mar 14, 2026" shipped as "Mar 14," / "2026" and a
+  // four-row table stood eight lines tall. Free text keeps its break point —
+  // it is the only cell that has a legitimate one.
+  it("never breaks a formatted cell across lines, and still wraps free text", () => {
+    render(<DataTable rows={rows} columns={columns} />);
+    const cells = within(screen.getAllByRole("row")[1] as HTMLElement).getAllByRole("cell");
+    expect((cells[0] as HTMLElement).style.whiteSpace).toBe("");
+    expect((cells[1] as HTMLElement).style.whiteSpace).toBe("nowrap");
+    expect((cells[2] as HTMLElement).style.whiteSpace).toBe("nowrap");
+  });
 });
