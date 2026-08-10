@@ -92,6 +92,10 @@ export const ESCALATE_TOOL = "escalate";
  *  write outside it. */
 export const SAVE_APP_TOOL = "save_app";
 
+/** The catalog search, by name — the one assembly verb a deployment can render
+ *  useless, so the loadout below has to be able to name it. */
+const SEARCH_TOOL = "search_components";
+
 /**
  * The assembly verbs, by NAME rather than by risk.
  *
@@ -101,7 +105,7 @@ export const SAVE_APP_TOOL = "save_app";
  * around. Host read tools come in by risk below; these come in by name.
  */
 const ASSEMBLY_TOOLS: readonly string[] = [
-  "search_components",
+  SEARCH_TOOL,
   "validate",
   "vendo_apps_data_list",
   "vendo_apps_open",
@@ -137,6 +141,11 @@ export interface ScreenInput {
    *  in the same bytes the box rung is handed. Knowledge, not instruction, so it
    *  sits with the job description rather than with the deployment's voice. */
   briefing?: string;
+  /** How many components this product ships (`BriefingPack.catalog.length`).
+   *  Absent is NOT zero: a caller with no pack has told us nothing about the
+   *  catalog, and only a count of exactly 0 means every catalog search can
+   *  answer `[]`. */
+  componentCount?: number;
 }
 
 /** What one assembly run answers. `ScreenOutcome` plus the title an assembled
@@ -212,14 +221,14 @@ export function toolBrief(listings: readonly ToolListing[]): string {
  * the skill says what the job is — which is the difference between deriving a
  * brief and forking one.
  */
-const environmentNote = (appId: AppId, listings: readonly ToolListing[]): string => `# In this loop
+const environmentNote = (input: ScreenInput, listings: readonly ToolListing[]): string => `# In this loop
 
 You have no machine: no shell, no \`Task\`, no files on disk. Everything the skill
 above tells you to read is already below, and everything it tells you to write goes
 through two tools.
 
 - **\`${SAVE_APP_TOOL}\`** saves this app's whole document. The app is
-  \`${appId}\`; you never name a path. Every save that parses repaints the person's
+  \`${input.appId}\`; you never name a path. Every save that parses repaints the person's
   screen, so save as you go — a save is cheap and silence is not. There is no
   edit-in-place tool: save the full document each time.
   Its \`decisions\` is this app's MEMORY, and the only thing the next editor will
@@ -238,7 +247,12 @@ through two tools.
   \`<Server kind="steps"|"agentic"|"box" [served] why="…"/>\` line the skill above
   teaches. Leave it out and the builder reads the escalation itself as the answer:
   \`kind="box"\`, a machine and real code.
-- \`${SCREEN_STEPS}\` steps is the whole budget. Escalate rather than run out of it.
+- \`${SCREEN_STEPS}\` steps is the whole budget. Escalate rather than run out of it.${
+  input.componentCount === 0
+    ? `\n- This product ships no components of its own, so there is no catalog to search and no`
+      + ` \`${SEARCH_TOOL}\` tool. Build the screen out of the primitives the manual above teaches.`
+    : ""
+}
 
 Never look for a tool that builds the app for you. There isn't one, and that is
 deliberate.
@@ -257,7 +271,7 @@ function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): stri
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
     input.briefing,
-    environmentNote(input.appId, listings),
+    environmentNote(input, listings),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
     .join("\n\n---\n\n");
@@ -451,8 +465,17 @@ export async function assembleScreen(
   // this loop — and a mutating host tool is not an assembly tool. Names, not a
   // risk filter passed downward: the closed list stays a list, and the one place
   // that can decide "is this an assembly tool" is the one holding the listing.
+  //
+  // A deployment that ships no components of its own has a catalog that can only
+  // answer `[]`, and the loop cannot know that until it has spent a step and a
+  // round trip asking — which is what the slowest runs spend most of their budget
+  // on. So the tool comes off at COMPOSITION time and the brief says why (above),
+  // rather than being discovered a query at a time. Exactly 0, never a falsy
+  // check: an absent count is a caller with no briefing pack, which has told us
+  // nothing about the catalog.
   const loadout: Array<string | HarnessHand> = listings
     .filter((listing) => listing.name !== VENDO_MAKE_TOOL)
+    .filter((listing) => input.componentCount !== 0 || listing.name !== SEARCH_TOOL)
     .filter((listing) => ASSEMBLY_TOOLS.includes(listing.name) || listing.risk === "read")
     .map((listing) => listing.name);
   loadout.push(saveApp, escalate);
@@ -653,7 +676,9 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
         {
           appId: request.appId,
           request: request.request,
-          ...(pack === undefined ? {} : { briefing: renderBriefingPack(pack) }),
+          ...(pack === undefined
+            ? {}
+            : { briefing: renderBriefingPack(pack), componentCount: pack.catalog.length }),
         },
       );
       if (result.kind !== "assembled") return result;
