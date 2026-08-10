@@ -74,7 +74,7 @@
         ]
       },
       {
-        "group": "Open your product to outside agents",
+        "group": "Expose your product over MCP",
         "pages": [
           "capabilities/mcp",
           "existing-agents/mcp",
