@@ -368,6 +368,7 @@ export async function assembleScreen(
    * there is nothing to cancel and no ordering to get wrong.
    */
   const clock = new AbortController();
+  const startedAt = Date.now();
   const fuse = (ms: number): void => {
     AbortSignal.timeout(ms).addEventListener("abort", () => clock.abort(), { once: true });
   };
@@ -375,6 +376,31 @@ export async function assembleScreen(
   // The caller's hang-up and the clock are the same fact to the loop: stop now.
   // They are told apart afterwards, because they mean different answers.
   const signal = AbortSignal.any([surface.signal, clock.signal]);
+
+  /** When the polish clock was armed — the first landed save, stamped where the
+   *  fuse is lit so the two never disagree about which deadline is live. */
+  let paintedAt = 0;
+  /** Tool calls this run has made. A PROXY for steps, not the step count: a step
+   *  that calls two tools spends two, which is why the line below says `~`. */
+  let calls = 0;
+
+  /**
+   * The budget, as it stands right now.
+   *
+   * The brief states the budget once, statically, and a loop that cannot see what
+   * is LEFT of it manages against a guess: the measured failure is four catalog
+   * searches spread over the first minute with nothing on screen. So the same two
+   * numbers the clock already holds are recomputed and re-injected on the strings
+   * this loop reads as instruction — the save hand's note and the repair round —
+   * rather than said once at the top and never again.
+   */
+  const budgetLine = (): string => {
+    const deadline = record.assembled ? paintedAt + SCREEN_POLISH_MS : startedAt + SCREEN_BLIND_MS;
+    const left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+    return `[budget] ${calls} of ~${SCREEN_STEPS} moves used, ${left}s left${
+      record.assembled ? " on the polish clock — the screen is already up" : " and nothing is on screen yet"
+    }.`;
+  };
 
   /**
    * Write one hot-path file and land it.
@@ -411,14 +437,21 @@ export async function assembleScreen(
       additionalProperties: false,
     },
     execute: async (args, turn) => {
+      calls += 1;
       const { content, decisions } = args as { content: string; decisions?: string };
       const committed = await save(turn, APP_FILE, content);
       if (committed.status !== "ok") {
-        return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
+        return {
+          saved: false,
+          note: `The save did not land — someone else changed this app. Save again.\n${budgetLine()}`,
+        };
       }
       // The FIRST landed save is when the person stops waiting and starts
       // looking, so it is what starts the short clock.
-      if (!record.assembled) fuse(SCREEN_POLISH_MS);
+      if (!record.assembled) {
+        fuse(SCREEN_POLISH_MS);
+        paintedAt = Date.now();
+      }
       record.assembled = true;
       record.title = nameOf(content) ?? record.title;
       // The last save that had something to say wins the run. An omitted or blank
@@ -460,10 +493,12 @@ export async function assembleScreen(
         // is the fact this hand does have, and it is enough to act on.
         return {
           saved: true,
-          note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.",
+          note: `${
+            instruction ?? "That save landed but did not reach the person's screen. Save a simpler document."
+          }\n${budgetLine()}`,
         };
       }
-      return { saved: true, note: "Run validate on it now." };
+      return { saved: true, note: `Run validate on it now.\n${budgetLine()}` };
     },
   };
 
@@ -483,6 +518,7 @@ export async function assembleScreen(
       additionalProperties: false,
     },
     execute: async (args, turn) => {
+      calls += 1;
       const { plan, why } = args as { plan: string; why: string };
       // §4.5: no consent step and no ceremony. The plan lands, its skeleton
       // paints in seconds, and the work proceeds — so the only thing this
@@ -510,7 +546,13 @@ export async function assembleScreen(
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: {
+      call: (name, args) => {
+        calls += 1;
+        return surface.tools.call(name, args);
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
@@ -602,15 +644,15 @@ export async function assembleScreen(
       // the repair round has none of the first one's context — and a repair with no
       // document in front of it is a rewrite from scratch.
       const saved = await turn.workspace.readFile(appPath).catch(() => undefined);
+      const documentNote = saved === undefined
+        ? ""
+        : `\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`;
       await drive([...turn.messages, {
         id: `repair_${input.appId}`,
         role: "user",
-        parts: [{
-          type: "text",
-          text: saved === undefined
-            ? instruction
-            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
-        }],
+        // The budget FIRST: this round is on the polish clock with a screen already
+        // up, and how much of it is left is what decides how deep the fix goes.
+        parts: [{ type: "text", text: `${budgetLine()}\n\n${instruction}${documentNote}` }],
       }]);
     }
     return {
