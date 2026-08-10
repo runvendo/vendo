@@ -48,30 +48,36 @@
         "group": "Start here",
         "pages": [
           "index",
-          "full-stack-agents",
           "concepts/architecture",
           "concepts/tools-and-safety"
         ]
       },
       {
-        "group": "Bring your own agent",
+        "group": "You already have an agent",
         "tag": "Recommended",
         "pages": [
-          "existing-agents/your-agent",
           "existing-agents/index",
+          "existing-agents/your-agent",
           "existing-agents/ai-sdk",
           "existing-agents/mastra",
-          "existing-agents/mcp",
           "existing-agents/embeds",
           "existing-agents/configuration"
         ]
       },
       {
-        "group": "Use Vendo's agent",
+        "group": "You don't have an agent yet",
         "tag": "Beta",
         "pages": [
           "quickstart",
           "ui/components"
+        ]
+      },
+      {
+        "group": "Open your product to outside agents",
+        "pages": [
+          "capabilities/mcp",
+          "existing-agents/mcp",
+          "capabilities/mcp-registry"
         ]
       },
       {
@@ -84,7 +90,7 @@
         ]
       },
       {
-        "group": "Make it yours",
+        "group": "Your brand and your rules",
         "pages": [
           "connect/theming",
           "connect/host-components",
@@ -94,18 +100,16 @@
         ]
       },
       {
-        "group": "Give it reach",
+        "group": "What the agent can do",
         "pages": [
           "capabilities/connected-accounts",
-          "capabilities/mcp",
-          "capabilities/mcp-registry",
           "capabilities/compound-tools",
           "concepts/generated-ui",
           "concepts/in-client-venue"
         ]
       },
       {
-        "group": "Ship it",
+        "group": "Go to production",
         "pages": [
           "deploy/deploying",
           "deploy/persistence",
@@ -118,7 +122,7 @@
         ]
       },
       {
-        "group": "For coding agents",
+        "group": "Installing with a coding agent",
         "pages": [
           "agents/index",
           "agents/host-auth",
@@ -185,6 +189,16 @@
     {
       "source": "/install.md",
       "destination": "/agents.md",
+      "permanent": true
+    },
+    {
+      "source": "/full-stack-agents",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/full-stack-agents.md",
+      "destination": "/index.md",
       "permanent": true
     }
   ],
