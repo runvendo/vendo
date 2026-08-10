@@ -110,12 +110,20 @@ export interface TurnTools {
   list(): Promise<ToolListing[]>;
 }
 
-/** Build contract §1.1 — three statuses is the whole surface a harness sees. */
-export type ToolResult =
+/**
+ * Build contract §1.1 — three statuses is the whole surface a harness sees.
+ *
+ * `note` is the RUNTIME's own word about the call that was just made — never the
+ * host's data and never part of `output`: what this turn has already learned from
+ * its own calls, so a model reading the result reads the lesson with it (see the
+ * harness runtime's call ledger). Absent on almost every call.
+ */
+export type ToolResult = (
   | { status: "ok"; output: Json }
   /** Guard said no / needs a human. */
   | { status: "denied"; reason: string; needs?: DeniedNeeds }
-  | { status: "error"; error: { code: string; message: string } };
+  | { status: "error"; error: { code: string; message: string } }
+) & { note?: string };
 
 /** Build contract §1.1 */
 export type DeniedNeeds =

@@ -12,6 +12,7 @@ import type {
   TurnId,
   TurnTools,
 } from "@vendoai/core";
+import { createCallLedger } from "./call-ledger.js";
 import type { CapabilityMissReporter } from "./capability-miss.js";
 import { guardedCall, previewApproval, type ToolBridgeOptions } from "./tool-bridge.js";
 import { emitWorkbench, workbenchCursor, type WorkbenchEvent } from "./workbench.js";
@@ -185,6 +186,11 @@ export interface RuntimeTurnTools extends TurnTools {
 
 export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
   const waiter = createApprovalWaiter(options.guard);
+  /** What this turn's own calls have already taught it, for the ONE surface every
+   *  brain's calls pass through. Per turn because that is the life of this object
+   *  — a lesson about what a question answered has no bearing on the next turn,
+   *  where the world has moved on and the person has asked something else. */
+  const ledger = createCallLedger();
   const approvalWaitMs = options.approvalWaitMs ?? APPROVAL_WAIT_MS;
   const bridge: ToolBridgeOptions = {
     ...options.bridge,
@@ -265,7 +271,12 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
       let guard: ToolFact["guard"];
       let approval: ToolFact["approval"];
       mirror({ kind: "call", toolCallId, name, args });
-      const finish = (result: ToolResult, outcome?: ToolOutcome): ToolResult => {
+      const finish = (unnoted: ToolResult, outcome?: ToolOutcome): ToolResult => {
+        // The turn's own lesson, attached where the model is already reading. Never
+        // instead of the result: a repeat still RUNS (a transient failure deserves
+        // its retry) and an empty answer is still the empty answer the tool gave.
+        const note = ledger.note(name, args, unnoted);
+        const result = note === undefined ? unnoted : { ...unnoted, note };
         mirror({ kind: "result", toolCallId, name, result, ...(outcome === undefined ? {} : { outcome }) });
         if (outcome?.status === "blocked") guard = "block";
         emitWorkbench(options.ctx.turnId, at.agent, {
