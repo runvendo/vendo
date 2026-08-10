@@ -25,6 +25,22 @@ const tableColumn = z.object({
 });
 const cardField = z.object({ key: z.string(), label: z.string().optional(), format: valueFormat.optional() });
 const action = z.string().describe("names a host tool");
+// The wire has no loop variable (see the wire compiler's unknown-reference
+// message), so a control that belongs to ONE row cannot be written as a child —
+// the component that iterates the rows renders it. The inner key is `tool`, not
+// `action`: convert-payload rewrites any nested `{action}` object to `{$action}`
+// and drops its siblings, which would eat the label.
+const rowAction = z.object({
+  label: z.string(),
+  tool: z.string(),
+  args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+  variant: z.enum(["primary", "secondary", "danger"]).optional(),
+  when: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).optional(),
+});
+const rowActions = (subject: string) => config(
+  z.array(rowAction),
+  `per-${subject} controls: {label, tool, args?, variant?, when?}. An args value of "$row.field" reads that field off the ${subject} the control sits on (dot-paths allowed); when is a field→value (or values) filter deciding which ${subject}s get it`,
+);
 
 // ---- specs ---------------------------------------------------------------
 export const KIT_SPECS: KitComponentSpec[] = [
@@ -165,9 +181,11 @@ export const KIT_SPECS: KitComponentSpec[] = [
       paginate: config(z.number().int().positive(), "page size (enables pagination)"),
       emptyState: copy(z.string(), "text when the query returns no rows"),
       caption: copy(z.string(), "table caption"),
+      rowActions: rowActions("row"),
     },
     examples: [
       '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amountCents",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
+      '<DataTable rows={transfers.data} columns={[{key:"payee"},{key:"amountCents",format:"money",align:"end"},{key:"status"}]} rowActions={[{label:"Cancel",tool:"transfers_cancel",args:{id:"$row.id"},variant:"danger",when:{status:"pending"}}]}/>',
     ],
   },
   {
@@ -181,6 +199,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       fields: config(z.array(cardField), "label/value rows shown on each card"),
       columns: config(z.number().int().positive(), "cards per row"),
       emptyState: copy(z.string(), "text when there are no items"),
+      rowActions: rowActions("card"),
     },
     examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balanceCents",label:"Balance",format:"money"}]}/>'],
   },

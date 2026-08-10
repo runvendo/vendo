@@ -18,6 +18,7 @@ import {
 import { applyFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
+import { RowActions, type RowAction, type RowActionRunner } from "./row-actions.js";
 
 export interface DataTableColumn {
   /** Field key; supports dot-paths ("client.name"). */
@@ -48,6 +49,10 @@ export interface DataTableProps {
   emptyState?: string;
   /** Optional table caption. */
   caption?: string;
+  /** Per-row controls, rendered in a trailing column. */
+  rowActions?: RowAction[];
+  /** The guarded action runner (renderer-supplied). */
+  runAction?: RowActionRunner;
 }
 
 /** Resolve a dot-path against a row. */
@@ -84,7 +89,13 @@ export function DataTable(props: DataTableProps) {
     paginate,
     emptyState = "No data",
     caption,
+    rowActions,
+    runAction,
   } = props;
+  // The trailing column exists only when something can actually fire in it.
+  const rowControls = Array.isArray(rowActions) && rowActions.length > 0 && runAction !== undefined
+    ? rowActions
+    : undefined;
 
   // W3 — fail SOFT on missing data: a failed/pending query resolves its
   // binding to undefined at runtime; the table's named-query empty state is
@@ -277,6 +288,22 @@ export function DataTable(props: DataTableProps) {
                     </th>
                   );
                 })}
+                {rowControls === undefined ? null : (
+                  <th
+                    key="row-actions"
+                    scope="col"
+                    style={{
+                      borderBottom: `1px solid ${t.border}`,
+                      padding: cellPad,
+                      width: "1%",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+                      Actions
+                    </span>
+                  </th>
+                )}
               </tr>
             ))}
           </thead>
@@ -284,7 +311,7 @@ export function DataTable(props: DataTableProps) {
             {bodyRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={Math.max(1, columns.length)}
+                  colSpan={Math.max(1, columns.length + (rowControls === undefined ? 0 : 1))}
                   style={{ color: t.muted, padding: "calc(var(--vendo-font-size, 15px) * 1.6) 12px", textAlign: "center" }}
                 >
                   {emptyState}
@@ -309,6 +336,18 @@ export function DataTable(props: DataTableProps) {
                       </td>
                     );
                   })}
+                  {rowControls === undefined ? null : (
+                    <td
+                      style={{
+                        borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
+                        padding: cellPad,
+                        textAlign: "right",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <RowActions row={row.original} actions={rowControls} runAction={runAction} />
+                    </td>
+                  )}
                 </tr>
               ))
             )}

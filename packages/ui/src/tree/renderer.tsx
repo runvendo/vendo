@@ -326,6 +326,9 @@ interface NodeRendererProps {
 
 const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid"]);
 
+/** The Kit components that iterate rows, so a per-row control is theirs to fire. */
+const ROW_ACTION_COMPONENTS = new Set(["DataTable", "CardList"]);
+
 const hasRenderableTreeContent = (tree: WalkTree): boolean => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const pending = [tree.root];
@@ -500,12 +503,18 @@ function NodeRenderer(props: NodeRendererProps) {
       );
     } else {
       const { bound, mismatch } = bindProps(node.props ?? {}, "host", props.data, props.state, invoke);
+      // `rowActions` fires per ROW, so its arguments only exist while the row is
+      // rendering — the component that iterates the rows gets the same guarded
+      // runner every bound action prop goes through (guard → outcome notice).
+      const withRunner = ROW_ACTION_COMPONENTS.has(node.component) && bound?.rowActions !== undefined
+        ? { ...bound, runAction: invoke }
+        : bound;
       // The notice replaces only the mis-bound component, never its subtree —
       // a container (Stack/Grid) with one bad prop must not swallow its valid
       // children (same containment scope as the generated paths above).
       content = mismatch !== null
         ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>
-        : <Implementation {...bound}>{children}</Implementation>;
+        : <Implementation {...withRunner}>{children}</Implementation>;
     }
   }
 

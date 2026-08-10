@@ -181,6 +181,17 @@ An \`on*\` attribute names a host tool: \`onClick="maple_invoice_send"\`. That i
 only way anything in an app mutates. A value that is not a legal tool name drops
 the attribute.
 
+There is no loop variable, so a control that belongs to ONE ROW cannot be written
+as a child. It is a \`rowActions\` entry on \`<DataTable>\` or \`<CardList>\`, and the
+component renders one per row. Each entry is \`{label, tool, args?, variant?,
+when?}\`: an \`args\` value of \`"$row.field"\` reads that field off the row the
+control sits on, so the call carries THAT row's id, and \`when\` limits which rows
+get it. Never hand-roll per-row controls in an island.
+
+\`\`\`
+rowActions={[{label:"Cancel",tool:"maple_transfer_cancel",args:{id:"$row.id"},variant:"danger",when:{status:"pending"}}]}
+\`\`\`
+
 ### \`<Island name="PascalName">\` — a component you write
 
 The content is raw TSX, verbatim to the **first** \`</Island>\`, with an

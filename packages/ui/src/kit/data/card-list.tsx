@@ -2,6 +2,7 @@
 import { applyFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { EnumBadge } from "../values.js";
+import { RowActions, type RowAction, type RowActionRunner } from "./row-actions.js";
 
 export interface CardField {
   key: string;
@@ -22,13 +23,17 @@ export interface CardListProps {
   columns?: number;
   /** Text shown when there are no items. */
   emptyState?: string;
+  /** Per-card controls, rendered under the card's fields. */
+  rowActions?: RowAction[];
+  /** The guarded action runner (renderer-supplied). */
+  runAction?: RowActionRunner;
 }
 
 function resolve(row: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((acc, k) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[k] : undefined), row);
 }
 
-export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items" }: CardListProps) {
+export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items", rowActions, runAction }: CardListProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const items = Array.isArray(rawItems) ? rawItems : [];
   if (items.length === 0) {
@@ -94,6 +99,11 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
                 </div>
               );
             })}
+            {rowActions && rowActions.length > 0 && runAction !== undefined ? (
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <RowActions row={item} actions={rowActions} runAction={runAction} />
+              </div>
+            ) : null}
           </article>
         );
       })}
