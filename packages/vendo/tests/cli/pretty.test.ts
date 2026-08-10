@@ -238,6 +238,46 @@ describe("createPrettyOutput (visual system)", () => {
     expect(plain.indexOf("◆  Judgment")).toBeLessThan(plain.indexOf("◆  Your brand"));
   });
 
+  it("keeps the model's prose out of the judgment summary, blanks and all", () => {
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false, command: "vendo sync" });
+    // A real run: four tools, tallies counted per FIELD, and the model's
+    // multi-sentence narrative emitted at the same indent as the tallies —
+    // blank separator lines and internal `: ` included.
+    pretty.log("judgment (claude-code): 4 tools judged");
+    pretty.log("  hardened (18): createInvoice.risk, createInvoice.description, listInvoices.title");
+    pretty.log("  schemas inferred (6): createInvoice.inputSchema, listInvoices.outputSchema");
+    pretty.log("  loosenings approved (1)");
+    pretty.log("  rejected by the skeptic (1): deleteInvoice");
+    pretty.log("  Two handler files back all four tools");
+    pretty.log("  ");
+    pretty.log("  The store is a module-level literal, const invoices = [...]. POST is the only handler that touches it — invoices.push(created) — so it is the only genuine write in the product. It is a write, not destructive");
+    pretty.log("  ");
+    pretty.log("  DELETE and PATCH are stubs. DELETE's entire body is `const { id } = await params; return NextResponse.json({ deleted: true })`");
+    pretty.log("  On semantics: the response fields are named, not described");
+    pretty.done(4200, true);
+    const body = out.plain().split("\n").filter((entry) => entry.startsWith("│  "));
+    const summary = body.find((entry) => entry.includes("4 tools judged"))!;
+
+    // Counts only — every segment is a tally, and the prose is nowhere in it.
+    expect(summary).toBe("│  4 tools judged · hardened (18) · schemas inferred (6) · loosenings approved (1) · rejected by the skeptic (1)");
+    expect(summary).not.toContain("·  ·");
+    expect(summary).not.toContain("handler files");
+    expect(summary).not.toContain("On semantics");
+    // The mid-token cut the ": " split used to make.
+    expect(summary).not.toContain("NextResponse.json({ deleted");
+    for (const segment of summary.slice("│  ".length).split(" · ")) {
+      expect(segment.trim()).not.toBe("");
+    }
+
+    // The prose is still shown — whole, below the summary, one line each.
+    expect(body).toContain("│  Two handler files back all four tools");
+    expect(body).toContain("│  On semantics: the response fields are named, not described");
+    expect(out.plain()).toContain("return NextResponse.json({ deleted: true })");
+    // The blank separator lines never became empty body rows either.
+    expect(body.some((entry) => entry.trim() === "│")).toBe(false);
+  });
+
   it("gives sync's impact lines their own ◇ Impact block", () => {
     const out = sink();
     const pretty = createPrettyOutput({ write: out.write, banner: false, command: "vendo sync" });

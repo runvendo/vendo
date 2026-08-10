@@ -109,6 +109,11 @@ const CATALOG_PREFIXES = ["tools: ", "tool schemas: ", "pins: ", "catalog.json: 
 const CATALOG_COMPONENTS = "components: ";
 const JUDGMENT_HEAD = /^judgment \(.+\): (.+)$/;
 const JUDGMENT_QUEUED = "loosenings queued";
+/** A judgment detail that is a TALLY — `hardened (18): …`, `loosenings
+    approved (1)`. The pass emits the model's free-text prose at the same
+    indent as its tallies, so "indented" cannot decide what belongs in the
+    counts summary; this shape can. */
+const JUDGMENT_COUNT = /^([^:]+ \(\d+\))(?::|$)/;
 /** The paste block's ASCII frame — dropped; the block rides the rail instead. */
 const PASTE_RULE = "─".repeat(64);
 const PASTE_HEAD = /^(ONE|\d+) STEPS? LEFT — paste th(?:is|ese) yourself \((.+)\)$/;
@@ -275,14 +280,26 @@ function flushJudgment(state: RenderState, rail: Rail): void {
   const { summary, details } = state.judgment;
   state.judgment = null;
   rail.section(lilac("◆"), bold("Judgment"));
-  const queued = details.filter((detail) => detail.includes(JUDGMENT_QUEUED));
-  // Every detail line keeps its own count clause; the long name lists behind
-  // the colon are what --json and `vendo sync` are for.
-  const counted = details
-    .filter((detail) => !detail.includes(JUDGMENT_QUEUED))
-    .map((detail) => detail.trim().split(": ")[0]!);
+  // Three populations at one indent: the tallies, the one line that needs the
+  // user, and the model's prose. Only tallies join the summary — splitting a
+  // sentence on ": " both put free-text in a counts line and cut it mid-token.
+  // A blank line is dropped rather than joined, so no `·  ·` can appear.
+  const queued: string[] = [];
+  const counted: string[] = [];
+  const narrative: string[] = [];
+  for (const detail of details) {
+    const text = detail.trim();
+    if (text === "") continue;
+    const count = JUDGMENT_COUNT.exec(text);
+    if (text.includes(JUDGMENT_QUEUED)) queued.push(text);
+    // The long name lists behind the colon are what --json and `vendo sync`
+    // are for; the count clause in front of it is the summary's share.
+    else if (count !== null) counted.push(count[1]!);
+    else narrative.push(text);
+  }
   rail.body([summary, ...counted].join(" · "));
-  for (const entry of queued) rail.body(entry.trim());
+  for (const entry of queued) rail.body(entry);
+  for (const entry of narrative) rail.body(dim(entry));
 }
 
 /** A block of the extracted colour. The truecolor escape lives HERE, never in
