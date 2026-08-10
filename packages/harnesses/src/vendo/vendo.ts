@@ -40,6 +40,7 @@ import {
   type LanguageModel,
   type LanguageModelUsage,
   type ModelMessage,
+  type StopCondition,
   type ToolSet,
 } from "ai";
 import { defineHarness } from "../define.js";
@@ -172,6 +173,14 @@ export interface VendoHarnessDeps {
    * and the system precedence are the ones above, not a fork of them.
    */
   tools?: readonly (string | HarnessHand)[];
+  /**
+   * Extra stop conditions, COMPOSED with the shipped loop's own three rather than
+   * replacing them (`startTurn`'s `stopWhen`). The step cap is a number and knows
+   * nothing about what the turn achieved; a specialist that ends on PROGRESS —
+   * the screen agent's idle budget — declares that here rather than forking the
+   * loop to hold it.
+   */
+  stopWhen?: readonly StopCondition<ToolSet>[];
 }
 
 /**
@@ -593,6 +602,8 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           // passing it is simply true.
           turnId: turn.turnId,
           workbenchAgent,
+          // Composed with the loop's own conditions, never replacing them.
+          ...(deps.stopWhen === undefined ? {} : { stopWhen: deps.stopWhen }),
           // The loadout, in the loop's own vocabulary: `prepareStep` re-reads
           // this each step and restricts what the model may PICK, so a tool
           // searched in through `find_tools` is choosable on the next step and

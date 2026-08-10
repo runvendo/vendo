@@ -66,7 +66,7 @@ import {
   wrapWorkspaceForRender,
   type RenderSeamOptions,
 } from "@vendoai/apps";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, StopCondition, ToolSet } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
 
 /**
@@ -81,6 +81,35 @@ import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harn
  * for a BUILD, and `escalate` is the honest exit rather than a bigger number.
  */
 export const SCREEN_STEPS = 10;
+
+/**
+ * How many steps in a row may change NOTHING on the person's screen, once there
+ * is a screen.
+ *
+ * The cap above is a number, and a number knows nothing about what a step
+ * achieved — so for as long as it was the only thing that ever ended a screen,
+ * the loop spent whatever it had left. Measured over 34 instrumented assembly
+ * runs: a correct screen was up after a median 28s and the run settled at a
+ * median 136s, and the steps in between neither saved nor changed the document —
+ * a `validate` that already came back clean, then the component catalog searched
+ * again, then one 70-120s step that re-derived what was already on screen. Twice
+ * before, deleting one of those wastes freed budget the loop simply spent
+ * elsewhere, which is the tell that the BUDGET binds rather than any one tool.
+ *
+ * So the budget answers to progress: a save that reaches the screen buys the next
+ * two steps, and a third step that changes nothing ends the drive. Two, not one,
+ * because the shipped cycle is `validate` → fix what it named → save again, and
+ * the fix must not be cut off; the `validate` is idle and the save that follows
+ * it is not.
+ *
+ * This LOWERS no cap. Before the first paint the budget is flat {@link
+ * SCREEN_STEPS}, so a screen that is still being figured out is never truncated —
+ * the only thing this ends is a run that already has its answer on the wall. What
+ * it cannot end is the floor: the mandatory reviewer pass and its one repair round
+ * run after the drive, whatever ended it, so a screen stopped early is judged by
+ * exactly the same gate as one that ran to the cap.
+ */
+export const SCREEN_IDLE_STEPS = 2;
 
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
@@ -238,7 +267,10 @@ through two tools.
   \`<Server kind="steps"|"agentic"|"box" [served] why="…"/>\` line the skill above
   teaches. Leave it out and the builder reads the escalation itself as the answer:
   \`kind="box"\`, a machine and real code.
-- \`${SCREEN_STEPS}\` steps is the whole budget. Escalate rather than run out of it.
+- \`${SCREEN_STEPS}\` steps is the whole budget, and once a save has reached the
+  screen your turn ends after ${SCREEN_IDLE_STEPS} steps that put nothing new on it.
+  Validate, fix what it names, save — then stop. Polishing a screen that is already
+  right is what the budget is spent on; escalate rather than run out of it.
 
 Never look for a tool that builds the app for you. There isn't one, and that is
 deliberate.
@@ -280,6 +312,35 @@ interface RunRecord {
   /** The last non-empty `decisions` a save carried — this run's whole memory
    *  contribution, and what replaces the app's stored block. */
   decisions?: string;
+}
+
+/**
+ * The progress budget, as one more stop condition on the shipped loop
+ * ({@link SCREEN_IDLE_STEPS}).
+ *
+ * Stateless on purpose: `steps` is THIS drive's steps, so the count restarts for
+ * the repair round and for the loop's own overflow retry without anything having
+ * to remember to reset it. `record.painted` is the arming switch — it is the one
+ * fact that says the person is looking at something — and a `save_app` the hand
+ * reported as landed is the one thing that counts as progress. A step that only
+ * read, searched, validated or talked is idle, however long it took.
+ */
+export function idleScreenStop(record: { readonly painted: boolean }): StopCondition<ToolSet> {
+  return ({ steps }): boolean => {
+    if (!record.painted) return false;
+    let idle = 0;
+    for (const step of [...steps].reverse()) {
+      const saved = step.toolResults.some((result) => {
+        if (result.toolName !== SAVE_APP_TOOL) return false;
+        const output = result.output as { saved?: unknown } | null;
+        return typeof output === "object" && output !== null && output.saved === true;
+      });
+      if (saved) return false;
+      idle += 1;
+      if (idle >= SCREEN_IDLE_STEPS) return true;
+    }
+    return false;
+  };
 }
 
 /** Nothing to hire and nothing to load: the job description is already the whole
@@ -482,6 +543,10 @@ export async function assembleScreen(
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
+    // The budget's other half: the cap bounds a run that is still building, and
+    // this ends one that is not (see SCREEN_IDLE_STEPS). One condition for both
+    // drives — it reads the run's own record, and counts per drive.
+    stopWhen: [idleScreenStop(record)],
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
     // in as its first section, so letting the turn's copy through would say it
     // twice.
