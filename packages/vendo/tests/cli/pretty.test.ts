@@ -238,6 +238,36 @@ describe("createPrettyOutput (visual system)", () => {
     expect(plain.indexOf("◆  Judgment")).toBeLessThan(plain.indexOf("◆  Your brand"));
   });
 
+  it("gives sync's impact lines their own ◇ Impact block", () => {
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false, command: "vendo sync" });
+    pretty.log("impact: sendEmail breaks 2 automations, 1 app, 3 grants");
+    pretty.log("impact: createInvoice no saved references");
+    pretty.done(4200, true);
+    const block = out.plain().split("\n").filter((entry) => entry.includes("Impact")
+      || entry.includes("sendEmail") || entry.includes("createInvoice"));
+    expect(block[0]).toContain("◇  Impact");
+    expect(block[1]).toBe("│  sendEmail breaks 2 automations, 1 app, 3 grants");
+    expect(block[2]).toBe("│  createInvoice no saved references");
+    expect(block).toHaveLength(3);
+    // The title replaces the prefix; every fact is still the caller's.
+    expect(out.plain()).not.toContain("impact: ");
+    expect(out.raw()).toContain(`${ESC}[1m2 automations, 1 app, 3 grants${ESC}[22m`);
+  });
+
+  it.each([
+    ["NO_COLOR on a TTY", { isTTY: true }, { NO_COLOR: "1" }],
+    ["CI on a TTY", { isTTY: true }, { CI: "true" }],
+    ["TERM=dumb on a TTY", { isTTY: true }, { TERM: "dumb" }],
+    ["piped stdout", { isTTY: false }, {}],
+  ] as const)("leaves the impact line exactly as sync emits it under %s", (_name, stream, env) => {
+    const out = sink();
+    const message = "impact: sendEmail breaks 2 automations, 1 app, 3 grants";
+    if (usePrettyOutput(stream, env)) createPrettyOutput({ write: out.write, banner: false }).log(message);
+    else out.write(`${message}\n`);
+    expect(out.raw()).toBe(`${message}\n`);
+  });
+
   it("turns the 64-dash paste frame into a ◇ section with an indented code block", () => {
     const out = sink();
     const rule = "─".repeat(64);

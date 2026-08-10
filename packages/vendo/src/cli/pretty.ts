@@ -132,6 +132,10 @@ const PALETTE_ENTRY = /(\w+) (#[0-9a-fA-F]{6})$/;
 /** Any SGR the caller already wrote — stripped before the hexes are parsed. */
 const SGR = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
 const SYNC_THEME = /^theme: (.+)$/;
+/** One `impact:` line per changed tool at the end of a sync — one block. */
+const IMPACT_LINE = "impact: ";
+/** Weight on the references, because that count is what the answer turns on. */
+const IMPACT_BREAKS = /^(.+ breaks )(.+)$/;
 const CLOUD_ABSENT = /^Vendo Cloud \(optional\): not configured\. A key unlocks (.+)\.$/;
 const CLOUD_PRESENT = /^Vendo Cloud: (.+)$/;
 const CTA = /`?vendo (cloud )?login`?/;
@@ -240,6 +244,7 @@ interface RenderState {
       hierarchy, not the rail's). */
   absorb: number;
   catalog: string[];
+  impact: string[];
   judgment: { summary: string; details: string[] } | null;
   paste: { count: number; why: string; titled: boolean } | null;
 }
@@ -252,6 +257,17 @@ function flushCatalog(state: RenderState, rail: Rail): void {
   const counts = lines.filter((entry) => !entry.startsWith(CATALOG_COMPONENTS));
   if (counts.length > 0) rail.body(counts.join(" · "));
   for (const entry of lines.filter((line) => line.startsWith(CATALOG_COMPONENTS))) rail.body(entry);
+}
+
+function flushImpact(state: RenderState, rail: Rail): void {
+  if (state.impact.length === 0) return;
+  const lines = state.impact;
+  state.impact = [];
+  rail.section(lilac("◇"), bold("Impact"));
+  for (const entry of lines) {
+    const breaks = IMPACT_BREAKS.exec(entry);
+    rail.body(breaks === null ? entry : `${breaks[1]!}${bold(breaks[2]!)}`);
+  }
 }
 
 function flushJudgment(state: RenderState, rail: Rail): void {
@@ -402,6 +418,7 @@ function renderRaw(raw: string, state: RenderState, rail: Rail): void {
   if (raw === "") {
     flushCatalog(state, rail);
     flushJudgment(state, rail);
+    flushImpact(state, rail);
     rail.bar();
     return;
   }
@@ -409,6 +426,13 @@ function renderRaw(raw: string, state: RenderState, rail: Rail): void {
     renderPaste(raw, state, rail);
     return;
   }
+  if (raw.startsWith(IMPACT_LINE)) {
+    flushCatalog(state, rail);
+    flushJudgment(state, rail);
+    state.impact.push(raw.slice(IMPACT_LINE.length));
+    return;
+  }
+  flushImpact(state, rail);
   if (CATALOG_PREFIXES.some((prefix) => raw.startsWith(prefix))) {
     flushJudgment(state, rail);
     state.catalog.push(raw);
@@ -455,7 +479,7 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
   let lastWasBar = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   let frame = 0;
-  const state: RenderState = { absorb: 0, catalog: [], judgment: null, paste: null };
+  const state: RenderState = { absorb: 0, catalog: [], impact: [], judgment: null, paste: null };
 
   const line = (text: string): void => {
     write(`${text}\n`);
@@ -485,6 +509,7 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
   const flush = (): void => {
     flushCatalog(state, rail);
     flushJudgment(state, rail);
+    flushImpact(state, rail);
   };
 
   const clearFrame = (): void => {
