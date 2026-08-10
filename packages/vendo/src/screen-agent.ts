@@ -36,8 +36,10 @@ import {
   mintTurnId,
   type AppId,
   type CommitResult,
+  type Json,
   type SeatModels,
   type RunContext,
+  type ToolResult,
   type ToolListing,
   type ToolRegistry,
   type TurnId,
@@ -62,6 +64,7 @@ import {
   buildingAppsSkill,
   paintedIn,
   repairInstruction,
+  VALIDATE_TOOL,
   validateWrittenApps,
   wrapWorkspaceForRender,
   type RenderSeamOptions,
@@ -228,7 +231,10 @@ through two tools.
   ruled out. Never record what you did or in what order; that is narration, and
   it crowds out the one line that mattered.
 - **\`validate\`** is the floor. Call it on what you saved, fix what it names, save
-  again. You are not done until it comes back clean.
+  again. You are not done until it comes back clean — and once it comes back clean
+  on what you saved, you ARE done: that screen is what the person keeps and your
+  turn ends there. So save the whole screen before you validate it, not a piece of
+  one.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Assembling a document out of this
   product's components is all you can do; anything that needs real code, its own
   server, a file the person uploads, or a surface these components cannot express
@@ -332,6 +338,46 @@ export async function assembleScreen(
   const record: RunRecord = { assembled: false, painted: false };
 
   /**
+   * THE SETTLE — the last paint after which nothing changed, and the only thing
+   * besides the step cap that can end a screen.
+   *
+   * Both halves are the PRODUCT's own facts, never a claim the model makes about
+   * itself (a `done` flag is claimed thin — a stub declared finished reads exactly
+   * like a finished screen):
+   *
+   *  - the render seam painted the last save (`record.painted`), which already
+   *    means it compiled, it renders and the checks floor found nothing blocking
+   *    (`render-seam.ts:271-303`);
+   *  - `validate` then answered clean on those same bytes — the verb this loop's
+   *    own brief sends it to, and on `{ appId }` that is the floor AND the AI
+   *    reviewer over the app's real query results (`build-surface.ts:390-428`).
+   *
+   * `saves` is what makes "nothing changed" true rather than hoped: a verdict is
+   * only the settle if no save landed while it was being reached.
+   */
+  let saves = 0;
+  let paintedContent: string | undefined;
+  let settled: "reviewed" | "mechanical" | undefined;
+  /**
+   * The verdict `validate` just gave, iff it is about the screen on the person's
+   * display right now.
+   *
+   * `{ appId }` reads the row the seam upserted when it painted, so an
+   * appId-scoped pass is a pass on exactly those bytes — and it is the same call
+   * the mandatory reviewer below would make. `{ document }` is checked against the
+   * painted bytes because the skill teaches validating text BEFORE saving it: a
+   * pass on a draft says nothing about the screen.
+   */
+  const noteVerdict = (args: Json, result: ToolResult, savesBefore: number): void => {
+    if (result.status !== "ok" || saves !== savesBefore || paintedContent === undefined) return;
+    const output = result.output as { ok?: unknown } | null;
+    if (typeof output !== "object" || output === null || output.ok !== true) return;
+    const scope = (args ?? {}) as { appId?: unknown; document?: unknown };
+    if (typeof scope.appId === "string") settled = "reviewed";
+    else if (scope.document === paintedContent) settled = "mechanical";
+  };
+
+  /**
    * Write one hot-path file and land it.
    *
    * The commit IS the store write and the paint (§1.6), and the seam answers BOTH
@@ -367,6 +413,11 @@ export async function assembleScreen(
     },
     execute: async (args, turn) => {
       const { content, decisions } = args as { content: string; decisions?: string };
+      // Something is changing, so whatever was settled no longer is — recorded
+      // BEFORE the write, because a verdict reached while this save was in flight
+      // is a verdict about the screen it replaced.
+      saves += 1;
+      settled = undefined;
       const committed = await save(turn, APP_FILE, content);
       if (committed.status !== "ok") {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
@@ -397,6 +448,11 @@ export async function assembleScreen(
        */
       const painted = paintedIn(committed);
       record.painted = painted?.includes(input.appId) ?? false;
+      // The bytes on the person's display, for the settle above. A save the seam
+      // declined left the OLDER screen up, and this loop is not able to say which
+      // document that was — so it claims nothing rather than mistaking the last
+      // save for the last paint.
+      paintedContent = record.painted ? content : undefined;
       if (painted !== undefined && !record.painted) {
         const instruction = repairInstruction(await validateWrittenApps({
           tools: turn.tools,
@@ -462,7 +518,18 @@ export async function assembleScreen(
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: {
+      // Every verb the model calls passes here, which is the only place this loop
+      // can hear `validate`'s verdict — the hands are its own, but a verb's answer
+      // goes straight to the model otherwise.
+      call: async (name, args) => {
+        const savesBefore = saves;
+        const result = await surface.tools.call(name, args);
+        if (name === VALIDATE_TOOL) noteVerdict(args, result, savesBefore);
+        return result;
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
@@ -486,6 +553,22 @@ export async function assembleScreen(
     // in as its first section, so letting the turn's copy through would say it
     // twice.
     system: () => screenBrief(input, listings),
+    /**
+     * A SETTLED SCREEN IS A FINISHED TURN — the second reason a screen can end,
+     * beside the step cap.
+     *
+     * Measured (29 bench runs, 2026-08-10): the screen painted at ~30s and
+     * `validate` cleared it seconds later, and the loop then spent 170–215s more
+     * searching the catalog and rewriting a document that was already on screen
+     * and already clean. Nothing but `SCREEN_STEPS` ended it, so "first paint 36s,
+     * settled 137s" was almost entirely work after the answer.
+     *
+     * The brief already draws the line — "you are not done until it comes back
+     * clean" — and this is that sentence made true in both directions: clean IS
+     * done. The mandatory reviewer below still runs, so ending here is a stop, not
+     * a shortcut past the gate.
+     */
+    stopWhen: [() => settled !== undefined],
   });
   /**
    * One drive of the loop. The events MUST be drained or nothing runs. Nothing is
@@ -498,6 +581,9 @@ export async function assembleScreen(
    * reason).
    */
   const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
+    // A repair drive is asked to CHANGE the screen, so the settle that ended the
+    // last drive cannot be allowed to end this one before it starts.
+    settled = undefined;
     for await (const event of harness.run({ ...turn, messages })) {
       if (event.type === "error") failure ??= event.message;
     }
@@ -536,7 +622,15 @@ export async function assembleScreen(
      * time repeating it.
      */
     const appPath = `${directory}/${APP_FILE}`;
-    const instruction = record.painted
+    /**
+     * …unless the loop already faced it on these exact bytes. `settled ===
+     * "reviewed"` means the model's own `validate({ appId })` came back clean and
+     * nothing has changed since — the SAME door, on the same row, with the same
+     * reviewer and the same query evidence behind it (`build-surface.ts:390-428`),
+     * which is the second call this pass would make. Asking again is the person
+     * waiting through a full review to be told what they were told a step ago.
+     */
+    const instruction = record.painted && settled !== "reviewed"
       ? repairInstruction(await validateWrittenApps({
         tools: turn.tools,
         workspace: turn.workspace,

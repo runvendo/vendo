@@ -40,6 +40,7 @@ import {
   type LanguageModel,
   type LanguageModelUsage,
   type ModelMessage,
+  type StopCondition,
   type ToolSet,
 } from "ai";
 import { defineHarness } from "../define.js";
@@ -150,6 +151,17 @@ export interface VendoHarnessDeps {
    *  table is wrong about it. Q1a: this lives on the harness and nowhere else —
    *  it is a fact about a model, not a product decision a host composes. */
   contextWindowTokens?: number;
+  /**
+   * Extra reasons this caller's turn is over, COMPOSED with the loop's own three
+   * (`stepCountIs`, `buildFailedStop`, `askedUserStop`) rather than replacing
+   * them.
+   *
+   * Code, not configuration — which is why it is a dep and not a per-turn option:
+   * the condition closes over what the caller can see about its own run. The
+   * screen agent's is "the screen settled", and without this door its only way
+   * to end a finished screen was to run the step cap out.
+   */
+  stopWhen?: readonly StopCondition<ToolSet>[];
   /**
    * vendo()'s tool-search strategy: the loadout cap and the `find_tools` hand
    * ({@link VendoToolSearchConfig}). Composition passes it when it constructs
@@ -603,6 +615,7 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           // filling it. Always passed: a deployment that never set a knob is
           // exactly the deployment that has never had a context rail at all.
           compaction: attemptCompaction,
+          ...(deps.stopWhen === undefined ? {} : { stopWhen: deps.stopWhen }),
           ...(resume === undefined ? {} : { resume }),
           // The WHOLE context, not just `maxSteps`. Passing one knob is what made
           // every other knob unreachable from `vendo()` — the loop declared them,
