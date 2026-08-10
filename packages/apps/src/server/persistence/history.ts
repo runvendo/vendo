@@ -28,49 +28,6 @@ interface HistorySnapshot {
   seq: number;
 }
 
-/**
- * What a pin-intent row IS, which is what decides whether `pins.rebase` may use it:
- *
- * - `"fork"` — the write that created the pin. The only kind that can vouch for the
- *   pinned component having started as the captured baseline, which is what the
- *   mechanical re-fork reproduces.
- * - `"edit"` — a later modification in the user's own words, so the recorded intent
- *   IS a replayable instruction for the brain.
- * - `"touch"` — a write that changed the pinned component while recording only that
- *   it did ("Saved app.vendo" from a files-first save). Nothing can replay it and
- *   the change lives only in the document it wrote, so a rebase that skipped past
- *   it would silently reset that work to the pristine host component.
- */
-export type PinIntentKind = "fork" | "edit" | "touch";
-
-/** Internal replay fuel for 06-apps §8 drift rebases; not a VersionEntry field. */
-export interface PinIntentEntry {
-  slot: string;
-  at: IsoDateTime;
-  intent: string;
-  /** Absent on rows written before the discriminator existed; `pins.rebase`
-   *  treats a row that does not say what it is as unable to vouch for a fork
-   *  and as unreplayable. */
-  kind?: PinIntentKind;
-}
-
-const pinIntentEntrySchema = z.object({
-  slot: z.string().min(1),
-  at: isoDateTimeSchema,
-  intent: z.string(),
-  kind: z.union([z.literal("fork"), z.literal("edit"), z.literal("touch")]).optional(),
-}).passthrough() satisfies z.ZodType<PinIntentEntry>;
-
-interface StoredPinIntent extends PinIntentEntry {
-  versionId: string;
-  seq: number;
-}
-
-const storedPinIntentSchema = pinIntentEntrySchema.extend({
-  versionId: z.string(),
-  seq: z.number().int().nonnegative(),
-}) satisfies z.ZodType<StoredPinIntent>;
-
 const allRecords = (records: RecordStore): Promise<VendoRecord[]> => listAllRecords(records);
 
 const snapshotFromRecord = (record: VendoRecord, appId: AppId): HistorySnapshot => {
@@ -95,11 +52,6 @@ const snapshotFromRecord = (record: VendoRecord, appId: AppId): HistorySnapshot 
   return { doc: validateDocument(data.doc, appId), entry: parsedEntry.data, seq };
 };
 
-const storedPinIntentFromRecord = (record: VendoRecord): StoredPinIntent | null => {
-  const parsed = storedPinIntentSchema.safeParse(record.data);
-  return parsed.success ? parsed.data : null;
-};
-
 const sequenceFromRecord = (record: VendoRecord): number => {
   if (typeof record.data !== "object" || record.data === null || Array.isArray(record.data)) return 0;
   const seq = (record.data as Record<string, unknown>).seq;
@@ -110,16 +62,8 @@ export interface AppHistoryAccess {
   /** Returns the appended version's id, so a caller whose write then fails can
    *  `discard` it — a version recording a state that never became the past is a
    *  lie in the trail. */
-  append(
-    appId: AppId,
-    doc: AppDocument,
-    entry: VersionEntry,
-    pinSlots?: readonly string[],
-    pinKind?: PinIntentKind,
-  ): Promise<string>;
+  append(appId: AppId, doc: AppDocument, entry: VersionEntry): Promise<string>;
   documents(appId: AppId): Promise<AppDocument[]>;
-  pinIntents(appId: AppId, slot: string): Promise<PinIntentEntry[]>;
-  /** Deletes one version and the pin intents it recorded. */
   discard(appId: AppId, versionId: string): Promise<void>;
   /**
    * Trims the version log to the cap. Called by a caller whose write has
@@ -128,7 +72,6 @@ export interface AppHistoryAccess {
    * have deleted the oldest REAL version to make room for it. Fifty refused
    * saves would have erased the whole recorded history of an app that never
    * changed once.
-   * The pin-intent trail is not capped (06-apps §8 replays the full trail).
    */
   prune(appId: AppId): Promise<void>;
   clear(appId: AppId): Promise<void>;
@@ -140,21 +83,16 @@ export interface AppHistoryAccess {
 /** 06-apps §1 — persisted capped history, kept outside the app artifact. */
 export const createAppHistory = (store: StoreAdapter): AppHistoryAccess => {
   const collection = (appId: AppId): RecordStore => store.records(`vendo:app-history:${appId}`);
-  const intentCollection = (appId: AppId): RecordStore => store.records(`vendo:app-pin-intents:${appId}`);
   const ordered = async (appId: AppId): Promise<VendoRecord[]> => (await allRecords(collection(appId)))
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt)
       || sequenceFromRecord(left) - sequenceFromRecord(right)
       || left.id.localeCompare(right.id));
   const deleteVersion = async (appId: AppId, versionId: string): Promise<void> => {
     await collection(appId).delete(versionId);
-    const intents = intentCollection(appId);
-    for (const record of await allRecords(intents)) {
-      if (storedPinIntentFromRecord(record)?.versionId === versionId) await intents.delete(record.id);
-    }
   };
 
   return {
-    async append(appId, doc, entry, pinSlots = [], pinKind = "edit") {
+    async append(appId, doc, entry) {
       const validated = validateDocument(doc, appId);
       const parsedEntry = versionEntrySchema.parse(entry);
       const records = collection(appId);
@@ -168,14 +106,6 @@ export const createAppHistory = (store: StoreAdapter): AppHistoryAccess => {
         id: versionId,
         data: { doc: validated, entry: parsedEntry, seq },
       });
-      const intents = intentCollection(appId);
-      for (const slot of new Set(pinSlots)) {
-        await intents.put({
-          id: `pinint_${crypto.randomUUID()}`,
-          data: { slot, at: parsedEntry.at, intent: parsedEntry.intent, kind: pinKind, versionId, seq },
-          refs: { slot },
-        });
-      }
       return versionId;
     },
     async documents(appId) {
@@ -189,15 +119,6 @@ export const createAppHistory = (store: StoreAdapter): AppHistoryAccess => {
       }
       return documents;
     },
-    async pinIntents(appId, slot) {
-      return (await allRecords(intentCollection(appId)))
-        .flatMap((record) => {
-          const intent = storedPinIntentFromRecord(record);
-          return intent?.slot === slot ? [intent] : [];
-        })
-        .sort((left, right) => left.seq - right.seq || left.at.localeCompare(right.at))
-        .map(({ slot: intentSlot, at, intent, kind }) => ({ slot: intentSlot, at, intent, ...(kind === undefined ? {} : { kind }) }));
-    },
     discard: deleteVersion,
     async prune(appId) {
       const records = collection(appId);
@@ -209,8 +130,6 @@ export const createAppHistory = (store: StoreAdapter): AppHistoryAccess => {
     async clear(appId) {
       const records = collection(appId);
       for (const record of await allRecords(records)) await records.delete(record.id);
-      const intents = intentCollection(appId);
-      for (const record of await allRecords(intents)) await intents.delete(record.id);
     },
     surface(appId) {
       return {

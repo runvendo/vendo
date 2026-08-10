@@ -6,7 +6,8 @@ import {
   type AppDocument,
 } from "../../contract/index.js";
 import { appVersionHash } from "./version-hash.js";
-import { pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
+import { seedComponentName } from "@vendoai/core";
+import { seedForkSource, type SeedBaseline } from "../../contract/index.js";
 import { unifiedDiff } from "../persistence/unified-diff.js";
 
 /**
@@ -29,7 +30,7 @@ export interface ShipDiff {
 
 export interface ShipDiffPin {
   slot: string;
-  /** The generated-component name the fork ships under (`pinComponentName`). */
+  /** The generated-component name the fork ships under (`seedComponentName`). */
   component: string;
   /** The baseline hash the pin was forked from (`Pin.base`). */
   baseHash: string;
@@ -57,24 +58,25 @@ export interface ShipDiffGenerated {
  */
 export const computeShipDiff = (
   doc: AppDocument,
-  baselines: readonly PinBaseline[],
+  baselines: readonly SeedBaseline[],
 ): ShipDiff => {
-  const pins = (doc.pins ?? []).map((pin): ShipDiffPin => {
-    const component = pinComponentName(pin.slot);
-    const baseline = baselines.find((candidate) => candidate.slot === pin.slot);
+  const seed = doc.seed;
+  const pins: ShipDiffPin[] = seed === undefined ? [] : [(() => {
+    const component = seedComponentName(seed.component);
+    const baseline = baselines.find((candidate) => candidate.slot === seed.component);
     const shipped = bundleOf(doc.components?.[component] ?? "").source;
     return {
-      slot: pin.slot,
+      slot: seed.component,
       component,
-      baseHash: pin.base,
+      baseHash: seed.baseline,
       ...(baseline === undefined ? {} : { baselineHash: baseline.hash }),
-      drifted: baseline?.hash !== pin.base,
-      // Diff from the source the fork actually started as (`pinForkSource`):
-      // the synthesized default-export alias on a named-export capture is fork
-      // plumbing, not a host edit, so an unedited fork reads as an empty diff.
-      diff: unifiedDiff(`${pin.slot}/${component}.tsx`, baseline === undefined ? "" : pinForkSource(baseline.source), shipped),
+      drifted: baseline?.hash !== seed.baseline,
+      // Diff from the source the seat actually started as (`seedForkSource`):
+      // the synthesized default-export alias on a named-export capture is seed
+      // plumbing, not a host edit, so an unedited seat reads as an empty diff.
+      diff: unifiedDiff(`${seed.component}/${component}.tsx`, baseline === undefined ? "" : seedForkSource(baseline.source), shipped),
     };
-  });
+  })()];
   const pinnedComponents = new Set(pins.map((pin) => pin.component));
   const generated = Object.entries(doc.components ?? {})
     .filter(([name]) => !pinnedComponents.has(name))

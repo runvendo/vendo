@@ -24,7 +24,7 @@ import type {
   ServerActionHandler,
 } from "@vendoai/actions";
 import type { AgentComposition } from "@vendoai/agents";
-import type { AppsRuntime, PinBaseline } from "@vendoai/apps";
+import type { AppsRuntime, SeedBaseline } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
 import type {
   ActAs,
@@ -172,7 +172,7 @@ export interface VendoComposition {
   /** THE briefing pack — assembled once (compose-surfaces.ts), read by both
    *  generation rungs. */
   briefing: (ctx: RunContext) => Promise<BriefingPack>;
-  pinBaselines: PinBaseline[];
+  seedBaselines: SeedBaseline[];
   hostSemanticsProvider: () => ReturnType<typeof mergedHostSemantics>;
   capability: MergedCapability;
   catalog: ReturnType<typeof mergeRuntimeCatalog>;

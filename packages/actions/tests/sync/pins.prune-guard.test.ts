@@ -5,7 +5,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { capturePins } from "../../src/sync/pins.js";
+import { capturePins } from "../../src/sync/seeds.js";
 
 vi.mock("../../src/sync/common.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/sync/common.js")>()),

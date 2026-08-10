@@ -13,7 +13,30 @@ import {
 import { unzipSync, zipSync, type Zippable } from "fflate";
 import { appLifecycleEvent } from "./audit.js";
 import { appRecordInput } from "./persistence.js";
-import { assertPinsExportable, type PinBaseline } from "../remix/pins.js";
+import { type SeedBaseline } from "../../contract/index.js";
+
+/**
+ * 06-apps §7–§8 — an artifact export needs explicit host permission for the
+ * component the app was seeded from. Missing or drifted baselines fail closed,
+ * because an export must never quietly strip the seeded component out.
+ */
+const assertSeedExportable = (
+  app: AppDocument,
+  baselines: readonly SeedBaseline[],
+): void => {
+  const seed = app.seed;
+  if (seed === undefined) return;
+  const baseline = baselines.find((candidate) => candidate.slot === seed.component);
+  if (baseline?.hash === seed.baseline && baseline.exportable === true) return;
+  const reason = baseline === undefined
+    ? "missing-baseline"
+    : baseline.hash !== seed.baseline ? "baseline-hash-mismatch" : "baseline-forbids-export";
+  throw new VendoError("blocked", `seed ${seed.component} is not exportable`, {
+    component: seed.component,
+    baseline: seed.baseline,
+    reason,
+  });
+};
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -136,7 +159,7 @@ const parseArchive = (source: Uint8Array): ParsedArchive => {
 export interface AppInterchangeDependencies {
   store: StoreAdapter;
   guard: Guard;
-  pinBaselines?: readonly PinBaseline[];
+  seedBaselines?: readonly SeedBaseline[];
   requireOwned(appId: AppId, ctx: RunContext): Promise<AppDocument>;
 }
 
@@ -164,7 +187,7 @@ export const createAppInterchange = (
   return {
     async exportApp(appId, ctx) {
       const app = await dependencies.requireOwned(appId, ctx);
-      assertPinsExportable(app.pins ?? [], dependencies.pinBaselines ?? []);
+      assertSeedExportable(app, dependencies.seedBaselines ?? []);
       const archive: Zippable = {
         "app.json": encoder.encode(JSON.stringify(withoutExportIdentity(app))),
       };

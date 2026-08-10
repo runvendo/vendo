@@ -183,12 +183,12 @@ const referenceFieldsError = (app: AppDocument): AppDocumentValidation | null =>
   if (app.machine !== undefined && !SERVER_REFERENCE_PATTERN.test(app.machine.snapshotRef)) {
     return fail("validation", `invalid machine snapshot reference "${app.machine.snapshotRef}"`);
   }
-  for (const pin of app.pins ?? []) {
-    if (pin.slot.length === 0) {
-      return fail("validation", "pin slot must be non-empty");
+  if (app.seed !== undefined) {
+    if (app.seed.component.length === 0) {
+      return fail("validation", "seed component must be non-empty");
     }
-    if (!pin.base.startsWith("sha256:")) {
-      return fail("validation", `pin base "${pin.base}" must start with "sha256:"`);
+    if (!app.seed.baseline.startsWith("sha256:")) {
+      return fail("validation", `seed baseline "${app.seed.baseline}" must start with "sha256:"`);
     }
   }
   return null;

@@ -1,15 +1,34 @@
-import type {
-  AppId,
-  RecordStore,
-  ReviewStanding,
-  StoreAdapter,
+import {
+  appIdSchema,
+  isoDateTimeSchema,
+  type AppId,
+  type IsoDateTime,
+  type RecordStore,
+  type ReviewStanding,
+  type StoreAdapter,
 } from "@vendoai/core";
+import { z } from "zod";
 import type {
   AppDocument,
 } from "../../contract/index.js";
 import { listAllRecords } from "../persistence/persistence.js";
-import { inClientApprovalSchema, type InClientApproval } from "./pins.js";
 import { appVersionHash } from "./version-hash.js";
+
+/** 06-apps §9 — approval to mount one exact app version in the host page. */
+export interface InClientApproval {
+  appId: AppId;
+  versionHash: string;
+  approvedBy: string;
+  at: IsoDateTime;
+}
+
+/** 06-apps §9 — validated wire representation of an in-client approval. */
+export const inClientApprovalSchema = z.object({
+  appId: appIdSchema,
+  versionHash: z.string(),
+  approvedBy: z.string(),
+  at: isoDateTimeSchema,
+}).passthrough() satisfies z.ZodType<InClientApproval>;
 
 /**
  * 06-apps §9 — the server-side verdict for the trust axis. UI runs in the

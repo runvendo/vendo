@@ -25,7 +25,7 @@ export const generationDependencies = (
   return {
     model,
     catalog: config.catalog,
-    pinBaselines: config.pinBaselines,
+    seedBaselines: config.seedBaselines,
     ...(semantics === undefined ? {} : { semantics }),
     ...toolContext,
     ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),

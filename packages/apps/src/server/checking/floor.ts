@@ -30,7 +30,6 @@ import {
   type WireCompileResult,
   type AppFloor,
 } from "../../contract/index.js";
-import { isPinComponentName } from "../remix/pins.js";
 import { wireCompileOptionsFor } from "../runtime/wire-options.js";
 import type { FloorDependencies } from "./deps.js";
 import { screenTypesCheck } from "./facts.js";
@@ -58,15 +57,17 @@ const documentOf = (appId: AppId, compiled: WireCompileResult): AppDocument => (
  * (`smokeRenderIslands`) — the same two the create validator runs, ordered the
  * same way, so a cheap failure never pays for a render.
  *
- * PINNED components are skipped: their source is host source captured on the
- * furnishing trust path, so it keeps its imports and was never a model island.
+ * EVERY seat faces it, seeded ones included. Seeded source used to be skipped
+ * here on the grounds that it was host source rather than a model island — but
+ * the floor is what stands between a document and a screen, and a bundle this
+ * runtime is about to render is a bundle whichever side wrote it. A capture
+ * that cannot pass the gate is a capture that cannot render.
  */
 const islandsCheck = (deps: FloorDependencies): Check => ({
   name: "islands-render",
   kind: "fact",
   run: async ({ document, request }) => {
     const components = Object.fromEntries(Object.entries(document.components ?? {})
-      .filter(([name]) => !isPinComponentName(name))
       .map(([name, entry]) => [name, bundleOf(entry).source]));
     if (Object.keys(components).length === 0) return [];
     const prepared = await prepareIslands(
@@ -77,12 +78,18 @@ const islandsCheck = (deps: FloorDependencies): Check => ({
       // verb call or a file save honestly has.
       request === "" ? undefined : request,
     );
-    const issues = prepared.issues.length > 0 ? prepared.issues : await smokeRenderIslands({
-      components: prepared.components,
-      componentTools: prepared.componentTools,
-      tools: deps.tools,
-      toolShapes: deps.toolShapes,
-    });
+    // `pipeline.smokeRender: false` turns the crash gate off, and it has to mean
+    // the same thing here as it does on create. The floor read no pipeline at
+    // all, so a host that had switched the render off still paid for one on
+    // every commit — and got blocked by a gate it had disabled.
+    const issues = prepared.issues.length > 0 || deps.pipeline?.smokeRender === false
+      ? prepared.issues
+      : await smokeRenderIslands({
+        components: prepared.components,
+        componentTools: prepared.componentTools,
+        tools: deps.tools,
+        toolShapes: deps.toolShapes,
+      });
     // An island issue already names its island, so it has no separate locus.
     return issues.map((message) => ({ severity: "block" as const, message }));
   },

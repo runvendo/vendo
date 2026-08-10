@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { capturedPinBaselineSchema } from "@vendoai/actions";
+import { seedBaselineSchema } from "@vendoai/actions";
 import { vendoSync } from "@vendoai/actions/sync";
 import { pinBaselineSchema } from "@vendoai/apps";
 import { VENDO_APP_FORMAT, type AppDocument, type RunContext } from "@vendoai/core";
@@ -83,7 +83,7 @@ describe("pin baseline schema lockstep", () => {
       styles: [{ path: "src/app/globals.css", css: ".card { color: navy; }" }],
     };
 
-    expect(capturedPinBaselineSchema.parse(furnished)).toEqual(pinBaselineSchema.parse(furnished));
+    expect(seedBaselineSchema.parse(furnished)).toEqual(pinBaselineSchema.parse(furnished));
   });
 });
 

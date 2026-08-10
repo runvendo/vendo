@@ -145,7 +145,7 @@ const machineEnvFor = (
 /** Persistence, permission and interchange: the seams the runtime reads and
  *  writes THROUGH. */
 const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partial<AppsConfig> => {
-  const { store, guard, boundTools, inference, catalog, pinBaselines, files } = composition;
+  const { store, guard, boundTools, inference, catalog, seedBaselines, files } = composition;
   const { access } = seams;
   return {
     store,
@@ -153,7 +153,7 @@ const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partia
     tools: boundTools,
     model: inference.agent.model,
     catalog,
-    pinBaselines,
+    seedBaselines,
     // Contract §3.2 — the SAME `FilesAdapter` the workspace rows spill to (one
     // `selectFiles` answer, above), so an app's source past the inline cap uses the
     // spill that already exists instead of inventing a second one.

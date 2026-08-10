@@ -16,7 +16,7 @@ import {
 } from "../../contract/index.js";
 import type { AppCaller } from "./call.js";
 import type { InClientVenueState } from "../remix/inclient.js";
-import { detectPinDrift, pinComponentName, type PinBaseline, type PinDrift } from "../remix/pins.js";
+import { bundleOf, seedDrift, type SeedBaseline, type SeedDrift } from "../../contract/index.js";
 import type { OpenSurface } from "../runtime/runtime.js";
 
 /**
@@ -159,22 +159,28 @@ export const createProgressiveQueryResolver = (
   };
 };
 
-/** 06-apps §8 — jail furnishing for forked pins rides inside the tagged tree
- *  payload (UIPayload is forward-compatible). */
-const attachPinFurnishings = (
-  tree: Tree,
-  app: AppDocument,
-  pinBaselines: readonly PinBaseline[],
-): void => {
-  const furnishings = Object.fromEntries((app.pins ?? []).flatMap((pin) => {
-    const baseline = pinBaselines.find((candidate) => candidate.slot === pin.slot && candidate.hash === pin.base);
-    if (baseline === undefined) return [];
-    return [[pinComponentName(pin.slot), {
-      ...(baseline.sourceImports === undefined ? {} : { sourceImports: structuredClone(baseline.sourceImports) }),
-      ...(baseline.subSources === undefined ? {} : { subSources: structuredClone(baseline.subSources) }),
-      ...(baseline.sampleProps === undefined ? {} : { sampleProps: structuredClone(baseline.sampleProps) }),
-      ...(baseline.styles === undefined ? {} : { styles: structuredClone(baseline.styles) }),
-    }]];
+/**
+ * 06-apps §8 — jail furnishing rides inside the tagged tree payload (UIPayload
+ * is forward-compatible), read STRAIGHT OFF THE STORED BUNDLE.
+ *
+ * There is no baseline lookup and no hash match here any more. There used to
+ * be, and it is the defect this seam is named after: a seeded app whose host
+ * component had moved on matched nothing, so it opened with no imports, no
+ * sub-modules and no styles — rendering broken, silently, with no warning that
+ * anything was missing. The seat holds its own contents; drift is a separate
+ * warning that changes nothing about what opens.
+ */
+const attachSeedFurnishings = (tree: Tree, app: AppDocument): void => {
+  const furnishings = Object.fromEntries(Object.entries(app.components ?? {}).flatMap(([name, entry]) => {
+    const bundle = bundleOf(entry);
+    if (bundle.origin !== "seeded") return [];
+    const furnishing = {
+      ...(bundle.sourceImports === undefined ? {} : { sourceImports: structuredClone(bundle.sourceImports) }),
+      ...(bundle.subSources === undefined ? {} : { subSources: structuredClone(bundle.subSources) }),
+      ...(bundle.sampleProps === undefined ? {} : { sampleProps: structuredClone(bundle.sampleProps) }),
+      ...(bundle.styleSheets === undefined ? {} : { styles: structuredClone(bundle.styleSheets) }),
+    };
+    return Object.keys(furnishing).length === 0 ? [] : [[name, furnishing]];
   }));
   if (Object.keys(furnishings).length > 0) {
     (tree as Tree & { furnishings: typeof furnishings }).furnishings = furnishings;
@@ -213,7 +219,7 @@ const additionalVenueState = async (
 /** 06-apps §§1–2 — construct the open surface. */
 export const createAppOpener = (
   caller: AppCaller,
-  pinBaselines: readonly PinBaseline[] = [],
+  seedBaselines: readonly SeedBaseline[] = [],
   inClientVenue: ((app: AppDocument) => Promise<InClientVenueState | undefined>) | undefined,
   served: ServedSurface,
   /**
@@ -281,12 +287,12 @@ export const createAppOpener = (
     for (const [key, value] of Object.entries(await additionalVenueState(venueState, app, ctx))) {
       // `dataUnavailable` is reserved for the same reason as the other three: it is
       // a claim about queries THIS open ran, which a venue hook has not.
-      if (key === "inClient" || key === "data" || key === "pinDrift" || key === "dataUnavailable") continue;
+      if (key === "inClient" || key === "data" || key === "seedDrift" || key === "dataUnavailable") continue;
       (tree as Tree & Record<string, unknown>)[key] = value;
     }
-    const pinDrift = detectPinDrift(app, pinBaselines);
-    if (pinDrift.length > 0) {
-      (tree as Tree & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
+    const drift = seedDrift(app, seedBaselines);
+    if (drift !== null) {
+      (tree as Tree & { seedDrift: SeedDrift }).seedDrift = drift;
     }
     // Review-kind gate (2026-08-02): an unapproved review-kind version ships
     // NO executable source — no components, no componentTools, no furnishings,
@@ -296,7 +302,7 @@ export const createAppOpener = (
     if (inClient?.granted === false && inClient.reason === "pending-review") {
       return { kind: "tree", payload: tree as unknown as UIPayload };
     }
-    attachPinFurnishings(tree, app, pinBaselines);
+    attachSeedFurnishings(tree, app);
     const queries = createProgressiveQueryResolver(caller, app, ctx);
     queries.update(tree);
     tree.data = await queries.complete();

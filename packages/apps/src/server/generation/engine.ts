@@ -19,7 +19,8 @@ import {
 import type { LanguageModel, ModelMessage } from "ai";
 import type { FloorDependencies } from "../checking/deps.js";
 import { modelCallParams } from "../runtime/model-params.js";
-import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "../remix/pins.js";
+import { seedComponentName } from "@vendoai/core";
+import { hasDefaultExport, seedForkSource, type SeedBaseline } from "../../contract/index.js";
 
 /** The floor owns the tool slice now (`../checking/deps.ts`) so it can outlive
  *  this pipeline; re-exported here because every generation module already
@@ -36,18 +37,10 @@ export interface GenerationDependencies extends FloorDependencies {
   /** Narrowed to REQUIRED: the floor can run its deterministic half without a
    *  model, but a generation cannot happen without one. */
   model: LanguageModel;
-  pinBaselines?: readonly PinBaseline[];
+  seedBaselines?: readonly SeedBaseline[];
   /** Per-tool field semantics from `.vendo/semantics.json`: annotated shape
    *  cards and Kit format defaults. Keyed by tool name. */
   semantics?: Readonly<Record<string, ToolSemantics>>;
-  /**
-   * The island smoke-render gate: every generated island renders once in a
-   * headless DOM before it ships, so a crashing island never reaches a screen.
-   * ON unless explicitly `false` — the seam the island tests run without.
-   */
-  pipeline?: {
-    smokeRender?: boolean;
-  };
 }
 
 export type GeneratedAppDocument = Omit<AppDocument, "id">;
@@ -142,28 +135,29 @@ const insertChild = (parent: TreeNode, nodeId: string, index: unknown): void => 
   parent.children = children;
 };
 
-/** The deterministic fork core (06-apps §8): copies the TRUSTED captured
- *  baseline into the named generated component, mints and attaches the node, and
- *  records the pin — no model involvement, source is never retyped. The
- *  runtime's pins.fork surface (the user's Remix gesture) is the only caller. */
-export const applyPinFork = (
+/** The deterministic seed core (06-apps §8): copies the TRUSTED captured
+ *  baseline into the named generated component AS A BUNDLE — source plus every
+ *  furnishing the jail needs to run it — mints and attaches the node, and
+ *  records the seed. No model involvement, source is never retyped. The
+ *  runtime's `seed.from` surface (the ✦ gesture) is the only caller. */
+export const applySeedFork = (
   app: AppDocument,
   props: Record<string, unknown>,
-  pinBaselines: readonly PinBaseline[] | undefined,
+  seedBaselines: readonly SeedBaseline[] | undefined,
 ): string[] => {
-  const fail = (message: string): string[] => [`pin fork failed: ${message}`];
-  if (app.tree === undefined) return fail("this app has no tree to fork a pin into");
+  const fail = (message: string): string[] => [`seed failed: ${message}`];
+  if (app.tree === undefined) return fail("this app has no tree to seed a component into");
   const slot = props.slot;
   if (typeof slot !== "string" || slot.length === 0) return fail("requires a non-empty slot attribute");
-  const baseline = pinBaselines?.find((candidate) => candidate.slot === slot);
-  if (baseline === undefined) return fail(`pin baseline "${slot}" is unavailable`);
-  if (app.pins?.some((pin) => pin.slot === baseline.slot)) return fail(`pin slot "${baseline.slot}" is already forked`);
+  const baseline = seedBaselines?.find((candidate) => candidate.slot === slot);
+  if (baseline === undefined) return fail(`seed baseline "${slot}" is unavailable`);
+  if (app.seed !== undefined) return fail(`this app is already seeded from "${app.seed.component}"`);
   // A named-export capture forks with a synthesized default export.
-  const forkSource = pinForkSource(baseline.source);
+  const forkSource = seedForkSource(baseline.source);
   if (!hasDefaultExport(forkSource)) {
-    return fail(`pin baseline "${slot}" has no default export and no detectable named component export; export the component from its module and re-run vendo sync`);
+    return fail(`seed baseline "${slot}" has no default export and no detectable named component export; export the component from its module and re-run vendo sync`);
   }
-  const componentName = pinComponentName(baseline.slot);
+  const componentName = seedComponentName(baseline.slot);
   if (app.components?.[componentName] !== undefined) return fail(`generated component "${componentName}" already exists`);
   const tree = asTree(app.tree);
   const parentId = props.into === undefined ? tree.root : props.into;
@@ -188,7 +182,24 @@ export const applyPinFork = (
   };
   tree.nodes.push(node);
   insertChild(parent, node.id, props.at);
-  app.components = { ...(app.components ?? {}), [componentName]: forkSource };
-  app.pins = [...(app.pins ?? []), { slot: baseline.slot, base: baseline.hash }];
+  // The seat holds its own contents: source AND every furnishing the jail needs.
+  // Nothing is looked up at open time, so a baseline that moves under this app
+  // costs it a drift warning and never its furnishings.
+  app.components = {
+    ...(app.components ?? {}),
+    [componentName]: {
+      source: forkSource,
+      origin: "seeded",
+      ...(baseline.sourceImports === undefined ? {} : { sourceImports: structuredClone(baseline.sourceImports) }),
+      ...(baseline.subSources === undefined ? {} : { subSources: structuredClone(baseline.subSources) }),
+      ...(baseline.sampleProps === undefined ? {} : { sampleProps: structuredClone(baseline.sampleProps) }),
+      ...(baseline.styles === undefined ? {} : { styleSheets: structuredClone(baseline.styles) }),
+    },
+  };
+  app.seed = {
+    component: baseline.slot,
+    baseline: baseline.hash,
+    ...(baseline.review === undefined ? {} : { review: baseline.review }),
+  };
   return [];
 };

@@ -503,7 +503,7 @@ describe("a save whose text left a pinned component out", () => {
     // The trail is what `pins.rebase` reads before it touches a drifted pin.
     // Without the slot on this save's version, a rebase would not even know the
     // file had changed the pinned component — the same record `persistEdit`
-    // writes for a model edit (touchedPinSlots).
+    // writes for a model edit.
     //
     // Recorded as a "touch": neither the fork (it cannot vouch for the pinned
     // source having started as the captured baseline) nor an "edit" ("Saved

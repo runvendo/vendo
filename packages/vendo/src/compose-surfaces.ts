@@ -32,7 +32,7 @@ import type { VendoComposition } from "./compose-context.js";
 import { selectConfigSurface } from "./config-surface.js";
 import {
   dotVendoFile,
-  dotVendoPinBaselines,
+  dotVendoSeedBaselines,
   hostToolDefinitions,
   hostToolNames,
   parseVendoTheme,
@@ -42,7 +42,7 @@ import {
 /** cse lane 3 — the config surfaces, resolved to the shapes app generation and
  *  the system prompt read them through. */
 export const composeSurfaces = (composition: VendoComposition): Pick<VendoComposition,
-  "theme" | "themeProvider" | "designRules" | "briefing" | "pinBaselines"
+  "theme" | "themeProvider" | "designRules" | "briefing" | "seedBaselines"
   | "hostSemanticsProvider" | "capability" | "catalog"> => {
   const { config, configCloud, readSurfaceFile, surfaceRoot, memoizeOnce } = composition;
   // Theme surface (cse lane 3, boot-once/next-load STRUCTURAL): explicit config
@@ -106,7 +106,7 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
       hostSemantics: appsRuntime === undefined ? "" : await appsRuntime.toolShapeBrief(ctx),
     };
   };
-  const pinBaselines = dotVendoPinBaselines(config.profileDir);
+  const seedBaselines = dotVendoSeedBaselines(config.profileDir);
   // W3 + cse lane 3 — field semantics from the merged .vendo
   // pair (generated tools.json overlaid by overrides.json). The OVERRIDES
   // surface resolves file → cloud; tools.json stays a
@@ -148,7 +148,7 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
     themeProvider,
     designRules,
     briefing,
-    pinBaselines,
+    seedBaselines,
     hostSemanticsProvider,
     ...capabilityAndCatalog(composition),
   };

@@ -38,7 +38,7 @@ export const createInClientSurface = (deps: InClientSurfaceDeps): AppsRuntime["i
   return {
   async shipDiff(appId, ctx) {
     const app = await requireOwned(appId, ctx, "viewer");
-    return computeShipDiff(app, config.pinBaselines ?? []);
+    return computeShipDiff(app, config.seedBaselines ?? []);
   },
   async approve(input, ctx) {
     // Round-2 hardening (2026-08-02) — a review-kind approval IS the

@@ -14,7 +14,7 @@ import {
 import { z } from "zod";
 import type { AppHistoryAccess } from "../persistence/history.js";
 import type { InClientApprovalAccess, InClientVenueState, ReviewStanding } from "./inclient.js";
-import type { PinBaseline } from "./pins.js";
+import type { SeedBaseline } from "../../contract/index.js";
 import { documentFromRecord, listAllRecords, rowFromRecord } from "../persistence/persistence.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
@@ -102,18 +102,18 @@ export interface ReviewLifecycle {
 
 export interface ReviewLifecycleDeps {
   store: StoreAdapter;
-  baselines: readonly PinBaseline[] | undefined;
+  baselines: readonly SeedBaseline[] | undefined;
   approvals: InClientApprovalAccess;
   history: Pick<AppHistoryAccess, "documents">;
 }
 
 export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycle => {
   const rejections: RecordStore = deps.store.records(COLLECTION);
-  const baselines = (): readonly PinBaseline[] => deps.baselines ?? [];
+  const baselines = (): readonly SeedBaseline[] => deps.baselines ?? [];
 
   const isReviewKind = (doc: AppDocument): boolean =>
-    (doc.pins ?? []).some((pin) =>
-      baselines().some((baseline) => baseline.slot === pin.slot && baseline.review === true));
+    doc.seed !== undefined
+    && baselines().some((baseline) => baseline.slot === doc.seed!.component && baseline.review === true);
 
   const rejectionsFor = async (appId: AppId): Promise<RemixRejection[]> => {
     const records = await listAllRecords(rejections, { refs: { appId } });
@@ -201,8 +201,7 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
         }
         const doc = row.doc;
         // The review-kind slot doubles as the kind test: none → instant-kind.
-        const slot = (doc.pins ?? []).find((pin) =>
-          baselines().some((baseline) => baseline.slot === pin.slot && baseline.review === true))?.slot;
+        const slot = isReviewKind(doc) ? doc.seed!.component : undefined;
         if (slot === undefined) continue;
         if ((await deps.approvals.verdictFor(doc)).granted) continue;
         const versionHash = appVersionHash(doc);

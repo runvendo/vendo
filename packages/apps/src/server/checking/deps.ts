@@ -61,4 +61,18 @@ export interface FloorDependencies {
   toolShapes?: Readonly<Record<string, ShapeType>>;
   /** The host tools a query may name. Absent → `tools-exist` stays silent. */
   tools?: readonly HostToolInfo[];
+  /**
+   * The island smoke-render gate: every island renders once in a headless DOM
+   * before it ships, so a crashing island never reaches a screen. ON unless
+   * explicitly `false` — the seam the island tests run without.
+   *
+   * It lives on the FLOOR, not on the generation bag above it, because the
+   * floor is the other half that runs the gate. It was declared only on
+   * `GenerationDependencies`, so `create` honoured the switch and the floor
+   * never saw it: a host that turned the render off still paid for one on every
+   * commit, and was blocked by a gate it had disabled.
+   */
+  pipeline?: {
+    smokeRender?: boolean;
+  };
 }

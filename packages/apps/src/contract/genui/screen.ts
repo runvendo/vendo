@@ -41,7 +41,7 @@ export const VENDO_SCREEN_FORMAT = VENDO_TREE_FORMAT;
  * `@vendoai/apps` (`PinDrift`, which core may not import); declared here as the
  * part the channel promises, and passthrough so the rest travels intact.
  */
-export interface ScreenPinDrift {
+export interface ScreenSeedDrift {
   slot: string;
   component: string;
 }
@@ -69,7 +69,7 @@ export interface ScreenDescription {
    *  `@vendoai/apps` (`InClientVenueState`); the channel promises the verdict and
    *  the version it was reached on. */
   inClient?: { granted: boolean; versionHash: string };
-  pinDrift?: ScreenPinDrift[];
+  pinDrift?: ScreenSeedDrift[];
 }
 
 /**

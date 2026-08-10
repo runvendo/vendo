@@ -4,7 +4,7 @@ import { createAppsSurface } from "../doors/apps-surface.js";
 import { createBuildSurface } from "../doors/build-surface.js";
 import { createInClientSurface } from "../doors/inclient-surface.js";
 import { createMachineSurface, createServedDoors } from "../doors/machine-surface.js";
-import { createPinsSurface } from "../remix/seed-surface.js";
+import { createSeedSurface } from "../remix/seed-surface.js";
 import { createPlacementSurface } from "../doors/placement-surface.js";
 import { createReviewSurface } from "../doors/review-surface.js";
 import { createRuntimeContext } from "./runtime-context.js";
@@ -24,9 +24,7 @@ export type {
   EditFailure,
   EditResult,
   OpenSurface,
-  PinForkInput,
-  PinForkResult,
-  PinRebaseResult,
+  SeedFromInput,
   PlacementEntry,
   VersionEntry,
 } from "./types.js";
@@ -62,7 +60,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     slots: ctx.slots,
     inClient: createInClientSurface(ctx),
     review: createReviewSurface(ctx),
-    pins: createPinsSurface(ctx),
+    seed: createSeedSurface(ctx),
     machine: createMachineSurface(ctx),
   };
   return runtime;

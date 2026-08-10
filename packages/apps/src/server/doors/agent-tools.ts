@@ -63,16 +63,15 @@ const descriptors = [
     risk: "read",
   },
   {
-    name: "vendo_apps_rebase_pin",
-    description: "Rebase one drifted remixed pin of a Vendo app onto the host's updated component: re-fork the new captured baseline and replay the recorded edit intents in order. Use when an edit result or open() payload reports drifted pins and the user asks to update the remix. If the result has status \"failed\", nothing was changed; it lists which intents replayed and which failed.",
+    name: "vendo_apps_reseed",
+    description: "Update a Vendo app that was created from a host component so it uses the host's current version of that component. WARNING, tell the user first: this REPLACES the component with the fresh copy, so any changes they made to it are lost. Use only when the app reports seed drift and the user has said they want the update.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
       properties: {
         appId: { type: "string", minLength: 1 },
-        slot: { type: "string", minLength: 1 },
       },
-      required: ["appId", "slot"],
+      required: ["appId"],
       additionalProperties: false,
     },
     risk: "write",
@@ -274,12 +273,9 @@ export const createAgentTools = (
       if (call.tool === VENDO_MAKE_TOOL) {
         return await runMakeTool(runtime, dependencies, call, ctx);
       }
-      if (call.tool === "vendo_apps_rebase_pin") {
-        const args = input(call.args, ["appId", "slot"]);
-        const result = await runtime.pins.rebase({
-          appId: args.appId as string,
-          slot: args.slot as string,
-        }, ctx);
+      if (call.tool === "vendo_apps_reseed") {
+        const args = input(call.args, ["appId"]);
+        const result = await runtime.seed.reseed({ appId: args.appId as string }, ctx);
         return { status: "ok", output: result as unknown as Json };
       }
       if (call.tool === "vendo_apps_open") {

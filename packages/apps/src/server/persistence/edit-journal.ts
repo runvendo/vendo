@@ -20,7 +20,6 @@ import {
   type AdmissionOrigin,
 } from "../../contract/index.js";
 import { appMemoryBrief } from "./app-memory.js";
-import type { PinIntentKind } from "./history.js";
 import {
   appRecordInput,
   enabledAfterDocumentEdit,
@@ -28,7 +27,6 @@ import {
   withoutSession,
   type AppRecordWrite,
 } from "./persistence.js";
-import { detectPinDrift, pinComponentName } from "../remix/pins.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import { NO_ASSEMBLER, NOTHING_RENDERABLE } from "../doors/build-messages.js";
 import type { EditResult, VersionEntry } from "../runtime/types.js";
@@ -47,48 +45,6 @@ export const rungFor = (
   return 1;
 };
 
-const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
-  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT) return [];
-  const tree = app.tree as unknown as Tree;
-  const included = new Set(tree.nodes.filter((node) => node.component === componentName).map((node) => node.id));
-  const pending = [...included];
-  while (pending.length > 0) {
-    const id = pending.pop();
-    const node = tree.nodes.find((candidate) => candidate.id === id);
-    for (const child of node?.children ?? []) {
-      if (included.has(child)) continue;
-      included.add(child);
-      pending.push(child);
-    }
-  }
-  return tree.nodes.filter(({ id }) => included.has(id));
-};
-
-/** One component's source, or undefined when the document has no such entry.
- *  Absence stays distinct from an empty source, which is what the raw `!==`
- *  compared before bundles existed. */
-const sourceOf = (document: AppDocument, componentName: string): string | undefined => {
-  const entry = document.components?.[componentName];
-  return entry === undefined ? undefined : bundleOf(entry).source;
-};
-
-export const touchedPinSlots = (previous: AppDocument, next: AppDocument): string[] => {
-  const previousPins = new Map((previous.pins ?? []).map((pin) => [pin.slot, pin]));
-  return (next.pins ?? []).flatMap((pin) => {
-    const prior = previousPins.get(pin.slot);
-    if (prior?.base !== pin.base) return [pin.slot];
-    const componentName = pinComponentName(pin.slot);
-    // Through `bundleOf`, not on the raw entry: a bare source string compares by
-    // VALUE but a bundle compares by identity, so a raw `!==` would report every
-    // pinned slot as touched on every edit the moment a bundle is stored.
-    if (sourceOf(previous, componentName) !== sourceOf(next, componentName)) return [pin.slot];
-    // Subtree serialization intentionally over-reports reordered nodes as touched.
-    return JSON.stringify(pinnedSubtree(previous, componentName)) === JSON.stringify(pinnedSubtree(next, componentName))
-      ? []
-      : [pin.slot];
-  });
-};
-
 /** A document without its id, the shape every generation module speaks. */
 export const withoutId = (app: AppDocument): Omit<AppDocument, "id"> => {
   const { id: _id, ...document } = structuredClone(app);
@@ -97,19 +53,12 @@ export const withoutId = (app: AppDocument): Omit<AppDocument, "id"> => {
 
 const createEditResults = (deps: Pick<AppsRuntimeContext, "config">) => {
   const { config } = deps;
-  // 06-apps §8 — every edit result over a drifted app carries the drift report,
-  // so an agent or host editing a stale fork hears about it at edit time.
-  const withPinDrift = (result: EditResult): EditResult => {
-    const driftedPins = detectPinDrift(result.app, config.pinBaselines ?? []);
-    return driftedPins.length === 0 ? result : { ...result, driftedPins };
-  };
-
   const failedEdit = (
     app: AppDocument,
     instruction: string,
     issues: string[],
     retryable = true,
-  ): EditResult => withPinDrift({
+  ): EditResult => ({
     app: structuredClone(app),
     version: {
       at: new Date().toISOString(),
@@ -126,7 +75,7 @@ const createEditResults = (deps: Pick<AppsRuntimeContext, "config">) => {
     },
   });
 
-  return { withPinDrift, failedEdit };
+  return { failedEdit };
 };
 
 const createEditNotices = (deps: Pick<AppsRuntimeContext, "config" | "history">) => {
@@ -190,17 +139,11 @@ const createEditPersist = (
     app: AppDocument,
     version: VersionEntry,
     subject: string,
-    pinSlots: readonly string[] | undefined,
     options: {
       /** An edit that AUTHORED the trigger arms it in the same write (the
        *  server lane's automation path); every other edit keeps the
        *  disarm-on-trigger-change rule below. */
       armTrigger?: boolean;
-      /** `"fork"` on the fork gesture's own version — the ONE pin intent that
-       *  vouches for the pinned source having started as the captured baseline,
-       *  which is what `pins.rebase` replays the rest of the trail onto. Every
-       *  other write records a replayable `"edit"`. */
-      pinIntentKind?: PinIntentKind;
       /** Who is writing, for the admission audit. Required, because this is the
        *  ONE document write and every rung reaches it: a default would let a
        *  path write anonymously. It never changes what the door CHECKS — the
@@ -245,13 +188,7 @@ const createEditPersist = (
     } else {
       app.memory = structuredClone(previous.memory);
     }
-    const versionId = await history.append(
-      app.id,
-      previous,
-      version,
-      pinSlots ?? touchedPinSlots(previous, app),
-      options.pinIntentKind,
-    );
+    const versionId = await history.append(app.id, previous, version);
     let appRow: AppRecordWrite;
     try {
       const wasEnabled = await assertCurrent();

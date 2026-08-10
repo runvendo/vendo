@@ -19,14 +19,14 @@ export {
   appDocumentSchema,
   appMemorySchema,
   appSourceFileSchema,
-  pinComponentName,
-  pinSchema,
+  appSeedSchema,
+  seedComponentName,
   storageDeclSchema,
   type AppBuildFailure,
   type AppDocument,
   type AppMemory,
+  type AppSeed,
   type AppSourceFile,
-  type Pin,
   type StorageDecl,
 } from "@vendoai/core";
 export { validateAppDocument, type AppDocumentValidation } from "./app-validation.js";

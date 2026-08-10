@@ -40,7 +40,7 @@ import type { GenerationDependencies } from "../generation/engine.js";
 import { createFnCaller, type FnCaller } from "../escalation/fn.js";
 import { createGenerationContext } from "./generation-context.js";
 import { resolveProvider } from "./generation-context.js";
-import { createAppHistory, type AppHistoryAccess, type PinIntentKind } from "../persistence/history.js";
+import { createAppHistory, type AppHistoryAccess } from "../persistence/history.js";
 import { createInClientApprovals, type InClientApprovalAccess } from "../remix/inclient.js";
 import { createAppInterchange, type AppInterchange } from "../persistence/interchange.js";
 import type { MachineLifecycle } from "../escalation/machine-lifecycle.js";
@@ -132,7 +132,7 @@ export interface AppsRuntimeContext {
   ): Promise<void>;
   /** The `app-lifecycle` audit kind, under the calling principal. */
   reportLifecycle(
-    operation: "create" | "delete" | "fork" | "in-client-approve" | "pin-fork" | "pin-rebase" | "machine-provision" | "place" | "unplace",
+    operation: "create" | "delete" | "fork" | "in-client-approve" | "seed" | "reseed" | "machine-provision" | "place" | "unplace",
     appId: AppId,
     ctx: RunContext,
     extra?: Record<string, Json>,
@@ -155,7 +155,6 @@ export interface AppsRuntimeContext {
   /** The layer ladder, derived from the document (never a stored rung). */
   rungFor(app: AppDocument, declared?: VersionEntry["rung"]): VersionEntry["rung"];
   /** 06-apps §8 — every edit result over a drifted app carries the drift report. */
-  withPinDrift(result: EditResult): EditResult;
   /** An edit result that persisted nothing, with the drift report attached. */
   failedEdit(
     app: AppDocument,
@@ -169,8 +168,7 @@ export interface AppsRuntimeContext {
     app: AppDocument,
     version: VersionEntry,
     subject: string,
-    pinSlots: readonly string[] | undefined,
-    options: { armTrigger?: boolean; pinIntentKind?: PinIntentKind; origin: AdmissionOrigin },
+    options: { armTrigger?: boolean; origin: AdmissionOrigin },
   ): Promise<AppDocument>;
   /** Build contract §9.9 — the ONE announcement every change to what an app IS. */
   reportDocumentEdit(previous: AppDocument, next: AppDocument, subject: string): Promise<void>;
@@ -285,7 +283,7 @@ const createDoors = (
   const interchange = createAppInterchange({
     store: config.store,
     guard: config.guard,
-    pinBaselines: config.pinBaselines,
+    seedBaselines: config.seedBaselines,
     requireOwned,
   });
 
@@ -295,7 +293,7 @@ const createDoors = (
   // fork; a served older approved version carries the current standing).
   const review = createReviewLifecycle({
     store: config.store,
-    baselines: config.pinBaselines,
+    baselines: config.seedBaselines,
     approvals: inClientApprovals,
     history,
   });
@@ -323,7 +321,7 @@ const createDoors = (
   }));
   const opener = createAppOpener(
     caller,
-    config.pinBaselines,
+    config.seedBaselines,
     // Review-aware venue: instant-kind answers exactly the plain hash-pin
     // venue; review-kind never answers a jail state (review.ts).
     (doc) => review.venueStateFor(doc),

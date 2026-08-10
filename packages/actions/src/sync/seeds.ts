@@ -2,9 +2,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { sha256Hex } from "@vendoai/core";
 import {
-  capturedPinBaselineSchema,
-  type CapturedPinBaseline,
-  type CapturedPinStyle,
+  seedBaselineSchema,
+  type SeedBaseline,
+  type SeedStyle,
 } from "../formats.js";
 import type TS from "typescript";
 import {
@@ -47,7 +47,7 @@ export interface PinCaptureResult {
   warnings: string[];
   /** The app-root stylesheets this walk captured. Shared with the registered
    *  component capture — the same root files, read once. */
-  styles: CapturedPinStyle[];
+  styles: SeedStyle[];
 }
 
 /** One `<Remixable>` element found in host source. */
@@ -224,11 +224,11 @@ function plumbingSignals(source: string, file: string): string[] {
   return [...signals];
 }
 
-async function readExisting(file: string): Promise<{ exists: boolean; baseline: CapturedPinBaseline | null }> {
+async function readExisting(file: string): Promise<{ exists: boolean; baseline: SeedBaseline | null }> {
   try {
     const raw = await fs.readFile(file, "utf8");
     try {
-      return { exists: true, baseline: capturedPinBaselineSchema.parse(JSON.parse(raw)) };
+      return { exists: true, baseline: seedBaselineSchema.parse(JSON.parse(raw)) };
     } catch {
       return { exists: true, baseline: null };
     }
@@ -243,8 +243,8 @@ async function captureRootStyles(
   realRoot: string,
   files: readonly string[],
   warnings: string[],
-): Promise<CapturedPinStyle[]> {
-  const styles: CapturedPinStyle[] = [];
+): Promise<SeedStyle[]> {
+  const styles: SeedStyle[] = [];
   const seen = new Set<string>();
   for (const rootFile of files.filter((file) => ROOT_FILE.test(portablePath(root, file)))) {
     const source = await fs.readFile(rootFile, "utf8");
@@ -273,9 +273,9 @@ async function captureRootStyles(
   return styles;
 }
 
-function sameCapturedPayload(left: CapturedPinBaseline | null, right: CapturedPinBaseline): boolean {
+function sameCapturedPayload(left: SeedBaseline | null, right: SeedBaseline): boolean {
   if (left === null) return false;
-  const payload = (baseline: CapturedPinBaseline) => ({
+  const payload = (baseline: SeedBaseline) => ({
     slot: baseline.slot,
     source: baseline.source,
     hash: baseline.hash,
@@ -426,7 +426,7 @@ export async function capturePins(
     const { sourceImports, subSources } = walked.closure;
     const hash = `sha256:${sha256Hex(primary.source)}`;
     const existing = await readExisting(baselineFile);
-    const baseline: CapturedPinBaseline = {
+    const baseline: SeedBaseline = {
       slot,
       source: primary.source,
       hash,

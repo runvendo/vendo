@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import { pinBaselineSchema, type PinBaseline } from "@vendoai/apps";
+import { seedBaselineSchema, type SeedBaseline } from "@vendoai/apps";
 import type { Json } from "@vendoai/core";
 import { hostedStore } from "../../hosted-store.js";
 
@@ -13,7 +13,7 @@ import { hostedStore } from "../../hosted-store.js";
  * transport is the ordinary public store door (`hostedStore`, the same adapter
  * a keyed runtime uses), writing the `vendo_pin_baselines` collection the
  * console reads — one record per slot, id = slot, `data` = the captured
- * baseline validated by the OSS `pinBaselineSchema`.
+ * baseline validated by the OSS `seedBaselineSchema`.
  *
  * WHAT CROSSES THE WIRE, explicitly: the wrapped component's SOURCE, the
  * source of every module it imports within the capture depth, and the app-root
@@ -31,7 +31,7 @@ export const PIN_BASELINES_COLLECTION = "vendo_pin_baselines";
  *  caller's warning, exactly like any other Cloud hiccup. */
 const RECONCILE_BUDGET_MS = 20_000;
 
-export interface PinBaselinePushResult {
+export interface SeedBaselinePushResult {
   pushed: string[];
   /** Slots deleted from Cloud because no local baseline FILE names them. */
   pruned: string[];
@@ -49,7 +49,7 @@ interface LocalBaselines {
    *  read as "this slot is gone" and delete the console's review baseline. */
   present: Set<string>;
   /** The parsed, valid baselines — the push payloads. */
-  valid: Map<string, PinBaseline>;
+  valid: Map<string, SeedBaseline>;
   unreadable: string[];
 }
 
@@ -63,10 +63,10 @@ async function localBaselines(vendoDir: string): Promise<LocalBaselines> {
     const slot = entry.slice(0, -".json".length);
     local.present.add(slot);
     const raw = await fs.readFile(join(dir, entry), "utf8").catch(() => null);
-    let parsed: PinBaseline | null = null;
+    let parsed: SeedBaseline | null = null;
     if (raw !== null) {
       try {
-        const candidate = pinBaselineSchema.safeParse(JSON.parse(raw) as unknown);
+        const candidate = seedBaselineSchema.safeParse(JSON.parse(raw) as unknown);
         if (candidate.success) parsed = candidate.data;
       } catch {
         // Malformed JSON — a half-written capture, not a deletion.
@@ -85,8 +85,8 @@ async function localBaselines(vendoDir: string): Promise<LocalBaselines> {
     whenever sync rewrites the file, and `hash` covers the primary source, so
     the pair is a sufficient equality test — and keeps an unchanged sync from
     re-uploading every component's source. */
-function upToDate(remote: unknown, local: PinBaseline): boolean {
-  const parsed = pinBaselineSchema.safeParse(remote);
+function upToDate(remote: unknown, local: SeedBaseline): boolean {
+  const parsed = seedBaselineSchema.safeParse(remote);
   return parsed.success
     && parsed.data.hash === local.hash
     && parsed.data.capturedAt === local.capturedAt
@@ -99,13 +99,13 @@ function upToDate(remote: unknown, local: PinBaseline): boolean {
  * the partial accounting plus `error`, so the caller can warn without losing
  * track of what already landed.
  */
-export async function pushPinBaselines(options: {
+export async function pushSeedBaselines(options: {
   vendoDir: string;
   apiKey: string;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   budgetMs?: number;
-}): Promise<PinBaselinePushResult> {
+}): Promise<SeedBaselinePushResult> {
   const local = await localBaselines(options.vendoDir);
   const pushed: string[] = [];
   const pruned: string[] = [];
@@ -113,7 +113,7 @@ export async function pushPinBaselines(options: {
   const budget = new AbortController();
   const timer = setTimeout(() => budget.abort(), budgetMs);
   timer.unref?.();
-  const done = (error?: unknown): PinBaselinePushResult => ({
+  const done = (error?: unknown): SeedBaselinePushResult => ({
     pushed,
     pruned,
     unreadable: local.unreadable,

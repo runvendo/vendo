@@ -44,7 +44,7 @@ import {
   auditEventSchema,
   uiPayloadSchema,
   storageDeclSchema,
-  pinSchema,
+  appSeedSchema,
   triggerSourceSchema,
   runModelSchema,
   stepSchema,
@@ -324,7 +324,7 @@ describe("§9 — app document plane values and sub-schemas", () => {
   it("storageDecl defaults kind to records and pin base must be a hash ref", () => {
     expect(storageDeclSchema.safeParse({ about: "x" }).success).toBe(true);
     expect(storageDeclSchema.safeParse({ about: "x", kind: "blobs" }).success).toBe(false);
-    expect(pinSchema.safeParse({ slot: "card", base: "sha256:abc" }).success).toBe(true);
+    expect(appSeedSchema.safeParse({ component: "card", baseline: "sha256:abc" }).success).toBe(true);
   });
 });
 
@@ -434,7 +434,7 @@ describe("public export surface — every contracted camelCaseName schema is pre
       "grantScopeSchema", "grantDurationSchema", "permissionGrantSchema", "approvalRequestSchema",
       "approvalDecisionSchema", "guardDecisionSchema", "auditEventSchema", "uiPayloadSchema",
       "treeNodeSchema", "appDocumentSchema", "storageDeclSchema",
-      "pinSchema", "triggerSourceSchema", "runModelSchema", "stepSchema", "triggerSchema",
+      "appSeedSchema", "triggerSourceSchema", "runModelSchema", "stepSchema", "triggerSchema",
       "vendoRecordSchema", "recordQuerySchema", "authMaterialSchema", "agentRunReportSchema",
       "vendoViewPartSchema", "vendoApprovalPartSchema", "vendoCitationsPartSchema", "vendoErrorCodeSchema",
       "capabilityMissToolFailureSchema", "capabilityMissTriggerSchema", "capabilityMissEventSchema",

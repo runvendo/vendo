@@ -2,8 +2,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { capturedPinBaselineSchema } from "../../src/formats.js";
-import { capturePins } from "../../src/sync/pins.js";
+import { seedBaselineSchema } from "../../src/formats.js";
+import { capturePins } from "../../src/sync/seeds.js";
 
 /** The proven wrapper-import specifier fixtures write to disk. Assembled at
  *  runtime because the dependency guard's static text scan reads
@@ -28,7 +28,7 @@ async function write(root: string, relativePath: string, source: string): Promis
 }
 
 async function baselineFor(root: string, slot: string) {
-  return capturedPinBaselineSchema.parse(JSON.parse(
+  return seedBaselineSchema.parse(JSON.parse(
     await fs.readFile(path.join(root, ".vendo/remixable", `${slot}.json`), "utf8"),
   ));
 }

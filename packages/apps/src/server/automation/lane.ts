@@ -423,7 +423,6 @@ export const createAutomationLane = (
             next,
             { at: new Date().toISOString(), intent: input.request, rung: rungFor(next) },
             ctx.principal.subject,
-            undefined,
             { ...options, origin: "automation" },
           );
         },

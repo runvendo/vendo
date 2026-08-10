@@ -46,7 +46,8 @@ import type { CloudAppsClient, PublishRecord, ShareSnapshot } from "../persisten
 import type { GenerationDependencies } from "../generation/engine.js";
 import type { BuildMachineEnv, LifecycleClock } from "../escalation/machine-lifecycle.js";
 import type { AppMachineStatus } from "../escalation/manifest-triggers.js";
-import type { InClientApproval, PinBaseline, PinDrift } from "../remix/pins.js";
+import type { InClientApproval } from "../remix/inclient.js";
+import type { SeedBaseline, SeedDrift } from "../../contract/index.js";
 import type { RemixRejection, ReviewQueueEntry } from "../remix/review.js";
 import type { SandboxAdapter } from "../escalation/sandbox.js";
 import type { ShipDiff } from "../remix/ship-diff.js";
@@ -175,7 +176,7 @@ export interface AppsConfig {
    * runtime composed without the umbrella already was.
    */
   briefing?: (ctx: RunContext) => Promise<BriefingPack>;
-  pinBaselines?: PinBaseline[];
+  seedBaselines?: SeedBaseline[];
   /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
    *  assertion for the review-kind lifecycle. Reviewing crosses owner
    *  boundaries, so it is never inferred from a principal alone: `reviewer`
@@ -238,10 +239,10 @@ export interface EditResult {
   issues?: string[];
   /** Additive failure detail: when present, no edit was persisted. */
   failure?: EditFailure;
-  /** Additive 06 §8 drift report: pins whose host baseline changed under the
+  /** Additive 06 §8 drift report: the host component this app was seeded from
    * fork. Present on every edit result over a drifted app so drift is loud at
    * edit time, not only in sync output or the ship-diff. */
-  driftedPins?: PinDrift[];
+  seedDrift?: SeedDrift;
   /**
    * execution-v2 Wave 3 — set when this edit graduated the app 1→2 (or edited
    * an already-graduated app's server): the machine was provisioned, the box
@@ -326,62 +327,15 @@ export interface BoxResponse {
 }
 
 /**
- * 06-apps §8 — the outcome of one pin rebase. `failed` persists NOTHING: the
- * pre-rebase version stays live, and the report says which recorded intents
- * replayed cleanly, which one failed, and which were never attempted.
- * Fail-closed by construction — a rebase is all-or-nothing, never a silent
- * half-rebase.
+ * The ✦ gesture's input. The seed itself is DETERMINISTIC — the engine copies
+ * the captured baseline into the seeded seat with no model call — so `component`
+ * names the captured host component and `slot` is the placement the gesture came
+ * from. An `instruction` then rides the ORDINARY edit path on the new app.
  */
-export type PinRebaseResult =
-  | {
-    status: "rebased";
-    app: AppDocument;
-    version: VersionEntry;
-    slot: string;
-    /** The NEW baseline hash the pin now records as its `base`. */
-    baseHash: string;
-    /** The pin intents replayed onto the new baseline, in recorded order. */
-    replayed: string[];
-  }
-  | {
-    status: "failed";
-    slot: string;
-    baseHash: string;
-    replayed: string[];
-    failed: { intent: string; issues: string[] };
-    remaining: string[];
-  };
-
-/**
- * 06-apps §8 — gesture-owned forking (2026-07-21): the input of pins.fork().
- * The fork itself is DETERMINISTIC (engine copies the captured baseline and
- * records the pin — no model call); the model never decides to fork. With no
- * `appId` the gesture mints a minimal app around the fork (the empty-slot
- * Remix affordance). An `instruction` then rides the ORDINARY edit path,
- * already scoped to the forked component.
- */
-export interface PinForkInput {
-  appId?: AppId;
-  slot: string;
-  /** The wrapper's serializable live props at fork time (2026-08-02 final
-   *  shape). Stored as the pinned node's props — the fork's dashboard seed
-   *  when it is placed away from the host page; in place the wrapper streams
-   *  live props over the frame boundary on every render instead. */
-  props?: Record<string, Json>;
+export interface SeedFromInput {
+  component: string;
+  slot?: string;
   instruction?: string;
-}
-
-/** 06-apps §8 — the outcome of one gesture fork. `version` describes the
- *  deterministic fork itself; `edit` (present only when the gesture carried an
- *  instruction) is the scoped follow-up edit — its failure never rolls the
- *  fork back, so `app` is always at least the faithful fork. */
-export interface PinForkResult {
-  app: AppDocument;
-  version: VersionEntry;
-  slot: string;
-  /** The generated-component name the fork ships under (`pinComponentName`). */
-  componentName: string;
-  edit?: EditResult;
 }
 
 /**
@@ -705,7 +659,7 @@ export interface AppsRuntime {
   };
   /**
    * Remix final shape (2026-08-02) — additive review-kind lifecycle surface
-   * (same additive precedent as `inClient`/`pins`). A review-kind remix (an
+   * (same additive precedent as `inClient`/`seed`). A review-kind remix (an
    * app forked from a baseline captured with `review: true`) is invisible to
    * its own user until a host reviewer approves; the approved version then
    * mounts natively in place, riding the §9 hash-pin machinery. These two
@@ -727,32 +681,26 @@ export interface AppsRuntime {
     reject(input: { appId: AppId; note: string }, ctx: RunContext): Promise<RemixRejection>;
   };
   /**
-   * 06-apps §8 — additive drift→rebase surface (same additive precedent as
-   * `inClient`, not part of the frozen §1 method table). `drift` reports the
-   * pins whose captured host baseline changed under a fork; `rebase` re-forks
-   * ONE drifted pin from the NEW baseline and replays its recorded pin-intent
-   * trail (history.pinIntents) through the real model edit path, producing a
-   * new version whose pin `base` is the new baseline hash. A rebase is a
-   * content change, so it is NEVER invoked automatically: the agent tool
-   * `vendo_apps_rebase_pin` and the wire route are the invocation surfaces,
-   * and the new version drops in-client approval by construction (§9).
+   * 06-apps §8 — additive remix surface (same additive precedent as `inClient`,
+   * not part of the frozen §1 method table).
+   *
+   * `from` is the ✦ gesture: capture → bundle → an ordinary `create` carrying a
+   * `seed`. `drift` reports that the host component this app was seeded from has
+   * moved on — a WARNING, nothing more. `reseed` acts on it by swapping in the
+   * pristine new component and minting a version.
+   *
+   * A re-seed REPLACES the seeded component, including whatever the person has
+   * changed about it. That is why it is never automatic and why the surface that
+   * offers it has to say what it costs.
    */
-  pins: {
-    rebase(input: { appId: AppId; slot: string }, ctx: RunContext): Promise<PinRebaseResult>;
-    /**
-     * Gesture-owned forking (2026-07-21) — the deterministic fork the user's
-     * Remix gesture invokes: the engine copies the captured baseline into the
-     * pinned generated component and records the pin, with NO model call. The
-     * model lost the fork decision entirely (<ForkPin> is retired from the
-     * edit dialect; the op still compiles for stored apps). An optional
-     * instruction runs afterwards as an ordinary edit, already scoped to the
-     * forked component; its failure leaves the faithful fork in place.
-     */
-    fork(input: PinForkInput, ctx: RunContext): Promise<PinForkResult>;
+  seed: {
+    drift(appId: AppId, ctx: RunContext): Promise<SeedDrift | null>;
+    reseed(input: { appId: AppId }, ctx: RunContext): Promise<AppDocument>;
+    from(input: SeedFromInput, ctx: RunContext): Promise<AppDocument>;
   };
   /**
    * execution-v2 — additive machine lifecycle surface (same additive precedent
-   * as `inClient`/`pins`). An app with no `machine` on its document
+   * as `inClient`/`seed`). An app with no `machine` on its document
    * is a layer-1 tree app; presence of `machine` means layer 2+ — the layer is
    * always derived from presence, never stored. Wake single-flight and idle
    * auto-sleep live in-process; a multi-instance host can wake one app twice

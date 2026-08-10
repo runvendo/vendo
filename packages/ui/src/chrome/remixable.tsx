@@ -1,5 +1,5 @@
 import { isValidElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { pinComponentName, type AppDocument, type Json, type TreeNode } from "@vendoai/core";
+import { seedComponentName, type AppDocument, type Json, type TreeNode } from "@vendoai/core";
 import { useVendoProvider } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useResource } from "../hooks/use-resource.js";
@@ -193,7 +193,7 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
     if (surface?.kind !== "tree") return surface;
     const payload = structuredClone(surface.payload);
     const nodes = payload.nodes as TreeNode[] | undefined;
-    const pinned = nodes?.find(node => node.component === pinComponentName(slot) && node.source === "generated");
+    const pinned = nodes?.find(node => node.component === seedComponentName(slot) && node.source === "generated");
     if (pinned) pinned.props = { ...pinned.props, ...(JSON.parse(livePropsKey) as Record<string, Json>) };
     return { ...surface, payload };
   }, [surface, slot, livePropsKey]);

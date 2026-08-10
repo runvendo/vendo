@@ -8,7 +8,7 @@ import {
   readPushComponents,
   writePushComponents,
 } from "./cloud/host-components.js";
-import { pushPinBaselines } from "./cloud/pin-baselines.js";
+import { pushSeedBaselines } from "./cloud/seed-baselines.js";
 import { AGENT_ENDPOINT_ENV_VAR } from "./extract/gateway-fuel.js";
 import type { ThemeStageInput } from "./extract/stages.js";
 import { runProseStages } from "./init-judgment.js";
@@ -552,7 +552,7 @@ async function pushBaselinesToCloud(input: {
     return null;
   }
   // Never throws: whatever landed before a failure is still accounted for.
-  const result = await pushPinBaselines({
+  const result = await pushSeedBaselines({
     vendoDir,
     apiKey: cloudKey!,
     ...(options.apiUrl === undefined ? {} : { baseUrl: options.apiUrl }),

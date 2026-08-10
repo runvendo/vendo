@@ -498,61 +498,16 @@ export const judgmentsFileSchema = z.object({
 
 /**
  * Remixable component baseline captured by sync (06 §8, written to
- * `.vendo/remixable/<slot>.json`). Structural copy of apps' `PinBaseline` —
- * actions depends on core only, and this is a JSON format, not an import.
+ * `.vendo/remixable/<slot>.json`) — ONE shape, owned by the contract door.
+ * Actions used to carry a structural copy of it; the console reads the same
+ * bytes from a browser, so the door is where it belongs.
  */
-export interface CapturedPinBaseline {
-  slot: string;
-  source: string;
-  hash: string;                    // "sha256:..." of source
-  exportable: boolean;
-  capturedAt: string;              // IsoDateTime
-  /** True when the `<Remixable review>` wrapper marks this a reviewed-kind
-   *  component: remixes stay invisible until a host reviewer approves. */
-  review?: boolean;
-  /** Import specifier -> captured module id for imports in the primary source. */
-  sourceImports?: Record<string, string>;
-  /** Source-owned modules reachable within two local-import hops. */
-  subSources?: Record<string, CapturedPinSubSource>;
-  /** No longer written by sync (live props seed forks now); kept optional so
-   *  legacy baseline files stay valid. */
-  sampleProps?: Record<string, unknown>;
-  /** Direct CSS imports from canonical app root files, in deterministic order. */
-  styles?: CapturedPinStyle[];
-}
-
-export interface CapturedPinSubSource {
-  source: string;
-  imports: Record<string, string>;
-}
-
-export interface CapturedPinStyle {
-  path: string;
-  css: string;
-}
-
-const capturedPinSubSourceSchema = z.object({
-  source: z.string(),
-  imports: z.record(z.string()),
-}).passthrough() satisfies z.ZodType<CapturedPinSubSource>;
-
-const capturedPinStyleSchema = z.object({
-  path: z.string(),
-  css: z.string(),
-}).passthrough() satisfies z.ZodType<CapturedPinStyle>;
-
-export const capturedPinBaselineSchema = z.object({
-  slot: z.string().min(1),
-  source: z.string(),
-  hash: z.string().startsWith("sha256:"),
-  exportable: z.boolean(),
-  capturedAt: z.string(),
-  review: z.boolean().optional(),
-  sourceImports: z.record(z.string()).optional(),
-  subSources: z.record(capturedPinSubSourceSchema).optional(),
-  sampleProps: z.record(z.unknown()).optional(),
-  styles: z.array(capturedPinStyleSchema).optional(),
-}).passthrough() satisfies z.ZodType<CapturedPinBaseline>;
+export type {
+  SeedBaseline,
+  SeedSubSource,
+  SeedStyle,
+} from "@vendoai/apps/contract";
+export { seedBaselineSchema } from "@vendoai/apps/contract";
 
 /**
  * The component-bundle format (`CapturedModule`, `CapturedHostComponent` and

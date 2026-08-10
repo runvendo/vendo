@@ -5,7 +5,7 @@ import {
   capturedHostComponentSchema,
   type CapturedHostComponent,
   type CapturedModule,
-  type CapturedPinStyle,
+  type SeedStyle,
   type CatalogEntry,
   type HostComponentSampleGap,
   type HostComponentSkip,
@@ -180,7 +180,7 @@ function captureHash(record: Omit<CapturedHostComponent, "hash" | "capturedAt">)
 interface CaptureContext {
   root: string;
   realRoot: string;
-  styles: readonly CapturedPinStyle[];
+  styles: readonly SeedStyle[];
   styleRefs: () => Array<{ path: string; ref: string }>;
   budgetBytes: number | undefined;
   corpus: Corpus;
@@ -318,7 +318,7 @@ export async function captureHostComponents(options: {
   root: string;
   out: string;
   sites: readonly HostComponentSite[];
-  styles: readonly CapturedPinStyle[];
+  styles: readonly SeedStyle[];
   /** The catalog sync just wrote — the source of the preview seed, via its
    *  `examples` then its derived `propsSchema`. The MERGED file, not the raw
    *  scan, so curated copy on a scanned entry counts exactly like a

@@ -16,7 +16,7 @@ import {
   scanIslandTools,
   stripIslandImports,
 } from "../../contract/index.js";
-import { hasDefaultExport } from "../remix/pins.js";
+import { hasDefaultExport } from "../../contract/index.js";
 import type { HostToolInfo } from "./deps.js";
 
 /** Models wrap island TSX in a JSX template-literal expression (`{`…`}`)

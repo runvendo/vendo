@@ -28,7 +28,26 @@ export interface ComponentBundle {
   /** `"authored"` — a generated island. `"seeded"` — captured from a host
    *  component the person forked. */
   origin: "authored" | "seeded";
+  /**
+   * What the JAIL needs to run a seeded entry: the import table the captured
+   * source resolves against, and the module bodies it reaches.
+   *
+   * These travel in the bundle rather than being looked up per open, which is
+   * the whole point of the seat holding its own contents. They used to be
+   * hash-matched against the live host baseline at open time, so the moment the
+   * host component changed the match failed and a seeded app rendered with no
+   * imports, no styles and no sub-modules at all — silently.
+   */
+  sourceImports?: Record<string, string>;
+  subSources?: Record<string, { source: string; imports: Record<string, string> }>;
+  /** Inert host stylesheet snapshots, in captured order. */
+  styleSheets?: Array<{ path: string; css: string }>;
 }
+
+const bundleSubSourceSchema = z.object({
+  source: z.string(),
+  imports: z.record(z.string()),
+}).passthrough();
 
 /** 01-core §9 */
 export const componentBundleSchema = z.object({
@@ -37,6 +56,9 @@ export const componentBundleSchema = z.object({
   styles: z.string().optional(),
   sampleProps: z.record(z.unknown()).optional(),
   origin: z.enum(["authored", "seeded"]),
+  sourceImports: z.record(z.string()).optional(),
+  subSources: z.record(bundleSubSourceSchema).optional(),
+  styleSheets: z.array(z.object({ path: z.string(), css: z.string() }).passthrough()).optional(),
 }).passthrough() satisfies z.ZodType<ComponentBundle>;
 
 /**
@@ -158,34 +180,51 @@ export const appMemorySchema = z.object({
   decisions: z.string().optional(),
 }).passthrough() satisfies z.ZodType<AppMemory>;
 
-/** 01-core §9 */
-export interface Pin {
-  slot: string;
-  base: string;
+/**
+ * 01-core §9 — remix provenance: "this app was created from host component X at
+ * baseline hash H".
+ *
+ * ONE seed, not a list of pins. A remix is an app created from something that
+ * already existed, so the provenance is a property of the app, not a row set:
+ * the thing it was seeded from, and the version of that thing it started at.
+ * `slot` is the placement the ✦ gesture came from (a convenience for the chrome,
+ * never the location of record — that is a placement ROW), and `review` carries
+ * the captured baseline's review kind.
+ */
+export interface AppSeed {
+  component: string;
+  baseline: string;
+  slot?: string;
+  review?: boolean;
 }
 
 /** 01-core §9 */
-export const pinSchema = z.object({
-  slot: z.string(),
-  base: z.string(),
-}).passthrough() satisfies z.ZodType<Pin>;
+export const appSeedSchema = z.object({
+  component: z.string(),
+  baseline: z.string(),
+  slot: z.string().optional(),
+  review: z.boolean().optional(),
+}).passthrough() satisfies z.ZodType<AppSeed>;
 
 /**
- * The stable generated-component name a fork of one captured host slot ships
- * under — a pure function of {@link Pin}'s slot, so it belongs beside the pin.
+ * The stable generated-component name a seeded app's copy of the host component
+ * ships under — a pure function of {@link AppSeed}'s component, so it belongs
+ * beside the seed.
  *
- * It lives in core because BOTH sides of the fork seam need the same answer and
+ * It lives in core because BOTH sides of the seam need the same answer and
  * `ui → apps` is not an edge layering allows (dependency-guard): the runtime
  * writes the node under this name, and the client's in-place mount finds it by
- * this name. It was hand-copied three times before this (apps' pins.ts, ui's
- * remixable wrapper, ui's wire fixture).
+ * this name.
  */
-export const pinComponentName = (slot: string): string => {
+export const seedComponentName = (slot: string): string => {
   const stem = (slot.match(/[A-Za-z0-9]+/g) ?? [])
     .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
     .join("") || "Slot";
   // The hash suffix prevents punctuation-only normalization collisions while
   // keeping the name a valid generated-component PascalCase identifier.
+  // The `Pinned` stem is a STORED value — it is the key of `components` in every
+  // seeded document already on disk — so the surface rename to `seed` leaves it
+  // alone rather than invalidating them.
   return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
 };
 
@@ -262,10 +301,10 @@ export interface AppDocument {
    */
   egressApproved?: string[];
   secrets?: string[];
-  /** Fork provenance ONLY (drift, ship-diff, rebase). "Show this app in that
+  /** Remix provenance ONLY (drift, ship-diff, re-seed). "Show this app in that
    *  slot" is a placement ROW, never a document field — see
    *  `@vendoai/apps` `placements.ts`. */
-  pins?: Pin[];
+  seed?: AppSeed;
   forkedFrom?: AppId;
   /**
    * A terminal build failure. Present only on a record the runtime persisted
@@ -306,7 +345,7 @@ const appDocumentShapeSchema = z.object({
   egress: z.array(z.string()).optional(),
   egressApproved: z.array(z.string()).optional(),
   secrets: z.array(z.string()).optional(),
-  pins: z.array(pinSchema).optional(),
+  seed: appSeedSchema.optional(),
   forkedFrom: appIdSchema.optional(),
   buildFailed: appBuildFailureSchema.optional(),
   memory: appMemorySchema.optional(),

@@ -12,13 +12,14 @@ import {
   type RunContext,
 } from "@vendoai/core";
 import {
+  bundleOf,
   type AppDocument,
   type WireCompileResult,
 } from "../../contract/index.js";
 import { rememberedMemory } from "../persistence/app-memory.js";
 import { commitApp } from "../persistence/app-source.js";
 import { NO_MACHINE } from "./build-messages.js";
-import { rungFor, touchedPinSlots } from "../persistence/edit-journal.js";
+import { rungFor } from "../persistence/edit-journal.js";
 import { asPayload } from "../generation/engine.js";
 import { escalatedServer, escalationNeedsMachine } from "../generation/lanes.js";
 import { findingLine } from "./build-messages.js";
@@ -35,7 +36,6 @@ import {
   enabledAfterDocumentEdit,
   rowFromRecord,
 } from "../persistence/persistence.js";
-import { pinComponentName } from "../remix/pins.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import { asTree } from "../generation/engine.js";
 import type { AppsRuntime, EditResult, VersionEntry } from "../runtime/types.js";
@@ -73,15 +73,13 @@ const authoredDocument = (
     ui: "tree",
     tree: asPayload(structuredClone(compiled.tree)),
   };
-  // documentFromEdit's pinned/model split: a PINNED component's source is host
-  // source captured on the furnishing trust path, backing a `pins` row that is the
-  // app's own history — not a file save's to drop. The compile still wins for a
-  // name it does carry (a pinned island IS editable through the wire); a save whose
-  // text omits it keeps the stored source, because `pins` carries on naming it and
-  // a pin whose source is gone is not a pin (pins.ts demotes it).
-  const pinned = new Set((previous?.pins ?? []).map((pin) => pinComponentName(pin.slot)));
+  // documentFromEdit's seeded/model split: a SEEDED seat holds host source
+  // captured on the furnishing trust path, and it is the app's own provenance —
+  // not a file save's to drop. The compile still wins for a name it does carry
+  // (a seeded island IS editable through the wire); a save whose text omits it
+  // keeps the stored bundle, furnishings and all.
   const carried = Object.entries(previous?.components ?? {})
-    .filter(([name]) => pinned.has(name) && compiled.components[name] === undefined);
+    .filter(([name, entry]) => bundleOf(entry).origin === "seeded" && compiled.components[name] === undefined);
   const components = { ...Object.fromEntries(carried), ...compiled.components };
   if (Object.keys(components).length === 0) {
     delete document.components;
@@ -186,15 +184,7 @@ const createAuthoredSaver = (
           // ONE clock read for this save: when the save is an `edit`'s, that
           // door reports this very row (see `editVersions`).
           if (intent !== undefined) editVersions.set(input.appId, entry);
-          appended = await history.append(input.appId, previous, entry, touchedPinSlots(previous, document),
-          // A "touch" for an authored save, never an "edit": that receipt
-          // records THAT the save changed a pinned component and nothing
-          // about what it changed. Handing "Saved app.vendo" to a rebase as a
-          // replay instruction is how a file-authored remix gets overwritten
-          // by the pristine host component under a "rebased" verdict (see
-          // pins.rebase) — which is exactly why an edit whose intent IS the
-          // person's words records the replayable kind instead.
-          intent === undefined ? "touch" : "edit");
+          appended = await history.append(input.appId, previous, entry);
         }
         // Asserted a SECOND time, because the append is itself a store round
         // trip and the first check alone leaves it inside the TOCTOU window.
@@ -279,9 +269,9 @@ const createAuthoredDoor = (
 /** A SERVED app has no tree, so its edits go to the in-box agent whole. */
 const createServedAppEditor = (
   deps: Pick<AppsRuntimeContext,
-    "history" | "requireOwned" | "editServerViaBox" | "failedEdit" | "withPinDrift" | "pruneHistory">,
+    "history" | "requireOwned" | "editServerViaBox" | "failedEdit" | "pruneHistory">,
 ) => {
-  const { history, requireOwned, editServerViaBox, failedEdit, withPinDrift, pruneHistory } = deps;
+  const { history, requireOwned, editServerViaBox, failedEdit, pruneHistory } = deps;
   return async (
     previous: AppDocument,
     appId: AppId,
@@ -302,9 +292,9 @@ const createServedAppEditor = (
     };
     // The box already landed its own write, so this version is real history
     // the moment it is appended — and the cap applies to it right here.
-    await history.append(landed.id, previous, boxVersion, []);
+    await history.append(landed.id, previous, boxVersion);
     await pruneHistory(landed.id);
-    return withPinDrift({
+    return ({
       app: landed,
       version: { ...boxVersion },
       graduated: true,
@@ -320,12 +310,12 @@ const createServedAppEditor = (
 
 const createEditDoor = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "lifecycle" | "requireOwned" | "assembleEdit" | "failedEdit" | "withPinDrift"
+    "config" | "lifecycle" | "requireOwned" | "assembleEdit" | "failedEdit"
     | "takeEditVersion" | "generationToolContext" | "runServerWork"> & {
     editServedApp: ReturnType<typeof createServedAppEditor>;
   },
 ): AppsRuntime["edit"] => {
-  const { config, lifecycle, requireOwned, assembleEdit, failedEdit, withPinDrift } = deps;
+  const { config, lifecycle, requireOwned, assembleEdit, failedEdit } = deps;
   const { takeEditVersion, generationToolContext, runServerWork, editServedApp } = deps;
   return async (appId, instruction, ctx) => {
     // Permission before capability (§9.4): a viewer must hear "you can't
@@ -414,7 +404,7 @@ const createEditDoor = (
       intent: instruction,
       rung: rungFor(app),
     };
-    return withPinDrift({
+    return ({
       app,
       version,
       ...(issues.length === 0 ? {} : { issues }),
@@ -428,7 +418,7 @@ const createEditDoor = (
 export const createWriteSurface = (
   deps: Pick<AppsRuntimeContext,
     "config" | "apps" | "caller" | "history" | "holds" | "lifecycle" | "requireOwned"
-    | "updateAppDocument" | "assembleEdit" | "failedEdit" | "withPinDrift" | "takeEditVersion"
+    | "updateAppDocument" | "assembleEdit" | "failedEdit" | "takeEditVersion"
     | "generationToolContext" | "runServerWork" | "editServerViaBox" | "pruneHistory"
     | "reportLifecycle" | "reportDocumentEdit" | "discardVersion"
     | "editIntents" | "editVersions" | "editRefusals">,

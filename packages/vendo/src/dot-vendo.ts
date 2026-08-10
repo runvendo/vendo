@@ -5,7 +5,7 @@
  * fail-soft read, and nothing here reaches the network.
  */
 import type { ExtractedTool } from "@vendoai/actions";
-import { pinBaselineSchema, type PinBaseline } from "@vendoai/apps";
+import { seedBaselineSchema, type SeedBaseline } from "@vendoai/apps";
 import {
   type ToolDefinition,
 } from "@vendoai/core";
@@ -125,7 +125,7 @@ export function parseVendoTheme(raw: string | undefined): VendoTheme | undefined
 /** 06-apps §8 — load sync-captured host source into the composition. Invalid
     files are warned and skipped so one bad slot cannot crash the host; an
     absent directory is the normal zero-remixable-components case. */
-export function dotVendoPinBaselines(root?: string): PinBaseline[] {
+export function dotVendoSeedBaselines(root?: string): SeedBaseline[] {
   const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process;
   const fs = proc?.getBuiltinModule?.("node:fs") as typeof import("node:fs") | undefined;
   if (fs === undefined) return [];
@@ -139,12 +139,12 @@ export function dotVendoPinBaselines(root?: string): PinBaseline[] {
     return [];
   }
 
-  const baselines: PinBaseline[] = [];
+  const baselines: SeedBaseline[] = [];
   const slots = new Set<string>();
   for (const name of names) {
     const file = `${directory}/${name}`;
     try {
-      const parsed = pinBaselineSchema.parse(JSON.parse(fs.readFileSync(file, "utf8")));
+      const parsed = seedBaselineSchema.parse(JSON.parse(fs.readFileSync(file, "utf8")));
       if (slots.has(parsed.slot)) {
         console.warn(`[vendo] duplicate pin baseline slot ${parsed.slot} in ${file}; file was skipped`);
         continue;
