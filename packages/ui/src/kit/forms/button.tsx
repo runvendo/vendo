@@ -4,7 +4,7 @@
  * Crayon/Tambo/Tremor buttons (which can't mutate anything), this carries a real
  * host action. Standalone it just calls the bound callback.
  */
-import type { PropsWithChildren } from "react";
+import { useState, type PropsWithChildren } from "react";
 import { font, t } from "../tokens.js";
 
 export interface ButtonProps {
@@ -14,9 +14,49 @@ export interface ButtonProps {
   /** Bound host-tool action (renderer-supplied). */
   onClick?: () => void;
   type?: "button" | "submit";
+  /** The question the danger confirmation asks. */
+  confirm?: string;
 }
 
-export function Button({ label, variant = "primary", disabled = false, onClick, type = "button", children }: PropsWithChildren<ButtonProps>) {
+export function Button({ label, variant = "primary", disabled = false, onClick, type = "button", confirm, children }: PropsWithChildren<ButtonProps>) {
+  const [asking, setAsking] = useState(false);
+  const danger = variant === "danger";
+  if (!danger || disabled) {
+    return <Pressable variant={variant} disabled={disabled} type={type} onPress={() => onClick?.()}>{label ?? children}</Pressable>;
+  }
+  if (!asking) {
+    // A destructive press can only ever open the question — forced to
+    // type="button" so a submit-typed danger button inside a Form doesn't
+    // submit it on the way to the dialog (Form owns preventDefault).
+    return <Pressable variant="danger" type="button" onPress={() => setAsking(true)}>{label ?? children}</Pressable>;
+  }
+  const question = confirm ?? `${label ?? "This"} — this can't be undone.`;
+  return (
+    // The way out comes first and the destructive control last: that order is
+    // what makes "the last control in the dialog" the one that destroys.
+    <div
+      role="dialog"
+      aria-label={question}
+      style={{
+        ...font,
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "var(--vendo-density-inline-gap, 7px)",
+        border: `1px solid ${t.border}`,
+        borderRadius: t.radiusMedium,
+        background: t.surface,
+        padding: "var(--vendo-density-card-padding, 12px 14px)",
+      }}
+    >
+      <span style={{ color: t.muted, flex: "1 1 100%" }}>{question}</span>
+      <Pressable variant="secondary" type="button" onPress={() => setAsking(false)}>Keep it</Pressable>
+      <Pressable variant="danger" type={type} onPress={() => { setAsking(false); onClick?.(); }}>{label ?? children}</Pressable>
+    </div>
+  );
+}
+
+function Pressable({ variant, disabled = false, type, onPress, children }: PropsWithChildren<{ variant: NonNullable<ButtonProps["variant"]>; disabled?: boolean; type: NonNullable<ButtonProps["type"]>; onPress: () => void }>) {
   const primary = variant === "primary";
   const danger = variant === "danger";
   const background = primary ? t.accent : danger ? t.danger : t.surface;
@@ -28,7 +68,7 @@ export function Button({ label, variant = "primary", disabled = false, onClick, 
       data-variant={variant}
       disabled={disabled}
       onClick={() => {
-        if (!disabled) onClick?.();
+        if (!disabled) onPress();
       }}
       style={{
         ...font,
@@ -52,7 +92,7 @@ export function Button({ label, variant = "primary", disabled = false, onClick, 
         transition: `background-color ${t.motionDuration} ${t.motionEasing}, opacity ${t.motionDuration} ${t.motionEasing}`,
       }}
     >
-      {label ?? children}
+      {children}
     </button>
   );
 }
