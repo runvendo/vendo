@@ -14,6 +14,29 @@ import { FormingSkeleton } from "../forming-skeleton.js";
 import { applyFrameResize, FRAME_MAX_HEIGHT_CSS, isFromFrame } from "../frame-resize.js";
 import { JAIL_RUNTIME_SOURCE } from "./runtime-bundle.gen.js";
 
+/** The host page's own `@font-face` rules, as TEXT. `--vendo-font-family` names
+ *  the brand family but the face itself lives in the host's sheets, so without
+ *  this an island falls back to the system stack while the screen around it does
+ *  not. Text only — no sheet URL crosses, and the jail's `font-src data:` still
+ *  decides what may load. A cross-origin sheet's rules are unreadable, which is
+ *  a skip, not a throw. */
+function hostFontFaceCss(): string {
+  if (typeof document === "undefined") return "";
+  let css = "";
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules: CSSRuleList;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      continue;
+    }
+    for (const rule of Array.from(rules)) {
+      if (rule.cssText.startsWith("@font-face")) css += rule.cssText;
+    }
+  }
+  return css;
+}
+
 /**
  * The jail is TWO nested frames, and the nesting is the security boundary.
  *
@@ -89,6 +112,7 @@ function buildJailSrcdoc(loadsPackages: boolean): string {
   const inner = [
     "<!doctype html><html lang=\"en\"><head>",
     head,
+    `<style>${hostFontFaceCss()}</style>`,
     "<title>Generated Vendo component</title></head><body>",
     `<script>${safeRuntime}<\/script>`,
     "</body></html>",

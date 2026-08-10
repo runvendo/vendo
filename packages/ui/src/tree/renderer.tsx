@@ -14,6 +14,7 @@ import {
 } from "@vendoai/core";
 import {
   KIT_COMPONENT_NAMES,
+  VENDO_THEME_VARIABLE_NAMES,
   evaluateExpr,
   isExprBinding,
 } from "@vendoai/apps/contract";
@@ -518,6 +519,22 @@ function NodeRenderer(props: NodeRendererProps) {
   );
 }
 
+/** The `--vendo-*` values ACTUALLY applied to the page, which win over the ones
+ *  React context knows: a TreeView mounted with no VendoProvider (a standalone
+ *  surface, an embedded page whose host called `applyThemeVars`) otherwise hands
+ *  the jail `defaultVendoTheme`, so an island renders in Vendo's own palette
+ *  while everything around it wears the host's brand. */
+function rootThemeVars(): Record<string, string> {
+  if (typeof document === "undefined") return {};
+  const root = document.documentElement.style;
+  const vars: Record<string, string> = {};
+  for (const name of VENDO_THEME_VARIABLE_NAMES) {
+    const value = root.getPropertyValue(name);
+    if (value !== "") vars[name] = value;
+  }
+  return vars;
+}
+
 /**
  * 08-ui §5 — render a validated walk tree.
  *
@@ -533,7 +550,7 @@ function StatefulTreeView({
   onStateChange,
 }: TreeViewProps) {
   const theme = useVendoThemeOrDefault();
-  const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
+  const themeVars = useMemo(() => ({ ...themeCssVariables(theme), ...rootThemeVars() }), [theme]);
   const streaming = (tree as WalkTree & { streaming?: unknown }).streaming === true;
   const furnishings = (tree as WalkTree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
   // The stamped per-island tool manifests ride the payload beside the
