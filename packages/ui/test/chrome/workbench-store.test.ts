@@ -71,6 +71,24 @@ describe("workbench store", () => {
     expect(workbenchFeed()).not.toBe(before);
   });
 
+  it("keeps only the most recent turns, dropping the oldest first-seen", () => {
+    for (let n = 1; n <= 21; n += 1) publishWorkbenchPart(chunk({ turnId: `thr_${n}`, event: STEP_START }));
+    const feed = workbenchFeed();
+    expect(feed).toHaveLength(20);
+    expect(feed[0]!.turnId).toBe("thr_2");
+    expect(feed.at(-1)!.turnId).toBe("thr_21");
+  });
+
+  it("rebuilds only the turn that changed, leaving the others' entries untouched", () => {
+    publishWorkbenchPart(chunk({ turnId: "thr_a", event: STEP_START }));
+    const before = workbenchFeed()[0]!;
+    publishWorkbenchPart(chunk({ turnId: "thr_b", event: STEP_START }));
+    publishWorkbenchPart(chunk({ turnId: "thr_b", seq: 2, event: STEP_END }));
+    const after = workbenchFeed()[0]!;
+    expect(after).toBe(before);
+    expect(after.parts).toBe(before.parts);
+  });
+
   it("forgets every turn on reset", () => {
     publishWorkbenchPart(chunk({ event: STEP_START }));
     resetWorkbench();

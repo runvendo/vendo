@@ -73,7 +73,13 @@ const EVENT_KINDS: Record<WorkbenchEvent["kind"], true> = {
 
 const NO_TURNS: readonly WorkbenchTurn[] = [];
 
-const byTurn = new Map<string, WorkbenchPart[]>();
+/** Turns kept before the oldest is dropped: the store is a module singleton
+    that outlives every turn, so a dev session must not grow without bound. */
+const MAX_TURNS = 20;
+
+/** Holds the snapshot entries themselves, so a turn nothing landed in keeps the
+    object and array the last snapshot handed out. */
+const byTurn = new Map<string, WorkbenchTurn>();
 const listeners = new Set<() => void>();
 let feed: readonly WorkbenchTurn[] = NO_TURNS;
 
@@ -113,14 +119,18 @@ function notify(): void {
 export function publishWorkbenchPart(chunk: { type: string; data?: unknown }): void {
   const part = workbenchPart(chunk);
   if (part === undefined) return;
-  const parts = byTurn.get(part.turnId) ?? [];
+  const parts = [...(byTurn.get(part.turnId)?.parts ?? [])];
   const at = parts.findIndex(existing => existing.seq > part.seq);
   parts.splice(at === -1 ? parts.length : at, 0, part);
   // `set` on a key the map already holds leaves its position alone, so turns
-  // keep the order their first part arrived in; every snapshot is fresh so a
-  // reader can compare identities to spot new news.
-  byTurn.set(part.turnId, parts);
-  feed = [...byTurn].map(([turnId, list]) => ({ turnId, parts: [...list] }));
+  // keep the order their first part arrived in; only the turn the part landed
+  // in gets a new entry, so a reader can compare identities to spot new news.
+  byTurn.set(part.turnId, { turnId: part.turnId, parts });
+  if (byTurn.size > MAX_TURNS) {
+    const oldest = byTurn.keys().next().value;
+    if (oldest !== undefined) byTurn.delete(oldest);
+  }
+  feed = [...byTurn.values()];
   notify();
 }
 
