@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { initTelemetry, repoHost, type Telemetry } from "@vendoai/telemetry";
+import { walk } from "./theme/walk.js";
 
 export const CLI_VERSION = "0.9.0";
 
@@ -270,23 +271,34 @@ export async function appDirectory(root: string): Promise<string> {
   return join(root, "app");
 }
 
+const LAYOUT_FILE = /(^|[\\/])layout\.(?:tsx|jsx|js)$/;
+
 /** The file whose client root the <VendoProvider> paste belongs in, and the
-    child expression it wraps there. A pages-only host has NO app/layout.tsx to
-    wrap — its client root is pages/_app.tsx, and the paste mounts there
-    unchanged. (Where the API route segment
+    child expression it wraps there. The app router's ROOT layout is whichever
+    layout sits shallowest — an i18n or route-group host (`app/[locale]/`,
+    `app/(shop)/`) has no app/layout.tsx at all, so a literal app/layout.tsx
+    probe named a file that does not exist and told the user to create a SECOND
+    root layout, which is how you break such a host rather than mount in it.
+    Shallowest wins, lexicographic on a tie (walk() sorts, and sort is stable).
+    A pages-only host has no layout to wrap — its client root is pages/_app.tsx,
+    and the paste mounts there unchanged. (Where the API route segment
     gets scaffolded is a separate, deliberate choice — see appDirectory.)
     Keyed on the layout FILE, not on a router probe: the scaffold creates app/
-    mid-run, and the answer must be the same before and after it.
+    mid-run, and the answer must be the same before and after it. The
+    conventional app/layout.tsx survives only as the last resort — a host with
+    no layout and no pages/ has no client root yet, and that is where Next
+    wants the one it must create.
 
     Shared with doctor on purpose: init tells the user which file to paste into
     and doctor grades whether they did. Two copies of this rule meant doctor
     failed every pages-only host forever, naming a file init never mentioned. */
 export async function clientRoot(root: string): Promise<{ file: string; children: string }> {
-  const layout = join(await appDirectory(root), "layout.tsx");
-  if (!(await exists(layout))) {
-    for (const pages of [join(root, "src", "pages"), join(root, "pages")]) {
-      if (await exists(pages)) return { file: join(pages, "_app.tsx"), children: "<Component {...pageProps} />" };
-    }
+  const app = await appDirectory(root);
+  const [layout] = (await walk(app, (file) => LAYOUT_FILE.test(file)))
+    .sort((a, b) => a.split(sep).length - b.split(sep).length);
+  if (layout !== undefined) return { file: layout, children: "{children}" };
+  for (const pages of [join(root, "src", "pages"), join(root, "pages")]) {
+    if (await exists(pages)) return { file: join(pages, "_app.tsx"), children: "<Component {...pageProps} />" };
   }
-  return { file: layout, children: "{children}" };
+  return { file: join(app, "layout.tsx"), children: "{children}" };
 }
