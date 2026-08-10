@@ -209,6 +209,9 @@ export function memoryStoreOps(): StoreOps {
       name. The real backend composes both in one place, which core cannot
       import. */
   const appCollection = (target: AppDataTarget): string => {
+    if (target.appId === "" || target.appId.includes(":")) {
+      throw new VendoError("validation", `app data appId "${target.appId}" must be non-empty and free of ":"`);
+    }
     if (!APP_DATA_COLLECTION_PATTERN.test(target.collection)) {
       throw new VendoError("validation", `app data collection "${target.collection}" is not a legal name`);
     }
@@ -229,6 +232,10 @@ export function memoryStoreOps(): StoreOps {
     async put(target, record) {
       const collection = appCollection(target);
       refuseSubject(record.refs, "put");
+      const held = col(collection).get(record.id);
+      if (held !== undefined && held.refs?.["subject"] !== target.owner) {
+        throw new VendoError("conflict", `app data id "${record.id}" is already held in this collection`);
+      }
       return records.put(collection, { ...record, refs: { ...record.refs, subject: target.owner } });
     },
     async get(target, id) {

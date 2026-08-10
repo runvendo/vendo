@@ -347,13 +347,38 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(await ops.appData.get(other, "secret") === null, "get read another owner's row");
       }),
 
-      opsCase(opts, "appData.delete does not delete another owner's row", async (ops) => {
+      /** Both halves, deliberately: a `delete` that does nothing at all also
+          leaves the other owner's row alone, so the negative assertion on its
+          own is passed by an empty function. */
+      opsCase(opts, "appData.delete deletes only the caller's own row", async (ops) => {
         await seedApp(ops, "app_delscope");
         const owner = { appId: "app_delscope", collection: "notes", owner: "own_a" };
         const other = { appId: "app_delscope", collection: "notes", owner: "own_b" };
         await ops.appData.put(owner, { id: "keep", data: { v: 1 } });
         await ops.appData.delete(other, "keep");
         assert(await ops.appData.get(owner, "keep") !== null, "delete destroyed another owner's row");
+        await ops.appData.delete(owner, "keep");
+        assert(await ops.appData.get(owner, "keep") === null, "delete left the owner's own row behind");
+      }),
+
+      /** `put` has `records.put`'s blast radius — an unconditional upsert on
+          (collection, id) — so an id another owner holds must be refused, not
+          overwritten and re-stamped into a row the loser can neither read nor
+          delete. */
+      opsCase(opts, "appData.put refuses an id another owner holds", async (ops) => {
+        await seedApp(ops, "app_putconflict");
+        const owner = { appId: "app_putconflict", collection: "notes", owner: "own_a" };
+        const other = { appId: "app_putconflict", collection: "notes", owner: "own_b" };
+        await ops.appData.put(owner, { id: "taken", data: { v: 1 } });
+        await assertThrowsCode(
+          () => ops.appData.put(other, { id: "taken", data: { v: 2 } }),
+          "conflict",
+          "a put against an id another owner holds",
+        );
+        const still = await ops.appData.get(owner, "taken");
+        assert(still !== null, "the refused put destroyed the holder's row");
+        assertDeepEqual(still!.data, { v: 1 }, "the refused put overwrote the holder's row");
+        assert(await ops.appData.get(other, "taken") === null, "the refused put re-stamped the row");
       }),
 
       opsCase(opts, "appData.list honors caller refs alongside the owner scope", async (ops) => {
@@ -384,6 +409,9 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(await ops.appData.getFile(other, "receipt.bin") === null, "getFile read another owner's file");
         await ops.appData.deleteFile(other, "receipt.bin");
         assert(await ops.appData.getFile(owner, "receipt.bin") !== null, "deleteFile destroyed another owner's file");
+        // The positive half — without it an empty deleteFile passes the line above.
+        await ops.appData.deleteFile(owner, "receipt.bin");
+        assert(await ops.appData.getFile(owner, "receipt.bin") === null, "deleteFile left the owner's own file behind");
       }),
 
       /** The owner prefix is the backend's scoping mechanism, not part of the
@@ -416,12 +444,29 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(put.id === "ok", "a legal box: collection was not accepted");
 
         for (const collection of ["has spaces", "a/b"]) {
+          const illegal = { appId: "app_grammar", collection, owner: "own_a" };
           await assertThrowsCode(
-            () => ops.appData.put({ appId: "app_grammar", collection, owner: "own_a" }, { id: "no", data: {} }),
+            () => ops.appData.put(illegal, { id: "no", data: {} }),
             "validation",
-            `the collection name ${JSON.stringify(collection)}`,
+            `the collection name ${JSON.stringify(collection)} on put`,
+          );
+          // A read verb too: the name is composed on every verb, not just writes.
+          await assertThrowsCode(
+            () => ops.appData.get(illegal, "no"),
+            "validation",
+            `the collection name ${JSON.stringify(collection)} on get`,
           );
         }
+
+        // The appId shares the name with the collection and is parsed back out
+        // of it on the assumption it holds no colon, so it carries its own
+        // refusal: "app_grammar:box" + "evil" would otherwise be the same
+        // drawer as "app_grammar" + "box:evil".
+        await assertThrowsCode(
+          () => ops.appData.put({ appId: "app_grammar:box", collection: "evil", owner: "own_a" }, { id: "no", data: {} }),
+          "validation",
+          "an appId containing a colon",
+        );
       }),
 
       // =====================================================================

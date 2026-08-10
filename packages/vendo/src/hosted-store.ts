@@ -544,8 +544,7 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
     // Everything generated apps invent. The whole address rides ONE `target`
     // (appId + collection + owner) instead of a collection string, because the
     // owner is the runtime's stamp: the service scopes reads and stamps writes
-    // from it, so no verb here takes a subject. Files are the blobs shape over
-    // the same target — base64 bytes out, the same missing-file posture back.
+    // from it, so no verb here takes a subject.
     appData: {
       async put(target, record) {
         return recordOf(await mutate("appData.put", P["appData.put"], { target, record }));

@@ -5,10 +5,6 @@ export { createStore } from "./create-store.js";
 export { maybeDbFor, type VendoStore } from "./store.js";
 // The StoreOps local backend (02-store): the 35-op named-operation contract
 // served off this store's own Postgres, transactions at verb boundaries.
-// `createStoreOps` opens the handle eagerly, so a caller composing it for an
-// arbitrary store asks `maybeDbFor` first — that pair is `backendOf`'s
-// three-way answer (own ops / SQL handle / neither) at a seam outside this
-// package.
 export { createStoreOps } from "./ops.js";
 // The one composer of appData names and the owner stamp: everything that
 // serves the family (the local backend here, the surfaces above it) spells

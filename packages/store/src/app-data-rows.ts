@@ -1,5 +1,6 @@
 import {
   APP_DATA_COLLECTION_PATTERN,
+  VendoError,
   type AppDataTarget,
   type BlobStore,
   type RecordInput,
@@ -7,6 +8,7 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import type { Db } from "./db.js";
+import { jsonParam } from "./helpers/utils.js";
 import { createRecordStore } from "./records.js";
 import type { VendoStore } from "./store.js";
 import { invalid } from "./validate.js";
@@ -22,7 +24,13 @@ export const APP_DATA_OWNER_REF = "subject";
  *  same shape, which is what keeps `eraseStore().byApp`'s
  *  `namespace LIKE 'app:<appId>:%'` sweeping both with the app. */
 export function appDataCollection(target: AppDataTarget): string {
-  if (target.appId === "") invalid("app data needs an appId");
+  // The appId goes into the name unescaped, and `appScopeId` parses it back on
+  // the assumption that segment is colon-free. A colon in the appId collapses
+  // two different drawers onto one string: appId "a:box" + collection "evil"
+  // and appId "a" + collection "box:evil" both spell `app:a:box:evil`.
+  if (target.appId === "" || target.appId.includes(":")) {
+    invalid(`app data appId ${JSON.stringify(target.appId)} must be non-empty and free of ":"`);
+  }
   if (!APP_DATA_COLLECTION_PATTERN.test(target.collection)) {
     invalid(
       `app data collection ${JSON.stringify(target.collection)} is not a legal name`
@@ -65,22 +73,49 @@ export interface AppDataRows {
 }
 
 export function appDataRows(db: Db, target: AppDataTarget): AppDataRows {
-  const records = createRecordStore(db, appDataCollection(target));
-  const owned = (record: VendoRecord | null): boolean =>
-    record?.refs?.[APP_DATA_OWNER_REF] === target.owner;
+  const collection = appDataCollection(target);
+  const records = createRecordStore(db, collection);
+  const stamp = { [APP_DATA_OWNER_REF]: target.owner };
 
   return {
+    /** An id another owner holds is a `conflict`, not an overwrite:
+     *  `records.put` is an unconditional upsert on (collection, id), so without
+     *  this a caller could destroy and re-stamp a row it can neither read nor
+     *  delete. The refusal never names the holder — it only says the id is
+     *  taken, which is all a caller who cannot see the row may learn.
+     *
+     *  Race-free rather than check-then-write: the insert decides the create
+     *  atomically, and when it loses, `FOR UPDATE` locks the row that beat it,
+     *  so a concurrent writer blocks instead of interleaving. That lock lives
+     *  until COMMIT, so this needs a transaction-scoped handle (ops.ts hands
+     *  one in) — a bare `BEGIN` is READ COMMITTED, where an unlocked read would
+     *  see a snapshot the following write does not honor. */
     async put(record) {
       refuseCallerOwner(record.refs);
-      return await records.put({
-        ...record,
-        refs: { ...record.refs, [APP_DATA_OWNER_REF]: target.owner },
-      });
+      const stamped = { ...record, refs: { ...record.refs, ...stamp } };
+      const created = await records.atomic!.insertIfAbsent(stamped);
+      if (created !== null) return created;
+
+      const held = await db.query(
+        "SELECT refs FROM vendo_records WHERE collection = $1 AND id = $2 FOR UPDATE",
+        [collection, record.id],
+      );
+      const row = held.rows[0];
+      // No row means the holder deleted it while we looked; the upsert below
+      // recreates it as ours.
+      if (row !== undefined
+        && (row["refs"] as Record<string, string> | null)?.[APP_DATA_OWNER_REF] !== target.owner) {
+        throw new VendoError(
+          "conflict",
+          `app data id ${JSON.stringify(record.id)} is already held in this collection`,
+        );
+      }
+      return await records.put(stamped);
     },
 
     async get(id) {
       const record = await records.get(id);
-      return owned(record) ? record : null;
+      return record?.refs?.[APP_DATA_OWNER_REF] === target.owner ? record : null;
     },
 
     async list(query = {}) {
@@ -91,13 +126,19 @@ export function appDataRows(db: Db, target: AppDataTarget): AppDataRows {
       });
     },
 
-    /** Read-then-check, so a foreign row survives. Both statements go through
-     *  the `db` handed in — hand this a transaction-scoped handle and the check
-     *  and the delete are ONE transaction, which is the only way the row cannot
-     *  change owner between them. */
+    /** ONE owner-predicated statement, so a foreign row survives with no window
+     *  to race — a read-then-delete has one, because `createRecordStore.delete`
+     *  carries no owner predicate and would delete a row that changed hands
+     *  between the two statements. That missing predicate is why the composer
+     *  reaches the table directly here instead of going through the door.
+     *  `refs @> …` rides the same GIN index the scoped read does, and the
+     *  door's skipped `requireKnownApp` pre-check was only an error signal — a
+     *  delete never creates rows. */
     async delete(id) {
-      if (!owned(await records.get(id))) return;
-      await records.delete(id);
+      await db.query(
+        "DELETE FROM vendo_records WHERE collection = $1 AND id = $2 AND refs @> $3::jsonb",
+        [collection, id, jsonParam(stamp)],
+      );
     },
   };
 }

@@ -257,10 +257,8 @@ export function createStoreOps(
       async list(target, query) {
         return await appDataRows(db, target).list(query);
       },
-      /** The ownership read and the delete share ONE transaction (the rows door
-       *  gets the tx handle), so a row cannot change hands between them. */
       async delete(target, id) {
-        await db.transaction((q) => appDataRows(txDb(q), target).delete(id));
+        await appDataRows(db, target).delete(id);
       },
       /** The file twins are single-statement blob verbs, exactly like the blobs
        *  family above, so none of them opens a transaction. */

@@ -18,9 +18,11 @@ cannot exist.
 
 **Reads are auto-scoped, so permission IS the query.** `list` ANDs the stamp
 into `query.refs`, `get` returns `null` for another owner's row, and `delete`
-no-ops on one — the read and the delete share a transaction, so a foreign row
-cannot be raced out from under the check. Caller refs still filter alongside the
-stamp. There is no rules language and no policy DSL to get wrong.
+no-ops on one — one owner-predicated statement, so there is no window in which a
+foreign row can be raced out from under a check. A `put` against an id another
+owner holds is refused with `conflict` rather than overwriting and re-stamping
+it. Caller refs still filter alongside the stamp. There is no rules language and
+no policy DSL to get wrong.
 
 The stamp is `refs.subject`, deliberately not a new column: the erase cascade
 already deletes stamped rows and the GIN index on `refs` already serves scoped
@@ -37,7 +39,7 @@ the member.
 
 All eight verbs speak `vendo/store-wire@1` at `/app-data/*` with exported
 request schemas, and are implemented by the local Postgres backend, the Cloud
-client, and the in-core memory reference. Ten conformance cases pin the
+client, and the in-core memory reference. Eleven conformance cases pin the
 behavior in one place and every backend runs them. `StoreWireStatus` also gains
 an optional `deprecated` list so a mount can announce ops it is retiring.
 
