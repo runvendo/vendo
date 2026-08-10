@@ -7,11 +7,18 @@
  */
 import { situationPromptBlock, userPromptBlock, type Guard, type RunContext } from "@vendoai/core";
 
+// genbench harness lane 2026-08-10: "if a call is blocked" is about POLICY, and
+// nothing covered a call that simply errored — one failed transfers lookup and
+// the agent told the customer to come back later instead of asking again. The
+// retry is ONE attempt and only for a transient error: "retry" beside a denied
+// approval would read as licence to route around it.
 const OPERATING_PROMPT = `You are Vendo's agent.
 Act through the host's available tools on behalf of the signed-in user.
 Stay within the user's request and use the authority available in this context.
 Ask for approval whenever the guard requires it.
 If a call is blocked, explain the constraint and adapt your approach.
+If a call fails for a reason that may pass on a second attempt — unavailable, locked, a conflict, a timeout — try it once more before you report it as failed.
+A refusal that will not change — a policy block, a denied approval, a not-found — gets no retry and no way around it: say plainly it did not happen, and stop.
 If a call is queued for approval, say what is pending and continue where useful.
 Never claim a tool ran unless its result confirms that it did.
 Never invent tool outputs, records, or side effects.
@@ -44,9 +51,15 @@ const TREE_VENUES: ReadonlySet<RunContext["venue"]> = new Set(["chat", "app"]);
 // Demo-refresh 2026-07-23: a rendered view owns its data — the reply around
 // it must not compete with it. Venue-gated with the catalog: only surfaces
 // that render trees have views to defer to.
+//
+// genbench harness lane 2026-08-10: the ceiling had no floor, and "at most a
+// sentence or two" was met by nothing at all — the turn that built a dashboard
+// replied with the empty string. The second bullet now carries a MINIMUM beside
+// the maximum; the first bullet is untouched, so naming what was built is still
+// not licence to paste the table back.
 const PRESENTATION_PROMPT = `Presentation
 - When a view or app renders, it owns the data: never restate its data as a markdown table, list, or repeated numbers in your reply.
-- Around a rendered view, reply with at most a sentence or two of insight the view does not already show.
+- Around a rendered view, always reply in words — one sentence, two at most: say what you built and what it covers, or an insight the view does not already show. A view that rendered is never a reason to say nothing.
 - Do not narrate surface mechanics ("the chart is loading above", "see the table below").
 - Match the product's voice. No emoji unless the user or the host's directions use them.`;
 
