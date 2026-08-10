@@ -36,10 +36,12 @@ import {
   mintTurnId,
   type AppId,
   type CommitResult,
+  type Json,
   type SeatModels,
   type RunContext,
   type ToolListing,
   type ToolRegistry,
+  type ToolResult,
   type TurnId,
   type TurnSkills,
   type TurnState,
@@ -240,6 +242,13 @@ through two tools.
   \`kind="box"\`, a machine and real code.
 - \`${SCREEN_STEPS}\` steps is the whole budget. Escalate rather than run out of it.
 
+The briefing above lists this product's host components — ALL of them, with a
+count. \`search_components\` only ever looks one of those up in full; it can never
+name a component that list does not, so if the count is zero there is nothing to
+search for and the built-in primitives are the whole vocabulary. A tool that has
+already answered "nothing" will answer "nothing" again: read that as the product's
+final word on it and build with what you have, or ${ESCALATE_TOOL}.
+
 Never look for a tool that builds the app for you. There isn't one, and that is
 deliberate.
 
@@ -281,6 +290,89 @@ interface RunRecord {
    *  contribution, and what replaces the app's stored block. */
   decisions?: string;
 }
+
+/**
+ * How many DIFFERENT questions a tool may answer with nothing before this loop
+ * stops asking it.
+ *
+ * Three, not one: the first empty answer is information ("no match for that
+ * wording"), the second is a coincidence, the third is the tool's answer about
+ * this screen. One would blind a run whose second query was the good one — a real
+ * host's catalog does have something in it, and the tool's whole value is finding
+ * it — and there is no fourth, because by then the run is spending steps rather
+ * than learning.
+ */
+const FRUITLESS_LIMIT = 3;
+
+/**
+ * Did this answer carry anything at all?
+ *
+ * Shape-blind on purpose: it is asked of a HOST's output, whose field names this
+ * loop does not know. Any number, string or boolean is content — `{ ok: false }`
+ * is `validate` saying something — so only the empty container and the absent
+ * value read as nothing.
+ */
+const isNothing = (value: unknown): boolean => {
+  if (value === null || value === undefined) return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "string") return value.trim() === "";
+  if (typeof value === "object") return Object.values(value).every(isNothing);
+  return false;
+};
+
+/**
+ * THE FRUITLESS-CALL LEDGER — a question already answered with nothing is not
+ * asked again.
+ *
+ * The 2026-08-10 bench runs are the case for it: `search_components` was called
+ * up to NINE times in one screen, every call answered with an empty array, and
+ * those calls cost 21.8s of a ~110s run while teaching the run nothing. Nothing
+ * about it is component-specific, and it cannot be: the same shape appears
+ * wherever a read has nothing to give (an app collection with no records, a host
+ * list filtered to empty).
+ *
+ * It is safe HERE because of what this loadout is: assembly verbs and the host's
+ * READ tools (`risk === "read"`), so nothing the model can call changes another
+ * tool's answer — and `save_app`, the one thing that changes `validate`'s, is a
+ * hand and never passes this seam. A tool that answers with something once is
+ * cleared for the rest of the run, so a catalog that has anything in it is never
+ * hidden.
+ */
+const fruitlessLedger = () => {
+  /** Per tool, the argument shapes that came back with nothing. */
+  const empty = new Map<string, Set<string>>();
+  /** Tools that have answered with SOMETHING. Never refused again. */
+  const answered = new Set<string>();
+  const signature = (args: Json): string => JSON.stringify(args ?? null);
+
+  return {
+    /** The sentence to answer with instead of dispatching, or `undefined` to ask. */
+    refuse(name: string, args: Json): string | undefined {
+      if (answered.has(name)) return undefined;
+      const asked = empty.get(name);
+      if (asked === undefined) return undefined;
+      if (asked.has(signature(args))) {
+        return `\`${name}\` already answered this exact call with nothing in this run, and nothing since `
+          + `could have changed that. Work with what you have.`;
+      }
+      if (asked.size < FRUITLESS_LIMIT) return undefined;
+      return `\`${name}\` has now answered ${asked.size} different calls with nothing in this run `
+        + `(${[...asked].join(", ")}). It has nothing for this screen. Build with what you already have, `
+        + `or ${ESCALATE_TOOL}.`;
+    },
+    record(name: string, args: Json, result: ToolResult): void {
+      if (result.status !== "ok") return;
+      if (!isNothing(result.output)) {
+        answered.add(name);
+        empty.delete(name);
+        return;
+      }
+      const asked = empty.get(name) ?? new Set<string>();
+      asked.add(signature(args));
+      empty.set(name, asked);
+    },
+  };
+};
 
 /** Nothing to hire and nothing to load: the job description is already the whole
  *  brief, and `hire_subagent` is not on this loadout. */
@@ -457,12 +549,24 @@ export async function assembleScreen(
     .map((listing) => listing.name);
   loadout.push(saveApp, escalate);
 
+  const ledger = fruitlessLedger();
+  const call = async (name: string, args: Json): Promise<ToolResult> => {
+    const refusal = ledger.refuse(name, args);
+    // An `error`, not an empty `ok`: this loop does not know the tool's output
+    // shape, and a sentence smuggled into a field the model may bind is worse
+    // than one it reads as what it is.
+    if (refusal !== undefined) return { status: "error", error: { code: "already-answered", message: refusal } };
+    const result = await surface.tools.call(name, args);
+    ledger.record(name, args, result);
+    return result;
+  };
+
   const turn: Turn<VendoHarnessOptions> = {
     messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: { call, list: async () => listings },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,

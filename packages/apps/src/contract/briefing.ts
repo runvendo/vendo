@@ -62,6 +62,14 @@ export const briefingPackSchema: z.ZodType<BriefingPack> = z.object({
  * still the difference between a model that knows there are no house rules and
  * one that was never told either way, and the component lines keep the catalog
  * summary's `- name: first line` shape.
+ *
+ * The component section is UNCONDITIONAL, and says how many there are. A host
+ * with no components of its own used to get no section at all, and a writer who
+ * is told nothing about a catalog goes looking for it: the 2026-08-10 bench runs
+ * spent 21.8s per screen on component searches — up to NINE in one run — against
+ * a catalog that was empty the whole time. The count plus "this is the complete
+ * list" is what makes a search the writer cannot win unattractive at any size,
+ * without hiding a catalog that does have something.
  */
 export function renderBriefingPack(pack: BriefingPack): string {
   const sections: string[] = [];
@@ -74,10 +82,13 @@ export function renderBriefingPack(pack: BriefingPack): string {
   if (brief !== undefined && brief !== "") {
     sections.push(`WHAT THIS PRODUCT IS:\n${brief}`);
   }
-  if (pack.catalog.length > 0) {
-    const lines = pack.catalog.map((entry) => `- ${entry.name}: ${entry.description}`.trimEnd());
-    sections.push(`Host components (usable in generated views beside the built-in primitives)\n${lines.join("\n")}`);
-  }
+  const lines = pack.catalog.map((entry) => `- ${entry.name}: ${entry.description}`.trimEnd());
+  sections.push(
+    `Host components — this product ships ${pack.catalog.length}, and this is the COMPLETE list `
+    + `(usable in generated views beside the built-in primitives). A name that is not below does not exist `
+    + `here, so no amount of looking will turn one up; looking a listed one up in full is the only thing left `
+    + `to learn.${lines.length === 0 ? "" : `\n${lines.join("\n")}`}`,
+  );
   const semantics = pack.hostSemantics.trim();
   if (semantics !== "") sections.push(semantics);
   return sections.join("\n\n");
