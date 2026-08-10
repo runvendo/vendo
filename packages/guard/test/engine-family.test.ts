@@ -1,7 +1,10 @@
 // Every drawer this block owns — approvals, grants, audit, the effect ledger,
 // the freeze switch, the transition receipts — is Vendo's OWN data, so it
-// reaches the store through the named `engine` family and its allowlist, never
-// through the generic `records.*` door a host uses for its own rows.
+// reaches the store through the named `engine` family and its allowlist. The
+// generic records family this once had to steer clear of is gone from StoreOps
+// entirely, so "never the generic door" is now a compile error rather than
+// something a spy has to catch at runtime; what is left to prove is that every
+// collection named is one the allowlist knows.
 //
 // The counterparty here is the REAL in-core StoreOps reference
 // (`memoryStoreOps`), gate included: the flow writes through the guard and
@@ -15,7 +18,7 @@ import { createMemoryStore } from "./fixtures/memory-store.js";
 import { alice, FixtureTools, call, context } from "./fixtures/tools.js";
 
 interface Op {
-  family: "engine" | "records";
+  family: "engine";
   verb: string;
   collection: string;
 }
@@ -40,7 +43,7 @@ function recordingOps(): { ops: StoreOps; traffic: Op[] } {
       (note(name, "compareAndSwap", c), door.compareAndSwap(c, record, revision)),
   });
   return {
-    ops: { ...real, engine: family("engine", real.engine), records: family("records", real.records) },
+    ops: { ...real, engine: family("engine", real.engine) },
     traffic,
   };
 }
@@ -81,10 +84,9 @@ async function exerciseEveryDrawer(): Promise<{ ops: StoreOps; traffic: Op[] }> 
 }
 
 describe("the guard's own drawers ride the engine family", () => {
-  it("never touches the generic records door, and names only allowlisted collections", async () => {
+  it("names only allowlisted collections", async () => {
     const { traffic } = await exerciseEveryDrawer();
 
-    expect(traffic.filter((op) => op.family === "records")).toEqual([]);
     const collections = [...new Set(traffic.map((op) => op.collection))].sort();
     expect(collections.filter((c) => !isEngineCollection(c))).toEqual([]);
     expect(collections).toEqual([
