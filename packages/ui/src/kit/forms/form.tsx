@@ -8,9 +8,11 @@ export interface FormProps {
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
   submitLabel?: string;
   disabled?: boolean;
+  /** The question to ask before the submit action runs (see Button). */
+  confirm?: string;
 }
 
-export function Form({ onSubmit, submitLabel = "Submit", disabled, children }: PropsWithChildren<FormProps>) {
+export function Form({ onSubmit, submitLabel = "Submit", disabled, confirm, children }: PropsWithChildren<FormProps>) {
   return (
     <form
       data-kit="Form"
@@ -34,7 +36,7 @@ export function Form({ onSubmit, submitLabel = "Submit", disabled, children }: P
     >
       {children}
       <div>
-        <Button type="submit" label={submitLabel} disabled={disabled} />
+        <Button type="submit" label={submitLabel} disabled={disabled} confirm={confirm} />
       </div>
     </form>
   );

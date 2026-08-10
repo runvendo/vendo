@@ -345,14 +345,18 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Button",
     group: "forms",
-    summary: "Action-gated button. onClick NAMES a host tool; the runtime routes it through the guard + approval pipe. This is the only way the UI mutates.",
+    summary: "Action-gated button. onClick NAMES a host tool; the runtime routes it through the guard + approval pipe. This is the only way the UI mutates. Set confirm on anything destructive.",
     props: {
       label: copy(z.string(), "button text", { required: true }),
       onClick: config(action, "the host tool to run"),
       variant: config(z.enum(["primary", "secondary", "danger"]), "emphasis"),
       disabled: config(z.boolean(), "disabled state"),
+      confirm: copy(z.string(), "ask this question first — the press opens a confirmation and the tool runs only when it is confirmed; the whole confirmation step, so never hand-roll one"),
     },
-    examples: ['<Button label="Remind all" onClick="invoices.sendReminders"/>'],
+    examples: [
+      '<Button label="Remind all" onClick="invoices.sendReminders"/>',
+      '<Button label="Delete invoice" variant="danger" onClick="invoices.delete" confirm="Delete this invoice? This cannot be undone."/>',
+    ],
   },
   {
     name: "Form",
@@ -361,6 +365,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     props: {
       onSubmit: config(action, "the host tool to run on submit"),
       submitLabel: copy(z.string(), "submit button text"),
+      confirm: copy(z.string(), "ask this question before submitting, exactly as Button's confirm does"),
     },
     examples: ['<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name"/></Form>'],
   },
