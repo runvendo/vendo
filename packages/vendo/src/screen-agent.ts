@@ -2,12 +2,12 @@
  * The screen agent — UI-generation blueprint §4.2 and §4.5.
  *
  * It is `vendo()` with a CLOSED loadout and a tight step budget, not a harness of
- * its own: the assembly verbs and the host's read tools by name, two hands of its
- * own, and one door out. There is no second drive of `startTurn` here — the step
+ * its own: the assembly verbs and the host's read tools by name, its own hands,
+ * and one door out. There is no second drive of `startTurn` here — the step
  * cap, the seat resolution, `wireErrorMessage`, the history knobs and the system
  * precedence are the default harness's, so a rail cannot be fixed in one loop and
  * stay broken in the other. What this file holds is the CONFIGURATION: the brief,
- * the loadout, the two hands, and the outcome the front door reads.
+ * the loadout, the hands, and the outcome the front door reads.
  *
  * - **The write path is `turn.workspace`.** The `claudeCode()` harness already
  *   builds apps this way: the model writes `plan.vendo` / `app.vendo` with its own
@@ -68,6 +68,7 @@ import {
 } from "@vendoai/apps";
 import type { LanguageModel } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
+import { applyEditBlocks, type EditBlock } from "./screen-edit.js";
 
 /**
  * The whole budget for assembling one screen.
@@ -116,6 +117,11 @@ export const ESCALATE_TOOL = "escalate";
  *  has exactly one app directory, and a tool that takes a path is a tool that can
  *  write outside it. */
 export const SAVE_APP_TOOL = "save_app";
+
+/** The revision hand. Re-emitting a whole document to move one number is the
+ *  expensive half of an edit, so every save after the first one is a set of
+ *  SEARCH/REPLACE blocks against the document already on screen. */
+export const EDIT_APP_TOOL = "edit_app";
 
 /**
  * The assembly verbs, by NAME rather than by risk.
@@ -241,17 +247,25 @@ const environmentNote = (appId: AppId, listings: readonly ToolListing[]): string
 
 You have no machine: no shell, no \`Task\`, no files on disk. Everything the skill
 above tells you to read is already below, and everything it tells you to write goes
-through two tools.
+through the tools below.
 
 - **\`${SAVE_APP_TOOL}\`** saves this app's whole document. The app is
   \`${appId}\`; you never name a path. Every save that parses repaints the person's
-  screen, so save as you go — a save is cheap and silence is not. There is no
-  edit-in-place tool: save the full document each time.
+  screen, so save as you go — a save is cheap and silence is not. Save the whole
+  document ONCE, as early as you can; after that every revision is
+  \`${EDIT_APP_TOOL}\`.
   Its \`decisions\` is this app's MEMORY, and the only thing the next editor will
   have besides the document. Record what reading the document could not tell
   them — why you narrowed something, a constraint the tools imposed, a shape you
   ruled out. Never record what you did or in what order; that is narration, and
   it crowds out the one line that mattered.
+- **\`${EDIT_APP_TOOL}\`** revises the document you already saved, with
+  SEARCH/REPLACE blocks: \`search\` is lines copied off that document verbatim,
+  \`replace\` is what they become. Use the SMALLEST blocks that carry the change,
+  one block per place — quoting the whole document back is the thing this tool
+  exists to avoid. Each \`search\` must match in exactly one place, so include a
+  surrounding line or two when a line repeats. Every block has to match or none
+  of them is applied, and the reply tells you which one missed.
 - **\`validate\`** is the floor. Call it on what you saved, fix what it names, save
   again. You are not done until it comes back clean.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Assembling a document out of this
@@ -290,7 +304,7 @@ function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): stri
     .join("\n\n---\n\n");
 }
 
-/** What the two hands recorded, for THIS run. A collector on the run rather than
+/** What the hands recorded, for THIS run. A collector on the run rather than
  *  module state: the hands are built per run and closed over it, so two concurrent
  *  assemblies cannot read each other's verdict. */
 interface RunRecord {
@@ -390,6 +404,61 @@ export async function assembleScreen(
     return await turn.workspace.commit({ message: `${file} (${input.appId})` });
   };
 
+  /**
+   * What a landed `app.vendo` write MEANS — the bookkeeping both writing hands
+   * share, so a revision reaches the floor, the paint verdict and the audit by
+   * exactly the same route a whole-document save does.
+   *
+   * Returns the note the hand hands back, which is the only part either hand
+   * decides for itself.
+   */
+  const afterAppSave = async (
+    turn: Turn<unknown>,
+    content: string,
+    committed: CommitResult,
+  ): Promise<string> => {
+    // The FIRST landed save is when the person stops waiting and starts
+    // looking, so it is what starts the short clock.
+    if (!record.assembled) fuse(SCREEN_POLISH_MS);
+    record.assembled = true;
+    record.title = nameOf(content) ?? record.title;
+    /**
+     * A SAVE THAT NEVER REACHED THE SCREEN HEARS WHY — the builder's own gate
+     * (`validateWrittenApps`), on the one case this loop had no door for.
+     *
+     * Live 2026-08-06 ("a dashboard for my upcoming bills"): a save the seam
+     * would not paint leaves no ROW — no paint, no `authored` — and
+     * `validate({appId})`, the door this hand's own note sends the model to, is
+     * row-scoped. It answered "app not found" on exactly the document that
+     * needed judging, so the loop heard nothing, saved again, and the screen the
+     * person kept was judged by nothing it could hear from. `{ document }` has
+     * no such hole, which is the gate's own reason for taking it.
+     *
+     * Only when the paint did NOT happen: a painted save is already floored (the
+     * seam runs the same checks before it emits), so running them again would
+     * pay twice and second-guess the seam. `painted` absent means an unwrapped
+     * workspace — nothing known, so nothing claimed.
+     */
+    const painted = paintedIn(committed);
+    record.painted = painted?.includes(input.appId) ?? false;
+    if (painted !== undefined && !record.painted) {
+      const instruction = repairInstruction(await validateWrittenApps({
+        tools: turn.tools,
+        workspace: turn.workspace,
+        paths: [`${directory}/${APP_FILE}`],
+      }));
+      // No instruction covers BOTH "validate cleared it" and every way the gate
+      // could not reach a verdict — a denied call, an unreadable answer, a
+      // workspace that closed under it — each of which the gate reports to the
+      // operator and returns empty for, its fail-open being deliberate. So this
+      // hand cannot say which happened, and claiming the first told the loop its
+      // document had been checked when nothing had checked it. The failed paint
+      // is the fact this hand does have, and it is enough to act on.
+      return instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.";
+    }
+    return "Run validate on it now.";
+  };
+
   const saveApp: HarnessHand = {
     name: SAVE_APP_TOOL,
     description:
@@ -416,54 +485,81 @@ export async function assembleScreen(
       if (committed.status !== "ok") {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
       }
-      // The FIRST landed save is when the person stops waiting and starts
-      // looking, so it is what starts the short clock.
-      if (!record.assembled) fuse(SCREEN_POLISH_MS);
-      record.assembled = true;
-      record.title = nameOf(content) ?? record.title;
       // The last save that had something to say wins the run. An omitted or blank
       // `decisions` on a later save is "nothing to add", not "forget the earlier
       // one" — a save-as-you-go loop would otherwise erase its own memory on the
       // final validate-fix save.
       if (decisions !== undefined && decisions.trim() !== "") record.decisions = decisions;
-      /**
-       * A SAVE THAT NEVER REACHED THE SCREEN HEARS WHY — the builder's own gate
-       * (`validateWrittenApps`), on the one case this loop had no door for.
-       *
-       * Live 2026-08-06 ("a dashboard for my upcoming bills"): a save the seam
-       * would not paint leaves no ROW — no paint, no `authored` — and
-       * `validate({appId})`, the door this hand's own note sends the model to, is
-       * row-scoped. It answered "app not found" on exactly the document that
-       * needed judging, so the loop heard nothing, saved again, and the screen the
-       * person kept was judged by nothing it could hear from. `{ document }` has
-       * no such hole, which is the gate's own reason for taking it.
-       *
-       * Only when the paint did NOT happen: a painted save is already floored (the
-       * seam runs the same checks before it emits), so running them again would
-       * pay twice and second-guess the seam. `painted` absent means an unwrapped
-       * workspace — nothing known, so nothing claimed.
-       */
-      const painted = paintedIn(committed);
-      record.painted = painted?.includes(input.appId) ?? false;
-      if (painted !== undefined && !record.painted) {
-        const instruction = repairInstruction(await validateWrittenApps({
-          tools: turn.tools,
-          workspace: turn.workspace,
-          paths: [`${directory}/${APP_FILE}`],
-        }));
-        // No instruction covers BOTH "validate cleared it" and every way the gate
-        // could not reach a verdict — a denied call, an unreadable answer, a
-        // workspace that closed under it — each of which the gate reports to the
-        // operator and returns empty for, its fail-open being deliberate. So this
-        // hand cannot say which happened, and claiming the first told the loop its
-        // document had been checked when nothing had checked it. The failed paint
-        // is the fact this hand does have, and it is enough to act on.
+      return { saved: true, note: await afterAppSave(turn, content, committed) };
+    },
+  };
+
+  /**
+   * THE REVISION HAND (aider's SEARCH/REPLACE, minus its parsing).
+   *
+   * A whole-document save per fix is the expensive half of every revision: the
+   * document is already on the person's screen and in this loop's own transcript,
+   * and re-emitting it to change one prop costs a full generation of tokens and
+   * seconds. The blocks arrive as tool ARGUMENTS rather than inside a fenced
+   * reply, which is where aider's own format brittleness lives — there is nothing
+   * to parse, so the only thing that can go wrong is a `search` that does not
+   * match, and `applyEditBlocks` answers that with the failed block and the
+   * nearest real lines.
+   *
+   * Everything after a successful apply is `saveApp`'s route, verbatim: the same
+   * `save`, the same paint verdict, the same floor. A failure writes nothing.
+   */
+  const editApp: HarnessHand = {
+    name: EDIT_APP_TOOL,
+    description:
+      "Revise the document you already saved, with SEARCH/REPLACE blocks instead of the whole document. "
+      + "Each `search` is lines copied off that document verbatim and must match in exactly one place; every "
+      + "block has to match or none is applied. The screen repaints on every applied edit.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        edits: {
+          type: "array",
+          description: "The changes, applied in order. The smallest blocks that carry the change.",
+          items: {
+            type: "object",
+            properties: {
+              search: {
+                type: "string",
+                description:
+                  "Lines from the saved document, exactly as they appear in it — enough of them that they "
+                  + "appear in exactly one place.",
+              },
+              replace: {
+                type: "string",
+                description: "What those lines become. Empty removes them.",
+              },
+            },
+            required: ["search", "replace"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["edits"],
+      additionalProperties: false,
+    },
+    execute: async (args, turn) => {
+      const { edits } = args as { edits: readonly EditBlock[] };
+      const path = `${directory}/${APP_FILE}`;
+      const current = await turn.workspace.readFile(path).catch(() => undefined);
+      if (current === undefined) {
         return {
-          saved: true,
-          note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.",
+          applied: false,
+          note: `There is no document to edit yet — save the whole document with \`${SAVE_APP_TOOL}\` first.`,
         };
       }
-      return { saved: true, note: "Run validate on it now." };
+      const edited = applyEditBlocks(current, edits);
+      if (!edited.ok) return { applied: false, note: edited.note };
+      const committed = await save(turn, APP_FILE, edited.document);
+      if (committed.status !== "ok") {
+        return { applied: false, note: "The edit did not land — someone else changed this app. Try again." };
+      }
+      return { applied: true, note: await afterAppSave(turn, edited.document, committed) };
     },
   };
 
@@ -503,7 +599,7 @@ export async function assembleScreen(
     .filter((listing) => listing.name !== VENDO_MAKE_TOOL)
     .filter((listing) => ASSEMBLY_TOOLS.includes(listing.name) || listing.risk === "read")
     .map((listing) => listing.name);
-  loadout.push(saveApp, escalate);
+  loadout.push(saveApp, editApp, escalate);
 
   const turn: Turn<VendoHarnessOptions> = {
     messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
