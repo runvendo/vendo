@@ -184,19 +184,59 @@ const whereOf = (file: TS.SourceFile, diagnostic: TS.Diagnostic, locus: Locus): 
 
 // ---- translating a diagnostic --------------------------------------------
 
-/** A prop-type name short enough to read. A screen's row types print as long
+/** A type name short enough to read. A screen's row types print as long
  *  anonymous objects; the author needs the SHAPE class, not every field. */
-const briefType = (ts: typeof TS, checker: TS.TypeChecker, type: TS.Type | undefined): string => {
-  if (type === undefined) return "a different type";
-  const text = checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation);
+const brief = (text: string): string => {
   if (text.length <= 60) return text;
   if (text.endsWith("[]") || text.startsWith("Array<")) return "a list of rows";
   return text.slice(0, 57).concat("…");
 };
 
+const briefType = (ts: typeof TS, checker: TS.TypeChecker, type: TS.Type | undefined): string => {
+  if (type === undefined) return "a different type";
+  return brief(checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation));
+};
+
+/** The type a prop takes, as the author has to write it. EVERY prop also accepts
+ *  a binding object (`{ $path } | { $state } | { $expr }`, screen-typings.ts), so
+ *  spelling those three out buries the one type that matters — and it is the
+ *  same boilerplate on every prop of every component, which teaches nothing. */
+const propTypeText = (ts: typeof TS, checker: TS.TypeChecker, type: TS.Type | undefined): string => {
+  if (type === undefined) return "a different type";
+  const members = (type.isUnion() ? type.types : [type])
+    .map((member) => checker.typeToString(member, undefined, ts.TypeFormatFlags.NoTruncation))
+    .filter((text) => !text.startsWith("{ $"));
+  return members.length === 0 ? briefType(ts, checker, type) : brief(members.join(" | "));
+};
+
+/**
+ * The offending tag, quoted back on one line.
+ *
+ * A finding's `where` carries the tag NAME and at best a prop name (`<Stat>
+ * prop "value"`), and a real screen routinely holds several nodes of the same
+ * component — so "<Stat> is missing required prop \"value\"" does not say WHICH
+ * Stat to edit. The model then guesses, and a wrong guess costs a whole
+ * save → validate → re-save round: the identical finding came back twice in one
+ * measured run, unfixed both times. The tag's own text is the locus the author
+ * can actually find, because the screen this compiler reads is the tree printed
+ * back (print.ts round-trips byte-identically), so the quote matches the file
+ * the author wrote. Truncated: a DataTable's `columns` runs long.
+ */
+const tagText = (file: TS.SourceFile, element: TS.JsxOpeningElement | TS.JsxSelfClosingElement): string => {
+  const text = element.getText(file).replace(/\s+/gu, " ").trim();
+  return text.length <= 140 ? text : `${text.slice(0, 139)}…`;
+};
+
+/** A required prop, with the type it takes — the name alone says what is
+ *  missing, the type says what to write there. */
+interface RequiredProp {
+  name: string;
+  type: string;
+}
+
 const propsOf = (ts: typeof TS, checker: TS.TypeChecker, element: TS.JsxOpeningElement | TS.JsxSelfClosingElement): {
   all: string[];
-  required: string[];
+  required: RequiredProp[];
 } | undefined => {
   const signature = checker.getTypeAtLocation(element.tagName).getCallSignatures()[0];
   const parameter = signature?.getParameters()[0];
@@ -209,7 +249,10 @@ const propsOf = (ts: typeof TS, checker: TS.TypeChecker, element: TS.JsxOpeningE
     .filter((symbol) => symbol.getName() !== "children" && symbol.getName() !== "pending");
   return {
     all: symbols.map((symbol) => symbol.getName()),
-    required: symbols.filter((symbol) => (symbol.flags & ts.SymbolFlags.Optional) === 0).map((symbol) => symbol.getName()),
+    required: symbols.filter((symbol) => (symbol.flags & ts.SymbolFlags.Optional) === 0).map((symbol) => ({
+      name: symbol.getName(),
+      type: propTypeText(ts, checker, checker.getTypeOfSymbolAtLocation(symbol, element.tagName)),
+    })),
   };
 };
 
@@ -232,20 +275,24 @@ const elementPropFindings = (
   const written = writtenProps(ts, file, element);
   const allowed = new Set(target.all);
   const findings: Finding[] = [];
+  const tag = tagText(file, element);
   for (const prop of written) {
     if (allowed.has(prop)) continue;
     findings.push({
       severity: "block",
       where: `<${component}> prop "${prop}"`,
-      message: `sets unknown prop "${prop}" on <${component}>; the renderer drops it. Allowed props: ${target.all.join(", ") || "(none)"}`,
+      message: `sets unknown prop "${prop}" on <${component}>; the renderer drops it. Allowed props: ${target.all.join(", ") || "(none)"}`
+        + `. Rename or drop "${prop}" in this exact tag: ${tag}`,
     });
   }
-  for (const prop of target.required) {
-    if (written.includes(prop)) continue;
+  for (const { name, type } of target.required) {
+    if (written.includes(name)) continue;
     findings.push({
       severity: "block",
       where: `<${component}>`,
-      message: `is missing required prop "${prop}" on <${component}>; the component cannot render without it. Its props are: ${target.all.join(", ")}`,
+      message: `is missing required prop "${name}" on <${component}>; the component cannot render without it.`
+        + ` Add ${name} (it takes ${type}) to this exact tag: ${tag}`
+        + `. Its props are: ${target.all.join(", ")}`,
     });
   }
   return findings;
@@ -328,9 +375,10 @@ const attributeValueFinding = (
   return {
     severity: "block",
     where,
-    message: `prop "${locus.prop}" on <${locus.element.tagName.getText(file)}> takes ${briefType(ts, checker, wanted)},`
+    message: `prop "${locus.prop}" on <${locus.element.tagName.getText(file)}> takes ${propTypeText(ts, checker, wanted)},`
       + ` but this value is ${briefType(ts, checker, checker.getTypeAtLocation(value))}`
-      + " — bind a value whose type matches the prop",
+      + " — bind a value whose type matches the prop"
+      + `, in this exact tag: ${tagText(file, locus.element)}`,
   };
 };
 
@@ -387,10 +435,14 @@ const translate = (
     if (finding !== undefined) return [finding];
   }
 
+  // An unmapped code arrives as the compiler's own prose, which names types and
+  // no place. The tag it sits on is the one thing the author can act on, so it
+  // rides along here too.
   return [{
     severity: "block",
     where,
-    message: ts.flattenDiagnosticMessageText(diagnostic.messageText, " "),
+    message: ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")
+      + (locus.element === undefined ? "" : ` — in this exact tag: ${tagText(file, locus.element)}`),
   }];
 };
 
