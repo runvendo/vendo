@@ -220,15 +220,20 @@ through two tools.
 
 - **\`${SAVE_APP_TOOL}\`** saves this app's whole document. The app is
   \`${appId}\`; you never name a path. Every save that parses repaints the person's
-  screen, so save as you go — a save is cheap and silence is not. There is no
-  edit-in-place tool: save the full document each time.
+  screen, and the FIRST save is the one they see — so look up every component you
+  need BEFORE you save, and make that first save the whole screen rather than a
+  sketch you intend to grow. There is no edit-in-place tool: save the full
+  document each time.
   Its \`decisions\` is this app's MEMORY, and the only thing the next editor will
   have besides the document. Record what reading the document could not tell
   them — why you narrowed something, a constraint the tools imposed, a shape you
   ruled out. Never record what you did or in what order; that is narration, and
   it crowds out the one line that mattered.
-- **\`validate\`** is the floor. Call it on what you saved, fix what it names, save
-  again. You are not done until it comes back clean.
+- **\`validate\`** is the floor AND the finish line. Call it on what you saved, fix
+  what it names, save again — and the first time it comes back clean you are DONE:
+  say your one sentence and stop. Not another save, not another component search,
+  not a second \`validate\` to be sure. Nothing you do after a clean floor reaches
+  the person any faster than stopping does.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Assembling a document out of this
   product's components is all you can do; anything that needs real code, its own
   server, a file the person uploads, or a surface these components cannot express
