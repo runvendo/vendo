@@ -52,5 +52,2876 @@
       "offers no cancel control"
     ],
     "data": { "list_transfers": { "data": [] } }
+  },
+  {
+    "id": "small-amounts",
+    "lane": "screen",
+    "prompt": "What are my three smallest spending categories this month? I want the exact dollars.",
+    "prompts": [
+      "What are my three smallest spending categories this month? I want the exact dollars.",
+      "Where am I spending the least? Show me the bottom three categories with real amounts, nothing rounded off.",
+      "bottom 3 spend categories pls, exact figures"
+    ],
+    "pass": [
+      "shows exactly three categories: coffee, transport and subscriptions",
+      "the amounts read $61.30, $96.75 and $184.41",
+      "no amount is a hundred times too large — nothing reads $6,130, $9,675 or $18,441",
+      "the three are ordered smallest first: coffee, then transport, then subscriptions",
+      "housing, groceries and dining appear nowhere on the screen"
+    ]
+  },
+  {
+    "id": "spend-shares",
+    "lane": "screen",
+    "prompt": "Break my spending down by share — what percentage of the month went to each category?",
+    "prompts": [
+      "Break my spending down by share — what percentage of the month went to each category?",
+      "I want the percentage split of my spending this month, category by category, with the dollar amount beside each one.",
+      "show me what % of my money each category ate this month"
+    ],
+    "pass": [
+      "shows six category rows and no seventh",
+      "each category carries both a dollar amount and a percentage share",
+      "the month's total reads $4,243.11",
+      "housing's share reads about 67% (67.2%) — not 6.7%, not 672%, not 100%",
+      "coffee's share reads about 1.4% and is not rounded away to 0%",
+      "the six shares add up to 100% give or take one rounding point"
+    ]
+  },
+  {
+    "id": "transfer-dates-plain",
+    "lane": "screen",
+    "prompt": "List my recent transfers and when each one went out, in plain English dates.",
+    "prompts": [
+      "List my recent transfers and when each one went out, in plain English dates.",
+      "Show me every transfer I've made lately with the date it carries — readable dates please, not database ones.",
+      "recent transfers + dates, human readable"
+    ],
+    "pass": [
+      "all four transfers are listed, each with the date from its own row: Alex Rivera Aug 1, Jordan Avery Jul 30, Mission St Property Jul 28, Dana Whitfield Jul 24",
+      "no date is off by a day — nothing reads Jul 31, Jul 29, Jul 27 or Jul 23",
+      "no date appears in 2026-08-01 form anywhere on the screen",
+      "the amounts read $250.00, $60.00, $2,850.00 and $125.50"
+    ]
+  },
+  {
+    "id": "accounts-total",
+    "lane": "screen",
+    "prompt": "How many accounts do I have with you, and what do they add up to?",
+    "prompts": [
+      "How many accounts do I have with you, and what do they add up to?",
+      "Give me a summary of everything I hold: each account's balance and the combined total.",
+      "account count + combined balance"
+    ],
+    "pass": [
+      "says there are 3 accounts and lists all three balances: $9,412.20, $28,141.35 and -$1,288.40",
+      "the total reads $36,265.15 — the credit balance is subtracted, not added, so it is not $38,841.95",
+      "the credit balance is presented as negative (a minus sign, parentheses, or the word owed), never as a plain $1,288.40",
+      "no fourth account and no invented figure appears alongside them"
+    ]
+  },
+  {
+    "id": "accounts-average",
+    "lane": "screen",
+    "prompt": "Show all my accounts, what they add up to, and the average balance across them.",
+    "prompts": [
+      "Show all my accounts, what they add up to, and the average balance across them.",
+      "I want a summary of my accounts: every balance, the combined total, and what the average account holds.",
+      "accounts overview — total plus average balance"
+    ],
+    "pass": [
+      "lists all four accounts with their balances: $12,840.00, $9,064.00, $1,586.00 and -$4,129.60",
+      "the total reads $19,360.40 — the credit balance is subtracted, not added, so it is not $27,619.60",
+      "the average balance reads $4,840.10, taken across all four accounts — not $7,830.00",
+      "the credit balance is presented as negative (a minus sign, parentheses, or the word owed), never as a plain $4,129.60"
+    ],
+    "data": {
+      "list_accounts": {
+        "data": [
+          {
+            "id": "acc_checking",
+            "name": "Maple Checking",
+            "kind": "checking",
+            "mask": "4471",
+            "balance": 1284000
+          },
+          {
+            "id": "acc_savings",
+            "name": "Maple Savings",
+            "kind": "savings",
+            "mask": "8820",
+            "balance": 906400
+          },
+          {
+            "id": "acc_kids",
+            "name": "Maple Kids Savings",
+            "kind": "savings",
+            "mask": "5502",
+            "balance": 158600
+          },
+          {
+            "id": "acc_credit",
+            "name": "Maple Credit",
+            "kind": "credit",
+            "mask": "0934",
+            "balance": -412960
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "busy-month-top5",
+    "lane": "screen",
+    "prompt": "It's been a chaotic quarter — how many transfers have I made, and what were my five biggest?",
+    "prompts": [
+      "It's been a chaotic quarter — how many transfers have I made, and what were my five biggest?",
+      "Tell me how many transfers sit on my account and show the top five by amount.",
+      "count my transfers + show the 5 largest"
+    ],
+    "pass": [
+      "says there are 200 transfers",
+      "lists exactly five of them, largest first: Rosalind Achebe $4,734.74, Lucia Ferrari $4,720.28, Hana Matsumoto $4,714.43, Lena Fitzgerald $4,711.62, Golden Gate Fitness $4,679.71",
+      "there is no sixth transfer row and no dump of the full 200",
+      "the five are ranked by amount, not by date — a screen showing the five most recent transfers has failed this line"
+    ],
+    "data": {
+      "list_transfers": {
+        "data": [
+          {
+            "id": "tr_oxmh",
+            "to": "Alex Rivera",
+            "amount": 316540,
+            "date": "2026-08-01",
+            "status": "completed"
+          },
+          {
+            "id": "tr_slel",
+            "to": "Jordan Avery",
+            "amount": 228873,
+            "date": "2026-08-01",
+            "status": "completed"
+          },
+          {
+            "id": "tr_nwnv",
+            "to": "Dana Whitfield",
+            "amount": 155701,
+            "date": "2026-08-01",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mrmv",
+            "to": "Mission St Property",
+            "amount": 30213,
+            "date": "2026-07-31",
+            "status": "completed"
+          },
+          {
+            "id": "tr_nlvo",
+            "to": "Priya Raghunathan",
+            "amount": 64827,
+            "date": "2026-07-31",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ajcn",
+            "to": "Tomas Eklund",
+            "amount": 294756,
+            "date": "2026-07-30",
+            "status": "completed"
+          },
+          {
+            "id": "tr_fusp",
+            "to": "Nadia Okonkwo",
+            "amount": 409777,
+            "date": "2026-07-30",
+            "status": "completed"
+          },
+          {
+            "id": "tr_qxbw",
+            "to": "Blue Bottle Coffee",
+            "amount": 286600,
+            "date": "2026-07-29",
+            "status": "failed"
+          },
+          {
+            "id": "tr_euga",
+            "to": "Sunset Hardware",
+            "amount": 97105,
+            "date": "2026-07-29",
+            "status": "completed"
+          },
+          {
+            "id": "tr_hsnb",
+            "to": "Bayview Dental Group",
+            "amount": 167737,
+            "date": "2026-07-28",
+            "status": "completed"
+          },
+          {
+            "id": "tr_sais",
+            "to": "Lena Fitzgerald",
+            "amount": 142395,
+            "date": "2026-07-28",
+            "status": "completed"
+          },
+          {
+            "id": "tr_tmcp",
+            "to": "Omar Haddad",
+            "amount": 272150,
+            "date": "2026-07-27",
+            "status": "completed"
+          },
+          {
+            "id": "tr_arrx",
+            "to": "Rowan Delacroix",
+            "amount": 266317,
+            "date": "2026-07-27",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ater",
+            "to": "Golden Gate Fitness",
+            "amount": 467971,
+            "date": "2026-07-27",
+            "status": "failed"
+          },
+          {
+            "id": "tr_tgrs",
+            "to": "Hana Matsumoto",
+            "amount": 299821,
+            "date": "2026-07-26",
+            "status": "completed"
+          },
+          {
+            "id": "tr_zzap",
+            "to": "Trellis Wine Merchants",
+            "amount": 299555,
+            "date": "2026-07-26",
+            "status": "completed"
+          },
+          {
+            "id": "tr_bmtt",
+            "to": "Isaac Berhane",
+            "amount": 241220,
+            "date": "2026-07-25",
+            "status": "completed"
+          },
+          {
+            "id": "tr_lrtd",
+            "to": "Clara Voss",
+            "amount": 379139,
+            "date": "2026-07-25",
+            "status": "completed"
+          },
+          {
+            "id": "tr_scry",
+            "to": "Presidio Pet Clinic",
+            "amount": 405092,
+            "date": "2026-07-24",
+            "status": "completed"
+          },
+          {
+            "id": "tr_rjuw",
+            "to": "Mateo Villanueva",
+            "amount": 400270,
+            "date": "2026-07-24",
+            "status": "pending"
+          },
+          {
+            "id": "tr_yjlf",
+            "to": "Yusuf Karimov",
+            "amount": 235832,
+            "date": "2026-07-23",
+            "status": "failed"
+          },
+          {
+            "id": "tr_qfbj",
+            "to": "Ferry Building Market",
+            "amount": 13871,
+            "date": "2026-07-23",
+            "status": "completed"
+          },
+          {
+            "id": "tr_fdes",
+            "to": "Ingrid Solberg",
+            "amount": 260823,
+            "date": "2026-07-22",
+            "status": "completed"
+          },
+          {
+            "id": "tr_lfjl",
+            "to": "Devon Ashcroft",
+            "amount": 279791,
+            "date": "2026-07-22",
+            "status": "pending"
+          },
+          {
+            "id": "tr_shog",
+            "to": "Marin Cyclery",
+            "amount": 372139,
+            "date": "2026-07-22",
+            "status": "completed"
+          },
+          {
+            "id": "tr_fuxx",
+            "to": "Sofia Mendoza",
+            "amount": 407771,
+            "date": "2026-07-21",
+            "status": "completed"
+          },
+          {
+            "id": "tr_lxta",
+            "to": "Kwame Asante",
+            "amount": 162632,
+            "date": "2026-07-21",
+            "status": "completed"
+          },
+          {
+            "id": "tr_gsak",
+            "to": "Ocean Beach Laundry",
+            "amount": 103231,
+            "date": "2026-07-20",
+            "status": "completed"
+          },
+          {
+            "id": "tr_edjt",
+            "to": "Elena Petrova",
+            "amount": 283893,
+            "date": "2026-07-20",
+            "status": "completed"
+          },
+          {
+            "id": "tr_kzkd",
+            "to": "Harper Lindqvist",
+            "amount": 173520,
+            "date": "2026-07-19",
+            "status": "completed"
+          },
+          {
+            "id": "tr_wsxx",
+            "to": "Noor Al-Sabah",
+            "amount": 49224,
+            "date": "2026-07-19",
+            "status": "completed"
+          },
+          {
+            "id": "tr_psig",
+            "to": "Cypress Grove Creamery",
+            "amount": 132948,
+            "date": "2026-07-18",
+            "status": "completed"
+          },
+          {
+            "id": "tr_avuv",
+            "to": "Tobias Renner",
+            "amount": 12138,
+            "date": "2026-07-18",
+            "status": "failed"
+          },
+          {
+            "id": "tr_lahl",
+            "to": "Amara Nwosu",
+            "amount": 383009,
+            "date": "2026-07-17",
+            "status": "pending"
+          },
+          {
+            "id": "tr_bxcv",
+            "to": "Silver Terrace Storage",
+            "amount": 317899,
+            "date": "2026-07-17",
+            "status": "completed"
+          },
+          {
+            "id": "tr_xzoe",
+            "to": "Lucia Ferrari",
+            "amount": 472028,
+            "date": "2026-07-16",
+            "status": "completed"
+          },
+          {
+            "id": "tr_gzbf",
+            "to": "Ravi Balakrishnan",
+            "amount": 156832,
+            "date": "2026-07-16",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dfld",
+            "to": "Dolores Park Cafe",
+            "amount": 268725,
+            "date": "2026-07-16",
+            "status": "completed"
+          },
+          {
+            "id": "tr_kcik",
+            "to": "Freya Osgood",
+            "amount": 338588,
+            "date": "2026-07-15",
+            "status": "completed"
+          },
+          {
+            "id": "tr_hvdc",
+            "to": "Emeka Chukwu",
+            "amount": 297722,
+            "date": "2026-07-15",
+            "status": "pending"
+          },
+          {
+            "id": "tr_txik",
+            "to": "Anneliese Brandt",
+            "amount": 85719,
+            "date": "2026-07-14",
+            "status": "completed"
+          },
+          {
+            "id": "tr_acuu",
+            "to": "Cole Whitaker",
+            "amount": 294308,
+            "date": "2026-07-14",
+            "status": "completed"
+          },
+          {
+            "id": "tr_nrxy",
+            "to": "Sana Qureshi",
+            "amount": 134658,
+            "date": "2026-07-13",
+            "status": "completed"
+          },
+          {
+            "id": "tr_nhdy",
+            "to": "Twin Peaks Electric",
+            "amount": 306810,
+            "date": "2026-07-13",
+            "status": "completed"
+          },
+          {
+            "id": "tr_pjde",
+            "to": "Gustavo Sandoval",
+            "amount": 430504,
+            "date": "2026-07-12",
+            "status": "completed"
+          },
+          {
+            "id": "tr_gxjr",
+            "to": "Mira Halvorsen",
+            "amount": 240384,
+            "date": "2026-07-12",
+            "status": "completed"
+          },
+          {
+            "id": "tr_npxm",
+            "to": "Dmitri Volkov",
+            "amount": 310453,
+            "date": "2026-07-11",
+            "status": "completed"
+          },
+          {
+            "id": "tr_aqfe",
+            "to": "Rosalind Achebe",
+            "amount": 405623,
+            "date": "2026-07-11",
+            "status": "completed"
+          },
+          {
+            "id": "tr_tvis",
+            "to": "Bernal Heights Books",
+            "amount": 52854,
+            "date": "2026-07-11",
+            "status": "completed"
+          },
+          {
+            "id": "tr_koft",
+            "to": "Theo Lindgren",
+            "amount": 424818,
+            "date": "2026-07-10",
+            "status": "completed"
+          },
+          {
+            "id": "tr_cujn",
+            "to": "Aisha Diallo",
+            "amount": 42309,
+            "date": "2026-07-10",
+            "status": "pending"
+          },
+          {
+            "id": "tr_waib",
+            "to": "Marcus Oyelaran",
+            "amount": 159401,
+            "date": "2026-07-09",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ifvv",
+            "to": "Valentina Ruiz",
+            "amount": 114265,
+            "date": "2026-07-09",
+            "status": "completed"
+          },
+          {
+            "id": "tr_emmw",
+            "to": "Soren Kjaer",
+            "amount": 152360,
+            "date": "2026-07-08",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dyko",
+            "to": "Potrero Auto Works",
+            "amount": 274180,
+            "date": "2026-07-08",
+            "status": "completed"
+          },
+          {
+            "id": "tr_jwuu",
+            "to": "Leila Farouk",
+            "amount": 324817,
+            "date": "2026-07-07",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ktoj",
+            "to": "Hugo Bergstrom",
+            "amount": 326573,
+            "date": "2026-07-07",
+            "status": "completed"
+          },
+          {
+            "id": "tr_tknt",
+            "to": "Naledi Mokoena",
+            "amount": 172351,
+            "date": "2026-07-06",
+            "status": "pending"
+          },
+          {
+            "id": "tr_nsus",
+            "to": "Cassian Wray",
+            "amount": 11468,
+            "date": "2026-07-06",
+            "status": "pending"
+          },
+          {
+            "id": "tr_lwnn",
+            "to": "Yara Haddadin",
+            "amount": 446356,
+            "date": "2026-07-06",
+            "status": "completed"
+          },
+          {
+            "id": "tr_fyun",
+            "to": "Alex Rivera",
+            "amount": 217587,
+            "date": "2026-07-05",
+            "status": "completed"
+          },
+          {
+            "id": "tr_gzei",
+            "to": "Jordan Avery",
+            "amount": 226153,
+            "date": "2026-07-05",
+            "status": "completed"
+          },
+          {
+            "id": "tr_jnnl",
+            "to": "Dana Whitfield",
+            "amount": 363062,
+            "date": "2026-07-04",
+            "status": "pending"
+          },
+          {
+            "id": "tr_vwwi",
+            "to": "Mission St Property",
+            "amount": 443145,
+            "date": "2026-07-04",
+            "status": "completed"
+          },
+          {
+            "id": "tr_pxhb",
+            "to": "Priya Raghunathan",
+            "amount": 331369,
+            "date": "2026-07-03",
+            "status": "pending"
+          },
+          {
+            "id": "tr_leif",
+            "to": "Tomas Eklund",
+            "amount": 453984,
+            "date": "2026-07-03",
+            "status": "completed"
+          },
+          {
+            "id": "tr_xmkd",
+            "to": "Nadia Okonkwo",
+            "amount": 377489,
+            "date": "2026-07-02",
+            "status": "completed"
+          },
+          {
+            "id": "tr_yrfn",
+            "to": "Blue Bottle Coffee",
+            "amount": 156366,
+            "date": "2026-07-02",
+            "status": "completed"
+          },
+          {
+            "id": "tr_covt",
+            "to": "Sunset Hardware",
+            "amount": 406098,
+            "date": "2026-07-01",
+            "status": "pending"
+          },
+          {
+            "id": "tr_sqqn",
+            "to": "Bayview Dental Group",
+            "amount": 133060,
+            "date": "2026-07-01",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mwtb",
+            "to": "Lena Fitzgerald",
+            "amount": 421121,
+            "date": "2026-06-30",
+            "status": "completed"
+          },
+          {
+            "id": "tr_bipt",
+            "to": "Omar Haddad",
+            "amount": 409860,
+            "date": "2026-06-30",
+            "status": "completed"
+          },
+          {
+            "id": "tr_pwmz",
+            "to": "Rowan Delacroix",
+            "amount": 50857,
+            "date": "2026-06-30",
+            "status": "completed"
+          },
+          {
+            "id": "tr_yvwr",
+            "to": "Golden Gate Fitness",
+            "amount": 432241,
+            "date": "2026-06-29",
+            "status": "completed"
+          },
+          {
+            "id": "tr_guob",
+            "to": "Hana Matsumoto",
+            "amount": 59518,
+            "date": "2026-06-29",
+            "status": "completed"
+          },
+          {
+            "id": "tr_owur",
+            "to": "Trellis Wine Merchants",
+            "amount": 337512,
+            "date": "2026-06-28",
+            "status": "completed"
+          },
+          {
+            "id": "tr_yjyi",
+            "to": "Isaac Berhane",
+            "amount": 172288,
+            "date": "2026-06-28",
+            "status": "completed"
+          },
+          {
+            "id": "tr_rqop",
+            "to": "Clara Voss",
+            "amount": 174963,
+            "date": "2026-06-27",
+            "status": "pending"
+          },
+          {
+            "id": "tr_zafs",
+            "to": "Presidio Pet Clinic",
+            "amount": 396627,
+            "date": "2026-06-27",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dnzb",
+            "to": "Mateo Villanueva",
+            "amount": 69466,
+            "date": "2026-06-26",
+            "status": "completed"
+          },
+          {
+            "id": "tr_npzc",
+            "to": "Yusuf Karimov",
+            "amount": 316490,
+            "date": "2026-06-26",
+            "status": "completed"
+          },
+          {
+            "id": "tr_bzvj",
+            "to": "Ferry Building Market",
+            "amount": 263736,
+            "date": "2026-06-25",
+            "status": "completed"
+          },
+          {
+            "id": "tr_kbcz",
+            "to": "Ingrid Solberg",
+            "amount": 126780,
+            "date": "2026-06-25",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dfjj",
+            "to": "Devon Ashcroft",
+            "amount": 385080,
+            "date": "2026-06-25",
+            "status": "completed"
+          },
+          {
+            "id": "tr_plki",
+            "to": "Marin Cyclery",
+            "amount": 68940,
+            "date": "2026-06-24",
+            "status": "completed"
+          },
+          {
+            "id": "tr_joqx",
+            "to": "Sofia Mendoza",
+            "amount": 367094,
+            "date": "2026-06-24",
+            "status": "completed"
+          },
+          {
+            "id": "tr_jwxg",
+            "to": "Kwame Asante",
+            "amount": 288196,
+            "date": "2026-06-23",
+            "status": "failed"
+          },
+          {
+            "id": "tr_sncp",
+            "to": "Ocean Beach Laundry",
+            "amount": 353445,
+            "date": "2026-06-23",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ujzl",
+            "to": "Elena Petrova",
+            "amount": 36054,
+            "date": "2026-06-22",
+            "status": "completed"
+          },
+          {
+            "id": "tr_lmgg",
+            "to": "Harper Lindqvist",
+            "amount": 307075,
+            "date": "2026-06-22",
+            "status": "pending"
+          },
+          {
+            "id": "tr_beth",
+            "to": "Noor Al-Sabah",
+            "amount": 71659,
+            "date": "2026-06-21",
+            "status": "completed"
+          },
+          {
+            "id": "tr_xjuu",
+            "to": "Cypress Grove Creamery",
+            "amount": 113049,
+            "date": "2026-06-21",
+            "status": "completed"
+          },
+          {
+            "id": "tr_uudw",
+            "to": "Tobias Renner",
+            "amount": 325121,
+            "date": "2026-06-20",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ujei",
+            "to": "Amara Nwosu",
+            "amount": 388031,
+            "date": "2026-06-20",
+            "status": "completed"
+          },
+          {
+            "id": "tr_nhrm",
+            "to": "Silver Terrace Storage",
+            "amount": 335298,
+            "date": "2026-06-20",
+            "status": "pending"
+          },
+          {
+            "id": "tr_ccfi",
+            "to": "Lucia Ferrari",
+            "amount": 292795,
+            "date": "2026-06-19",
+            "status": "completed"
+          },
+          {
+            "id": "tr_geti",
+            "to": "Ravi Balakrishnan",
+            "amount": 15614,
+            "date": "2026-06-19",
+            "status": "completed"
+          },
+          {
+            "id": "tr_xhgr",
+            "to": "Dolores Park Cafe",
+            "amount": 208771,
+            "date": "2026-06-18",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dcyk",
+            "to": "Freya Osgood",
+            "amount": 10122,
+            "date": "2026-06-18",
+            "status": "completed"
+          },
+          {
+            "id": "tr_wvyi",
+            "to": "Emeka Chukwu",
+            "amount": 100081,
+            "date": "2026-06-17",
+            "status": "pending"
+          },
+          {
+            "id": "tr_hcss",
+            "to": "Anneliese Brandt",
+            "amount": 316156,
+            "date": "2026-06-17",
+            "status": "completed"
+          },
+          {
+            "id": "tr_jbhi",
+            "to": "Cole Whitaker",
+            "amount": 209327,
+            "date": "2026-06-16",
+            "status": "completed"
+          },
+          {
+            "id": "tr_bpov",
+            "to": "Sana Qureshi",
+            "amount": 341107,
+            "date": "2026-06-16",
+            "status": "failed"
+          },
+          {
+            "id": "tr_ztrq",
+            "to": "Twin Peaks Electric",
+            "amount": 277263,
+            "date": "2026-06-15",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ewae",
+            "to": "Gustavo Sandoval",
+            "amount": 236433,
+            "date": "2026-06-15",
+            "status": "completed"
+          },
+          {
+            "id": "tr_rbea",
+            "to": "Mira Halvorsen",
+            "amount": 213291,
+            "date": "2026-06-14",
+            "status": "completed"
+          },
+          {
+            "id": "tr_iulf",
+            "to": "Dmitri Volkov",
+            "amount": 289940,
+            "date": "2026-06-14",
+            "status": "pending"
+          },
+          {
+            "id": "tr_vksm",
+            "to": "Rosalind Achebe",
+            "amount": 473474,
+            "date": "2026-06-14",
+            "status": "pending"
+          },
+          {
+            "id": "tr_apgj",
+            "to": "Bernal Heights Books",
+            "amount": 411935,
+            "date": "2026-06-13",
+            "status": "completed"
+          },
+          {
+            "id": "tr_nfqm",
+            "to": "Theo Lindgren",
+            "amount": 427004,
+            "date": "2026-06-13",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ivcu",
+            "to": "Aisha Diallo",
+            "amount": 327754,
+            "date": "2026-06-12",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dgfj",
+            "to": "Marcus Oyelaran",
+            "amount": 163945,
+            "date": "2026-06-12",
+            "status": "pending"
+          },
+          {
+            "id": "tr_ribe",
+            "to": "Valentina Ruiz",
+            "amount": 262082,
+            "date": "2026-06-11",
+            "status": "pending"
+          },
+          {
+            "id": "tr_ipfx",
+            "to": "Soren Kjaer",
+            "amount": 166207,
+            "date": "2026-06-11",
+            "status": "completed"
+          },
+          {
+            "id": "tr_alqs",
+            "to": "Potrero Auto Works",
+            "amount": 7041,
+            "date": "2026-06-10",
+            "status": "failed"
+          },
+          {
+            "id": "tr_fyhv",
+            "to": "Leila Farouk",
+            "amount": 17110,
+            "date": "2026-06-10",
+            "status": "failed"
+          },
+          {
+            "id": "tr_wnph",
+            "to": "Hugo Bergstrom",
+            "amount": 388761,
+            "date": "2026-06-09",
+            "status": "completed"
+          },
+          {
+            "id": "tr_hitr",
+            "to": "Naledi Mokoena",
+            "amount": 174432,
+            "date": "2026-06-09",
+            "status": "pending"
+          },
+          {
+            "id": "tr_fhkc",
+            "to": "Cassian Wray",
+            "amount": 78242,
+            "date": "2026-06-09",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ihmf",
+            "to": "Yara Haddadin",
+            "amount": 29592,
+            "date": "2026-06-08",
+            "status": "completed"
+          },
+          {
+            "id": "tr_wqlp",
+            "to": "Alex Rivera",
+            "amount": 94893,
+            "date": "2026-06-08",
+            "status": "completed"
+          },
+          {
+            "id": "tr_qwtv",
+            "to": "Jordan Avery",
+            "amount": 461287,
+            "date": "2026-06-07",
+            "status": "pending"
+          },
+          {
+            "id": "tr_rnbu",
+            "to": "Dana Whitfield",
+            "amount": 455374,
+            "date": "2026-06-07",
+            "status": "completed"
+          },
+          {
+            "id": "tr_edjg",
+            "to": "Mission St Property",
+            "amount": 192348,
+            "date": "2026-06-06",
+            "status": "pending"
+          },
+          {
+            "id": "tr_iics",
+            "to": "Priya Raghunathan",
+            "amount": 330060,
+            "date": "2026-06-06",
+            "status": "pending"
+          },
+          {
+            "id": "tr_qpzr",
+            "to": "Tomas Eklund",
+            "amount": 32756,
+            "date": "2026-06-05",
+            "status": "pending"
+          },
+          {
+            "id": "tr_dgem",
+            "to": "Nadia Okonkwo",
+            "amount": 174117,
+            "date": "2026-06-05",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ijuv",
+            "to": "Blue Bottle Coffee",
+            "amount": 238141,
+            "date": "2026-06-04",
+            "status": "completed"
+          },
+          {
+            "id": "tr_oluq",
+            "to": "Sunset Hardware",
+            "amount": 244546,
+            "date": "2026-06-04",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mtbd",
+            "to": "Bayview Dental Group",
+            "amount": 465512,
+            "date": "2026-06-04",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ayvv",
+            "to": "Lena Fitzgerald",
+            "amount": 471162,
+            "date": "2026-06-03",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ldhr",
+            "to": "Omar Haddad",
+            "amount": 413962,
+            "date": "2026-06-03",
+            "status": "pending"
+          },
+          {
+            "id": "tr_mjcu",
+            "to": "Rowan Delacroix",
+            "amount": 102700,
+            "date": "2026-06-02",
+            "status": "pending"
+          },
+          {
+            "id": "tr_ouea",
+            "to": "Golden Gate Fitness",
+            "amount": 409236,
+            "date": "2026-06-02",
+            "status": "pending"
+          },
+          {
+            "id": "tr_cwvi",
+            "to": "Hana Matsumoto",
+            "amount": 303219,
+            "date": "2026-06-01",
+            "status": "completed"
+          },
+          {
+            "id": "tr_flra",
+            "to": "Trellis Wine Merchants",
+            "amount": 378829,
+            "date": "2026-06-01",
+            "status": "completed"
+          },
+          {
+            "id": "tr_vsae",
+            "to": "Isaac Berhane",
+            "amount": 414897,
+            "date": "2026-05-31",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dxij",
+            "to": "Clara Voss",
+            "amount": 447712,
+            "date": "2026-05-31",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ttfd",
+            "to": "Presidio Pet Clinic",
+            "amount": 133384,
+            "date": "2026-05-30",
+            "status": "completed"
+          },
+          {
+            "id": "tr_bwrh",
+            "to": "Mateo Villanueva",
+            "amount": 191231,
+            "date": "2026-05-30",
+            "status": "completed"
+          },
+          {
+            "id": "tr_gfnr",
+            "to": "Yusuf Karimov",
+            "amount": 86656,
+            "date": "2026-05-29",
+            "status": "completed"
+          },
+          {
+            "id": "tr_olaa",
+            "to": "Ferry Building Market",
+            "amount": 54938,
+            "date": "2026-05-29",
+            "status": "failed"
+          },
+          {
+            "id": "tr_lytx",
+            "to": "Ingrid Solberg",
+            "amount": 25061,
+            "date": "2026-05-29",
+            "status": "pending"
+          },
+          {
+            "id": "tr_txyg",
+            "to": "Devon Ashcroft",
+            "amount": 150636,
+            "date": "2026-05-28",
+            "status": "completed"
+          },
+          {
+            "id": "tr_togj",
+            "to": "Marin Cyclery",
+            "amount": 56115,
+            "date": "2026-05-28",
+            "status": "completed"
+          },
+          {
+            "id": "tr_jnzz",
+            "to": "Sofia Mendoza",
+            "amount": 352210,
+            "date": "2026-05-27",
+            "status": "pending"
+          },
+          {
+            "id": "tr_qknh",
+            "to": "Kwame Asante",
+            "amount": 371558,
+            "date": "2026-05-27",
+            "status": "completed"
+          },
+          {
+            "id": "tr_rvzj",
+            "to": "Ocean Beach Laundry",
+            "amount": 186961,
+            "date": "2026-05-26",
+            "status": "completed"
+          },
+          {
+            "id": "tr_pbml",
+            "to": "Elena Petrova",
+            "amount": 329820,
+            "date": "2026-05-26",
+            "status": "completed"
+          },
+          {
+            "id": "tr_tpta",
+            "to": "Harper Lindqvist",
+            "amount": 272653,
+            "date": "2026-05-25",
+            "status": "completed"
+          },
+          {
+            "id": "tr_zlgx",
+            "to": "Noor Al-Sabah",
+            "amount": 151151,
+            "date": "2026-05-25",
+            "status": "pending"
+          },
+          {
+            "id": "tr_aiyl",
+            "to": "Cypress Grove Creamery",
+            "amount": 354397,
+            "date": "2026-05-24",
+            "status": "completed"
+          },
+          {
+            "id": "tr_pdez",
+            "to": "Tobias Renner",
+            "amount": 204230,
+            "date": "2026-05-24",
+            "status": "completed"
+          },
+          {
+            "id": "tr_kwxh",
+            "to": "Amara Nwosu",
+            "amount": 161808,
+            "date": "2026-05-24",
+            "status": "completed"
+          },
+          {
+            "id": "tr_uqzo",
+            "to": "Silver Terrace Storage",
+            "amount": 394124,
+            "date": "2026-05-23",
+            "status": "completed"
+          },
+          {
+            "id": "tr_fwgx",
+            "to": "Lucia Ferrari",
+            "amount": 299948,
+            "date": "2026-05-23",
+            "status": "completed"
+          },
+          {
+            "id": "tr_etow",
+            "to": "Ravi Balakrishnan",
+            "amount": 248506,
+            "date": "2026-05-22",
+            "status": "pending"
+          },
+          {
+            "id": "tr_npxn",
+            "to": "Dolores Park Cafe",
+            "amount": 216171,
+            "date": "2026-05-22",
+            "status": "completed"
+          },
+          {
+            "id": "tr_owkq",
+            "to": "Freya Osgood",
+            "amount": 302614,
+            "date": "2026-05-21",
+            "status": "completed"
+          },
+          {
+            "id": "tr_pbfx",
+            "to": "Emeka Chukwu",
+            "amount": 333773,
+            "date": "2026-05-21",
+            "status": "pending"
+          },
+          {
+            "id": "tr_qxky",
+            "to": "Anneliese Brandt",
+            "amount": 182292,
+            "date": "2026-05-20",
+            "status": "completed"
+          },
+          {
+            "id": "tr_wutc",
+            "to": "Cole Whitaker",
+            "amount": 332553,
+            "date": "2026-05-20",
+            "status": "failed"
+          },
+          {
+            "id": "tr_buez",
+            "to": "Sana Qureshi",
+            "amount": 230400,
+            "date": "2026-05-19",
+            "status": "completed"
+          },
+          {
+            "id": "tr_rmjp",
+            "to": "Twin Peaks Electric",
+            "amount": 319164,
+            "date": "2026-05-19",
+            "status": "pending"
+          },
+          {
+            "id": "tr_qbok",
+            "to": "Gustavo Sandoval",
+            "amount": 288537,
+            "date": "2026-05-19",
+            "status": "completed"
+          },
+          {
+            "id": "tr_sssa",
+            "to": "Mira Halvorsen",
+            "amount": 326841,
+            "date": "2026-05-18",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ugom",
+            "to": "Dmitri Volkov",
+            "amount": 215388,
+            "date": "2026-05-18",
+            "status": "pending"
+          },
+          {
+            "id": "tr_owlk",
+            "to": "Rosalind Achebe",
+            "amount": 215838,
+            "date": "2026-05-17",
+            "status": "completed"
+          },
+          {
+            "id": "tr_keka",
+            "to": "Bernal Heights Books",
+            "amount": 327495,
+            "date": "2026-05-17",
+            "status": "completed"
+          },
+          {
+            "id": "tr_qgcr",
+            "to": "Theo Lindgren",
+            "amount": 176224,
+            "date": "2026-05-16",
+            "status": "completed"
+          },
+          {
+            "id": "tr_pytx",
+            "to": "Aisha Diallo",
+            "amount": 156368,
+            "date": "2026-05-16",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ppes",
+            "to": "Marcus Oyelaran",
+            "amount": 195236,
+            "date": "2026-05-15",
+            "status": "completed"
+          },
+          {
+            "id": "tr_puge",
+            "to": "Valentina Ruiz",
+            "amount": 296137,
+            "date": "2026-05-15",
+            "status": "failed"
+          },
+          {
+            "id": "tr_yjua",
+            "to": "Soren Kjaer",
+            "amount": 335185,
+            "date": "2026-05-14",
+            "status": "completed"
+          },
+          {
+            "id": "tr_gfcr",
+            "to": "Potrero Auto Works",
+            "amount": 411479,
+            "date": "2026-05-14",
+            "status": "pending"
+          },
+          {
+            "id": "tr_esec",
+            "to": "Leila Farouk",
+            "amount": 463566,
+            "date": "2026-05-13",
+            "status": "completed"
+          },
+          {
+            "id": "tr_jhqf",
+            "to": "Hugo Bergstrom",
+            "amount": 278716,
+            "date": "2026-05-13",
+            "status": "completed"
+          },
+          {
+            "id": "tr_hxwq",
+            "to": "Naledi Mokoena",
+            "amount": 84710,
+            "date": "2026-05-13",
+            "status": "completed"
+          },
+          {
+            "id": "tr_cgsj",
+            "to": "Cassian Wray",
+            "amount": 192278,
+            "date": "2026-05-12",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ihhk",
+            "to": "Yara Haddadin",
+            "amount": 180619,
+            "date": "2026-05-12",
+            "status": "pending"
+          },
+          {
+            "id": "tr_ixyd",
+            "to": "Alex Rivera",
+            "amount": 65638,
+            "date": "2026-05-11",
+            "status": "completed"
+          },
+          {
+            "id": "tr_nnzc",
+            "to": "Jordan Avery",
+            "amount": 452095,
+            "date": "2026-05-11",
+            "status": "pending"
+          },
+          {
+            "id": "tr_fqab",
+            "to": "Dana Whitfield",
+            "amount": 29587,
+            "date": "2026-05-10",
+            "status": "completed"
+          },
+          {
+            "id": "tr_axod",
+            "to": "Mission St Property",
+            "amount": 430255,
+            "date": "2026-05-10",
+            "status": "completed"
+          },
+          {
+            "id": "tr_xift",
+            "to": "Priya Raghunathan",
+            "amount": 313911,
+            "date": "2026-05-09",
+            "status": "completed"
+          },
+          {
+            "id": "tr_rlvq",
+            "to": "Tomas Eklund",
+            "amount": 57917,
+            "date": "2026-05-09",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mktp",
+            "to": "Nadia Okonkwo",
+            "amount": 366471,
+            "date": "2026-05-08",
+            "status": "completed"
+          },
+          {
+            "id": "tr_qglt",
+            "to": "Blue Bottle Coffee",
+            "amount": 178433,
+            "date": "2026-05-08",
+            "status": "pending"
+          },
+          {
+            "id": "tr_bwvt",
+            "to": "Sunset Hardware",
+            "amount": 443468,
+            "date": "2026-05-08",
+            "status": "pending"
+          },
+          {
+            "id": "tr_exey",
+            "to": "Bayview Dental Group",
+            "amount": 253384,
+            "date": "2026-05-07",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mgyw",
+            "to": "Lena Fitzgerald",
+            "amount": 356000,
+            "date": "2026-05-07",
+            "status": "pending"
+          },
+          {
+            "id": "tr_sjgd",
+            "to": "Omar Haddad",
+            "amount": 307262,
+            "date": "2026-05-06",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dbxb",
+            "to": "Rowan Delacroix",
+            "amount": 301690,
+            "date": "2026-05-06",
+            "status": "completed"
+          },
+          {
+            "id": "tr_yyfl",
+            "to": "Golden Gate Fitness",
+            "amount": 9791,
+            "date": "2026-05-05",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ikjb",
+            "to": "Hana Matsumoto",
+            "amount": 471443,
+            "date": "2026-05-05",
+            "status": "pending"
+          },
+          {
+            "id": "tr_csbb",
+            "to": "Trellis Wine Merchants",
+            "amount": 128927,
+            "date": "2026-05-04",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mcqy",
+            "to": "Isaac Berhane",
+            "amount": 392253,
+            "date": "2026-05-04",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ynqg",
+            "to": "Clara Voss",
+            "amount": 38650,
+            "date": "2026-05-03",
+            "status": "completed"
+          },
+          {
+            "id": "tr_nfrc",
+            "to": "Presidio Pet Clinic",
+            "amount": 154071,
+            "date": "2026-05-03",
+            "status": "completed"
+          },
+          {
+            "id": "tr_wnrb",
+            "to": "Mateo Villanueva",
+            "amount": 204889,
+            "date": "2026-05-02",
+            "status": "pending"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "top-3-spend",
+    "lane": "screen",
+    "prompt": "Just my top 3 spending categories, biggest first. Nothing else.",
+    "prompts": [
+      "Just my top 3 spending categories, biggest first. Nothing else.",
+      "Show me the three categories I spent the most on this month, largest at the top — and only those three.",
+      "top 3 categories by spend, descending, no extras"
+    ],
+    "pass": [
+      "shows exactly three categories, in this order: housing, groceries, dining",
+      "their amounts read $2,850.00, $612.45 and $438.20",
+      "subscriptions, transport and coffee appear nowhere on the screen — not as rows, not as a chart segment, not as an 'other' bucket",
+      "nothing is added that was not asked for: no fourth row, no month total, no percentage column"
+    ]
+  },
+  {
+    "id": "spend-excluding-housing",
+    "lane": "screen",
+    "prompt": "Show my spending this month excluding housing, largest first, with a total.",
+    "prompts": [
+      "Show my spending this month excluding housing, largest first, with a total.",
+      "I already know what rent costs. Give me everything except housing, biggest to smallest, and tell me what that comes to.",
+      "spend breakdown minus housing + subtotal"
+    ],
+    "pass": [
+      "housing appears nowhere — not as a row, not greyed out, not folded into the total",
+      "the five remaining categories are all present, largest first: groceries $612.45, dining $438.20, subscriptions $184.41, transport $96.75, coffee $61.30",
+      "the total reads $1,393.11 — a total of $4,243.11 would mean housing was still counted"
+    ]
+  },
+  {
+    "id": "cancel-with-confirm",
+    "lane": "screen",
+    "prompt": "Let me cancel a pending transfer, but make me confirm first — I don't want to fat-finger it.",
+    "prompts": [
+      "Let me cancel a pending transfer, but make me confirm first — I don't want to fat-finger it.",
+      "Show my pending transfers with a cancel control on each one, and put a confirmation step in front of it.",
+      "pending transfers, cancel per row, confirm before anything is sent"
+    ],
+    "pass": [
+      "the two pending transfers each carry their own cancel control, and the two completed ones carry none",
+      "pressing a cancel control asks for confirmation before anything is sent",
+      "the confirmation names the transfer it is about to cancel — Alex Rivera $250.00, or Jordan Avery $60.00",
+      "cancel_transfer only fires after the confirmation, and it carries that row's own id: tr_1 for Alex Rivera, tr_2 for Jordan Avery"
+    ]
+  },
+  {
+    "id": "cancel-form-validation",
+    "lane": "screen",
+    "prompt": "Give me one form to cancel a transfer: pick which one, type the recipient's name to be sure, and keep the button off until it matches.",
+    "prompts": [
+      "Give me one form to cancel a transfer: pick which one, type the recipient's name to be sure, and keep the button off until it matches.",
+      "I want a safe cancel form — choose the transfer, retype the recipient to confirm, and leave submit disabled until everything is right.",
+      "cancel form w/ typed name confirmation + validation before submit"
+    ],
+    "pass": [
+      "the form offers only the two pending transfers to choose from: Alex Rivera $250.00 and Jordan Avery $60.00",
+      "the submit control is visibly disabled while nothing is selected or the typed name does not match",
+      "the screen's own code compares the typed name against the selected transfer's recipient and says what is wrong when they differ — an empty or mismatched entry can never submit",
+      "when it does submit it calls cancel_transfer with the selected transfer's id, and passes no other argument",
+      "the form invents no field the host does not take — no reason, no amount, no date on the cancel call"
+    ]
+  },
+  {
+    "id": "spending-empty",
+    "lane": "screen",
+    "prompt": "Show me where my money went this month.",
+    "prompts": [
+      "Show me where my money went this month.",
+      "Break down this month's spending by category for me.",
+      "what did I spend on this month"
+    ],
+    "pass": [
+      "says in words that there is no spending to show this month, rather than drawing an empty chart or a table of headers",
+      "invents no category and no amount",
+      "any total on the screen reads $0.00"
+    ],
+    "data": {
+      "get_spending": {
+        "data": []
+      }
+    }
+  },
+  {
+    "id": "single-account",
+    "lane": "screen",
+    "prompt": "Show me all my accounts and what I'm worth in total.",
+    "prompts": [
+      "Show me all my accounts and what I'm worth in total.",
+      "Give me the balance on everything I hold with you, plus the combined total.",
+      "my accounts + total balance"
+    ],
+    "pass": [
+      "shows exactly one account: Maple Checking, $9,412.20",
+      "any total on the screen is that same $9,412.20 — no second balance is invented",
+      "no placeholder, 'coming soon' or greyed-out second account appears",
+      "the screen is composed for a single account: no empty rows and no column headers standing over blank space"
+    ],
+    "data": {
+      "list_accounts": {
+        "data": [
+          {
+            "id": "acc_checking",
+            "name": "Maple Checking",
+            "kind": "checking",
+            "mask": "4471",
+            "balance": 941220
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "long-merchant-names",
+    "lane": "screen",
+    "prompt": "List my recent transfers with who they went to and how much.",
+    "prompts": [
+      "List my recent transfers with who they went to and how much.",
+      "Show me the transfers I've sent lately — recipient, amount and date, in a table.",
+      "recent transfers table pls"
+    ],
+    "pass": [
+      "every recipient name is either shown in full or truncated with an ellipsis — no name is cut off mid-word with nothing to signal it",
+      "no name overlaps or pushes another column out of place: every row's amount and date stay readable and aligned with the rows above and below",
+      "the amounts read $1,284.00, $2,850.00, $92.15 and $5.00",
+      "the shortest recipient (Ana) and the longest sit in the same column, aligned the same way",
+      "nothing spills outside the card or panel it is drawn in"
+    ],
+    "data": {
+      "list_transfers": {
+        "data": [
+          {
+            "id": "tr_qkzm",
+            "to": "Pacific Northwest Sustainable Grain and Milling Cooperative Association of Greater Puget Sound",
+            "amount": 128400,
+            "date": "2026-08-01",
+            "status": "pending"
+          },
+          {
+            "id": "tr_vhrd",
+            "to": "Interborough Residential Property Management and Maintenance Holdings Limited",
+            "amount": 285000,
+            "date": "2026-07-30",
+            "status": "pending"
+          },
+          {
+            "id": "tr_pxlt",
+            "to": "Dr. Eleanor Whitcombe-Ashbury Pediatric and Adolescent Dentistry",
+            "amount": 9215,
+            "date": "2026-07-28",
+            "status": "completed"
+          },
+          {
+            "id": "tr_bnwe",
+            "to": "Ana",
+            "amount": 500,
+            "date": "2026-07-24",
+            "status": "completed"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "cancel-then-vanish",
+    "lane": "screen",
+    "prompt": "Show my pending transfers with a way to kill one — and when I do, it should leave the list and the pending total should drop.",
+    "prompts": [
+      "Show my pending transfers with a way to kill one — and when I do, it should leave the list and the pending total should drop.",
+      "Pending transfers with cancel controls, please. The list and the total need to update the moment I cancel one.",
+      "pending list + cancel, and keep the total in sync after"
+    ],
+    "pass": [
+      "all three pending transfers are listed, each with its own cancel control",
+      "the screen shows a pending total of $727.50 and a count of 3",
+      "cancelling a row calls cancel_transfer with that row's id, and the screen's own code then drops that row from the list it renders — the row does not stay put",
+      "the total and the count are read from that same list, so they fall to $477.50 and 2 after Alex Rivera's transfer is cancelled instead of staying at $727.50 and 3"
+    ],
+    "data": {
+      "list_transfers": {
+        "data": [
+          {
+            "id": "tr_1",
+            "to": "Alex Rivera",
+            "amount": 25000,
+            "date": "2026-08-01",
+            "status": "pending"
+          },
+          {
+            "id": "tr_2",
+            "to": "Jordan Avery",
+            "amount": 6000,
+            "date": "2026-07-30",
+            "status": "pending"
+          },
+          {
+            "id": "tr_5",
+            "to": "Priya Raghunathan",
+            "amount": 41750,
+            "date": "2026-07-27",
+            "status": "pending"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "show-more-transfers",
+    "lane": "screen",
+    "prompt": "Show me my two most recent transfers, with a 'show all' control that pulls in the rest.",
+    "prompts": [
+      "Show me my two most recent transfers, with a 'show all' control that pulls in the rest.",
+      "Start with just the latest two transfers and give me a button that loads the full list.",
+      "2 latest transfers + show all button"
+    ],
+    "pass": [
+      "exactly two transfers are visible at first: Alex Rivera $250.00 on Aug 1 and Jordan Avery $60.00 on Jul 30",
+      "one control offers to show the rest, and it is the only thing on screen that does",
+      "pressing it calls list_transfers with a numeric limit — the only argument that tool takes — and puts what comes back on screen",
+      "after it is pressed the list holds all four transfers: Mission St Property $2,850.00 and Dana Whitfield $125.50 join the two already there"
+    ]
+  },
+  {
+    "id": "spend-dashboard",
+    "lane": "screen",
+    "prompt": "Build me a real spending dashboard — headline numbers at the top, a couple of charts, and a control to switch the range.",
+    "prompts": [
+      "Build me a real spending dashboard — headline numbers at the top, a couple of charts, and a control to switch the range.",
+      "I want a proper analytics view for my spending: the big numbers up front, more than one chart, and a range selector I can flip between.",
+      "spending dashboard: headline stats, charts, range switcher"
+    ],
+    "pass": [
+      "a headline strip along the top carries the month's total, $4,243.11, and the largest category, housing at $2,850.00",
+      "at least two different visualisations are drawn — not the same chart twice",
+      "all six categories appear in at least one of them, at $2,850.00, $612.45, $438.20, $184.41, $96.75 and $61.30",
+      "a range switcher offers at least two ranges, and the one in force is visibly the selected one",
+      "pressing a range option asks the host for data again rather than doing nothing, and passes only arguments the tools actually take — get_spending takes none",
+      "no figure on the dashboard is invented: every number is one the tools returned or a total of them"
+    ]
+  },
+  {
+    "id": "transfer-drilldown",
+    "lane": "screen",
+    "prompt": "Give me my transfers as a list I can click into — opening one shows its full detail, with a way back.",
+    "prompts": [
+      "Give me my transfers as a list I can click into — opening one shows its full detail, with a way back.",
+      "Transfers list where tapping a row opens that transfer's own details, and I can get back to the list from there.",
+      "transfers list → detail view → back"
+    ],
+    "pass": [
+      "the list shows all four transfers with recipient, amount and date",
+      "opening a row shows a detail view for that same transfer — its own recipient, its own amount ($250.00, $60.00, $2,850.00 or $125.50) and its own date — not one fixed example row",
+      "the detail view offers a way back to the list",
+      "a pending transfer's detail offers cancel and the call carries that transfer's id (tr_1 or tr_2); a completed transfer's detail offers no cancel",
+      "the detail invents nothing the tools do not return: no reference number, no fee, no memo, no estimated arrival"
+    ]
+  },
+  {
+    "id": "cancel-wizard",
+    "lane": "screen",
+    "prompt": "Walk me through cancelling a transfer in steps: pick it, check the details, then confirm. Don't let me skip a step.",
+    "prompts": [
+      "Walk me through cancelling a transfer in steps: pick it, check the details, then confirm. Don't let me skip a step.",
+      "I want a step-by-step cancel flow — selection, review, confirmation — and it should refuse to continue with nothing chosen.",
+      "3-step cancel wizard with validation between the steps"
+    ],
+    "pass": [
+      "the flow is presented as steps, and which step you are on is visible on the screen",
+      "the first step offers only the two pending transfers: Alex Rivera $250.00 and Jordan Avery $60.00",
+      "you cannot reach the next step with nothing chosen — the continue control is disabled or refuses with a message that says why",
+      "the review step repeats the chosen transfer's own recipient, amount and date (Aug 1 for Alex Rivera, Jul 30 for Jordan Avery)",
+      "the final confirm is the only control that calls cancel_transfer, and it carries the chosen transfer's id",
+      "you can step backwards without losing the choice already made"
+    ]
+  },
+  {
+    "id": "transfers-grid",
+    "lane": "screen",
+    "prompt": "I want a dense table of every transfer, grouped by status, with a search box and the actions right in the row.",
+    "prompts": [
+      "I want a dense table of every transfer, grouped by status, with a search box and the actions right in the row.",
+      "Give me the full transfer history in one compact table: group it by status, let me search it, and put cancel inline on the rows that allow it.",
+      "all transfers, grouped by status, searchable, inline actions"
+    ],
+    "pass": [
+      "every transfer the tool returned is in the table — 120 of them; scrolling to reach the rest is fine",
+      "the rows are grouped by status under a heading per group, and the group sizes read 24 pending, 88 completed and 8 failed",
+      "a search input sits with the table and narrows the rows by recipient",
+      "each pending row carries its own inline cancel, and pressing one calls cancel_transfer with that row's id",
+      "the three very long recipient names do not break the grid: they truncate or wrap inside their own column and the amount and date columns stay aligned",
+      "amounts are shown in dollars with two decimals — the largest is $3,118.15 and the smallest $6.47 — and are right-aligned in their column"
+    ],
+    "data": {
+      "list_transfers": {
+        "data": [
+          {
+            "id": "tr_lbsm",
+            "to": "Pacific Northwest Sustainable Grain and Milling Cooperative Association",
+            "amount": 124235,
+            "date": "2026-07-31",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dvwu",
+            "to": "The Very Long Named Fine Art Restoration and Conservation Studio of San Francisco",
+            "amount": 279647,
+            "date": "2026-07-31",
+            "status": "completed"
+          },
+          {
+            "id": "tr_bexp",
+            "to": "Interborough Residential Property Management and Maintenance Holdings Limited",
+            "amount": 142211,
+            "date": "2026-07-30",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mrkb",
+            "to": "Mission St Property",
+            "amount": 142973,
+            "date": "2026-07-30",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dbkn",
+            "to": "Priya Raghunathan",
+            "amount": 69977,
+            "date": "2026-07-29",
+            "status": "completed"
+          },
+          {
+            "id": "tr_zbhg",
+            "to": "Tomas Eklund",
+            "amount": 271450,
+            "date": "2026-07-29",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dffa",
+            "to": "Nadia Okonkwo",
+            "amount": 267540,
+            "date": "2026-07-28",
+            "status": "failed"
+          },
+          {
+            "id": "tr_vnmp",
+            "to": "Blue Bottle Coffee",
+            "amount": 225670,
+            "date": "2026-07-28",
+            "status": "completed"
+          },
+          {
+            "id": "tr_hgph",
+            "to": "Sunset Hardware",
+            "amount": 41878,
+            "date": "2026-07-27",
+            "status": "failed"
+          },
+          {
+            "id": "tr_slqp",
+            "to": "Bayview Dental Group",
+            "amount": 244280,
+            "date": "2026-07-27",
+            "status": "completed"
+          },
+          {
+            "id": "tr_kdho",
+            "to": "Lena Fitzgerald",
+            "amount": 123928,
+            "date": "2026-07-26",
+            "status": "completed"
+          },
+          {
+            "id": "tr_aydx",
+            "to": "Omar Haddad",
+            "amount": 195543,
+            "date": "2026-07-26",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mvij",
+            "to": "Rowan Delacroix",
+            "amount": 269401,
+            "date": "2026-07-25",
+            "status": "failed"
+          },
+          {
+            "id": "tr_hqwk",
+            "to": "Golden Gate Fitness",
+            "amount": 269942,
+            "date": "2026-07-25",
+            "status": "failed"
+          },
+          {
+            "id": "tr_koht",
+            "to": "Hana Matsumoto",
+            "amount": 218890,
+            "date": "2026-07-24",
+            "status": "completed"
+          },
+          {
+            "id": "tr_jkim",
+            "to": "Trellis Wine Merchants",
+            "amount": 41915,
+            "date": "2026-07-24",
+            "status": "completed"
+          },
+          {
+            "id": "tr_qovn",
+            "to": "Isaac Berhane",
+            "amount": 149302,
+            "date": "2026-07-23",
+            "status": "completed"
+          },
+          {
+            "id": "tr_nnjm",
+            "to": "Clara Voss",
+            "amount": 24184,
+            "date": "2026-07-23",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ppjl",
+            "to": "Presidio Pet Clinic",
+            "amount": 112970,
+            "date": "2026-07-22",
+            "status": "completed"
+          },
+          {
+            "id": "tr_bdak",
+            "to": "Mateo Villanueva",
+            "amount": 7513,
+            "date": "2026-07-22",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ilgi",
+            "to": "Yusuf Karimov",
+            "amount": 160764,
+            "date": "2026-07-21",
+            "status": "pending"
+          },
+          {
+            "id": "tr_qblv",
+            "to": "Ferry Building Market",
+            "amount": 304087,
+            "date": "2026-07-21",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ropi",
+            "to": "Ingrid Solberg",
+            "amount": 240548,
+            "date": "2026-07-20",
+            "status": "completed"
+          },
+          {
+            "id": "tr_unzh",
+            "to": "Devon Ashcroft",
+            "amount": 32364,
+            "date": "2026-07-20",
+            "status": "completed"
+          },
+          {
+            "id": "tr_auda",
+            "to": "Marin Cyclery",
+            "amount": 36915,
+            "date": "2026-07-19",
+            "status": "pending"
+          },
+          {
+            "id": "tr_kavm",
+            "to": "Sofia Mendoza",
+            "amount": 24865,
+            "date": "2026-07-19",
+            "status": "pending"
+          },
+          {
+            "id": "tr_crjc",
+            "to": "Kwame Asante",
+            "amount": 287101,
+            "date": "2026-07-18",
+            "status": "pending"
+          },
+          {
+            "id": "tr_fcgv",
+            "to": "Ocean Beach Laundry",
+            "amount": 261399,
+            "date": "2026-07-18",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ueny",
+            "to": "Elena Petrova",
+            "amount": 164097,
+            "date": "2026-07-17",
+            "status": "pending"
+          },
+          {
+            "id": "tr_nvpn",
+            "to": "Harper Lindqvist",
+            "amount": 86567,
+            "date": "2026-07-17",
+            "status": "completed"
+          },
+          {
+            "id": "tr_gage",
+            "to": "Noor Al-Sabah",
+            "amount": 101682,
+            "date": "2026-07-16",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mstt",
+            "to": "Cypress Grove Creamery",
+            "amount": 18484,
+            "date": "2026-07-16",
+            "status": "pending"
+          },
+          {
+            "id": "tr_bfui",
+            "to": "Tobias Renner",
+            "amount": 228301,
+            "date": "2026-07-15",
+            "status": "completed"
+          },
+          {
+            "id": "tr_omay",
+            "to": "Amara Nwosu",
+            "amount": 149678,
+            "date": "2026-07-15",
+            "status": "completed"
+          },
+          {
+            "id": "tr_fjud",
+            "to": "Silver Terrace Storage",
+            "amount": 278452,
+            "date": "2026-07-14",
+            "status": "pending"
+          },
+          {
+            "id": "tr_uxvj",
+            "to": "Lucia Ferrari",
+            "amount": 14280,
+            "date": "2026-07-14",
+            "status": "completed"
+          },
+          {
+            "id": "tr_hqys",
+            "to": "Ravi Balakrishnan",
+            "amount": 76064,
+            "date": "2026-07-13",
+            "status": "completed"
+          },
+          {
+            "id": "tr_aobk",
+            "to": "Dolores Park Cafe",
+            "amount": 300341,
+            "date": "2026-07-13",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ymqj",
+            "to": "Freya Osgood",
+            "amount": 187210,
+            "date": "2026-07-12",
+            "status": "completed"
+          },
+          {
+            "id": "tr_tkzz",
+            "to": "Emeka Chukwu",
+            "amount": 647,
+            "date": "2026-07-12",
+            "status": "failed"
+          },
+          {
+            "id": "tr_wphl",
+            "to": "Anneliese Brandt",
+            "amount": 86995,
+            "date": "2026-07-11",
+            "status": "pending"
+          },
+          {
+            "id": "tr_moxs",
+            "to": "Cole Whitaker",
+            "amount": 154948,
+            "date": "2026-07-11",
+            "status": "pending"
+          },
+          {
+            "id": "tr_qofs",
+            "to": "Sana Qureshi",
+            "amount": 193260,
+            "date": "2026-07-10",
+            "status": "completed"
+          },
+          {
+            "id": "tr_eshb",
+            "to": "Twin Peaks Electric",
+            "amount": 101212,
+            "date": "2026-07-10",
+            "status": "completed"
+          },
+          {
+            "id": "tr_rumm",
+            "to": "Gustavo Sandoval",
+            "amount": 786,
+            "date": "2026-07-09",
+            "status": "completed"
+          },
+          {
+            "id": "tr_null",
+            "to": "Mira Halvorsen",
+            "amount": 9071,
+            "date": "2026-07-09",
+            "status": "completed"
+          },
+          {
+            "id": "tr_qfyh",
+            "to": "Dmitri Volkov",
+            "amount": 115469,
+            "date": "2026-07-08",
+            "status": "completed"
+          },
+          {
+            "id": "tr_yecf",
+            "to": "Rosalind Achebe",
+            "amount": 129121,
+            "date": "2026-07-08",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mhph",
+            "to": "Bernal Heights Books",
+            "amount": 60891,
+            "date": "2026-07-07",
+            "status": "completed"
+          },
+          {
+            "id": "tr_lvqp",
+            "to": "Theo Lindgren",
+            "amount": 238830,
+            "date": "2026-07-07",
+            "status": "completed"
+          },
+          {
+            "id": "tr_fbmx",
+            "to": "Aisha Diallo",
+            "amount": 40766,
+            "date": "2026-07-06",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ecfg",
+            "to": "Marcus Oyelaran",
+            "amount": 166625,
+            "date": "2026-07-06",
+            "status": "pending"
+          },
+          {
+            "id": "tr_raxb",
+            "to": "Valentina Ruiz",
+            "amount": 137605,
+            "date": "2026-07-05",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dypi",
+            "to": "Soren Kjaer",
+            "amount": 113231,
+            "date": "2026-07-05",
+            "status": "completed"
+          },
+          {
+            "id": "tr_tziv",
+            "to": "Potrero Auto Works",
+            "amount": 293658,
+            "date": "2026-07-04",
+            "status": "pending"
+          },
+          {
+            "id": "tr_ktrz",
+            "to": "Leila Farouk",
+            "amount": 153072,
+            "date": "2026-07-04",
+            "status": "completed"
+          },
+          {
+            "id": "tr_demy",
+            "to": "Hugo Bergstrom",
+            "amount": 17071,
+            "date": "2026-07-03",
+            "status": "pending"
+          },
+          {
+            "id": "tr_qrow",
+            "to": "Naledi Mokoena",
+            "amount": 42264,
+            "date": "2026-07-03",
+            "status": "completed"
+          },
+          {
+            "id": "tr_tnys",
+            "to": "Cassian Wray",
+            "amount": 188962,
+            "date": "2026-07-02",
+            "status": "completed"
+          },
+          {
+            "id": "tr_gecb",
+            "to": "Yara Haddadin",
+            "amount": 186065,
+            "date": "2026-07-02",
+            "status": "pending"
+          },
+          {
+            "id": "tr_ncqs",
+            "to": "Alex Rivera",
+            "amount": 242724,
+            "date": "2026-07-01",
+            "status": "pending"
+          },
+          {
+            "id": "tr_sogt",
+            "to": "Jordan Avery",
+            "amount": 168427,
+            "date": "2026-07-01",
+            "status": "completed"
+          },
+          {
+            "id": "tr_gxkt",
+            "to": "Dana Whitfield",
+            "amount": 62415,
+            "date": "2026-06-30",
+            "status": "completed"
+          },
+          {
+            "id": "tr_jnbf",
+            "to": "Mission St Property",
+            "amount": 18268,
+            "date": "2026-06-30",
+            "status": "failed"
+          },
+          {
+            "id": "tr_olne",
+            "to": "Priya Raghunathan",
+            "amount": 263915,
+            "date": "2026-06-29",
+            "status": "pending"
+          },
+          {
+            "id": "tr_ooer",
+            "to": "Tomas Eklund",
+            "amount": 141862,
+            "date": "2026-06-29",
+            "status": "completed"
+          },
+          {
+            "id": "tr_uuur",
+            "to": "Nadia Okonkwo",
+            "amount": 72913,
+            "date": "2026-06-28",
+            "status": "completed"
+          },
+          {
+            "id": "tr_wjey",
+            "to": "Blue Bottle Coffee",
+            "amount": 102299,
+            "date": "2026-06-28",
+            "status": "completed"
+          },
+          {
+            "id": "tr_zxqn",
+            "to": "Sunset Hardware",
+            "amount": 121114,
+            "date": "2026-06-27",
+            "status": "completed"
+          },
+          {
+            "id": "tr_lgkf",
+            "to": "Bayview Dental Group",
+            "amount": 302147,
+            "date": "2026-06-27",
+            "status": "pending"
+          },
+          {
+            "id": "tr_vevp",
+            "to": "Lena Fitzgerald",
+            "amount": 292914,
+            "date": "2026-06-26",
+            "status": "pending"
+          },
+          {
+            "id": "tr_mcdy",
+            "to": "Omar Haddad",
+            "amount": 136821,
+            "date": "2026-06-26",
+            "status": "pending"
+          },
+          {
+            "id": "tr_xqlg",
+            "to": "Rowan Delacroix",
+            "amount": 302475,
+            "date": "2026-06-25",
+            "status": "failed"
+          },
+          {
+            "id": "tr_dpyc",
+            "to": "Golden Gate Fitness",
+            "amount": 242854,
+            "date": "2026-06-25",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ifng",
+            "to": "Hana Matsumoto",
+            "amount": 116343,
+            "date": "2026-06-24",
+            "status": "pending"
+          },
+          {
+            "id": "tr_xhnj",
+            "to": "Trellis Wine Merchants",
+            "amount": 96812,
+            "date": "2026-06-24",
+            "status": "completed"
+          },
+          {
+            "id": "tr_vrgf",
+            "to": "Isaac Berhane",
+            "amount": 159987,
+            "date": "2026-06-23",
+            "status": "completed"
+          },
+          {
+            "id": "tr_yrne",
+            "to": "Clara Voss",
+            "amount": 168064,
+            "date": "2026-06-23",
+            "status": "completed"
+          },
+          {
+            "id": "tr_itay",
+            "to": "Presidio Pet Clinic",
+            "amount": 311815,
+            "date": "2026-06-22",
+            "status": "completed"
+          },
+          {
+            "id": "tr_zggu",
+            "to": "Mateo Villanueva",
+            "amount": 24916,
+            "date": "2026-06-22",
+            "status": "completed"
+          },
+          {
+            "id": "tr_igqp",
+            "to": "Yusuf Karimov",
+            "amount": 136639,
+            "date": "2026-06-21",
+            "status": "completed"
+          },
+          {
+            "id": "tr_qcts",
+            "to": "Ferry Building Market",
+            "amount": 24782,
+            "date": "2026-06-21",
+            "status": "completed"
+          },
+          {
+            "id": "tr_svsk",
+            "to": "Ingrid Solberg",
+            "amount": 238808,
+            "date": "2026-06-20",
+            "status": "pending"
+          },
+          {
+            "id": "tr_xoyu",
+            "to": "Devon Ashcroft",
+            "amount": 264462,
+            "date": "2026-06-20",
+            "status": "completed"
+          },
+          {
+            "id": "tr_wxwu",
+            "to": "Marin Cyclery",
+            "amount": 268402,
+            "date": "2026-06-19",
+            "status": "completed"
+          },
+          {
+            "id": "tr_gdez",
+            "to": "Sofia Mendoza",
+            "amount": 151235,
+            "date": "2026-06-19",
+            "status": "pending"
+          },
+          {
+            "id": "tr_toyq",
+            "to": "Kwame Asante",
+            "amount": 192352,
+            "date": "2026-06-18",
+            "status": "completed"
+          },
+          {
+            "id": "tr_muyu",
+            "to": "Ocean Beach Laundry",
+            "amount": 8440,
+            "date": "2026-06-18",
+            "status": "completed"
+          },
+          {
+            "id": "tr_pzfh",
+            "to": "Elena Petrova",
+            "amount": 137930,
+            "date": "2026-06-17",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ojze",
+            "to": "Harper Lindqvist",
+            "amount": 40097,
+            "date": "2026-06-17",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ibbg",
+            "to": "Noor Al-Sabah",
+            "amount": 276555,
+            "date": "2026-06-16",
+            "status": "completed"
+          },
+          {
+            "id": "tr_rede",
+            "to": "Cypress Grove Creamery",
+            "amount": 282812,
+            "date": "2026-06-16",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ecve",
+            "to": "Tobias Renner",
+            "amount": 310853,
+            "date": "2026-06-15",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mtdf",
+            "to": "Amara Nwosu",
+            "amount": 278943,
+            "date": "2026-06-15",
+            "status": "pending"
+          },
+          {
+            "id": "tr_eezy",
+            "to": "Silver Terrace Storage",
+            "amount": 152798,
+            "date": "2026-06-14",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mqoz",
+            "to": "Lucia Ferrari",
+            "amount": 212389,
+            "date": "2026-06-14",
+            "status": "completed"
+          },
+          {
+            "id": "tr_gqkn",
+            "to": "Ravi Balakrishnan",
+            "amount": 114378,
+            "date": "2026-06-13",
+            "status": "completed"
+          },
+          {
+            "id": "tr_htop",
+            "to": "Dolores Park Cafe",
+            "amount": 206386,
+            "date": "2026-06-13",
+            "status": "completed"
+          },
+          {
+            "id": "tr_mjqd",
+            "to": "Freya Osgood",
+            "amount": 236173,
+            "date": "2026-06-12",
+            "status": "pending"
+          },
+          {
+            "id": "tr_izgq",
+            "to": "Emeka Chukwu",
+            "amount": 54708,
+            "date": "2026-06-12",
+            "status": "failed"
+          },
+          {
+            "id": "tr_lhcb",
+            "to": "Anneliese Brandt",
+            "amount": 189782,
+            "date": "2026-06-11",
+            "status": "completed"
+          },
+          {
+            "id": "tr_djos",
+            "to": "Cole Whitaker",
+            "amount": 263843,
+            "date": "2026-06-11",
+            "status": "completed"
+          },
+          {
+            "id": "tr_brps",
+            "to": "Sana Qureshi",
+            "amount": 139112,
+            "date": "2026-06-10",
+            "status": "pending"
+          },
+          {
+            "id": "tr_rokq",
+            "to": "Twin Peaks Electric",
+            "amount": 8548,
+            "date": "2026-06-10",
+            "status": "completed"
+          },
+          {
+            "id": "tr_iumz",
+            "to": "Gustavo Sandoval",
+            "amount": 84459,
+            "date": "2026-06-09",
+            "status": "completed"
+          },
+          {
+            "id": "tr_rews",
+            "to": "Mira Halvorsen",
+            "amount": 261999,
+            "date": "2026-06-09",
+            "status": "completed"
+          },
+          {
+            "id": "tr_xzfk",
+            "to": "Dmitri Volkov",
+            "amount": 12161,
+            "date": "2026-06-08",
+            "status": "completed"
+          },
+          {
+            "id": "tr_snyk",
+            "to": "Rosalind Achebe",
+            "amount": 34657,
+            "date": "2026-06-08",
+            "status": "completed"
+          },
+          {
+            "id": "tr_vhbo",
+            "to": "Bernal Heights Books",
+            "amount": 76225,
+            "date": "2026-06-07",
+            "status": "completed"
+          },
+          {
+            "id": "tr_frlb",
+            "to": "Theo Lindgren",
+            "amount": 102842,
+            "date": "2026-06-07",
+            "status": "completed"
+          },
+          {
+            "id": "tr_apbc",
+            "to": "Aisha Diallo",
+            "amount": 117010,
+            "date": "2026-06-06",
+            "status": "completed"
+          },
+          {
+            "id": "tr_ohkx",
+            "to": "Marcus Oyelaran",
+            "amount": 92108,
+            "date": "2026-06-06",
+            "status": "completed"
+          },
+          {
+            "id": "tr_anjr",
+            "to": "Valentina Ruiz",
+            "amount": 281676,
+            "date": "2026-06-05",
+            "status": "completed"
+          },
+          {
+            "id": "tr_liyl",
+            "to": "Soren Kjaer",
+            "amount": 199819,
+            "date": "2026-06-05",
+            "status": "completed"
+          },
+          {
+            "id": "tr_zkvm",
+            "to": "Potrero Auto Works",
+            "amount": 303920,
+            "date": "2026-06-04",
+            "status": "completed"
+          },
+          {
+            "id": "tr_qzlp",
+            "to": "Leila Farouk",
+            "amount": 70976,
+            "date": "2026-06-04",
+            "status": "completed"
+          },
+          {
+            "id": "tr_jlhm",
+            "to": "Hugo Bergstrom",
+            "amount": 21483,
+            "date": "2026-06-03",
+            "status": "completed"
+          },
+          {
+            "id": "tr_oyry",
+            "to": "Naledi Mokoena",
+            "amount": 41553,
+            "date": "2026-06-03",
+            "status": "completed"
+          },
+          {
+            "id": "tr_uuwa",
+            "to": "Cassian Wray",
+            "amount": 306223,
+            "date": "2026-06-02",
+            "status": "completed"
+          },
+          {
+            "id": "tr_nhtm",
+            "to": "Yara Haddadin",
+            "amount": 144585,
+            "date": "2026-06-01",
+            "status": "completed"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "accounts-average-shuffled",
+    "lane": "screen",
+    "prompt": "Show all my accounts, what they add up to, and the average balance across them.",
+    "prompts": [
+      "Show all my accounts, what they add up to, and the average balance across them.",
+      "I want a summary of my accounts: every balance, the combined total, and what the average account holds.",
+      "accounts overview — total plus average balance"
+    ],
+    "pass": [
+      "lists all three accounts with their balances: $5,883.00, $12,300.00 and -$660.00",
+      "the total reads $17,523.00 — the credit balance is subtracted, not added, so it is not $18,843.00",
+      "the average balance reads $5,841.00, taken across all three accounts — not $9,091.50",
+      "the credit balance is presented as negative (a minus sign, parentheses, or the word owed), never as a plain $660.00"
+    ],
+    "data": {
+      "list_accounts": {
+        "data": [
+          {
+            "id": "acc_checking",
+            "name": "Maple Checking",
+            "kind": "checking",
+            "mask": "4471",
+            "balance": 588300
+          },
+          {
+            "id": "acc_savings",
+            "name": "Maple Savings",
+            "kind": "savings",
+            "mask": "8820",
+            "balance": 1230000
+          },
+          {
+            "id": "acc_credit",
+            "name": "Maple Credit",
+            "kind": "credit",
+            "mask": "0934",
+            "balance": -66000
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "small-amounts-shuffled",
+    "lane": "screen",
+    "prompt": "What are my three smallest spending categories this month? I want the exact dollars.",
+    "prompts": [
+      "What are my three smallest spending categories this month? I want the exact dollars.",
+      "Where am I spending the least? Show me the bottom three categories with real amounts, nothing rounded off.",
+      "bottom 3 spend categories pls, exact figures"
+    ],
+    "pass": [
+      "shows exactly three categories: laundry, parking and pharmacy",
+      "the amounts read $6.15, $19.40 and $48.72",
+      "no amount is a hundred times too large — nothing reads $615, $1,940 or $4,872",
+      "the three are ordered smallest first: laundry, then parking, then pharmacy",
+      "rent, childcare, groceries and utilities appear nowhere on the screen"
+    ],
+    "data": {
+      "get_spending": {
+        "data": [
+          {
+            "category": "rent",
+            "amount": 412500
+          },
+          {
+            "category": "childcare",
+            "amount": 189000
+          },
+          {
+            "category": "groceries",
+            "amount": 74318
+          },
+          {
+            "category": "utilities",
+            "amount": 21205
+          },
+          {
+            "category": "pharmacy",
+            "amount": 4872
+          },
+          {
+            "category": "parking",
+            "amount": 1940
+          },
+          {
+            "category": "laundry",
+            "amount": 615
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "spend-shares-shuffled",
+    "lane": "screen",
+    "prompt": "Break my spending down by share — what percentage of the month went to each category?",
+    "prompts": [
+      "Break my spending down by share — what percentage of the month went to each category?",
+      "I want the percentage split of my spending this month, category by category, with the dollar amount beside each one.",
+      "show me what % of my money each category ate this month"
+    ],
+    "pass": [
+      "shows six category rows and no seventh",
+      "each category carries both a dollar amount and a percentage share",
+      "the month's total reads $4,400.00",
+      "housing's share reads 45% (45.0%) — not 4.5%, not 450%, not 100%",
+      "coffee's share reads about 0.6% and is not rounded away to 0%",
+      "the six shares add up to 100% give or take one rounding point"
+    ],
+    "data": {
+      "get_spending": {
+        "data": [
+          {
+            "category": "housing",
+            "amount": 198000
+          },
+          {
+            "category": "travel",
+            "amount": 121450
+          },
+          {
+            "category": "dining",
+            "amount": 60725
+          },
+          {
+            "category": "groceries",
+            "amount": 45320
+          },
+          {
+            "category": "wellness",
+            "amount": 12005
+          },
+          {
+            "category": "coffee",
+            "amount": 2500
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "transfer-dates-shuffled",
+    "lane": "screen",
+    "prompt": "List my recent transfers and when each one went out, in plain English dates.",
+    "prompts": [
+      "List my recent transfers and when each one went out, in plain English dates.",
+      "Show me every transfer I've made lately with the date it carries — readable dates please, not database ones.",
+      "recent transfers + dates, human readable"
+    ],
+    "pass": [
+      "all four transfers are listed, each with the date from its own row: Marisol Vega Jun 1, Northgate Utilities May 31, Ellis Thorne May 1, Casa Verde Landscaping Apr 30",
+      "no date has slipped back a day across a month boundary — nothing reads May 30, Apr 29, or May 31 against Marisol Vega",
+      "no date appears in 2026-06-01 form anywhere on the screen",
+      "the amounts read $475.00, $89.25, $2,100.00 and $34.05"
+    ],
+    "data": {
+      "list_transfers": {
+        "data": [
+          {
+            "id": "tr_kpqv",
+            "to": "Marisol Vega",
+            "amount": 47500,
+            "date": "2026-06-01",
+            "status": "pending"
+          },
+          {
+            "id": "tr_wmtl",
+            "to": "Northgate Utilities",
+            "amount": 8925,
+            "date": "2026-05-31",
+            "status": "pending"
+          },
+          {
+            "id": "tr_zbrh",
+            "to": "Ellis Thorne",
+            "amount": 210000,
+            "date": "2026-05-01",
+            "status": "completed"
+          },
+          {
+            "id": "tr_dnqx",
+            "to": "Casa Verde Landscaping",
+            "amount": 3405,
+            "date": "2026-04-30",
+            "status": "completed"
+          }
+        ]
+      }
+    }
   }
 ]

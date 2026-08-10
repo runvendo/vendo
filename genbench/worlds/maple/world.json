@@ -20,7 +20,14 @@
     "uses the theme exactly: brand green, Onest, 8px corners — no invented colors or fonts",
     "money always shows 2 decimals with currency symbol",
     "destructive actions ask for confirmation",
-    "dates shown as 'Aug 1' style, never ISO"
+    "dates shown as 'Aug 1' style, never ISO",
+    "one thing leads: the screen's headline — its title, or the number it exists to report — is the largest text on it and sits above the detail it summarises",
+    "two text tones only: full-strength text for values, the muted grey for labels and secondary copy",
+    "spacing repeats: equal padding on all four sides of a card, equal gaps between sibling rows, and nothing pressed against a container edge",
+    "the accent green is kept for the primary action and brand marks, and the danger red for destructive controls and negative amounts — neither is used as decoration",
+    "amounts in a column are right-aligned and line up on the decimal point, with their labels left-aligned",
+    "an empty, zero or still-loading result is stated in words where the data would be — never an empty table, a blank card, or a bare '0'",
+    "dense but not cramped: a list row is one line tall at this density, every card is sized to its content, and no card carries a large blank area"
   ],
   "tools": {
     "list_accounts": {
