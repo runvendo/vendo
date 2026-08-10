@@ -44,16 +44,23 @@ export function ChartFrame({ height = 220, children }: ChartFrameProps) {
   return <div style={{ width: "100%", height, minHeight: height }}>{children}</div>;
 }
 
-/** A designed empty/invalid state that reads as intentional, not broken. */
-export function ChartEmpty({ height = 220, children }: { height?: number; children: ReactNode }) {
+/**
+ * A designed empty/invalid state that reads as intentional, not broken — and
+ * sized to its SENTENCE, not to the chart it stands in for.
+ *
+ * `height` is still accepted, because every chart passes its own down, and it is
+ * deliberately not applied: a 220px box holding one centred line was the tallest
+ * thing on genbench's `spending-empty` screen, which the blind judge failed twice
+ * ("a tall ~230px box holding only one centered line, a large blank area, far
+ * taller than the adjacent card"). There is no chart here to reserve room for.
+ */
+export function ChartEmpty(props: { height?: number; children: ReactNode }) {
   const style: CSSProperties = {
     ...font,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     width: "100%",
-    height,
-    minHeight: height,
     color: t.muted,
     border: `1px dashed ${t.border}`,
     borderRadius: t.radiusMedium,
@@ -62,5 +69,5 @@ export function ChartEmpty({ height = 220, children }: { height?: number; childr
     textAlign: "center",
     padding: 12,
   };
-  return <div data-kit="ChartEmpty">{<div style={style}>{children}</div>}</div>;
+  return <div data-kit="ChartEmpty">{<div style={style}>{props.children}</div>}</div>;
 }

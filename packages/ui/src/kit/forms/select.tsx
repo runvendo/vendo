@@ -3,8 +3,8 @@
  * The model passes tool output straight in; no `asOptions` reshape needed.
  * `multiple` folds in MultiSelect.
  */
-import { control } from "../tokens.js";
-import { FieldShell, useFieldIds } from "./field.js";
+import { control, font, t } from "../tokens.js";
+import { FieldShell, useFieldIds, useReportNothingToOffer } from "./field.js";
 
 export type SelectOption = string | number | Record<string, unknown>;
 
@@ -23,6 +23,8 @@ export interface SelectProps {
   required?: boolean;
   /** Allow selecting several values. */
   multiple?: boolean;
+  /** Words shown in place of the dropdown when there is nothing to choose. */
+  emptyState?: string;
   /** Bound change handler; receives the selected value(s). */
   onChange?: (value: string | string[]) => void;
 }
@@ -37,10 +39,23 @@ function optionLabel(opt: SelectOption, labelField?: string): string {
   return String(opt);
 }
 
-export function Select({ label, options: rawOptions, labelField, valueField, value, placeholder, hint, disabled, required, multiple, onChange }: SelectProps) {
+export function Select({ label, options: rawOptions, labelField, valueField, value, placeholder, hint, disabled, required, multiple, emptyState = "Nothing to choose from", onChange }: SelectProps) {
   const { fieldId, helpId } = useFieldIds("select");
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const options = Array.isArray(rawOptions) ? rawOptions : [];
+  // An empty query is an ANSWER, so say it: a dropdown with no options renders as
+  // a blank control that tells the person nothing and hands its form no value.
+  // The form hears it too (`useReportNothingToOffer`) and withholds its submit.
+  useReportNothingToOffer(fieldId, options.length === 0);
+  if (options.length === 0) {
+    return (
+      <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
+        <span id={fieldId} data-kit="Select" data-empty="" style={{ ...font, color: t.muted }}>
+          {emptyState}
+        </span>
+      </FieldShell>
+    );
+  }
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
       <select
