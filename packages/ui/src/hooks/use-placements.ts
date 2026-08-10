@@ -112,9 +112,24 @@ function createPoller(client: VendoClient): Poller {
     announce();
   };
 
+  /** Keep the registry's rows alive under a client that never re-mounts them.
+   *  `useReportSlot` fires on mount and on a changed prop, so a slot rendered
+   *  by a tab left open for weeks would never report again and would age out of
+   *  the registry while it is still on the screen. The poll loop runs for
+   *  exactly as long as a slot is mounted, so it carries the renewal. */
+  const renew = (): void => {
+    const stale = Date.now() - SLOT_REPORT_REFRESH_MS;
+    for (const [key, at] of [...reported]) {
+      if (at > stale) continue;
+      const [id, label] = JSON.parse(key) as [string, string];
+      if (listeners.has(id)) poller.report(id, label);
+    }
+  };
+
   // Self-scheduling, never setInterval: the next tick is armed only once the
   // current read settles, so a slow wire cannot stack overlapping requests.
   const tick = async (): Promise<void> => {
+    renew();
     await read();
     if (running) timer = setTimeout(() => void tick(), POLL_MS);
   };
@@ -152,7 +167,7 @@ function createPoller(client: VendoClient): Poller {
     loaded = false;
   };
 
-  return {
+  const poller: Poller = {
     add(slot, listener) {
       const set = listeners.get(slot) ?? new Set<() => void>();
       const first = set.size === 0;
@@ -214,6 +229,8 @@ function createPoller(client: VendoClient): Poller {
       });
     },
   };
+
+  return poller;
 }
 
 function pollerFor(client: VendoClient): Poller {

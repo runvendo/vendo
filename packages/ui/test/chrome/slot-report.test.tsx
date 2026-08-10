@@ -104,6 +104,22 @@ describe("a mounted VendoSlot reports itself to the registry", () => {
     expect(reports()[1]?.body).toEqual({ slots: [{ id: "hero", label: "Hero" }] });
   });
 
+  it("renews a slot that never re-mounts — the poll loop reports it, not the effect", async () => {
+    // The harder half of the same lease: `useReportSlot` fires on mount, so one
+    // tab left open on one page has no second mount to renew with. Nothing here
+    // rerenders or remounts; the placement poller is what has to notice.
+    render(<VendoProvider client={client}><VendoSlot id="hero" /></VendoProvider>);
+    await waitFor(() => expect(reports()).toHaveLength(1));
+
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + SLOT_REPORT_REFRESH_MS + 1);
+    // The renewal rides the 5s poll tick, so this waits on a real interval. The
+    // poll budget is deliberately LOOSER than the test's own timeout: the test
+    // timeout is the hang-detector, and a tighter inner limit would call a busy
+    // machine a product bug.
+    await waitFor(() => expect(reports()).toHaveLength(2), { timeout: 30_000 });
+    expect(reports()[1]?.body).toEqual({ slots: [{ id: "hero", label: "Hero" }] });
+  }, 20_000);
+
   it("re-reports the same slot under a NEW label", async () => {
     const { rerender } = render(<VendoProvider client={client}><VendoSlot id="hero" label="Hero" /></VendoProvider>);
     await waitFor(() => expect(wire.state.slots.map(slot => slot.label)).toEqual(["Hero"]));
