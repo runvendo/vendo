@@ -194,8 +194,12 @@ export const KIT_SPECS: KitComponentSpec[] = [
       format: config(valueFormat, "value tier format"),
       trend: copy(z.string(), "delta caption, e.g. +12% MoM"),
       tone: config(z.enum(["default", "accent", "danger"]), "emphasis"),
+      size: config(z.enum(["default", "hero"]), "hero = the screen's headline figure: unboxed, largest text on the screen, at most ONE per screen"),
     },
-    examples: ['<Stat label="Total overdue" value={invoices.total({}).amountCents} format="money" trend="+12% MoM"/>'],
+    examples: [
+      '<Stat size="hero" label="Spent this month" value={spending.total({}).amountCents} format="money" trend="across 6 categories"/>',
+      '<Stat label="Total overdue" value={invoices.total({}).amountCents} format="money" trend="+12% MoM"/>',
+    ],
   },
   {
     name: "Badge",

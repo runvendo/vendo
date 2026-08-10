@@ -12,6 +12,8 @@ export interface StatProps {
   /** A trend / delta caption, e.g. "+12% MoM". */
   trend?: string;
   tone?: "default" | "accent" | "danger";
+  /** `hero` is the screen's headline figure: unboxed and oversized, at most one per screen. */
+  size?: "default" | "hero";
 }
 
 /** A KPI value is a number or a short phrase, never prose: past this length
@@ -19,8 +21,9 @@ export interface StatProps {
  *  so longer text renders truncated with the full text in the tooltip. */
 const STAT_VALUE_MAX_CHARS = 40;
 
-export function Stat({ label, value, format = "text", trend, tone = "default" }: StatProps) {
+export function Stat({ label, value, format = "text", trend, tone = "default", size = "default" }: StatProps) {
   const emphasis = tone === "accent" ? t.accent : tone === "danger" ? t.danger : t.text;
+  const hero = size === "hero";
   const formatted = applyFormat(value, format);
   const empty = formatted === null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;
@@ -40,10 +43,14 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         flexDirection: "column",
         gap: "var(--vendo-density-field-gap, 6px)",
         minWidth: 0,
-        borderLeft: `3px solid ${emphasis}`,
-        borderRadius: t.radiusSmall,
-        background: `color-mix(in srgb, ${t.surface} 90%, ${t.background})`,
-        padding: "var(--vendo-density-stat-padding, 12px 14px)",
+        ...(hero
+          ? { padding: 0 }
+          : {
+              borderLeft: `3px solid ${emphasis}`,
+              borderRadius: t.radiusSmall,
+              background: `color-mix(in srgb, ${t.surface} 90%, ${t.background})`,
+              padding: "var(--vendo-density-stat-padding, 12px 14px)",
+            }),
       }}
     >
       <span style={{ color: t.muted, fontSize: "0.82em", fontWeight: 650 }}>{label}</span>
@@ -52,7 +59,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         style={{
           color: empty ? t.muted : emphasis,
           fontFamily: t.headingFamily,
-          fontSize: "calc(var(--vendo-font-size, 15px) * 1.65)",
+          fontSize: `calc(var(--vendo-font-size, 15px) * ${hero ? 2.6 : 1.65})`,
           fontWeight: 700,
           letterSpacing: "-0.025em",
           lineHeight: 1.12,
