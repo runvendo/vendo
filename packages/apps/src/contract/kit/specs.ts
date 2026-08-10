@@ -24,7 +24,17 @@ const tableColumn = z.object({
   align: align.optional(),
 });
 const cardField = z.object({ key: z.string(), label: z.string().optional(), format: valueFormat.optional() });
-const action = z.string().describe("names a host tool");
+/** An action prop: a bare tool name, or `{action, payload}` when the tool takes
+ *  arguments. Both forms already work end to end — the wire compiler passes an
+ *  expression-form `on*` through verbatim (wire/attributes.ts), and the renderer
+ *  binds the payload before it calls the tool (ui `tree/renderer.tsx`). The
+ *  union is here because this schema is also what the blocking tsc gate compiles
+ *  an action attribute against (`checking/screen-typings.ts`), and typed as a
+ *  bare string it rejected the only form that can carry an argument. */
+const action = z.union([
+  z.string(),
+  z.object({ action: z.string(), payload: z.record(z.string(), z.unknown()).optional() }),
+]).describe("names a host tool, or `{action, payload}` when the tool takes arguments");
 
 // ---- specs ---------------------------------------------------------------
 export const KIT_SPECS: KitComponentSpec[] = [
@@ -348,18 +358,21 @@ export const KIT_SPECS: KitComponentSpec[] = [
     summary: "Action-gated button. onClick NAMES a host tool; the runtime routes it through the guard + approval pipe. This is the only way the UI mutates.",
     props: {
       label: copy(z.string(), "button text", { required: true }),
-      onClick: config(action, "the host tool to run"),
+      onClick: config(action, "the host tool to run — `{action:\"tool\", payload:{…}}` when the tool takes arguments"),
       variant: config(z.enum(["primary", "secondary", "danger"]), "emphasis"),
       disabled: config(z.boolean(), "disabled state"),
     },
-    examples: ['<Button label="Remind all" onClick="invoices.sendReminders"/>'],
+    examples: [
+      '<Button label="Remind all" onClick="invoices.sendReminders"/>',
+      '<Button label="Cancel" variant="danger" onClick={{action:"transfers.cancel", payload:{id: pending.data.0.id}}}/>',
+    ],
   },
   {
     name: "Form",
     group: "forms",
-    summary: "Groups fields with a submit action. onSubmit names a host tool.",
+    summary: "Groups fields with a submit action. onSubmit names a host tool and sends NO field values — a submit that must carry data is a <Button> with a payload.",
     props: {
-      onSubmit: config(action, "the host tool to run on submit"),
+      onSubmit: config(action, "the host tool to run on submit; the fields' values are NOT sent"),
       submitLabel: copy(z.string(), "submit button text"),
     },
     examples: ['<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name"/></Form>'],

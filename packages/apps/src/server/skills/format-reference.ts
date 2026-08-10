@@ -177,9 +177,23 @@ searchable                       a bare flag, meaning true
 
 ### Actions
 
-An \`on*\` attribute names a host tool: \`onClick="maple_invoice_send"\`. That is the
-only way anything in an app mutates. A value that is not a legal tool name drops
-the attribute.
+An \`on*\` attribute fires a host tool — the only way anything in an app mutates.
+It has TWO forms, and which one you need is decided by the tool's own arguments:
+
+\`\`\`
+onClick="maple_invoice_send"                                       takes none
+onClick={{action:"maple_transfer_cancel", payload:{id: pending.data.0.id}}}
+\`\`\`
+
+- A tool with required arguments MUST use the payload form. Without it the call
+  reaches the host as \`{}\` and fails there — a button that looks wired and is not.
+- The payload keys are that tool's OWN argument names, exactly, and nothing else;
+  each value is an ordinary brace read (\`pending.data.0.id\`, \`state.chosen\`) or a
+  literal. No key the tool does not declare.
+- \`<Form onSubmit>\` sends the tool name ALONE — a form never sends its fields'
+  values. Anything that must carry data is a \`<Button>\` with a payload, or an
+  \`<Island>\` calling \`tools.the_tool({…})\` with what the user picked.
+- A value that is not a legal tool name drops the attribute.
 
 ### \`<Island name="PascalName">\` — a component you write
 

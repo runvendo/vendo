@@ -430,6 +430,44 @@ export const unknownToolIssues = (tree: Tree, tools: readonly HostToolInfo[] | u
     }));
 };
 
+/**
+ * A control wired to a tool that TAKES arguments, with no payload carrying them.
+ *
+ * The wire's action prop has two forms — `{ action }` and `{ action, payload }`
+ * — and only the second reaches the host with arguments. Nothing else catches
+ * the first one: the tool exists, the name is legal, the screen renders, and the
+ * press fires a call the host rejects because the required argument is absent.
+ * `<Form onSubmit>` is the usual way in — a form submits the tool name alone and
+ * never sends its fields' values (ui `kit/forms/form.tsx`).
+ *
+ * Silent-breakage class, so it blocks, and the message prints the replacement
+ * attribute rather than only naming the gap.
+ */
+export const actionArgumentIssues = (tree: Tree, tools: readonly HostToolInfo[] | undefined): FactIssue[] => {
+  if (tools === undefined) return [];
+  const required = new Map(tools.flatMap((tool) => {
+    const names = tool.inputSchema?.required;
+    return Array.isArray(names) && names.length > 0
+      ? [[tool.name, names.filter((name): name is string => typeof name === "string")] as const]
+      : [];
+  }));
+  const issues: FactIssue[] = [];
+  for (const node of tree.nodes) {
+    for (const [prop, value] of Object.entries(node.props ?? {})) {
+      if (!isRecord(value) || typeof value.action !== "string") continue;
+      const names = required.get(value.action);
+      if (names === undefined) continue;
+      const carried = isRecord(value.payload) ? Object.keys(value.payload) : [];
+      const missing = names.filter((name) => !carried.includes(name));
+      if (missing.length === 0) continue;
+      const quoted = missing.map((name) => `"${name}"`).join(", ");
+      const form = `${prop}={{action:"${value.action}", payload:{${names.map((name) => `${name}: …`).join(", ")}}}}`;
+      issues.push(atProp(node.id, prop, `runs "${value.action}" without its required ${missing.length === 1 ? "argument" : "arguments"} ${quoted}, so the call reaches the host as {} and fails there — a control that looks wired and is not. Write the payload form: ${form}, each value a brace read of the row or state it belongs to. A <Form> cannot do this: it submits the tool name alone and never sends its fields' values.`));
+    }
+  }
+  return issues;
+};
+
 /** Every `$path` binding resolved query → tool → response shape by the wire
  *  compiler's own checker. A miss carries the fields that ARE there, so the
  *  message can teach instead of only refusing.
@@ -551,6 +589,7 @@ const screenTypeFindings = (tree: Tree, document: AppDocument, deps: FloorDepend
 export const factChecks = (deps: FloorDependencies): Check[] => [
   { name: "document", kind: "fact", run: async ({ document }) => blocking(documentIssues(document)) },
   treeCheck("tools-exist", (tree) => unknownToolIssues(tree, deps.tools)),
+  treeCheck("actions-carry-arguments", (tree) => actionArgumentIssues(tree, deps.tools)),
   treeCheck("components-exist", (tree, document) => catalogIssues(tree, document.components, deps.catalog)),
   treeCheck("bindings-fit", (tree) => [
     ...bindingShapeIssues(tree, deps),
