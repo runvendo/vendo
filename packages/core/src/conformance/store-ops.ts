@@ -339,12 +339,18 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         );
       }),
 
+      /** Both halves, deliberately — the same trap `delete` below calls out: a
+          `get` that returns null for EVERYONE also passes the negative
+          assertion on its own, so the owner's own read is asserted too. */
       opsCase(opts, "appData.get returns null for another owner's row", async (ops) => {
         await seedApp(ops, "app_getscope");
         const owner = { appId: "app_getscope", collection: "notes", owner: "own_a" };
         const other = { appId: "app_getscope", collection: "notes", owner: "own_b" };
         await ops.appData.put(owner, { id: "secret", data: { v: 1 } });
         assert(await ops.appData.get(other, "secret") === null, "get read another owner's row");
+        const mine = await ops.appData.get(owner, "secret");
+        assert(mine !== null, "get returned null for the owner's own row");
+        assertDeepEqual(mine!.data, { v: 1 }, "get returned the wrong row for its owner");
       }),
 
       /** Both halves, deliberately: a `delete` that does nothing at all also
