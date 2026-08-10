@@ -211,14 +211,11 @@ skip none of its steps.
    ```
 
    **No login yet?** No preset applies — there is no session to read, and
-   installing a provider's SDK is not a login. Fill the three seams yourself,
+   installing a provider's SDK is not a login. Fill two seams yourself instead,
    never beside `auth` (one preset or the per-seam trio; mixing throws at
-   composition): keep the demo `principal` `--auth none` wrote, add an `oauth`
-   whose `session` hands the door that same subject instead of bouncing a
-   browser — the door still renders its own consent page — and an `actAs` with
-   empty headers, since a product with no login has no per-user credential to
-   mint. Every client then acts as that one person: a demo or an internal tool,
-   not a multi-user product.
+   composition): keep the demo `principal` `--auth none` wrote, and add an
+   `oauth` whose `session` hands the door that same subject instead of bouncing
+   a browser — the door still renders its own consent page.
 
    ```ts
    export const vendo = createVendo({
@@ -227,10 +224,18 @@ skip none of its steps.
        session: async () => ({ subject: "demo-user" }),
        principal: async (subject) => ({ kind: "user", subject }),
      },
-     actAs: async () => ({ headers: {} }),
      mcp: true,
    });
    ```
+
+   Leave `actAs` out. A stub returning empty headers is worse than an absent
+   seam: doctor then runs its live mint-and-verify round-trip and FAILS
+   [`E-AUTH-004`](/agents/verify#E-AUTH-004), because a fixed demo principal can
+   never echo the probe's own subject. Absent, doctor warns
+   [`E-AUTH-007`](/agents/verify#E-AUTH-007) and step 6's gate still passes — the
+   price is that your own route-bound tools answer `not-implemented` over the
+   door, while `vendo_make` and the apps tools work. Every client acts as that
+   one person: a demo or an internal tool, not a multi-user product.
 
 2. **The discovery route — init does not write it.** The door's discovery
    documents live at ORIGIN-ROOT paths, outside `/api/vendo`, so the catch-all
