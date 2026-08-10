@@ -1,0 +1,141 @@
+{
+  "app": "Atlas, an issue tracker for software teams",
+  "theme": {
+    "colors": {
+      "background": "#0E0E14",
+      "surface": "#16161F",
+      "text": "#ECECF2",
+      "muted": "#8A8AA0",
+      "accent": "#7C5CFF",
+      "accentText": "#FFFFFF",
+      "danger": "#F2555A",
+      "border": "#26263A"
+    },
+    "typography": { "fontFamily": "Inter, system-ui, -apple-system, 'Segoe UI', sans-serif", "baseSize": "13px" },
+    "radius": { "small": "4px", "medium": "6px", "large": "8px" },
+    "density": "compact",
+    "motion": "full"
+  },
+  "style": [
+    "uses the theme exactly: dark violet surfaces, the theme's sans stack, 4-6px corners — no invented colors, no serif or display type",
+    "dense like a keyboard-driven tracker: compact rows, small type, no hero whitespace and no oversized cards",
+    "status and priority read as short color-coded badges, never as sentences",
+    "task rows lead with their ATL key, and estimates read as '5 pts'",
+    "dates read as 'Aug 7', never ISO",
+    "destructive actions ask for confirmation before they fire"
+  ],
+  "tools": {
+    "list_sprints": {
+      "does": "Every cycle the team has planned, newest first. The rows are the `data` array. `committedPoints` is the whole estimate in the cycle and `completedPoints` is the part already finished — both are story points, never hours. `state` is one of planned, active, completed. Dates are ISO.",
+      "data": {
+        "data": [
+          { "id": "sp_22", "number": 22, "name": "Cycle 22", "state": "active", "startDate": "2026-08-03", "endDate": "2026-08-14", "committedPoints": 47, "completedPoints": 23 },
+          { "id": "sp_21", "number": 21, "name": "Cycle 21", "state": "completed", "startDate": "2026-07-20", "endDate": "2026-07-31", "committedPoints": 45, "completedPoints": 41 },
+          { "id": "sp_20", "number": 20, "name": "Cycle 20", "state": "completed", "startDate": "2026-07-06", "endDate": "2026-07-17", "committedPoints": 42, "completedPoints": 38 }
+        ]
+      }
+    },
+    "list_tasks": {
+      "does": "Every task in the workspace, across all cycles, newest key first. The rows are the `data` array. `points` is the story-point estimate, `sprint` is the cycle's id, `assignee` is a member id and is an empty string when nobody owns the task. `status` is one of todo, in_progress, in_review, blocked, done. `priority` is one of urgent, high, medium, low. `dueDate` is ISO.",
+      "data": {
+        "data": [
+          { "id": "t_155", "number": 155, "key": "ATL-155", "title": "Empty-state copy pass", "sprint": "sp_22", "status": "done", "priority": "low", "points": 1, "assignee": "m_sana", "dueDate": "2026-08-06", "tags": ["design"] },
+          { "id": "t_154", "number": 154, "key": "ATL-154", "title": "Import from CSV: column mapping", "sprint": "sp_22", "status": "todo", "priority": "low", "points": 2, "assignee": "", "dueDate": "2026-08-14", "tags": ["import"] },
+          { "id": "t_153", "number": 153, "key": "ATL-153", "title": "Fix flaky cycle-rollover test", "sprint": "sp_22", "status": "done", "priority": "low", "points": 1, "assignee": "m_theo", "dueDate": "2026-08-04", "tags": ["tests"] },
+          { "id": "t_152", "number": 152, "key": "ATL-152", "title": "Mobile: swipe to change status", "sprint": "sp_22", "status": "in_review", "priority": "medium", "points": 3, "assignee": "m_mira", "dueDate": "2026-08-13", "tags": ["mobile"] },
+          { "id": "t_151", "number": 151, "key": "ATL-151", "title": "Keyboard shortcut sheet", "sprint": "sp_22", "status": "done", "priority": "medium", "points": 2, "assignee": "m_dara", "dueDate": "2026-08-05", "tags": ["editor", "design"] },
+          { "id": "t_150", "number": 150, "key": "ATL-150", "title": "Bulk assign from the board", "sprint": "sp_22", "status": "todo", "priority": "medium", "points": 3, "assignee": "m_ivy", "dueDate": "2026-08-14", "tags": ["board"] },
+          { "id": "t_149", "number": 149, "key": "ATL-149", "title": "Slack unfurl for task links", "sprint": "sp_22", "status": "done", "priority": "low", "points": 3, "assignee": "m_luca", "dueDate": "2026-08-03", "tags": ["integrations"] },
+          { "id": "t_148", "number": 148, "key": "ATL-148", "title": "Burndown chart component", "sprint": "sp_22", "status": "in_progress", "priority": "medium", "points": 3, "assignee": "m_sana", "dueDate": "2026-08-13", "tags": ["charts"] },
+          { "id": "t_147", "number": 147, "key": "ATL-147", "title": "Cycle burndown endpoint", "sprint": "sp_22", "status": "done", "priority": "high", "points": 3, "assignee": "m_noor", "dueDate": "2026-08-04", "tags": ["api"] },
+          { "id": "t_146", "number": 146, "key": "ATL-146", "title": "Board drag-and-drop drops cards while scrolling", "sprint": "sp_22", "status": "blocked", "priority": "urgent", "points": 3, "assignee": "m_theo", "dueDate": "2026-08-07", "tags": ["board", "bug"] },
+          { "id": "t_145", "number": 145, "key": "ATL-145", "title": "Command palette: fuzzy match on project names", "sprint": "sp_22", "status": "done", "priority": "high", "points": 5, "assignee": "m_dara", "dueDate": "2026-08-05", "tags": ["editor"] },
+          { "id": "t_144", "number": 144, "key": "ATL-144", "title": "Audit log retention job", "sprint": "sp_22", "status": "blocked", "priority": "high", "points": 5, "assignee": "m_noor", "dueDate": "2026-08-11", "tags": ["infra"] },
+          { "id": "t_143", "number": 143, "key": "ATL-143", "title": "Rotate refresh tokens on password change", "sprint": "sp_22", "status": "done", "priority": "high", "points": 8, "assignee": "m_ivy", "dueDate": "2026-08-06", "tags": ["auth", "security"] },
+          { "id": "t_142", "number": 142, "key": "ATL-142", "title": "Passkey sign-in on the web app", "sprint": "sp_22", "status": "in_progress", "priority": "urgent", "points": 5, "assignee": "m_ivy", "dueDate": "2026-08-12", "tags": ["auth"] },
+          { "id": "t_141", "number": 141, "key": "ATL-141", "title": "Tighten focus rings", "sprint": "sp_21", "status": "in_review", "priority": "low", "points": 1, "assignee": "m_sana", "dueDate": "2026-07-31", "tags": ["design"] },
+          { "id": "t_140", "number": 140, "key": "ATL-140", "title": "Search indexes archived tasks", "sprint": "sp_21", "status": "todo", "priority": "medium", "points": 3, "assignee": "m_rhys", "dueDate": "2026-07-31", "tags": ["search"] },
+          { "id": "t_139", "number": 139, "key": "ATL-139", "title": "Task counts on cycle cards", "sprint": "sp_21", "status": "done", "priority": "low", "points": 2, "assignee": "m_rhys", "dueDate": "2026-07-29", "tags": ["cycles"] },
+          { "id": "t_138", "number": 138, "key": "ATL-138", "title": "Dark theme contrast pass", "sprint": "sp_21", "status": "done", "priority": "low", "points": 2, "assignee": "m_sana", "dueDate": "2026-07-31", "tags": ["design"] },
+          { "id": "t_137", "number": 137, "key": "ATL-137", "title": "Comment mentions notify the mentioned", "sprint": "sp_21", "status": "done", "priority": "medium", "points": 2, "assignee": "m_mira", "dueDate": "2026-07-23", "tags": ["comments"] },
+          { "id": "t_136", "number": 136, "key": "ATL-136", "title": "GitHub branch linking", "sprint": "sp_21", "status": "done", "priority": "high", "points": 3, "assignee": "m_ivy", "dueDate": "2026-07-30", "tags": ["integrations"] },
+          { "id": "t_135", "number": 135, "key": "ATL-135", "title": "Assignee avatars on the board", "sprint": "sp_21", "status": "done", "priority": "low", "points": 3, "assignee": "m_sana", "dueDate": "2026-07-25", "tags": ["board", "design"] },
+          { "id": "t_134", "number": 134, "key": "ATL-134", "title": "Filter chips for tags", "sprint": "sp_21", "status": "done", "priority": "medium", "points": 3, "assignee": "m_dara", "dueDate": "2026-07-30", "tags": ["editor"] },
+          { "id": "t_133", "number": 133, "key": "ATL-133", "title": "Inline task titles are editable", "sprint": "sp_21", "status": "done", "priority": "medium", "points": 3, "assignee": "m_theo", "dueDate": "2026-07-28", "tags": ["editor"] },
+          { "id": "t_132", "number": 132, "key": "ATL-132", "title": "Webhook retries with backoff", "sprint": "sp_21", "status": "done", "priority": "medium", "points": 5, "assignee": "m_luca", "dueDate": "2026-07-29", "tags": ["integrations"] },
+          { "id": "t_131", "number": 131, "key": "ATL-131", "title": "Cycle rollover moves unfinished work", "sprint": "sp_21", "status": "done", "priority": "urgent", "points": 5, "assignee": "m_noor", "dueDate": "2026-07-22", "tags": ["cycles"] },
+          { "id": "t_130", "number": 130, "key": "ATL-130", "title": "Saved views in the sidebar", "sprint": "sp_21", "status": "done", "priority": "high", "points": 5, "assignee": "m_dara", "dueDate": "2026-07-27", "tags": ["editor"] },
+          { "id": "t_129", "number": 129, "key": "ATL-129", "title": "Project templates", "sprint": "sp_21", "status": "done", "priority": "high", "points": 8, "assignee": "m_ivy", "dueDate": "2026-07-24", "tags": ["projects"] },
+          { "id": "t_128", "number": 128, "key": "ATL-128", "title": "Tooltip copy on the board", "sprint": "sp_20", "status": "todo", "priority": "low", "points": 1, "assignee": "m_sana", "dueDate": "2026-07-17", "tags": ["design"] },
+          { "id": "t_127", "number": 127, "key": "ATL-127", "title": "Rename a cycle", "sprint": "sp_20", "status": "done", "priority": "low", "points": 1, "assignee": "m_rhys", "dueDate": "2026-07-17", "tags": ["cycles"] },
+          { "id": "t_126", "number": 126, "key": "ATL-126", "title": "Fix timezone drift on due dates", "sprint": "sp_20", "status": "done", "priority": "high", "points": 2, "assignee": "m_theo", "dueDate": "2026-07-08", "tags": ["bug"] },
+          { "id": "t_125", "number": 125, "key": "ATL-125", "title": "Keyboard nav in the sidebar", "sprint": "sp_20", "status": "done", "priority": "medium", "points": 3, "assignee": "m_dara", "dueDate": "2026-07-15", "tags": ["editor"] },
+          { "id": "t_124", "number": 124, "key": "ATL-124", "title": "Duplicate-task detection", "sprint": "sp_20", "status": "done", "priority": "low", "points": 2, "assignee": "m_rhys", "dueDate": "2026-07-16", "tags": ["quality"] },
+          { "id": "t_123", "number": 123, "key": "ATL-123", "title": "Priority sort on every list", "sprint": "sp_20", "status": "done", "priority": "high", "points": 3, "assignee": "m_theo", "dueDate": "2026-07-12", "tags": ["editor"] },
+          { "id": "t_122", "number": 122, "key": "ATL-122", "title": "Type scale cleanup", "sprint": "sp_20", "status": "done", "priority": "low", "points": 3, "assignee": "m_sana", "dueDate": "2026-07-17", "tags": ["design"] },
+          { "id": "t_121", "number": 121, "key": "ATL-121", "title": "Onboarding checklist", "sprint": "sp_20", "status": "done", "priority": "medium", "points": 3, "assignee": "m_mira", "dueDate": "2026-07-13", "tags": ["onboarding"] },
+          { "id": "t_120", "number": 120, "key": "ATL-120", "title": "CSV export of a cycle", "sprint": "sp_20", "status": "done", "priority": "medium", "points": 3, "assignee": "m_luca", "dueDate": "2026-07-15", "tags": ["export"] },
+          { "id": "t_119", "number": 119, "key": "ATL-119", "title": "Postgres pool exhaustion under load", "sprint": "sp_20", "status": "blocked", "priority": "urgent", "points": 3, "assignee": "m_noor", "dueDate": "2026-07-09", "tags": ["infra", "bug"] },
+          { "id": "t_118", "number": 118, "key": "ATL-118", "title": "Roles and permissions", "sprint": "sp_20", "status": "done", "priority": "high", "points": 5, "assignee": "m_noor", "dueDate": "2026-07-16", "tags": ["auth"] },
+          { "id": "t_117", "number": 117, "key": "ATL-117", "title": "Task detail side panel", "sprint": "sp_20", "status": "done", "priority": "high", "points": 5, "assignee": "m_dara", "dueDate": "2026-07-14", "tags": ["editor"] },
+          { "id": "t_116", "number": 116, "key": "ATL-116", "title": "Realtime sync over websockets", "sprint": "sp_20", "status": "done", "priority": "urgent", "points": 8, "assignee": "m_ivy", "dueDate": "2026-07-10", "tags": ["infra"] }
+        ]
+      }
+    },
+    "get_task": {
+      "does": "One task in full, with its comments. The task is the `data` object.",
+      "takes": { "id": "string" },
+      "data": {
+        "data": {
+          "id": "t_146",
+          "number": 146,
+          "key": "ATL-146",
+          "title": "Board drag-and-drop drops cards while scrolling",
+          "sprint": "sp_22",
+          "status": "blocked",
+          "priority": "urgent",
+          "points": 3,
+          "assignee": "m_theo",
+          "dueDate": "2026-08-07",
+          "tags": ["board", "bug"],
+          "description": "Dragging a card while the column is scrolling drops it on the wrong lane. Blocked on the pointer-capture fix landing upstream.",
+          "comments": [
+            { "id": "cm_one", "author": "m_theo", "body": "Reproduced on trackpad and mouse. Waiting on the upstream fix.", "at": "2026-08-05" },
+            { "id": "cm_two", "author": "m_ivy", "body": "Upstream merged theirs — we can unblock once it ships.", "at": "2026-08-06" }
+          ]
+        }
+      }
+    },
+    "list_members": {
+      "does": "Everyone on the team. The rows are the `data` array. `capacityPoints` is how many story points that person can take in a two-week cycle.",
+      "data": {
+        "data": [
+          { "id": "m_ivy", "name": "Ivy Chen", "handle": "ivy", "role": "engineer", "capacityPoints": 13 },
+          { "id": "m_dara", "name": "Dara Osei", "handle": "dara", "role": "engineer", "capacityPoints": 13 },
+          { "id": "m_noor", "name": "Noor Haddad", "handle": "noor", "role": "engineer", "capacityPoints": 13 },
+          { "id": "m_theo", "name": "Theo Vance", "handle": "theo", "role": "engineer", "capacityPoints": 13 },
+          { "id": "m_rhys", "name": "Rhys Alderman", "handle": "rhys", "role": "qa", "capacityPoints": 13 },
+          { "id": "m_sana", "name": "Sana Iqbal", "handle": "sana", "role": "designer", "capacityPoints": 10 },
+          { "id": "m_luca", "name": "Luca Moretti", "handle": "luca", "role": "engineer", "capacityPoints": 8 },
+          { "id": "m_mira", "name": "Mira Castellanos", "handle": "mira", "role": "engineer", "capacityPoints": 8 }
+        ]
+      }
+    },
+    "update_task_status": {
+      "does": "Move a task to a different status. `status` is one of todo, in_progress, in_review, blocked, done.",
+      "takes": { "id": "string", "status": "string" }
+    },
+    "assign_task": {
+      "does": "Give a task an owner. `memberId` is a member's id.",
+      "takes": { "id": "string", "memberId": "string" }
+    },
+    "add_comment": {
+      "does": "Post a comment on a task.",
+      "takes": { "id": "string", "body": "string" }
+    },
+    "delete_task": {
+      "does": "Permanently delete a task. This cannot be undone and the task's comments and history go with it.",
+      "takes": { "id": "string" }
+    }
+  }
+}

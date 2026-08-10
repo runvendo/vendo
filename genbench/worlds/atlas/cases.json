@@ -1,0 +1,112 @@
+[
+  {
+    "id": "cycle-velocity",
+    "lane": "screen",
+    "prompts": [
+      "How is Cycle 22 tracking against the two cycles before it? Include our average points completed per cycle.",
+      "Give me a velocity view: the last three cycles, what each one finished, the average per cycle, and where Cycle 22 stands right now.",
+      "I want to know whether this cycle is on pace. Show each cycle's completed points, the average across them, and Cycle 22 against what it committed."
+    ],
+    "prompt": "How is Cycle 22 tracking against the two cycles before it? Include our average points completed per cycle.",
+    "pass": [
+      "shows all three cycles with the points each one completed: 38, 41 and 23",
+      "shows Cycle 22 as the active cycle, 23 of its 47 committed points complete",
+      "shows the average completed per cycle as 34",
+      "never presents a cycle's committed points as if they were the points completed",
+      "invents no cycle beyond the three the tool returned"
+    ]
+  },
+  {
+    "id": "top-priorities",
+    "lane": "screen",
+    "prompts": [
+      "Show me the three highest-priority unfinished tasks in Cycle 22, soonest due date first. Nothing else.",
+      "Just the top three open items in Cycle 22 by priority, ordered with the nearest due date first — leave everything else out.",
+      "What are the three most urgent things still open in Cycle 22? List them nearest-due first and nothing more."
+    ],
+    "prompt": "Show me the three highest-priority unfinished tasks in Cycle 22, soonest due date first. Nothing else.",
+    "pass": [
+      "shows exactly three tasks",
+      "shows ATL-146, ATL-144 and ATL-142, and no other task",
+      "orders them ATL-146 first, then ATL-144, then ATL-142",
+      "shows no done task and no task from Cycle 20 or Cycle 21",
+      "shows each due date in 'Aug 7' form rather than ISO"
+    ]
+  },
+  {
+    "id": "triage-blocked",
+    "lane": "screen",
+    "prompts": [
+      "Show the blocked tasks in Cycle 22, with a way to put each one back in progress and a way to delete one.",
+      "What's blocked in Cycle 22? Give me a control on each row to move it back to in progress, and one to delete it.",
+      "I need to triage Cycle 22's blockers: list them, let me un-block each one, and let me delete one if it's dead."
+    ],
+    "prompt": "Show the blocked tasks in Cycle 22, with a way to put each one back in progress and a way to delete one.",
+    "pass": [
+      "lists both blocked tasks in the cycle, ATL-146 and ATL-144, and no task that is not blocked",
+      "leaves out ATL-119, which is blocked in an older cycle",
+      "each row carries a control that moves that task to in_progress",
+      "the control targets the task it sits on, passing that task's own id",
+      "the delete control asks for confirmation before it fires"
+    ]
+  },
+  {
+    "id": "empty-cycle",
+    "lane": "screen",
+    "prompts": [
+      "Show me Cycle 23 — what's on it and who's on the work.",
+      "Open the Cycle 23 plan: the tasks in it and who owns them.",
+      "What does Cycle 23 look like so far, and who is it assigned to?"
+    ],
+    "prompt": "Show me Cycle 23 — what's on it and who's on the work.",
+    "pass": [
+      "says the cycle has no tasks yet rather than showing an empty table",
+      "invents no task, no owner and no estimate",
+      "shows no progress or burndown figure other than zero",
+      "offers no control that acts on a task"
+    ],
+    "data": {
+      "list_tasks": { "data": [] },
+      "list_sprints": {
+        "data": [
+          { "id": "sp_23", "number": 23, "name": "Cycle 23", "state": "planned", "startDate": "2026-08-17", "endDate": "2026-08-28", "committedPoints": 0, "completedPoints": 0 }
+        ]
+      }
+    }
+  },
+  {
+    "id": "status-board",
+    "lane": "screen",
+    "prompts": [
+      "Build me a board of Cycle 22 by status, where moving a task to another status updates the board right away.",
+      "I want a Cycle 22 kanban: columns by status, and changing a card's status re-draws the board immediately.",
+      "Give me Cycle 22 as a status board — when I move a card the board should update on the spot, not after a reload."
+    ],
+    "prompt": "Build me a board of Cycle 22 by status, where moving a task to another status updates the board right away.",
+    "pass": [
+      "groups Cycle 22's tasks into columns by status",
+      "shows only Cycle 22's 14 tasks, not the whole workspace",
+      "the columns hold 7 done, 2 in progress, 1 in review, 2 blocked and 2 todo",
+      "changing a task's status updates what is on screen without a reload",
+      "the status change calls the tool with that card's own id and the new status"
+    ]
+  },
+  {
+    "id": "cycle-dashboard",
+    "lane": "screen",
+    "prompts": [
+      "Build me a cycle dashboard for Cycle 22: a burndown of the points, workload by member, and what's at risk.",
+      "I want one screen for Cycle 22 — how the points are burning down, how loaded each person is, and which tasks are in trouble.",
+      "Give me the Cycle 22 command centre: points burndown, per-member workload against capacity, and the at-risk list."
+    ],
+    "prompt": "Build me a cycle dashboard for Cycle 22: a burndown of the points, workload by member, and what's at risk.",
+    "pass": [
+      "draws a burndown or progress chart rather than only listing numbers",
+      "shows Cycle 22 as 23 of 47 points complete",
+      "shows a workload figure for all eight members, including the one carrying no cycle work",
+      "shows Ivy Chen as the most loaded member, at 16 points against a 13-point capacity",
+      "flags the two blocked tasks, ATL-146 and ATL-144, as at risk",
+      "names every member by their display name, never by a raw member id"
+    ]
+  }
+]
