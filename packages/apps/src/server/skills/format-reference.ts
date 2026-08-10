@@ -279,12 +279,20 @@ the centre is always a query or \`state\` read.
 
 \`\`\`
 points={asPoints(invoices.data, "month", "total_cents")}
-rows={format(pick(invoices.data, "client", "amount_cents"), "amount_cents", "currency")}
+rows={format(pick(invoices.data, "client", "issued_at"), "issued_at", "date")}
 note={format(state.rate, "percent")}
 \`\`\`
 
 Reading the nesting from the inside out reads the steps in order: \`pick\` first,
 then \`format\`.
+
+\`"currency"\` prints the number exactly as it stands, so a field holding CENTS
+never goes through it: \`format(rows, "amount_cents", "currency")\` puts
+$61,245.00 on the screen where the money is $612.45. Hand the cents field to the
+component instead — \`Stat\` with \`format="money"\`, a \`DataTable\` column with
+\`format:"money"\`, \`Money\` with \`cents\` — those are the ones that divide by
+100. And never format a field you also sort on: formatting turns the number into
+text, and \`sortBy\` then sorts it alphabetically.
 
 ### Calculating: functions and arithmetic
 
