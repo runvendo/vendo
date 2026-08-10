@@ -368,13 +368,31 @@ export async function assembleScreen(
    * there is nothing to cancel and no ordering to get wrong.
    */
   const clock = new AbortController();
+  let deadlineAt = Date.now() + SCREEN_BLIND_MS;
   const fuse = (ms: number): void => {
+    deadlineAt = Math.min(deadlineAt, Date.now() + ms);
     AbortSignal.timeout(ms).addEventListener("abort", () => clock.abort(), { once: true });
   };
   fuse(SCREEN_BLIND_MS);
   // The caller's hang-up and the clock are the same fact to the loop: stop now.
   // They are told apart afterwards, because they mean different answers.
   const signal = AbortSignal.any([surface.signal, clock.signal]);
+
+  /**
+   * The clock as the loop READS it, recomputed and attached to what it just did.
+   *
+   * The brief states the budget once, before the run starts, and a sentence in the
+   * system prompt is the one fact a long loop never re-reads. So the remaining
+   * seconds ride back on every tool result instead — Claude Code's own
+   * token-and-dollar system-reminder trick — and what "spend it on" means changes
+   * with whether anything is on screen yet.
+   */
+  const budgetLine = (): string => {
+    const left = Math.max(0, Math.round((deadlineAt - Date.now()) / 1000));
+    return record.assembled
+      ? `Budget: ${left}s left, and a screen is already up — if it answers the ask, say so and stop.`
+      : `Budget: ${left}s left and nothing is on screen yet — save something now, or escalate.`;
+  };
 
   /**
    * Write one hot-path file and land it.
@@ -460,10 +478,10 @@ export async function assembleScreen(
         // is the fact this hand does have, and it is enough to act on.
         return {
           saved: true,
-          note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.",
+          note: `${instruction ?? "That save landed but did not reach the person's screen. Save a simpler document."} ${budgetLine()}`,
         };
       }
-      return { saved: true, note: "Run validate on it now." };
+      return { saved: true, note: `Run validate on it now. ${budgetLine()}` };
     },
   };
 
@@ -510,7 +528,21 @@ export async function assembleScreen(
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: {
+      // Every host read carries the clock back too — a run that spends 40s in
+      // `search_components` hears that it did, on the result itself. Only a plain
+      // object can take the extra key; anything else rides back untouched.
+      call: async (name, args) => {
+        const result = await surface.tools.call(name, args);
+        return result.status === "ok"
+            && typeof result.output === "object"
+            && result.output !== null
+            && !Array.isArray(result.output)
+          ? { ...result, output: { ...result.output, budget: budgetLine() } }
+          : result;
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
