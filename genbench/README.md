@@ -94,7 +94,11 @@ outruns its budget is recorded `failure: "timeout"`; its siblings finish
 normally.
 
 Flags: `--prompt <id>` for one case, `--models sonnet,opus,haiku`,
-`--world <name>` (default `maple`), `--lane build` (deferred).
+`--world <name>` (default `maple`), `--lane harness` (below), `--lane build`
+(deferred), `--cases <path>` for a cases file that lives somewhere else — a
+HELD-OUT set, graded against `--world`'s world — and `--repeat <n>`, which picks
+the nth of a case's `prompts` array, so running a case twice measures the product
+against two phrasings rather than the same sentence twice.
 
 A `--prompt` run opens the preview on macOS when it finishes — that is one
 person watching one case, and a window is the point of it. A full run prints the
@@ -136,6 +140,7 @@ A world is a **folder**, `worlds/<name>/`:
 | --- | --- |
 | `world.json` | the entire product: identity, a `VendoTheme`, a plain-English style rubric, and ~4 tools |
 | `cases.json` | the prompts |
+| `harness-cases.json` | the conversations, for the harness lane below |
 | `font.woff2` | optional. The face the theme's `fontFamily` names, injected into every contender's page |
 
 `maple` is the only world today. A tool that declares `data` returns rows and is
@@ -196,10 +201,15 @@ Five deterministic checks, no model involved:
   **row count** of one tool; the **sum, mean, min or max** of one numeric field
   across one tool's rows; and the **count of one tool's rows filtered to one
   field equalling one value** ("2 pending transfers" — two of `list_transfers`'
-  four rows carry `status: "pending"`). Money is matched at either scale, because
-  the same amount may be authored in cents and shown in dollars; a count is
-  matched at its own magnitude only, since two transfers is never $0.02 or 200 of
-  anything. Whatever tier 1 cannot clear goes to **tier 2**, below
+  four rows carry `status: "pending"`). Money crosses scale in ONE direction each
+  way: an **integer** value also matches its ÷100 reading, because integer cents
+  is the only thing that can honestly be re-shown as dollars, and every value
+  matches its ×100 reading, because multiplying cannot invent precision. A
+  derivation that needs a rounding decision to line up therefore does not clear
+  here at all — it goes to **tier 2**, where a program has to state the rounding
+  it applied. A count is matched at its own magnitude only, since two transfers is
+  never $0.02 or 200 of anything. Whatever tier 1 cannot clear goes to **tier 2**,
+  below
 - **wiredActions** — the probe pressed every control on the page and every call
   that fired names a real tool with schema-valid arguments. A control that fires
   nothing fails: naming a tool in a document is not being wired to it, which is
@@ -285,6 +295,58 @@ so on the terminal, in `result.json` and at the top of its column in the
 preview, and the run still exits on what the floor found. A column that
 delivered no screen at all is failed on every line too, but that is the
 contender's failure and is not marked degraded.
+
+## The harness lane
+
+    ANTHROPIC_API_KEY=… pnpm genbench run --lane harness
+
+Everything above benchmarks GENERATION. This lane benchmarks the loop that lives
+in the product — the resident `vendo()` harness: multi-tool asks, arithmetic
+across two results, recovery from a tool that just failed, honesty when nothing
+answers, a question instead of a guess, and a reference resolved three turns
+later.
+
+It drives the SHIPPED door. `createVendo` composes the whole product — the
+default harness, the real guard, the real transcript, the real per-turn system
+prompt — and every turn goes through `vendo.harness.stream`, which is what a
+host's own chat route calls. The only thing substituted is the WORLD, exactly as
+the screen lane substitutes it: the host's tools answer with the case's canned
+rows. Nothing here reimplements a loop and nothing mocks one — a harness bench
+that mocks the harness proves nothing, which is what `tests/harness-lane.test.ts`
+holds down by driving the real composition with a scripted brain and asserting
+the world reached the model at all.
+
+**The trace is the product's own record.** Every guarded call is mirrored onto
+the wire by the runtime before it runs and again when it answers, so reading that
+stream back gives every call, its arguments and its outcome — including the ones
+the guard refused, which no registry wrapper can see.
+
+A case is one to three user messages down ONE thread, so turn 3 is graded against
+what the product actually remembers. `worlds/<name>/harness-cases.json`:
+
+| key | what it says |
+| --- | --- |
+| `turns` | 1-3 user messages, in order |
+| `tools` | amend a world tool (`data`) or make it fail (`fail: "first" \| "always"`, `error`), and DEFINE a tool the world does not have (`does`, `takes`, `data`) — in the case rather than in `world.json`, because the world's hash is every recorded screen run's comparability stamp |
+| `gate` | `"deny"` or `"approve"`: the guard asks before every write and a person answers, immediately, through the shipped `guard.approvals.decide` — a real approval round trip instead of a 90-second wait for a tap nobody makes |
+| `expectCalls` | calls that must have happened, matched on a SUBSET of the arguments. Naming one tool twice asks for two DISTINCT calls, which is how "it had to look again after the failure" is said |
+| `forbidCalls` / `maxToolCalls` | what must never be called, and the efficiency bound — counted over the HOST's tools only, so a budget does not move when the product's own loadout rail does |
+| `mustAsk` | the reply must be a question: the `ask_user` door, or a question in the reply's own words |
+| `mustAdmitFailure` | the reply must state no figure the tools did not return. The floor's own number index, built from the outputs this conversation REALLY received — so when every call failed the index is empty and any figure is invention, while an honest sum over a result that did arrive still clears |
+| `mustSay` | text the final reply must contain, currency and separators normalised away, so `$1,050.65` satisfies `1050.65` |
+| `pass` | the case's own rubric, graded blind on the transcript |
+
+Scoring is **trace-first**: those checks are deterministic, they alone decide the
+exit code, and each one is present in `result.json` only when the case asked for
+it, so a column's checks are its own contract. The judge is garnish — the same
+blind, shuffled, fail-closed contract as above under its own stamp
+(`HarnessJudgeContract`), reading the transcript and the tool calls instead of a
+screenshot. The world's `style` rubric is deliberately not sent: it is written
+about screens, and this lane has no pixels.
+
+`runs/<run>/<contender>/<case>/result.json` carries the whole conversation — every
+turn's ask, reply, calls, milliseconds and tokens — and `preview.html` renders it
+as a transcript with the verdicts underneath.
 
 ## What honestData does not read
 

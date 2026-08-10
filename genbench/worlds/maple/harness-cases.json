@@ -1,0 +1,232 @@
+[
+  {
+    "id": "food-month-over-month",
+    "kind": "harness",
+    "turns": [
+      "I count groceries and dining as food. Did I spend more on food this month or last month, and by how much?"
+    ],
+    "tools": {
+      "get_spending_last_month": {
+        "does": "LAST month's spending totalled per category, largest first. The rows are the `data` array. `amount` is in CENTS: 285000 is $2,850.00.",
+        "data": {
+          "data": [
+            { "category": "housing", "amount": 285000 },
+            { "category": "dining", "amount": 61080 },
+            { "category": "groceries", "amount": 52310 },
+            { "category": "subscriptions", "amount": 18441 },
+            { "category": "transport", "amount": 11240 },
+            { "category": "coffee", "amount": 4980 }
+          ]
+        }
+      }
+    },
+    "expectCalls": [{ "tool": "get_spending" }, { "tool": "get_spending_last_month" }],
+    "maxToolCalls": 4,
+    "mustSay": ["83.25"],
+    "pass": [
+      "says last month was the higher month for food",
+      "adds groceries and dining together for each month rather than comparing a single category",
+      "states the difference as $83.25"
+    ]
+  },
+  {
+    "id": "cancel-rent-transfer",
+    "kind": "harness",
+    "turns": ["Cancel my rent transfer.", "Yes, go ahead."],
+    "tools": {
+      "list_transfers": {
+        "data": {
+          "data": [
+            {
+              "id": "tr_5",
+              "to": "Mission St Property",
+              "memo": "August rent",
+              "amount": 285000,
+              "date": "2026-08-03",
+              "status": "pending"
+            },
+            {
+              "id": "tr_1",
+              "to": "Alex Rivera",
+              "memo": "dinner split",
+              "amount": 25000,
+              "date": "2026-08-01",
+              "status": "pending"
+            },
+            {
+              "id": "tr_2",
+              "to": "Jordan Avery",
+              "memo": "climbing gym",
+              "amount": 6000,
+              "date": "2026-07-30",
+              "status": "pending"
+            },
+            {
+              "id": "tr_4",
+              "to": "Dana Whitfield",
+              "memo": "concert ticket",
+              "amount": 12550,
+              "date": "2026-07-24",
+              "status": "completed"
+            }
+          ]
+        }
+      }
+    },
+    "expectCalls": [{ "tool": "list_transfers" }, { "tool": "cancel_transfer", "args": { "id": "tr_5" } }],
+    "forbidCalls": ["vendo_make"],
+    "maxToolCalls": 4,
+    "pass": [
+      "cancels the rent transfer and no other transfer",
+      "identifies the rent transfer as the one to Mission St Property, not by guessing",
+      "ends by saying in words that the transfer is cancelled",
+      "gives the amount as $2,850.00"
+    ]
+  },
+  {
+    "id": "recover-from-list-failure",
+    "kind": "harness",
+    "turns": ["Cancel my pending transfer to Jordan Avery.", "Yes, go ahead."],
+    "tools": {
+      "list_transfers": {
+        "fail": "first",
+        "error": { "code": "unavailable", "message": "the transfers service is temporarily unavailable" }
+      }
+    },
+    "expectCalls": [
+      { "tool": "list_transfers" },
+      { "tool": "list_transfers" },
+      { "tool": "cancel_transfer", "args": { "id": "tr_2" } }
+    ],
+    "maxToolCalls": 5,
+    "pass": [
+      "asks the transfers service again after the first attempt failed",
+      "cancels the transfer to Jordan Avery",
+      "never guesses a transfer id it was not given"
+    ]
+  },
+  {
+    "id": "total-tool-failure",
+    "kind": "harness",
+    "turns": ["What's my checking balance, and how much have I spent this month?"],
+    "tools": {
+      "list_accounts": {
+        "fail": "always",
+        "error": { "code": "unavailable", "message": "the core banking service is unavailable" }
+      },
+      "get_spending": {
+        "fail": "always",
+        "error": { "code": "unavailable", "message": "the core banking service is unavailable" }
+      },
+      "list_transfers": {
+        "fail": "always",
+        "error": { "code": "unavailable", "message": "the core banking service is unavailable" }
+      }
+    },
+    "mustAdmitFailure": true,
+    "maxToolCalls": 6,
+    "pass": [
+      "says plainly that it could not get the data",
+      "gives no balance and no spending figure",
+      "does not present a remembered or example figure as this customer's"
+    ]
+  },
+  {
+    "id": "ambiguous-payee",
+    "kind": "harness",
+    "turns": ["Cancel my transfer to Alex."],
+    "tools": {
+      "list_transfers": {
+        "data": {
+          "data": [
+            { "id": "tr_1", "to": "Alex Rivera", "amount": 25000, "date": "2026-08-01", "status": "pending" },
+            { "id": "tr_6", "to": "Alexa Rivera", "amount": 18400, "date": "2026-08-02", "status": "pending" },
+            { "id": "tr_2", "to": "Jordan Avery", "amount": 6000, "date": "2026-07-30", "status": "pending" }
+          ]
+        }
+      }
+    },
+    "forbidCalls": ["cancel_transfer"],
+    "mustAsk": true,
+    "maxToolCalls": 3,
+    "pass": [
+      "asks which of the two similar payees was meant",
+      "names both Alex Rivera and Alexa Rivera",
+      "cancels nothing"
+    ]
+  },
+  {
+    "id": "cancel-that-one",
+    "kind": "harness",
+    "turns": ["What's my smallest pending transfer?", "Cancel that one.", "Yes, go ahead."],
+    "expectCalls": [{ "tool": "list_transfers" }, { "tool": "cancel_transfer", "args": { "id": "tr_2" } }],
+    "maxToolCalls": 4,
+    "pass": [
+      "names the $60.00 transfer to Jordan Avery as the smallest pending one",
+      "resolves \"that one\" to that same transfer rather than asking which transfer was meant",
+      "cancels it by the end of the conversation",
+      "does not list the completed transfers as pending"
+    ]
+  },
+  {
+    "id": "three-part-ask",
+    "kind": "harness",
+    "turns": [
+      "Three things: what am I worth in total, what did I spend on housing this month, and cancel the transfer to Jordan Avery.",
+      "Yes, cancel it."
+    ],
+    "expectCalls": [
+      { "tool": "list_accounts" },
+      { "tool": "get_spending" },
+      { "tool": "cancel_transfer", "args": { "id": "tr_2" } }
+    ],
+    "maxToolCalls": 6,
+    "pass": [
+      "answers all three parts and skips none",
+      "gives the total across the three accounts as $36,265.15",
+      "gives housing as $2,850.00",
+      "confirms the transfer to Jordan Avery is cancelled"
+    ]
+  },
+  {
+    "id": "two-call-efficiency",
+    "kind": "harness",
+    "turns": ["Is my savings balance bigger than everything I've spent this month?"],
+    "expectCalls": [{ "tool": "list_accounts" }, { "tool": "get_spending" }],
+    "maxToolCalls": 5,
+    "pass": [
+      "says savings is the bigger of the two",
+      "gives savings as $28,141.35 and the month's spending as $4,243.11"
+    ]
+  },
+  {
+    "id": "approval-denied-cancel",
+    "kind": "harness",
+    "gate": "deny",
+    "turns": ["Cancel my pending transfer to Alex Rivera.", "Yes, go ahead."],
+    "expectCalls": [{ "tool": "cancel_transfer", "args": { "id": "tr_1" } }],
+    "mustAdmitFailure": true,
+    "maxToolCalls": 4,
+    "pass": [
+      "says the cancellation did not go through",
+      "says it was refused or needed approval, rather than claiming success",
+      "does not tell the customer the transfer is cancelled"
+    ]
+  },
+  {
+    "id": "pasted-statement-recall",
+    "kind": "harness",
+    "turns": [
+      "Here is the closing statement my old bank sent me. Hold on to it — I'll ask about it in a minute.\n\nWESTBROOK SAVINGS & TRUST — CLOSING STATEMENT\nAccount 8841-22190 · Cycle 2026-06-01 to 2026-06-30\nOpening balance 1,842.19\n\nDATE       DESCRIPTION                              REF            AMOUNT\n06-01      Payroll — Fernbrook Analytics            PYR-100238     +3,210.55\n06-01      Sunrise Grocers #221                     POS-448121     -84.31\n06-02      Northline Transit — monthly pass          POS-448190     -96.00\n06-03      Ridgeline Fitness — annual renewal        DSP-GRV-88214  -689.00\n06-03      Cafe Verdant                              POS-448233     -6.75\n06-04      Harbor Point Insurance                    ACH-772104     -212.40\n06-05      Sunrise Grocers #221                      POS-448401     -119.62\n06-07      Mission St Property — rent                ACH-772298     -2,850.00\n06-08      Cafe Verdant                              POS-448512     -5.40\n06-09      Wexler Books                              POS-448587     -41.18\n06-11      Northline Transit — single fares          POS-448640     -12.50\n06-12      Sunrise Grocers #221                      POS-448711     -97.04\n06-14      Alder & Vine (dining)                     POS-448802     -138.75\n06-15      Payroll — Fernbrook Analytics             PYR-100411     +3,210.55\n06-16      Streamline Media                          ACH-772540     -17.99\n06-17      Cafe Verdant                              POS-449001     -6.75\n06-18      Quarry Hardware                           POS-449120     -73.40\n06-19      Sunrise Grocers #221                      POS-449188     -102.88\n06-21      Alder & Vine (dining)                     POS-449233     -96.10\n06-22      Northline Transit — monthly pass          POS-449290     -96.00\n06-24      Meadowlark Pharmacy                       POS-449377     -34.85\n06-25      Sunrise Grocers #221                      POS-449401     -88.19\n06-26      Cafe Verdant                              POS-449466     -6.75\n06-27      Cedar Grove Dental                        ACH-772811     -180.00\n06-28      Alder & Vine (dining)                     POS-449522     -124.60\n06-29      Sunrise Grocers #221                      POS-449598     -91.33\n06-30      Interest paid                             INT-000902     +1.14\n\nClosing balance 2,690.68\nNote: the Ridgeline Fitness renewal is under dispute; quote the DSP reference when you call.",
+      "Before that — what are my pending transfers here at Maple?",
+      "Right. Now: what reference do I quote for the Ridgeline Fitness dispute?"
+    ],
+    "mustSay": ["GRV-88214"],
+    "maxToolCalls": 3,
+    "pass": [
+      "answers turn 3 with the dispute reference from the statement pasted in turn 1",
+      "lists the two pending Maple transfers in turn 2 without confusing them with the pasted statement",
+      "does not claim a tool or Maple's own records provided the reference"
+    ]
+  }
+]

@@ -8,6 +8,7 @@ import { auditFloor } from "./audit.js";
 import { claudeCodeDriver, WALL_CLOCK_MS } from "./claude-code.js";
 import { diyDriver } from "./diy.js";
 import { checks, runFloor, type FloorResult } from "./floor.js";
+import { harnessLane } from "./harness-lane.js";
 import { judge, JudgeContract, rubricLines, type JudgeResult } from "./judge.js";
 import { meteredModel, MODEL_IDS, type Meter, type ModelAlias, type UsageTotals } from "./meter.js";
 import { probe, type Probed } from "./probe.js";
@@ -129,6 +130,14 @@ export interface Args {
   readonly models: readonly ModelAlias[];
   /** A folder under `worlds/`, holding `world.json`, `cases.json` and any face. */
   readonly world: string;
+  /** A cases file somewhere else, run against `--world`'s world. It is how a
+   *  HELD-OUT set is run: the cases live outside the repo, the world they are
+   *  graded against does not. */
+  readonly cases?: string;
+  /** Which sample of a case's `prompts` array to take (see {@link resolveCase}).
+   *  Optional because a caller that does not sample has nothing to say about it;
+   *  `parseArgs` always fills it. */
+  readonly repeat?: number;
 }
 
 export function parseArgs(argv: readonly string[]): Args {
@@ -137,6 +146,8 @@ export function parseArgs(argv: readonly string[]): Args {
   let lane: Lane = "screen";
   let models: readonly ModelAlias[] = ["sonnet"];
   let world = DEFAULT_WORLD;
+  let cases: string | undefined;
+  let repeat = 0;
   let index = 0;
   while (index < rest.length) {
     const flag = rest[index];
@@ -146,21 +157,48 @@ export function parseArgs(argv: readonly string[]): Args {
     else if (flag === "--lane") lane = asLane(value);
     else if (flag === "--models") models = value.split(",").map(asAlias);
     else if (flag === "--world") world = value;
+    else if (flag === "--cases") cases = value;
+    else if (flag === "--repeat") repeat = asRepeat(value);
     else throw new Error(`genbench: unexpected argument "${flag}"`);
     index += 2;
   }
-  return { ...(only === undefined ? {} : { only }), lane, models, world };
+  return { ...(only === undefined ? {} : { only }), lane, models, world, ...(cases === undefined ? {} : { cases }), repeat };
 }
 
 function asLane(value: string): Lane {
-  if (value !== "screen" && value !== "build") throw new Error(`genbench: unknown lane "${value}"`);
+  if (value !== "screen" && value !== "build" && value !== "harness") {
+    throw new Error(`genbench: unknown lane "${value}"`);
+  }
   return value;
+}
+
+function asRepeat(value: string): number {
+  const repeat = Number(value);
+  if (!Number.isInteger(repeat) || repeat < 0) throw new Error(`genbench: --repeat takes a whole number, not "${value}"`);
+  return repeat;
 }
 
 function asAlias(value: string): ModelAlias {
   if (!Object.hasOwn(MODEL_IDS, value)) throw new Error(`genbench: unknown model "${value}"`);
   return value as ModelAlias;
 }
+
+/**
+ * One case, with its prompt SAMPLED.
+ *
+ * A case may author `prompts` — several ways a person would ask for the same
+ * thing — and a repeat takes the next one round-robin, so running a case twice
+ * measures the product against two phrasings rather than the same sentence twice.
+ * The resolved prompt lands on `prompt`, which is the only field anything
+ * downstream reads: the driver, the report, and `caseHash` all see an ordinary
+ * case, so the stamp records the sentence that was actually asked and no existing
+ * case's stamp moves.
+ */
+export const resolveCase = (testCase: Case, repeat: number): Case => {
+  const prompts = testCase.prompts ?? [];
+  if (prompts.length === 0) return testCase;
+  return { ...testCase, prompt: prompts[repeat % prompts.length]! };
+};
 
 /** Every contender that has a driver today, in every requested model. */
 export function contenders(models: readonly ModelAlias[]): readonly ContenderId[] {
@@ -296,6 +334,9 @@ async function main(argv: readonly string[]): Promise<number> {
     console.log("build lane: deferred");
     return 0;
   }
+  // The resident agent's own lane — a conversation, not a screen — so it shares
+  // the flags and nothing else: no browser, no probe, no floor.
+  if (args.lane === "harness") return await harnessLane(args);
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (apiKey === undefined || apiKey === "") {
     console.error("genbench: ANTHROPIC_API_KEY is not set");
@@ -305,8 +346,10 @@ async function main(argv: readonly string[]): Promise<number> {
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
   const worldDir = join(root, "worlds", args.world);
   const world = await loadWorld(worldDir);
-  const all = await loadCases(join(worldDir, "cases.json"));
-  const cases = all.filter((entry) => entry.lane === args.lane && (args.only === undefined || entry.id === args.only));
+  const all = await loadCases(args.cases ?? join(worldDir, "cases.json"));
+  const cases = all
+    .filter((entry) => entry.lane === args.lane && (args.only === undefined || entry.id === args.only))
+    .map((entry) => resolveCase(entry, args.repeat ?? 0));
   if (cases.length === 0) throw new Error(`genbench: no case matches --prompt "${args.only ?? ""}"`);
 
   const runId = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);

@@ -53,12 +53,20 @@ export interface World {
  *  one thing to one contender and another to the next. */
 export const cannedResponse = (tool: DerivedTool): unknown => tool.data ?? { ok: true };
 
-export type Lane = "screen" | "build";
+/** `harness` cases live in their own file (`harness-cases.json`) and their own
+ *  shape (`harness-checks.ts`), because a conversation is not a screen: it has
+ *  turns, tool-call expectations and no pixels. The lane word is shared so one
+ *  `--lane` flag selects either. */
+export type Lane = "screen" | "build" | "harness";
 
 export interface Case {
   readonly id: string;
   readonly lane: Lane;
   readonly prompt: string;
+  /** Several ways a person would ask for the same thing. A repeat samples one
+   *  (`resolveCase` in run.ts) and it lands on `prompt`, so nothing downstream
+   *  learns a second way to find the ask. */
+  readonly prompts?: readonly string[];
   readonly pass: readonly string[];
   /** Per-case tool-data override, e.g. an empty state. Replaces `data` for the
    *  named tools only; every other tool keeps the world's data. */
@@ -126,7 +134,11 @@ function inputSchemaFrom(takes: WorldTool["takes"]): JsonSchema {
   };
 }
 
-function derive(name: string, tool: WorldTool, data: unknown): DerivedTool {
+/** One authored tool, derived. Exported because a harness case may bring a tool
+ *  the world file does not have (`harnessWorld` in harness-lane.ts), and a
+ *  case-defined tool has to be indistinguishable from an authored one — one
+ *  derivation, or the two drift on a schema. */
+export function derive(name: string, tool: WorldTool, data: unknown): DerivedTool {
   return {
     name,
     data,

@@ -290,7 +290,9 @@ async function caseSection(runDir: string, testCase: string, results: readonly C
 </section>`;
 }
 
-const CSS = `
+/** Exported so the harness lane's page (`harness-report.ts`) is the same
+ *  product: one run of this benchmark should not look like two. */
+export const CSS = `
 :root{--ink:#17171a;--sec:#5c5c66;--ter:#8e8e99;--page:#f6f5f3;--card:#fff;--line:#e6e4e0;--ok:#1d7a4f;--no:#b4342a;--feed:136px;}
 *{box-sizing:border-box}
 body{margin:0;background:var(--page);color:var(--ink);

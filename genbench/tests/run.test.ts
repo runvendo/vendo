@@ -9,12 +9,14 @@ import { describe, expect, it, vi } from "vitest";
 import { WALL_CLOCK_MS } from "../src/claude-code.js";
 import type { FloorResult } from "../src/floor.js";
 import { JudgeContract, type JudgeResult } from "../src/judge.js";
+import { caseHash, type Case } from "../src/world.js";
 import {
   attempt,
   CASE_TIMEOUT_MS,
   contenders,
   exitCode,
   parseArgs,
+  resolveCase,
   shouldOpen,
   ungraded,
   type Args,
@@ -227,5 +229,60 @@ describe("parseArgs", () => {
       world: "sienna",
       only: "spend-overview",
     });
+  });
+
+  it("takes a cases file that lives somewhere else, and a repeat index", () => {
+    expect(parseArgs(["run", "--cases", "/held-out/maple/cases.json", "--repeat", "2"])).toMatchObject({
+      cases: "/held-out/maple/cases.json",
+      repeat: 2,
+      world: "maple",
+    });
+  });
+
+  it("refuses a repeat that is not a whole number", () => {
+    expect(() => parseArgs(["run", "--repeat", "1.5"])).toThrow(/whole number/);
+    expect(() => parseArgs(["run", "--repeat", "-1"])).toThrow(/whole number/);
+  });
+
+  it("knows the harness lane and still refuses one nobody has", () => {
+    expect(parseArgs(["run", "--lane", "harness"]).lane).toBe("harness");
+    expect(() => parseArgs(["run", "--lane", "vibes"])).toThrow(/unknown lane/);
+  });
+});
+
+/**
+ * A repeat measures the product against a different PHRASING, not the same
+ * sentence twice — and it does it by resolving the case, so everything
+ * downstream (the driver, the report, `caseHash`) sees an ordinary case whose
+ * prompt is the one that was actually asked.
+ */
+describe("resolveCase", () => {
+  const testCase = (over: Partial<Case> = {}): Case => ({
+    id: "c",
+    lane: "screen",
+    prompt: "the authored ask",
+    pass: [],
+    ...over,
+  });
+
+  it("leaves a case with no samples exactly as authored", () => {
+    const only = testCase();
+    expect(resolveCase(only, 3)).toBe(only);
+  });
+
+  it("takes the first sample by default", () => {
+    expect(resolveCase(testCase({ prompts: ["one", "two"] }), 0).prompt).toBe("one");
+  });
+
+  it("walks the samples round-robin, so a fourth repeat of three phrasings is the first again", () => {
+    const three = testCase({ prompts: ["one", "two", "three"] });
+    expect([0, 1, 2, 3].map((repeat) => resolveCase(three, repeat).prompt)).toEqual(["one", "two", "three", "one"]);
+  });
+
+  /** The stamp has to move with the sentence: two phrasings that hashed the same
+   *  would compare as one another's repeats. */
+  it("changes the case's stamp with the sample", () => {
+    const two = testCase({ prompts: ["one", "two"] });
+    expect(caseHash(resolveCase(two, 0))).not.toBe(caseHash(resolveCase(two, 1)));
   });
 });
