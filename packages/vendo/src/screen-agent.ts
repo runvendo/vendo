@@ -102,7 +102,7 @@ export const SCREEN_STEPS = 10;
  *
  * A deployment that disagrees passes `ScreenAssemblerDeps.effort`.
  */
-export const SCREEN_EFFORT: ModelEffort = "low";
+export const SCREEN_EFFORT: ModelEffort = "medium";
 
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
