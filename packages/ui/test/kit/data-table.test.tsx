@@ -35,6 +35,18 @@ describe("DataTable", () => {
     expect(screen.getAllByRole("row").slice(1)).toHaveLength(2);
   });
 
+  // Top-N is sort THEN cut. `limit` used to slice the raw rows before the table
+  // had sorted anything, so "the two biggest" was the first two rows the tool
+  // happened to return, put in order — a wrong number on screen that reads as a
+  // right one. Borealis (175000) is the second largest and arrives LAST, so the
+  // old order cannot pass this.
+  it("limits to the rows the sort chose, not the first rows in the data", () => {
+    render(<DataTable rows={rows} columns={columns} sortBy="amountCents desc" limit={2} />);
+    const bodyRows = screen.getAllByRole("row").slice(1); // drop header
+    expect(bodyRows.map((r) => within(r).getAllByRole("cell")[0]?.textContent))
+      .toEqual(["Hartwell", "Borealis"]);
+  });
+
   it("filters via the search box when searchable", () => {
     render(<DataTable rows={rows} columns={columns} searchable />);
     const search = screen.getByRole("searchbox");

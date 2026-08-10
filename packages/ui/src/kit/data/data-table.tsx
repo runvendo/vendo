@@ -36,7 +36,7 @@ export interface DataTableProps {
   columns?: DataTableColumn[];
   /** Initial sort, e.g. "dueDate asc" or "amountCents desc". */
   sortBy?: string;
-  /** Hard cap on rows shown. */
+  /** Hard cap on rows shown, applied AFTER the sort: `sortBy` + `limit` is top-N. */
   limit?: number;
   /** Column keys to expose as distinct-value filter dropdowns. */
   filterableBy?: string[];
@@ -99,11 +99,6 @@ export function DataTable(props: DataTableProps) {
     [props.columns, rows],
   );
 
-  const data = useMemo(
-    () => (typeof limit === "number" && limit >= 0 ? rows.slice(0, limit) : rows),
-    [rows, limit],
-  );
-
   const initialSorting = useMemo<SortingState>(() => {
     if (!sortBy) return [];
     const [id, dir] = sortBy.trim().split(/\s+/);
@@ -136,7 +131,7 @@ export function DataTable(props: DataTableProps) {
   const [columnFilters, setColumnFilters] = useState<Array<{ id: string; value: string }>>([]);
 
   const table = useReactTable({
-    data,
+    data: rows,
     columns: tanstackColumns,
     state: { sorting, globalFilter, columnFilters },
     onSortingChange: setSorting,
@@ -164,19 +159,24 @@ export function DataTable(props: DataTableProps) {
     for (const key of filterableBy ?? []) {
       const col = columns.find((entry) => entry.key === key) ?? { key };
       const set = new Set<string>();
-      for (const row of data) {
+      for (const row of rows) {
         const text = displayText(row, col);
         if (text !== "") set.add(text);
       }
       map.set(key, [...set].sort());
     }
     return map;
-  }, [filterableBy, data, columns]);
+  }, [filterableBy, rows, columns]);
 
   const columnLabel = (key: string) =>
     columns.find((c) => c.key === key)?.label ?? humanizeEnum(key.split(".").pop() ?? key);
 
-  const bodyRows = table.getRowModel().rows;
+  // The cap is the LAST thing that happens, so the sort decides which rows
+  // survive it. Slicing the raw rows up front instead cut before anything was
+  // ordered, and "the five biggest" was five arbitrary rows put in order — a
+  // wrong number on screen that reads as a right one.
+  const modelRows = table.getRowModel().rows;
+  const bodyRows = typeof limit === "number" && limit >= 0 ? modelRows.slice(0, limit) : modelRows;
 
   return (
     <div data-kit="DataTable" style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}>
