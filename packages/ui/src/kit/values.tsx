@@ -176,10 +176,12 @@ export interface TextProps {
   variant?: "body" | "heading" | "caption" | "label";
 }
 
-/** Themed text. Heading renders an <h3>; others render a <span>. */
+/** Themed text. Heading renders an <h3>; others render a <span>.
+ *  Two text tones: a label and a caption name the data, so they take the muted
+ *  tone; full strength belongs to the value they sit next to. */
 export function Text({ text, variant = "body" }: TextProps) {
   const style: CSSProperties = {
-    color: variant === "caption" ? t.muted : t.text,
+    color: variant === "caption" || variant === "label" ? t.muted : t.text,
     fontFamily: variant === "heading" ? t.headingFamily : t.fontFamily,
     fontSize: variant === "caption" ? "var(--vendo-font-size-caption, 12.5px)" : t.fontSize,
     fontWeight: variant === "heading" ? 650 : variant === "label" ? 600 : 400,

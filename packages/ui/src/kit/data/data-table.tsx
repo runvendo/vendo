@@ -74,6 +74,30 @@ function displayText(row: Record<string, unknown>, column: DataTableColumn): str
 
 const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
 
+/**
+ * Two text tones, structurally: full strength for the row's identity and its
+ * quantities, the muted tone for everything else. Every cell used to render at
+ * full strength, so an account's `kind` and `mask` shouted as loudly as its
+ * balance and the table read as one flat tone.
+ *
+ * A QUANTITY is a column the model already marked as one — a money/number/
+ * percent format, or the right-alignment amounts get. The IDENTITY is the first
+ * non-quantity column, skipping a raw `id` (the Kit already treats that key as
+ * the record's technical handle, not its name — see CardList's row key). With
+ * no quantity there is nothing to contrast against, so the table stays in one
+ * tone. Derived from the columns the model writes anyway: no extra prop.
+ */
+function isQuantity(col: DataTableColumn): boolean {
+  return col.align === "end" || col.format === "money" || col.format === "number" || col.format === "percent";
+}
+
+function valueToneKeys(columns: DataTableColumn[]): Set<string> | null {
+  const quantities = columns.filter(isQuantity);
+  if (quantities.length === 0) return null;
+  const identity = columns.find((col) => !isQuantity(col) && col.key !== "id");
+  return new Set([...quantities, ...(identity ? [identity] : [])].map((col) => col.key));
+}
+
 export function DataTable(props: DataTableProps) {
   const {
     rows: rawRows,
@@ -177,6 +201,7 @@ export function DataTable(props: DataTableProps) {
     columns.find((c) => c.key === key)?.label ?? humanizeEnum(key.split(".").pop() ?? key);
 
   const bodyRows = table.getRowModel().rows;
+  const valueTone = useMemo(() => valueToneKeys(columns), [columns]);
 
   return (
     <div data-kit="DataTable" style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}>
@@ -299,6 +324,7 @@ export function DataTable(props: DataTableProps) {
                       <td
                         key={cell.id}
                         style={{
+                          color: valueTone && !valueTone.has(cell.column.id) ? t.muted : undefined,
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
                           padding: cellPad,
                           textAlign: alignCss(col?.align),
