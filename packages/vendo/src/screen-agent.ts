@@ -69,6 +69,7 @@ import {
 import type { LanguageModel } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
 import type { ModelEffort } from "@vendoai/harnesses/vendo";
+import { PREFETCH_NOTE, prefetchReads, type PrefetchedReads } from "./screen-prefetch.js";
 
 /**
  * The whole budget for assembling one screen.
@@ -212,8 +213,17 @@ const nameOf = (content: string): string | undefined => {
  * sentence rather than nothing (outputs) or a bare `{}` (inputs): `{}` reads as
  * "takes no arguments", so a blind tool would be called with none. A DECLARED
  * empty input still prints its schema — that IS the host's contract.
+ *
+ * A tool whose value `resolved` holds gets a THIRD line: the real answer, fetched
+ * before the model started (`screen-prefetch.ts`). It sits on the tool's own card
+ * rather than in a section of its own, because the shape and the values are one
+ * fact about one tool and a model reading the shape is exactly the reader who
+ * needs the values.
  */
-export function toolBrief(listings: readonly ToolListing[]): string {
+export function toolBrief(
+  listings: readonly ToolListing[],
+  resolved: PrefetchedReads = new Map(),
+): string {
   if (listings.length === 0) return "This product has no tools you can read data from.";
   return listings
     .map((listing) => {
@@ -223,7 +233,9 @@ export function toolBrief(listings: readonly ToolListing[]): string {
       const input = inputSchemaIsBlind(listing.inputSchema)
         ? `\n  ${UNKNOWN_INPUT_SCHEMA_NOTE}`
         : `\n  input: ${JSON.stringify(listing.inputSchema)}`;
-      return `- ${listing.name} — ${modelToolDescription(listing)}${input}${shape}`;
+      const value = resolved.get(listing.name);
+      const now = value === undefined ? "" : `\n  read just now: ${value}`;
+      return `- ${listing.name} — ${modelToolDescription(listing)}${input}${shape}${now}`;
     })
     .join("\n");
 }
@@ -237,7 +249,11 @@ export function toolBrief(listings: readonly ToolListing[]): string {
  * the skill says what the job is — which is the difference between deriving a
  * brief and forking one.
  */
-const environmentNote = (appId: AppId, listings: readonly ToolListing[]): string => `# In this loop
+const environmentNote = (
+  appId: AppId,
+  listings: readonly ToolListing[],
+  resolved: PrefetchedReads,
+): string => `# In this loop
 
 You have no machine: no shell, no \`Task\`, no files on disk. Everything the skill
 above tells you to read is already below, and everything it tells you to write goes
@@ -269,20 +285,24 @@ Never look for a tool that builds the app for you. There isn't one, and that is
 deliberate.
 
 ## This product's tools, with the shapes they return
-
-${toolBrief(listings)}`;
+${resolved.size === 0 ? "" : `\n${PREFETCH_NOTE}\n`}
+${toolBrief(listings, resolved)}`;
 
 /** The full brief: the shipped job description, the shipped syntax manual, the
  *  briefing pack, then what is different here. The manual and the environment
  *  note are this rung's own INSTRUCTIONS — the box is told a different job in
  *  its own words; the pack between them is the product knowledge both rungs
  *  read byte for byte (`contract/briefing.ts`). */
-function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): string {
+function screenBrief(
+  input: ScreenInput,
+  listings: readonly ToolListing[],
+  resolved: PrefetchedReads,
+): string {
   return [
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
     input.briefing,
-    environmentNote(input.appId, listings),
+    environmentNote(input.appId, listings, resolved),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
     .join("\n\n---\n\n");
@@ -354,6 +374,11 @@ export async function assembleScreen(
 
   const directory = appDirectory(input.appId);
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
+  // THE DATA, BEFORE THE MODEL. Every read this product says needs no arguments,
+  // resolved in parallel and printed on its own tool card, so the writer does not
+  // spend a step of a 10-step budget learning what a tool returns. What cannot be
+  // known before the document exists is not guessed — see `screen-prefetch.ts`.
+  const resolved = await prefetchReads(surface.tools, listings, ASSEMBLY_TOOLS);
   const record: RunRecord = { assembled: false, painted: false };
 
   /**
@@ -512,7 +537,7 @@ export async function assembleScreen(
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
     // in as its first section, so letting the turn's copy through would say it
     // twice.
-    system: () => screenBrief(input, listings),
+    system: () => screenBrief(input, listings, resolved),
   });
   /**
    * One drive of the loop. The events MUST be drained or nothing runs. Nothing is
