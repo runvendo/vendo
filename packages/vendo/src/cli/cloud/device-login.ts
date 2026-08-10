@@ -394,8 +394,12 @@ export async function runDeviceLogin(
         }
         // Never print the key itself — .env.local is the hand-off, last4 the
         // receipt. A resumed run names the full path: it may differ from cwd.
-        output.log(`Approved — VENDO_API_KEY saved to ${
-          resume !== null ? join(root, ".env.local") : ".env.local"} (…${key.slice(-4)})`);
+        // Same split as the ceremony above: the rail's phrasing is the rail's,
+        // and every non-pretty path keeps the pinned piped wording byte for byte.
+        const envLocalPath = resume !== null ? join(root, ".env.local") : ".env.local";
+        output.log(options.pretty === true
+          ? `Approved — VENDO_API_KEY saved to ${envLocalPath} (…${key.slice(-4)})`
+          : `Approved — wrote VENDO_API_KEY (…${key.slice(-4)}) to ${envLocalPath}.`);
         await ensureEnvLocalIgnored(root, output);
         if (options.rerunHint !== false) {
           output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");

@@ -291,9 +291,9 @@ describe("runDeviceLogin", () => {
 
   // The piped ceremony is a parsed contract, not prose: the numbered form and
   // its exact wording are what an agent (and every non-pretty caller: --agent,
-  // CI, standalone `vendo login`) reads the URL and the code out of. The
-  // one-line collapse belongs to the pretty rail and NOWHERE else.
-  it("keeps the four-line numbered ceremony byte for byte on the non-pretty path", async () => {
+  // CI, standalone `vendo login`) reads the URL, the code and the outcome out
+  // of. The rail's phrasings belong to the pretty path and NOWHERE else.
+  it("keeps the five-line ceremony byte for byte on the non-pretty path", async () => {
     const opened: string[] = [];
     const { fetchImpl } = scriptedFetch([
       { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
@@ -310,11 +310,12 @@ describe("runDeviceLogin", () => {
       openBrowser: (url) => opened.push(url),
     });
     expect(exit).toBe(0);
-    expect(messages.logs.slice(0, 4)).toEqual([
+    expect(messages.logs.slice(0, 5)).toEqual([
       "Vendo Cloud device login — ask your human to approve this request:",
       "  1. Open https://console.test/claim?code=BCDF-GHJK",
       "  2. Confirm the code: BCDF-GHJK",
       "Waiting for approval (the code expires in 10 minutes)…",
+      `Approved — wrote VENDO_API_KEY (…${KEY.slice(-4)}) to .env.local.`,
     ]);
     expect(opened).toEqual([]);
   });
