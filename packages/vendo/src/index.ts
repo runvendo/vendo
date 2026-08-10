@@ -60,6 +60,7 @@ export type { ByoApprovalResolution } from "./byo-approvals.js";
 // them. They stood on `@vendoai/agent`'s public barrel until the engine fold
 // moved them here; this keeps that surface reachable under its new name.
 export { ASK_USER_TOOL, askUserRegistry } from "./ask-user.js";
+export { planRegistry, UPDATE_PLAN_TOOL } from "./plan-tool.js";
 export {
   VENDO_VERB_TOOLS,
   vendoVerbsRegistry,

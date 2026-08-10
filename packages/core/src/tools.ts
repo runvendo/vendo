@@ -113,6 +113,7 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   search_components: "Look up available components",
   schedule: "Set when this runs",
   ask_user: "Ask you a question",
+  update_plan: "Plan the steps",
   find_service_tools: "Look for an outside service",
   use_service_tool: "Use an outside service",
   list_connections: "Check your connected services",
