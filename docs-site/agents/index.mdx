@@ -57,12 +57,16 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
 3. **Install the package, then verify what actually resolved.**
 
    ```bash
-   npm install vendoai
+   npm install vendoai @vendoai/vendo
    npx vendo --version   # must be >= 0.4.0
    ```
 
-   `vendoai` is a thin alias of `@vendoai/vendo`. The version check is not
-   optional: stale placeholder versions (0.1.x) exist on npm, and package
+   `vendoai` is a thin alias of `@vendoai/vendo`, and every file init writes
+   imports `@vendoai/vendo/*` — so install BOTH: with the alias alone, pnpm's
+   strict `node_modules` cannot resolve those imports and every route 500s with
+   `Module not found: Can't resolve '@vendoai/vendo/server'`, which reaches
+   doctor as `live/*` and `auth/*` breakages that name none of it. The version
+   check is not optional: stale placeholder versions (0.1.x) exist on npm, and package
    managers with a release-age cooldown (pnpm 11 holds new releases for a
    day by default via `minimumReleaseAge`; npm's `min-release-age` is
    opt-in) will SILENTLY resolve a fresh Vendo release to that stale
@@ -287,6 +291,8 @@ skip none of its steps.
 - **Ask your human before creating any account or key.** That includes Vendo
   Cloud (`vendo login`), model provider keys, and sandbox accounts
   (E2B or the managed Cloud sandbox). Relay the choice; never sign up on your own.
+  Look before you ask, though: a `VENDO_API_KEY` already in `.env.local` or the
+  environment is used as it is, so there is no key to create and nothing to ask.
 - **Never invent props or tools outside the catalog.** Only components
   registered in `vendo/registry.tsx` exist, and only with the props their
   schemas declare. Only tools in `.vendo/tools.json` exist. Copy real names
