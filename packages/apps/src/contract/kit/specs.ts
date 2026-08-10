@@ -239,12 +239,13 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "DonutChart",
     group: "charts",
-    summary: "A donut/pie of category shares. Zero and invalid slices are dropped.",
+    summary:
+      "A donut/pie of category shares beside a legend that prints every slice's name and formatted value, so it needs no table repeating the same figures. Zero and invalid slices are dropped.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       categoryKey: config(z.string(), "slice-label field", { required: true }),
       valueKey: config(z.string(), "slice-value field", { required: true }),
-      format: config(valueFormat, "tooltip format"),
+      format: config(valueFormat, "legend + tooltip format"),
       donut: config(z.boolean(), "false renders a full pie"),
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
