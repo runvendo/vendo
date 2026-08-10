@@ -192,6 +192,39 @@ export interface HarnessHand {
   /** JSON Schema, the same dialect a `ToolListing.inputSchema` carries. */
   inputSchema: Record<string, unknown>;
   execute(input: Json, turn: Turn<unknown>): Promise<Json>;
+  /**
+   * This call's arguments SO FAR, as raw JSON text, each time the provider sends
+   * more of them — for a hand whose whole value is arriving before it is complete.
+   *
+   * The accumulated text rather than the delta, because one delta is a slice of a
+   * JSON string and means nothing alone; raw rather than parsed, because what a
+   * half-finished argument means is the hand's business and not the loop's. It is
+   * called for effect only — nothing waits for it, so a hand can never hold up the
+   * model's stream — and `execute` still receives the complete input.
+   */
+  onInputDelta?(arriving: string, turn: Turn<unknown>): void;
+}
+
+/**
+ * The provider's argument stream, accumulated for a hand that asked to watch it.
+ *
+ * `onInputStart` is the only signal that a SECOND call to the same hand has
+ * begun, which is why the reset lives there rather than in the delta.
+ */
+function watchArrivingInput(hand: HarnessHand, turn: Turn<unknown>): {
+  onInputStart: () => void;
+  onInputDelta: (options: { inputTextDelta: string }) => void;
+} {
+  let arriving = "";
+  return {
+    onInputStart: () => {
+      arriving = "";
+    },
+    onInputDelta: ({ inputTextDelta }) => {
+      arriving += inputTextDelta;
+      hand.onInputDelta?.(arriving, turn);
+    },
+  };
 }
 
 /** A tool with no declared input still needs a schema the provider will accept. */
@@ -260,6 +293,7 @@ async function equipClosedLoadout(
       tools[entry.name] = tool({
         description: entry.description,
         inputSchema: jsonSchema(entry.inputSchema as Parameters<typeof jsonSchema>[0]),
+        ...(entry.onInputDelta === undefined ? {} : watchArrivingInput(entry, turn)),
         execute: async (input: unknown) => await entry.execute(input as Json, turn),
       });
       continue;

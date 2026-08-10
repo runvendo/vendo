@@ -66,7 +66,7 @@ import {
   wrapWorkspaceForRender,
   type RenderSeamOptions,
 } from "@vendoai/apps";
-import type { LanguageModel } from "ai";
+import { parsePartialJson, type LanguageModel } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
 
 /**
@@ -151,6 +151,105 @@ export type ScreenResult = ScreenOutcome & {
 
 const APP_FILE = "app.vendo";
 const PLAN_FILE = "plan.vendo";
+
+/**
+ * How much more document has to arrive before the person's screen is worth
+ * repainting mid-dictation.
+ *
+ * A screen is not slow to BUILD, it is slow to be HANDED OVER: the document is
+ * dictated in one tool call, so today nothing paints until the last character of
+ * it arrives — measured 30s to 90s of silence between the step that started the
+ * save and the save landing. The compiler is total and valid-while-partial (every
+ * prefix of a wire compiles, `wire/compile.ts`) and the seam already declines
+ * anything that would not draw, so a prefix is a paintable document.
+ *
+ * A window rather than every delta because a paint is not free — a commit, the
+ * checks floor and the app half's real queries — and nobody can see 200
+ * characters land. This size paints a typical screen three or four times on the
+ * way in.
+ */
+const STREAM_PAINT_CHARS = 1200;
+
+/** The prefix of `arriving` up to its last complete LINE, or undefined if there
+ *  is not one yet.
+ *
+ *  Two reasons, both load-bearing. A tag cut in half mid-line is the input most
+ *  likely to compile to nothing, and a line boundary is the cheapest place the
+ *  writer's own formatting offers. And it keeps every painted prefix strictly
+ *  shorter than the finished document, so the completed save always has bytes to
+ *  change — a commit that changed nothing is not in `CommitResult.changed`, and a
+ *  save the seam never saw is a save the loop reads as never painted. */
+const wholeLines = (arriving: string): string | undefined => {
+  const end = arriving.lastIndexOf("\n");
+  return end <= 0 ? undefined : arriving.slice(0, end);
+};
+
+/**
+ * The mid-dictation painter for one run's `save_app` hand.
+ *
+ * `save` is the run's own queued write, because the commit IS the paint (§1.6) and
+ * the seam is the only thing allowed to decide a prefix is worth drawing: a prefix
+ * that does not compile, does not render or does not pass the checks floor emits
+ * nothing, and the person keeps the screen they had. Nothing here records anything
+ * on the run — a prefix is not an assembled screen, and only the completed save
+ * may claim one.
+ */
+function streamingPainter(save: (turn: Turn<unknown>, content: string) => Promise<unknown>): {
+  /** More of the call's arguments have arrived. */
+  arrived: (arriving: string, turn: Turn<unknown>) => void;
+  /** The completed call is writing. Nothing read before it may land after it: the
+   *  LAST commit is the document the person keeps and the store holds. */
+  close: () => void;
+} {
+  /** How much of this call's arguments have been acted on, and how much has been
+   *  seen at all — a text SHORTER than the last one is the only sign a second call
+   *  to the same hand has started, and it reopens the painter. */
+  let paintedChars = 0;
+  let seenChars = 0;
+  /** A paint is in flight, so the next delta is not a second one. */
+  let painting = false;
+  let closed = false;
+
+  const paint = async (arriving: string, turn: Turn<unknown>): Promise<void> => {
+    if (arriving.length < seenChars) {
+      paintedChars = 0;
+      closed = false;
+    }
+    seenChars = arriving.length;
+    if (closed || painting || arriving.length - paintedChars < STREAM_PAINT_CHARS) return;
+    painting = true;
+    paintedChars = arriving.length;
+    try {
+      // The repair is the SDK's own (`parsePartialJson` closes what the provider
+      // has not finished), so a half-arrived argument object reads like any other.
+      const { value } = await parsePartialJson(arriving);
+      const content = value === null || typeof value !== "object" || Array.isArray(value)
+        ? undefined
+        : value.content;
+      const prefix = typeof content === "string" ? wholeLines(content) : undefined;
+      // `closed` is re-read after the parse: the completed call may have started
+      // while this prefix was being read, and its bytes are the newer ones.
+      if (prefix === undefined || closed) return;
+      await save(turn, prefix);
+    } catch {
+      // A mid-dictation paint is a courtesy on top of a save that has not happened
+      // yet. It can never fail that save, and nothing is owed to the model about it.
+    } finally {
+      painting = false;
+    }
+  };
+
+  return {
+    // Fire-and-forget: the loop awaits this callback, and a paint that held up the
+    // model's stream would buy its own head start back at the same price.
+    arrived: (arriving, turn) => {
+      void paint(arriving, turn);
+    },
+    close: () => {
+      closed = true;
+    },
+  };
+}
 
 /** §3.1's frozen layout, personal mount. A NEW app is always `/user/**`: a fresh
  *  `/orgs/<org>/apps/<id>/` path has no row to grant on, so the workspace façade
@@ -339,11 +438,25 @@ export async function assembleScreen(
    * it reach the screen (`paintedIn`). The paint verdict is the one this loop
    * could not see before — `emit` belongs to whoever wrapped the workspace, not to
    * us — and it is what separates "saved" from "saved and shown".
+   *
+   * Writes go through ONE QUEUE. The streaming painter below commits the document
+   * while the model is still dictating it, so without the queue two commits are in
+   * flight over the same app at once — and the loser of the workspace's
+   * compare-and-swap comes back `status !== "ok"`, which is how the completed save
+   * would report "someone else changed this app" about its own prefix.
    */
+  let writes: Promise<unknown> = Promise.resolve();
   const save = async (turn: Turn<unknown>, file: string, content: string): Promise<CommitResult> => {
-    await turn.workspace.writeFile(`${directory}/${file}`, content);
-    return await turn.workspace.commit({ message: `${file} (${input.appId})` });
+    const write = writes.then(async () => {
+      await turn.workspace.writeFile(`${directory}/${file}`, content);
+      return await turn.workspace.commit({ message: `${file} (${input.appId})` });
+    });
+    writes = write.catch(() => undefined);
+    return await write;
   };
+
+  /** This run's mid-dictation paints, over the same queued write. */
+  const painter = streamingPainter(async (turn, content) => await save(turn, APP_FILE, content));
 
   const saveApp: HarnessHand = {
     name: SAVE_APP_TOOL,
@@ -365,7 +478,12 @@ export async function assembleScreen(
       required: ["content"],
       additionalProperties: false,
     },
+    // The document goes on screen while it is still being dictated, which is the
+    // whole difference between a screen that is slow to build and one that is
+    // slow to be handed over.
+    onInputDelta: painter.arrived,
     execute: async (args, turn) => {
+      painter.close();
       const { content, decisions } = args as { content: string; decisions?: string };
       const committed = await save(turn, APP_FILE, content);
       if (committed.status !== "ok") {
