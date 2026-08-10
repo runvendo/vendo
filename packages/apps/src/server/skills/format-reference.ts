@@ -231,12 +231,15 @@ the centre is always a query or \`state\` read.
 | \`pick\` | one or more field names | keep only those fields (per row, over rows) |
 | \`rename\` | old/new pairs | rename fields |
 | \`asPoints\` | label field, value field | rows to \`{label, value}\` points |
-| \`format\` | \`"number"\` / \`"currency"\` / \`"percent"\` / \`"date"\` | format the value |
-| \`format\` | field, kind | format that field in every row |
+| \`format\` | \`"number"\` / \`"percent"\` / \`"date"\`, or field then kind | format the value, or that field in every row |
+
+Money is never a reshape. A \`format\` reshape replaces the number with a STRING,
+so the column can no longer sort or align — a \`DataTable\` column takes
+\`format:"money"\`, \`Stat\` takes \`format="money"\`, and both read the raw cents.
 
 \`\`\`
 points={asPoints(invoices.data, "month", "total_cents")}
-rows={format(pick(invoices.data, "client", "amount_cents"), "amount_cents", "currency")}
+rows={format(pick(invoices.data, "client", "issued_at"), "issued_at", "date")}
 note={format(state.rate, "percent")}
 \`\`\`
 
@@ -282,7 +285,7 @@ rather than rendered as nonsense.
 There is exactly one \`sum\`, one \`count\`, one \`average\`, one \`min\` and one
 \`max\`, and each takes rows. A reshape works on what a query read, so the value at
 the centre of the nesting is a path — \`format(sum(invoices.data, "amount_cents"),
-"currency")\` is refused, because \`sum(...)\` already produced a number and there
+"number")\` is refused, because \`sum(...)\` already produced a number and there
 is nothing left to reshape. Let the component format it: \`Stat\` takes
 \`format="money"\`, \`Money\` takes \`cents\`, a \`DataTable\` column takes
 \`format:"money"\`.
