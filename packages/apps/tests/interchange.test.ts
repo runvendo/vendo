@@ -12,7 +12,7 @@ import {
 import { unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { createApps } from "../src/server/index.js";
-import { pinComponentName } from "../src/server/remix/pins.js";
+import { seedComponentName } from "../src/contract/index.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { seedAppRow } from "../src/server/testing/seed-app-row.js";
@@ -144,9 +144,9 @@ describe(".vendoapp interchange through createApps", () => {
     // The mismatched-hash case carries its forked component, as every real
     // fork does, so the export gate is refusing a genuine pin whose baseline
     // moved rather than a hand-built document.
-    const forkedComponent = { [pinComponentName("invoice-card")]: "source" };
+    const forkedComponent = { [seedComponentName("invoice-card")]: "source" };
     const cases: Array<{
-      baselines: Parameters<typeof createApps>[0]["pinBaselines"];
+      baselines: Parameters<typeof createApps>[0]["seedBaselines"];
       allowed: boolean;
       components?: Record<string, string>;
     }> = [
@@ -181,21 +181,21 @@ describe(".vendoapp interchange through createApps", () => {
         guard: guardFixture(),
         tools,
         catalog: [],
-        pinBaselines: testCase.baselines,
+        seedBaselines: testCase.baselines,
       });
       const app = await runtime.importApp(document({
-        pins: [pin],
+        seed: { component: pin.slot, baseline: pin.base },
         ...(testCase.components === undefined ? {} : { components: testCase.components }),
       }), ctx);
       if (!testCase.allowed) {
         await expect(runtime.exportApp(app.id, ctx)).rejects.toMatchObject({
           code: "blocked",
-          message: "pin invoice-card is not exportable",
+          message: "seed invoice-card is not exportable",
         });
       } else {
         const archive = unzipSync(await runtime.exportApp(app.id, ctx));
         const exported = JSON.parse(decoder.decode(archive["app.json"])) as AppDocument;
-        expect(exported.pins).toEqual([pin]);
+        expect(exported.seed).toEqual({ component: pin.slot, baseline: pin.base });
       }
     }
   });

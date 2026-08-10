@@ -16,17 +16,19 @@
 import {
   VENDO_TREE_FORMAT,
   VendoError,
+  seedComponentName,
   type AppId,
   type RunContext,
 } from "@vendoai/core";
 import {
+  hasDefaultExport,
   seedDrift,
   validateAppDocument,
   type AppDocument,
   type SeedBaseline,
   type SeedDrift,
 } from "../../contract/index.js";
-import { applySeedFork } from "../generation/engine.js";
+import { applySeedFork, seededBundle } from "../generation/engine.js";
 import { appRecordInput } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime, SeedFromInput, VersionEntry } from "../runtime/types.js";
@@ -78,6 +80,15 @@ const seedFrom = async (
   ctx: RunContext,
 ): Promise<AppDocument> => {
   const baseline = baselineFor(deps, input.component);
+  // Idempotent per (subject, component): the gesture dedupes SERVER-side, so a
+  // double-tap can never mint two apps and the chrome's latch stays cosmetic.
+  // The OLDEST matching row wins, which is the same winner the chrome's own
+  // `.at(-1)` discovery converges on.
+  const seededAlready = (app: AppDocument): boolean => app.seed?.component === input.component;
+  const existing = (await deps.runtime().list(ctx)).filter(seededAlready).at(-1);
+  // A riding instruction is dropped on a dedupe hit: the tap that created the
+  // app already carried it, and replaying it would apply the same edit twice.
+  if (existing !== undefined) return existing;
   const minted: AppDocument = {
     format: "vendo/app@1",
     id: `app_${globalThis.crypto.randomUUID()}`,
@@ -105,6 +116,16 @@ const seedFrom = async (
     });
   }
   await deps.reportLifecycle("create", seeded.id, ctx);
+  // The pre-mint check is list-then-put, so two concurrent gestures can both
+  // find nothing and both mint. Close the race after the write: if an OLDER app
+  // also carries this seed, the just-minted row deletes itself and the older one
+  // wins. List order is deterministic, so both racers pick the same winner and
+  // only the loser deletes.
+  const oldest = (await deps.runtime().list(ctx)).filter(seededAlready).at(-1);
+  if (oldest !== undefined && oldest.id !== seeded.id) {
+    await deps.runtime().delete(seeded.id, ctx);
+    return oldest;
+  }
   // Re-read the stored row: the concurrency check compares against the store's
   // own JSON round-trip, never the in-memory original.
   const stored = await deps.requireOwned(seeded.id, ctx);
@@ -139,13 +160,28 @@ const reseed = async (
   if (baseline.hash === app.seed.baseline) {
     throw new VendoError("conflict", `${app.seed.component} has not changed since this app was created`);
   }
-  // Drop the old seat and seed the new baseline into it: one code path for the
-  // first seed and every re-seed after it.
-  const stripped = structuredClone(app);
-  delete stripped.components?.[app.seed.component];
-  delete stripped.seed;
-  const reseeded = seedOnto(stripped, baseline);
-  reseeded.seed = { ...reseeded.seed!, ...(app.seed.slot === undefined ? {} : { slot: app.seed.slot }) };
+  // Swap the SEAT's contents, in place. The node, its props and the rest of the
+  // tree are the person's app and are not this gesture's to rearrange — only
+  // what sits in the seeded seat changes, which is exactly what "the pristine
+  // new component" means.
+  const componentName = seedComponentName(app.seed.component);
+  const bundle = seededBundle(baseline);
+  if (!hasDefaultExport(bundle.source)) {
+    throw new VendoError(
+      "conflict",
+      `${app.seed.component} has no default export and no component export to alias; export it from its module and re-run vendo sync`,
+    );
+  }
+  const reseeded = structuredClone(app);
+  reseeded.components = { ...(reseeded.components ?? {}), [componentName]: bundle };
+  reseeded.seed = {
+    component: app.seed.component,
+    baseline: baseline.hash,
+    ...(app.seed.slot === undefined ? {} : { slot: app.seed.slot }),
+    ...(baseline.review === undefined ? {} : { review: baseline.review }),
+  };
+  const validation = validateAppDocument(reseeded);
+  if (!validation.ok) throw new VendoError("validation", validation.error.message);
   const version: VersionEntry = {
     at: new Date().toISOString(),
     intent: `Update ${app.seed.component} to the host's current version`,

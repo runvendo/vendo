@@ -9,7 +9,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { createApps } from "../src/server/index.js";
 import { stripServerAuthoritativeFields } from "../src/contract/index.js";
-import { pinComponentName, type PinBaseline } from "../src/server/remix/pins.js";
+import { seedComponentName, type SeedBaseline } from "../src/contract/index.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
@@ -52,7 +52,7 @@ const baseline = {
   sourceImports: { "./helper": "src/helper.ts" },
   subSources: { "src/helper.ts": { source: "export const helper = 1;", imports: {} } },
   packages: { recharts: "recharts@3.9.2" },
-} as PinBaseline;
+} as SeedBaseline;
 
 const doc = (): AppDocument => ({
   format: VENDO_APP_FORMAT,
@@ -64,11 +64,18 @@ const doc = (): AppDocument => ({
     root: "root",
     nodes: [
       { id: "root", component: "Stack", source: "prewired", children: ["fork"] },
-      { id: "fork", component: pinComponentName(slot), source: "generated" },
+      { id: "fork", component: seedComponentName(slot), source: "generated" },
     ],
   },
-  pins: [{ slot, base: "sha256:donut-base" }],
-  components: { [pinComponentName(slot)]: "export default function Fork() { return <b>fork</b>; }" },
+  seed: { component: slot, baseline: "sha256:donut-base" },
+  components: {
+    [seedComponentName(slot)]: {
+      source: "export default function Fork() { return <b>fork</b>; }",
+      origin: "seeded" as const,
+      sourceImports: { "./helper": "src/helper.ts" },
+      subSources: { "src/helper.ts": { source: "export const helper = 1;", imports: {} } },
+    },
+  },
 });
 
 describe("CDN package loading never reaches the production venue", () => {
@@ -79,7 +86,7 @@ describe("CDN package loading never reaches the production venue", () => {
       guard: guardFixture(),
       tools,
       catalog: [],
-      pinBaselines: [baseline],
+      seedBaselines: [baseline],
       model: scriptedLanguageModel(() => "<Edit></Edit>"),
     });
     const app = doc();
@@ -89,7 +96,7 @@ describe("CDN package loading never reaches the production venue", () => {
     if (surface.kind !== "tree") throw new Error("expected tree surface");
     const furnishing = (surface.payload as {
       furnishings?: Record<string, Record<string, unknown>>;
-    }).furnishings?.[pinComponentName(slot)];
+    }).furnishings?.[seedComponentName(slot)];
     // Everything a fork legitimately needs still travels…
     expect(furnishing?.sourceImports).toEqual({ "./helper": "src/helper.ts" });
     expect(furnishing?.subSources).toBeDefined();

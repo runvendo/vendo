@@ -567,7 +567,7 @@ describe("the empty-slot Remix gesture places its mint", () => {
       guard: guardFixture(),
       tools,
       catalog: [],
-      pinBaselines: [{
+      seedBaselines: [{
         slot: "net-worth-card",
         source: "export default function NetWorthCard() { return <strong>$1.2M</strong>; }",
         hash: "sha256:maple-base",
@@ -576,9 +576,9 @@ describe("the empty-slot Remix gesture places its mint", () => {
       }],
     });
 
-    const forked = await runtime.pins.fork({ slot: "net-worth-card" }, ctx);
+    const forked = await runtime.seed.from({ component: "net-worth-card", slot: "net-worth-card" }, ctx);
     expect(await runtime.placements({}, ctx)).toEqual([
-      { slot: "net-worth-card", app: forked.app.id, title: forked.app.name, status: "ready" },
+      { slot: "net-worth-card", app: forked.id, title: forked.name, status: "ready" },
     ]);
   });
 });

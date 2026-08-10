@@ -1,23 +1,23 @@
 import type {
   AppDocument,
 } from "../src/contract/index.js";
+import { inClientApprovalSchema } from "../src/server/index.js";
 import { describe, expect, it } from "vitest";
 import {
-  pinBaselineSchema,
-  pinComponentName,
-  type PinBaseline,
+  seedBaselineSchema,
+  seedComponentName,
+  type SeedBaseline,
 } from "../src/server/index.js";
 import {
-  detectPinDrift,
-  inClientApprovalSchema,
-  pinForkSource,
-} from "../src/server/remix/pins.js";
+  seedDrift,
+  seedForkSource,
+} from "../src/contract/index.js";
 
 const capturedAt = "2026-07-11T12:00:00.000Z";
 
-describe("pin contract shapes", () => {
-  it("validates the frozen pin and in-client approval shapes", () => {
-    expect(pinBaselineSchema.parse({
+describe("seed contract shapes", () => {
+  it("validates the frozen baseline and in-client approval shapes", () => {
+    expect(seedBaselineSchema.parse({
       slot: "invoice-card",
       source: "export function InvoiceCard() {}",
       hash: "sha256:x",
@@ -34,36 +34,36 @@ describe("pin contract shapes", () => {
 
 });
 
-describe("pinForkSource", () => {
+describe("seedForkSource", () => {
   it("keeps a source with a default export verbatim", () => {
     const declared = "export default function Card() { return null; }";
-    expect(pinForkSource(declared)).toBe(declared);
+    expect(seedForkSource(declared)).toBe(declared);
     const aliased = "function Card() { return null; }\nexport { Card as default };";
-    expect(pinForkSource(aliased)).toBe(aliased);
+    expect(seedForkSource(aliased)).toBe(aliased);
     const reExported = "export { default } from \"./card\";";
-    expect(pinForkSource(reExported)).toBe(reExported);
+    expect(seedForkSource(reExported)).toBe(reExported);
   });
 
   it("ignores commented-out and quoted default exports", () => {
     const commented = "// export default function Old() {}\nexport function InvoiceCard() { return null; }";
-    expect(pinForkSource(commented)).toBe(`${commented}\nexport { InvoiceCard as default };\n`);
+    expect(seedForkSource(commented)).toBe(`${commented}\nexport { InvoiceCard as default };\n`);
     const block = "/* export default Old */\nexport function InvoiceCard() { return null; }";
-    expect(pinForkSource(block)).toContain("export { InvoiceCard as default };");
+    expect(seedForkSource(block)).toContain("export { InvoiceCard as default };");
     // A commented-out export is never the alias target either.
     const staleExport = "// export function OldCard() {}\nexport function InvoiceCard() { return null; }";
-    expect(pinForkSource(staleExport)).toContain("export { InvoiceCard as default };");
+    expect(seedForkSource(staleExport)).toContain("export { InvoiceCard as default };");
     // A quoted phrase neither adds nor masks a real default export.
     const quoted = "const hint = \"export default\";\nexport function InvoiceCard() { return null; }\nexport default InvoiceCard;";
-    expect(pinForkSource(quoted)).toBe(quoted);
+    expect(seedForkSource(quoted)).toBe(quoted);
   });
 
   it("ignores type-only default exports, which are erased at runtime", () => {
     const inline = "export function InvoiceCard() { return null; }\nexport { type Props as default };";
-    expect(pinForkSource(inline)).toContain("export { InvoiceCard as default };");
+    expect(seedForkSource(inline)).toContain("export { InvoiceCard as default };");
     const statement = "export function InvoiceCard() { return null; }\nexport type { Props as default };";
-    expect(pinForkSource(statement)).toContain("export { InvoiceCard as default };");
+    expect(seedForkSource(statement)).toContain("export { InvoiceCard as default };");
     const declared = "export default interface Props { label: string }\nexport function InvoiceCard() { return null; }";
-    expect(pinForkSource(declared)).toContain("export { InvoiceCard as default };");
+    expect(seedForkSource(declared)).toContain("export { InvoiceCard as default };");
   });
 
   it("does not mistake a renamed default re-export for a default export", () => {
@@ -71,17 +71,17 @@ describe("pinForkSource", () => {
     // binding; there is no local binding to alias either, so the source passes
     // through unchanged and fork-pin refuses it loudly.
     const renamed = "export { default as InvoiceCard } from \"./InvoiceCard\";";
-    expect(pinForkSource(renamed)).toBe(renamed);
+    expect(seedForkSource(renamed)).toBe(renamed);
   });
 
   it("synthesizes a default export for a named function export (ENG-348)", () => {
     const source = "export function InvoiceCard() { return <b>invoices</b>; }";
-    expect(pinForkSource(source)).toBe(`${source}\nexport { InvoiceCard as default };\n`);
+    expect(seedForkSource(source)).toBe(`${source}\nexport { InvoiceCard as default };\n`);
   });
 
   it("synthesizes a default export for a named const export", () => {
     const source = "export const InvoiceCard = () => <b>invoices</b>;";
-    expect(pinForkSource(source)).toBe(`${source}\nexport { InvoiceCard as default };\n`);
+    expect(seedForkSource(source)).toBe(`${source}\nexport { InvoiceCard as default };\n`);
   });
 
   it("picks the component-cased export over helper exports", () => {
@@ -89,24 +89,24 @@ describe("pinForkSource", () => {
       "export const useInvoiceTotals = () => 0;",
       "export function InvoiceCard() { return null; }",
     ].join("\n");
-    expect(pinForkSource(source)).toContain("export { InvoiceCard as default };");
+    expect(seedForkSource(source)).toContain("export { InvoiceCard as default };");
   });
 
   it("aliases an export-list component back to its local binding", () => {
     const source = "function Internal() { return null; }\nexport { Internal as InvoiceCard };";
-    expect(pinForkSource(source)).toContain("export { Internal as default };");
+    expect(seedForkSource(source)).toContain("export { Internal as default };");
   });
 
   it("leaves a source with no detectable component export unchanged", () => {
     const local = "const Card = () => null;";
-    expect(pinForkSource(local)).toBe(local);
+    expect(seedForkSource(local)).toBe(local);
     const lowercase = "export const helpers = { format: (value: number) => value };";
-    expect(pinForkSource(lowercase)).toBe(lowercase);
+    expect(seedForkSource(lowercase)).toBe(lowercase);
   });
 });
 
-describe("detectPinDrift", () => {
-  const baseline = (slot: string, hash: string): PinBaseline => ({
+describe("seedDrift — one seed, one verdict", () => {
+  const baseline = (slot: string, hash: string): SeedBaseline => ({
     slot,
     source: `export default function Card() { return null; } // ${hash}`,
     hash,
@@ -114,51 +114,47 @@ describe("detectPinDrift", () => {
     capturedAt,
   });
 
-  const app = (pins: AppDocument["pins"]): AppDocument => ({
+  const app = (seed?: AppDocument["seed"]): AppDocument => ({
     format: "vendo/app@1",
     id: "app_drift",
     name: "Drift check",
-    ...(pins === undefined ? {} : { pins }),
+    ...(seed === undefined ? {} : { seed }),
   });
 
-  it("reports nothing for matching baselines, pinless apps, and empty pins", () => {
-    expect(detectPinDrift(app(undefined), [baseline("invoice-card", "sha256:a")])).toEqual([]);
-    expect(detectPinDrift(app([]), [baseline("invoice-card", "sha256:a")])).toEqual([]);
-    expect(detectPinDrift(
-      app([{ slot: "invoice-card", base: "sha256:a" }]),
+  it("is silent on an unseeded app and on one still at its baseline", () => {
+    expect(seedDrift(app(undefined), [baseline("invoice-card", "sha256:a")])).toBeNull();
+    expect(seedDrift(
+      app({ component: "invoice-card", baseline: "sha256:a" }),
       [baseline("invoice-card", "sha256:a")],
-    )).toEqual([]);
+    )).toBeNull();
   });
 
-  it("marks a pin drifted when the captured baseline hash changed", () => {
-    expect(detectPinDrift(
-      app([{ slot: "invoice-card", base: "sha256:old" }]),
+  it("reports drift when the captured baseline hash changed", () => {
+    expect(seedDrift(
+      app({ component: "invoice-card", baseline: "sha256:old" }),
       [baseline("invoice-card", "sha256:new")],
-    )).toEqual([{
-      slot: "invoice-card",
-      component: pinComponentName("invoice-card"),
-      baseHash: "sha256:old",
-      baselineHash: "sha256:new",
+    )).toEqual({
+      component: "invoice-card",
+      componentName: seedComponentName("invoice-card"),
+      baseline: "sha256:old",
+      current: "sha256:new",
       reason: "baseline-changed",
-    }]);
+    });
   });
 
-  it("marks a pin drifted when the baseline disappeared entirely", () => {
-    expect(detectPinDrift(app([{ slot: "invoice-card", base: "sha256:old" }]), [])).toEqual([{
-      slot: "invoice-card",
-      component: pinComponentName("invoice-card"),
-      baseHash: "sha256:old",
+  it("reports a baseline that disappeared entirely as its own reason", () => {
+    expect(seedDrift(app({ component: "invoice-card", baseline: "sha256:old" }), [])).toEqual({
+      component: "invoice-card",
+      componentName: seedComponentName("invoice-card"),
+      baseline: "sha256:old",
       reason: "baseline-missing",
-    }]);
+    });
   });
 
-  it("reports each pin independently", () => {
-    expect(detectPinDrift(
-      app([
-        { slot: "invoice-card", base: "sha256:a" },
-        { slot: "net-worth-card", base: "sha256:old" },
-      ]),
+  it("ignores baselines for components this app was not seeded from", () => {
+    expect(seedDrift(
+      app({ component: "invoice-card", baseline: "sha256:a" }),
       [baseline("invoice-card", "sha256:a"), baseline("net-worth-card", "sha256:new")],
-    )).toEqual([expect.objectContaining({ slot: "net-worth-card", reason: "baseline-changed" })]);
+    )).toBeNull();
   });
 });

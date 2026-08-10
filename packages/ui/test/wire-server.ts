@@ -6,7 +6,7 @@ import {
 } from "ai";
 import {
   DEFAULT_TRIGGER_ID,
-  pinComponentName,
+  seedComponentName,
   type AppDocument,
   type ApprovalRequest,
   type AuditEvent,
@@ -1053,63 +1053,50 @@ export async function createWireServer(options: WireServerOptions = {}) {
         return empty(response);
       }
 
-      // Gesture-owned forking (2026-07-21): the deterministic fork the ✦
-      // Remix gesture invokes — no model, the fixture mints a pinned app
-      // directly, mirroring the runtime: the pinned island lands in the tree
-      // with the gesture's `props` snapshot as its node props (the dashboard
-      // seed, 2026-08-02 final shape), and the appId-less call dedupes per
-      // slot (W0) — a raced double-tap can never mint two.
-      const forkPinAppMatch = url.pathname.match(/^\/apps\/([^/]+)\/fork-pin$/);
-      if (method === "POST" && (url.pathname === "/apps/fork-pin" || forkPinAppMatch)) {
-        const { slot, props } = parsedBody as { slot: string; props?: Record<string, unknown> };
-        const existingId = forkPinAppMatch ? decodeURIComponent(forkPinAppMatch[1] ?? "") : undefined;
-        const componentName = pinComponentName(slot);
-        if (existingId === undefined) {
-          const deduped = state.apps.find(item => item.pins?.some(pin => pin.slot === slot));
-          if (deduped) {
-            return json(response, {
-              app: deduped,
-              version: { at: NOW, intent: `Remix the host component "${slot}"`, rung: 1 },
-              slot,
-              componentName,
-            });
-          }
+      // The ✦ gesture (06 §8): the deterministic seed — no model, the fixture
+      // mints an ordinary app carrying ONE seed record, mirroring the runtime:
+      // the seeded island lands in the tree, and the call dedupes per component
+      // (W0) so a raced double-tap can never mint two. It answers with the app
+      // document itself; there is no fork result envelope.
+      if (method === "POST" && url.pathname === "/apps/seed") {
+        const { component, slot } = parsedBody as { component: string; slot?: string; instruction?: string };
+        const componentName = seedComponentName(component);
+        const deduped = state.apps.find(item => item.seed?.component === component);
+        if (deduped) return json(response, deduped);
+        const minted = app(`app_seed_${state.apps.length + 1}`, `${component} remix`);
+        // Mirrors the runtime's mint: an explicit destination is a placement
+        // ROW (location) beside the seed on the document (provenance).
+        if (slot !== undefined) {
+          state.placements = [
+            ...state.placements.filter(row => row.slot !== slot),
+            { slot, appId: minted.id },
+          ];
         }
-        const target = existingId === undefined
-          ? (() => {
-            const minted = app(`app_pin_${state.apps.length + 1}`, `${slot} remix`);
-            // Mirrors the runtime's mint: the placement is a ROW (location)
-            // beside the pin on the document (provenance).
-            state.placements = [
-              ...state.placements.filter(row => row.slot !== slot),
-              { slot, appId: minted.id },
-            ];
-            minted.tree = {
-              formatVersion: "vendo-genui/v2",
-              root: "root",
-              nodes: [
-                { id: "root", component: "Stack", source: "prewired", children: [`${componentName.toLowerCase()}-1`] },
-                {
-                  id: `${componentName.toLowerCase()}-1`,
-                  component: componentName,
-                  source: "generated",
-                  ...(props === undefined ? {} : { props }),
-                },
-              ],
-              components: { [componentName]: `export default function Fork() { return <p>${slot} fork</p>; }` },
-            } as AppDocument["tree"];
-            state.apps.push(minted);
-            return minted;
-          })()
-          : state.apps.find(item => item.id === existingId);
+        minted.tree = {
+          formatVersion: "vendo-genui/v2",
+          root: "root",
+          nodes: [
+            { id: "root", component: "Stack", source: "prewired", children: [`${componentName.toLowerCase()}-1`] },
+            { id: `${componentName.toLowerCase()}-1`, component: componentName, source: "generated" },
+          ],
+          components: { [componentName]: `export default function Fork() { return <p>${component} fork</p>; }` },
+        } as AppDocument["tree"];
+        minted.seed = { component, baseline: "sha256:fixture" };
+        state.apps.push(minted);
+        return json(response, minted);
+      }
+      // The plain re-seed: the seeded seat takes the host's current version, so
+      // the document's baseline moves. It REPLACES — nothing is replayed.
+      const reseedMatch = url.pathname.match(/^\/apps\/([^/]+)\/reseed$/);
+      if (method === "POST" && reseedMatch) {
+        const id = decodeURIComponent(reseedMatch[1] ?? "");
+        const target = state.apps.find(item => item.id === id);
         if (!target) return wireError(response, "not-found", "App not found", 404);
-        target.pins = [...(target.pins ?? []), { slot, base: "sha256:fixture" }];
-        return json(response, {
-          app: target,
-          version: { at: NOW, intent: `Remix the host component "${slot}"`, rung: 1 },
-          slot,
-          componentName,
-        });
+        if (target.seed === undefined) {
+          return wireError(response, "validation", "This app was not created from a host component", 400);
+        }
+        target.seed = { ...target.seed, baseline: "sha256:fixture-NEW" };
+        return json(response, target);
       }
       // Placement (2026-08-05) — ahead of the /apps/:id arms, exactly like the
       // real route table (the catch-all would otherwise read "placements" as an

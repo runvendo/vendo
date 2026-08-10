@@ -2,11 +2,10 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vendoSync } from "@vendoai/actions/sync";
-import { appVersionHash, pinComponentName } from "@vendoai/apps";
+import { appVersionHash } from "@vendoai/apps";
 import {
-  type AppDocument,
+  seedComponentName,
   type Principal,
-  VENDO_APP_FORMAT,
 } from "@vendoai/core";
 import {
   componentSources,
@@ -118,7 +117,7 @@ const request = (method: string, path: string, body?: unknown): Request =>
   });
 
 describe.sequential("06-apps §9 — the in-client promotion journey through the real umbrella", () => {
-  it("fork → visible ship-diff → injected approval → host-page verdict → new version drops back → re-approval", async () => {
+  it("seed → visible ship-diff → injected approval → host-page verdict → new version drops back → re-approval", async () => {
     // A remixable host slot, captured by the REAL sync.
     const root = await mkdtemp(join(tmpdir(), "vendo-inclient-journey-"));
     cleanups.push(async () => rm(root, { recursive: true, force: true }));
@@ -137,11 +136,11 @@ export default function Page() {
     const synced = await vendoSync({ root, out: join(root, ".vendo") });
     expect(synced.pins.captured).toEqual(["MapleNetWorthCard"]);
 
-    const componentName = pinComponentName("MapleNetWorthCard");
+    const componentName = seedComponentName("MapleNetWorthCard");
     const ctx = { principal, venue: "app" as const, presence: "present" as const, sessionId: "session_journey" };
     let composed: Vendo | undefined;
-    /** The app under edit. Set once it is imported — `importApp` mints the id,
-     *  it never keeps the one in the source document. */
+    /** The app under edit. Set once the seed mints it — the ✦ gesture is a
+     *  create, so the app does not exist before it. */
     let appUnderEdit: string | undefined;
     /** The app's own document, printed exactly as a checkout prints it — the
      *  text the assembler opens before it rewrites anything. */
@@ -157,13 +156,13 @@ export default function Page() {
     // assembly loop rewriting this app's WHOLE document and saving it back.
     const model = screenModel(async (prompt) => {
       const document = await asItStands();
-      // Any content change after approval — must invalidate the pin. The app's
-      // name is printed on its opening <App> line, so a rename is one edit.
+      // Any content change after approval — must invalidate the approval. The
+      // app's name is printed on its opening <App> line, so a rename is one edit.
       if (prompt.includes("Rename the app")) {
-        return document.replace('<App name="Maple overview">', '<App name="Net worth (renamed)">');
+        return document.replace(/^<App name="[^"]*"/, '<App name="Net worth (renamed)"');
       }
-      // Change the fork — the reviewable delta the ship-diff must show, written
-      // into the pinned island's own source.
+      // Change the seeded seat — the reviewable delta the ship-diff must show,
+      // written into the seeded island's own source.
       return document.replace("$1.2M", "$1.2M — remixed");
     });
 
@@ -179,26 +178,14 @@ export default function Page() {
     });
     composed = vendo;
 
-    const imported = await vendo.apps.importApp({
-      format: VENDO_APP_FORMAT,
-      id: "app_identity_is_replaced",
-      name: "Maple overview",
-      ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-      },
-    } as AppDocument, ctx);
-    appUnderEdit = imported.id;
-
-    // The fork is the user's Remix GESTURE, executed deterministically by the
-    // engine (the captured source is copied, the pin recorded, no model call).
-    const forked = await vendo.apps.pins.fork({ appId: imported.id, slot: "MapleNetWorthCard" }, ctx);
-    expect(forked.componentName).toBe(componentName);
-    const remixed = await vendo.apps.edit(imported.id, "Call out that it is remixed", ctx);
+    // The seed is the user's Remix GESTURE, executed deterministically by the
+    // engine (the captured source is copied, the seed recorded, no model call).
+    const seeded = await vendo.apps.seed.from({ component: "MapleNetWorthCard" }, ctx);
+    expect(seeded.components?.[componentName]).toBeDefined();
+    const appId = seeded.id;
+    appUnderEdit = appId;
+    const remixed = await vendo.apps.edit(appId, "Call out that it is remixed", ctx);
     expect(remixed.failure).toBeUndefined();
-    const appId = imported.id;
 
     // 1. The ship-diff is visible over the wire and shows exactly the net change.
     const shipDiffResponse = await vendo.handler(request("GET", `/apps/${appId}/ship-diff`));

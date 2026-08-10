@@ -2,8 +2,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vendoSync } from "@vendoai/actions/sync";
-import { appVersionHash, pinComponentName } from "@vendoai/apps";
+import { appVersionHash } from "@vendoai/apps";
 import {
+  seedComponentName,
   type AppDocument,
   type Principal,
 } from "@vendoai/core";
@@ -121,7 +122,7 @@ const request = (method: string, path: string, options: { as?: string; body?: un
   });
 
 describe.sequential("remix W1c — the review-kind lifecycle through the real umbrella", () => {
-  it("fork is invisible until approved; reject sends the note back; approval swaps versions natively", async () => {
+  it("a seeded app is invisible until approved; reject sends the note back; approval swaps versions natively", async () => {
     // A review-kind host slot, captured by the REAL sync from <Remixable review>.
     const root = await mkdtemp(join(tmpdir(), "vendo-review-journey-"));
     cleanups.push(async () => rm(root, { recursive: true, force: true }));
@@ -183,13 +184,13 @@ export default function Page() {
     });
     composed = vendo;
 
-    // 1. The user's Remix gesture forks the review-kind slot.
-    const forkResponse = await vendo.handler(request("POST", "/apps/fork-pin", { as: user, body: { slot: "TransferPanel" } }));
-    expect(forkResponse.status).toBe(200);
-    const fork = await forkResponse.json() as { app: AppDocument };
-    const appId = fork.app.id;
+    // 1. The user's Remix gesture seeds an app from the review-kind component.
+    const seedResponse = await vendo.handler(request("POST", "/apps/seed", { as: user, body: { component: "TransferPanel" } }));
+    expect(seedResponse.status).toBe(200);
+    const seeded = await seedResponse.json() as AppDocument;
+    const appId = seeded.id;
     appUnderEdit = appId;
-    const v1Hash = appVersionHash(fork.app);
+    const v1Hash = appVersionHash(seeded);
 
     // 2. Unapproved: the user gets the pending state and the ORIGINAL — the
     // payload ships no fork source, so a jailed render can never occur.
@@ -319,7 +320,7 @@ export default function Page() {
       approvedBy: "host-security-review",
     });
     expect(granted.payload.inClient.review).toBeUndefined();
-    const componentName = pinComponentName("TransferPanel");
+    const componentName = seedComponentName("TransferPanel");
     expect(granted.components?.[componentName]).toContain("TransferPanel");
 
     // 7. Another edit: the LAST approved version keeps rendering natively

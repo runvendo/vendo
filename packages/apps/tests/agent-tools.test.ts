@@ -50,7 +50,7 @@ describe("apps agent tools", () => {
 
     expect(descriptors.map((descriptor) => descriptor.name)).toEqual([
       "vendo_make",
-      "vendo_apps_rebase_pin",
+      "vendo_apps_reseed",
       "vendo_apps_open",
       "vendo_apps_pin",
       "vendo_apps_unpin",
@@ -415,20 +415,20 @@ describe("apps agent tools", () => {
       status: "error",
       error: { code: "validation" },
     });
-    // The rebase tool routes through runtime.pins.rebase with the same
+    // The re-seed tool routes through runtime.seed.reseed with the same
     // ownership scoping and contained VendoError codes as every other tool.
     await expect(registry.execute({
-      id: "call_rebase_missing",
-      tool: "vendo_apps_rebase_pin",
-      args: { appId: "app_missing", slot: "net-worth-card" },
+      id: "call_reseed_missing",
+      tool: "vendo_apps_reseed",
+      args: { appId: "app_missing" },
     }, ctx)).resolves.toEqual({
       status: "error",
       error: { code: "not-found", message: "app not found: app_missing" },
     });
     await expect(registry.execute({
-      id: "call_rebase_bad_input",
-      tool: "vendo_apps_rebase_pin",
-      args: { appId: "app_missing" },
+      id: "call_reseed_bad_input",
+      tool: "vendo_apps_reseed",
+      args: {},
     }, ctx)).resolves.toMatchObject({
       status: "error",
       error: { code: "validation" },

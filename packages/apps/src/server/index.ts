@@ -58,8 +58,17 @@ export {
   type PublishRecord,
   type ShareSnapshot,
 } from "./persistence/cloud.js";
-export { type InClientApproval } from "./remix/inclient.js";
-export { seedBaselineSchema, seedDrift, type SeedBaseline, type SeedDrift } from "../contract/index.js";
+export { inClientApprovalSchema, type InClientApproval } from "./remix/inclient.js";
+export {
+  seedBaselineSchema,
+  seedComponentName,
+  seedDrift,
+  seedForkSource,
+  isSeedComponentName,
+  hasDefaultExport,
+  type SeedBaseline,
+  type SeedDrift,
+} from "../contract/index.js";
 export { appVersionHash } from "./remix/version-hash.js";
 export {
   type InClientVenueState,

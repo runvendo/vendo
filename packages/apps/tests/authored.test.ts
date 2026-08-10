@@ -20,6 +20,7 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import {
+  bundleOf,
   compileWire,
   type AppDocument,
 } from "../src/contract/index.js";
@@ -30,8 +31,7 @@ import { memoryStore } from "../src/server/testing/memory-store.js";
 import { scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
 import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 import { createAppHistory } from "../src/server/persistence/history.js";
-import { createApps, pinComponentName, type AppsRuntime, type PinBaseline } from "../src/server/index.js";
-import { detectPinDrift } from "../src/server/remix/pins.js";
+import { createApps, seedComponentName, type AppsRuntime, type SeedBaseline } from "../src/server/index.js";
 import type { SandboxAdapter, SandboxMachine } from "../src/server/escalation/sandbox.js";
 import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
 
@@ -139,7 +139,7 @@ const stand = (options: {
    *  whose captured baselines have moved (a host resync). */
   store?: ReturnType<typeof memoryStore>;
   /** What `vendo sync` captured for this deployment's remixable slots. */
-  pinBaselines?: readonly PinBaseline[];
+  seedBaselines?: readonly SeedBaseline[];
   /** Wire a model, so the generation-gated doors (pins.rebase) get past their
    *  own refusal. A files-first save never asks it anything — and if a rebase
    *  replay does, this answer makes the rebase FAIL loudly rather than quietly
@@ -201,7 +201,7 @@ const stand = (options: {
     },
     ...(options.shared === true ? { appAccess: storeAccessFixture(store) } : {}),
     ...(options.box === true ? { machine: { sandbox: fnBox(seen) } } : {}),
-    ...(options.pinBaselines === undefined ? {} : { pinBaselines: [...options.pinBaselines] }),
+    ...(options.seedBaselines === undefined ? {} : { seedBaselines: [...options.seedBaselines] }),
     ...(options.model === true ? { model: scriptedLanguageModel("<Cannot>the model was never asked anything.</Cannot>") } : {}),
   });
   return {
@@ -440,19 +440,22 @@ describe("§9.9 — the announcement a files-first save owes", () => {
   });
 });
 
-describe("a save whose text left a pinned component out", () => {
+describe("a save whose text left a seeded component out", () => {
   const slot = "dashboard.header";
-  const name = pinComponentName(slot);
+  const name = seedComponentName(slot);
 
-  it("keeps the pinned source — a pin whose source is gone is not a pin", async () => {
+  it("keeps the seeded source — a seat whose source is gone is not a seat", async () => {
     const { runtime, store } = stand();
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
-    // A remixed host component: `pins` names the slot, `components` holds the
-    // captured host source. `Extra` is the model's own island, next to it.
+    // A remixed host component: `seed` names it, `components` holds the captured
+    // host source as a seeded bundle. `Extra` is the model's own island, beside it.
     await seedAppRow(store, {
       ...(await rowOf(store))!.doc!,
-      pins: [{ slot, base: "sha256:hostsource" }],
-      components: { [name]: "export default () => null;", Extra: "export default () => 1;" },
+      seed: { component: slot, baseline: "sha256:hostsource" },
+      components: {
+        [name]: { source: "export default () => null;", origin: "seeded" as const },
+        Extra: "export default () => 1;",
+      },
     }, "u1");
 
     // The compile carries NO islands at all (a rewrite from scratch, or a save
@@ -460,20 +463,20 @@ describe("a save whose text left a pinned component out", () => {
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
 
     const doc = (await rowOf(store))?.doc;
-    expect(doc?.pins).toEqual([{ slot, base: "sha256:hostsource" }]);
-    expect(doc?.components?.[name]).toBe("export default () => null;");
-    // The model's island is the model's to drop; only the pinned source is the
-    // app's own history.
+    expect(doc?.seed).toEqual({ component: slot, baseline: "sha256:hostsource" });
+    expect(bundleOf(doc!.components![name]!).source).toBe("export default () => null;");
+    // The model's island is the model's to drop; only the seeded seat is the
+    // app's own provenance.
     expect(doc?.components?.Extra).toBeUndefined();
   });
 
-  it("still lets the file EDIT a pinned component, exactly as an engine edit may", async () => {
+  it("still lets the file EDIT a seeded component, exactly as an engine edit may", async () => {
     const { runtime, store } = stand();
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
     await seedAppRow(store, {
       ...(await rowOf(store))!.doc!,
-      pins: [{ slot, base: "sha256:hostsource" }],
-      components: { [name]: "export default () => null;" },
+      seed: { component: slot, baseline: "sha256:hostsource" },
+      components: { [name]: { source: "export default () => null;", origin: "seeded" as const } },
     }, "u1");
 
     const island = `<App name="Spending">
@@ -485,39 +488,8 @@ describe("a save whose text left a pinned component out", () => {
     expect((await rowOf(store))?.doc?.components?.[name]).toContain("2");
   });
 
-  it("records the pin intent that edit does, as a TOUCH a rebase can never replay", async () => {
-    const { runtime, store } = stand();
-    await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
-    await seedAppRow(store, {
-      ...(await rowOf(store))!.doc!,
-      pins: [{ slot, base: "sha256:hostsource" }],
-      components: { [name]: "export default () => null;" },
-    }, "u1");
-
-    const island = `<App name="Spending">
-  <${name} />
-  <Island name="${name}">export default () =&gt; 2;</Island>
-</App>`;
-    await runtime.authored({ appId: APP_ID, compiled: compiled(island) }, ctx());
-
-    // The trail is what `pins.rebase` reads before it touches a drifted pin.
-    // Without the slot on this save's version, a rebase would not even know the
-    // file had changed the pinned component — the same record `persistEdit`
-    // writes for a model edit.
-    //
-    // Recorded as a "touch": neither the fork (it cannot vouch for the pinned
-    // source having started as the captured baseline) nor an "edit" ("Saved
-    // app.vendo" is a save receipt, not one of the user's instructions — replayed
-    // through the brain it means nothing, and the change it stands for exists
-    // only in the document itself). A trail row that says "touch" is exactly why
-    // the rebase below refuses instead of resetting the remix.
-    const trail = await store.records(`vendo:app-pin-intents:${APP_ID}`).list();
-    expect(trail.records.map((record) => record.data))
-      .toEqual([expect.objectContaining({ slot, intent: "Saved app.vendo", kind: "touch" })]);
-  });
-
   /** The host component as `vendo sync` captured it. */
-  const captured = (source: string, hash: string): PinBaseline => ({
+  const captured = (source: string, hash: string): SeedBaseline => ({
     slot,
     source,
     hash,
@@ -531,47 +503,6 @@ describe("a save whose text left a pinned component out", () => {
   return <h1>Maple Bank</h1>;
 }`;
 
-  it("cannot vouch for a fork — the remix survives the next rebase", async () => {
-    const first = stand({ pinBaselines: [captured(HOST_OLD, "sha256:host-old")], model: true });
-    await first.runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
-    // The shape an app fork or an interchange import leaves: the pin and the
-    // person's remix are on the document, and the history is EMPTY — nothing
-    // recorded the fork that produced that source.
-    await seedAppRow(first.store, {
-      ...(await rowOf(first.store))!.doc!,
-      pins: [{ slot, base: "sha256:host-old" }],
-      components: { [name]: "export default () => null;" },
-    }, "u1");
-    const island = `<App name="Spending">
-  <${name} />
-  <Island name="${name}">export default () =&gt; "Ada's own remix";</Island>
-</App>`;
-
-    // One files-first save that touches the pinned component, so the ONLY pin
-    // intent this app has ever recorded is "Saved app.vendo".
-    await first.runtime.authored({ appId: APP_ID, compiled: compiled(island) }, ctx());
-    expect((await rowOf(first.store))?.doc?.components?.[name]).toContain("Ada's own remix");
-
-    // The host ships a new version of that component and re-syncs: drift.
-    const hostNew = captured(HOST_NEW, "sha256:host-new");
-    const resynced = stand({
-      store: first.store,
-      pinBaselines: [hostNew],
-      model: true,
-    });
-    expect(detectPinDrift((await rowOf(first.store))!.doc!, [hostNew])).toMatchObject([{ slot }]);
-
-    // A trail whose first row is not the fork cannot vouch for what the pinned
-    // component holds, and a mechanical re-fork would overwrite the remix with
-    // the pristine host component while reporting "rebased". The rebase refuses
-    // instead: the remix stands, and the pin stays honestly drifted.
-    await expect(resynced.runtime.pins.rebase({ appId: APP_ID, slot }, ctx())).rejects.toMatchObject({
-      code: "conflict",
-      message: expect.stringContaining("no recorded edit trail"),
-    });
-    expect((await rowOf(first.store))?.doc?.components?.[name]).toContain("Ada's own remix");
-    expect(detectPinDrift((await rowOf(first.store))!.doc!, [hostNew])).toMatchObject([{ slot }]);
-  });
 });
 
 describe("the version a files-first save leaves", () => {
@@ -660,25 +591,33 @@ describe("a refused write at the history cap", () => {
     }
   });
 
-  it("costs the GESTURE path none either (persistEdit shares the rule)", async () => {
+  it("costs the RE-SEED path none either (persistEdit shares the rule)", async () => {
     const slot = "dashboard.header";
     const { runtime, store, arm } = stand({
-      pinBaselines: [{
+      seedBaselines: [{
         slot,
-        source: "export default function Header() {\n  return <h1>Maple</h1>;\n}",
-        hash: "sha256:host-old",
+        source: "export default function Header() {\n  return <h1>Maple Bank</h1>;\n}",
+        hash: "sha256:host-NEW",
         exportable: false,
         capturedAt: "2026-08-03T00:00:00.000Z",
       }],
     });
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
+    // A seeded app sitting on the OLD baseline, so the re-seed below has real
+    // work to do. `reseed` is the deterministic, model-less persistEdit path
+    // the fork gesture used to be.
+    await seedAppRow(store, {
+      ...(await rowOf(store))!.doc!,
+      seed: { component: slot, baseline: "sha256:host-old" },
+      components: { [seedComponentName(slot)]: { source: "export default () => null;", origin: "seeded" as const } },
+    }, "u1");
     const stored = (await rowOf(store))!.doc!;
     const before = await fillToCap(store);
     arm(async () => {
       await seedAppRow(store, { ...stored, description: "the person's own edit" }, "u1");
     }, 2);
 
-    await expect(runtime.pins.fork({ appId: APP_ID, slot }, ctx())).rejects.toMatchObject({
+    await expect(runtime.seed.reseed({ appId: APP_ID }, ctx())).rejects.toMatchObject({
       code: "conflict",
     });
 
@@ -793,18 +732,26 @@ describe("a save computed over a row that changed under it", () => {
    * never existed. The fork gesture is the one persistEdit path a model-less
    * stand can drive (it is deterministic by design).
    */
-  it("leaves no version behind when a GESTURE is refused mid-write", async () => {
+  it("leaves no version behind when a RE-SEED is refused mid-write", async () => {
     const slot = "dashboard.header";
     const { runtime, store, arm } = stand({
-      pinBaselines: [{
+      seedBaselines: [{
         slot,
-        source: "export default function Header() {\n  return <h1>Maple</h1>;\n}",
-        hash: "sha256:host-old",
+        source: "export default function Header() {\n  return <h1>Maple Bank</h1>;\n}",
+        hash: "sha256:host-NEW",
         exportable: false,
         capturedAt: "2026-08-03T00:00:00.000Z",
       }],
     });
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
+    // A seeded app sitting on the OLD baseline, so the re-seed below has real
+    // work to do. `reseed` is the deterministic, model-less persistEdit path
+    // the fork gesture used to be.
+    await seedAppRow(store, {
+      ...(await rowOf(store))!.doc!,
+      seed: { component: slot, baseline: "sha256:host-old" },
+      components: { [seedComponentName(slot)]: { source: "export default () => null;", origin: "seeded" as const } },
+    }, "u1");
     const stored = (await rowOf(store))!.doc!;
     // Two reads pass (the gesture's own read and persistEdit's row-subject read),
     // then the edit lands right after the first concurrency check — so the append
@@ -813,17 +760,14 @@ describe("a save computed over a row that changed under it", () => {
       await seedAppRow(store, { ...stored, description: "the person's own edit" }, "u1");
     }, 2);
 
-    await expect(runtime.pins.fork({ appId: APP_ID, slot }, ctx())).rejects.toMatchObject({
+    await expect(runtime.seed.reseed({ appId: APP_ID }, ctx())).rejects.toMatchObject({
       code: "conflict",
     });
 
     expect((await rowOf(store))?.doc?.description).toBe("the person's own edit");
-    expect((await rowOf(store))?.doc?.pins).toBeUndefined();
+    // The refused re-seed left the app on its ORIGINAL baseline.
+    expect((await rowOf(store))?.doc?.seed?.baseline).toBe("sha256:host-old");
     expect(await runtime.history(APP_ID, ctx()).list()).toEqual([]);
-    // Including the pin intent that version recorded: a fork intent for a fork
-    // that never happened would later vouch for a rebase of a pin that is not
-    // even on the document.
-    expect((await store.records(`vendo:app-pin-intents:${APP_ID}`).list()).records).toEqual([]);
     expect((await rowOf(store))?.doc?.description).toBe("the person's own edit");
   });
 });

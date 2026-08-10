@@ -20,7 +20,7 @@ import type { LanguageModel, ModelMessage } from "ai";
 import type { FloorDependencies } from "../checking/deps.js";
 import { modelCallParams } from "../runtime/model-params.js";
 import { seedComponentName } from "@vendoai/core";
-import { hasDefaultExport, seedForkSource, type SeedBaseline } from "../../contract/index.js";
+import { hasDefaultExport, seedForkSource, type ComponentBundle, type SeedBaseline } from "../../contract/index.js";
 
 /** The floor owns the tool slice now (`../checking/deps.ts`) so it can outlive
  *  this pipeline; re-exported here because every generation module already
@@ -135,6 +135,23 @@ const insertChild = (parent: TreeNode, nodeId: string, index: unknown): void => 
   parent.children = children;
 };
 
+/**
+ * What a seeded seat holds: the captured source, plus every furnishing the jail
+ * needs to run it. It travels IN the document, which is what makes a seeded app
+ * independent of whatever the host's baseline does next — the open path reads
+ * this and never matches a hash. Shared by the first seed and every re-seed, so
+ * the two can never furnish a seat differently.
+ */
+export const seededBundle = (baseline: SeedBaseline): ComponentBundle => ({
+  // A named-export capture seeds with a synthesized default export.
+  source: seedForkSource(baseline.source),
+  origin: "seeded",
+  ...(baseline.sourceImports === undefined ? {} : { sourceImports: structuredClone(baseline.sourceImports) }),
+  ...(baseline.subSources === undefined ? {} : { subSources: structuredClone(baseline.subSources) }),
+  ...(baseline.sampleProps === undefined ? {} : { sampleProps: structuredClone(baseline.sampleProps) }),
+  ...(baseline.styles === undefined ? {} : { styleSheets: structuredClone(baseline.styles) }),
+});
+
 /** The deterministic seed core (06-apps §8): copies the TRUSTED captured
  *  baseline into the named generated component AS A BUNDLE — source plus every
  *  furnishing the jail needs to run it — mints and attaches the node, and
@@ -182,20 +199,7 @@ export const applySeedFork = (
   };
   tree.nodes.push(node);
   insertChild(parent, node.id, props.at);
-  // The seat holds its own contents: source AND every furnishing the jail needs.
-  // Nothing is looked up at open time, so a baseline that moves under this app
-  // costs it a drift warning and never its furnishings.
-  app.components = {
-    ...(app.components ?? {}),
-    [componentName]: {
-      source: forkSource,
-      origin: "seeded",
-      ...(baseline.sourceImports === undefined ? {} : { sourceImports: structuredClone(baseline.sourceImports) }),
-      ...(baseline.subSources === undefined ? {} : { subSources: structuredClone(baseline.subSources) }),
-      ...(baseline.sampleProps === undefined ? {} : { sampleProps: structuredClone(baseline.sampleProps) }),
-      ...(baseline.styles === undefined ? {} : { styleSheets: structuredClone(baseline.styles) }),
-    },
-  };
+  app.components = { ...(app.components ?? {}), [componentName]: seededBundle(baseline) };
   app.seed = {
     component: baseline.slot,
     baseline: baseline.hash,

@@ -60,17 +60,18 @@ describe("createVendoClient", () => {
     const imported = await client.apps.importApp(new Uint8Array([4, 5, 6]));
     expect(imported.id).toBe("app_imported");
     expect((await client.apps.fork("app_1")).forkedFrom).toBe("app_1");
-    // Gesture-owned forking: appId routes to /apps/:id/fork-pin, none to /apps/fork-pin.
-    // (Fixture-shape update, 2026-08-02: the wire fixture now mints with the
-    // runtime's REAL pinComponentName — hash-suffixed — and the appId-less
-    // call carries the wrapper's serializable live props.)
-    expect((await client.apps.forkPin({ appId: "app_1", slot: "hero", instruction: "make it blue" })).slot).toBe("hero");
-    expect((await client.apps.forkPin({ slot: "hero" })).componentName).toMatch(/^PinnedHero[0-9a-f]{8}$/);
-    expect((await client.apps.forkPin({ slot: "hero2", props: { title: "Mine" } })).slot).toBe("hero2");
+    // The ✦ gesture: one seed per app, answered with the app document itself.
+    // The seeded seat ships under the runtime's REAL seedComponentName —
+    // hash-suffixed — and a `slot` also places the mint there.
+    const seeded = await client.apps.seedFrom({ component: "hero", instruction: "make it blue" });
+    expect(seeded.seed).toEqual({ component: "hero", baseline: "sha256:fixture" });
+    expect(Object.keys(seeded.tree?.components ?? {})).toEqual([expect.stringMatching(/^PinnedHero[0-9a-f]{8}$/)]);
+    expect((await client.apps.seedFrom({ component: "hero2", slot: "hero2" })).seed?.component).toBe("hero2");
+    // Re-seeding moves the app onto the host's current version of that component.
+    expect((await client.apps.reseed(seeded.id)).seed?.baseline).toBe("sha256:fixture-NEW");
     expect(await client.apps.pingMachine("app_1")).toEqual({ state: "awake" });
     // Placement (2026-08-05): place → read back → evict → unplace → gone.
-    // A slot of its own: the appId-less forkPin calls above already placed
-    // their mints in "hero" and "hero2".
+    // A slot of its own: the seed call above already placed its mint in "hero2".
     expect(await client.apps.place("app_1", "shelf")).toEqual({});
     // "Edited", not "Invoices": the edit above renamed app_1, and the title
     // is derived from the CURRENT document on every read, never stored.
@@ -126,9 +127,9 @@ describe("createVendoClient", () => {
     exact("GET", "/apps/app_1/export", undefined);
     exact("POST", "/apps/import", [4, 5, 6]);
     exact("POST", "/apps/app_1/fork", {});
-    exact("POST", "/apps/app_1/fork-pin", { slot: "hero", instruction: "make it blue" });
-    exact("POST", "/apps/fork-pin", { slot: "hero" });
-    exact("POST", "/apps/fork-pin", { slot: "hero2", props: { title: "Mine" } });
+    exact("POST", "/apps/seed", { component: "hero", instruction: "make it blue" });
+    exact("POST", "/apps/seed", { component: "hero2", slot: "hero2" });
+    exact("POST", `/apps/${seeded.id}/reseed`, {});
     exact("POST", "/apps/app_1/machine/ping", {});
     exact("GET", "/automations", undefined);
     exact("POST", "/automations/app_auto/enable/main", {});

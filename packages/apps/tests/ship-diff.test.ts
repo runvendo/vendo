@@ -5,11 +5,11 @@ import {
   type AppDocument,
 } from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { pinComponentName, pinForkSource, type PinBaseline } from "../src/server/remix/pins.js";
+import { seedComponentName, seedForkSource, type SeedBaseline } from "../src/contract/index.js";
 import { computeShipDiff } from "../src/server/remix/ship-diff.js";
 import { appVersionHash } from "../src/server/remix/version-hash.js";
 
-const baseline: PinBaseline = {
+const baseline: SeedBaseline = {
   slot: "net-worth-card",
   source: "export default function Card() {\n  return <b>host</b>;\n}",
   hash: "sha256:baseline",
@@ -17,7 +17,7 @@ const baseline: PinBaseline = {
   capturedAt: "2026-07-14T12:00:00.000Z",
 };
 
-const componentName = pinComponentName("net-worth-card");
+const componentName = seedComponentName("net-worth-card");
 
 const app = (overrides: Partial<AppDocument> = {}): AppDocument => ({
   format: VENDO_APP_FORMAT,
@@ -29,7 +29,7 @@ const app = (overrides: Partial<AppDocument> = {}): AppDocument => ({
     root: "root",
     nodes: [{ id: "root", component: "Stack", source: "prewired" }],
   },
-  pins: [{ slot: "net-worth-card", base: "sha256:baseline" }],
+  seed: { component: "net-worth-card", baseline: "sha256:baseline" },
   components: {
     [componentName]: "export default function Card() {\n  return <b>forked</b>;\n}",
   },
@@ -66,18 +66,18 @@ describe("computeShipDiff", () => {
   });
 
   it("reports an unedited fork of a named-export baseline as an empty diff (ENG-348)", () => {
-    const named: PinBaseline = {
+    const named: SeedBaseline = {
       ...baseline,
       source: "export function Card() {\n  return <b>host</b>;\n}",
     };
-    // The fork ships pinForkSource(baseline.source) — the synthesized default
+    // The fork ships seedForkSource(baseline.source) — the synthesized default
     // export is fork plumbing, not a host edit, so it never shows to approvers.
-    const doc = app({ components: { [componentName]: pinForkSource(named.source) } });
+    const doc = app({ components: { [componentName]: seedForkSource(named.source) } });
     expect(computeShipDiff(doc, [named]).pins[0]?.diff).toBe("");
   });
 
   it("flags drift when the captured baseline hash no longer matches the pin base", () => {
-    const moved: PinBaseline = { ...baseline, hash: "sha256:new-host-version" };
+    const moved: SeedBaseline = { ...baseline, hash: "sha256:new-host-version" };
     const pin = computeShipDiff(app(), [moved]).pins[0]!;
     expect(pin.drifted).toBe(true);
     expect(pin.baselineHash).toBe("sha256:new-host-version");

@@ -8,8 +8,9 @@ import {
 } from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
 import { createInClientApprovals } from "../src/server/remix/inclient.js";
+import { createAppHistory } from "../src/server/persistence/history.js";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
-import { pinComponentName, type PinBaseline } from "../src/server/remix/pins.js";
+import { seedComponentName, type SeedBaseline } from "../src/contract/index.js";
 import { createReviewLifecycle } from "../src/server/remix/review.js";
 import { scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
@@ -35,7 +36,7 @@ const context = (subject: string): RunContext => ({
 });
 
 /** A review-kind capture beside an instant one: kind is baseline metadata. */
-const reviewedBaseline: PinBaseline = {
+const reviewedBaseline: SeedBaseline = {
   slot: "transfer-panel",
   source: "export default function TransferPanel() { return <b>host</b>; }",
   hash: "sha256:transfer-base",
@@ -44,7 +45,7 @@ const reviewedBaseline: PinBaseline = {
   review: true,
 };
 
-const instantBaseline: PinBaseline = {
+const instantBaseline: SeedBaseline = {
   slot: "hero-card",
   source: "export default function Hero() { return <b>host</b>; }",
   hash: "sha256:hero-base",
@@ -62,12 +63,12 @@ const doc = (slot: string, overrides: Partial<AppDocument> = {}): AppDocument =>
     root: "root",
     nodes: [
       { id: "root", component: "Stack", source: "prewired", children: ["fork"] },
-      { id: "fork", component: pinComponentName(slot), source: "generated" },
+      { id: "fork", component: seedComponentName(slot), source: "generated" },
     ],
   },
-  pins: [{ slot, base: `sha256:${slot === "transfer-panel" ? "transfer" : "hero"}-base` }],
+  seed: { component: slot, baseline: `sha256:${slot === "transfer-panel" ? "transfer" : "hero"}-base` },
   components: {
-    [pinComponentName(slot)]: "export default function Fork() { return <b>fork</b>; }",
+    [seedComponentName(slot)]: "export default function Fork() { return <b>fork</b>; }",
   },
   ...overrides,
 });
@@ -84,13 +85,13 @@ const setup = (review: { reviewer?(ctx: RunContext): boolean } = { reviewer: (ct
     guard,
     tools,
     catalog: [],
-    pinBaselines: [reviewedBaseline, instantBaseline],
+    seedBaselines: [reviewedBaseline, instantBaseline],
     // A rename, as the ONE builder does it: the assembler opens the app's own
     // document, writes it out again under a new name and saves the whole thing.
     // The remixed island travels with it, because a rewrite that dropped the
     // person's fork would be a different app, not a renamed one.
     screen: scriptedAssembler(() => runtime, (_request, current) => {
-      const component = pinComponentName(current?.pins?.[0]?.slot ?? "hero-card");
+      const component = seedComponentName(current?.seed?.component ?? "hero-card");
       const source = current?.components?.[component];
       return `<App name="Edited name">${source === undefined
         ? ""
@@ -197,7 +198,7 @@ describe("approval swaps the served version", () => {
     // the SERVED document carries no review-kind pin of its own.
     const { store, runtime } = setup();
     const v1 = doc("transfer-panel", {
-      pins: undefined,
+      seed: undefined,
       tree: {
         formatVersion: "vendo-genui/v2",
         root: "root",
@@ -209,8 +210,17 @@ describe("approval swaps the served version", () => {
     await runtime.inClient.approve({ appId: v1.id, approvedBy: "host-console" }, owner);
     const v1Hash = appVersionHash(await runtime.get(v1.id, owner) as AppDocument);
 
-    const forked = await runtime.pins.fork({ appId: v1.id, slot: "transfer-panel" }, owner);
-    const v2Hash = appVersionHash(forked.app);
+    // v2 arrives carrying the review-kind seed. The ✦ gesture always MINTS an
+    // app now (a seed is provenance of a whole app, not a row added to one), so
+    // this writes the next version the way any other author would: v1 goes into
+    // the history the approval resolves against, and the row becomes v2.
+    await createAppHistory(store).append(v1.id, v1, {
+      at: "2026-08-03T00:00:00.000Z",
+      intent: "the approved version",
+      rung: 1,
+    });
+    await seedAppRow(store, { ...doc("transfer-panel"), id: v1.id }, owner.principal.subject);
+    const v2Hash = appVersionHash(await runtime.get(v1.id, owner) as AppDocument);
     expect(v2Hash).not.toBe(v1Hash);
 
     const surface = await runtime.open(v1.id, owner);

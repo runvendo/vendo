@@ -2,11 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vendoSync } from "@vendoai/actions/sync";
-import { appVersionHash, pinBaselineSchema, pinComponentName } from "@vendoai/apps";
+import { appVersionHash, seedBaselineSchema } from "@vendoai/apps";
 import {
+  bundleOf,
+  seedComponentName,
   type AppDocument,
   type Principal,
-  VENDO_APP_FORMAT,
 } from "@vendoai/core";
 import {
   componentSources,
@@ -31,14 +32,12 @@ const SCREEN_BRIEF_MARKER = "# In this loop";
 const SAVED_MARKER = "Run validate on it now.";
 
 /**
- * The screen agent, scripted. There is one builder now, so both the user's edit
- * and the rebase's REPLAY of that same recorded intent come through here: read
- * the app's document as it stands, add the remix note to the pinned island's
- * source, save the whole thing back.
+ * The screen agent, scripted, for the ONE model-driven step in this journey —
+ * the user's edit. It reads the app's document as it stands, adds the remix note
+ * to the seeded island's source, and saves the whole thing back.
  *
- * Reading the document rather than a printed copy in the prompt is what keeps
- * the same script correct on the replay, where the island source is the host's
- * NEW baseline.
+ * The re-seed below never comes through here: it is deterministic (d6 — a plain
+ * swap for the pristine new component, with no replay).
  */
 const screenModel = (document: () => Promise<string>): LanguageModel => {
   const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
@@ -110,14 +109,14 @@ const request = (method: string, path: string, body?: unknown): Request =>
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 
-describe.sequential("06-apps §8 — the drift→rebase journey through the real umbrella", () => {
-  it("sync → fork → edit → host change + resync → loud drift → rebase replays intents → approval drops", async () => {
-    // A remixable host slot, captured by the REAL sync.
-    const root = await mkdtemp(join(tmpdir(), "vendo-drift-rebase-"));
+describe.sequential("06-apps §8 — the drift→re-seed journey through the real umbrella", () => {
+  it("sync → seed → edit → host change + resync → loud drift → re-seed REPLACES → approval drops", async () => {
+    // A remixable host component, captured by the REAL sync.
+    const root = await mkdtemp(join(tmpdir(), "vendo-drift-reseed-"));
     cleanups.push(async () => rm(root, { recursive: true, force: true }));
     await mkdir(join(root, "src"), { recursive: true });
     const slot = "MapleNetWorthCard";
-    const componentName = pinComponentName(slot);
+    const componentName = seedComponentName(slot);
     const hostSource = `export default function MapleNetWorthCard() {
   return <article><span>Net worth</span><strong>$1.2M</strong></article>;
 }\n`;
@@ -133,7 +132,7 @@ export default function Page() {
     const synced = await vendoSync({ root, out: join(root, ".vendo") });
     expect(synced.pins).toEqual({ captured: [slot], drifted: [] });
     const baselineFile = join(root, ".vendo", "remixable", `${slot}.json`);
-    const oldHash = pinBaselineSchema.parse(JSON.parse(await readFile(baselineFile, "utf8"))).hash;
+    const oldHash = seedBaselineSchema.parse(JSON.parse(await readFile(baselineFile, "utf8"))).hash;
 
     const store = createStore({ dataDir: join(root, ".data") });
     cleanups.push(async () => store.close());
@@ -155,7 +154,7 @@ export default function Page() {
       );
     };
 
-    // ONE host process lifetime: fork the pin (gesture, no model) and edit the fork.
+    // ONE host process lifetime: seed the app (gesture, no model) and edit it.
     const vendo = createVendo({
       model: screenModel(asItStands),
       principal: async () => principal,
@@ -163,30 +162,18 @@ export default function Page() {
       development: true,
     });
     active = vendo;
-    const imported = await vendo.apps.importApp({
-      format: VENDO_APP_FORMAT,
-      id: "app_identity_is_replaced",
-      name: "Maple overview",
-      ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-      },
-    } as AppDocument, ctx);
-    const appId = imported.id;
+    // Gesture-owned seeding: the seed rides its own wire route, executed
+    // deterministically by the engine — the model never sees it.
+    const seedResponse = await vendo.handler(request("POST", "/apps/seed", { component: slot }));
+    expect(seedResponse.status).toBe(200);
+    const seeded = await seedResponse.json() as AppDocument;
+    const appId = seeded.id;
     appUnderEdit = appId;
-    // Gesture-owned forking (2026-07-21): the fork rides its own wire route,
-    // executed deterministically by the engine — the model never sees it.
-    const forkResponse = await vendo.handler(request("POST", `/apps/${appId}/fork-pin`, { slot }));
-    expect(forkResponse.status).toBe(200);
-    const forked = await forkResponse.json();
-    expect(forked.componentName).toBe(componentName);
-    expect(forked.app.pins).toEqual([{ slot, base: oldHash }]);
-    expect(forked.app.components[componentName]).toContain("$1.2M");
+    expect(seeded.seed).toEqual({ component: slot, baseline: oldHash });
+    expect(bundleOf(seeded.components![componentName]!).source).toContain("$1.2M");
     const remixed = await vendo.apps.edit(appId, "Call out that it is remixed", ctx);
     expect(remixed.failure).toBeUndefined();
-    expect(remixed.app.pins).toEqual([{ slot, base: oldHash }]);
+    expect(remixed.app.seed).toEqual({ component: slot, baseline: oldHash });
 
     // The pre-drift version gets an in-client approval (dev injection seam).
     const approval = await (await vendo.handler(request("POST", "/dev/inclient-approval", {
@@ -202,67 +189,60 @@ export default function Page() {
     ));
     const resynced = await vendoSync({ root, out: join(root, ".vendo") });
     expect(resynced.pins).toEqual({ captured: [], drifted: [slot] });
-    const newBaseline = pinBaselineSchema.parse(JSON.parse(await readFile(baselineFile, "utf8")));
+    const newBaseline = seedBaselineSchema.parse(JSON.parse(await readFile(baselineFile, "utf8")));
     expect(newBaseline.hash).not.toBe(oldHash);
 
     // The host redeploys: a fresh composition loads the NEW baselines over the
     // SAME store. Drift must now be loud on every surface the app rides.
     const redeployed = createVendo({
-      // The rebase replays the ONE recorded pin intent through the same builder,
-      // which now opens the app with the NEW baseline source under the pinned
-      // component.
       model: screenModel(asItStands),
       principal: async () => principal,
       store,
       development: true,
     });
     active = redeployed;
-    const expectedDrift = {
-      slot,
-      component: componentName,
-      baseHash: oldHash,
-      baselineHash: newBaseline.hash,
-      reason: "baseline-changed",
-    };
 
     // 1. open() rides the drift report on the payload (the renderer's notice)
-    //    while the untouched version keeps its hash-pinned approval.
+    //    while the untouched version keeps its hash-pinned approval. ONE seed,
+    //    ONE verdict — an object, never a row set.
     const drifted = await (await redeployed.handler(request("GET", `/apps/${appId}/open`))).json();
     expect(drifted.kind).toBe("tree");
-    expect(drifted.payload.pinDrift).toEqual([expectedDrift]);
+    expect(drifted.payload.seedDrift).toEqual({
+      component: slot,
+      componentName,
+      baseline: oldHash,
+      current: newBaseline.hash,
+      reason: "baseline-changed",
+    });
     expect(drifted.payload.inClient).toMatchObject({ granted: true });
 
     // 2. The ship-diff fail-closes review with its drifted flag (M4).
     const shipDiff = await (await redeployed.handler(request("GET", `/apps/${appId}/ship-diff`))).json();
     expect(shipDiff.pins).toEqual([expect.objectContaining({ slot, drifted: true })]);
 
-    // 3. The rebase re-forks the NEW baseline and replays the recorded intent.
-    const rebaseResponse = await redeployed.handler(request("POST", `/apps/${appId}/rebase-pin`, { slot }));
-    expect(rebaseResponse.status).toBe(200);
-    const rebase = await rebaseResponse.json();
-    expect(rebase).toMatchObject({
-      status: "rebased",
-      slot,
-      baseHash: newBaseline.hash,
-      replayed: ["Call out that it is remixed"],
-    });
-    expect(rebase.app.pins).toEqual([{ slot, base: newBaseline.hash }]);
-    expect(rebase.app.components[componentName]).toContain("Total net worth");
-    expect(rebase.app.components[componentName]).toContain("— remixed");
+    // 3. The re-seed swaps in the PRISTINE new component. That is the whole
+    //    trade: it replaces what the person made, and nothing is replayed.
+    const reseedResponse = await redeployed.handler(request("POST", `/apps/${appId}/reseed`));
+    expect(reseedResponse.status).toBe(200);
+    const reseeded = await reseedResponse.json() as AppDocument;
+    expect(reseeded.seed).toEqual({ component: slot, baseline: newBaseline.hash });
+    const reseededSource = bundleOf(reseeded.components![componentName]!).source;
+    expect(reseededSource).toContain("Total net worth");
+    expect(reseededSource).not.toContain("— remixed");
 
-    // 4. Drift is gone — and the rebase minted a NEW version, so the old
+    // 4. Drift is gone — and the re-seed minted a NEW version, so the old
     //    in-client approval no longer grants: back to the sandbox, loudly.
-    const afterRebase = await (await redeployed.handler(request("GET", `/apps/${appId}/open`))).json();
-    expect(afterRebase.payload.pinDrift).toBeUndefined();
-    expect(afterRebase.payload.inClient).toEqual({
+    const afterReseed = await (await redeployed.handler(request("GET", `/apps/${appId}/open`))).json();
+    expect(afterReseed.payload.seedDrift).toBeUndefined();
+    expect(afterReseed.payload.inClient).toEqual({
       granted: false,
-      versionHash: appVersionHash(rebase.app),
+      versionHash: appVersionHash(reseeded),
       reason: "version-changed",
     });
-    expect(afterRebase.payload.inClient.versionHash).not.toBe(approval.versionHash);
+    expect(afterReseed.payload.inClient.versionHash).not.toBe(approval.versionHash);
 
-    // 5. The rebase version sits on the public history like any edit.
+    // 5. The re-seed version sits on the public history like any edit.
     const history = await (await redeployed.handler(request("GET", `/apps/${appId}/history`))).json();
-    expect(history[0].intent).toContain(`Rebase remixed ${slot}`);
+    expect(history[0].intent).toContain(`Update ${slot} to the host's current version`);
   }, 120_000);
 });

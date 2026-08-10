@@ -248,7 +248,7 @@ describe("apps lifecycle", () => {
       format: VENDO_APP_FORMAT,
       id: "app_pin_intent_history",
       name: "Pinned app",
-      pins: [{ slot: "net-worth-card", base: "sha256:base" }],
+      seed: { component: "net-worth-card", baseline: "sha256:base" },
     };
     await seedAppRow(store, app, "user_ada");
     for (let index = 1; index <= 51; index += 1) {
@@ -256,7 +256,7 @@ describe("apps lifecycle", () => {
         at: new Date(1_720_000_000_000 + index).toISOString(),
         intent: `Pin edit ${index}`,
         rung: 1,
-      }, ["net-worth-card"]);
+      });
       // The cap is applied by the caller once its write has LANDED — an append
       // is speculative until then, and pruning inside it charged a refused write
       // the oldest real version (see AppHistoryAccess.prune).
@@ -264,8 +264,6 @@ describe("apps lifecycle", () => {
     }
 
     expect(await history.surface(app.id).list()).toHaveLength(50);
-    expect((await history.pinIntents(app.id, "net-worth-card")).map(({ intent }) => intent))
-      .toEqual(Array.from({ length: 51 }, (_, index) => `Pin edit ${index + 1}`));
   });
 
   it("rejects invalid stored documents on reads with the app id in detail", async () => {

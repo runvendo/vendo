@@ -938,11 +938,11 @@ function ReviewStandingScenario() {
   );
 }
 
-/** 06-apps §8 — the drift notice scenario: the host updated the component a
- *  pin was remixed from, so the payload carries a server-written `pinDrift`
- *  report. The surface says so loudly ABOVE the tree while the remixed fork
- *  keeps rendering in its jail — nothing changes without the user. */
-const driftedPinSource = String.raw`
+/** 06-apps §8 — the drift notice scenario: the host updated the component this
+ *  app was seeded from, so the payload carries a server-written `seedDrift`
+ *  report. The surface says so loudly ABOVE the tree while the remix keeps
+ *  rendering in its jail — nothing changes without the user. */
+const driftedSeedSource = String.raw`
 import React from "react";
 
 export default function RemixedNetWorthCard() {
@@ -953,7 +953,7 @@ export default function RemixedNetWorthCard() {
 }
 `;
 
-function PinDriftScenario() {
+function SeedDriftScenario() {
   const tree: UIPayload = {
     formatVersion: "vendo-genui/v2",
     root: "root",
@@ -962,20 +962,21 @@ function PinDriftScenario() {
       { id: "worth", component: "RemixedNetWorthCard", source: "generated" },
       { id: "sibling", component: "Text", props: { text: "Host sibling survived" } },
     ],
-    components: { RemixedNetWorthCard: driftedPinSource },
+    components: { RemixedNetWorthCard: driftedSeedSource },
     ...({
-      pinDrift: [{
-        slot: "net-worth-card",
-        component: "RemixedNetWorthCard",
-        baseHash: "sha256:maple-old",
-        baselineHash: "sha256:maple-new",
+      // ONE seed, ONE report — never a list.
+      seedDrift: {
+        component: "net-worth-card",
+        componentName: "RemixedNetWorthCard",
+        baseline: "sha256:maple-old",
+        current: "sha256:maple-new",
         reason: "baseline-changed",
-      }],
+      },
     } as object),
   } as UIPayload;
   return (
     <TreeThemeBoundary>
-      <section aria-label="Drifted remixed pin">
+      <section aria-label="Drifted remix">
         <h2>Host component updated under the remix</h2>
         <TreeView
           tree={tree}
@@ -2062,7 +2063,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-injected": return { title: "Injected payload (captured host component)", content: <InjectedTreeScenario /> };
     case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
     case "/tree-review": return { title: "Review-kind standing (pending / rejected)", content: <ReviewStandingScenario /> };
-    case "/tree-drift": return { title: "Pin drift (host component updated)", content: <PinDriftScenario /> };
+    case "/tree-drift": return { title: "Seed drift (host component updated)", content: <SeedDriftScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
     case "/tree-wire": return { title: "vendo-genui/v2 — wire compile + stored render", content: <TreeWireScenario /> };

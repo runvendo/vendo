@@ -9,7 +9,8 @@ import {
 import { describe, expect, it } from "vitest";
 import { createInClientApprovals } from "../src/server/remix/inclient.js";
 import { createApps, type AppsRuntime } from "../src/server/index.js";
-import { pinComponentName, type InClientApproval, type PinBaseline } from "../src/server/remix/pins.js";
+import { seedComponentName, type SeedBaseline } from "../src/contract/index.js";
+import type { InClientApproval } from "../src/server/index.js";
 import { authoringAssembler, scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
 import { guardFixture } from "../src/server/testing/guard-fixture.js";
 import { memoryStore } from "../src/server/testing/memory-store.js";
@@ -159,7 +160,7 @@ describe("createInClientApprovals", () => {
 });
 
 describe("runtime in-client surface", () => {
-  const baseline: PinBaseline = {
+  const baseline: SeedBaseline = {
     slot: "hero-card",
     source: "export default function Hero() { return <b>host</b>; }",
     hash: "sha256:hero-base",
@@ -176,7 +177,7 @@ describe("runtime in-client surface", () => {
       guard,
       tools,
       catalog: [],
-      pinBaselines: [baseline],
+      seedBaselines: [baseline],
       model: basicLanguageModel(),
       // A rename through the ONE engine: the assembler opens the app, rewrites
       // it under the instruction's name and saves the whole thing through the
@@ -193,10 +194,10 @@ describe("runtime in-client surface", () => {
 
   const seeded = async (store: ReturnType<typeof memoryStore>, subject = "user_ada") => {
     const app = doc({
-      pins: [{ slot: "hero-card", base: "sha256:hero-base" }],
+      seed: { component: "hero-card", baseline: "sha256:hero-base" },
       components: {
         Widget: "export default function Widget() { return null; }",
-        [pinComponentName("hero-card")]: "export default function Hero() { return <b>fork</b>; }",
+        [seedComponentName("hero-card")]: "export default function Hero() { return <b>fork</b>; }",
       },
     });
     await seedAppRow(store, app, subject);

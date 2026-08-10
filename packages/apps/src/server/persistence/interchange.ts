@@ -56,7 +56,7 @@ const APP_DOCUMENT_FIELDS = [
   "triggers",
   "egress",
   "secrets",
-  "pins",
+  "seed",
   "forkedFrom",
 ] as const;
 

@@ -1,10 +1,9 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { seedBaselineSchema } from "@vendoai/actions";
 import { vendoSync } from "@vendoai/actions/sync";
-import { pinBaselineSchema } from "@vendoai/apps";
-import { VENDO_APP_FORMAT, type AppDocument, type RunContext } from "@vendoai/core";
+import { seedBaselineSchema } from "@vendoai/apps";
+import { bundleOf, seedComponentName, type RunContext } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,8 +18,8 @@ interface ModelCall {
 
 const scriptedModel = (respond: (call: ModelCall) => string): LanguageModel => ({
   specificationVersion: "v2",
-  provider: "vendo-pin-fixture",
-  modelId: "vendo-pin-fixture-v1",
+  provider: "vendo-seed-fixture",
+  modelId: "vendo-seed-fixture-v1",
   supportedUrls: {},
   async doGenerate(call: ModelCall) {
     return {
@@ -66,30 +65,9 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-describe("pin baseline schema lockstep", () => {
-  it("keeps the actions and apps persisted-baseline schemas in lockstep", () => {
-    const furnished = {
-      slot: "invoice-card",
-      source: "export default function Card() { return null; }",
-      hash: "sha256:abc",
-      exportable: true,
-      review: true,
-      capturedAt: "2026-07-14T12:00:00.000Z",
-      sourceImports: { "./Badge": "src/Badge.tsx" },
-      subSources: {
-        "src/Badge.tsx": { source: "export function Badge() { return null; }", imports: {} },
-      },
-      sampleProps: { title: "Preview" },
-      styles: [{ path: "src/app/globals.css", css: ".card { color: navy; }" }],
-    };
-
-    expect(seedBaselineSchema.parse(furnished)).toEqual(pinBaselineSchema.parse(furnished));
-  });
-});
-
-describe.sequential("captured pin baseline through the real umbrella", () => {
-  it("captures a furnished Maple slot, loads it into createApps, forks it, opens it furnished, and enforces export permission", async () => {
-    const root = await mkdtemp(join(tmpdir(), "vendo-maple-pin-"));
+describe.sequential("a captured seed baseline through the real umbrella", () => {
+  it("captures a furnished Maple slot, loads it into createVendo, seeds an app from it, opens it furnished, and enforces export permission", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-maple-seed-"));
     cleanups.push(async () => rm(root, { recursive: true, force: true }));
     await mkdir(join(root, "src"), { recursive: true });
     await mkdir(join(root, "src", "app"), { recursive: true });
@@ -126,7 +104,7 @@ export default function Page() {
     const synced = await vendoSync({ root, out: join(root, ".vendo") });
     expect(synced.remixableErrors).toEqual([]);
     expect(synced.pins).toEqual({ captured: ["MapleNetWorthCard"], drifted: [] });
-    const baseline = pinBaselineSchema.parse(JSON.parse(
+    const baseline = seedBaselineSchema.parse(JSON.parse(
       await readFile(join(root, ".vendo", "remixable", "MapleNetWorthCard.json"), "utf8"),
     ));
     expect(baseline.sourceImports).toEqual({ "./MapleTrendBadge": "src/MapleTrendBadge.tsx" });
@@ -152,60 +130,53 @@ export default function Page() {
       principal: async () => ctx.principal,
       store,
     });
-    const seed: AppDocument = {
-      format: VENDO_APP_FORMAT,
-      id: "app_fixture_identity_is_replaced",
-      name: "Maple overview",
-      ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-      },
-    };
-    const imported = await vendo.apps.importApp(seed, ctx);
 
-    // Gesture-owned forking: the user's Remix gesture, executed deterministically
-    // by the engine — the captured source is copied and the pin recorded with NO
-    // model call at all.
-    const edited = await vendo.apps.pins.fork({ appId: imported.id, slot: "MapleNetWorthCard" }, ctx);
+    // The ✦ gesture is a CREATE that starts from something: the engine copies
+    // the captured baseline into a new app's seeded seat with NO model call.
+    const app = await vendo.apps.seed.from({ component: "MapleNetWorthCard" }, ctx);
 
-    // Gesture-owned forking: the fork never reaches the model at all.
     expect(modelCalls).toBe(0);
-    expect(edited.app.pins).toEqual([{
-      slot: "MapleNetWorthCard",
-      base: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
-    }]);
-    const [componentName, pinnedSource] = Object.entries(edited.app.components ?? {})[0] ?? [];
-    expect(componentName).toMatch(/^PinnedMapleNetWorthCard/);
-    expect(pinnedSource).toBe(componentSource);
-    expect(edited.app.tree).toMatchObject({
+    expect(app.seed).toEqual({
+      component: "MapleNetWorthCard",
+      baseline: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    });
+    const componentName = seedComponentName("MapleNetWorthCard");
+    // The seat holds its own contents: the captured source verbatim, tagged
+    // seeded, with every furnishing the jail needs to run it.
+    expect(app.components?.[componentName]).toMatchObject({
+      source: componentSource,
+      origin: "seeded",
+      sourceImports: { "./MapleTrendBadge": "src/MapleTrendBadge.tsx" },
+      subSources: { "src/MapleTrendBadge.tsx": { source: badgeSource, imports: {} } },
+      styleSheets: [{ path: "src/app/globals.css", css: rootCss }],
+    });
+    expect(app.tree).toMatchObject({
       nodes: expect.arrayContaining([expect.objectContaining({
-        id: `${String(componentName).toLowerCase()}-1`,
+        id: `${componentName.toLowerCase()}-1`,
         component: componentName,
         source: "generated",
       })]),
     });
-    const surface = await vendo.apps.open(edited.app.id, ctx);
+    const surface = await vendo.apps.open(app.id, ctx);
     if (surface.kind !== "tree") throw new Error("Expected tree surface");
     expect(surface.payload).toMatchObject({
       furnishings: {
-        [componentName as string]: {
+        [componentName]: {
           sourceImports: { "./MapleTrendBadge": "src/MapleTrendBadge.tsx" },
           subSources: { "src/MapleTrendBadge.tsx": { source: badgeSource, imports: {} } },
           styles: [{ path: "src/app/globals.css", css: rootCss }],
         },
       },
     });
-    await expect(vendo.apps.exportApp(edited.app.id, ctx)).rejects.toMatchObject({
+    await expect(vendo.apps.exportApp(app.id, ctx)).rejects.toMatchObject({
       code: "blocked",
       detail: { reason: "baseline-forbids-export" },
     });
     expect(warning).toHaveBeenCalledWith(expect.stringContaining("invalid.json"));
   }, 120_000);
 
-  it("exports a fork with an exportable baseline and preserves its pin", async () => {
-    const root = await mkdtemp(join(tmpdir(), "vendo-maple-exportable-pin-"));
+  it("exports a seeded app with an exportable baseline and preserves its seed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-maple-exportable-seed-"));
     cleanups.push(async () => rm(root, { recursive: true, force: true }));
     await mkdir(join(root, "src"), { recursive: true });
     const componentSource = `export default function MapleNetWorthCard() {
@@ -227,7 +198,7 @@ export default function Page() {
     const baselineFile = join(root, ".vendo", "remixable", "MapleNetWorthCard.json");
     const captured = JSON.parse(await readFile(baselineFile, "utf8"));
     await writeFile(baselineFile, JSON.stringify({ ...captured, exportable: true }, null, 2));
-    // The fork gesture never reaches the model; the composition still wants one.
+    // The gesture never reaches the model; the composition still wants one.
     const model = scriptedModel(() => "");
     const store = createStore({ dataDir: join(root, ".data") });
     cleanups.push(async () => store.close());
@@ -238,26 +209,18 @@ export default function Page() {
       principal: async () => ctx.principal,
       store,
     });
-    const imported = await vendo.apps.importApp({
-      format: VENDO_APP_FORMAT,
-      id: "app_exportable_fixture_identity_is_replaced",
-      name: "Maple overview",
-      ui: "tree",
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
-      },
-    }, ctx);
 
-    const edited = await vendo.apps.pins.fork({ appId: imported.id, slot: "MapleNetWorthCard" }, ctx);
-    const archive = await vendo.apps.exportApp(edited.app.id, ctx);
+    const app = await vendo.apps.seed.from({ component: "MapleNetWorthCard" }, ctx);
+    const archive = await vendo.apps.exportApp(app.id, ctx);
     const exported = await vendo.apps.importApp(archive, ctx);
 
-    expect(edited.app.pins).toEqual([{
-      slot: "MapleNetWorthCard",
-      base: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
-    }]);
-    expect(exported.pins).toEqual(edited.app.pins);
+    expect(app.seed).toEqual({
+      component: "MapleNetWorthCard",
+      baseline: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    });
+    expect(exported.seed).toEqual(app.seed);
+    // The seeded seat survives the round trip with its source intact.
+    expect(bundleOf(exported.components![seedComponentName("MapleNetWorthCard")]!).source)
+      .toBe(componentSource);
   }, 120_000);
 });

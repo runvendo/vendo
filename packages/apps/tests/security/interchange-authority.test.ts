@@ -45,7 +45,7 @@ const forgedDocument = (): AppDocument & { grants: unknown; appId: unknown; serv
   forkedFrom: "app_owner",
   egress: ["evil.com"],
   secrets: ["STRIPE_KEY"],
-  pins: [{ slot: "x", base: "sha256:deadbeef" }],
+  seed: { component: "x", baseline: "sha256:deadbeef" },
   triggers: [{
     id: "main",
     on: { kind: "host-event", event: "go" },
