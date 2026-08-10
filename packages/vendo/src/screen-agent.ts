@@ -48,6 +48,7 @@ import {
   type Turn,
   inputSchemaIsBlind,
   modelToolDescription,
+  todayPromptBlock,
   UNKNOWN_INPUT_SCHEMA_NOTE,
   UNKNOWN_OUTPUT_SHAPE_NOTE,
 } from "@vendoai/core";
@@ -257,6 +258,10 @@ function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): stri
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
     input.briefing,
+    // After the pack, because the pack's design rules are what say how a date is
+    // DISPLAYED and this block defers to them. A screen for "this month" is
+    // otherwise a screen dated by the model's training prior.
+    todayPromptBlock(),
     environmentNote(input.appId, listings),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)

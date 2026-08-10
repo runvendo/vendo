@@ -54,6 +54,42 @@ export function userPromptBlock(facts: Record<string, Json> | undefined): string
   return lines.length === 0 ? undefined : ["[User]", ...lines].join("\n");
 }
 
+/**
+ * What day it is — the fact the model has no other way to learn.
+ *
+ * Without it "last month" resolves against the model's training prior: on the
+ * 2026-08-10 harness run against a world dated Aug 2026 it offered "Sep 2025"
+ * and asked the user which month they meant, twice, and sent nothing.
+ *
+ * A DATE, never a clock time. The whole system prompt is one prompt-cache
+ * prefix, so a value that moved every turn would pay a cache write every turn;
+ * a date moves once a day and the prefix holds all day. Stated in UTC, both
+ * halves off the same instant, so the two spellings can never disagree.
+ *
+ * Nothing host- or client-supplied reaches this block — it is rendered entirely
+ * from a `Date` — so there is no value in it that could forge a section, which
+ * is the same property the indent buys the two blocks below.
+ *
+ * The last line is the boundary with the host's directions: several hosts tell
+ * the agent how to SHOW a date ("Aug 1" style, never ISO). That governs what
+ * the user reads; this governs what the agent knows.
+ */
+export function todayPromptBlock(now: Date = new Date()): string {
+  const words = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  return [
+    "[Today]",
+    `Today's date is ${now.toISOString().slice(0, 10)} — ${words} (UTC).`,
+    "Resolve \"last month\", \"this week\", \"yesterday\" and every other relative date against it; never ask the user what today's date is.",
+    "That is what you know, not how you write it — how a date is shown to the user is the host's directions' call.",
+  ].join("\n");
+}
+
 /** What the user's screen currently shows, this turn only. Labeled as
  *  observation so the model reads page content as evidence, never as
  *  instruction — the half of the defence the standalone copy was missing. */

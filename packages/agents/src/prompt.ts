@@ -5,7 +5,7 @@
  * and the guard's directions. Assembled per turn because it needs the ctx a
  * `Turn` deliberately does not carry; it rides `Turn.system`.
  */
-import { situationPromptBlock, userPromptBlock, type Json, type RunContext } from "@vendoai/core";
+import { situationPromptBlock, todayPromptBlock, userPromptBlock, type Json, type RunContext } from "@vendoai/core";
 
 const BASE_RULES = [
   "You are an agent embedded in the host application, acting for the user named below.",
@@ -37,9 +37,15 @@ export function assemblePrompt(input: PromptInput): string {
   if (input.instructions !== undefined && input.instructions.trim() !== "") {
     sections.push(input.instructions.trim());
   }
-  // Both blocks — the label, the observation note, and the section-forgery
-  // indent that stops a client-supplied fact from forging a top-level
-  // `Directions` — are core's, shared verbatim with the umbrella's assembler.
+  // All three blocks — the labels, the observation note, and the
+  // section-forgery indent that stops a client-supplied fact from forging a
+  // top-level `Directions` — are core's, shared verbatim with the umbrella's
+  // assembler. `[Today]` is here for the same reason the other two are: this is
+  // the whole system prompt for a host that adopted `agent()` without a
+  // `system` hook, and an agent that does not know the date asks the user for
+  // it. The umbrella threads a clock in for its own tests; nothing here needs
+  // to, so this takes core's default.
+  sections.push(todayPromptBlock());
   const user = userPromptBlock(input.user);
   if (user !== undefined) sections.push(user);
   const situation = situationPromptBlock(input.situation);

@@ -5,7 +5,7 @@
  * catalog and the knowledge index. It rides the turn (`Turn.system`), so every
  * harness — the default one, a host's own — thinks on the same brief.
  */
-import { situationPromptBlock, userPromptBlock, type Guard, type RunContext } from "@vendoai/core";
+import { situationPromptBlock, todayPromptBlock, userPromptBlock, type Guard, type RunContext } from "@vendoai/core";
 
 const OPERATING_PROMPT = `You are Vendo's agent.
 Act through the host's available tools on behalf of the signed-in user.
@@ -124,6 +124,11 @@ export async function assembleSystemPrompt(
   // Composio-scoped tools, or neither. One assembler, never a forked prompt —
   // the mid-conversation harness swap depends on the shared policy text.
   discovery: "find-tools" | "connectors" | false = false,
+  // The clock, as a seam (core's `todayPromptBlock` owns the default). An
+  // assembler that read the wall clock itself could not be asserted on, and
+  // "the date is in the prompt" is not a property a test can pin by reading the
+  // same clock the code just read.
+  now: Date = new Date(),
 ): Promise<string> {
   const sections = [OPERATING_PROMPT];
   if (TREE_VENUES.has(ctx.venue)) sections.push(PRESENTATION_PROMPT);
@@ -141,6 +146,11 @@ export async function assembleSystemPrompt(
   // nothing the store writes). Both blocks are core's, shared verbatim with
   // @vendoai/agents' assemblePrompt: the section-forgery indent is a
   // prompt-injection defence and it gets exactly one implementation.
+  //
+  // `[Today]` leads the turn facts because it is the only one of the three that
+  // is unconditional: the other two describe a turn that may have neither a
+  // profile nor a screen, and every turn has a date.
+  sections.push(todayPromptBlock(now));
   const user = userPromptBlock(ctx.user);
   if (user !== undefined) sections.push(user);
   const situation = situationPromptBlock(ctx.context);

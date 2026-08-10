@@ -330,3 +330,64 @@ describe("the connect etiquette every discovery surface carries", () => {
     expect(seen[0]).not.toMatch(/point (the user )?(to|at) the connect/i);
   });
 });
+
+/**
+ * The date, which the agent has no other way to learn.
+ *
+ * Harness lane 2026-08-10, case `gauntlet-statements-every-account`: asked to
+ * email last month's statements against a world dated Aug 2026, the agent
+ * replied "what month counts as 'last month' for you (e.g., Sep 2025)?" and
+ * sent nothing. That was the honest answer — nothing in the 5,441-character
+ * prompt said what day it was, so "Sep 2025" is the training prior showing
+ * through. The clock is a parameter here for exactly this reason: a test that
+ * read the same wall clock the assembler read could not tell a real date from
+ * an absent one.
+ */
+describe("what day it is", () => {
+  const guard = () => createGuard({ store: memoryStoreAdapter(), policy: {} });
+  const AUG_10 = new Date("2026-08-10T12:42:43Z");
+
+  it("states the date on every discovery surface, off the injected clock", async () => {
+    for (const discovery of ["find-tools", "connectors", false] as const) {
+      const prompt = await assembleSystemPrompt(guard(), ctx(), undefined, false, discovery, AUG_10);
+      expect(prompt, String(discovery)).toContain("Today's date is 2026-08-10 — Monday, August 10, 2026");
+      expect(prompt.match(/Today's date is/g), String(discovery)).toHaveLength(1);
+    }
+  });
+
+  /** Above `Directions`, which is where the host's display rule lives ("dates
+   *  shown as 'Aug 1' style, never ISO" in the bench world). The two must not
+   *  read as one instruction: the block says the ISO date is what the agent
+   *  KNOWS, and hands the formatting question to the directions below it. */
+  it("lands above the guard's Directions and defers to them on formatting", async () => {
+    const withRule = createGuard({
+      store: memoryStoreAdapter(),
+      policy: { directions: ["Dates shown as 'Aug 1' style, never ISO."] },
+    });
+    const prompt = await assembleSystemPrompt(withRule, ctx(), undefined, false, false, AUG_10);
+    expect(prompt.indexOf("[Today]")).toBeLessThan(prompt.indexOf("\n\nDirections\n"));
+    expect(prompt).toContain("how a date is shown to the user is the host's directions' call");
+  });
+
+  /** A clock time in the prompt would invalidate the cached prefix on every
+   *  turn (~6,860 cacheRead tokens a call on the bench run). A date holds all
+   *  day, so two turns a day apart in wall-clock time get the same bytes. */
+  it("is byte-identical for two turns on the same day, so the cache prefix holds", async () => {
+    const morning = await assembleSystemPrompt(guard(), ctx(), undefined, false, false, new Date("2026-08-10T00:00:01Z"));
+    const evening = await assembleSystemPrompt(guard(), ctx(), undefined, false, false, new Date("2026-08-10T23:59:59Z"));
+    expect(morning).toBe(evening);
+  });
+
+  /** The RESIDENT harness (`harness: vendo()` → compose-harness.ts), not the
+   *  assembler's return value: the 5,441-character prompt that shipped without
+   *  a date was this door's, so a fact is only in the product once the model on
+   *  the other side of it has been handed the fact. */
+  it("reaches the model through the resident harness door", async () => {
+    const { vendo, seen } = await compose({ harness: vendoHarness() as never });
+    await (await post(vendo, { threadId: "thr_date", message: userMessage("m1", "last month's spend") })).text();
+    // The shape, not today's value: the injected-clock cases above own the
+    // value, and re-reading the wall clock here would be a test that flakes
+    // once a day at midnight.
+    expect(seen[0]).toMatch(/Today's date is \d{4}-\d{2}-\d{2} — \w+day, \w+ \d{1,2}, \d{4} \(UTC\)\./);
+  });
+});
