@@ -712,13 +712,13 @@ const cells = (text: string): number => {
     if (/[\u{FE0F}\u{200D}\u{1F3FB}-\u{1F3FF}]/u.test(segment)) { width += 2; continue; }
     const char = String.fromCodePoint(segment.codePointAt(0) ?? 0);
     if (/^[\p{Mn}\p{Me}\p{Cf}]$/u.test(char)) continue;
+    if (/^\p{Emoji_Presentation}$/u.test(char)) { width += 2; continue; }
     const point = char.codePointAt(0) ?? 0;
     const wide = (point >= 0x1100 && point <= 0x115f)
       || (point >= 0x2e80 && point <= 0xa4cf)
       || (point >= 0xac00 && point <= 0xd7a3)
       || (point >= 0xf900 && point <= 0xfaff)
-      || (point >= 0xff00 && point <= 0xff60)
-      || (point >= 0x1f300 && point <= 0x1f9ff);
+      || (point >= 0xff00 && point <= 0xff60);
     width += wide ? 2 : 1;
   }
   return width;
@@ -945,6 +945,13 @@ describe("createPrettyOutput (display width — wide glyphs and combining marks)
     // row: a one-cell base the variation selector promotes to emoji width.
     expect(displayWidth("\u2714\uFE0F")).toBe(2);
     expect(displayWidth("\u2714")).toBe(1);
+    // Emoji width is the Emoji_Presentation PROPERTY, not a hand-kept range
+    // table: a block Unicode added recently is two cells the day it lands...
+    expect(displayWidth("\u{1FA70}")).toBe(2);  // U+1FA70, Extended-A
+    expect(displayWidth("\u{1FAF6}")).toBe(2);  // U+1FAF6, added later still
+    // ...and a pictograph a terminal draws as TEXT stays one.
+    expect(displayWidth("\u2122")).toBe(1);     // ™
+    expect(displayWidth("\u2600")).toBe(1);     // ☀
   });
 
   it("select: an emoji option that a code-point count would under-measure still prints once", async () => {

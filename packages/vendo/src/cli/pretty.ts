@@ -156,16 +156,21 @@ function styleInline(text: string, reopen = ""): string {
     `é`) and format characters (Cf — the zero-width joiner, variation
     selectors' friends). A terminal draws them into the PREVIOUS cell. */
 const ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cf}]$/u;
-/** The blocks a terminal draws in TWO cells — East Asian Wide and Fullwidth,
-    plus the emoji planes. Coarse on purpose: the full table is enormous, and
-    these are the ranges a CLI actually meets (CJK, Kana, Hangul, fullwidth
-    forms, CJK extensions). */
+/** Emoji are two cells wherever they live, and the ones that are two cells by
+    DEFAULT are exactly `Emoji_Presentation` — which is why this is a property
+    and not a list: a hand-kept emoji range table silently under-measures every
+    block Unicode adds next (it did: U+1FA70 `🩰` fell through as one cell), and
+    under-measuring is the direction that overflows a row. It also correctly
+    leaves `™`, `☀` and `✔` at one cell, since a terminal draws those as text
+    unless a variation selector says otherwise. */
+const EMOJI_WIDE = /^\p{Emoji_Presentation}$/u;
+/** The East Asian Wide and Fullwidth blocks, which are not an emoji property:
+    CJK, Kana, Hangul, fullwidth forms, CJK extensions. */
 const WIDE_RANGES: readonly (readonly [number, number])[] = [
   [0x1100, 0x115f], [0x2e80, 0x303e], [0x3041, 0x33ff], [0x3400, 0x4dbf],
   [0x4e00, 0x9fff], [0xa000, 0xa4cf], [0xa960, 0xa97f], [0xac00, 0xd7a3],
   [0xf900, 0xfaff], [0xfe10, 0xfe19], [0xfe30, 0xfe6f], [0xff00, 0xff60],
-  [0xffe0, 0xffe6], [0x1f300, 0x1f64f], [0x1f680, 0x1f6ff], [0x1f900, 0x1f9ff],
-  [0x20000, 0x3fffd],
+  [0xffe0, 0xffe6], [0x20000, 0x3fffd],
 ];
 
 /** What forces emoji presentation, whatever the base's own width would be: the
@@ -180,6 +185,7 @@ function cellWidth(cluster: string): number {
   if (EMOJI_PRESENTATION.test(cluster)) return 2;
   const base = String.fromCodePoint(cluster.codePointAt(0) ?? 0);
   if (ZERO_WIDTH.test(base)) return 0;
+  if (EMOJI_WIDE.test(base)) return 2;
   const point = base.codePointAt(0) ?? 0;
   return WIDE_RANGES.some(([from, to]) => point >= from && point <= to) ? 2 : 1;
 }
