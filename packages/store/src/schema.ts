@@ -12,8 +12,8 @@ import type { Db } from "./db-postgres.js";
     required and this migration does not attempt it.
 
     v4 (kill-list §B3) added `vendo_sessions`, the guest-session registry. Guest
-    sessions are gone; the table's CREATE is removed here and databases that
-    already have it keep it as an orphan until the cleanup stage drops it.
+    sessions are gone; the table's CREATE is removed here and ADDITIVE_DDL now
+    drops the orphan left behind on databases that already had it.
 
     v5 (ENG-356, knowledge design v2 (2026-07-22) R1) adds the dedicated
     knowledge record collections `vendo_knowledge_docs` / `vendo_knowledge_chunks`.
@@ -289,6 +289,10 @@ const ADDITIVE_DDL = [
   // receipt written before the column existed genuinely has no known owner, and
   // every write path has supplied one since.
   "ALTER TABLE vendo_effects ADD COLUMN IF NOT EXISTS subject text NOT NULL DEFAULT ''",
+  // Guest sessions are gone, so the v4 registry is an orphan on any database that
+  // booted before its CREATE was removed. The version gate would never re-run the
+  // DDL loop on those databases, so the drop lives here and runs every boot.
+  "DROP TABLE IF EXISTS vendo_sessions",
 ] as const;
 
 // v2 backfill (runs once, only when upgrading from a version < 2 — 02 §4 keys

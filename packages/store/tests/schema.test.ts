@@ -186,6 +186,32 @@ for (const backend of backends()) {
       expect(rows.some((row) => /\(principal\)/.test(String(row.indexdef)))).toBe(true);
     });
 
+    it("drops a leftover vendo_sessions table", async () => {
+      // Guest sessions are gone and the CREATE was removed without a version bump,
+      // so a database that booted on v4 still carries the orphan; ADDITIVE_DDL's
+      // drop is the only thing that removes it.
+      await made.sql("CREATE TABLE vendo_sessions (subject text PRIMARY KEY, touched_at timestamptz NOT NULL)");
+
+      await made.store.ensureSchema();
+
+      const rows = await made.sql(
+        `SELECT table_name FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = 'vendo_sessions'`,
+      );
+      expect(rows).toEqual([]);
+    });
+
+    it("is a no-op on a database that never had vendo_sessions", async () => {
+      // The previous test left it dropped; running again must not error.
+      await made.store.ensureSchema();
+
+      const rows = await made.sql(
+        `SELECT table_name FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = 'vendo_sessions'`,
+      );
+      expect(rows).toEqual([]);
+    });
+
     it("rejects a future schema version as a conflict", async () => {
       await made.sql("UPDATE vendo_meta SET value = '999'::jsonb WHERE key = 'schema_version'");
       await made.store.close();

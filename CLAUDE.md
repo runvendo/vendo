@@ -54,6 +54,8 @@ generated UI in a sandboxed, brand-native surface.
 - Local gate = `pnpm build && pnpm test:affected && pnpm typecheck && pnpm lint`
   on the touched scope. The FULL suite runs only in CI — the PR's green `ci`
   check is the gate of record; never run the full suite locally.
+- After any `@vendoai` npm release, bump `vendo-web`'s `@vendoai` deps to the
+  new version in the same session.
 
 ## Tests
 
