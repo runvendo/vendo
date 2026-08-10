@@ -74,6 +74,24 @@ function displayText(row: Record<string, unknown>, column: DataTableColumn): str
 
 const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
 
+/**
+ * A row is ONE line tall whatever the data says, without the writer asking.
+ * Two different wraps were making rows two-to-five lines tall:
+ *  - a formatted value split across lines ("Aug 1," / "2026", "$1,284" / ".00")
+ *    whenever the auto layout squeezed its column. Those columns are `nowrap`,
+ *    so the column is sized to the whole value and the value is never broken.
+ *  - a long text cell (a 94-character payee) wrapped to five lines. Text cells
+ *    stay WRAPPABLE for width purposes — that is what keeps the table inside
+ *    its container instead of a horizontal scroll — and are clamped to a single
+ *    line with an ellipsis, with the full text on `title`.
+ */
+const oneLine: CSSProperties = {
+  display: "-webkit-box",
+  WebkitBoxOrient: "vertical",
+  WebkitLineClamp: 1,
+  overflow: "hidden",
+};
+
 export function DataTable(props: DataTableProps) {
   const {
     rows: rawRows,
@@ -295,6 +313,9 @@ export function DataTable(props: DataTableProps) {
                 <tr key={row.id}>
                   {row.getVisibleCells().map((cell) => {
                     const col = columns.find((c) => c.key === cell.column.id);
+                    const isValue = Boolean(col?.format && col.format !== "text");
+                    const rendered = flexRender(cell.column.columnDef.cell, cell.getContext());
+                    const full = col ? displayText(row.original, col) : "";
                     return (
                       <td
                         key={cell.id}
@@ -302,10 +323,17 @@ export function DataTable(props: DataTableProps) {
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
                           padding: cellPad,
                           textAlign: alignCss(col?.align),
-                          fontVariantNumeric: col?.format && col.format !== "text" ? "tabular-nums" : undefined,
+                          fontVariantNumeric: isValue ? "tabular-nums" : undefined,
+                          whiteSpace: isValue ? "nowrap" : undefined,
                         }}
                       >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        {isValue ? (
+                          rendered
+                        ) : (
+                          <div style={oneLine} title={full || undefined}>
+                            {rendered}
+                          </div>
+                        )}
                       </td>
                     );
                   })}
