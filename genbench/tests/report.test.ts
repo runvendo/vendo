@@ -125,6 +125,29 @@ describe("the preview page", () => {
     expect(html).toContain(onPage({ ok: true }));
   });
 
+  it("says why a control that called no tool was still counted as wired", async () => {
+    const result = resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers.");
+    const html = await preview(
+      [
+        {
+          ...result,
+          floor: {
+            ...PASSING,
+            wiredActions: {
+              pass: true,
+              bindings: [{ where: "Next", kind: "state", known: true, argsValid: true }],
+            },
+          },
+        },
+      ],
+      { "pending-transfers": world },
+    );
+
+    // Otherwise the row reads as a bare checkmark beside a control that asked the
+    // host for nothing, which is the thing this check exists to catch.
+    expect(html).toContain("changed the view · no tool needed");
+  });
+
   it("prints every rubric line with its verdict and the evidence the judge named", async () => {
     const html = await preview([resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers.")], {
       "pending-transfers": world,

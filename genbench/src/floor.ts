@@ -48,6 +48,9 @@ export interface Binding {
   readonly where: string;
   /** Absent when the press fired nothing at all. */
   readonly tool?: string;
+  /** What the press turned out to be: a call to the host (`tool`), a change to
+   *  what the screen shows and no call (`state`), or neither (`dead`). */
+  readonly kind: "tool" | "state" | "dead";
   readonly known: boolean;
   readonly argsValid: boolean;
   readonly why?: string;
@@ -260,23 +263,40 @@ function checkArgs(args: unknown, schema: Record<string, unknown>): string | und
 }
 
 /** What the probe actually saw fire, graded against the world. A control that was
- *  pressed and asked for nothing is the failure this replaced a static scan to
+ *  pressed and did nothing at all is the failure this replaced a static scan to
  *  catch: a screen can name a tool in its document and still be dead in a
- *  browser. A screen with nothing to press passes vacuously. */
+ *  browser.
+ *
+ *  Calling a tool is not the only way to be wired. A drill-down row, a wizard's
+ *  Next and a tab move the view and are right to ask the host for nothing, so a
+ *  press that verifiably CHANGED what the screen shows counts — and a press that
+ *  changed nothing and called nothing is still dead. A screen with nothing to
+ *  press passes vacuously. */
 export function wiredActions(trace: readonly Probed[], world: World): WiredActionsResult {
   const bindings = trace.flatMap((candidate): Binding[] => {
     if (candidate.calls.length === 0) {
-      return [{ where: candidate.label, known: false, argsValid: false, why: "pressing it called nothing" }];
+      return [
+        candidate.changedView
+          ? { where: candidate.label, kind: "state", known: true, argsValid: true }
+          : {
+              where: candidate.label,
+              kind: "dead",
+              known: false,
+              argsValid: false,
+              why: "pressing it called nothing and changed nothing on screen",
+            },
+      ];
     }
     return candidate.calls.map((call): Binding => {
       const tool = world.tools.find((known) => known.name === call.name);
       if (tool === undefined) {
-        return { where: candidate.label, tool: call.name, known: false, argsValid: false, why: `no tool named "${call.name}"` };
+        return { where: candidate.label, tool: call.name, kind: "tool", known: false, argsValid: false, why: `no tool named "${call.name}"` };
       }
       const why = checkArgs(call.args, tool.descriptor.inputSchema as Record<string, unknown>);
       return {
         where: candidate.label,
         tool: call.name,
+        kind: "tool",
         known: true,
         argsValid: why === undefined,
         ...(why === undefined ? {} : { why }),

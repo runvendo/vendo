@@ -39,7 +39,7 @@ const bindingList = (bindings: readonly Binding[]): string =>
       ? ["<li><span>nothing on this screen to press</span></li>"]
       : bindings.map(
           (b) =>
-            `<li><code>${escape(b.where)}</code> <span>${[b.tool, b.why]
+            `<li><code>${escape(b.where)}</code> <span>${[b.kind === "state" ? "changed the view · no tool needed" : b.tool, b.why]
               .filter((part) => part !== undefined)
               .map(escape)
               .join(" — ")}</span> ${b.known && b.argsValid ? '<i class="ok">✓</i>' : '<i class="no">✕</i>'}</li>`,

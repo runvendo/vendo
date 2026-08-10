@@ -165,17 +165,40 @@ describe("the money-scale tolerance", () => {
 
 describe("wiredActions", () => {
   const pressed = (name: string, args: unknown): Probed[] => [
-    { label: "Cancel", confirmed: false, calls: [{ name, args }] },
+    { label: "Cancel", confirmed: false, changedView: false, calls: [{ name, args }] },
   ];
 
   it("passes a real tool called with the arguments it declares", () => {
-    expect(wiredActions(pressed("cancel_transfer", { id: "tr_1" }), world).pass).toBe(true);
+    const result = wiredActions(pressed("cancel_transfer", { id: "tr_1" }), world);
+    expect(result.pass).toBe(true);
+    expect(result.bindings[0]).toMatchObject({ kind: "tool", tool: "cancel_transfer" });
   });
 
-  it("fails a control that was pressed and called nothing", () => {
-    const result = wiredActions([{ label: "Cancel", confirmed: false, calls: [] }], world);
+  it("fails a control that was pressed and neither called nor changed anything", () => {
+    const result = wiredActions([{ label: "Cancel", confirmed: false, changedView: false, calls: [] }], world);
     expect(result.pass).toBe(false);
-    expect(result.bindings[0]).toMatchObject({ where: "Cancel", known: false, why: "pressing it called nothing" });
+    expect(result.bindings[0]).toMatchObject({
+      where: "Cancel",
+      kind: "dead",
+      known: false,
+      why: "pressing it called nothing and changed nothing on screen",
+    });
+  });
+
+  /** A drill-down row, a tab and a wizard's Next are right to ask the host for
+   *  nothing — what they do is move the screen, and the probe watched them do it. */
+  it("counts a control that called nothing but changed the view", () => {
+    const result = wiredActions([{ label: "Next", confirmed: false, changedView: true, calls: [] }], world);
+    expect(result.pass).toBe(true);
+    expect(result.bindings[0]).toEqual({ where: "Next", kind: "state", known: true, argsValid: true });
+  });
+
+  /** The view change is no excuse for a call that is wrong: what fired is still
+   *  graded, so a tab that calls a tool the world does not have still fails. */
+  it("still grades the call when a press both changed the view and fired", () => {
+    const result = wiredActions([{ label: "Last 90 days", confirmed: false, changedView: true, calls: [{ name: "get_spending_ever", args: {} }] }], world);
+    expect(result.pass).toBe(false);
+    expect(result.bindings[0]).toMatchObject({ kind: "tool", why: 'no tool named "get_spending_ever"' });
   });
 
   it("fails a tool the world does not have", () => {
