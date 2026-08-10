@@ -2,7 +2,6 @@ import {
   VendoError,
   isoDateTimeSchema,
   type AppId,
-  type IsoDateTime,
   type RecordStore,
   type StoreAdapter,
   type VendoRecord,

@@ -488,20 +488,6 @@ describe("a save whose text left a seeded component out", () => {
     expect((await rowOf(store))?.doc?.components?.[name]).toContain("2");
   });
 
-  /** The host component as `vendo sync` captured it. */
-  const captured = (source: string, hash: string): SeedBaseline => ({
-    slot,
-    source,
-    hash,
-    exportable: false,
-    capturedAt: "2026-08-03T00:00:00.000Z",
-  });
-  const HOST_OLD = `export default function Header() {
-  return <h1>Maple</h1>;
-}`;
-  const HOST_NEW = `export default function Header() {
-  return <h1>Maple Bank</h1>;
-}`;
 
 });
 

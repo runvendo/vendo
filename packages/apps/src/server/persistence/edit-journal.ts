@@ -6,7 +6,6 @@
  * Lifted out of `createApps` unchanged.
  */
 import {
-  VENDO_TREE_FORMAT,
   VendoError,
   safeErrorMessage,
   type AppId,
@@ -16,7 +15,6 @@ import {
   bundleOf,
   type AppDocument,
   type ScreenAssembler,
-  type Tree,
   type AdmissionOrigin,
 } from "../../contract/index.js";
 import { appMemoryBrief } from "./app-memory.js";
@@ -51,8 +49,7 @@ export const withoutId = (app: AppDocument): Omit<AppDocument, "id"> => {
   return document;
 };
 
-const createEditResults = (deps: Pick<AppsRuntimeContext, "config">) => {
-  const { config } = deps;
+const createEditResults = () => {
   const failedEdit = (
     app: AppDocument,
     instruction: string,
@@ -376,7 +373,7 @@ const createEditAssembler = (
 export const createEditJournal = (
   deps: Pick<AppsRuntimeContext, "config" | "apps" | "history" | "requireOwned">,
 ) => {
-  const results = createEditResults(deps);
+  const results = createEditResults();
   const notices = createEditNotices(deps);
   const persist = createEditPersist({ ...deps, ...notices });
   const intents = createEditIntents();
