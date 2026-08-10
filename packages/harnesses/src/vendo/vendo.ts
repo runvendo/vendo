@@ -19,7 +19,7 @@
 import { z } from "zod";
 import { modelToolDescription, type Harness, type Json, type Turn } from "@vendoai/core";
 import { readCompactionState, writeCompactionState, type CompactionState } from "./compaction.js";
-import { startTurn, type TurnCompaction, type TurnContext } from "./loop.js";
+import { startTurn, type ModelEffort, type TurnCompaction, type TurnContext } from "./loop.js";
 import { contextWindowTokens, rememberResolvedModelId } from "./model-windows.js";
 import { isContextOverflow } from "./overflow.js";
 import {
@@ -53,6 +53,13 @@ const SPECIALIST_SYSTEM =
   + "at most three sentences. Your reply is read by another agent, not by a person.";
 
 const HIRE_SUBAGENT = "hire_subagent";
+
+/** What an aborted turn says, on BOTH carriers (see the `abort` case). Written
+ *  for the person, and it claims nothing it cannot know: a signal says the turn
+ *  was stopped, never by whom or why, and work already committed through
+ *  `turn.tools.call()` stays committed — so it must not promise that nothing
+ *  happened. */
+const TURN_ABORTED = "This turn was stopped before it finished, so what I was doing may be incomplete.";
 
 /**
  * What a specialist is handed instead of the skill it was hired with, when that
@@ -95,6 +102,10 @@ export interface VendoHarnessOptions {
   contextTokenBudget?: number;
   maxOutputTokens?: number;
   maxRetries?: number;
+  /** How hard the model may think this turn ({@link TurnContext.effort}); unset
+   *  leaves the provider's default, which is unbounded extended thinking on the
+   *  Claude 5 line. */
+  effort?: ModelEffort;
   /** Override the window this seat is assumed to have. The BYO escape for a
    *  model {@link contextWindowTokens}'s table cannot name. */
   contextWindowTokens?: number;
@@ -108,6 +119,7 @@ const CONTEXT_KNOBS = [
   "contextTokenBudget",
   "maxOutputTokens",
   "maxRetries",
+  "effort",
   "contextWindowTokens",
 ] as const;
 
@@ -146,6 +158,9 @@ export interface VendoHarnessDeps {
   /** How many times the SDK re-issues a failed provider call ({@link
    *  DEFAULT_MAX_RETRIES}); `0` spends nothing. */
   maxRetries?: number;
+  /** This deployment's thinking budget ({@link TurnContext.effort}) — the door a
+   *  specialist built on `vendo()` sets, and the one a host overrides. */
+  effort?: ModelEffort;
   /** The window this deployment's seat is assumed to have, when the shipped
    *  table is wrong about it. Q1a: this lives on the harness and nowhere else —
    *  it is a fact about a model, not a product decision a host composes. */
@@ -401,10 +416,13 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       if (model === undefined) {
         throw new Error("vendo() thinks with `turn.models.default`, and this turn carries no default seat");
       }
-      const resolved: Partial<Record<(typeof CONTEXT_KNOBS)[number], number>> = {};
+      // Each knob keeps its OWN type (they are not all numbers since `effort`),
+      // and `Object.assign` is what writes one member of a mapped type under a
+      // key the loop only knows as the union.
+      const resolved: { [K in (typeof CONTEXT_KNOBS)[number]]?: VendoHarnessOptions[K] } = {};
       for (const knob of CONTEXT_KNOBS) {
         const value = turn.options?.[knob] ?? deps[knob];
-        if (value !== undefined) resolved[knob] = value;
+        if (value !== undefined) Object.assign(resolved, { [knob]: value });
       }
       // The window is not one of the loop's `TurnContext` knobs — it configures
       // COMPACTION, which is its own shape. It rides the same resolution list
@@ -621,6 +639,9 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
 
       /** The turn's single retry, spent. */
       let retried = false;
+      /** Whether anything has reached the screen yet — so the sentences this
+       *  function appends below join prose instead of colliding with it. */
+      let spoke = false;
       for (;;) {
         /** Set when THIS attempt died on a prompt that did not fit. */
         let overflowed = false;
@@ -628,6 +649,7 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           for await (const part of loop.result.fullStream) {
             switch (part.type) {
               case "text-delta":
+                if (part.text !== "") spoke = true;
                 yield { type: "text", delta: part.text };
                 break;
               case "finish-step":
@@ -657,7 +679,21 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
                 yield { type: "error", message: wireErrorMessage(part.error), code: "model" };
                 break;
               case "abort":
-                // The caller hung up: stop cleanly, say nothing.
+                // Stopping cleanly is not the same thing as stopping SILENTLY,
+                // which is what this used to do. A turn cut short mid-work is
+                // the one outcome nobody can see from the outside: the caller
+                // read a finished stream with no failure on it and could not
+                // tell a silent success from a dead turn, and the person waiting
+                // watched the chat go quiet under a half-finished job. So both
+                // carriers say so, in the ONE sentence, and neither can drift:
+                // the assistant's own voice closes the message it was writing…
+                yield { type: "text", delta: spoke ? `\n\n${TURN_ABORTED}` : TURN_ABORTED };
+                // …and an `error` is the failure the caller sees (the runtime's
+                // `failure` on the audit row, the host's banner). The signal's
+                // own `reason` is deliberately not repeated: it is a
+                // DOMException message, i.e. an internal, and §1.5's `error` is
+                // consumer-voice.
+                yield { type: "error", message: TURN_ABORTED, code: "aborted" };
                 return;
               case "finish":
                 // The RESIDENT loop's own spend. Each hire's spend is yielded as
@@ -744,6 +780,18 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // without the summary, which is exactly the split intended: a stale
       // boundary says nothing about which tools the thread loaded.)
       else if (stored !== undefined) turn.state.clear();
+
+      // The question `askedUserStop` ended the turn on, delivered as the reply.
+      // `ask_user` instructs the model to ask in its own words as its final
+      // message and the stop condition removes that message, so without this the
+      // turn ends wordless on the one occasion the user is being asked for
+      // something. It costs no round-trip — the loop reads the model's own
+      // argument back off the step that stopped the turn — and it is skipped
+      // whenever that step spoke, so nothing is ever asked twice.
+      const question = await loop.unspokenQuestion();
+      if (question !== undefined) {
+        yield { type: "text", delta: spoke ? `\n\n${question}` : question };
+      }
 
       const stepLimit = await loop.stepLimitPart();
       if (stepLimit !== undefined) {

@@ -68,6 +68,7 @@ import {
 } from "@vendoai/apps";
 import type { LanguageModel } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
+import type { ModelEffort } from "@vendoai/harnesses/vendo";
 
 /**
  * The whole budget for assembling one screen.
@@ -81,6 +82,49 @@ import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harn
  * for a BUILD, and `escalate` is the honest exit rather than a bigger number.
  */
 export const SCREEN_STEPS = 10;
+
+/**
+ * How hard the assembler may think (`vendo({ effort })`).
+ *
+ * `"low"`, for the same reason `SCREEN_STEPS` is 10: this loop is a SPECIALIST
+ * that must produce a document, not a resident reasoning about an open-ended
+ * ask. It is handed the briefing pack, a closed loadout and a job description —
+ * the work is writing the screen, and every token spent thinking about it is a
+ * token the person waits for and never sees.
+ *
+ * Unbounded is what the provider does when nobody says otherwise (extended
+ * thinking is on across the Claude 5 line), and it is not free. Measured live
+ * 2026-08-10 on `maple/spend-overview`, sonnet-5, one unbounded run: a single
+ * model call spent 240s and 13.7K output tokens to emit a 623-character
+ * `validate` argument — 83% of a 292s run inside reasoning nobody reads. The
+ * five-case genbench sweep behind this value is in the shipping PR: `low` was
+ * the fastest level that lost no floor verdict and no rubric line.
+ *
+ * A deployment that disagrees passes `ScreenAssemblerDeps.effort`.
+ */
+export const SCREEN_EFFORT: ModelEffort = "medium";
+
+/**
+ * The repair round's whole budget: ONE model call, ONE hand.
+ *
+ * The reviewer hands over a locus and the real alternative for every finding
+ * (`checking/reviewer.ts`'s `report_findings`), `repairInstruction` passes those
+ * sentences through verbatim, and the document itself rides on the message. So
+ * nothing is left to discover here — the only work is writing the corrected
+ * document, and `save_app` is the one tool that does it. A repair that has to
+ * search a catalog or re-read a shape is a repair that was not told what was
+ * wrong, and that is a bug in the finding, not a reason for a budget.
+ *
+ * Sized off the measurement rather than off symmetry with {@link SCREEN_STEPS}.
+ * Over the 34 reviewed screens in the app-gen bench (072edfff8), the 7 whose
+ * review found something spent a MEDIAN 94.8s in this round (69.5s–214.8s), every
+ * second of it AFTER the person's screen was already up, and 4 of the 7 spent
+ * steps back in `search_components` shopping for components instead of applying
+ * the fixes they had just been handed. The loop spends whatever budget it has, so
+ * the budget is the fix. The 27 clean reviews build none of this and cost only the
+ * reviewer itself (median 4.4s).
+ */
+const REPAIR_STEPS = 1;
 
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
@@ -118,6 +162,9 @@ const ASSEMBLY_TOOLS: readonly string[] = [
  */
 export interface ScreenSurface {
   readonly models: SeatModels<LanguageModel>;
+  /** How hard the seat may think, when the deployment overrides
+   *  {@link SCREEN_EFFORT}. A fact about the brain, so it rides beside the seats. */
+  readonly effort?: ModelEffort;
   readonly tools: TurnTools;
   /** Wrapped by the render seam before it gets here, so `commit()` paints. */
   readonly workspace: WorkspaceFs;
@@ -482,27 +529,32 @@ export async function assembleScreen(
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
+    // Bounded thinking, on purpose — see SCREEN_EFFORT.
+    effort: surface.effort ?? SCREEN_EFFORT,
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
     // in as its first section, so letting the turn's copy through would say it
     // twice.
     system: () => screenBrief(input, listings),
   });
   /**
-   * One drive of the loop. The events MUST be drained or nothing runs. Nothing is
+   * One drive of one loop. The events MUST be drained or nothing runs. Nothing is
    * teed and nothing is buffered: this loop produces no prose for a person — the
    * screen is the answer and the front door speaks the receipt.
    *
-   * It takes the messages because the review below needs a SECOND drive, and a
-   * repair round that went through different code than the turn would be a second
-   * way to drive the same loop (`claude-code/index.ts`'s `round` for the same
-   * reason).
+   * It takes the loop and the messages because the review below drives a DIFFERENT
+   * loop over the same turn — one hand, one step ({@link REPAIR_STEPS}) — and both
+   * drains have to be this one, or a rail could be drained in assembly and dropped
+   * in repair (`claude-code/index.ts`'s `round` for the same reason).
    */
-  const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
-    for await (const event of harness.run({ ...turn, messages })) {
+  const drive = async (
+    loop: ReturnType<typeof vendo>,
+    messages: Turn<VendoHarnessOptions>["messages"],
+  ): Promise<void> => {
+    for await (const event of loop.run({ ...turn, messages })) {
       if (event.type === "error") failure ??= event.message;
     }
   };
-  await drive(turn.messages);
+  await drive(harness, turn.messages);
 
   if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
   // Escalation wins over a partial paint: the builder is finishing this app, and
@@ -523,7 +575,7 @@ export async function assembleScreen(
      * it never ran, because it fires only when the writing model volunteers to
      * call `validate({appId})`. So the gate asks, once, at the end.
      *
-     * ONE repair round, for the brain's own reason (`claude-code/index.ts`): being
+     * ONE repair CALL, for the brain's own reason (`claude-code/index.ts`): being
      * shown exactly what is wrong fixes it on the first try or not at all, and a
      * second round is the person waiting longer for the same answer. Whatever
      * survives it stands — the screen has already painted, and the honest thing is
@@ -549,16 +601,31 @@ export async function assembleScreen(
       // the repair round has none of the first one's context — and a repair with no
       // document in front of it is a rewrite from scratch.
       const saved = await turn.workspace.readFile(appPath).catch(() => undefined);
-      await drive([...turn.messages, {
-        id: `repair_${input.appId}`,
-        role: "user",
-        parts: [{
-          type: "text",
-          text: saved === undefined
-            ? instruction
-            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
+      await drive(
+        // The SAME brief and the same seat: the correction is written in the same
+        // dialect against the same product, and an identical prefix is a
+        // prompt-cache READ rather than a second write of a 47K-character brief.
+        // What differs is the budget and the loadout — one call, one hand, no
+        // catalog to shop in and no verb to deliberate with (see REPAIR_STEPS).
+        vendo({
+          tools: [saveApp],
+          maxSteps: REPAIR_STEPS,
+          effort: surface.effort ?? SCREEN_EFFORT,
+          system: () => screenBrief(input, listings),
+        }),
+        [...turn.messages, {
+          id: `repair_${input.appId}`,
+          role: "user",
+          parts: [{
+            type: "text",
+            text: saved === undefined
+              ? instruction
+              : `${instruction}\n\nThis is the document you saved. Save the whole corrected version in one `
+                + `${SAVE_APP_TOOL} call — that hand is the only tool you have here, and this is your only step:`
+                + `\n${saved}`,
+          }],
         }],
-      }]);
+      );
     }
     return {
       kind: "assembled",
@@ -574,6 +641,10 @@ export async function assembleScreen(
 export interface ScreenAssemblerDeps {
   /** The seats, as `Turn.models` carries them. */
   models: SeatModels<LanguageModel>;
+  /** This deployment's thinking budget for assembly; unset means
+   *  {@link SCREEN_EFFORT}. The way out of the default, for a host whose screens
+   *  are worth the extra minutes. */
+  effort?: ModelEffort;
   /** The GUARD-BOUND registry (`VendoGuard.bind(hostTools)`) — the same choke
    *  point every harness's calls pass through. */
   tools: ToolRegistry;
@@ -643,6 +714,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
       const result = await assembleScreen(
         {
           models: deps.models,
+          ...(deps.effort === undefined ? {} : { effort: deps.effort }),
           tools: registryTools(deps.tools, ctx),
           workspace,
           // The front door owns cancellation: `vendo_make` resolves or it does
