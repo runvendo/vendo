@@ -194,12 +194,29 @@ surface as any other install: do the install below, then [MCP door](#mcp-door).
 
 ## MCP door
 
-Additive to the install flow above: take these in order once init has run, and
-skip none of its steps.
+Additive to the install flow above: take these in order, and skip none of the
+install's own steps.
 
-1. **`mcp: true` plus the OAuth adapter.** Add `mcp: true` to the
-   `createVendo({...})` init wrote. The door mints its own principals through a
-   `HostOAuthAdapter`, and `createVendo` THROWS at composition without one.
+Run step 4 with `--use-case mcp` (interactively: pick **outside agents over
+MCP**) and init writes 1 and 2 below for you — the composition with
+`mcp: true`, a thin catch-all route over it, and the origin-root discovery
+route:
+
+```bash
+npx vendo init --yes --use-case mcp --auth authJs --base-url https://app.example.com
+```
+
+That path needs Next.js and one of the four zero-arg presets,
+`--auth authJs|clerk|supabase|auth0`. On anything else — Express, `--auth none`,
+or `--auth jwt` (init prints the recipe instead: it cannot guess your signing
+secret) — it prints why and writes nothing MCP, and 1 and 2 are yours to wire.
+`--posture broker` and `--service-key` answer the two extra questions the MCP
+path asks; 3 is always yours.
+
+1. **`mcp: true` plus the OAuth adapter.** Written by `--use-case mcp`; add it
+   to the `createVendo({...})` init wrote otherwise. The door mints its own
+   principals through a `HostOAuthAdapter`, and `createVendo` THROWS at
+   composition without one.
    Every named preset carries it, so `--auth authJs|clerk|supabase|auth0` (or
    `jwt({ secret })`) is the whole answer; `--auth none` is NOT — it writes a
    demo `principal` and no oauth seam, so the door stays shut until that seam is
@@ -241,9 +258,10 @@ skip none of its steps.
    door, while `vendo_make` and the apps tools work. Every client acts as that
    one person: a demo or an internal tool, not a multi-user product.
 
-2. **The discovery route — init does not write it.** The door's discovery
-   documents live at ORIGIN-ROOT paths, outside `/api/vendo`, so the catch-all
-   route never sees them and that directory needs a handler of its own:
+2. **The discovery route.** Also written by `--use-case mcp`. The door's
+   discovery documents live at ORIGIN-ROOT paths, outside `/api/vendo`, so the
+   catch-all route never sees them and that directory needs a handler of its
+   own:
 
    ```ts
    // app/.well-known/[...vendo]/route.ts (src/app when the repo uses it)
@@ -269,13 +287,21 @@ skip none of its steps.
    VENDO_BASE_URL=https://app.example.com
    ```
 
+   `--base-url` only writes it into `.env.example`; setting it where the host
+   deploys stays your human's. Doctor FAILS
+   [`E-MCP-009`](/agents/verify#E-MCP-009) on an MCP-wired project with neither
+   this variable nor `mcp: { baseUrl }`.
+
 4. **`serviceAuth` — only when asked for.** Skip it unless the HOST's own
    backend has to act for a user who is not at a browser (a nightly job, a
    queue worker). `mcp: { serviceAuth: { keys: [...] } }` opens an RFC 8693
    exchange at the door's own token endpoint: the backend posts a key plus one
    of the host's user ids and gets back a short-lived token bound to that user.
    The keys are opaque secrets your human generates — ask before creating one
-   (Rules of engagement below). Third-party agents need none of it; they run
+   (Rules of engagement below). On the MCP init path, `--service-key` generates
+   one into `.env.local` and wires it, but only under local posture: a
+   broker-fronted door serves no token endpoint of its own, so the key is the
+   console's to create there. Third-party agents need none of it; they run
    the per-user OAuth the door already serves. Recipe:
    [MCP door](/capabilities/mcp).
 

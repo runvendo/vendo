@@ -234,6 +234,9 @@ When the door is served on a different origin than the one host routes resolve
 against, `mcp.baseUrl` carries the door's public base explicitly:
 `createVendo({ mcp: { baseUrl: "https://app.example.com" }, oauth })`.
 
+`vendo doctor` fails `E-MCP-009` on an MCP-wired composition with neither — a
+static check, so it catches this with no dev server and no network.
+
 <Warning>
   Under a path prefix, `VENDO_BASE_URL` must be the full public base *including*
   that prefix (`https://site.com/app`), or the door advertises OAuth endpoints
