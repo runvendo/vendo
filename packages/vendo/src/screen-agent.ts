@@ -280,6 +280,9 @@ interface RunRecord {
   /** The last non-empty `decisions` a save carried — this run's whole memory
    *  contribution, and what replaces the app's stored block. */
   decisions?: string;
+  /** The last document handed to `validate({document})` and never saved. A
+   *  rehearsal, not a screen — see the exit at the end of `assembleScreen`. */
+  lastValidated?: string;
 }
 
 /** Nothing to hire and nothing to load: the job description is already the whole
@@ -462,7 +465,26 @@ export async function assembleScreen(
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: {
+      /**
+       * Pass-through, plus ONE thing remembered: the document a `validate` call
+       * carried.
+       *
+       * `validate({document})` is a rehearsal — it judges bytes the seam has never
+       * seen — and a run can spend its whole budget rehearsing. 2026-08-10
+       * (`transfers-grid`): six `validate` calls, zero saves, 128s, nothing on the
+       * person's screen. Keeping the last rehearsed document is what lets the exit
+       * below hand it to the only tool that paints.
+       */
+      call: (name, args) => {
+        if (name === "validate") {
+          const document = (args as { document?: unknown } | null)?.document;
+          if (typeof document === "string" && document.trim() !== "") record.lastValidated = document;
+        }
+        return surface.tools.call(name, args);
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
@@ -510,6 +532,46 @@ export async function assembleScreen(
   // to avoid. `status: "building"` is the honest receipt, and the front door
   // stamps it.
   if (record.escalated !== undefined) return { kind: "escalate", why: record.escalated };
+
+  /**
+   * A RUN MUST NOT END WITH A DOCUMENT THAT ONLY EVER WENT THROUGH `validate`.
+   *
+   * `save_app` is the only writer and the seam is the only painter, and until here
+   * nothing insisted the two ever meet. 2026-08-10 measured 10 of 45 vendo runs
+   * delivering no screen at all, and two of the three classes are this: the loop
+   * rehearsing a document through `validate({document})` until the budget ran out
+   * (`transfers-grid`, six validates, zero saves), or simply going quiet after one
+   * host read (`accounts-total`, done at 20s). Undelivered fails every rubric line
+   * at once, so it is worth more than any amount of polish on the ones that land.
+   *
+   * Two exits, in order of what is already known. If a rehearsed document exists,
+   * hand it to the seam — it paints it or declines it under the same floor as any
+   * other save, so this cannot smuggle anything past the gate. If not, say the one
+   * fact the loop evidently does not hold, ONE round, the same law as the repair
+   * round below: being told exactly what is missing works on the first try or not
+   * at all. Both branches are dead once anything has painted.
+   */
+  if (!record.assembled && record.lastValidated !== undefined && !surface.signal.aborted) {
+    const committed = await save(turn, APP_FILE, record.lastValidated);
+    if (committed.status === "ok") {
+      record.assembled = true;
+      record.title = nameOf(record.lastValidated) ?? record.title;
+      record.painted = paintedIn(committed)?.includes(input.appId) ?? false;
+    }
+  }
+  if (!record.assembled && !surface.signal.aborted) {
+    await drive([...turn.messages, {
+      id: `paint_${input.appId}`,
+      role: "user",
+      parts: [{
+        type: "text",
+        text: "Nothing is on the person's screen. `save_app` is the only thing that puts a screen up; save the "
+          + "document now or `escalate`.",
+      }],
+    }]);
+    if (record.escalated !== undefined) return { kind: "escalate", why: record.escalated };
+  }
+
   // A model failure AFTER a screen already painted is not a failed screen.
   if (record.assembled) {
     /**
