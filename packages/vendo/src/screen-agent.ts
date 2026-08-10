@@ -198,10 +198,51 @@ export function toolBrief(listings: readonly ToolListing[]): string {
       const input = inputSchemaIsBlind(listing.inputSchema)
         ? `\n  ${UNKNOWN_INPUT_SCHEMA_NOTE}`
         : `\n  input: ${JSON.stringify(listing.inputSchema)}`;
-      return `- ${listing.name} — ${modelToolDescription(listing)}${input}${shape}`;
+      return `- ${listing.name}${riskMark(listing)} — ${modelToolDescription(listing)}${input}${shape}`;
     })
     .join("\n");
 }
+
+/**
+ * The grade this loop ALREADY reads, said out loud.
+ *
+ * The loadout filter below (`listing.risk === "read"`) admits reads and leaves
+ * every mutating tool out of the writer's hands — and then the brief listed all
+ * of them in one undifferentiated menu, so a `cancel_transfer` read exactly like a
+ * `list_transfers`. The writer bound a destructive verb without ever being told it
+ * was one, and could not have known: `risk` never crossed into any writer-facing
+ * text (`grep destructive packages/apps/src` finds checks and planners, no prompt).
+ *
+ * Anything not graded `read` is marked, EXCEPT the tools this loop hands itself:
+ * `ASSEMBLY_TOOLS` are graded `write` by a naming heuristic (see the note above
+ * them) and `validate` is the floor, so marking it would talk the writer out of
+ * the one call the brief insists on; `vendo_make` is what called this loop. What
+ * is left is exactly the set the loadout withholds — mutating and bindable-only —
+ * which is what makes the sentence beside the mark true of every tool it lands on.
+ *
+ * `ungraded` means NOBODY has graded it, and unknown is not the same as safe, so
+ * it is marked too — the conservative direction.
+ */
+const riskMark = (listing: ToolListing): string =>
+  listing.risk === "read" || listing.name === VENDO_MAKE_TOOL || ASSEMBLY_TOOLS.includes(listing.name)
+    ? ""
+    : " [CHANGES DATA]";
+
+/** What the mark MEANS, printed only where one lands: a paragraph about a mark
+ *  the list does not carry sends the reader hunting for it. */
+const mutationNote = (listings: readonly ToolListing[]): string =>
+  listings.every((listing) => riskMark(listing) === "")
+    ? ""
+    : `A tool marked **[CHANGES DATA]** is not a query and is not on your tool list — you
+cannot call it, and you never need to. It exists to be bound to an \`on*\`
+attribute, and the moment a person presses that control it changes their real
+records, for real, with nothing on this screen able to take it back. So a control
+bound to a marked tool says in its own label exactly what it will do and to what
+("Cancel transfer to Jordan Avery", never a bare "Cancel"), sits beside the row it
+acts on rather than under a list, and is never the easiest thing on the screen to
+press by accident. Everything unmarked only reads: query it freely.
+
+`;
 
 /**
  * The environment correction, and only that.
@@ -245,7 +286,7 @@ deliberate.
 
 ## This product's tools, with the shapes they return
 
-${toolBrief(listings)}`;
+${mutationNote(listings)}${toolBrief(listings)}`;
 
 /** The full brief: the shipped job description, the shipped syntax manual, the
  *  briefing pack, then what is different here. The manual and the environment
