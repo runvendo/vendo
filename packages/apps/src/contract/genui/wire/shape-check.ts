@@ -93,7 +93,9 @@ type SlotCheck =
   | { kind: "display"; prop: string }
   /** Table rows: every DISPLAYED column cell must be a scalar. `displayed`
    *  null means every row field shows (the renderer's default). */
-  | { kind: "cells"; displayed: ReadonlySet<string> | null };
+  | { kind: "cells"; displayed: ReadonlySet<string> | null }
+  /** Chart rows: every PLOTTED key must arrive as a number. */
+  | { kind: "numeric"; keys: readonly string[] };
 
 /** The column keys of a fully-literal DataTable `columns` prop; null when the
  *  prop is absent or carries bindings/unknown forms — then the renderer
@@ -111,6 +113,26 @@ const literalColumnKeys = (columns: unknown): ReadonlySet<string> | null => {
     }
   }
   return keys;
+};
+
+/** The row keys a chart PLOTS: the literal `series` keys for the axis charts,
+ *  `valueKey` for the radial ones. Non-literal entries (bindings) are invisible
+ *  to this pass and are dropped; null when nothing literal remains. */
+const plottedKeys = (node: TreeNode): readonly string[] | null => {
+  const props = node.props;
+  if (props === undefined) return null;
+  if (node.component === "LineChart" || node.component === "BarChart") {
+    if (!Array.isArray(props.series)) return null;
+    const keys = props.series.flatMap((entry) =>
+      typeof entry === "string"
+        ? [entry]
+        : isPlainObject(entry) && typeof entry.key === "string" ? [entry.key] : []);
+    return keys.length === 0 ? null : keys;
+  }
+  if (node.component === "DonutChart" || node.component === "Sparkline") {
+    return typeof props.valueKey === "string" ? [props.valueKey] : null;
+  }
+  return null;
 };
 
 const slotFor = (node: TreeNode, prop: string): SlotCheck | null => {
@@ -140,6 +162,10 @@ const slotFor = (node: TreeNode, prop: string): SlotCheck | null => {
     // defensive skip, matching the json-region discipline.
     if (columns !== undefined && literalColumnKeys(columns) === null) return null;
     return { kind: "cells", displayed: literalColumnKeys(columns) };
+  }
+  if (prop === "data") {
+    const plotted = plottedKeys(node);
+    if (plotted !== null) return { kind: "numeric", keys: plotted };
   }
   return null;
 };
@@ -182,9 +208,32 @@ const cellsMiss = (shape: ShapeType, displayed: ReadonlySet<string> | null): Mis
   };
 };
 
+/** A chart plots finite numbers: a plotted key that arrives pre-formatted (a
+ *  string, from a `format(...)` reshape step) or is absent (a typo'd
+ *  series/valueKey) plots nothing, so the chart renders its EMPTY state under a
+ *  heading that claims data. `json` and non-object rows stay defensive. */
+const numericMiss = (shape: ShapeType, keys: readonly string[]): MissReport | null => {
+  if (shape.kind !== "array" || shape.items.kind !== "object") return null;
+  const fields = shape.items.fields;
+  const kindOf = (key: string): string | null =>
+    Object.prototype.hasOwnProperty.call(fields, key) ? (fields[key] as ShapeType).kind : null;
+  const offenders = keys.filter((key) => {
+    const kind = kindOf(key);
+    return kind !== "number" && kind !== "json";
+  });
+  if (offenders.length === 0) return null;
+  const missing = offenders.filter((key) => kindOf(key) === null);
+  return {
+    message: `the chart plots ${offenders.map((key) => `"${key}" (${kindOf(key) ?? "absent"})`).join(", ")} — a chart plots finite numbers only, so this renders the EMPTY state under a heading that claims data; bind the RAW numeric field and drop the format(...) step (a Kit format="money" prop labels the axis)`,
+    available: Object.keys(fields),
+    ...(missing.length === 0 ? {} : { missing }),
+  };
+};
+
 const slotMiss = (slot: SlotCheck, shape: ShapeType): MissReport | null => {
   if (slot.kind === "options") return optionItemMiss(shape, slot.required, slot.hint);
   if (slot.kind === "display") return displaySlotMiss(shape, slot.prop);
+  if (slot.kind === "numeric") return numericMiss(shape, slot.keys);
   return cellsMiss(shape, slot.displayed);
 };
 
