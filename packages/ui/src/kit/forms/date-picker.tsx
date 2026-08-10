@@ -8,19 +8,22 @@ export interface DatePickerProps {
   value?: string;
   min?: string;
   max?: string;
+  /** The enclosing <Form>'s submit argument this field fills. */
+  name?: string;
   hint?: string;
   disabled?: boolean;
   required?: boolean;
   onChange?: (value: string) => void;
 }
 
-export function DatePicker({ label, value, min, max, hint, disabled, required, onChange }: DatePickerProps) {
+export function DatePicker({ label, value, min, max, name, hint, disabled, required, onChange }: DatePickerProps) {
   const { fieldId, helpId } = useFieldIds("date");
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
       <input
         id={fieldId}
         data-kit="DatePicker"
+        name={name}
         type="date"
         defaultValue={value}
         min={min}

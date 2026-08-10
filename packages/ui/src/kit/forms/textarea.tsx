@@ -7,19 +7,22 @@ export interface TextareaProps {
   value?: string;
   placeholder?: string;
   rows?: number;
+  /** The enclosing <Form>'s submit argument this field fills. */
+  name?: string;
   hint?: string;
   disabled?: boolean;
   required?: boolean;
   onChange?: (value: string) => void;
 }
 
-export function Textarea({ label, value, placeholder, rows = 3, hint, disabled, required, onChange }: TextareaProps) {
+export function Textarea({ label, value, placeholder, rows = 3, name, hint, disabled, required, onChange }: TextareaProps) {
   const { fieldId, helpId } = useFieldIds("textarea");
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
       <textarea
         id={fieldId}
         data-kit="Textarea"
+        name={name}
         defaultValue={value}
         placeholder={placeholder}
         rows={rows}

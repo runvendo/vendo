@@ -41,6 +41,7 @@ import { KIT_COMPONENT_NAMES, WIRE_COMPONENT_NAMES } from "../../kit/specs.js";
 import { QUERY_NAME_PATTERN, type TreeQuery, type Tree } from "../tree.js";
 import { parseAttributes } from "./attributes.js";
 import type { WireIssue } from "./expression.js";
+import { autowireFormSubmits } from "./autowire-form.js";
 import { checkBindingShapes, mirrorBindingIssues, type BindingShapeError } from "./shape-check.js";
 import { expandInlineRefs } from "./inline-refs.js";
 import { admitIslandSource, claimNodeSlot, claimQuerySlot } from "./limits.js";
@@ -65,6 +66,11 @@ export interface WireCompileOptions {
    *  single-segment inline heads (production extraction names like
    *  `host_listTransactions`). */
   inlineTools?: readonly string[];
+  /** The tools' DECLARED input schemas (`ToolDescriptor.inputSchema`), keyed by
+   *  tool name. When present, a `<Form onSubmit>` whose tool still wants a
+   *  required argument gets it wired to the field inside the form that supplies
+   *  it (autowire-form.ts) — otherwise the submit compiles to a dead button. */
+  toolInputs?: Readonly<Record<string, unknown>>;
 }
 
 /** v2 spec §2 / plan D6 — the compile result. */
@@ -519,7 +525,7 @@ const determineComplete = (state: CompileState): boolean =>
 const finishResult = (
   state: CompileState,
   name: string | undefined,
-  toolShapes: Readonly<Record<string, ShapeType>> | undefined,
+  options: WireCompileOptions | undefined,
 ): WireCompileResult => {
   // Dangling-generated reconciliation: the pre-scan marks nodes "generated"
   // cap-blind, but admitIslandSource may then drop the island (§8 size/count
@@ -544,9 +550,12 @@ const finishResult = (
   // needs the anchor) and `complete` is untouched — the engine's ship gate
   // is `bindingErrors.length > 0`. Each error also mirrors into the issue
   // stream (capped like every issue; no index — post-pass, not a cursor).
-  const bindingErrors = toolShapes === undefined
+  // The autowire runs BEFORE the shape check, so a payload it just filled in is
+  // checked like any the writer authored.
+  if (options?.toolInputs !== undefined) autowireFormSubmits(state.nodes, options.toolInputs);
+  const bindingErrors = options?.toolShapes === undefined
     ? []
-    : checkBindingShapes(state.nodes, state.queries, toolShapes);
+    : checkBindingShapes(state.nodes, state.queries, options.toolShapes);
   mirrorBindingIssues(state, bindingErrors);
   const result: WireCompileResult = {
     tree,
@@ -573,14 +582,14 @@ const compileWireUnsafe = (rawWire: string, options: WireCompileOptions | undefi
   // all, or garbage before it) degrades to the empty valid tree.
   if (!opensApp(state)) {
     issue(state, "missing-app", "expected a single <App ...>...</App> element");
-    return finishResult(state, undefined, options?.toolShapes);
+    return finishResult(state, undefined, options);
   }
   state.index += 4; // consume "<App"
   const app = parseAttributes(state, "app");
   if (app === FAILED) {
     state.eofTruncated = true;
     issue(state, "truncated-tag", "<App ...> tag was truncated at end of input");
-    return finishResult(state, undefined, options?.toolShapes);
+    return finishResult(state, undefined, options);
   }
   // D3 — only App's name attribute means anything; the rest are discarded.
   const name = typeof app.props?.name === "string" ? app.props.name : undefined;
@@ -596,7 +605,7 @@ const compileWireUnsafe = (rawWire: string, options: WireCompileOptions | undefi
       issue(state, "trailing-content", "content after </App> was dropped");
     }
   }
-  return finishResult(state, name, options?.toolShapes);
+  return finishResult(state, name, options);
 };
 
 /**

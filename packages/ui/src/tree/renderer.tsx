@@ -36,6 +36,7 @@ import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
+import { FormValues } from "../kit/forms/form.js";
 import { useKeyedState } from "../kit/state.js";
 
 export interface TreeViewProps {
@@ -188,6 +189,22 @@ export function isActionBinding(value: unknown): value is ActionBinding {
     && typeof (value as { $action?: unknown }).$action === "string";
 }
 
+/**
+ * A submitting `<Form>` hands its bound action the values of its own NAMED
+ * fields, and those values ARE the arguments (apps: `genui/wire/autowire-form.ts`
+ * gives a field the `name` of the submit argument it fills). Anything the writer
+ * declared in the payload wins: an explicit literal is a decision, not a
+ * default.
+ *
+ * Every other binding kind resolves at render time; this one cannot, because a
+ * field's value does not exist until the press.
+ */
+const withFormValues = (payload: Json | undefined, submitted: unknown): Json | undefined => {
+  if (!(submitted instanceof FormValues)) return payload;
+  const declared = typeof payload === "object" && payload !== null && !Array.isArray(payload) ? payload : {};
+  return { ...submitted.values, ...declared };
+};
+
 type BoundMode = "host" | "jail";
 
 /** Apply a binding's `$reshape` chain to the resolved value.
@@ -234,7 +251,7 @@ function bindValue(
     if (mode === "jail") {
       return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
     }
-    return () => action(value.$action, value.payload === undefined ? undefined : payload);
+    return (submitted?: unknown) => action(value.$action, withFormValues(payload, submitted));
   }
   if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, onMismatch));
   if (typeof value === "object" && value !== null) {

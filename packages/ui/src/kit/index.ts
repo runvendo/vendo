@@ -52,7 +52,7 @@ export { Select, type SelectProps, type SelectOption } from "./forms/select.js";
 export { DatePicker, type DatePickerProps } from "./forms/date-picker.js";
 export { Textarea, type TextareaProps } from "./forms/textarea.js";
 export { Checkbox, type CheckboxProps } from "./forms/checkbox.js";
-export { Form, type FormProps } from "./forms/form.js";
+export { Form, FormValues, type FormProps } from "./forms/form.js";
 export { Disclaimer, type DisclaimerProps } from "./forms/disclaimer.js";
 export { Tabs, type TabsProps, type TabItem } from "./feedback/tabs.js";
 export { Callout, type CalloutProps, type CalloutTone } from "./feedback/callout.js";

@@ -7,6 +7,8 @@ export interface InputProps {
   value?: string;
   placeholder?: string;
   type?: "text" | "email" | "number" | "password" | "search" | "tel" | "url";
+  /** The enclosing <Form>'s submit argument this field fills. */
+  name?: string;
   hint?: string;
   error?: string;
   disabled?: boolean;
@@ -15,13 +17,14 @@ export interface InputProps {
   onChange?: (value: string) => void;
 }
 
-export function Input({ label, value, placeholder, type = "text", hint, error, disabled, required, onChange }: InputProps) {
+export function Input({ label, value, placeholder, type = "text", name, hint, error, disabled, required, onChange }: InputProps) {
   const { fieldId, helpId } = useFieldIds("input");
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} error={error}>
       <input
         id={fieldId}
         data-kit="Input"
+        name={name}
         type={type}
         defaultValue={value}
         placeholder={placeholder}

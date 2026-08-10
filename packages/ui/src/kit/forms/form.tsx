@@ -1,11 +1,25 @@
 /** Form — groups fields with a submit action (W2 §The Kit). */
-import type { FormEvent, PropsWithChildren } from "react";
+import type { PropsWithChildren } from "react";
 import { font } from "../tokens.js";
 import { Button } from "./button.js";
 
+/**
+ * What a submitting Form hands its bound action: the values of its own NAMED
+ * fields, exactly as the form is showing them.
+ *
+ * A class rather than a bare record because the renderer has to tell this apart
+ * from the click event every other bound handler is called with, and sniffing an
+ * object's shape for that is a guess (`tree/renderer.tsx`). Plain HTML
+ * semantics: `name` maps a field onto a submit argument, and what submits is
+ * what is on screen — no state slot, no change handler, nothing to seed.
+ */
+export class FormValues {
+  constructor(readonly values: Readonly<Record<string, string>>) {}
+}
+
 export interface FormProps {
   /** Bound host-tool submit action (renderer-supplied). */
-  onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
+  onSubmit?: (values: FormValues) => void;
   submitLabel?: string;
   disabled?: boolean;
 }
@@ -28,7 +42,11 @@ export function Form({ onSubmit, submitLabel = "Submit", disabled, children }: P
         // visibly. Form is the one place every Kit-composed submit passes
         // through, so it — not the generated code — owns preventDefault.
         e.preventDefault();
-        onSubmit?.(e);
+        const values: Record<string, string> = {};
+        for (const [key, value] of new FormData(e.currentTarget).entries()) {
+          if (typeof value === "string") values[key] = value;
+        }
+        onSubmit?.(new FormValues(values));
       }}
       style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}
     >

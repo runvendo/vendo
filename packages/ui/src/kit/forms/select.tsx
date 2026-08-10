@@ -21,6 +21,8 @@ export interface SelectProps {
   hint?: string;
   disabled?: boolean;
   required?: boolean;
+  /** The enclosing <Form>'s submit argument this field fills. */
+  name?: string;
   /** Allow selecting several values. */
   multiple?: boolean;
   /** Bound change handler; receives the selected value(s). */
@@ -37,7 +39,7 @@ function optionLabel(opt: SelectOption, labelField?: string): string {
   return String(opt);
 }
 
-export function Select({ label, options: rawOptions, labelField, valueField, value, placeholder, hint, disabled, required, multiple, onChange }: SelectProps) {
+export function Select({ label, options: rawOptions, labelField, valueField, value, name, placeholder, hint, disabled, required, multiple, onChange }: SelectProps) {
   const { fieldId, helpId } = useFieldIds("select");
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const options = Array.isArray(rawOptions) ? rawOptions : [];
@@ -46,6 +48,7 @@ export function Select({ label, options: rawOptions, labelField, valueField, val
       <select
         id={fieldId}
         data-kit="Select"
+        name={name}
         multiple={multiple}
         defaultValue={value}
         disabled={disabled}

@@ -23,6 +23,10 @@ export const wireCompileOptionsFor = (
 ): Parameters<typeof compileWire>[1] => ({
   hostComponents: deps.catalog.map(({ name }) => name),
   inlineRefs: true,
-  ...(deps.tools === undefined ? {} : { inlineTools: deps.tools.map(({ name }) => name) }),
+  ...(deps.tools === undefined ? {} : {
+    inlineTools: deps.tools.map(({ name }) => name),
+    toolInputs: Object.fromEntries(deps.tools.flatMap(({ name, inputSchema }) =>
+      inputSchema === undefined ? [] : [[name, inputSchema] as const])),
+  }),
   ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
 });
