@@ -279,6 +279,20 @@ Tell each worker:
 - **Show what is in the data.** Every number, name, date and status on screen is
   a reference to a query: \`rows={invoices.data}\`, \`cents={invoice.total_cents}\`.
   Text you write yourself is fine for labels and headings, never for data.
+- **A control that acts on one of several things sits on that thing, and carries
+  that thing's own id.** "Give me a way to cancel one" is a control in every row,
+  never one control below the list beside a picker that makes the person choose
+  the thing all over again — that second screen is where the id gets lost. An
+  \`on*\` attribute names a tool and carries no arguments with it: it fires that
+  tool with an empty argument object. So a control that has to say WHICH one is
+  an \`<Island>\` over those same rows, calling
+  \`await tools.maple_invoice_send({ invoice_id: invoice.id })\` from the row the
+  control sits in. Every control on a screen gets pressed, and a press that calls
+  a tool with nothing in its arguments is a dead control.
+- **A confirmation names the thing it is about to act on.** Where the ask is that
+  they confirm first, the control they confirm with reads "Remind Acme Utilities
+  about $1,400" — never "Are you sure?" — and it is the only control that calls
+  the tool.
 - **Never do the arithmetic yourself, and never paste in a value you fetched.**
   Write the calculation and let it compute fresh on every render:
   \`value={sum(transactions, "amount_cents")}\`. Inside those braces: field paths,

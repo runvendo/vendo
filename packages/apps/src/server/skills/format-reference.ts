@@ -181,6 +181,11 @@ An \`on*\` attribute names a host tool: \`onClick="maple_invoice_send"\`. That i
 only way anything in an app mutates. A value that is not a legal tool name drops
 the attribute.
 
+It carries NO arguments: the tool is called with an empty argument object. That
+is everything "remind every client" needs, and never enough for "remind THIS
+one" — an action that has to say which row it is acting on is called from an
+\`<Island>\`, where the row is in scope and the call is code.
+
 ### \`<Island name="PascalName">\` — a component you write
 
 The content is raw TSX, verbatim to the **first** \`</Island>\`, with an
@@ -191,8 +196,46 @@ and nothing else can load. The name must be PascalCase and must not collide with
 a host, Kit or prewired component name. Reference it as \`<PascalName/>\`.
 ${ISLAND_BUDGET}
 
+One more name is in scope: \`tools\`, this product's own operations —
+\`await tools.maple_invoice_send({ invoice_id: invoice.id })\`, with the tool name
+written out in full. It is the only channel an island has: there is no network in
+here, and a computed name or an aliased \`tools\` reaches nothing. An island reads
+its DATA from the props you bind on it, in the same brace grammar as any other
+component — \`<PendingInvoices rows={invoices.data}/>\` — and declares no queries
+of its own.
+
 Write an island for a custom visual or client-side logic. Never for a chart — the
 Kit's charts already render their own empty state.
+
+**A control that acts on one row lives in that row**, and the call it makes
+carries that row's own id. An action attribute cannot do that — it has no
+arguments — so a row that has to act is an island over those rows:
+
+\`\`\`
+<Island name="PendingInvoices">
+export default function PendingInvoices({ rows }) {
+  const [asked, setAsked] = useState(null);
+  return (
+    <Stack gap={8}>
+      {rows.map((row) => (
+        <Row key={row.id} justify="between" align="center">
+          <Text text={row.client}/>
+          <Money cents={row.amount_cents}/>
+          {asked === row.id
+            ? <Button label={"Remind " + row.client + " about " + fmt.money(row.amount_cents)} variant="danger" onClick={() => tools.maple_invoice_send({ invoice_id: row.id })}/>
+            : <Button label="Remind" variant="secondary" onClick={() => setAsked(row.id)}/>}
+        </Row>
+      ))}
+    </Stack>
+  );
+}
+</Island>
+\`\`\`
+
+Every row comes from the query the props were bound to, and every call carries the
+id of the row its own control sits in — never a row the person had to pick again
+somewhere else. The second control is the confirmation: it names the invoice it is
+about to act on, and it is the only one that calls the tool.
 
 ---
 
