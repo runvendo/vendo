@@ -7,6 +7,21 @@
  */
 import { situationPromptBlock, userPromptBlock, type Guard, type RunContext } from "@vendoai/core";
 
+// Round-trips 2026-08-10. Two costs the model was never told about, and both are
+// shaped by how a turn runs: the turn is ONE multi-step loop, one provider
+// round-trip per step (harnesses' loop.ts), so N calls that do not depend on each
+// other issued one per step is N times the latency for the same work — and the SDK
+// already runs a step's calls concurrently, so nothing but the model's habit was
+// serialising them. The other half is the prompt itself: the transcript is re-sent
+// whole, so a figure a tool returned two turns ago is still in front of the model
+// and calling again to re-read it buys a round-trip and nothing else.
+//
+// The fence is the honesty rails right above this: thrift is reusing what a tool
+// RETURNED. A value nobody read, or an effect that was only requested, is
+// invention — and invention is more expensive than the round-trip.
+const THRIFT = `Calls that do not depend on each other belong in one step: issue them together rather than one per step — the same read over ten records is one step, not ten.
+Reuse a figure, id or name a tool already returned in this conversation instead of calling again to re-read it — but only what a tool really returned: never a value you assumed, and never one you expect a requested change to have produced.`;
+
 const OPERATING_PROMPT = `You are Vendo's agent.
 Act through the host's available tools on behalf of the signed-in user.
 Stay within the user's request and use the authority available in this context.
@@ -15,6 +30,7 @@ If a call is blocked, explain the constraint and adapt your approach.
 If a call is queued for approval, say what is pending and continue where useful.
 Never claim a tool ran unless its result confirms that it did.
 Never invent tool outputs, records, or side effects.
+${THRIFT}
 A tool result whose status is "building" (or otherwise not yet final) is not done — never say it succeeded, never describe or invent what it contains, and never report a build as anything but failed once its result says it failed.
 For away runs, clearly state what completed and what was left pending.
 When someone asks for something to look at, track, or use — a dashboard, a list, a recurring report — build them an app instead of describing the data in text; the building-apps skill is the manual.
