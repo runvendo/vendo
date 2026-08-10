@@ -345,24 +345,32 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Button",
     group: "forms",
-    summary: "Action-gated button. onClick NAMES a host tool; the runtime routes it through the guard + approval pipe. This is the only way the UI mutates.",
+    summary: "Action-gated button. onClick NAMES a host tool; the runtime routes it through the guard + approval pipe. This is the only way the UI mutates. A destructive action sets `confirm` — never hand-roll the question.",
     props: {
       label: copy(z.string(), "button text", { required: true }),
       onClick: config(action, "the host tool to run"),
       variant: config(z.enum(["primary", "secondary", "danger"]), "emphasis"),
       disabled: config(z.boolean(), "disabled state"),
+      confirm: copy(z.string(), "the question to ask before the action runs; the press opens the confirmation and only its own control calls the tool. Name what is about to happen, to which record"),
     },
-    examples: ['<Button label="Remind all" onClick="invoices.sendReminders"/>'],
+    examples: [
+      '<Button label="Remind all" onClick="invoices.sendReminders"/>',
+      '<Button label="Delete invoice" variant="danger" onClick="invoices.delete" confirm="Delete Hartwell\'s $1,200.00 invoice? This cannot be undone."/>',
+    ],
   },
   {
     name: "Form",
     group: "forms",
-    summary: "Groups fields with a submit action. onSubmit names a host tool.",
+    summary: "Groups fields with a submit action. onSubmit names a host tool. A destructive submit sets `confirm`.",
     props: {
       onSubmit: config(action, "the host tool to run on submit"),
       submitLabel: copy(z.string(), "submit button text"),
+      confirm: copy(z.string(), "the question to ask before the submit action runs; every way into the form has to answer it"),
     },
-    examples: ['<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name"/></Form>'],
+    examples: [
+      '<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name"/></Form>',
+      '<Form onSubmit="invoices.void" submitLabel="Void invoice" confirm="Void this invoice? This cannot be undone."><Select options={invoices.list({}).data} labelField="number" valueField="id"/></Form>',
+    ],
   },
   {
     name: "Disclaimer",
