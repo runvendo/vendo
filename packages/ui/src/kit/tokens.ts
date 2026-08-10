@@ -33,6 +33,27 @@ export const t = {
   motionEasing: "var(--vendo-motion-easing, cubic-bezier(0.2, 0.8, 0.2, 1))",
 } as const;
 
+/**
+ * The Kit's type scale, as multipliers of the host's base size — ORDERED, and
+ * the order is the point: one thing leads a screen. The headline is the largest
+ * text on it, above a Stat's value, above a section's Card/Surface title, above
+ * body (1). The scale used to be flat (a headline rendered at BODY size with a
+ * heavier weight, a Stat's value at 1.65×), so the biggest thing on a generated
+ * screen was whichever Stat tile happened to sit there, and a screen with two or
+ * three of them had nothing leading at all.
+ */
+export const typeScale = {
+  headline: 1.8,
+  statValue: 1.35,
+  cardTitle: 1.08,
+  surfaceTitle: 1.05,
+} as const;
+
+/** A type-scale step as a CSS font-size against the host's base. */
+export function fontSizeAt(step: number): string {
+  return `calc(var(--vendo-font-size, ${d.typography.baseSize}) * ${step})`;
+}
+
 /** Base text style shared by every Kit component. */
 export const font: CSSProperties = {
   color: t.text,

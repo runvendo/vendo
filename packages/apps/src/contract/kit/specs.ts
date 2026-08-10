@@ -84,7 +84,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Text",
     group: "values",
-    summary: "Themed text. Use variant=heading for section titles.",
+    summary: "Themed text. variant=heading is the screen's one headline (largest text, at the top); Card/Surface titles head sections.",
     props: {
       // string | number, matching the implementation (`text: ReactNode`, which
       // renders a number verbatim). The spec said `string` only, which never

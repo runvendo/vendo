@@ -13,7 +13,7 @@ import {
   type DateTimeOptions,
   type MoneyOptions,
 } from "./format.js";
-import { font, t } from "./tokens.js";
+import { font, fontSizeAt, t, typeScale } from "./tokens.js";
 
 const PLACEHOLDER = "—";
 
@@ -176,15 +176,19 @@ export interface TextProps {
   variant?: "body" | "heading" | "caption" | "label";
 }
 
-/** Themed text. Heading renders an <h3>; others render a <span>. */
+/** Themed text. Heading renders an <h3>; others render a <span>. A heading is
+ *  the screen's HEADLINE — the top of the Kit's type scale (see `typeScale`). */
 export function Text({ text, variant = "body" }: TextProps) {
+  const heading = variant === "heading";
   const style: CSSProperties = {
     color: variant === "caption" ? t.muted : t.text,
-    fontFamily: variant === "heading" ? t.headingFamily : t.fontFamily,
-    fontSize: variant === "caption" ? "var(--vendo-font-size-caption, 12.5px)" : t.fontSize,
-    fontWeight: variant === "heading" ? 650 : variant === "label" ? 600 : 400,
-    letterSpacing: "-0.011em",
-    lineHeight: variant === "heading" ? 1.3 : 1.5,
+    fontFamily: heading ? t.headingFamily : t.fontFamily,
+    fontSize: heading
+      ? fontSizeAt(typeScale.headline)
+      : variant === "caption" ? "var(--vendo-font-size-caption, 12.5px)" : t.fontSize,
+    fontWeight: heading ? 700 : variant === "label" ? 600 : 400,
+    letterSpacing: heading ? "-0.022em" : "-0.011em",
+    lineHeight: heading ? 1.2 : 1.5,
     margin: 0,
   };
   if (variant === "heading") {

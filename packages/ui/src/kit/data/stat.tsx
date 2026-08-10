@@ -1,6 +1,6 @@
 /** Stat — a KPI/metric summary with semantic formatting (W2 §The Kit). */
 import { applyFormat, type ValueFormat } from "../format.js";
-import { font, t } from "../tokens.js";
+import { font, fontSizeAt, t, typeScale } from "../tokens.js";
 
 export interface StatProps {
   /** Metric name. */
@@ -52,7 +52,10 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         style={{
           color: empty ? t.muted : emphasis,
           fontFamily: t.headingFamily,
-          fontSize: "calc(var(--vendo-font-size, 15px) * 1.65)",
+          // Below a headline on purpose: a Stat summarises the screen, it is
+          // not the screen's headline. Still the largest text on a screen that
+          // has no headline at all.
+          fontSize: fontSizeAt(typeScale.statValue),
           fontWeight: 700,
           letterSpacing: "-0.025em",
           lineHeight: 1.12,
