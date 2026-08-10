@@ -15,7 +15,9 @@ export interface ProgressProps {
 
 const TONE_FILL: Record<NonNullable<ProgressProps["tone"]>, string> = {
   accent: t.accent,
-  success: "#1e7f53",
+  // Mixed from the host accent, never a hardcoded green: a fixed hex is an
+  // invented color on any host whose brand isn't green.
+  success: `color-mix(in srgb, ${t.accent} 62%, #000)`,
   danger: t.danger,
 };
 

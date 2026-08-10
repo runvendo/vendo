@@ -9,6 +9,7 @@ import {
   formatMoney,
   formatNum,
   formatPercent,
+  signTone,
   type DateInput,
   type DateTimeOptions,
   type MoneyOptions,
@@ -27,6 +28,11 @@ function Placeholder(): ReactNode {
 
 const numeric: CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
+/** Sign-derived tone for a numeric span: negatives are danger red, and nothing
+ *  else in the value tier ever spends the danger color. */
+const signStyle = (value: number, format: "money" | "number" | "percent"): CSSProperties =>
+  signTone(value, format) === undefined ? {} : { color: t.danger };
+
 export interface MoneyProps extends MoneyOptions {
   /** Amount in integer cents (minor units). */
   cents: number;
@@ -37,7 +43,7 @@ export function Money({ cents, currency, locale }: MoneyProps) {
   const formatted = formatMoney(cents, { currency, locale });
   if (formatted === null) return <Placeholder />;
   return (
-    <span data-kit="Money" style={{ ...font, ...numeric }}>
+    <span data-kit="Money" style={{ ...font, ...numeric, ...signStyle(cents, "money") }}>
       {formatted}
     </span>
   );
@@ -70,7 +76,7 @@ export function Percent({ value, fractionDigits, whole }: PercentProps) {
   const formatted = formatPercent(value, { fractionDigits, whole });
   if (formatted === null) return <Placeholder />;
   return (
-    <span data-kit="Percent" style={{ ...font, ...numeric }}>
+    <span data-kit="Percent" style={{ ...font, ...numeric, ...signStyle(value, "percent") }}>
       {formatted}
     </span>
   );
@@ -87,13 +93,17 @@ export function Num({ value, maximumFractionDigits, notation }: NumProps) {
   const formatted = formatNum(value, { maximumFractionDigits, notation });
   if (formatted === null) return <Placeholder />;
   return (
-    <span data-kit="Num" style={{ ...font, ...numeric }}>
+    <span data-kit="Num" style={{ ...font, ...numeric, ...signStyle(value, "number") }}>
       {formatted}
     </span>
   );
 }
 
 export type EnumTone = "neutral" | "accent" | "success" | "warning" | "danger";
+
+/** Warning has no theme slot of its own: it sits between the host's danger and
+ *  its accent, so it stays in the brand's own hue family. */
+const WARNING = `var(--vendo-color-warning, color-mix(in srgb, ${t.danger} 55%, ${t.accent}))`;
 
 const TONE_STYLE: Record<EnumTone, { color: string; background: string; border: string }> = {
   neutral: {
@@ -102,15 +112,18 @@ const TONE_STYLE: Record<EnumTone, { color: string; background: string; border: 
     border: t.border,
   },
   accent: { color: t.accentText, background: t.accent, border: t.accent },
+  // Success and warning are MIXED from the theme, never invented: a hardcoded
+  // green/amber is an off-brand color on every host that isn't porcelain, and
+  // "no invented colors" is the line the theme is graded on.
   success: {
-    color: "color-mix(in srgb, #1e7f53 88%, #000)",
-    background: "color-mix(in srgb, #1e7f53 12%, var(--vendo-color-surface, #ffffff))",
-    border: "color-mix(in srgb, #1e7f53 30%, var(--vendo-color-border, #e3e3e8))",
+    color: `color-mix(in srgb, ${t.accent} 62%, #000)`,
+    background: `color-mix(in srgb, ${t.accent} 12%, ${t.surface})`,
+    border: `color-mix(in srgb, ${t.accent} 30%, ${t.border})`,
   },
   warning: {
-    color: "color-mix(in srgb, #9a6700 90%, #000)",
-    background: "color-mix(in srgb, #d4a017 16%, var(--vendo-color-surface, #ffffff))",
-    border: "color-mix(in srgb, #d4a017 34%, var(--vendo-color-border, #e3e3e8))",
+    color: `color-mix(in srgb, ${WARNING} 72%, #000)`,
+    background: `color-mix(in srgb, ${WARNING} 16%, ${t.surface})`,
+    border: `color-mix(in srgb, ${WARNING} 34%, ${t.border})`,
   },
   danger: {
     color: t.danger,

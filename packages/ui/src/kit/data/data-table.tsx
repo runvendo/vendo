@@ -15,7 +15,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { applyFormat, type ValueFormat } from "../format.js";
+import { applyFormat, signTone, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
@@ -121,6 +121,11 @@ export function DataTable(props: DataTableProps) {
           const raw = ctx.getValue();
           const formatted = applyFormat(raw, col.format ?? "text");
           if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
+          // A negative amount is a loss and reads in danger red — the cell,
+          // not the writer, spends that color (`signTone`, format.ts).
+          if (signTone(raw, col.format ?? "text") !== undefined) {
+            return <span style={{ color: t.danger }}>{formatted}</span>;
+          }
           return formatted;
         },
         // A dropdown lists the values that exist, so picking one means THIS

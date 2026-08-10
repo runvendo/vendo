@@ -188,6 +188,29 @@ export function isActionBinding(value: unknown): value is ActionBinding {
     && typeof (value as { $action?: unknown }).$action === "string";
 }
 
+/** Verbs that make a bound tool destructive by its NAME — the only signal a
+ *  rendered tree carries about what a control does. */
+const DESTRUCTIVE_VERBS: ReadonlySet<string> = new Set([
+  "cancel", "delete", "remove", "revoke", "void", "refund", "close", "terminate", "archive", "deactivate",
+]);
+
+const namesDestruction = (action: string): boolean =>
+  action
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[^A-Za-z]+/)
+    .some((word) => DESTRUCTIVE_VERBS.has(word.toLowerCase()));
+
+/** Danger emphasis is DERIVED, never a judgement the writer has to make:
+ *  Button and Form both default to the brand accent, so a submit bound to
+ *  `transfers.cancel` was STRUCTURALLY forced to be accent-green. An explicit
+ *  `variant` always wins. */
+function derivedVariant(node: TreeNode): { variant: "danger" } | undefined {
+  if (node.component !== "Button" && node.component !== "Form") return undefined;
+  if (node.props?.variant !== undefined) return undefined;
+  const action = node.props?.[node.component === "Form" ? "onSubmit" : "onClick"];
+  return isActionBinding(action) && namesDestruction(action.$action) ? { variant: "danger" } : undefined;
+}
+
 type BoundMode = "host" | "jail";
 
 /** Apply a binding's `$reshape` chain to the resolved value.
@@ -500,12 +523,13 @@ function NodeRenderer(props: NodeRendererProps) {
       );
     } else {
       const { bound, mismatch } = bindProps(node.props ?? {}, "host", props.data, props.state, invoke);
+      const derived = Implementation === kit ? derivedVariant(node) : undefined;
       // The notice replaces only the mis-bound component, never its subtree —
       // a container (Stack/Grid) with one bad prop must not swallow its valid
       // children (same containment scope as the generated paths above).
       content = mismatch !== null
         ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>
-        : <Implementation {...bound}>{children}</Implementation>;
+        : <Implementation {...bound} {...derived}>{children}</Implementation>;
     }
   }
 

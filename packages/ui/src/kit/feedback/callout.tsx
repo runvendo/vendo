@@ -14,8 +14,10 @@ const TONE: Record<CalloutTone, { accent: string; icon: string }> = {
   // Stat/Progress), so generated code reaches for it constantly — re-gate
   // 2026-07-26 arm C crashed on it four times. First-class, brand-accented.
   accent: { accent: t.accent, icon: "●" },
-  success: { accent: "#1e7f53", icon: "✓" },
-  warning: { accent: "#b8860b", icon: "▲" },
+  // Both are MIXED from the theme (same rule as EnumBadge): a hardcoded green
+  // or amber is a color the host never declared.
+  success: { accent: `color-mix(in srgb, ${t.accent} 62%, #000)`, icon: "✓" },
+  warning: { accent: `color-mix(in srgb, ${t.danger} 55%, ${t.accent})`, icon: "▲" },
   danger: { accent: t.danger, icon: "✕" },
 };
 

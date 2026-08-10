@@ -349,7 +349,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     props: {
       label: copy(z.string(), "button text", { required: true }),
       onClick: config(action, "the host tool to run"),
-      variant: config(z.enum(["primary", "secondary", "danger"]), "emphasis"),
+      variant: config(z.enum(["primary", "secondary", "danger"]), "emphasis override — danger is already automatic for destructive tools"),
       disabled: config(z.boolean(), "disabled state"),
     },
     examples: ['<Button label="Remind all" onClick="invoices.sendReminders"/>'],
@@ -361,6 +361,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     props: {
       onSubmit: config(action, "the host tool to run on submit"),
       submitLabel: copy(z.string(), "submit button text"),
+      variant: config(z.enum(["primary", "secondary", "danger"]), "submit emphasis override — danger is already automatic for destructive tools"),
     },
     examples: ['<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name"/></Form>'],
   },

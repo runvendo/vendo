@@ -1,16 +1,19 @@
 /** Form — groups fields with a submit action (W2 §The Kit). */
 import type { FormEvent, PropsWithChildren } from "react";
 import { font } from "../tokens.js";
-import { Button } from "./button.js";
+import { Button, type ButtonProps } from "./button.js";
 
 export interface FormProps {
   /** Bound host-tool submit action (renderer-supplied). */
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
   submitLabel?: string;
   disabled?: boolean;
+  /** Submit emphasis. The renderer stamps `danger` when the bound tool is
+   *  destructive, so a "Cancel transfer" form is never brand-accent green. */
+  variant?: ButtonProps["variant"];
 }
 
-export function Form({ onSubmit, submitLabel = "Submit", disabled, children }: PropsWithChildren<FormProps>) {
+export function Form({ onSubmit, submitLabel = "Submit", disabled, variant, children }: PropsWithChildren<FormProps>) {
   return (
     <form
       data-kit="Form"
@@ -34,7 +37,7 @@ export function Form({ onSubmit, submitLabel = "Submit", disabled, children }: P
     >
       {children}
       <div>
-        <Button type="submit" label={submitLabel} disabled={disabled} />
+        <Button type="submit" label={submitLabel} disabled={disabled} variant={variant} />
       </div>
     </form>
   );

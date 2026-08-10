@@ -228,6 +228,17 @@ export function formatDateTime(value: DateInput, options: DateTimeOptions = {}):
 /** The value-tier `format` union — the same tokens a DataTable column accepts. */
 export type ValueFormat = "money" | "date" | "datetime" | "time" | "percent" | "number" | "text";
 
+/**
+ * The tone a numeric value carries by its own sign: a negative amount is a
+ * loss and reads in danger red. The value tier owns this so no writer has to
+ * decide it per cell — -$128,840.00 was rendering in the same dark text as a
+ * positive everywhere the data tier formats (Stat, DataTable, CardList).
+ */
+export function signTone(value: unknown, format: ValueFormat = "text"): "danger" | undefined {
+  if (format !== "money" && format !== "number" && format !== "percent") return undefined;
+  return typeof value === "number" && value < 0 ? "danger" : undefined;
+}
+
 /** Apply a `ValueFormat` token to a raw value, returning `null` when unrenderable. */
 export function applyFormat(value: unknown, format: ValueFormat = "text"): string | null {
   switch (format) {

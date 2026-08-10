@@ -1,5 +1,5 @@
 /** Stat — a KPI/metric summary with semantic formatting (W2 §The Kit). */
-import { applyFormat, type ValueFormat } from "../format.js";
+import { applyFormat, signTone, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 
 export interface StatProps {
@@ -20,7 +20,12 @@ export interface StatProps {
 const STAT_VALUE_MAX_CHARS = 40;
 
 export function Stat({ label, value, format = "text", trend, tone = "default" }: StatProps) {
-  const emphasis = tone === "accent" ? t.accent : tone === "danger" ? t.danger : t.text;
+  // A negative KPI is danger red without anyone asking for it, and the default
+  // rail is a hairline in the theme's border color — a full-strength text-black
+  // bar reads as a color the theme never declared.
+  const negative = signTone(value, format) !== undefined;
+  const emphasis = tone === "accent" ? t.accent : tone === "danger" || negative ? t.danger : t.text;
+  const rail = tone === "default" && !negative ? t.border : emphasis;
   const formatted = applyFormat(value, format);
   const empty = formatted === null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;
@@ -40,7 +45,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         flexDirection: "column",
         gap: "var(--vendo-density-field-gap, 6px)",
         minWidth: 0,
-        borderLeft: `3px solid ${emphasis}`,
+        borderLeft: `3px solid ${rail}`,
         borderRadius: t.radiusSmall,
         background: `color-mix(in srgb, ${t.surface} 90%, ${t.background})`,
         padding: "var(--vendo-density-stat-padding, 12px 14px)",
