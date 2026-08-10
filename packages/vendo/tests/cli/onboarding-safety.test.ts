@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ensureEnvLocalIgnored, warnEnvLocalNotIgnored } from "../../src/cli/cloud-init.js";
+import { ensureEnvLocalIgnored } from "../../src/cli/cloud-init.js";
 import { workspaceHostCandidates } from "../../src/cli/framework.js";
 import { runInit } from "../../src/cli/init.js";
 import type { Output } from "../../src/cli/shared.js";
@@ -93,42 +93,49 @@ describe("the .env.local secret write warns when git would commit it", () => {
     return root;
   }
 
-  it("warns, naming the fix, when .env.local is not ignored", async () => {
+  it("ADDS the ignore line for an untracked .env.local and reports it, once", async () => {
+    const root = await repo();
     const sink = output();
-    await warnEnvLocalNotIgnored(await repo(), sink.output);
-    const warning = sink.errors.join("\n");
-    expect(warning).toContain("NOT gitignored");
-    expect(warning).toContain("add `.env.local` to .gitignore");
-    expect(sink.logs).toEqual([]);
+    expect(await ensureEnvLocalIgnored(root, sink.output)).toBe(".env.local");
+    expect(await readFile(join(root, ".gitignore"), "utf8")).toBe(".env.local\n");
+    expect(sink.logs).toEqual(["Added .env.local to .gitignore"]);
+    expect(sink.errors).toEqual([]);
+    // Idempotent: the second run finds it ignored and says nothing at all.
+    const again = output();
+    expect(await ensureEnvLocalIgnored(root, again.output)).toBeNull();
+    expect(again.logs).toEqual([]);
+    expect(again.errors).toEqual([]);
   });
 
-  it("stays silent when .gitignore covers .env.local", async () => {
+  it("stays silent when .gitignore already covers .env.local", async () => {
     const root = await repo();
     await writeFile(join(root, ".gitignore"), ".env*.local\n");
     const sink = output();
-    await warnEnvLocalNotIgnored(root, sink.output);
+    expect(await ensureEnvLocalIgnored(root, sink.output)).toBeNull();
     expect(sink.errors).toEqual([]);
+    expect(sink.logs).toEqual([]);
   });
 
-  it("an ALREADY TRACKED .env.local gets the remediation that actually works", async () => {
+  it("an ALREADY TRACKED .env.local is the one branch init must not silently fix", async () => {
     // git check-ignore reports a tracked file as NOT ignored even when a
-    // pattern matches it, so "add it to .gitignore" would be both the wrong
-    // advice and useless: the file is in the index and commits anyway.
+    // pattern matches it, so adding the line would be both the wrong advice
+    // and useless: the file is in the index and commits anyway.
     const root = await repo();
     await writeFile(join(root, ".gitignore"), ".env*.local\n");
     execFileSync("git", ["add", "-f", ".env.local"], { cwd: root });
     const sink = output();
-    await warnEnvLocalNotIgnored(root, sink.output);
+    expect(await ensureEnvLocalIgnored(root, sink.output)).toBeNull();
     const warning = sink.errors.join("\n");
     expect(warning).toContain("TRACKED by git");
     expect(warning).toContain("git rm --cached .env.local");
-    expect(warning).not.toContain("is NOT gitignored");
+    expect(sink.logs).toEqual([]);
   });
 
   it("stays silent outside a git repo — nothing to leak into", async () => {
     const sink = output();
-    await warnEnvLocalNotIgnored(await tempDir("vendo-gitignore-nogit-"), sink.output);
+    expect(await ensureEnvLocalIgnored(await tempDir("vendo-gitignore-nogit-"), sink.output)).toBeNull();
     expect(sink.errors).toEqual([]);
+    expect(sink.logs).toEqual([]);
   });
 
   it("a symlinked .env.local is judged by the file the write really lands in", async () => {
@@ -142,7 +149,7 @@ describe("the .env.local secret write warns when git would commit it", () => {
     await rm(join(root, ".env.local"));
     await symlink(join(root, "config", "dev.env"), join(root, ".env.local"));
     const sink = output();
-    await warnEnvLocalNotIgnored(root, sink.output);
+    expect(await ensureEnvLocalIgnored(root, sink.output)).toBeNull();
     const warning = sink.errors.join("\n");
     expect(warning).toContain("TRACKED by git");
     expect(warning).toContain(join("config", "dev.env"));
@@ -154,35 +161,10 @@ describe("the .env.local secret write warns when git would commit it", () => {
     const root = await repo();
     await writeFile(join(root, ".git", "config"), "[core\nnot valid\n");
     const sink = output();
-    await warnEnvLocalNotIgnored(root, sink.output);
+    expect(await ensureEnvLocalIgnored(root, sink.output)).toBeNull();
     const warning = sink.errors.join("\n");
     expect(warning).toContain("could not say whether it is ignored");
     expect(warning).toContain("bad config line");
-  });
-
-  it("init ADDS the ignore line for an untracked .env.local and reports it", async () => {
-    const root = await repo();
-    const sink = output();
-    expect(await ensureEnvLocalIgnored(root, sink.output)).toBe(".env.local");
-    expect(await readFile(join(root, ".gitignore"), "utf8")).toBe(".env.local\n");
-    expect(sink.logs).toEqual(["Added .env.local to .gitignore"]);
-    expect(sink.errors).toEqual([]);
-    // Idempotent: the second run finds it ignored and says nothing.
-    const again = output();
-    expect(await ensureEnvLocalIgnored(root, again.output)).toBeNull();
-    expect(again.logs).toEqual([]);
-  });
-
-  it("a TRACKED .env.local is the one branch init must not silently fix", async () => {
-    // .gitignore does nothing for a file already in the index, so adding the
-    // line would be a lie: this case keeps the warning that actually works.
-    const root = await repo();
-    execFileSync("git", ["add", "-f", ".env.local"], { cwd: root });
-    const sink = output();
-    expect(await ensureEnvLocalIgnored(root, sink.output)).toBeNull();
-    await expect(readFile(join(root, ".gitignore"))).rejects.toMatchObject({ code: "ENOENT" });
-    expect(sink.errors.join("\n")).toContain("TRACKED by git");
-    expect(sink.errors.join("\n")).toContain("git rm --cached .env.local");
   });
 
   it("--cloud-key adds the ignore line right after the write, and never blocks it", async () => {

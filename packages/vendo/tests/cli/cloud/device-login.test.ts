@@ -307,10 +307,42 @@ describe("runDeviceLogin", () => {
     });
     expect(exit).toBe(0);
     expect(opened).toEqual(["https://console.test/claim?code=BCDF-GHJK"]);
-    // The printed URL + code stay — the browser open is best-effort, text is the fallback.
-    const joined = messages.logs.join("\n");
-    expect(joined).toContain("BCDF-GHJK");
-    expect(joined).toContain("https://console.test/claim?code=BCDF-GHJK");
+    // The browser is already opening, so the code IS the whole instruction:
+    // ONE line, no numbered list, no URL competing with it. The URL is not
+    // lost — the stall notice below carries it if the browser never came up.
+    expect(messages.logs[0]).toBe("Opening your browser — approve the code BCDF-GHJK there…");
+    expect(messages.logs.join("\n")).not.toContain("https://console.test/claim");
+  });
+
+  it("holds the expiry sentence back until the ceremony has visibly stalled", async () => {
+    // Leading with "the code expires in 10 minutes" is noise for an approval
+    // that lands in ten seconds. It arrives when it becomes relevant, once,
+    // and carries the URL a TTY run no longer prints up front.
+    const { fetchImpl } = scriptedFetch([
+      { status: 400, body: { error: "authorization_pending" } },
+      { status: 400, body: { error: "authorization_pending" } },
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const messages = output();
+    // Each poll advances the clock 15s: the first lands inside the 20s
+    // window, the second past it.
+    let clock = Date.parse("2026-08-10T00:00:00Z");
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root: await tempRoot(),
+      home: await tempRoot(),
+      sleep: async () => { clock += 15_000; },
+      now: () => clock,
+      env: {},
+      isTty: true,
+      openBrowser: () => {},
+    });
+    expect(exit).toBe(0);
+    const stalls = messages.logs.filter((line) => line.startsWith("Still waiting —"));
+    expect(stalls).toHaveLength(1);
+    expect(stalls[0]).toContain("minutes");
+    expect(stalls[0]).toContain("https://console.test/claim?code=BCDF-GHJK");
   });
 
   it("never launches a browser for a non-TTY (agent) caller", async () => {

@@ -6,7 +6,7 @@ import { isVendoKey, resolveCloudBaseUrl } from "./client.js";
 import { errorMessage, printJson } from "./output.js";
 import { deletePendingClaim, readPendingClaim, writePendingClaim } from "./pending-claim.js";
 import { writeCloudSession, type CloudSession } from "./session.js";
-import { upsertEnvLocal, warnEnvLocalNotIgnored } from "../cloud-init.js";
+import { ensureEnvLocalIgnored, upsertEnvLocal } from "../cloud-init.js";
 import { browserOpenCommand, CLI_VERSION, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
 
 /**
@@ -22,6 +22,9 @@ import { browserOpenCommand, CLI_VERSION, consoleOutput, withCommandRun, type Ou
  * the console-envelope-shaped cloudFetch would flatten to http-400 — so this
  * command talks to both endpoints with a raw (injectable) fetch instead.
  */
+
+/** How long the ceremony may run before it explains itself (see noteStall). */
+const STALL_MS = 20_000;
 
 const CLAIM_PATH = "/api/v1/agent/claim";
 const TOKEN_PATH = "/api/v1/oauth/token";
@@ -225,7 +228,6 @@ export async function runDeviceLogin(
     let verificationUriComplete: string;
     if (resume !== null) {
       output.log(`Resuming pending approval — code ${resume.user_code}, approve at ${resume.verification_uri_complete}`);
-      output.log(`Waiting for approval (the code expires in ${Math.max(1, Math.round((resume.expires_at - now()) / 60_000))} minutes)…`);
       claimToken = resume.claim_token;
       deadline = resume.expires_at;
       intervalMs = Math.max(resume.interval, 1) * 1000;
@@ -255,15 +257,18 @@ export async function runDeviceLogin(
       const ceremony = ceremonyFrom(claim.body);
 
       const approvalUrl = ceremony.verification_uri_complete ?? ceremony.verification_uri;
-      output.log("Vendo Cloud device login — ask your human to approve this request:");
-      output.log(`  1. Open ${approvalUrl}`);
-      output.log(`  2. Confirm the code: ${ceremony.user_code}`);
       const tty = options.isTty ?? (process.stdout.isTTY === true);
       if (tty) {
-        output.log("Opening your browser… (approve there, then come back here)");
+        // One line. The browser is already opening, so the code IS the whole
+        // instruction; the URL is not lost — the stall notice below carries it
+        // as the recovery path if the browser never came up.
+        output.log(`Opening your browser — approve the code ${ceremony.user_code} there…`);
         (options.openBrowser ?? defaultOpenBrowser)(approvalUrl);
+      } else {
+        // The agent path: a human is being told what to do by proxy, so the
+        // URL and the code both have to be on screen.
+        output.log(`Vendo Cloud device login — approve the code ${ceremony.user_code} at ${approvalUrl}`);
       }
-      output.log(`Waiting for approval (the code expires in ${Math.round(ceremony.expires_in / 60)} minutes)…`);
 
       claimToken = ceremony.claim_token;
       deadline = now() + ceremony.expires_in * 1000;
@@ -284,6 +289,21 @@ export async function runDeviceLogin(
         cwd: root,
       }, pendingHome);
     }
+
+    // The expiry sentence used to lead the wait, where it is pure noise — an
+    // approval that lands in ten seconds never needed it. It arrives when it
+    // becomes relevant instead: once, after the ceremony has visibly stalled,
+    // carrying the URL as the recovery path a TTY run no longer prints up top.
+    const ceremonyStarted = now();
+    let stallNoted = false;
+    const noteStall = (): void => {
+      if (stallNoted || now() - ceremonyStarted < STALL_MS) return;
+      stallNoted = true;
+      output.log(
+        `Still waiting — the code expires in ${Math.max(1, Math.round((deadline - now()) / 60_000))} minutes. `
+        + `Approve at ${verificationUriComplete}`,
+      );
+    };
 
     const pollBody = new URLSearchParams({
       grant_type: CLAIM_GRANT_TYPE,
@@ -343,9 +363,9 @@ export async function runDeviceLogin(
         }
         // Never print the key itself — .env.local is the hand-off, last4 the
         // receipt. A resumed run names the full path: it may differ from cwd.
-        output.log(`Approved — wrote VENDO_API_KEY (…${key.slice(-4)}) to ${
-          resume !== null ? join(root, ".env.local") : ".env.local"}.`);
-        await warnEnvLocalNotIgnored(root, output);
+        output.log(`Approved — VENDO_API_KEY saved to ${
+          resume !== null ? join(root, ".env.local") : ".env.local"} (…${key.slice(-4)})`);
+        await ensureEnvLocalIgnored(root, output);
         if (options.rerunHint !== false) {
           output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");
         }
@@ -398,6 +418,7 @@ export async function runDeviceLogin(
         const result = await pollOnce();
         if (result === "approved") return 0;
         if (result === "slow_down") intervalMs += 5000;
+        noteStall();
       }
       await deletePendingClaim(claimCwd, pendingHome);
       throw new Error("The code expired before it was approved; run `vendo login` again.");
@@ -410,6 +431,7 @@ export async function runDeviceLogin(
       const result = await pollOnce();
       if (result === "approved") return 0;
       if (result === "slow_down") intervalMs += 5000;
+      noteStall();
       if (now() >= deadline) {
         await deletePendingClaim(claimCwd, pendingHome);
         throw new Error("The code expired before it was approved; run `vendo login` again.");

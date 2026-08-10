@@ -85,25 +85,14 @@ function reportEnvLocalRisk(state: EnvLocalState, output: Output): void {
   }
 }
 
-/** One loud line when the file we just wrote a secret into would be committed.
-    Never blocks the write (the key is already minted and unrecoverable) — the
-    dev needs to know, not to be stopped. Three honest outcomes, each with the
-    remediation that actually works for it. Kept for `vendo login`, which
-    writes the key from OUTSIDE an install and so has no mandate to edit the
-    repo's .gitignore; init uses `ensureEnvLocalIgnored` instead. */
-export async function warnEnvLocalNotIgnored(root: string, output: Output): Promise<void> {
-  const state = await envLocalState(root);
-  reportEnvLocalRisk(state, output);
-  if (state.kind === "add") {
-    output.error(`warning: ${state.name} holds a secret and is NOT gitignored — add \`${state.name}\` to .gitignore before you commit.`);
-  }
-}
-
-/** init's version: a secret in an unignored, UNTRACKED file is a one-line fix
-    init can simply make, so it makes it and says so. The tracked case is the
-    one branch init must not silently fix — .gitignore does nothing for a file
-    already in the index — so it keeps the warning, verbatim. Returns the line
-    added, or null when nothing was written. */
+/** The single answer to "we just wrote a secret to disk". A secret in an
+    unignored, UNTRACKED file is a one-line fix, so it gets made and reported
+    instead of turned into homework. The tracked case is the one branch that
+    must not be silently "fixed" — .gitignore does nothing for a file already
+    in the index — so it keeps its warning, verbatim, and so does the case
+    where git cannot answer at all. Never blocks the write: the key is already
+    minted and unrecoverable, so the dev needs to know, not to be stopped.
+    Returns the line added, or null when nothing was written. */
 export async function ensureEnvLocalIgnored(root: string, output: Output): Promise<string | null> {
   const state = await envLocalState(root);
   reportEnvLocalRisk(state, output);

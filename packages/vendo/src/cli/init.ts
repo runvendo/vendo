@@ -37,7 +37,7 @@ import {
   serverActionsWiring,
   VENDO_ENV_EXAMPLE,
 } from "./init-scaffolds.js";
-import { createPrettyOutput, plainSelect, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
+import { createPrettyOutput, plainSelect, plainText, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { contrastingText } from "./theme/color.js";
 import {
   applyThemeDraft,
@@ -691,10 +691,14 @@ export async function captureBaseUrl(input: {
   interactive: boolean;
 }): Promise<string | null> {
   const { root, options, output, pretty, interactive } = input;
+  // plainText carries plainSelect's guard — a non-TTY input or output returns
+  // the fallback and never prompts — so a piped run stays byte-identical while
+  // a NO_COLOR terminal still gets the question. Making this pretty-only would
+  // silently delete the feature for anyone who sets NO_COLOR.
   const ask = options.baseUrl !== undefined
     ? async () => options.baseUrl!
     : options.askText
-      ?? (options.yes === true || !interactive || pretty === null ? undefined : pretty.text);
+      ?? (options.yes === true || !interactive ? undefined : (pretty === null ? plainText : pretty.text));
   if (ask === undefined) return null;
   const url = (await ask("Where will this deploy?", "e.g. https://app.acme.com — Enter to skip")).trim();
   if (url === "") return null;
