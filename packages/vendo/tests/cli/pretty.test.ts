@@ -699,3 +699,164 @@ describe("createPrettyOutput (visual system)", () => {
     expect(out.raw()).toBe(settled); // no frames after stopSpin
   });
 });
+
+/** The bytes a terminal is SENT are not what a person sees: the select rewinds
+    the cursor and redraws over itself. This applies the moves the renderer
+    actually uses (newline, carriage return, cursor-up, erase-line,
+    erase-to-end-of-screen) to a row buffer, so the assertions below are about
+    the settled SCREEN — which is where every one of these bugs was visible. */
+function screen(): { write: (chunk: string) => void; rows: () => string[] } {
+  const rows: string[] = [""];
+  let at = 0;
+  let col = 0;
+  const put = (text: string): void => {
+    const row = (rows[at] ?? "").padEnd(col);
+    rows[at] = row.slice(0, col) + text + row.slice(col + text.length);
+    col += text.length;
+  };
+  return {
+    write: (chunk) => {
+      for (const token of chunk.match(/\u001b\[[0-9;?]*[A-Za-z]|\n|\r|[^\u001b\n\r]+/g) ?? []) {
+        if (token === "\n") {
+          at += 1;
+          col = 0;
+          if (rows[at] === undefined) rows[at] = "";
+          continue;
+        }
+        if (token === "\r") { col = 0; continue; }
+        if (token.startsWith(ESC)) {
+          const up = /^\u001b\[(\d*)A$/.exec(token);
+          if (up !== null) { at = Math.max(0, at - (up[1] === "" ? 1 : Number(up[1]))); continue; }
+          if (token === `${ESC}[2K`) { rows[at] = ""; continue; }
+          if (token === `${ESC}[0J` || token === `${ESC}[J`) {
+            rows[at] = (rows[at] ?? "").slice(0, col);
+            rows.length = at + 1;
+            continue;
+          }
+          continue; // SGR and cursor visibility change no cell
+        }
+        put(token);
+      }
+    },
+    rows: () => rows,
+  };
+}
+
+/** The run's first question, verbatim from init's USE_CASE_OPTIONS — the list
+    that duplicated itself at 80 columns. */
+const USE_CASE_OPTIONS = [
+  { value: "embedded", label: "Embedded in my app — chat + generated UI", hint: "recommended" },
+  { value: "agent-loop", label: "Through my own agent loop (AI SDK / Mastra)" },
+  { value: "mcp", label: "From outside agents over MCP — Claude, ChatGPT, Cursor, or any MCP agent (experimental)" },
+] as const;
+
+const occurrences = (text: string, needle: string): number => text.split(needle).length - 1;
+
+describe("createPrettyOutput (80 columns — the width most people run)", () => {
+  it("select: the answered block prints each option once, with exactly one ● bullet", async () => {
+    const term = screen();
+    const keys = fakeInput();
+    const pretty = createPrettyOutput({
+      write: term.write, input: keys.input, banner: false, columns: 80,
+    });
+    const choice = pretty.select("How will people use your agent?", [...USE_CASE_OPTIONS]);
+
+    // Live: one row per option, one ● — even though option 3 wraps.
+    keys.press("\u001b[B");
+    const live = term.rows().join("\n");
+    expect(occurrences(live, "●")).toBe(1);
+    for (const option of USE_CASE_OPTIONS) {
+      expect(occurrences(live, option.label.slice(0, 24))).toBe(1);
+    }
+
+    keys.press("3");
+    expect(await choice).toBe("mcp");
+    const settled = term.rows().join("\n");
+    // Settled: only the chosen option survives, and it survives once.
+    expect(occurrences(settled, "●")).toBe(1);
+    expect(occurrences(settled, "From outside agents over MCP")).toBe(1);
+    expect(settled).not.toContain("Embedded in my app");
+    expect(settled).not.toContain("Through my own agent loop");
+    expect(settled).not.toContain("○");
+  });
+
+  it("select: the settled long answer stays on the rail and still reads whole", async () => {
+    const term = screen();
+    const keys = fakeInput();
+    const pretty = createPrettyOutput({
+      write: term.write, input: keys.input, banner: false, columns: 80,
+    });
+    const choice = pretty.select("How will people use your agent?", [...USE_CASE_OPTIONS]);
+    keys.press("3");
+    expect(await choice).toBe("mcp");
+
+    const rows = term.rows().filter((row) => row !== "");
+    const answer = rows.slice(rows.findIndex((row) => row.includes("●")));
+    // It needed two rows at this width, and both ride the rail.
+    expect(answer).toHaveLength(2);
+    for (const row of answer) expect(row.startsWith("│  ")).toBe(true);
+    expect(answer.map((row) => row.slice(3)).join(" ")).toBe(`● ${USE_CASE_OPTIONS[2].label}`);
+  });
+
+  it("wraps every long line onto the rail — no continuation starts at column 0", () => {
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false, columns: 80 });
+    pretty.log("catalog.json: 5 discovered, 5 registered");
+    pretty.log("components: 12 captured, 3 updated, 1 removed because the source component is gone");
+    pretty.log("\nVendo Cloud (optional): not configured. A key unlocks team sharing & org governance"
+      + " across your whole company; hosted automations that keep running while you sleep.");
+    pretty.log("Run `vendo login` to claim a free API key; it lands in .env.local and nothing else changes.");
+    pretty.error("warning: .env.local holds a secret — add it to `.gitignore` before you commit it anywhere");
+    pretty.done(12400, true, "14 tools · brand captured · 1 paste left");
+
+    const rows = out.plain().split("\n").slice(0, -1);
+    // The header opens the rail; every row after it is a rail row, and nothing
+    // is wider than the terminal.
+    expect(rows[0]).toBe("┌  vendo init");
+    for (const row of rows.slice(1, -1)) {
+      expect(row).toMatch(/^[│◇◆└]/);
+      expect(row.length).toBeLessThanOrEqual(80);
+    }
+    // The wrapped body of a long line is a rail line too, not a naked tail.
+    const wrapped = rows.filter((row) => row.startsWith("│  ") && row.includes("while you sleep"));
+    expect(wrapped).toHaveLength(1);
+  });
+
+  it("closes the rail with a cancel line when Ctrl-C interrupts a question", () => {
+    const term = screen();
+    const keys = fakeInput();
+    const exit = vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit:${String(code)}`);
+    });
+    try {
+      const pretty = createPrettyOutput({
+        write: term.write, input: keys.input, banner: false, columns: 80,
+      });
+      void pretty.select("How will people use your agent?", [...USE_CASE_OPTIONS]).catch(() => undefined);
+      expect(() => keys.press("\u0003")).toThrow("exit:130");
+      expect(exit).toHaveBeenCalledWith(130);
+    } finally {
+      exit.mockRestore();
+    }
+    const rows = term.rows().filter((row) => row !== "");
+    expect(rows.at(-1)).toBe("└  Cancelled");
+    // The rail is closed, not left hanging under a half-drawn question.
+    expect(rows.at(-2)).toBe("│");
+    expect(rows.join("\n")).not.toContain("○");
+  });
+
+  it.each([
+    ["NO_COLOR on a TTY", { isTTY: true }, { NO_COLOR: "1" }],
+    ["CI on a TTY", { isTTY: true }, { CI: "true" }],
+    ["TERM=dumb on a TTY", { isTTY: true }, { TERM: "dumb" }],
+    ["piped stdout", { isTTY: false }, {}],
+  ] as const)("never wraps, restyles or re-rails a long line under %s", (_name, stream, env) => {
+    const out = sink();
+    const message = "components: 12 captured, 3 updated, 1 removed because the source component"
+      + " is gone — a 140-column line that a pipe must receive exactly as sync emits it";
+    if (usePrettyOutput(stream, env)) {
+      createPrettyOutput({ write: out.write, banner: false, columns: 80 }).log(message);
+    } else out.write(`${message}\n`);
+    expect(out.raw()).toBe(`${message}\n`);
+  });
+});

@@ -100,6 +100,10 @@ export interface PrettyOutput extends Output {
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const BAR = dim("│");
 const CLEAR_LINE = `\r${ESC}[2K`;
+const RESET = `${ESC}[0m`;
+const SHOW_CURSOR = `${ESC}[?25h`;
+/** Columns the rail costs a continuation row: `│` plus the two-space body gap. */
+const RAIL_WIDTH = 3;
 /** The star ask, demoted from an interactive question to a dim last line —
     pretty-only, so a piped or NO_COLOR run never sees it. */
 const STAR_FOOTER = "Star us: vendo.run/star · docs.vendo.run";
@@ -146,6 +150,99 @@ const CTA_ALL = /`?vendo (cloud )?login`?/g;
     after it — `reopen` re-arms the enclosing color (error() passes it). */
 function styleInline(text: string, reopen = ""): string {
   return text.replace(/`([^`]+)`/g, (_match, code: string) => `${bold(lilac(code))}${reopen}`);
+}
+
+/** Visible columns: SGR sequences take none. */
+const visibleWidth = (text: string): number => text.replace(SGR, "").length;
+
+/** What each closing SGR closes, matched on a sequence's FIRST code so the
+    truecolor swatch (`48;2;r;g;b`, closed by 49) is tracked like any other. */
+const CLOSED_BY: Record<string, RegExp> = {
+  "22": /^[12]$/,
+  "23": /^3$/,
+  "24": /^4$/,
+  "27": /^7$/,
+  "29": /^9$/,
+  "39": /^(3[0-8]|9[0-7])$/,
+  "49": /^(4[0-8]|10[0-7])$/,
+};
+
+const sgrCode = (sequence: string): string => sequence.slice(2, -1).split(";")[0] ?? "";
+
+/** Track the styles still in force, so a wrapped row can re-open them. Every
+    style this file writes nests, so a close pops the innermost match. */
+function trackStyle(open: string[], sequence: string): void {
+  const code = sgrCode(sequence);
+  if (code === "" || code === "0") {
+    open.length = 0;
+    return;
+  }
+  const closes = CLOSED_BY[code];
+  if (closes === undefined) {
+    open.push(sequence);
+    return;
+  }
+  for (let at = open.length - 1; at >= 0; at -= 1) {
+    if (closes.test(sgrCode(open[at]!))) {
+      open.splice(at, 1);
+      return;
+    }
+  }
+}
+
+/** Wrap one composed line to the terminal, ANSI-aware: every continuation row
+    carries the rail, so a long line still reads as one rail body line, and no
+    emitted row is wider than the terminal — which is what makes the select's
+    cursor-up redraw (it counts ROWS) land on the rows it printed. Unknown
+    width (a pipe, a test writer) means no wrapping at all. */
+function wrapRail(text: string, columns: number): string[] {
+  if (!Number.isFinite(columns) || columns <= RAIL_WIDTH + 1) return [text];
+  if (visibleWidth(text) <= columns) return [text];
+  const rows: string[] = [];
+  const open: string[] = [];
+  let atWord: string[] = [];
+  let row = "";
+  let used = 0;
+  let gap = "";
+  let word = "";
+  let width = 0;
+  const breakRow = (): void => {
+    rows.push(atWord.length === 0 ? row : `${row}${RESET}`);
+    row = `${BAR}  ${atWord.join("")}`;
+    used = RAIL_WIDTH;
+    gap = "";
+  };
+  /** Commit the pending word, breaking first when it no longer fits. */
+  const place = (): void => {
+    if (word === "") return;
+    if (used > 0 && used + gap.length + width > columns) breakRow();
+    row += `${gap}${word}`;
+    used += gap.length + width;
+    gap = "";
+    word = "";
+    width = 0;
+  };
+  for (const token of text.match(/\u001b\[[0-9;]*m|[\s\S]/g) ?? []) {
+    if (word === "") atWord = [...open];
+    if (token.startsWith(ESC)) {
+      word += token;
+      trackStyle(open, token);
+      continue;
+    }
+    if (token === " ") {
+      place();
+      gap += " ";
+      continue;
+    }
+    word += token;
+    width += 1;
+    // A word too long for a row of its own (a URL, a code snippet) has to be
+    // broken somewhere: break it where it fills a row.
+    if (width >= columns - RAIL_WIDTH) place();
+  }
+  place();
+  if (row !== "") rows.push(row);
+  return rows;
 }
 
 /** The plain-terminal select for non-pretty interactive runs: numbered list +
@@ -464,6 +561,9 @@ export interface PrettyOptions {
   /** The settled banner above the header. */
   banner?: boolean;
   env?: Record<string, string | undefined>;
+  /** Terminal width to wrap to. Unset follows the real stdout, and an unknown
+      width (a pipe, an injected test writer) never wraps. */
+  columns?: number;
 }
 
 export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
@@ -481,15 +581,31 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
   let frame = 0;
   const state: RenderState = { absorb: 0, catalog: [], impact: [], judgment: null, paste: null };
 
-  const line = (text: string): void => {
-    write(`${text}\n`);
+  /** True when this renderer draws on the real terminal. Only then does it
+      follow stdout's width and answer the interrupt signal; an injected
+      writer (tests, embedders) stays deterministic. */
+  const ownsTerminal = options.write === undefined;
+  /** Read per line, so a resize mid-run wraps to the new width. */
+  const columns = (): number => {
+    if (options.columns !== undefined) return options.columns;
+    if (!ownsTerminal) return Number.POSITIVE_INFINITY;
+    return stdout.columns ?? Number.POSITIVE_INFINITY;
+  };
+  /** One logical line — and the number of terminal ROWS it took, which is what
+      a cursor-up redraw has to rewind. */
+  const line = (text: string): number => {
+    const rows = wrapRail(text, columns());
+    for (const row of rows) write(`${row}\n`);
     lastWasBar = text === BAR;
+    return rows.length;
   };
   const rail: Rail = {
     bar: (): void => {
       if (!lastWasBar) line(BAR);
     },
-    body: (text: string, reopen = ""): void => line(`${BAR}  ${styleInline(text, reopen)}`),
+    body: (text: string, reopen = ""): void => {
+      line(`${BAR}  ${styleInline(text, reopen)}`);
+    },
     section: (marker: string, title: string): void => {
       rail.bar();
       line(`${marker}  ${title}`);
@@ -527,6 +643,22 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
     ensureHeader();
     flush();
   };
+  /** Ctrl-C: give the cursor back and CLOSE the rail, so an interrupted run
+      still ends in a `└` instead of a bare `^C` under an open block. The exit
+      code is the caller's — this only draws. */
+  const cancel = (): void => {
+    stopSpin();
+    write(SHOW_CURSOR);
+    ensureHeader();
+    rail.bar();
+    line(`${dim("└")}  ${yellow("Cancelled")}`);
+  };
+  if (ownsTerminal) {
+    process.once("SIGINT", () => {
+      cancel();
+      process.exit(130);
+    });
+  }
 
   return {
     log(message) {
@@ -647,10 +779,18 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
         const hint = option.hint === undefined ? "" : ` ${dim(`(${option.hint})`)}`;
         return `${BAR}  ${marker} ${label}${hint}`;
       };
-      for (const [at, option] of options.entries()) line(optionLine(option, at));
+      // ROWS, not options: a wrapped option owns more than one terminal row,
+      // and rewinding by the option COUNT redraws on top of the wrong rows.
+      let drawn = 0;
+      const draw = (): void => {
+        drawn = 0;
+        for (const [at, option] of options.entries()) drawn += line(optionLine(option, at));
+      };
+      draw();
+      const rewind = (): void => { write(`${ESC}[${drawn}A${ESC}[0J`); };
       const redraw = (): void => {
-        write(`${ESC}[${options.length}A`);
-        for (const [at, option] of options.entries()) write(`${ESC}[2K${optionLine(option, at)}\n`);
+        rewind();
+        draw();
       };
       const chosen = await new Promise<number>((resolveChoice) => {
         const cleanup = (): void => {
@@ -690,7 +830,8 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
             pending = pending.slice(1);
             if (key === "\u0003") { // Ctrl+C
               cleanup();
-              write("\n");
+              rewind();
+              cancel();
               process.exit(130);
             }
             if (key === "\r" || key === "\n") {
@@ -713,7 +854,7 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
         input.on("data", onData);
       });
       // Collapse the option list to the chosen answer.
-      write(`${ESC}[${options.length}A${ESC}[0J`);
+      rewind();
       line(`${BAR}  ${lilac("●")} ${options[chosen]!.label}`);
       return options[chosen]!.value;
     },
