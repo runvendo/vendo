@@ -53,6 +53,54 @@ page has no CDN reference and no absolute asset URL). Code validity comes from
 `tsc` and `vite build` — there is no hand-rolled syntax checking, and there must
 never be.
 
+## Durable rows
+
+The disk is scratch. Durable data goes to the Vendo store, and `rows.js` is the
+whole client — zero dependencies, server half only (it reads `$VENDO_APP_TOKEN`,
+and `fns.js` is the only place that may). The page reaches it through an fn.
+
+**Rows are automatically scoped to the end user.** The app never names an owner,
+cannot set one, and cannot see another user's rows — the host stamps every row
+with the app token's subject.
+
+```js
+// fns.js
+import { rows } from "./rows.js";
+
+const notes = rows("notes");
+
+export const fns = {
+  async listNotes({ limit = 20 }) {
+    const { records, cursor } = await notes.list({ limit });
+    return { notes: records, cursor };
+  },
+  async saveNote({ id, title }) {
+    return { note: await notes.put(id, { title }, { refs: { status: "open" } }) };
+  },
+  async getNote({ id }) {
+    return { note: await notes.get(id) }; // null when there is no such row
+  },
+  async deleteNote({ id }) {
+    await notes.delete(id);
+    return { ok: true };
+  },
+};
+```
+
+A failure throws an `Error` whose message is `"<code>: <message>"` and which
+carries `.code` and `.status`, so you branch on `error.code === "conflict"`
+rather than on prose.
+
+Not a Node app? The store is plain HTTP with a bearer — curl it directly:
+
+```sh
+curl -X PUT "$VENDO_STORE_URL/rows/notes/note_1" \
+  -H "authorization: Bearer $VENDO_APP_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"data": {"title": "Hello"}}'
+curl "$VENDO_STORE_URL/rows/notes" -H "authorization: Bearer $VENDO_APP_TOKEN"
+```
+
 ## The theme route
 
 `?vendoTheme=<json>` — the apps runtime puts the host's live tokens on the
@@ -70,6 +118,7 @@ ignored: a bad theme must never blank the app. It flows through
 | `src/theme.ts` | the `?vendoTheme=` reader |
 | `src/fn.ts` | `callFn` — the app's own server half |
 | `fns.js` | the `POST /fn/<name>` handlers |
+| `rows.js` | `rows` — durable rows in the Vendo store, scoped to the end user |
 | `server.js` | the skin contract + serving the Vite build |
 | `vendo.json` | the manifest (`schedules`, `egress`) |
 | `run` | the `.vendo/run` line, landed by the bake |

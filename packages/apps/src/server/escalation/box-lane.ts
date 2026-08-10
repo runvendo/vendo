@@ -48,7 +48,7 @@ const skinContractPrompt = (app: AppDocument): string => {
     "- Listen on the PORT env var. Serve POST /fn/<name> answering {\"result\": ...} (or {\"error\":{\"code\",\"message\"}}), and GET /vendo.json returning the manifest file.",
     "- Manifest vendo.json: {\"schedules\":[{\"cron\":\"0 8 * * *\",\"fn\":\"<name>\"}], \"egress\":[\"host.example.com\"]}. Declare EVERY third-party domain you fetch; undeclared egress is blocked at the network layer.",
     "- .vendo/run holds ONE shell line that starts the app (e.g. \"node server.js\"). Write it; a supervisor runs it.",
-    "- Durable rows go through the Vendo store, NOT disk: PUT \"$VENDO_STORE_URL/rows/<collection>/<id>\" with header \"authorization: Bearer $VENDO_APP_TOKEN\" and body {\"data\":{...}}; list with GET \"$VENDO_STORE_URL/rows/<collection>\".",
+    "- Durable rows go through the Vendo store, NOT disk. From the template: `import { rows } from \"./rows.js\"` in fns.js, then `rows(\"notes\").put(id, data, {refs})`, `.get(id)` (null when there is no such row), `.list({refs, limit, cursor})`, `.delete(id)`. Rows are scoped to the end user automatically — you never name an owner, cannot set one, and cannot read another user's rows. In any other language, curl the same door: PUT \"$VENDO_STORE_URL/rows/<collection>/<id>\" with header \"authorization: Bearer $VENDO_APP_TOKEN\" and body {\"data\":{...}}; list with GET \"$VENDO_STORE_URL/rows/<collection>\".",
     "- Host tools ride POST \"$VENDO_HOST_URL/tools/<name>\" with the same bearer; approvals/audit happen host-side.",
     `- Env vars available in the box: PORT, VENDO_STORE_URL, VENDO_APP_TOKEN, VENDO_HOST_URL, VENDO_INFERENCE_URL, VENDO_INFERENCE_KEY, and these declared secrets by name: ${secretNames}.`,
   ].join("\n");

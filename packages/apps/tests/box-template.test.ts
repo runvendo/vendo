@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer as createHttpServer, type Server } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -321,5 +322,240 @@ describe("the dev port is declared by the host, and the template binds it", () =
   it("the three box ports are distinct", () => {
     // 8811 is the harness control port; the contract says three, all distinct.
     expect(new Set([VENDO_APP_PORT, VENDO_DEV_PORT, 8811]).size).toBe(3);
+  });
+});
+
+/**
+ * `rows.js` — the template's durable-rows client, exercised INSIDE a really
+ * booted template, through the real `POST /fn/<name>` envelope. Nothing here
+ * imports rows.js into the vitest process and nothing stubs fetch: the app's
+ * server half calls it exactly as a generated app would.
+ *
+ * The endpoint below is a CONTRACT CHECKER, not a convenience stub. It asserts
+ * the exact request shape the real box door requires (the bearer, the
+ * `/rows/<collection>/<id>` path, `content-type: application/json` on PUT, a
+ * `{data, refs?}` body with no other top-level key, no `refs.subject` filter)
+ * and answers with the door's real envelopes. ANYTHING rows.js sends that the
+ * real door would reject fails this test. The door's own half of this seam is
+ * proven for real — against the real store — in
+ * `packages/vendo/tests/box-wire.test.ts`.
+ */
+describe("the template's durable rows (rows.js against the box door's contract)", () => {
+  const TOKEN = "app_tok_rows_test";
+  /** The real VENDO_STORE_URL carries a path prefix (`.../api/vendo/box`), so
+   *  the checker mounts under one: a client that ignored it would 404 here. */
+  const PREFIX = "/box";
+
+  let child: ChildProcess;
+  let checker: Server;
+  let base: string;
+  let appRoot: string | undefined;
+  const violations: string[] = [];
+  const stored = new Map<string, unknown>();
+
+  beforeAll(async () => {
+    appRoot = mkdtempSync(path.join(tmpdir(), "vendo-template-"));
+    const appDir = provision(appRoot);
+
+    const storePort = await freePort();
+    checker = createHttpServer((req, res) => {
+      const reply = (status: number, value: unknown): void => {
+        res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify(value));
+      };
+      // A rejected request is recorded AND refused, so a bad shape shows up
+      // both as a failed fn call and as a named violation.
+      const refuse = (detail: string): void => {
+        violations.push(detail);
+        reply(400, { error: { code: "validation", message: detail } });
+      };
+
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      if (req.headers.authorization !== `Bearer ${TOKEN}`) {
+        refuse(`authorization must be the app token bearer, got ${String(req.headers.authorization)}`);
+        return;
+      }
+      const segments = url.pathname.split("/").filter(Boolean);
+      if (`/${segments[0]}` !== PREFIX || segments[1] !== "rows") {
+        refuse(`path must be <store url>/rows/..., got ${url.pathname}`);
+        return;
+      }
+      const collection = segments[2] ?? "";
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(collection) || segments.length > 4) {
+        refuse(`bad rows path ${url.pathname}`);
+        return;
+      }
+      const id = segments[3];
+
+      if (id === undefined) {
+        if (req.method !== "GET") {
+          refuse(`a collection is listed with GET, got ${String(req.method)}`);
+          return;
+        }
+        for (const key of url.searchParams.keys()) {
+          // The door refuses every other parameter, and refuses refs.subject
+          // outright: the owner is not the app's to filter on.
+          if (key === "refs.subject" || !(key.startsWith("refs.") || key === "limit" || key === "cursor")) {
+            refuse(`unknown list query parameter: ${key}`);
+            return;
+          }
+        }
+        reply(200, { records: [...stored.values()] });
+        return;
+      }
+
+      if (id.length === 0 || id.length > 256) {
+        refuse(`row id must be 1-256 characters, got ${id.length}`);
+        return;
+      }
+      if (req.method === "GET") {
+        const record = stored.get(id);
+        if (record === undefined) reply(404, { error: { code: "not-found", message: `row not found: ${id}` } });
+        else reply(200, record);
+        return;
+      }
+      if (req.method === "DELETE") {
+        stored.delete(id);
+        reply(200, { status: "ok" });
+        return;
+      }
+      if (req.method !== "PUT") {
+        refuse(`unsupported method ${String(req.method)}`);
+        return;
+      }
+      if (req.headers["content-type"]?.split(";", 1)[0]?.trim() !== "application/json") {
+        refuse(`PUT needs content-type: application/json, got ${String(req.headers["content-type"])}`);
+        return;
+      }
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => {
+        let body: Record<string, unknown>;
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+        } catch {
+          refuse("PUT body must be JSON");
+          return;
+        }
+        const unexpected = Object.keys(body).find((key) => key !== "data" && key !== "refs");
+        if (unexpected !== undefined) {
+          refuse(`unexpected row property: ${unexpected}`);
+          return;
+        }
+        if (!Object.prototype.hasOwnProperty.call(body, "data")) {
+          refuse("row body must contain data");
+          return;
+        }
+        // The one id another user already holds: the door answers 409, never a
+        // silent overwrite.
+        if (id === "held_elsewhere") {
+          reply(409, { error: { code: "conflict", message: `row ${id} belongs to another owner` } });
+          return;
+        }
+        const record = { id, data: body["data"], ...(body["refs"] === undefined ? {} : { refs: body["refs"] }) };
+        stored.set(id, record);
+        reply(200, record);
+      });
+    });
+    checker.listen(storePort, "127.0.0.1");
+    await once(checker, "listening");
+
+    // The app's server half, exactly as a generated app writes it.
+    writeFileSync(path.join(appDir, "fns.js"), [
+      'import { rows } from "./rows.js";',
+      'const notes = rows("notes");',
+      "export const fns = {",
+      '  save: async ({ id, title }) => ({ record: await notes.put(id, { title }, { refs: { status: "open" } }) }),',
+      "  read: async ({ id }) => ({ record: await notes.get(id) }),",
+      "  all: async () => notes.list({ limit: 10 }),",
+      "  remove: async ({ id }) => { await notes.delete(id); return { removed: true }; },",
+      // The thrown error is caught HERE so the assertion can read its own
+      // properties: an fn envelope only carries the message.
+      "  taken: async () => {",
+      '    try { await notes.put("held_elsewhere", { title: "mine" }); return { threw: false }; }',
+      "    catch (error) { return { threw: true, code: error.code, status: error.status, message: error.message }; }",
+      "  },",
+      "};",
+      "",
+    ].join("\n"));
+
+    const built = spawnSync("npm", ["run", "build", "--silent"], { cwd: appDir, encoding: "utf8" });
+    expect(built.status, `vite build failed:\n${built.stdout}\n${built.stderr}`).toBe(0);
+
+    const port = await freePort();
+    base = `http://127.0.0.1:${port}`;
+    child = spawn("node", ["server.js"], {
+      cwd: appDir,
+      env: {
+        ...process.env,
+        PORT: String(port),
+        VENDO_STORE_URL: `http://127.0.0.1:${storePort}${PREFIX}`,
+        VENDO_APP_TOKEN: TOKEN,
+      },
+      stdio: "ignore",
+    });
+    // Matches this test's own timeout, never tighter (see the note above).
+    const deadline = Date.now() + 300_000;
+    let up = false;
+    while (!up && Date.now() < deadline) {
+      up = await fetch(`${base}/`).then((response) => response.ok, () => false);
+      if (!up) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(up).toBe(true);
+  }, 300_000);
+
+  afterAll(async () => {
+    child?.kill("SIGKILL");
+    await new Promise((resolve) => checker?.close(resolve));
+    if (appRoot !== undefined) rmSync(appRoot, { recursive: true, force: true });
+  });
+
+  const callFn = async (name: string, args: Record<string, unknown> = {}): Promise<unknown> => {
+    const response = await fetch(`${base}/fn/${name}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ args }),
+    });
+    const body = await response.json() as { result?: unknown; error?: { code: string; message: string } };
+    if (body.error) throw new Error(`${body.error.code}: ${body.error.message}`);
+    return body.result;
+  };
+
+  it("puts a row and gets the stored record back", async () => {
+    expect(await callFn("save", { id: "note_1", title: "Hello" })).toEqual({
+      record: { id: "note_1", data: { title: "Hello" }, refs: { status: "open" } },
+    });
+    expect(await callFn("read", { id: "note_1" })).toEqual({
+      record: { id: "note_1", data: { title: "Hello" }, refs: { status: "open" } },
+    });
+  });
+
+  it("gets a missing row as null rather than throwing", async () => {
+    expect(await callFn("read", { id: "never_written" })).toEqual({ record: null });
+  });
+
+  it("lists a collection as { records }", async () => {
+    await callFn("save", { id: "note_2", title: "Second" });
+    const listed = await callFn("all") as { records: { id: string }[] };
+    expect(listed.records.map((record) => record.id)).toContain("note_2");
+  });
+
+  it("deletes a row", async () => {
+    await callFn("save", { id: "note_3", title: "Doomed" });
+    expect(await callFn("remove", { id: "note_3" })).toEqual({ removed: true });
+    expect(await callFn("read", { id: "note_3" })).toEqual({ record: null });
+  });
+
+  it("surfaces a 409 as a thrown error carrying .code = conflict", async () => {
+    expect(await callFn("taken")).toEqual({
+      threw: true,
+      code: "conflict",
+      status: 409,
+      message: "conflict: row held_elsewhere belongs to another owner",
+    });
+  });
+
+  it("sent nothing the real box door would have refused", () => {
+    expect(violations).toEqual([]);
   });
 });
