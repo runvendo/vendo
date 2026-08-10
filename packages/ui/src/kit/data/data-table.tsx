@@ -238,6 +238,9 @@ export function DataTable(props: DataTableProps) {
         style={{
           width: "100%",
           overflowX: "auto",
+          overflowY: "auto",
+          // A long table scrolls in its own box instead of stretching the page.
+          maxHeight: bodyRows.length > 14 ? "min(70vh, 620px)" : undefined,
           border: `1px solid ${t.border}`,
           borderRadius: t.radiusMedium,
           background: t.surface,
@@ -259,6 +262,11 @@ export function DataTable(props: DataTableProps) {
                       scope="col"
                       onClick={header.column.getToggleSortingHandler()}
                       style={{
+                        // Sticky cells don't inherit the row's background, so the tint repeats here.
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 1,
+                        background: `color-mix(in srgb, ${t.background} 72%, ${t.surface})`,
                         color: t.muted,
                         borderBottom: `1px solid ${t.border}`,
                         fontSize: "0.78em",
