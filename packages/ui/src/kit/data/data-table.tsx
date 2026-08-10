@@ -16,7 +16,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { font, t } from "../tokens.js";
+import { amountColor, font, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
 export interface DataTableColumn {
@@ -121,6 +121,8 @@ export function DataTable(props: DataTableProps) {
           const raw = ctx.getValue();
           const formatted = applyFormat(raw, col.format ?? "text");
           if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
+          const negative = amountColor(raw, col.format);
+          if (negative) return <span style={{ color: negative }}>{formatted}</span>;
           return formatted;
         },
         // A dropdown lists the values that exist, so picking one means THIS

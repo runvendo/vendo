@@ -15,11 +15,17 @@ export interface ProgressProps {
 
 const TONE_FILL: Record<NonNullable<ProgressProps["tone"]>, string> = {
   accent: t.accent,
-  success: "#1e7f53",
+  // Was a hardcoded #1e7f53, which is a second green beside the brand's own on a
+  // green host and an unexplained green on a host with no green at all.
+  success: `color-mix(in srgb, ${t.accent} 82%, ${t.text})`,
   danger: t.danger,
 };
 
-export function Progress({ value, max, label, showValue = false, tone = "accent" }: ProgressProps) {
+/** An untoned bar is decoration, so it fills in the theme's text tone. `tone`
+ *  spends the accent or the danger colour only when the writer means it. */
+const NEUTRAL_FILL = `color-mix(in srgb, ${t.text} 62%, ${t.surface})`;
+
+export function Progress({ value, max, label, showValue = false, tone }: ProgressProps) {
   if (!isRenderableNumber(value) || (max !== undefined && !isRenderableNumber(max))) {
     return (
       <div data-kit="Progress" style={{ ...font, color: t.muted }}>
@@ -50,7 +56,7 @@ export function Progress({ value, max, label, showValue = false, tone = "accent"
             width: pct,
             height: "100%",
             borderRadius: 999,
-            background: TONE_FILL[tone],
+            background: tone ? TONE_FILL[tone] : NEUTRAL_FILL,
             transition: `width ${t.motionDuration} ${t.motionEasing}`,
           }}
         />

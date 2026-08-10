@@ -13,7 +13,7 @@ import {
   type DateTimeOptions,
   type MoneyOptions,
 } from "./format.js";
-import { font, t } from "./tokens.js";
+import { amountColor, font, t } from "./tokens.js";
 
 const PLACEHOLDER = "—";
 
@@ -32,12 +32,13 @@ export interface MoneyProps extends MoneyOptions {
   cents: number;
 }
 
-/** Currency from integer cents. `<Money cents={123456}/>` → "$1,234.56". */
+/** Currency from integer cents. `<Money cents={123456}/>` → "$1,234.56"; a
+ *  negative amount carries the theme's danger tone (see `amountColor`). */
 export function Money({ cents, currency, locale }: MoneyProps) {
   const formatted = formatMoney(cents, { currency, locale });
   if (formatted === null) return <Placeholder />;
   return (
-    <span data-kit="Money" style={{ ...font, ...numeric }}>
+    <span data-kit="Money" style={{ ...font, ...numeric, color: amountColor(cents, "money") ?? t.text }}>
       {formatted}
     </span>
   );
@@ -102,15 +103,19 @@ const TONE_STYLE: Record<EnumTone, { color: string; background: string; border: 
     border: t.border,
   },
   accent: { color: t.accentText, background: t.accent, border: t.accent },
+  // The theme names exactly two loud colours, accent and danger, so success and
+  // warning are TINTS of them rather than the fixed green/amber this used to
+  // hardcode — that pair put a second green next to the brand's own on a green
+  // host, and a green "paid" pill on a host whose palette has no green at all.
   success: {
-    color: "color-mix(in srgb, #1e7f53 88%, #000)",
-    background: "color-mix(in srgb, #1e7f53 12%, var(--vendo-color-surface, #ffffff))",
-    border: "color-mix(in srgb, #1e7f53 30%, var(--vendo-color-border, #e3e3e8))",
+    color: `color-mix(in srgb, ${t.accent} 88%, ${t.text})`,
+    background: `color-mix(in srgb, ${t.accent} 12%, ${t.surface})`,
+    border: `color-mix(in srgb, ${t.accent} 30%, ${t.border})`,
   },
   warning: {
-    color: "color-mix(in srgb, #9a6700 90%, #000)",
-    background: "color-mix(in srgb, #d4a017 16%, var(--vendo-color-surface, #ffffff))",
-    border: "color-mix(in srgb, #d4a017 34%, var(--vendo-color-border, #e3e3e8))",
+    color: `color-mix(in srgb, ${t.danger} 74%, ${t.text})`,
+    background: `color-mix(in srgb, ${t.danger} 10%, ${t.surface})`,
+    border: `color-mix(in srgb, ${t.danger} 22%, ${t.border})`,
   },
   danger: {
     color: t.danger,

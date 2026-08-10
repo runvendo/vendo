@@ -1,6 +1,6 @@
 /** CardList — one branded card per record, semantically formatted (W2 §The Kit). */
 import { applyFormat, type ValueFormat } from "../format.js";
-import { font, t } from "../tokens.js";
+import { amountColor, font, t } from "../tokens.js";
 import { EnumBadge } from "../values.js";
 
 export interface CardField {
@@ -86,11 +86,14 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
               </div>
             )}
             {fields.map((f) => {
-              const formatted = applyFormat(resolve(item, f.key), f.format ?? "text");
+              const raw = resolve(item, f.key);
+              const formatted = applyFormat(raw, f.format ?? "text");
               return (
                 <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
                   <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
-                  <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatted ?? "—"}</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums", color: amountColor(raw, f.format) }}>
+                    {formatted ?? "—"}
+                  </span>
                 </div>
               );
             })}
