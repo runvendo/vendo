@@ -369,7 +369,9 @@ async function repairedDocument(input: {
     }],
     abortSignal: input.signal,
   });
-  const repaired = documentIn(await result.text.catch(() => ""));
+  // `then`, not `catch`: the stream's text is a `PromiseLike`, and a rejected one
+  // is the fail-open case rather than an exception this run should carry.
+  const repaired = documentIn(await result.text.then((text) => text, () => ""));
   // An answer identical to the input is the model's other way of saying NO_CHANGE,
   // and a save that changes nothing is a commit and a repaint for no reason.
   return repaired === input.document ? undefined : repaired;
