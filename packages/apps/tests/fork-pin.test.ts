@@ -3,15 +3,24 @@
 // captured source and records the pin with NO builder call. The generator lost
 // the fork decision entirely; an instruction riding the gesture reaches the
 // builder already scoped to an ordinary island edit on the existing fork.
-import type { AppDocument, RunContext, ScreenAssembler, StoreAdapter, ToolRegistry, Tree } from "@vendoai/core";
+import type {
+  RunContext,
+  StoreAdapter,
+  ToolRegistry,
+} from "@vendoai/core";
+import type {
+  AppDocument,
+  ScreenAssembler,
+  Tree,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createApps, type AppsConfig, type AppsRuntime, type PinBaseline } from "../src/index.js";
-import { detectPinDrift, pinComponentName } from "../src/pins.js";
-import { scriptedAssembler } from "../src/testing/authoring-assembler.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createApps, type AppsConfig, type AppsRuntime, type PinBaseline } from "../src/server/index.js";
+import { detectPinDrift, pinComponentName } from "../src/server/remix/pins.js";
+import { scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_gesture" },

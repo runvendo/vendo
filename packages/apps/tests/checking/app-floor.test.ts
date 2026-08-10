@@ -14,14 +14,16 @@
  * tool reference, and produce a binding error.
  */
 import {
+  type ShapeType,
+} from "@vendoai/core";
+import {
   compileWire,
   type Check,
   type NormalizedCatalog,
-  type ShapeType,
-} from "@vendoai/core";
+} from "../../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
-import type { FloorDependencies, HostToolInfo } from "../../src/checking/deps.js";
-import { blocks, createAppFloor } from "../../src/checking/floor.js";
+import type { FloorDependencies, HostToolInfo } from "../../src/server/checking/deps.js";
+import { blocks, createAppFloor } from "../../src/server/checking/floor.js";
 
 const tools: HostToolInfo[] = [{
   name: "host_listInvoices",

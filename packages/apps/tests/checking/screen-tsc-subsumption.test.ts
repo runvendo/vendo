@@ -14,25 +14,27 @@
  */
 import {
   VENDO_APP_FORMAT,
+  type JsonSchema,
+  type ShapeType,
+} from "@vendoai/core";
+import {
   checkBindingShapes,
   compileWire,
   type AppDocument,
-  type JsonSchema,
   type NormalizedCatalog,
-  type ShapeType,
   type StandardSchema,
   type Tree,
-} from "@vendoai/core";
+} from "../../src/contract/index.js";
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
-import { bindingKindIssues, catalogIssues, kitSlotIssues } from "../../src/checking/facts.js";
-import { screenTypings } from "../../src/checking/screen-typings.js";
-import { screenTscFindings } from "../../src/checking/screen-tsc.js";
+import { bindingKindIssues, catalogIssues, kitSlotIssues } from "../../src/server/checking/facts.js";
+import { screenTypings } from "../../src/server/checking/screen-typings.js";
+import { screenTscFindings } from "../../src/server/checking/screen-tsc.js";
 // The bespoke checks under test take the floor's own dependency type; using it
 // (not `GenerationDependencies` from ../generation/) keeps this test inside the
 // §7.3 floor-independence guard that deps.test.ts enforces.
-import type { FloorDependencies } from "../../src/checking/deps.js";
-import { scriptedLanguageModel } from "../../src/testing/scripted-model.js";
+import type { FloorDependencies } from "../../src/server/checking/deps.js";
+import { scriptedLanguageModel } from "../../src/server/testing/scripted-model.js";
 
 const TOOL = "maple_invoices_list";
 

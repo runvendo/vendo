@@ -37,8 +37,10 @@ import type {
   SecretsProvider,
   ToolCall,
   ToolRegistry,
-  VendoTheme,
 } from "@vendoai/core";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import type { VendoGuard, RiskResolver } from "@vendoai/guard";
 import type { CapabilityMissConfig } from "@vendoai/harnesses";
 import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
@@ -72,7 +74,7 @@ import type { resolveVendoUrls } from "./urls.js";
 import type { WireDeps } from "./wire/shared.js";
 import type { createConnectGate, mergedHostSemantics } from "@vendoai/actions";
 import type { createAppTokens } from "@vendoai/apps";
-import type { selectSandbox } from "@vendoai/apps/sandbox-ladder";
+import type { selectSandbox } from "@vendoai/apps";
 import type { appAccess } from "@vendoai/store";
 import type { HostAuthPreset } from "./auth-presets/index.js";
 

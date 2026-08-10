@@ -5,11 +5,14 @@
  * vocabulary — skeleton.ts's withoutPlanVocabulary — so the same defence has
  * to run here too, before any check reads the compiled tree.
  */
-import { compileWire, type NormalizedCatalog } from "@vendoai/core";
+import {
+  compileWire,
+  type NormalizedCatalog,
+} from "../../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { scriptedLanguageModel } from "../../../src/testing/scripted-model.js";
-import { asTree, type GenerationDependencies, type HostToolInfo } from "../../../src/generation/engine.js";
-import { validateCompiledCreate } from "../../../src/generation/validation/validate.js";
+import { scriptedLanguageModel } from "../../../src/server/testing/scripted-model.js";
+import { asTree, type GenerationDependencies, type HostToolInfo } from "../../../src/server/generation/engine.js";
+import { validateCompiledCreate } from "../../../src/server/generation/validation/validate.js";
 
 const catalog: NormalizedCatalog = [];
 const tools: HostToolInfo[] = [];

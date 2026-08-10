@@ -29,12 +29,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   VENDO_MAKE_TOOL,
-  makeReceiptSchema,
   type Json,
   type Principal,
   type ToolDefinition,
   type ToolResult,
 } from "@vendoai/core";
+import {
+  makeReceiptSchema,
+} from "@vendoai/apps/contract";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";

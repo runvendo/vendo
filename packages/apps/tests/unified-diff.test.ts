@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { unifiedDiff } from "../src/unified-diff.js";
+import { unifiedDiff } from "../src/server/persistence/unified-diff.js";
 
 describe("unifiedDiff", () => {
   it("returns an empty string for identical inputs", () => {

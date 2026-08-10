@@ -61,14 +61,16 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 /** package name → allowed @vendoai/* (and umbrella) deps. "*" = anything in the map. */
 const LAYERS = {
   "@vendoai/core": [],
-  "@vendoai/store": ["@vendoai/core"],
-  "@vendoai/actions": ["@vendoai/core"],
+  "@vendoai/store": ["@vendoai/core", "@vendoai/apps"],
+  "@vendoai/actions": ["@vendoai/core", "@vendoai/apps"],
   "@vendoai/guard": ["@vendoai/core"],
-  "@vendoai/ui": ["@vendoai/core"],
+  // ui reaches app generation ONLY through the browser-safe contract door —
+  // enforced by ONLY_SUBPATHS below, not by this list.
+  "@vendoai/ui": ["@vendoai/core", "@vendoai/apps"],
   "@vendoai/apps": ["@vendoai/core"],
   // the door (10-mcp): depends on core only; the ui/tree shim arrives as a
   // prebuilt committed artifact (built by packages/ui/scripts), never an import
-  "@vendoai/mcp": ["@vendoai/core"],
+  "@vendoai/mcp": ["@vendoai/core", "@vendoai/apps"],
   // the product knowledge base (knowledge design v2): engines + ingestion behind
   // core's KnowledgeAdapter contract; core-only, like the other engine blocks
   "@vendoai/knowledge": ["@vendoai/core"],
@@ -132,6 +134,19 @@ const LAYERS = {
   vendoai: ["@vendoai/vendo"],
   // orthogonal to the campaign (00-overview: "stays as-is"); no vendo deps
   "@vendoai/telemetry": [],
+};
+
+/**
+ * consumer → the ONLY specifiers it may use for a given package.
+ *
+ * The scan below reduces every specifier to its package name, so a subpath rule
+ * is matched on the RAW specifier. An ALLOW-list, not a ban list: `@vendoai/apps`
+ * root is the node-only engine and `@vendoai/apps/contract` is its browser-safe
+ * half, so a ban list would let a future node-only subpath through by default.
+ * Browser code reaches the contract and never the root.
+ */
+const ONLY_SUBPATHS = {
+  "@vendoai/ui": { "@vendoai/apps": ["@vendoai/apps/contract"] },
 };
 
 /**
@@ -383,6 +398,12 @@ for (const dir of dirs) {
       const name = spec.startsWith("@")
         ? spec.split("/").slice(0, 2).join("/")
         : spec.split("/")[0];
+      const only = ONLY_SUBPATHS[pkg.name]?.[name];
+      if (only && !only.includes(spec)) {
+        errors.push(
+          `${rel}: imports "${spec}" — ${pkg.name} may reach ${name} only through ${only.join(", ")}.`,
+        );
+      }
       if (RETIRED.includes(name)) {
         errors.push(`${rel}: imports retired quarry package "${name}".`);
       } else if (name.startsWith("@vendoai/") || name === "vendoai") {

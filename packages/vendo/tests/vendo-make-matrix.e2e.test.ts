@@ -31,10 +31,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   VENDO_MAKE_TOOL,
-  makeReceiptSchema,
   type Principal,
   type ToolResult,
 } from "@vendoai/core";
+import {
+  makeReceiptSchema,
+} from "@vendoai/apps/contract";
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";

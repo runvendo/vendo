@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { APP_TOKEN_COLLECTION, createAppTokens } from "../src/app-token.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { APP_TOKEN_COLLECTION, createAppTokens } from "../src/server/persistence/app-token.js";
 
 const APP = "app_box_1";
 const OWNER = "user_ada";

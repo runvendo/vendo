@@ -21,7 +21,10 @@
  * model-free wire paths (/apps/import, enable/approve, vendo.emit).
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { AppDocument, Principal } from "@vendoai/core";
+import {
+  type AppDocument,
+  type Principal,
+} from "@vendoai/core";
 import {
   createStack,
   decideApprovals,

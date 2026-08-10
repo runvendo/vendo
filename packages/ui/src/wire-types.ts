@@ -1,55 +1,30 @@
 /**
  * Structural declarations of wire-response shapes owned by sibling block
- * contracts (06-apps, 07-automations, 03-agent, 09-vendo §3).
+ * contracts (07-automations, 03-agent, 09-vendo §3).
  *
  * ui depends on core only (00-overview dependency rule), so shapes that the
  * wire returns but core does not export are declared here, verbatim from the
  * frozen contract text. "Cannot drift because both sides copied the same frozen
  * text" turned out to be a promise rather than a mechanism, so the shapes the
- * producer and this consumer BOTH speak have moved to core
- * (`core/src/app-surfaces.ts`) and are re-exported below — the client's public
- * surface is unchanged, but there is now only one definition to drift from.
+ * producer and this consumer BOTH speak have moved to their producer's own
+ * contract — `core/src/app-surfaces.ts` and the app-generation contract door,
+ * `@vendoai/apps/contract` — and are re-exported below. The client's public
+ * surface is unchanged; there is now only one definition to drift from.
  */
-import type {
-  AppDocument,
-  AppId,
-  ApprovalRequest,
-  IsoDateTime,
-  Membership,
-  PlacementEntry,
-  ReviewStanding,
-  RunId,
-  ThreadId,
-  Trigger,
-  TriggerSource,
-  ToolOutcome,
-  UIPayload,
+import {
+  type AppDocument,
+  type AppId,
+  type ApprovalRequest,
+  type IsoDateTime,
+  type Membership,
+  type PlacementEntry,
+  type ReviewStanding,
+  type RunId,
+  type ThreadId,
+  type ToolOutcome,
+  type Trigger,
+  type TriggerSource,
 } from "@vendoai/core";
-import type { UIMessage } from "ai";
-
-export type { PlacementEntry, ReviewStanding };
-
-/** 06-apps §1 — what `GET /apps/:id/open` returns. */
-export type OpenSurface =
-  | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }
-  | { kind: "http"; url: string }
-  | { kind: "resuming"; cover?: string }
-  /**
-   * The build turn terminally FAILED (model error, quota, timeout): the app
-   * will never become servable. The embed resolves promptly to the failed
-   * vocabulary with this reason instead of polling to its build deadline.
-   * `prompt` (when the failed record carries it) feeds the retry affordance —
-   * re-issuing the exact create instead of the capped title.
-   */
-  | { kind: "failed"; reason: string; retryable?: boolean; prompt?: string };
-
-/** Existing-agents polish — the flag-gated build-window answer: what
- *  `GET /apps/:id/open?pending=1` returns while the app is not yet servable
- *  (the record lands at build completion). Only flagged polls ever see it;
- *  unflagged callers keep the contracted not-found. */
-export interface PendingSurface {
-  kind: "pending";
-}
 
 /** One row of `GET /slots` — a destination a mounted `VendoSlot` reported on
  *  this deployment. A slot id is the HOST's markup, not a Vendo document, so
@@ -64,109 +39,23 @@ export interface SlotEntry {
   /** When a mounted slot last reported itself. */
   lastSeen: string;
 }
+import type { UIMessage } from "ai";
 
-/**
- * 06-apps §9 — the additive in-client venue verdict riding a tree payload
- * (`payload.inClient`). SERVER-AUTHORITATIVE: only the runtime's hash-pin
- * verification writes it. `granted: true` is the ONLY state that lets the
- * renderer mount generated code in the host page; a missing field and every
- * other state stay in the sandboxed iframe jail — except review-kind's
- * `reason: "pending-review"` (2026-08-02), which must render the ORIGINAL
- * host component: the server ships no executable fork source with it, so a
- * jailed fork render cannot occur. A granted verdict's `review` rider means
- * an OLDER approved version is being served while the current one awaits
- * review.
- */
-export type InClientVenue =
-  | { granted: true; versionHash: string; approvedBy: string; at: IsoDateTime; review?: ReviewStanding }
-  | { granted: false; versionHash: string; reason: "version-changed" }
-  | { granted: false; versionHash: string; reason: "pending-review"; review: ReviewStanding };
+export type { PlacementEntry, ReviewStanding };
 
-/**
- * 06-apps §8 — one drifted pin riding a tree payload (`payload.pinDrift`):
- * the host updated (or removed) the captured component this fork was remixed
- * from. SERVER-AUTHORITATIVE: only the runtime's baseline comparison writes
- * it. Informational — the renderer says so loudly but never mutates content;
- * a rebase is always user-invoked.
- */
-export interface PinDrift {
-  slot: string;
-  component: string;
-  baseHash: string;
-  baselineHash?: string;
-  reason: "baseline-changed" | "baseline-missing";
-}
-
-/** 06-apps §8–§9 — what `GET /apps/:id/ship-diff` returns. */
-export interface ShipDiff {
-  appId: AppId;
-  versionHash: string;
-  pins: Array<{
-    slot: string;
-    component: string;
-    baseHash: string;
-    baselineHash?: string;
-    drifted: boolean;
-    diff: string;
-  }>;
-  generated: Array<{ component: string; diff: string }>;
-}
-
-/** 06-apps §1 — what `POST /apps/:id/edit` returns. */
-export interface EditResult {
-  app: AppDocument;
-  version: VersionEntry;
-  issues?: string[];
-  /** Additive 06 §8 drift report: present when the edited app has drifted pins. */
-  driftedPins?: PinDrift[];
-}
-
-/**
- * 06-apps §8 — what `POST /apps/:id/rebase-pin` returns. `failed` persisted
- * NOTHING: the pre-rebase version stays live and the report lists which
- * recorded intents replayed, which one failed, and which were never attempted.
- */
-export type PinRebaseResult =
-  | {
-    status: "rebased";
-    app: AppDocument;
-    version: VersionEntry;
-    slot: string;
-    baseHash: string;
-    replayed: string[];
-  }
-  | {
-    status: "failed";
-    slot: string;
-    baseHash: string;
-    replayed: string[];
-    failed: { intent: string; issues: string[] };
-    remaining: string[];
-  };
-
-/**
- * 06-apps §8 — what `POST /apps/fork-pin` and `POST /apps/:id/fork-pin`
- * return: the gesture-owned DETERMINISTIC fork (engine copies the captured
- * baseline and records the pin; no model call). `version` describes the fork
- * itself; `edit` is present only when the gesture carried an instruction —
- * the ordinary edit that ran afterwards, already scoped to the forked
- * component. A failed `edit` never rolls the fork back, so `app` is always at
- * least the faithful fork.
- */
-export interface PinForkResult {
-  app: AppDocument;
-  version: VersionEntry;
-  slot: string;
-  componentName: string;
-  edit?: EditResult;
-}
-
-/** 06-apps §1 — one entry of `GET /apps/:id/history`. */
-export interface VersionEntry {
-  at: IsoDateTime;
-  intent: string;
-  rung: 1 | 2 | 3 | 4;
-}
+/** 06-apps §1/§8/§9 — the app-generation half of the wire. One definition,
+ *  on the producer's browser-safe contract door. */
+export type {
+  EditResult,
+  InClientVenue,
+  OpenSurface,
+  PendingSurface,
+  PinDrift,
+  PinForkResult,
+  PinRebaseResult,
+  ShipDiff,
+  VersionEntry,
+} from "@vendoai/apps/contract";
 
 /** 04-actions §3 — one per-user connected account as `GET /connections` returns it. */
 export interface ConnectionAccount {

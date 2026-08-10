@@ -1,18 +1,26 @@
-import type {
-  Guard,
-  Json,
-  Membership,
-  Principal,
-  RiskLabel,
-  RunContext,
-  StoreAdapter,
-  ToolDescriptor,
-  ToolOutcome,
-  ToolRegistry,
-  ToolResult,
-  VendoTheme,
+import {
+  auditContext,
+  type Guard,
+  type Json,
+  type Membership,
+  type Principal,
+  publicBase,
+  type RiskLabel,
+  type RunContext,
+  type StoreAdapter,
+  stripPathPrefix,
+  type ToolDescriptor,
+  type ToolOutcome,
+  type ToolRegistry,
+  type ToolResult,
+  withPathPrefix,
 } from "@vendoai/core";
-import { auditContext, publicBase, stripPathPrefix, themeCssVariables, withPathPrefix } from "@vendoai/core";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
+import {
+  themeCssVariables,
+} from "@vendoai/apps/contract";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";

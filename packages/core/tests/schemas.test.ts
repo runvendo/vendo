@@ -15,7 +15,6 @@ import {
   toolOutcomeSchema,
   triggerSourceSchema,
   vendoApprovalPartSchema,
-  vendoThemeSchema,
   vendoViewPartSchema,
   type RunContext,
 } from "../src/index.js";
@@ -210,19 +209,6 @@ describe("context, triggers, host reports, theme, and stream schemas", () => {
       status: "ok",
       summary: "Listed invoices",
       toolCalls: [{ call, outcome: "ok" }],
-    }).success).toBe(true);
-  });
-
-  it("validates a complete theme", () => {
-    expect(vendoThemeSchema.safeParse({
-      colors: {
-        background: "#fff", surface: "#fff", text: "#111", muted: "#777",
-        accent: "#00f", accentText: "#fff", danger: "#f00", border: "#ddd",
-      },
-      typography: { fontFamily: "Inter", baseSize: "16px" },
-      radius: { small: "4px", medium: "8px", large: "16px" },
-      density: "comfortable",
-      motion: "reduced",
     }).success).toBe(true);
   });
 

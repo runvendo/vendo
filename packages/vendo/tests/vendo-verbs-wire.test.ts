@@ -14,14 +14,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  DEFAULT_TRIGGER_ID,
-  VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
   type AppDocument,
-  type ComponentRegistry,
+  DEFAULT_TRIGGER_ID,
   type Principal,
   type RunContext,
+  VENDO_APP_FORMAT,
+  VENDO_TREE_FORMAT,
 } from "@vendoai/core";
+import {
+  type ComponentRegistry,
+} from "@vendoai/apps/contract";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";

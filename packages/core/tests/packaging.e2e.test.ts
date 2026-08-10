@@ -16,11 +16,10 @@ const WORK_DIR = join(PACKAGE_DIR, ".e2e-pack");
 
 const RUNTIME_EXPORTS = [
   "VENDO_APP_FORMAT",
-  "VENDO_POLICY_FORMAT", "VENDO_CAPABILITY_MISS_FORMAT", "descriptorHash", "validateTree", "validateAppDocument", "VendoError",
+  "VENDO_POLICY_FORMAT", "VENDO_CAPABILITY_MISS_FORMAT", "descriptorHash", "VendoError",
   "safeErrorMessage", "canonicalJson", "sha256Hex", "TOOL_NAME_PATTERN",
   "TREE_MAX_NODES", "TREE_MAX_QUERIES", "TREE_MAX_GENERATED_COMPONENTS",
-  "TREE_MAX_COMPONENT_SOURCE_CHARS", "TREE_MAX_TOTAL_COMPONENT_CHARS", "KIT_COMPONENT_NAMES",
-  "isPathBinding", "isStateBinding",
+  "TREE_MAX_COMPONENT_SOURCE_CHARS", "TREE_MAX_TOTAL_COMPONENT_CHARS", "isPathBinding", "isStateBinding",
   "principalSchema", "runContextSchema", "triggerRefSchema", "riskLabelSchema",
   "toolDescriptorSchema", "toolCallSchema", "toolOutcomeSchema",
   "grantScopeSchema", "grantDurationSchema", "permissionGrantSchema", "approvalRequestSchema",
@@ -28,15 +27,11 @@ const RUNTIME_EXPORTS = [
   "treeNodeSchema", "appDocumentSchema", "storageDeclSchema",
   "pinSchema", "triggerSourceSchema", "runModelSchema", "stepSchema", "triggerSchema",
   "vendoRecordSchema", "recordQuerySchema", "authMaterialSchema", "agentRunReportSchema",
-  "vendoThemeSchema", "vendoViewPartSchema", "vendoApprovalPartSchema", "vendoErrorCodeSchema",
+  "vendoViewPartSchema", "vendoApprovalPartSchema", "vendoErrorCodeSchema",
   "capabilityMissToolFailureSchema", "capabilityMissTriggerSchema", "capabilityMissEventSchema",
   "appIdSchema", "grantIdSchema", "approvalIdSchema", "runIdSchema", "threadIdSchema",
   "isoDateTimeSchema", "jsonSchemaSchema",
-  "VENDO_TREE_FORMAT", "validateTree", "treeSchema", "treeQuerySchema",
-  "compileWire", "WIRE_ISSUE_CODES",
-  "defaultVendoTheme", "resolveTheme", "colorSchemeForBackground", "themeCssVariables",
-  "VENDO_THEME_VARIABLE_NAMES",
-];
+  "VENDO_TREE_FORMAT", ];
 
 interface PackedPackage {
   dir: string;
@@ -89,13 +84,14 @@ describe("packaging e2e — the artifact blocks will install", () => {
     const missing = RUNTIME_EXPORTS.filter((name) => !(name in core));
     expect(missing).toEqual([]);
 
-    // behavior spot-checks through the packed artifact
-    const tree = core.validateTree({
-      formatVersion: "vendo-genui/v2",
-      root: "a",
-      nodes: [{ id: "a", component: "Text" }],
+    // behavior spot-checks through the packed artifact. The tree validator moved
+    // to `@vendoai/apps/contract` with the rest of the app format, so the schema
+    // core still owns stands in for it — the subject is the packed artifact, not
+    // which validator it carries.
+    const parsed = core.appDocumentSchema.safeParse({
+      format: "vendo/app@1", id: "app_a", name: "A", ui: "http",
     });
-    expect(tree.ok).toBe(true);
+    expect(parsed.success).toBe(true);
     const err = new core.VendoError("not-found", "missing");
     expect(err).toBeInstanceOf(Error);
     expect(err.code).toBe("not-found");
@@ -168,10 +164,10 @@ describe("packaging e2e — the artifact blocks will install", () => {
     const script = `
       const core = await import(${JSON.stringify(pathToFileURL(packed.resolve(".")).href)});
       const conf = await import(${JSON.stringify(pathToFileURL(packed.resolve("./conformance")).href)});
-      const tree = core.validateTree({ formatVersion: "vendo-genui/v2", root: "a", nodes: [{ id: "a", component: "Text" }] });
+      const parsed = core.appDocumentSchema.safeParse({ format: "vendo/app@1", id: "app_a", name: "A", ui: "http" });
       const hash = core.descriptorHash({ name: "t", description: "", inputSchema: {}, risk: "read" });
       const report = await conf.runConformance(conf.storeAdapterConformance({ makeAdapter: async () => ({ adapter: conf.memoryStoreAdapter() }) }));
-      if (!tree.ok || !hash.startsWith("sha256:") || !report.ok) throw new Error("bun leg failed");
+      if (!parsed.success || !hash.startsWith("sha256:") || !report.ok) throw new Error("bun leg failed");
       console.log("BUN_OK");
     `;
     const output = execFileSync(bunPath, ["-e", script], { encoding: "utf8" });

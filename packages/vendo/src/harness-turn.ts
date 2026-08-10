@@ -15,13 +15,11 @@
 import {
   VendoError,
   createTurnSkills,
-  hostComponentFiles,
   hostSkillFiles,
   isUnattended,
   type FilesAdapter,
   type Harness,
   type Membership,
-  type NormalizedCatalog,
   type Skill,
   type Principal,
   type ResolvedModels,
@@ -30,6 +28,10 @@ import {
   type ToolRegistry,
   type WorkspaceFs,
 } from "@vendoai/core";
+import {
+  hostComponentFiles,
+  type NormalizedCatalog,
+} from "@vendoai/apps/contract";
 import { ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
 import {
   HOT_PATH_WATCH,

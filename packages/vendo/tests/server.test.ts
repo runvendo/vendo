@@ -2,16 +2,18 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type AppDocument,
+  type Principal,
+  type RunContext,
   VENDO_APP_FORMAT,
   VENDO_POLICY_FORMAT,
   VENDO_TREE_FORMAT,
   VendoError,
-  type AppDocument,
+} from "@vendoai/core";
+import {
   type ComponentCatalog,
   type ComponentRegistry,
-  type Principal,
-  type RunContext,
-} from "@vendoai/core";
+} from "@vendoai/apps/contract";
 import type { SandboxAdapter } from "@vendoai/apps";
 import type { Connector } from "@vendoai/actions";
 import type { ConnectionsService } from "../src/connections.js";

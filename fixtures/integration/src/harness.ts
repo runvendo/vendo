@@ -25,7 +25,11 @@ import { inject } from "vitest";
 import { zipSync } from "fflate";
 import type { Connector } from "@vendoai/actions";
 import type { SandboxAdapter } from "@vendoai/apps";
-import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core";
+import {
+  type AppDocument,
+  type Principal,
+  type ToolRegistry,
+} from "@vendoai/core";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { createVendo, type CreateVendoConfig, type Vendo } from "@vendoai/vendo/server";

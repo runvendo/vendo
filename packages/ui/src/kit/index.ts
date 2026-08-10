@@ -78,7 +78,12 @@ export { applyThemeVars, postToHost, startFrameProtocol } from "../embedded-runt
  * `undefined`; these two answer with `{ ok, reason }` / `{ ok, issue }`. Same
  * functions, one implementation — this is the second shape, and the only one.
  */
-export { applyReshape, evaluateExpr } from "@vendoai/core";
+export {
+  applyReshape,
+} from "@vendoai/core";
+export {
+  evaluateExpr,
+} from "@vendoai/apps/contract";
 export type { Json, ReshapeOp, ReshapeResult, ReshapeStep, ToolOutcome } from "@vendoai/core";
 
 // The projection vocabulary: nine live reshape ops.

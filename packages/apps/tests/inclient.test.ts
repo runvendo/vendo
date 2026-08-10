@@ -1,14 +1,21 @@
-import { VENDO_APP_FORMAT, type AppDocument, type RunContext, type ToolRegistry } from "@vendoai/core";
+import {
+  VENDO_APP_FORMAT,
+  type RunContext,
+  type ToolRegistry,
+} from "@vendoai/core";
+import {
+  type AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createInClientApprovals } from "../src/inclient.js";
-import { createApps, type AppsRuntime } from "../src/index.js";
-import { pinComponentName, type InClientApproval, type PinBaseline } from "../src/pins.js";
-import { authoringAssembler, scriptedAssembler } from "../src/testing/authoring-assembler.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
-import { appVersionHash } from "../src/version-hash.js";
+import { createInClientApprovals } from "../src/server/remix/inclient.js";
+import { createApps, type AppsRuntime } from "../src/server/index.js";
+import { pinComponentName, type InClientApproval, type PinBaseline } from "../src/server/remix/pins.js";
+import { authoringAssembler, scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
+import { appVersionHash } from "../src/server/remix/version-hash.js";
 
 const tools: ToolRegistry = {
   async descriptors() {

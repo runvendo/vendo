@@ -8,14 +8,22 @@
  * learn which of the two was wrong.
  */
 import { readFile } from "node:fs/promises";
-import { compilePlan, compileWire, EXPR_CALLS, RESHAPE_OPS, WIRE_COMPONENT_NAMES } from "@vendoai/core";
+import {
+  RESHAPE_OPS,
+} from "@vendoai/core";
+import {
+  compilePlan,
+  compileWire,
+  EXPR_CALLS,
+  WIRE_COMPONENT_NAMES,
+} from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { VENDO_FORMAT_REFERENCE } from "../../src/skills/format-reference.js";
+import { VENDO_FORMAT_REFERENCE } from "../../src/server/skills/format-reference.js";
 
 const FENCED = /```\n([\s\S]*?)```/g;
 
 const REPO_ROOT = new URL("../../../../", import.meta.url);
-const PLAN_COMPILER = "packages/core/src/genui/plan/compile.ts";
+const PLAN_COMPILER = "packages/apps/src/contract/genui/plan/compile.ts";
 
 /** The reference's own `<Plan>` section, up to the next heading. */
 const planSection = (): string => {

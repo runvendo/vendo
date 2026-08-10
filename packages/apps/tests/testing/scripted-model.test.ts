@@ -12,7 +12,7 @@
  */
 import { generateText, streamText } from "ai";
 import { describe, expect, it } from "vitest";
-import { basicLanguageModel, scriptedLanguageModel, type ScriptedModelCall } from "../../src/testing/scripted-model.js";
+import { basicLanguageModel, scriptedLanguageModel, type ScriptedModelCall } from "../../src/server/testing/scripted-model.js";
 
 const ask = (model: ReturnType<typeof scriptedLanguageModel>, prompt = "hello") =>
   generateText({ model, prompt });

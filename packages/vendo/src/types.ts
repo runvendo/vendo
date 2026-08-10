@@ -19,8 +19,6 @@ import type { VendoAgent as ComposedAgent } from "@vendoai/agents";
 import type { AutomationsEngine } from "@vendoai/automations";
 import type {
   ActAs,
-  ComponentCatalog,
-  ComponentRegistry,
   FilesAdapter,
   Harness,
   Json,
@@ -32,8 +30,12 @@ import type {
   Skill,
   ToolDefinition,
   ToolRegistry,
-  VendoTheme,
 } from "@vendoai/core";
+import type {
+  ComponentCatalog,
+  ComponentRegistry,
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import type { GuardRules, PolicyFile, VendoGuard } from "@vendoai/guard";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 import type { VendoStore } from "@vendoai/store";

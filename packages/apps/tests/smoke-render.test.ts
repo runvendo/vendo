@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isWorkerLoadablePath, resolveWorkerModulePaths, sampleFromShape, smokeRenderIslands } from "../src/checking/smoke-render.js";
+import { isWorkerLoadablePath, resolveWorkerModulePaths, sampleFromShape, smokeRenderIslands } from "../src/server/checking/smoke-render.js";
 
 /**
  * v4 wave — the smoke-render gate. Final gate 2026-07-21: two crash forms

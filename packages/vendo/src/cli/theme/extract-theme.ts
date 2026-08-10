@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { VendoTheme } from "@vendoai/core";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import { z } from "zod";
 import { contrastingText, normalizeColor, normalizeLength, resolveCssVarRefs } from "./color.js";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";

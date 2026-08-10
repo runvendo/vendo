@@ -38,9 +38,6 @@ import {
   type CommitResult,
   type SeatModels,
   type RunContext,
-  type ScreenAssembler,
-  type ScreenOutcome,
-  type ScreenRequest,
   type ToolListing,
   type ToolRegistry,
   type TurnId,
@@ -54,6 +51,11 @@ import {
   UNKNOWN_INPUT_SCHEMA_NOTE,
   UNKNOWN_OUTPUT_SHAPE_NOTE,
 } from "@vendoai/core";
+import {
+  type ScreenAssembler,
+  type ScreenOutcome,
+  type ScreenRequest,
+} from "@vendoai/apps/contract";
 import {
   buildingAppsSkill,
   paintedIn,

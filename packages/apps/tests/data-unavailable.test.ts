@@ -16,20 +16,22 @@
  * reverse.
  */
 import {
-  compileWire,
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
-  type AppDocument,
   type RunContext,
   type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
 } from "@vendoai/core";
+import {
+  compileWire,
+  type AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createApps } from "../src/index.js";
-import { bindTools, guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createApps } from "../src/server/index.js";
+import { bindTools, guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const APP_ID = "app_data_unavailable";
 

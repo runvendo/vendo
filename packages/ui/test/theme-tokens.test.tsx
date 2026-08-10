@@ -9,7 +9,9 @@
 // the shipped sheet — and that the user bubble fill is neutral, not raw accent.
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { VendoTheme } from "@vendoai/core";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import { defaultVendoTheme, themeCssVariables } from "../src/theme.js";
 import { t } from "../src/kit/tokens.js";
 import { VendoProvider, createVendoClient } from "../src/index.js";

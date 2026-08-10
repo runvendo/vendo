@@ -3,4 +3,7 @@
  * W3 hoisted the generator to `@vendoai/core` (the engine consumes it there);
  * re-exported so the `@vendoai/ui/kit` surface is unchanged.
  */
-export { kitPrompt, type KitPromptOptions } from "@vendoai/core";
+export {
+  kitPrompt,
+  type KitPromptOptions,
+} from "@vendoai/apps/contract";

@@ -1,15 +1,19 @@
 import { catalogFileSchema, type CatalogFile } from "@vendoai/actions";
-import { VendoError, componentPath } from "@vendoai/core";
+import {
+  type JsonSchema,
+  VendoError,
+} from "@vendoai/core";
+import {
+  componentPath,
+} from "@vendoai/apps/contract";
 import type {
   ComponentCatalog,
   ComponentRegistry,
-  JsonSchema,
   NormalizedCatalog,
   NormalizedCatalogEntry,
   RegisteredComponent,
   StandardSchema,
-  VendoTheme,
-} from "@vendoai/core";
+} from "@vendoai/apps/contract";
 import { zodSchema } from "ai";
 import Ajv, { type ErrorObject } from "ajv";
 import addFormats from "ajv-formats";
@@ -205,27 +209,6 @@ export function normalizeCatalogConfig(
     ...(entry.props === undefined ? {} : { propsSchema: entry.props }),
     ...(entry.examples === undefined ? {} : { examples: entry.examples }),
   }, source));
-}
-
-/** AGENT-1 — 03 §3 item (4): the model-facing summary of the host components a
- * generated view may use and how the host's brand should feel. One succinct
- * block; the agent injects it only for venues that render trees. */
-export function catalogThemeSummary(
-  catalog: NormalizedCatalog,
-  theme?: VendoTheme,
-): string | undefined {
-  const sections: string[] = [];
-  if (catalog.length > 0) {
-    const lines = catalog.map((entry) =>
-      `- ${entry.name}: ${entry.description.split("\n", 1)[0] ?? ""}`.trimEnd());
-    sections.push(`Host components (usable in generated views beside the built-in primitives)\n${lines.join("\n")}`);
-  }
-  if (theme !== undefined) {
-    sections.push(
-      `Theme: ${theme.density} density, ${theme.motion} motion, ${theme.typography.fontFamily} typography.`,
-    );
-  }
-  return sections.length > 0 ? sections.join("\n\n") : undefined;
 }
 
 /** Explicit createVendo registrations win by name over disk registrations. */

@@ -31,7 +31,7 @@ const readJson = async <T>(path: string): Promise<T> => JSON.parse(await read(pa
 
 const PAGE = "docs-site/existing-agents/your-agent.mdx";
 const NAV_ENTRY = "existing-agents/your-agent";
-const AGENT_TOOLS = "packages/apps/src/agent-tools.ts";
+const AGENT_TOOLS = "packages/apps/src/server/doors/agent-tools.ts";
 const PACK = "packages/vendo/src/pack.ts";
 
 interface DocsJson {
@@ -156,7 +156,7 @@ describe("the page's argument tables match the real schemas", () => {
 
 describe("the receipt law the page teaches is the real receipt", () => {
   it("has exactly id, title, status, say — and status's three values", async () => {
-    const source = await read("packages/core/src/make-receipt.ts");
+    const source = await read("packages/apps/src/contract/make-receipt.ts");
     expect(source).toContain("id: appIdSchema");
     expect(source).toContain("title: z.string().min(1)");
     expect(source).toContain('status: z.enum(["ready", "building", "failed"])');

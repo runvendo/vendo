@@ -4,18 +4,20 @@ import {
   VENDO_TOOL_TITLES,
   toolDescriptorSchema,
   type RunContext,
-  type ScreenAssembler,
   type ToolRegistry,
 } from "@vendoai/core";
+import {
+  type ScreenAssembler,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { agentToolDescriptors } from "../src/agent-tools.js";
-import { createApps, type AppsRuntime, type PlacementEntry } from "../src/index.js";
-import { authoringAssembler, scriptedAssembler } from "../src/testing/authoring-assembler.js";
-import { fakeBoxSandbox } from "../src/testing/fake-box.js";
-import { bindTools, guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel, scriptedLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { agentToolDescriptors } from "../src/server/doors/agent-tools.js";
+import { createApps, type AppsRuntime, type PlacementEntry } from "../src/server/index.js";
+import { authoringAssembler, scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { fakeBoxSandbox } from "../src/server/testing/fake-box.js";
+import { bindTools, guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel, scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
 
 const ctx: RunContext = {

@@ -1,8 +1,8 @@
 import {
-  canonicalJson,
   type AppDocument,
   type AuditEvent,
   type BlobStore,
+  canonicalJson,
   type Guard,
   type Json,
   type Membership,
@@ -14,9 +14,11 @@ import {
   type ToolListing,
   type ToolOutcome,
   type ToolRegistry,
-  type VendoTheme,
   type VendoRecord,
 } from "@vendoai/core";
+import {
+  type VendoTheme,
+} from "@vendoai/apps/contract";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";

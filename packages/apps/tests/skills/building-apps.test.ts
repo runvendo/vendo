@@ -6,7 +6,7 @@
  */
 import { createTurnSkills, hostSkillFiles, renderSkillMd, type SkillsFs } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { buildingAppsSkill } from "../../src/skills/building-apps.js";
+import { buildingAppsSkill } from "../../src/server/skills/building-apps.js";
 
 /** A workspace opened with this skill in its read-only `/host` projection. */
 const mounted = (): SkillsFs => {

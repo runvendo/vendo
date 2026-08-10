@@ -76,6 +76,9 @@ importers:
       '@vendoai/actions':
         specifier: workspace:*
         version: link:../../packages/actions
+      '@vendoai/apps':
+        specifier: workspace:*
+        version: link:../../packages/apps
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -833,6 +836,9 @@ importers:
 
   packages/actions:
     dependencies:
+      '@vendoai/apps':
+        specifier: workspace:*
+        version: link:../apps
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core
@@ -1148,6 +1154,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)
+      '@vendoai/apps':
+        specifier: workspace:*
+        version: link:../apps
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core
@@ -1173,6 +1182,9 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.5.4
         version: 0.5.4
+      '@vendoai/apps':
+        specifier: workspace:*
+        version: link:../apps
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core
@@ -1204,6 +1216,9 @@ importers:
       '@tanstack/react-table':
         specifier: ^8.20.0
         version: 8.21.3(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@vendoai/apps':
+        specifier: workspace:*
+        version: link:../apps
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core

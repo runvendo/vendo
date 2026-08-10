@@ -6,18 +6,20 @@
  */
 import {
   VENDO_APP_FORMAT,
+  type ShapeType,
+} from "@vendoai/core";
+import {
   compileWire,
   type AppDocument,
   type AppPlan,
   type NormalizedCatalog,
-  type ShapeType,
-} from "@vendoai/core";
+} from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createCheckingLayer, judgmentRules } from "../../src/checking/layer.js";
-import { reviewerCheck } from "../../src/checking/reviewer.js";
-import type { Check, CheckInput } from "../../src/checking/types.js";
-import type { FloorDependencies, HostToolInfo } from "../../src/checking/deps.js";
-import { scriptedLanguageModel, type ScriptedModelCall } from "../../src/testing/scripted-model.js";
+import { createCheckingLayer, judgmentRules } from "../../src/server/checking/layer.js";
+import { reviewerCheck } from "../../src/server/checking/reviewer.js";
+import type { Check, CheckInput } from "../../src/server/checking/types.js";
+import type { FloorDependencies, HostToolInfo } from "../../src/server/checking/deps.js";
+import { scriptedLanguageModel, type ScriptedModelCall } from "../../src/server/testing/scripted-model.js";
 
 const tools: HostToolInfo[] = [{
   name: "host_listInvoices",

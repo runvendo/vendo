@@ -8,7 +8,7 @@
  */
 import type { CapabilityMissConfig } from "@vendoai/harnesses";
 import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
-import { catalogThemeSummary } from "./catalog.js";
+import { catalogThemeSummary } from "@vendoai/apps/contract";
 import type { CloudConfig } from "./cloud-config.js";
 import type { VendoComposition } from "./compose-context.js";
 import { selectConfigSurface } from "./config-surface.js";

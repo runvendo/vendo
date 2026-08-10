@@ -1,14 +1,22 @@
-import { compileWire, type AppDocument, type RunContext, type StoreAdapter, type ToolRegistry } from "@vendoai/core";
+import {
+  type RunContext,
+  type StoreAdapter,
+  type ToolRegistry,
+} from "@vendoai/core";
+import {
+  compileWire,
+  type AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createAppHistory } from "../src/history.js";
-import { createApps, type AppsRuntime, type PinBaseline } from "../src/index.js";
-import { detectPinDrift, pinComponentName } from "../src/pins.js";
-import { appVersionHash } from "../src/version-hash.js";
-import { scriptedAssembler, type AssemblerAnswer } from "../src/testing/authoring-assembler.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createAppHistory } from "../src/server/persistence/history.js";
+import { createApps, type AppsRuntime, type PinBaseline } from "../src/server/index.js";
+import { detectPinDrift, pinComponentName } from "../src/server/remix/pins.js";
+import { appVersionHash } from "../src/server/remix/version-hash.js";
+import { scriptedAssembler, type AssemblerAnswer } from "../src/server/testing/authoring-assembler.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_rebase" },

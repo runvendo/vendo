@@ -7,9 +7,12 @@
  * PREFIX of the plan must mint the same ids as the skeleton of the whole plan,
  * so a plan arriving group by group makes the UI GROW instead of re-mounting.
  */
-import { validateTree, type AppPlan } from "@vendoai/core";
+import {
+  validateTree,
+  type AppPlan,
+} from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { skeletonFromPlan } from "../../src/generation/skeleton.js";
+import { skeletonFromPlan } from "../../src/server/generation/skeleton.js";
 
 const plan = (groups: AppPlan["groups"], extra: Partial<AppPlan> = {}): AppPlan => ({
   name: "Invoices",

@@ -1,13 +1,19 @@
-import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
-import { VENDO_APP_FORMAT } from "@vendoai/core";
+import {
+  type RunContext,
+  type ToolRegistry,
+  VENDO_APP_FORMAT,
+} from "@vendoai/core";
+import type {
+  AppDocument,
+} from "../src/contract/index.js";
 import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { createMachineLane } from "../src/box-lane.js";
-import { createApps, type AppsConfig } from "../src/index.js";
-import { fakeStatefulSandbox, type FakeStatefulSandbox } from "../src/testing/fake-sandbox-stateful.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createMachineLane } from "../src/server/escalation/box-lane.js";
+import { createApps, type AppsConfig } from "../src/server/index.js";
+import { fakeStatefulSandbox, type FakeStatefulSandbox } from "../src/server/testing/fake-sandbox-stateful.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const decoder = new TextDecoder();
 

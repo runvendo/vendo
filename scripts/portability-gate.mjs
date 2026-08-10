@@ -56,8 +56,8 @@ const FORBIDDEN_INPUTS = [
   { fragment: "packages/store/dist/crypto.js", seam: "#store/crypto conditions" },
   { fragment: "node_modules/.pnpm/pg@", seam: "#store/db conditions" },
   { fragment: "node_modules/.pnpm/typescript@", seam: "@vendoai/actions/sync subpath split" },
-  { fragment: "node_modules/.pnpm/e2b@", seam: "bundler-blind e2b specifier (apps/src/e2b)" },
-  { fragment: "node_modules/.pnpm/esbuild@", seam: "bundler-blind esbuild specifier (apps/src/engine island validator)" },
+  { fragment: "node_modules/.pnpm/e2b@", seam: "bundler-blind e2b specifier (apps/src/server/escalation/e2b)" },
+  { fragment: "node_modules/.pnpm/esbuild@", seam: "bundler-blind esbuild specifier (apps/src/server/checking/islands)" },
 ];
 
 /** Raw source patterns whose fix classes this gate owns. */
@@ -68,7 +68,7 @@ const SOURCE_GUARDS = [
   },
   {
     pattern: /await import\((?:\/\*[^*]*\*\/\s*)*["']e2b["']\)/,
-    message: "literal import(\"e2b\") — esbuild hard-resolves it; route through the bundler-blind specifier in packages/apps/src/e2b",
+    message: "literal import(\"e2b\") — esbuild hard-resolves it; route through the bundler-blind specifier in packages/apps/src/server/escalation/e2b",
   },
   {
     pattern: /await import\((?:\/\*[^*]*\*\/\s*)*["']esbuild["']\)/,

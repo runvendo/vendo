@@ -1,19 +1,20 @@
 // The filesystem shape lives in core (vendored from just-bash, Apache-2.0), so
 // neither core nor the store depends on the bash interpreter at runtime.
-import type {
-  BufferEncoding,
-  CommitResult,
-  CpOptions,
-  DirentEntry,
-  FileContent,
-  FsStat,
-  MkdirOptions,
-  ReadFileOptions,
-  RmOptions,
-  WorkspaceFs,
-  WriteFileOptions,
+import {
+  type BufferEncoding,
+  type CommitResult,
+  type CpOptions,
+  type DirentEntry,
+  type FileContent,
+  type FsStat,
+  type MkdirOptions,
+  type ReadFileOptions,
+  type RmOptions,
+  safeErrorMessage,
+  VendoError,
+  type WorkspaceFs,
+  type WriteFileOptions,
 } from "@vendoai/core";
-import { safeErrorMessage, VendoError } from "@vendoai/core";
 import type { PreparedWrite, WorkspaceFileMeta, WorkspaceRows } from "./workspace-rows.js";
 
 /** Build contract §3.1 — the frozen layout. `/user` is the subject's, rw;

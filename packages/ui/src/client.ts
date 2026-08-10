@@ -5,19 +5,19 @@
  * The interface is the coordination artifact between lanes; the
  * implementation lives in client-impl.ts (lane A).
  */
-import type {
-  AppDocument,
-  AppId,
-  ApprovalDecision,
-  ApprovalId,
-  ApprovalRequest,
-  AuditEvent,
-  GrantId,
-  Json,
-  PermissionGrant,
-  RunId,
-  ThreadId,
-  ToolOutcome,
+import {
+  type AppDocument,
+  type AppId,
+  type ApprovalDecision,
+  type ApprovalId,
+  type ApprovalRequest,
+  type AuditEvent,
+  type GrantId,
+  type Json,
+  type PermissionGrant,
+  type RunId,
+  type ThreadId,
+  type ToolOutcome,
 } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import type {

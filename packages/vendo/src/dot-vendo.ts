@@ -6,7 +6,13 @@
  */
 import type { ExtractedTool } from "@vendoai/actions";
 import { pinBaselineSchema, type PinBaseline } from "@vendoai/apps";
-import { vendoThemeSchema, type ToolDefinition, type VendoTheme } from "@vendoai/core";
+import {
+  type ToolDefinition,
+} from "@vendoai/core";
+import {
+  vendoThemeSchema,
+  type VendoTheme,
+} from "@vendoai/apps/contract";
 import { hostToolNamesIn, vendoDirOf } from "./capability/index.js";
 import type { CreateVendoConfig } from "./types.js";
 

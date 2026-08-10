@@ -12,7 +12,7 @@
  */
 import { vendoViewPartSchema, vendoViewStreamId, type Json, type UIPayload, type VendoViewPart } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { HOT_PATH_FILES, HOT_PATH_WATCH, hotPathAppId, viewForWrite, wrapWorkspaceForRender } from "../src/render-seam.js";
+import { HOT_PATH_FILES, HOT_PATH_WATCH, hotPathAppId, viewForWrite, wrapWorkspaceForRender } from "../src/server/generation/render-seam.js";
 import { testWorkspace } from "./test-doubles.test-util.js";
 
 const APP = "app_1";

@@ -15,14 +15,16 @@
  * gate measures the shapes production really produces.
  */
 import {
+  type JsonSchema,
+} from "@vendoai/core";
+import {
   KIT_WIRE_COMPONENT_NAMES,
   WIRE_COMPONENT_NAMES,
-  type JsonSchema,
   type NormalizedCatalog,
-} from "@vendoai/core";
+} from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { screenTypings } from "../../src/checking/screen-typings.js";
-import { screenTscFindings } from "../../src/checking/screen-tsc.js";
+import { screenTypings } from "../../src/server/checking/screen-typings.js";
+import { screenTscFindings } from "../../src/server/checking/screen-tsc.js";
 
 /** examples/demo-bank/.vendo/catalog.json → MapleNetWorthCard.propsSchema */
 const mapleNetWorthCard: JsonSchema = {

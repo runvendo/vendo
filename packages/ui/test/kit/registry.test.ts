@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ISLAND_AMBIENT_KIT_NAMES } from "@vendoai/core";
+import {
+  ISLAND_AMBIENT_KIT_NAMES,
+} from "@vendoai/apps/contract";
 import { KIT_COMPONENTS, KIT_SPECS, kitComponentNames } from "../../src/kit/registry.js";
 import { kitPrompt } from "../../src/kit/kit-prompt.js";
 import { propsSchema } from "../../src/kit/schema.js";

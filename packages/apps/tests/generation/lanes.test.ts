@@ -1,20 +1,22 @@
 import {
   VENDO_APP_FORMAT,
-  type AppPlan,
   type ApprovalRequest,
   type RunContext,
 } from "@vendoai/core";
+import {
+  type AppPlan,
+} from "../../src/contract/index.js";
 import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
-import { scriptedLanguageModel, type ScriptedModelCall } from "../../src/testing/scripted-model.js";
-import type { GeneratedAppDocument, HostToolInfo } from "../../src/generation/engine.js";
+import { scriptedLanguageModel, type ScriptedModelCall } from "../../src/server/testing/scripted-model.js";
+import type { GeneratedAppDocument, HostToolInfo } from "../../src/server/generation/engine.js";
 import {
   escalatedServer,
   runServerLane,
   type BoxOutcome,
   type BoxSeam,
   type ServerLaneDeps,
-} from "../../src/generation/lanes.js";
+} from "../../src/server/generation/lanes.js";
 
 /**
  * The server lane: the automation a plan declares, and the box — whose whole

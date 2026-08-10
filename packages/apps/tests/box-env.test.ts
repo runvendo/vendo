@@ -1,6 +1,13 @@
-import { VENDO_APP_FORMAT, VendoError, type AppDocument, type SecretsProvider } from "@vendoai/core";
+import {
+  VENDO_APP_FORMAT,
+  VendoError,
+  type SecretsProvider,
+} from "@vendoai/core";
+import {
+  type AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { buildEnv, type BuildEnvContext } from "../src/box-env.js";
+import { buildEnv, type BuildEnvContext } from "../src/server/escalation/box-env.js";
 
 const app = (overrides: Partial<AppDocument> = {}): AppDocument => ({
   format: VENDO_APP_FORMAT,

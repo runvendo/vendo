@@ -56,6 +56,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@vendoai/apps": "workspace:*",
     "@vendoai/core": "workspace:*",
     "jsonata": "^2.0.5",
     "yaml": "^2.6.0",

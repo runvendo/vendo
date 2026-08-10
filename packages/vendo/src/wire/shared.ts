@@ -1,5 +1,5 @@
 import type { AppsRuntime, AppTokens } from "@vendoai/apps";
-import type { SandboxVenue } from "@vendoai/apps/sandbox-ladder";
+import type { SandboxVenue } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
 import {
   VendoError,
@@ -28,7 +28,7 @@ export const VERSION = "0.9.0";
 export const BASE_PATH = "/api/vendo";
 
 /** Re-exported, not redeclared: the venue tag is what the ONE sandbox ladder
-    returns (@vendoai/apps/sandbox-ladder), and /status reports it verbatim. */
+    returns (@vendoai/apps), and /status reports it verbatim. */
 export type { SandboxVenue };
 
 /** How inference is served: "custom" (a host-passed model) or "ladder" (the

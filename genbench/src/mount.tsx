@@ -4,14 +4,16 @@
  * Bundled once per run by `render.ts` and inlined into every page.
  */
 import {
-  defaultVendoTheme,
-  resolveTheme,
-  themeCssVariables,
   type Json,
   type ToolOutcome,
   type UIPayload,
-  type VendoTheme,
 } from "@vendoai/core";
+import {
+  defaultVendoTheme,
+  resolveTheme,
+  themeCssVariables,
+  type VendoTheme,
+} from "@vendoai/apps/contract";
 import { applyThemeVars } from "@vendoai/ui/kit";
 import { PayloadView } from "@vendoai/ui/tree";
 import { useEffect, type JSX } from "react";

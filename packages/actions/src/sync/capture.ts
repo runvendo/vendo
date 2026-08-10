@@ -1,6 +1,10 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { isIslandResolvableSpecifier, isPinnedJailPackage, JAIL_BUNDLED_PACKAGES } from "@vendoai/core";
+import {
+  isIslandResolvableSpecifier,
+  isPinnedJailPackage,
+  JAIL_BUNDLED_PACKAGES,
+} from "@vendoai/apps/contract";
 import type { CapturedPinSubSource } from "../formats.js";
 import {
   isInside,

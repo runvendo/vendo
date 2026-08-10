@@ -1,16 +1,17 @@
 import {
-  STORE_WIRE_PATHS,
-  VendoError,
-  parseStoreWireError,
-  storeWireStatusSchema,
-  vendoRecordSchema,
   type BlobStore,
+  defaultFetch,
+  parseStoreWireError,
   type RecordInput,
   type RecordQuery,
   type RecordStore,
+  STORE_WIRE_PATHS,
   type StoreOps,
   type StoreWireStatus,
+  storeWireStatusSchema,
+  VendoError,
   type VendoRecord,
+  vendoRecordSchema,
 } from "@vendoai/core";
 import {
   DEDICATED_RECORD_COLLECTIONS,
@@ -20,7 +21,6 @@ import {
 } from "@vendoai/store";
 import { consoleSender, raiseCloudError, toArrayBuffer } from "./cloud-console.js";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
-import { defaultFetch } from "@vendoai/core";
 
 /** The console mounts the hosted-store surface here
  * (apps/console/app/api/v1/store/*). */

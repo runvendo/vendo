@@ -22,15 +22,24 @@
  *    left no row are four different bugs and four failed receipts — never a
  *    "ready" served by an engine nobody chose.
  */
-import type { AppId, RunContext, ScreenAssembler, ScreenRequest, ToolRegistry, VendoViewPart } from "@vendoai/core";
+import type {
+  AppId,
+  RunContext,
+  ToolRegistry,
+  VendoViewPart,
+} from "@vendoai/core";
+import type {
+  ScreenAssembler,
+  ScreenRequest,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createAgentTools } from "../src/agent-tools.js";
-import { authoringAssembler, scriptedAssembler } from "../src/testing/authoring-assembler.js";
-import { fakeBoxSandbox } from "../src/testing/fake-box.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
-import { createApps, type AppsRuntime } from "../src/index.js";
+import { createAgentTools } from "../src/server/doors/agent-tools.js";
+import { authoringAssembler, scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { fakeBoxSandbox } from "../src/server/testing/fake-box.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { createApps, type AppsRuntime } from "../src/server/index.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_screen" },

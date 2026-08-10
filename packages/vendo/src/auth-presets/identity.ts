@@ -1,6 +1,12 @@
 import type { SecretSource } from "@vendoai/actions/presets";
-import type { ActAs, Json, Membership, PermissionGrant, Principal } from "@vendoai/core";
-import { joinUrl } from "@vendoai/core";
+import {
+  type ActAs,
+  joinUrl,
+  type Json,
+  type Membership,
+  type PermissionGrant,
+  type Principal,
+} from "@vendoai/core";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 import { environment } from "../wire/shared.js";
 import type { HostAuthPreset, HostAuthPresetUser, HostAuthPresetUserResolver } from "./shared.js";

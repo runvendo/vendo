@@ -4,7 +4,6 @@ import {
   VENDO_MAKE_TOOL,
   VENDO_VIEW_STREAM,
   canonicalJson,
-  makeReceiptSchema,
   type AgentRunner,
   type Json,
   type RunContext,
@@ -16,6 +15,9 @@ import {
   type VendoToolEnvelope,
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
+import {
+  makeReceiptSchema,
+} from "@vendoai/apps/contract";
 import {
   VENDO_DELEGATE_TOOL,
   VENDO_TOOL_PACK_PREFIX,

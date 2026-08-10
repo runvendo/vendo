@@ -36,7 +36,13 @@
  * `mcp-door-outside-agent.e2e.test.ts`.
  */
 import type { ExtractedTool } from "@vendoai/actions";
-import { VENDO_MAKE_TOOL, VENDO_TOOL_TITLES, makeReceiptSchema } from "@vendoai/core";
+import {
+  VENDO_MAKE_TOOL,
+  VENDO_TOOL_TITLES,
+} from "@vendoai/core";
+import {
+  makeReceiptSchema,
+} from "@vendoai/apps/contract";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MOUNT,

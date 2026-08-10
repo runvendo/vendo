@@ -18,17 +18,19 @@
  * broken" while findings read as "your document is wrong".
  */
 import {
-  type Check,
-  type Finding,
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
+import {
+  type Check,
+  type Finding,
+} from "../../src/contract/index.js";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createApps, type AppsRuntime } from "../../src/index.js";
-import { authoringAssembler } from "../../src/testing/authoring-assembler.js";
-import { guardFixture } from "../../src/testing/guard-fixture.js";
-import { memoryStore } from "../../src/testing/memory-store.js";
-import { scriptedLanguageModel, type ScriptedModelCall } from "../../src/testing/scripted-model.js";
+import { createApps, type AppsRuntime } from "../../src/server/index.js";
+import { authoringAssembler } from "../../src/server/testing/authoring-assembler.js";
+import { guardFixture } from "../../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../../src/server/testing/memory-store.js";
+import { scriptedLanguageModel, type ScriptedModelCall } from "../../src/server/testing/scripted-model.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_ada" },

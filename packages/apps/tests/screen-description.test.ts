@@ -10,9 +10,15 @@
  * Written through the real seam (`writeFile` + `commit()`, the store-write moment)
  * and read back off the real emitted part. Nothing is stubbed on either side.
  */
-import { screenDescriptionSchema, VENDO_SCREEN_FORMAT, type VendoViewPart } from "@vendoai/core";
+import {
+  type VendoViewPart,
+} from "@vendoai/core";
+import {
+  screenDescriptionSchema,
+  VENDO_SCREEN_FORMAT,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { wrapWorkspaceForRender } from "../src/render-seam.js";
+import { wrapWorkspaceForRender } from "../src/server/generation/render-seam.js";
 import { testWorkspace } from "./test-doubles.test-util.js";
 
 const APP = "app_screen";

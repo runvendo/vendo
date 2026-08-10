@@ -1,5 +1,8 @@
 /** @vendoai/vendo — root contract types (09-vendo §1). */
 export type * from "@vendoai/core";
+// The app format moved off core onto its own browser-safe door; re-exported
+// here so every type consumer reading it through the umbrella is untouched.
+export type * from "@vendoai/apps/contract";
 export type { VendoStore } from "@vendoai/store";
 export type { Thread, ThreadSummary } from "./threads.js";
 export type {

@@ -14,23 +14,25 @@
  * and an app that already exists keeps everything that is its own history.
  */
 import {
-  compileWire,
-  type AppDocument,
   type Json,
   type RunContext,
   type ToolDescriptor,
   type ToolRegistry,
 } from "@vendoai/core";
+import {
+  compileWire,
+  type AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
-import { inMemoryBoxFiles } from "../src/testing/box-files.js";
-import { bindTools, guardFixture, type GuardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { scriptedLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
-import { createAppHistory } from "../src/history.js";
-import { createApps, pinComponentName, type AppsRuntime, type PinBaseline } from "../src/index.js";
-import { detectPinDrift } from "../src/pins.js";
-import type { SandboxAdapter, SandboxMachine } from "../src/sandbox.js";
+import { inMemoryBoxFiles } from "../src/server/testing/box-files.js";
+import { bindTools, guardFixture, type GuardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
+import { createAppHistory } from "../src/server/persistence/history.js";
+import { createApps, pinComponentName, type AppsRuntime, type PinBaseline } from "../src/server/index.js";
+import { detectPinDrift } from "../src/server/remix/pins.js";
+import type { SandboxAdapter, SandboxMachine } from "../src/server/escalation/sandbox.js";
 import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
 
 const APP_ID = "app_authored";

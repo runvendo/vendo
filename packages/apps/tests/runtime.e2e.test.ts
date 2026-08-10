@@ -1,15 +1,17 @@
 import {
   VENDO_APP_FORMAT,
-  type AppDocument,
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
+import {
+  type AppDocument,
+} from "../src/contract/index.js";
 import { zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { createApps } from "../src/index.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createApps } from "../src/server/index.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 /**
  * E2E of ownership/interchange authority (06-apps §7, 01-core §10), exercised

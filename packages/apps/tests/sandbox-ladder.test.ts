@@ -15,8 +15,8 @@
  */
 import { VendoError } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SandboxAdapter } from "../src/sandbox.js";
-import { selectSandbox, type CloudSandboxRung } from "../src/sandbox-ladder.js";
+import type { SandboxAdapter } from "../src/server/escalation/sandbox.js";
+import { selectSandbox, type CloudSandboxRung } from "../src/server/escalation/sandbox-ladder.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();

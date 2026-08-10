@@ -1,0 +1,327 @@
+import { afterEach, describe, expect, it } from "vitest";
+import type { SandboxAdapter, SandboxMachine } from "../escalation/sandbox.js";
+
+const decoder = new TextDecoder();
+const TEST_TIMEOUT_MS = 180_000;
+
+/**
+ * The conformance app every harness must install in the box (on $PORT):
+ * - `GET /conformance/env/<NAME>` → 200, body = the box's value for env NAME
+ * - `POST /fn/echo` → 200, body echoed back
+ * - `GET /conformance/egress/<host>` → 200 JSON `{"allowed": boolean}` — an
+ *   outbound `https://<host>` attempt (real or provider-faithfully simulated)
+ */
+export interface SandboxConformanceHarness {
+  makeAdapter(): SandboxAdapter | Promise<SandboxAdapter>;
+  /**
+   * Install the conformance app in a freshly created machine through
+   * provider-private means (in production the in-box agent owns the inside of
+   * the box; here it is test scaffolding — e.g. adapter-private exec for a
+   * live provider, an in-process handler for the fake).
+   */
+  bootstrap(machine: SandboxMachine): Promise<void>;
+  /** True when the adapter enforces create()'s allowedDomains; enables the egress case. */
+  enforcesAllowedDomains: boolean;
+  /**
+   * True when a DEFAULT request() (no explicit port) reaches the app on its
+   * $PORT whatever that is (e2b). The Vendo Cloud relay defaults to the one
+   * canonical box port instead — explicit ports route fine, but the
+   * "$PORT by default" case is provider-specific and tested beside the
+   * adapter.
+   */
+  multiPort: boolean;
+  /**
+   * True when resume() mints an INDEPENDENT machine per call (e2b restores a
+   * checkpoint into fresh sandboxes; Cloud's artifact model does the same). A
+   * pause-model provider that revives the ONE machine a snapshot came from
+   * would set this false and skip the independent-machines and fresh-id cases.
+   */
+  resumeForks: boolean;
+  /**
+   * True when resume(ref, policy) can REPLACE the snapshot-time egress
+   * allowlist — e2b via provider network rules, Cloud by stating the allowlist
+   * on every resume. A provider that only takes the bare ref sets this false.
+   */
+  resumeReplacesPolicy: boolean;
+}
+
+const requestEventually = async (
+  machine: SandboxMachine,
+  req: Parameters<SandboxMachine["request"]>[0],
+): Promise<{ status: number; body: string }> => {
+  let failure: unknown;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    try {
+      const response = await machine.request(req);
+      if (response.status >= 200 && response.status < 500) {
+        expect(response.body).toBeInstanceOf(Uint8Array);
+        return { status: response.status, body: decoder.decode(response.body) };
+      }
+      failure = new Error(`sandbox listener answered ${response.status} for ${req.path}`);
+    } catch (error) {
+      failure = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw failure ?? new Error(`sandbox listener did not serve ${req.path}`);
+};
+
+/** True when the machine no longer serves the given env value (asleep, dead, or wrong box). */
+const noLongerServes = async (
+  machine: SandboxMachine,
+  req: Parameters<SandboxMachine["request"]>[0],
+  value: string,
+): Promise<boolean> => {
+  try {
+    const response = await machine.request(req);
+    return response.status !== 200 || decoder.decode(response.body) !== value;
+  } catch {
+    return true;
+  }
+};
+
+/** execution-v2 sandbox-seam conformance suite shared by the fake and live adapters. */
+export const sandboxAdapterConformance = (
+  name: string,
+  harness: SandboxConformanceHarness,
+): void => {
+  describe(`${name} SandboxAdapter conformance`, () => {
+    const spawned: SandboxMachine[] = [];
+    const track = <T extends SandboxMachine>(machine: T): T => {
+      spawned.push(machine);
+      return machine;
+    };
+    const mintedRefs: Array<{ adapter: SandboxAdapter; ref: string }> = [];
+    const mint = async (adapter: SandboxAdapter, machine: SandboxMachine): Promise<string> => {
+      const ref = await machine.snapshot();
+      mintedRefs.push({ adapter, ref });
+      return ref;
+    };
+
+    // The gate's own rule: destroy every sandbox we create — and every
+    // snapshot we mint — even on failure.
+    afterEach(async () => {
+      await Promise.all(spawned.splice(0).map((machine) => machine.destroy().catch(() => undefined)));
+      await Promise.all(mintedRefs.splice(0).map(({ adapter, ref }) => adapter.destroy(ref).catch(() => undefined)));
+    }, TEST_TIMEOUT_MS);
+
+    it("creates, serves on $PORT, snapshots, sleeps, resumes, and destroys", async () => {
+      const adapter = await harness.makeAdapter();
+      const created = track(await adapter.create({
+        env: { PORT: "8080", CONFORMANCE_VALUE: "present" },
+      }));
+      await harness.bootstrap(created);
+
+      const envRequest = { method: "GET", path: "/conformance/env/CONFORMANCE_VALUE" };
+      await expect(requestEventually(created, envRequest))
+        .resolves.toMatchObject({ status: 200, body: "present" });
+      const echoed = await created.request({ method: "POST", path: "/fn/echo", body: "round-trip" });
+      expect(echoed.status).toBe(200);
+      expect(decoder.decode(echoed.body)).toBe("round-trip");
+
+      const snapshotRef = await mint(adapter, created);
+      // The seam requires provider-prefixed refs (e.g. "e2b:…"); the prefix
+      // spelling beyond that is the provider's business.
+      expect(snapshotRef).toMatch(/^[A-Za-z][A-Za-z0-9_-]*:.+/);
+
+      await created.stop();
+      await created.stop(); // sleeping twice is not an error
+      expect(await noLongerServes(created, envRequest, "present")).toBe(true);
+
+      // A fresh adapter instance restores the ref: env and app carried. A
+      // forking provider restores into a NEW machine; a pause-model provider
+      // (Cloud) revives the one it came from.
+      const resumed = track(await (await harness.makeAdapter()).resume(snapshotRef));
+      if (harness.resumeForks) expect(resumed.id).not.toBe(created.id);
+      await expect(requestEventually(resumed, envRequest))
+        .resolves.toMatchObject({ status: 200, body: "present" });
+
+      // destroy() works on a sleeping machine and is idempotent.
+      await created.destroy();
+      await created.destroy();
+      await resumed.destroy();
+      expect(await noLongerServes(resumed, envRequest, "present")).toBe(true);
+    }, TEST_TIMEOUT_MS);
+
+    it.skipIf(!harness.resumeForks)("resumes one snapshot into independent machines", async () => {
+      const adapter = await harness.makeAdapter();
+      const source = track(await adapter.create({
+        env: { PORT: "8080", CONFORMANCE_VALUE: "independent" },
+      }));
+      await harness.bootstrap(source);
+      const envRequest = { method: "GET", path: "/conformance/env/CONFORMANCE_VALUE" };
+      await requestEventually(source, envRequest);
+      const ref = await mint(adapter, source);
+
+      // The source keeps serving after the snapshot...
+      await expect(requestEventually(source, envRequest))
+        .resolves.toMatchObject({ status: 200, body: "independent" });
+
+      const left = track(await adapter.resume(ref));
+      const right = track(await adapter.resume(ref));
+      expect(new Set([source.id, left.id, right.id]).size).toBe(3);
+      await requestEventually(left, envRequest);
+
+      // ...and destroying one resume leaves its sibling alive.
+      await left.destroy();
+      await expect(requestEventually(right, envRequest))
+        .resolves.toMatchObject({ status: 200, body: "independent" });
+    }, TEST_TIMEOUT_MS);
+
+    it.skipIf(!harness.multiPort)("routes requests to the box $PORT by default, honoring an explicit port", async () => {
+      const adapter = await harness.makeAdapter();
+      const machine = track(await adapter.create({
+        env: { PORT: "9090", CONFORMANCE_VALUE: "ported" },
+      }));
+      await harness.bootstrap(machine);
+      const envPath = "/conformance/env/CONFORMANCE_VALUE";
+      await expect(requestEventually(machine, { method: "GET", path: envPath }))
+        .resolves.toMatchObject({ status: 200, body: "ported" });
+      await expect(requestEventually(machine, { method: "GET", path: envPath, port: 9090 }))
+        .resolves.toMatchObject({ status: 200, body: "ported" });
+      // A port nothing listens on never reaches the app.
+      expect(await noLongerServes(machine, { method: "GET", path: envPath, port: 9099 }, "ported"))
+        .toBe(true);
+    }, TEST_TIMEOUT_MS);
+
+    it.skipIf(!harness.enforcesAllowedDomains)(
+      "enforces the create-time allowedDomains egress allowlist",
+      async () => {
+        const adapter = await harness.makeAdapter();
+        const machine = track(await adapter.create({
+          env: { PORT: "8080" },
+          allowedDomains: ["example.com"],
+        }));
+        await harness.bootstrap(machine);
+        const attempt = async (host: string): Promise<boolean> => {
+          const result = await requestEventually(machine, {
+            method: "GET",
+            path: `/conformance/egress/${host}`,
+          });
+          return (JSON.parse(result.body) as { allowed: boolean }).allowed;
+        };
+        expect(await attempt("example.com")).toBe(true);
+        expect(await attempt("vendo.run")).toBe(false);
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    it.skipIf(!harness.enforcesAllowedDomains || !harness.resumeReplacesPolicy)(
+      "a resume-time policy replaces the snapshot's egress allowlist",
+      async () => {
+        const adapter = await harness.makeAdapter();
+        const source = track(await adapter.create({
+          env: { PORT: "8080" },
+          allowedDomains: ["example.com"],
+        }));
+        await harness.bootstrap(source);
+        const attempt = async (machine: SandboxMachine, host: string): Promise<boolean> => {
+          const result = await requestEventually(machine, {
+            method: "GET",
+            path: `/conformance/egress/${host}`,
+          });
+          return (JSON.parse(result.body) as { allowed: boolean }).allowed;
+        };
+        expect(await attempt(source, "example.com")).toBe(true);
+        const ref = await mint(adapter, source);
+
+        // A bare resume restores the snapshot-time policy…
+        const bare = track(await adapter.resume(ref));
+        expect(await attempt(bare, "example.com")).toBe(true);
+        expect(await attempt(bare, "vendo.run")).toBe(false);
+
+        // …and a passed policy replaces it — the wake enforces CURRENT grants
+        // (Lane E), not what the machine slept with. The positive probe uses
+        // an IANA-reserved domain so reachability never masquerades as policy.
+        const repoliced = track(await adapter.resume(ref, { allowedDomains: ["example.org"] }));
+        expect(await attempt(repoliced, "example.org")).toBe(true);
+        expect(await attempt(repoliced, "example.com")).toBe(false);
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    it("writes, reads back byte-for-byte, lists one level, and rejects what it does not hold", async () => {
+      const adapter = await harness.makeAdapter();
+      const machine = track(await adapter.create({ env: { PORT: "8080" } }));
+      // /tmp, not the app root: every provider's box has it and it is writable
+      // without bootstrap, so the file seam is provable on a bare machine.
+      const dir = "/tmp/vendo-conformance-files";
+      // Deliberately hostile bytes: a NUL, a CRLF, a lone CR, and three
+      // sequences that are not valid UTF-8. Box content is UNTRUSTED — the
+      // layer above verifies a built app's source against the hash in its row,
+      // which it can only do if this seam hands back the bytes UNCHANGED. No
+      // text decode, no BOM strip, no line-ending normalization.
+      const hostile = new Uint8Array([0, 13, 10, 13, 0xff, 0xfe, 0x80, 65, 13, 0]);
+
+      await machine.files.write(`${dir}/one.txt`, "first");
+      await machine.files.write(`${dir}/nested/two.bin`, hostile);
+
+      const read = await machine.files.read(`${dir}/one.txt`);
+      expect(read).toBeInstanceOf(Uint8Array);
+      expect(decoder.decode(read)).toBe("first");
+      expect(await machine.files.read(`${dir}/nested/two.bin`)).toEqual(hostile);
+
+      // A second write REPLACES the file whole; it never appends.
+      await machine.files.write(`${dir}/one.txt`, "second");
+      expect(decoder.decode(await machine.files.read(`${dir}/one.txt`))).toBe("second");
+
+      // list is ONE level and names only: the subdirectory's own name, never
+      // the file inside it and never a path.
+      expect([...await machine.files.list(dir)].sort()).toEqual(["nested", "one.txt"]);
+
+      // The seam's one answer for a path the box does not hold: it rejects.
+      // Answering empty bytes would turn a lost source file into a silently
+      // empty one.
+      await expect(machine.files.read(`${dir}/absent.txt`)).rejects.toThrow();
+
+      // …and the same answer for a DIRECTORY it does not hold. Probed against
+      // real e2b, which reports `[not_found] lstat …: no such file or
+      // directory`; both in-memory fakes used to answer `[]` instead, which is
+      // how a mistyped source directory reads as "this app has no files".
+      await expect(machine.files.list(`${dir}/nope`)).rejects.toThrow();
+
+      // The ROOT is a directory like any other, and it EXISTS on every box —
+      // it must never answer empty on a box that demonstrably holds files.
+      // An in-memory impl that treats the root prefix as "" instead of "/"
+      // slices nothing off an absolute path and drops every name as blank.
+      // Asserted by containment, not equality: a real box's root also holds
+      // bin, etc, home…
+      const rootNames = await machine.files.list("/");
+      expect(rootNames).toContain("tmp");
+      expect(rootNames.filter((name) => name === "" || name.includes("/"))).toEqual([]);
+    }, TEST_TIMEOUT_MS);
+
+    it("exposes a public ingress URL, defaulting to the app's $PORT", async () => {
+      const adapter = await harness.makeAdapter();
+      const machine = track(await adapter.create({
+        env: { PORT: "8080" },
+      }));
+      // Wave 4 (layer 3) — the browser→box path: an absolute URL per port,
+      // defaulting to the app's $PORT. The exact host shape is the provider's.
+      const appUrl = await machine.url();
+      expect(new URL(appUrl).protocol).toMatch(/^https?:$/);
+      expect(await machine.url(8080)).toBe(appUrl);
+      expect(await machine.url(9090)).not.toBe(appUrl);
+      expect(new URL(await machine.url(9090)).protocol).toMatch(/^https?:$/);
+    }, TEST_TIMEOUT_MS);
+
+    it("rejects a snapshot ref it did not issue", async () => {
+      const adapter = await harness.makeAdapter();
+      await expect(adapter.resume("bogus:not-a-real-ref")).rejects.toThrow();
+      await expect(adapter.destroy("bogus:not-a-real-ref")).rejects.toThrow();
+    }, TEST_TIMEOUT_MS);
+
+    it("destroys a sleeping machine by ref, without resuming it", async () => {
+      const adapter = await harness.makeAdapter();
+      const machine = track(await adapter.create({
+        env: { PORT: "8080", CONFORMANCE_VALUE: "sleeping" },
+      }));
+      const ref = await mint(adapter, machine);
+      await machine.stop();
+
+      await adapter.destroy(ref);
+      await adapter.destroy(ref); // destroying already-destroyed state is a no-op
+      await expect(adapter.resume(ref)).rejects.toThrow();
+    }, TEST_TIMEOUT_MS);
+  });
+};

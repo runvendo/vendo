@@ -1,17 +1,26 @@
-import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
-import { VENDO_APP_FORMAT, validateAppDocument } from "@vendoai/core";
+import {
+  type RunContext,
+  type ToolRegistry,
+  VENDO_APP_FORMAT,
+} from "@vendoai/core";
+import type {
+  AppDocument,
+} from "../src/contract/index.js";
+import {
+  validateAppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
 import {
   APP_BLOB_MAX_BYTES,
   APP_RECORD_MAX_BYTES,
   createAppData,
-} from "../src/app-data.js";
-import { createApps, type AppsRuntime } from "../src/index.js";
-import { scriptedAssembler } from "../src/testing/authoring-assembler.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+} from "../src/server/persistence/app-data.js";
+import { createApps, type AppsRuntime } from "../src/server/index.js";
+import { scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const tools: ToolRegistry = {
   async descriptors() {

@@ -1,7 +1,11 @@
-import { declaredMoneyUnit, type Json, type JsonSchema } from "@vendoai/core";
+import {
+  declaredMoneyUnit,
+  type Json,
+  type JsonSchema,
+  USE_SERVICE_TOOL,
+} from "@vendoai/core";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import { useEffect, useRef, useState } from "react";
-import { USE_SERVICE_TOOL } from "@vendoai/core";
 import { useVendoProvider } from "../context.js";
 import { developmentMode } from "./dev-mode.js";
 import { memberSchema } from "./field-rows.js";

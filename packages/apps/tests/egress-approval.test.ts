@@ -1,4 +1,6 @@
-import type { AppDocument } from "@vendoai/core";
+import type {
+  AppDocument,
+} from "../src/contract/index.js";
 import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import {
@@ -6,8 +8,8 @@ import {
   createEgressApprovals,
   normalizeEgressDomain,
   unapprovedEgress,
-} from "../src/egress-approval.js";
-import { memoryStore } from "../src/testing/memory-store.js";
+} from "../src/server/escalation/egress-approval.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
 
 const app = (overrides: Partial<AppDocument> = {}): AppDocument => ({
   format: VENDO_APP_FORMAT,

@@ -3,7 +3,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inject } from "vitest";
-import type { AppDocument, Principal, ToolRegistry, VendoTheme } from "@vendoai/core";
+import {
+  type AppDocument,
+  type Principal,
+  type ToolRegistry,
+} from "@vendoai/core";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import { createActions } from "@vendoai/actions";
 import { createApps, type AppsRuntime } from "@vendoai/apps";
 import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";

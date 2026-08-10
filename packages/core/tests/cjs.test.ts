@@ -10,7 +10,7 @@ describe("CJS export condition", () => {
     const script = `
       const core = require("@vendoai/core");
       const conformance = require("@vendoai/core/conformance");
-      if (typeof core.validateTree !== "function") throw new Error("validateTree missing");
+      if (typeof core.descriptorHash !== "function") throw new Error("descriptorHash missing");
       if (typeof core.VendoError !== "function") throw new Error("VendoError missing");
       if (core.VENDO_APPS_TOOL_PREFIX !== "vendo_apps_") throw new Error("constants missing");
       const parsed = core.runContextSchema.safeParse({

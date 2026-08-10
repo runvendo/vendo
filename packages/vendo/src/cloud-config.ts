@@ -1,5 +1,7 @@
-import { VendoError } from "@vendoai/core";
-import { defaultFetch } from "@vendoai/core";
+import {
+  defaultFetch,
+  VendoError,
+} from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
 
 /** The Cloud hosted-config client — the read half of the config-resolution seam

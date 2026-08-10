@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fakeSandbox } from "../../src/testing/fake-sandbox.js";
+import { fakeSandbox } from "../../src/server/testing/fake-sandbox.js";
 
 const decoder = new TextDecoder();
 

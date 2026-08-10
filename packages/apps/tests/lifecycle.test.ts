@@ -1,14 +1,22 @@
-import type { AppDocument, RunContext, ScreenAssembler, ToolRegistry } from "@vendoai/core";
-import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
+import {
+  type RunContext,
+  type ToolRegistry,
+  VENDO_APP_FORMAT,
+  VendoError,
+} from "@vendoai/core";
+import type {
+  AppDocument,
+  ScreenAssembler,
+} from "../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
-import { createApps, type AppsRuntime } from "../src/index.js";
-import { createAppHistory } from "../src/history.js";
-import { enabledAfterDocumentEdit } from "../src/persistence.js";
-import { scriptedAssembler } from "../src/testing/authoring-assembler.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createApps, type AppsRuntime } from "../src/server/index.js";
+import { createAppHistory } from "../src/server/persistence/history.js";
+import { enabledAfterDocumentEdit } from "../src/server/persistence/persistence.js";
+import { scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const tools: ToolRegistry = {
   async descriptors() {

@@ -43,13 +43,8 @@ import {
   guardDecisionSchema,
   auditEventSchema,
   uiPayloadSchema,
-  treeNodeSchema,
-  treeQuerySchema,
-  treeSchema,
-  validateTree,
   storageDeclSchema,
   pinSchema,
-  appDocumentSchema,
   triggerSourceSchema,
   runModelSchema,
   stepSchema,
@@ -58,13 +53,11 @@ import {
   recordQuerySchema,
   authMaterialSchema,
   agentRunReportSchema,
-  vendoThemeSchema,
   vendoViewPartSchema,
   vendoApprovalPartSchema,
   vendoErrorCodeSchema,
   canonicalJson,
   descriptorHash,
-  validateAppDocument,
   type ToolDescriptor,
 } from "../src/index.js";
 
@@ -324,99 +317,10 @@ describe("§8 — UIPayload is the format-tag dispatch surface; unknown tags are
     expect(uiPayloadSchema.safeParse({ formatVersion: 1 }).success).toBe(false); // non-string tag
   });
 
-  it("an unknown tag passes UIPayload but validateTree rejects it as a 'version' error (containment is the renderer's job)", () => {
-    const unknown = { formatVersion: "vendo-canvas/v2", root: "r", nodes: [] };
-    expect(uiPayloadSchema.safeParse(unknown).success).toBe(true);
-    const result = validateTree(unknown);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe("version");
-  });
 });
 
-describe("§8 — tree/node/query schemas parse the structural shape", () => {
-  it("treeSchema accepts a minimal v2 tree and rejects a foreign formatVersion", () => {
-    expect(treeSchema.safeParse({
-      formatVersion: "vendo-genui/v2", root: "a", nodes: [{ id: "a", component: "Text" }],
-    }).success).toBe(true);
-    expect(treeSchema.safeParse({
-      formatVersion: "vendo-canvas/v2", root: "a", nodes: [],
-    }).success).toBe(false);
-  });
-
-  it("treeNode and treeQuery enforce their required fields", () => {
-    expect(treeNodeSchema.safeParse({ id: "a", component: "Text", source: "generated" }).success).toBe(true);
-    expect(treeNodeSchema.safeParse({ id: "a", component: "Text", source: "wired" }).success).toBe(false);
-    expect(treeQuerySchema.safeParse({ name: "x", tool: "host_x", input: { limit: 5 } }).success).toBe(true);
-    expect(treeQuerySchema.safeParse({ name: "x" }).success).toBe(false);
-  });
-});
-
-describe("§8 — validateTree validates fn: GRAMMAR only; machine-presence is an app-document rule", () => {
-  // The tree shape carries no machine field, so validateTree structurally
-  // cannot enforce "trees without a machine must not contain fn: references." It
-  // validates fn: grammar; validateAppDocument (which knows `machine`) enforces
-  // the machine-presence rule. See ESCALATION in the lane report.
-  it("accepts a well-formed fn: reference with no machine in sight", () => {
-    expect(validateTree({
-      formatVersion: "vendo-genui/v2", root: "r",
-      nodes: [{ id: "r", component: "Text" }],
-      queries: [{ name: "refresh", tool: "fn:refresh" }],
-    }).ok).toBe(true);
-  });
-
-  it("rejects fn: references that violate the /^fn:[A-Za-z_][A-Za-z0-9_-]*$/ grammar", () => {
-    for (const tool of ["fn:", "fn:9lead", "fn:has space", "fn:slash/x"]) {
-      const result = validateTree({
-        formatVersion: "vendo-genui/v2", root: "r",
-        nodes: [{ id: "r", component: "Text" }],
-        queries: [{ name: "q", tool }],
-      });
-      expect(result.ok, tool).toBe(false);
-      if (!result.ok) expect(result.error.code).toBe("provision");
-    }
-  });
-
-  it("CORE-5: enforces the same grammar on fn: ACTION names inside node props (the wire-enforceable half)", () => {
-    const treeWithAction = (action: string) => ({
-      formatVersion: "vendo-genui/v2", root: "r",
-      nodes: [{ id: "r", component: "Text", props: { rows: [{ action, label: "Go" }] } }],
-    });
-    expect(validateTree(treeWithAction("fn:refresh")).ok).toBe(true);
-    for (const action of ["fn:", "fn:9lead", "fn:has space", "fn:slash/x"]) {
-      const result = validateTree(treeWithAction(action));
-      expect(result.ok, action).toBe(false);
-      if (!result.ok) expect(result.error.code).toBe("provision");
-    }
-    // Non-fn action names are the host's tool namespace — not this grammar's job.
-    expect(validateTree(treeWithAction("host_refresh")).ok).toBe(true);
-  });
-
-  it("validateAppDocument is where a machine-less fn: reference becomes an error", () => {
-    const withFnNoMachine = {
-      format: "vendo/app@1", id: "app_x", name: "X", ui: "tree" as const,
-      tree: {
-        formatVersion: "vendo-genui/v2", root: "r",
-        nodes: [{ id: "r", component: "Text" }],
-        queries: [{ name: "refresh", tool: "fn:refresh" }],
-      },
-    };
-    expect(validateAppDocument(withFnNoMachine).ok).toBe(false);
-    expect(validateAppDocument({
-      ...withFnNoMachine,
-      machine: { snapshotRef: "e2b:v2:snap_1", provisionedAt: "2026-07-19T00:00:00.000Z" },
-    }).ok).toBe(true);
-  });
-});
 
 describe("§9 — app document plane values and sub-schemas", () => {
-  it("accepts the http plane (keeps the last payload as a cover)", () => {
-    const httpApp = {
-      format: "vendo/app@1", id: "app_http", name: "Server App", ui: "http" as const,
-    };
-    expect(appDocumentSchema.safeParse(httpApp).success).toBe(true);
-    expect(validateAppDocument(httpApp).ok).toBe(true);
-  });
-
   it("storageDecl defaults kind to records and pin base must be a hash ref", () => {
     expect(storageDeclSchema.safeParse({ about: "x" }).success).toBe(true);
     expect(storageDeclSchema.safeParse({ about: "x", kind: "blobs" }).success).toBe(false);
@@ -485,18 +389,6 @@ describe("§12/§13/§14 — store, host-seam, and theme schemas", () => {
     }).success).toBe(true);
   });
 
-  it("vendoTheme accepts the remaining density/motion enum values", () => {
-    expect(vendoThemeSchema.safeParse({
-      colors: {
-        background: "#000", surface: "#111", text: "#fff", muted: "#999",
-        accent: "#00f", accentText: "#fff", danger: "#f00", border: "#333",
-      },
-      typography: { fontFamily: "Inter", headingFamily: "Newsreader", baseSize: "16px" },
-      radius: { small: "2px", medium: "6px", large: "12px" },
-      density: "compact", motion: "full",
-    }).success).toBe(true);
-  });
-
   it("stream parts carry the pinned data-* type discriminants", () => {
     expect(vendoViewPartSchema.safeParse({
       type: "data-vendo-view", appId: "app_1", payload: { formatVersion: "vendo-genui/v2" },
@@ -541,10 +433,10 @@ describe("public export surface — every contracted camelCaseName schema is pre
       "toolDescriptorSchema", "toolCallSchema", "toolOutcomeSchema",
       "grantScopeSchema", "grantDurationSchema", "permissionGrantSchema", "approvalRequestSchema",
       "approvalDecisionSchema", "guardDecisionSchema", "auditEventSchema", "uiPayloadSchema",
-      "treeSchema", "treeNodeSchema", "treeQuerySchema", "appDocumentSchema", "storageDeclSchema",
+      "treeNodeSchema", "appDocumentSchema", "storageDeclSchema",
       "pinSchema", "triggerSourceSchema", "runModelSchema", "stepSchema", "triggerSchema",
       "vendoRecordSchema", "recordQuerySchema", "authMaterialSchema", "agentRunReportSchema",
-      "vendoThemeSchema", "vendoViewPartSchema", "vendoApprovalPartSchema", "vendoCitationsPartSchema", "vendoErrorCodeSchema",
+      "vendoViewPartSchema", "vendoApprovalPartSchema", "vendoCitationsPartSchema", "vendoErrorCodeSchema",
       "capabilityMissToolFailureSchema", "capabilityMissTriggerSchema", "capabilityMissEventSchema",
       "appIdSchema", "grantIdSchema", "approvalIdSchema", "runIdSchema", "threadIdSchema",
       "isoDateTimeSchema", "jsonSchemaSchema",
@@ -579,13 +471,6 @@ describe("amended public export surface — root utilities and /conformance inve
     ]) {
       expect(typeof registry[name], `missing numeric export ${name}`).toBe("number");
     }
-    // V4 — one component family: the Kit specs ARE the built-in vocabulary,
-    // and the three hand-kept name lists that used to sit beside them
-    // (reserved / branded / prewired) are gone from the root.
-    expect(registry.KIT_COMPONENT_NAMES).toEqual((registry.KIT_SPECS as { name: string }[]).map((spec) => spec.name));
-    expect(registry.KIT_COMPONENT_NAMES).toContain("DataTable");
-    expect(Object.keys(registry).filter((name) => /_COMPONENT_NAMES$/.test(name)).sort())
-      .toEqual(["KIT_COMPONENT_NAMES", "KIT_WIRE_COMPONENT_NAMES", "WIRE_COMPONENT_NAMES"]);
   });
 
   it("exports the exact executable /conformance kit inventory", () => {

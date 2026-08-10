@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vendoSync } from "@vendoai/actions/sync";
 import { appVersionHash, pinBaselineSchema, pinComponentName } from "@vendoai/apps";
-import { VENDO_APP_FORMAT, printWire, type AppDocument, type Principal } from "@vendoai/core";
+import {
+  type AppDocument,
+  type Principal,
+  VENDO_APP_FORMAT,
+} from "@vendoai/core";
+import {
+  printWire,
+} from "@vendoai/apps/contract";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";

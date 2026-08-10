@@ -1,19 +1,21 @@
 import {
   VENDO_APP_FORMAT,
   type AppAccess,
-  type AppDocument,
   type AppId,
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
+import {
+  type AppDocument,
+} from "../src/contract/index.js";
 import { appAccessConformance } from "@vendoai/core/conformance";
 import { describe, expect, it } from "vitest";
-import { createApps, type AppsConfig, type AppsRuntime } from "../src/index.js";
-import { scriptedAssembler } from "../src/testing/authoring-assembler.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createApps, type AppsConfig, type AppsRuntime } from "../src/server/index.js";
+import { scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 // One copy of the AppAccess stand-in, shared with served-orgs.test.ts.
 import { seedGrantRows as seedGrants, storeAccessFixture as storeAccess } from "./app-access-fixture.js";
 

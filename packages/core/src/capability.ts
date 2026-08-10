@@ -9,8 +9,6 @@
  * slots do: the composition merge in the umbrella, the floor in
  * `@vendoai/apps`, the skills store next door in `./skills.ts`.
  */
-import type { AppDocument } from "./app-document.js";
-import type { AppPlan } from "./genui/plan/types.js";
 import type { Json } from "./ids.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall, ToolDescriptor } from "./tools.js";
@@ -65,6 +63,11 @@ export interface Skill {
  *
  * `block` stops the app shipping as-is; `warn` rides along (the section-sized
  * failure, and every check that could not run).
+ *
+ * It lives HERE and not on the app-generation contract door because the harness
+ * runtime speaks it: the validate gate is an injected slot on `HarnessAdapters`
+ * and its failures carry findings, so a package below app generation has to be
+ * able to name the shape (structure §0, L1).
  */
 export interface Finding {
   severity: "block" | "warn";
@@ -90,28 +93,3 @@ export interface Finding {
    */
   check?: string;
 }
-
-export interface CheckInput {
-  document: AppDocument;
-  /** The user's own words — what the app was asked to be. */
-  request: string;
-  /** The plan the app was built from, when the check runs mid-pipeline; absent
-   *  for checks over a finished document. */
-  plan?: AppPlan;
-}
-
-/**
- * A check on the floor. Two kinds, and the difference is who decides:
- *
- * - `fact` — decidable by looking things up, so it is plain code the floor runs.
- * - `judgment` — a rule only a reader can apply, so it is one sentence that
- *   joins the reviewer's rubric as its own line.
- *
- * `kind` is OPTIONAL on the fact variant and absence means `"fact"`: checks
- * predate this field, and the floor is a safety floor. Anything that is not
- * explicitly a judgment rule is code we run — a check that silently stops
- * firing is the worst failure this contract could allow.
- */
-export type Check =
-  | { name: string; kind?: "fact"; run(input: CheckInput): Promise<Finding[]> }
-  | { name: string; kind: "judgment"; rule: string };

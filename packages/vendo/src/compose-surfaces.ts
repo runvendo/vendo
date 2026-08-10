@@ -6,7 +6,13 @@
  */
 import { mergedHostSemantics, VENDO_TOOLS_FORMAT } from "@vendoai/actions";
 import { agentToolDescriptors, buildingAppsSkill, hostDesignBrief } from "@vendoai/apps";
-import { VendoError, type ToolRegistry, type VendoTheme } from "@vendoai/core";
+import {
+  VendoError,
+  type ToolRegistry,
+} from "@vendoai/core";
+import {
+  type VendoTheme,
+} from "@vendoai/apps/contract";
 import {
   hostToolCollision,
   mergeCapability,

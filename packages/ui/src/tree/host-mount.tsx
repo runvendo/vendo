@@ -6,7 +6,14 @@ import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { transform } from "sucrase";
 import { clsx } from "clsx";
 import * as tailwindMerge from "tailwind-merge";
-import type { Json, JailBundledPackage, JailModule, ToolOutcome } from "@vendoai/core";
+import type {
+  Json,
+  ToolOutcome,
+} from "@vendoai/core";
+import type {
+  JailBundledPackage,
+  JailModule,
+} from "@vendoai/apps/contract";
 import { zodShim } from "./jail/zod-shim.js";
 import type { JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";

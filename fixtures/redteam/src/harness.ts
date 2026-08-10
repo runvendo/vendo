@@ -13,17 +13,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inject } from "vitest";
 import { unzipSync, zipSync, type Unzipped, type Zippable } from "fflate";
-import { serviceToolSlug, USE_SERVICE_TOOL } from "@vendoai/core";
-import type {
-  ActAs,
-  AgentRunner,
-  AppDocument,
-  AppId,
-  Principal,
-  RiskResolver,
-  RunContext,
-  ToolRegistry,
-  Trigger,
+import {
+  type ActAs,
+  type AgentRunner,
+  type AppDocument,
+  type AppId,
+  type Principal,
+  type RiskResolver,
+  type RunContext,
+  serviceToolSlug,
+  type ToolRegistry,
+  type Trigger,
+  USE_SERVICE_TOOL,
 } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";

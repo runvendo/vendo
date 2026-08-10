@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ambientKitEquivalent, prepareIslands } from "../src/checking/islands.js";
+import { ambientKitEquivalent, prepareIslands } from "../src/server/checking/islands.js";
 
 /**
  * Rematch gate 2026-07-25: 17+ Cadence and several Maple creates burned every

@@ -13,7 +13,11 @@ import { transform } from "sucrase";
 import { clsx } from "clsx";
 import * as tailwindMerge from "tailwind-merge";
 import { zodShim } from "./zod-shim.js";
-import { ISLAND_AMBIENT_NAMES, jailPackageUrl, type IslandResolvableModule } from "@vendoai/core";
+import {
+  ISLAND_AMBIENT_NAMES,
+  jailPackageUrl,
+  type IslandResolvableModule,
+} from "@vendoai/apps/contract";
 import { applyThemeVars, postToHost, startFrameProtocol } from "../../embedded-runtime.js";
 import {
   Accordion, Badge, BarChart, Button, Callout, Card, CardList, Checkbox, DataTable,

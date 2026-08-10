@@ -5,9 +5,9 @@ import type {
   ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { fakeSandbox, type MachineApp } from "../../src/testing/fake-sandbox.js";
-import { bindTools, guardFixture } from "../../src/testing/guard-fixture.js";
-import { memoryStore } from "../../src/testing/memory-store.js";
+import { fakeSandbox, type MachineApp } from "../../src/server/testing/fake-sandbox.js";
+import { bindTools, guardFixture } from "../../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../../src/server/testing/memory-store.js";
 
 const decoder = new TextDecoder();
 

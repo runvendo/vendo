@@ -27,21 +27,23 @@
 import {
   VENDO_APP_FORMAT,
   VendoError,
+  type RunContext,
+  type ToolRegistry,
+} from "@vendoai/core";
+import {
   compileWire,
   type AppDocument,
   type Check,
   type Finding,
-  type RunContext,
-  type ToolRegistry,
-} from "@vendoai/core";
+} from "../../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
-import { createApps, type AppsRuntime } from "../../src/index.js";
-import { scriptedAssembler, type AssemblerAnswer } from "../../src/testing/authoring-assembler.js";
-import { guardFixture } from "../../src/testing/guard-fixture.js";
-import { memoryStore } from "../../src/testing/memory-store.js";
-import { basicLanguageModel } from "../../src/testing/scripted-model.js";
-import { seedAppRow } from "../../src/testing/seed-app-row.js";
-import { blocks } from "../../src/checking/floor.js";
+import { createApps, type AppsRuntime } from "../../src/server/index.js";
+import { scriptedAssembler, type AssemblerAnswer } from "../../src/server/testing/authoring-assembler.js";
+import { guardFixture } from "../../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../../src/server/testing/seed-app-row.js";
+import { blocks } from "../../src/server/checking/floor.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_ada" },

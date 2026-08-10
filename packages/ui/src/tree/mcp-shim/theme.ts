@@ -1,4 +1,8 @@
-import { VENDO_THEME_VARIABLE_NAMES, defaultVendoTheme, type VendoTheme } from "@vendoai/core";
+import {
+  VENDO_THEME_VARIABLE_NAMES,
+  defaultVendoTheme,
+  type VendoTheme,
+} from "@vendoai/apps/contract";
 
 type CssVariables = Pick<CSSStyleDeclaration, "getPropertyValue">;
 

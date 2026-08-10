@@ -10,16 +10,18 @@
  * enforces it is a separate question with a measured gap (the domain filter is
  * bypassed by a client that omits SNI).
  */
-import type { AppDocument } from "@vendoai/core";
+import type {
+  AppDocument,
+} from "../src/contract/index.js";
 import { VENDO_APP_FORMAT } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { createMachineLane } from "../src/box-lane.js";
-import { createMachineLifecycle } from "../src/machine-lifecycle.js";
-import type { SandboxAdapter } from "../src/sandbox.js";
-import { fakeStatefulSandbox } from "../src/testing/fake-sandbox-stateful.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createMachineLane } from "../src/server/escalation/box-lane.js";
+import { createMachineLifecycle } from "../src/server/escalation/machine-lifecycle.js";
+import type { SandboxAdapter } from "../src/server/escalation/sandbox.js";
+import { fakeStatefulSandbox } from "../src/server/testing/fake-sandbox-stateful.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 type CreateSpec = { template?: string; env: Record<string, string>; allowedDomains?: string[] };
 

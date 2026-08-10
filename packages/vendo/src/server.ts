@@ -173,7 +173,9 @@ export type { CatalogFile, ExtractedTool, OverridesFile, ServerActionHandler } f
 // must be able to name what it passes without adding a direct dependency on the
 // block the value came from.
 export type { VendoAgent as ComposedAgent } from "@vendoai/agents";
-export type { VendoTheme } from "@vendoai/core";
+export type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
 export type { PolicyFile } from "@vendoai/guard";
 // The `guard:` slot's two arms, named from here for the same reason as
 // `ServerActionHandler` and `ComposedAgent`: a host must be able to name what

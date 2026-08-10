@@ -1,15 +1,22 @@
-import type { AppDocument, RunContext, SecretsProvider, ToolRegistry } from "@vendoai/core";
-import { VENDO_APP_FORMAT } from "@vendoai/core";
+import {
+  type RunContext,
+  type SecretsProvider,
+  type ToolRegistry,
+  VENDO_APP_FORMAT,
+} from "@vendoai/core";
+import type {
+  AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createMachineLane } from "../src/box-lane.js";
-import { createApps, type AppsConfig } from "../src/index.js";
-import { collectSecretValues, redactSecretJson, redactSecretText } from "../src/redaction.js";
-import { fakeBoxSandbox, type FakeBoxAgent } from "../src/testing/fake-box.js";
-import { fakeStatefulSandbox } from "../src/testing/fake-sandbox-stateful.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createMachineLane } from "../src/server/escalation/box-lane.js";
+import { createApps, type AppsConfig } from "../src/server/index.js";
+import { collectSecretValues, redactSecretJson, redactSecretText } from "../src/server/persistence/redaction.js";
+import { fakeBoxSandbox, type FakeBoxAgent } from "../src/server/testing/fake-box.js";
+import { fakeStatefulSandbox } from "../src/server/testing/fake-sandbox-stateful.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const STRIPE_VALUE = "vendo_fixture_4eC39HqLyjWDarjtT1zdp7dc";
 

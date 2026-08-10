@@ -30,7 +30,11 @@ import { Tabs } from "./feedback/tabs.js";
 import { Callout } from "./feedback/callout.js";
 import { Accordion } from "./feedback/accordion.js";
 
-export { KIT_SPECS, kitComponentNames, kitSpec } from "@vendoai/core";
+export {
+  KIT_SPECS,
+  kitComponentNames,
+  kitSpec,
+} from "@vendoai/apps/contract";
 
 /** Name → React component, for the tree renderer. */
 export const KIT_COMPONENTS: Readonly<Record<string, ComponentType<Record<string, never>>>> = {

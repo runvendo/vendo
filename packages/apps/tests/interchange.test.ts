@@ -1,12 +1,21 @@
-import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
-import { VENDO_APP_FORMAT, validateAppDocument } from "@vendoai/core";
+import {
+  type RunContext,
+  type ToolRegistry,
+  VENDO_APP_FORMAT,
+} from "@vendoai/core";
+import type {
+  AppDocument,
+} from "../src/contract/index.js";
+import {
+  validateAppDocument,
+} from "../src/contract/index.js";
 import { unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { createApps } from "../src/index.js";
-import { pinComponentName } from "../src/pins.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createApps } from "../src/server/index.js";
+import { pinComponentName } from "../src/server/remix/pins.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

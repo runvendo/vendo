@@ -1,6 +1,11 @@
-import { VENDO_APP_FORMAT, type AppDocument } from "@vendoai/core";
+import {
+  VENDO_APP_FORMAT,
+} from "@vendoai/core";
+import {
+  type AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { appVersionHash } from "../src/index.js";
+import { appVersionHash } from "../src/server/index.js";
 
 const document = (overrides: Partial<AppDocument> = {}): AppDocument => ({
   format: VENDO_APP_FORMAT,

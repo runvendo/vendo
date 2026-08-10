@@ -1,13 +1,13 @@
-import type {
-  AppDocument,
-  AppId,
-  ApprovalId,
-  ApprovalRequest,
-  IsoDateTime,
-  Json,
-  RunId,
-  ThreadId,
-  TriggerSource,
+import {
+  type AppDocument,
+  type AppId,
+  type ApprovalId,
+  type ApprovalRequest,
+  type IsoDateTime,
+  type Json,
+  type RunId,
+  type ThreadId,
+  type TriggerSource,
 } from "@vendoai/core";
 
 /** 02-store §3 */

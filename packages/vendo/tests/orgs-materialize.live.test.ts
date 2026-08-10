@@ -30,14 +30,14 @@ import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import type { UIMessage } from "ai";
 import {
-  VENDO_APP_FORMAT,
   type AppDocument,
   type Membership,
   type Principal,
   type RunContext,
+  VENDO_APP_FORMAT,
 } from "@vendoai/core";
 import type { SandboxAdapter } from "@vendoai/apps";
-import { e2bSandbox } from "@vendoai/apps/e2b";
+import { e2bSandbox } from "@vendoai/apps";
 import { claudeCode } from "@vendoai/harnesses/claude-code";
 import { appAccess, createStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";

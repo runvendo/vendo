@@ -1,14 +1,15 @@
 import {
-  compileWire,
   type ApprovalDecision,
   type ApprovalRequest,
   type Json,
   type ShapeType,
   type ToolOutcome,
- 
   type UIPayload,
-  type VendoTheme,
 } from "@vendoai/core";
+import {
+  compileWire,
+  type VendoTheme,
+} from "@vendoai/apps/contract";
 import {
   VendoProvider,
   createVendoClient,

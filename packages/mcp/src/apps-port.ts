@@ -1,4 +1,10 @@
-import type { AppDocument, AppId, Json, RunContext, UIPayload } from "@vendoai/core";
+import {
+  type AppDocument,
+  type AppId,
+  type Json,
+  type RunContext,
+  type UIPayload,
+} from "@vendoai/core";
 
 /** 10-mcp §4 — structural subset of AppsRuntime (06 §1); the umbrella passes
  * `vendo.apps` essentially verbatim. */

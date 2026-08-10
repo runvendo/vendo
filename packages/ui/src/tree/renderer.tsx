@@ -1,11 +1,8 @@
 import {
-  KIT_COMPONENT_NAMES,
   TREE_MAX_COMPONENT_SOURCE_CHARS,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_CHARS,
   applyReshape,
-  evaluateExpr,
-  isExprBinding,
   isPathBinding,
   isStateBinding,
   VENDO_TREE_FORMAT,
@@ -15,6 +12,11 @@ import {
   type TreeNode,
   type UIPayload,
 } from "@vendoai/core";
+import {
+  KIT_COMPONENT_NAMES,
+  evaluateExpr,
+  isExprBinding,
+} from "@vendoai/apps/contract";
 import { convertPayload } from "./convert-payload.js";
 import {
   useCallback,

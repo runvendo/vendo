@@ -1,8 +1,13 @@
-import { VENDO_APP_FORMAT, type AppDocument } from "@vendoai/core";
+import {
+  VENDO_APP_FORMAT,
+} from "@vendoai/core";
+import {
+  type AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { pinComponentName, pinForkSource, type PinBaseline } from "../src/pins.js";
-import { computeShipDiff } from "../src/ship-diff.js";
-import { appVersionHash } from "../src/version-hash.js";
+import { pinComponentName, pinForkSource, type PinBaseline } from "../src/server/remix/pins.js";
+import { computeShipDiff } from "../src/server/remix/ship-diff.js";
+import { appVersionHash } from "../src/server/remix/version-hash.js";
 
 const baseline: PinBaseline = {
   slot: "net-worth-card",

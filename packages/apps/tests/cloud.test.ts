@@ -1,14 +1,16 @@
-import type { AppDocument } from "@vendoai/core";
+import type {
+  AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
 import {
   createApps,
   publishRecordSchema,
   shareSnapshotSchema,
   type CloudAppsClient,
-} from "../src/index.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+} from "../src/server/index.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 // ADAPTER RULE (see selectConnections in the umbrella's server.ts): the apps
 // block never reads the environment. Share/publish ride an INJECTED Cloud

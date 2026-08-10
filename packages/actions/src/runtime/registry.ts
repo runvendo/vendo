@@ -1,17 +1,18 @@
 import { readOptionalVendoJson } from "#actions/host-files";
 import {
-  VendoError,
+  type ActAs,
+  defaultFetch,
   descriptorHash,
   joinUrl,
-  toolDescriptorSchema,
-  type ActAs,
   type PermissionGrant,
   type Principal,
   type RunContext,
   type ToolCall,
   type ToolDescriptor,
+  toolDescriptorSchema,
   type ToolOutcome,
   type ToolRegistry,
+  VendoError,
 } from "@vendoai/core";
 import type { Connector } from "../connectors/connector.js";
 import {
@@ -37,7 +38,6 @@ import { applyJudgment } from "../judgments.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
 import { searchToolDescriptors, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
-import { defaultFetch } from "@vendoai/core";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;

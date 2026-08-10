@@ -3,7 +3,7 @@ import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
 import {
   sandboxAdapterConformance,
   type SandboxConformanceHarness,
-} from "@vendoai/apps/adapter-conformance";
+} from "@vendoai/apps/testing";
 import { CLOUD_BOX_PORT, CLOUD_SANDBOX_PATH, CLOUD_SNAPSHOT_REF_PREFIX } from "../src/sandbox-wire.js";
 import { cloudSandbox } from "../src/sandbox.js";
 

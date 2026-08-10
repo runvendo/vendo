@@ -3,16 +3,18 @@
  * schemas the system already has, never a hand-written list.
  */
 import {
+  shapeFromJsonSchema,
+  type JsonSchema,
+} from "@vendoai/core";
+import {
   EXPR_BUCKETS,
   EXPR_CALLS,
   KIT_WIRE_COMPONENT_NAMES,
   WIRE_COMPONENT_NAMES,
-  shapeFromJsonSchema,
-  type JsonSchema,
   type NormalizedCatalog,
-} from "@vendoai/core";
+} from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { AGGREGATE_FIELD_ARITY, screenTypings } from "../../src/checking/screen-typings.js";
+import { AGGREGATE_FIELD_ARITY, screenTypings } from "../../src/server/checking/screen-typings.js";
 
 const netWorthSchema: JsonSchema = {
   type: "object",

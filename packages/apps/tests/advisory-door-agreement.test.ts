@@ -29,18 +29,20 @@
  * `apps/generation/validation/validate.ts` and `validate({ document })` goes red
  * on `wire wire-id-ignored: …` while the seam beside it still paints.
  */
-import { createApps } from "../src/index.js";
+import { createApps } from "../src/server/index.js";
 import {
-  compileWire,
-  printWire,
   type AppId,
-  type NormalizedCatalog,
   type ToolRegistry,
   type VendoViewPart,
 } from "@vendoai/core";
+import {
+  compileWire,
+  printWire,
+  type NormalizedCatalog,
+} from "../src/contract/index.js";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import { describe, expect, it } from "vitest";
-import { wrapWorkspaceForRender } from "../src/render-seam.js";
+import { wrapWorkspaceForRender } from "../src/server/generation/render-seam.js";
 import { ctx, scriptedModel, testGuard, testWorkspace } from "./test-doubles.test-util.js";
 
 const APP_ID = "app_advisory_door" as AppId;
