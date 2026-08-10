@@ -42,6 +42,9 @@ export interface JudgeResult {
 }
 
 export interface JudgeInput {
+  /** The shot's `evidence` copy — sized to the model's image limit by
+   *  `render.ts`. A full-resolution shot of a tall screen is rejected outright,
+   *  and this call cannot retry its way past a 400. */
   readonly screenshot: Buffer;
   readonly artifact: string;
   readonly trace: readonly Probed[];

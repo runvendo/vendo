@@ -417,7 +417,10 @@ async function main(argv: readonly string[]): Promise<number> {
       shot === undefined
         ? ungraded(testCase.pass, scoped.style)
         : await judge({
-            screenshot: shot.png,
+            // `evidence`, not `png`: the full-resolution shot is for the run
+            // folder, and sending it would fail a tall screen on the provider's
+            // image limit rather than on the rubric.
+            screenshot: shot.evidence,
             artifact: artifact ?? "",
             trace,
             caseLines: testCase.pass,

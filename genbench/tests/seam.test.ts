@@ -203,7 +203,7 @@ const resultFor = (contender: string): CaseResult => ({
   judgeContract: JudgeContract,
 });
 
-const SHOT: Shot = { png: PNG, visibleText: "", renders: true, consoleErrors: [] };
+const SHOT: Shot = { png: PNG, evidence: PNG, visibleText: "", renders: true, consoleErrors: [] };
 
 /** Every identity the feed is showing, top row first. */
 type Rows = Array<{ who: string; tool: string }>;
