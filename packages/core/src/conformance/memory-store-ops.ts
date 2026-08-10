@@ -1,11 +1,13 @@
 import { VendoError } from "../errors.js";
 import type { IsoDateTime } from "../ids.js";
 import { VENDO_STORE_WIRE_FORMAT, type StoreWireStatus } from "../store-wire.js";
-import type {
-  RecordInput,
-  RecordQuery,
-  StoreOps,
-  VendoRecord,
+import {
+  APP_DATA_COLLECTION_PATTERN,
+  type AppDataTarget,
+  type RecordInput,
+  type RecordQuery,
+  type StoreOps,
+  type VendoRecord,
 } from "../store.js";
 
 // ---------------------------------------------------------------------------
@@ -195,6 +197,66 @@ export function memoryStoreOps(): StoreOps {
     },
     async list(namespace, prefix = "") {
       return [...ns(namespace).keys()].filter((k) => k.startsWith(prefix));
+    },
+  };
+
+  // ---------------------------------------------------------------------------
+  // appData family
+  // ---------------------------------------------------------------------------
+
+  /** The reference's own copy of the naming grammar — rows land in one
+      collection per app+collection, files in the blob namespace of the same
+      name. The real backend composes both in one place, which core cannot
+      import. */
+  const appCollection = (target: AppDataTarget): string => {
+    if (!APP_DATA_COLLECTION_PATTERN.test(target.collection)) {
+      throw new VendoError("validation", `app data collection "${target.collection}" is not a legal name`);
+    }
+    return `app:${target.appId}:${target.collection}`;
+  };
+
+  /** Files are scoped by key prefix rather than by a stamp, so the owner leg
+      never reaches the caller — `listFiles` strips it back off. */
+  const ownedKey = (target: AppDataTarget, key: string): string => `${target.owner}/${key}`;
+
+  const refuseSubject = (refs: Record<string, string> | undefined, verb: string): void => {
+    if (refs !== undefined && "subject" in refs) {
+      throw new VendoError("validation", `appData.${verb} may not supply refs.subject; the owner is stamped from the session`);
+    }
+  };
+
+  const appData: StoreOps["appData"] = {
+    async put(target, record) {
+      const collection = appCollection(target);
+      refuseSubject(record.refs, "put");
+      return records.put(collection, { ...record, refs: { ...record.refs, subject: target.owner } });
+    },
+    async get(target, id) {
+      const record = await records.get(appCollection(target), id);
+      return record?.refs?.["subject"] === target.owner ? record : null;
+    },
+    async list(target, query = {}) {
+      const collection = appCollection(target);
+      refuseSubject(query.refs, "list");
+      return records.list(collection, { ...query, refs: { ...query.refs, subject: target.owner } });
+    },
+    async delete(target, id) {
+      const collection = appCollection(target);
+      if (col(collection).get(id)?.refs?.["subject"] !== target.owner) return;
+      await records.delete(collection, id);
+    },
+    async putFile(target, key, bytes, meta) {
+      await blobs.put(appCollection(target), ownedKey(target, key), bytes, meta);
+    },
+    async getFile(target, key) {
+      return blobs.get(appCollection(target), ownedKey(target, key));
+    },
+    async listFiles(target, prefix = "") {
+      const keys = await blobs.list(appCollection(target), ownedKey(target, prefix));
+      return keys.map((key) => key.slice(target.owner.length + 1));
+    },
+    async deleteFile(target, key) {
+      await blobs.delete(appCollection(target), ownedKey(target, key));
     },
   };
 
@@ -472,12 +534,13 @@ export function memoryStoreOps(): StoreOps {
   return {
     records,
     blobs,
+    appData,
     transcripts,
     harness,
     workspace,
     lifecycle,
     async status(): Promise<StoreWireStatus> {
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 27 };
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 35 };
     },
   };
 }

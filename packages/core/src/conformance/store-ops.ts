@@ -73,8 +73,23 @@ const numberField = (entry: unknown, field: string, message: string): number => 
 
 /** A thread's harness state rides the harness slot under this synthetic appId
     (the store's `harnessStateKey`), which is what makes deleteThread's cascade
-    onto harness state observable through the 27 ops. */
+    onto harness state observable through the 35 ops. */
 const harnessSlot = (threadId: string): string => `harness_state:${threadId}`;
+
+/** appData rows live in the app's own drawer, and the local backend fails an
+    app-scoped write closed when the app has no row — so every appData case
+    seeds one first, with the shape the typed `vendo_apps` door accepts. */
+const seedApp = async (ops: StoreOps, appId: string): Promise<void> => {
+  await ops.records.put("vendo_apps", {
+    id: appId,
+    data: {
+      subject: "user_1",
+      enabled: true,
+      doc: { format: "vendo/app@1", id: appId, name: appId },
+    },
+    refs: { subject: "user_1" },
+  });
+};
 
 // ---------------------------------------------------------------------------
 // suite
@@ -264,6 +279,149 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           ["images/a.png", "images/b.png"],
           "blob prefix list returned the wrong keys",
         );
+      }),
+
+      // =====================================================================
+      // appData
+      // =====================================================================
+
+      opsCase(opts, "appData.put stamps the target owner as refs.subject", async (ops) => {
+        await seedApp(ops, "app_stamp");
+        const target = { appId: "app_stamp", collection: "notes", owner: "own_a" };
+        const put = await ops.appData.put(target, { id: "n1", data: { text: "hi" } });
+        assert(
+          put.refs?.["subject"] === "own_a",
+          `put should stamp the owner as refs.subject, got ${String(put.refs?.["subject"])}`,
+        );
+        const got = await ops.appData.get(target, "n1");
+        assert(got?.refs?.["subject"] === "own_a", "the stamped record did not read back for its owner");
+      }),
+
+      /** Generated code has no field for the owner, so a `refs.subject` in the
+          record is a caller trying to write as someone else. Refused, never
+          silently overwritten with the real owner. */
+      opsCase(opts, "appData.put refuses a caller-supplied refs.subject", async (ops) => {
+        await seedApp(ops, "app_putsub");
+        const target = { appId: "app_putsub", collection: "notes", owner: "own_a" };
+        await assertThrowsCode(
+          () => ops.appData.put(target, { id: "n1", data: {}, refs: { subject: "own_b" } }),
+          "validation",
+          "a caller-supplied refs.subject on appData.put",
+        );
+        assert(await ops.appData.get(target, "n1") === null, "the refused put wrote its row anyway");
+      }),
+
+      opsCase(opts, "appData.list refuses a caller-supplied refs.subject", async (ops) => {
+        await seedApp(ops, "app_listsub");
+        const target = { appId: "app_listsub", collection: "notes", owner: "own_a" };
+        await assertThrowsCode(
+          () => ops.appData.list(target, { refs: { subject: "own_b" } }),
+          "validation",
+          "a caller-supplied refs.subject on appData.list",
+        );
+      }),
+
+      opsCase(opts, "appData.list never returns another owner's rows", async (ops) => {
+        await seedApp(ops, "app_scope");
+        const a = { appId: "app_scope", collection: "notes", owner: "own_a" };
+        const b = { appId: "app_scope", collection: "notes", owner: "own_b" };
+        await ops.appData.put(a, { id: "mine", data: {} });
+        await ops.appData.put(b, { id: "theirs", data: {} });
+        assertDeepEqual(
+          (await ops.appData.list(a)).records.map((r) => r.id),
+          ["mine"],
+          "list returned rows outside the target owner's scope",
+        );
+        assertDeepEqual(
+          (await ops.appData.list(b)).records.map((r) => r.id),
+          ["theirs"],
+          "list returned rows outside the target owner's scope",
+        );
+      }),
+
+      opsCase(opts, "appData.get returns null for another owner's row", async (ops) => {
+        await seedApp(ops, "app_getscope");
+        const owner = { appId: "app_getscope", collection: "notes", owner: "own_a" };
+        const other = { appId: "app_getscope", collection: "notes", owner: "own_b" };
+        await ops.appData.put(owner, { id: "secret", data: { v: 1 } });
+        assert(await ops.appData.get(other, "secret") === null, "get read another owner's row");
+      }),
+
+      opsCase(opts, "appData.delete does not delete another owner's row", async (ops) => {
+        await seedApp(ops, "app_delscope");
+        const owner = { appId: "app_delscope", collection: "notes", owner: "own_a" };
+        const other = { appId: "app_delscope", collection: "notes", owner: "own_b" };
+        await ops.appData.put(owner, { id: "keep", data: { v: 1 } });
+        await ops.appData.delete(other, "keep");
+        assert(await ops.appData.get(owner, "keep") !== null, "delete destroyed another owner's row");
+      }),
+
+      opsCase(opts, "appData.list honors caller refs alongside the owner scope", async (ops) => {
+        await seedApp(ops, "app_refs");
+        const a = { appId: "app_refs", collection: "notes", owner: "own_a" };
+        const b = { appId: "app_refs", collection: "notes", owner: "own_b" };
+        await ops.appData.put(a, { id: "inv", data: {}, refs: { kind: "invoice" } });
+        await ops.appData.put(a, { id: "memo", data: {}, refs: { kind: "memo" } });
+        await ops.appData.put(b, { id: "their_inv", data: {}, refs: { kind: "invoice" } });
+        assertDeepEqual(
+          (await ops.appData.list(a, { refs: { kind: "invoice" } })).records.map((r) => r.id),
+          ["inv"],
+          "the caller's refs filter and the owner scope did not both apply",
+        );
+      }),
+
+      opsCase(opts, "appData file twins round-trip and stay owner-isolated", async (ops) => {
+        await seedApp(ops, "app_files");
+        const owner = { appId: "app_files", collection: "notes", owner: "own_a" };
+        const other = { appId: "app_files", collection: "notes", owner: "own_b" };
+        const bytes = new Uint8Array([0, 7, 255]);
+        await ops.appData.putFile(owner, "receipt.bin", bytes, { contentType: "application/octet-stream" });
+        const got = await ops.appData.getFile(owner, "receipt.bin");
+        assert(got !== null, "the stored file returned null for its owner");
+        assertBytesEqual(got!.bytes, bytes, "file bytes did not round-trip");
+        assert(got!.contentType === "application/octet-stream", "file contentType did not round-trip");
+
+        assert(await ops.appData.getFile(other, "receipt.bin") === null, "getFile read another owner's file");
+        await ops.appData.deleteFile(other, "receipt.bin");
+        assert(await ops.appData.getFile(owner, "receipt.bin") !== null, "deleteFile destroyed another owner's file");
+      }),
+
+      /** The owner prefix is the backend's scoping mechanism, not part of the
+          caller's key space: a generated app that stored `receipt.bin` must get
+          `receipt.bin` back, and its prefix filters are its own keys' prefixes. */
+      opsCase(opts, "appData.listFiles returns keys without the owner prefix", async (ops) => {
+        await seedApp(ops, "app_listfiles");
+        const owner = { appId: "app_listfiles", collection: "notes", owner: "own_a" };
+        const other = { appId: "app_listfiles", collection: "notes", owner: "own_b" };
+        await ops.appData.putFile(owner, "images/a.png", new Uint8Array([1]));
+        await ops.appData.putFile(owner, "docs/a.txt", new Uint8Array([2]));
+        await ops.appData.putFile(other, "images/b.png", new Uint8Array([3]));
+
+        assertDeepEqual(
+          (await ops.appData.listFiles(owner)).sort(),
+          ["docs/a.txt", "images/a.png"],
+          "listFiles returned prefixed keys or crossed owners",
+        );
+        assertDeepEqual(
+          await ops.appData.listFiles(owner, "images/"),
+          ["images/a.png"],
+          "the prefix filter was not relative to the caller's own key space",
+        );
+      }),
+
+      opsCase(opts, "appData refuses a collection name outside the grammar", async (ops) => {
+        await seedApp(ops, "app_grammar");
+        const legal = { appId: "app_grammar", collection: "box:inbox", owner: "own_a" };
+        const put = await ops.appData.put(legal, { id: "ok", data: {} });
+        assert(put.id === "ok", "a legal box: collection was not accepted");
+
+        for (const collection of ["has spaces", "a/b"]) {
+          await assertThrowsCode(
+            () => ops.appData.put({ appId: "app_grammar", collection, owner: "own_a" }, { id: "no", data: {} }),
+            "validation",
+            `the collection name ${JSON.stringify(collection)}`,
+          );
+        }
       }),
 
       // =====================================================================
@@ -786,7 +944,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         const status = await ops.status();
         assert(status.format === VENDO_STORE_WIRE_FORMAT, `status.format should be ${VENDO_STORE_WIRE_FORMAT}`);
         assert(typeof status.ops === "number", "status.ops should be a number");
-        assert(status.ops === 27, `status.ops should be 27, got ${status.ops}`);
+        assert(status.ops === 35, `status.ops should be 35, got ${status.ops}`);
       }),
     ],
   };
