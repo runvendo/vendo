@@ -1,8 +1,8 @@
 ---
-"@vendoai/core": major
-"@vendoai/apps": major
-"@vendoai/store": major
-"@vendoai/agents": major
+"@vendoai/core": minor
+"@vendoai/apps": minor
+"@vendoai/store": minor
+"@vendoai/agents": minor
 "@vendoai/knowledge": minor
 "@vendoai/actions": minor
 "@vendoai/ui": minor

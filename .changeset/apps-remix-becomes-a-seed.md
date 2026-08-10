@@ -1,10 +1,10 @@
 ---
-"@vendoai/apps": major
-"@vendoai/core": major
-"@vendoai/ui": major
-"@vendoai/vendo": major
-"@vendoai/actions": major
-"vendoai": major
+"@vendoai/apps": minor
+"@vendoai/core": minor
+"@vendoai/ui": minor
+"@vendoai/vendo": minor
+"@vendoai/actions": minor
+"vendoai": minor
 ---
 
 Remix is a seeded app: the pins subsystem is gone

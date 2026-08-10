@@ -1,6 +1,6 @@
 ---
-"@vendoai/core": major
-"@vendoai/apps": major
+"@vendoai/core": minor
+"@vendoai/apps": minor
 ---
 
 The app format has one definition, and a test that fails when a mirror drifts

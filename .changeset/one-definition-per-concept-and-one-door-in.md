@@ -1,7 +1,7 @@
 ---
-"@vendoai/apps": major
-"@vendoai/mcp": major
-"@vendoai/automations": major
+"@vendoai/apps": minor
+"@vendoai/mcp": minor
+"@vendoai/automations": minor
 "@vendoai/store": minor
 "@vendoai/core": minor
 ---

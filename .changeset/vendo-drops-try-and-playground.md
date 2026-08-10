@@ -1,5 +1,5 @@
 ---
-"@vendoai/vendo": major
+"@vendoai/vendo": minor
 ---
 
 The playground and the hosted try surface are gone, and with them two entry

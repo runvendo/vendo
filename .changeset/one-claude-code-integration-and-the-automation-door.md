@@ -1,5 +1,5 @@
 ---
-"@vendoai/apps": major
+"@vendoai/apps": minor
 "@vendoai/harnesses": minor
 ---
 

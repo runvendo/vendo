@@ -1,10 +1,10 @@
 ---
-"@vendoai/core": major
-"@vendoai/apps": major
-"@vendoai/actions": major
-"@vendoai/store": major
-"@vendoai/mcp": major
-"@vendoai/ui": major
+"@vendoai/core": minor
+"@vendoai/apps": minor
+"@vendoai/actions": minor
+"@vendoai/store": minor
+"@vendoai/mcp": minor
+"@vendoai/ui": minor
 ---
 
 App generation moves into one package, behind two doors

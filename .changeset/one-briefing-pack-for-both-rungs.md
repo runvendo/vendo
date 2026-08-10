@@ -1,6 +1,6 @@
 ---
-"@vendoai/apps": major
-"@vendoai/vendo": major
+"@vendoai/apps": minor
+"@vendoai/vendo": minor
 ---
 
 One briefing pack, assembled once, handed to both generation rungs
