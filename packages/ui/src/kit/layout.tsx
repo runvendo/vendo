@@ -68,14 +68,21 @@ export interface GridProps {
 /** Equal-width columns. */
 export function Grid({ columns = 2, gap, children }: PropsWithChildren<GridProps>) {
   const safe = Number.isFinite(columns) ? Math.max(1, Math.floor(columns)) : 2;
+  const g = gapVar(gap);
+  // The track minimum is the asked column width but never below 160px, so a narrow
+  // surface drops a column instead of shipping cramped tracks.
+  const columnsCss =
+    safe === 1
+      ? "minmax(0, 1fr)"
+      : `repeat(auto-fit, minmax(max(160px, calc((100% - ${safe - 1} * ${g}) / ${safe})), 1fr))`;
   return (
     <div
       data-kit="Grid"
       style={{
         display: "grid",
-        gridTemplateColumns: `repeat(${safe}, minmax(0, 1fr))`,
-        alignItems: "stretch",
-        gap: gapVar(gap),
+        gridTemplateColumns: columnsCss,
+        alignItems: "start",
+        gap: g,
       }}
     >
       {children}
