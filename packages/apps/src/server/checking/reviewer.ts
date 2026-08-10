@@ -49,7 +49,7 @@ const REPORT_FINDINGS_SCHEMA: Record<string, unknown> = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["severity", "where", "message"],
+        required: ["severity", "where", "message", "evidence"],
         properties: {
           severity: {
             type: "string",
@@ -64,6 +64,10 @@ const REPORT_FINDINGS_SCHEMA: Record<string, unknown> = {
             type: "string",
             description: "One sentence: what is wrong AND the real alternative.",
           },
+          evidence: {
+            type: "string",
+            description: "The exact text you are judging, copied character-for-character from APP, RESOLVED_DATA or USER_REQUEST. If you cannot copy one, you do not have a finding.",
+          },
         },
       },
     },
@@ -74,14 +78,26 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** The reported findings, keeping only entries that really are {@link Finding}s
- *  — a malformed entry is dropped, never coerced and never thrown. */
-const findingsFrom = (reported: unknown): Finding[] => {
+ *  — a malformed entry is dropped, never coerced and never thrown.
+ *
+ *  A finding is real only if it can QUOTE the text that proves it: `evidence`
+ *  that is not in `haystack` — the app, the ask and the data the reviewer was
+ *  actually shown — is a paraphrase or an invention, and the finding goes with
+ *  it. Whitespace collapses on both sides because printed markup wraps where the
+ *  quote does not, and a quote under 8 characters is dropped because "0" or "$"
+ *  matches anything and proves nothing. `evidence` never leaves this function:
+ *  it is the gate, not a field of {@link Finding}. */
+const findingsFrom = (reported: unknown, haystack: string): Finding[] => {
   if (!Array.isArray(reported)) return [];
+  const shown = haystack.replace(/\s+/g, " ");
   return reported.flatMap((entry) => {
     if (!isRecord(entry)) return [];
-    const { severity, where, message } = entry;
+    const { severity, where, message, evidence } = entry;
     if (severity !== "block" && severity !== "warn") return [];
     if (typeof where !== "string" || typeof message !== "string") return [];
+    if (typeof evidence !== "string") return [];
+    const quote = evidence.replace(/\s+/g, " ").trim();
+    if (quote.length < 8 || !shown.includes(quote)) return [];
     return [{ severity, where, message }];
   });
 };
@@ -170,6 +186,10 @@ export const reviewerCheck = (
       `${REVIEWER_SYSTEM}${rubricSection(rubric)}`,
       `USER_REQUEST: ${request}\nAPP (wire markup):\n${printed}${planLines(plan)}${samples === undefined ? "" : sampleLines(samples)}`,
     );
-    return reported === undefined ? [] : findingsFrom(reported.findings);
+    if (reported === undefined) return [];
+    return findingsFrom(
+      reported.findings,
+      `${printed}\n${request}\n${samples === undefined ? "" : JSON.stringify(samples)}`,
+    );
   },
 });

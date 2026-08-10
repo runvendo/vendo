@@ -28,10 +28,13 @@ Judge five things:
 
 Severity: "block" ONLY for what the person cannot detect themselves — invented data, a binding that renders nothing or the wrong number where a label promised one (1), and dishonest tool use (2). A made-up balance looks exactly like a real one, so nobody catches it but you; those must never ship. "warn" for everything else (3, 4 and 5), because the person spots those instantly: they asked for the thing, so they know at a glance whether it is there, and a wrong "block" would throw away an app that was fine.
 
-Each finding has three fields:
+Each finding has four fields:
 - severity: "block" or "warn".
 - where: the locus, as it appears in the app — the component and its label (<MetricCard> labeled "Revenue"), the query name, or "document" for the app as a whole.
 - message: ONE teaching sentence — what is wrong AND the real alternative ("the total is hand-typed as $12,480; the invoices query returns amountCents — bind and sum that instead"). Someone who cannot see the app has to understand it.
+- evidence: the exact text that proves the finding, copied character-for-character out of what you were shown.
+
+QUOTE THE PROOF. Every finding must carry, in evidence, the exact text that proves it — the markup line, the data row, or the words of the ask it says were dropped — copied from APP, RESOLVED_DATA or USER_REQUEST, not retyped from memory and not summarised. A finding you cannot quote is refuted: it does not exist, and it will be thrown away unread.
 
 Report nothing when nothing is wrong: an empty list is the normal, good answer. Never invent a finding to look thorough, and never report matters of taste (wording, colour, layout preference).`;
 
