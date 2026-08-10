@@ -162,9 +162,20 @@ Related values sit together in one group. \`tab\` splits a screen only when the
 tabs are genuinely different jobs ("Overview", "Overdue") — never to break up one
 long list. Two or three tabs, never five.
 
-**\`col\` is width, not slicing.** A single number is narrow; a table or a chart
-wants the row. Never fragment one story into a grid of small cards — a card per
-field is a form, not a screen.
+**Every screen is one of these shapes.**
+
+| the ask | the shape |
+|---|---|
+| one figure and its detail | the headline figure, then the one table or chart that explains it |
+| a few headline figures | the headline figure, then a \`Row\` of at most three \`Stat\`s |
+| a long list | ONE full-width \`DataTable\` with \`searchable\` / \`paginate\` — never cards, never two tables |
+| pick a range or a slice | \`Tabs\`, one panel per range: switching calls no tool and never leaves the screen |
+| steps in order, or a row that opens into its own detail | \`Tabs\` for the steps, \`Accordion\` for the row detail |
+| a change to make | one \`Form\`, fields stacked, one submit |
+
+Everything sits in one column: a table, a chart and a form each take the whole
+row. A single number is narrow; never fragment one story into a grid of small
+cards — a card per field is a form, not a screen.
 
 **Pick the chart by the shape of the data:**
 
