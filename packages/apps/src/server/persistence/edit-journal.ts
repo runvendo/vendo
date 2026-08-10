@@ -12,7 +12,6 @@ import {
   type RunContext,
 } from "@vendoai/core";
 import {
-  bundleOf,
   type AppDocument,
   type ScreenAssembler,
   type AdmissionOrigin,

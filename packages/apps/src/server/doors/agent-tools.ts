@@ -239,7 +239,7 @@ export interface AgentToolsDataDependencies {
  * people read the message.
  */
 // Deliberately DIRECTS rather than promises: there is no fork tool in this
-// registry (make · rebase_pin · open · data_*), so a message saying "I
+// registry (make · reseed · open · data_*), so a message saying "I
 // will make you one" would have the model claim a capability it does not have.
 const FORK_OFFER = "I can’t change the team’s copy of this app. Say so plainly, and offer them"
   + " their own copy instead — forking the app from its card gives them one I can change freely.";

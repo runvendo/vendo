@@ -82,7 +82,7 @@ describe("the MCP door, as an OUTSIDE agent sees it — pinned before door-ctx",
       "vendo_apps_list",
       "vendo_apps_open",
       "vendo_apps_pin",
-      "vendo_apps_rebase_pin",
+      "vendo_apps_reseed",
       "vendo_apps_unpin",
       // The one-tool contract's whole point for MCP: an outside agent asks for a
       // screen through `vendo_make` and never has to decide "new or change?"

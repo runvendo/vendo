@@ -25,7 +25,7 @@ const RUNTIME_EXPORTS = [
   "grantScopeSchema", "grantDurationSchema", "permissionGrantSchema", "approvalRequestSchema",
   "approvalDecisionSchema", "guardDecisionSchema", "auditEventSchema", "uiPayloadSchema",
   "treeNodeSchema", "appDocumentSchema", "storageDeclSchema",
-  "pinSchema", "triggerSourceSchema", "runModelSchema", "stepSchema", "triggerSchema",
+  "appSeedSchema", "triggerSourceSchema", "runModelSchema", "stepSchema", "triggerSchema",
   "vendoRecordSchema", "recordQuerySchema", "authMaterialSchema", "agentRunReportSchema",
   "vendoViewPartSchema", "vendoApprovalPartSchema", "vendoErrorCodeSchema",
   "capabilityMissToolFailureSchema", "capabilityMissTriggerSchema", "capabilityMissEventSchema",

@@ -273,7 +273,7 @@ describe("vendo sync", () => {
     expect(prunedLines[0]).toContain("stale baseline deleted");
   });
 
-  it("names drifted slots and says forks stay on the old capture until rebased", async () => {
+  it("names drifted slots and says remixes stay on the old capture until updated", async () => {
     const messages = captureOutput();
     const drifted = {
       ...report(),
@@ -283,7 +283,10 @@ describe("vendo sync", () => {
     const log = messages.logs.join("\n");
     expect(log).toContain("pins: 1 captured, 1 drifted");
     expect(log).toContain("drifted: net-worth-card");
-    expect(log).toContain("rebase");
+    expect(log).toContain("reseed");
+    // The CLI has to carry the same cost the banner does: updating REPLACES
+    // whatever the person changed about the component.
+    expect(log).toContain("replaces their changes");
     // Drift alone never fails the sync and never mutates any fork.
   });
 

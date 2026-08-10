@@ -112,7 +112,7 @@ describe("the page's argument tables match the real schemas", () => {
     const source = await read(AGENT_TOOLS);
     const start = source.indexOf("name: VENDO_MAKE_TOOL");
     expect(start, "the make descriptor must still exist").toBeGreaterThan(-1);
-    const schema = source.slice(start, source.indexOf('name: "vendo_apps_rebase_pin"', start));
+    const schema = source.slice(start, source.indexOf('name: "vendo_apps_reseed"', start));
     for (const argument of ["request", "context", "app", "slot"]) {
       expect(schema, `vendo_make must accept \`${argument}\``).toMatch(
         new RegExp(`\\b${argument}: \\{ type: "string"`),
