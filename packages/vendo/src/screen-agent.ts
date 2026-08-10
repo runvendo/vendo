@@ -602,15 +602,38 @@ export async function assembleScreen(
       // the repair round has none of the first one's context — and a repair with no
       // document in front of it is a rewrite from scratch.
       const saved = await turn.workspace.readFile(appPath).catch(() => undefined);
+      /**
+       * ONE dense, sectioned snapshot — gemini-cli's `<state_snapshot>`
+       * (`overall_goal` / `active_constraints` / `key_knowledge` /
+       * `artifact_trail` / `task_state`, `packages/core/src/prompts/snippets.ts`),
+       * ported to this loop's second drive.
+       *
+       * Its rule is why the sections exist: the snapshot "will become the agent's
+       * *only* memory of the past", so anything the first drive learned and this
+       * text does not carry is gone. The first drive learned this host's tool
+       * shapes by calling tools; the second has none of that context and re-derives
+       * or guesses them, so `toolBrief` rides along as `key_knowledge`.
+       * `task_state` marks the painted screen [DONE] and names the one next step,
+       * because a repair that reads as a fresh assignment is a rewrite.
+       *
+       * `active_constraints` has no section: the constraints are the brief, which
+       * `vendo()` re-applies to every drive as the system prompt.
+       */
+      const text = saved === undefined ? instruction : [
+        "This snapshot is your only memory of the work so far.",
+        `<overall_goal>\n${input.request}\n</overall_goal>`,
+        `<key_knowledge>\nThis product's tools, with the shapes they return:\n${toolBrief(listings)}\n</key_knowledge>`,
+        ...(record.decisions === undefined ? [] : [`<artifact_trail>\n${record.decisions}\n</artifact_trail>`]),
+        `<findings>\n${instruction}\n</findings>`,
+        `<document>\n${saved}\n</document>`,
+        `<task_state>\n1. [DONE] the screen is saved and on the person's display.\n`
+        + `2. [IN PROGRESS] fix exactly the findings above and save the whole corrected document with `
+        + `${SAVE_APP_TOOL} — change nothing else.\n</task_state>`,
+      ].join("\n\n");
       await drive([...turn.messages, {
         id: `repair_${input.appId}`,
         role: "user",
-        parts: [{
-          type: "text",
-          text: saved === undefined
-            ? instruction
-            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
-        }],
+        parts: [{ type: "text", text }],
       }]);
     }
     return {
