@@ -190,7 +190,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     summary: "A KPI/metric summary. Formats its value (money takes cents) and shows an optional trend.",
     props: {
       label: copy(z.string(), "metric name", { required: true }),
-      value: data(z.union([z.number(), z.string()]), "raw value", { required: true }),
+      value: data(z.union([z.number(), z.string()]), "raw value; an absent value renders as words, not a dash", { required: true }),
       format: config(valueFormat, "value tier format"),
       trend: copy(z.string(), "delta caption, e.g. +12% MoM"),
       tone: config(z.enum(["default", "accent", "danger"]), "emphasis"),

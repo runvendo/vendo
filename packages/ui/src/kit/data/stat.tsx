@@ -23,12 +23,13 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
   const emphasis = tone === "accent" ? t.accent : tone === "danger" ? t.danger : t.text;
   const formatted = applyFormat(value, format);
   const empty = formatted === null;
+  // A hole in the data, or an exact zero count, is said in words at body size —
+  // at the hero size a glyph for "nothing" becomes the largest text on the screen.
+  // Money and percent keep their numbers: $0.00 and 0% are real values.
+  const words = empty ? "No data yet" : format === "number" && value === 0 ? "None" : null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;
-  const display = empty
-    ? "—"
-    : overflow
-      ? `${formatted.slice(0, STAT_VALUE_MAX_CHARS - 1).trimEnd()}…`
-      : formatted;
+  const display =
+    words ?? (overflow ? `${formatted.slice(0, STAT_VALUE_MAX_CHARS - 1).trimEnd()}…` : formatted);
   return (
     <article
       data-kit="Stat"
@@ -48,12 +49,12 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
     >
       <span style={{ color: t.muted, fontSize: "0.82em", fontWeight: 650 }}>{label}</span>
       <strong
-        {...(empty ? { "data-empty": "", title: "No data yet" } : overflow ? { title: formatted } : {})}
+        {...(empty ? { "data-empty": "" } : overflow ? { title: formatted } : {})}
         style={{
-          color: empty ? t.muted : emphasis,
+          color: words ? t.muted : emphasis,
           fontFamily: t.headingFamily,
-          fontSize: "calc(var(--vendo-font-size, 15px) * 1.65)",
-          fontWeight: 700,
+          fontSize: words ? "1em" : "calc(var(--vendo-font-size, 15px) * 1.65)",
+          fontWeight: words ? 500 : 700,
           letterSpacing: "-0.025em",
           lineHeight: 1.12,
           fontVariantNumeric: "tabular-nums",

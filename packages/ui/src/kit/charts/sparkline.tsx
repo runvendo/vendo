@@ -14,7 +14,7 @@ export interface SparklineProps {
   emptyState?: string;
 }
 
-export function Sparkline({ data, valueKey = "value", height = 40, emptyState = "—" }: SparklineProps) {
+export function Sparkline({ data, valueKey = "value", height = 40, emptyState = "No trend yet" }: SparklineProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const raw = (Array.isArray(data) ? data : []).map((d) => (typeof d === "number" ? d : (d[valueKey] as number)));
   const clean = sanitizeNumbers(raw);
