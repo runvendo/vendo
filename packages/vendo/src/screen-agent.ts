@@ -120,14 +120,22 @@ export const SAVE_APP_TOOL = "save_app";
 /**
  * The assembly verbs, by NAME rather than by risk.
  *
- * `validate` and `search_components` are graded `write` on purpose — design §12's
- * mechanical vote fail-closes a name ending in a noun (`vendo-verbs.ts:41-48`) —
- * so a `risk === "read"` filter would drop the two tools the whole loop is built
- * around. Host read tools come in by risk below; these come in by name.
+ * `search_components` is graded `write` on purpose — design §12's mechanical vote
+ * fail-closes a name ending in a noun (`vendo-verbs.ts:41-48`) — so a
+ * `risk === "read"` filter would drop the tool the whole loop is built around.
+ * Host read tools come in by risk below; these come in by name.
+ *
+ * `validate` IS NOT HERE, and its absence is the mechanism. A checking tool on
+ * the loadout is a dry-run door, and the measured runs walked through it over and
+ * over: search, validate, search, validate, nothing on screen. The save is the
+ * check — it lands and repaints, or it comes back with exactly what to fix — so
+ * the verb stays reachable to the gates that own the floor (`validateWrittenApps`
+ * calls it through `turn.tools`, not through this list) and unreachable to the
+ * writer. A sentence telling the model to stop re-checking is advice; taking the
+ * tool away is arithmetic.
  */
 const ASSEMBLY_TOOLS: readonly string[] = [
   "search_components",
-  "validate",
   "vendo_apps_data_list",
   "vendo_apps_open",
   "ask_user",
@@ -252,8 +260,10 @@ through two tools.
   them — why you narrowed something, a constraint the tools imposed, a shape you
   ruled out. Never record what you did or in what order; that is narration, and
   it crowds out the one line that mattered.
-- **\`validate\`** is the floor. Call it on what you saved, fix what it names, save
-  again. You are not done until it comes back clean.
+- **The save IS the check.** A save that lands and repaints has already passed this
+  product's floor; a save that does not reach the screen comes back with exactly
+  what to fix. There is nothing to re-check and no checking tool — fix what a save
+  tells you, then stop.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Assembling a document out of this
   product's components is all you can do; anything that needs real code, its own
   server, a file the person uploads, or a surface these components cannot express
