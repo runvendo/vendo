@@ -62,11 +62,12 @@ import {
   buildingAppsSkill,
   paintedIn,
   repairInstruction,
+  VALIDATE_TOOL,
   validateWrittenApps,
   wrapWorkspaceForRender,
   type RenderSeamOptions,
 } from "@vendoai/apps";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, StopCondition, ToolSet } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
 import type { ModelEffort } from "@vendoai/harnesses/vendo";
 
@@ -252,8 +253,19 @@ through two tools.
   them — why you narrowed something, a constraint the tools imposed, a shape you
   ruled out. Never record what you did or in what order; that is narration, and
   it crowds out the one line that mattered.
-- **\`validate\`** is the floor. Call it on what you saved, fix what it names, save
-  again. You are not done until it comes back clean.
+  Its \`done\` is how you FINISH. Set it on the save that answers the whole ask,
+  and the turn ends the moment that save reaches the screen. Nothing else ends it:
+  without \`done\` you keep going until the step budget runs out, and every step
+  after the screen was finished is the person waiting for a screen they already
+  have. Before you set it, read the ask again clause by clause and find each one on
+  the screen you just wrote — a screen the person would have to ask a second time
+  for is not finished, and the steps you have left are what it costs to fix that.
+- **\`validate\`** is not your spell-checker — the save is. Every save runs the
+  checks on the way in and hands you back what they found, so there is nothing left
+  to discover about a document you just saved. Ask \`validate\` only for a second
+  reading of a screen that is already up, and only ever once: a call with no new
+  save behind it is refused, because nothing it says can have changed. When you find
+  a problem, the fix is a save, not another check.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Assembling a document out of this
   product's components is all you can do; anything that needs real code, its own
   server, a file the person uploads, or a surface these components cannot express
@@ -263,7 +275,9 @@ through two tools.
   \`<Server kind="steps"|"agentic"|"box" [served] why="…"/>\` line the skill above
   teaches. Leave it out and the builder reads the escalation itself as the answer:
   \`kind="box"\`, a machine and real code.
-- \`${SCREEN_STEPS}\` steps is the whole budget. Escalate rather than run out of it.
+- \`${SCREEN_STEPS}\` steps is the whole budget, and it is a ceiling rather than a
+  finish line: end on a save marked \`done\`, or escalate. Running out of it means
+  the person waited for steps that changed nothing on their screen.
 
 Never look for a tool that builds the app for you. There isn't one, and that is
 deliberate.
@@ -356,6 +370,18 @@ export async function assembleScreen(
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
   const record: RunRecord = { assembled: false, painted: false };
 
+  /** How many saves have LANDED, and the count as of the last `validate` that was
+   *  let through. Two numbers, because "has anything changed since you last asked"
+   *  is the whole question the rail below answers. */
+  let saves = 0;
+  let validatedAtSave = 0;
+
+  /** OUR calls, not the model's — the gate below and the reviewer pass go straight
+   *  at the guard-bound registry, so the rail this file hangs on the model's
+   *  `validate` never answers a call this file made itself. Same registry, same
+   *  guard, same audit row: `surface.tools` IS what `turn.tools` forwards to. */
+  const ours = { call: (name: string, args: Parameters<TurnTools["call"]>[1]) => surface.tools.call(name, args) };
+
   /**
    * Write one hot-path file and land it.
    *
@@ -374,11 +400,20 @@ export async function assembleScreen(
     name: SAVE_APP_TOOL,
     description:
       "Save this app's whole document. The person's screen repaints on every save that parses, so save "
-      + "as you go rather than once at the end. Returns whether the save landed.",
+      + "as you go rather than once at the end. Returns whether the save landed, whether it reached the "
+      + "person's screen, and what the checks found on the way in — so a save is also your check. Set "
+      + "`done` on the save that finishes the job: that is how this turn ends.",
     inputSchema: {
       type: "object",
       properties: {
         content: { type: "string", description: "The complete app document, in the .vendo format." },
+        done: {
+          type: "boolean",
+          description:
+            "True only if this save is the FINISHED screen — everything the person asked for is on it and you "
+            + "have nothing left to add. The turn ends when a save marked this way reaches the screen, so leave "
+            + "it out on a save-as-you-go revision that still has work behind it.",
+        },
         decisions: {
           type: "string",
           description:
@@ -391,13 +426,14 @@ export async function assembleScreen(
       additionalProperties: false,
     },
     execute: async (args, turn) => {
-      const { content, decisions } = args as { content: string; decisions?: string };
+      const { content, decisions, done } = args as { content: string; decisions?: string; done?: boolean };
       const committed = await save(turn, APP_FILE, content);
       if (committed.status !== "ok") {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
       }
       record.assembled = true;
       record.title = nameOf(content) ?? record.title;
+      saves += 1;
       // The last save that had something to say wins the run. An omitted or blank
       // `decisions` on a later save is "nothing to add", not "forget the earlier
       // one" — a save-as-you-go loop would otherwise erase its own memory on the
@@ -424,7 +460,7 @@ export async function assembleScreen(
       record.painted = painted?.includes(input.appId) ?? false;
       if (painted !== undefined && !record.painted) {
         const instruction = repairInstruction(await validateWrittenApps({
-          tools: turn.tools,
+          tools: ours,
           workspace: turn.workspace,
           paths: [`${directory}/${APP_FILE}`],
         }));
@@ -437,7 +473,46 @@ export async function assembleScreen(
         // is the fact this hand does have, and it is enough to act on.
         return {
           saved: true,
+          painted: false,
           note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.",
+        };
+      }
+      /**
+       * THE SAVE CARRIES ITS OWN MECHANICAL VERDICT.
+       *
+       * A paint is not a courtesy — the seam compiles in the production dialect and
+       * runs `AppsRuntime.floor` (the fact checks, the compiler static half and the
+       * island gates: `checking/floor.ts`) BEFORE it emits, and a document that
+       * blocks paints nothing. So a save that reached the screen has already been
+       * through the same layer `validate` runs, and sending the model to `validate`
+       * to be told so was one guaranteed round-trip per revision — a second `tsc`
+       * program and a second smoke render to learn what this answer already knows.
+       *
+       * The note claims only the fact this hand HAS: the screen moved. Nothing
+       * about a check, because `painted` absent means an unwrapped workspace where
+       * no floor ran at all — and that config still gets the old instruction, since
+       * there `validate` is the only checker in the building.
+       */
+      if (painted !== undefined) {
+        /**
+         * THE COMPLETION SIGNAL, and the only place it can honestly be made.
+         *
+         * `done` is the model's claim; the paint is the mechanical fact. Both, or
+         * neither: a claim over bytes the seam declined to paint took the branch
+         * above and is already being repaired, and a paint alone is not
+         * completion — the brief tells this loop to save as you go, so most
+         * painted saves are half a screen. So the two are ANDed here, in the hand
+         * that holds both, and {@link finishedStop} below only has to read the
+         * verdict rather than re-derive it.
+         */
+        return {
+          saved: true,
+          painted: true,
+          ...(done === true ? { done: true } : {}),
+          note: done === true
+            ? "Saved, and it is on the person's screen. You called this the finished screen, so your turn ends here."
+            : "Saved, and it is on the person's screen — nothing on the way in blocked it. Keep saving revisions; "
+              + "you do not need to check what you just saved.",
         };
       }
       return { saved: true, note: "Run validate on it now." };
@@ -482,12 +557,48 @@ export async function assembleScreen(
     .map((listing) => listing.name);
   loadout.push(saveApp, escalate);
 
+  /**
+   * THE STUCK-LOOP RAIL — a `validate` with nothing new behind it is answered here
+   * rather than by the door.
+   *
+   * `validate` is the most expensive read on this loadout (a `tsc` program, an
+   * island smoke render, and on the stored form a reviewer model call), and its
+   * answer is a function of the document alone. So a second call over bytes nobody
+   * has changed spends all of that to repeat itself, and a run can spend its whole
+   * budget doing it: `transfers-grid` (genbench, 2026-08-10) made SIX validate
+   * calls, never once saved, and delivered nothing in 128 seconds.
+   *
+   * The rule is one line — a save must have landed since the last verdict — and it
+   * covers both shapes of the same mistake: checking a document that is not saved
+   * (which puts nothing on anyone's screen, and which `save_app` would have checked
+   * anyway on the way in), and re-asking after a verdict without fixing anything.
+   * `denied` with a reason, never a fabricated verdict: this loop declines the
+   * call, and a checker that answers "ok" for a check it did not run is the worst
+   * lie available here.
+   */
+  const modelCall: TurnTools["call"] = async (name, args) => {
+    if (name === VALIDATE_TOOL) {
+      if (saves === validatedAtSave) {
+        return {
+          status: "denied",
+          reason: saves === 0
+            ? "Save it first with save_app. A document you have not saved is on nobody's screen, and the save runs "
+              + "these same checks on the way in and tells you what they found."
+            : "Nothing has changed since your last check, so this would report exactly what it reported then. "
+              + "Save your fix with save_app — its answer is the same verdict, one round-trip earlier.",
+        };
+      }
+      validatedAtSave = saves;
+    }
+    return await surface.tools.call(name, args);
+  };
+
   const turn: Turn<VendoHarnessOptions> = {
     messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: { call: modelCall, list: async () => listings },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
@@ -501,12 +612,53 @@ export async function assembleScreen(
     turnId: surface.turnId ?? mintTurnId(),
   };
 
+  /**
+   * WHAT ENDS AN ASSEMBLY, other than running out of budget.
+   *
+   * `SCREEN_STEPS` was the only thing that ever ended one, and a step cap is a
+   * hang detector rather than a finish line. Measured on genbench 2026-08-10: the
+   * median screen reached the person's display at 35.8s and the run settled at
+   * 137.3s — on `spend-shares` the correct screen painted at 27.9s and the loop
+   * then spent 232 more seconds re-searching the catalog and re-saving the same
+   * answer, because nothing told it it was finished and it still had steps.
+   *
+   * Same shape as the loop's own `buildFailedStop` and `askedUserStop`: read the
+   * last step's tool RESULTS and stop on a verdict a hand has already reached.
+   * Nothing is re-derived and nothing is judged here — a stop condition that
+   * decided whether a screen was any good would be a third checker, and the two
+   * this loop has (the paint's floor, and the reviewer below) still run either
+   * way. Stopping does not skip the review; it only stops the wandering between
+   * the last good save and the budget.
+   */
+  const lastStepReported = (
+    toolName: string,
+    field: "done" | "handedOver",
+  ): StopCondition<ToolSet> => ({ steps }) => {
+    const last = steps.at(-1);
+    return last !== undefined && last.toolResults.some((result) => {
+      if (result.toolName !== toolName) return false;
+      const output = result.output as Record<string, unknown> | null;
+      return typeof output === "object" && output !== null && output[field] === true;
+    });
+  };
+
+  /** The work is DONE: a save that landed, that the seam painted, and that the
+   *  model itself called the finished screen (`saveApp` ANDs the three). */
+  const finishedStop = lastStepReported(SAVE_APP_TOOL, "done");
+  /** The door out was taken. `escalate`'s own description already promises "This
+   *  ends your turn", and nothing made that true: the plan is saved and the
+   *  outcome below is `escalate` whatever else this drive goes on to do, so every
+   *  further step is spent on an answer nobody reads. */
+  const escalatedStop = lastStepReported(ESCALATE_TOOL, "handedOver");
+
   /** The first thing that went wrong, in the shipped loop's own words
    *  (`wireErrorMessage`, applied inside `vendo()`). */
   let failure: string | undefined;
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
+    // The budget is the ceiling; these are the finish lines.
+    stopWhen: [finishedStop, escalatedStop],
     // Bounded thinking, on purpose — see SCREEN_EFFORT.
     effort: surface.effort ?? SCREEN_EFFORT,
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
@@ -561,14 +713,22 @@ export async function assembleScreen(
      * that loop the floor's own sentences, the app has no row for the reviewer's
      * row-scoped door to find, and asking again here would only spend the person's
      * time repeating it.
+     *
+     * `alreadyFloored`, for the same reason `record.painted` is the gate: the bytes
+     * this reads back are the bytes the seam painted, and the seam runs the
+     * mechanical floor before it paints. Asking `validate({document})` for that
+     * verdict again spins a second `tsc` program and a second smoke render to be
+     * told what the paint already said. JUDGMENT is what this pass is for, and it
+     * is the one thing no save can know.
      */
     const appPath = `${directory}/${APP_FILE}`;
     const instruction = record.painted
       ? repairInstruction(await validateWrittenApps({
-        tools: turn.tools,
+        tools: ours,
         workspace: turn.workspace,
         paths: [appPath],
         review: true,
+        alreadyFloored: true,
       }))
       : undefined;
     if (instruction !== undefined && !surface.signal.aborted) {
@@ -583,7 +743,11 @@ export async function assembleScreen(
           type: "text",
           text: saved === undefined
             ? instruction
-            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
+            // Marked done: the repair round is shown exactly what is wrong, so the
+            // corrected save IS the end of it — and a repair drive that carries on
+            // afterwards spends a second fresh budget on a screen already fixed.
+            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version, `
+              + `with done set on that save:\n${saved}`,
         }],
       }]);
     }
