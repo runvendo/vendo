@@ -107,6 +107,20 @@ export const SCREEN_STEPS = 10;
 export const SCREEN_BLIND_MS = 150_000;
 export const SCREEN_POLISH_MS = 30_000;
 
+/**
+ * The cycle stop, from gemini-cli's `LoopDetectionService.checkToolCallLoop`:
+ * key every call by name + JSON args, keep a rolling window, and treat a short
+ * sequence that repeats verbatim at the tail as a loop rather than as work.
+ *
+ * gemini uses `TOOL_CALL_LOOP_THRESHOLD = 5` over cycle lengths 1–5 because it
+ * watches an unbounded session. These are scaled down because `SCREEN_STEPS` is
+ * 10, not a session: a 3-call sequence repeated once is already most of this
+ * loop's whole budget spent hearing the same answers twice.
+ */
+const RECENT_KEYS = 12;
+const MAX_CYCLE = 3;
+const CYCLE_REPEATS = 2;
+
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
  *  agent's own, not a product capability anybody else may reach. */
@@ -358,6 +372,22 @@ export async function assembleScreen(
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
   const record: RunRecord = { assembled: false, painted: false };
 
+  /** This run's call keys, newest last, and whether it has had its one warning.
+   *  gemini's two-stage response: the first detection is a directive and the run
+   *  continues; the second ends it. */
+  const callKeys: string[] = [];
+  let nudged = false;
+  /** gemini's pattern match: the tail of the window is a cycle of length k
+   *  repeated `CYCLE_REPEATS` times. */
+  const cycling = (): boolean => {
+    for (let k = 1; k <= MAX_CYCLE; k += 1) {
+      if (callKeys.length < k * CYCLE_REPEATS) continue;
+      const tail = callKeys.slice(-k * CYCLE_REPEATS);
+      if (tail.every((key, index) => key === tail[index % k])) return true;
+    }
+    return false;
+  };
+
   /**
    * The clock, as one signal the loop already obeys.
    *
@@ -416,6 +446,12 @@ export async function assembleScreen(
       if (committed.status !== "ok") {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
       }
+      // PROGRESS RESETS THE DETECTOR — gemini's own carve-out: re-running a check
+      // to verify a fix is normal workflow, not a loop. So the save→validate→
+      // fix→save→validate rhythm this brief asks for can never trip the cycle
+      // stop; only repetition with nothing landing in between can.
+      callKeys.length = 0;
+      nudged = false;
       // The FIRST landed save is when the person stops waiting and starts
       // looking, so it is what starts the short clock.
       if (!record.assembled) fuse(SCREEN_POLISH_MS);
@@ -510,7 +546,41 @@ export async function assembleScreen(
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: {
+      /**
+       * Every host and assembly call, through the cycle stop. Four identical
+       * `search_components` round-trips are not research — the catalog cannot
+       * answer differently the second time — so a repeated sequence hears what
+       * it already knows, once, and then the run ends.
+       *
+       * The two hands (`save_app`, `escalate`) do NOT route through here — a
+       * `HarnessHand` never reaches the registry — so this can only ever refuse
+       * a read, never progress.
+       */
+      call: async (name, args) => {
+        callKeys.push(`${name}:${JSON.stringify(args ?? {})}`);
+        if (callKeys.length > RECENT_KEYS) callKeys.shift();
+        if (cycling()) {
+          if (!nudged) {
+            nudged = true;
+            return {
+              status: "denied",
+              reason: record.assembled
+                ? "You already made this exact sequence and got the same answers. The screen is saved — fix one "
+                  + "named thing or stop."
+                : "You already made this exact sequence and got the same answers. Save a document with "
+                  + `${SAVE_APP_TOOL} now, or ${ESCALATE_TOOL} if these components cannot express this ask.`,
+            };
+          }
+          // Circling with nothing on screen is the same fact the blind clock
+          // reports, so it takes the same door: a handover, not a dead end.
+          if (!record.assembled) clock.abort();
+          return { status: "denied", reason: "This run is going in circles and is ending." };
+        }
+        return await surface.tools.call(name, args);
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
