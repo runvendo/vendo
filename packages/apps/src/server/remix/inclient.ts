@@ -75,8 +75,12 @@ export interface InClientApprovalAccess {
 
 const COLLECTION = "vendo_inclient_approvals";
 
+/** `app_id`, NOT `appId`: this is a generic `vendo_records` row, and the erase
+ *  cascade's byApp leg matches `refs @> {"app_id": …}` (store/src/erase.ts).
+ *  Rows written under the camelCase key were never swept with their app and
+ *  outlived it forever — `backfillAppRefKey` renames the ones already on disk. */
 const allRecords = (records: RecordStore, appId: AppId) =>
-  listAllRecords(records, { refs: { appId } });
+  listAllRecords(records, { refs: { app_id: appId } });
 
 /** 06-apps §9 — hash-pinned in-client approvals over the store seam. */
 export const createInClientApprovals = (store: StoreAdapter): InClientApprovalAccess => {
@@ -112,7 +116,7 @@ export const createInClientApprovals = (store: StoreAdapter): InClientApprovalAc
       await records.put({
         id: `incl_${globalThis.crypto.randomUUID()}`,
         data: validated,
-        refs: { appId: validated.appId },
+        refs: { app_id: validated.appId },
       });
       return validated;
     },

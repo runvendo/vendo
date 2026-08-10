@@ -200,6 +200,51 @@ export async function backfillAppDataStamps(
   return await backfillAppDataOnDb(dbFor(store), options);
 }
 
+/** The two generic-table collections that wrote their app ref under `appId`
+ *  instead of the `app_id` every other writer (and the erase cascade) uses. */
+const APP_REF_KEY_COLLECTIONS = ["vendo_inclient_approvals", "vendo_remix_rejections"] as const;
+
+export interface AppRefKeyBackfillReport {
+  /** Rows whose `refs.appId` became `refs.app_id` on this run. */
+  rowsRenamed: number;
+  /** Rows already carrying `app_id` — counted BEFORE the rename, so a run never
+   *  reports its own work as pre-existing. A second run renames 0 and skips
+   *  everything the first one fixed. */
+  rowsSkipped: number;
+}
+
+/**
+ * In-client approvals and remix rejections wrote their app ref as `refs.appId`;
+ * the erase cascade's byApp leg matches `refs @> {"app_id": …}`, so those rows
+ * were never swept with their app and outlived it permanently. The writers now
+ * spell `app_id`; this renames the key on the rows already on disk.
+ *
+ * Re-runnable by construction — the selector excludes anything that already
+ * carries `app_id`, so a second run reports `rowsRenamed: 0`. `data` is
+ * untouched and no row is ever deleted; only the ref KEY moves, so a live
+ * reader sees the same app id under the name every other collection uses.
+ */
+export async function backfillAppRefKey(store: VendoStore): Promise<AppRefKeyBackfillReport> {
+  const db = dbFor(store);
+  const collections = [...APP_REF_KEY_COLLECTIONS];
+  const skipped = await db.query(
+    `SELECT count(*)::int AS skipped FROM vendo_records
+     WHERE collection = ANY($1::text[]) AND refs ? 'app_id'`,
+    [collections],
+  );
+  const renamed = await db.query(
+    `UPDATE vendo_records
+     SET refs = (refs - 'appId') || jsonb_build_object('app_id', refs->>'appId')
+     WHERE collection = ANY($1::text[]) AND refs ? 'appId' AND NOT refs ? 'app_id'
+     RETURNING 1`,
+    [collections],
+  );
+  return {
+    rowsRenamed: renamed.rows.length,
+    rowsSkipped: Number(skipped.rows[0]?.["skipped"] ?? 0),
+  };
+}
+
 /** Promote's half: the whole app changes hands, so every appData row and file
  *  stamped `from` is re-stamped `to`. Takes a Db (not a store) so promote can
  *  pass its TRANSACTION-scoped handle — a base-handle query issued mid

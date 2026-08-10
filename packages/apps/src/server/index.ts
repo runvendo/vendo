@@ -59,6 +59,11 @@ export {
   type ShareSnapshot,
 } from "./persistence/cloud.js";
 export { inClientApprovalSchema, type InClientApproval } from "./remix/inclient.js";
+// The two app-scoped persistence doors, exported so `@vendoai/store` — a
+// declared consumer of this package — can prove its erase cascade against the
+// REAL writers instead of a hand-rolled copy of the rows they produce.
+export { createInClientApprovals, type InClientApprovalAccess } from "./remix/inclient.js";
+export { createAppHistory, type AppHistoryAccess } from "./persistence/history.js";
 export {
   seedBaselineSchema,
   seedComponentName,

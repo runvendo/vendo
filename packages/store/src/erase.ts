@@ -1,4 +1,4 @@
-import { encodeGrantPrincipal, type FilesAdapter } from "@vendoai/core";
+import { encodeGrantPrincipal, engineAppHistory, type FilesAdapter } from "@vendoai/core";
 import { escapeLike } from "./helpers/utils.js";
 import { dbFor, type VendoStore } from "./store.js";
 import { invalid } from "./validate.js";
@@ -129,6 +129,15 @@ export function eraseStore(store: VendoStore, options: { files: FilesAdapter }):
   const eraseAppData = async (report: EraseReport, appId: string): Promise<void> => {
     const prefix = `app:${escapeLike(appId)}:%`;
     await del(report, "vendo_records", "collection LIKE $1 ESCAPE '\\'", [prefix]);
+    // The capped version log (and the pin-intent trail inside it) is the one
+    // app-scoped drawer neither selector could see: its name is
+    // `vendo:app-history:<id>`, not the `app:<id>:` prefix above, and its rows
+    // carry NO refs at all (apps/src/server/persistence/history.ts:104), so the
+    // refs containment leg below never matched them either. Every stored version
+    // of every deleted app survived its app until this line existed. Named
+    // through core's ONE builder — the same one that composes it on the write
+    // side — so the two can never drift apart.
+    await del(report, "vendo_records", "collection = $1", [engineAppHistory(appId)]);
     await del(report, "vendo_blobs", "namespace LIKE $1 ESCAPE '\\'", [prefix]);
     await del(report, "vendo_state", "app_id = $1", [appId]);
     await del(report, "vendo_runs", "app_id = $1", [appId]);

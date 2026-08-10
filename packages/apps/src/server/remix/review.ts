@@ -116,7 +116,9 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
     && baselines().some((baseline) => baseline.slot === doc.seed!.component && baseline.review === true);
 
   const rejectionsFor = async (appId: AppId): Promise<RemixRejection[]> => {
-    const records = await listAllRecords(rejections, { refs: { appId } });
+    // `app_id`, not `appId` — see the note on inclient.ts's `allRecords`: the
+    // erase cascade's byApp leg matches this exact ref key.
+    const records = await listAllRecords(rejections, { refs: { app_id: appId } });
     return records
       .flatMap((record) => {
         const parsed = remixRejectionSchema.safeParse(record.data);
@@ -259,7 +261,7 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
       await rejections.put({
         id: `remrej_${sha256Hex(`${rejection.appId}:${versionHash}`)}`,
         data: rejection,
-        refs: { appId: rejection.appId },
+        refs: { app_id: rejection.appId },
       });
       return rejection;
     },
@@ -267,7 +269,7 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
     rejections: rejectionsFor,
 
     async clear(appId) {
-      for (const record of await listAllRecords(rejections, { refs: { appId } })) {
+      for (const record of await listAllRecords(rejections, { refs: { app_id: appId } })) {
         await rejections.delete(record.id);
       }
     },
