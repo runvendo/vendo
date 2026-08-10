@@ -13,6 +13,7 @@ import {
   type RunContext,
 } from "@vendoai/core";
 import {
+  bundleOf,
   type AppDocument,
   type ScreenAssembler,
   type Tree,
@@ -62,13 +63,24 @@ const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
   return tree.nodes.filter(({ id }) => included.has(id));
 };
 
+/** One component's source, or undefined when the document has no such entry.
+ *  Absence stays distinct from an empty source, which is what the raw `!==`
+ *  compared before bundles existed. */
+const sourceOf = (document: AppDocument, componentName: string): string | undefined => {
+  const entry = document.components?.[componentName];
+  return entry === undefined ? undefined : bundleOf(entry).source;
+};
+
 export const touchedPinSlots = (previous: AppDocument, next: AppDocument): string[] => {
   const previousPins = new Map((previous.pins ?? []).map((pin) => [pin.slot, pin]));
   return (next.pins ?? []).flatMap((pin) => {
     const prior = previousPins.get(pin.slot);
     if (prior?.base !== pin.base) return [pin.slot];
     const componentName = pinComponentName(pin.slot);
-    if (previous.components?.[componentName] !== next.components?.[componentName]) return [pin.slot];
+    // Through `bundleOf`, not on the raw entry: a bare source string compares by
+    // VALUE but a bundle compares by identity, so a raw `!==` would report every
+    // pinned slot as touched on every edit the moment a bundle is stored.
+    if (sourceOf(previous, componentName) !== sourceOf(next, componentName)) return [pin.slot];
     // Subtree serialization intentionally over-reports reordered nodes as touched.
     return JSON.stringify(pinnedSubtree(previous, componentName)) === JSON.stringify(pinnedSubtree(next, componentName))
       ? []

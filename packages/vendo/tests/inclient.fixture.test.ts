@@ -9,6 +9,7 @@ import {
   VENDO_APP_FORMAT,
 } from "@vendoai/core";
 import {
+  componentSources,
   printWire,
 } from "@vendoai/apps/contract";
 import { createStore } from "@vendoai/store";
@@ -148,7 +149,7 @@ export default function Page() {
       const app = await composed!.apps.get(appUnderEdit!, ctx);
       if (app === null) throw new Error("no app row to rewrite");
       return printWire(
-        { tree: app.tree as never, components: app.components ?? {}, name: app.name },
+        { tree: app.tree as never, components: componentSources(app.components), name: app.name },
         { includeIds: true },
       );
     };

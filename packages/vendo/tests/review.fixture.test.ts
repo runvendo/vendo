@@ -8,6 +8,7 @@ import {
   type Principal,
 } from "@vendoai/core";
 import {
+  componentSources,
   printWire,
 } from "@vendoai/apps/contract";
 import { createStore } from "@vendoai/store";
@@ -162,7 +163,7 @@ export default function Page() {
       });
       if (app === null) throw new Error("no app row to rewrite");
       return printWire(
-        { tree: app.tree as never, components: app.components ?? {}, name: app.name },
+        { tree: app.tree as never, components: componentSources(app.components), name: app.name },
         { includeIds: true },
       );
     };
