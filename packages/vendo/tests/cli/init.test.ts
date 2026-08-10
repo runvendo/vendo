@@ -1849,6 +1849,62 @@ describe("the mount paste (init never edits user-authored source)", () => {
     await expect(readFile(join(root, "vendo", "vendo-root.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(sink.logs.join("\n")).not.toContain("Last steps are yours:");
   });
+
+  /** The nextcrm shape (corpus, pinned 5b6a555): every route lives under
+      app/[locale]/, so the app router's ROOT layout is app/[locale]/layout.tsx
+      and app/layout.tsx does not exist. Naming the phantom told the user to
+      create a second root layout — the one edit that breaks such a host. */
+  it("names the shallowest nested layout when the host has no app/layout.tsx", async () => {
+    const root = await fixture();
+    await rm(join(root, "app", "layout.tsx"));
+    await mkdir(join(root, "app", "[locale]", "(auth)"), { recursive: true });
+    await writeFile(join(root, "app", "[locale]", "layout.tsx"),
+      "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
+    await writeFile(join(root, "app", "[locale]", "(auth)", "layout.tsx"),
+      "export default function AuthLayout({ children }) { return <main>{children}</main>; }\n");
+    const sink = output();
+    expect(await run(root, sink, { agent: true })).toBe(0);
+    const plan = JSON.parse(sink.logs.join("\n")) as { mount?: { file: string; lines: string[] } };
+    expect(plan.mount?.file).toBe(join("app", "[locale]", "layout.tsx"));
+    // The paste still wraps {children}, and the theme import walks out of the
+    // deeper directory.
+    expect(plan.mount?.lines.at(-1)).toContain("{children}</VendoProvider>");
+    expect(plan.mount?.lines).toContain('import theme from "../../.vendo/theme.json";');
+  });
+
+  it("keeps naming app/layout.tsx when a root layout sits beside nested ones", async () => {
+    const root = await fixture();
+    await mkdir(join(root, "app", "(shop)"), { recursive: true });
+    await writeFile(join(root, "app", "(shop)", "layout.tsx"),
+      "export default function ShopLayout({ children }) { return <main>{children}</main>; }\n");
+    const sink = output();
+    expect(await run(root, sink, { agent: true })).toBe(0);
+    expect((JSON.parse(sink.logs.join("\n")) as { mount?: { file: string } }).mount?.file)
+      .toBe(join("app", "layout.tsx"));
+  });
+
+  it("still names pages/_app.tsx on a Pages-Router host with no layouts at all", async () => {
+    const root = await fixture();
+    await rm(join(root, "app", "layout.tsx"));
+    await mkdir(join(root, "pages"), { recursive: true });
+    await writeFile(join(root, "pages", "index.tsx"), "export default () => <main />;\n");
+    const sink = output();
+    expect(await run(root, sink, { agent: true })).toBe(0);
+    const plan = JSON.parse(sink.logs.join("\n")) as { mount?: { file: string; lines: string[] } };
+    expect(plan.mount?.file).toBe(join("pages", "_app.tsx"));
+    expect(plan.mount?.lines.at(-1)).toContain("<Component {...pageProps} /></VendoProvider>");
+  });
+
+  /** No layout and no pages/ means the host has no client root yet — the
+      conventional app/layout.tsx is the address of the one it must create. */
+  it("falls back to app/layout.tsx only when the host has no client root at all", async () => {
+    const root = await fixture();
+    await rm(join(root, "app", "layout.tsx"));
+    const sink = output();
+    expect(await run(root, sink, { agent: true })).toBe(0);
+    expect((JSON.parse(sink.logs.join("\n")) as { mount?: { file: string } }).mount?.file)
+      .toBe(join("app", "layout.tsx"));
+  });
 });
 
 describe("init telemetry enrichment", () => {

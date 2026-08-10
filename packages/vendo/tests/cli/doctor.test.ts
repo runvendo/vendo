@@ -1718,6 +1718,30 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(wire004).not.toContain(join("app", "layout.tsx"));
   });
 
+  /** The nextcrm shape (corpus, pinned 5b6a555): an i18n host whose root
+      layout IS app/[locale]/layout.tsx. Naming the phantom app/layout.tsx sent
+      the user to create a SECOND root layout — the fix doctor asks for must be
+      one this host can actually apply. */
+  it("names the nested root layout, not a phantom app/layout.tsx, on an i18n host", async () => {
+    const root = await healthy();
+    await rm(join(root, "app", "layout.tsx"));
+    await mkdir(join(root, "app", "[locale]", "(routes)"), { recursive: true });
+    await writeFile(join(root, "app", "[locale]", "layout.tsx"),
+      "export default ({children}) => <html><body>{children}</body></html>;");
+    await writeFile(join(root, "app", "[locale]", "(routes)", "layout.tsx"),
+      "export default ({children}) => <main>{children}</main>;");
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    const wire004 = messages.errors.join("\n");
+    expect(wire004).toContain(join("app", "[locale]", "layout.tsx"));
+    expect(wire004).not.toContain(join("app", "[locale]", "(routes)", "layout.tsx"));
+  });
+
   // Render gate (0.4.1 E2E cert M3): the certified invoify install had every
   // page 500ing while doctor exited 0 — a live wire proves nothing about the
   // pages users load.
