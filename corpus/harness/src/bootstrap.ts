@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { resolveAppRoot } from "./app-root.js";
@@ -88,6 +88,26 @@ function isTransientBootstrapFailure(output: string): boolean {
   return TRANSIENT_BOOTSTRAP_FAILURE_PATTERNS.some((pattern) => pattern.test(output));
 }
 
+/** The env vars above cover every pnpm that reads its config from the
+ * environment, but not the one invocation that matters most: a repo script like
+ * rallly's `db:generate` shells out to `pnpm --filter … exec`, and on that path
+ * pnpm 10 re-runs the engines check reading only the project's own .npmrc — no
+ * env var and no CLI flag reaches it, because the command lives inside the
+ * repo's package.json, not in anything the harness passes. A pinned checkout's
+ * `engines.node` is about the day it was pinned, so neutralize the guard at its
+ * source. Rewrites in place rather than appending: npm's ini parser keeps the
+ * FIRST occurrence of a key, so a trailing `engine-strict=false` does nothing
+ * (measured on rallly under pnpm 10.28 / Node 26). */
+async function relaxEngineStrict(repoDir: string): Promise<boolean> {
+  const npmrc = path.join(repoDir, ".npmrc");
+  const source = await readFile(npmrc, "utf8").catch(() => null);
+  if (source === null) return false;
+  const relaxed = source.replace(/^[ \t]*engine-strict[ \t]*=.*$/gim, "engine-strict=false");
+  if (relaxed === source) return false;
+  await writeFile(npmrc, relaxed);
+  return true;
+}
+
 export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptions = {}): Promise<BootstrapResult> {
   const context = options.context ?? createRunContext();
   const env = { ...process.env, ...options.env };
@@ -124,6 +144,12 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
     dropIgnoreWorkspace: hasPnpmWorkspace,
     pnpmConfig: repoCuratesBuilds ? ["--config.minimumReleaseAge=0"] : undefined,
   });
+  // Once, before the install, so every later host command — typecheck, build,
+  // and the nested pnpm calls inside the repo's own scripts — runs against a
+  // relaxed checkout too.
+  const engineNote = await relaxEngineStrict(repoDir)
+    ? `Corpus harness set engine-strict=false in ${repo.name}'s .npmrc so the pinned checkout's engines.node cannot fail this host's Node.\n`
+    : "";
   // Only the engine guard is relaxed here: the build-script and lockfile
   // guards ride the normalized CLI flags above, which respect a repo that
   // curates its own build allowlist.
@@ -145,7 +171,7 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
     result = retryResult;
   }
 
-  await writeFile(logs.stdout, `${normalizationNote}${retryNote}${result.stdout}`);
+  await writeFile(logs.stdout, `${engineNote}${normalizationNote}${retryNote}${result.stdout}`);
   await writeFile(logs.stderr, result.stderr);
 
   if (result.code !== 0) {

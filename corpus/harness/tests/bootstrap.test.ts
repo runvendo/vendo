@@ -113,6 +113,40 @@ describe("bootstrapRepo", () => {
     );
   });
 
+  it("neutralizes engine-strict in the checkout's own .npmrc, keeping its other settings", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    const context = createRunContext({ corpusRoot });
+    await writeFile(path.join(repoDir, ".npmrc"), [
+      "engine-strict=true",
+      "public-hoist-pattern[]=*import-in-the-middle*",
+      "",
+    ].join("\n"));
+    await writeInstallScript(repoDir, `console.log("ok");`);
+
+    await bootstrapRepo(repo, { context });
+
+    await expect(readFile(path.join(repoDir, ".npmrc"), "utf8")).resolves.toBe([
+      "engine-strict=false",
+      "public-hoist-pattern[]=*import-in-the-middle*",
+      "",
+    ].join("\n"));
+    await expect(readFile(path.join(context.logsDir(repo.name), "bootstrap.stdout.log"), "utf8"))
+      .resolves.toMatch(/set engine-strict=false/);
+  });
+
+  it("leaves a checkout without an engine-strict .npmrc untouched", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    const context = createRunContext({ corpusRoot });
+    await writeFile(path.join(repoDir, ".npmrc"), "public-hoist-pattern[]=*in-the-middle*\n");
+    await writeInstallScript(repoDir, `console.log("ok");`);
+
+    await bootstrapRepo(repo, { context });
+
+    await expect(readFile(path.join(repoDir, ".npmrc"), "utf8")).resolves.toBe("public-hoist-pattern[]=*in-the-middle*\n");
+    await expect(readFile(path.join(context.logsDir(repo.name), "bootstrap.stdout.log"), "utf8"))
+      .resolves.not.toMatch(/engine-strict/);
+  });
+
   it("materializes .env from envTemplate placeholders and literal values", async () => {
     const { corpusRoot, repo, repoDir } = await makeRepo();
     repo.bootstrap.envTemplate = {
