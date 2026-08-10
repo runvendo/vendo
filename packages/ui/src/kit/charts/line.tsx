@@ -38,7 +38,7 @@ export function LineChart({ data, xKey, series, format = "number", height = 220,
   const keys = cols.map((c) => c.key);
   const clean = sanitizeSeries(data, keys);
   if (clean.length === 0 || seriesIsEmpty(clean, keys)) {
-    return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
+    return <ChartEmpty>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (
