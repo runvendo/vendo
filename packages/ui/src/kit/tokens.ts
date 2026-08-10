@@ -40,6 +40,15 @@ export const font: CSSProperties = {
   fontSize: t.fontSize,
 };
 
+/** The one label treatment in the Kit — muted and caption-sized, so a screenshot
+ * only ever shows two text tones: full-strength values and grey labels. */
+export const labelStyle: CSSProperties = {
+  color: t.muted,
+  fontSize: "0.82em",
+  fontWeight: 650,
+  letterSpacing: 0,
+};
+
 /** A form control (input/select) surface. */
 export const control: CSSProperties = {
   ...font,

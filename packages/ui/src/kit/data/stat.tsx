@@ -1,6 +1,6 @@
 /** Stat — a KPI/metric summary with semantic formatting (W2 §The Kit). */
 import { applyFormat, type ValueFormat } from "../format.js";
-import { font, t } from "../tokens.js";
+import { font, labelStyle, t } from "../tokens.js";
 
 export interface StatProps {
   /** Metric name. */
@@ -46,7 +46,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         padding: "var(--vendo-density-stat-padding, 12px 14px)",
       }}
     >
-      <span style={{ color: t.muted, fontSize: "0.82em", fontWeight: 650 }}>{label}</span>
+      <span style={labelStyle}>{label}</span>
       <strong
         {...(empty ? { "data-empty": "", title: "No data yet" } : overflow ? { title: formatted } : {})}
         style={{

@@ -55,7 +55,7 @@ export function Callout({ tone = "info", title, children }: PropsWithChildren<Ca
       </span>
       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         {title ? <span style={{ fontWeight: 650, letterSpacing: "-0.01em" }}>{title}</span> : null}
-        <span style={{ color: t.muted, fontSize: "0.92em", lineHeight: 1.45 }}>{children}</span>
+        <span style={{ fontSize: "0.92em", lineHeight: 1.45 }}>{children}</span>
       </div>
     </div>
   );

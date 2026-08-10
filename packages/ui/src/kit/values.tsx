@@ -178,10 +178,11 @@ export interface TextProps {
 
 /** Themed text. Heading renders an <h3>; others render a <span>. */
 export function Text({ text, variant = "body" }: TextProps) {
+  const isLabel = variant === "caption" || variant === "label";
   const style: CSSProperties = {
-    color: variant === "caption" ? t.muted : t.text,
+    color: isLabel ? t.muted : t.text,
     fontFamily: variant === "heading" ? t.headingFamily : t.fontFamily,
-    fontSize: variant === "caption" ? "var(--vendo-font-size-caption, 12.5px)" : t.fontSize,
+    fontSize: isLabel ? "var(--vendo-font-size-caption, 12.5px)" : t.fontSize,
     fontWeight: variant === "heading" ? 650 : variant === "label" ? 600 : 400,
     letterSpacing: "-0.011em",
     lineHeight: variant === "heading" ? 1.3 : 1.5,

@@ -16,7 +16,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { font, t } from "../tokens.js";
+import { font, labelStyle, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
 export interface DataTableColumn {
@@ -259,14 +259,10 @@ export function DataTable(props: DataTableProps) {
                       scope="col"
                       onClick={header.column.getToggleSortingHandler()}
                       style={{
-                        color: t.muted,
+                        ...labelStyle,
                         borderBottom: `1px solid ${t.border}`,
-                        fontSize: "0.78em",
-                        fontWeight: 700,
-                        letterSpacing: "0.045em",
                         padding: cellPad,
                         textAlign: alignCss(col?.align),
-                        textTransform: "uppercase",
                         cursor: "pointer",
                         userSelect: "none",
                         whiteSpace: "nowrap",
