@@ -15,6 +15,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
+import { Button } from "../forms/button.js";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
@@ -48,6 +49,16 @@ export interface DataTableProps {
   emptyState?: string;
   /** Optional table caption. */
   caption?: string;
+  /** Bound host-tool action for a row's own control (renderer-supplied). The
+   *  press carries the fields named by `rowActionArgs` from THAT row. */
+  onRowAction?: (args?: Record<string, unknown>) => void;
+  /** Label on the row control; defaults to "Open". */
+  rowActionLabel?: string;
+  /** Row field keys sent as the press arguments; defaults to ["id"]. */
+  rowActionArgs?: string[];
+  /** Only rows matching every field → value entry get the control. */
+  rowActionWhen?: Record<string, string>;
+  rowActionVariant?: "secondary" | "danger";
 }
 
 /** Resolve a dot-path against a row. */
@@ -84,6 +95,11 @@ export function DataTable(props: DataTableProps) {
     paginate,
     emptyState = "No data",
     caption,
+    onRowAction,
+    rowActionLabel = "Open",
+    rowActionArgs = ["id"],
+    rowActionWhen,
+    rowActionVariant = "secondary",
   } = props;
 
   // W3 — fail SOFT on missing data: a failed/pending query resolves its
@@ -277,6 +293,13 @@ export function DataTable(props: DataTableProps) {
                     </th>
                   );
                 })}
+                {onRowAction ? (
+                  <th
+                    scope="col"
+                    aria-label="Actions"
+                    style={{ borderBottom: `1px solid ${t.border}`, padding: cellPad, width: 1 }}
+                  />
+                ) : null}
               </tr>
             ))}
           </thead>
@@ -284,7 +307,7 @@ export function DataTable(props: DataTableProps) {
             {bodyRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={Math.max(1, columns.length)}
+                  colSpan={Math.max(1, columns.length) + (onRowAction ? 1 : 0)}
                   style={{ color: t.muted, padding: "calc(var(--vendo-font-size, 15px) * 1.6) 12px", textAlign: "center" }}
                 >
                   {emptyState}
@@ -309,6 +332,29 @@ export function DataTable(props: DataTableProps) {
                       </td>
                     );
                   })}
+                  {onRowAction ? (
+                    <td
+                      style={{
+                        borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
+                        padding: cellPad,
+                        textAlign: "right",
+                      }}
+                    >
+                      {Object.entries(rowActionWhen ?? {}).every(
+                        ([key, want]) => String(resolvePath(row.original, key)) === want,
+                      ) ? (
+                        <Button
+                          label={rowActionLabel}
+                          variant={rowActionVariant}
+                          onClick={() =>
+                            onRowAction(
+                              Object.fromEntries(rowActionArgs.map((key) => [key, resolvePath(row.original, key)])),
+                            )
+                          }
+                        />
+                      ) : null}
+                    </td>
+                  ) : null}
                 </tr>
               ))
             )}

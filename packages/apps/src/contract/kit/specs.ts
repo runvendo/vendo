@@ -165,9 +165,15 @@ export const KIT_SPECS: KitComponentSpec[] = [
       paginate: config(z.number().int().positive(), "page size (enables pagination)"),
       emptyState: copy(z.string(), "text when the query returns no rows"),
       caption: copy(z.string(), "table caption"),
+      onRowAction: config(action, "the host tool a row's own control runs; the press carries that row's fields named by rowActionArgs"),
+      rowActionLabel: copy(z.string(), 'label on the row control (default "Open")'),
+      rowActionArgs: config(z.array(z.string()), 'row field keys the press sends as arguments (default ["id"])'),
+      rowActionWhen: config(z.record(z.string(), z.string()), "only rows matching every field → value entry get the control"),
+      rowActionVariant: config(z.enum(["secondary", "danger"]), "danger for a destructive tool, otherwise secondary"),
     },
     examples: [
       '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amountCents",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
+      '<DataTable rows={transfers.list({}).data} onRowAction="cancel_transfer" rowActionLabel="Cancel" rowActionVariant="danger" rowActionWhen={{status:"pending"}} columns={[{key:"payee"},{key:"amountCents",format:"money",align:"end"},{key:"status"}]}/>',
     ],
   },
   {

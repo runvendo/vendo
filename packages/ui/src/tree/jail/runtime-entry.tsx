@@ -18,7 +18,9 @@ import {
   jailPackageUrl,
   type IslandResolvableModule,
 } from "@vendoai/apps/contract";
+import type { Json } from "@vendoai/core";
 import { applyThemeVars, postToHost, startFrameProtocol } from "../../embedded-runtime.js";
+import { withPressArgs } from "../bindings.js";
 import {
   Accordion, Badge, BarChart, Button, Callout, Card, CardList, Checkbox, DataTable,
   DatePicker, DateTime, Disclaimer, Divider, DonutChart, EnumBadge, Form, Grid,
@@ -503,7 +505,7 @@ function hydrate(value: unknown): unknown {
   const record = value as Record<string, unknown>;
   if (typeof record.$action === "string") {
     const payload = hydrate(record.payload);
-    return () => requestAction(record.$action as string, payload);
+    return (extra?: unknown) => requestAction(record.$action as string, withPressArgs(payload as Json | undefined, extra));
   }
   return Object.fromEntries(Object.entries(record).map(([key, child]) => [key, hydrate(child)]));
 }

@@ -28,7 +28,7 @@ import {
 import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
 import type { InClientVenue, SeedDrift } from "../wire-types.js";
-import { resolvePointer } from "./bindings.js";
+import { resolvePointer, withPressArgs } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
 import { deriveFormShape, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
@@ -234,7 +234,8 @@ function bindValue(
     if (mode === "jail") {
       return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
     }
-    return () => action(value.$action, value.payload === undefined ? undefined : payload);
+    return (extra?: unknown) =>
+      action(value.$action, withPressArgs(value.payload === undefined ? undefined : payload, extra));
   }
   if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, onMismatch));
   if (typeof value === "object" && value !== null) {

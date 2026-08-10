@@ -1,5 +1,17 @@
 import type { Json } from "@vendoai/core";
 
+/** A Kit control may hand the press its OWN arguments — the id of the row the
+ *  button sits on — which merge over the declared payload. Only a plain object
+ *  literal counts: the Kit's other bound handlers hand over a string
+ *  (input/textarea/date-picker/select), a boolean (checkbox) or a React event
+ *  (form), and none of those has Object.prototype. */
+export function withPressArgs(declared: Json | undefined, extra: unknown): Json | undefined {
+  if (extra === null || typeof extra !== "object" || Object.getPrototypeOf(extra) !== Object.prototype) {
+    return declared;
+  }
+  return { ...(declared as Record<string, Json> | undefined), ...(extra as Record<string, Json>) };
+}
+
 /** 01-core §8 — resolve an RFC 6901 JSON Pointer (`""` is the whole model). */
 export function resolvePointer(model: Json, pointer: string): Json | undefined {
   if (pointer === "") return model;
