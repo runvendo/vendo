@@ -228,11 +228,11 @@ const createAuthoredSaver = (
 };
 
 const createAuthoredDoor = (
-  deps: Pick<AppsRuntimeContext, "apps" | "caller" | "holds"> & {
+  deps: Pick<AppsRuntimeContext, "apps" | "caller" | "holds" | "validationMemo"> & {
     saveAuthoredDocument: ReturnType<typeof createAuthoredSaver>;
   },
 ): AppsRuntime["authored"] => {
-  const { apps, caller, holds, saveAuthoredDocument } = deps;
+  const { apps, caller, holds, saveAuthoredDocument, validationMemo } = deps;
   return async (input, ctx) => {
     const record = await apps.get(input.appId);
     const row = record === null ? null : rowFromRecord(record);
@@ -262,6 +262,11 @@ const createAuthoredDoor = (
     const queries = createProgressiveQueryResolver(caller, document, ctx);
     queries.update(asTree(document.tree));
     const data = await queries.complete();
+    // The rows this screen renders, kept for the review that follows it. The
+    // assembly loop is told to validate what it just saved, and `validate({ appId })`
+    // shows the AI reviewer these very queries' results — so without this it runs
+    // them a second time (`checking/evidence.ts`).
+    validationMemo.keepEvidence(document, data, ctx);
     return { data, ...(queries.dataUnavailable() ? { dataUnavailable: true as const } : {}) };
   };
 };
@@ -421,7 +426,7 @@ export const createWriteSurface = (
     | "updateAppDocument" | "assembleEdit" | "failedEdit" | "takeEditVersion"
     | "generationToolContext" | "runServerWork" | "editServerViaBox" | "pruneHistory"
     | "reportLifecycle" | "reportDocumentEdit" | "discardVersion"
-    | "editIntents" | "editVersions" | "editRefusals">,
+    | "editIntents" | "editVersions" | "editRefusals" | "validationMemo">,
 ): Pick<AppsRuntime, "authored" | "commitSource" | "edit" | "remember" | "schedule"> => {
   const { config, apps, requireOwned, updateAppDocument } = deps;
   const saveAuthoredDocument = createAuthoredSaver(deps);

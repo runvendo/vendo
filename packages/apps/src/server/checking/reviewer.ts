@@ -20,6 +20,7 @@ import { treeOf } from "./facts.js";
 import { REPORT_FINDINGS_DESCRIPTION, REVIEWER_SYSTEM } from "./reviewer-prompt.js";
 import { strictToolCall } from "./strict-tool-call.js";
 import type { Check, Finding } from "./types.js";
+import type { ValidationMemo } from "./validation-memo.js";
 
 export const REVIEWER_CHECK_NAME = "reviewer";
 
@@ -152,6 +153,18 @@ export const reviewerCheck = (
   deps: FloorDependencies,
   samples?: Readonly<Record<string, unknown>>,
   rubric: readonly string[] = [],
+  /**
+   * The runtime's memo, where there is one (`./validation-memo.ts`).
+   *
+   * This is a MODEL CALL, and the assembly loop asks the same question twice on
+   * every run: once because it is told to validate after every save, once because
+   * the end-of-run gate reviews the finished screen (`../generation/validate-gate.ts`,
+   * whose own comment says the reviewer is to be "spent exactly once, on exactly the
+   * screens a person is about to keep"). The second ask reads the same markup, the
+   * same rows and the same rules, so it gets the same answer without spending a
+   * second call. Anything else about it changes and the reviewer runs.
+   */
+  memo?: Pick<ValidationMemo, "verdict" | "keepVerdict">,
 ): Check => ({
   name: REVIEWER_CHECK_NAME,
   // `fact` is about WHO RUNS IT, not about how sure it is: the two kinds are
@@ -162,6 +175,9 @@ export const reviewerCheck = (
   run: async ({ document, request, plan }): Promise<Finding[]> => {
     const printed = printedApp(document);
     if (printed === undefined) return [];
+    const read = { document, samples, rubric, request, plan };
+    const remembered = memo?.verdict(read);
+    if (remembered !== undefined) return [...remembered];
     const reported = await strictToolCall(
       deps,
       REPORT_FINDINGS_TOOL,
@@ -170,6 +186,12 @@ export const reviewerCheck = (
       `${REVIEWER_SYSTEM}${rubricSection(rubric)}`,
       `USER_REQUEST: ${request}\nAPP (wire markup):\n${printed}${planLines(plan)}${samples === undefined ? "" : sampleLines(samples)}`,
     );
-    return reported === undefined ? [] : findingsFrom(reported.findings);
+    // Fail-open, and NEVER remembered: a judgment that could not be REACHED is not
+    // a clean bill of health, and remembering one would let a single refused model
+    // call stand in for the mandatory review of a finished screen.
+    if (reported === undefined) return [];
+    const findings = findingsFrom(reported.findings);
+    memo?.keepVerdict(read, findings);
+    return findings;
   },
 });

@@ -350,9 +350,9 @@ const createCreateDoor = (
 };
 
 const createValidateDoor = (
-  deps: Pick<AppsRuntimeContext, "config" | "requireOwned" | "generationToolContext">,
+  deps: Pick<AppsRuntimeContext, "config" | "requireOwned" | "generationToolContext" | "validationMemo">,
 ): AppsRuntime["validate"] => {
-  const { config, requireOwned, generationToolContext } = deps;
+  const { config, requireOwned, generationToolContext, validationMemo } = deps;
   return async (input, ctx) => {
     if (config.model === undefined) {
       // The floor's fact checks read the generation dependencies, which are
@@ -405,23 +405,32 @@ const createValidateDoor = (
     // rubric the reviewer reads and `layer.rubric` cannot diverge. Fail-open is
     // unchanged: silence, a refusal and a failed request all mean no findings.
     //
-    // `samples` are the app's OWN queries, run (`queryEvidence`). This door used
-    // to pass none, on the reasoning that a verb call has run no queries — true,
-    // and it left the reviewer judging markup with nothing behind it, which is
-    // half its rubric switched off. A double-counted headline ($11,216 shown,
-    // ~$6,276 true, demo-bank 2026-08-06) is invisible in the markup and obvious
-    // beside the rows.
+    // `samples` are the app's OWN queries. This door used to pass none, on the
+    // reasoning that a verb call has run no queries — true, and it left the
+    // reviewer judging markup with nothing behind it, which is half its rubric
+    // switched off. A double-counted headline ($11,216 shown, ~$6,276 true,
+    // demo-bank 2026-08-06) is invisible in the markup and obvious beside the rows.
+    //
+    // They come from the PAINT where there is one: the save that put this screen up
+    // resolved these very queries moments ago, under this authority, through the
+    // same guard-bound caller (`evidenceFromResolved`). `queryEvidence` runs them
+    // for every other caller, exactly as before.
     //
     // `request` is empty because a verb call carries no user text — the checks
     // that read it treat that as "no carve-out", which is the conservative
     // direction.
     const plugged = config.checks ?? [];
-    const samples = await queryEvidence(document, config.tools, ctx);
+    const samples = validationMemo.evidence(document, ctx)
+      ?? await queryEvidence(document, config.tools, ctx);
     const findings = await createCheckingLayer({
       deps,
       // The thorough door: the shared floor AND the reviewer. Off the
       // scripted-create hot path, so the tsc pass is affordable here (§7.1).
-      checks: [...floorChecks(deps), reviewerCheck(deps, samples, judgmentRules(plugged)), ...plugged],
+      checks: [
+        ...floorChecks(deps),
+        reviewerCheck(deps, samples, judgmentRules(plugged), validationMemo),
+        ...plugged,
+      ],
     }).run({ document, request: "" });
     return { ok: !findings.some(({ severity }) => severity === "block"), findings };
   };
@@ -431,7 +440,7 @@ const createValidateDoor = (
 export const createBuildSurface = (
   deps: Pick<AppsRuntimeContext,
     "config" | "apps" | "caller" | "lifecycle" | "claimSlot" | "generationToolContext"
-    | "reportLifecycle" | "runServerWork" | "requireOwned">,
+    | "reportLifecycle" | "runServerWork" | "requireOwned" | "validationMemo">,
 ): Pick<AppsRuntime, "create" | "toolShapeBrief" | "floor" | "agentToolRisk" | "validate"> => {
   const { config, generationToolContext } = deps;
   return {

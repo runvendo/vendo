@@ -54,6 +54,7 @@ import { createPlacementRows } from "../doors/placement-surface.js";
 import { createEgressApprovals } from "../escalation/egress-approval.js";
 import { createReviewLifecycle, type ReviewLifecycle } from "../remix/review.js";
 import { createSlotRegistry, type SlotRegistry } from "../persistence/slots.js";
+import { createValidationMemo, type ValidationMemo } from "../checking/validation-memo.js";
 import type {
   AppsConfig,
   AppsRuntime,
@@ -96,6 +97,9 @@ export interface AppsRuntimeContext {
   fnCaller: FnCaller;
   /** The guard-bound caller every query and action rides. */
   caller: AppCaller;
+  /** What validation already knows: the rows a paint resolved, and the reviewer's
+   *  last verdict (checking/validation-memo.ts). */
+  validationMemo: ValidationMemo;
   /** The one read path a client opens an app through (open.ts). */
   opener: ReturnType<typeof createAppOpener>;
   /** Host-tunable box-edit poll interval, when the composition set one. */
@@ -384,7 +388,12 @@ export const createRuntimeContext = (
     appId: AppId,
     mutate: (doc: AppDocument) => AppDocument,
   ): Promise<AppDocument> => updateAppRow(stores.apps, appId, mutate, "box");
-  const base = { config, ...stores, ...audit, ...access, ...machine, updateAppDocument, runtime };
+  const base = {
+    config, ...stores, ...audit, ...access, ...machine, updateAppDocument, runtime,
+    // Per runtime, like the edit journal's own per-app maps: two runtimes must never
+    // read each other's paint or each other's verdicts.
+    validationMemo: createValidationMemo(),
+  };
   const approvals = createApprovalFlow(base);
   const journal = createEditJournal(base);
   const doors = createDoors(base);

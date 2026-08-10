@@ -74,3 +74,32 @@ export const queryEvidence = async (
   const fetched = results.filter((entry): entry is readonly [string, unknown] => entry !== undefined);
   return fetched.length === 0 ? undefined : Object.fromEntries(fetched);
 };
+
+/**
+ * The same evidence, read off a paint that ALREADY ran the queries.
+ *
+ * `queryEvidence` above exists because a verb call has run nothing. A paint has:
+ * every save that reaches a screen resolves the tree's queries through the same
+ * guard-bound caller under the same authority (`doors/write-surface.ts`
+ * `authored`), moments before the loop validates what it just saved. On that path
+ * the rows are already in hand, and asking the host again buys nothing but a second
+ * round trip — canned and free in a bench, real latency on the person's critical
+ * path against a live host. These are also the rows the screen being judged
+ * actually renders, which is what the samples are FOR.
+ *
+ * Projected onto the DECLARED queries, because a resolver's data model also carries
+ * the tree's own literal `data` — authored, not returned — and the label on this
+ * says "what this app's queries actually returned". `fn:` queries are kept here and
+ * skipped above for the same reason in both places: the app's own server code is not
+ * on the registry to CALL, but its answer is already resolved. Same query budget, so
+ * the reviewer's prompt is the same size whichever way the rows arrived.
+ */
+export const evidenceFromResolved = (
+  document: AppDocument,
+  data: Readonly<Record<string, unknown>>,
+): Record<string, unknown> | undefined => {
+  const resolved = (treeOf(document)?.queries ?? [])
+    .slice(0, MAX_QUERIES)
+    .flatMap(({ name }) => (Object.hasOwn(data, name) ? [[name, data[name]] as const] : []));
+  return resolved.length === 0 ? undefined : Object.fromEntries(resolved);
+};
