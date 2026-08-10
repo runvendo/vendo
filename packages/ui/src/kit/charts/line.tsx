@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { seriesColor, t } from "../tokens.js";
-import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty } from "./sanitize.js";
+import { ChartEmpty, ChartFrame, ChartLegend, sanitizeSeries, seriesIsEmpty } from "./sanitize.js";
 
 export type SeriesInput = string | { key: string; label?: string };
 
@@ -38,7 +38,7 @@ export function LineChart({ data, xKey, series, format = "number", height = 220,
   const keys = cols.map((c) => c.key);
   const clean = sanitizeSeries(data, keys);
   if (clean.length === 0 || seriesIsEmpty(clean, keys)) {
-    return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
+    return <ChartEmpty>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (
@@ -66,6 +66,7 @@ export function LineChart({ data, xKey, series, format = "number", height = 220,
           </RLineChart>
         </ResponsiveContainer>
       </ChartFrame>
+      {cols.length > 1 ? <ChartLegend items={cols.map((c, i) => ({ label: c.label, color: seriesColor(i) }))} /> : null}
     </div>
   );
 }

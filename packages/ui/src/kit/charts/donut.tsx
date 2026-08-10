@@ -2,7 +2,7 @@
 import { Cell, Pie, PieChart as RPieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { isRenderableNumber, applyFormat, type ValueFormat } from "../format.js";
 import { seriesColor, t } from "../tokens.js";
-import { ChartEmpty, ChartFrame } from "./sanitize.js";
+import { ChartEmpty, ChartFrame, ChartLegend } from "./sanitize.js";
 
 export interface DonutChartProps {
   data: Array<Record<string, unknown>>;
@@ -10,7 +10,7 @@ export interface DonutChartProps {
   categoryKey: string;
   /** Slice-value field. */
   valueKey: string;
-  /** Value-tier format for tooltips. */
+  /** Value-tier format for the legend and tooltips. */
   format?: ValueFormat;
   /** false renders a full pie. */
   donut?: boolean;
@@ -33,7 +33,7 @@ export function DonutChart({
     .map((row) => ({ name: String(row[categoryKey] ?? ""), value: row[valueKey] }))
     .filter((s) => isRenderableNumber(s.value) && (s.value as number) > 0) as Array<{ name: string; value: number }>;
   if (slices.length === 0) {
-    return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
+    return <ChartEmpty>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (
@@ -60,6 +60,7 @@ export function DonutChart({
           </RPieChart>
         </ResponsiveContainer>
       </ChartFrame>
+      <ChartLegend items={slices.map((s, i) => ({ label: s.name, value: fmt(s.value), color: seriesColor(i) }))} />
     </div>
   );
 }
