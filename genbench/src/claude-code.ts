@@ -206,6 +206,10 @@ async function run(request: RunRequest, options: ClaudeCodeOptions): Promise<Cla
     // no finding the product's own floor could raise about them.
     blocking: [],
     snapshots: [],
+    // A session with hands leaves one mark this driver can honestly make: each
+    // revision of the page, when it landed. The tool calls that produced it are
+    // the engine's own business and never reach this loop.
+    stages: writes.map((write) => ({ label: `write ${PAGE}`, atMs: write.atMs })),
     writes,
     usage,
     usd,

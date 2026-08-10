@@ -33,6 +33,15 @@ export interface RunRequest {
   readonly meter: Meter;
 }
 
+/** One moment inside a contender's own generation, on the run's clock — the
+ *  marks that say WHERE the settled time went. Driver-specific by design: what a
+ *  harness can honestly observe differs, and a label a driver invented would be
+ *  worse than no mark at all. */
+export interface Stage {
+  readonly label: string;
+  readonly atMs: number;
+}
+
 export interface RunOutcome {
   readonly artifact?: string;
   /** What the product's own checks floor refuses to paint in the delivered
@@ -52,6 +61,10 @@ export interface RunOutcome {
   /** When the contender had something new to show. Only the clock is shared —
    *  what each snapshot holds is the driver's own business. */
   readonly snapshots: ReadonlyArray<{ atMs: number }>;
+  /** The marks above, in the order they happened. Additive: `firstRenderMs` and
+   *  `settledMs` are what they always were, and a driver with nothing it can
+   *  observe reports none of these rather than a made-up timeline. */
+  readonly stages?: readonly Stage[];
   readonly firstRenderMs?: number;
   readonly settledMs: number;
   /** The contender's own failure sentence, when it has one. */
@@ -72,7 +85,7 @@ export interface CaseResult {
   readonly prompt: string;
   readonly lane: Lane;
   readonly floor: FloorResult;
-  readonly timing: { firstRenderMs?: number; settledMs: number };
+  readonly timing: { firstRenderMs?: number; settledMs: number; stages?: readonly Stage[] };
   readonly cost: { usage: UsageTotals; usd: number };
   /** Nodes the writer generated as islands rather than assembling from the Kit. */
   readonly islands: number;
@@ -381,6 +394,7 @@ async function main(argv: readonly string[]): Promise<number> {
       timing: {
         ...(outcome?.firstRenderMs === undefined ? {} : { firstRenderMs: outcome.firstRenderMs }),
         settledMs: outcome?.settledMs ?? meter.elapsedMs(),
+        ...(outcome?.stages === undefined || outcome.stages.length === 0 ? {} : { stages: outcome.stages }),
       },
       // The meter is every column's clock, but not every column's bill: a
       // contender that spawns its own engine reports what that session spent,

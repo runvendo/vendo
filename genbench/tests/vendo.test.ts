@@ -105,3 +105,34 @@ describe("the vendo driver reports one revision", () => {
     expect(outcome.failure).toBeUndefined();
   });
 });
+
+/**
+ * Where the settled time went, as this driver can honestly see it. `settledMs`
+ * alone says a screen took forty seconds and nothing about which forty; these
+ * marks are the only evidence in the run folder that answers that.
+ */
+describe("the vendo driver's stage marks", () => {
+  it("marks the start of assembly, every save it lands and every view it paints", async () => {
+    const outcome = await vendoDriver().run({
+      world,
+      testCase: caseFor("stage-marks"),
+      meter: scripted([saveTurn(PAINTS, "c1"), stopTurn()]),
+    });
+
+    const labels = outcome.stages?.map((stage) => stage.label) ?? [];
+    // Everything before this is the harness's own setup — the store, the guard,
+    // the runtime — and charging it to the contender would misread the timeline.
+    expect(labels[0]).toBe("assembly");
+    // `save_app` is a HAND, not a tool call: the workspace is the only place a
+    // save is visible from out here, and the view follows the save that painted.
+    expect(labels).toContain("save app.vendo");
+    expect(labels.indexOf("save app.vendo")).toBeLessThan(labels.indexOf("view"));
+
+    const times = outcome.stages!.map((stage) => stage.atMs);
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+    // One clock read per view, so a snapshot and its mark are the same moment.
+    expect(outcome.stages?.filter((stage) => stage.label === "view").map((stage) => stage.atMs)).toEqual(
+      outcome.snapshots.map((snapshot) => snapshot.atMs),
+    );
+  });
+});

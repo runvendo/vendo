@@ -76,8 +76,36 @@ export interface FloorResult {
  *  the index compares magnitudes. */
 export const numberKey = (value: number): string => String(Math.round(Math.abs(value) * 100) / 100);
 
-/** The same amount authored in dollars may be shown in cents, and vice versa. */
-export const numberKeys = (value: number): string[] => [numberKey(value), numberKey(value / 100), numberKey(value * 100)];
+/**
+ * The same amount authored in dollars may be shown in cents, and vice versa —
+ * but only where a CENTS reading of this value is actually possible.
+ *
+ * The ÷100 alternate is offered for an INTEGER base alone, because integer cents
+ * is the only thing that can honestly be re-shown as dollars. Offered
+ * unconditionally, it was `numberKey`'s two decimals that decided the verdict:
+ * an auditor program deriving 36265.15 — net worth in dollars — cleared a screen
+ * showing $362.65, because 36265.15/100 rounds to exactly 362.65. That made an
+ * exactly-100x money error indistinguishable from an honest cents→dollars
+ * conversion, which is the worst thing this check can fail to see. Anything that
+ * needs a rounding decision to line up is tier 2's job — there a program has to
+ * state the rounding it applied and return what the screen actually printed.
+ *
+ * The ×100 alternate stays unconditional: multiplying cannot invent precision
+ * for the rounding to swallow, so it only ever matches an amount that really IS
+ * this one in cents. It is also the only way a dollars-authored world's rows are
+ * recognised on a screen that prints cents.
+ */
+export const numberKeys = (value: number): string[] => [
+  numberKey(value),
+  ...(Number.isInteger(value) ? [numberKey(value / 100)] : []),
+  numberKey(value * 100),
+];
+
+/** Whether a derived value ANSWERS a number on screen, at the one scale
+ *  tolerance above. Not symmetric — the derived value is the base whose cents
+ *  reading is judged — so the argument order is the whole meaning. Tier 1 asks
+ *  the same question through the index it built with `numberKeys`. */
+export const clears = (value: number, shown: number): boolean => numberKeys(value).includes(numberKey(shown));
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const ISO_DATE = /\b(\d{4})-(\d{2})-(\d{2})\b/g;

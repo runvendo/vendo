@@ -194,6 +194,43 @@ describe("a program that echoes the value it is meant to derive", () => {
   });
 });
 
+// ------------------------------------------------ the scale a program clears at
+
+/**
+ * A program that lands a hundred times off the screen has not derived it.
+ *
+ * From a real audit, 2026-08-10: the auditor's program returned 36265.15 — this
+ * world's net worth, in dollars — for a screen that showed $362.65, and the ÷100
+ * alternate cleared it, because two-decimal rounding turns 362.6515 into exactly
+ * the number printed. The tolerance exists for integer cents shown as dollars; a
+ * derived value that already carries cents of its own has to answer the screen it
+ * is on, and if it needed rounding to get there the program has to do that
+ * rounding itself.
+ */
+describe("the money scale a program may clear at", () => {
+  const NET_WORTH_IN_DOLLARS =
+    "const rows = data.list_accounts.data;" +
+    " return rows.reduce((sum, row) => sum + row.balance, 0) / 100;";
+
+  it("does not clear a screen showing a hundredth of what the program returned", async () => {
+    const result = await auditing("Net worth $362.65", proposing({ "$362.65": NET_WORTH_IN_DOLLARS }));
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "offender", result: "36265.15" });
+    expect(result.pass).toBe(false);
+  });
+
+  it("still clears integer cents against the dollars the screen shows", async () => {
+    // Housing plus groceries, 285000 + 61245 — a pair no tier-1 rule reaches —
+    // derived in the cents the tools hold and shown in the dollars a person
+    // reads. That conversion is exact, and it is the one the tolerance is for.
+    const pair = "const rows = data.get_spending.data; return rows[0].amount + rows[1].amount;";
+    const result = await auditing("Housing and groceries $3,462.45", proposing({ "$3,462.45": pair }));
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "cleared-by-audit", result: "346245" });
+    expect(result.pass).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------- sandbox discipline
 
 /**

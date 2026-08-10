@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { checks, type Binding, type HonestDataResult, type Offender } from "./floor.js";
 import type { JudgeResult, LineVerdict, Verdict } from "./judge.js";
 import type { UsageTotals } from "./meter.js";
-import type { CaseResult } from "./run.js";
+import type { CaseResult, Stage } from "./run.js";
 import { cannedResponse, type World } from "./world.js";
 
 const escape = (value: string): string =>
@@ -92,6 +92,36 @@ const consoleNote = (errors: readonly string[]): string =>
 
 const metric = (label: string, value: string): string =>
   `<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`;
+
+/** Seconds, because this block is read as a timeline: `+18.4s` is the sentence
+ *  "the second save cost eighteen seconds", and `+18412 ms` is arithmetic. */
+const secs = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
+
+/**
+ * Where one contender's time actually went: the marks its driver could observe,
+ * in order, each with the gap from the one before.
+ *
+ * The GAP is what a person is looking for, so it is the emphasised column; the
+ * absolute time stays beside it because a list of gaps alone cannot be checked
+ * against `settled` in the metrics below. A driver with nothing observable
+ * prints nothing at all rather than a row that would read as a measurement.
+ */
+const stageList = (stages: readonly Stage[] | undefined): string => {
+  if (stages === undefined || stages.length === 0) return "";
+  let previous = 0;
+  const rows = stages.map((stage) => {
+    const gap = stage.atMs - previous;
+    previous = stage.atMs;
+    return (
+      `<li><span class="mark">${escape(stage.label)}</span>` +
+      `<span class="at">${secs(stage.atMs)}</span><b>+${secs(gap)}</b></li>`
+    );
+  });
+  return `<section class="stages">
+    <p class="half-head"><span>where the time went</span><b>${stages.length} mark${stages.length === 1 ? "" : "s"}</b></p>
+    <ol>${rows.join("")}</ol>
+  </section>`;
+};
 
 /** Never colour alone: the mark says which verdict this is in grayscale, to a
  *  screen reader, and to anyone who does not see red and green apart. */
@@ -194,6 +224,7 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
     ${metric("tokens", tokens.toLocaleString("en-US"))}
     ${metric("cost", `$${result.cost.usd.toFixed(4)}`)}
   </dl>
+  ${stageList(result.timing.stages)}
 </section>`;
 }
 
@@ -331,6 +362,18 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
 .metrics>div{display:block}
 .metrics dt{font:450 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ter)}
 .metrics dd{margin:6px 0 0;font:450 15px/1 ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+
+/* ---- where the time went: the driver's own marks, in the order it made them.
+       Under the metrics because it is a reading of the settled number above it,
+       not a fourth score. The gap column is the one that carries meaning, so it
+       is the only ink at full strength. */
+.stages{margin-top:16px}
+.stages ol{margin:0;padding:0;list-style:none}
+.stages li{display:flex;gap:10px;align-items:baseline;padding:3px 0;
+  font:450 12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+.stages .mark{min-width:0;color:var(--sec);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stages .at{margin-left:auto;color:var(--ter);font-variant-numeric:tabular-nums}
+.stages b{min-width:52px;text-align:right;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
 
 /* ---- the judge's half: one row per rubric line, its evidence underneath ---- */
 .rubric{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}

@@ -22,7 +22,7 @@ describe("loadWorld", () => {
     // A typo deserves the list of real names, in the product's own voice — not
     // a raw ENOENT naming a path the person never typed.
     await expect(loadWorld(join(root, "worlds", "nosuch"))).rejects.toThrow(
-      'genbench: unknown world "nosuch" (available: maple)',
+      'genbench: unknown world "nosuch" (available: atlas, maple)',
     );
   });
 

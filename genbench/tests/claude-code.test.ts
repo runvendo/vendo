@@ -148,6 +148,10 @@ describe("driving Claude Code", () => {
     expect(outcome.settledMs).toBeGreaterThanOrEqual(times.at(-1)!);
     expect(outcome.failure).toBeUndefined();
     expect(existsSync(workspaceOf(seen))).toBe(false);
+    // The same writes, as the marks the report reads to say where time went: one
+    // per revision, and nothing this driver cannot actually see. The tool calls
+    // behind them are the engine's own business and never reach this loop.
+    expect(outcome.stages).toEqual(times.map((atMs) => ({ label: "write index.html", atMs })));
   });
 
   it("reports the SDK's own tokens, priced from genbench's one table", async () => {

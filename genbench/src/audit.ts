@@ -3,9 +3,8 @@ import { generateObject, jsonSchema, type LanguageModel, type LanguageModelUsage
 import { createHash } from "node:crypto";
 import { createContext, runInContext } from "node:vm";
 import {
+  clears,
   numberIn,
-  numberKey,
-  numberKeys,
   NUMBER,
   passes,
   type Audited,
@@ -152,14 +151,15 @@ const data = ${JSON.stringify(data)};
  * The value the program is meant to DERIVE, written into it as a constant.
  *
  * This is the one cheat that would make the whole tier worthless: `return 9999`
- * clears a fabricated 9999 exactly as well as an honest one. Every literal in
- * the source is normalised the way the screen's own number is — at both money
- * scales — so `9999`, `9999.00` and `999900 / 100` are all the same echo.
+ * clears a fabricated 9999 exactly as well as an honest one. So every literal in
+ * the source is put through the very comparison that CLEARS a value: a literal
+ * that would clear this number on its own is refused, which makes `9999`,
+ * `9999.00` and `999900 / 100` all the same echo, and keeps the guard exactly as
+ * wide as the tolerance it is guarding — two spellings of that scale rule would
+ * eventually leave a gap for one of them to walk through.
  */
-const echoes = (program: string, shown: number): boolean => {
-  const forbidden = new Set(numberKeys(shown));
-  return [...program.matchAll(NUMBER)].some((match) => forbidden.has(numberKey(numberIn(match[0]))));
-};
+const echoes = (program: string, shown: number): boolean =>
+  [...program.matchAll(NUMBER)].some((match) => clears(numberIn(match[0]), shown));
 
 /** What the harness — never the model — concluded about one proposal. */
 function check(program: string, shown: number, data: Readonly<Record<string, unknown>>): Omit<Audited, "text" | "attempts"> {
@@ -172,10 +172,14 @@ function check(program: string, shown: number, data: Readonly<Record<string, unk
   if (typeof ran.value !== "number" || !Number.isFinite(ran.value)) {
     return offender(`rejected: returned ${JSON.stringify(ran.value) ?? String(ran.value)}, which is not a number`);
   }
-  // The same scale tolerance tier 1 gives a literal: an amount computed in cents
-  // may honestly be shown in dollars. The executed value is the authored side.
-  const cleared = numberKeys(ran.value).includes(numberKey(shown));
-  return { program, result: String(ran.value), verdict: cleared ? "cleared-by-audit" : "offender" };
+  // The same scale tolerance tier 1 gives a literal: integer cents may honestly
+  // be shown in dollars. The executed value is the authored side, and a program
+  // that lands 100x off a screen it did not round for is not a derivation of it.
+  return {
+    program,
+    result: String(ran.value),
+    verdict: clears(ran.value, shown) ? "cleared-by-audit" : "offender",
+  };
 }
 
 // --------------------------------------------------------------- the auditor

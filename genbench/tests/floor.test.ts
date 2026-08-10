@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { buildIndex, honestData, wiredActions, type DataIndex } from "../src/floor.js";
+import { buildIndex, clears, honestData, wiredActions, type DataIndex } from "../src/floor.js";
 import type { Probed } from "../src/probe.js";
 import { loadWorld, type World } from "../src/world.js";
 
@@ -117,6 +117,49 @@ describe("honestData — the negative control", () => {
     const result = honestData("Scheduled Aug 3", index);
     expect(result.pass).toBe(false);
     expect(result.offenders[0]).toMatchObject({ kind: "date" });
+  });
+});
+
+/**
+ * The one tolerance a number is given, and its limit.
+ *
+ * A world authors money in integer cents and a screen shows dollars, so the two
+ * have to be one fact. But offered in both directions for any value at all, that
+ * forgiveness swallowed the very error it sits beside: a derived 36265.15 —
+ * dollars — cleared a screen showing $362.65, because two-decimal rounding turns
+ * 362.6515 into exactly the number printed. An exactly-100x money error was
+ * indistinguishable from an honest cents→dollars conversion (a real audit,
+ * 2026-08-10). So the ÷100 reading is offered only where a cents interpretation
+ * exists at all: an integer base.
+ */
+describe("the money-scale tolerance", () => {
+  it("reads integer cents as the dollars a screen shows", () => {
+    expect(clears(3626515, 36265.15)).toBe(true);
+    expect(clears(285000, 2850)).toBe(true);
+  });
+
+  it("refuses a hundred-times error against a value that is not integer cents", () => {
+    expect(clears(36265.15, 362.65)).toBe(false);
+  });
+
+  it("reads dollars as the integer cents a screen shows", () => {
+    // The case the rule does not settle by itself, decided from the principle:
+    // 9412.20 dollars IS 941220 cents, exactly. Nothing has to be rounded away
+    // for the two to line up, so they are one amount at two scales and it
+    // clears. Only the reading that NEEDS rounding to agree was ever dangerous,
+    // and multiplying never needs it — it cannot invent precision for
+    // `numberKey` to swallow.
+    expect(clears(9412.2, 941220)).toBe(true);
+  });
+
+  it("sends a value that needs rounding to tier 2 instead of guessing a scale", () => {
+    // This month's spending averages 70718.5 cents — half a cent, so no screen
+    // can print it in dollars without deciding a rounding. The ÷100 reading used
+    // to clear "$707.19" for free; now the screen has to justify the rounding it
+    // applied, which is exactly what an executed program states.
+    expect(honestData("Average category $707.19", index).pass).toBe(false);
+    // The mean as the data actually holds it is still a value it returned.
+    expect(honestData("Average category 70718.5", index).pass).toBe(true);
   });
 });
 

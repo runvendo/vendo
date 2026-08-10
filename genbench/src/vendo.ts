@@ -1,11 +1,11 @@
 import { createApps } from "@vendoai/apps";
 import { renderBriefingPack, type BriefingPack } from "@vendoai/apps/contract";
-import type { AppId, Principal, RunContext, ToolRegistry, UIPayload } from "@vendoai/core";
+import type { AppId, Principal, RunContext, ToolRegistry, UIPayload, WorkspaceFs } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
 import { createStore, workspaceStore } from "@vendoai/store";
 import { vendoVerbsRegistry } from "@vendoai/vendo";
 import { screenAssembler } from "@vendoai/vendo/server";
-import type { Contender, RunOutcome, RunRequest } from "./run.js";
+import type { Contender, RunOutcome, RunRequest, Stage } from "./run.js";
 import { cannedResponse, type World } from "./world.js";
 
 const PRINCIPAL: Principal = { kind: "user", subject: "genbench" };
@@ -77,6 +77,32 @@ export function vendoDriver(): Contender {
   return { run };
 }
 
+/**
+ * The workspace, with every save it lands announced on the run's clock.
+ *
+ * `save_app` is a HAND, not a tool call — it writes through the workspace and
+ * commits (`screen-agent.ts:344`) — so the filesystem is the only place out here
+ * a save can be seen at all. A Proxy for exactly the reason the render seam's own
+ * wrapper is one (`render-seam.ts:447`): the store's façade is a class, so
+ * spreading it would drop every method, and `receiver` is deliberately not
+ * forwarded because a method read off the proxy and called with `this === proxy`
+ * breaks on the first `#private` field. The commit rides microseconds behind its
+ * write, so the write IS the mark.
+ */
+function announcingSaves(workspace: WorkspaceFs, mark: (label: string) => void): WorkspaceFs {
+  return new Proxy(workspace, {
+    get(target, property) {
+      const value = Reflect.get(target, property) as unknown;
+      if (typeof value !== "function") return value;
+      if (property !== "writeFile") return value.bind(target);
+      return async (path: string, ...rest: unknown[]): Promise<unknown> => {
+        mark(`save ${path.split("/").pop() ?? path}`);
+        return await (value as (...args: unknown[]) => Promise<unknown>).call(target, path, ...rest);
+      };
+    },
+  });
+}
+
 /** The product's own verdict on the bytes that landed — the render seam's three
  *  paint gates (`render-seam.ts`), in its order: it compiles, it has something
  *  to draw, and it passes the checks floor. Anything here is a reason the seam
@@ -118,6 +144,17 @@ async function run(request: RunRequest): Promise<RunOutcome> {
   // agent runs non-interactive, so a parked call would just stall the run.
   const guard = createGuard({ store, policy: "autopilot" });
 
+  /** Where this column's time went, in the order it went there. Every mark is
+   *  something the driver can genuinely see from out here: a tool the agent
+   *  called through the registry this driver serves, a save it landed on the
+   *  workspace this driver handed over, or a view the render seam emitted. The
+   *  loop's own internal repair pass is none of those, and it is read off the
+   *  shape instead — a second save after a `validate` is a repair. */
+  const stages: Stage[] = [];
+  const mark = (label: string): void => {
+    stages.push({ label, atMs: meter.elapsedMs() });
+  };
+
   // The assembly verbs (`validate`, `vendo_apps_*`) only exist once the runtime
   // does, so the registry is spliced after `createApps` returns.
   let appsTools: ToolRegistry | undefined;
@@ -127,6 +164,9 @@ async function run(request: RunRequest): Promise<RunOutcome> {
       return [...(await host.descriptors(listCtx)), ...(appsTools === undefined ? [] : await appsTools.descriptors(listCtx))];
     },
     async execute(call, callCtx) {
+      // Every call the agent makes passes here — host reads and `validate` alike
+      // — because this is the registry the assembler was handed.
+      mark(call.tool);
       if (world.tools.some((tool) => tool.name === call.tool)) return host.execute(call, callCtx);
       if (appsTools !== undefined) return appsTools.execute(call, callCtx);
       return { status: "error", error: { code: "not-found", message: `no tool ${call.tool}` } };
@@ -141,7 +181,7 @@ async function run(request: RunRequest): Promise<RunOutcome> {
   const assembler = screenAssembler({
     models: { default: meter.model },
     tools: boundTools,
-    workspace: async (screenCtx) => await workspaces.open(screenCtx.principal),
+    workspace: async (screenCtx) => announcingSaves(await workspaces.open(screenCtx.principal), mark),
     // Wiring all three halves is what makes the emitted payload carry REAL
     // resolved query data; unwired, the seam falls back to a bare compile and
     // paints blank values.
@@ -197,11 +237,20 @@ async function run(request: RunRequest): Promise<RunOutcome> {
   };
 
   try {
+    // Everything above is this driver's own setup, so the mark is what separates
+    // the harness's cost from the contender's.
+    mark("assembly");
     const outcome = await assembler.assemble(
       {
         appId,
         request: testCase.prompt,
-        onView: (part) => snapshots.push({ atMs: meter.elapsedMs(), payload: part.payload }),
+        // One clock read for both, so the stage and the snapshot it belongs to
+        // can never disagree about when the screen appeared.
+        onView: (part) => {
+          const atMs = meter.elapsedMs();
+          stages.push({ label: "view", atMs });
+          snapshots.push({ atMs, payload: part.payload });
+        },
       },
       ctx,
     );
@@ -231,6 +280,7 @@ async function run(request: RunRequest): Promise<RunOutcome> {
       // is the screen a person is left looking at.
       ...(painted === undefined ? {} : { payload: painted.payload }),
       snapshots,
+      stages,
       // The seam only emits once a payload actually renders, so the first
       // snapshot IS first render.
       ...(snapshots[0] === undefined ? {} : { firstRenderMs: snapshots[0].atMs }),

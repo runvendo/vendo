@@ -217,6 +217,43 @@ describe("the preview page", () => {
     expect(html).toContain(`call.genbench !== "call"`);
   });
 
+  it("shows where the settled time went, mark by mark, with the gap between them", async () => {
+    const base = resultFor("vendo-sonnet", "spend-overview", "Show me where my money went.");
+    const html = await preview(
+      [
+        {
+          ...base,
+          timing: {
+            ...base.timing,
+            stages: [
+              { label: "assembly", atMs: 900 },
+              { label: "get_spending", atMs: 5_400 },
+              { label: "save app.vendo", atMs: 23_800 },
+            ],
+          },
+        },
+      ],
+      { "spend-overview": world },
+    );
+
+    for (const label of ["assembly", "get_spending", "save app.vendo"]) expect(html).toContain(label);
+    // The GAP is the number a person is looking for — the save cost 18.4 of the
+    // 23.8 seconds — so it has to be on the page and not left to be worked out.
+    expect(html).toContain("<b>+18.4s</b>");
+    expect(html).toContain(`<span class="at">23.8s</span>`);
+  });
+
+  it("prints no timeline for a contender whose driver could observe nothing", async () => {
+    const html = await preview([resultFor("diy-sonnet", "spend-overview", "Show me where my money went.")], {
+      "spend-overview": world,
+    });
+
+    // A driver with no marks says nothing, rather than a row that would read as a
+    // measurement of a screen nobody watched being built. The markup, not the
+    // heading: the stylesheet names this block too, and always will.
+    expect(html).not.toContain(`<section class="stages">`);
+  });
+
   it("shows a vacuous honestData pass as muted, not a clean checkmark", async () => {
     const html = await preview(
       [{ ...resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."), floor: NOTHING_TO_CHECK }],
