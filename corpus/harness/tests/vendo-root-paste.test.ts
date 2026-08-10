@@ -78,6 +78,27 @@ const INVOIFY_PASSTHROUGH_LAYOUT = [
   "",
 ].join("\n");
 
+// A helper component that renders {children} ABOVE the real root layout, and
+// is not rendered by it — Greptile's repro on PR #1126. First-match on the
+// module wrapped the helper, so the paste reported success while nothing on
+// the page could reach the provider.
+const HELPER_BEFORE_ROOT_LAYOUT = [
+  'import type { ReactNode } from "react";',
+  "",
+  "export function Shell({ children }: { children: ReactNode }) {",
+  '  return <div className="shell">{children}</div>;',
+  "}",
+  "",
+  "export default function RootLayout({ children }: { children: ReactNode }) {",
+  "  return (",
+  '    <html lang="en">',
+  "      <body>{children}</body>",
+  "    </html>",
+  "  );",
+  "}",
+  "",
+].join("\n");
+
 // teable's src/pages/_app.tsx, trimmed to its structure at the manifest's
 // pinned sha (105e0f945dd9e4181ba6f80e44056c176a9800aa): a pages-router host
 // with NO app/layout.* at baseline. Its page slot carries the host's own props
@@ -86,6 +107,7 @@ const INVOIFY_PASSTHROUGH_LAYOUT = [
 const TEABLE_PAGES_APP = [
   'import type { AppProps } from "next/app";',
   'import Head from "next/head";',
+  'import { appWithTranslation } from "next-i18next";',
   'import { AppProviders } from "../AppProviders";',
   "",
   "const MyApp = (appProps: AppProps) => {",
@@ -110,7 +132,8 @@ const TEABLE_PAGES_APP = [
   "  );",
   "};",
   "",
-  "export default MyApp;",
+  "// The default export is the component behind an HOC, not the component.",
+  "export default appWithTranslation(MyApp);",
   "",
 ].join("\n");
 
@@ -169,6 +192,21 @@ describe("applyVendoRootPaste", () => {
       fileName: "layout.tsx",
       compilerOptions: { jsx: ts.JsxEmit.Preserve },
     }).diagnostics ?? []).toEqual([]);
+  });
+
+  it("wraps the DEFAULT-EXPORTED root layout, not a helper defined above it", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "app"), { recursive: true });
+    await writeFile(path.join(repoDir, "app/layout.tsx"), HELPER_BEFORE_ROOT_LAYOUT);
+
+    const result = await applyVendoRootPaste(repoDir, "next");
+
+    expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
+    const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
+    // The helper owns the file's FIRST rendered {children} and must be left
+    // alone: wrapping it mounts a provider nothing renders.
+    expect(layout).toContain('  return <div className="shell">{children}</div>;');
+    expect(layout).toContain(`<body>${WRAP}</body>`);
   });
 
   it("keeps a leading 'use client' directive first — pasted imports go after it", async () => {
@@ -246,7 +284,7 @@ describe("applyVendoRootPaste", () => {
     await writeFile(path.join(repoDir, "app/layout.tsx"), original);
 
     await expect(applyVendoRootPaste(repoDir, "next"))
-      .rejects.toThrow(/no "\{children\}" expression/);
+      .rejects.toThrow(/no default-exported component rendering "\{children\}"/);
 
     // Untouched — a failed wrap must not leave a half-applied import behind.
     await expect(readFile(path.join(repoDir, "app/layout.tsx"), "utf8")).resolves.toBe(original);

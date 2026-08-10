@@ -49,7 +49,65 @@ function directivePrologueEnd(lines: readonly string[]): number {
   return end;
 }
 
-/** The text span the mount wraps.
+function unwrapExpression(node: ts.Expression): ts.Expression {
+  let inner = node;
+  while (ts.isParenthesizedExpression(inner) || ts.isAsExpression(inner) || ts.isSatisfiesExpression(inner)) {
+    inner = inner.expression;
+  }
+  return inner;
+}
+
+/** The module-level function declared as `name`, if it is one. */
+function localFunction(sf: ts.SourceFile, name: string): ts.Node | undefined {
+  for (const statement of sf.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) return statement;
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== name || !declaration.initializer) continue;
+      const initializer = unwrapExpression(declaration.initializer);
+      if (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) return initializer;
+    }
+  }
+  return undefined;
+}
+
+/** The component behind an `export default` expression: the function itself, a
+ * name pointing at one, or — teable's shape — a component handed to an HOC
+ * (`export default appWithTranslation(MyApp, …)`). */
+function componentOf(sf: ts.SourceFile, expression: ts.Expression): ts.Node | undefined {
+  const inner = unwrapExpression(expression);
+  if (ts.isArrowFunction(inner) || ts.isFunctionExpression(inner)) return inner;
+  if (ts.isIdentifier(inner)) return localFunction(sf, inner.text);
+  if (ts.isCallExpression(inner)) {
+    for (const argument of inner.arguments) {
+      const component = componentOf(sf, argument);
+      if (component !== undefined) return component;
+    }
+  }
+  return undefined;
+}
+
+/** The module's DEFAULT EXPORT — the component Next actually renders — or null
+ * when it cannot be resolved inside this file (a re-export, an HOC over an
+ * imported component). Null fails the paste loudly; it deliberately does NOT
+ * fall back to searching the module, because searching the module IS the bug:
+ * a helper that renders `{children}` ABOVE the root layout won on first-match,
+ * so the paste wrapped the helper, reported success, and left the page with no
+ * reachable provider (Greptile, PR #1126). */
+function defaultExportedComponent(sf: ts.SourceFile): ts.Node | null {
+  for (const statement of sf.statements) {
+    const isDefault = ts.canHaveModifiers(statement)
+      && ts.getModifiers(statement)?.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
+    if (isDefault && (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement))) return statement;
+    if (ts.isExportAssignment(statement) && statement.isExportEquals !== true) {
+      return componentOf(sf, statement.expression) ?? null;
+    }
+  }
+  return null;
+}
+
+/** The text span the mount wraps, searched inside the DEFAULT-EXPORTED
+ * component only.
  * In an app-router layout: the JSX `{children}` it renders, or — for a
  * pass-through root layout that just `return children` (invoify keeps one only
  * because a sibling not-found.tsx demands it) — the returned identifier. Both
@@ -83,7 +141,9 @@ function mountSpan(source: string, fileName: string, router: "app" | "pages"): {
     }
     ts.forEachChild(node, visit);
   };
-  visit(sf);
+  const root = defaultExportedComponent(sf);
+  if (root === null) return null;
+  visit(root);
   const target = jsx ?? returned;
   return target === undefined ? null : { start: target.getStart(sf), end: target.getEnd() };
 }
@@ -125,7 +185,7 @@ export async function applyVendoRootPaste(
 
   const span = mountSpan(original, mount.mountRel, mount.router);
   if (span === null) {
-    throw new Error(`${mount.mountRel} has no "${mountedChild(mount)}" expression for the mount to wrap`);
+    throw new Error(`${mount.mountRel} has no default-exported component rendering "${mountedChild(mount)}" for the mount to wrap`);
   }
   // The app-router paste is the canonical docs block verbatim; the pages paste
   // wraps in place instead, so the host's own props on <Component …> survive.
