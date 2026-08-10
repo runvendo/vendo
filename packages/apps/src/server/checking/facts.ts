@@ -430,6 +430,71 @@ export const unknownToolIssues = (tree: Tree, tools: readonly HostToolInfo[] | u
     }));
 };
 
+/** An `on*` prop as it lands in props: `{ action, payload? }` — the shape the
+ *  wire compiles the string form to (`genui/wire/attributes.ts`) and the shape
+ *  the renderer dispatches (`@vendoai/ui` tree/convert-payload.ts). */
+const asActionProp = (value: unknown): { action: string; payload: unknown } | undefined =>
+  isRecord(value) && typeof value.action === "string"
+    ? { action: value.action, payload: value.payload }
+    : undefined;
+
+/** The arguments a tool's own input schema says it cannot run without. */
+const requiredArgumentsOf = (tool: HostToolInfo): string[] => {
+  const required = tool.inputSchema?.required;
+  return Array.isArray(required) ? required.filter((name): name is string => typeof name === "string") : [];
+};
+
+/**
+ * A control bound to a tool that REQUIRES arguments and carrying none of them.
+ *
+ * A bare `onClick="cancel_transfer"` compiles to `{ action }` and nothing else,
+ * and the renderer calls the tool with exactly that payload and no more —
+ * `bindValue` binds a zero-argument closure, so neither the row the control sits
+ * on nor the value a field just took ever reaches the tool (`@vendoai/ui`
+ * tree/renderer.tsx). The press therefore arrives at the host with `{}` and is
+ * refused for a missing argument: a control that names a real tool, spells its
+ * prop right, and is dead on screen. Nothing in the markup shows it, which is why
+ * it belongs on the floor — the AI reviewer names the same class ("a row action
+ * carrying no row id") but at `warn`, and a warning never reaches a builder.
+ *
+ * Only a REQUIRED argument fires it, so an argument-less action
+ * (`onClick="refresh_feed"`) — the string form's whole purpose — is never
+ * touched. A payload that is itself a binding has keys nothing here can read, and
+ * an unknown or `fn:` action has no host schema to read, so all three stay
+ * silent.
+ */
+export const actionArgumentIssues = (tree: Tree, tools: readonly HostToolInfo[] | undefined): FactIssue[] => {
+  if (tools === undefined) return [];
+  const byName = new Map(tools.map((tool) => [tool.name, tool]));
+  const issues: FactIssue[] = [];
+  const walk = (nodeId: string, prop: string, value: unknown): void => {
+    const bound = asActionProp(value);
+    if (bound !== undefined) {
+      const tool = byName.get(bound.action);
+      if (tool === undefined || isRuntimeBound(bound.payload)) return;
+      const payload = isRecord(bound.payload) ? bound.payload : {};
+      const missing = requiredArgumentsOf(tool).filter((name) => !Object.hasOwn(payload, name));
+      if (missing.length === 0) return;
+      const example = missing.map((name) => `${name}: <query>.data.0.${name}`).join(", ");
+      issues.push(atProp(nodeId, prop, `runs "${bound.action}", which cannot run without ${
+        missing.map((name) => `"${name}"`).join(", ")
+      } — a bare tool name calls it with no arguments at all, so the press is refused and the control is dead. Write the arguments beside the name, each one read from the data: ${prop}={{ action: "${bound.action}", payload: { ${example} } }}`));
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(nodeId, prop, item);
+      return;
+    }
+    if (isRecord(value)) {
+      for (const child of Object.values(value)) walk(nodeId, prop, child);
+    }
+  };
+  for (const node of tree.nodes) {
+    for (const [prop, value] of Object.entries(node.props ?? {})) walk(node.id, prop, value);
+  }
+  return issues;
+};
+
 /** Every `$path` binding resolved query → tool → response shape by the wire
  *  compiler's own checker. A miss carries the fields that ARE there, so the
  *  message can teach instead of only refusing.
@@ -551,6 +616,7 @@ const screenTypeFindings = (tree: Tree, document: AppDocument, deps: FloorDepend
 export const factChecks = (deps: FloorDependencies): Check[] => [
   { name: "document", kind: "fact", run: async ({ document }) => blocking(documentIssues(document)) },
   treeCheck("tools-exist", (tree) => unknownToolIssues(tree, deps.tools)),
+  treeCheck("actions-carry-arguments", (tree) => actionArgumentIssues(tree, deps.tools)),
   treeCheck("components-exist", (tree, document) => catalogIssues(tree, document.components, deps.catalog)),
   treeCheck("bindings-fit", (tree) => [
     ...bindingShapeIssues(tree, deps),
