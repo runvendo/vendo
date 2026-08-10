@@ -1,9 +1,14 @@
 /** Layout tier — themed containers (W2 §The Kit). */
-import type { CSSProperties, PropsWithChildren } from "react";
+import { Children, type CSSProperties, type PropsWithChildren, type ReactNode } from "react";
 import { font, t } from "./tokens.js";
 
 const gapVar = (gap: number | undefined): string =>
   gap === undefined ? "var(--vendo-density-content-gap, 10px)" : `${gap}px`;
+
+/** Only a value standing alone leads; side-by-side values are context, so the
+ *  container demotes them and exactly one number can ever be the largest text. */
+const contextScale = (children: ReactNode): CSSProperties =>
+  Children.count(children) > 1 ? ({ "--vendo-lead-scale": 1.25 } as CSSProperties) : {};
 
 export interface StackProps {
   gap?: number;
@@ -53,6 +58,7 @@ export function Row({ gap, align = "center", justify = "start", wrap = true, chi
         alignItems: alignMap[align],
         justifyContent: justifyMap[justify],
         gap: gapVar(gap),
+        ...contextScale(children),
       }}
     >
       {children}
@@ -76,6 +82,7 @@ export function Grid({ columns = 2, gap, children }: PropsWithChildren<GridProps
         gridTemplateColumns: `repeat(${safe}, minmax(0, 1fr))`,
         alignItems: "stretch",
         gap: gapVar(gap),
+        ...contextScale(children),
       }}
     >
       {children}

@@ -52,7 +52,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         style={{
           color: empty ? t.muted : emphasis,
           fontFamily: t.headingFamily,
-          fontSize: "calc(var(--vendo-font-size, 15px) * 1.65)",
+          fontSize: "calc(var(--vendo-font-size, 15px) * var(--vendo-lead-scale, 2.2))",
           fontWeight: 700,
           letterSpacing: "-0.025em",
           lineHeight: 1.12,
