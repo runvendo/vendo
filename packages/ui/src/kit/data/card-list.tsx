@@ -1,7 +1,7 @@
 /** CardList — one branded card per record, semantically formatted (W2 §The Kit). */
-import { applyFormat, type ValueFormat } from "../format.js";
+import type { ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
-import { EnumBadge } from "../values.js";
+import { EnumBadge, ValueCell } from "../values.js";
 
 export interface CardField {
   key: string;
@@ -77,7 +77,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 {titleField ? (
                   <span style={{ fontFamily: t.headingFamily, fontWeight: 650, letterSpacing: "-0.015em" }}>
-                    {String(resolve(item, titleField) ?? "—")}
+                    <ValueCell value={resolve(item, titleField)} />
                   </span>
                 ) : <span />}
                 {badge !== undefined && badge !== null && badge !== "" ? (
@@ -85,15 +85,14 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
                 ) : null}
               </div>
             )}
-            {fields.map((f) => {
-              const formatted = applyFormat(resolve(item, f.key), f.format ?? "text");
-              return (
-                <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
-                  <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
-                  <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatted ?? "—"}</span>
-                </div>
-              );
-            })}
+            {fields.map((f) => (
+              <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
+                <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
+                <span style={{ fontVariantNumeric: "tabular-nums" }}>
+                  <ValueCell value={resolve(item, f.key)} format={f.format} />
+                </span>
+              </div>
+            ))}
           </article>
         );
       })}

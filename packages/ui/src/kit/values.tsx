@@ -5,6 +5,7 @@
  */
 import type { CSSProperties, ReactNode } from "react";
 import {
+  applyFormat,
   formatDateTime,
   formatMoney,
   formatNum,
@@ -12,6 +13,7 @@ import {
   type DateInput,
   type DateTimeOptions,
   type MoneyOptions,
+  type ValueFormat,
 } from "./format.js";
 import { font, t } from "./tokens.js";
 
@@ -26,6 +28,19 @@ function Placeholder(): ReactNode {
 }
 
 const numeric: CSSProperties = { fontVariantNumeric: "tabular-nums" };
+
+/**
+ * What a value slot SHOWS: the format's own render, else the text the row
+ * actually carries (a string from a `format(...)` reshape is a value, not a
+ * gap — `applyFormat(…, "money")` nulls it because it is not a number), else
+ * muted words. A dash states nothing.
+ */
+export function ValueCell({ value, format }: { value: unknown; format?: ValueFormat }) {
+  const formatted = applyFormat(value, format ?? "text");
+  if (formatted !== null) return <>{formatted}</>;
+  const given = typeof value === "string" ? value.trim() : "";
+  return given === "" ? <span style={{ color: t.muted }}>Not recorded</span> : <>{given}</>;
+}
 
 export interface MoneyProps extends MoneyOptions {
   /** Amount in integer cents (minor units). */

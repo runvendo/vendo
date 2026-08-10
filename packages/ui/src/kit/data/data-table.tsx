@@ -17,7 +17,7 @@ import {
 } from "@tanstack/react-table";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
-import { humanizeEnum } from "../values.js";
+import { humanizeEnum, ValueCell } from "../values.js";
 
 export interface DataTableColumn {
   /** Field key; supports dot-paths ("client.name"). */
@@ -66,7 +66,7 @@ const alignCss = (a: DataTableColumn["align"]): CSSProperties["textAlign"] =>
  * against: the person filters on what is in front of them. Filtering the raw
  * field instead meant "$2,500.00" and "Mar 14, 2026" were unsearchable, while
  * the dropdown offered "2026-03-14" as an option for a column reading
- * "Mar 14, 2026". Unrenderable cells (the "—" placeholder) filter as empty.
+ * "Mar 14, 2026". Cells the format cannot render filter as empty.
  */
 function displayText(row: Record<string, unknown>, column: DataTableColumn): string {
   return applyFormat(resolvePath(row, column.key), column.format ?? "text") ?? "";
@@ -117,12 +117,7 @@ export function DataTable(props: DataTableProps) {
         id: col.key,
         accessorFn: (row) => resolvePath(row, col.key),
         header: col.label ?? humanizeEnum(col.key.split(".").pop() ?? col.key),
-        cell: (ctx) => {
-          const raw = ctx.getValue();
-          const formatted = applyFormat(raw, col.format ?? "text");
-          if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
-          return formatted;
-        },
+        cell: (ctx) => <ValueCell value={ctx.getValue()} format={col.format} />,
         // A dropdown lists the values that exist, so picking one means THIS
         // value — "includesString" here let a pick of "paid" list the "unpaid"
         // rows too.
