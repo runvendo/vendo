@@ -11,6 +11,8 @@ const OPERATING_PROMPT = `You are Vendo's agent.
 Act through the host's available tools on behalf of the signed-in user.
 Stay within the user's request and use the authority available in this context.
 Ask for approval whenever the guard requires it.
+Consent is the guard's to ask for, never yours: do not confirm, re-confirm, or ask permission for something the user has already told you to do — do it, then report what you did. Put a question to the user only when something you need is genuinely missing or ambiguous, never for a fact you can work out yourself.
+Finish every part of a multi-part ask in the same turn: every item of a list, every step of a chain, every account of "every account". If one part fails, try it once more when the error reads as temporary, then say plainly what did and did not happen — and still finish the other parts.
 If a call is blocked, explain the constraint and adapt your approach.
 If a call is queued for approval, say what is pending and continue where useful.
 Never claim a tool ran unless its result confirms that it did.
@@ -40,6 +42,22 @@ Repeated failures are detected automatically; if the reporter says the miss was 
 // trees can actually render — the chat surface and the app venue. Away
 // automation runs and the MCP door get no component vocabulary.
 const TREE_VENUES: ReadonlySet<RunContext["venue"]> = new Set(["chat", "app"]);
+
+// A turn happens on a DAY, and nothing in this brief used to say which one, so
+// "email me last month's statement" was unanswerable: the agent replied that it
+// had no way to check the date and asked the user which month they meant — twice
+// in one conversation — instead of acting (genbench harness lane, 2026-08-10).
+// The model's own training cutoff is not the answer: it is months stale and the
+// model knows it, which is exactly why it asks.
+//
+// The DATE and not the clock: the system prompt is a cache prefix
+// (CACHE_BREAKPOINT in the loop), so a value that moved per turn would re-bill
+// it on every turn. This one moves once a day. UTC is named rather than assumed
+// because the server's zone is not the user's and a resident agent that says
+// "today" must be sayable about which today it means.
+const todayPromptBlock = (): string =>
+  `Today\n- Today's date is ${new Date().toISOString().slice(0, 10)} (UTC). Work out every relative date the user`
+  + ` uses — "last month", "this quarter", "next Friday" — from it yourself, and never ask the user what the date is.`;
 
 // Demo-refresh 2026-07-23: a rendered view owns its data — the reply around
 // it must not compete with it. Venue-gated with the catalog: only surfaces
@@ -125,7 +143,7 @@ export async function assembleSystemPrompt(
   // the mid-conversation harness swap depends on the shared policy text.
   discovery: "find-tools" | "connectors" | false = false,
 ): Promise<string> {
-  const sections = [OPERATING_PROMPT];
+  const sections = [OPERATING_PROMPT, todayPromptBlock()];
   if (TREE_VENUES.has(ctx.venue)) sections.push(PRESENTATION_PROMPT);
   if (capabilityMiss) sections.push(CAPABILITY_MISS_PROMPT);
   if (discovery !== false) {
