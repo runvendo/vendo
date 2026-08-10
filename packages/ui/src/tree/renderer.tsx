@@ -17,6 +17,7 @@ import {
   evaluateExpr,
   isExprBinding,
 } from "@vendoai/apps/contract";
+import { mergeActionArgs } from "./action-args.js";
 import { convertPayload } from "./convert-payload.js";
 import {
   useCallback,
@@ -234,7 +235,10 @@ function bindValue(
     if (mode === "jail") {
       return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
     }
-    return () => action(value.$action, value.payload === undefined ? undefined : payload);
+    return (extra?: unknown) => action(
+      value.$action,
+      mergeActionArgs(value.payload === undefined ? undefined : payload, extra),
+    );
   }
   if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, onMismatch));
   if (typeof value === "object" && value !== null) {

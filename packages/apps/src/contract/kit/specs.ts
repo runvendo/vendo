@@ -165,9 +165,14 @@ export const KIT_SPECS: KitComponentSpec[] = [
       paginate: config(z.number().int().positive(), "page size (enables pagination)"),
       emptyState: copy(z.string(), "text when the query returns no rows"),
       caption: copy(z.string(), "table caption"),
+      onRowAction: config(action, "host tool run by a button ON EACH ROW, called with that row's own fields — the only way an action reaches ONE record"),
+      rowActionLabel: copy(z.string(), "row button label"),
+      rowActionArgs: config(z.array(z.string()), 'row fields sent as the action\'s arguments (defaults to ["id"])'),
+      rowActionVariant: config(z.enum(["primary", "secondary", "danger"]), 'row button emphasis; "danger" for a destructive action'),
     },
     examples: [
       '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amountCents",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
+      '<DataTable rows={transfers.list({status:"pending"}).data} columns={[{key:"to",label:"To"},{key:"amountCents",format:"money",align:"end"}]} onRowAction="cancel_transfer" rowActionLabel="Cancel" rowActionArgs={["id"]} rowActionVariant="danger" emptyState="No pending transfers"/>',
     ],
   },
   {
@@ -181,8 +186,12 @@ export const KIT_SPECS: KitComponentSpec[] = [
       fields: config(z.array(cardField), "label/value rows shown on each card"),
       columns: config(z.number().int().positive(), "cards per row"),
       emptyState: copy(z.string(), "text when there are no items"),
+      onRowAction: config(action, "host tool run by a button ON EACH CARD, called with that card's own fields"),
+      rowActionLabel: copy(z.string(), "card button label"),
+      rowActionArgs: config(z.array(z.string()), 'item fields sent as the action\'s arguments (defaults to ["id"])'),
+      rowActionVariant: config(z.enum(["primary", "secondary", "danger"]), 'card button emphasis; "danger" for a destructive action'),
     },
-    examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balanceCents",label:"Balance",format:"money"}]}/>'],
+    examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balanceCents",label:"Balance",format:"money"}]} onRowAction="client_archive" rowActionLabel="Archive" rowActionArgs={["id"]}/>'],
   },
   {
     name: "Stat",

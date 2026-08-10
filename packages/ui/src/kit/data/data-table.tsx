@@ -18,6 +18,7 @@ import {
 import { applyFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
+import { rowActionArguments, type RowActionVariant } from "./row-action.js";
 
 export interface DataTableColumn {
   /** Field key; supports dot-paths ("client.name"). */
@@ -48,6 +49,18 @@ export interface DataTableProps {
   emptyState?: string;
   /** Optional table caption. */
   caption?: string;
+  /**
+   * Bound host-tool action (renderer-supplied) for a per-row button. It is
+   * called with the row's own fields, so the action acts on the row it sits on
+   * — the only shape in the Kit that can pass a record's identity to a tool.
+   */
+  onRowAction?: (args?: Record<string, unknown>) => void;
+  /** Button label for the row action (defaults to "Open"). */
+  rowActionLabel?: string;
+  /** Row fields sent as the action's arguments (defaults to ["id"]). */
+  rowActionArgs?: string[];
+  /** Row-button emphasis; a destructive action takes "danger". */
+  rowActionVariant?: RowActionVariant;
 }
 
 /** Resolve a dot-path against a row. */
@@ -84,6 +97,10 @@ export function DataTable(props: DataTableProps) {
     paginate,
     emptyState = "No data",
     caption,
+    onRowAction,
+    rowActionLabel = "Open",
+    rowActionArgs,
+    rowActionVariant = "secondary",
   } = props;
 
   // W3 — fail SOFT on missing data: a failed/pending query resolves its
@@ -277,6 +294,13 @@ export function DataTable(props: DataTableProps) {
                     </th>
                   );
                 })}
+                {onRowAction ? (
+                  <th
+                    scope="col"
+                    aria-label="Actions"
+                    style={{ borderBottom: `1px solid ${t.border}`, padding: cellPad, width: 1 }}
+                  />
+                ) : null}
               </tr>
             ))}
           </thead>
@@ -284,7 +308,7 @@ export function DataTable(props: DataTableProps) {
             {bodyRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={Math.max(1, columns.length)}
+                  colSpan={Math.max(1, columns.length + (onRowAction ? 1 : 0))}
                   style={{ color: t.muted, padding: "calc(var(--vendo-font-size, 15px) * 1.6) 12px", textAlign: "center" }}
                 >
                   {emptyState}
@@ -309,6 +333,22 @@ export function DataTable(props: DataTableProps) {
                       </td>
                     );
                   })}
+                  {onRowAction ? (
+                    <td
+                      style={{
+                        borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
+                        padding: cellPad,
+                        textAlign: "right",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <RowActionButton
+                        label={rowActionLabel}
+                        variant={rowActionVariant}
+                        onPress={() => onRowAction(rowActionArguments(row.original, rowActionArgs))}
+                      />
+                    </td>
+                  ) : null}
                 </tr>
               ))
             )}
@@ -332,6 +372,38 @@ export function DataTable(props: DataTableProps) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Compact by design: a row action must not make its row two lines tall, so it
+ *  is smaller than a standalone `<Button>` rather than reusing it. */
+function RowActionButton({ label, variant, onPress }: {
+  label: string;
+  variant: RowActionVariant;
+  onPress: () => void;
+}) {
+  const emphasis = variant === "primary" || variant === "danger";
+  return (
+    <button
+      type="button"
+      data-kit="RowAction"
+      data-variant={variant}
+      onClick={onPress}
+      style={{
+        ...font,
+        border: emphasis ? "1px solid transparent" : `1px solid ${t.border}`,
+        borderRadius: t.radiusSmall,
+        background: variant === "primary" ? t.accent : variant === "danger" ? t.danger : t.surface,
+        color: emphasis ? t.accentText : t.text,
+        cursor: "pointer",
+        fontSize: "0.85em",
+        fontWeight: 600,
+        lineHeight: 1.2,
+        padding: "5px 10px",
+      }}
+    >
+      {label}
+    </button>
   );
 }
 

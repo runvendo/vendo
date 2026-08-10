@@ -1,7 +1,9 @@
 /** CardList — one branded card per record, semantically formatted (W2 §The Kit). */
 import { applyFormat, type ValueFormat } from "../format.js";
+import { Button } from "../forms/button.js";
 import { font, t } from "../tokens.js";
 import { EnumBadge } from "../values.js";
+import { rowActionArguments, type RowActionVariant } from "./row-action.js";
 
 export interface CardField {
   key: string;
@@ -22,13 +24,36 @@ export interface CardListProps {
   columns?: number;
   /** Text shown when there are no items. */
   emptyState?: string;
+  /**
+   * Bound host-tool action (renderer-supplied) for a per-card button. It is
+   * called with that card's own fields, so the action acts on the record it
+   * sits on.
+   */
+  onRowAction?: (args?: Record<string, unknown>) => void;
+  /** Button label for the card action (defaults to "Open"). */
+  rowActionLabel?: string;
+  /** Item fields sent as the action's arguments (defaults to ["id"]). */
+  rowActionArgs?: string[];
+  /** Card-button emphasis; a destructive action takes "danger". */
+  rowActionVariant?: RowActionVariant;
 }
 
 function resolve(row: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((acc, k) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[k] : undefined), row);
 }
 
-export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items" }: CardListProps) {
+export function CardList({
+  items: rawItems,
+  titleField,
+  badgeField,
+  fields = [],
+  columns,
+  emptyState = "No items",
+  onRowAction,
+  rowActionLabel = "Open",
+  rowActionArgs,
+  rowActionVariant = "secondary",
+}: CardListProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const items = Array.isArray(rawItems) ? rawItems : [];
   if (items.length === 0) {
@@ -94,6 +119,15 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
                 </div>
               );
             })}
+            {onRowAction ? (
+              <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 2 }}>
+                <Button
+                  label={rowActionLabel}
+                  variant={rowActionVariant}
+                  onClick={() => onRowAction(rowActionArguments(item, rowActionArgs))}
+                />
+              </div>
+            ) : null}
           </article>
         );
       })}

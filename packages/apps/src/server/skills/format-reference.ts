@@ -181,6 +181,16 @@ An \`on*\` attribute names a host tool: \`onClick="maple_invoice_send"\`. That i
 only way anything in an app mutates. A value that is not a legal tool name drops
 the attribute.
 
+An action on a \`<Button>\` or \`<Form>\` sends only what was authored, so it can
+never say WHICH record it acts on — and a \`<Select>\` inside a \`<Form>\` cannot
+pass its choice to the tool. When the tool needs one record's id, put the action
+on the row: \`onRowAction\` on \`<DataTable>\`/\`<CardList>\` gives every row its own
+button, pressed with that row's own fields.
+
+\`\`\`
+<DataTable rows={transfers.data} columns={[{key:"to"},{key:"amountCents",format:"money"}]} onRowAction="cancel_transfer" rowActionLabel="Cancel" rowActionArgs={["id"]} rowActionVariant="danger"/>
+\`\`\`
+
 ### \`<Island name="PascalName">\` — a component you write
 
 The content is raw TSX, verbatim to the **first** \`</Island>\`, with an
