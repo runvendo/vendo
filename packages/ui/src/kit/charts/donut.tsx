@@ -2,7 +2,8 @@
 import { Cell, Pie, PieChart as RPieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { isRenderableNumber, applyFormat, type ValueFormat } from "../format.js";
 import { seriesColor, t } from "../tokens.js";
-import { ChartEmpty, ChartFrame } from "./sanitize.js";
+import { EmptyRegion } from "../values.js";
+import { ChartFrame } from "./sanitize.js";
 
 export interface DonutChartProps {
   data: Array<Record<string, unknown>>;
@@ -33,7 +34,7 @@ export function DonutChart({
     .map((row) => ({ name: String(row[categoryKey] ?? ""), value: row[valueKey] }))
     .filter((s) => isRenderableNumber(s.value) && (s.value as number) > 0) as Array<{ name: string; value: number }>;
   if (slices.length === 0) {
-    return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
+    return <EmptyRegion>{emptyState}</EmptyRegion>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (

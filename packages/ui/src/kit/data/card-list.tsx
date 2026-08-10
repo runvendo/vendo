@@ -1,7 +1,7 @@
 /** CardList — one branded card per record, semantically formatted (W2 §The Kit). */
 import { applyFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
-import { EnumBadge } from "../values.js";
+import { EmptyRegion, EnumBadge } from "../values.js";
 
 export interface CardField {
   key: string;
@@ -33,18 +33,8 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
   const items = Array.isArray(rawItems) ? rawItems : [];
   if (items.length === 0) {
     return (
-      <div
-        data-kit="CardList"
-        style={{
-          ...font,
-          color: t.muted,
-          textAlign: "center",
-          border: `1px dashed ${t.border}`,
-          borderRadius: t.radiusMedium,
-          padding: "calc(var(--vendo-font-size, 15px) * 1.6)",
-        }}
-      >
-        {emptyState}
+      <div data-kit="CardList">
+        <EmptyRegion>{emptyState}</EmptyRegion>
       </div>
     );
   }

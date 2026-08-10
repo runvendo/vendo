@@ -10,7 +10,8 @@ import {
 } from "recharts";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { seriesColor, t } from "../tokens.js";
-import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty } from "./sanitize.js";
+import { EmptyRegion } from "../values.js";
+import { ChartFrame, sanitizeSeries, seriesIsEmpty } from "./sanitize.js";
 import type { SeriesInput } from "./line.js";
 
 export interface BarChartProps {
@@ -46,7 +47,7 @@ export function BarChart({
   const keys = cols.map((c) => c.key);
   const clean = sanitizeSeries(data, keys);
   if (clean.length === 0 || seriesIsEmpty(clean, keys)) {
-    return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
+    return <EmptyRegion>{emptyState}</EmptyRegion>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (

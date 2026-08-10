@@ -25,6 +25,29 @@ function Placeholder(): ReactNode {
   );
 }
 
+/**
+ * An empty/zero/still-loading result stated in words, sized to the sentence it
+ * holds and padded like a card — never a tall reserved void.
+ */
+export function EmptyRegion({ children }: { children: ReactNode }) {
+  return (
+    <div
+      data-kit="EmptyRegion"
+      style={{
+        ...font,
+        color: t.muted,
+        textAlign: "center",
+        border: `1px solid ${t.border}`,
+        borderRadius: t.radiusMedium,
+        background: t.surface,
+        padding: "var(--vendo-density-card-padding, 16px)",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 const numeric: CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
 export interface MoneyProps extends MoneyOptions {

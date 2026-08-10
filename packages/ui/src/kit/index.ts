@@ -39,13 +39,7 @@ export { BarChart, type BarChartProps } from "./charts/bar.js";
 export { DonutChart, type DonutChartProps } from "./charts/donut.js";
 export { Sparkline, type SparklineProps } from "./charts/sparkline.js";
 export { Progress, type ProgressProps } from "./charts/progress.js";
-export {
-  ChartFrame,
-  ChartEmpty,
-  sanitizeSeries,
-  sanitizeNumbers,
-  seriesIsEmpty,
-} from "./charts/sanitize.js";
+export { ChartFrame, sanitizeSeries, sanitizeNumbers, seriesIsEmpty } from "./charts/sanitize.js";
 export { Button, type ButtonProps } from "./forms/button.js";
 export { Input, type InputProps } from "./forms/input.js";
 export { Select, type SelectProps, type SelectOption } from "./forms/select.js";
