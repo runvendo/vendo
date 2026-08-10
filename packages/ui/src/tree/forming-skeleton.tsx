@@ -23,10 +23,12 @@ export function Skeleton(props: { width?: string | number; height?: string | num
         width: props.width ?? "100%",
         height: props.height ?? "var(--vendo-skeleton-height, 16px)",
         minHeight: props.height ?? "var(--vendo-skeleton-height, 16px)",
+        // Neutral, not the brand accent: a placeholder is not a brand mark, and
+        // the accent on a decorative surface reads as an invented highlight.
         background: `linear-gradient(100deg,
-          color-mix(in srgb, var(--vendo-color-accent, #111111) 10%, transparent) 30%,
-          color-mix(in srgb, var(--vendo-color-accent, #111111) 22%, transparent) 50%,
-          color-mix(in srgb, var(--vendo-color-accent, #111111) 10%, transparent) 70%)`,
+          color-mix(in srgb, var(--vendo-color-muted, #6b6b76) 14%, transparent) 30%,
+          color-mix(in srgb, var(--vendo-color-muted, #6b6b76) 26%, transparent) 50%,
+          color-mix(in srgb, var(--vendo-color-muted, #6b6b76) 14%, transparent) 70%)`,
         backgroundSize: "200% 100%",
         borderRadius: "var(--vendo-radius-medium, 10px)",
       }}
@@ -59,7 +61,7 @@ const cell: CSSProperties = { flex: 1, minWidth: 0 };
 
 /** The shape-aware streaming placeholder: shimmer silhouettes of the final
  *  geometry, so arrival is a crossfade instead of a slab popping into a view. */
-export function FormingSkeleton({ name }: { name: string }) {
+function Silhouette({ name }: { name: string }) {
   const shape = deriveFormShape(name);
   if (shape === "tiles") {
     return (
@@ -73,9 +75,9 @@ export function FormingSkeleton({ name }: { name: string }) {
   if (shape === "rows") {
     return (
       <span data-form-shape="rows" style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }} aria-hidden="true">
-        <Skeleton height={40} />
-        <Skeleton height={40} />
-        <Skeleton height={40} />
+        <Skeleton height={28} />
+        <Skeleton height={28} />
+        <Skeleton height={28} />
       </span>
     );
   }
@@ -107,6 +109,25 @@ export function FormingSkeleton({ name }: { name: string }) {
   );
 }
 
+/** A forming REGION says so in words: every silhouette above is aria-hidden and
+ *  wordless, and when a screen escalates that silhouette IS what is delivered. */
+export function FormingSkeleton({ name }: { name: string }) {
+  const shape = deriveFormShape(name);
+  if (shape === "pill" || shape === "control") return <Silhouette name={name} />;
+  return (
+    <span style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%" }}>
+      <span style={{
+        color: "var(--vendo-color-muted, #6b6b76)",
+        fontFamily: "var(--vendo-font-family, system-ui, sans-serif)",
+        fontSize: "var(--vendo-font-size-caption, 12.5px)",
+      }}>
+        Still building this section…
+      </span>
+      <Silhouette name={name} />
+    </span>
+  );
+}
+
 /**
  * One PLAN LEAF that has not been filled yet (generation pipeline rebuild,
  * Task 5). A leaf is exactly one component, so a stat-shaped leaf is one tile —
@@ -114,7 +135,7 @@ export function FormingSkeleton({ name }: { name: string }) {
  * repeating it per leaf would show nine tiles for three stats.
  */
 export function PendingLeaf({ name }: { name: string }) {
-  if (deriveFormShape(name) !== "tiles") return <FormingSkeleton name={name} />;
+  if (deriveFormShape(name) !== "tiles") return <Silhouette name={name} />;
   return (
     <span data-form-shape="tile" style={{ display: "block", width: "100%" }} aria-hidden="true">
       <Skeleton height={64} />
