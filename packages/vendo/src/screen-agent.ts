@@ -32,6 +32,7 @@
  * schema-validated, and the kit treats them as inert. There is no box here.
  */
 import {
+  ASK_USER_TOOL,
   VENDO_MAKE_TOOL,
   mintTurnId,
   type AppId,
@@ -275,6 +276,10 @@ interface RunRecord {
    *  reviewer. Absent paint information (an unwrapped workspace) claims nothing,
    *  exactly as the hand's own gate does. */
   painted: boolean;
+  /** Did a question reach the person? `ask_user` is an honest non-document end —
+   *  the shipped loop stops the drive on it (`askedUserStop`) — so a run that
+   *  asked is WAITING, not stalled, and nothing here may push it further. */
+  asked: boolean;
   title?: string;
   escalated?: string;
   /** The last non-empty `decisions` a save carried — this run's whole memory
@@ -307,6 +312,17 @@ const runState = (): TurnState => {
 };
 
 /**
+ * What a drive that ended in PROSE is told, once (see the call site).
+ *
+ * A drive starts from the messages it is given, so the words the model just wrote
+ * are not in front of it — this is not a critique of a visible answer, it is the
+ * channel, restated: the ask above, and the two hands that can end the turn.
+ */
+const NO_DOCUMENT_NUDGE = `You saved nothing, so the person is still looking at a blank screen.
+
+The ask above is a request for a SCREEN. Words typed in this turn reach nobody — the document is the only answer, and there is no one reading a written reply. Read what you need, then call \`${SAVE_APP_TOOL}\` with the whole document. If assembling one out of this product's components genuinely cannot serve the ask, call \`${ESCALATE_TOOL}\` with the plan. Those two are the only ways this turn ends.`;
+
+/**
  * ONE assembly run, over any surface a `Turn` satisfies.
  *
  * Every host effect goes through `surface.tools.call()` and every file write
@@ -329,7 +345,7 @@ export async function assembleScreen(
 
   const directory = appDirectory(input.appId);
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
-  const record: RunRecord = { assembled: false, painted: false };
+  const record: RunRecord = { assembled: false, painted: false, asked: false };
 
   /**
    * Write one hot-path file and land it.
@@ -462,7 +478,17 @@ export async function assembleScreen(
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: {
+      call: async (name, args) => {
+        const result = await surface.tools.call(name, args);
+        // The one call that ENDS this run without a document, recorded where every
+        // host call already passes. A refused question (unattended, blank) is not
+        // an end — same reading as the loop's own `askedUserStop`.
+        if (name === ASK_USER_TOOL && result.status === "ok") record.asked = true;
+        return result;
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
@@ -503,6 +529,40 @@ export async function assembleScreen(
     }
   };
   await drive(turn.messages);
+
+  /**
+   * PROSE IS NOT A SCREEN — the loop refuses to end that way.
+   *
+   * A model that emits text and stops is a legitimate end of turn for the
+   * RESIDENT, and the shipped loop ends there because nothing asked for a tool
+   * call. For this specialist it is a channel switch: measured over the 45 vendo
+   * screen runs recorded on 2026-08-10, 3 ended with one host read and an answer
+   * written in words — no `save_app`, no document, no paint, ~120 output tokens and
+   * 20 seconds spent on a blank screen. Telling it harder in the brief is the thing
+   * that keeps not working; this is the loop noticing.
+   *
+   * ONE more drive, for the repair round's own reason below: being told plainly
+   * lands it on the first try or not at all. It can only fire on a run that has
+   * ALREADY failed — nothing was saved, no question was asked, no escalation was
+   * taken and no error was reported — so a finished screen never pays for it, and
+   * whatever survives it still returns the honest `unavailable` at the end.
+   *
+   * A run that spent its whole step cap without saving reads the same from here,
+   * and gets the same one round: nothing landed either way.
+   */
+  if (
+    !record.assembled
+    && !record.asked
+    && record.escalated === undefined
+    && failure === undefined
+    && !surface.signal.aborted
+  ) {
+    await drive([...turn.messages, {
+      id: `no_document_${input.appId}`,
+      role: "user",
+      parts: [{ type: "text", text: NO_DOCUMENT_NUDGE }],
+    }]);
+  }
 
   if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
   // Escalation wins over a partial paint: the builder is finishing this app, and
