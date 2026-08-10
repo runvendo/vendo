@@ -27,6 +27,7 @@ import { searchRuntimeCatalog } from "./catalog.js";
 import { cloudApps } from "./cloud-apps.js";
 import { cloudKeyOptions, positiveIntegerEnv } from "./compose-selection.js";
 import type { VendoComposition } from "./compose-context.js";
+import { partsRegistry } from "./parts.js";
 import { vendoVerbsRegistry } from "./vendo-verbs.js";
 import { BASE_PATH, environment } from "./wire/shared.js";
 
@@ -418,6 +419,11 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
   // the question, the loop stops, and the answer arrives as the next turn's
   // message — so it needs no thread binding, no answer door and no surface.
   actions.add(askUserRegistry());
+  // The parts ledger, beside the question door and for the same reason it owns no
+  // machinery: the list the model sends lives in the transcript the runtime
+  // already mirrors, so the tool is the structure and nothing else has to hold
+  // state.
+  actions.add(partsRegistry());
   actions.add(vendoVerbsRegistry({
     // The ctx is the CALLER's, handed down by the registry's own `execute` — not
     // assembled here and never read off the model's input. Both app-touching

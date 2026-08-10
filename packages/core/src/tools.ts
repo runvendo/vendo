@@ -105,6 +105,7 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_apps_data_put: "Save an item in the app",
   vendo_apps_data_delete: "Remove an item from the app",
   vendo_knowledge_search: "Look it up in the docs",
+  vendo_parts: "Track the parts of this ask",
   // The verbs and `ask_user` authored these titles inline first; they moved here
   // verbatim so the CLIENT can say them too. A live browser proof caught the gap:
   // `search_components` narrated "Search components…" — its identifier
