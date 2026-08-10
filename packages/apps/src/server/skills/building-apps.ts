@@ -140,7 +140,10 @@ and in the parts you name.
 **Lead with the answer.** The first thing on screen is what they asked for — the
 number, the summary, the one chart that settles it. Detail goes underneath. One
 focal point per screen: if two parts are competing to be the headline, one of
-them is not the headline.
+them is not the headline. The app's \`name\` is chrome and may never be on screen,
+so the headline is a part you write: the \`Stat\` that IS the answer, or a
+\`<Text variant="heading">\` above the table — a screen that opens on a bare table
+answers nothing.
 
 **Fewer parts, better parts.** A group is five leaves at most and usually three.
 One table that answers the question beats three that circle it. Whitespace is

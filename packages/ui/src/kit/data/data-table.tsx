@@ -74,6 +74,32 @@ function displayText(row: Record<string, unknown>, column: DataTableColumn): str
 
 const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
 
+/**
+ * A row is ONE line tall. Body cells used to wrap while the header did not, so
+ * "Aug 1, 2026" broke over two lines and every row in every table was double
+ * height — a long merchant name made it five.
+ *
+ * Nothing wraps now, and the clamp that ellipsizes an over-wide value goes on
+ * LEFT-ALIGNED cells only. That "only" matters: the clamp is a block, so in a
+ * column wider than it, it stops filling the cell — invisible where the text
+ * starts at the left edge anyway, but it walks a right-aligned amount away from
+ * the edge its own header sits on. Amounts and dates are short; prose is not.
+ *
+ * The cap is the smaller of a character count and a share of the TABLE's own
+ * width, because a single number cannot be right for both: 32ch alone let one
+ * long name take 344px of a 440px card and push the date and status columns out
+ * of sight, while a cap tight enough for that card truncates needlessly on a
+ * desktop. The share is measured against the scroller below (`cqw`), not the
+ * viewport, so a table inside a narrow host card is read as narrow.
+ */
+const CELL_MAX_CHARS = 32;
+const clamped: CSSProperties = {
+  display: "block",
+  maxWidth: `min(${CELL_MAX_CHARS}ch, 26cqw)`,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
 export function DataTable(props: DataTableProps) {
   const {
     rows: rawRows,
@@ -238,6 +264,8 @@ export function DataTable(props: DataTableProps) {
         style={{
           width: "100%",
           overflowX: "auto",
+          // The size container the cell cap is a share of (see `cellText`).
+          containerType: "inline-size",
           border: `1px solid ${t.border}`,
           borderRadius: t.radiusMedium,
           background: t.surface,
@@ -294,18 +322,27 @@ export function DataTable(props: DataTableProps) {
               bodyRows.map((row, rowIndex) => (
                 <tr key={row.id}>
                   {row.getVisibleCells().map((cell) => {
-                    const col = columns.find((c) => c.key === cell.column.id);
+                    const col: DataTableColumn =
+                      columns.find((c) => c.key === cell.column.id) ?? { key: cell.column.id };
+                    const text = displayText(row.original, col);
                     return (
                       <td
                         key={cell.id}
                         style={{
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
                           padding: cellPad,
-                          textAlign: alignCss(col?.align),
-                          fontVariantNumeric: col?.format && col.format !== "text" ? "tabular-nums" : undefined,
+                          textAlign: alignCss(col.align),
+                          fontVariantNumeric: col.format && col.format !== "text" ? "tabular-nums" : undefined,
+                          whiteSpace: "nowrap",
                         }}
                       >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        {alignCss(col.align) === "left" ? (
+                          <span style={clamped} {...(text.length > CELL_MAX_CHARS ? { title: text } : {})}>
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </span>
+                        ) : (
+                          flexRender(cell.column.columnDef.cell, cell.getContext())
+                        )}
                       </td>
                     );
                   })}

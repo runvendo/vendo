@@ -176,15 +176,26 @@ export interface TextProps {
   variant?: "body" | "heading" | "caption" | "label";
 }
 
+/** A heading is what LEADS the screen, so it is the LARGEST text on it — above
+ *  the Stat value (1.65×), which is the only other thing allowed to lead and
+ *  which used to out-size it. At base size a heading rendered pixel-identical to
+ *  body text, so a screen that opened with its headline looked like it had none. */
+const HEADING_SIZE = "calc(var(--vendo-font-size, 15px) * 1.9)";
+
 /** Themed text. Heading renders an <h3>; others render a <span>. */
 export function Text({ text, variant = "body" }: TextProps) {
   const style: CSSProperties = {
     color: variant === "caption" ? t.muted : t.text,
     fontFamily: variant === "heading" ? t.headingFamily : t.fontFamily,
-    fontSize: variant === "caption" ? "var(--vendo-font-size-caption, 12.5px)" : t.fontSize,
-    fontWeight: variant === "heading" ? 650 : variant === "label" ? 600 : 400,
-    letterSpacing: "-0.011em",
-    lineHeight: variant === "heading" ? 1.3 : 1.5,
+    fontSize:
+      variant === "heading"
+        ? HEADING_SIZE
+        : variant === "caption"
+          ? "var(--vendo-font-size-caption, 12.5px)"
+          : t.fontSize,
+    fontWeight: variant === "heading" ? 700 : variant === "label" ? 600 : 400,
+    letterSpacing: variant === "heading" ? "-0.022em" : "-0.011em",
+    lineHeight: variant === "heading" ? 1.22 : 1.5,
     margin: 0,
   };
   if (variant === "heading") {
