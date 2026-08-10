@@ -262,11 +262,10 @@ export interface CatalogSearchMatch {
   examples?: string[];
 }
 
-export function searchRuntimeCatalog(
-  catalog: NormalizedCatalog,
-  query: string,
-  limit = SEARCH_DEFAULT_LIMIT,
-): CatalogSearchMatch[] {
+const searchLimit = (limit: number): number => Math.min(Math.max(1, Math.trunc(limit)), SEARCH_MAX_LIMIT);
+
+/** Every match, ranked, unsliced — so a caller that must report "k of m" knows m. */
+function rankedMatches(catalog: NormalizedCatalog, query: string): CatalogSearchMatch[] {
   const wanted = searchTokens(query);
   if (wanted.length === 0) return [];
   const whole = wanted.join("");
@@ -288,11 +287,65 @@ export function searchRuntimeCatalog(
   return scored
     .filter(({ score }) => score > 0)
     .sort((left, right) => right.score - left.score || left.entry.name.localeCompare(right.entry.name))
-    .slice(0, Math.min(Math.max(1, Math.trunc(limit)), SEARCH_MAX_LIMIT))
     .map(({ entry }) => ({
       component: entry.name,
       description: entry.description,
       ...(entry.propsJsonSchema === undefined ? {} : { props: entry.propsJsonSchema }),
       ...(entry.examples === undefined ? {} : { examples: [...entry.examples] }),
     }));
+}
+
+export function searchRuntimeCatalog(
+  catalog: NormalizedCatalog,
+  query: string,
+  limit = SEARCH_DEFAULT_LIMIT,
+): CatalogSearchMatch[] {
+  return rankedMatches(catalog, query).slice(0, searchLimit(limit));
+}
+
+/** The same matches, plus one sentence when there is something to say about them.
+ *
+ * Ported from SWE-agent's search ACI, which never answers a query with silence:
+ * a miss prints `No matches found for "X" in <dir>`, and a big result set prints a
+ * summarized index (names, capped) instead of a dump. An empty `{ components: [] }`
+ * is silence, and silence is what a model retries against — four searches into a
+ * catalog that can never match is the grind this closes.
+ *
+ * The miss note lists NAMES only. That is the summarized half of the port, and it is
+ * why this does not contradict the no-empty-query rule above: a name index is a
+ * thing to search next, not the props dump that lets a model skip searching.
+ */
+export interface CatalogSearchResult {
+  components: CatalogSearchMatch[];
+  note?: string;
+}
+
+/** SWE-agent's own cap on a summarized index. */
+const SEARCH_NOTE_NAME_CAP = 50;
+
+export function searchCatalogResult(
+  catalog: NormalizedCatalog,
+  query: string,
+  limit = SEARCH_DEFAULT_LIMIT,
+): CatalogSearchResult {
+  const ranked = rankedMatches(catalog, query);
+  const components = ranked.slice(0, searchLimit(limit));
+  if (catalog.length === 0) {
+    return {
+      components,
+      note: "This product registers no host components, so no search will ever match. Build the screen from the built-in primitives in the format manual above; do not search again.",
+    };
+  }
+  if (components.length === 0) {
+    const names = catalog.slice(0, SEARCH_NOTE_NAME_CAP).map((entry) => entry.name);
+    const howMany = names.length === catalog.length ? `all ${catalog.length}` : `${names.length} of the ${catalog.length}`;
+    return {
+      components,
+      note: `No component matched ${JSON.stringify(query)}. These are ${howMany} this product has: ${names.join(", ")}. Pick one by name and search that exact name for its props.`,
+    };
+  }
+  if (components.length < ranked.length) {
+    return { components, note: `${components.length} of ${ranked.length} matches shown — narrow the query.` };
+  }
+  return { components };
 }

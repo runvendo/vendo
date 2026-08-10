@@ -31,8 +31,10 @@ export interface VendoVerbPorts {
     input: { appId?: string; document?: string },
     ctx: RunContext,
   ): Promise<{ ok: boolean; findings: VendoVerbFinding[] }>;
-  /** Search the component catalog. Returns the SHIPPED catalog vocabulary
-   *  (`{ component, description, props?, examples?, remixable? }`). No ctx: the
+  /** Search the component catalog. Returns either the bare match list in the
+   *  SHIPPED catalog vocabulary (`{ component, description, props?, examples?,
+   *  remixable? }`) or `searchCatalogResult`'s envelope — the same list under
+   *  `components`, plus a `note` saying what the result set means. No ctx: the
    *  catalog is the deployment's, identical for everyone. */
   searchComponents(query: string, limit?: number): Promise<Json>;
   /** Arm or change an app's schedule. Owner-scoped through `ctx`. */
@@ -136,8 +138,28 @@ export function vendoVerbsRegistry(ports: VendoVerbPorts): ToolRegistry {
               return fail("validation", "search_components needs a query — it never lists the whole catalog");
             }
             const limit = typeof args["limit"] === "number" ? args["limit"] : undefined;
-            const components = await ports.searchComponents(query, limit);
-            return { status: "ok", output: { components } as unknown as Json };
+            const answer = await ports.searchComponents(query, limit);
+            // A port that hands back the bare list is still wrapped, so the output
+            // shape the model reads never changes; a port that hands back the
+            // envelope ships its note through.
+            const result = (Array.isArray(answer) ? { components: answer } : answer) as {
+              components?: unknown;
+              note?: unknown;
+            };
+            // No hits and nothing said is silence, and silence is what a model
+            // retries against — the same query cannot start matching, so say so
+            // (SWE-agent's search ACI prints its miss rather than nothing).
+            if (Array.isArray(result.components) && result.components.length === 0 && result.note === undefined) {
+              return {
+                status: "ok",
+                output: {
+                  ...result,
+                  note: `No component matched ${JSON.stringify(query)}. Repeating that query returns the same nothing — `
+                    + "try different words, or build the screen from the built-in primitives in the format manual.",
+                } as unknown as Json,
+              };
+            }
+            return { status: "ok", output: result as unknown as Json };
           }
           case "schedule": {
             const appId = typeof args["appId"] === "string" ? args["appId"] : "";
