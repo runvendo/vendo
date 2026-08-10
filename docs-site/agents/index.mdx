@@ -23,6 +23,11 @@ minute of latency and a chunk of context you will not use, and it is why
 installs feel slow to start. Read the repo's `package.json` before deep
 directory scans. Start acting after step 1, not after reading everything.
 
+**Asked for the MCP door?** That is outside agents — Claude, ChatGPT, Cursor —
+acting in the host's product through its own guard, riding the `createVendo`
+composition that both step-1 paths write. It needs the same wiring and visible
+surface as any other install: do the install below, then [MCP door](#mcp-door).
+
 ## Install flow
 
 1. **Check for an existing agent — and branch here.** If the host repo already runs its own
@@ -180,6 +185,72 @@ directory scans. Start acting after step 1, not after reading everything.
    from your data; a guarded write will render an approve/deny card inline."
    Name which of their agent's surfaces now renders Vendo output (the chat
    page, the overlay, an embed) so they know where to look.
+
+## MCP door
+
+Additive to the install flow above: take these in order once init has run, and
+skip none of its steps.
+
+1. **`mcp: true` plus the OAuth adapter.** Add `mcp: true` to the
+   `createVendo({...})` init wrote. The door mints its own principals through a
+   `HostOAuthAdapter`, and `createVendo` THROWS at composition without one.
+   Every named preset carries it, so `--auth authJs|clerk|supabase|auth0` (or
+   `jwt({ secret })`) is the whole answer; `--auth none` is NOT — it writes a
+   demo `principal` and no oauth seam, so the door cannot open. An `auth` preset
+   owns the seam: a separately passed `oauth` is ignored whenever `auth` is set.
+   Which preset: [host auth](/agents/host-auth).
+
+   ```ts
+   export const vendo = createVendo({
+     auth: authJs(), // supplies principal, actAs, and the door's oauth half
+     mcp: true,
+   });
+   ```
+
+2. **The discovery route — init does not write it.** The door's discovery
+   documents live at ORIGIN-ROOT paths, outside `/api/vendo`, so the catch-all
+   route never sees them and that directory needs a handler of its own:
+
+   ```ts
+   // app/.well-known/[...vendo]/route.ts (src/app when the repo uses it)
+   import { wellKnownVendoHandler } from "@vendoai/vendo/server";
+   import { vendo } from "@/vendo/server"; // wherever init put the composition
+
+   export const { GET, POST } = wellKnownVendoHandler(vendo);
+   ```
+
+   The handler answers only the door's own paths and 404s everything else under
+   `/.well-known`. Express and custom hosts instead mount the same composition
+   at the origin root as well (`app.use("/.well-known", mountVendo())`),
+   registered after the app's own well-known routes.
+
+3. **`VENDO_BASE_URL`.** Set it to the deployment's FULL public URL, path
+   prefix included. The issuer, every advertised endpoint, the
+   protected-resource identifier, and the RFC 8707 audience all derive from it;
+   left unset they come from the request URL — behind any proxy the
+   proxy-internal origin, so discovery advertises endpoints no client can reach.
+   Forwarded headers are never consulted.
+
+   ```bash
+   VENDO_BASE_URL=https://app.example.com
+   ```
+
+4. **`serviceAuth` — only when asked for.** Skip it unless the HOST's own
+   backend has to act for a user who is not at a browser (a nightly job, a
+   queue worker). `mcp: { serviceAuth: { keys: [...] } }` opens an RFC 8693
+   exchange at the door's own token endpoint: the backend posts a key plus one
+   of the host's user ids and gets back a short-lived token bound to that user.
+   The keys are opaque secrets your human generates — ask before creating one
+   (Rules of engagement below). Third-party agents need none of it; they run
+   the per-user OAuth the door already serves. Recipe:
+   [MCP door](/capabilities/mcp).
+
+5. **Verify — step 6's gate, nothing new.** Doctor reads the door's posture off
+   the running composition, so the dev server must be up for the MCP checks to
+   run at all. The registry checks grade `server.json` and the challenge only
+   when those files already exist — publishing to the MCP registry is a separate
+   job, not part of reaching green. Every `E-MCP` code with its exact fix:
+   [verify](/agents/verify#E-MCP-001).
 
 ## Rules of engagement
 
