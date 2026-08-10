@@ -1,12 +1,11 @@
 import { join } from "node:path";
+import { joinUrl } from "@vendoai/core";
+import { resolveVendoUrls } from "../urls.js";
 import type { DoctorErrorCode } from "./doctor-codes.js";
 import type { DoctorRun } from "./doctor-report.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
 import { readOptional } from "./shared.js";
 
-/** Fetch a discovery document, grade it, and hand it back so a follow-up check
- *  can read what it advertised. A non-JSON error page still names its status;
- *  only a fetch that never answered is "unreachable". */
 type ResolveDocument = (
   id: string,
   code: DoctorErrorCode,
@@ -57,7 +56,7 @@ async function checkBrokerAuthorizationServer(
     await resolves(
       "mcp/authorization-server",
       "E-MCP-002",
-      `${advertised.replace(/\/+$/, "")}/.well-known/oauth-authorization-server`,
+      joinUrl(advertised, "/.well-known/oauth-authorization-server").href,
       (body) => body.issuer === advertised,
       `MCP authorization-server metadata at ${advertised} resolves`,
     );
@@ -92,7 +91,7 @@ async function checkRegistryAuthChallenge(run: DoctorRun, origin: string): Promi
     else run.fail("mcp/registry-auth-local", "E-MCP-007", "local MCP registry auth challenge must start with v=MCPv1");
   }
   try {
-    const response = await run.fetchImpl(`${origin}/.well-known/mcp-registry-auth`, {
+    const response = await run.fetchImpl(joinUrl(origin, "/.well-known/mcp-registry-auth").href, {
       headers: { accept: "text/plain" },
     });
     if (response.ok) {
@@ -114,13 +113,20 @@ export async function checkMcpDiscovery(run: DoctorRun, mcpPosture: "local" | "b
   run.note(mcpPosture === "broker"
     ? "MCP door mode: broker — an external authorization server fronts it (VENDO_MCP_BROKER_URL, or mcp.remoteAs)"
     : "MCP door mode: local — the door serves its own OAuth surface (set VENDO_MCP_BROKER_URL to front it with a broker)");
-  const origin = new URL(run.statusUrl).origin;
-  const mountPath = `${new URL(run.statusUrl).pathname.replace(/\/$/, "")}/mcp`;
+  const urls = resolveVendoUrls(run.env);
+  const base = urls ? urls.publicUrl.href : new URL(run.statusUrl).origin;
+  let mountPath = `${new URL(run.statusUrl).pathname.replace(/\/$/, "")}/mcp`;
+  if (urls) {
+    const basePath = urls.publicUrl.pathname.replace(/\/$/, "");
+    if (basePath.length > 0 && (mountPath === basePath || mountPath.startsWith(`${basePath}/`))) {
+      mountPath = mountPath.slice(basePath.length);
+    }
+  }
   const resolves = documentResolver(run);
   const resource = await resolves(
     "mcp/protected-resource",
     "E-MCP-001",
-    `${origin}/.well-known/oauth-protected-resource${mountPath}`,
+    joinUrl(base, `/.well-known/oauth-protected-resource${mountPath}`).href,
     (body) => typeof body.resource === "string",
     "MCP protected-resource metadata resolves",
   );
@@ -130,7 +136,7 @@ export async function checkMcpDiscovery(run: DoctorRun, mcpPosture: "local" | "b
     await resolves(
       "mcp/authorization-server",
       "E-MCP-002",
-      `${origin}/.well-known/oauth-authorization-server${mountPath}`,
+      joinUrl(base, `/.well-known/oauth-authorization-server${mountPath}`).href,
       (body) => typeof body.issuer === "string",
       "MCP authorization-server metadata resolves",
     );
@@ -138,11 +144,11 @@ export async function checkMcpDiscovery(run: DoctorRun, mcpPosture: "local" | "b
   await resolves(
     "mcp/server-card",
     "E-MCP-003",
-    `${origin}/.well-known/mcp/server-card.json`,
+    joinUrl(base, "/.well-known/mcp/server-card.json").href,
     (body) => typeof body.name === "string" && Array.isArray(body.transports),
     "MCP server card parses",
   );
 
-  await checkServerJson(run, `${origin}${mountPath}`);
-  await checkRegistryAuthChallenge(run, origin);
+  await checkServerJson(run, joinUrl(base, mountPath).href);
+  await checkRegistryAuthChallenge(run, base);
 }
