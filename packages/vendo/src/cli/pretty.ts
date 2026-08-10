@@ -90,13 +90,17 @@ export interface PrettyOutput extends Output {
       blocks the pretty run composes itself. */
   block(title: string, lines: string[], marker?: "◆" | "◇"): void;
   /** The `└ Done in Xs` footer (red `Failed` when the command exits non-zero);
-      `stats` is the dim tail that says what the run actually achieved. */
+      `stats` is the dim tail that says what the run actually achieved, and a
+      dim star line closes the run. */
   done(durationMs: number, ok: boolean, stats?: string): void;
 }
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const BAR = dim("│");
 const CLEAR_LINE = `\r${ESC}[2K`;
+/** The star ask, demoted from an interactive question to a dim last line —
+    pretty-only, so a piped or NO_COLOR run never sees it. */
+const STAR_FOOTER = "Star us: vendo.run/star · docs.vendo.run";
 
 /** The five always-printed catalog lines, collapsed into one block. */
 const CATALOG_PREFIXES = ["tools: ", "tool schemas: ", "pins: ", "catalog.json: ", "components: "];
@@ -651,6 +655,7 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
       const seconds = `${(durationMs / 1000).toFixed(1)}s`;
       const tail = stats === undefined ? "" : ` ${dim(`— ${stats}`)}`;
       line(`${dim("└")}  ${ok ? green(`Done in ${seconds}`) : red(`Failed after ${seconds}`)}${tail}`);
+      line(`   ${dim(STAR_FOOTER)}`);
     },
   };
 }

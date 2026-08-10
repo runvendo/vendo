@@ -307,6 +307,19 @@ describe("createPrettyOutput (visual system)", () => {
     expect(out.plain()).toContain("└  Done in 12.4s — 14 tools · brand captured · 1 paste left");
   });
 
+  // The star ask is a dim footer line now, not a question. It is pretty-only:
+  // usePrettyOutput already keeps plain, piped, NO_COLOR, CI and TERM=dumb runs
+  // out of this renderer entirely.
+  it("closes the run with the dim star line", () => {
+    const out = sink();
+    const pretty = createPrettyOutput({ write: out.write, banner: false });
+    pretty.done(12400, true, "14 tools · brand captured");
+    const lines = out.plain().trimEnd().split("\n");
+    expect(lines.at(-2)).toContain("└  Done in 12.4s");
+    expect(lines.at(-1)).toBe("   Star us: vendo.run/star · docs.vendo.run");
+    expect(out.raw()).toContain(`${ESC}[2mStar us: vendo.run/star · docs.vendo.run${ESC}[22m`);
+  });
+
   it("closes with a red failure footer when init fails", () => {
     const out = sink();
     const pretty = createPrettyOutput({ write: out.write, banner: false });
