@@ -1,5 +1,191 @@
 # @vendoai/vendo
 
+## 0.11.0
+
+### Minor Changes
+
+- eeebbee: The agent's data tools move onto `appData` — one user can no longer see another's rows.
+
+  `vendo_apps_data_list` / `_put` / `_delete` are how the embedded agent saves and
+  reads an app's declared storage on the person's behalf. They landed in the
+  generic `records` family, which has no answer to "whose row is this": every
+  user of an app wrote into one flat collection, and the only thing between them
+  was that nobody had asked.
+
+  Now every one of those calls carries `ctx.principal.subject` — the LIVE caller,
+  off the run context, never off the tool args — into the owner-stamped `appData`
+  family. `put` stamps the row with that subject, `list` ANDs it into the query,
+  `get` answers `null` for another owner's row and `delete` no-ops on one. A
+  cross-user read is no longer forbidden; it is unexpressible. An id another owner
+  already holds refuses with `conflict` rather than being taken over, and that
+  refusal is surfaced honestly rather than swallowed. Declared file collections
+  get the same treatment through the family's file twins.
+
+  Nothing about what an app may declare changed. The guards keep their posts in
+  the same order — the declaration check (with `state` still reserved), the
+  declared-refs check, the 256 KB record cap, the 5 MB blob cap — and app state
+  (`vendo_state`) stays on the `StoreAdapter` façade, deliberately.
+
+  `AppsConfig` gains an optional `ops` slot that the umbrella fills with the same
+  `StoreOps` surface the deployment already selected. Its absence is a real
+  answer, not a failure: a store that offers neither its own ops nor a SQL handle
+  keeps exactly today's behavior instead of crashing composition at boot.
+
+- a216b68: Box rows are owner-stamped, and the box still never learns who the user is.
+
+  `PUT $VENDO_STORE_URL/rows/<collection>/<id>` used to land in the generic
+  records family, where every row an app wrote was one drawer per app and nothing
+  more. It now lands in the `appData` family, so the door stamps each row with the
+  subject of the app token that presented it: one user's rows are the only rows
+  that user's requests can read, list, overwrite or delete. Cross-user access is
+  unwritable rather than merely forbidden — an id another user holds comes back
+  `409 conflict`, and a caller who tries to name an owner by sending
+  `refs.subject` is refused `400 validation`.
+
+  Nothing about this crosses the sandbox boundary. The box is told no identity and
+  takes no owner parameter; the door stamps on its behalf, which is why the client
+  below has no owner argument to get wrong.
+
+  The HTTP contract is unchanged, byte for byte. Existing rows keep their
+  collection names (`app:<id>:box:<collection>`), and the `appData` backfill gives
+  rows written before the flip their owner stamp.
+
+  **`./rows.js` in the box template** — a zero-dependency client for the door,
+  which the in-box coding agent is now pointed at first and the raw curl second:
+
+  ```js
+  import { rows } from "./rows.js";
+
+  const notes = rows("notes");
+  await notes.put("note_1", { title: "Hello" }); // → the stored record
+  await notes.get("note_1"); // → the record, or null
+  await notes.list({ limit: 20 }); // → { records, cursor? }
+  await notes.delete("note_1");
+  ```
+
+  It is the app's server half only — it reads `$VENDO_APP_TOKEN`, and `fns.js` is
+  the only place that may. A failure throws an `Error` carrying `.code` and
+  `.status`, so a caller branches on `error.code === "conflict"` instead of
+  parsing prose.
+
+  A deployment whose store offers neither a SQL handle nor a `StoreOps` surface
+  now refuses THAT REQUEST on the rows door, naming both ways to give it one,
+  rather than writing rows nobody owns.
+
+- e58520e: `appData` — the store family for everything generated apps invent.
+
+  The `StoreOps` contract grows from 27 ops across 7 families to 35 across 8. The
+  new family is `appData`, and it exists because generic `records.*` made every
+  app's data one flat namespace with no answer to "whose row is this".
+
+  **Every appData row is owner-stamped, by the runtime.** `appData.put` writes
+  `refs.subject = <caller>` from the host's login session. Generated code has no
+  field for the owner and cannot invent one: a caller that supplies `refs.subject`
+  itself is refused with `validation`, never silently overwritten. Unstamped rows
+  cannot exist.
+
+  **Reads are auto-scoped, so permission IS the query.** `list` ANDs the stamp
+  into `query.refs`, `get` returns `null` for another owner's row, and `delete`
+  no-ops on one — one owner-predicated statement, so there is no window in which a
+  foreign row can be raced out from under a check. A `put` against an id another
+  owner holds is refused with `conflict` rather than overwriting and re-stamping
+  it. Caller refs still filter alongside the stamp. There is no rules language and
+  no policy DSL to get wrong.
+
+  The stamp is `refs.subject`, deliberately not a new column: the erase cascade
+  already deletes stamped rows and the GIN index on `refs` already serves scoped
+  reads, so this ships with **no schema change**. `@vendoai/store` gains one
+  composer, `app-data-rows.ts`, as the single place that spells
+  `app:<appId>:<collection>` and the `<owner>/` file-key prefix.
+
+  **File twins take a required owner.** `putFile`/`getFile`/`listFiles`/
+  `deleteFile` live in the app's existing blob namespace under an `<owner>/` key
+  prefix, which `listFiles` strips on the way out. One new erase selector sweeps
+  those keys on the subject axis, so a member's files inside a _promoted_ org app
+  — an app the org owns, which the subject cascade never reached — now die with
+  the member.
+
+  All eight verbs speak `vendo/store-wire@1` at `/app-data/*` with exported
+  request schemas, and are implemented by the local Postgres backend, the Cloud
+  client, and the in-core memory reference. Eleven conformance cases pin the
+  behavior in one place and every backend runs them. `StoreWireStatus` also gains
+  an optional `deprecated` list so a mount can announce ops it is retiring.
+
+  `StoreAdapter` — the BYO seam — is untouched.
+
+- 863dc53: `engine` — the store family for Vendo's own drawers, behind an allowlist.
+
+  The `StoreOps` contract grows from 35 ops across 8 families to 42 across 9. The
+  new family is `engine`, and it is today's `records.*` family verb for verb —
+  `get`, `put`, `delete`, `list`, `claim`, `insertIfAbsent`, `compareAndSwap`, same
+  arguments, same returns, same routed doors — with one thing added in front of
+  every verb: `assertEngineCollection(collection)`.
+
+  **The point is the name and the gate, not new semantics.** Grants, approvals, the
+  audit log, threads, runs, apps, effects, the automations schedules and deliveries,
+  the guard's freeze switch — Vendo's own bookkeeping — all reached the store
+  through the same generic `records.*` door a host uses for its own data. Nothing
+  said which collections were Vendo's, so nothing could refuse a call that reached
+  for one. `engine` says it, and refuses everything else with `blocked`.
+
+  `ENGINE_COLLECTIONS` (`@vendoai/core`) is that list: 35 static names — the nine
+  reserved collections, the four dedicated tables, and the 22 the blocks own on the
+  generic table — plus exactly one dynamic pattern, `vendo:app-history:<id>`, built
+  by `engineAppHistory(appId)`. It lives in core rather than `@vendoai/store`
+  because `guard`, `automations` and `apps` all need to name their own collections
+  and none of them may import the store; `@vendoai/store` is what _enforces_ it. A
+  refused name is told the allowlist version, the nearest allowed name when it
+  looks like a typo, and where its data actually belongs — app data belongs to
+  `appData`.
+
+  **Per-collection policy did not move.** `engine` reaches the same
+  `createReservedRecordStore` doors, so the audit log is still append-only through
+  it, the effect ledger is still insert-once, and a collection with no atomic
+  support still answers `not-implemented`. Two conformance cases pin exactly that,
+  because a second door onto the same rows is the natural place for policy to
+  quietly stop applying.
+
+  Seven wire paths under `/engine/*` join `vendo/store-wire@1`, served by the local
+  Postgres backend, the Cloud client and the in-core memory reference, with seven
+  conformance cases run by all three. The seven collection-addressed request
+  schemas are renamed `storeWireCollection*RequestSchema` — one body shape now
+  serves both `/records/*` and `/engine/*` — and the old `storeWireRecords*` names
+  stay exported as deprecated aliases.
+
+  `records.*`, `StoreAdapter` and every existing call site are untouched.
+
+### Patch Changes
+
+- fc902aa: `vendo doctor`'s mount-agreement check (E-CFG-003) now fires when the OpenAPI
+  spec declares a relative `servers[0].url` and `VENDO_BASE_URL` is unset.
+
+  It used to return early in exactly that case, so the check was silent in the one
+  posture that breaks. With no base URL the wire learns the bare request ORIGIN
+  (`onRequestOrigin`) and stored binding paths are prefix-free by law (spec
+  2026-08-06 §B1), so a path-mounted host serves every host tool one prefix short
+  of the real endpoint: every page renders and every tool call 404s. The existing
+  disagree/agree branches and the error code are unchanged.
+
+- Updated dependencies [5c8043d]
+- Updated dependencies [5c8043d]
+- Updated dependencies [eeebbee]
+- Updated dependencies [402e7ad]
+- Updated dependencies [a216b68]
+- Updated dependencies [aeb1bae]
+- Updated dependencies [e58520e]
+- Updated dependencies [863dc53]
+  - @vendoai/core@0.11.0
+  - @vendoai/store@0.11.0
+  - @vendoai/apps@0.11.0
+  - @vendoai/actions@0.11.0
+  - @vendoai/agents@0.11.0
+  - @vendoai/automations@0.11.0
+  - @vendoai/guard@0.11.0
+  - @vendoai/harnesses@0.11.0
+  - @vendoai/knowledge@0.11.0
+  - @vendoai/mcp@0.11.0
+  - @vendoai/ui@0.11.0
+
 ## 0.10.0
 
 ### Minor Changes

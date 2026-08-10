@@ -1,5 +1,117 @@
 # @vendoai/apps
 
+## 0.11.0
+
+### Minor Changes
+
+- eeebbee: The agent's data tools move onto `appData` — one user can no longer see another's rows.
+
+  `vendo_apps_data_list` / `_put` / `_delete` are how the embedded agent saves and
+  reads an app's declared storage on the person's behalf. They landed in the
+  generic `records` family, which has no answer to "whose row is this": every
+  user of an app wrote into one flat collection, and the only thing between them
+  was that nobody had asked.
+
+  Now every one of those calls carries `ctx.principal.subject` — the LIVE caller,
+  off the run context, never off the tool args — into the owner-stamped `appData`
+  family. `put` stamps the row with that subject, `list` ANDs it into the query,
+  `get` answers `null` for another owner's row and `delete` no-ops on one. A
+  cross-user read is no longer forbidden; it is unexpressible. An id another owner
+  already holds refuses with `conflict` rather than being taken over, and that
+  refusal is surfaced honestly rather than swallowed. Declared file collections
+  get the same treatment through the family's file twins.
+
+  Nothing about what an app may declare changed. The guards keep their posts in
+  the same order — the declaration check (with `state` still reserved), the
+  declared-refs check, the 256 KB record cap, the 5 MB blob cap — and app state
+  (`vendo_state`) stays on the `StoreAdapter` façade, deliberately.
+
+  `AppsConfig` gains an optional `ops` slot that the umbrella fills with the same
+  `StoreOps` surface the deployment already selected. Its absence is a real
+  answer, not a failure: a store that offers neither its own ops nor a SQL handle
+  keeps exactly today's behavior instead of crashing composition at boot.
+
+- a216b68: Box rows are owner-stamped, and the box still never learns who the user is.
+
+  `PUT $VENDO_STORE_URL/rows/<collection>/<id>` used to land in the generic
+  records family, where every row an app wrote was one drawer per app and nothing
+  more. It now lands in the `appData` family, so the door stamps each row with the
+  subject of the app token that presented it: one user's rows are the only rows
+  that user's requests can read, list, overwrite or delete. Cross-user access is
+  unwritable rather than merely forbidden — an id another user holds comes back
+  `409 conflict`, and a caller who tries to name an owner by sending
+  `refs.subject` is refused `400 validation`.
+
+  Nothing about this crosses the sandbox boundary. The box is told no identity and
+  takes no owner parameter; the door stamps on its behalf, which is why the client
+  below has no owner argument to get wrong.
+
+  The HTTP contract is unchanged, byte for byte. Existing rows keep their
+  collection names (`app:<id>:box:<collection>`), and the `appData` backfill gives
+  rows written before the flip their owner stamp.
+
+  **`./rows.js` in the box template** — a zero-dependency client for the door,
+  which the in-box coding agent is now pointed at first and the raw curl second:
+
+  ```js
+  import { rows } from "./rows.js";
+
+  const notes = rows("notes");
+  await notes.put("note_1", { title: "Hello" }); // → the stored record
+  await notes.get("note_1"); // → the record, or null
+  await notes.list({ limit: 20 }); // → { records, cursor? }
+  await notes.delete("note_1");
+  ```
+
+  It is the app's server half only — it reads `$VENDO_APP_TOKEN`, and `fns.js` is
+  the only place that may. A failure throws an `Error` carrying `.code` and
+  `.status`, so a caller branches on `error.code === "conflict"` instead of
+  parsing prose.
+
+  A deployment whose store offers neither a SQL handle nor a `StoreOps` surface
+  now refuses THAT REQUEST on the rows door, naming both ways to give it one,
+  rather than writing rows nobody owns.
+
+### Patch Changes
+
+- 402e7ad: A remix survives its own edit door. Three defects, all of which destroy work a
+  person can see on screen, all of which returned 200.
+
+  **The island gate no longer runs over a seeded seat.** Its rules are the
+  GENERATED-island contract — no imports, ambient Kit only, no hand-typed constant
+  feeding displayed math — and captured host source cannot satisfy them by
+  construction (the demo host's own capture blocks on `pad = 6`, SVG chart
+  padding). `seed.from` writes its row without the floor, so the document was born
+  un-admittable: the next edit ran the floor, got the unsatisfiable blocks back
+  verbatim as repair instructions, and the only edit that cleared them was to stop
+  rendering the island. The person's fork was replaced by plain host components,
+  the bundle orphaned and the app renamed, while the card still rendered and the
+  ✦ pill still said "Remixed". A capture with no default export is still refused,
+  by the seed doors themselves, where it always was.
+
+  **A fork records the version that says where it came from.** `seed.from` is the
+  one create that does not go through `persistEdit`, so it now appends its own
+  history entry. Without it a remix arrived with no history at all — and a
+  review-kind remix failed closed to pending the moment its current version
+  stopped being approved, because the reviewer's serve path reads the newest
+  approved snapshot out of history.
+
+  **A file save no longer deletes a legacy remix's source.** The save's
+  seeded-bundle carry-forward was keyed on `origin === "seeded"`, but a component
+  entry may be a bare source string — the shape every remix forked before the
+  seeded bundle existed is stored in — and those read back as `authored`, so the
+  carry never fired and a save that omitted the component dropped the remix
+  outright.
+
+  All three now key on the component's NAME (`isSeedComponentName`). The origin
+  cannot carry this: a compiled `app.vendo` prints its components as bare source
+  strings, so an origin test reads `authored` on exactly the path that matters.
+
+- Updated dependencies [5c8043d]
+- Updated dependencies [e58520e]
+- Updated dependencies [863dc53]
+  - @vendoai/core@0.11.0
+
 ## 0.10.0
 
 ### Minor Changes

@@ -1,5 +1,111 @@
 # @vendoai/core
 
+## 0.11.0
+
+### Minor Changes
+
+- e58520e: `appData` — the store family for everything generated apps invent.
+
+  The `StoreOps` contract grows from 27 ops across 7 families to 35 across 8. The
+  new family is `appData`, and it exists because generic `records.*` made every
+  app's data one flat namespace with no answer to "whose row is this".
+
+  **Every appData row is owner-stamped, by the runtime.** `appData.put` writes
+  `refs.subject = <caller>` from the host's login session. Generated code has no
+  field for the owner and cannot invent one: a caller that supplies `refs.subject`
+  itself is refused with `validation`, never silently overwritten. Unstamped rows
+  cannot exist.
+
+  **Reads are auto-scoped, so permission IS the query.** `list` ANDs the stamp
+  into `query.refs`, `get` returns `null` for another owner's row, and `delete`
+  no-ops on one — one owner-predicated statement, so there is no window in which a
+  foreign row can be raced out from under a check. A `put` against an id another
+  owner holds is refused with `conflict` rather than overwriting and re-stamping
+  it. Caller refs still filter alongside the stamp. There is no rules language and
+  no policy DSL to get wrong.
+
+  The stamp is `refs.subject`, deliberately not a new column: the erase cascade
+  already deletes stamped rows and the GIN index on `refs` already serves scoped
+  reads, so this ships with **no schema change**. `@vendoai/store` gains one
+  composer, `app-data-rows.ts`, as the single place that spells
+  `app:<appId>:<collection>` and the `<owner>/` file-key prefix.
+
+  **File twins take a required owner.** `putFile`/`getFile`/`listFiles`/
+  `deleteFile` live in the app's existing blob namespace under an `<owner>/` key
+  prefix, which `listFiles` strips on the way out. One new erase selector sweeps
+  those keys on the subject axis, so a member's files inside a _promoted_ org app
+  — an app the org owns, which the subject cascade never reached — now die with
+  the member.
+
+  All eight verbs speak `vendo/store-wire@1` at `/app-data/*` with exported
+  request schemas, and are implemented by the local Postgres backend, the Cloud
+  client, and the in-core memory reference. Eleven conformance cases pin the
+  behavior in one place and every backend runs them. `StoreWireStatus` also gains
+  an optional `deprecated` list so a mount can announce ops it is retiring.
+
+  `StoreAdapter` — the BYO seam — is untouched.
+
+- 863dc53: `engine` — the store family for Vendo's own drawers, behind an allowlist.
+
+  The `StoreOps` contract grows from 35 ops across 8 families to 42 across 9. The
+  new family is `engine`, and it is today's `records.*` family verb for verb —
+  `get`, `put`, `delete`, `list`, `claim`, `insertIfAbsent`, `compareAndSwap`, same
+  arguments, same returns, same routed doors — with one thing added in front of
+  every verb: `assertEngineCollection(collection)`.
+
+  **The point is the name and the gate, not new semantics.** Grants, approvals, the
+  audit log, threads, runs, apps, effects, the automations schedules and deliveries,
+  the guard's freeze switch — Vendo's own bookkeeping — all reached the store
+  through the same generic `records.*` door a host uses for its own data. Nothing
+  said which collections were Vendo's, so nothing could refuse a call that reached
+  for one. `engine` says it, and refuses everything else with `blocked`.
+
+  `ENGINE_COLLECTIONS` (`@vendoai/core`) is that list: 35 static names — the nine
+  reserved collections, the four dedicated tables, and the 22 the blocks own on the
+  generic table — plus exactly one dynamic pattern, `vendo:app-history:<id>`, built
+  by `engineAppHistory(appId)`. It lives in core rather than `@vendoai/store`
+  because `guard`, `automations` and `apps` all need to name their own collections
+  and none of them may import the store; `@vendoai/store` is what _enforces_ it. A
+  refused name is told the allowlist version, the nearest allowed name when it
+  looks like a typo, and where its data actually belongs — app data belongs to
+  `appData`.
+
+  **Per-collection policy did not move.** `engine` reaches the same
+  `createReservedRecordStore` doors, so the audit log is still append-only through
+  it, the effect ledger is still insert-once, and a collection with no atomic
+  support still answers `not-implemented`. Two conformance cases pin exactly that,
+  because a second door onto the same rows is the natural place for policy to
+  quietly stop applying.
+
+  Seven wire paths under `/engine/*` join `vendo/store-wire@1`, served by the local
+  Postgres backend, the Cloud client and the in-core memory reference, with seven
+  conformance cases run by all three. The seven collection-addressed request
+  schemas are renamed `storeWireCollection*RequestSchema` — one body shape now
+  serves both `/records/*` and `/engine/*` — and the old `storeWireRecords*` names
+  stay exported as deprecated aliases.
+
+  `records.*`, `StoreAdapter` and every existing call site are untouched.
+
+### Patch Changes
+
+- 5c8043d: `appData` fences the owner, so a path-like subject can no longer read another
+  user's files.
+
+  The owner is the first path segment of every appData file key (`<owner>/<key>`),
+  and nothing checked it. `appId` was fenced against `":"` and `collection`
+  against `APP_DATA_COLLECTION_PATTERN`; the owner went in raw. So owner
+  `own_a/sub` reading `x.bin` read owner `own_a`'s file `sub/x.bin` — a silent
+  cross-user read for any host whose subject ids contain a slash, which
+  `org/user`, an email-derived id, or a URI-style OIDC subject all can.
+
+  `APP_DATA_OWNER_PATTERN` (`/^[^/]+$/`) is now enforced at the wire schema and at
+  the store composer, on every one of the eight verbs, with the `validation` code.
+  Deliberately **not** a slug grammar: a subject is the host's own user id in the
+  host's own spelling, so `auth0|64f…`, `user:with:colons` and
+  `person@example.com` all still pass. Only `/` is refused — and it is refused,
+  never rewritten, because a sanitised owner would land two different people in
+  one drawer.
+
 ## 0.10.0
 
 ### Minor Changes
