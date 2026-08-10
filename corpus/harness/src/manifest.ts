@@ -17,46 +17,12 @@ function relativePosixPathSchema(field: "appDir" | "localPath") {
     );
 }
 
-const devServerSchema = z
-  .object({
-    command: z.string().min(1),
-    /** True when the dev-server command serves prebuilt output (for example
-     * express-host's `node dist/...` start), so boot-oriented commands such as
-     * `corpus gallery` must run `buildCommand` first. Self-compiling dev
-     * servers (`next dev`, `nest start -w`) leave this unset: `corpus boot`
-     * has never built before booting, and repos with a broken upstream
-     * baseline build (papermark) can still boot and be captured. */
-    requiresBuild: z.boolean().optional(),
-    readinessUrl: z.string().url(),
-    readinessBodyContains: z.string().min(1).optional(),
-    readinessTimeoutMs: z.number().int().positive().optional(),
-    readinessIntervalMs: z.number().int().positive().optional(),
-  })
-  .strict();
-
-const dockerPostgresProvisioningSchema = z
-  .object({
-    kind: z.literal("docker-postgres"),
-    containerName: z.string().min(1),
-    image: z.string().min(1),
-    hostPort: z.number().int().min(1024).max(65535),
-    database: z.string().min(1),
-    username: z.string().min(1),
-    password: z.string().min(1),
-    readinessTimeoutMs: z.number().int().positive().optional(),
-    readinessIntervalMs: z.number().int().positive().optional(),
-  })
-  .strict();
-
 const bootstrapRecipeSchema = z
   .object({
     installCommand: z.string().min(1),
     envTemplate: z.record(z.string(), z.string()),
-    seedCommand: z.string().min(1).optional(),
-    database: dockerPostgresProvisioningSchema.optional(),
     typecheckCommand: z.string().min(1).optional(),
     buildCommand: z.string().min(1),
-    devServer: devServerSchema.optional(),
   })
   .strict();
 
@@ -68,6 +34,9 @@ export const manifestEntrySchema = z
     localPath: relativePosixPathSchema("localPath").optional(),
     appDir: relativePosixPathSchema("appDir").optional(),
     framework: z.enum(["next", "express"]).default("next"),
+    /** For pinned repos that declare no packageManager of their own, so the
+     * ambient corepack pin above `.repos/` cannot leak into the checkout. */
+    packageManager: z.string().min(1).optional(),
     license: z.string().min(1),
     tier: z.enum(["broad", "deep"]),
     bootstrap: bootstrapRecipeSchema,
@@ -106,13 +75,6 @@ export const manifestEntrySchema = z
         });
       }
     }
-    if (entry.tier === "deep" && !entry.bootstrap.devServer) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["bootstrap", "devServer"],
-        message: "deep tier entries must define a devServer recipe",
-      });
-    }
   });
 
 export const corpusManifestSchema = z
@@ -137,7 +99,6 @@ export const corpusManifestSchema = z
 
 export type ManifestEntry = z.input<typeof manifestEntrySchema>;
 export type CorpusManifest = ManifestEntry[];
-export type DatabaseProvisioning = z.infer<typeof dockerPostgresProvisioningSchema>;
 
 export const defaultManifestPath = fileURLToPath(new URL("../../manifest.json", import.meta.url));
 

@@ -281,7 +281,7 @@ describe("bootstrapRepo", () => {
     );
   });
 
-  it("retries once and succeeds when the install fails with a transient resolver/registry error (nextcrm flake class)", async () => {
+  it("retries once and succeeds when the install fails with a transient registry error", async () => {
     const { corpusRoot, repo, repoDir } = await makeRepo();
     const context = createRunContext({ corpusRoot });
     const attemptFile = path.join(repoDir, "attempt.txt");
@@ -291,7 +291,7 @@ describe("bootstrapRepo", () => {
       const attempt = existsSync(marker) ? Number(readFileSync(marker, "utf8")) + 1 : 1;
       writeFileSync(marker, String(attempt));
       if (attempt === 1) {
-        console.error("ERR_PNPM_NO_MATCHING_VERSION  No matching version found for @types/react@^19.0.0");
+        console.error("ECONNRESET  socket hang up while fetching from registry");
         process.exit(1);
       }
       console.log("install stdout attempt " + attempt);
@@ -305,7 +305,7 @@ describe("bootstrapRepo", () => {
     expect(stdoutLog).toContain("install stdout attempt 2");
   });
 
-  it("does not retry a non-transient install failure (fails immediately on attempt 1)", async () => {
+  it("does not retry a deterministic install failure — resolution or config — on attempt 1", async () => {
     const { corpusRoot, repo, repoDir } = await makeRepo();
     const context = createRunContext({ corpusRoot });
     const attemptFile = path.join(repoDir, "attempt.txt");
@@ -314,6 +314,7 @@ describe("bootstrapRepo", () => {
       const marker = ${JSON.stringify(attemptFile)};
       const attempt = existsSync(marker) ? Number(readFileSync(marker, "utf8")) + 1 : 1;
       writeFileSync(marker, String(attempt));
+      console.error("ERR_PNPM_NO_MATCHING_VERSION  No matching version found for @types/react@^19.0.0");
       console.error("SyntaxError: Unexpected token in package.json");
       process.exit(1);
     `);

@@ -14,23 +14,7 @@ const entry = {
     envTemplate: {
       DATABASE_URL: "${CORPUS_UMAMI_DATABASE_URL}",
     },
-    seedCommand: "pnpm seed-data",
-    database: {
-      kind: "docker-postgres",
-      containerName: "vendo-corpus-umami-postgres",
-      image: "postgres:16-alpine",
-      hostPort: 55432,
-      database: "umami",
-      username: "corpus",
-      password: "corpus",
-      readinessTimeoutMs: 30_000,
-    },
     buildCommand: "pnpm build",
-    devServer: {
-      command: "pnpm dev",
-      readinessUrl: "http://127.0.0.1:3000",
-      readinessTimeoutMs: 30_000,
-    },
   },
   notes: "Verified as a Next.js app.",
 };
@@ -84,39 +68,10 @@ describe("parseManifest", () => {
     expect(() => parseManifest([entry, { ...entry }])).toThrow(/duplicate.*umami/i);
   });
 
-  it("accepts a dev server that requires a build and rejects non-boolean flags", () => {
-    const withFlag = {
-      ...entry,
-      bootstrap: {
-        ...entry.bootstrap,
-        devServer: { ...entry.bootstrap.devServer, requiresBuild: true },
-      },
-    };
-    expect(parseManifest([withFlag])[0]?.bootstrap.devServer?.requiresBuild).toBe(true);
-
-    const invalid = {
-      ...entry,
-      bootstrap: {
-        ...entry.bootstrap,
-        devServer: { ...entry.bootstrap.devServer, requiresBuild: "yes" },
-      },
-    };
-    expect(() => parseManifest([invalid])).toThrow(/requiresBuild/i);
-  });
-
-  it("rejects invalid deep-tier docker database provisioning", () => {
-    const invalid = {
-      ...entry,
-      bootstrap: {
-        ...entry.bootstrap,
-        database: {
-          ...entry.bootstrap.database,
-          hostPort: 70000,
-        },
-      },
-    };
-
-    expect(() => parseManifest([invalid])).toThrow(/hostPort/i);
+  it("accepts an optional package-manager pin and rejects an empty one", () => {
+    expect(parseManifest([{ ...entry, packageManager: "pnpm@10.33.4" }])[0]?.packageManager).toBe("pnpm@10.33.4");
+    expect(parseManifest([entry])[0]?.packageManager).toBeUndefined();
+    expect(() => parseManifest([{ ...entry, packageManager: "" }])).toThrow(/packageManager/i);
   });
 
   it("loads the committed corpus manifest", async () => {
@@ -131,36 +86,16 @@ describe("parseManifest", () => {
       localPath: "corpus/hosts/express-host",
       framework: "express",
       tier: "deep",
-      // Its dev server is `node dist/...`, the only recipe serving prebuilt
-      // output — boot-oriented commands must run buildCommand first.
-      bootstrap: { devServer: { requiresBuild: true } },
     });
-    for (const repo of manifest.filter((entry) => ["umami", "skateshop", "papermark", "teable"].includes(entry.name))) {
-      expect(repo.bootstrap.devServer?.requiresBuild).toBeUndefined();
-    }
-    for (const repo of manifest.filter((entry) => ["umami", "skateshop", "papermark"].includes(entry.name))) {
-      expect(repo.bootstrap.database?.kind).toBe("docker-postgres");
-      expect(repo.bootstrap.devServer?.readinessTimeoutMs).toBeGreaterThan(0);
-    }
 
-    expect(manifest.find((repo) => repo.name === "teable")).toMatchObject({
-      appDir: "apps/nextjs-app",
-      tier: "deep",
+    // nextcrm declares no packageManager upstream, so the manifest pins one and
+    // drives its pnpm through corepack to keep that pin in force.
+    expect(manifest.find((repo) => repo.name === "nextcrm")).toMatchObject({
+      packageManager: "pnpm@10.33.4",
       bootstrap: {
-        envTemplate: {
-          PRISMA_DATABASE_URL: "postgresql://corpus:corpus@127.0.0.1:55436/teable?schema=public&statement_cache_size=0",
-        },
-        seedCommand: expect.stringContaining("prisma-db-seed -- --e2e"),
-        database: {
-          kind: "docker-postgres",
-          containerName: "vendo-corpus-teable-postgres",
-          hostPort: 55436,
-        },
-        devServer: {
-          command: "corepack pnpm --dir ../nestjs-backend exec dotenv-flow -p ../nextjs-app -- nest start --webpackPath ./webpack.swc.js -w",
-          readinessUrl: "http://127.0.0.1:43105/auth/login",
-          readinessBodyContains: "Teable",
-        },
+        installCommand: expect.stringMatching(/^corepack pnpm /),
+        typecheckCommand: expect.stringMatching(/^corepack pnpm /),
+        buildCommand: expect.stringMatching(/^corepack pnpm /),
       },
     });
   });

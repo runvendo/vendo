@@ -80,6 +80,18 @@ async function createFixtureRepo(): Promise<FixtureRepo> {
   };
 }
 
+async function commitPackageJson(source: FixtureRepo, pkg: Record<string, unknown>): Promise<string> {
+  await writeFile(path.join(source.dir, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
+  await runGit(["add", "package.json"], source.dir);
+  await runGit(["commit", "-m", "add package.json"], source.dir);
+  return runGit(["rev-parse", "HEAD"], source.dir);
+}
+
+async function readPackageManager(repoDir: string): Promise<unknown> {
+  const pkg = JSON.parse(await readFile(path.join(repoDir, "package.json"), "utf8")) as Record<string, unknown>;
+  return pkg["packageManager"];
+}
+
 function entry(gitUrl: string, pinnedSha: string): Pick<ManifestEntry, "name" | "gitUrl" | "pinnedSha"> {
   return {
     name: "fixture-app",
@@ -217,6 +229,45 @@ describe("ensureRepoCheckout", () => {
     await expect(runGit(["remote", "get-url", "origin"], outerRoot)).resolves.toBe("https://example.com/outer.git");
     await expect(runGit(["rev-parse", "--show-toplevel"], repoDir)).resolves.toBe(await realpath(repoDir));
     await expect(runGit(["rev-parse", "HEAD"], repoDir)).resolves.toBe(pinnedSha);
+  });
+
+  it("pins the manifest package manager into a checkout that declares none", async () => {
+    const source = await createFixtureRepo();
+    await source.commitFile("pinned\n");
+    const pinnedSha = await commitPackageJson(source, { name: "fixture-app" });
+    const corpusRoot = await makeTempRoot("pm-pin");
+    const context = createRunContext({ corpusRoot });
+
+    const repoDir = await ensureRepoCheckout(
+      { ...entry(source.gitUrl, pinnedSha), packageManager: "pnpm@10.33.4" },
+      { context },
+    );
+
+    await expect(readPackageManager(repoDir)).resolves.toBe("pnpm@10.33.4");
+    // git clean -ffdx resets the checkout on reuse, so the pin must be rewritten.
+    await ensureRepoCheckout({ ...entry(source.gitUrl, pinnedSha), packageManager: "pnpm@10.33.4" }, { context });
+    await expect(readPackageManager(repoDir)).resolves.toBe("pnpm@10.33.4");
+  });
+
+  it("leaves a checkout's own package manager and an unpinned entry untouched", async () => {
+    const source = await createFixtureRepo();
+    await source.commitFile("pinned\n");
+    const pinnedSha = await commitPackageJson(source, { name: "fixture-app", packageManager: "pnpm@9.1.0" });
+    const corpusRoot = await makeTempRoot("pm-keep");
+    const context = createRunContext({ corpusRoot });
+
+    const repoDir = await ensureRepoCheckout(
+      { ...entry(source.gitUrl, pinnedSha), packageManager: "pnpm@10.33.4" },
+      { context },
+    );
+    await expect(readPackageManager(repoDir)).resolves.toBe("pnpm@9.1.0");
+
+    const bare = await createFixtureRepo();
+    await bare.commitFile("pinned\n");
+    const bareSha = await commitPackageJson(bare, { name: "fixture-app" });
+    const bareRoot = await makeTempRoot("pm-none");
+    const bareDir = await ensureRepoCheckout(entry(bare.gitUrl, bareSha), { context: createRunContext({ corpusRoot: bareRoot }) });
+    await expect(readPackageManager(bareDir)).resolves.toBeUndefined();
   });
 
   it("recovers when the cached clone is corrupted", async () => {

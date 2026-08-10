@@ -72,13 +72,12 @@ function logPaths(logsDir: string): BootstrapLogPaths {
 
 const DEFAULT_RETRY_DELAY_MS = 5_000;
 
-// Small, deliberately narrow transient-failure class (nextcrm flake:
-// ERR_PNPM_NO_MATCHING_VERSION on a re-resolved React-19 type-alias override,
-// identical retry succeeded). Real dependency/config errors are NOT in this
-// list on purpose — only failures that look like registry/resolver hiccups
-// get the one bounded retry.
+// Small, deliberately narrow transient-failure class. Real dependency/config
+// errors are NOT in this list on purpose — only failures that look like
+// registry/resolver hiccups get the one bounded retry. Resolution errors
+// (ERR_PNPM_NO_MATCHING_VERSION) are deliberately excluded: they are
+// deterministic, and retrying them only hides the regression that caused them.
 const TRANSIENT_BOOTSTRAP_FAILURE_PATTERNS: readonly RegExp[] = [
-  /ERR_PNPM_NO_MATCHING_VERSION/,
   /ECONNRESET/,
   /ETIMEDOUT/,
   /\bE5\d{2}\b/, // npm/pnpm registry 5xx error codes (E500, E502, E503, ...)
@@ -130,10 +129,9 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
     ? `Corpus harness normalized bootstrap install command from "${repo.bootstrap.installCommand}" to "${installCommand.command}" so lockfile updates are allowed.\n`
     : "";
 
-  // ONE bounded retry for transient-looking registry/resolver failures (the
-  // nextcrm flake: ERR_PNPM_NO_MATCHING_VERSION on its React-19 type-alias
-  // overrides, identical retry succeeded). Anything else fails immediately —
-  // this is not a general flaky-install workaround.
+  // ONE bounded retry for transient-looking registry/resolver failures.
+  // Anything else fails immediately — this is not a general flaky-install
+  // workaround.
   let retryNote = "";
   if (result.code !== 0 && isTransientBootstrapFailure(`${result.stdout}\n${result.stderr}`)) {
     const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;

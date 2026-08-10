@@ -1,12 +1,12 @@
 import { realpathSync } from "node:fs";
-import { cp, mkdir, realpath, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ManifestEntry } from "./manifest.js";
 import { runCommand, type CommandResult } from "./process.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
-export type CloneRepo = Pick<ManifestEntry, "name" | "gitUrl" | "pinnedSha" | "localPath">;
+export type CloneRepo = Pick<ManifestEntry, "name" | "gitUrl" | "pinnedSha" | "localPath" | "packageManager">;
 
 export interface EnsureRepoCheckoutOptions {
   context?: CorpusRunContext;
@@ -131,6 +131,18 @@ async function fetchPinnedSha(gitBin: string, repoDir: string, sha: string): Pro
   throw new Error(`Unable to fetch pinned SHA ${sha} into ${repoDir}.\n${formatFetchAttempts(attempts)}`);
 }
 
+/** A checkout that declares no packageManager inherits corepack's nearest
+ * ancestor pin — the Vendo root's, since `.repos/` lives inside the worktree —
+ * so the repo silently installs under a package-manager major it was never
+ * pinned at. Written after the reset so a reused clone gets it back. */
+async function pinPackageManager(repoDir: string, packageManager: string): Promise<void> {
+  const packageJsonPath = path.join(repoDir, "package.json");
+  const pkg = JSON.parse(await readFile(packageJsonPath, "utf8")) as Record<string, unknown>;
+  if (pkg["packageManager"] !== undefined) return;
+  pkg["packageManager"] = packageManager;
+  await writeFile(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
+}
+
 export async function ensureRepoCheckout(repo: CloneRepo, options: EnsureRepoCheckoutOptions = {}): Promise<string> {
   const context = options.context ?? createRunContext();
   const gitBin = options.gitBin ?? "git";
@@ -179,6 +191,7 @@ export async function ensureRepoCheckout(repo: CloneRepo, options: EnsureRepoChe
   await checkedGit(gitBin, ["checkout", "--detach", "--force", repo.pinnedSha], repoDir);
   await checkedGit(gitBin, ["reset", "--hard", repo.pinnedSha], repoDir);
   await checkedGit(gitBin, ["clean", "-ffdx"], repoDir);
+  if (repo.packageManager !== undefined) await pinPackageManager(repoDir, repo.packageManager);
 
   return repoDir;
 }

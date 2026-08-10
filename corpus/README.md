@@ -65,10 +65,13 @@ the permanent proof that the framework-agnostic handler claim in contracts 09
   `localPath`; the two forms are mutually exclusive.
 - `framework`: optional `next` or `express` structural wiring mode; defaults to
   `next`.
+- `packageManager`: optional `pnpm@x.y.z`-style pin written into the checkout's
+  root `package.json` when the repo declares none of its own — without it
+  corepack resolves the Vendo root's pin, a different major.
 - `license`: SPDX identifier or a documented best-effort license string.
 - `tier`: `broad` or `deep`.
-- `bootstrap`: install command, env template, optional seed command, build
-  command, and for `deep` repos a dev-server command plus readiness URL.
+- `bootstrap`: install command, env template, optional typecheck command, and
+  build command.
 - `notes`: optional verification notes.
 
 Env template values are either literals or secret placeholders such as
