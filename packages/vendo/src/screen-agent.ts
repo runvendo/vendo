@@ -66,8 +66,9 @@ import {
   wrapWorkspaceForRender,
   type RenderSeamOptions,
 } from "@vendoai/apps";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, StopCondition, ToolSet } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
+import { PREFETCH_NOTE, prefetchReads, type PrefetchedReads } from "./screen-prefetch.js";
 
 /**
  * The whole budget for assembling one screen.
@@ -187,8 +188,17 @@ const nameOf = (content: string): string | undefined => {
  * sentence rather than nothing (outputs) or a bare `{}` (inputs): `{}` reads as
  * "takes no arguments", so a blind tool would be called with none. A DECLARED
  * empty input still prints its schema — that IS the host's contract.
+ *
+ * A tool whose value `resolved` holds gets a THIRD line: the real answer, fetched
+ * before the model started (`screen-prefetch.ts`). It sits on the tool's own card
+ * rather than in a section of its own, because the shape and the values are one
+ * fact about one tool and a model reading the shape is exactly the reader who
+ * needs the values.
  */
-export function toolBrief(listings: readonly ToolListing[]): string {
+export function toolBrief(
+  listings: readonly ToolListing[],
+  resolved: PrefetchedReads = new Map(),
+): string {
   if (listings.length === 0) return "This product has no tools you can read data from.";
   return listings
     .map((listing) => {
@@ -198,7 +208,9 @@ export function toolBrief(listings: readonly ToolListing[]): string {
       const input = inputSchemaIsBlind(listing.inputSchema)
         ? `\n  ${UNKNOWN_INPUT_SCHEMA_NOTE}`
         : `\n  input: ${JSON.stringify(listing.inputSchema)}`;
-      return `- ${listing.name} — ${modelToolDescription(listing)}${input}${shape}`;
+      const value = resolved.get(listing.name);
+      const now = value === undefined ? "" : `\n  read just now: ${value}`;
+      return `- ${listing.name} — ${modelToolDescription(listing)}${input}${shape}${now}`;
     })
     .join("\n");
 }
@@ -212,7 +224,11 @@ export function toolBrief(listings: readonly ToolListing[]): string {
  * the skill says what the job is — which is the difference between deriving a
  * brief and forking one.
  */
-const environmentNote = (appId: AppId, listings: readonly ToolListing[]): string => `# In this loop
+const environmentNote = (
+  appId: AppId,
+  listings: readonly ToolListing[],
+  resolved: PrefetchedReads,
+): string => `# In this loop
 
 You have no machine: no shell, no \`Task\`, no files on disk. Everything the skill
 above tells you to read is already below, and everything it tells you to write goes
@@ -227,6 +243,13 @@ through two tools.
   them — why you narrowed something, a constraint the tools imposed, a shape you
   ruled out. Never record what you did or in what order; that is narration, and
   it crowds out the one line that mattered.
+  Its \`done\` is how you FINISH. Set it on the save that answers the whole ask,
+  and the turn ends the moment that save reaches the screen. Nothing else ends it:
+  without \`done\` you keep going until the step budget runs out, and every step
+  after the screen was finished is the person waiting for a screen they already
+  have. Before you set it, read the ask again clause by clause and find each one on
+  the screen you just wrote — a screen the person would have to ask a second time
+  for is not finished, and the steps you have left are what it costs to fix that.
 - **\`validate\`** is the floor. Call it on what you saved, fix what it names, save
   again. You are not done until it comes back clean.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Assembling a document out of this
@@ -238,26 +261,32 @@ through two tools.
   \`<Server kind="steps"|"agentic"|"box" [served] why="…"/>\` line the skill above
   teaches. Leave it out and the builder reads the escalation itself as the answer:
   \`kind="box"\`, a machine and real code.
-- \`${SCREEN_STEPS}\` steps is the whole budget. Escalate rather than run out of it.
+- \`${SCREEN_STEPS}\` steps is the whole budget, and it is a ceiling rather than a
+  finish line: end on a save marked \`done\`, or escalate. Running out of it means
+  the person waited for steps that changed nothing on their screen.
 
 Never look for a tool that builds the app for you. There isn't one, and that is
 deliberate.
 
 ## This product's tools, with the shapes they return
-
-${toolBrief(listings)}`;
+${resolved.size === 0 ? "" : `\n${PREFETCH_NOTE}\n`}
+${toolBrief(listings, resolved)}`;
 
 /** The full brief: the shipped job description, the shipped syntax manual, the
  *  briefing pack, then what is different here. The manual and the environment
  *  note are this rung's own INSTRUCTIONS — the box is told a different job in
  *  its own words; the pack between them is the product knowledge both rungs
  *  read byte for byte (`contract/briefing.ts`). */
-function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): string {
+function screenBrief(
+  input: ScreenInput,
+  listings: readonly ToolListing[],
+  resolved: PrefetchedReads,
+): string {
   return [
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
     input.briefing,
-    environmentNote(input.appId, listings),
+    environmentNote(input.appId, listings, resolved),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
     .join("\n\n---\n\n");
@@ -329,6 +358,11 @@ export async function assembleScreen(
 
   const directory = appDirectory(input.appId);
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
+  // THE DATA, BEFORE THE MODEL. Every read this product says needs no arguments,
+  // resolved in parallel and printed on its own tool card, so the writer does not
+  // spend a step of a 10-step budget learning what a tool returns. What cannot be
+  // known before the document exists is not guessed — see `screen-prefetch.ts`.
+  const resolved = await prefetchReads(surface.tools, listings, ASSEMBLY_TOOLS);
   const record: RunRecord = { assembled: false, painted: false };
 
   /**
@@ -349,11 +383,19 @@ export async function assembleScreen(
     name: SAVE_APP_TOOL,
     description:
       "Save this app's whole document. The person's screen repaints on every save that parses, so save "
-      + "as you go rather than once at the end. Returns whether the save landed.",
+      + "as you go rather than once at the end. Returns whether the save landed. Set `done` on the save "
+      + "that finishes the job: that is how this turn ends.",
     inputSchema: {
       type: "object",
       properties: {
         content: { type: "string", description: "The complete app document, in the .vendo format." },
+        done: {
+          type: "boolean",
+          description:
+            "True only if this save is the FINISHED screen — everything the person asked for is on it and you "
+            + "have nothing left to add. The turn ends when a save marked this way reaches the screen, so leave "
+            + "it out on a save-as-you-go revision that still has work behind it.",
+        },
         decisions: {
           type: "string",
           description:
@@ -366,7 +408,7 @@ export async function assembleScreen(
       additionalProperties: false,
     },
     execute: async (args, turn) => {
-      const { content, decisions } = args as { content: string; decisions?: string };
+      const { content, decisions, done } = args as { content: string; decisions?: string; done?: boolean };
       const committed = await save(turn, APP_FILE, content);
       if (committed.status !== "ok") {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
@@ -413,6 +455,25 @@ export async function assembleScreen(
         return {
           saved: true,
           note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.",
+        };
+      }
+      /**
+       * THE COMPLETION SIGNAL, and the only place it can honestly be made.
+       *
+       * `done` is the model's claim; `record.painted` is the mechanical fact. Both,
+       * or neither: a claim over bytes the seam declined to paint took the branch
+       * above and is already being repaired, and a paint alone is not completion —
+       * the brief tells this loop to save as you go, so most painted saves are half
+       * a screen. So the two are ANDed here, in the hand that holds both, and
+       * {@link finishedStop} below only has to read the verdict rather than
+       * re-derive it. An unwrapped workspace (`painted` absent) claims no paint, so
+       * it never ends a turn this way — same posture as every other gate here.
+       */
+      if (done === true && record.painted) {
+        return {
+          saved: true,
+          done: true,
+          note: "Saved, and it is on the person's screen. You called this the finished screen, so your turn ends here.",
         };
       }
       return { saved: true, note: "Run validate on it now." };
@@ -476,16 +537,57 @@ export async function assembleScreen(
     turnId: surface.turnId ?? mintTurnId(),
   };
 
+  /**
+   * WHAT ENDS AN ASSEMBLY, other than running out of budget.
+   *
+   * `SCREEN_STEPS` was the only thing that ever ended one, and a step cap is a
+   * hang detector rather than a finish line. Measured on genbench 2026-08-10: the
+   * median screen reached the person's display at 35.8s and the run settled at
+   * 137.3s — on `spend-shares` the correct screen painted at 27.9s and the loop
+   * then spent 232 more seconds re-searching the catalog and re-saving the same
+   * answer, because nothing told it it was finished and it still had steps.
+   *
+   * Same shape as the loop's own `buildFailedStop` and `askedUserStop`: read the
+   * last step's tool RESULTS and stop on a verdict a hand has already reached.
+   * Nothing is re-derived and nothing is judged here — a stop condition that
+   * decided whether a screen was any good would be a third checker, and the two
+   * this loop has (the paint's floor, and the reviewer below) still run either
+   * way. Stopping does not skip the review; it only stops the wandering between
+   * the last good save and the budget.
+   */
+  const lastStepReported = (
+    toolName: string,
+    field: "done" | "handedOver",
+  ): StopCondition<ToolSet> => ({ steps }) => {
+    const last = steps.at(-1);
+    return last !== undefined && last.toolResults.some((result) => {
+      if (result.toolName !== toolName) return false;
+      const output = result.output as Record<string, unknown> | null;
+      return typeof output === "object" && output !== null && output[field] === true;
+    });
+  };
+
+  /** The work is DONE: a save that landed, that the seam painted, and that the
+   *  model itself called the finished screen (`saveApp` ANDs the three). */
+  const finishedStop = lastStepReported(SAVE_APP_TOOL, "done");
+  /** The door out was taken. `escalate`'s own description already promises "This
+   *  ends your turn", and nothing made that true: the plan is saved and the
+   *  outcome below is `escalate` whatever else this drive goes on to do, so every
+   *  further step is spent on an answer nobody reads. */
+  const escalatedStop = lastStepReported(ESCALATE_TOOL, "handedOver");
+
   /** The first thing that went wrong, in the shipped loop's own words
    *  (`wireErrorMessage`, applied inside `vendo()`). */
   let failure: string | undefined;
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
+    // The budget is the ceiling; these are the finish lines.
+    stopWhen: [finishedStop, escalatedStop],
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
     // in as its first section, so letting the turn's copy through would say it
     // twice.
-    system: () => screenBrief(input, listings),
+    system: () => screenBrief(input, listings, resolved),
   });
   /**
    * One drive of the loop. The events MUST be drained or nothing runs. Nothing is
@@ -556,7 +658,11 @@ export async function assembleScreen(
           type: "text",
           text: saved === undefined
             ? instruction
-            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
+            // Marked done: the repair round is shown exactly what is wrong, so the
+            // corrected save IS the end of it — and a repair drive that carries on
+            // afterwards spends a second fresh budget on a screen already fixed.
+            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version, `
+              + `with done set on that save:\n${saved}`,
         }],
       }]);
     }

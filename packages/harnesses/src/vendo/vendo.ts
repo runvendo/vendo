@@ -40,6 +40,7 @@ import {
   type LanguageModel,
   type LanguageModelUsage,
   type ModelMessage,
+  type StopCondition,
   type ToolSet,
 } from "ai";
 import { defineHarness } from "../define.js";
@@ -172,6 +173,19 @@ export interface VendoHarnessDeps {
    * and the system precedence are the ones above, not a fork of them.
    */
   tools?: readonly (string | HarnessHand)[];
+  /**
+   * Extra stop conditions, COMPOSED with the loop's own (`stopWhen` in
+   * ./loop.ts) rather than replacing them.
+   *
+   * The loop already takes them; this is the door a specialist built on
+   * `vendo()` reaches them through, and it belongs here rather than in the loop
+   * because the conditions worth adding are about a HAND the loop does not own.
+   * `buildFailedStop` and `askedUserStop` are in the loop because `vendo_make`
+   * and `ask_user` are on every surface; "this screen is finished" is a fact
+   * only the closed loadout's own hand can state, so its condition ships with
+   * the hand.
+   */
+  stopWhen?: readonly StopCondition<ToolSet>[];
 }
 
 /**
@@ -599,6 +613,8 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           // one outside the loadout never is. Gates CHOICE only — execution is
           // always the guard-bound `turn.tools.call()`.
           activeTools: activeToolNames,
+          // The caller's own reasons to stop, added to the loop's three.
+          ...(deps.stopWhen === undefined ? {} : { stopWhen: deps.stopWhen }),
           // How big this seat's window is, and what the thread remembers about
           // filling it. Always passed: a deployment that never set a knob is
           // exactly the deployment that has never had a context rail at all.
