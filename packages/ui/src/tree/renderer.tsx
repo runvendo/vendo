@@ -234,7 +234,14 @@ function bindValue(
     if (mode === "jail") {
       return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
     }
-    return () => action(value.$action, value.payload === undefined ? undefined : payload);
+    // The callback alone drops the action's NAME, and the Kit needs it: a
+    // control that cancels or deletes must not wear the brand accent
+    // (`destructiveVariant`, kit/forms/button.tsx). Carried on the callback so
+    // no component gains a prop for it.
+    return Object.assign(
+      () => action(value.$action, value.payload === undefined ? undefined : payload),
+      { actionName: value.$action },
+    );
   }
   if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, onMismatch));
   if (typeof value === "object" && value !== null) {

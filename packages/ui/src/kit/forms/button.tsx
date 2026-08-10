@@ -16,16 +16,33 @@ export interface ButtonProps {
   type?: "button" | "submit";
 }
 
-export function Button({ label, variant = "primary", disabled = false, onClick, type = "button", children }: PropsWithChildren<ButtonProps>) {
-  const primary = variant === "primary";
-  const danger = variant === "danger";
+/** Tool names in action position read `cancel_transfer`, `transfers.cancel` or
+ *  `fn:cancelSelected` — a leading word, or one after a name separator. */
+const DESTRUCTIVE_ACTION = /(^|[._:])(cancel|delete|remove|revoke|close|terminate|refund|void|archive|disable|reject)/i;
+
+/**
+ * The variant a bound action implies when the author named none. The accent is
+ * the brand's "this is the primary action" colour, so a control that destroys
+ * something must not wear it — the renderer tags each bound callback with the
+ * tool NAME it fires (`bindValue`, tree/renderer.tsx) precisely so the Kit can
+ * tell the two apart. An explicit `variant` always wins.
+ */
+export function destructiveVariant(action: unknown): "danger" | undefined {
+  const name = typeof action === "function" ? (action as { actionName?: string }).actionName : undefined;
+  return name !== undefined && DESTRUCTIVE_ACTION.test(name) ? "danger" : undefined;
+}
+
+export function Button({ label, variant, disabled = false, onClick, type = "button", children }: PropsWithChildren<ButtonProps>) {
+  const resolved = variant ?? destructiveVariant(onClick) ?? "primary";
+  const primary = resolved === "primary";
+  const danger = resolved === "danger";
   const background = primary ? t.accent : danger ? t.danger : t.surface;
   const color = primary || danger ? t.accentText : t.text;
   return (
     <button
       type={type}
       data-kit="Button"
-      data-variant={variant}
+      data-variant={resolved}
       disabled={disabled}
       onClick={() => {
         if (!disabled) onClick?.();

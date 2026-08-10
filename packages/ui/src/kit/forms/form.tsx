@@ -1,7 +1,7 @@
 /** Form — groups fields with a submit action (W2 §The Kit). */
 import type { FormEvent, PropsWithChildren } from "react";
 import { font } from "../tokens.js";
-import { Button } from "./button.js";
+import { Button, destructiveVariant } from "./button.js";
 
 export interface FormProps {
   /** Bound host-tool submit action (renderer-supplied). */
@@ -34,7 +34,7 @@ export function Form({ onSubmit, submitLabel = "Submit", disabled, children }: P
     >
       {children}
       <div>
-        <Button type="submit" label={submitLabel} disabled={disabled} />
+        <Button type="submit" label={submitLabel} disabled={disabled} variant={destructiveVariant(onSubmit)} />
       </div>
     </form>
   );
