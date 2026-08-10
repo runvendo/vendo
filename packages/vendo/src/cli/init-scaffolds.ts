@@ -48,7 +48,23 @@ function authImportLine(auth: AuthMatch | null): string {
   return auth === null ? "" : `import { ${auth.preset} } from ${JSON.stringify(AUTH_PRESET_SPECIFIER[auth.preset])};\n`;
 }
 
-export function routeSource(options: { serverActions: boolean; auth: AuthMatch | null }): string {
+export function routeSource(options: {
+  serverActions: boolean;
+  auth: AuthMatch | null;
+  /** The MCP path (10-mcp): the composition moves to its own module and this
+      file becomes the thin handler over it. A Next.js route module may not
+      export anything but route handlers, and the origin-root discovery route
+      has to import the SAME instance — so `vendo` cannot live here. */
+  mcp?: { serviceAuth: boolean };
+}): string {
+  if (options.mcp !== undefined) {
+    return `// Next.js route modules may export only route handlers, so the composition\n` +
+      `// lives next door in ./vendo — import it from anywhere that needs the SAME\n` +
+      `// instance (app/.well-known/[...vendo]/route.ts does).\n` +
+      `import { nextVendoHandler } from "@vendoai/vendo/server";\n` +
+      `import { vendo } from "./vendo";\n\n` +
+      `export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n`;
+  }
   return authImportLine(options.auth) +
     `import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";\n` +
     (options.serverActions ? `import { serverActions } from "./vendo-actions";\n` : "") +
@@ -59,6 +75,42 @@ export function routeSource(options: { serverActions: boolean; auth: AuthMatch |
     `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
     `export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n`;
+}
+
+/**
+ * The MCP path's composition module (`app/api/vendo/[...vendo]/vendo.ts`) — the
+ * file the thin route and the origin-root discovery route BOTH import, so the
+ * two share one instance.
+ *
+ * `auth` is non-null by construction: the door mints its own principals through
+ * the preset's oauth half and composition throws without one, so `planMcp`
+ * blocks before it ever reaches this function (10-mcp §3).
+ */
+export function compositionModuleSource(options: {
+  serverActions: boolean;
+  auth: AuthMatch;
+  /** Wire first-party service auth off the environment (local posture only). */
+  serviceAuth: boolean;
+}): string {
+  return authImportLine(options.auth) +
+    `import { createVendo, guard } from "@vendoai/vendo/server";\n` +
+    (options.serverActions ? `import { serverActions } from "./vendo-actions";\n` : "") +
+    (options.serviceAuth
+      ? `\n// Machine-to-machine: your backend exchanges this key plus a user id at\n` +
+        `// /api/vendo/mcp/token (RFC 8693) for a 10-minute token acting as that named\n` +
+        `// user — svc: attribution in the audit. The key stays in the environment.\n` +
+        `const serviceKey = process.env.VENDO_SERVICE_KEY ?? "";\n`
+      : "") +
+    `\nexport const vendo = createVendo({\n` +
+    authConfigLines(options.auth) +
+    (options.serverActions ? `  serverActions,\n` : "") +
+    `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
+    `  // The door outside agents reach, through the SAME guard-bound path your own\n` +
+    `  // surface uses. Discovery derives from VENDO_BASE_URL — set it where you deploy.\n` +
+    (options.serviceAuth
+      ? `  mcp: serviceKey === "" ? true : { serviceAuth: { keys: [serviceKey] } },\n`
+      : `  mcp: true,\n`) +
+    `});\n`;
 }
 
 /**
@@ -114,6 +166,15 @@ export function serverActionsWiring(source: string): ServerActionsWiring {
   // Unrecognized composition: no honest paste to name, nothing honest to grade.
   if (call === null) return "unknown";
   return /(^|[\s{,])serverActions\b/.test(source.slice(source.indexOf(call[0]))) ? "wired" : "unwired";
+}
+
+/** Is this a THIN route over the split composition — the shape the MCP path
+    writes, where `createVendo` lives in `./vendo` because a Next.js route
+    module may export only handlers? The composition, not the route, is the file
+    to grade for server-action wiring; without this a thin route reads as an
+    unrecognized composition and doctor goes quiet on a host that is wired. */
+export function importsSplitComposition(source: string): boolean {
+  return /from\s+["']\.\/vendo["']/.test(source);
 }
 
 /** Does this route source the GENERATED map? A route that composes its own

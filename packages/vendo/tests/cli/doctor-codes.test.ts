@@ -48,6 +48,7 @@ describe("doctor error-code registry", () => {
         "E-MCP-006": "server.json is invalid JSON",
         "E-MCP-007": "the local MCP registry auth challenge is malformed",
         "E-MCP-008": "the live MCP registry auth challenge is malformed",
+        "E-MCP-009": "the MCP door is wired but VENDO_BASE_URL is not set (discovery advertises the wrong origin)",
         "E-SCHED-001": "apps declare vendo.json schedules but no schedule caller is configured",
         "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
         "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",

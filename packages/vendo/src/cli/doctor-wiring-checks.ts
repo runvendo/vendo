@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { detectFramework, detectVendoWiring, type VendoWiring } from "./framework.js";
-import { importsGeneratedMap, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
+import { importsGeneratedMap, importsSplitComposition, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
+import { checkMcpBaseUrl } from "./doctor-mcp-checks.js";
 import type { DoctorRun } from "./doctor-report.js";
 import { walk } from "./theme/walk.js";
 import { clientRoot, exists, readOptional } from "./shared.js";
@@ -59,14 +60,14 @@ async function checkServerActionsWiring(run: DoctorRun, routePath: string): Prom
   const { root } = run;
   const registrations = await requiredServerActions(root);
   if (registrations.length === 0) return;
-  const routeSource = await readFile(routePath, "utf8").catch(() => "");
-  const wiring = serverActionsWiring(routeSource);
+  const { path: compositionPath, source } = await compositionOf(routePath);
+  const wiring = serverActionsWiring(source);
   if (wiring === "unknown") {
     // No recognizable createVendo({ … }) — the same shape init declines to
     // name a paste for. Nothing honest to grade.
     return;
   }
-  if (wiring === "wired" && !importsGeneratedMap(routeSource)) {
+  if (wiring === "wired" && !importsGeneratedMap(source)) {
     // The route passes a map it composes itself (a local object, an aliased
     // import). Init leaves that alone by design, and there is no generated
     // map to grade against — so doctor says nothing rather than guessing.
@@ -85,9 +86,22 @@ async function checkServerActionsWiring(run: DoctorRun, routePath: string): Prom
           : `${relative(root, mapPath)} does not register ${missing.map(registrationKey).join(", ")}`]),
         // Scoped to the call on purpose: an import line alone is not
         // wiring, and it is exactly where a half-applied paste lands.
-        ...(wiring === "unwired" ? [`${relative(root, routePath)} does not pass serverActions inside createVendo({ … })`] : []),
+        ...(wiring === "unwired" ? [`${relative(root, compositionPath)} does not pass serverActions inside createVendo({ … })`] : []),
       ].join("; ")}. Re-run \`npx vendo init\`: it prints the exact paste for each (it never rewrites a file you already have).`);
   }
+}
+
+/** Which file holds this route's `createVendo({ … })`. The MCP path splits the
+ *  composition into a sibling `vendo.ts` — a Next.js route module may export
+ *  only route handlers, and the origin-root discovery route has to import the
+ *  SAME instance — so a thin route.ts is WIRED, not unrecognized. Grading the
+ *  thin file instead would go silent on a host that is correctly wired. */
+async function compositionOf(routePath: string): Promise<{ path: string; source: string }> {
+  const source = await readFile(routePath, "utf8").catch(() => "");
+  if (!importsSplitComposition(source)) return { path: routePath, source };
+  const split = join(dirname(routePath), "vendo.ts");
+  const splitSource = await readOptional(split);
+  return splitSource === null ? { path: routePath, source } : { path: split, source: splitSource };
 }
 
 /** The mount may live in ANY layout, not just the root one (i18n/route-group
@@ -170,6 +184,9 @@ export async function checkWiring(run: DoctorRun): Promise<void> {
   }
 
   await checkLegacyRoot(run, wiring.legacyRoot);
+  // Static, so it fires on a project nobody has started yet — which is exactly
+  // when a missing base URL is still cheap to fix.
+  await checkMcpBaseUrl(run);
 
   if (await hasDependency(root)) run.pass("wiring/dependency", "@vendoai/vendo dependency is declared");
   else run.fail("wiring/dependency", "E-WIRE-005", "@vendoai/vendo (or vendoai alias) is not declared");

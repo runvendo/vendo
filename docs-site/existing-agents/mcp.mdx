@@ -27,11 +27,24 @@ calls what it finds — your host actions, and Vendo's own `vendo_make`.
 
 ## 1. Open the door
 
-Three things, all host decisions, none of them scaffolded by `vendo init`:
-`mcp: true`, an OAuth adapter, and the origin-root discovery route.
+Pick **outside agents over MCP** in `npx vendo init` and this is scaffolded for
+you: the composition with `mcp: true`, the origin-root discovery route, and a
+thin catch-all route over the same instance. Two of the three below stop being
+host decisions the moment init is the one *creating* the composition — writing
+`mcp: true` into a file it authors is not editing your code, and the discovery
+route is a new file at a fixed path with a fixed two-line body.
+
+Exactly two things stay yours, because they are the two init genuinely cannot
+do: set `VENDO_BASE_URL` in your deploy platform, and point a client at the
+door. `npx vendo doctor` **fails** (`E-MCP-009`) on an MCP-wired project with no
+base URL — the door's discovery, issuer and token audience all derive from it,
+so without it the door advertises whatever origin a request happened to carry.
+
+By hand, it is three things: `mcp: true`, an OAuth adapter, and the origin-root
+discovery route.
 
 ```ts
-// lib/vendo.ts
+// app/api/vendo/[...vendo]/vendo.ts
 export const vendo = createVendo({
   model,
   principal: resolvePrincipal,
@@ -43,10 +56,23 @@ export const vendo = createVendo({
 ```ts
 // app/.well-known/[...vendo]/route.ts
 import { wellKnownVendoHandler } from "@vendoai/vendo/server";
-import { vendo } from "@/lib/vendo";
+import { vendo } from "../../api/vendo/[...vendo]/vendo";
 
 export const { GET, POST } = wellKnownVendoHandler(vendo);
 ```
+
+The composition lives in its own module for two reasons: a Next.js route module
+may export only route handlers, and the discovery route must import the **same
+instance** your catch-all serves. `wellKnownVendoHandler` resolves its path set
+by instance identity, so a second `createVendo` call in that file answers 404 on
+every well-known path.
+
+The OAuth adapter needs no separate decision when an auth preset is already
+wired: `createVendo({ auth })` fills the principal, actAs **and oauth** seams
+from one preset, and every zero-arg preset — `clerk()`, `authJs()`,
+`supabase()`, `auth0()` — carries all three. `jwt()` does not, which is why init
+declines to open the door on a `jwt` or anonymous composition rather than
+writing a `mcp: true` that throws at startup.
 
 Your existing catch-all route already serves the transport, and
 `npx vendo doctor` checks the wiring. The adapter contract and the consent page

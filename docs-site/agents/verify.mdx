@@ -584,6 +584,21 @@ does not start with `v=MCPv1`, usually a stale or hand-edited deployed copy.
 [E-MCP-007](#E-MCP-007)); DNS verification is an alternative to serving it
 over HTTP.
 
+### E-MCP-009 {#E-MCP-009}
+
+**Symptom:** The MCP door is wired but `VENDO_BASE_URL` is not set.
+
+**Cause:** The composition passes `mcp` to `createVendo`, and neither
+`VENDO_BASE_URL` nor `mcp: { baseUrl }` names the deployment's public origin.
+The door's discovery documents, its issuer, its resource identifiers and its
+RFC 8707 audience binding all derive from that one value, so the door
+advertises whatever origin the request happened to carry. Nothing looks wrong
+locally; it surfaces later, in someone else's terminal, as "Claude can't find
+my server".
+
+**Fix:** Set `VENDO_BASE_URL` to the deployment's full public URL — path prefix
+included — where you deploy, or pass `mcp: { baseUrl }` in the composition.
+
 ## Machine schedules
 
 ### E-SCHED-001 {#E-SCHED-001}
