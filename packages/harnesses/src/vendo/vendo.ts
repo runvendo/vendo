@@ -19,7 +19,7 @@
 import { z } from "zod";
 import { modelToolDescription, type Harness, type Json, type Turn } from "@vendoai/core";
 import { readCompactionState, writeCompactionState, type CompactionState } from "./compaction.js";
-import { startTurn, type TurnCompaction, type TurnContext } from "./loop.js";
+import { startTurn, type ModelEffort, type TurnCompaction, type TurnContext } from "./loop.js";
 import { contextWindowTokens, rememberResolvedModelId } from "./model-windows.js";
 import { isContextOverflow } from "./overflow.js";
 import {
@@ -95,6 +95,10 @@ export interface VendoHarnessOptions {
   contextTokenBudget?: number;
   maxOutputTokens?: number;
   maxRetries?: number;
+  /** How hard the model may think this turn ({@link TurnContext.effort}); unset
+   *  leaves the provider's default, which is unbounded extended thinking on the
+   *  Claude 5 line. */
+  effort?: ModelEffort;
   /** Override the window this seat is assumed to have. The BYO escape for a
    *  model {@link contextWindowTokens}'s table cannot name. */
   contextWindowTokens?: number;
@@ -108,6 +112,7 @@ const CONTEXT_KNOBS = [
   "contextTokenBudget",
   "maxOutputTokens",
   "maxRetries",
+  "effort",
   "contextWindowTokens",
 ] as const;
 
@@ -146,6 +151,9 @@ export interface VendoHarnessDeps {
   /** How many times the SDK re-issues a failed provider call ({@link
    *  DEFAULT_MAX_RETRIES}); `0` spends nothing. */
   maxRetries?: number;
+  /** This deployment's thinking budget ({@link TurnContext.effort}) — the door a
+   *  specialist built on `vendo()` sets, and the one a host overrides. */
+  effort?: ModelEffort;
   /** The window this deployment's seat is assumed to have, when the shipped
    *  table is wrong about it. Q1a: this lives on the harness and nowhere else —
    *  it is a fact about a model, not a product decision a host composes. */
@@ -401,10 +409,13 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       if (model === undefined) {
         throw new Error("vendo() thinks with `turn.models.default`, and this turn carries no default seat");
       }
-      const resolved: Partial<Record<(typeof CONTEXT_KNOBS)[number], number>> = {};
+      // Each knob keeps its OWN type (they are not all numbers since `effort`),
+      // and `Object.assign` is what writes one member of a mapped type under a
+      // key the loop only knows as the union.
+      const resolved: { [K in (typeof CONTEXT_KNOBS)[number]]?: VendoHarnessOptions[K] } = {};
       for (const knob of CONTEXT_KNOBS) {
         const value = turn.options?.[knob] ?? deps[knob];
-        if (value !== undefined) resolved[knob] = value;
+        if (value !== undefined) Object.assign(resolved, { [knob]: value });
       }
       // The window is not one of the loop's `TurnContext` knobs — it configures
       // COMPACTION, which is its own shape. It rides the same resolution list
