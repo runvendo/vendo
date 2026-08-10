@@ -82,6 +82,23 @@ import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harn
  */
 export const SCREEN_STEPS = 10;
 
+/**
+ * The other half of that budget: how long the whole screen may take.
+ *
+ * Ten steps bound how many times the loop may THINK, not how long any of it
+ * takes, and the two are not the same rail. On the bench the same screen showed
+ * its first paint at 35.8s and settled at 137.3s, with a single call measured at
+ * 240.9s for 623 characters of output and a retry budget that re-issues such a
+ * call twice more — so the step cap alone puts no ceiling a waiting person could
+ * name. This is that ceiling, and it is generous against the paint: assembly
+ * carries on to the last second it has, and only the overrun is cut.
+ *
+ * Every drive shares one reading of it (see `drive`), and the loop spends it
+ * through `turnBudgetMs` — no new step and no retry once it is gone, and a
+ * screen already on the glass stays on the glass.
+ */
+export const SCREEN_BUDGET_MS = 100_000;
+
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
  *  agent's own, not a product capability anybody else may reach. */
@@ -327,6 +344,8 @@ export async function assembleScreen(
     throw new Error("the screen agent thinks with `turn.models.default`, and this turn carries no default seat");
   }
 
+  /** When this screen is out of time, read once so every drive shares it. */
+  const deadline = Date.now() + SCREEN_BUDGET_MS;
   const directory = appDirectory(input.appId);
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
   const record: RunRecord = { assembled: false, painted: false };
@@ -498,7 +517,12 @@ export async function assembleScreen(
    * reason).
    */
   const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
-    for await (const event of harness.run({ ...turn, messages })) {
+    // What is LEFT of the screen's clock — ONE budget for the whole assembly, not
+    // one per drive: the reviewer round and the `validate` call before it are part
+    // of the same wait, so a second full clock here would double the ceiling the
+    // person is actually holding.
+    const turnBudgetMs = Math.max(deadline - Date.now(), 0);
+    for await (const event of harness.run({ ...turn, messages, options: { turnBudgetMs } })) {
       if (event.type === "error") failure ??= event.message;
     }
   };

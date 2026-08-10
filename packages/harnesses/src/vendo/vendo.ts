@@ -95,6 +95,11 @@ export interface VendoHarnessOptions {
   contextTokenBudget?: number;
   maxOutputTokens?: number;
   maxRetries?: number;
+  /** The wall clock for THIS turn (`TurnContext.turnBudgetMs`). Per-turn is where
+   *  it belongs: the budget belongs to whoever is waiting, and a caller that
+   *  drives the loop twice for one ask (the screen agent's reviewer round) hands
+   *  the second drive what is left rather than a second full clock. */
+  turnBudgetMs?: number;
   /** Override the window this seat is assumed to have. The BYO escape for a
    *  model {@link contextWindowTokens}'s table cannot name. */
   contextWindowTokens?: number;
@@ -108,6 +113,7 @@ const CONTEXT_KNOBS = [
   "contextTokenBudget",
   "maxOutputTokens",
   "maxRetries",
+  "turnBudgetMs",
   "contextWindowTokens",
 ] as const;
 
@@ -146,6 +152,9 @@ export interface VendoHarnessDeps {
   /** How many times the SDK re-issues a failed provider call ({@link
    *  DEFAULT_MAX_RETRIES}); `0` spends nothing. */
   maxRetries?: number;
+  /** The deployment's default wall clock per turn, in ms; a per-turn option wins.
+   *  Unset = no clock (`TurnContext.turnBudgetMs`). */
+  turnBudgetMs?: number;
   /** The window this deployment's seat is assumed to have, when the shipped
    *  table is wrong about it. Q1a: this lives on the harness and nowhere else —
    *  it is a fact about a model, not a product decision a host composes. */

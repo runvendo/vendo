@@ -54,7 +54,15 @@ export const DEFAULT_MAX_STEPS = 20;
  *  so the loop inherited whatever the SDK's default happened to be: a posture
  *  nobody chose, that no reader of this file could see, and that a minor version
  *  bump could change under us. The value matches the SDK's own default, so making
- *  it explicit changed no behaviour — only who owns it. */
+ *  it explicit changed no behaviour — only who owns it.
+ *
+ *  It also multiplies the worst case invisibly, and that is why
+ *  `TurnContext.turnBudgetMs` exists. Every rail above counts STEPS, and a step
+ *  has no bound in time: one measured call spent 240.9s on 623 characters of
+ *  output, so a ten-step turn at this budget is thirty unbounded calls. A
+ *  smaller number would not fix it — retrying an overloaded provider is the
+ *  right move, and the wrong one is retrying it after the caller has stopped
+ *  waiting. Only a clock can tell those apart. */
 export const DEFAULT_MAX_RETRIES = 2;
 
 // Anthropic prompt-caching breakpoint. providerOptions.anthropic is ignored by every
@@ -548,6 +556,14 @@ export interface TurnContext {
   /** How many times the SDK re-issues a failed provider call. Defaults to
    *  {@link DEFAULT_MAX_RETRIES}; 0 spends nothing. */
   maxRetries?: number;
+  /** The WALL CLOCK for one drive of this loop, in ms. Unset = no clock, which is
+   *  every rail this loop had before: they all count steps, and a step has no
+   *  bound in time. ONE number, not a per-step ceiling beside it: a step that
+   *  writes a whole app document legitimately runs for a minute or two, so any
+   *  per-step number safe enough to keep is already the whole budget. See {@link
+   *  DEFAULT_MAX_RETRIES} for why the retry budget makes a clock the only honest
+   *  bound. */
+  turnBudgetMs?: number;
 }
 
 export interface TurnLoop {
@@ -579,6 +595,7 @@ function turnModel(options: TurnLoopOptions): LanguageModel {
 
 export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
   const maxSteps = options.context?.maxSteps ?? DEFAULT_MAX_STEPS;
+  const budgetMs = options.context?.turnBudgetMs;
   /** The workbench's ear for this drive. Off (every production turn) this is a
    *  map miss and returns; see `../workbench.ts`. */
   const debug = (event: WorkbenchEvent): void =>
@@ -608,6 +625,12 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     maxOutputTokens: options.context?.maxOutputTokens,
     // Stated rather than inherited — see DEFAULT_MAX_RETRIES.
     maxRetries: options.context?.maxRetries ?? DEFAULT_MAX_RETRIES,
+    // The caller's clock, as the SDK's own `timeout`: it merges the budget into
+    // the very signal every provider call, and every retry's BACKOFF, already
+    // shares — so a retry the clock cannot pay for is refused instead of being
+    // dialled and waited on by nobody. Unset (every caller before this) and not
+    // one option changes.
+    ...(budgetMs === undefined ? {} : { timeout: { totalMs: budgetMs } }),
     // The caller's loadout: restrict what the model may pick to the current
     // offered set. `prepareStep` re-reads it each step so a tool the caller
     // equips mid-turn (e.g. via vendo()'s `find_tools` hand) becomes choosable
