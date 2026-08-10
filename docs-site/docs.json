@@ -75,6 +75,7 @@
       },
       {
         "group": "Expose your product over MCP",
+        "tag": "Experimental",
         "pages": [
           "capabilities/mcp",
           "existing-agents/mcp",
