@@ -185,6 +185,15 @@ export interface RuntimeTurnTools extends TurnTools {
 
 export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
   const waiter = createApprovalWaiter(options.guard);
+  /**
+   * The repeat guard — OpenHands' stuck detector, per turn.
+   *
+   * Keyed the way that detector compares: the tool name plus its arguments, no
+   * call id and no timings, so two calls that mean the same thing are the same
+   * key. Nothing here is asked of the model; a loop that repeats itself is not
+   * reading its instructions either.
+   */
+  const repeats = new Map<string, { count: number; result: ToolResult }>();
   const approvalWaitMs = options.approvalWaitMs ?? APPROVAL_WAIT_MS;
   const bridge: ToolBridgeOptions = {
     ...options.bridge,
@@ -264,6 +273,11 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
       const at = workbenchCursor(options.ctx.turnId);
       let guard: ToolFact["guard"];
       let approval: ToolFact["approval"];
+      /** This call's repeat-guard key, and the grade the descriptor gave it (known
+       *  only once resolved below, which is after `finish` is written). */
+      const key = `${name} ${JSON.stringify(args)}`;
+      const prior = repeats.get(key);
+      let risk: ToolDescriptor["risk"] | undefined;
       mirror({ kind: "call", toolCallId, name, args });
       const finish = (result: ToolResult, outcome?: ToolOutcome): ToolResult => {
         mirror({ kind: "result", toolCallId, name, result, ...(outcome === undefined ? {} : { outcome }) });
@@ -279,8 +293,37 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
           ...(approval === undefined ? {} : { approval }),
           durationMs: Date.now() - startedAt,
         });
+        // A successful write moves the world, so no answer this turn remembers
+        // stands — its own included, because a second identical write is a second
+        // real write and not a re-read. Everything else is remembered by key.
+        if (result.status === "ok" && risk !== undefined && risk !== "read") repeats.clear();
+        else repeats.set(key, { count: (prior?.count ?? 0) + 1, result });
         return result;
       };
+
+      // THE REPEAT GUARD, before anything executes and after the call is mirrored:
+      // nothing runs, but the transcript still carries the call the model made.
+      // An answer that already came back is handed back verbatim rather than
+      // fetched again; a failure gets exactly ONE retry, because an immediate
+      // retry after a transient failure is a promoted win and a third identical
+      // attempt is the loop OpenHands' detector halts.
+      if (prior !== undefined && prior.result.status === "ok") {
+        return finish({
+          status: "ok",
+          output: prior.result.output,
+          note: `Identical to your earlier ${name} call; this is that same answer and it will not change. Act on it.`,
+        });
+      }
+      if (prior !== undefined && prior.count >= 2) {
+        return finish({
+          status: "error",
+          error: {
+            code: "repeated",
+            message:
+              `${name} has failed the same way twice. Do not call it again — finish with what you have, or escalate.`,
+          },
+        });
+      }
 
       try {
         // The miss reporter first, and NOT through the guard: it never reaches
@@ -305,6 +348,9 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
             error: { code: "not-found", message: `Unknown tool: ${name}` },
           });
         }
+        // What the repeat guard needs from the descriptor, and the only thing it
+        // takes: a read may be remembered, a write invalidates.
+        risk = descriptor.risk;
 
         // §1.4: PREVIEW first, exactly as the ai-SDK path's needsApproval hook
         // does. A preview never spends the write-budget/call-rate breakers and

@@ -39,7 +39,9 @@ import {
   type SeatModels,
   type RunContext,
   type ToolListing,
+  type ToolOutcome,
   type ToolRegistry,
+  type ToolResult,
   type TurnId,
   type TurnSkills,
   type TurnState,
@@ -143,7 +145,12 @@ const ASSEMBLY_TOOLS: readonly string[] = [
  */
 export interface ScreenSurface {
   readonly models: SeatModels<LanguageModel>;
-  readonly tools: TurnTools;
+  readonly tools: TurnTools & {
+    /** Told when this run WROTE something, so a repeat guard on the other side of
+     *  this seam drops answers about a document that no longer exists. Optional
+     *  because a caller inside a turn still passes its own `Turn` verbatim. */
+    readonly invalidate?: () => void;
+  };
   /** Wrapped by the render seam before it gets here, so `commit()` paints. */
   readonly workspace: WorkspaceFs;
   readonly signal: AbortSignal;
@@ -387,7 +394,13 @@ export async function assembleScreen(
    */
   const save = async (turn: Turn<unknown>, file: string, content: string): Promise<CommitResult> => {
     await turn.workspace.writeFile(`${directory}/${file}`, content);
-    return await turn.workspace.commit({ message: `${file} (${input.appId})` });
+    const committed = await turn.workspace.commit({ message: `${file} (${input.appId})` });
+    // The hands write through the workspace, not through a tool, so the repeat
+    // guard cannot see this from its own side: `validate`'s earlier verdict is
+    // about a document that no longer exists, and handing it back as "the same
+    // answer" would tell a fixed screen it is still broken.
+    if (committed.status === "ok") surface.tools.invalidate?.();
+    return committed;
   };
 
   const saveApp: HarnessHand = {
@@ -751,11 +764,29 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
  * and a parked approval is not something an assembly loop can wait for — so it
  * reads as denied with the reason, which is what the model needs in order to
  * write around it rather than bind a value it never got.
+ *
+ * THE REPEAT GUARD lives here because this is the choke point the generation lane
+ * actually uses (`vendo_make` and the bench both arrive through
+ * `screenAssembler`, never through `createTurnTools`). Ported from OpenHands'
+ * stuck detector: it compares calls SEMANTICALLY — tool name plus arguments — and
+ * is code, not a line in the brief, because a loop that repeats itself is not
+ * reading its instructions either.
  */
-function registryTools(registry: ToolRegistry, ctx: RunContext): TurnTools {
+function registryTools(
+  registry: ToolRegistry,
+  ctx: RunContext,
+): TurnTools & { invalidate: () => void } {
+  /** Every tool's grade, learned on the one `list()` this run makes. An unknown
+   *  name reads as a write below, so the guard forgets rather than caches. */
+  const risks = new Map<string, ToolListing["risk"]>();
+  /** OpenHands' semantic key — the tool and its arguments, no call id and no
+   *  timings — against what that call answered, for THIS run only. */
+  const seen = new Map<string, { count: number; result: ToolResult }>();
   return {
+    invalidate: () => seen.clear(),
     async list(): Promise<ToolListing[]> {
       const descriptors = await registry.descriptors(ctx).catch(() => []);
+      for (const descriptor of descriptors) risks.set(descriptor.name, descriptor.risk);
       return descriptors.map((descriptor) => ({
         name: descriptor.name,
         title: descriptor.title ?? descriptor.name,
@@ -766,25 +797,61 @@ function registryTools(registry: ToolRegistry, ctx: RunContext): TurnTools {
       }));
     },
     async call(name, args) {
-      const outcome = await registry.execute(
-        { id: `call_${globalThis.crypto.randomUUID()}`, tool: name, args },
-        ctx,
-      );
-      if (outcome.status === "ok") return { status: "ok", output: outcome.output };
-      if (outcome.status === "error") return { status: "error", error: outcome.error };
-      if (outcome.status === "blocked") return { status: "denied", reason: outcome.reason };
-      if (outcome.status === "connect-required") {
+      const key = `${name} ${JSON.stringify(args)}`;
+      const prior = seen.get(key);
+      // An answer that already came back is not asked for twice: the measured
+      // lane spent four round-trips re-reading the same catalog before it painted
+      // anything, and nothing about the second read could differ.
+      if (prior !== undefined && prior.result.status === "ok") {
         return {
-          status: "denied",
-          reason: `${outcome.connect.toolkit} is not connected, so this cannot be read.`,
-          needs: { kind: "connect", toolkit: outcome.connect.toolkit },
+          status: "ok",
+          output: prior.result.output,
+          note: `Identical to your earlier ${name} call; this is that same answer and it will not change. Act on it.`,
         };
       }
-      return {
-        status: "denied",
-        reason: "This one needs the person's approval, which cannot be asked for here.",
-        needs: { kind: "approval", approvalId: outcome.approvalId },
-      };
+      // One retry after a failure is a promoted win; a third identical attempt is
+      // the loop OpenHands' detector halts.
+      if (prior !== undefined && prior.count >= 2) {
+        return {
+          status: "error",
+          error: {
+            code: "repeated",
+            message:
+              `${name} has failed the same way twice. Do not call it again — finish with what you have, or escalate.`,
+          },
+        };
+      }
+      const result = screenToolResult(await registry.execute(
+        { id: `call_${globalThis.crypto.randomUUID()}`, tool: name, args },
+        ctx,
+      ));
+      // A successful write moves the world, so every answer this run remembers is
+      // now suspect — its own included, because a second identical write is a
+      // second real write and not a re-read.
+      if (result.status === "ok" && risks.get(name) !== "read") seen.clear();
+      else seen.set(key, { count: (prior?.count ?? 0) + 1, result });
+      return result;
     },
+  };
+}
+
+/** The registry's outcomes as the three statuses a harness sees (§1.1), unchanged
+ *  — lifted out of `call` only so the repeat guard above can hold the result as a
+ *  value instead of returning it from five places. */
+function screenToolResult(outcome: ToolOutcome): ToolResult {
+  if (outcome.status === "ok") return { status: "ok", output: outcome.output };
+  if (outcome.status === "error") return { status: "error", error: outcome.error };
+  if (outcome.status === "blocked") return { status: "denied", reason: outcome.reason };
+  if (outcome.status === "connect-required") {
+    return {
+      status: "denied",
+      reason: `${outcome.connect.toolkit} is not connected, so this cannot be read.`,
+      needs: { kind: "connect", toolkit: outcome.connect.toolkit },
+    };
+  }
+  return {
+    status: "denied",
+    reason: "This one needs the person's approval, which cannot be asked for here.",
+    needs: { kind: "approval", approvalId: outcome.approvalId },
   };
 }

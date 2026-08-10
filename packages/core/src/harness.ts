@@ -112,7 +112,10 @@ export interface TurnTools {
 
 /** Build contract §1.1 — three statuses is the whole surface a harness sees. */
 export type ToolResult =
-  | { status: "ok"; output: Json }
+  /** `note` is the RUNTIME's own aside about this call, never the host's data and
+   *  never written to the screen: the repeat guard uses it to say "you already
+   *  asked this, and the answer has not changed". Absent on an ordinary call. */
+  | { status: "ok"; output: Json; note?: string }
   /** Guard said no / needs a human. */
   | { status: "denied"; reason: string; needs?: DeniedNeeds }
   | { status: "error"; error: { code: string; message: string } };
