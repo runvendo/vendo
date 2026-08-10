@@ -50,7 +50,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Grid",
     group: "layout",
-    summary: "Equal-width columns. Use for a grid of cards or stats.",
+    summary: "Equal-width columns that wrap when a column would get too narrow; columns is a maximum. Use for a grid of cards or stats.",
     props: { columns: config(z.number().int().positive(), "column count"), gap: config(z.number(), "pixels between cells") },
     examples: ["<Grid columns={3}><Stat .../><Stat .../><Stat .../></Grid>"],
   },

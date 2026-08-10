@@ -65,16 +65,17 @@ export interface GridProps {
   gap?: number;
 }
 
-/** Equal-width columns. */
+/** Equal-width columns; `columns` is a maximum — a track narrower than 240px wraps instead of clipping. */
 export function Grid({ columns = 2, gap, children }: PropsWithChildren<GridProps>) {
   const safe = Number.isFinite(columns) ? Math.max(1, Math.floor(columns)) : 2;
+  const ideal = safe === 1 ? "100%" : `calc((100% - ${safe - 1} * ${gapVar(gap)}) / ${safe})`;
   return (
     <div
       data-kit="Grid"
       style={{
         display: "grid",
-        gridTemplateColumns: `repeat(${safe}, minmax(0, 1fr))`,
-        alignItems: "stretch",
+        gridTemplateColumns: `repeat(auto-fit, minmax(max(240px, ${ideal}), 1fr))`,
+        alignItems: "start",
         gap: gapVar(gap),
       }}
     >
