@@ -92,6 +92,10 @@ export const ESCALATE_TOOL = "escalate";
  *  write outside it. */
 export const SAVE_APP_TOOL = "save_app";
 
+/** The catalog lookup verb (`vendo-verbs.ts:63`). Named here because this loop
+ *  withholds it on a product that has no catalog for it to read. */
+const SEARCH_COMPONENTS_TOOL = "search_components";
+
 /**
  * The assembly verbs, by NAME rather than by risk.
  *
@@ -101,7 +105,7 @@ export const SAVE_APP_TOOL = "save_app";
  * around. Host read tools come in by risk below; these come in by name.
  */
 const ASSEMBLY_TOOLS: readonly string[] = [
-  "search_components",
+  SEARCH_COMPONENTS_TOOL,
   "validate",
   "vendo_apps_data_list",
   "vendo_apps_open",
@@ -137,6 +141,15 @@ export interface ScreenInput {
    *  in the same bytes the box rung is handed. Knowledge, not instruction, so it
    *  sits with the job description rather than with the deployment's voice. */
   briefing?: string;
+  /**
+   * The host's OWN components, by name — `BriefingPack.catalog` as the pack above
+   * already lists them, so the two can never disagree about what exists.
+   *
+   * Three states, and the empty one is the point: `undefined` is a caller that did
+   * not say, and the loop assumes there may be something to find; `[]` is a caller
+   * that says there is NOTHING to find, and the loop stops offering to look.
+   */
+  hostComponents?: readonly string[];
 }
 
 /** What one assembly run answers. `ScreenOutcome` plus the title an assembled
@@ -203,6 +216,39 @@ export function toolBrief(listings: readonly ToolListing[]): string {
     .join("\n");
 }
 
+/** Whether this product is KNOWN to register no components of its own — the one
+ *  state `ScreenInput.hostComponents` exists to carry (an absent list is "the
+ *  caller did not say", which claims nothing). */
+const noHostComponents = (input: ScreenInput): boolean => input.hostComponents?.length === 0;
+
+/**
+ * THE ANSWER TO THE QUESTION THE SKILL SENDS THE MODEL LOOKING FOR.
+ *
+ * `search_components` reads the HOST's registered catalog and nothing else
+ * (`compose-apps.ts:432` → `searchRuntimeCatalog` in `catalog.ts:264`) — the
+ * built-in Kit components are never in it, they are in the manual above. The
+ * shipped skill says to search when you do not know a name
+ * (`format-reference.ts:378`, `building-apps.ts:59`) and the briefing pack says
+ * nothing at all when the catalog is empty (`briefing.ts:76` prints the section
+ * only when it has entries), so a writer on a product that registers none
+ * searches for `Stat`, gets `{components: []}`, and searches again. Six of eleven
+ * model steps on maple's `pending-transfers` went there and learned nothing.
+ *
+ * A fact costs no round trip. When there IS a catalog this says nothing: the pack
+ * has already listed it and `search_components` is on the loadout to read the
+ * props those lines do not carry.
+ */
+const componentNote = (input: ScreenInput): string => noHostComponents(input)
+  ? `## This product's own components
+
+It registers none. The components in the manual above are your whole vocabulary —
+there is no catalog to search, and \`${SEARCH_COMPONENTS_TOOL}\` is not on your tool
+list because it would have nothing to answer with. Write the document out of the
+built-in components.
+
+`
+  : "";
+
 /**
  * The environment correction, and only that.
  *
@@ -212,14 +258,14 @@ export function toolBrief(listings: readonly ToolListing[]): string {
  * the skill says what the job is — which is the difference between deriving a
  * brief and forking one.
  */
-const environmentNote = (appId: AppId, listings: readonly ToolListing[]): string => `# In this loop
+const environmentNote = (input: ScreenInput, listings: readonly ToolListing[]): string => `# In this loop
 
 You have no machine: no shell, no \`Task\`, no files on disk. Everything the skill
 above tells you to read is already below, and everything it tells you to write goes
 through two tools.
 
 - **\`${SAVE_APP_TOOL}\`** saves this app's whole document. The app is
-  \`${appId}\`; you never name a path. Every save that parses repaints the person's
+  \`${input.appId}\`; you never name a path. Every save that parses repaints the person's
   screen, so save as you go — a save is cheap and silence is not. There is no
   edit-in-place tool: save the full document each time.
   Its \`decisions\` is this app's MEMORY, and the only thing the next editor will
@@ -243,7 +289,7 @@ through two tools.
 Never look for a tool that builds the app for you. There isn't one, and that is
 deliberate.
 
-## This product's tools, with the shapes they return
+${componentNote(input)}## This product's tools, with the shapes they return
 
 ${toolBrief(listings)}`;
 
@@ -257,7 +303,7 @@ function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): stri
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
     input.briefing,
-    environmentNote(input.appId, listings),
+    environmentNote(input, listings),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
     .join("\n\n---\n\n");
@@ -451,8 +497,21 @@ export async function assembleScreen(
   // this loop — and a mutating host tool is not an assembly tool. Names, not a
   // risk filter passed downward: the closed list stays a list, and the one place
   // that can decide "is this an assembly tool" is the one holding the listing.
+  //
+  // `search_components` is withheld the same way when this product registers no
+  // components of its own: it can only answer `{components: []}` (see
+  // `componentNote`), and an offer to look is an offer the model takes — six
+  // round trips of it on maple's `pending-transfers`. Withheld by NAME, not by
+  // dropping it from `ASSEMBLY_TOOLS`, because its descriptor also declares
+  // `risk: "read"` (`vendo-verbs.ts:76`) and the risk filter below would let it
+  // straight back in. Nothing is lost: the answer it would have given is now a
+  // line in the brief.
+  const withheld = new Set<string>([
+    VENDO_MAKE_TOOL,
+    ...(noHostComponents(input) ? [SEARCH_COMPONENTS_TOOL] : []),
+  ]);
   const loadout: Array<string | HarnessHand> = listings
-    .filter((listing) => listing.name !== VENDO_MAKE_TOOL)
+    .filter((listing) => !withheld.has(listing.name))
     .filter((listing) => ASSEMBLY_TOOLS.includes(listing.name) || listing.risk === "read")
     .map((listing) => listing.name);
   loadout.push(saveApp, escalate);
@@ -653,7 +712,14 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
         {
           appId: request.appId,
           request: request.request,
-          ...(pack === undefined ? {} : { briefing: renderBriefingPack(pack) }),
+          // The same pack, twice over: the bytes the writer reads, and the one
+          // fact it has to ACT on — whether there is a catalog to search at all.
+          // Read off `pack.catalog` rather than counted separately, so the brief
+          // and the loadout can never disagree about what this product registers.
+          ...(pack === undefined ? {} : {
+            briefing: renderBriefingPack(pack),
+            hostComponents: pack.catalog.map((entry) => entry.name),
+          }),
         },
       );
       if (result.kind !== "assembled") return result;
