@@ -1,5 +1,653 @@
 # @vendoai/apps
 
+## 0.10.0
+
+### Minor Changes
+
+- e2128aa: App generation moves into one package, behind two doors
+
+  `@vendoai/apps` now has a browser-safe **contract door** and a node-only
+  **engine root**. The app format — the document, the two genui dialects and their
+  compilers, the Kit, the island/jail rules, catalog + theme, the checking
+  contract, remix provenance, and the wire shapes `/apps/*` returns — lives on
+  `@vendoai/apps/contract`, which imports no node built-ins. The behavior that
+  produces those shapes stays behind `@vendoai/apps`.
+
+  **Migration:**
+
+  1. **Moved `@vendoai/core` names are a hard rename** — import them from
+     **`@vendoai/apps/contract`**: the genui dialect (`validateTree`, `compileWire`,
+     `compilePlan`, `printWire`, the expression grammar), the Kit, the
+     island/jail rules, catalog + theme, `AppFloor`/`Check`/`CheckInput`,
+     `ScreenAssembler`, `MakeReceipt`, host components, and build deadlines.
+     Types reaching you through `@vendoai/vendo` or the `vendoai` alias are
+     **unchanged** — the umbrella re-exports the contract beside core.
+     `@vendoai/apps` is ESM-only, so `require()` of these _values_ needs ESM or
+     the umbrella.
+     `AppDocument` and its schemas, and `Finding`, deliberately **stay in
+     `@vendoai/core`** (the store contract and the harness runtime speak them);
+     the contract door re-exports them, so one door serves every consumer.
+
+  2. **Subpaths — what moved and what did not.** Entry points go 8 → 4:
+
+     - **`@vendoai/apps`, `@vendoai/apps/e2b` and `@vendoai/apps/testing` all
+       survive with their specifiers unchanged.** `./e2b` stays because the venue
+       ladder reaches it as a real module seam, not merely a convenience re-export.
+     - `@vendoai/apps/{sandbox-ladder,internal}` **fold into `@vendoai/apps`** —
+       import those names from the root.
+     - `@vendoai/apps/adapter-conformance` → **`@vendoai/apps/testing`**, not the
+       root: it imports `vitest`, and the root rides every composed host's server
+       path.
+     - `@vendoai/apps/claude-turn` → **`@vendoai/harnesses/claude-turn`** and
+       `@vendoai/apps/box-door` → **`@vendoai/harnesses/box-door`** (both moved with
+       `claudeCode()`).
+     - **NEW:** `@vendoai/apps/contract`.
+
+  3. **`@vendoai/ui`, `@vendoai/store`, `@vendoai/actions` and `@vendoai/mcp` now
+     depend on `@vendoai/apps`** and read the app format from
+     `@vendoai/apps/contract`. Their own public surfaces are unchanged.
+
+  **Known tradeoffs, stated plainly:**
+
+  - **One name, still two declarations.** `@vendoai/ui` no longer keeps its own
+    copy of the `/apps/*` wire shapes — it re-exports them from the contract
+    door. That removes a copy; it does not yet make one definition. The engine's
+    server door declares its own richer `EditResult` (with `failure`,
+    `graduated`, `box`, `pendingEgress`, `automation`) beside the contract's
+    four-field wire shape, so the name has two declarations inside
+    `@vendoai/apps`, one per door. Unifying them decides which fields the wire
+    may expose, which is a behavior change and not part of this move.
+  - **Install weight.** `@vendoai/apps` declares `esbuild`, `jsdom`, `fflate` and
+    `react-dom` as hard dependencies, so a browser-only consumer of
+    `@vendoai/apps/contract` still installs the engine's dependency set. The
+    contract door itself bundles clean for a browser target (enforced by a new
+    leg in `scripts/portability-gate.mjs`); it is the install graph, not the
+    bundle, that carries the weight. Pre-existing, amplified by this split.
+
+- e1032f9: The package now exports only what its consumers actually import. Two runtime
+  doors and twelve names left the public surface; nothing in this repo, the
+  console, or the examples called any of them.
+
+  Gone from `AppsRuntime`: `machine.editApp` (and its `MachineEditResult` result
+  type) and `prewarm`. `machine.editApp` had zero callers — the in-box edit path
+  every caller actually uses is `edit`, which graduates the app and lands the
+  tree's `fn:` bindings as well as the server change. `prewarm` was a best-effort
+  page-open model warm-up no surface ever mounted.
+
+  Gone from the package root: `placementStore`, `PLACEMENTS_COLLECTION`,
+  `parseVendoManifest`, `vendoManifestSchema`, `detectPinDrift`,
+  `inClientApprovalSchema`, `remixRejectionSchema`, `appMountFor`,
+  `invalidSourcePath`, and `buildFailureReason`. Every one of them is still used
+  inside the package — only the re-export is gone. The types beside them stay
+  exported, as do `checkoutApp`, `commitApp`, `appVersionHash`,
+  `pinComponentName`, `pinBaselineSchema`, `planAutomation`, and
+  `skeletonFromPlan`, which real consumers import.
+
+  `@vendoai/apps/claude-turn` no longer exports the `ClaudeSessionInput` and
+  `SdkModule` interfaces; `createClaudeSession` and `ClaudeSession` are unchanged.
+
+- 079d7d8: Four unreachable features leave the public surface. Nothing in this repo, the
+  console, or the examples called any of them; every name was re-grepped across
+  `packages/`, `examples/`, `fixtures/`, `corpus/` and `scripts/` before removal.
+
+  **The secrets-exposure write path (ENG-345) is gone.** `AppsRuntime.secrets` —
+  both `exposure()` and `setExposure()` — is deleted, along with the
+  `vendo_secret_exposure` grant store, the `SecretExposureState` and
+  `SetExposureResult` types, and the synthetic `vendo_secret_expose` approval
+  descriptor. This was the exception path that placed a secret's REAL value into a
+  box. The default is unchanged and is now the only behavior: a declared secret
+  enters the sandbox as an opaque alias and is substituted at the egress proxy.
+  The egress half of the approval flow (`vendo_egress_allow`) rides the same
+  `onApprovalDecision` subscription and is untouched, as are `redaction.ts` and
+  `egress-approval.ts`. `buildEnv` keeps its optional `grants` argument, so a host
+  that assembles box env itself needs no change.
+
+  **Five manual machine-lifecycle doors are gone**: `machine.provision`, `wake`,
+  `sleep`, `destroy` and `syncManifest`. Each duplicated work the runtime already
+  does on its own — graduation provisions, box edits and fn calls wake, edits
+  sleep, `apps.delete` reaps, and manifest schedules fold in automatically after
+  every box edit. `machine.available`, `machine.ping` and `machine.report` stay,
+  and the whole internal lifecycle is unchanged.
+
+  **Two bypassed trust-check doors are gone**: `inClient.verdict` and
+  `inClient.approvals`. The verdict clients actually read rides the `open()`
+  payload as `inClient`; `inClient.shipDiff`, `inClient.approve`, the dev approve
+  route and all internal verdict logic are unchanged.
+
+  **`pins.drift` is gone.** The live drift path is the report `open()` attaches to
+  the payload, which is unchanged; `detectPinDrift` and its internal callers stay,
+  as do `pins.fork` and `pins.rebase`.
+
+- 0e51585: `AppMachine.envStaleAt` — the Wave-7 env-rebuild marker — and the wake-time
+  rebuild it gated are removed.
+
+  The marker's only production writer was the secrets-exposure grant flow deleted
+  in #1100, so nothing could set it any more and `rebuildStaleEnv` could never
+  run. What goes with it:
+
+  - `AppMachine.envStaleAt` (`@vendoai/core`) — field and schema entry
+  - `rebuildStaleEnv` and both of its wake call sites (`machine-lifecycle.ts`)
+  - the `injectEnv` slot on `MachineLifecycleConfig`, whose only reader it was,
+    and the `injectEnv: pushBoxEnv` wiring in `box-lane.ts`
+  - `nextEnvStaleAt` (`persistence.ts`), which already had zero callers
+
+  The two paths that assemble and inject a box's boundary env are untouched:
+  provision (`buildEnv` → `SandboxAdapter.create`) and the pre-edit re-injection
+  every box edit makes (`buildAppEnv` → `pushBoxEnv` over the box control port).
+  `pushBoxEnv` itself stays — the edit path is its live caller.
+
+  The machine schema is `.passthrough()`, so a stored document that still carries
+  an `envStaleAt` key parses exactly as before; the key survives as an unknown
+  field and is simply no longer typed, validated, or read.
+
+- e87a765: Three v1 back-compat readers leave the runtime. A production-data audit across
+  all 84 Cloud tenant schemas and the console mirror (898 app documents) found
+  ZERO rows carrying any of the three shapes, and every name was re-grepped across
+  `packages/`, `examples/`, `fixtures/`, `corpus/` and `scripts/` before removal.
+
+  **The e2b v1 snapshot-ref decoder is gone.** `decodeSnapshotRef` accepts only
+  `e2b:v2:` refs now; the `e2b:v1:` prefix, its `egress` → `allowedDomains`
+  mapping, and its mention in the validation error are deleted.
+
+  > **BREAKING for self-hosted deployments:** pre-v2 e2b snapshot refs are no
+  > longer resumable; re-create the app's box.
+
+  Nothing else about the v2 path changes — the ref format, the `sourceSandboxId`
+  reap-on-destroy, the port and allowlist round-trip are all untouched.
+
+  **The retired v1 `server` field readers are gone.** `rungFor` no longer consults
+  `app.server`, the fork no longer strips it, and interchange no longer lists or
+  omits it — the field is dropped from `APP_DOCUMENT_FIELDS`, so a document that
+  smuggles one is stripped by the allowlist exactly as any other unknown field is.
+  Rung 4 stays: it is a served document with no machine (a de-graduated doc), which
+  is still reachable and still has no surface. The singular `trigger` → `triggers`
+  import migration beside it is UNTOUCHED — production documents still carry the
+  singular key, and that migration is alive.
+
+  **The legacy scheduler-state migration is gone.** The `vendo_app_schedules`
+  cache, the `carryLegacyCursors` cutover that carried its `lastFiredAt` onto the
+  new per-trigger cursor, and `clearLegacyState` (with its one caller in
+  `apps.delete`) are deleted. The apps-side write into the automations-owned
+  `automations:schedule` collection existed solely for that cutover and goes with
+  it, as its own comment said it would. The successor cursor path in
+  `@vendoai/automations` — the one the engine actually reads and writes — is
+  untouched.
+
+- 361f9b9: The app format has one definition, and a test that fails when a mirror drifts
+
+  The format was kept by hand in four places — the contract, core's pinned limits,
+  the manual the agent reads, and the public docs — and they disagreed. The manual
+  promised "16 islands, 64 KB each" and never mentioned the **256 KB total** the
+  validator also enforces, so a build that obeyed the manual could exceed a budget
+  it was never told about and fail to validate for a reason it could not see.
+  Nothing about enforcement changed; the manual and the docs are now generated
+  from, and pinned to, the same constants.
+
+  **A generated component may now be a bundle, and nothing migrates.**
+  `AppDocument.components` values widen from `string` to `ComponentEntry` —
+  either the legacy bare source string or a `ComponentBundle`
+  (`{ source, modules?, styles?, sampleProps?, origin: "authored" | "seeded" }`).
+  Backward compatible **by construction**: a stored bare string still reads, and
+  every reader goes through `bundleOf(entry)`, which returns
+  `{ source, origin: "authored" }` for one. No document is rewritten, no version
+  is minted, and an app stored before this release opens unchanged.
+
+  _If you read `document.components` yourself_, that is the one change to make:
+
+  ```ts
+  // before
+  const source = document.components?.[name];
+  // after
+  import { bundleOf, componentSources } from "@vendoai/apps/contract";
+  const source = bundleOf(document.components?.[name] ?? "").source;
+  const asSources = componentSources(document.components); // the whole map
+  ```
+
+  `ComponentBundle`, `componentBundleSchema`, `ComponentEntry`,
+  `componentEntrySchema` and `bundleOf` are **declared in `@vendoai/core`**, beside
+  the `AppDocument` field they type — core's store conformance kit parses a stored
+  row with `appDocumentSchema` and cannot reach up into `@vendoai/apps`. The
+  contract door **re-exports** them and never re-declares them, so
+  `@vendoai/apps/contract` remains the one place to import the format from. Same
+  rule as `TREE_MAX_GENERATED_COMPONENTS` / `TREE_MAX_COMPONENT_SOURCE_BYTES` /
+  `TREE_MAX_TOTAL_COMPONENT_BYTES`, which are re-exported from core here too.
+
+  **BREAKING — the plan dialect loses two leaf fields.** `PlanLeaf` no longer has
+  `query` or `attrs`, and `<Leaf>` no longer parses a `query` attribute or
+  collects arrangement hints. Both were parsed and fact-checked with no downstream
+  consumer. A `<Leaf query="…" col="2"/>` still compiles — the extra attributes are
+  simply ignored — so no plan text breaks; only code reading `leaf.query` or
+  `leaf.attrs` does. The plan's top-level `<Query>` list and `<Cannot>` are
+  unaffected.
+
+  **New on `@vendoai/apps/contract`: the real validator surface.** `componentMapError`
+  and `utf8ByteLength` (the generated-component map rules, measured in UTF-8 bytes),
+  `SAFE_COMPONENT_NAME`, and `componentSources`. A consumer validating a component
+  map should call `componentMapError` rather than re-implementing the byte
+  accounting and the reserved-name check against `KIT_COMPONENT_NAMES`.
+
+  **The Kit vocabulary is one list.** `KIT_COMPONENT_NAMES` derives from `KIT_SPECS`,
+  `kitComponentNames()` returns that list instead of recomputing it, and
+  `WIRE_COMPONENT_NAMES` is `KIT_WIRE_COMPONENT_NAMES` re-exported — the same
+  binding, not a second array. All three names are still exported and their values
+  are unchanged.
+
+- b0a165c: Remix is a seeded app: the pins subsystem is gone
+
+  An app that was made from one of your components no longer carries a list of
+  "pins". It carries a single `seed` — the component it started from and the
+  version of that component it started at. A remix is an ordinary app that
+  happens to start from something, so it is created, validated, edited and
+  versioned through exactly the same doors as every other app.
+
+  **Behaviour change you will notice: updating a remix now replaces it.**
+  When the host component changes, the remix reports drift as a warning and
+  nothing happens on its own. If you choose to update, you get the pristine new
+  component — the edits you made to that component are replaced. The previous
+  release replayed your recorded edits on top of the new version; that machinery,
+  its preflight and the version trail feeding it are deleted. Drift is a warning,
+  and updating is always your choice. The UI says this in the drift banner, and
+  the agent tool's description tells the model to say it too.
+
+  **Behaviour change on admission.** Every write path now runs the same document
+  validation, seeded and forked apps included. Seeded bundles used to skip the
+  island gate entirely, so a capture the jail could never render was accepted
+  without complaint. Captures that produce invalid documents will now be refused.
+
+  **Fixed.** A seeded app whose host component had moved on used to open with no
+  imports, no sub-modules and no styles — silently. Those furnishings were
+  hash-matched against the live baseline at open time, so any drift lost them.
+  They now travel inside the stored component bundle. Separately, artifact export
+  dropped remix provenance because the interchange field whitelist never listed
+  it, so export-permission checks never ran.
+
+  **Renames.**
+
+  - `AppDocument.pins?: Pin[]` → `AppDocument.seed?: AppSeed`
+    (`{ component, baseline, slot?, review? }`). `Pin` and `pinSchema` are removed;
+    `AppSeed` and `appSeedSchema` replace them. `forkedFrom` is unchanged.
+  - `AppsRuntime.pins.{fork,rebase}` → `AppsRuntime.seed.{from,reseed}`, plus
+    `seed.drift`. `seed.from({ component, slot?, instruction? })` and
+    `seed.reseed({ appId })` both return the `AppDocument`.
+  - `pinComponentName` → `seedComponentName`; `PinBaseline`/`pinBaselineSchema` →
+    `SeedBaseline`/`seedBaselineSchema`; `AppsConfig.pinBaselines` →
+    `seedBaselines`; `detectPinDrift` → `seedDrift` (one seed, so it returns one
+    `SeedDrift` or `null`); `ScreenPinDrift` → `ScreenSeedDrift`.
+  - `EditResult.driftedPins?: PinDrift[]` → `EditResult.seedDrift?: SeedDrift`;
+    the tree payload's `pinDrift` array → a single `seedDrift`.
+  - HTTP: `POST /apps/fork-pin` and `POST /apps/:id/fork-pin` → `POST /apps/seed`;
+    `POST /apps/:id/rebase-pin` → `POST /apps/:id/reseed`.
+  - Client: `apps.forkPin(...)` → `apps.seedFrom({ component, slot?, instruction? })`;
+    `apps.rebasePin(id, slot)` → `apps.reseed(id)`.
+  - Agent tool `vendo_apps_rebase_pin` (appId + slot) → `vendo_apps_reseed` (appId).
+  - `@vendoai/actions` no longer declares its own `CapturedPinBaseline`; the one
+    shape lives on `@vendoai/apps/contract` and actions re-exports it as
+    `SeedBaseline` / `seedBaselineSchema`.
+  - `PinForkInput`, `PinForkResult`, `PinRebaseResult` and `PinDrift` are removed.
+
+  Seeding into an app that already exists is gone: the gesture always mints an
+  app, because a seed is the provenance of a whole app rather than a row added to
+  one. The generated component name stored inside documents is deliberately
+  unchanged, so apps already on disk keep working.
+
+- 1549f90: The published surface shrinks to what consumers actually import.
+
+  **`@vendoai/apps/testing` exports three names**, down from 32:
+  `inMemoryBoxFiles`, `scriptedLanguageModel` and `ScriptedModelCall` — the ones
+  imported outside this package. The other 29 fixtures (the sandbox fakes, the
+  guard and store doubles, the assemblers, the row seeds) are this package's own;
+  they still exist, and this package's tests now name the module they come from
+  instead of the published barrel.
+
+  **Eleven free-floating type exports leave the package root.** Each was reachable
+  from no public value, schema, `AppsRuntime` method or `AppsConfig` field, and
+  had no importer anywhere: `ManifestTriggerResult`, `ManifestTriggerSync`,
+  `VendoManifest`, `VendoManifestSchedule`, `PlacementRow`, `PlacementStore`,
+  `GeneratedAppDocument`, `CheckingLayer`, and the `Check`, `CheckInput` and
+  `Finding` re-exports — those three are `@vendoai/core`'s types, and a host
+  writing an `AppsConfig.checks` entry imports them from core, where a pack is
+  authorable without depending on this block.
+
+  Everything anchored to surviving surface stays exported, including
+  `AuthoredAppResult`, `EditFailure`, `BuildEnvContext`, `BuiltBoxEnv`,
+  `InferenceResolver`, `AppMachineStatus`, `PublishRecord`, `ShareSnapshot`,
+  `ReviewStanding`, `RemixRejection`, `ReviewQueueEntry`, `ShipDiffPin`,
+  `ShipDiffGenerated`, `Skeleton`, `AutomationPlan`, `GenerationDependencies`,
+  `PlacementEntry`, `PinForkInput` and `PinForkResult`.
+
+- 79d7088: Three shapes the apps runtime produces and the client consumes now have exactly
+  one definition, in core.
+
+  `@vendoai/ui` may not import `@vendoai/apps` (the dependency guard's layering
+  rule), so it re-declared the wire shapes it reads "verbatim from the frozen
+  contract text". That is a promise, not a mechanism. `pinComponentName` — the
+  generated-component name a forked host slot ships under, and therefore the name
+  the client's in-place mount looks the node up by — existed as THREE hand-written
+  copies: `apps/pins.ts`, ui's `<Remixable>` wrapper, and ui's wire fixture.
+
+  Moved into `@vendoai/core`:
+
+  - `pinComponentName` → `core/app-document.ts`, beside `Pin` (it is a pure
+    function of `Pin.slot`).
+  - `PlacementEntry` and `ReviewStanding` → `core/app-surfaces.ts`, a new module
+    whose membership rule is one line: apps produces it, ui consumes it off the
+    wire.
+
+  No package's public surface changes. `@vendoai/apps` still exports
+  `pinComponentName`, `PlacementEntry` and `ReviewStanding` from the same modules
+  as before, and `@vendoai/ui` still exports `PlacementEntry` and `ReviewStanding`
+  from its root — each is now a re-export of core's single definition.
+
+  `PinForkResult` was deliberately NOT unified. Its own fields match on both
+  sides, but its `edit?: EditResult` does not: apps' `EditResult` carries
+  `failure`, `graduated`, `box` and `pendingEgress`, which ui's copy never grew,
+  and the wire returns the runtime's result untrimmed. Unifying it would widen
+  `@vendoai/ui`'s published `EditResult` — a contract change, not a refactor.
+
+- 79d7088: The per-person app-sharing chain — the Share dialog and everything under it —
+  is removed. No host ever mounted the dialog; every name below was re-grepped
+  across `packages/`, `examples/`, `fixtures/`, `corpus/`, `scripts/`,
+  `docs-site/` and the console repo before removal, and the only callers found
+  were other members of this same chain.
+
+  **Gone from `@vendoai/ui`:** the `ShareDialog` component and `ShareDialogProps`
+  (from `@vendoai/ui/chrome`), the `useAppGrants` hook, and the five client
+  methods that existed only to feed them — `client.apps.grants`, `.share`,
+  `.unshare`, `.promote` and `.resolvePerson`. `ForkOffer` and
+  `encodeGrantPrincipal` shared the dialog's file and are unaffected; the file is
+  now `chrome/fork-offer.tsx`.
+
+  **Gone from `@vendoai/vendo`:** the wire routes `GET`/`POST`/`DELETE
+/apps/:id/grants`, `POST /apps/:id/grants/resolve` and `POST /apps/:id/promote`,
+  their handlers, and the `promoteApp` composition seam.
+
+  **Gone from `@vendoai/apps`:** `AppsRuntime.promote`, and the write half of
+  `AppsRuntime.access` — `list`, `grant`, `revoke` and `holder`. Their now
+  unreachable supporting seams go with them: `AppsConfig.multiParty`,
+  `AppsConfig.promoteApp`, and the internal `requireMultiParty` / `requireAccess`
+  / `reportShare` helpers.
+
+  **Unchanged, and deliberately so:**
+
+  - `AppsRuntime.access.levelFor`, and `access-checks.ts`' `holds` / `owned` /
+    `requireOwned` / `grantedRecords` — the permission backbone behind every app
+    door.
+  - The `AppAccess` seam itself (`@vendoai/store`'s `appAccess(store)`), whose
+    full `levelFor`/`grant`/`revoke`/`list`/`can` surface and conformance kit are
+    untouched. Grant rows are still written and read there; only the runtime door
+    over that write half is gone.
+  - `vendo.apps.share()` and `vendo.apps.publish()` — the Cloud snapshot and
+    registry feature. A different feature that merely shares a name with the
+    deleted grants `share`.
+  - The auth presets' `resolvePerson` seam and `/status`'s `namesPeople` flag.
+  - `@vendoai/store`'s `appStore().promote` row primitive and the hosted store's
+    `lifecycle.promote` op.
+
+- 0f46e44: Dead features and their public surface are gone. Every removal below had zero
+  callers in this repo, the console, or the examples; nothing changed behavior for
+  a caller that was using a live path.
+
+  **`@vendoai/core` (breaking).** `AppDocument.placements` is gone from the
+  interface and the schema, and the validator no longer checks it. There has been
+  no writer since the placements-as-rows split; "show this app in that slot" is a
+  placement ROW (`@vendoai/apps` `placements.ts`, `GET /apps/placements`), which
+  is unchanged and is the live feature. Also removed: `PlanIsland` and the
+  `AppPlan.island` field, because the plan-level `<Island name purpose/>`
+  declaration no longer parses; and `PackSkill`, the deprecated alias for `Skill`.
+  `Pin`, `pinSchema` and `AppDocument.pins` are untouched — fork provenance is
+  still live.
+
+  **`@vendoai/apps` (breaking).** `PinShipRequest`, `PinApproval`,
+  `pinShipRequestSchema` and `pinApprovalSchema` never ran; `ShipDiffPin` and
+  `inClientApprovalSchema` are the live path and stay. `bindingKindCheck` is gone
+  — it had no callers; the `bindingKindIssues` walker it wrapped is still used by
+  the validate path. The plan compiler no longer accepts a plan-level
+  `<Island name purpose/>` element (an inline `<Island>` inside an app file is a
+  different, live feature and is unchanged). `GenerationPromptSection["id"]`
+  narrows to `"theme" | "design-rules"`; the other five ids had no producer.
+
+  **`@vendoai/store` (breaking).** The `stateStore` and `approvalStore` helpers
+  are gone. Both were test-only wrappers over the routed `records("vendo_state")`
+  and approval write paths, which are unchanged and are what production uses.
+  `ApprovalRow` is unaffected — it is exported from `helpers/types.ts` as before.
+
+  **`@vendoai/agents` (breaking).** The `./harnesses` subpath export is gone.
+  Import the harness factories from their own package instead:
+  `import { claudeCode } from "@vendoai/harnesses/claude-code"` and
+  `import { vendo } from "@vendoai/harnesses"`.
+
+  **`@vendoai/knowledge`.** `knowledgeIndexSummary` and `parseKnowledgeConfig` are
+  no longer exported from the package root. Both functions stay and are still used
+  internally by `knowledgeIndexResolver`, which remains exported.
+
+  **`@vendoai/actions`.** `DEFAULT_CAPTURE_BUDGET_BYTES` is no longer exported.
+  The constant and the 256 KB default it sets are unchanged.
+
+  **`@vendoai/ui`.** The unexported, unreferenced `TakeoverPortal` component is
+  deleted.
+
+- 70644e3: One briefing pack, assembled once, handed to both generation rungs
+
+  What a writer is told about the host's product is now a single object,
+  `BriefingPack` (`@vendoai/apps/contract`), rendered once by
+  `renderBriefingPack` and read by both rungs: the screen agent and the in-box
+  builder. It carries the theme verbatim, the host's design rules,
+  `.vendo/brief.md`, the component catalog one line per entry, and the
+  semantics-annotated tool shape card.
+
+  This closes two silent gaps. `.vendo/brief.md` never reached the screen agent
+  at all, and the in-box builder was told nothing about the brand, the rules, the
+  catalog or the tool shapes. Instructions stay per-rung — the screen agent's
+  dialect manual and the box's skin contract are different jobs.
+
+  Breaking:
+
+  - `@vendoai/apps` no longer exports `hostDesignBrief`. Compose a `BriefingPack`
+    and call `renderBriefingPack` instead.
+  - `AppsConfig.designRules` is replaced by `AppsConfig.briefing`. `AppsConfig.theme`
+    survives for the served-app `?vendoTheme=` handoff only.
+  - `GenerationDependencies` no longer carries `theme` / `designRules`, and
+    `snapshotDesignRules` is removed with them.
+  - `ScreenAssemblerDeps`' `design` and `system` slots collapse into one
+    `briefing` slot, and `ScreenInput` takes a rendered `briefing` string.
+
+  One removal a host can feel: the CONVERSATIONAL harness prompt no longer carries
+  the design brief. `createVendo()`'s composed `turn.system` used to end with the
+  `THEME TOKENS:` JSON and the `HOST DESIGN RULES:` block appended after the
+  system prompt; that suffix is gone. What still reaches that prompt is the
+  product brief and, through `catalogThemeSummary`, the host component lines plus
+  a one-line theme sentence (density, motion, typography) — but NOT the theme
+  token JSON and NOT `apps.designRules`. This follows from `claudeCode()` being
+  the harness that RUNS a box rather than the thing that decides what an app is:
+  the two writers that build apps — the screen agent and the in-box builder — both
+  read the briefing pack, so the house rules reach every writer through one
+  rendering instead of three. If your deployment relies on a `claudeCode()` turn
+  obeying `apps.designRules` while editing `app.vendo` with its own hands, that
+  turn is no longer told them; put those rules in `instructions` (`.vendo/brief.md`),
+  which still rides that prompt.
+
+  Otherwise host-facing configuration is unchanged:
+  `createVendo({ theme, apps: { designRules } })` and
+  `.vendo/{theme.json,design-rules.md,brief.md,catalog.json}` all still work, and
+  now reach both generation rungs.
+
+- d9ae728: One Claude Code integration, and automation authoring gets its own door
+
+  The box carried **two** Claude Agent SDK loops: the conversational session door
+  (`claude-turn.mjs`, the same module `machine: "local"` runs on a host) and a
+  bespoke one-shot runner behind `/agent/task`. The duplicate is deleted. The
+  supervisor's task door now drives the SAME `claude-turn.mjs` the session door
+  does — one runner, two doors, three callers — keeping what only the task door
+  needs: the box conventions the agent builds against, and the structured result
+  the host polls for.
+
+  **Box boundary — the one behavioral change.** That structured result now arrives
+  as a FILE: the agent writes `/app/.vendo/report.json` and the supervisor reads
+  it back, where it used to call an in-process `report_done` MCP tool. The shared
+  runner's only MCP server is the host's own door, and a box task has none, so
+  the report rides the one channel a box task and its supervisor already share.
+  The JSON is the same shape it always was (`ok`, `summary`, `filesChanged`,
+  `testsRun`, `fns?`, `servesUi?`) and it is still treated as DATA host-side —
+  nothing in it can approve or authorize anything. **If you maintain a custom box
+  image or your own in-box agent, this is the line to change**: end the task by
+  writing that file instead of calling a tool. **The control-port protocol itself
+  did not change** — `/agent/task` still answers `202 {taskId}` and
+  `/agent/task/<id>` still answers `{status, result?, log}`, so nothing outside
+  the box needed edits.
+
+  Escalation now means exactly two rungs: the screen agent, and the box.
+  Authoring an automation never needed a machine, so it is its own door:
+
+  ```ts
+  await apps.automation.author(
+    {
+      appId,
+      instruction: "email me the unpaid invoices every Friday",
+      mode: "steps",
+    },
+    ctx
+  );
+  // → { ok: true, document, triggerId, armed } | { ok: false, issues }
+  ```
+
+  The planner, the trigger-id rules, the results-board rewire and the arming are
+  **unchanged** — `planAutomation` and its lane moved from
+  `generation/lanes.ts` to `server/automation/{plan,lane}.ts` verbatim. An
+  escalated plan that asks for an automation is routed to the same door, so both
+  ways in land, arm and audit identically.
+
+  **`<Server kind="steps">` and `<Server kind="agentic">` both still exist and
+  still work — nothing was removed from the plan dialect.** What changed is where
+  they lead: they are no longer _escalation kinds_ (branches of the server lane
+  that could reach for a machine), they are the escalating agent's signal INTO
+  the automation door. A plan that declares either authors exactly the automation
+  it always did. `steps` remains the deterministic mode — a fixed step pipeline
+  with no model call per firing — and `agentic` the judgment-per-run mode. Only
+  `kind="box"` still means a machine, and it is now the only rung the ladder has.
+
+  **Behavior fix:** `create` and `edit` no longer disagree about escalation.
+  `create` used to refuse EVERY escalation on a deployment with no sandbox while
+  `edit` refused only a box — so an automation you could ask for by editing an
+  app you could not ask for by making one. Both now gate on the one expression
+  (`escalationNeedsMachine`), and only the box rung needs a machine.
+
+  **Migration:** `AppsRuntime` gains a required `automation` slot (a test double
+  implementing the interface by hand must add it). No import path changed.
+
+- 61b75bd: One definition per concept, and one door in
+
+  Every app write that mints or changes a document now passes the same admission
+  gate, and the concepts that were declared in five places are declared once.
+
+  **The one door.** `admitAppDocument({document, origin})` ships from
+  `@vendoai/apps/contract` — pure, browser-safe, structural schema plus the
+  cross-field rules, with `validateAppDocument` still exported as its inner half.
+  `origin` is recorded on the refusal and never changes what is checked. It is
+  called from exactly one place: the row writer in `server/persistence`.
+
+  **The door sanitises as well as validates.** The venue verdict (`inClient`),
+  the drift report (`pinDrift`), the `dataUnavailable` claim and CDN furnishing
+  packages are server-authoritative: only code that verified the hash, compared
+  the baseline or ran the queries may assert them. They were stripped on the way
+  OUT, which kept a forged claim off the wire but left it in the row — three
+  write paths each remembered to strip first and `importApp` did not. The row
+  writer strips them now, so a reader that forgets can no longer be wrong.
+  **Pre-existing, fixed here rather than introduced here.**
+
+  **One named exception, stated out loud:** `@vendoai/automations`' `writeApp`
+  puts the row directly. Its two callers flip `enabled` on a document they
+  round-tripped unchanged out of the store, and forcing them through admission
+  would let a document stored before this door existed refuse a _disarm_ — a
+  safety control must not fail by refusing to turn something off.
+
+  **Breaking**
+
+  - `@vendoai/mcp` no longer exports `AppsPort`. It was a structural mirror of
+    `AppsRuntime`; the door types its apps ride-along off the real runtime, so
+    the two can no longer disagree. Hosts that named the type should use
+    `NonNullable<McpDoorConfig["apps"]>`. Note that the mirror typed `call` as
+    `Promise<unknown>` while the umbrella has always wired `AppsRuntime.call`,
+    which returns a `ToolOutcome` — the real shape is now visible in the types.
+  - `appRecordInput`, `updateAppRow` and `persistEdit` (all internal to
+    `@vendoai/apps`) take a required `AdmissionOrigin`. Required, not defaulted:
+    a default would let a write path record itself anonymously.
+  - `@vendoai/automations` renames its row type `AppRow` → `AppData` and drops its
+    local `appRowSchema`, both of which now come from `@vendoai/apps/contract`.
+
+  **Retired from the plan: the `vendo_make` envelope unification.**
+
+  The MCP door was to answer `vendo_make` with the same `vendo/app-ref@1`
+  envelope the in-process tool pack returns. It is not shipped, for two reasons:
+
+  1. It breaks a tested door-parity law — the in-process leg and the door leg
+     must return the same output, and the envelope made them disagree.
+  2. It would make the door state something false. The envelope's `status` is
+     pinned to the literal `"building"` and documented as _"never means done,
+     win or lose"_, because it exists for the fast-return path where the build
+     is still streaming. The MCP door does not stream; it runs `vendo_make` to
+     completion. Wrapping a finished build in it tells an agent the app is not
+     built when it is.
+
+  The receipt is the honest answer on a door that runs to completion. Reviving
+  this needs a non-`"building"` status and a deliberately rewritten parity law,
+  as its own change.
+
+  **Unifications**
+
+  - `AppRow` / `AppData` / `appRowSchema` — the stored row, declared once in
+    `@vendoai/apps/contract`. It was five: the store's projection, the automations
+    engine's read shape, the persistence layer's `AppRowData`, a structural alias
+    in `write-surface.ts`, and a narrower mirror in the umbrella's sync reader.
+  - `data-vendo-view` — one producer, `vendoViewPart` in `@vendoai/core`. Four
+    writers hand-built the part and only two validated it.
+  - `WIRE_RESHAPE_OPS` is now derived from `RESHAPE_OPS` minus the aggregates
+    rather than listed a second time, so the two cannot drift.
+  - `stripServerAuthoritativeFields` moves to `@vendoai/apps/contract` (it is pure
+    and browser-safe) and is re-exported from the package root, so the console can
+    stop hand-copying it.
+  - `AppData` is declared beside `AppRow` in the contract, replacing the console's
+    mirror of a type `@vendoai/store` never exported.
+  - The corpus structural layer's expected-files list gains `.vendo/catalog.json`
+    and `.vendo/theme.extracted.json`, both of which every real `vendo init`
+    writes; its duplicated tool-identity join collapses to one copy.
+
+- 384eb09: The "Add to…" picker's destinations come from a per-user slot registry on the
+  server instead of `localStorage`. A slot id is host markup, so nothing knows a
+  slot exists until a page renders one — but the surface that offers it as a
+  destination is usually a different page, and often a different device, which
+  `localStorage` could never reach.
+
+  A mounted `VendoSlot` now reports itself through `POST /slots` (batched: a whole
+  page of slots is one request, and a client repeats a slot at most once a day, so
+  one long-lived tab renews its slots instead of watching them age out), and
+  `GET /slots` answers the
+  caller's own slots, most recently seen first. Rows age out
+  30 days after the last render that reported them, so a slot deleted from the
+  codebase stops being offered on its own. The rows live in the generic records
+  collection (`vendo_slots`), so there is no migration to run, and `refs.subject`
+  puts them in the existing erase cascade.
+
+  > **BREAKING:** `knownSlots`, `noteSlot` and the `SlotNote` type are removed
+  > from the `@vendoai/ui` and `@vendoai/vendo/react` roots, and `useKnownSlots`
+  > is removed from `@vendoai/ui/chrome`. Read the registry with the new
+  > `useSlots()` hook (or `client.slots.list()`); a mounted `VendoSlot` still does
+  > the reporting for you, so nothing needs to call the write path by hand.
+
+### Patch Changes
+
+- 8105ade: The `esbuild` dependency floor rises from `^0.25.0` to `^0.25.12` (security hygiene sweep; same range, newer minimum). No API or behavior change.
+- 591ea46: The optional `vitest` peer dependency now admits v3 (`^2.0.0 || ^3.0.0`). Hosts on vitest 3 no longer get a peer-range warning; nothing changes for hosts on vitest 2 or without vitest.
+- Updated dependencies [e2128aa]
+- Updated dependencies [0e51585]
+- Updated dependencies [361f9b9]
+- Updated dependencies [b0a165c]
+- Updated dependencies [e87a765]
+- Updated dependencies [79d7088]
+- Updated dependencies [89b4444]
+- Updated dependencies [0f46e44]
+- Updated dependencies [61b75bd]
+  - @vendoai/core@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes

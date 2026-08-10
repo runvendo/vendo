@@ -1,5 +1,317 @@
 # @vendoai/vendo
 
+## 0.10.0
+
+### Minor Changes
+
+- b0a165c: Remix is a seeded app: the pins subsystem is gone
+
+  An app that was made from one of your components no longer carries a list of
+  "pins". It carries a single `seed` — the component it started from and the
+  version of that component it started at. A remix is an ordinary app that
+  happens to start from something, so it is created, validated, edited and
+  versioned through exactly the same doors as every other app.
+
+  **Behaviour change you will notice: updating a remix now replaces it.**
+  When the host component changes, the remix reports drift as a warning and
+  nothing happens on its own. If you choose to update, you get the pristine new
+  component — the edits you made to that component are replaced. The previous
+  release replayed your recorded edits on top of the new version; that machinery,
+  its preflight and the version trail feeding it are deleted. Drift is a warning,
+  and updating is always your choice. The UI says this in the drift banner, and
+  the agent tool's description tells the model to say it too.
+
+  **Behaviour change on admission.** Every write path now runs the same document
+  validation, seeded and forked apps included. Seeded bundles used to skip the
+  island gate entirely, so a capture the jail could never render was accepted
+  without complaint. Captures that produce invalid documents will now be refused.
+
+  **Fixed.** A seeded app whose host component had moved on used to open with no
+  imports, no sub-modules and no styles — silently. Those furnishings were
+  hash-matched against the live baseline at open time, so any drift lost them.
+  They now travel inside the stored component bundle. Separately, artifact export
+  dropped remix provenance because the interchange field whitelist never listed
+  it, so export-permission checks never ran.
+
+  **Renames.**
+
+  - `AppDocument.pins?: Pin[]` → `AppDocument.seed?: AppSeed`
+    (`{ component, baseline, slot?, review? }`). `Pin` and `pinSchema` are removed;
+    `AppSeed` and `appSeedSchema` replace them. `forkedFrom` is unchanged.
+  - `AppsRuntime.pins.{fork,rebase}` → `AppsRuntime.seed.{from,reseed}`, plus
+    `seed.drift`. `seed.from({ component, slot?, instruction? })` and
+    `seed.reseed({ appId })` both return the `AppDocument`.
+  - `pinComponentName` → `seedComponentName`; `PinBaseline`/`pinBaselineSchema` →
+    `SeedBaseline`/`seedBaselineSchema`; `AppsConfig.pinBaselines` →
+    `seedBaselines`; `detectPinDrift` → `seedDrift` (one seed, so it returns one
+    `SeedDrift` or `null`); `ScreenPinDrift` → `ScreenSeedDrift`.
+  - `EditResult.driftedPins?: PinDrift[]` → `EditResult.seedDrift?: SeedDrift`;
+    the tree payload's `pinDrift` array → a single `seedDrift`.
+  - HTTP: `POST /apps/fork-pin` and `POST /apps/:id/fork-pin` → `POST /apps/seed`;
+    `POST /apps/:id/rebase-pin` → `POST /apps/:id/reseed`.
+  - Client: `apps.forkPin(...)` → `apps.seedFrom({ component, slot?, instruction? })`;
+    `apps.rebasePin(id, slot)` → `apps.reseed(id)`.
+  - Agent tool `vendo_apps_rebase_pin` (appId + slot) → `vendo_apps_reseed` (appId).
+  - `@vendoai/actions` no longer declares its own `CapturedPinBaseline`; the one
+    shape lives on `@vendoai/apps/contract` and actions re-exports it as
+    `SeedBaseline` / `seedBaselineSchema`.
+  - `PinForkInput`, `PinForkResult`, `PinRebaseResult` and `PinDrift` are removed.
+
+  Seeding into an app that already exists is gone: the gesture always mints an
+  app, because a seed is the provenance of a whole app rather than a row added to
+  one. The generated component name stored inside documents is deliberately
+  unchanged, so apps already on disk keep working.
+
+- 79d7088: The per-person app-sharing chain — the Share dialog and everything under it —
+  is removed. No host ever mounted the dialog; every name below was re-grepped
+  across `packages/`, `examples/`, `fixtures/`, `corpus/`, `scripts/`,
+  `docs-site/` and the console repo before removal, and the only callers found
+  were other members of this same chain.
+
+  **Gone from `@vendoai/ui`:** the `ShareDialog` component and `ShareDialogProps`
+  (from `@vendoai/ui/chrome`), the `useAppGrants` hook, and the five client
+  methods that existed only to feed them — `client.apps.grants`, `.share`,
+  `.unshare`, `.promote` and `.resolvePerson`. `ForkOffer` and
+  `encodeGrantPrincipal` shared the dialog's file and are unaffected; the file is
+  now `chrome/fork-offer.tsx`.
+
+  **Gone from `@vendoai/vendo`:** the wire routes `GET`/`POST`/`DELETE
+/apps/:id/grants`, `POST /apps/:id/grants/resolve` and `POST /apps/:id/promote`,
+  their handlers, and the `promoteApp` composition seam.
+
+  **Gone from `@vendoai/apps`:** `AppsRuntime.promote`, and the write half of
+  `AppsRuntime.access` — `list`, `grant`, `revoke` and `holder`. Their now
+  unreachable supporting seams go with them: `AppsConfig.multiParty`,
+  `AppsConfig.promoteApp`, and the internal `requireMultiParty` / `requireAccess`
+  / `reportShare` helpers.
+
+  **Unchanged, and deliberately so:**
+
+  - `AppsRuntime.access.levelFor`, and `access-checks.ts`' `holds` / `owned` /
+    `requireOwned` / `grantedRecords` — the permission backbone behind every app
+    door.
+  - The `AppAccess` seam itself (`@vendoai/store`'s `appAccess(store)`), whose
+    full `levelFor`/`grant`/`revoke`/`list`/`can` surface and conformance kit are
+    untouched. Grant rows are still written and read there; only the runtime door
+    over that write half is gone.
+  - `vendo.apps.share()` and `vendo.apps.publish()` — the Cloud snapshot and
+    registry feature. A different feature that merely shares a name with the
+    deleted grants `share`.
+  - The auth presets' `resolvePerson` seam and `/status`'s `namesPeople` flag.
+  - `@vendoai/store`'s `appStore().promote` row primitive and the hosted store's
+    `lifecycle.promote` op.
+
+- 89b4444: The `resolvePerson` auth-preset hook and the `namesPeople` status field are
+  removed. Both existed for one reason — telling the Share dialog whether it could
+  offer to share an app with one named person — and that dialog, with the whole
+  grants chain under it, was removed in #1108. Nothing has read either since. Every
+  name was re-grepped across `packages/`, `examples/`, `fixtures/`, `corpus/`,
+  `docs-site/` and `scripts/` before removal.
+
+  > **BREAKING for hosts that wired `resolvePerson`:** the hook is gone from all
+  > seven auth presets (`identity`, `authJs`, `auth0`, `clerk`, `jwt`, `supabase`,
+  > and the shared options type). Delete the `resolvePerson:` property from your
+  > `auth:` config — it is now a type error, not a silent no-op. Nothing else about
+  > your preset changes, and no behaviour you can observe changes with it: the
+  > callback has had no caller since #1108.
+
+  > **BREAKING for surfaces reading `GET /status`:** the response no longer carries
+  > `namesPeople`, and `VendoStatus.namesPeople` / `useVendoStatus().namesPeople`
+  > are gone from `@vendoai/ui`. The field only ever reported whether the seam
+  > above was wired.
+
+  `ResolvedPerson` is gone from `@vendoai/core` — it was the hook's return shape
+  and had no other producer or consumer.
+
+  **Untouched, and deliberately:** `auth.memberships` and `auth.facts` (the other
+  preset seams), `/status`'s `memberships` field, the `Membership` type, and every
+  part of `can()` / `AppAccess`. Vendo still holds no directory; the difference is
+  that it no longer ships a seam nobody asks a question through.
+
+- 70644e3: One briefing pack, assembled once, handed to both generation rungs
+
+  What a writer is told about the host's product is now a single object,
+  `BriefingPack` (`@vendoai/apps/contract`), rendered once by
+  `renderBriefingPack` and read by both rungs: the screen agent and the in-box
+  builder. It carries the theme verbatim, the host's design rules,
+  `.vendo/brief.md`, the component catalog one line per entry, and the
+  semantics-annotated tool shape card.
+
+  This closes two silent gaps. `.vendo/brief.md` never reached the screen agent
+  at all, and the in-box builder was told nothing about the brand, the rules, the
+  catalog or the tool shapes. Instructions stay per-rung — the screen agent's
+  dialect manual and the box's skin contract are different jobs.
+
+  Breaking:
+
+  - `@vendoai/apps` no longer exports `hostDesignBrief`. Compose a `BriefingPack`
+    and call `renderBriefingPack` instead.
+  - `AppsConfig.designRules` is replaced by `AppsConfig.briefing`. `AppsConfig.theme`
+    survives for the served-app `?vendoTheme=` handoff only.
+  - `GenerationDependencies` no longer carries `theme` / `designRules`, and
+    `snapshotDesignRules` is removed with them.
+  - `ScreenAssemblerDeps`' `design` and `system` slots collapse into one
+    `briefing` slot, and `ScreenInput` takes a rendered `briefing` string.
+
+  One removal a host can feel: the CONVERSATIONAL harness prompt no longer carries
+  the design brief. `createVendo()`'s composed `turn.system` used to end with the
+  `THEME TOKENS:` JSON and the `HOST DESIGN RULES:` block appended after the
+  system prompt; that suffix is gone. What still reaches that prompt is the
+  product brief and, through `catalogThemeSummary`, the host component lines plus
+  a one-line theme sentence (density, motion, typography) — but NOT the theme
+  token JSON and NOT `apps.designRules`. This follows from `claudeCode()` being
+  the harness that RUNS a box rather than the thing that decides what an app is:
+  the two writers that build apps — the screen agent and the in-box builder — both
+  read the briefing pack, so the house rules reach every writer through one
+  rendering instead of three. If your deployment relies on a `claudeCode()` turn
+  obeying `apps.designRules` while editing `app.vendo` with its own hands, that
+  turn is no longer told them; put those rules in `instructions` (`.vendo/brief.md`),
+  which still rides that prompt.
+
+  Otherwise host-facing configuration is unchanged:
+  `createVendo({ theme, apps: { designRules } })` and
+  `.vendo/{theme.json,design-rules.md,brief.md,catalog.json}` all still work, and
+  now reach both generation rungs.
+
+- 384eb09: The "Add to…" picker's destinations come from a per-user slot registry on the
+  server instead of `localStorage`. A slot id is host markup, so nothing knows a
+  slot exists until a page renders one — but the surface that offers it as a
+  destination is usually a different page, and often a different device, which
+  `localStorage` could never reach.
+
+  A mounted `VendoSlot` now reports itself through `POST /slots` (batched: a whole
+  page of slots is one request, and a client repeats a slot at most once a day, so
+  one long-lived tab renews its slots instead of watching them age out), and
+  `GET /slots` answers the
+  caller's own slots, most recently seen first. Rows age out
+  30 days after the last render that reported them, so a slot deleted from the
+  codebase stops being offered on its own. The rows live in the generic records
+  collection (`vendo_slots`), so there is no migration to run, and `refs.subject`
+  puts them in the existing erase cascade.
+
+  > **BREAKING:** `knownSlots`, `noteSlot` and the `SlotNote` type are removed
+  > from the `@vendoai/ui` and `@vendoai/vendo/react` roots, and `useKnownSlots`
+  > is removed from `@vendoai/ui/chrome`. Read the registry with the new
+  > `useSlots()` hook (or `client.slots.list()`); a mounted `VendoSlot` still does
+  > the reporting for you, so nothing needs to call the write path by hand.
+
+- b642c4d: The playground and the hosted try surface are gone, and with them two entry
+  points: **`@vendoai/vendo/try` and `@vendoai/vendo/try-surface` no longer
+  exist**. The exports map goes from thirteen subpaths to eleven.
+
+  `./try` published the hosted try venue's session-composition surface
+  (`createSyntheticFetch`, `usecasesFileSchema`, `fixturesFileSchema`,
+  `tryProfileSchema`, `assembleTryProfile`, `VENDO_USECASES_FORMAT`,
+  `VENDO_FIXTURES_FORMAT`). `./try-surface` published the scripted playground
+  shell that `vendo.run/playground` and the docs inline-embed IIFE
+  (`vendo.run/playground/embed.js`) both mounted — `mount`, `PlaygroundApp`,
+  `TryBootConfig`, `TryProfile`. Both venues are retired: **nothing is served at
+  `vendo.run/playground` any more**, and the docs embeds it fed are now static
+  images. There is no replacement — run `vendo init` in your own app instead.
+
+  Deleted with them: the seeds extraction pass (`runSeedsPass`), the synthetic
+  fetch, the try profile schemas, and the embed-bundle build script. The
+  `vendo playground` command already printed a retirement notice and still does.
+
+  `createVendo`'s `profileDir`, `fetch`, and `profile` options are **unchanged** —
+  they are general composition seams and only their docs mentioned the dead
+  `vendo try` command.
+
+- 079d7d8: `GET /apps/:id/pin-drift` and the `client.apps.pinDrift()` method that called it
+  are removed. Neither had a caller: the drift report the drift banner actually
+  renders is the `pinDrift` array `open()` attaches to the payload, which is
+  unchanged, as are `POST /apps/:id/rebase-pin` and the fork-pin routes.
+
+  No rendered UI changes — the removed client method was never invoked.
+
+- ed44a58: A dev-only workbench diagnostics channel behind `VENDO_WORKBENCH`, and the feed
+  store that reads it.
+
+  `@vendoai/harnesses` reports what a turn is doing about itself — step starts and
+  ends, guarded tool calls, context and compaction, loadout, hires, errors — on a
+  transient `data-vendo-debug` part. The gate is `VENDO_WORKBENCH=1` on the
+  server, read once per turn: unset, no channel is registered, so nothing can
+  reach the wire and nothing is ever persisted.
+
+  `@vendoai/ui` gains the receiving half: `publishWorkbenchPart` files a chunk,
+  `useWorkbenchFeed` reads the turns back in the producer's own `seq` order, and
+  `developmentMode` decides whether such a surface renders at all.
+  `@vendoai/vendo/react` re-exports all three, so a host on the umbrella package
+  can build the pane without reaching for `@vendoai/ui` directly.
+
+### Patch Changes
+
+- f9aa721: `vendo init` and `vendo doctor` find a nested root layout instead of naming a
+  file that does not exist
+
+  An app-router host whose routes all live under an i18n segment or a route group
+  (`app/[locale]/layout.tsx`, `app/(shop)/layout.tsx`) has no `app/layout.tsx` —
+  that nested file IS its root layout. Both commands probed for the literal
+  `app/layout.tsx` and, finding nothing, named it anyway: init printed a paste for
+  a phantom file, and doctor's E-WIRE-004 demanded the same one. A user who
+  followed that instruction created a SECOND root layout, which is the one edit
+  that breaks such a host.
+
+  Both now resolve the client root to the shallowest `layout.{tsx,jsx,js}` under
+  the app directory (lexicographic on a tie), so the paste and the doctor fix name
+  the file the host actually has. Hosts with a real `app/layout.tsx`, pages-only
+  hosts (`pages/_app.tsx`), and hosts with no client root at all are unchanged.
+
+- 7f5d502: `vendo init`'s two dependency repairs — the provider install and the zod floor
+  bump — now run with `pnpm add --ignore-workspace` when the host is an
+  independent pnpm project nested inside an unrelated pnpm workspace.
+
+  pnpm picks its workspace root by walking up to the nearest
+  `pnpm-workspace.yaml`, so an unqualified `pnpm add` in a repo that merely sits
+  inside someone else's monorepo installs against that ancestor. Two ways that
+  goes wrong: the ancestor's `overrides` rewrite the host's own pins (a host
+  pinning `next@14.2.5` under an ancestor pinning `next: ">=16.2.11"` gets a
+  next 16 tree), and under an older pnpm the add aborts against the ancestor's
+  store, so init only warns (E-DEP-003) and the zod floor never applies —
+  leaving the build red on `zod ./v4 not exported`.
+
+  Membership is decided by the ancestor workspace's own `packages:` globs
+  matched against the host's relative path, so a genuine member keeps ordinary
+  workspace behavior even if it carries a stale leaf lockfile, and a host that
+  has never installed is still recognized as a non-member. A pattern form the
+  reader does not model resolves to "member", which is the pre-existing
+  behavior.
+
+- Updated dependencies [e2128aa]
+- Updated dependencies [e1032f9]
+- Updated dependencies [079d7d8]
+- Updated dependencies [0e51585]
+- Updated dependencies [e87a765]
+- Updated dependencies [8105ade]
+- Updated dependencies [361f9b9]
+- Updated dependencies [b0a165c]
+- Updated dependencies [1549f90]
+- Updated dependencies [591ea46]
+- Updated dependencies [e87a765]
+- Updated dependencies [79d7088]
+- Updated dependencies [79d7088]
+- Updated dependencies [89b4444]
+- Updated dependencies [0f46e44]
+- Updated dependencies [70644e3]
+- Updated dependencies [d9ae728]
+- Updated dependencies [61b75bd]
+- Updated dependencies [384eb09]
+- Updated dependencies [0e46cd5]
+- Updated dependencies [079d7d8]
+- Updated dependencies [29c2b49]
+- Updated dependencies [ed44a58]
+  - @vendoai/core@0.10.0
+  - @vendoai/apps@0.10.0
+  - @vendoai/actions@0.10.0
+  - @vendoai/store@0.10.0
+  - @vendoai/mcp@0.10.0
+  - @vendoai/ui@0.10.0
+  - @vendoai/agents@0.10.0
+  - @vendoai/knowledge@0.10.0
+  - @vendoai/harnesses@0.10.0
+  - @vendoai/automations@0.10.0
+  - @vendoai/guard@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes

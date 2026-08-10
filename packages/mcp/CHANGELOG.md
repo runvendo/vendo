@@ -1,5 +1,170 @@
 # @vendoai/mcp
 
+## 0.10.0
+
+### Minor Changes
+
+- e2128aa: App generation moves into one package, behind two doors
+
+  `@vendoai/apps` now has a browser-safe **contract door** and a node-only
+  **engine root**. The app format — the document, the two genui dialects and their
+  compilers, the Kit, the island/jail rules, catalog + theme, the checking
+  contract, remix provenance, and the wire shapes `/apps/*` returns — lives on
+  `@vendoai/apps/contract`, which imports no node built-ins. The behavior that
+  produces those shapes stays behind `@vendoai/apps`.
+
+  **Migration:**
+
+  1. **Moved `@vendoai/core` names are a hard rename** — import them from
+     **`@vendoai/apps/contract`**: the genui dialect (`validateTree`, `compileWire`,
+     `compilePlan`, `printWire`, the expression grammar), the Kit, the
+     island/jail rules, catalog + theme, `AppFloor`/`Check`/`CheckInput`,
+     `ScreenAssembler`, `MakeReceipt`, host components, and build deadlines.
+     Types reaching you through `@vendoai/vendo` or the `vendoai` alias are
+     **unchanged** — the umbrella re-exports the contract beside core.
+     `@vendoai/apps` is ESM-only, so `require()` of these _values_ needs ESM or
+     the umbrella.
+     `AppDocument` and its schemas, and `Finding`, deliberately **stay in
+     `@vendoai/core`** (the store contract and the harness runtime speak them);
+     the contract door re-exports them, so one door serves every consumer.
+
+  2. **Subpaths — what moved and what did not.** Entry points go 8 → 4:
+
+     - **`@vendoai/apps`, `@vendoai/apps/e2b` and `@vendoai/apps/testing` all
+       survive with their specifiers unchanged.** `./e2b` stays because the venue
+       ladder reaches it as a real module seam, not merely a convenience re-export.
+     - `@vendoai/apps/{sandbox-ladder,internal}` **fold into `@vendoai/apps`** —
+       import those names from the root.
+     - `@vendoai/apps/adapter-conformance` → **`@vendoai/apps/testing`**, not the
+       root: it imports `vitest`, and the root rides every composed host's server
+       path.
+     - `@vendoai/apps/claude-turn` → **`@vendoai/harnesses/claude-turn`** and
+       `@vendoai/apps/box-door` → **`@vendoai/harnesses/box-door`** (both moved with
+       `claudeCode()`).
+     - **NEW:** `@vendoai/apps/contract`.
+
+  3. **`@vendoai/ui`, `@vendoai/store`, `@vendoai/actions` and `@vendoai/mcp` now
+     depend on `@vendoai/apps`** and read the app format from
+     `@vendoai/apps/contract`. Their own public surfaces are unchanged.
+
+  **Known tradeoffs, stated plainly:**
+
+  - **One name, still two declarations.** `@vendoai/ui` no longer keeps its own
+    copy of the `/apps/*` wire shapes — it re-exports them from the contract
+    door. That removes a copy; it does not yet make one definition. The engine's
+    server door declares its own richer `EditResult` (with `failure`,
+    `graduated`, `box`, `pendingEgress`, `automation`) beside the contract's
+    four-field wire shape, so the name has two declarations inside
+    `@vendoai/apps`, one per door. Unifying them decides which fields the wire
+    may expose, which is a behavior change and not part of this move.
+  - **Install weight.** `@vendoai/apps` declares `esbuild`, `jsdom`, `fflate` and
+    `react-dom` as hard dependencies, so a browser-only consumer of
+    `@vendoai/apps/contract` still installs the engine's dependency set. The
+    contract door itself bundles clean for a browser target (enforced by a new
+    leg in `scripts/portability-gate.mjs`); it is the install graph, not the
+    bundle, that carries the weight. Pre-existing, amplified by this split.
+
+- 61b75bd: One definition per concept, and one door in
+
+  Every app write that mints or changes a document now passes the same admission
+  gate, and the concepts that were declared in five places are declared once.
+
+  **The one door.** `admitAppDocument({document, origin})` ships from
+  `@vendoai/apps/contract` — pure, browser-safe, structural schema plus the
+  cross-field rules, with `validateAppDocument` still exported as its inner half.
+  `origin` is recorded on the refusal and never changes what is checked. It is
+  called from exactly one place: the row writer in `server/persistence`.
+
+  **The door sanitises as well as validates.** The venue verdict (`inClient`),
+  the drift report (`pinDrift`), the `dataUnavailable` claim and CDN furnishing
+  packages are server-authoritative: only code that verified the hash, compared
+  the baseline or ran the queries may assert them. They were stripped on the way
+  OUT, which kept a forged claim off the wire but left it in the row — three
+  write paths each remembered to strip first and `importApp` did not. The row
+  writer strips them now, so a reader that forgets can no longer be wrong.
+  **Pre-existing, fixed here rather than introduced here.**
+
+  **One named exception, stated out loud:** `@vendoai/automations`' `writeApp`
+  puts the row directly. Its two callers flip `enabled` on a document they
+  round-tripped unchanged out of the store, and forcing them through admission
+  would let a document stored before this door existed refuse a _disarm_ — a
+  safety control must not fail by refusing to turn something off.
+
+  **Breaking**
+
+  - `@vendoai/mcp` no longer exports `AppsPort`. It was a structural mirror of
+    `AppsRuntime`; the door types its apps ride-along off the real runtime, so
+    the two can no longer disagree. Hosts that named the type should use
+    `NonNullable<McpDoorConfig["apps"]>`. Note that the mirror typed `call` as
+    `Promise<unknown>` while the umbrella has always wired `AppsRuntime.call`,
+    which returns a `ToolOutcome` — the real shape is now visible in the types.
+  - `appRecordInput`, `updateAppRow` and `persistEdit` (all internal to
+    `@vendoai/apps`) take a required `AdmissionOrigin`. Required, not defaulted:
+    a default would let a write path record itself anonymously.
+  - `@vendoai/automations` renames its row type `AppRow` → `AppData` and drops its
+    local `appRowSchema`, both of which now come from `@vendoai/apps/contract`.
+
+  **Retired from the plan: the `vendo_make` envelope unification.**
+
+  The MCP door was to answer `vendo_make` with the same `vendo/app-ref@1`
+  envelope the in-process tool pack returns. It is not shipped, for two reasons:
+
+  1. It breaks a tested door-parity law — the in-process leg and the door leg
+     must return the same output, and the envelope made them disagree.
+  2. It would make the door state something false. The envelope's `status` is
+     pinned to the literal `"building"` and documented as _"never means done,
+     win or lose"_, because it exists for the fast-return path where the build
+     is still streaming. The MCP door does not stream; it runs `vendo_make` to
+     completion. Wrapping a finished build in it tells an agent the app is not
+     built when it is.
+
+  The receipt is the honest answer on a door that runs to completion. Reviving
+  this needs a non-`"building"` status and a deliberately rewritten parity law,
+  as its own change.
+
+  **Unifications**
+
+  - `AppRow` / `AppData` / `appRowSchema` — the stored row, declared once in
+    `@vendoai/apps/contract`. It was five: the store's projection, the automations
+    engine's read shape, the persistence layer's `AppRowData`, a structural alias
+    in `write-surface.ts`, and a narrower mirror in the umbrella's sync reader.
+  - `data-vendo-view` — one producer, `vendoViewPart` in `@vendoai/core`. Four
+    writers hand-built the part and only two validated it.
+  - `WIRE_RESHAPE_OPS` is now derived from `RESHAPE_OPS` minus the aggregates
+    rather than listed a second time, so the two cannot drift.
+  - `stripServerAuthoritativeFields` moves to `@vendoai/apps/contract` (it is pure
+    and browser-safe) and is re-exported from the package root, so the console can
+    stop hand-copying it.
+  - `AppData` is declared beside `AppRow` in the contract, replacing the console's
+    mirror of a type `@vendoai/store` never exported.
+  - The corpus structural layer's expected-files list gains `.vendo/catalog.json`
+    and `.vendo/theme.extracted.json`, both of which every real `vendo init`
+    writes; its duplicated tool-identity join collapses to one copy.
+
+### Patch Changes
+
+- Updated dependencies [e2128aa]
+- Updated dependencies [e1032f9]
+- Updated dependencies [079d7d8]
+- Updated dependencies [0e51585]
+- Updated dependencies [e87a765]
+- Updated dependencies [8105ade]
+- Updated dependencies [361f9b9]
+- Updated dependencies [b0a165c]
+- Updated dependencies [1549f90]
+- Updated dependencies [591ea46]
+- Updated dependencies [e87a765]
+- Updated dependencies [79d7088]
+- Updated dependencies [79d7088]
+- Updated dependencies [89b4444]
+- Updated dependencies [0f46e44]
+- Updated dependencies [70644e3]
+- Updated dependencies [d9ae728]
+- Updated dependencies [61b75bd]
+- Updated dependencies [384eb09]
+  - @vendoai/core@0.10.0
+  - @vendoai/apps@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes

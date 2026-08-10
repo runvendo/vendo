@@ -1,5 +1,194 @@
 # @vendoai/actions
 
+## 0.10.0
+
+### Minor Changes
+
+- e2128aa: App generation moves into one package, behind two doors
+
+  `@vendoai/apps` now has a browser-safe **contract door** and a node-only
+  **engine root**. The app format — the document, the two genui dialects and their
+  compilers, the Kit, the island/jail rules, catalog + theme, the checking
+  contract, remix provenance, and the wire shapes `/apps/*` returns — lives on
+  `@vendoai/apps/contract`, which imports no node built-ins. The behavior that
+  produces those shapes stays behind `@vendoai/apps`.
+
+  **Migration:**
+
+  1. **Moved `@vendoai/core` names are a hard rename** — import them from
+     **`@vendoai/apps/contract`**: the genui dialect (`validateTree`, `compileWire`,
+     `compilePlan`, `printWire`, the expression grammar), the Kit, the
+     island/jail rules, catalog + theme, `AppFloor`/`Check`/`CheckInput`,
+     `ScreenAssembler`, `MakeReceipt`, host components, and build deadlines.
+     Types reaching you through `@vendoai/vendo` or the `vendoai` alias are
+     **unchanged** — the umbrella re-exports the contract beside core.
+     `@vendoai/apps` is ESM-only, so `require()` of these _values_ needs ESM or
+     the umbrella.
+     `AppDocument` and its schemas, and `Finding`, deliberately **stay in
+     `@vendoai/core`** (the store contract and the harness runtime speak them);
+     the contract door re-exports them, so one door serves every consumer.
+
+  2. **Subpaths — what moved and what did not.** Entry points go 8 → 4:
+
+     - **`@vendoai/apps`, `@vendoai/apps/e2b` and `@vendoai/apps/testing` all
+       survive with their specifiers unchanged.** `./e2b` stays because the venue
+       ladder reaches it as a real module seam, not merely a convenience re-export.
+     - `@vendoai/apps/{sandbox-ladder,internal}` **fold into `@vendoai/apps`** —
+       import those names from the root.
+     - `@vendoai/apps/adapter-conformance` → **`@vendoai/apps/testing`**, not the
+       root: it imports `vitest`, and the root rides every composed host's server
+       path.
+     - `@vendoai/apps/claude-turn` → **`@vendoai/harnesses/claude-turn`** and
+       `@vendoai/apps/box-door` → **`@vendoai/harnesses/box-door`** (both moved with
+       `claudeCode()`).
+     - **NEW:** `@vendoai/apps/contract`.
+
+  3. **`@vendoai/ui`, `@vendoai/store`, `@vendoai/actions` and `@vendoai/mcp` now
+     depend on `@vendoai/apps`** and read the app format from
+     `@vendoai/apps/contract`. Their own public surfaces are unchanged.
+
+  **Known tradeoffs, stated plainly:**
+
+  - **One name, still two declarations.** `@vendoai/ui` no longer keeps its own
+    copy of the `/apps/*` wire shapes — it re-exports them from the contract
+    door. That removes a copy; it does not yet make one definition. The engine's
+    server door declares its own richer `EditResult` (with `failure`,
+    `graduated`, `box`, `pendingEgress`, `automation`) beside the contract's
+    four-field wire shape, so the name has two declarations inside
+    `@vendoai/apps`, one per door. Unifying them decides which fields the wire
+    may expose, which is a behavior change and not part of this move.
+  - **Install weight.** `@vendoai/apps` declares `esbuild`, `jsdom`, `fflate` and
+    `react-dom` as hard dependencies, so a browser-only consumer of
+    `@vendoai/apps/contract` still installs the engine's dependency set. The
+    contract door itself bundles clean for a browser target (enforced by a new
+    leg in `scripts/portability-gate.mjs`); it is the install graph, not the
+    bundle, that carries the weight. Pre-existing, amplified by this split.
+
+- b0a165c: Remix is a seeded app: the pins subsystem is gone
+
+  An app that was made from one of your components no longer carries a list of
+  "pins". It carries a single `seed` — the component it started from and the
+  version of that component it started at. A remix is an ordinary app that
+  happens to start from something, so it is created, validated, edited and
+  versioned through exactly the same doors as every other app.
+
+  **Behaviour change you will notice: updating a remix now replaces it.**
+  When the host component changes, the remix reports drift as a warning and
+  nothing happens on its own. If you choose to update, you get the pristine new
+  component — the edits you made to that component are replaced. The previous
+  release replayed your recorded edits on top of the new version; that machinery,
+  its preflight and the version trail feeding it are deleted. Drift is a warning,
+  and updating is always your choice. The UI says this in the drift banner, and
+  the agent tool's description tells the model to say it too.
+
+  **Behaviour change on admission.** Every write path now runs the same document
+  validation, seeded and forked apps included. Seeded bundles used to skip the
+  island gate entirely, so a capture the jail could never render was accepted
+  without complaint. Captures that produce invalid documents will now be refused.
+
+  **Fixed.** A seeded app whose host component had moved on used to open with no
+  imports, no sub-modules and no styles — silently. Those furnishings were
+  hash-matched against the live baseline at open time, so any drift lost them.
+  They now travel inside the stored component bundle. Separately, artifact export
+  dropped remix provenance because the interchange field whitelist never listed
+  it, so export-permission checks never ran.
+
+  **Renames.**
+
+  - `AppDocument.pins?: Pin[]` → `AppDocument.seed?: AppSeed`
+    (`{ component, baseline, slot?, review? }`). `Pin` and `pinSchema` are removed;
+    `AppSeed` and `appSeedSchema` replace them. `forkedFrom` is unchanged.
+  - `AppsRuntime.pins.{fork,rebase}` → `AppsRuntime.seed.{from,reseed}`, plus
+    `seed.drift`. `seed.from({ component, slot?, instruction? })` and
+    `seed.reseed({ appId })` both return the `AppDocument`.
+  - `pinComponentName` → `seedComponentName`; `PinBaseline`/`pinBaselineSchema` →
+    `SeedBaseline`/`seedBaselineSchema`; `AppsConfig.pinBaselines` →
+    `seedBaselines`; `detectPinDrift` → `seedDrift` (one seed, so it returns one
+    `SeedDrift` or `null`); `ScreenPinDrift` → `ScreenSeedDrift`.
+  - `EditResult.driftedPins?: PinDrift[]` → `EditResult.seedDrift?: SeedDrift`;
+    the tree payload's `pinDrift` array → a single `seedDrift`.
+  - HTTP: `POST /apps/fork-pin` and `POST /apps/:id/fork-pin` → `POST /apps/seed`;
+    `POST /apps/:id/rebase-pin` → `POST /apps/:id/reseed`.
+  - Client: `apps.forkPin(...)` → `apps.seedFrom({ component, slot?, instruction? })`;
+    `apps.rebasePin(id, slot)` → `apps.reseed(id)`.
+  - Agent tool `vendo_apps_rebase_pin` (appId + slot) → `vendo_apps_reseed` (appId).
+  - `@vendoai/actions` no longer declares its own `CapturedPinBaseline`; the one
+    shape lives on `@vendoai/apps/contract` and actions re-exports it as
+    `SeedBaseline` / `seedBaselineSchema`.
+  - `PinForkInput`, `PinForkResult`, `PinRebaseResult` and `PinDrift` are removed.
+
+  Seeding into an app that already exists is gone: the gesture always mints an
+  app, because a seed is the provenance of a whole app rather than a row added to
+  one. The generated component name stored inside documents is deliberately
+  unchanged, so apps already on disk keep working.
+
+- 0f46e44: Dead features and their public surface are gone. Every removal below had zero
+  callers in this repo, the console, or the examples; nothing changed behavior for
+  a caller that was using a live path.
+
+  **`@vendoai/core` (breaking).** `AppDocument.placements` is gone from the
+  interface and the schema, and the validator no longer checks it. There has been
+  no writer since the placements-as-rows split; "show this app in that slot" is a
+  placement ROW (`@vendoai/apps` `placements.ts`, `GET /apps/placements`), which
+  is unchanged and is the live feature. Also removed: `PlanIsland` and the
+  `AppPlan.island` field, because the plan-level `<Island name purpose/>`
+  declaration no longer parses; and `PackSkill`, the deprecated alias for `Skill`.
+  `Pin`, `pinSchema` and `AppDocument.pins` are untouched — fork provenance is
+  still live.
+
+  **`@vendoai/apps` (breaking).** `PinShipRequest`, `PinApproval`,
+  `pinShipRequestSchema` and `pinApprovalSchema` never ran; `ShipDiffPin` and
+  `inClientApprovalSchema` are the live path and stay. `bindingKindCheck` is gone
+  — it had no callers; the `bindingKindIssues` walker it wrapped is still used by
+  the validate path. The plan compiler no longer accepts a plan-level
+  `<Island name purpose/>` element (an inline `<Island>` inside an app file is a
+  different, live feature and is unchanged). `GenerationPromptSection["id"]`
+  narrows to `"theme" | "design-rules"`; the other five ids had no producer.
+
+  **`@vendoai/store` (breaking).** The `stateStore` and `approvalStore` helpers
+  are gone. Both were test-only wrappers over the routed `records("vendo_state")`
+  and approval write paths, which are unchanged and are what production uses.
+  `ApprovalRow` is unaffected — it is exported from `helpers/types.ts` as before.
+
+  **`@vendoai/agents` (breaking).** The `./harnesses` subpath export is gone.
+  Import the harness factories from their own package instead:
+  `import { claudeCode } from "@vendoai/harnesses/claude-code"` and
+  `import { vendo } from "@vendoai/harnesses"`.
+
+  **`@vendoai/knowledge`.** `knowledgeIndexSummary` and `parseKnowledgeConfig` are
+  no longer exported from the package root. Both functions stay and are still used
+  internally by `knowledgeIndexResolver`, which remains exported.
+
+  **`@vendoai/actions`.** `DEFAULT_CAPTURE_BUDGET_BYTES` is no longer exported.
+  The constant and the 256 KB default it sets are unchanged.
+
+  **`@vendoai/ui`.** The unexported, unreferenced `TakeoverPortal` component is
+  deleted.
+
+### Patch Changes
+
+- Updated dependencies [e2128aa]
+- Updated dependencies [e1032f9]
+- Updated dependencies [079d7d8]
+- Updated dependencies [0e51585]
+- Updated dependencies [e87a765]
+- Updated dependencies [8105ade]
+- Updated dependencies [361f9b9]
+- Updated dependencies [b0a165c]
+- Updated dependencies [1549f90]
+- Updated dependencies [591ea46]
+- Updated dependencies [e87a765]
+- Updated dependencies [79d7088]
+- Updated dependencies [79d7088]
+- Updated dependencies [89b4444]
+- Updated dependencies [0f46e44]
+- Updated dependencies [70644e3]
+- Updated dependencies [d9ae728]
+- Updated dependencies [61b75bd]
+- Updated dependencies [384eb09]
+  - @vendoai/core@0.10.0
+  - @vendoai/apps@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes

@@ -1,5 +1,86 @@
 # @vendoai/agents
 
+## 0.10.0
+
+### Minor Changes
+
+- 0f46e44: Dead features and their public surface are gone. Every removal below had zero
+  callers in this repo, the console, or the examples; nothing changed behavior for
+  a caller that was using a live path.
+
+  **`@vendoai/core` (breaking).** `AppDocument.placements` is gone from the
+  interface and the schema, and the validator no longer checks it. There has been
+  no writer since the placements-as-rows split; "show this app in that slot" is a
+  placement ROW (`@vendoai/apps` `placements.ts`, `GET /apps/placements`), which
+  is unchanged and is the live feature. Also removed: `PlanIsland` and the
+  `AppPlan.island` field, because the plan-level `<Island name purpose/>`
+  declaration no longer parses; and `PackSkill`, the deprecated alias for `Skill`.
+  `Pin`, `pinSchema` and `AppDocument.pins` are untouched — fork provenance is
+  still live.
+
+  **`@vendoai/apps` (breaking).** `PinShipRequest`, `PinApproval`,
+  `pinShipRequestSchema` and `pinApprovalSchema` never ran; `ShipDiffPin` and
+  `inClientApprovalSchema` are the live path and stay. `bindingKindCheck` is gone
+  — it had no callers; the `bindingKindIssues` walker it wrapped is still used by
+  the validate path. The plan compiler no longer accepts a plan-level
+  `<Island name purpose/>` element (an inline `<Island>` inside an app file is a
+  different, live feature and is unchanged). `GenerationPromptSection["id"]`
+  narrows to `"theme" | "design-rules"`; the other five ids had no producer.
+
+  **`@vendoai/store` (breaking).** The `stateStore` and `approvalStore` helpers
+  are gone. Both were test-only wrappers over the routed `records("vendo_state")`
+  and approval write paths, which are unchanged and are what production uses.
+  `ApprovalRow` is unaffected — it is exported from `helpers/types.ts` as before.
+
+  **`@vendoai/agents` (breaking).** The `./harnesses` subpath export is gone.
+  Import the harness factories from their own package instead:
+  `import { claudeCode } from "@vendoai/harnesses/claude-code"` and
+  `import { vendo } from "@vendoai/harnesses"`.
+
+  **`@vendoai/knowledge`.** `knowledgeIndexSummary` and `parseKnowledgeConfig` are
+  no longer exported from the package root. Both functions stay and are still used
+  internally by `knowledgeIndexResolver`, which remains exported.
+
+  **`@vendoai/actions`.** `DEFAULT_CAPTURE_BUDGET_BYTES` is no longer exported.
+  The constant and the 256 KB default it sets are unchanged.
+
+  **`@vendoai/ui`.** The unexported, unreferenced `TakeoverPortal` component is
+  deleted.
+
+- 0e46cd5: `agent({ system })` — the host's last word on the per-turn system prompt. It is called once per turn with the ctx and this package's own assembly (`{ assembled, directions }`); return a string and it is the prompt VERBATIM, return `undefined` and the default assembly stands. One hook covers both venues — `ctx.venue` says whether this is a chat turn or an away firing — so a deployment cannot drift into two agents wearing one name, and `undefined` meaning "the default" is what stops a conditional that falls through from silently stripping the base rules. `awayRunner({ system })` now takes the same two-argument shape and, where a hook returning `undefined` previously meant NO system prompt reached the runtime, it now means the default assembly: an away run is never promptless. Existing one-argument implementations are unchanged and still assignable. `assemblePrompt` and `PromptInput` are exported so a host replacing the prompt can rebuild the parts it wants to keep.
+
+  Also removed: `PromptInput.sourceNotes`, which had no callers and rendered a section nothing produced.
+
+### Patch Changes
+
+- Updated dependencies [e2128aa]
+- Updated dependencies [e1032f9]
+- Updated dependencies [079d7d8]
+- Updated dependencies [0e51585]
+- Updated dependencies [e87a765]
+- Updated dependencies [8105ade]
+- Updated dependencies [361f9b9]
+- Updated dependencies [b0a165c]
+- Updated dependencies [1549f90]
+- Updated dependencies [591ea46]
+- Updated dependencies [e87a765]
+- Updated dependencies [79d7088]
+- Updated dependencies [79d7088]
+- Updated dependencies [89b4444]
+- Updated dependencies [0f46e44]
+- Updated dependencies [70644e3]
+- Updated dependencies [d9ae728]
+- Updated dependencies [61b75bd]
+- Updated dependencies [384eb09]
+- Updated dependencies [ed44a58]
+  - @vendoai/core@0.10.0
+  - @vendoai/apps@0.10.0
+  - @vendoai/actions@0.10.0
+  - @vendoai/store@0.10.0
+  - @vendoai/mcp@0.10.0
+  - @vendoai/harnesses@0.10.0
+  - @vendoai/guard@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes

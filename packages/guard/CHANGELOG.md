@@ -1,5 +1,20 @@
 # @vendoai/guard
 
+## 0.10.0
+
+### Patch Changes
+
+- Updated dependencies [e2128aa]
+- Updated dependencies [0e51585]
+- Updated dependencies [361f9b9]
+- Updated dependencies [b0a165c]
+- Updated dependencies [e87a765]
+- Updated dependencies [79d7088]
+- Updated dependencies [89b4444]
+- Updated dependencies [0f46e44]
+- Updated dependencies [61b75bd]
+  - @vendoai/core@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes
