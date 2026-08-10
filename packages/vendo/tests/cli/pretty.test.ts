@@ -255,6 +255,10 @@ describe("createPrettyOutput (visual system)", () => {
     pretty.log("  ");
     pretty.log("  DELETE and PATCH are stubs. DELETE's entire body is `const { id } = await params; return NextResponse.json({ deleted: true })`");
     pretty.log("  On semantics: the response fields are named, not described");
+    // Prose wearing a tally's SHAPE — `<words> (N): <words>`. Only the label
+    // allowlist can tell this from a real tally; a shape test lifts
+    // "The proposal adds (2)" into the summary and eats ": examples".
+    pretty.log("  The proposal adds (2): examples");
     pretty.done(4200, true);
     const body = out.plain().split("\n").filter((entry) => entry.startsWith("│  "));
     const summary = body.find((entry) => entry.includes("4 tools judged"))!;
@@ -266,6 +270,8 @@ describe("createPrettyOutput (visual system)", () => {
     expect(summary).not.toContain("On semantics");
     // The mid-token cut the ": " split used to make.
     expect(summary).not.toContain("NextResponse.json({ deleted");
+    // Prose that imitates a tally contributes nothing and keeps its tail.
+    expect(summary).not.toContain("The proposal adds");
     for (const segment of summary.slice("│  ".length).split(" · ")) {
       expect(segment.trim()).not.toBe("");
     }
@@ -273,6 +279,7 @@ describe("createPrettyOutput (visual system)", () => {
     // The prose is still shown — whole, below the summary, one line each.
     expect(body).toContain("│  Two handler files back all four tools");
     expect(body).toContain("│  On semantics: the response fields are named, not described");
+    expect(body).toContain("│  The proposal adds (2): examples");
     expect(out.plain()).toContain("return NextResponse.json({ deleted: true })");
     // The blank separator lines never became empty body rows either.
     expect(body.some((entry) => entry.trim() === "│")).toBe(false);

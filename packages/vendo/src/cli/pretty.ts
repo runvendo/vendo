@@ -109,11 +109,41 @@ const CATALOG_PREFIXES = ["tools: ", "tool schemas: ", "pins: ", "catalog.json: 
 const CATALOG_COMPONENTS = "components: ";
 const JUDGMENT_HEAD = /^judgment \(.+\): (.+)$/;
 const JUDGMENT_QUEUED = "loosenings queued";
-/** A judgment detail that is a TALLY — `hardened fields (18): …`, `loosenings
-    approved (1)`. The pass emits the model's free-text prose at the same
-    indent as its tallies, so "indented" cannot decide what belongs in the
-    counts summary; this shape can. */
-const JUDGMENT_COUNT = /^([^:]+ \(\d+\))(?::|$)/;
+/** EVERY tally `reportJudgment` prints under the head line, verbatim and in
+    its order — packages/vendo/src/cli/judge/pass.ts:1034-1075. Only these join
+    the counts summary.
+
+    An allowlist and not a shape, because the pass emits the model's free-text
+    at the SAME indent as its tallies, and prose can wear any shape: `The
+    proposal adds (2): examples` matches `<words> (N):` perfectly, so a shape
+    test lifts it into the summary and eats its tail. Prose cannot be on this
+    list, so it cannot impersonate a tally.
+
+    THE FAILURE THIS TRADES FOR: add a tally to pass.ts and not here, and it
+    renders as prose on its own body line instead of joining the summary —
+    visibly demoted, never garbled or truncated. Keep the two in step. */
+const JUDGMENT_TALLIES = [
+  "hardened fields",
+  "schemas inferred",
+  "schema proposals refused",
+  "loosenings approved",
+  "loosenings declined and dropped",
+  "rejected by the skeptic",
+  "unexamined after one re-ask, rejected",
+  "no evidence → rejected",
+  "malformed proposals ignored",
+  "risk grade contradicted its own reason, dropped",
+  "wholly rejected, left unjudged",
+  "proposals for unknown tools ignored",
+];
+/** `<allowed label> (12)` → that segment; anything else → null. The count must
+    close the label, so a tally's name list never reaches the summary. */
+function judgmentTally(text: string): string | null {
+  const label = JUDGMENT_TALLIES.find((entry) => text.startsWith(`${entry} (`));
+  if (label === undefined) return null;
+  const count = /^ \((\d+)\)(?::|$)/.exec(text.slice(label.length));
+  return count === null ? null : `${label} (${count[1]!})`;
+}
 /** The paste block's ASCII frame — dropped; the block rides the rail instead. */
 const PASTE_RULE = "─".repeat(64);
 const PASTE_HEAD = /^(ONE|\d+) STEPS? LEFT — paste th(?:is|ese) yourself \((.+)\)$/;
@@ -290,11 +320,11 @@ function flushJudgment(state: RenderState, rail: Rail): void {
   for (const detail of details) {
     const text = detail.trim();
     if (text === "") continue;
-    const count = JUDGMENT_COUNT.exec(text);
+    const tally = judgmentTally(text);
     if (text.includes(JUDGMENT_QUEUED)) queued.push(text);
     // The long name lists behind the colon are what --json and `vendo sync`
     // are for; the count clause in front of it is the summary's share.
-    else if (count !== null) counted.push(count[1]!);
+    else if (tally !== null) counted.push(tally);
     else narrative.push(text);
   }
   rail.body([summary, ...counted].join(" · "));
