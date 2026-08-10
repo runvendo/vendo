@@ -1,9 +1,11 @@
 import {
+  type AppDataTarget,
   type AppId,
   type BlobStore,
   type Json,
   type RecordStore,
   type StoreAdapter,
+  type StoreOps,
   VendoError,
 } from "@vendoai/core";
 import type {
@@ -32,6 +34,43 @@ export const resolveAppStorage = (
   ? { kind: "files", blobs: store.blobs(`app:${appId}:${name}`) }
   : { kind: "records", records: store.records(`app:${appId}:${name}`) };
 
+/** The appData family, wearing the plain `RecordStore` / `BlobStore` face the
+ *  guards below already wrap. The owner rides in the target, so the store
+ *  stamps it onto every write and scopes every read to it — nothing here may
+ *  set `refs.subject`, which the family refuses. */
+const appDataRecords = (ops: StoreOps, target: AppDataTarget): RecordStore => ({
+  get: (id) => ops.appData.get(target, id),
+  put: (record) => ops.appData.put(target, record),
+  delete: (id) => ops.appData.delete(target, id),
+  list: (query) => ops.appData.list(target, query),
+});
+
+const appDataBlobs = (ops: StoreOps, target: AppDataTarget): BlobStore => ({
+  put: (key, bytes, meta) => ops.appData.putFile(target, key, bytes, meta),
+  get: (key) => ops.appData.getFile(target, key),
+  delete: (key) => ops.appData.deleteFile(target, key),
+  list: (prefix) => ops.appData.listFiles(target, prefix),
+});
+
+/** The ONE spelling of "which store backs this collection". `selectStoreOps`
+ *  gives a three-way answer — the store's own ops, the local backend over a SQL
+ *  handle, or nothing at all for a store with neither. Requiring `ops` would
+ *  crash composition at boot for that third store, where today it refuses at
+ *  the op that needed one; so a store without an ops surface keeps exactly
+ *  today's façade behavior, unowned, and a store with one gets owner stamping.
+ *  No other branch. */
+const backingFor = (
+  ops: StoreOps | undefined,
+  store: StoreAdapter,
+  target: AppDataTarget,
+  declaration: StorageDecl,
+): AppStorage => {
+  if (ops === undefined) return resolveAppStorage(store, target.appId, target.collection, declaration);
+  return declaration.kind === "files"
+    ? { kind: "files", blobs: appDataBlobs(ops, target) }
+    : { kind: "records", records: appDataRecords(ops, target) };
+};
+
 const allRecordIds = async (records: RecordStore): Promise<string[]> =>
   (await listAllRecords(records)).map((record) => record.id);
 
@@ -46,8 +85,8 @@ const clearBlobs = async (blobs: BlobStore): Promise<void> => {
 export interface AppDataAccess {
   getState(appId: AppId, subject: string): Promise<Json | null>;
   setState(appId: AppId, subject: string, data: Json): Promise<void>;
-  records(app: AppDocument, name: string): RecordStore;
-  blobs(app: AppDocument, name: string): BlobStore;
+  records(app: AppDocument, name: string, owner: string): RecordStore;
+  blobs(app: AppDocument, name: string, owner: string): BlobStore;
   clear(app: AppDocument, subject: string, historical?: readonly AppDocument[]): Promise<void>;
 }
 
@@ -98,7 +137,9 @@ const recordByteLength = (record: Parameters<RecordStore["put"]>[0]): number => 
 };
 
 /** 06-apps §6 — private app-data API consumed by lifecycle and later execution lanes. */
-export const createAppData = (store: StoreAdapter): AppDataAccess => ({
+export const createAppData = (
+  { ops, store }: { ops: StoreOps | undefined; store: StoreAdapter },
+): AppDataAccess => ({
   async getState(appId, subject) {
     const record = await store.records("vendo_state").get(`${appId}:${subject}`);
     return record === null ? null : structuredClone(record.data);
@@ -110,9 +151,9 @@ export const createAppData = (store: StoreAdapter): AppDataAccess => ({
       refs: { subject, app_id: appId },
     });
   },
-  records(app, name) {
+  records(app, name, owner) {
     const declaration = declaredStorage(app, name, "records");
-    const storage = resolveAppStorage(store, app.id, name, declaration);
+    const storage = backingFor(ops, store, { appId: app.id, collection: name, owner }, declaration);
     if (storage.kind !== "records") {
       throw new VendoError("not-found", `records collection not found: ${name}`);
     }
@@ -129,9 +170,9 @@ export const createAppData = (store: StoreAdapter): AppDataAccess => ({
       list: (query) => storage.records.list(query),
     };
   },
-  blobs(app, name) {
+  blobs(app, name, owner) {
     const declaration = declaredStorage(app, name, "files");
-    const storage = resolveAppStorage(store, app.id, name, declaration);
+    const storage = backingFor(ops, store, { appId: app.id, collection: name, owner }, declaration);
     if (storage.kind !== "files") {
       throw new VendoError("not-found", `files collection not found: ${name}`);
     }
@@ -156,7 +197,10 @@ export const createAppData = (store: StoreAdapter): AppDataAccess => ({
     }
     for (const [key, declaration] of declarations) {
       const name = key.slice(0, key.lastIndexOf(":"));
-      const storage = resolveAppStorage(store, app.id, name, declaration);
+      // Owner-scoped through the same backing the doors write: an appData list
+      // already sees only this subject's rows, so the sweep empties the
+      // caller's drawer and nobody else's.
+      const storage = backingFor(ops, store, { appId: app.id, collection: name, owner: subject }, declaration);
       if (storage.kind === "records") await clearRecords(storage.records);
       else await clearBlobs(storage.blobs);
     }

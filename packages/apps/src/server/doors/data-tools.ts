@@ -3,7 +3,9 @@
  * declared app data collection, over the same `requireOwned` gate every other
  * door reads.
  *
- * Lifted out of `createAgentTools` unchanged.
+ * Lifted out of `createAgentTools` unchanged. Every row is owned by the LIVE
+ * caller: the subject comes off the run context, never off the tool args, so
+ * generated code has no way to name someone else's drawer.
  */
 import {
   VendoError,
@@ -35,7 +37,9 @@ export const listAppData = async (
   };
   return {
     status: "ok",
-    output: await dependencies.data.records(app, args.collection as string).list(query) as unknown as Json,
+    output: await dependencies.data
+      .records(app, args.collection as string, ctx.principal.subject)
+      .list(query) as unknown as Json,
   };
 };
 
@@ -50,11 +54,13 @@ export const putAppData = async (
   }
   const app = await dependencies.requireOwned(args.appId as string, ctx);
   const refs = optionalRefs(args.refs);
-  const record = await dependencies.data.records(app, args.collection as string).put({
-    id: args.id as string,
-    data: args.data,
-    ...(refs === undefined ? {} : { refs }),
-  });
+  const record = await dependencies.data
+    .records(app, args.collection as string, ctx.principal.subject)
+    .put({
+      id: args.id as string,
+      data: args.data,
+      ...(refs === undefined ? {} : { refs }),
+    });
   return { status: "ok", output: record as unknown as Json };
 };
 
@@ -65,6 +71,8 @@ export const deleteAppData = async (
 ): Promise<ToolOutcome> => {
   const args = input(call.args, ["appId", "collection", "id"]);
   const app = await dependencies.requireOwned(args.appId as string, ctx);
-  await dependencies.data.records(app, args.collection as string).delete(args.id as string);
+  await dependencies.data
+    .records(app, args.collection as string, ctx.principal.subject)
+    .delete(args.id as string);
   return { status: "ok", output: { status: "ok" } };
 };

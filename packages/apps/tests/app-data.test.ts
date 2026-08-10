@@ -74,14 +74,15 @@ describe("app data persistence", () => {
         attachments: { about: "Invoice attachments", kind: "files" },
       },
     };
-    const data = createAppData(store);
+    const data = createAppData({ ops: undefined, store });
+    const owner = ctx.principal.subject;
 
-    expect(() => data.records(app, "missing")).toThrow(expect.objectContaining({ code: "not-found" }));
-    expect(() => data.blobs(app, "missing")).toThrow(expect.objectContaining({ code: "not-found" }));
-    expect(() => data.records(app, "attachments")).toThrow(expect.objectContaining({ code: "not-found" }));
-    expect(() => data.blobs(app, "notes")).toThrow(expect.objectContaining({ code: "not-found" }));
-    expect(() => data.records(app, "state")).toThrow(expect.objectContaining({ code: "validation" }));
-    expect(() => data.blobs(app, "state")).toThrow(expect.objectContaining({ code: "validation" }));
+    expect(() => data.records(app, "missing", owner)).toThrow(expect.objectContaining({ code: "not-found" }));
+    expect(() => data.blobs(app, "missing", owner)).toThrow(expect.objectContaining({ code: "not-found" }));
+    expect(() => data.records(app, "attachments", owner)).toThrow(expect.objectContaining({ code: "not-found" }));
+    expect(() => data.blobs(app, "notes", owner)).toThrow(expect.objectContaining({ code: "not-found" }));
+    expect(() => data.records(app, "state", owner)).toThrow(expect.objectContaining({ code: "validation" }));
+    expect(() => data.blobs(app, "state", owner)).toThrow(expect.objectContaining({ code: "validation" }));
   });
 
   it("round-trips records with refs filters and validates declared refs", async () => {
@@ -94,7 +95,7 @@ describe("app data persistence", () => {
         notes: { about: "Invoice notes", refs: { invoice_id: "host.invoice" } },
       },
     };
-    const records = createAppData(store).records(app, "notes");
+    const records = createAppData({ ops: undefined, store }).records(app, "notes", ctx.principal.subject);
 
     await records.put({ id: "note_1", data: { body: "first" }, refs: { invoice_id: "inv_1" } });
     await records.put({ id: "note_2", data: { body: "second" }, refs: { invoice_id: "inv_2" } });
@@ -125,13 +126,13 @@ describe("app data persistence", () => {
         attachments: { about: "Bounded attachments", kind: "files" },
       },
     };
-    const data = createAppData(store);
+    const data = createAppData({ ops: undefined, store });
 
-    await expect(data.records(app, "notes").put({
+    await expect(data.records(app, "notes", ctx.principal.subject).put({
       id: "oversized",
       data: { body: "x".repeat(APP_RECORD_MAX_BYTES) },
     })).rejects.toMatchObject({ code: "validation" });
-    await expect(data.blobs(app, "attachments").put(
+    await expect(data.blobs(app, "attachments", ctx.principal.subject).put(
       "oversized.bin",
       new Uint8Array(APP_BLOB_MAX_BYTES + 1),
     )).rejects.toMatchObject({ code: "validation" });

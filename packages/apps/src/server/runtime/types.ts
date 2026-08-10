@@ -22,6 +22,7 @@ import type {
   RunContext,
   SecretsProvider,
   StoreAdapter,
+  StoreOps,
   ToolCall,
   ToolOutcome,
   ToolRegistry,
@@ -56,6 +57,14 @@ import type { SlotRegistry } from "../persistence/slots.js";
 /** 06-apps §1 plus block-plan decisions 3–4. */
 export interface AppsConfig {
   store: StoreAdapter;
+  /**
+   * The deployment's 35-op store surface, when it has one. App data goes
+   * through its `appData` family so every row is stamped with the live
+   * caller's subject and every read is scoped to it. Absent — a store that
+   * offers neither its own ops nor a SQL handle — app data falls back to the
+   * raw `store` façade collections, unowned, exactly as it landed before.
+   */
+  ops?: StoreOps;
   guard: Guard;
   tools: ToolRegistry;
   /**

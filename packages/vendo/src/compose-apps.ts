@@ -145,10 +145,14 @@ const machineEnvFor = (
 /** Persistence, permission and interchange: the seams the runtime reads and
  *  writes THROUGH. */
 const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partial<AppsConfig> => {
-  const { store, guard, boundTools, inference, catalog, seedBaselines, files } = composition;
+  const { store, ops, guard, boundTools, inference, catalog, seedBaselines, files } = composition;
   const { access } = seams;
   return {
     store,
+    // Adapter rule — the SAME ops surface the deployment selected, so app data
+    // lands owner-stamped through the named-operation family instead of the
+    // raw façade.
+    ops,
     guard,
     tools: boundTools,
     model: inference.agent.model,

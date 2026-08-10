@@ -256,7 +256,7 @@ const createStores = (
   const apps = config.store.records("vendo_apps");
   const placementRows = placementStore(config.store);
   const slots = createSlotRegistry(config.store);
-  const data = createAppData(config.store);
+  const data = createAppData({ ops: config.ops, store: config.store });
   const history = createAppHistory(config.store);
   // Lane E — parked egress approvals (approved state lives on the document's
   // egressApproved field; this collection holds only undecided cards).
