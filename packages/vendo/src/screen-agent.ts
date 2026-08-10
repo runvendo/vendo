@@ -40,6 +40,7 @@ import {
   type RunContext,
   type ToolListing,
   type ToolRegistry,
+  type ToolResult,
   type TurnId,
   type TurnSkills,
   type TurnState,
@@ -63,6 +64,7 @@ import {
   paintedIn,
   repairInstruction,
   validateWrittenApps,
+  VALIDATE_TOOL,
   wrapWorkspaceForRender,
   type RenderSeamOptions,
 } from "@vendoai/apps";
@@ -174,6 +176,16 @@ const nameOf = (content: string): string | undefined => {
   const match = /<App\b[^>]*\bname="([^"]+)"/.exec(content);
   return match?.[1]?.trim() || undefined;
 };
+
+/** The floor's own PASS, read exactly as the gate reads it (`validate-gate.ts`'s
+ *  `askValidate`): a verdict it could not reach — denied, errored, or answered in
+ *  a shape nobody can read — is never a pass. */
+const verdictIsClean = (result: ToolResult): boolean =>
+  result.status === "ok"
+  && typeof result.output === "object"
+  && result.output !== null
+  && !Array.isArray(result.output)
+  && (result.output as Record<string, unknown>)["ok"] === true;
 
 /**
  * The host's surface, as the model reads it before writing a single binding.
@@ -457,12 +469,38 @@ export async function assembleScreen(
     .map((listing) => listing.name);
   loadout.push(saveApp, escalate);
 
+  /**
+   * THE DRIVE'S OWN STOP — the verdict ends the drive, not the caller.
+   *
+   * Replaying the archived runs: every one reached a clean `validate` seconds after
+   * its first paint, then spent another 80–150 seconds rewriting a screen whose
+   * verdict never moved (one still failed the same reviewer finding 98 seconds
+   * later). So the drive stops on two MECHANICAL verdicts over the same painted
+   * bytes: the seam painted the last save — it refuses to paint anything the floor
+   * blocks — and the floor says that document is clean. No model self-report is in
+   * the trigger, which is what separates this from a model-written `done` flag: an
+   * empty document cannot paint at all.
+   *
+   * Deliberately NOT `surface.signal`: every check after the drive reads the
+   * CALLER's signal, so a self-stop returns `assembled` over the screen that is up
+   * rather than `unavailable`. Re-minted per drive, so the reviewer's repair round
+   * below is not born aborted by the first drive's stop.
+   */
+  let stop = new AbortController();
+
   const turn: Turn<VendoHarnessOptions> = {
     messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: {
+      call: async (name, args) => {
+        const result = await surface.tools.call(name, args);
+        if (name === VALIDATE_TOOL && record.painted && verdictIsClean(result)) stop.abort();
+        return result;
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
@@ -498,7 +536,9 @@ export async function assembleScreen(
    * reason).
    */
   const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
-    for await (const event of harness.run({ ...turn, messages })) {
+    stop = new AbortController();
+    const signal = AbortSignal.any([surface.signal, stop.signal]);
+    for await (const event of harness.run({ ...turn, messages, signal })) {
       if (event.type === "error") failure ??= event.message;
     }
   };
