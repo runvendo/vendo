@@ -169,6 +169,59 @@ describe("runSyncFlow", () => {
   });
 });
 
+/**
+ * The two phases that can hold a terminal for minutes — extraction and the
+ * judgment pass — get the caller's spinner when it has one. Full mode's
+ * "Reading your product (…)…" line is the SAME string either way: the label
+ * when a renderer is attached, the printed line when there is none.
+ */
+describe("the slow phases spin when the caller supplies one", () => {
+  const scripted = {
+    id: "scripted",
+    availability: async () => "a scripted engine",
+    run: async () => "```json\n" + JSON.stringify({ tools: [], narrative: "" }) + "\n```",
+  };
+
+  it("labels extraction and the judgment pass in both modes", async () => {
+    const seen: Record<string, { labels: string[]; stops: number; logs: string[] }> = {};
+    for (const mode of ["full", "incremental"] as const) {
+      const labels: string[] = [];
+      let stops = 0;
+      const { output, logs } = captureOutput();
+      await runSyncFlow({
+        root: await host(), output, mode, interactive: true, yes: false, sync: scan,
+        fetchImpl: offline,
+        confirm: async () => true,
+        judge: { harnesses: [scripted] },
+        spinner: { spin: (label) => labels.push(label), stopSpin: () => { stops += 1; } },
+      });
+      seen[mode] = { labels, stops, logs };
+    }
+    expect(seen.full!.labels).toEqual([
+      "Re-reading your product…",
+      "Reading your product (a scripted engine)…",
+    ]);
+    expect(seen.full!.stops).toBe(2);
+    // The line became the label; it is not ALSO printed.
+    expect(seen.full!.logs.join("\n")).not.toContain("Reading your product");
+    expect(seen.incremental!.labels).toEqual([
+      "Re-reading your product…",
+      "Judging what moved… (a scripted engine)",
+    ]);
+  });
+
+  it("without a spinner full mode prints exactly the line it prints today", async () => {
+    const { output, logs } = captureOutput();
+    await runSyncFlow({
+      root: await host(), output, mode: "full", interactive: true, yes: false, sync: scan,
+      fetchImpl: offline,
+      confirm: async () => true,
+      judge: { harnesses: [scripted] },
+    });
+    expect(logs).toContain("\nReading your product (a scripted engine)…");
+  });
+});
+
 describe("the AI flag matrix (one rule, both modes)", () => {
   it("interactive with no flag ASKS, every run — nothing is persisted", async () => {
     const dir = await host();

@@ -1,11 +1,13 @@
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
 import { pushSyncReport } from "./cloud/services.js";
 import type { JudgmentPassOptions } from "./judge/pass.js";
+import { createPrettyOutput, usePrettyOutput, type PrettyOutput } from "./pretty.js";
 import { runSyncFlow, type SyncFlowResult } from "./sync-flow.js";
-import { consoleOutput, invokedByPackageScript, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
+import { applyThemeDraft, toVendoTheme } from "./theme/extract-theme.js";
+import { consoleOutput, invokedByPackageScript, withCommandRun, writeText, type Output, type TelemetryOptions } from "./shared.js";
 
 export interface SyncReportPayload {
   report: SyncReportWithWarnings;
@@ -142,17 +144,61 @@ async function pushReport(
 }
 
 /**
+ * The theme fill `sync --full` used to pay for and throw away: full mode runs
+ * the prose stages, waits on the model to fill the still-open brand slots, and
+ * hands them back as `themeDraft`. `vendo init` consumes it (finalizeTheme);
+ * `vendo sync` never read it — computed, never written, never printed. Same
+ * two exports and the same merge law init uses, so there is one theme path.
+ */
+async function writeThemeDraft(root: string, flow: SyncFlowResult, output: Output): Promise<void> {
+  if (flow.themeSummary === null || flow.themeDraft === null) return;
+  const summary = applyThemeDraft(flow.themeSummary, flow.themeDraft);
+  // `(model)` is the provenance assembleTheme stamps on a slot the draft
+  // filled — an exact read is never overwritten, so this is exactly what the
+  // tokens bought.
+  const filled = Object.keys(summary.matched).filter((slot) => summary.matched[slot] === "(model)");
+  if (filled.length === 0) return;
+  await writeText(join(root, ".vendo", "theme.json"), `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
+  output.log(`theme: ${filled.length} slot${filled.length === 1 ? "" : "s"} filled by the AI pass (${filled.join(", ")}) → .vendo/theme.json`);
+}
+
+/** The footer's "what moved", read off the report this run just printed. The
+ *  footer REPORTS the outcome; it never decides it. */
+function whatMoved(flow: SyncFlowResult): string | undefined {
+  const moved: string[] = [];
+  const { added, removed, changed } = flow.report.tools;
+  if (added.length > 0) moved.push(`+${added.length} tool${added.length === 1 ? "" : "s"}`);
+  if (removed.length > 0) moved.push(`-${removed.length} tool${removed.length === 1 ? "" : "s"}`);
+  if (changed.length > 0) moved.push(`~${changed.length} changed`);
+  if ((flow.baselines?.pushed.length ?? 0) + (flow.components?.pushed.length ?? 0) > 0) {
+    moved.push("pushed to Cloud");
+  }
+  return moved.length === 0 ? undefined : moved.join(" · ");
+}
+
+/**
  * sync = the shared flow (sync-flow.ts) in "incremental" mode, plus the two
  * things that are the COMMAND's and not the flow's: the `--report` push and
  * the exit codes. Fail-soft on purpose — a sync problem must never break a
  * build — where `vendo init` runs the same flow in "full" mode and fails loud.
  */
 async function sync(options: SyncOptions): Promise<number> {
-  const output = options.output ?? consoleOutput;
   const json = options.json === true;
+  // The same renderer `vendo init` uses, over the same Output seam and the
+  // same gate: it restyles the exact plain strings below, and is selected only
+  // for a human terminal. `--json` owns its stdout byte-for-byte, an injected
+  // output is the caller's, and a package-script run (predev/prebuild) keeps
+  // today's output — that one is the most-seen sync output there is.
+  const pretty: PrettyOutput | null =
+    options.output === undefined && !json && !invokedByPackageScript() && usePrettyOutput()
+      ? createPrettyOutput({ command: "vendo sync" })
+      : null;
+  const output = options.output ?? pretty ?? consoleOutput;
+  const started = Date.now();
   // In --json mode, human lines that duplicate report fields are dropped and
   // CLI-level events collect into `notes`; stdout carries exactly one object.
   const notes: string[] = [];
+  const note = (message: string): void => { if (json) notes.push(message); else output.log(message); };
   const noteError = (message: string): void => { if (json) notes.push(message); else output.error(message); };
   try {
     const root = resolve(options.targetDir);
@@ -177,12 +223,18 @@ async function sync(options: SyncOptions): Promise<number> {
       ...(options.url === undefined ? {} : { url: options.url }),
       ...(options.sync === undefined ? {} : { sync: options.sync }),
       ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-      ...(options.confirm === undefined ? {} : { confirm: options.confirm }),
+      ...(options.confirm === undefined
+        ? (pretty === null ? {} : { confirm: pretty.confirm })
+        : { confirm: options.confirm }),
+      ...(pretty === null
+        ? {}
+        : { choose: pretty.select, spinner: { spin: pretty.spin, stopSpin: pretty.stopSpin } }),
       ...(options.judge === undefined ? {} : { judge: options.judge }),
       ...(options.pushComponents === undefined ? {} : { pushComponents: options.pushComponents }),
       ...(options.baselineBudgetMs === undefined ? {} : { baselineBudgetMs: options.baselineBudgetMs }),
     });
     notes.push(...flow.notes);
+    await writeThemeDraft(root, flow, { log: note, error: noteError });
     const report = flow.report;
 
     const reportUnkeyed = options.report !== true
@@ -211,6 +263,7 @@ async function sync(options: SyncOptions): Promise<number> {
       };
       output.log(JSON.stringify(result, null, 2));
     }
+    pretty?.done(Date.now() - started, exitCode === 0, whatMoved(flow));
     return exitCode;
   } catch (error) {
     const message = `sync failed soft: ${error instanceof Error ? error.message : "unknown error"}`;
@@ -231,6 +284,7 @@ async function sync(options: SyncOptions): Promise<number> {
     } else {
       output.error(`warning: ${message}`);
     }
+    pretty?.done(Date.now() - started, exitCode === 0);
     return exitCode;
   }
 }

@@ -73,8 +73,26 @@ export interface SyncFlowOptions {
   choose?: (question: string, options: SelectOption[], defaultIndex: number) => Promise<string>;
   judge?: Pick<JudgmentPassOptions,
     "harness" | "harnesses" | "resolveCredential" | "confirm" | "onProgress">;
+  /** The renderer's spinner, for the two phases that can hold the terminal for
+   *  minutes: extraction and the judgment pass. Absent (plain runs, CI, pipes)
+   *  → nothing spins and the printed lines stay exactly what they are today. */
+  spinner?: { spin: (label: string) => void; stopSpin: () => void };
   /** Test seam: the wall-clock budget for each Cloud reconcile. */
   baselineBudgetMs?: number;
+}
+
+/** A slow phase under the caller's spinner, when it supplied one. */
+async function withSpin<T>(
+  spinner: SyncFlowOptions["spinner"],
+  label: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  spinner?.spin(label);
+  try {
+    return await run();
+  } finally {
+    spinner?.stopSpin();
+  }
 }
 
 export interface SyncFlowResult {
@@ -444,10 +462,15 @@ async function runGradingStages(input: {
   if (selection.skip) return { judged, themeDraft };
 
   // A one-time install narrates the slowest step it is about to take; an
-  // incremental sync stays as quiet as it is today.
-  if (mode === "full" && selection.engine !== undefined) {
-    output.log(`\nReading your product (${selection.engine.credential})…`);
-  }
+  // incremental sync stays as quiet as it is today. With a renderer attached
+  // that same narration becomes the spinner's label instead of a printed line.
+  const credential = selection.engine === undefined ? null : selection.engine.credential;
+  const narration = mode === "full" && credential !== null
+    ? `Reading your product (${credential})…`
+    : null;
+  if (narration !== null && options.spinner === undefined) output.log(`\n${narration}`);
+  const spinLabel = narration
+    ?? `Judging what moved…${credential === null ? "" : ` (${credential})`}`;
   try {
     // `--yes` means every question is already answered, so it must not reach
     // the aggregated loosening review either: an unattended run cannot
@@ -456,7 +479,7 @@ async function runGradingStages(input: {
     // nothing downstream can acquire a way to block.
     const attended = options.interactive && !options.yes;
     const loosenings = attended || options.review === true ? "review" : "queue";
-    const pass = await runJudgmentPass({
+    const pass = await withSpin(options.spinner, spinLabel, () => runJudgmentPass({
       root,
       out: vendoDir,
       mode,
@@ -471,7 +494,7 @@ async function runGradingStages(input: {
       ...(options.judge?.harnesses === undefined ? {} : { harnesses: options.judge.harnesses }),
       ...(options.judge?.resolveCredential === undefined ? {} : { resolveCredential: options.judge.resolveCredential }),
       ...(options.judge?.onProgress === undefined ? {} : { onProgress: options.judge.onProgress }),
-    });
+    }));
     // The pass already printed the count and `vendo sync --review`; say WHY
     // they were held, so an unattended caller doesn't read it as a refusal.
     if (loosenings === "queue" && pass.status === "judged" && pass.queued > 0) {
@@ -639,12 +662,16 @@ export async function runSyncFlow(options: SyncFlowOptions): Promise<SyncFlowRes
   // otherwise sync structural-only with no signal why (#567).
   const env = await readEnvFiles(root);
 
-  const report: SyncReportWithWarnings = await (options.sync ?? vendoSync)({
-    root,
-    out: vendoDir,
-    // The CLI needs the report to compute exit 2 vs 3; it applies strictness.
-    strict: false,
-  });
+  const report: SyncReportWithWarnings = await withSpin(
+    options.spinner,
+    "Re-reading your product…",
+    () => (options.sync ?? vendoSync)({
+      root,
+      out: vendoDir,
+      // The CLI needs the report to compute exit 2 vs 3; it applies strictness.
+      strict: false,
+    }),
+  );
   printSyncReport(report, output);
 
   const notes_ = { note, noteError };

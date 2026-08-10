@@ -936,3 +936,63 @@ describe("vendo sync wrapper coherence", () => {
     });
   });
 });
+
+/**
+ * `sync --full` runs the prose stages and pays the tokens and the wait for the
+ * model to fill the still-open brand slots — and then threw the result away:
+ * `vendo init` consumed `themeDraft`, `vendo sync` never read it. The seam is
+ * the point, so nothing here is stubbed on either side of it: the real flow
+ * runs the real theme stage and the real merge, and the assertion is the file
+ * on disk.
+ */
+describe("sync --full writes the theme fill it paid for", () => {
+  const offline = (async () => { throw new Error("offline"); }) as unknown as typeof fetch;
+  const dirs: string[] = [];
+  afterEach(async () => {
+    await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
+  async function host(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "vendo-sync-theme-"));
+    dirs.push(dir);
+    await mkdir(join(dir, ".vendo"), { recursive: true });
+    return dir;
+  }
+
+  it("merges the draft into .vendo/theme.json and names the slots it filled", async () => {
+    const root = await host();
+    const messages = captureOutput();
+    const stages: string[] = [];
+    const harness = {
+      id: "scripted",
+      availability: async () => "a scripted engine",
+      run: async (input: { instructions: string }) => {
+        const theme = input.instructions.includes("filling the theme's brand slots");
+        stages.push(theme ? "theme" : "judgment");
+        return "```json\n" + JSON.stringify(theme
+          ? { slots: { accent: "#112233", fontFamily: "Inter, sans-serif" } }
+          : { tools: [], narrative: "" }) + "\n```";
+      },
+    };
+
+    const exit = await runSync({
+      targetDir: root,
+      output: messages.output,
+      fetchImpl: offline,
+      sync: async () => report(),
+      full: true,
+      ai: true,
+      yes: true,
+      judge: { harnesses: [harness] },
+    });
+
+    expect(exit).toBe(0);
+    expect(stages).toContain("theme");
+    const written = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8")) as {
+      colors: { accent: string }; typography: { fontFamily: string };
+    };
+    expect(written.colors.accent).toBe("#112233");
+    expect(written.typography.fontFamily).toBe("Inter, sans-serif");
+    expect(messages.logs.join("\n")).toContain("filled by the AI pass (accent, fontFamily)");
+  });
+});
