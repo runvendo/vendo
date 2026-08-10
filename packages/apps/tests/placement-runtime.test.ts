@@ -570,7 +570,6 @@ describe("the empty-slot Remix gesture places its mint", () => {
     });
 
     const forked = await runtime.pins.fork({ slot: "net-worth-card" }, ctx);
-    expect(forked.app.placements).toBeUndefined();
     expect(await runtime.placements({}, ctx)).toEqual([
       { slot: "net-worth-card", app: forked.app.id, title: forked.app.name, status: "ready" },
     ]);

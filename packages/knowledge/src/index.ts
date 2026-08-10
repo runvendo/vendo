@@ -39,7 +39,5 @@ export { bindKnowledgeStore, vendoKnowledge } from "./local/lexical.js";
 /** The static prompt index (boot + sync-state refresh). */
 export {
   knowledgeIndexResolver,
-  knowledgeIndexSummary,
-  parseKnowledgeConfig,
   type KnowledgeIndexReaders,
 } from "./prompt-note.js";

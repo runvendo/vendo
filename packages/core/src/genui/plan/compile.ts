@@ -12,7 +12,7 @@
  * Two deliberate differences from the wire compiler:
  *
  * - The shape is flat BY GRAMMAR. `<Plan>` holds `<Query>`, `<Group>`,
- *   `<Server>`, `<Island>` and `<Cannot>`; a group holds `<Leaf>` elements and
+ *   `<Server>` and `<Cannot>`; a group holds `<Leaf>` elements and
  *   nothing else. There is no production for a group inside a group, and tabs
  *   are never written — they derive from the groups' tab labels (planTabs).
  * - Issues are sentences, not codes. A plan issue is the WHOLE explanation
@@ -232,7 +232,7 @@ const compileLeaf = (plan: PlanState, group: PlanGroup): PlanLeaf | undefined =>
   }
   if (!plan.components.has(component)) {
     plan.issues.push(
-      `there is no component called "${component}". The components you can use are: ${nameList(plan.facts.components)}. Pick the closest fit, or declare an <Island> when none of them can express it.`,
+      `there is no component called "${component}". The components you can use are: ${nameList(plan.facts.components)}. Pick the closest fit.`,
     );
   }
   const leaf: PlanLeaf = { component, purpose };
@@ -409,28 +409,6 @@ const compileServer = (plan: PlanState, appPlan: AppPlan): void => {
   appPlan.server = server;
 };
 
-const compileIsland = (plan: PlanState, appPlan: AppPlan): void => {
-  const attrs = openTag(plan);
-  if (attrs === FAILED) return;
-  if (!attrs.selfClosing) {
-    plan.issues.push("<Island> holds nothing here — the plan only names it; its content was ignored.");
-    skipContent(plan, "Island");
-  }
-  if (appPlan.island !== undefined) {
-    plan.issues.push("a plan asks for one island at most — the second <Island> was dropped.");
-    return;
-  }
-  const name = stringAttr(attrs.props, "name");
-  const purpose = stringAttr(attrs.props, "purpose");
-  if (name === undefined || purpose === undefined) {
-    plan.issues.push(
-      'an <Island> needs a name and a purpose — <Island name="RunwayDial" purpose="..."/> — so it can be built and screened. It was dropped.',
-    );
-    return;
-  }
-  appPlan.island = { name, purpose };
-};
-
 /** `<Cannot>` carries a sentence a person reads, so its text is taken
  *  verbatim to the first `</Cannot>` (the raw-island capture stance). */
 const compileCannot = (plan: PlanState, appPlan: AppPlan): void => {
@@ -491,10 +469,6 @@ const compilePlanChildren = (plan: PlanState, appPlan: AppPlan): void => {
       compileServer(plan, appPlan);
       continue;
     }
-    if (tag === "Island") {
-      compileIsland(plan, appPlan);
-      continue;
-    }
     if (tag === "Cannot") {
       compileCannot(plan, appPlan);
       continue;
@@ -502,7 +476,7 @@ const compilePlanChildren = (plan: PlanState, appPlan: AppPlan): void => {
     plan.issues.push(
       tag === "Leaf"
         ? "a <Leaf> belongs inside a <Group>, never straight in the plan — the group is what one worker writes. It was dropped."
-        : `<${tag}> is not part of a plan, which holds <Query>, <Group> (of <Leaf> elements), <Server>, <Island> and <Cannot>. It was dropped.`,
+        : `<${tag}> is not part of a plan, which holds <Query>, <Group> (of <Leaf> elements), <Server> and <Cannot>. It was dropped.`,
     );
     const attrs = openTag(plan);
     if (attrs === FAILED) break;

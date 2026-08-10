@@ -1,8 +1,8 @@
 /**
  * `@vendoai/agents` — spawn a governed, harness-grade agent in any Node
  * backend in a few lines. One runtime, always host-run; a Vendo Cloud key
- * fills the sandbox slot when it is left unset. Harness factories live at
- * `@vendoai/agents/harnesses` (`claudeCode`, `vendo`).
+ * fills the sandbox slot when it is left unset. Harness factories live in
+ * `@vendoai/harnesses` (`claudeCode`, `vendo`).
  */
 export {
   agent,

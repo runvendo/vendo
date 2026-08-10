@@ -1,5 +1,5 @@
 import type { SecretSource } from "@vendoai/actions/presets";
-import type { ActAs, Json, Membership, Principal, ResolvedPerson } from "@vendoai/core";
+import type { ActAs, Json, Membership, Principal } from "@vendoai/core";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 
 /** 09-vendo §2.1 — one host-identity story, three seams. A HostAuthPreset fills
@@ -19,23 +19,6 @@ export interface HostAuthPreset {
       deployment). Absent → no orgs asserted → `can()` degenerates to
       ownership. Never persisted anywhere. */
   memberships?: (principal: Principal) => Promise<Membership[]>;
-  /** Build contract §9.1 companion — the fifth seam: turn what someone TYPED
-      ("Mia", "mia@work.com") into one of the host's own subjects, or null.
-      Vendo holds no directory, so a person cannot be resolved here; the surface
-      that asked used to encode the typed string verbatim and write a grant that
-      matched nobody. Absent → /status reports `namesPeople: false` and no
-      surface may offer to name one person.
-
-      NOTE: the Share dialog that consumed this was removed (it was never
-      mounted by any host). The seam stays because it is host-configured public
-      API on every preset, but nothing in this repo calls it today.
-
-      `asker` is WHO is asking, so the host can scope its own directory — "only
-      people in the asker's own org" is the common rule and it is unimplementable
-      without this. Keyed on Principal for the same reason `memberships` is. Vendo
-      also gates the door on the asker holding at least one asserted membership,
-      but only the host knows its own org chart. */
-  resolvePerson?: (query: string, asker: Principal) => Promise<ResolvedPerson | null>;
   /** Spec 2026-08-05 §1 — the host's asserted profile facts for the request's
       user, resolved from the SAME session decode as `principal` (the composed
       presets memoize per Request). The wire stashes the result as `ctx.user`,
@@ -77,9 +60,4 @@ export interface HostAuthPresetOptions {
       forwards this verbatim; nothing about it is vendor-specific, because the
       org chart it reads is the HOST's, not the identity vendor's. */
   memberships?: (principal: Principal) => Promise<Membership[]>;
-  /** Build contract §9.1 companion — see HostAuthPreset.resolvePerson. Forwarded
-      verbatim by every preset, for the same reason `memberships` is: the
-      directory it reads is the HOST's, and so is the decision about who may see
-      which part of it. */
-  resolvePerson?: (query: string, asker: Principal) => Promise<ResolvedPerson | null>;
 }

@@ -512,7 +512,7 @@ describe("E7 · the credential law — build list item 8", () => {
 
 // These pin WHAT WE SEND the provider, which is all this repo controls. How
 // strongly the provider then enforces it is a separate question with a real
-// gap: docs/verification/box-egress/README.md.
+// gap (a client that omits SNI is not matched by the provider's domain filter).
 describe("the box's egress allowlist — what the provider is asked to filter", () => {
   /** The env a box gets when nothing about inference is configured on the host. */
   const NO_INFERENCE = {

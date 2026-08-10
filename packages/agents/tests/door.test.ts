@@ -25,7 +25,7 @@ import { createStore } from "@vendoai/store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { agent } from "../src/agent.js";
 import { DOOR_PATH } from "../src/door.js";
-import { claudeCode } from "../src/harnesses.js";
+import { claudeCode } from "@vendoai/harnesses/claude-code";
 import { tool } from "../src/tools.js";
 
 const ORIGIN = "https://app.example.com";

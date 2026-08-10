@@ -304,7 +304,7 @@ const ADDITIVE_DDL = [
 //      vendo_records rather than being silently destroyed or misrouted.
 //   2. The DELETE is scoped to the identical predicate as the INSERT — only the rows
 //      actually relocated are removed.
-//   3. Both write doors were live pre-fix (stateStore wrote the dedicated table, the
+//   3. Both write doors were live pre-fix (the helper wrote the dedicated table, the
 //      seam wrote vendo_records), so a legacy row can be NEWER than an existing
 //      dedicated row. Resolve by timestamp (`WHERE vendo_state.updated_at <
 //      EXCLUDED.updated_at`) so the newer write wins instead of DO NOTHING dropping it.

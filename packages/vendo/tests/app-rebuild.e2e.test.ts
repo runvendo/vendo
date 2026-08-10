@@ -345,7 +345,6 @@ describe.sequential("an app rebuilds from its row onto a fresh box, with its sna
     const after = await apps.get(APP, orgCtx);
     expect(after!.id).toBe(APP);
     expect(after!.triggers).toEqual(TRIGGERS);
-    expect(after!.placements).toEqual(["dashboard.main"]);
     expect((await access.list(orgCtx, APP)).map((grant) => grant.principal))
       .toEqual([`user:${READER.subject}`]);
   }, 120_000);
@@ -367,7 +366,6 @@ describe.sequential("an app rebuilds from its row onto a fresh box, with its sna
       expect((await workspace.commit()).status).toBe("ok");
       const doc = await apps.get(APP, ctx);
       expect(doc!.triggers).toEqual(TRIGGERS);
-      expect(doc!.placements).toEqual(["dashboard.main"]);
       expect(doc!.name).toBe("Spending");
       expect(doc!.source!["src/App.tsx"]!.text).toBe(`// ${round}\n`);
     }

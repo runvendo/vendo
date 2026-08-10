@@ -13,7 +13,7 @@ generated UI in a sandboxed, brand-native surface.
 - `examples/` — the demo host `demo-bank` (Maple) and the framework integration
   examples (`ai-sdk-agent`, `mastra-agent`, `claude-code-plugin`)
 - `corpus/` — init-extraction corpus harness (`pnpm corpus`)
-- `docs/` — integration docs; `docs-site/` — the public docs site
+- `docs-site/` — the public docs site
 
 ## Commands
 

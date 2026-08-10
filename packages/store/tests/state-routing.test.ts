@@ -2,7 +2,6 @@ import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { appFixture, persistentPrincipal } from "../src/fixtures.test-util.js";
-import { stateStore } from "../src/helpers/state.js";
 import { appStore, createStore } from "../src/index.js";
 
 for (const backend of backends()) {
@@ -91,16 +90,6 @@ for (const backend of backends()) {
         .rejects.toMatchObject({ code: "validation" });
     });
 
-    it("shares one world between stateStore and the records(vendo_state) seam", async () => {
-      const seam = made.store.records("vendo_state");
-      // helper write is visible through the seam
-      await stateStore(made.store).put(persistentPrincipal, "app_shared", { via: "helper" });
-      expect((await seam.get(`app_shared:${persistentPrincipal.subject}`))?.data).toEqual({ via: "helper" });
-      // seam write is visible through the helper
-      await seam.put({ id: `app_shared:${persistentPrincipal.subject}`, data: { via: "seam" } });
-      expect(await stateStore(made.store).get(persistentPrincipal, "app_shared")).toEqual({ via: "seam" });
-    });
-
     it("app-delete cascade removes runtime-written state", async () => {
       const doc = appFixture("app_cascade", "Cascade");
       await appStore(made.store).put(persistentPrincipal, doc);
@@ -141,22 +130,6 @@ for (const backend of backends()) {
       expect(await made.sql(
         "SELECT id FROM vendo_state WHERE id = $1", ["app_stable:user_s"],
       )).toEqual([{ id: "app_stable:user_s" }]);
-    });
-
-    it("both write doors (stateStore + routed seam) produce identical rows", async () => {
-      const viaHelper = await stateStore(made.store);
-      await viaHelper.put(persistentPrincipal, "app_doors", { same: true });
-      const helperRow = (await made.sql(
-        "SELECT id, app_id, subject, data FROM vendo_state WHERE id = $1",
-        [`app_doors:${persistentPrincipal.subject}`],
-      ))[0];
-      // Overwrite through the seam; row shape (id/app_id/subject) is identical.
-      await made.store.records("vendo_state").put({ id: `app_doors:${persistentPrincipal.subject}`, data: { same: true } });
-      const seamRow = (await made.sql(
-        "SELECT id, app_id, subject, data FROM vendo_state WHERE id = $1",
-        [`app_doors:${persistentPrincipal.subject}`],
-      ))[0];
-      expect(seamRow).toEqual(helperRow);
     });
 
     it("does not skip an unvisited row when a later row is updated mid-sweep (cursor on created_at)", async () => {
@@ -275,9 +248,7 @@ for (const backend of backends()) {
       const seam = made.store.records("vendo_state");
       await seam.put({ id: "app_ghost:sess_state", data: { secret: 1 } });
 
-      // Readable through both doors...
       expect((await seam.get("app_ghost:sess_state"))?.data).toEqual({ secret: 1 });
-      expect(await stateStore(made.store).get(ephemeral, "app_ghost")).toEqual({ secret: 1 });
       // ...and on disk like any other subject.
       expect(Number((await made.sql(
         "SELECT COUNT(*)::int AS count FROM vendo_state WHERE subject = $1",
@@ -290,23 +261,6 @@ for (const backend of backends()) {
       await made.store.ensureSchema();
       expect((await made.store.records("vendo_state").get("app_ghost:sess_state"))?.data)
         .toEqual({ secret: 1 });
-    });
-
-    it("keeps the helper and seam doors on one write path for ephemeral subjects (B2)", async () => {
-      // Split-brain pin: an ephemeral principal's FIRST write goes through
-      // stateStore.put, then the apps runtime writes the same singleton through
-      // the records seam. Both land on the SAME disk row.
-      const solo: Principal = { kind: "user", subject: "sess_b2", ephemeral: true };
-      await stateStore(made.store).put(solo, "app_b2", { first: "helper" });
-      await made.store.records("vendo_state").put({ id: "app_b2:sess_b2", data: { second: "seam" } });
-
-      expect(Number((await made.sql(
-        "SELECT COUNT(*)::int AS count FROM vendo_state WHERE subject = 'sess_b2'",
-      ))[0]?.["count"])).toBe(1);
-      // Both doors read the SAME value (no split-brain).
-      expect(await stateStore(made.store).get(solo, "app_b2")).toEqual({ second: "seam" });
-      expect((await made.store.records("vendo_state").get("app_b2:sess_b2"))?.data)
-        .toEqual({ second: "seam" });
     });
   });
 }

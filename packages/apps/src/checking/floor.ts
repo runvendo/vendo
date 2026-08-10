@@ -3,10 +3,10 @@
  *
  * THE HOLE THIS CLOSES. The seam compiled `app.vendo` with `compileWire(content)`
  * and no options at all, so every files-first paint spoke a different dialect than
- * `conductor.ts`, `fill.ts` and `lanes.ts`: inline tool references did not expand,
+ * the generation path: inline tool references did not expand,
  * and `bindingErrors` — "the engine's unshippable gate" — was `[]` by construction
  * (`genui/wire/compile.ts`: `toolShapes === undefined ? [] : …`). Nothing checked a
- * harness's own writes. The floor was live for the conductor and structurally dead
+ * harness's own writes. The floor was live for generation and structurally dead
  * for every other author.
  *
  * It is RELOCATED, not rewritten. `compile` is the one dialect
@@ -124,7 +124,7 @@ export const createAppFloor = ({ deps, checks }: AppFloorOptions): AppFloor => {
       // The compiler static half and the island gates run HERE — the paint gate
       // blocks a bad screen from a user, and this ms is off the synchronous
       // create latency budget (§7.1). The generate path uses the cheap
-      // node-anchored `bindingKindCheck` instead; neither path runs both.
+      // node-anchored `bindingKindIssues` walker instead; neither path runs both.
       const layer = createCheckingLayer({
         deps: resolved,
         checks: [...floorChecks(resolved), ...(checks ?? [])],

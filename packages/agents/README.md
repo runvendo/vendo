@@ -7,7 +7,7 @@ key-conditional behavior.
 
 ```ts
 import { agent, tool, api, createGuard, e2b, postgres } from "@vendoai/agents";
-import { claudeCode } from "@vendoai/agents/harnesses";
+import { claudeCode } from "@vendoai/harnesses/claude-code";
 
 const support = agent({
   name: "support",

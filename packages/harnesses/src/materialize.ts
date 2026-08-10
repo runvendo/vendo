@@ -19,7 +19,7 @@
  *
  * This file is deliberately harness-agnostic and transport-agnostic: it moves
  * bytes between a `WorkspaceFs` and a plain path→bytes list. `claudeCode()` is
- * its first caller; `codex()` is its second.
+ * its caller today; any future harness is the same shape.
  *
  * Landing bytes and calling `commit()` is the WHOLE mid-turn render story — the
  * render seam (`@vendoai/apps` render-seam.ts) wraps `commit` and emits the

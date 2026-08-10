@@ -110,9 +110,6 @@ const planLines = (plan: AppPlan | undefined): string => {
     const { kind, schedule, why, served } = plan.server;
     lines.push(`- server work IS planned and the runtime arms it after this review: kind="${kind}"${schedule === undefined ? "" : ` schedule="${schedule}"`}${served === true ? " (it serves the whole app surface)" : ""} — ${why}`);
   }
-  if (plan.island !== undefined) {
-    lines.push(`- a generated component "${plan.island.name}" is planned: ${plan.island.purpose}`);
-  }
   for (const cannot of plan.cannot) {
     lines.push(`- the host cannot do this, and the person was told so verbatim: ${cannot}`);
   }

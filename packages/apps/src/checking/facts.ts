@@ -557,22 +557,6 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
 ];
 
 /**
- * The cheap structural type-mismatch check — a binding's shape KIND against the
- * host prop's declared type (`shapeSchemaMismatch`). It is node-anchored, so the
- * conductor's fix-loop can act on it; the compiler static half's findings are
- * tag-anchored and it cannot.
- *
- * It is NOT in `factChecks`. It runs on the GENERATE path (conductor, fill),
- * where a synchronous, fix-loop-consumable type check is what the loop needs and
- * a compiler program would blow the create latency budget (`gen-scripted:create`,
- * measured: the tsc pass alone is ~3ms of a ~4ms create). At the floor and the
- * validate door the compiler static half (`screenTypesCheck`) covers this class
- * and more, so neither path runs both — one type check each, the right one.
- */
-export const bindingKindCheck = (deps: FloorDependencies): Check =>
-  treeCheck("bindings-fit-kind", (tree) => bindingKindIssues(tree, deps));
-
-/**
  * The compiler static half (§7.1 + Track A): a `tsc` program over the printed
  * screen + generated typings. It spins a compiler, so it runs ONLY where a bad
  * screen is blocked from a user and the cost is affordable — the paint-seam floor

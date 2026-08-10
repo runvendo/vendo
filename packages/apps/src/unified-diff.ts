@@ -1,7 +1,7 @@
 /**
- * Minimal line-based unified diff for pin ship requests (06-apps §8).
+ * Minimal line-based unified diff for ship diffs (06-apps §8).
  *
- * PinShipRequest.diff is "the net diff against the host baseline" a human
+ * `ShipDiffPin.diff` is "the net diff against the host baseline" a human
  * approver reviews. Component sources are small (caps in 01-core §9), so a
  * plain O(n·m) LCS is comfortably fast and keeps this dependency-free.
  */

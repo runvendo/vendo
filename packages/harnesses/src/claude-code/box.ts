@@ -158,8 +158,7 @@ export interface BoxMachineOptions {
    *
    * "Strictest expressible" is not "airtight": the provider's filter keys on the
    * requested server name, so a client that omits SNI is not matched and is let
-   * through. `docs/verification/box-egress/README.md` has the measurement and
-   * why it is not closable from this side.
+   * through (measured; not closable from this side).
    */
   allowedDomains: string[];
   /** Provider template; defaults to `VENDO_BOX_TEMPLATE`. */

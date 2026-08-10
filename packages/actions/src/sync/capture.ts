@@ -27,7 +27,7 @@ import {
 /** ~1 MB of TypeScript is already far past what a jail should compile to draw
  *  one card; 256 KB leaves generous headroom for a real component tree while
  *  keeping a stray data fixture out of every host's `.vendo/`. */
-export const DEFAULT_CAPTURE_BUDGET_BYTES = 256 * 1024;
+const DEFAULT_CAPTURE_BUDGET_BYTES = 256 * 1024;
 
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/u;
 

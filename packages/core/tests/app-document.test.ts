@@ -375,26 +375,6 @@ describe("validateAppDocument walks a vendo-genui tree", () => {
   });
 });
 
-// Remix final shape (2026-08-02) — pins/placements split: `placements` is
-// "show this app in that slot" (slot discovery), `pins` stays fork provenance.
-describe("placements", () => {
-  it("round-trips placements beside pins", () => {
-    const placed = {
-      ...minimal(),
-      pins: [{ slot: "NetWorthCard", base: "sha256:abc123" }],
-      placements: ["home-hero"],
-    };
-    expect(appDocumentSchema.parse(placed)).toEqual(placed);
-    expect(validateAppDocument(placed)).toEqual({ ok: true, app: placed });
-  });
-
-  it("rejects empty placement slots", () => {
-    const result = validateAppDocument({ ...minimal(), placements: [""] });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe("validation");
-  });
-});
-
 // Contract §3.2 — a checkout writes each `source` key to disk, so the key space
 // is a security surface: `../` or a leading slash would put one app's checkout in
 // another app's files. The document validator is the gate every stored document

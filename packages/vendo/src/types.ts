@@ -76,10 +76,13 @@ export interface CreateVendoConfig {
       then VENDO_API_KEY → Vendo Cloud managed inference — and fails honestly
       with instructions when none exists (precedence: resolveModels). */
   model?: LanguageModel;
-  /** @deprecated Superseded by `models.paint`. The group fill workers it fed
-      are gone with the generation pipeline, so nothing reads this any more; it
-      is still accepted, and ignored, so a host config does not have to change
-      in the same release. */
+  /** @deprecated The `model` half is superseded by `models.fill` (spelled
+      `models.paint` in older configs); `disabled` has no replacement and is
+      still the only switch for the app-generation lane. Both halves are LIVE —
+      `resolveModels` throws `validation` when `paint.model` is set beside
+      `models.fill`, takes `paint.model` for the fill seat when the `models`
+      block leaves it unset, and turns the lane off on `disabled`. Still
+      accepted so a host config does not have to change in the same release. */
   paint?: ResolveModelsInput["paint"];
   /** Models spec 2026-07-22 (DX surface 3) — the models block, keyed by slot,
       valued by a model-name string (resolved through vendoModel's credential
@@ -223,25 +226,22 @@ export interface CreateVendoConfig {
       `process` at all — leaves them closed. /doctor/base-url is the one
       exception and answers in every environment. */
   development?: boolean;
-  /** Unified try surface — the project root the `.vendo/` profile is read
+  /** The project root the `.vendo/` profile is read
       under: the actions files (tools.json/overrides.json, read by the actions
       registry this composition builds with `dir`), theme.json, brief.md,
       catalog.json, the per-generation design-rules.md read, and the remixable
       pin baselines all resolve against it. Unset keeps today's
-      behavior (the process cwd), so `npx vendo try` can mount a real
-      composition over a profile living in a temp directory without chdir. */
+      behavior (the process cwd), so a host can mount a real composition over a
+      profile living in a temp directory without chdir. */
   profileDir?: string;
-  /** Unified try surface — the fetch host route/OpenAPI tool bindings execute
+  /** The fetch host route/OpenAPI tool bindings execute
       through, threaded verbatim into the actions registry. An explicitly
       passed function always wins (adapter rule); unset keeps the platform
-      fetch. `npx vendo try` injects a synthetic-fixture fetch here so host
-      tool calls succeed with no host API running. */
+      fetch. */
   fetch?: typeof fetch;
-  /** Unified try surface (Task 15a) — the `.vendo/` profile pieces as
-      IN-MEMORY compose-time inputs, for venues with no filesystem (the hosted
-      try venue composes per anonymous session from an AI-generated tool
-      catalog + theme + brief held in memory; the `profileDir` seam can't
-      reach it). Precedence PER PIECE, each independent of the others:
+  /** The `.vendo/` profile pieces as IN-MEMORY compose-time inputs, for
+      deployments with no filesystem (the `profileDir` seam cannot reach
+      them). Precedence PER PIECE, each independent of the others:
       `profile.<piece>` (in-memory, wins) → the `profileDir` file → the cwd
       default. A caller may pass only `tools` + `theme` and still read
       `brief.md` from disk. Each piece's type is exactly what the
@@ -256,8 +256,8 @@ export interface CreateVendoConfig {
       posture as the existing `catalog` key (zod parsing exists for untyped
       file bytes, not typed config). `policy` is the parsed `policy.json`
       document (the guard's `PolicyFile` shape — what the file read parses
-      into today), for the venue that holds its demo policy in memory where
-      the local `vendo try` writes the file; the longer-standing explicit
+      into today), for a deployment that holds its policy in memory instead of
+      on disk; the longer-standing explicit
       `policy` knob wins over it (the `apps.designRules` discipline), and
       when the piece applies it feeds the guard inline, replacing the
       file/cloud legs entirely. `designRules` is a convenience alias for

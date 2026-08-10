@@ -19,8 +19,8 @@ export type ResolvedModels<Model = unknown> = Readonly<Record<Seat, Model>>;
 /**
  * What a `Turn` carries (agents spec 2026-08-04): any subset of the seats. A
  * seat is required only where a harness actually reads it — `claudeCode()`
- * reads none (its box brings its own inference), `vendo()` thinks with
- * `default`, `instant()` routes with `fill` — so demanding every seat from
+ * reads none (its box brings its own inference) and `vendo()` thinks with
+ * `default` — so demanding every seat from
  * every caller made hosts fabricate models nobody would call. Composition still
  * hands over a full `ResolvedModels` (it is assignable); a host driving the
  * runtime directly passes only what its harness reads. A harness that reads a

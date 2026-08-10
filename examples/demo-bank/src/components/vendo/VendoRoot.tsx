@@ -24,7 +24,6 @@ export function VendoRoot({
   children,
 }: {
   children: ReactNode;
-  threadId?: string;
 }) {
   return (
     <VendoProvider
@@ -33,14 +32,11 @@ export function VendoRoot({
       baseUrl={withBasePath("/api/vendo")}
       components={mapleRegistry}
       theme={mapleTheme}
-      // "Pin to dashboard" lands here. Maple used to answer that with its own
-      // /api/demo/pin route writing doc.placements by hand; placement is a
-      // first-class Vendo write now, so naming the slot is the whole wiring.
+      // "Pin to dashboard" lands here — placement is a first-class Vendo
+      // write, so naming the slot is the whole wiring.
       pinSlot="home-hero"
       tools={mapleToolMeta}
     >
-      {/* VENDO-MIGRATION: thread selection moved from the provider to each
-          thread surface in 08-ui §3; callers retain the prop during migration. */}
       {children}
     </VendoProvider>
   );

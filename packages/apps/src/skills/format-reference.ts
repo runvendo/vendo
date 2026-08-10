@@ -47,7 +47,7 @@ read from the first \`<Plan\` to the last \`</Plan>\`.
 </Plan>
 \`\`\`
 
-A plan holds \`<Query>\`, \`<Group>\` (of \`<Leaf>\`), \`<Server>\`, \`<Island>\` and
+A plan holds \`<Query>\`, \`<Group>\` (of \`<Leaf>\`), \`<Server>\` and
 \`<Cannot>\`, and nothing else. It needs at least one group or one \`<Cannot>\`.
 
 ### \`<Plan name display>\`
@@ -105,11 +105,6 @@ purpose. Read the findings.
 | \`why\` | required | one sentence: why this app needs a server side at all. |
 | \`served\` | optional | a BARE flag, legal only with \`kind="box"\`. |
 | \`schedule\` | optional | a cadence in words, or a five-field cron read in UTC. |
-
-### \`<Island name purpose/>\` — self-closing, at most one
-
-Declares that this app needs a component you will write, by name and purpose. It
-carries no code; the code goes in app.vendo's own \`<Island>\`.
 
 ### \`<Cannot>…</Cannot>\`
 

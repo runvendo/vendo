@@ -33,10 +33,10 @@
  *     single live row: there is no served-version pointer distinct from the
  *     latest-written one, so "the previous version keeps serving" has no
  *     mechanism.
- *  3. The bounded fix round exists but at the wrong time. `FIX_ROUNDS = 2` in
- *     `../generation/conductor.ts` re-invokes the brain on blocking findings — a
- *     PRE-land loop inside generation, two rounds rather than one, and whatever
- *     survives it lands unflagged.
+ *  3. The bounded fix round exists but at the wrong time. The claude-code
+ *     harness runs ONE validate-and-repair round at the turn boundary
+ *     (`@vendoai/harnesses` `claude-code/index.ts`, `repairInstruction`) — a
+ *     PRE-land loop, and whatever survives it lands unflagged.
  *  4. Check PROVENANCE now exists (2026-08-05, `./checking.test.ts`). `Finding`
  *     carries `check`, stamped by `./layer.ts` — the one place that knows the
  *     answer for every check at once — and overriding whatever the check itself
@@ -49,7 +49,7 @@
  *     `Pack.checks` entry is distinguishable, a plugged rubric line is not.
  *
  * The floor itself is real and good — the reviewer, the pack checks, the judgment
- * rubric and the fix rounds all work, a `block` now stops the write, and since
+ * rubric and the pre-land repair round all work, a `block` now stops the write, and since
  * 2026-08-05 the floor runs at the PAINT SEAM for every author (blueprint §7.1),
  * so a `block` also means the view never reaches the user. It is the protocol
  * AFTER a FAIL — the flagged version, its remediation round, its card and its
@@ -69,9 +69,9 @@ describe.skip("review failure protocol (design §7) — NOT IMPLEMENTED", () => 
   });
 
   it("gives a flagged version exactly one bounded fix round AFTER it lands", () => {
-    // MUST BE BUILT: a post-land remediation round. `FIX_ROUNDS = 2` in
-    // `../generation/conductor.ts` is a pre-land generation repair loop — a
-    // different thing, at a different time, with a different bound.
+    // MUST BE BUILT: a post-land remediation round. The harness's single
+    // validate-and-repair round is a pre-land loop — a different thing, at a
+    // different time.
     expect.fail("the only fix loop is pre-land generation repair");
   });
 

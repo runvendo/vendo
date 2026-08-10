@@ -457,7 +457,7 @@ jobs:
              && jq -e '[.packages.items[].name | select(IN(
                   "@vendoai/core",
                   "@vendoai/store",
-                  "@vendoai/agent"))] | length == 0' /tmp/affected.json > /dev/null; then
+                  "@vendoai/vendo"))] | length == 0' /tmp/affected.json > /dev/null; then
             echo "conformance scope unaffected by this PR; skipping"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi

@@ -4,10 +4,10 @@
  * section.
  *
  * What used to live here — the role line, the v2 tree contract, the host tool and
- * shape sections, the island contract — belonged to the generation pipeline's own
- * prompts (the brain, the fill worker, the island lane). All three are gone, and
- * so is their text; keeping it would have left a second, silently diverging source
- * of truth about a tree nothing in this package writes any more.
+ * shape sections, the island contract — belonged to generation pipelines that no
+ * longer exist, and so does their text; keeping it would have left a second,
+ * silently diverging source of truth about a tree nothing in this package writes
+ * any more.
  *
  * What survives is what a LIVE reader still asks for: `hostDesignBrief` for the
  * two writers' briefs, and `componentsPromptSection` for the shipped skill's
@@ -20,7 +20,7 @@ import {
 import type { GenerationDependencies } from "../engine.js";
 
 export interface GenerationPromptSection {
-  id: "role" | "tree-contract" | "clock" | "catalog" | "theme" | "design-rules" | "limits";
+  id: "theme" | "design-rules";
   content: string;
 }
 

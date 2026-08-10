@@ -127,7 +127,7 @@ describe("the reference only names things that exist", () => {
   });
 
   it("teaches the plan's real element set and no invented one", () => {
-    for (const element of ["<Plan", "<Query", "<Group", "<Leaf", "<Server", "<Island", "<Cannot"]) {
+    for (const element of ["<Plan", "<Query", "<Group", "<Leaf", "<Server", "<Cannot"]) {
       expect(VENDO_FORMAT_REFERENCE).toContain(element);
     }
     // There is no <Tab> element in either dialect, and saying so is the point.

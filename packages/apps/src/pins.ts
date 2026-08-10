@@ -199,40 +199,6 @@ export const pinForkSource = (source: string): string => {
   return `${source}\nexport { ${component.local} as default };\n`;
 };
 
-/** 06-apps §8 — unified source diff proposed for host approval. */
-export interface PinShipRequest {
-  appId: AppId;
-  slot: string;
-  baseHash: string;
-  diff: string;
-}
-
-/** 06-apps §8 — validated wire representation of a pin ship request. */
-export const pinShipRequestSchema = z.object({
-  appId: appIdSchema,
-  slot: z.string(),
-  baseHash: z.string(),
-  diff: z.string(),
-}).passthrough() satisfies z.ZodType<PinShipRequest>;
-
-/** 06-apps §8 — immutable host approval for one baseline-to-version transition. */
-export interface PinApproval {
-  slot: string;
-  baseHash: string;
-  approvedHash: string;
-  approvedBy: string;
-  at: IsoDateTime;
-}
-
-/** 06-apps §8 — validated wire representation of a host pin approval. */
-export const pinApprovalSchema = z.object({
-  slot: z.string(),
-  baseHash: z.string(),
-  approvedHash: z.string(),
-  approvedBy: z.string(),
-  at: isoDateTimeSchema,
-}).passthrough() satisfies z.ZodType<PinApproval>;
-
 /** 06-apps §9 — approval to mount one exact app version in the host page. */
 export interface InClientApproval {
   appId: AppId;

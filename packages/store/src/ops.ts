@@ -338,8 +338,8 @@ export function createStoreOps(
 
     // -----------------------------------------------------------------------
     // harness — the vendo_state slot, keyed by (appId, subject) exactly as the
-    // routed `vendo_state` door and stateStore key it, through the same single
-    // write path (helpers/rows putStateRow) so the three doors cannot drift.
+    // routed `vendo_state` door keys it, through the same single write path
+    // (helpers/rows putStateRow) so the two doors cannot drift.
     // Every verb here is one statement, so none of them opens a transaction.
     // -----------------------------------------------------------------------
     harness: {

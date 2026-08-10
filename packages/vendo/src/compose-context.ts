@@ -81,9 +81,9 @@ import type { HostAuthPreset } from "./auth-presets/index.js";
 export interface VendoActionsConfig {
   dir: string;
   tools?: ExtractedTool[];
-  /** The in-memory try-surface doc (profile.overrides) OR the cloud
-   *  enablement provider (#557) ride the same registry seam — both resolve
-   *  through loadHost to the same disabled/audience enablement path. */
+  /** The in-memory doc (profile.overrides) OR the cloud enablement provider
+   *  (#557) ride the same registry seam — both resolve through loadHost to the
+   *  same disabled/audience enablement path. */
   overrides?: OverridesFile | (() => Promise<OverridesFile | undefined>);
   connectors?: Connector[];
   actAs?: ActAs;
@@ -116,7 +116,6 @@ export interface VendoComposition {
   /** Build contract §9.1 — the host org query the wire, the harness, the
    *  automations engine and the MCP door all resolve the SAME answer through. */
   membershipsSeam: HostAuthPreset["memberships"];
-  resolvePersonSeam: HostAuthPreset["resolvePerson"];
   userFactsSeam: HostAuthPreset["facts"];
   sweepConfig: ResolvedSweep;
   sweepNow: () => number;
