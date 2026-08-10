@@ -78,7 +78,9 @@ export const vendo = createVendo({
 Move the composition `vendo init` wrote into `lib/vendo.ts` and re-export
 `nextVendoHandler(vendo)` from your catch-all route — that route already serves
 the door's transport and OAuth endpoints. Your own `oauth` adapter instead of a
-preset works too; see [Enable the door](/capabilities/mcp#enable-the-door).
+preset works too; see [Enable the door](/capabilities/mcp#enable-the-door). No
+login in your product yet? That adapter is the path, with a fixed subject — the
+shape is in the playbook's [door section](/agents#mcp-door).
 
 Second, the discovery route. It lives at the origin root, outside
 `/api/vendo`, so the catch-all never sees it:
@@ -159,9 +161,10 @@ export const vendo = createVendo({
 });
 ```
 
-On Vendo Cloud, create the key on the project's keys page in the console under
-**Service keys** instead — there is no `serviceAuth` to configure, and the
-exchange below posts to `https://<your tenant>.mcp.vendo.run/token`.
+Fronting the door with a hosted broker — `VENDO_MCP_BROKER_URL` set, which a
+Cloud key alone does not do — moves the exchange there instead: drop
+`serviceAuth`, create the key on the project's keys page in the console under
+**Service keys**, and post to `https://<your tenant>.mcp.vendo.run/token`.
 
 Then one RFC 8693 form post, from any language:
 
