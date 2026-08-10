@@ -76,6 +76,19 @@ export interface TurnToolsOptions {
 let counter = 0;
 const mintToolCallId = (): string => `hcall_${(counter += 1)}_${globalThis.crypto.randomUUID()}`;
 
+/**
+ * The port of LangGraph's per-node `RetryPolicy.retry_on`, and deliberately as
+ * conservative as theirs: these four codes all mean "the far side was busy" — a
+ * connection or 5xx-class transient — so the same arguments can plausibly
+ * succeed a moment later. Never `validation` / `not-found` / `conflict`, which
+ * are deterministic for the same arguments and almost certainly a bug: retrying
+ * one only buys a second round-trip to be told the same thing twice.
+ */
+const RETRY_ON: ReadonlySet<string> = new Set(["unavailable", "timeout", "rate-limited", "internal"]);
+
+/** LangGraph's `max_attempts` here is 2 — one retry, this pause, no ladder. */
+const RETRY_DELAY_MS = 250;
+
 /** The workbench's account of one call (dev-only; see ./workbench.ts). */
 type ToolFact = Extract<WorkbenchEvent, { kind: "tool" }>;
 
@@ -264,14 +277,18 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
       const at = workbenchCursor(options.ctx.turnId);
       let guard: ToolFact["guard"];
       let approval: ToolFact["approval"];
+      /** Which ATTEMPT the finishing result belongs to — the retry's own id once a
+       *  transient read was retried below, so every mirrored call is paired with
+       *  exactly one result. */
+      let attemptId = toolCallId;
       mirror({ kind: "call", toolCallId, name, args });
       const finish = (result: ToolResult, outcome?: ToolOutcome): ToolResult => {
-        mirror({ kind: "result", toolCallId, name, result, ...(outcome === undefined ? {} : { outcome }) });
+        mirror({ kind: "result", toolCallId: attemptId, name, result, ...(outcome === undefined ? {} : { outcome }) });
         if (outcome?.status === "blocked") guard = "block";
         emitWorkbench(options.ctx.turnId, at.agent, {
           kind: "tool",
           step: at.step,
-          toolCallId,
+          toolCallId: attemptId,
           name,
           argsPreview: argsPreview(args),
           status: result.status,
@@ -358,7 +375,27 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
         // channel (a `vendo_apps_*` tree plus the VENDO_VIEW_STREAM partials),
         // the connect card, the build-failed banner, the citations part and
         // `toolOutputCap` all come from here — never a second implementation.
-        const outcome = await guardedCall(descriptor, bridge, args, { toolCallId });
+        let outcome = await guardedCall(descriptor, bridge, args, { toolCallId });
+
+        // LangGraph's per-node RetryPolicy, transplanted onto the tool node: a
+        // transient failure is retried by the HARNESS, once, instead of being
+        // handed back to the model to spend a whole extra step on.
+        //
+        // `risk === "read"` is the entire safety story: a write retried after an
+        // ambiguous failure is a double effect — the first attempt may well have
+        // landed — and the guard already spent this call's write budget on that
+        // attempt, so a second one would be unbudgeted as well as unasked-for.
+        if (outcome.status === "error" && descriptor.risk === "read" && RETRY_ON.has(outcome.error.code)) {
+          // Both attempts stay mirrored and audited: the retry is a VISIBLE second
+          // call with its own id, never a hidden one, so the transcript and any
+          // record of what was called stay literally true.
+          mirror({ kind: "result", toolCallId, name, result: toToolResult(outcome), outcome });
+          attemptId = mintToolCallId();
+          mirror({ kind: "call", toolCallId: attemptId, name, args });
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+          outcome = await guardedCall(descriptor, bridge, args, { toolCallId: attemptId });
+        }
+
         if (outcome.status === "pending-approval") {
           // The preview said run and the REAL check asked — a breaker or presence
           // boundary. Nobody is waiting on this one, so it must still be swept.
