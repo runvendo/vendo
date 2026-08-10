@@ -42,9 +42,17 @@ consequences on the hosted adapter only:
   and BYO stores are untouched.
 - An app-scoped drawer is owner-scoped now, like every other appData read.
   `hostedStore({ owner })` names the owner; it defaults to the single-player
-  `"user_local"`, matching `createStoreOps`' bound workspace owner. Because
+  `"user_local"`, matching `createStoreOps`' bound workspace owner. **If you
+  serve more than one end user through one `hostedStore` instance, set it** —
+  on the default, every user's app rows and files land in one owner's drawer
+  and read each other. Construct one `hostedStore` per end user, or use
+  `ops.appData`, whose every verb names its owner at the call. Because
   `appData` has no compare-and-set verbs, an app-scoped `RecordStore` omits
   `claim` and `atomic` rather than advertising what it cannot serve.
+- One error string changed: a bare, envelope-less 404 from a blob read on the
+  hosted adapter now says `Vendo Cloud store request failed with 404` instead
+  of naming a "bare 404". Same behaviour — it still throws loudly rather than
+  reading as a missing blob — but stop grepping for the old wording.
 
 **Also removed, because they only existed to announce the retirement:**
 `STORE_WIRE_DEPRECATED_OPS`, `STORE_WIRE_DEPRECATED_REMOVED_IN` and

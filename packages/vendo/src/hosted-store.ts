@@ -39,10 +39,25 @@ export interface HostedStoreOptions {
   /** Whose drawer the StoreAdapter façade addresses when the collection (or
    * blob namespace) is app-scoped — `app:<appId>:<name>`, which the appData
    * family serves, and appData scopes every read and stamps every write with an
-   * owner. Named by a mount that serves more than one user; left unset, it is
-   * the single-player default, exactly as `createStoreOps`' bound workspace
-   * owner is. The op surface (`ops.appData`) is unaffected: every one of its
-   * verbs already carries the owner in its target. */
+   * owner. The op surface (`ops.appData`) is unaffected: every one of its verbs
+   * already carries the owner in its target.
+   *
+   * This option exists because the façade's signature has nowhere to put one:
+   * `records(collection)` takes a string, and the caller never had to think
+   * about ownership while the generic records family served these rows
+   * unscoped. It cannot be inferred — an owner is the host's own user id in the
+   * host's own spelling — so it is bound here, once, exactly as
+   * `createStoreOps`' `workspaceOwner` binds the workspace drawer.
+   *
+   * READ THIS BEFORE LEAVING IT UNSET. The default is the single-player
+   * `"user_local"`, and it is a real footgun for anyone else: a host that
+   * serves MORE THAN ONE end user through one `hostedStore` instance and takes
+   * the default puts every user's app rows and files in ONE owner's drawer,
+   * where they read each other's data. Nothing refuses it — `"user_local"` is a
+   * legal owner — so the symptom is cross-user reads in production, not an
+   * error at composition. A multi-user mount constructs one `hostedStore` per
+   * end user with that user's subject here, or stays on `ops.appData`, whose
+   * every verb names its owner at the call. */
   owner?: string;
   fetch?: typeof fetch;
 }
