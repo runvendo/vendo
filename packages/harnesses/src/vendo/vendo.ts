@@ -40,6 +40,7 @@ import {
   type LanguageModel,
   type LanguageModelUsage,
   type ModelMessage,
+  type StopCondition,
   type ToolSet,
 } from "ai";
 import { defineHarness } from "../define.js";
@@ -172,6 +173,17 @@ export interface VendoHarnessDeps {
    * and the system precedence are the ones above, not a fork of them.
    */
   tools?: readonly (string | HarnessHand)[];
+  /**
+   * Extra stop conditions, COMPOSED with the loop's own three (`stepCountIs`,
+   * `buildFailedStop`, `askedUserStop`) rather than replacing them.
+   *
+   * The loop has taken these since `stopWhen` was added to `TurnLoopOptions`; this
+   * is the door that lets a specialist built out of `vendo()` reach them. Without
+   * it the step cap is the only thing that can end a specialist's drive, which is
+   * how the screen agent kept thinking for ~100s after the person's screen was
+   * already finished — see `SCREEN_STEPS` and `screenFinishedStop`.
+   */
+  stopWhen?: readonly StopCondition<ToolSet>[];
 }
 
 /**
@@ -603,6 +615,9 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           // filling it. Always passed: a deployment that never set a knob is
           // exactly the deployment that has never had a context rail at all.
           compaction: attemptCompaction,
+          // COMPOSED with the loop's own three, never replacing them (see
+          // `stopWhen` on the deps).
+          ...(deps.stopWhen === undefined ? {} : { stopWhen: deps.stopWhen }),
           ...(resume === undefined ? {} : { resume }),
           // The WHOLE context, not just `maxSteps`. Passing one knob is what made
           // every other knob unreachable from `vendo()` — the loop declared them,

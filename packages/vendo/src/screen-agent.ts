@@ -64,9 +64,10 @@ import {
   repairInstruction,
   validateWrittenApps,
   wrapWorkspaceForRender,
+  VALIDATE_TOOL,
   type RenderSeamOptions,
 } from "@vendoai/apps";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, StopCondition, ToolSet } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
 
 /**
@@ -176,6 +177,24 @@ const nameOf = (content: string): string | undefined => {
 };
 
 /**
+ * A `validate` result that came back CLEAN, off the step the model just took.
+ *
+ * Two envelopes deep, because that is what an equipped registry tool returns: the
+ * loadout's `execute` hands back the harness contract's `ToolResult`
+ * (`{ status: "ok", output }`), and the verb's own answer is
+ * `{ ok, findings }` (`vendo-verbs.ts:131`). Anything else — a denial, an error, a
+ * shape this cannot read — is NOT a pass, exactly as the builder's gate treats an
+ * unreadable verdict: nothing known, nothing claimed, the drive continues.
+ */
+function validateCameBackClean(result: unknown): boolean {
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  if (!isRecord(result) || result["status"] !== "ok") return false;
+  const output = result["output"];
+  return isRecord(output) && output["ok"] === true;
+}
+
+/**
  * The host's surface, as the model reads it before writing a single binding.
  *
  * `ToolListing.outputSchema` is the host's OWN declared result shape, captured by
@@ -227,8 +246,9 @@ through two tools.
   them — why you narrowed something, a constraint the tools imposed, a shape you
   ruled out. Never record what you did or in what order; that is narration, and
   it crowds out the one line that mattered.
-- **\`validate\`** is the floor. Call it on what you saved, fix what it names, save
-  again. You are not done until it comes back clean.
+- **\`validate\`** is the floor, and the finish line. Call it on what you saved, fix
+  what it names, save again. A clean \`validate\` over a screen that has painted ENDS
+  your turn — so call it on the finished screen, not on a half-built one.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Assembling a document out of this
   product's components is all you can do; anything that needs real code, its own
   server, a file the person uploads, or a surface these components cannot express
@@ -275,6 +295,11 @@ interface RunRecord {
    *  reviewer. Absent paint information (an unwrapped workspace) claims nothing,
    *  exactly as the hand's own gate does. */
   painted: boolean;
+  /** How many saves have reached the SCREEN so far. Counted, not just flagged,
+   *  because the finish rule is per DRIVE: the repair round has to land a new
+   *  painted save of its own before a clean `validate` may end it, or it would end
+   *  on the clean mechanical verdict of the document it has not fixed yet. */
+  paintedSaves: number;
   title?: string;
   escalated?: string;
   /** The last non-empty `decisions` a save carried — this run's whole memory
@@ -329,7 +354,7 @@ export async function assembleScreen(
 
   const directory = appDirectory(input.appId);
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
-  const record: RunRecord = { assembled: false, painted: false };
+  const record: RunRecord = { assembled: false, painted: false, paintedSaves: 0 };
 
   /**
    * Write one hot-path file and land it.
@@ -397,6 +422,7 @@ export async function assembleScreen(
        */
       const painted = paintedIn(committed);
       record.painted = painted?.includes(input.appId) ?? false;
+      if (record.painted) record.paintedSaves += 1;
       if (painted !== undefined && !record.painted) {
         const instruction = repairInstruction(await validateWrittenApps({
           tools: turn.tools,
@@ -479,9 +505,47 @@ export async function assembleScreen(
   /** The first thing that went wrong, in the shipped loop's own words
    *  (`wireErrorMessage`, applied inside `vendo()`). */
   let failure: string | undefined;
+  /** The painted-save count this drive started at — the other half of
+   *  {@link screenFinishedStop}'s per-drive rule. */
+  let paintedSavesAtDriveStart = 0;
+  /**
+   * THE SCREEN IS FINISHED, AND NOTHING HAD TO VOLUNTEER IT.
+   *
+   * Measured 2026-08-10 over 35 assembly runs: median first paint 28.7s, median
+   * settled 135.2s — on the worst case 232s of the 260s happened after a screen
+   * the person kept was already on their screen. The step cap was the only thing
+   * that ever ended a screen, so "done" was whatever the model stopped doing at
+   * step 10: re-validating a document it had already cleared, searching a catalog
+   * for components it had already chosen, re-saving the same screen.
+   *
+   * Both halves are required, and each is load-bearing:
+   * - **a save that PAINTED, in THIS drive.** The seam's own paint verdict, the
+   *   same fact the hand's floor gate reads. A validate that came back clean over
+   *   bytes no screen ever showed says nothing about what the person is looking
+   *   at, and the pre-save `validate({document})` this loop's brief invites (seen
+   *   at 28.3s, six seconds before the save that painted) would otherwise end the
+   *   turn before a single pixel existed.
+   * - **`validate` came back clean.** The floor and, on the `{appId}` door, the
+   *   reviewer — this loop's own definition of done ("you are not done until it
+   *   comes back clean"), read off the tool result instead of waiting for the
+   *   model to act on it.
+   *
+   * What this does NOT skip: the mandatory reviewer pass below still runs on every
+   * assembled screen, and its one repair round still gets a full drive. The cap
+   * still ends a drive that never reaches this state. All this removes is the
+   * steps after the answer.
+   */
+  const screenFinishedStop: StopCondition<ToolSet> = ({ steps }) => {
+    if (record.paintedSaves === paintedSavesAtDriveStart) return false;
+    const last = steps.at(-1);
+    return last !== undefined && last.toolResults.some(
+      (result) => result.toolName === VALIDATE_TOOL && validateCameBackClean(result.output),
+    );
+  };
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
+    stopWhen: [screenFinishedStop],
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
     // in as its first section, so letting the turn's copy through would say it
     // twice.
@@ -498,6 +562,7 @@ export async function assembleScreen(
    * reason).
    */
   const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
+    paintedSavesAtDriveStart = record.paintedSaves;
     for await (const event of harness.run({ ...turn, messages })) {
       if (event.type === "error") failure ??= event.message;
     }
