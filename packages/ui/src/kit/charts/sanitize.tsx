@@ -54,7 +54,7 @@ export function ChartEmpty({ height = 220, children }: { height?: number; childr
     width: "100%",
     height,
     minHeight: height,
-    color: t.muted,
+    color: t.text,
     border: `1px dashed ${t.border}`,
     borderRadius: t.radiusMedium,
     background: `color-mix(in srgb, ${t.background} 40%, transparent)`,

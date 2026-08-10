@@ -285,7 +285,7 @@ export function DataTable(props: DataTableProps) {
               <tr>
                 <td
                   colSpan={Math.max(1, columns.length)}
-                  style={{ color: t.muted, padding: "calc(var(--vendo-font-size, 15px) * 1.6) 12px", textAlign: "center" }}
+                  style={{ padding: "calc(var(--vendo-font-size, 15px) * 1.6) 12px", textAlign: "center" }}
                 >
                   {emptyState}
                 </td>

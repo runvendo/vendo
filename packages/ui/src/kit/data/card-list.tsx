@@ -37,7 +37,6 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
         data-kit="CardList"
         style={{
           ...font,
-          color: t.muted,
           textAlign: "center",
           border: `1px dashed ${t.border}`,
           borderRadius: t.radiusMedium,
