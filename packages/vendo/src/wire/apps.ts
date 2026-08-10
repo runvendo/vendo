@@ -134,8 +134,8 @@ const op = (wire: WireContext, method: string, operation: string, length = 3): b
   wire.request.method === method && wire.segments[2] === operation && wire.segments.length === length;
 
 /** 06-apps / 09 §3 — the /apps wire area: CRUD, open/call/edit, history,
-    ship-diff, pin drift/rebase, the gesture fork (fork-pin), export/import,
-    fork (whole-app copy — a different feature from fork-pin). */
+    ship-diff, seed drift/re-seed, the ✦ gesture (seed), export/import,
+    fork (whole-app copy — a different feature from seeding). */
 export const appRoutes: RouteEntry[] = [
   // Grouped like the old if-chain arm: ANY method on /apps resolves context
   // first; an unhandled method falls through to the table's not-found.
@@ -179,7 +179,7 @@ export const appRoutes: RouteEntry[] = [
   // EMPTY queue — masked, never a probe. Production reviews ride Cloud's
   // console, or the self-hoster's own admin-authenticated route over the
   // runtime surface (apps.review).
-  // Like fork-pin above, this entry must stay ahead of the "/apps/:appId/*"
+  // Like /apps/seed above, this entry must stay ahead of the "/apps/:appId/*"
   // catch-all, whose rest pattern would otherwise capture
   // appId="review-queue".
   route("GET", "/apps/review-queue", async ({ deps, context }) => {
@@ -193,7 +193,7 @@ export const appRoutes: RouteEntry[] = [
   // Placement (2026-08-05) — the slots' own read: what is in each of the
   // caller's mounted slots, and where each of those builds stands. ONE request
   // for every slot on the page, which is why the slot list is a query param.
-  // ORDER IS LOAD-BEARING, exactly like /apps/fork-pin above: the
+  // ORDER IS LOAD-BEARING, exactly like /apps/seed above: the
   // "/apps/:appId/*" catch-all would otherwise capture appId="placements".
   route("GET", "/apps/placements", async ({ url, deps, context }) => {
     const ctx = await context("app");

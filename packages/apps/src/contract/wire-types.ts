@@ -90,45 +90,6 @@ export interface EditResult {
   seedDrift?: SeedDrift;
 }
 
-/**
- * 06-apps §8 — what `POST /apps/:id/rebase-pin` returns. `failed` persisted
- * NOTHING: the pre-rebase version stays live and the report lists which
- * recorded intents replayed, which one failed, and which were never attempted.
- */
-export type PinRebaseResult =
-  | {
-    status: "rebased";
-    app: AppDocument;
-    version: VersionEntry;
-    slot: string;
-    baseHash: string;
-    replayed: string[];
-  }
-  | {
-    status: "failed";
-    slot: string;
-    baseHash: string;
-    replayed: string[];
-    failed: { intent: string; issues: string[] };
-    remaining: string[];
-  };
-
-/**
- * 06-apps §8 — what `POST /apps/fork-pin` and `POST /apps/:id/fork-pin`
- * return: the gesture-owned DETERMINISTIC fork (engine copies the captured
- * baseline and records the pin; no model call). `version` describes the fork
- * itself; `edit` is present only when the gesture carried an instruction —
- * the ordinary edit that ran afterwards, already scoped to the forked
- * component. A failed `edit` never rolls the fork back, so `app` is always at
- * least the faithful fork.
- */
-export interface PinForkResult {
-  app: AppDocument;
-  version: VersionEntry;
-  slot: string;
-  componentName: string;
-  edit?: EditResult;
-}
 
 /** 06-apps §1 — one entry of `GET /apps/:id/history`. */
 export interface VersionEntry {

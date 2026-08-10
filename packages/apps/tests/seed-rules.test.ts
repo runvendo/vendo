@@ -69,7 +69,7 @@ describe("seedForkSource", () => {
   it("does not mistake a renamed default re-export for a default export", () => {
     // `export { default as InvoiceCard } from …` exposes only the NAMED
     // binding; there is no local binding to alias either, so the source passes
-    // through unchanged and fork-pin refuses it loudly.
+    // through unchanged and the seed gesture refuses it loudly.
     const renamed = "export { default as InvoiceCard } from \"./InvoiceCard\";";
     expect(seedForkSource(renamed)).toBe(renamed);
   });
