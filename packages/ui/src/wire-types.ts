@@ -6,10 +6,15 @@
  * wire returns but core does not export are declared here, verbatim from the
  * frozen contract text. "Cannot drift because both sides copied the same frozen
  * text" turned out to be a promise rather than a mechanism, so the shapes the
- * producer and this consumer BOTH speak have moved to their producer's own
- * contract — `core/src/app-surfaces.ts` and the app-generation contract door,
- * `@vendoai/apps/contract` — and are re-exported below. The client's public
- * surface is unchanged; there is now only one definition to drift from.
+ * producer and this consumer BOTH speak are no longer restated here: they are
+ * re-exported below from `core/src/app-surfaces.ts` and from the
+ * app-generation contract door, `@vendoai/apps/contract`. The client's public
+ * surface is unchanged, and this file no longer carries a second copy.
+ *
+ * That removes ui's copy; it does not by itself make one definition. The app
+ * engine's server door still declares its own richer `EditResult`, so the name
+ * has two declarations inside `@vendoai/apps` — see the note in
+ * `apps/src/contract/wire-types.ts`.
  */
 import {
   type AppDocument,

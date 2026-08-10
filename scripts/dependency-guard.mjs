@@ -144,6 +144,11 @@ const LAYERS = {
  * root is the node-only engine and `@vendoai/apps/contract` is its browser-safe
  * half, so a ban list would let a future node-only subpath through by default.
  * Browser code reaches the contract and never the root.
+ *
+ * Keyed on the CONSUMER's package name, so it covers `packages/*` only —
+ * `examples/` and `fixtures/` are scanned for layering but get no subpath rule.
+ * That matches the intended scope (the ban exists to keep the browser package
+ * off the node-only door), but it is worth knowing before you rely on it.
  */
 const ONLY_SUBPATHS = {
   "@vendoai/ui": { "@vendoai/apps": ["@vendoai/apps/contract"] },

@@ -232,6 +232,32 @@ try {
   fail(`fixture worker did not boot under workerd: ${error instanceof Error ? error.message : String(error)}`);
 }
 
+// ---- Leg D: the app-generation CONTRACT door bundles for a BROWSER ----
+// `@vendoai/apps/contract` is the browser-safe half of the app engine, and
+// `scripts/dependency-guard.mjs`'s ONLY_SUBPATHS rule makes it the one door
+// @vendoai/ui may reach. That rule enforces which SPECIFIER ui writes; nothing
+// enforced what the specifier RESOLVES to. A single `import "node:fs"` inside
+// src/contract/ passed lint, typecheck and the whole suite, and surfaced only
+// in a customer's `next build` — so the headline layering claim was a
+// convention, not a mechanism. This is the mechanism.
+try {
+  await esbuild.build({
+    entryPoints: [join(root, "packages/apps/dist/contract/index.js")],
+    bundle: true,
+    format: "esm",
+    platform: "browser",
+    write: false,
+  });
+  ok("@vendoai/apps/contract bundles for a browser target (no node built-ins)");
+} catch (error) {
+  fail(
+    "@vendoai/apps/contract does NOT bundle for a browser target — something under "
+    + "packages/apps/src/contract/ reached a node built-in or a node-only package. "
+    + "That door is imported by @vendoai/ui and by browser consumers; it must stay "
+    + `platform-clean. ${error instanceof Error ? error.message : String(error)}`,
+  );
+}
+
 if (failures > 0) {
   console.error(`portability-gate: ${failures} failure(s)`);
   process.exit(1);

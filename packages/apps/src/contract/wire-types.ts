@@ -2,11 +2,17 @@
  * The app-generation half of the wire — the shapes `/apps/*` returns.
  *
  * These were hand-copied into `@vendoai/ui` because "ui depends on core only"
- * and the producer lives in the server half, so the consumer re-declared them
- * "verbatim from the frozen contract text". That was a promise rather than a
- * mechanism. They live here now: the contract door is browser-safe, so the one
- * definition is reachable from both sides of the seam, and `@vendoai/ui`
- * re-exports these names unchanged.
+ * and the producer lives in the server half. They live HERE now, on a door a
+ * browser can import, so `@vendoai/ui` re-exports them instead of restating
+ * them — one fewer copy, and ui's public surface is unchanged.
+ *
+ * NOT yet one definition. The server half declares its own richer `EditResult`
+ * (`server/runtime/types.ts`) carrying `failure`, `graduated`, `box`,
+ * `pendingEgress` and `automation`; this one is the four-field wire shape a
+ * surface reads. Two declarations of the same name ship from this package, one
+ * per door. Unifying them is a behavior question — which fields the wire is
+ * allowed to expose — not a move, so it is deliberately left to the slice that
+ * owns unifications rather than smuggled into a reorganization.
  *
  * The chat / connections / automations / status shapes stay in `@vendoai/ui` —
  * they are not app-generation vocabulary and have no producer here.

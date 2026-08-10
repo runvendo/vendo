@@ -48,3 +48,20 @@ produces those shapes stays behind `@vendoai/apps`.
 3. **`@vendoai/ui`, `@vendoai/store`, `@vendoai/actions` and `@vendoai/mcp` now
    depend on `@vendoai/apps`** and read the app format from
    `@vendoai/apps/contract`. Their own public surfaces are unchanged.
+
+**Known tradeoffs, stated plainly:**
+
+- **One name, still two declarations.** `@vendoai/ui` no longer keeps its own
+  copy of the `/apps/*` wire shapes — it re-exports them from the contract
+  door. That removes a copy; it does not yet make one definition. The engine's
+  server door declares its own richer `EditResult` (with `failure`,
+  `graduated`, `box`, `pendingEgress`, `automation`) beside the contract's
+  four-field wire shape, so the name has two declarations inside
+  `@vendoai/apps`, one per door. Unifying them decides which fields the wire
+  may expose, which is a behavior change and not part of this move.
+- **Install weight.** `@vendoai/apps` declares `esbuild`, `jsdom`, `fflate` and
+  `react-dom` as hard dependencies, so a browser-only consumer of
+  `@vendoai/apps/contract` still installs the engine's dependency set. The
+  contract door itself bundles clean for a browser target (enforced by a new
+  leg in `scripts/portability-gate.mjs`); it is the install graph, not the
+  bundle, that carries the weight. Pre-existing, amplified by this split.
