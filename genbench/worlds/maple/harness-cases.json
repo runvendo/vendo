@@ -7,7 +7,7 @@
     ],
     "tools": {
       "get_spending_last_month": {
-        "does": "LAST month's spending totalled per category, largest first. The rows are the `data` array. `amount` is in CENTS: 285000 is $2,850.00.",
+        "does": "LAST month's spending totalled per category, largest first. The rows are the `data` array. `amount` is a whole number of CENTS.",
         "data": {
           "data": [
             { "category": "housing", "amount": 285000 },
@@ -239,7 +239,7 @@
     ],
     "tools": {
       "move_money": {
-        "does": "Move money between two accounts the signed-in customer holds. `from` and `to` are account ids from `list_accounts`. `amount_cents` is in CENTS: 24975 is $249.75.",
+        "does": "Move money between two accounts the signed-in customer holds. `from` and `to` are account ids from `list_accounts`. `amount_cents` is a whole number of CENTS.",
         "takes": { "from": "string", "to": "string", "amount_cents": "number" }
       }
     },
@@ -344,7 +344,7 @@
     ],
     "tools": {
       "move_money": {
-        "does": "Move money between two accounts the signed-in customer holds. `from` and `to` are account ids from `list_accounts`. `amount_cents` is in CENTS: 6000 is $60.00.",
+        "does": "Move money between two accounts the signed-in customer holds. `from` and `to` are account ids from `list_accounts`. `amount_cents` is a whole number of CENTS.",
         "takes": { "from": "string", "to": "string", "amount_cents": "number" },
         "fail": "first",
         "error": { "code": "conflict", "message": "the source account is locked while the ledger settles" }
