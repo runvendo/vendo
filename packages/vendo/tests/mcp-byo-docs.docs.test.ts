@@ -9,7 +9,8 @@ import { describe, expect, it } from "vitest";
  *
  * What it holds:
  *  1. the page exists, is in the nav, and every nav entry still resolves;
- *  2. the page names the door's make-and-place contract and its links resolve;
+ *  2. the docs name the door's make-and-place contract and the page's links
+ *     resolve;
  *  3. capabilities/mcp.mdx no longer claims the door cannot create;
  *  4. the HTTP reference carries the three placement routes;
  *  5. the plugin skill teaches slot targeting and pin etiquette;
@@ -22,6 +23,8 @@ const readJson = async <T>(path: string): Promise<T> => JSON.parse(await read(pa
 
 const PAGE = "docs-site/existing-agents/mcp.mdx";
 const NAV_ENTRY = "existing-agents/mcp";
+/** The playbook half of the split: where the make-and-place teaching lives. */
+const PLACEMENT_PAGE = "docs-site/existing-agents/your-agent.mdx";
 
 interface DocsJson {
   navigation: { groups: { group: string; pages: string[] }[] };
@@ -58,25 +61,33 @@ describe("the BYO-over-MCP page is published", () => {
   });
 });
 
-describe("the page teaches the door's make-and-place contract", () => {
-  const mustMention: [label: string, needle: string | RegExp][] = [
-    ["the make tool", "vendo_make"],
-    ["the slot argument", /`slot`/],
-    ["the pin tool", "vendo_apps_pin"],
-    ["the unpin tool", "vendo_apps_unpin"],
-    ["the receipt's say field", /`say`/],
-    ["the building status", /"building"/],
-    ["the host-side slot component", "VendoSlot"],
-    ["the in-process embed it is not", "VendoToolResult"],
-    ["the door URL to paste", "/api/vendo/mcp"],
-    ["the marketplace install", "/plugin marketplace add runvendo/vendo"],
-    ["the plugin install", "/plugin install vendo@vendo"],
-    ["the plugin's env var", "VENDO_MCP_URL"],
-    ["the door internals link", "/capabilities/mcp"],
+describe("the docs teach the door's make-and-place contract", () => {
+  /**
+   * #1139 split the story in two: the setup page owns the door, the connect
+   * step, and the first receipt; the placement page it hands off to owns the
+   * make-and-place teaching. Each needle is asserted against the page that
+   * carries it today, so the contract still has to be written down somewhere a
+   * reader following the setup page reaches.
+   */
+  const mustMention: [label: string, needle: string | RegExp, page: string][] = [
+    ["the make tool", "vendo_make", PAGE],
+    ["the slot argument", /`slot`/, PAGE],
+    ["the pin tool", "vendo_apps_pin", PLACEMENT_PAGE],
+    ["the unpin tool", "vendo_apps_unpin", PLACEMENT_PAGE],
+    ["the receipt's say field", /`say`/, PLACEMENT_PAGE],
+    ["the building status", /"building"/, PLACEMENT_PAGE],
+    ["the host-side slot component", "VendoSlot", PAGE],
+    ["the in-process embed it is not", "VendoToolResult", PLACEMENT_PAGE],
+    ["the door URL to paste", "/api/vendo/mcp", PAGE],
+    ["the marketplace install", "/plugin marketplace add runvendo/vendo", PAGE],
+    ["the plugin install", "/plugin install vendo@vendo", PAGE],
+    ["the plugin's env var", "VENDO_MCP_URL", PAGE],
+    ["the door internals link", "/capabilities/mcp", PAGE],
+    ["the hand-off to the placement page", "/existing-agents/your-agent", PAGE],
   ];
 
-  it.each(mustMention)("names %s", async (_label, needle) => {
-    expect(await read(PAGE)).toMatch(needle);
+  it.each(mustMention)("names %s", async (label, needle, page) => {
+    expect(await read(page), `${page} must name ${label}`).toMatch(needle);
   });
 
   it("links only to pages that exist", async () => {
@@ -96,14 +107,19 @@ describe("capabilities/mcp.mdx tells the truth about creation at the door", () =
     expect(text).not.toMatch(/creation and editing stay in-product/i);
   });
 
-  it("names vendo_make in the saved-apps section and points at the walkthrough", async () => {
+  it("names vendo_make and the pin tool in the saved-apps section", async () => {
     const text = await read(DOOR_PAGE);
     const start = text.indexOf("## Saved apps ride along");
     expect(start, "the saved-apps section must still exist").toBeGreaterThan(-1);
     const section = text.slice(start, text.indexOf("\n## ", start + 1));
     expect(section).toContain("vendo_make");
     expect(section).toContain("vendo_apps_pin");
-    expect(section).toContain("/existing-agents/mcp");
+  });
+
+  // #1139 lifted the walkthrough pointer out of the saved-apps section and into
+  // the reference page's opening, where every reader meets it.
+  it("points at the walkthrough", async () => {
+    expect(await read(DOOR_PAGE)).toContain("/existing-agents/mcp");
   });
 });
 
