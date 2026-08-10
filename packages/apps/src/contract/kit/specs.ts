@@ -345,14 +345,18 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Button",
     group: "forms",
-    summary: "Action-gated button. onClick NAMES a host tool; the runtime routes it through the guard + approval pipe. This is the only way the UI mutates.",
+    summary: "Action-gated button. onClick NAMES a host tool; the runtime routes it through the guard + approval pipe. This is the only way the UI mutates. A `danger` button always asks for confirmation before it fires — that is what danger means here.",
     props: {
       label: copy(z.string(), "button text", { required: true }),
       onClick: config(action, "the host tool to run"),
       variant: config(z.enum(["primary", "secondary", "danger"]), "emphasis"),
       disabled: config(z.boolean(), "disabled state"),
+      confirm: copy(z.string(), "the sentence the confirmation asks"),
     },
-    examples: ['<Button label="Remind all" onClick="invoices.sendReminders"/>'],
+    examples: [
+      '<Button label="Remind all" onClick="invoices.sendReminders"/>',
+      '<Button label="Cancel transfer" variant="danger" confirm="Cancel the $250.00 transfer to Alex Rivera?" onClick="cancel_transfer"/>',
+    ],
   },
   {
     name: "Form",
