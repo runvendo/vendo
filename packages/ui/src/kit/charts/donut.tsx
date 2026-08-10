@@ -33,7 +33,7 @@ export function DonutChart({
     .map((row) => ({ name: String(row[categoryKey] ?? ""), value: row[valueKey] }))
     .filter((s) => isRenderableNumber(s.value) && (s.value as number) > 0) as Array<{ name: string; value: number }>;
   if (slices.length === 0) {
-    return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
+    return <ChartEmpty>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (
