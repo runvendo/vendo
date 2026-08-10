@@ -350,8 +350,9 @@ The ask: "show me where my spend is going, and which invoices are late."
       <Text variant="heading">Where it goes</Text>
       <Grid columns={2}>
         <Stat label="Total spend" value={sum(expenses.data, "amount_cents")} format="money"/>
-        <BarChart data={group_by(expenses.data, "spent_at", "month", sum.of("amount_cents"))} xKey="key" series={["value"]} format="money" emptyState="No spend in this window"/>
+        <Stat label="Expenses" value={count(expenses.data)}/>
       </Grid>
+      <BarChart data={group_by(expenses.data, "spent_at", "month", sum.of("amount_cents"))} xKey="key" series={["value"]} format="money" emptyState="No spend in this window"/>
       <DataTable rows={expenses.data} sortBy="amount_cents desc" searchable columns={[{key:"vendor",label:"Vendor"},{key:"spent_at",format:"date"},{key:"amount_cents",format:"money",align:"end"}]} emptyState="No expenses yet"/>
     </Stack>
     <Stack>

@@ -149,7 +149,7 @@ add, and never something you fill.
 
 **Never say the same thing twice.** Two charts of the same series, or a number
 repeated from the table under it, is one part pretending to be two. A chart
-beside the table it summarises is not that — the chart shows the share, the table
+above the table it summarises is not that — the chart shows the share, the table
 shows the figures.
 
 **Bind the rows as they come.** Never reshape, trim or re-bucket data to fit a
@@ -162,9 +162,12 @@ Related values sit together in one group. \`tab\` splits a screen only when the
 tabs are genuinely different jobs ("Overview", "Overdue") — never to break up one
 long list. Two or three tabs, never five.
 
-**\`col\` is width, not slicing.** A single number is narrow; a table or a chart
-wants the row. Never fragment one story into a grid of small cards — a card per
-field is a form, not a screen.
+**The screen is one narrow column**, roughly one phone wide, so nothing shares a
+row with anything wide: a \`DataTable\`, a chart, or anything with a column of
+numbers is a full-width direct child of the \`Stack\`. \`Grid\` is two small equal
+tiles and nothing else — two \`Stat\`s, two badges — never a table and never a
+chart. Never fragment one story into a grid of small cards — a card per field is
+a form, not a screen.
 
 **Pick the chart by the shape of the data:**
 
