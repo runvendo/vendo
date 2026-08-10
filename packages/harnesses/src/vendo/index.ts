@@ -14,7 +14,7 @@
  * reader is surface nobody asked for.
  */
 export { vendo, type VendoHarnessDeps, type VendoHarnessOptions } from "./vendo.js";
-export { DEFAULT_MAX_RETRIES, DEFAULT_MAX_STEPS, type TurnContext } from "./loop.js";
+export { DEFAULT_MAX_RETRIES, DEFAULT_MAX_STEPS, type ModelEffort, type TurnContext } from "./loop.js";
 // vendo()'s tool-search strategy — the shape composition (or a host) hands
 // `vendo({ toolSearch })`, and the loadout knobs it carries.
 export {

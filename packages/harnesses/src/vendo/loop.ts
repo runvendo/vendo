@@ -61,6 +61,20 @@ export const DEFAULT_MAX_RETRIES = 2;
 // other provider (and by the test mocks), so marking breakpoints degrades to a no-op.
 const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral" } } } as const;
 
+/** How hard the model may think before it answers — `claudeCode()`'s spelling
+ *  ({@link ../claude-code/index.js ClaudeCodeOptions}), because it is the same
+ *  decision about the same brain and a host must not learn it twice. */
+export type ModelEffort = "low" | "medium" | "high";
+
+/**
+ * The effort knob in each provider's own spelling: `effort` for Anthropic,
+ * `reasoningEffort` for OpenAI. `providerOptions` is keyed by provider id and a
+ * provider reads only its own key, so naming both is general at the call site
+ * and a no-op on anything else (the same property `CACHE_BREAKPOINT` relies on).
+ */
+const effortOptions = (effort: ModelEffort | undefined): { providerOptions?: Record<string, Record<string, string>> } =>
+  effort === undefined ? {} : { providerOptions: { anthropic: { effort }, openai: { reasoningEffort: effort } } };
+
 /** 0.4.4 cert defect B — a terminally failed app BUILD ends the turn. A build
  *  is a minutes-long operation and its failure is deterministic for the same
  *  ask, so letting the model auto-retry inside the turn kept the thread
@@ -89,7 +103,11 @@ const buildFailedStop: StopCondition<ToolSet> = ({ steps }) => {
  *  asking, which is precisely the invention `ask_user` exists to prevent: it
  *  guesses an answer and carries on, and the user's real reply lands a turn too
  *  late to matter. A REFUSED question (unattended, blank) is not a stop — the
- *  model still has to finish what it can. */
+ *  model still has to finish what it can.
+ *
+ *  Stopping here leaves no step in which to ASK, which is why
+ *  {@link TurnLoop.unspokenQuestion} exists: the question is delivered off the
+ *  call the model already made, not off a step this condition took away. */
 const askedUserStop: StopCondition<ToolSet> = ({ steps }) => {
   const last = steps.at(-1);
   return last !== undefined && last.toolResults.some((result) => {
@@ -538,6 +556,19 @@ export interface TurnLoopOptions {
  *  other knob structurally unreachable from the default harness). */
 export interface TurnContext {
   maxOutputTokens?: number;
+  /**
+   * How hard the model may think before it answers ({@link ModelEffort}).
+   *
+   * Unset is the PROVIDER's default, which on the Claude 5 line is extended
+   * thinking ON and unbounded (`apps/src/server/runtime/model-params.ts` says
+   * the same about `max_tokens`). Measured 2026-08-10 on a screen-assembly
+   * turn: one unbounded call spent 240s and 13.7K output tokens to produce a
+   * 623-character tool argument — 83% of that run's wall clock inside hidden
+   * reasoning. So this is a knob a caller who knows the job needs, not a tuning
+   * detail: a specialist writing a document is not a resident reasoning about
+   * an open-ended ask.
+   */
+  effort?: ModelEffort;
   /** Bound the messages re-sent per turn to the last N whole messages. */
   historyWindow?: number;
   /** §4.1 item 2 — bound the PROMPT instead of the message count: reasoning and
@@ -559,6 +590,22 @@ export interface TurnLoop {
    * because of the cap, not because the model finished.
    */
   stepLimitPart(): Promise<VendoStepLimitPart | undefined>;
+  /**
+   * The question `askedUserStop` ended the turn on, when the ending step left
+   * the turn with nothing to say. Call after the stream drains.
+   *
+   * `ask_user` tells the model to "put the question to them in your own words as
+   * your final message" and then the stop condition takes that message away —
+   * the product asked for something the loop made impossible, and the turn went
+   * quiet on a person who was waiting to be asked something. Delivering it costs
+   * NO round-trip: the model already wrote the question as the call's argument,
+   * so this reads it back off the step that ended the turn. (Which is also why
+   * `ask-user-stop.test.ts`'s "the model is called exactly once" still holds.)
+   *
+   * Undefined when that step also SPOKE: the model's own words are then already
+   * the turn's reply, and the loop does not second-guess them.
+   */
+  unspokenQuestion(): Promise<string | undefined>;
   /** What this turn compacted, as DATA for whoever owns the state slot — the
    *  loop does not know where that is. Written by the summarizer. */
   compacted?: CompactionState;
@@ -606,6 +653,8 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     tools: options.tools,
     stopWhen: [stepCountIs(maxSteps), buildFailedStop, askedUserStop, ...(options.stopWhen ?? [])],
     maxOutputTokens: options.context?.maxOutputTokens,
+    // How hard the model may think, when the caller bounded it (TurnContext.effort).
+    ...effortOptions(options.context?.effort),
     // Stated rather than inherited — see DEFAULT_MAX_RETRIES.
     maxRetries: options.context?.maxRetries ?? DEFAULT_MAX_RETRIES,
     // The caller's loadout: restrict what the model may pick to the current
@@ -648,6 +697,40 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     maxSteps,
     // DATA out: what this turn compacted, for whoever owns the state slot.
     ...(compacted === undefined ? {} : { compacted }),
+    async unspokenQuestion() {
+      try {
+        const last = (await result.steps).at(-1);
+        // A step that said anything has already put the turn's reply on the
+        // screen; only a WORDLESS one is the silence this repairs.
+        if (last === undefined || last.text.trim() !== "") return undefined;
+        for (const call of last.toolResults) {
+          if (call.toolName !== ASK_USER_TOOL) continue;
+          // The same `ok` the stop condition read: a refused question did not end
+          // the turn, so there is nothing here to deliver.
+          const output = call.output as { status?: unknown } | null;
+          if (typeof output !== "object" || output === null || output.status !== "ok") continue;
+          // The model's OWN words, off the call it made. Read from the input
+          // rather than the output because the input is what the one door's
+          // schema guarantees, whatever a deployment's registry echoes back.
+          const input = call.input as { question?: unknown; choices?: unknown } | null;
+          const question = typeof input?.question === "string" ? input.question.trim() : "";
+          if (question === "") continue;
+          const choices = Array.isArray(input?.choices)
+            ? input.choices.filter((choice): choice is string => typeof choice === "string")
+            : [];
+          // A multiple-choice question without its choices is not the question
+          // the model asked, and they cost nothing: same call, same argument.
+          return choices.length === 0
+            ? question
+            : `${question}\n\n${choices.map((choice) => `- ${choice}`).join("\n")}`;
+        }
+        return undefined;
+      } catch {
+        // Same posture as `stepLimitPart`: the caller's stream already surfaced
+        // the run failure, and delivering a question must never mask it.
+        return undefined;
+      }
+    },
     async stepLimitPart() {
       try {
         const [finishReason, steps] = await Promise.all([result.finishReason, result.steps]);
