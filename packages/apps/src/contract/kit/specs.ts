@@ -25,6 +25,16 @@ const tableColumn = z.object({
 });
 const cardField = z.object({ key: z.string(), label: z.string().optional(), format: valueFormat.optional() });
 const action = z.string().describe("names a host tool");
+/** The one action that carries ARGUMENTS: an `on*` prop passes its tool
+ *  nothing, so a mutation whose input schema requires an id can only be wired
+ *  where the id is — on the row. `args` maps the TOOL's argument name to the
+ *  row field the value comes from (dot-paths allowed, like a column key). */
+const rowAction = z.object({
+  label: z.string(),
+  tool: z.string(),
+  args: z.record(z.string(), z.string()).optional(),
+  variant: z.enum(["primary", "secondary", "danger"]).optional(),
+});
 
 // ---- specs ---------------------------------------------------------------
 export const KIT_SPECS: KitComponentSpec[] = [
@@ -165,9 +175,11 @@ export const KIT_SPECS: KitComponentSpec[] = [
       paginate: config(z.number().int().positive(), "page size (enables pagination)"),
       emptyState: copy(z.string(), "text when the query returns no rows"),
       caption: copy(z.string(), "table caption"),
+      rowAction: config(rowAction, 'one control per row: {label, tool, args:{toolArgumentName:"rowFieldKey"}, variant} — the only action that can pass a tool its required arguments'),
     },
     examples: [
       '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amountCents",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
+      '<DataTable rows={transfers.list({status:"pending"}).data} columns={[{key:"payee"},{key:"amountCents",format:"money",align:"end"}]} rowAction={{label:"Cancel",tool:"cancel_transfer",args:{id:"id"},variant:"danger"}}/>',
     ],
   },
   {
@@ -181,6 +193,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       fields: config(z.array(cardField), "label/value rows shown on each card"),
       columns: config(z.number().int().positive(), "cards per row"),
       emptyState: copy(z.string(), "text when there are no items"),
+      rowAction: config(rowAction, 'one control per card: {label, tool, args:{toolArgumentName:"itemFieldKey"}, variant}'),
     },
     examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balanceCents",label:"Balance",format:"money"}]}/>'],
   },

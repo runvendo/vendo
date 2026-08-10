@@ -208,6 +208,12 @@ function resolveReshaped(
   return reshaped.value;
 }
 
+/** A press-time payload is a plain object literal; a React/DOM event is not. */
+const plainPayload = (value: unknown): Json | undefined =>
+  typeof value === "object" && value !== null && Object.getPrototypeOf(value) === Object.prototype
+    ? (value as Json)
+    : undefined;
+
 function bindValue(
   value: unknown,
   mode: BoundMode,
@@ -234,7 +240,12 @@ function bindValue(
     if (mode === "jail") {
       return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
     }
-    return () => action(value.$action, value.payload === undefined ? undefined : payload);
+    // A Kit component that owns a row (DataTable/CardList's `rowAction`) is the
+    // one place a tool's arguments exist, so it hands them over at press time.
+    // Only a plain object counts: `Form` calls its bound submit with the DOM
+    // EVENT, which is an argument for React and never a tool payload.
+    return (runtime?: unknown) =>
+      action(value.$action, value.payload === undefined ? plainPayload(runtime) : payload);
   }
   if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, onMismatch));
   if (typeof value === "object" && value !== null) {

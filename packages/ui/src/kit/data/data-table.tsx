@@ -18,6 +18,7 @@ import {
 import { applyFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
+import { RowActionButton, type RowAction } from "./row-action.js";
 
 export interface DataTableColumn {
   /** Field key; supports dot-paths ("client.name"). */
@@ -48,6 +49,8 @@ export interface DataTableProps {
   emptyState?: string;
   /** Optional table caption. */
   caption?: string;
+  /** One control per row, carrying that row's fields as the tool's arguments. */
+  rowAction?: RowAction;
 }
 
 /** Resolve a dot-path against a row. */
@@ -84,6 +87,7 @@ export function DataTable(props: DataTableProps) {
     paginate,
     emptyState = "No data",
     caption,
+    rowAction,
   } = props;
 
   // W3 — fail SOFT on missing data: a failed/pending query resolves its
@@ -277,6 +281,9 @@ export function DataTable(props: DataTableProps) {
                     </th>
                   );
                 })}
+                {/* The action column stays OUTSIDE the tanstack model: it holds
+                    no value, so it must not sort, filter or search. */}
+                {rowAction ? <th scope="col" style={{ borderBottom: `1px solid ${t.border}`, padding: cellPad }} /> : null}
               </tr>
             ))}
           </thead>
@@ -284,7 +291,7 @@ export function DataTable(props: DataTableProps) {
             {bodyRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={Math.max(1, columns.length)}
+                  colSpan={Math.max(1, columns.length + (rowAction ? 1 : 0))}
                   style={{ color: t.muted, padding: "calc(var(--vendo-font-size, 15px) * 1.6) 12px", textAlign: "center" }}
                 >
                   {emptyState}
@@ -309,6 +316,18 @@ export function DataTable(props: DataTableProps) {
                       </td>
                     );
                   })}
+                  {rowAction ? (
+                    <td
+                      style={{
+                        borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
+                        padding: cellPad,
+                        textAlign: "right",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <RowActionButton action={rowAction} row={row.original} />
+                    </td>
+                  ) : null}
                 </tr>
               ))
             )}

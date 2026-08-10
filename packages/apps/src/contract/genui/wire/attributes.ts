@@ -10,6 +10,7 @@
 import { FN_REFERENCE_PATTERN, findInvalidActionReference } from "../../fn-references.js";
 import {
   defineOwn,
+  isPlainObject,
   isWellFormedUtf16,
   type Json,
   TOOL_NAME_PATTERN,
@@ -98,6 +99,33 @@ const compileActionValue = (state: CompileState, name: string, value: string): J
     `action attribute "${name}" names neither a tool nor a valid fn: reference; the attribute was dropped`,
   );
   return DROPPED;
+};
+
+/** D5's row exception — `rowAction={{label, tool, args}}` on DataTable/CardList.
+ *  An `on*` attribute passes its tool nothing, so a mutation whose input schema
+ *  requires an id can only be wired where the id is: on the row. The tool name
+ *  arrives as a FIELD, and this lifts it into the canonical action shape one
+ *  level DOWN, under `run` — the walk that hydrates actions (ui
+ *  tree/convert-payload.ts) rewrites any object carrying a string `action` key
+ *  into a bare callback, and at the top level that would swallow the label and
+ *  the args with it. An already-canonical prop (a re-compiled print) is left
+ *  alone; a name that is neither a tool nor an fn: reference drops the prop,
+ *  exactly as `compileActionValue` drops an `on*` attribute. */
+export const foldRowAction = (state: CompileState, props: Record<string, Json> | undefined): void => {
+  if (props === undefined || !isPlainObject(props.rowAction)) return;
+  const { tool, action, ...rest } = props.rowAction;
+  if (tool === undefined && action === undefined) return;
+  const named = typeof tool === "string" ? tool : action;
+  if (typeof named !== "string" || !(TOOL_NAME_PATTERN.test(named) || FN_REFERENCE_PATTERN.test(named))) {
+    issue(
+      state,
+      "invalid-action",
+      "rowAction names neither a tool nor a valid fn: reference; the prop was dropped",
+    );
+    delete props.rowAction;
+    return;
+  }
+  defineOwn(props, "rowAction", { ...rest, run: { action: named } });
 };
 
 /** The `=`-value forms of D3, with the cursor sitting on the `=`. Bare

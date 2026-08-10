@@ -39,7 +39,7 @@ import {
 import { FN_REFERENCE_PATTERN } from "../../fn-references.js";
 import { KIT_COMPONENT_NAMES, WIRE_COMPONENT_NAMES } from "../../kit/specs.js";
 import { QUERY_NAME_PATTERN, type TreeQuery, type Tree } from "../tree.js";
-import { parseAttributes } from "./attributes.js";
+import { foldRowAction, parseAttributes } from "./attributes.js";
 import type { WireIssue } from "./expression.js";
 import { checkBindingShapes, mirrorBindingIssues, type BindingShapeError } from "./shape-check.js";
 import { expandInlineRefs } from "./inline-refs.js";
@@ -282,6 +282,7 @@ const compileOpenTag = (state: CompileState, frames: Frame[], name: string): voi
     issue(state, "truncated-tag", `<${name}> tag was truncated at end of input; the element was dropped`);
     return;
   }
+  foldRowAction(state, attrs.props);
   const node: TreeNode = { id: mintId(state, name), component: name };
   const source = resolveSource(state, name);
   if (source !== undefined) node.source = source;

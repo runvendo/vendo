@@ -181,6 +181,19 @@ An \`on*\` attribute names a host tool: \`onClick="maple_invoice_send"\`. That i
 only way anything in an app mutates. A value that is not a legal tool name drops
 the attribute.
 
+An \`on*\` action carries **no arguments**. A tool whose input schema requires any
+(an \`id\`) therefore cannot be wired as one — wire it as the row's own control,
+where the id is:
+
+\`\`\`
+rowAction={{label:"Cancel", tool:"cancel_transfer", args:{id:"id"}, variant:"danger"}}
+\`\`\`
+
+\`args\` maps the TOOL's argument name to the row field it reads (dot-paths
+allowed). \`<DataTable>\` renders it as a trailing column, \`<CardList>\` as a
+footer control, one per row. A form field cannot supply an argument; where the
+argument is not a row's field, call the tool from an \`<Island>\` instead.
+
 ### \`<Island name="PascalName">\` — a component you write
 
 The content is raw TSX, verbatim to the **first** \`</Island>\`, with an

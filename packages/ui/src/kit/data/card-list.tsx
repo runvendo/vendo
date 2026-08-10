@@ -2,6 +2,7 @@
 import { applyFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { EnumBadge } from "../values.js";
+import { RowActionButton, type RowAction } from "./row-action.js";
 
 export interface CardField {
   key: string;
@@ -22,13 +23,15 @@ export interface CardListProps {
   columns?: number;
   /** Text shown when there are no items. */
   emptyState?: string;
+  /** One control per card, carrying that item's fields as the tool's arguments. */
+  rowAction?: RowAction;
 }
 
 function resolve(row: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((acc, k) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[k] : undefined), row);
 }
 
-export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items" }: CardListProps) {
+export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items", rowAction }: CardListProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const items = Array.isArray(rawItems) ? rawItems : [];
   if (items.length === 0) {
@@ -94,6 +97,11 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
                 </div>
               );
             })}
+            {rowAction ? (
+              <div style={{ marginTop: "auto", paddingTop: "var(--vendo-density-field-gap, 6px)" }}>
+                <RowActionButton action={rowAction} row={item} />
+              </div>
+            ) : null}
           </article>
         );
       })}
