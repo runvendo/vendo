@@ -57,6 +57,26 @@ export interface InstallCommand {
   cwd: string;
 }
 
+/** True when the host is an independent pnpm project sitting INSIDE someone
+    else's pnpm workspace — a repo cloned into an unrelated monorepo. pnpm
+    picks its workspace root by walking up to the nearest
+    `pnpm-workspace.yaml`, so an unqualified `pnpm add` there installs against
+    the ANCESTOR: under pnpm 11 the ancestor's overrides rewrite the host's
+    own pins (this repo's `next: ">=16.2.11"` gave a host pinning 14.2.5 a
+    next 16 tree), and under pnpm 9 the add aborts on the ancestor's store
+    (ERR_PNPM_UNEXPECTED_STORE), so the repair never happens at all.
+    The app's own `pnpm-lock.yaml` is the proof it is not a member: pnpm keeps
+    exactly one lockfile, at the workspace root, never inside a member
+    package. An app that is its own workspace root already wins the walk. */
+async function nestedOutsidePnpmWorkspace(appRoot: string): Promise<boolean> {
+  if (!(await fileExists(appRoot, "pnpm-lock.yaml"))) return false;
+  if (await fileExists(appRoot, "pnpm-workspace.yaml")) return false;
+  for (let dir = dirname(appRoot); ; dir = dirname(dir)) {
+    if (await fileExists(dir, "pnpm-workspace.yaml")) return true;
+    if (dirname(dir) === dir) return false;
+  }
+}
+
 /** Lockfile-sniffed installer, resolved the way package managers resolve
     their own root: walk UP from the app dir to the NEAREST lockfile or
     workspace marker. A nested workspace app usually carries neither in its
@@ -67,7 +87,8 @@ export async function installCommandFor(root: string): Promise<InstallCommand> {
   const appRoot = resolve(root);
   for (let dir = appRoot; ; dir = dirname(dir)) {
     if ((await fileExists(dir, "pnpm-lock.yaml")) || (await fileExists(dir, "pnpm-workspace.yaml"))) {
-      return { command: "pnpm", args: ["add"], cwd: appRoot };
+      const args = (await nestedOutsidePnpmWorkspace(appRoot)) ? ["add", "--ignore-workspace"] : ["add"];
+      return { command: "pnpm", args, cwd: appRoot };
     }
     if (await fileExists(dir, "yarn.lock")) return { command: "yarn", args: ["add"], cwd: appRoot };
     if ((await fileExists(dir, "bun.lockb")) || (await fileExists(dir, "bun.lock"))) {

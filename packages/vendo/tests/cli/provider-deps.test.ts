@@ -62,6 +62,34 @@ describe("installCommandFor", () => {
     expect(await installCommandFor(app)).toEqual({ command: "pnpm", args: ["add"], cwd: app });
   });
 
+  it("ignores an ANCESTOR workspace the host is not a member of", async () => {
+    // A repo cloned into an unrelated monorepo (the corpus clones hosts into
+    // this repo's own tree). pnpm walks up to the nearest pnpm-workspace.yaml,
+    // so an unqualified `pnpm add` installs against the ancestor: its
+    // overrides rewrite the host's pins under pnpm 11, and the add aborts on
+    // the ancestor's store under pnpm 9. The host's own lockfile is the proof
+    // it is not a member — pnpm keeps one lockfile, at the workspace root.
+    const ancestor = await tempRoot();
+    await writeFile(join(ancestor, "pnpm-workspace.yaml"), "packages:\n  - pkgs/*\noverrides:\n  next: '>=16'\n");
+    const app = join(ancestor, ".repos", "skateshop");
+    await mkdir(app, { recursive: true });
+    await writeFile(join(app, "package.json"), JSON.stringify({ name: "skateshop" }));
+    await writeFile(join(app, "pnpm-lock.yaml"), "");
+    expect(await installCommandFor(app)).toEqual({ command: "pnpm", args: ["add", "--ignore-workspace"], cwd: app });
+  });
+
+  it("leaves a nested app that is its own workspace root alone", async () => {
+    // Its own pnpm-workspace.yaml wins pnpm's upward walk, so the ancestor
+    // never applies and --ignore-workspace would cut its own members loose.
+    const ancestor = await tempRoot();
+    await writeFile(join(ancestor, "pnpm-workspace.yaml"), "packages:\n  - pkgs/*\n");
+    const app = join(ancestor, ".repos", "monorepo-host");
+    await mkdir(app, { recursive: true });
+    await writeFile(join(app, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n");
+    await writeFile(join(app, "pnpm-lock.yaml"), "");
+    expect(await installCommandFor(app)).toEqual({ command: "pnpm", args: ["add"], cwd: app });
+  });
+
   it("targets a nested npm-workspace app from the lockfile root", async () => {
     const workspace = await tempRoot();
     await writeFile(join(workspace, "package-lock.json"), "{}");
@@ -358,6 +386,31 @@ describe("ensureZodFloor in a hoisted workspace (checker round 1)", () => {
     expect(messages.errors.join("\n")).toContain("zod@3.23.8");
     expect(messages.errors.join("\n")).toContain("pnpm add zod@^3.25.0");
     expect(messages.errors.join("\n")).not.toContain("npm install");
+  });
+
+  it("scopes the bump to a host nested inside an unrelated workspace", async () => {
+    // The repair that never landed: under the corpus's nesting the bump ran
+    // against the ancestor workspace, so the host's zod stayed below the floor.
+    const ancestor = await tempRoot();
+    await writeFile(join(ancestor, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
+    const app = join(ancestor, ".repos", "skateshop");
+    await mkdir(app, { recursive: true });
+    await writeFile(join(app, "package.json"), JSON.stringify({ name: "skateshop" }));
+    await writeFile(join(app, "pnpm-lock.yaml"), "");
+    await installZodVersion(app, "3.23.8");
+
+    const calls: Array<{ command: string; args: string[]; cwd: string }> = [];
+    const messages = output();
+    await ensureZodFloor({
+      root: app,
+      output: messages.sink,
+      yes: true,
+      run: async (command, args, cwd) => {
+        calls.push({ command, args, cwd });
+        return 0;
+      },
+    });
+    expect(calls).toEqual([{ command: "pnpm", args: ["add", "--ignore-workspace", ZOD_FLOOR_SPEC], cwd: app }]);
   });
 
   it("performs the --yes bump with the workspace's package manager from the app dir", async () => {
