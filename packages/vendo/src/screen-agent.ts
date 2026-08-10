@@ -82,6 +82,31 @@ import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harn
  */
 export const SCREEN_STEPS = 10;
 
+/**
+ * The same budget in seconds, because a step count does not bound a step.
+ *
+ * `SCREEN_STEPS` says how many times this loop may think and nothing said how
+ * LONG one think may take — a single measured call spent 240s producing 623
+ * characters, so ten steps is a budget with no ceiling. The clock has two halves,
+ * for the two different things a long run means:
+ *
+ * - **`SCREEN_BLIND_MS` — nothing on screen yet.** Searching the catalog and
+ *   dry-running `validate` for this long without ever saving is the loop saying,
+ *   in its own actions, that it cannot express this ask. That is what `escalate`
+ *   is for, and the clock takes the door the run would not: reached blind, the
+ *   answer is a handover, not a dead end.
+ * - **`SCREEN_POLISH_MS` — the screen is up.** Once a save has landed the person
+ *   has something to look at, and the honest end of a cheap screen is soon after.
+ *   The tail is where the grinding lives: passing runs mostly finish 8–18s after
+ *   their first save, and the ones that keep going are re-searching, not fixing.
+ *
+ * Both are enforced as the turn's own `AbortSignal`, so they reach the provider
+ * call (`loop.ts`'s `abortSignal`) and end the step in flight rather than waiting
+ * for the one that is already overdue.
+ */
+export const SCREEN_BLIND_MS = 150_000;
+export const SCREEN_POLISH_MS = 30_000;
+
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
  *  agent's own, not a product capability anybody else may reach. */
@@ -238,7 +263,9 @@ through two tools.
   \`<Server kind="steps"|"agentic"|"box" [served] why="…"/>\` line the skill above
   teaches. Leave it out and the builder reads the escalation itself as the answer:
   \`kind="box"\`, a machine and real code.
-- \`${SCREEN_STEPS}\` steps is the whole budget. Escalate rather than run out of it.
+- \`${SCREEN_STEPS}\` steps and ${SCREEN_BLIND_MS / 1000} seconds is the whole budget, and the clock
+  is short once a screen is up. Save something early, then finish it. Escalate
+  rather than run out.
 
 Never look for a tool that builds the app for you. There isn't one, and that is
 deliberate.
@@ -332,6 +359,24 @@ export async function assembleScreen(
   const record: RunRecord = { assembled: false, painted: false };
 
   /**
+   * The clock, as one signal the loop already obeys.
+   *
+   * `AbortSignal.timeout` rather than a timer this function has to remember to
+   * clear: it is unref'd, so an assembly that ends early never holds a process
+   * open. Each fuse only ever pulls the deadline EARLIER — the polish half is
+   * armed by the first landed save and whichever fires first ends the run — so
+   * there is nothing to cancel and no ordering to get wrong.
+   */
+  const clock = new AbortController();
+  const fuse = (ms: number): void => {
+    AbortSignal.timeout(ms).addEventListener("abort", () => clock.abort(), { once: true });
+  };
+  fuse(SCREEN_BLIND_MS);
+  // The caller's hang-up and the clock are the same fact to the loop: stop now.
+  // They are told apart afterwards, because they mean different answers.
+  const signal = AbortSignal.any([surface.signal, clock.signal]);
+
+  /**
    * Write one hot-path file and land it.
    *
    * The commit IS the store write and the paint (§1.6), and the seam answers BOTH
@@ -371,6 +416,9 @@ export async function assembleScreen(
       if (committed.status !== "ok") {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
       }
+      // The FIRST landed save is when the person stops waiting and starts
+      // looking, so it is what starts the short clock.
+      if (!record.assembled) fuse(SCREEN_POLISH_MS);
       record.assembled = true;
       record.title = nameOf(content) ?? record.title;
       // The last save that had something to say wins the run. An omitted or blank
@@ -468,7 +516,9 @@ export async function assembleScreen(
     models: surface.models,
     state: runState(),
     options: {},
-    signal: surface.signal,
+    // The caller's signal AND the clock: a loop that may think ten times still
+    // may not think for ten minutes.
+    signal,
     // This loop talks to nobody: the front door speaks the receipt, and an
     // approval it cannot show is a denial with a reason (see `registryTools`).
     interactive: false,
@@ -536,7 +586,10 @@ export async function assembleScreen(
      * time repeating it.
      */
     const appPath = `${directory}/${APP_FILE}`;
-    const instruction = record.painted
+    // The clock is the second gate: a run that spent its whole budget has a
+    // screen on the person's display and no time left to second-guess it, and a
+    // review whose repair round cannot run is a call spent on nothing.
+    const instruction = record.painted && !signal.aborted
       ? repairInstruction(await validateWrittenApps({
         tools: turn.tools,
         workspace: turn.workspace,
@@ -544,7 +597,7 @@ export async function assembleScreen(
         review: true,
       }))
       : undefined;
-    if (instruction !== undefined && !surface.signal.aborted) {
+    if (instruction !== undefined && !signal.aborted) {
       // The document rides along: a drive starts from the messages it is given, so
       // the repair round has none of the first one's context — and a repair with no
       // document in front of it is a rewrite from scratch.
@@ -564,6 +617,27 @@ export async function assembleScreen(
       kind: "assembled",
       ...(record.title === undefined ? {} : { title: record.title }),
       ...(record.decisions === undefined ? {} : { decisions: record.decisions }),
+    };
+  }
+  /**
+   * THE DOOR THE RUN WOULD NOT TAKE.
+   *
+   * `SCREEN_BLIND_MS` of catalog searches and dry-run `validate` calls with no
+   * save behind them is the loop demonstrating the very thing `escalate` is for:
+   * this ask is not a document these components can express. Live 2026-08-10
+   * ("a dense table of every transfer…"): seven searches, six validates, zero
+   * saves, and the person got "unavailable" — a dead end for work the builder
+   * could have started two minutes earlier.
+   *
+   * No plan, and that is not a hole: the receiving end already treats a missing
+   * plan as "build from the ask" (`compose-apps.ts`'s `escalatedPlan`). A plan
+   * this file wrote would be the one thing worse — a brief the model never
+   * agreed to, in words it never used.
+   */
+  if (clock.signal.aborted) {
+    return {
+      kind: "escalate",
+      why: "assembly spent its whole budget without putting anything on screen, so this is a build",
     };
   }
   return { kind: "unavailable", why: failure ?? "assembly produced nothing that renders" };
