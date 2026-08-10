@@ -1,10 +1,11 @@
 import { realpathSync } from "node:fs";
-import { cp, mkdir, realpath, rm } from "node:fs/promises";
+import { cp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ManifestEntry } from "./manifest.js";
 import { runCommand, type CommandResult } from "./process.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
+import { readOptional } from "./util.js";
 
 export type CloneRepo = Pick<ManifestEntry, "name" | "gitUrl" | "pinnedSha" | "localPath">;
 
@@ -131,6 +132,34 @@ async function fetchPinnedSha(gitBin: string, repoDir: string, sha: string): Pro
   throw new Error(`Unable to fetch pinned SHA ${sha} into ${repoDir}.\n${formatFetchAttempts(attempts)}`);
 }
 
+const DEPENDENCY_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
+
+/** A local host is copied OUT of the Vendo workspace, so every `workspace:`
+ * dependency it declares loses its resolver. The injector rewrites the Vendo
+ * ones to `file:vendor/*.tgz`; everything else (fixture kits, sibling demo
+ * packages) has no tarball and fails the post-injection install outright.
+ * Drop those from the snapshot — the copy is standalone by construction. */
+export function withoutUnresolvableWorkspaceDeps(pkg: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...pkg };
+  for (const section of DEPENDENCY_SECTIONS) {
+    const deps = next[section];
+    if (typeof deps !== "object" || deps === null) continue;
+    const kept = Object.entries(deps as Record<string, unknown>).filter(([name, spec]) =>
+      !(typeof spec === "string" && spec.startsWith("workspace:") && name !== "vendoai" && !name.startsWith("@vendoai/")));
+    if (kept.length === Object.keys(deps).length) continue;
+    next[section] = Object.fromEntries(kept);
+  }
+  return next;
+}
+
+async function stripUnresolvableWorkspaceDeps(repoDir: string): Promise<void> {
+  const file = path.join(repoDir, "package.json");
+  const source = await readOptional(file);
+  if (source === undefined) return;
+  const stripped = withoutUnresolvableWorkspaceDeps(JSON.parse(source) as Record<string, unknown>);
+  await writeFile(file, `${JSON.stringify(stripped, null, 2)}\n`);
+}
+
 export async function ensureRepoCheckout(repo: CloneRepo, options: EnsureRepoCheckoutOptions = {}): Promise<string> {
   const context = options.context ?? createRunContext();
   const gitBin = options.gitBin ?? "git";
@@ -151,6 +180,7 @@ export async function ensureRepoCheckout(repo: CloneRepo, options: EnsureRepoChe
         return !segments.some((segment, index) => segment === ".vendo" && segments[index + 1] === "data");
       },
     });
+    await stripUnresolvableWorkspaceDeps(repoDir);
     await checkedGit(gitBin, ["init"], repoDir);
     await checkedGit(gitBin, ["add", "-A"], repoDir);
     await checkedGit(gitBin, [
