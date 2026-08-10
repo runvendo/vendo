@@ -1,15 +1,16 @@
 import {
   TOOL_NAME_PATTERN,
-  VendoError,
   type CapabilityMissEvent,
   type CapabilityMissToolFailure,
   type CapabilityMissTrigger,
+  type Json,
   type RunContext,
   type ThreadId,
   type ToolCall,
+  type ToolListing,
   type ToolOutcome,
 } from "@vendoai/core";
-import { dynamicTool, jsonSchema, type ToolSet, type UIMessage } from "ai";
+import type { UIMessage } from "ai";
 
 export const CAPABILITY_MISS_TOOL_NAME = "vendo_report_capability_miss";
 
@@ -28,6 +29,11 @@ interface DetectorOptions {
   ctx: RunContext;
   intent: string;
   threadId?: ThreadId;
+  /** The names a report's `toolsConsidered` may claim — the projected surface,
+   *  resolved at report time so a fabricated name never lands in telemetry and
+   *  building the detector costs nothing. Unset (or failing) keeps every
+   *  pattern-valid name, which is the honest degradation. */
+  available?: () => Promise<ReadonlySet<string>>;
 }
 
 const REPORT_INPUT_SCHEMA = {
@@ -42,7 +48,7 @@ const REPORT_INPUT_SCHEMA = {
   },
   required: ["kind", "toolsConsidered"],
   additionalProperties: false,
-} as Parameters<typeof jsonSchema>[0];
+} as NonNullable<ToolListing["inputSchema"]>;
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -84,9 +90,17 @@ export function latestUserIntent(messages: UIMessage[]): string {
   return scrubCapabilityMissText(message.parts.map(textFromPart).filter(Boolean).join(" "));
 }
 
+/** The reporter tool, directly exposed: the runtime lists `listing` on the
+ *  turn's surface and dispatches calls to `execute`. Never through the guard —
+ *  reporting a miss spends no authority (§12: reads are silent, always). */
+export interface CapabilityMissReporter {
+  listing: ToolListing;
+  execute(args: Json): Promise<ToolOutcome>;
+}
+
 export interface CapabilityMissDetector {
   onCall(call: ToolCall): (outcome: ToolOutcome) => void;
-  attach(tools: ToolSet): void;
+  reporter: CapabilityMissReporter;
 }
 
 export function createCapabilityMissDetector(options: DetectorOptions): CapabilityMissDetector {
@@ -145,28 +159,30 @@ export function createCapabilityMissDetector(options: DetectorOptions): Capabili
         });
       };
     },
-    attach(tools) {
-      if (tools[CAPABILITY_MISS_TOOL_NAME] !== undefined) {
-        throw new VendoError("conflict", `Reserved internal tool name: ${CAPABILITY_MISS_TOOL_NAME}`);
-      }
-      const availableTools = new Set(Object.keys(tools));
-      tools[CAPABILITY_MISS_TOOL_NAME] = dynamicTool({
+    reporter: {
+      listing: {
+        name: CAPABILITY_MISS_TOOL_NAME,
+        title: "Report that this cannot be done",
         description: "Report that the current user ask cannot be fulfilled. Use only for no matching tool or an explicit terminal give-up.",
-        inputSchema: jsonSchema(REPORT_INPUT_SCHEMA),
-        execute: async (input): Promise<ToolOutcome> => {
-          const parsed = record(input);
-          const kind = parsed?.kind;
-          if (kind !== "no-matching-tool" && kind !== "agent-give-up") {
-            return { status: "error", error: { code: "validation", message: "Invalid capability-miss trigger" } };
-          }
-          const toolsConsidered = toolNames(parsed?.toolsConsidered)
-            .filter((name) => availableTools.has(name));
-          const emitted = kind === "no-matching-tool"
-            ? report({ kind, toolsConsidered })
-            : report({ kind, toolsConsidered, toolsAttempted: [...attempted] });
-          return { status: "ok", output: { reported: emitted } };
-        },
-      });
+        risk: "read",
+        inputSchema: REPORT_INPUT_SCHEMA,
+      },
+      execute: async (input): Promise<ToolOutcome> => {
+        const parsed = record(input);
+        const kind = parsed?.kind;
+        if (kind !== "no-matching-tool" && kind !== "agent-give-up") {
+          return { status: "error", error: { code: "validation", message: "Invalid capability-miss trigger" } };
+        }
+        const names = toolNames(parsed?.toolsConsidered);
+        const offered = await options.available?.().catch(() => undefined);
+        const toolsConsidered = offered === undefined
+          ? names
+          : names.filter((name) => offered.has(name));
+        const emitted = kind === "no-matching-tool"
+          ? report({ kind, toolsConsidered })
+          : report({ kind, toolsConsidered, toolsAttempted: [...attempted] });
+        return { status: "ok", output: { reported: emitted } };
+      },
     },
   };
 }

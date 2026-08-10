@@ -2,12 +2,13 @@
  * What a biller reads after a turn that hired — asserted over the ACTUAL audit
  * rows the guard received, from a real `vendo()` turn through the real runtime.
  *
- * The seam is the point: the harness decides what the `usage` event carries and
- * the runtime decides which rows exist, so a suite that stubbed either half
- * could never catch them disagreeing — and they did. The harness folded the
- * hires into the turn's usage AND reported each hire, so the runtime wrote both
- * a run row containing the hires and a row per hire, and a host summing rows
- * paid for every hire twice.
+ * The seam is the point: the harness decides what its `usage` events carry and
+ * the runtime decides what the row holds, so a suite that stubbed either half
+ * could never catch them disagreeing. Since the de-brain refactor there is ONE
+ * run row per turn and its `usage` is the turn's WHOLE spend: the resident's
+ * own figure and each hire's ride separate `usage` events (they partition the
+ * turn), and the runtime's `addUsage` folds them — the per-hire receipt rows
+ * are gone (Option 1, 2026-08-09).
  */
 import type { AuditEvent, ThreadId } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
@@ -51,16 +52,6 @@ interface RowUsage {
   model?: string;
 }
 
-/** Every usage figure this turn wrote anywhere, one entry per row — which is
- *  exactly how a host bills: sum the rows. */
-const usagesOf = (events: AuditEvent[]): RowUsage[] =>
-  events
-    .filter((event) => event.kind === "run")
-    .flatMap((event) => {
-      const detail = event.detail as { usage?: RowUsage; subagent?: { usage?: RowUsage } };
-      return [detail.usage, detail.subagent?.usage].filter((usage): usage is RowUsage => usage !== undefined);
-    });
-
 /** A turn whose resident hires one specialist and then answers. */
 async function turnThatHires() {
   const model = scriptedModel([
@@ -87,56 +78,38 @@ async function turnThatHires() {
   return { guard, modelId: (model as unknown as { modelId: string }).modelId };
 }
 
-describe("subagent spend lands in the ledger exactly once", () => {
-  it("counts the whole turn's tokens once across the rows, not once per row that mentions them", async () => {
+const runRows = (events: AuditEvent[]): AuditEvent[] =>
+  events.filter((event) => event.kind === "run");
+
+describe("a turn that hires lands in the ledger as ONE row, priced whole", () => {
+  it("writes exactly one run row, whose usage is the SUM of the resident and its helpers", async () => {
     const { guard } = await turnThatHires();
-    const usages = usagesOf(guard.events);
-    const total = (field: keyof RowUsage) =>
-      usages.reduce((sum, usage) => sum + ((usage[field] as number | undefined) ?? 0), 0);
+    const rows = runRows(guard.events);
+    expect(rows).toHaveLength(1);
 
-    // What the provider actually charged for: the resident's steps plus the
-    // hire's. Summing the rows has to land on exactly that.
-    expect(total("inputTokens")).toBe(RESIDENT.inputTokens.total + HIRE.inputTokens.total);
-    expect(total("outputTokens")).toBe(RESIDENT.outputTokens.total + HIRE.outputTokens.total);
-    expect(total("cacheReadTokens")).toBe(RESIDENT.inputTokens.cacheRead + HIRE.inputTokens.cacheRead);
-    expect(total("cacheWriteTokens")).toBe(RESIDENT.inputTokens.cacheWrite + HIRE.inputTokens.cacheWrite);
-  });
-
-  it("gives the run row the resident loop alone, cache split included", async () => {
-    const { guard } = await turnThatHires();
-    const run = guard.events.find(
-      (event) => event.kind === "run" && (event.detail as { usage?: unknown }).usage !== undefined,
-    );
-
-    expect((run!.detail as { usage: RowUsage }).usage).toMatchObject({
-      inputTokens: RESIDENT.inputTokens.total,
-      outputTokens: RESIDENT.outputTokens.total,
-      cacheReadTokens: RESIDENT.inputTokens.cacheRead,
-      cacheWriteTokens: RESIDENT.inputTokens.cacheWrite,
+    // The resident's `finish` figure and the hire's own `usage` event were
+    // separate events partitioning the turn; the row is their sum — what the
+    // provider actually charged for, counted once.
+    const usage = (rows[0]!.detail as { usage: RowUsage }).usage;
+    expect(usage).toMatchObject({
+      inputTokens: RESIDENT.inputTokens.total + HIRE.inputTokens.total,
+      outputTokens: RESIDENT.outputTokens.total + HIRE.outputTokens.total,
+      cacheReadTokens: RESIDENT.inputTokens.cacheRead + HIRE.inputTokens.cacheRead,
+      cacheWriteTokens: RESIDENT.inputTokens.cacheWrite + HIRE.inputTokens.cacheWrite,
     });
   });
 
-  it("gives the hire's row the hire's full usage, so its figures are priceable on their own", async () => {
+  it("writes no per-hire row: staffing is the brain's strategy, and the meter reads tokens", async () => {
     const { guard } = await turnThatHires();
-    const hire = guard.events.find(
-      (event) => event.kind === "run" && (event.detail as { subagent?: unknown }).subagent !== undefined,
+    const mentioned = guard.events.filter(
+      (event) => event.kind === "run" && JSON.stringify(event.detail).includes("subagent"),
     );
-
-    expect((hire!.detail as { subagent: { usage: RowUsage } }).subagent.usage).toMatchObject({
-      inputTokens: HIRE.inputTokens.total,
-      outputTokens: HIRE.outputTokens.total,
-      cacheReadTokens: HIRE.inputTokens.cacheRead,
-      cacheWriteTokens: HIRE.inputTokens.cacheWrite,
-    });
+    expect(mentioned).toEqual([]);
   });
-});
 
-describe("a usage row names the model that spent it", () => {
-  it("carries the resolved model id, so a row prices without guessing the seat", async () => {
+  it("names the model that spent it, so the row prices without guessing the seat", async () => {
     const { guard, modelId } = await turnThatHires();
-    const usages = usagesOf(guard.events);
-
-    expect(usages).not.toHaveLength(0);
-    expect(usages.every((usage) => usage.model === modelId)).toBe(true);
+    const usage = (runRows(guard.events)[0]!.detail as { usage: RowUsage }).usage;
+    expect(usage.model).toBe(modelId);
   });
 });

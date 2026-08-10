@@ -6,26 +6,26 @@
  */
 import { awayRunner } from "@vendoai/agents";
 import type { AgentRunner, Harness } from "@vendoai/core";
-import { assertHarnessComposable, reportHire, vendo } from "@vendoai/harnesses";
+import { assertHarnessComposable, vendo } from "@vendoai/harnesses";
 import type { VendoComposition } from "./compose-context.js";
 import { storeServesHarnessTurns } from "./compose-store.js";
 import { MCP_MOUNT } from "./door-paths.js";
 import { createHarnessTurns, type HarnessTurns } from "./harness-turn.js";
 import { assembleSystemPrompt } from "./prompt.js";
+import { withAgentMenu } from "./surface-menu.js";
 import { registerTurnSteer } from "./turn-liveness.js";
 
 /** The thinker, the door it may dial, and the boot gate between them. */
 const resolveHarnessDoor = (composition: VendoComposition): Pick<VendoComposition,
   "harness" | "mcpOptions" | "internalDoorOnly" | "doorBase"> => {
-  const { config, composed, sandbox, configuredBaseUrl } = composition;
+  const { config, composed, sandbox, configuredBaseUrl, toolSearch } = composition;
   // Architecture §3 — WHO THINKS, composed ONCE.
   //
   // This used to be two constructions: a throwaway `vendo()` here for the boot
-  // gate, and a second `vendo({ onHire: reportHire })` inside harness-turn.ts as
-  // the fallback that actually ran. The gate was therefore asserting a value that
-  // was never served, and the two differed (only one reported its hires). One
-  // value now, resolved here and passed down, so the harness the gate checks IS
-  // the harness the turn runs.
+  // gate, and a second configured `vendo()` inside harness-turn.ts as the
+  // fallback that actually ran. The gate was therefore asserting a value that
+  // was never served. One value now, resolved here and passed down, so the
+  // harness the gate checks IS the harness the turn runs.
   //
   // `assertHarnessComposable` is the BOOT gate: a harness that needs a machine to
   // live on and has none is a wiring mistake the host hears about here, not a turn
@@ -39,7 +39,11 @@ const resolveHarnessDoor = (composition: VendoComposition): Pick<VendoCompositio
   // thinker is named — `harness: vendo({ maxSteps: 40 })`. They used to be
   // createVendo's own `agent:` knobs, which meant a host configured the thinker
   // through a key the thinker never saw.
-  const harness = (composed?.harness ?? config.harness ?? vendo({ onHire: reportHire })) as Harness;
+  // The default brain gets its tool-search strategy at construction: the same
+  // registry search and loadout knobs the old runtime rail read, now the
+  // brain's own hand (a host-constructed `vendo()` receives them through the
+  // composed adapter slot instead — harness-turn.ts).
+  const harness = (composed?.harness ?? config.harness ?? vendo({ toolSearch })) as Harness;
   assertHarnessComposable(harness, sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter });
   // The harness runtime, wired to everything a turn needs: the store handle (its
   // transcript and its workspace), the ONE guard-bound registry, the merged pack
@@ -156,6 +160,11 @@ const harnessTurnConfig = (
   const { harness, sandbox, store, files, guard, boundTools, capability, catalog } = composition;
   const { inference, system, toolSearch, capabilityMiss } = composition;
   const { serviceCatalog, toolOutputCap, connectGate, membershipsSeam, writerDesignBrief } = composition;
+  // The host's `surfaces.agent` menu, bound at the harness door's registry
+  // handle so it curates EVERY brain's `turn.tools.list()` — see withAgentMenu.
+  // `agentMenu` is composed after this phase (compose-discovery.ts) and only
+  // read inside a request, hence the lazy property read.
+  const menuBoundTools = withAgentMenu(boundTools, () => composition.agentMenu());
   return {
     harness: harness as Harness<never>,
     // The composed sandbox adapter, threaded through so a spawned harness's
@@ -168,7 +177,7 @@ const harnessTurnConfig = (
     // whole point of resolving it once.
     files,
     guard,
-    tools: boundTools,
+    tools: menuBoundTools,
     skills: capability.skills,
     // The SAME normalized catalog the prompt summary is built from, so the
     // reference files on the mount and the components the model is told about
@@ -185,18 +194,17 @@ const harnessTurnConfig = (
       guard,
       ctx,
       system,
-      // Both rails now reach the harness path (`createDiscoveryRails`), so the
-      // prompt may promise them — and must, or the model is handed the miss
-      // reporter and a discovery rail with no instructions about either. WHICH
-      // discovery section rides is the turn's to say: an uncurated surface has no
-      // `find_tools`, so teaching it would name a tool that is not there.
+      // The miss reporter is a runtime rail and `find_tools` is vendo()'s own
+      // hand, so the prompt may promise them — and must, or the model is handed
+      // either with no instructions. WHICH discovery section rides is the
+      // turn's to say (a prompt-only signal now, keyed on `toolSurface.curated`
+      // in harness-turn.ts): an uncurated surface has no `find_tools`, so
+      // teaching it would name a tool that is not there.
       true,
       opts?.discovery ?? "find-tools",
     )}\n\n${writerDesignBrief()}`,
-    // Projected for THIS ctx, so THE LAW's unattended filter (design §12) decides
-    // what the model is even shown — not just what it is allowed to run.
-    descriptors: (ctx) => boundTools.descriptors(ctx),
-    // The discovery rails, defined once above and handed to the one thinker.
+    // vendo()'s tool-search strategy (for the composed adapter slot) and the
+    // honest-refusal rail, defined once (compose-prompt.ts).
     toolSearch,
     capabilityMiss,
     // The SAME condition the catalog pair is gated on above. The section teaches

@@ -21,11 +21,8 @@ export { defineHarness } from "./define.js";
 export { assertHarnessComposable, type ComposedAdapters } from "./compose.js";
 export {
   createHarnessRuntime,
-  reportHire,
-  VENDO_SUBAGENT_PART,
   type HarnessRuntime,
   type HarnessRuntimeDeps,
-  type HireRecord,
   type TranscriptStore,
   type TurnRunInput,
 } from "./runtime.js";
@@ -34,15 +31,6 @@ export {
 // Everything else that harness owns — its loop and its provider ladder — lives
 // behind `@vendoai/harnesses/vendo`, one subpath per harness.
 export { vendo, type HarnessHand, type VendoHarnessDeps, type VendoHarnessOptions } from "./vendo/vendo.js";
-// §4.1 item 4 — the shipped per-tenant token ceiling, for a door's `stopWhen`.
-// Public because the ceiling belongs to whoever is being metered.
-export { tokenBudgetStop } from "./vendo/loop.js";
-export {
-  createDiscoveryRails,
-  type DiscoveryOptions,
-  type DiscoveryRails,
-  type MetaTool,
-} from "./discovery.js";
 export {
   APPROVAL_WAIT_MS,
   createApprovalWaiter,
@@ -69,14 +57,6 @@ export {
   validateUpsert,
 } from "./transcript-rules.js";
 export { type ToolBridgeOptions } from "./tool-bridge.js";
-export {
-  DEFAULT_MAX_INITIAL_TOOLS,
-  FIND_TOOLS_TOOL_NAME,
-  type ToolSearchConfig,
-  type ToolSearchFn,
-  type ToolSearchMatch,
-  type ToolSearchSession,
-} from "./tool-search.js";
 export {
   latestUserIntent,
   type CapabilityMissConfig,

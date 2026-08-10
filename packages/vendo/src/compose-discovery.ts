@@ -13,39 +13,18 @@ import type { VendoComposition } from "./compose-context.js";
 import { selectConnections, withDisconnectInvalidation } from "./compose-selection.js";
 import { USE_SERVICE_TOOL } from "./connector-discovery.js";
 import { memoizedSurfaceMenu } from "./surface-menu.js";
-import { VENDO_TOOL_PACK_PREFIX } from "./tool-pack.js";
 
-/** The host's curated agent menu (`surfaces.agent`), and the two doors into the
- *  toolset it has to hold at. */
-const agentMenuFor = (composition: VendoComposition): Pick<VendoComposition,
-  "agentMenu" | "onAgentMenu" | "loadoutSeedFor"> => {
+/** The host's curated agent menu (`surfaces.agent`). Resolved here at the
+ *  composition seam, and BOUND at the harness door's registry projection
+ *  (`withAgentMenu` in compose-harness.ts) so it curates every brain's
+ *  `turn.tools.list()` — not inside the registry, because
+ *  `actions.descriptors()` is also what the MCP door and the host's own code
+ *  read, and those surfaces have their own menus. Successes are cached for the
+ *  process (a menu is boot config); failures are warned and never cached (see
+ *  memoizedSurfaceMenu). */
+const agentMenuFor = (composition: VendoComposition): Pick<VendoComposition, "agentMenu"> => {
   const { actions } = composition;
-  // `surfaces.agent` (.vendo/overrides.json): the host's curated agent menu.
-  // Enforced HERE, at the composition seam, and not inside the registry —
-  // `actions.descriptors()` is also what the MCP door and the host's own code
-  // read, and those surfaces have their own menus. Successes are cached for the
-  // process (a menu is boot config); failures are warned and never cached (see
-  // memoizedSurfaceMenu).
-  const agentMenu = memoizedSurfaceMenu(() => actions.surfaceMenu("agent"));
-  /** Keep only entries the agent menu offers. Vendo's OWN `vendo_*` runtime
-   *  tools are never curated away: surfaces curate a product's API surface, not
-   *  the runtime's plumbing (gating `vendo_apps_*` or `find_tools` out
-   *  would break the product, not trim it). */
-  async function onAgentMenu<T>(entries: T[], nameOf: (entry: T) => string): Promise<T[]> {
-    const menu = await agentMenu();
-    if (menu === undefined) return entries;
-    return entries.filter((entry) => {
-      const name = nameOf(entry);
-      return name.startsWith(VENDO_TOOL_PACK_PREFIX) || menu.has(name);
-    });
-  }
-  // No `connectedToolkitsFor` read: the seed stopped narrowing by connected
-  // toolkit when lazy expansion went, and keeping the call would have spent a
-  // broker round-trip per turn on an argument nobody reads.
-  async function loadoutSeedFor(): Promise<string[]> {
-    return onAgentMenu(await actions.loadoutSeed(), (name) => name);
-  }
-  return { agentMenu, onAgentMenu, loadoutSeedFor };
+  return { agentMenu: memoizedSurfaceMenu(() => actions.surfaceMenu("agent")) };
 };
 
 /** Per-subject connected-toolkit lookups, cached briefly. */
@@ -86,9 +65,8 @@ const connectedToolkits = (composition: VendoComposition): Pick<VendoComposition
       return undefined;
     }
   }
-  // Hoisted (function declaration): the apps composition above references it
-  // as the agent's connected-toolkit loadout seed; `connections` is declared below
-  // and only read at request time (same pattern as loadoutSeedFor). Built on
+  // Hoisted (function declaration): the apps composition above references it;
+  // `connections` is declared below and only read at request time. Built on
   // the discovery-lane cache primitives: cached hit serves, miss fetches and
   // caches; lookup failure degrades to "no connected toolkits" this call.
   async function connectedToolkitsFor(ctx: RunContext): Promise<string[]> {
@@ -150,8 +128,8 @@ const serviceCatalogLookups = (composition: VendoComposition): Pick<VendoComposi
 
 /** The discovery lane, composed as one. */
 export const composeDiscovery = (composition: VendoComposition): Pick<VendoComposition,
-  "connectedToolkitsCache" | "agentMenu" | "onAgentMenu" | "subjectHasToolkit"
-  | "connectedToolkitsFor" | "loadoutSeedFor" | "serviceToolOwner" | "serviceToolRisk"> => ({
+  "connectedToolkitsCache" | "agentMenu" | "subjectHasToolkit"
+  | "connectedToolkitsFor" | "serviceToolOwner" | "serviceToolRisk"> => ({
   ...connectedToolkits(composition),
   ...agentMenuFor(composition),
   ...serviceCatalogLookups(composition),

@@ -1,19 +1,17 @@
 /**
- * The two escalations the orchestrator ruled COMPLETE:
+ * The abort invariant is ENFORCED, not raced for — the runtime drops unpaired
+ * tool parts at persist time, so a mid-call abort can never land a dangling
+ * tool call in the transcript for a provider to reject later.
  *
- * A. The abort invariant is ENFORCED, not raced for — the runtime drops unpaired
- *    tool parts at persist time, so a mid-call abort can never land a dangling
- *    tool call in the transcript for a provider to reject later.
- * C. A subagent hire is visible — one audit row plus one persisted-but-unrendered
- *    `data-vendo-subagent` receipt. Persisted-with-no-renderer is the
- *    transcript-only channel (the transient status part's trick, in reverse), so
- *    `HarnessEvent` stays closed and the runtime owns both writes.
+ * (Escalation A of the receipts-era suite; the hire-receipt half of that file
+ * died with the receipt path — usage folding is pinned in runtime.test.ts and
+ * vendo/ledger.test.ts.)
  */
 import type { ThreadId } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import { defineHarness } from "../src/define.js";
-import { createHarnessRuntime, reportHire, VENDO_SUBAGENT_PART } from "../src/runtime.js";
+import { createHarnessRuntime } from "../src/runtime.js";
 import {
   boundRegistry,
   ctx,
@@ -27,7 +25,7 @@ import {
   userMessage,
 } from "../src/test-doubles.test-util.js";
 
-const THREAD = "thr_receipts" as ThreadId;
+const THREAD = "thr_dangling" as ThreadId;
 
 function fixture(tools: Parameters<typeof boundRegistry>[0] = {}) {
   const guard = testGuard();
@@ -56,7 +54,7 @@ function fixture(tools: Parameters<typeof boundRegistry>[0] = {}) {
   return { guard, run, persisted };
 }
 
-describe("A — an unpaired tool part never reaches the transcript", () => {
+describe("an unpaired tool part never reaches the transcript", () => {
   it("drops a call the turn ended before resolving", async () => {
     let release: (() => void) | undefined;
     const f = fixture({
@@ -153,98 +151,5 @@ describe("A — an unpaired tool part never reaches the transcript", () => {
     const stored = await transcript.list({ kind: "user", subject: "u1" }, THREAD);
     // The denial is recorded (output-denied), and nothing was silently pruned.
     expect(stored.at(-1)!.parts.some((part) => part.type === "dynamic-tool")).toBe(true);
-  });
-});
-
-describe("C — a hire leaves a receipt and an audit row", () => {
-  const hire = {
-    purpose: "build the invoices app",
-    skill: "building-apps",
-    summary: "Built a three-group invoices app and checked it.",
-    usage: { inputTokens: 90_000, outputTokens: 4_000 },
-  };
-
-  it("writes a persisted data-vendo-subagent receipt", async () => {
-    const f = fixture();
-    const parts = await f.run(
-      defineHarness({
-        name: "vendo",
-        async *run() {
-          reportHire(hire);
-          yield { type: "text", delta: "Your app is ready." };
-        },
-      }),
-    );
-    const receipt = parts.find((part) => part.type === VENDO_SUBAGENT_PART);
-    expect(receipt).toMatchObject({
-      data: { purpose: hire.purpose, skill: hire.skill, summary: hire.summary },
-    });
-    // Persisted, NOT transient: the transcript is the point of a receipt.
-    expect((receipt as { transient?: boolean }).transient).toBeUndefined();
-  });
-
-  it("keeps the receipt in the transcript — one line, never the screen's business", async () => {
-    const f = fixture();
-    await f.run(
-      defineHarness({
-        name: "vendo",
-        async *run() {
-          reportHire(hire);
-          yield { type: "text", delta: "Your app is ready." };
-        },
-      }),
-    );
-    const stored = await f.persisted();
-    const receipts = stored.flatMap((message) =>
-      message.parts.filter((part) => part.type === VENDO_SUBAGENT_PART),
-    );
-    expect(receipts).toHaveLength(1);
-    // Design §6's bar: a receipt is ~80 tokens, not a transcript of the helper.
-    expect(JSON.stringify(receipts[0]).length).toBeLessThan(400);
-  });
-
-  it("writes one audit row naming the harness, the purpose and the tokens", async () => {
-    const f = fixture();
-    await f.run(
-      defineHarness({
-        name: "vendo",
-        async *run() {
-          reportHire(hire);
-          yield { type: "text", delta: "done" };
-        },
-      }),
-    );
-    const rows = f.guard.events.filter(
-      (event) => event.kind === "run" && JSON.stringify(event.detail).includes("subagent"),
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.principal).toEqual({ kind: "user", subject: "u1" });
-    expect(rows[0]!.detail).toMatchObject({
-      harness: "vendo",
-      subagent: { purpose: hire.purpose, skill: hire.skill, usage: hire.usage },
-    });
-  });
-
-  it("a hire reported outside any turn is dropped, not thrown", () => {
-    expect(() => reportHire(hire)).not.toThrow();
-  });
-
-  it("records every hire of a turn", async () => {
-    const f = fixture();
-    await f.run(
-      defineHarness({
-        name: "vendo",
-        async *run() {
-          reportHire(hire);
-          reportHire({ ...hire, purpose: "a second job" });
-          yield { type: "text", delta: "done" };
-        },
-      }),
-    );
-    const stored = await f.persisted();
-    const receipts = stored.flatMap((message) =>
-      message.parts.filter((part) => part.type === VENDO_SUBAGENT_PART),
-    );
-    expect(receipts).toHaveLength(2);
   });
 });

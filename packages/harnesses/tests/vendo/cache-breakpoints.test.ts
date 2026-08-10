@@ -91,7 +91,7 @@ function markedIndexes(prompt: StepPrompt): number[] {
 }
 
 /** One turn, drained; the recorded per-step calls are the whole assertion surface. */
-async function runTurn(session?: { activeToolNames(): string[]; attach(): void }) {
+async function runTurn(activeTools?: () => string[]) {
   const model = threeStepModel();
   const loop = await startTurn({
     model,
@@ -99,7 +99,7 @@ async function runTurn(session?: { activeToolNames(): string[]; attach(): void }
     messages: thread(),
     tools: { echo, untouched },
     context: { maxSteps: 5 },
-    ...(session === undefined ? {} : { toolSearch: session as never }),
+    ...(activeTools === undefined ? {} : { activeTools }),
   });
   for await (const _part of loop.result.fullStream) void _part;
   return model.doStreamCalls;
@@ -148,11 +148,11 @@ describe("the cache breakpoint advances every step", () => {
     }
   });
 
-  it("still carries the tool-search loadout on the same hook", async () => {
+  it("still carries the caller's activeTools loadout on the same hook", async () => {
     // `prepareStep` used to exist ONLY under a tool-search session. It is returned
     // on every turn now, and the loadout rides the same result — so a run that
     // gates the model's choice must still gate it.
-    const calls = await runTurn({ activeToolNames: () => ["echo"], attach: () => {} });
+    const calls = await runTurn(() => ["echo"]);
     expect(calls.length).toBe(3);
     for (const [step, call] of calls.entries()) {
       expect((call.tools ?? []).map((entry) => entry.name), `step ${step}`).toEqual(["echo"]);

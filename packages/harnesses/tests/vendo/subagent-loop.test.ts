@@ -10,8 +10,9 @@
  *
  * What this suite pins: a hire goes through `startTurn` (asserted by rails only
  * that loop has), it still cannot hire — both depth-1 locks — two hires still
- * run at the same time (full parallelism, writes included), and the ledger still
- * partitions the turn into a resident run row plus one audit row per hire.
+ * run at the same time (full parallelism, writes included), and the turn's
+ * usage events still partition it: the resident's own figure plus one event per
+ * hire, which the runtime sums into the one run row.
  */
 import {
   ASK_USER_TOOL,
@@ -26,7 +27,6 @@ import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { vendo, type VendoHarnessOptions } from "../../src/vendo/vendo.js";
 import { createTurnTools } from "../../src/turn-tools.js";
-import type { HireRecord } from "../../src/runtime.js";
 import {
   ctx,
   readTool,
@@ -246,16 +246,11 @@ function overlappingHires(): { model: LanguageModel; order: string[] } {
   return { model, order };
 }
 
-describe("two hires in one step, and one ledger between them", () => {
+describe("two hires in one step, and one metering channel between them", () => {
   it("runs both specialists at the same time and partitions the turn's tokens", async () => {
     const { model, order } = overlappingHires();
-    const hires: HireRecord[] = [];
 
-    const events = await driveTurn({
-      harness: vendo({ onHire: (record) => hires.push(record) }),
-      registry: NO_TOOLS,
-      model,
-    });
+    const events = await driveTurn({ harness: vendo(), registry: NO_TOOLS, model });
 
     // Both started before either finished — overlap in time, not two turns in a
     // row. Write-lane serialization was explicitly rejected.
@@ -263,45 +258,15 @@ describe("two hires in one step, and one ledger between them", () => {
     expect(order.slice(0, 2).map((entry) => entry.split(":")[0])).toEqual(["start", "start"]);
     expect(texts(events)).toBe("Both specialists are done.");
 
-    // The run row is the RESIDENT's spend and only it: 900/80, not 90,900/4,080.
-    const usage = events.find((event) => event.type === "usage") as
-      | Extract<HarnessEvent, { type: "usage" }>
-      | undefined;
-    expect(usage).toMatchObject({ inputTokens: 900, outputTokens: 80 });
-
-    // ...and each hire is its own audit row, in full. Summing the rows prices the
-    // turn exactly once.
-    expect(hires).toHaveLength(2);
-    expect(hires.map((record) => record.usage!.inputTokens)).toEqual([45_000, 45_000]);
-    expect(hires.map((record) => record.usage!.outputTokens)).toEqual([2_000, 2_000]);
-    expect(hires.map((record) => record.purpose).sort()).toEqual(["job one", "job two"]);
-  });
-
-  it("hands back the finished work even when the receipt cannot be booked", async () => {
-    const model = scriptedModel([
-      toolCallTurn(HIRE_SUBAGENT, { instructions: "the big job" }),
-      textTurn("the big job is done"),
-      textTurn("All set."),
-    ]);
-
-    const events = await driveTurn({
-      // `onHire` is a public knob a host overrides to observe hires somewhere of
-      // its own, so its failures are the host's, not the specialist's.
-      harness: vendo({
-        onHire: () => {
-          throw new Error("receipt sink is down");
-        },
-      }),
-      registry: NO_TOOLS,
-      model,
-    });
-
-    // The specialist ran and its tokens are already spent. Reporting a bookkeeping
-    // failure as "could not be reached" invites the one reaction that costs real
-    // money — hiring again for a job that is already done and already paid for.
-    const afterTheHire = JSON.stringify(model.prompts[2]);
-    expect(afterTheHire).toContain("the big job is done");
-    expect(afterTheHire).not.toContain("could not be reached");
-    expect(texts(events)).toBe("All set.");
+    // Three usage events partitioning the turn: the RESIDENT's own spend
+    // (900/80, never 90,900/4,080), then one per hire, in full. The runtime's
+    // `addUsage` sums them into the one run row, so the turn prices exactly once.
+    const usages = events.filter(
+      (event): event is Extract<HarnessEvent, { type: "usage" }> => event.type === "usage",
+    );
+    expect(usages).toHaveLength(3);
+    expect(usages[0]).toMatchObject({ inputTokens: 900, outputTokens: 80 });
+    expect(usages.slice(1).map((usage) => usage.inputTokens)).toEqual([45_000, 45_000]);
+    expect(usages.slice(1).map((usage) => usage.outputTokens)).toEqual([2_000, 2_000]);
   });
 });

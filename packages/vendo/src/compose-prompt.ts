@@ -6,7 +6,8 @@
  * a `createAgent` that no longer exists, once for the harness runtime. They are
  * defined ONCE here and handed to the runtime below.
  */
-import type { CapabilityMissConfig, ToolSearchConfig } from "@vendoai/harnesses";
+import type { CapabilityMissConfig } from "@vendoai/harnesses";
+import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
 import { catalogThemeSummary } from "./catalog.js";
 import type { CloudConfig } from "./cloud-config.js";
 import type { VendoComposition } from "./compose-context.js";
@@ -53,43 +54,23 @@ export const composePrompt = (composition: VendoComposition): Pick<VendoComposit
         ...(knowledgeIndex === undefined ? {} : { knowledge: knowledgeIndex }),
       }
     : undefined;
-  // ONE definition of each discovery rail, for the one thinker: the harness
-  // runtime. They were written twice — once here for `createAgent`, once for the
-  // runtime — and a rail that existed on one path and not the other is exactly
-  // why `POST /threads` could not be pointed at the harness for so long.
+  // The honest-refusal rail, defined once for the one thinker: the harness
+  // runtime lists the reporter beside the projected tools.
   const capabilityMiss: CapabilityMissConfig = {
     hostId: missCapture.hostId,
     surface: () => missSurface().then(({ hash }) => ({ format: "vendo/tools@1" as const, hash })),
     emit: (event) => missCapture.record(event),
   };
-  // ENG-252: the agent starts with a bounded loadout and discovers the rest via
-  // `find_tools`. The search seam is the SAME guard-bound registry the
-  // agent executes through — a searched-in tool has no unguarded path.
-  const toolSearch: ToolSearchConfig = {
-    // Annotate results the subject cannot run yet. The tool description and the
-    // system prompt both promise this, and the connect-card flow depends on it;
-    // same predicate the connect gate executes against, so the annotation and
-    // the refusal can never disagree.
-    connectRequired: async (toolkit, toolkitCtx) => !(await composition.subjectHasToolkit(toolkit, toolkitCtx)),
-    // A curated agent menu has to hold at BOTH doors into the toolset: the
-    // per-turn seed below and search. Filtering only the seed would let the
-    // model search its way back to an off-menu tool.
-    search: async (query, options) => composition.onAgentMenu(
-      await actions.search(query, options),
-      (match) => match.name,
-    ),
-    // Connection-scoped loadout seed (spec 2026-07-20): each turn starts
-    // with host tools + the principal's connected toolkits — never an
-    // alphabetical slice of a lazy catalog. `connections` is declared below
-    // this composition; turns only run after createVendo returns, so the
-    // closure reference is safe.
-    seed: () => composition.loadoutSeedFor(),
-    // The curated agent menu also binds an explicit `loadout`: host config
-    // chooses WITHIN the menu, it does not escape it.
-    menu: async () => {
-      const menu = await composition.agentMenu();
-      return menu === undefined ? undefined : [...menu];
-    },
+  // ENG-252, de-brained: `vendo()` starts with a bounded loadout and discovers
+  // the rest through its own `find_tools` hand — this is the strategy config
+  // composition hands it (compose-harness.ts / the adapter slot). The search
+  // seam is the registry's own scorer; a match only becomes CALLABLE through
+  // the projected, menu-bound listing (`withAgentMenu` on the harness door's
+  // registry handle), so search has no path back to an off-menu or withheld
+  // tool. No connect-required annotation any more (deliberate cut): the
+  // connect card at call time is the flow that actually converts.
+  const toolSearch: VendoToolSearchConfig = {
+    search: async (query, options) => actions.search(query, options),
     ...(config.maxInitialTools === undefined ? {} : { maxInitialTools: config.maxInitialTools }),
     ...(config.loadout === undefined ? {} : { loadout: [...config.loadout] }),
   };

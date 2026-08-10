@@ -13,7 +13,8 @@
  * It drives ONE real composed turn through `vendo.handler` — real store, real
  * guard, real registry, real policy, a real interactive approval answered over the
  * wire — carrying every routing class §3 names: text, a guarded call, an approval,
- * an error, an in-box file op, a subagent receipt, and usage.
+ * an error, an in-box file op, and usage (in several events, the way a harness
+ * that staffs helpers reports).
  *
  * WHAT "⊇" MEANS HERE, precisely. Read strictly as sets of events the relation is
  * false, and deliberately so: §3's own routing table sends `text` to "screen +
@@ -30,7 +31,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Principal, ToolDescriptor, ToolRegistry } from "@vendoai/core";
-import { defineHarness, reportHire } from "@vendoai/harnesses";
+import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
@@ -196,15 +197,12 @@ async function runTheTurn(): Promise<TurnResult> {
       // transcript part, so it can only ever make the audit plane the larger one.
       await turn.workspace.writeFile("/user/memory/notes.md", "she prefers tables\n");
 
-      // Hired staff → one transcript receipt line, one audit row.
-      reportHire({
-        purpose: "Check the invoice totals add up",
-        summary: "They do.",
-        usage: { inputTokens: 120, outputTokens: 20 },
-      });
-
-      // usage → audit/metering ONLY. This is the half billing reads.
+      // usage → audit/metering ONLY. This is the half billing reads. TWO events
+      // — the resident's own figure and a helper's — because that is how a
+      // harness that staffs helpers reports since the receipt path died: the
+      // events partition the turn and the runtime sums them into ONE run row.
       yield { type: "usage", inputTokens: 900, outputTokens: 300, model: "test-model" };
+      yield { type: "usage", inputTokens: 120, outputTokens: 20, model: "test-model" };
 
       yield { type: "text", delta: "Done — the payment is sent." };
 
@@ -284,10 +282,6 @@ const ACCOUNTABLE_PARTS: Record<string, Accountable> = {
   // decision row, which is a different event. Correlating on `kind` alone let a
   // dropped park write stay green because the decision row covered for it.
   "data-vendo-approval": (row) => row.kind === "approval" && row.outcome === "pending-approval",
-  // The subagent receipt (persisted, unrendered). `reportRun` gives it its own
-  // row because the guard never saw the hire — only the specialist's calls.
-  "data-vendo-subagent": (row) =>
-    row.kind === "run" && typeof (row.detail as { subagent?: unknown } | undefined)?.subagent === "object",
   // The turn's failure, kept in the transcript so a reload still says why the
   // answer never came (self-serve P). The audit plane's counterpart is the run
   // row's `error` — one turn can only fail once, so one part, one row.
@@ -324,7 +318,7 @@ describe("audit ⊇ transcript (design §3, evaluation E7)", () => {
     expect(new Set(accountable.map((part) => String(part["type"])))).toEqual(
       new Set(Object.keys(ACCOUNTABLE_PARTS)),
     );
-    // Three tool parts + the approval card + the receipt.
+    // Three tool parts + the approval card + the turn error.
     expect(accountable.length).toBeGreaterThanOrEqual(5);
 
     for (const part of accountable) {
@@ -345,21 +339,18 @@ describe("audit ⊇ transcript (design §3, evaluation E7)", () => {
     const rows = await auditRows(store);
     const storyText = JSON.stringify(messages);
 
-    // Metering: the tokens billing charges for are in the audit plane…
-    const metered = rows.find(
+    // Metering: the tokens billing charges for are in the audit plane, as ONE
+    // run row whose usage is the SUM of every `usage` event the turn yielded
+    // (the resident's 900/300 plus the helper's 120/20). Pinned because this is
+    // exactly what a "sum the run rows" reconciliation reads — the per-hire row
+    // it used to have to know about is gone.
+    const metered = rows.filter(
       (row) => row.kind === "run" && (row.detail as { usage?: unknown } | undefined)?.usage !== undefined,
     );
-    const usage = (metered?.detail as { usage?: { inputTokens?: number; outputTokens?: number } } | undefined)?.usage;
-    expect(usage?.inputTokens).toBe(900);
-    expect(usage?.outputTokens).toBe(300);
-    // The specialist's spend is NOT folded into the turn total — it rides its own
-    // row. Pinned because it is the half a naive "sum the run rows" reconciliation
-    // would double-count or miss entirely, and nothing else says which it is.
-    const hired = rows.find(
-      (row) => row.kind === "run" && (row.detail as { subagent?: unknown } | undefined)?.subagent !== undefined,
-    );
-    expect((hired?.detail as { subagent?: { usage?: unknown } } | undefined)?.subagent?.usage)
-      .toEqual({ inputTokens: 120, outputTokens: 20 });
+    expect(metered).toHaveLength(1);
+    const usage = (metered[0]?.detail as { usage?: { inputTokens?: number; outputTokens?: number } } | undefined)?.usage;
+    expect(usage?.inputTokens).toBe(1_020);
+    expect(usage?.outputTokens).toBe(320);
     // …and NOWHERE in the story layer. `usage` is the one yield with no screen
     // and no transcript route at all, so a token count appearing in a persisted
     // part means the routing table was widened without anyone saying so.

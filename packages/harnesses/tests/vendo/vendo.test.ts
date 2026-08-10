@@ -15,7 +15,6 @@ import { describe, expect, it } from "vitest";
 import { vendo, type HarnessHand, type VendoHarnessDeps, type VendoHarnessOptions } from "../../src/vendo/vendo.js";
 import { createTurnState } from "../../src/harness-state.js";
 import { createTurnTools } from "../../src/turn-tools.js";
-import type { HireRecord } from "../../src/runtime.js";
 import {
   boundRegistry,
   ctx,
@@ -448,7 +447,7 @@ describe("vendo() — subagent hiring (build-list item 4)", () => {
     expect(briefOf(model.prompts[1])).toContain('The "building-apps" skill could not be loaded');
   });
 
-  it("reports the specialist's tokens as the SPECIALIST's, never folded into the turn's", async () => {
+  it("yields the specialist's tokens as their OWN usage event — the events partition the turn", async () => {
     const model = scriptedModel([
       toolCallTurn("hire_subagent", { instructions: "big job" }),
       // The specialist's own turn spends the bulk of the tokens.
@@ -461,24 +460,17 @@ describe("vendo() — subagent hiring (build-list item 4)", () => {
         outputTokens: { total: 100, text: 100, reasoning: 0 },
       }),
     ]);
-    const hires: HireRecord[] = [];
-    const { events } = await drive({
-      harness: vendo({ onHire: (record) => hires.push(record) }),
-      models: seats(model),
-      skills,
-    });
-    const usage = events.find((event) => event.type === "usage") as
-      | Extract<HarnessEvent, { type: "usage" }>
-      | undefined;
-    // The resident loop's own spend. Adding the hire's 90,000 here as well is
-    // what over-billed: the hire is ALSO reported below, and the runtime writes
-    // each report as its own audit row, so a host summing rows paid twice.
-    expect(usage?.inputTokens).toBe(1_000);
-    expect(usage?.outputTokens).toBe(100);
-    // The hire's spend, once, in full — cache split included, because its row is
-    // the only row that carries it. (The rows themselves: ./ledger.test.ts.)
-    expect(hires).toHaveLength(1);
-    expect(hires[0]!.usage).toMatchObject({ inputTokens: 90_000, outputTokens: 4_000 });
+    const { events } = await drive({ harness: vendo(), models: seats(model), skills });
+    const usages = events.filter(
+      (event): event is Extract<HarnessEvent, { type: "usage" }> => event.type === "usage",
+    );
+    // Two events: the resident loop's own spend, then the hire's, in full.
+    // Folding the hire into the resident's figure AND reporting it separately is
+    // what used to over-bill; partitioned events sum to the turn exactly once
+    // (the run row they fold into: ./ledger.test.ts).
+    expect(usages).toHaveLength(2);
+    expect(usages[0]).toMatchObject({ inputTokens: 1_000, outputTokens: 100 });
+    expect(usages[1]).toMatchObject({ inputTokens: 90_000, outputTokens: 4_000 });
   });
 
   it("a subagent cannot hire a subagent — depth is bounded", async () => {

@@ -16,7 +16,6 @@ import {
   withSseKeepalive,
   type ApprovalId,
   type AuditEvent,
-  type Json,
   type Guard,
   type Harness,
   type HarnessEvent,
@@ -31,13 +30,13 @@ import {
   type TurnTools,
   type WorkspaceFs,
 } from "@vendoai/core";
-import { AsyncLocalStorage } from "node:async_hooks";
 import {
   abandonPendingApprovals,
   clearFailedTurnRecord,
   guardApprovalIds,
   validateUpsert,
 } from "./transcript-rules.js";
+import { createCapabilityMissDetector, type CapabilityMissConfig } from "./capability-miss.js";
 import type { ToolBridgeOptions } from "./tool-bridge.js";
 import {
   createUIMessageStream,
@@ -53,7 +52,6 @@ import {
   memoryHarnessStateStore,
   type HarnessStateStore,
 } from "./harness-state.js";
-import type { DiscoveryRails } from "./discovery.js";
 import { createTurnTools, type MirrorEvent } from "./turn-tools.js";
 import { specificWireErrorMessage } from "./wire-error.js";
 import { TextChannel, writeError, writeMirror, writeStatus, writeTurnError, writeView } from "./wire.js";
@@ -71,44 +69,6 @@ function deepFreeze<T>(value: T): T {
     Object.freeze(value);
   }
   return value;
-}
-
-/**
- * The transcript-only channel. A persisted data part with NO renderer reaches the
- * transcript and never the screen — the transient status part's trick in reverse —
- * which is what lets a subagent receipt exist without opening the closed
- * `HarnessEvent` vocabulary. The runtime owns the write; a harness only reports.
- */
-export const VENDO_SUBAGENT_PART = "data-vendo-subagent" as const;
-
-/** Design §6's ~80-token receipt: what the specialist was for, and what it cost. */
-export interface HireRecord {
-  /** Consumer-voice: what the specialist was hired to accomplish. */
-  purpose: string;
-  skill?: string;
-  /** The specialist's own report back, as the resident received it. */
-  summary: string;
-  /** This hire's spend and nobody else's — the full shape, so its row prices on
-   *  its own. The turn's `usage` event never carries it: see `reportRun`. */
-  usage?: UsageTotals;
-}
-
-/**
- * Per-turn sink for hire reports. AsyncLocalStorage rather than a module-level
- * variable because a `harness:` slot is constructed ONCE for the deployment while
- * turns run concurrently — a shared variable would attribute one user's hire to
- * another user's thread.
- */
-const hireSink = new AsyncLocalStorage<(record: HireRecord) => void>();
-
-/**
- * Report a hired specialist. Composition wires this into the harness
- * (`vendo({ onHire: reportHire })`); the runtime turns it into an audit row and a
- * transcript receipt. Outside a turn it is a no-op: a harness driven by something
- * other than this runtime must not crash for want of a receipt.
- */
-export function reportHire(record: HireRecord): void {
-  hireSink.getStore()?.(record);
 }
 
 /** Build contract §6 — lane D's `threadMessageStore(store)` return value. Typed
@@ -193,12 +153,11 @@ export interface TurnRunInput<Options = unknown> {
    *  the ctx — and the runtime's to deliver, which is what puts a NAMED harness on
    *  the same brief as the default one. */
   system?: string;
-  /** The shipped discovery rails for THIS turn (`createDiscoveryRails`): the
-   *  loadout `list()` is curated by, plus `find_tools` and the capability-miss
-   *  reporter as callable meta-tools. Per turn, not per runtime, because every
-   *  input it needs is ctx-shaped — the projected catalog, the connection-scoped
-   *  seed, the surface menu, the user's latest intent. */
-  discovery?: DiscoveryRails;
+  /** The capability-miss rail for THIS turn: the honest-refusal reporter, listed
+   *  beside the projected tools, plus the repeated-failure detector on the
+   *  bridge. Per turn, not per runtime, because the intent is the user's latest
+   *  ask (`latestUserIntent(messages)`). */
+  capabilityMiss?: { config: CapabilityMissConfig; intent: string; threadId?: ThreadId };
   signal?: AbortSignal;
 }
 
@@ -339,8 +298,22 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
         turnErrorRecorded = true;
         writeTurnError(write, message);
       };
-      // Hoisted beside them: onFinish audits what execute collected.
-      const hires: HireRecord[] = [];
+
+      // The capability-miss rail, built here because the detector needs the
+      // resolved ctx. `available` bounds a report's `toolsConsidered` to the
+      // projected surface, resolved only when a miss is actually reported.
+      const capabilityMiss = input.capabilityMiss === undefined
+        ? undefined
+        : createCapabilityMissDetector({
+            config: input.capabilityMiss.config,
+            ctx,
+            intent: input.capabilityMiss.intent,
+            ...(input.capabilityMiss.threadId === undefined
+              ? {}
+              : { threadId: input.capabilityMiss.threadId }),
+            available: async () =>
+              new Set((await deps.tools.descriptors(ctx)).map((descriptor) => descriptor.name)),
+          });
 
       // A harness turn stays OPEN while a call is parked, so `onFinish` is much
       // too late to be this turn's only save: until the tap comes there is
@@ -415,13 +388,13 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             // in one turn reports itself, wherever the failure came from.
             bridge: {
               ...deps.bridge,
-              ...(input.discovery?.onCall === undefined ? {} : { onCall: input.discovery.onCall }),
+              ...(capabilityMiss === undefined ? {} : { onCall: capabilityMiss.onCall }),
               writer,
               connectCards: new Set<string>(),
             },
-            ...(input.discovery === undefined ? {} : { discovery: input.discovery }),
+            ...(capabilityMiss === undefined ? {} : { capabilityMiss: capabilityMiss.reporter }),
             // §1 amendment 2026-08-03: the harness's own say over the surface —
-            // whether the loadout curates it, and which names it never sees.
+            // which names it never sees (withhold).
             ...(input.harness.toolSurface === undefined
               ? {}
               : { toolSurface: input.harness.toolSurface }),
@@ -452,19 +425,6 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
                 error: error instanceof Error ? error.message : String(error),
               });
             }
-          };
-
-          const recordHire = (record: HireRecord): void => {
-            hires.push(record);
-            // The receipt: persisted (no `transient`), unrendered by design.
-            writer.write({
-              type: VENDO_SUBAGENT_PART,
-              data: {
-                purpose: record.purpose,
-                ...(record.skill === undefined ? {} : { skill: record.skill }),
-                summary: record.summary,
-              },
-            } as never);
           };
 
           const turn: Turn<Options> = {
@@ -507,9 +467,6 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
           });
 
           try {
-            // Every hire the harness makes inside this turn lands in THIS turn's
-            // records, even from a subagent several awaits deep.
-            await hireSink.run(recordHire, async () => {
             for await (const event of input.harness.run(turn)) {
               switch (event.type) {
                 case "text":
@@ -543,11 +500,12 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
                   break;
                 case "usage":
                   // Audit/metering only — never the screen, never the transcript.
+                  // A turn may yield several (the resident's own spend, then one
+                  // per hired helper); they partition the turn and sum here.
                   usage = addUsage(usage, event);
                   break;
               }
             }
-            });
           } catch (error) {
             // A harness that throws is a bug in the thinker, not in the user's
             // day. The real error goes to the operator's terminal; the user gets
@@ -594,7 +552,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
         onFinish: async ({ messages }) => {
           await persistTurn(deps.transcript, input, messages, pristine);
           await saveHarnessState(harnessState, input, state.pending());
-          await reportRun(deps.guard, input, { usage, failure, hires });
+          await reportRun(deps.guard, input, { usage, failure });
         },
         // The runtime's own last-resort gate for a runtime/transport fault.
         // A harness `error` event already reached the operator's terminal through
@@ -758,16 +716,15 @@ async function saveHarnessState(
 }
 
 /**
- * The turn's metering rows — `audit ⊇ transcript`, so billing never depends on
+ * The turn's metering row — `audit ⊇ transcript`, so billing never depends on
  * the story layer.
  *
- * HOW TO READ THEM, which is the whole rule a host needs: every row counts its
- * OWN spend and nobody else's. The `run` row's `usage` is the resident loop
- * alone; each `subagent` row's `usage` is that one hire. No row contains
- * another, so a turn's total is the SUM over its rows — and a row on its own is
- * never the total. The harness held the other half of this: it used to fold the
- * hires into the turn's `usage` event AND report each hire, so the rows
- * overlapped and every turn that hired over-billed by its hires.
+ * ONE row per turn, and its `usage` is the turn's WHOLE spend: a harness that
+ * staffs helpers yields each helper's figures as its own `usage` event and
+ * `addUsage` folds them all here — the same blended reporting a claude-code box
+ * gives. The per-hire receipt path (a `subagent` row per helper) is gone with
+ * the de-brain refactor: staffing is the brain's strategy, and the meter reads
+ * tokens, not org charts.
  */
 async function reportRun(
   guard: Guard,
@@ -775,44 +732,24 @@ async function reportRun(
   detail: {
     usage: UsageTotals | undefined;
     failure: { message: string; code?: string } | undefined;
-    hires: HireRecord[];
   },
 ): Promise<void> {
-  const row = (body: Json): AuditEvent => ({
+  if (detail.usage === undefined && detail.failure === undefined) return;
+  const event: AuditEvent = {
     id: mintAuditId(),
     at: new Date().toISOString(),
     kind: "run",
     ...auditContext(input.ctx),
-    detail: body,
-  });
-
-  const events: AuditEvent[] = [];
-  if (detail.usage !== undefined || detail.failure !== undefined) {
-    events.push(row({
+    detail: {
       harness: input.harness.name,
       ...(detail.usage === undefined ? {} : { usage: detail.usage }),
       ...(detail.failure === undefined ? {} : { error: detail.failure }),
-    }));
-  }
-  // A hire is staffing the guard never saw (only the specialist's guarded CALLS
-  // reach it), so it gets its own row: who ran, what for, what it cost.
-  for (const hire of detail.hires) {
-    events.push(row({
-      harness: input.harness.name,
-      subagent: {
-        purpose: hire.purpose,
-        ...(hire.skill === undefined ? {} : { skill: hire.skill }),
-        ...(hire.usage === undefined ? {} : { usage: hire.usage }),
-      },
-    }));
-  }
-
-  for (const event of events) {
-    try {
-      await guard.report(event);
-    } catch {
-      // A reporting failure cannot change a completed turn's result.
-    }
+    },
+  };
+  try {
+    await guard.report(event);
+  } catch {
+    // A reporting failure cannot change a completed turn's result.
   }
 }
 

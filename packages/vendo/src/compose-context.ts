@@ -40,7 +40,8 @@ import type {
   VendoTheme,
 } from "@vendoai/core";
 import type { VendoGuard, RiskResolver } from "@vendoai/guard";
-import type { CapabilityMissConfig, ToolSearchConfig } from "@vendoai/harnesses";
+import type { CapabilityMissConfig } from "@vendoai/harnesses";
+import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
 import type { McpDoor, TurnCredentials } from "@vendoai/mcp";
 import type { VendoStore } from "@vendoai/store";
 import type { createByoApprovals } from "./byo-approvals.js";
@@ -191,7 +192,7 @@ export interface VendoComposition {
   // ── compose-prompt.ts ──────────────────────────────────────────────────────
   system: Parameters<typeof import("./prompt.js").assembleSystemPrompt>[2];
   capabilityMiss: CapabilityMissConfig;
-  toolSearch: ToolSearchConfig;
+  toolSearch: VendoToolSearchConfig;
 
   // ── compose-harness.ts ─────────────────────────────────────────────────────
   harness: Harness;
@@ -211,10 +212,8 @@ export interface VendoComposition {
   // ── compose-discovery.ts ───────────────────────────────────────────────────
   connectedToolkitsCache: Map<string, { at: number; toolkits: string[] }>;
   agentMenu: () => Promise<ReadonlySet<string> | undefined>;
-  onAgentMenu: <T>(entries: T[], nameOf: (entry: T) => string) => Promise<T[]>;
   subjectHasToolkit: (toolkit: string, ctx: RunContext) => Promise<boolean | undefined>;
   connectedToolkitsFor: (ctx: RunContext) => Promise<string[]>;
-  loadoutSeedFor: () => Promise<string[]>;
   serviceToolOwner: (slug: string) => Promise<{ connector: Connector; risk: RiskLabel } | undefined>;
   serviceToolRisk: (call: ToolCall) => Promise<RiskLabel | undefined>;
   /** What the adapter rule chose, handed back on `vendo.connections` UNTOUCHED. */

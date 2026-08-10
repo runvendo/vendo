@@ -27,7 +27,6 @@ import {
   type ResolvedModels,
   type RunContext,
   type ThreadId,
-  type ToolDescriptor,
   type ToolRegistry,
   type WorkspaceFs,
 } from "@vendoai/core";
@@ -36,7 +35,6 @@ import { wrapWorkspaceForRender, type RenderSeamOptions } from "@vendoai/apps";
 import type { VendoGuard } from "@vendoai/guard";
 import { harnessStateStore, threadMessageStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import {
-  createDiscoveryRails,
   createHarnessRuntime,
   latestUserIntent,
   provideHarnessAdapters,
@@ -46,17 +44,16 @@ import {
   validateUpsert,
   type CapabilityMissConfig,
   type ToolDoorPort,
-  type DiscoveryRails,
   type HarnessRuntimeDeps,
   type ToolBridgeOptions,
-  type ToolSearchConfig,
 } from "@vendoai/harnesses";
+import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
 import type { LanguageModel, UIMessage } from "ai";
 
 export interface HarnessTurnsConfig {
   /** The resolved harness. Composition (server.ts) resolves the default —
-   *  `vendo()` with the hire reporter — so there is exactly ONE construction
-   *  and the gate-checked value IS the served value. */
+   *  `vendo()` with its tool-search strategy — so there is exactly ONE
+   *  construction and the gate-checked value IS the served value. */
   harness: Harness<never>;
   store: VendoStore;
   /** THE deployment's files adapter (`selectStore`), so workspace blobs are
@@ -90,14 +87,12 @@ export interface HarnessTurnsConfig {
     ctx: RunContext,
     opts?: { discovery?: "find-tools" | "connectors" | false },
   ) => Promise<string | undefined>;
-  /** The descriptor catalog the loadout and `find_tools` work over — projected for
-   *  THIS ctx, so THE LAW's unattended filter decides what the model can even see,
-   *  and search can never resolve its way back to a withheld tool. */
-  descriptors: (ctx: RunContext) => Promise<ToolDescriptor[]>;
-  /** The shipped `find_tools` rail: the search seam, the connect-required
-   *  annotation, and the loadout caps. Unset → no discovery rail (`list()` offers
-   *  everything projected), which is what the harness path carried before. */
-  toolSearch?: ToolSearchConfig;
+  /** vendo()'s tool-search strategy — the loadout cap and the `find_tools` hand.
+   *  Composition passes it to the DEFAULT harness at construction
+   *  (compose-harness.ts); this copy fills the composed adapter slot so a
+   *  HOST-constructed `vendo()` gets the same strategy, like `claudeCode()`'s
+   *  sandbox. Unset → no search and every projected tool offered. */
+  toolSearch?: VendoToolSearchConfig;
   /** The shipped capability-miss rail. Load-bearing for evaluation E1's fifth ask:
    *  an impossible request must produce an honest refusal, not an invention. */
   capabilityMiss?: CapabilityMissConfig;
@@ -157,12 +152,9 @@ export interface HarnessTurns {
   threads: {
     get(id: ThreadId, ctx: RunContext): Promise<Thread | null>;
     list(ctx: RunContext): Promise<ThreadSummary[]>;
-    /** Also releases the thread's searched-in loadout, so a reused id can never
-     *  inherit stale tools — the cleanup stays glued to the delete. */
     delete(id: ThreadId, ctx: RunContext): Promise<void>;
   };
-  /** D6 — drop every thread a subject owns, releasing each evicted thread's
-   *  loadout with them. */
+  /** D6 — drop every thread a subject owns. */
   evictSubject(subject: string): Promise<void>;
 }
 
@@ -229,10 +221,10 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
    * amendment), which the runtime delivers to every harness — named, defaulted, or
    * a host's own — off ONE assembly.
    *
-   * `vendo()` no longer takes a descriptor catalog either. It reads
-   * `turn.tools.list()` like any other harness, which is what puts every harness on
-   * the same discovery rail: the loadout, `find_tools` and the curated menu are the
-   * RUNTIME's, so a host's own thinker gets them without asking.
+   * `vendo()` reads `turn.tools.list()` like any other harness — the projected,
+   * menu-bound surface. How it COPES with a large one (the loadout cap,
+   * `find_tools`) is its own strategy, carried in its construction and in the
+   * composed adapter slot below, never a runtime rail.
    */
   // Deployment-scoped, filled once: the adapter is a deployment fact, so nothing
   // here could attribute one user's machine to another user's thread.
@@ -245,86 +237,25 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
   if (config.toolDoor !== undefined) {
     provideHarnessAdapters(config.harness, { toolDoor: config.toolDoor });
   }
+  // vendo()'s tool-search strategy, for a HOST-constructed `vendo()` (the
+  // default harness got it at construction). Same drawer as the sandbox: an
+  // adapter is a deployment fact.
+  if (config.toolSearch !== undefined) {
+    provideHarnessAdapters(config.harness, { toolSearch: config.toolSearch });
+  }
 
-  /**
-   * The per-THREAD searched-in set, exactly as `createAgent` keeps one: a tool
-   * discovered through `find_tools` stays callable for the rest of the
-   * conversation, and the LRU cap bounds memory in a long-lived process where
-   * threads are never evicted.
-   */
-  const loadedTools = new Map<string, Set<string>>();
-  const MAX_LOADED_THREADS = 1024;
-  const loadedFor = (threadId: string): Set<string> => {
-    const existing = loadedTools.get(threadId);
-    if (existing !== undefined) {
-      loadedTools.delete(threadId);
-      loadedTools.set(threadId, existing); // touch: most-recently-used
-      return existing;
+  /** The thread's harness-state slot, when this store can hold one. The slot
+   *  carries a native session ref and vendo()'s searched-in loadout, so it has
+   *  to die with the thread — a reused id must never inherit either (the
+   *  store's own SQL `threadStore.delete` cascades the same way). A store with
+   *  no SQL/ops backend never served a harness turn, so there is nothing to
+   *  clear and the lifecycle stays adapter-only. */
+  const stateDoor = (): ReturnType<typeof harnessStateStore> | undefined => {
+    try {
+      return sqlDoors().harnessState;
+    } catch {
+      return undefined;
     }
-    const fresh = new Set<string>();
-    loadedTools.set(threadId, fresh);
-    while (loadedTools.size > MAX_LOADED_THREADS) {
-      const oldest = loadedTools.keys().next().value;
-      if (oldest === undefined) break;
-      loadedTools.delete(oldest);
-    }
-    return fresh;
-  };
-
-  /**
-   * This turn's discovery rails. Every input is ctx-shaped, which is why they are
-   * built here and not at compose: the projected catalog, the connection-scoped
-   * seed, the host's surface menu, and the user's latest intent.
-   *
-   * The seed and the menu are resolved BESIDE each other and each degrades on
-   * failure rather than failing the turn — the shipped path's own rule. A failed
-   * menu degrades to unrestricted (the composition seam owns the warning); an
-   * EMPTY menu is a real answer and must not read as unrestricted, which is why
-   * `undefined` and `[]` are kept apart.
-   */
-  const discoveryFor = async (
-    ctx: RunContext,
-    threadId: ThreadId,
-    messages: readonly UIMessage[],
-  ): Promise<DiscoveryRails | undefined> => {
-    if (config.toolSearch === undefined && config.capabilityMiss === undefined) return undefined;
-    let seedNames: string[] | undefined;
-    if (config.toolSearch?.seed !== undefined) {
-      try {
-        seedNames = await config.toolSearch.seed(ctx);
-      } catch {
-        seedNames = undefined;
-      }
-    }
-    let menuNames: readonly string[] | undefined;
-    if (config.toolSearch?.menu !== undefined) {
-      try {
-        menuNames = await config.toolSearch.menu(ctx);
-      } catch {
-        menuNames = undefined;
-      }
-    }
-    return createDiscoveryRails({
-      descriptors: await config.descriptors(ctx),
-      ctx,
-      loaded: loadedFor(threadId),
-      ...(config.toolSearch === undefined ? {} : { toolSearch: config.toolSearch }),
-      ...(seedNames === undefined ? {} : { seedNames }),
-      ...(menuNames === undefined ? {} : { menuNames }),
-      // A search hit outside the built catalog was lazily expanded during the
-      // search itself; re-reading the PROJECTED catalog resolves it, so the same
-      // LAW filter applies to what search can reach.
-      resolve: async (names) => (await config.descriptors(ctx)).filter((d) => names.includes(d.name)),
-      ...(config.capabilityMiss === undefined
-        ? {}
-        : {
-            capabilityMiss: {
-              config: config.capabilityMiss,
-              intent: latestUserIntent([...messages]),
-              threadId,
-            },
-          }),
-    });
   };
 
   return {
@@ -332,18 +263,17 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       get: (id, ctx) => threads.get(id, ctx),
       list: (ctx) => threads.list(ctx),
       delete: async (id, ctx) => {
-        loadedTools.delete(id);
         await threads.delete(id, ctx);
+        await stateDoor()?.clear(id);
       },
     },
 
     async evictSubject(subject) {
-      // Release each evicted thread's searched-in loadout so a reused id can't
-      // inherit stale tools, and so memory is reclaimed on session sweep. Awaited
-      // rather than fire-and-forget (`createAgent`'s signature was synchronous):
-      // the caller is the sweep, which has somewhere to put a failure.
+      // D6 — drop every thread a subject owns, its state slot with it. Awaited
+      // rather than fire-and-forget: the caller is the sweep, which has
+      // somewhere to put a failure.
       for (const id of await threads.evictSubject(subject)) {
-        loadedTools.delete(id);
+        await stateDoor()?.clear(id);
       }
     },
 
@@ -427,7 +357,6 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         ...(config.liveTurn === undefined ? {} : { liveTurn: config.liveTurn }),
       });
 
-      const discovery = await discoveryFor(input.ctx, thread.id, thread.messages);
       // Assembled once, per turn, for WHOEVER thinks. The venue gate and the guard's
       // directions live in here, which is why it is composition's job and not the
       // harness's. Which discovery section it may promise is decided by what is
@@ -445,7 +374,16 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         workspace,
         models: config.models,
         ...(system === undefined ? {} : { system }),
-        ...(discovery === undefined ? {} : { discovery }),
+        // The honest-refusal rail, per turn: the intent is the user's latest ask.
+        ...(config.capabilityMiss === undefined
+          ? {}
+          : {
+              capabilityMiss: {
+                config: config.capabilityMiss,
+                intent: latestUserIntent([...thread.messages]),
+                threadId: thread.id,
+              },
+            }),
         // §1.4 — presence is proof, and `isUnattended` is the one predicate that
         // decides it. Interactive turns await the tap inside `call()`; the rest
         // fail loudly with a standing card.

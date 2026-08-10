@@ -1,3 +1,6 @@
+import { CONNECTOR_DISCOVERY_TOOLS, type ToolRegistry } from "@vendoai/core";
+import { VENDO_TOOL_PACK_PREFIX } from "./tool-pack.js";
+
 /**
  * The composition seam's cache for a resolved per-surface tool menu
  * (`.vendo/overrides.json` `surfaces.*`, via `ActionsRegistry.surfaceMenu`).
@@ -33,5 +36,40 @@ export function memoizedSurfaceMenu(
       });
     cached = attempt;
     return attempt;
+  };
+}
+
+/**
+ * Bind the host's `surfaces.agent` menu at the registry PROJECTION, so it holds
+ * for EVERY brain — `vendo()`, `claudeCode()`, a host's own harness — instead of
+ * riding one brain's loadout math (the pre-de-brain shape, where a non-vendo
+ * harness never saw the menu at all).
+ *
+ * Same precedent as `withUniqueToolTitles(connectGate.bind(...))`: a thin
+ * wrapper installed where the harness door's registry handle is assembled
+ * (compose-harness.ts), and ONLY there — the MCP door has its own menu, and
+ * `execute` is untouched because a menu is curation, not a permission boundary
+ * (grants, approvals and audit still see every call that arrives with a name).
+ *
+ * Vendo's own `vendo_*` tools and the connector-discovery four are exempt:
+ * surfaces curate a product's API surface, not the runtime's plumbing, and the
+ * four carry no prefix while the system prompt teaches them by name — filtering
+ * them out is the uiaudit-2026-08-06 regression (a curated host lost
+ * `request_connection` while the prompt kept teaching it).
+ */
+export function withAgentMenu(
+  tools: ToolRegistry,
+  menu: () => Promise<ReadonlySet<string> | undefined>,
+): ToolRegistry {
+  const exempt: ReadonlySet<string> = new Set(CONNECTOR_DISCOVERY_TOOLS);
+  return {
+    ...tools,
+    async descriptors(ctx) {
+      const offered = await menu();
+      const descriptors = await tools.descriptors(ctx);
+      if (offered === undefined) return descriptors;
+      return descriptors.filter(({ name }) =>
+        name.startsWith(VENDO_TOOL_PACK_PREFIX) || exempt.has(name) || offered.has(name));
+    },
   };
 }

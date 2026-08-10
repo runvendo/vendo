@@ -16,6 +16,7 @@ import { vendo as vendoHarness } from "@vendoai/harnesses";
 import { defineHarness } from "@vendoai/harnesses";
 import type { LanguageModel, UIMessage } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
+import { scriptedModel, textTurn, toolCallTurn } from "../src/agent-doubles.test-util.js";
 import { createVendo, type Vendo } from "../src/server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -548,10 +549,12 @@ describe("the default harness is `vendo()`", () => {
 });
 
 /**
- * The four shipped rails, on the harness path — the reason `POST /threads` could
- * not be pointed at a harness by default. Each one is proven through a real
- * `Request` into `vendo.handler`, because a unit test of `createDiscoveryRails`
- * cannot tell you the composition wired it.
+ * The rails on the harness path, proven through a real `Request` into
+ * `vendo.handler` — a unit test of a helper cannot tell you the composition
+ * wired it. Since the de-brain refactor the split is: tool search and the
+ * loadout are `vendo()`'s OWN strategy (composition hands it `toolSearch` at
+ * construction), the `surfaces.agent` menu binds every brain at the registry
+ * projection, and capability miss stays a runtime rail.
  */
 describe("rail parity: find_tools, the loadout, the menu, capability miss", () => {
   /** A brokered connector whose toolkit the subject has NOT connected. */
@@ -578,71 +581,66 @@ describe("rail parity: find_tools, the loadout, the menu, capability miss", () =
     };
   }
 
-  it("equips a searched-in tool and makes it CALLABLE in the same turn", async () => {
-    // The rail in one test: the curated loadout hides the long tail, `find_tools`
-    // equips a match, and the SAME turn's next `list()` offers it — which is how a
-    // harness discovers, since `list()` is the one discovery surface.
-    const before: string[][] = [];
-    const after: string[][] = [];
-    let searched: unknown;
-    let called: string | undefined;
+  /** A registry serving one extra host tool, so a curation surface has
+   *  something to exclude. */
+  const reportsRegistry = {
+    async descriptors() {
+      return [{
+        name: "maple_reports_read",
+        title: "Read reports",
+        description: "Read the customer's reports",
+        inputSchema: { type: "object", properties: {} },
+        risk: "read" as const,
+      }];
+    },
+    async execute() {
+      return { status: "ok" as const, output: {} };
+    },
+  };
+
+  it("the DEFAULT vendo(): the loadout gates the model's CHOICE, find_tools loads a match, and it is callable the next step", async () => {
+    // The rail in one test, through the real composition: `createVendo` hands
+    // `vendo()` its toolSearch strategy, the explicit `loadout` hides the long
+    // tail from the model's pick list (list() stays the full projected surface
+    // — curation gates choice, not existence), `find_tools` loads a match, and
+    // the very next step may call it.
+    const model = scriptedModel([
+      toolCallTurn("find_tools", { query: "invoices" }),
+      toolCallTurn("maple_invoices_list", {}, "c2"),
+      textTurn("You have 2 open invoices."),
+    ]);
     const { vendo, host } = await compose({
-      // A curated menu of exactly ONE tool: the long tail is off the initial
-      // loadout, so `list()` must not offer `maple_invoices_list` until it is
-      // searched in. This is the host's `surfaces.agent` menu in effect.
+      models: { default: model as unknown as LanguageModel },
       loadout: ["maple_reports_read"],
-      harness: scriptedHarness(async function* (turn) {
-        before.push((await turn.tools.list()).map((entry) => entry.name));
-        const search = await turn.tools.call("find_tools", { query: "invoices" });
-        searched = search.status === "ok" ? search.output : search;
-        after.push((await turn.tools.list()).map((entry) => entry.name));
-        const result = await turn.tools.call("maple_invoices_list", {});
-        called = result.status;
-        yield { type: "text", delta: `called=${called}` };
-      }),
     });
-    // A second host tool so the curated loadout has something to exclude.
-    vendo.actions.add({
-      async descriptors() {
-        return [{
-          name: "maple_reports_read",
-          title: "Read reports",
-          description: "Read the customer's reports",
-          inputSchema: { type: "object", properties: {} },
-          risk: "read" as const,
-        }];
-      },
-      async execute() {
-        return { status: "ok" as const, output: {} };
-      },
-    });
+    vendo.actions.add(reportsRegistry);
 
     const turn = await vendo.handler(request("/threads", {
       threadId: "thr_find", message: userMessage("m1", "how many invoices are open?"),
     }));
-    expect(await turn.text()).toContain("called=ok");
+    expect(turn.status).toBe(200);
+    expect(await turn.text()).toContain("You have 2 open invoices.");
 
-    // The loadout really was curated: the tool was NOT on offer to start with...
-    expect(before[0]).toContain("find_tools");
-    expect(before[0]).not.toContain("maple_invoices_list");
-    // ...`find_tools` equipped it, reporting what it loaded...
-    expect(JSON.stringify(searched)).toContain("maple_invoices_list");
-    // ...the very next `list()` offers it, with its schema...
-    expect(after[0]).toContain("maple_invoices_list");
-    // ...and it really executed, through the guard, in the same turn.
-    expect(called).toBe("ok");
+    // Step one: the loadout really gated the model's pick list…
+    const first = model.toolNamesPerCall[0] ?? [];
+    expect(first).toContain("find_tools");
+    expect(first).toContain("maple_reports_read");
+    expect(first).not.toContain("maple_invoices_list");
+    // …step two, right after the search, the match is choosable…
+    expect(model.toolNamesPerCall[1]).toContain("maple_invoices_list");
+    // …and it really executed, through the guard, in the same turn.
     expect(host.calls).toHaveLength(1);
   });
 
-  it("annotates an UNCONNECTED connector's tool and answers a call with the connect card", async () => {
+  it("answers a call on an UNCONNECTED connector's tool with the connect card, never an execution", async () => {
+    // The connect-required search ANNOTATION died with the runtime's tool-search
+    // rail (deliberate cut): the call-time connect card below is the flow that
+    // actually converts, whatever told the model the tool existed.
     const executed: string[] = [];
-    let searched = "";
     let denied: unknown;
     const { vendo } = await compose({
       connectors: [gmailConnector(executed)],
       harness: scriptedHarness(async function* (turn) {
-        const search = await turn.tools.call("find_tools", { query: "send an email" });
-        searched = JSON.stringify(search.status === "ok" ? search.output : search);
         denied = await turn.tools.call("gmail_GMAIL_SEND_EMAIL", { to: "a@b.test" });
         yield { type: "text", delta: "tried" };
       }),
@@ -653,15 +651,50 @@ describe("rail parity: find_tools, the loadout, the menu, capability miss", () =
     }));
     expect(await turn.text()).toContain("tried");
 
-    // The search told the model it cannot run this yet — the annotation the tool
-    // description and the system prompt both promise, and what stops the model
-    // burning a turn reading a refusal as a failure.
-    expect(searched).toContain("gmail_GMAIL_SEND_EMAIL");
-    expect(searched).toContain("connectRequired");
-    // And the call itself is the connect card, not an execution: `DeniedNeeds`
-    // carries the toolkit so the harness can offer connecting.
+    // The call is the connect card, not an execution: `DeniedNeeds` carries the
+    // toolkit so the harness can offer connecting.
     expect(denied).toMatchObject({ status: "denied", needs: { kind: "connect", toolkit: "gmail" } });
     expect(executed).toEqual([]);
+  });
+
+  it("binds the host's surfaces.agent menu on a NON-vendo brain's turn.tools.list()", async () => {
+    // NEW with the de-brain refactor, and pinned as such: the menu used to ride
+    // the loadout math only `vendo()` ran, so a host's own harness (or
+    // claudeCode) never saw it. It now binds at the harness door's registry
+    // projection, so EVERY brain's list() is the curated surface — while
+    // `vendo_*` and the connector-discovery tools survive it, or the
+    // uiaudit-2026-08-06 regression recurs.
+    let listed: string[] = [];
+    const { vendo } = await compose({
+      connectors: [gmailConnector([])],
+      profile: {
+        overrides: {
+          format: "vendo/overrides@3",
+          tools: {},
+          surfaces: { agent: { tools: ["maple_reports_read"] } },
+        },
+      },
+      harness: scriptedHarness(async function* (turn) {
+        listed = (await turn.tools.list()).map((entry) => entry.name);
+        yield { type: "text", delta: "listed" };
+      }),
+    });
+    vendo.actions.add(reportsRegistry);
+
+    const turn = await vendo.handler(request("/threads", {
+      threadId: "thr_menu", message: userMessage("m1", "what can you do?"),
+    }));
+    expect(await turn.text()).toContain("listed");
+
+    // The menu binds: only the named host tool is offered…
+    expect(listed).toContain("maple_reports_read");
+    expect(listed).not.toContain("maple_invoices_list");
+    expect(listed).not.toContain("gmail_GMAIL_SEND_EMAIL");
+    // …and Vendo's own surface survives it: the runtime's plumbing and the
+    // connector-discovery tools are never curated away.
+    expect(listed).toContain("request_connection");
+    expect(listed).toContain("list_connections");
+    expect(listed.some((name) => name.startsWith("vendo_"))).toBe(true);
   });
 
   it("takes the honest capability-miss path on an impossible ask (evaluation E1)", async () => {
