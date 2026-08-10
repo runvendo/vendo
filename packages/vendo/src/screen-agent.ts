@@ -304,6 +304,10 @@ interface RunRecord {
   painted: boolean;
   title?: string;
   escalated?: string;
+  /** The last document the seam actually PAINTED. Kept so a later save the seam
+   *  declines can be rolled back to it — the store must never end up holding a
+   *  document the person's screen never showed. */
+  lastPainted?: string;
   /** The last non-empty `decisions` a save carried — this run's whole memory
    *  contribution, and what replaces the app's stored block. */
   decisions?: string;
@@ -445,6 +449,7 @@ export async function assembleScreen(
        */
       const painted = paintedIn(committed);
       record.painted = painted?.includes(input.appId) ?? false;
+      if (record.painted) record.lastPainted = content;
       if (painted !== undefined && !record.painted) {
         const instruction = repairInstruction(await validateWrittenApps({
           tools: turn.tools,
@@ -458,9 +463,16 @@ export async function assembleScreen(
         // hand cannot say which happened, and claiming the first told the loop its
         // document had been checked when nothing had checked it. The failed paint
         // is the fact this hand does have, and it is enough to act on.
+        //
+        // THE WRITE IS THE GUARDRAIL: bytes the seam will not paint are REJECTED,
+        // not kept. Once a painting version exists the run rolls back to it, so
+        // the store and the screen never disagree and the loop is never left
+        // believing a broken document is what it saved.
+        if (record.lastPainted !== undefined) await save(turn, APP_FILE, record.lastPainted);
         return {
-          saved: true,
-          note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.",
+          saved: false,
+          note: `${instruction ?? "That save did not reach the person's screen."}\n`
+            + "Your previous working document is still what is saved; send a corrected whole document.",
         };
       }
       return { saved: true, note: "Run validate on it now." };
