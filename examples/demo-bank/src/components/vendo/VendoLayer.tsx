@@ -5,6 +5,7 @@ import { withBasePath } from "@/lib/base-path";
 import { useVendoOverlay } from "@vendoai/ui";
 import { VendoOverlay, VendoPalette, VendoThread, type VendoCommand, type VendoThreadProps } from "@vendoai/ui/chrome";
 import { MapleMark } from "@/components/ui/maple-mark";
+import { VendoWorkbench } from "@/components/vendo/workbench/VendoWorkbench";
 import { mapleScenarios } from "@/vendo/scenarios";
 
 /** The overlay's thread with the Maple scenario cards on the empty landing.
@@ -70,6 +71,9 @@ export function VendoLayer() {
         hotkey={(event) => (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "j"}
         onCommand={onCommand}
       />
+      {/* The harness workbench: dev-only diagnostics, docked beside the
+          overlay. Renders nothing outside `next dev`. */}
+      <VendoWorkbench />
     </>
   );
 }

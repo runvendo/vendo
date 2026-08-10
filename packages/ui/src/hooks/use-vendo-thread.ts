@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVendoProvider } from "../context.js";
 import { currentSituation } from "../situation.js";
 import { publishThreadRun, retireThreadRun, type VendoBeat } from "../chrome/run-activity.js";
+import { publishWorkbenchPart } from "../chrome/workbench-store.js";
 
 export type VendoThreadApproval = ToolUIPart | DynamicToolUIPart | VendoApprovalPart;
 
@@ -173,6 +174,11 @@ export function useVendoThread(threadId?: string) {
     onData: chunk => {
       const beat = vendoBeat(chunk);
       if (beat !== undefined) setBeats(current => [...current, beat]);
+      // §3.4's sibling channel: `data-vendo-debug` carries what the HARNESS did,
+      // for the dev-only workbench. Transient by the same construction — it
+      // lands in a module store, never in `message.parts`. Non-debug chunks are
+      // ignored there, so this needs no branch here.
+      publishWorkbenchPart(chunk);
     },
   });
   const running = chat.status === "submitted" || chat.status === "streaming";
