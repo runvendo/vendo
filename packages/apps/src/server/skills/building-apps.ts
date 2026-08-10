@@ -32,14 +32,13 @@
  * Yousef iterates on this text — keep it one screen per section.
  */
 import type { Skill } from "@vendoai/core";
-import { VENDO_FORMAT_REFERENCE } from "./format-reference.js";
+import { VENDO_FORMAT_REFERENCE, formatReference } from "./format-reference.js";
 
-const BODY = `# Building an app
-
-Somebody asked for something they want to look at or use. You are going to build
-it out of this product's own components and its own live data.
-
-**Run me in a fresh subagent**, through whatever your delegation tool is — the
+/**
+ * Delegate the job — the first thing a reader with a `Task` tool should do, and an
+ * instruction a reader without one can only fail to follow.
+ */
+const DELEGATION = `**Run me in a fresh subagent**, through whatever your delegation tool is — the
 \`Task\` tool, where you have one. This is a big, loud job with a lot of reading in
 it, and the assistant talking to the person should stay light. Hand the whole
 thing over, let it finish, and keep one line about what came back. If you have no
@@ -50,7 +49,11 @@ Put the person's ask in that brief **verbatim** — their sentence, their words 
 plus anything the conversation already settled ("only this quarter", "they mean
 the EU entity"). A paraphrase is where their app quietly becomes yours.
 
-Two references, on disk, whenever you need them. Both paths are relative to the
+`;
+
+/** Where the two references are, for a reader who has to go and open them. A
+ *  machine-less reader was handed both, inline, before it read this line. */
+const REFERENCES_ON_DISK = `Two references, on disk, whenever you need them. Both paths are relative to the
 directory you are working in:
 
 - \`host/skills/building-apps/references/format.md\` — the whole \`.vendo\` syntax.
@@ -59,13 +62,62 @@ directory you are working in:
   full props schema, its examples. Grep it; \`search_components\` is the quick
   lookup when you do not know a name yet.
 
-Tools are named bare here — \`search_components\`, \`validate\`, \`ask_user\`, and this
+`;
+
+/** The MCP door renames every tool. A closed in-process loadout does not, so this
+ *  paragraph sends that reader looking for a prefix nothing will ever show. */
+const PREFIXED_TOOL_NAMES = `Tools are named bare here — \`search_components\`, \`validate\`, \`ask_user\`, and this
 product's own operations. Your own tool list may show every one of them behind a
 server prefix (\`mcp__vendo__validate\`, \`mcp__vendo__host_listTransactions\`): call
 them by the exact name your list shows, and if a bare name comes back as no such
 tool, look for the prefixed one before concluding it does not exist.
 
-**Your hands are how an app gets built.** You write \`plan.vendo\` and \`app.vendo\`
+`;
+
+/** The fourth answer of §1 and the repair rule of §6, both of which spend an
+ *  edit-in-place tool. */
+const EDIT_IN_PLACE_ANSWER = `- **It already exists and the change is small** — edit the app's text in place.
+  Quote the exact lines that go and write what replaces them. Small edits keep
+  everything the person is already looking at exactly where it is.
+`;
+const EDIT_IN_PLACE_REPAIR = `
+Fix by editing the text in place, never by rewriting the file. Quote the exact
+text that goes and write what replaces it — and quote enough of it to match in
+exactly one place. Everything the person is already looking at then stays where
+it is; a rewritten file moves the whole app under them.
+`;
+
+/** §5's delegation half. The bullets it introduces are the honest-data rules and
+ *  they are read by everybody; only "give it to a worker" needs the machine. */
+const WORKER_PER_GROUP = `Give each group to its own worker — one \`Task\` per group, all launched together,
+where you have that tool. Without one, fill the groups yourself, one at a time in
+order, and read only what that group needs while you are on it.
+
+A worker sees **only** its own group, the docs for the components its leaves name,
+and the shape of its queries. The blinkers are the design, not a limitation: a
+worker that cannot see the rest of the app cannot quietly contradict it.
+
+Tell each worker:
+`;
+
+/**
+ * The body, as a function of ONE fact about its reader: has it a machine.
+ *
+ * A machine here is the four things the passages above spend — a delegation tool,
+ * files on disk, a prefixed tool list, an edit-in-place tool. `claudeCode()` has
+ * all four; the screen agent has two file hands and a step budget, and
+ * `environmentNote` (`screen-agent.ts`) already tells it so, one passage at a
+ * time. Correcting is not free: the instruction stays in the prompt, gets re-read
+ * on every step, and says the opposite of its correction. So the machine half is
+ * INTERPOLATED rather than written inline — one text, two readers, nothing to keep
+ * in sync, and `buildingAppsSkill.body` is byte for byte what it always was.
+ */
+const body = (machine: boolean): string => `# Building an app
+
+Somebody asked for something they want to look at or use. You are going to build
+it out of this product's own components and its own live data.
+
+${machine ? DELEGATION : ""}${machine ? REFERENCES_ON_DISK : ""}${machine ? PREFIXED_TOOL_NAMES : ""}**Your hands are how an app gets built.** You write \`plan.vendo\` and \`app.vendo\`
 yourself. If your tool list has no app-creation or app-edit tool, that is
 deliberate and not a gap — writing the files IS the mechanism, and the screen
 repaints on every save. Do not go searching for a tool that builds the app for you.
@@ -88,15 +140,12 @@ app is a new directory, and its name must start with \`app_\`, or nothing paints
 
 Writing everything once at the end works and feels dead. Don't.
 
-## 1. Decide which of the four answers this is
+## 1. Decide which of the ${machine ? "four" : "three"} answers this is
 
 - **Tiny** — one number, one list, one label. Write the app and stop. Never plan
   something you can finish in a sentence.
 - **Normal** — write the plan, then fill it in.
-- **It already exists and the change is small** — edit the app's text in place.
-  Quote the exact lines that go and write what replaces them. Small edits keep
-  everything the person is already looking at exactly where it is.
-- **This product cannot do it** — say so, in their words, and build nothing
+${machine ? EDIT_IN_PLACE_ANSWER : ""}- **This product cannot do it** — say so, in their words, and build nothing
   around the hole.
 
 ## 2. The plan
@@ -259,22 +308,12 @@ Name it the way they would say it out loud — "Morning overdue check", never
   you learn them.
 - **Call the query once** only when a tool declares no output schema, or when the
   actual values matter (what a status string really says, whether money is cents).
-- Look up every component you intend to use: \`host/components/<Name>.md\` for
-  this product's own, \`references/format.md\` for the ones that ship with the
+- Look up every component you intend to use: ${machine ? "`host/components/<Name>.md` for\n  this product's own, `references/format.md`" : "`search_components` for this\n  product's own, the format reference below"} for the ones that ship with the
   format. Props are checked by name, so a guessed prop is a failed app.
 
-## 5. Fill the groups in — one worker per group, blinkered
+## 5. Fill the groups in${machine ? " — one worker per group, blinkered" : ""}
 
-Give each group to its own worker — one \`Task\` per group, all launched together,
-where you have that tool. Without one, fill the groups yourself, one at a time in
-order, and read only what that group needs while you are on it.
-
-A worker sees **only** its own group, the docs for the components its leaves name,
-and the shape of its queries. The blinkers are the design, not a limitation: a
-worker that cannot see the rest of the app cannot quietly contradict it.
-
-Tell each worker:
-
+${machine ? WORKER_PER_GROUP : "Fill the groups yourself, one at a time in order, and read only what that group\nneeds while you are on it. For each group:\n"}
 - Write only the markup inside its section — one element per part, in order.
 - **Show what is in the data.** Every number, name, date and status on screen is
   a reference to a query: \`rows={invoices.data}\`, \`cents={invoice.total_cents}\`.
@@ -303,14 +342,8 @@ do the types fit. Every issue it reports is a sentence that names the real
 alternative — fix from it and validate again.
 
 **You are not done until \`validate\` comes back clean.** Not "mostly clean", and
-not "the rest looks cosmetic". A worker reports done when its section validates;
-you report done when the app does.
-
-Fix by editing the text in place, never by rewriting the file. Quote the exact
-text that goes and write what replaces it — and quote enough of it to match in
-exactly one place. Everything the person is already looking at then stays where
-it is; a rewritten file moves the whole app under them.
-
+not "the rest looks cosmetic". ${machine ? "A worker reports done when its section validates;\nyou report done when the app does." : "You report done when the app does."}
+${machine ? EDIT_IN_PLACE_REPAIR : ""}
 There are checks after you that you cannot see and cannot skip. They are not
 your enemy; they are the reason you can move fast.
 
@@ -334,11 +367,30 @@ a plan in it, and does not want to.
   "this product can't send email" beats anything that sounds like it worked.
 `;
 
+const DESCRIPTION = "Build or change an app for someone out of the product's own components and live data: plan it, fill it in, validate it, and say what you did in their words.";
+
 export const buildingAppsSkill: Skill = {
   name: "building-apps",
-  description: "Build or change an app for someone out of the product's own components and live data: plan it, fill it in, validate it, and say what you did in their words.",
-  body: BODY,
+  description: DESCRIPTION,
+  body: body(true),
   // The whole `.vendo` syntax, beside the body rather than in it: the body is the
   // job, this is the manual you open when you need an attribute.
   files: { "references/format.md": VENDO_FORMAT_REFERENCE },
+};
+
+/**
+ * The same skill, for a reader with no machine — no delegation tool, no files on
+ * disk, no prefixed tool list, no edit-in-place tool.
+ *
+ * Not a second brief: same name, same description, and both halves are the ONE
+ * text above with the machine passages interpolated out rather than argued with.
+ * The screen agent is that reader (`screen-agent.ts`), and it was previously
+ * handed the machine copy plus an `environmentNote` correcting it — which paid
+ * for both the instruction and its contradiction on every step of every run.
+ */
+export const buildingAppsSkillNoMachine: Skill = {
+  name: "building-apps",
+  description: DESCRIPTION,
+  body: body(false),
+  files: { "references/format.md": formatReference(false) },
 };

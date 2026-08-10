@@ -30,7 +30,23 @@ const ISLAND_BUDGET = `At most ${TREE_MAX_GENERATED_COMPONENTS} islands, ${
   TREE_MAX_COMPONENT_SOURCE_BYTES / KB} KB of source each, and ${
   TREE_MAX_TOTAL_COMPONENT_BYTES / KB} KB across all of them together. Past any one of those the app stops validating.`;
 
-const DIALECT = `# The .vendo format
+/** The one passage of the manual that spends an edit-in-place tool. A reader whose
+ *  only hand saves the whole document reads it as an instruction it cannot follow;
+ *  `environmentNote` (`screen-agent.ts`) then says the opposite two sections later. */
+const EDIT_IN_PLACE = `---
+
+## Changing an app that already exists
+
+Edit the text; never rewrite the file. Small edits keep everything the person is
+already looking at exactly where it is.
+
+Use your own file-edit tool, quoting the exact text that goes and the text that
+replaces it. Quote enough of it to match in exactly one place — a quote that
+matches twice, or not at all, is a failed edit, not a guess to retry.
+
+`;
+
+const dialect = (machine: boolean): string => `# The .vendo format
 
 An app is two files in its own directory, \`user/apps/app_<name>/\`:
 
@@ -287,18 +303,7 @@ is nothing left to reshape. Let the component format it: \`Stat\` takes
 \`format="money"\`, \`Money\` takes \`cents\`, a \`DataTable\` column takes
 \`format:"money"\`.
 
----
-
-## Changing an app that already exists
-
-Edit the text; never rewrite the file. Small edits keep everything the person is
-already looking at exactly where it is.
-
-Use your own file-edit tool, quoting the exact text that goes and the text that
-replaces it. Quote enough of it to match in exactly one place — a quote that
-matches twice, or not at all, is a failed edit, not a guess to retry.
-
----
+${machine ? EDIT_IN_PLACE : ""}---
 
 ## What \`validate\` checks
 
@@ -373,9 +378,9 @@ carry this product's own look.
 ## Components
 
 Host components come first when one fits: they are this product's own, already
-branded. One file each, with the full props schema and examples:
+branded.${machine ? ` One file each, with the full props schema and examples:
 \`host/components/<Name>.md\`, relative to the directory you are working in.
-\`search_components\` finds one by intent when you do not know the name.
+` : " "}\`search_components\` finds one by intent when you do not know the name.
 
 Everything below ships with the format and is available in every app. Use these
 exact component and prop names — an unknown prop fails validation.
@@ -387,4 +392,16 @@ with \`<Query>\` and reference it by id instead. Every prop name and type is exa
 `;
 
 /** The reference as it lands on disk. */
-export const VENDO_FORMAT_REFERENCE = `${DIALECT}${componentsPromptSection()}\n`;
+/**
+ * The manual, for a reader with a machine or for one without.
+ *
+ * `machine` is the same fact `body` in `./building-apps.ts` reads: files on disk to
+ * open, and a file-edit tool to change one in place. The screen agent has neither,
+ * and interpolating the two passages that assume them is what keeps ONE manual
+ * instead of a second one written for the loop.
+ */
+export const formatReference = (machine: boolean): string =>
+  `${dialect(machine)}${componentsPromptSection()}\n`;
+
+/** The reference as it lands on disk. */
+export const VENDO_FORMAT_REFERENCE = formatReference(true);

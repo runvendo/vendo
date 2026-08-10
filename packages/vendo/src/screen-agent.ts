@@ -22,11 +22,12 @@
  * - **`vendo_make` is withheld, not merely unused.** The screen agent IS what
  *   `vendo_make` calls, so leaving it callable is a loop. The closed loadout
  *   excludes it by omission.
- * - **The job description is the shipped skill.** `buildingAppsSkill` plus its
- *   `references/format.md` are the same text `claudeCode()` reads. This file adds
- *   one short block that corrects the ENVIRONMENT (no disk, no delegation, two
- *   files, one door out) rather than restating the job — a third prompt is the
- *   thing §0 forbids.
+ * - **The job description is the shipped skill.** `buildingAppsSkillNoMachine` plus
+ *   its `references/format.md` are the same text `claudeCode()` reads, minus the
+ *   passages that spend a machine `claudeCode()` has and this loop does not — one
+ *   text, two readers (`skills/building-apps.ts`). This file adds one short block
+ *   that corrects the rest of the ENVIRONMENT (two files, one door out) rather than
+ *   restating the job — a third prompt is the thing §0 forbids.
  *
  * Screens run UNSANDBOXED, by §6.5: a description is data, its props are
  * schema-validated, and the kit treats them as inert. There is no box here.
@@ -59,7 +60,7 @@ import {
   type ScreenRequest,
 } from "@vendoai/apps/contract";
 import {
-  buildingAppsSkill,
+  buildingAppsSkillNoMachine,
   paintedIn,
   repairInstruction,
   validateWrittenApps,
@@ -247,17 +248,31 @@ deliberate.
 
 ${toolBrief(listings)}`;
 
-/** The full brief: the shipped job description, the shipped syntax manual, the
- *  briefing pack, then what is different here. The manual and the environment
- *  note are this rung's own INSTRUCTIONS — the box is told a different job in
- *  its own words; the pack between them is the product knowledge both rungs
- *  read byte for byte (`contract/briefing.ts`). */
+/**
+ * The full brief: the shipped job description, the shipped syntax manual, the
+ * briefing pack, then what is different here. The manual and the environment
+ * note are this rung's own INSTRUCTIONS — the box is told a different job in
+ * its own words; the pack between them is the product knowledge both rungs
+ * read byte for byte (`contract/briefing.ts`).
+ *
+ * The job description is the NO-MACHINE cut of the shipped one: same text, with
+ * the passages that spend a delegation tool, files on disk, a prefixed tool list
+ * or an edit-in-place tool interpolated out (`buildingAppsSkillNoMachine`).
+ * `environmentNote` below corrected each of those in prose, which left both the
+ * instruction and its contradiction in a system prompt that is re-read on every
+ * one of {@link SCREEN_STEPS} steps.
+ *
+ * `vendo_make` is out of the listing for the same reason it is out of the loadout:
+ * this loop IS what it calls. Describing it — its schema is the longest of any
+ * tool the host has — advertises the app-building tool two paragraphs above the
+ * line that says there isn't one.
+ */
 function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): string {
   return [
-    buildingAppsSkill.body,
-    buildingAppsSkill.files?.[`references/${"format.md"}`],
+    buildingAppsSkillNoMachine.body,
+    buildingAppsSkillNoMachine.files?.[`references/${"format.md"}`],
     input.briefing,
-    environmentNote(input.appId, listings),
+    environmentNote(input.appId, listings.filter((listing) => listing.name !== VENDO_MAKE_TOOL)),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
     .join("\n\n---\n\n");

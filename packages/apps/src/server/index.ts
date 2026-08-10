@@ -114,7 +114,7 @@ export type { GenerationDependencies } from "./generation/engine.js";
 // is the only layer holding both these values and the live runtime they act
 // through.
 export { agentToolDescriptors } from "./doors/agent-tools.js";
-export { buildingAppsSkill } from "./skills/building-apps.js";
+export { buildingAppsSkill, buildingAppsSkillNoMachine } from "./skills/building-apps.js";
 // Contract §3.2 — the checkout/commit seam. Public because the workspace half of
 // it lives outside this package: a sandboxed harness holds a `WorkspaceFs` and
 // never a store, so composition binds the store side once and hands these to
