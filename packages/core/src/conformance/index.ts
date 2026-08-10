@@ -219,6 +219,55 @@ export function storeAdapterConformance(opts: {
         assertDeepEqual((await second.get("shared"))?.data, { collection: "b" }, "second collection collided");
       }),
 
+      /** 01-core §12: an adapter that offers `claim` must make it a
+          compare-and-set over the whole value — true for the one caller whose
+          expectation still holds, false for everyone else. Both halves of the
+          capability are OPTIONAL (an adapter with no database-level
+          compare-and-claim omits them), so an adapter that does not offer one
+          passes by not offering it; what it may not do is offer one that lies.
+          These three moved off the retired generic records WIRE family, whose
+          seven verbs the hosted store no longer serves: the behavior they pin
+          is the BYO seam's, and this is where a BYO adapter meets it. */
+      readyAdapterCase(opts, "01-core §12 — records.claim returns true on match, false on mismatch", async (adapter) => {
+        const records = adapter.records("conformance_claim");
+        if (records.claim === undefined) return;
+        await records.put({ id: "cl1", data: { v: 1 }, refs: { o: "a" } });
+        assert(await records.claim({ id: "cl1", data: { v: 999 } }) === false, "claim should return false on mismatch");
+        assert(
+          await records.claim({ id: "cl1", data: { v: 1 }, refs: { o: "a" } }, { data: { v: 2 }, refs: { o: "b" } }) === true,
+          "claim should return true on match",
+        );
+        assertDeepEqual((await records.get("cl1"))?.data, { v: 2 }, "claim did not apply replacement");
+      }),
+
+      /** 01-core §12: insertIfAbsent is insert-once — the second caller is told
+          it lost, and the first caller's row is left exactly as written. */
+      readyAdapterCase(opts, "01-core §12 — records.insertIfAbsent returns record on first call, null on second", async (adapter) => {
+        const records = adapter.records("conformance_insert_if_absent");
+        if (records.atomic === undefined) return;
+        const first = await records.atomic.insertIfAbsent({ id: "iia1", data: { n: 1 } });
+        assert(first !== null, "insertIfAbsent first call should return a record");
+        assert(first.id === "iia1", "insertIfAbsent did not echo id");
+        assert(await records.atomic.insertIfAbsent({ id: "iia1", data: { n: 2 } }) === null, "insertIfAbsent second call should return null");
+        assertDeepEqual((await records.get("iia1"))?.data, { n: 1 }, "insertIfAbsent overwrote existing record");
+      }),
+
+      /** 01-core §12: compareAndSwap lands only on the revision the caller
+          read; a stale revision is null at the seam, never an error. */
+      readyAdapterCase(opts, "01-core §12 — records.compareAndSwap succeeds on matching revision, null on stale", async (adapter) => {
+        const records = adapter.records("conformance_compare_and_swap");
+        if (records.atomic === undefined) return;
+        const created = await records.put({ id: "cas1", data: { v: 1 } });
+        assert(created.revision !== undefined, "put must return a revision for CAS");
+        const swapped = await records.atomic.compareAndSwap({ id: "cas1", data: { v: 2 } }, created.revision);
+        assert(swapped !== null, "compareAndSwap should succeed on matching revision");
+        assertDeepEqual(swapped.data, { v: 2 }, "compareAndSwap did not update data");
+        assert(
+          await records.atomic.compareAndSwap({ id: "cas1", data: { v: 3 } }, created.revision) === null,
+          "compareAndSwap should return null on stale revision",
+        );
+      }),
+
       /** 01-core §12: blobs round-trip bytes and content type. */
       readyAdapterCase(opts, "01-core §12 — blobs.put and get round-trip bytes and contentType", async (adapter) => {
         const blobs = adapter.blobs("conformance_blob_round_trip");

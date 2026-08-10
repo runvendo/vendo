@@ -1,9 +1,5 @@
-import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import {
-  STORE_WIRE_DEPRECATED_OPS,
-  STORE_WIRE_DEPRECATED_REMOVED_IN,
-  STORE_WIRE_MIN_CLIENT_VERSION,
   STORE_WIRE_PATHS,
   STORE_WIRE_STATUS_BY_CODE,
   VENDO_STORE_WIRE_FORMAT,
@@ -12,13 +8,6 @@ import {
   storeWireErrorSchema,
   storeWireStatusSchema,
   parseStoreWireError,
-  storeWireRecordsGetRequestSchema,
-  storeWireRecordsPutRequestSchema,
-  storeWireRecordsDeleteRequestSchema,
-  storeWireRecordsListRequestSchema,
-  storeWireRecordsClaimRequestSchema,
-  storeWireRecordsInsertIfAbsentRequestSchema,
-  storeWireRecordsCompareAndSwapRequestSchema,
   storeWireCollectionGetRequestSchema,
   storeWireCollectionPutRequestSchema,
   storeWireCollectionDeleteRequestSchema,
@@ -58,24 +47,26 @@ import {
 } from "../src/index.js";
 
 describe("vendo/store-wire@1", () => {
-  it("exposes the format constant and 42 mount-relative paths", () => {
+  it("exposes the format constant and 35 mount-relative paths", () => {
     expect(VENDO_STORE_WIRE_FORMAT).toBe("vendo/store-wire@1");
-    // 9 families: records(7) + engine(7) + blobs(4) + appData(8) + transcripts(6) + harness(3) + workspace(4) + lifecycle(2) + status(1) = 42
-    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(42);
+    // 8 families: engine(7) + blobs(4) + appData(8) + transcripts(6) + harness(3) + workspace(4) + lifecycle(2) + status(1) = 35
+    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(35);
     expect(STORE_WIRE_PATHS.status).toBe("/status");
-    expect(STORE_WIRE_PATHS["records.get"]).toBe("/records/get");
     expect(STORE_WIRE_PATHS["engine.get"]).toBe("/engine/get");
     expect(STORE_WIRE_PATHS["engine.compareAndSwap"]).toBe("/engine/compareAndSwap");
     expect(STORE_WIRE_PATHS["appData.put"]).toBe("/app-data/put");
     expect(STORE_WIRE_PATHS["lifecycle.promote"]).toBe("/lifecycle/promote");
   });
 
-  it("every engine door is its own path, distinct from its records twin", () => {
+  it("every engine door is its own path, and no route is left on the retired generic family", () => {
     const verbs = ["get", "put", "delete", "list", "claim", "insertIfAbsent", "compareAndSwap"] as const;
     for (const verb of verbs) {
-      const engine = STORE_WIRE_PATHS[`engine.${verb}`];
-      expect(engine).toBe(`/engine/${verb}`);
-      expect(engine).not.toBe(STORE_WIRE_PATHS[`records.${verb}`]);
+      expect(STORE_WIRE_PATHS[`engine.${verb}`]).toBe(`/engine/${verb}`);
+    }
+    // The hard cut: no op name and no path may lead back to /records/*.
+    for (const [op, path] of Object.entries(STORE_WIRE_PATHS)) {
+      expect(op.startsWith("records."), `${op} is a retired generic records op`).toBe(false);
+      expect(path.startsWith("/records/"), `${op} still routes to ${path}`).toBe(false);
     }
     const enginePaths = Object.entries(STORE_WIRE_PATHS)
       .filter(([op]) => op.startsWith("engine."))
@@ -84,81 +75,41 @@ describe("vendo/store-wire@1", () => {
     expect(enginePaths.every((path) => path.startsWith("/engine/"))).toBe(true);
   });
 
-  it("names every records.* op as deprecated, and nothing else", () => {
-    expect([...STORE_WIRE_DEPRECATED_OPS].sort()).toEqual([
-      "records.claim",
-      "records.compareAndSwap",
-      "records.delete",
-      "records.get",
-      "records.insertIfAbsent",
-      "records.list",
-      "records.put",
-    ]);
-    // Advertised only — every deprecated op is still a served path.
-    for (const op of STORE_WIRE_DEPRECATED_OPS) {
-      expect(Object.keys(STORE_WIRE_PATHS)).toContain(op);
-    }
-    // The removal release must be a real version, not a placeholder.
-    expect(STORE_WIRE_DEPRECATED_REMOVED_IN).toMatch(/^\d+\.\d+\.\d+$/);
-  });
+  it("parses collection-addressed request DTOs and rejects invalid ones", () => {
+    expect(storeWireCollectionGetRequestSchema.parse({ collection: "users", id: "u1" }).id).toBe("u1");
+    expect(storeWireCollectionGetRequestSchema.safeParse({ collection: "", id: "u1" }).success).toBe(false);
 
-  it("advertises the release it ships in as minClientVersion", async () => {
-    // scripts/sync-version-constants.mjs rewrites the constant at release cut,
-    // the same invariant cli/shared.test.ts pins for CLI_VERSION — so the
-    // handshake can never name a release this build did not ship in.
-    const pkg = JSON.parse(
-      await readFile(new URL("../package.json", import.meta.url), "utf8"),
-    ) as { version: string };
-    expect(STORE_WIRE_MIN_CLIENT_VERSION).toBe(pkg.version);
-  });
-
-  it("the storeWireRecords* names are aliases of the shared collection bodies", () => {
-    // Same shape serves /records/* and /engine/*; the old names stay exported
-    // until the removal slice, so they must BE the renamed schemas, not copies.
-    expect(storeWireRecordsGetRequestSchema).toBe(storeWireCollectionGetRequestSchema);
-    expect(storeWireRecordsPutRequestSchema).toBe(storeWireCollectionPutRequestSchema);
-    expect(storeWireRecordsDeleteRequestSchema).toBe(storeWireCollectionDeleteRequestSchema);
-    expect(storeWireRecordsListRequestSchema).toBe(storeWireCollectionListRequestSchema);
-    expect(storeWireRecordsClaimRequestSchema).toBe(storeWireCollectionClaimRequestSchema);
-    expect(storeWireRecordsInsertIfAbsentRequestSchema).toBe(storeWireCollectionInsertIfAbsentRequestSchema);
-    expect(storeWireRecordsCompareAndSwapRequestSchema).toBe(storeWireCollectionCompareAndSwapRequestSchema);
-  });
-
-  it("parses records request DTOs and rejects invalid ones", () => {
-    expect(storeWireRecordsGetRequestSchema.parse({ collection: "users", id: "u1" }).id).toBe("u1");
-    expect(storeWireRecordsGetRequestSchema.safeParse({ collection: "", id: "u1" }).success).toBe(false);
-
-    expect(storeWireRecordsPutRequestSchema.parse({
+    expect(storeWireCollectionPutRequestSchema.parse({
       collection: "users",
       record: { id: "u1", data: { name: "Alice" } },
     }).record.id).toBe("u1");
-    expect(storeWireRecordsPutRequestSchema.safeParse({ collection: "users" }).success).toBe(false);
+    expect(storeWireCollectionPutRequestSchema.safeParse({ collection: "users" }).success).toBe(false);
 
-    expect(storeWireRecordsDeleteRequestSchema.parse({ collection: "users", id: "u1" }).collection).toBe("users");
+    expect(storeWireCollectionDeleteRequestSchema.parse({ collection: "users", id: "u1" }).collection).toBe("users");
 
-    expect(storeWireRecordsListRequestSchema.parse({ collection: "users" }).collection).toBe("users");
-    expect(storeWireRecordsListRequestSchema.parse({
+    expect(storeWireCollectionListRequestSchema.parse({ collection: "users" }).collection).toBe("users");
+    expect(storeWireCollectionListRequestSchema.parse({
       collection: "users",
       query: { refs: { org: "o1" }, limit: 50 },
     }).query?.limit).toBe(50);
 
-    expect(storeWireRecordsClaimRequestSchema.parse({
+    expect(storeWireCollectionClaimRequestSchema.parse({
       collection: "users",
       expected: { id: "u1", data: { status: "free" } },
       replacement: { data: { status: "claimed" } },
     }).expected.id).toBe("u1");
 
-    expect(storeWireRecordsInsertIfAbsentRequestSchema.parse({
+    expect(storeWireCollectionInsertIfAbsentRequestSchema.parse({
       collection: "users",
       record: { id: "u2", data: {} },
     }).record.id).toBe("u2");
 
-    expect(storeWireRecordsCompareAndSwapRequestSchema.parse({
+    expect(storeWireCollectionCompareAndSwapRequestSchema.parse({
       collection: "users",
       record: { id: "u1", data: {} },
       expectedRevision: "rev_1",
     }).expectedRevision).toBe("rev_1");
-    expect(storeWireRecordsCompareAndSwapRequestSchema.safeParse({
+    expect(storeWireCollectionCompareAndSwapRequestSchema.safeParse({
       collection: "users",
       record: { id: "u1", data: {} },
       expectedRevision: "",
@@ -296,10 +247,12 @@ describe("vendo/store-wire@1", () => {
   it("status doubles as the discovery handshake: format + ops count", () => {
     const status: StoreWireStatus = {
       format: VENDO_STORE_WIRE_FORMAT,
-      ops: 42,
+      ops: 35,
     };
-    expect(storeWireStatusSchema.parse(status).ops).toBe(42);
-    expect(storeWireStatusSchema.parse({ ...status, deprecated: ["records.put"] }).deprecated).toEqual(["records.put"]);
+    expect(storeWireStatusSchema.parse(status).ops).toBe(35);
+    // An older mount still sending fields this build dropped is READ, not
+    // refused — the body passes unknown keys through.
+    expect(storeWireStatusSchema.safeParse({ ...status, deprecated: ["records.put"], minClientVersion: "0.12.0" }).success).toBe(true);
     expect(storeWireStatusSchema.safeParse({ ...status, format: "vendo/store-wire@2" }).success).toBe(false);
   });
 

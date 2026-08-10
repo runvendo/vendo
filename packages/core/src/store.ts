@@ -88,7 +88,7 @@ export interface StoreAdapter {
 }
 
 // ---------------------------------------------------------------------------
-// StoreOps — the named-operation contract for the 42-op / 9-family store.
+// StoreOps — the named-operation contract for the 35-op / 8-family store.
 // Both the local backend (store/ops.ts) and the cloud client
 // (hosted-store.ts) implement this interface.
 // ---------------------------------------------------------------------------
@@ -127,23 +127,15 @@ export type EraseTarget =
   | { subject: string; appId?: never }
   | { appId: string; subject?: never };
 
-/** The typed contract for all 42 store operations across 9 families.
+/** The typed contract for all 35 store operations across 8 families.
     Lean by design — this is the CONTRACT interface, not the implementation. */
 export interface StoreOps {
-  records: {
-    get(collection: string, id: string): Promise<VendoRecord | null>;
-    put(collection: string, record: RecordInput): Promise<VendoRecord>;
-    delete(collection: string, id: string): Promise<void>;
-    list(collection: string, query?: RecordQuery): Promise<{ records: VendoRecord[]; cursor?: string }>;
-    claim(collection: string, expected: RecordInput, replacement?: Pick<VendoRecord, "data" | "refs">): Promise<boolean>;
-    insertIfAbsent(collection: string, record: RecordInput): Promise<VendoRecord | null>;
-    compareAndSwap(collection: string, record: RecordInput, expectedRevision: string): Promise<VendoRecord | null>;
-  };
   /** Vendo's OWN engine data — grants, approvals, audit, threads, runs, apps,
-      effects, and the automations and guard drawers — reached through the same
-      seven verbs as `records`. `assertEngineCollection` (engine-collections.ts)
-      gates the collection name on every verb, so nothing outside the allowlist
-      passes. NOT a place for host or generated-app data: that is `appData`. */
+      effects, and the automations and guard drawers — reached through seven
+      collection-addressed verbs. `assertEngineCollection`
+      (engine-collections.ts) gates the collection name on every verb, so
+      nothing outside the allowlist passes. NOT a place for host or
+      generated-app data: that is `appData`. */
   engine: {
     get(collection: string, id: string): Promise<VendoRecord | null>;
     put(collection: string, record: RecordInput): Promise<VendoRecord>;

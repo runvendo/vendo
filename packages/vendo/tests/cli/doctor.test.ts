@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { STORE_WIRE_DEPRECATED_REMOVED_IN, type ActAs, type PermissionGrant, type Principal } from "@vendoai/core";
+import type { ActAs, PermissionGrant, Principal } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import { extractServerActions } from "@vendoai/actions/sync";
 import type { VendoStore } from "@vendoai/store";
@@ -625,7 +625,10 @@ describe("vendo doctor", () => {
     );
   });
 
-  it("warns, without failing, when /status advertises deprecated store ops", async () => {
+  it("says nothing about store-op deprecations, even against a mount that still advertises them", async () => {
+    // The generic records family is gone, so there is no deprecation window
+    // left to narrate. An older mount still sending `deprecated` on its
+    // handshake is read and ignored, never echoed as a warning.
     const messages = output();
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -648,19 +651,7 @@ describe("vendo doctor", () => {
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
-    expect(messages.errors).toContain(
-      `warning: the store wire still serves records.get, records.put, but it has deprecated them and removes them in ${STORE_WIRE_DEPRECATED_REMOVED_IN}. Move an app's own rows and files to the appData ops (owner-stamped for you) and Vendo's own collections to the engine ops (same seven verbs, behind an allowlist); calls left on the deprecated ops start failing at that release`,
-    );
-  });
-
-  it("says nothing about deprecations when /status advertises none", async () => {
-    const messages = output();
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch({ store: true, sandbox: "cloud" }),
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
+    expect(messages.errors.some((line) => line.includes("E-LIVE-008"))).toBe(false);
     expect(messages.errors.some((line) => line.includes("has deprecated them"))).toBe(false);
   });
 

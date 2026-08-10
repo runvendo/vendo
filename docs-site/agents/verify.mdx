@@ -442,19 +442,20 @@ re-run `vendo doctor`.
 
 ### E-LIVE-008 {#E-LIVE-008}
 
-**Symptom (warning):** `/status` lists store ops the wire has deprecated. The
-named ops still work today; the warning names the release that removes them.
+**Retired.** Doctor no longer emits this code. The warning existed for one
+release, while the generic `records.*` store-wire family was on its way out; the
+family is now gone, so there is nothing left to warn about. The code stays
+listed here because doctor codes are never reused — if you are reading it off an
+older run, the fix below is still the fix.
 
-**Cause:** The generic `records.*` family is being retired in favour of two
-named families: `appData.*` for the rows and files an app invents (owner-stamped
-for you) and `engine.*` for Vendo's own collections (the same seven verbs behind
-an allowlist). The mount advertises the retirement on its handshake so callers
-find out before the removal, not after.
+**What happened:** The generic `records.*` family was replaced by two named
+families: `appData.*` for the rows and files an app invents (owner-stamped for
+you) and `engine.*` for Vendo's own collections (the same seven verbs behind an
+allowlist). The hosted store's `/records/*` routes are gone.
 
 **Fix:** Move each `records.*` call to the family that owns the data: app data
-to `appData.*`, Vendo's own collections to `engine.*`. Nothing breaks until the
-release named in the warning; after it, the deprecated ops answer
-`not-implemented`.
+to `appData.*`, Vendo's own collections to `engine.*`. A call left on a
+`/records/*` route now answers `not-implemented` (HTTP 501) naming the op.
 
 ## Auth probes
 

@@ -101,7 +101,9 @@ export function memoryStoreOps(): StoreOps {
   const wsIdempotencyKeys = new Map<string, string>();
 
   // ---------------------------------------------------------------------------
-  // records family
+  // rows — the shared generic-collection implementation the engine and appData
+  // families are both built on. NOT an op family of its own: the wire's generic
+  // records family is gone, so nothing outside this module reaches these verbs.
   // ---------------------------------------------------------------------------
 
   const putRecord = (collection: string, input: RecordInput): VendoRecord => {
@@ -122,7 +124,7 @@ export function memoryStoreOps(): StoreOps {
     return copyRecord(record);
   };
 
-  const records: StoreOps["records"] = {
+  const rows: StoreOps["engine"] = {
     async get(collection, id) {
       const r = col(collection).get(id);
       return r ? copyRecord(r) : null;
@@ -179,7 +181,7 @@ export function memoryStoreOps(): StoreOps {
   };
 
   // ---------------------------------------------------------------------------
-  // engine family — `records`, behind the allowlist gate
+  // engine family — the generic rows above, behind the allowlist gate
   // ---------------------------------------------------------------------------
 
   /** MIRRORS the per-collection policy the real backend enforces in its typed
@@ -192,17 +194,17 @@ export function memoryStoreOps(): StoreOps {
   const engine: StoreOps["engine"] = {
     async get(collection, id) {
       assertEngineCollection(collection);
-      return records.get(collection, id);
+      return rows.get(collection, id);
     },
     async put(collection, record) {
       assertEngineCollection(collection);
       if (INSERT_ONCE.has(collection)) {
         // A receipt that already exists is the truth about what executed, so a
         // second put hands back the RECORDED row rather than overwriting it.
-        const held = await records.get(collection, record.id);
+        const held = await rows.get(collection, record.id);
         if (held) return held;
       }
-      return records.put(collection, record);
+      return rows.put(collection, record);
     },
     async delete(collection, id) {
       assertEngineCollection(collection);
@@ -212,23 +214,23 @@ export function memoryStoreOps(): StoreOps {
           `${collection} is append-only; rows are erased only via the store erase API (02-store §5)`,
         );
       }
-      await records.delete(collection, id);
+      await rows.delete(collection, id);
     },
     async list(collection, query) {
       assertEngineCollection(collection);
-      return records.list(collection, query);
+      return rows.list(collection, query);
     },
     async claim(collection, expected, replacement) {
       assertEngineCollection(collection);
-      return records.claim(collection, expected, replacement);
+      return rows.claim(collection, expected, replacement);
     },
     async insertIfAbsent(collection, record) {
       assertEngineCollection(collection);
-      return records.insertIfAbsent(collection, record);
+      return rows.insertIfAbsent(collection, record);
     },
     async compareAndSwap(collection, record, expectedRevision) {
       assertEngineCollection(collection);
-      return records.compareAndSwap(collection, record, expectedRevision);
+      return rows.compareAndSwap(collection, record, expectedRevision);
     },
   };
 
@@ -303,21 +305,21 @@ export function memoryStoreOps(): StoreOps {
       if (held !== undefined && held.refs?.["subject"] !== target.owner) {
         throw new VendoError("conflict", `app data id "${record.id}" is already held in this collection`);
       }
-      return records.put(collection, { ...record, refs: { ...record.refs, subject: target.owner } });
+      return rows.put(collection, { ...record, refs: { ...record.refs, subject: target.owner } });
     },
     async get(target, id) {
-      const record = await records.get(appCollection(target), id);
+      const record = await rows.get(appCollection(target), id);
       return record?.refs?.["subject"] === target.owner ? record : null;
     },
     async list(target, query = {}) {
       const collection = appCollection(target);
       refuseSubject(query.refs, "list");
-      return records.list(collection, { ...query, refs: { ...query.refs, subject: target.owner } });
+      return rows.list(collection, { ...query, refs: { ...query.refs, subject: target.owner } });
     },
     async delete(target, id) {
       const collection = appCollection(target);
       if (col(collection).get(id)?.refs?.["subject"] !== target.owner) return;
-      await records.delete(collection, id);
+      await rows.delete(collection, id);
     },
     async putFile(target, key, bytes, meta) {
       await blobs.put(appCollection(target), ownedKey(target, key), bytes, meta);
@@ -606,7 +608,6 @@ export function memoryStoreOps(): StoreOps {
   // ---------------------------------------------------------------------------
 
   return {
-    records,
     engine,
     blobs,
     appData,
@@ -615,7 +616,7 @@ export function memoryStoreOps(): StoreOps {
     workspace,
     lifecycle,
     async status(): Promise<StoreWireStatus> {
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 42 };
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 35 };
     },
   };
 }

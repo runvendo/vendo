@@ -3,6 +3,7 @@ import {
   VendoError,
   assertEngineCollection,
   canonicalJson,
+  type AppDataTarget,
   type BlobStore,
   type RecordStore,
   type VendoRecord,
@@ -53,23 +54,28 @@ const STATUS: Record<string, number> = {
   blocked: 403,
   "not-found": 404,
   conflict: 409,
+  "not-implemented": 501,
 };
 const json = (body: unknown, status = 200): Response => Response.json(body, { status });
 const envelope = (code: string, message: string): Response =>
   json({ error: { code, message } }, STATUS[code] ?? 503);
 
-/** The engine door's routes, mount-relative path -> op name, read OFF the wire
- *  contract instead of spelled out here. `engine` is the same seven verbs as
- *  `records` over the same rows, so it reaches the same dispatcher and the same
- *  in-memory state below — a test may write through one door and read back
- *  through the other, which is the only way the two can be caught disagreeing.
- *  Deriving the paths means a verb added to the contract arrives here served,
- *  and a verb renamed there cannot leave this fake answering the old spelling. */
-const ENGINE_ROUTES = new Map<string, string>(
+/** A family's routes, mount-relative path -> verb, read OFF the wire contract
+ *  instead of spelled out here: a verb added to the contract arrives here
+ *  served, and a verb renamed there cannot leave this fake answering the old
+ *  spelling. */
+const routesOf = (family: string): Map<string, string> => new Map(
   Object.entries(STORE_WIRE_PATHS)
-    .filter(([op]) => op.startsWith("engine."))
-    .map(([op, path]) => [path, op.slice("engine.".length)]),
+    .filter(([op]) => op.startsWith(`${family}.`))
+    .map(([op, path]) => [path, op.slice(family.length + 1)]),
 );
+
+const ENGINE_ROUTES = routesOf("engine");
+const APP_DATA_ROUTES = routesOf("appData");
+
+/** The ref key the appData family stamps its owner on, and the one key a caller
+ *  may never supply — packages/store's APP_DATA_OWNER_REF, mirrored. */
+const OWNER_REF = "subject";
 
 const sameValue = (
   current: VendoRecord,
@@ -78,11 +84,9 @@ const sameValue = (
   canonicalJson(current.data) === canonicalJson(expected.data)
   && canonicalJson(current.refs ?? null) === canonicalJson(expected.refs ?? null);
 
-/** The seven records ops, for BOTH records doors: the Store Wire v1 door takes
- *  the op from the path and the collection from the body, the per-collection
- *  legacy door takes the collection from the path and the method from the
- *  trailing segments — same seven operations, two spellings of the two atomic
- *  ones, so one dispatcher answers both and they cannot drift apart. */
+/** The seven collection-addressed ops the engine door serves: the op comes
+ *  from the path, the collection from the body. The two atomic verbs keep their
+ *  second spelling so a body aimed at either name lands on the same row. */
 async function recordsOp(records: RecordStore, op: string, body: Body, miss: Miss): Promise<Response> {
   switch (op) {
     case "get":
@@ -166,38 +170,71 @@ async function blobsWireOp(blobs: BlobStore, op: string, body: Body, miss: Miss)
   }
 }
 
-/** The per-namespace legacy blobs door: REST verbs, bytes raw on the wire, the
- *  key in the trailing path segments. `null` for a verb it does not serve, so
- *  the router reports the hole against the whole request rather than on this
- *  door's behalf. */
-async function blobsRestOp(
-  blobs: BlobStore,
-  request: Request,
-  url: URL,
-  recorded: RecordedRequest,
-  keySegments: string[],
-): Promise<Response | null> {
-  if (keySegments.length === 0 && request.method === "GET") {
-    return json({ keys: await blobs.list(url.searchParams.get("prefix") ?? "") });
+/** Store Wire v1 appData door: an app's own rows and files, addressed by a
+ *  `{appId, collection, owner}` target instead of a collection string. Mirrors
+ *  packages/store's app-data-rows.ts — rows land in `app:<appId>:<collection>`
+ *  with the owner stamped on `refs.subject` (a caller that supplies it is
+ *  refused), reads are scoped to that stamp, and files ride the twin blob
+ *  namespace under an `<owner>/` key prefix. A fake that skipped the stamping
+ *  would let an unscoped read pass here and fail against the console. */
+async function appDataOp(
+  records: (collection: string) => RecordStore,
+  blobStore: (namespace: string) => BlobStore,
+  op: string,
+  body: Body,
+  miss: Miss,
+): Promise<Response> {
+  const target = body.target as AppDataTarget;
+  const scope = `app:${target.appId}:${target.collection}`;
+  const rows = records(scope);
+  const owned = (key: string): string => `${target.owner}/${key}`;
+  const refuseCallerOwner = (refs: Record<string, string> | undefined): void => {
+    if (refs?.[OWNER_REF] !== undefined) {
+      throw new VendoError(
+        "validation",
+        `app data may not supply refs.${OWNER_REF}; the runtime stamps the owner from the host's session`,
+      );
+    }
+  };
+  switch (op) {
+    case "put": {
+      const record = body.record as { id: string; data: unknown; refs?: Record<string, string> };
+      refuseCallerOwner(record.refs);
+      const held = await rows.get(record.id);
+      if (held !== null && held.refs?.[OWNER_REF] !== target.owner) {
+        throw new VendoError("conflict", `app data id ${JSON.stringify(record.id)} is already held in this collection`);
+      }
+      return json({
+        record: await rows.put({ ...record, refs: { ...record.refs, [OWNER_REF]: target.owner } } as never),
+      });
+    }
+    case "get": {
+      const record = await rows.get(body.id as string);
+      return json({ record: record?.refs?.[OWNER_REF] === target.owner ? record : null });
+    }
+    case "list": {
+      const query = (body.query ?? {}) as { refs?: Record<string, string> };
+      refuseCallerOwner(query.refs);
+      return json(await rows.list({ ...query, refs: { ...query.refs, [OWNER_REF]: target.owner } } as never));
+    }
+    case "delete": {
+      const record = await rows.get(body.id as string);
+      if (record?.refs?.[OWNER_REF] === target.owner) await rows.delete(body.id as string);
+      return json({ ok: true });
+    }
+    case "putFile":
+      return blobsWireOp(blobStore(scope), "put", { ...body, key: owned(body.key as string) }, miss);
+    case "getFile":
+      return blobsWireOp(blobStore(scope), "get", { ...body, key: owned(body.key as string) }, miss);
+    case "deleteFile":
+      return blobsWireOp(blobStore(scope), "delete", { ...body, key: owned(body.key as string) }, miss);
+    case "listFiles": {
+      const keys = await blobStore(scope).list(owned((body.prefix as string | undefined) ?? ""));
+      return json({ keys: keys.map((key) => key.slice(target.owner.length + 1)) });
+    }
+    default:
+      return miss(`unknown appData op: ${op}`);
   }
-  const key = keySegments.join("/");
-  if (request.method === "PUT") {
-    const contentType = recorded.contentType ?? undefined;
-    await blobs.put(key, recorded.bytes ?? new Uint8Array(), contentType === undefined ? undefined : { contentType });
-    return json({ ok: true });
-  }
-  if (request.method === "GET") {
-    const blob = await blobs.get(key);
-    if (blob === null) return envelope("not-found", "Blob not found.");
-    return new Response(blob.bytes.slice().buffer as ArrayBuffer, {
-      headers: blob.contentType === undefined ? {} : { "content-type": blob.contentType },
-    });
-  }
-  if (request.method === "DELETE") {
-    await blobs.delete(key);
-    return json({ ok: true });
-  }
-  return null;
 }
 
 /** Everything the handler learns from the request before routing: the recorded
@@ -247,13 +284,21 @@ export function fakeConsole() {
     const body = (recorded.json ?? {}) as Body;
     const post = request.method === "POST";
 
-    // Store Wire v1 records door (STORE_WIRE_PATHS): one route per op, the
-    // collection rides the body. The per-collection legacy door below keeps
-    // serving the StoreAdapter surface over the same in-memory state.
-    if (rest[0] === "records" && rest.length === 2 && post) {
-      return recordsOp(adapter.records(body.collection as string), rest[1]!, body, miss);
+    // The RETIRED generic records family. Every /records/* route — the Store
+    // Wire v1 door and the older per-collection one alike — answers an
+    // ENVELOPED 501 that names the op the caller asked for. There was no
+    // deprecation window, so this refusal is the only notice a caller who wrote
+    // raw HTTP against /records/* ever gets: it must be loud, and it must be
+    // the wire's own voice rather than a hole in this fake.
+    if (rest[0] === "records") {
+      const op = `records.${rest[rest.length - 1]}`;
+      return envelope(
+        "not-implemented",
+        `the store wire no longer serves ${op} — the generic records family was removed.`
+        + " Use the appData ops for an app's own rows and files, or the engine ops for Vendo's own collections.",
+      );
     }
-    // The engine door: Vendo's OWN drawers, same seven verbs over the same rows,
+    // The engine door: Vendo's OWN drawers, seven collection-addressed verbs
     // with the allowlist in front. The gate is served here rather than skipped
     // because a fake that answers a collection the live door refuses lets a
     // wrong call pass every test and fail in production.
@@ -263,15 +308,12 @@ export function fakeConsole() {
       assertEngineCollection(collection);
       return recordsOp(adapter.records(collection), engineOp, body, miss);
     }
+    const appDataOpName = post ? APP_DATA_ROUTES.get(`/${rest.join("/")}`) : undefined;
+    if (appDataOpName !== undefined) {
+      return appDataOp((c) => adapter.records(c), (n) => adapter.blobs(n), appDataOpName, body, miss);
+    }
     if (rest[0] === "blobs" && rest.length === 2 && post) {
       return blobsWireOp(adapter.blobs(body.namespace as string), rest[1]!, body, miss);
-    }
-    if (rest[0] === "records" && post) {
-      return recordsOp(adapter.records(rest[1]!), rest.slice(2).join("/"), body, miss);
-    }
-    if (rest[0] === "blobs") {
-      const served = await blobsRestOp(adapter.blobs(rest[1]!), request, url, recorded, rest.slice(2));
-      if (served !== null) return served;
     }
     if (rest[0] === "erase" && post) {
       eraseCalls.push(recorded.json);

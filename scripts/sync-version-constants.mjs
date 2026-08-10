@@ -16,10 +16,6 @@ const version = JSON.parse(
 const targets = [
   { file: "packages/vendo/src/cli/shared.ts", pattern: /(export const CLI_VERSION = ")[^"]+(")/ },
   { file: "packages/vendo/src/wire/shared.ts", pattern: /(export const VERSION = ")[^"]+(")/ },
-  {
-    file: "packages/core/src/store-wire.ts",
-    pattern: /(export const STORE_WIRE_MIN_CLIENT_VERSION = ")[^"]+(")/,
-  },
 ];
 
 for (const { file, pattern } of targets) {
