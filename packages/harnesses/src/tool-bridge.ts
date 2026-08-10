@@ -2,6 +2,7 @@ import {
   VENDO_APP_BUILD_FAILED_PREFIX,
   VENDO_KNOWLEDGE_RESULT_KIND,
   VENDO_MAKE_TOOL,
+  VENDO_TURN_SIGNAL,
   VENDO_VIEW_STREAM,
   toVendoWirePart,
   vendoAutomationPartSchema,
@@ -52,6 +53,11 @@ export interface ToolBridgeOptions {
    * matter how many of its tools the model called. Omit to disable deduping
    * (the away runner has no card surface). */
   connectCards?: Set<string>;
+  /** The TURN's cancellation, carried to the executing tool on
+   * `VENDO_TURN_SIGNAL`. A tool that runs a loop of its own — `vendo_make`
+   * awaits a whole screen assembly inline — cannot otherwise learn that the
+   * caller hung up, and runs on past the end of the turn it belongs to. */
+  signal?: AbortSignal;
 }
 
 function writePart(
@@ -170,6 +176,12 @@ export async function guardedCall(
   { toolCallId }: { toolCallId: string },
 ): Promise<ToolOutcome> {
   const call: VendoViewStreamingToolCall = { id: toolCallId, tool: descriptor.name, args: input };
+  // The turn's own cancellation, on every call rather than on the one name that
+  // reads it today: "this turn is over" is true of whatever is executing, and a
+  // per-name list here is the sort of thing the next long-running tool forgets.
+  if (options.signal !== undefined) {
+    Object.defineProperty(call, VENDO_TURN_SIGNAL, { value: options.signal });
+  }
   if (descriptor.name === VENDO_MAKE_TOOL && options.writer !== undefined) {
     Object.defineProperty(call, VENDO_VIEW_STREAM, {
       // The producer names the part; this only decides whether to believe it. One

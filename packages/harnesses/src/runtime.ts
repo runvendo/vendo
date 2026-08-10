@@ -104,9 +104,10 @@ export interface HarnessRuntimeDeps {
     opts: { emit: (streamId: string, part: unknown) => void; turnId: TurnId },
   ) => WorkspaceFs;
   /** The shipped tool-bridge rails composition owns: `toolOutputCap`, the
-   *  `preflight` connect gate, and the capability-miss `onCall` hook. The writer
-   *  and the per-turn connect-card set are the runtime's to supply. */
-  bridge?: Omit<ToolBridgeOptions, "registry" | "ctx" | "guard" | "writer" | "connectCards">;
+   *  `preflight` connect gate, and the capability-miss `onCall` hook. The writer,
+   *  the per-turn connect-card set and the turn's `signal` are the runtime's to
+   *  supply — they are per-turn facts, and this slot is per-deployment. */
+  bridge?: Omit<ToolBridgeOptions, "registry" | "ctx" | "guard" | "writer" | "connectCards" | "signal">;
   /** Test seam only; production uses the frozen APPROVAL_WAIT_MS. */
   approvalWaitMs?: number;
   /**
@@ -396,6 +397,12 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
               ...(capabilityMiss === undefined ? {} : { onCall: capabilityMiss.onCall }),
               writer,
               connectCards: new Set<string>(),
+              // …and the turn's own cancellation. `turn.signal` bounds the LOOP; a
+              // tool that runs a loop of its own (`vendo_make` awaits a whole
+              // screen assembly inline) is outside that bound and used to run on
+              // after the caller hung up, billing model calls against a turn that
+              // was already over.
+              signal,
             },
             ...(capabilityMiss === undefined ? {} : { capabilityMiss: capabilityMiss.reporter }),
             // §1 amendment 2026-08-03: the harness's own say over the surface —

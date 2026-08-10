@@ -38,6 +38,16 @@ export interface ScreenRequest {
    *  `AppsRuntime.create` takes, so a screen and a built app reach the surface on
    *  one channel. */
   onView?: (part: VendoViewPart) => void;
+  /**
+   * The CALLER's cancellation — the turn `vendo_make` was dispatched inside.
+   *
+   * Assembly is awaited inline, so the two share one budget: `onView` publishes
+   * onto the turn's own stream writer and the receipt is read by the turn's own
+   * model, which is why a build cannot usefully outlive the turn that asked for
+   * it. Absent means "no caller to hang up on" (the edit journal's replay, the
+   * build surface's own path), never "run unbounded".
+   */
+  signal?: AbortSignal;
 }
 
 /**

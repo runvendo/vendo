@@ -645,9 +645,26 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
           models: deps.models,
           tools: registryTools(deps.tools, ctx),
           workspace,
-          // The front door owns cancellation: `vendo_make` resolves or it does
-          // not, and the tool bridge is what a caller aborts.
-          signal: new AbortController().signal,
+          // The CALLER's cancellation, threaded (`ScreenRequest.signal`).
+          //
+          // This used to mint a fresh controller that nothing could ever fire, on
+          // the reasoning that "the front door owns cancellation: `vendo_make`
+          // resolves or it does not, and the tool bridge is what a caller aborts".
+          // The second half was not true — `ToolRegistry.execute` takes no signal,
+          // so the bridge had nothing to abort with — and the first half made the
+          // consequence: assembly is AWAITED inline inside a harness turn, so a
+          // signal that cannot fire is a build with no bound at all. Measured on
+          // genbench's harness lane (2026-08-10), one ran 88s past the end of the
+          // 180s turn that asked for it, spending model calls on a screen whose
+          // stream writer and whose reader were both already gone.
+          //
+          // A build cannot usefully outlive its turn, which is what makes threading
+          // the right answer rather than a "still building" receipt: `onView` paints
+          // onto the turn's own writer, the receipt is read by the turn's own model,
+          // and the UI unmounts a still-forming card at turn end
+          // (`chrome/thread/parts.tsx`). Absent — the edit journal's replay, the
+          // build surface — is a signal that never fires, exactly as before.
+          signal: request.signal ?? new AbortController().signal,
           ...(ctx.turnId === undefined ? {} : { turnId: ctx.turnId }),
         },
         {

@@ -297,6 +297,28 @@ export const toolCallSchema = z.object({
   args: requiredJsonValueSchema,
 }).passthrough() satisfies z.ZodType<ToolCall>;
 
+/**
+ * Additive internal bridge seam: the TURN's cancellation, reaching a tool that
+ * runs a whole loop of its own.
+ *
+ * `vendo_make` awaits a full screen assembly inline, so the turn's budget and the
+ * build's are one budget — and until this existed the build had no way to learn
+ * that the caller had hung up, so it ran on alone, billing model calls against a
+ * turn that was already over. A symbol beside {@link ToolCall} rather than a
+ * field on it, for the same reason `VENDO_VIEW_STREAM` is one: a call is
+ * serialized to the model and persisted in the transcript, and neither can carry
+ * an `AbortSignal`.
+ *
+ * Absent means "no turn to hang up on" (a webhook, a schedule fire), never
+ * "cancellation is unavailable" — a tool that reads it treats absence as a signal
+ * that never fires.
+ */
+export const VENDO_TURN_SIGNAL = Symbol.for("@vendoai/core/vendo-turn-signal");
+
+export type VendoTurnScopedToolCall = ToolCall & {
+  [VENDO_TURN_SIGNAL]?: AbortSignal;
+};
+
 /** Additive composition hook: resolve a call's effective risk before policy
  * rules, grants, breakers, and approvals evaluate it. Throwing, returning an
  * unknown value, or returning undefined preserves the descriptor's risk.

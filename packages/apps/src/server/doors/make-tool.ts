@@ -7,6 +7,7 @@
  */
 import {
   isUnattended,
+  VENDO_TURN_SIGNAL,
   VENDO_VIEW_STREAM,
   VendoError,
   vendoViewStreamId,
@@ -15,6 +16,7 @@ import {
   type RunContext,
   type ToolCall,
   type ToolOutcome,
+  type VendoTurnScopedToolCall,
   type VendoViewStreamUpdate,
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
@@ -92,12 +94,15 @@ interface MakeCall {
   ask: string;
   /** The client parts this execution may publish, when the caller opened a stream. */
   stream: ((update: VendoViewStreamUpdate) => void) | undefined;
+  /** The turn this call is being awaited inside, so assembly stops when the
+   *  caller hangs up instead of billing on past the end of that turn. */
+  signal: AbortSignal | undefined;
   /** The ask, onto the app's memory. Best-effort, always. */
   remember(appId: string): Promise<void>;
 }
 
 const makeNewApp = async (
-  { runtime, dependencies, ctx, ask, stream, remember }: MakeCall,
+  { runtime, dependencies, ctx, ask, stream, signal, remember }: MakeCall,
   claimed: string | undefined,
 ): Promise<ToolOutcome> => {
   // ── THE SEAM (blueprint §1 point 2) ─────────────────────────────────
@@ -139,6 +144,7 @@ const makeNewApp = async (
     : await dependencies.screen.assemble({
       appId,
       request: ask,
+      ...(signal === undefined ? {} : { signal }),
       ...(stream === undefined ? {} : {
         onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
       }),
@@ -290,6 +296,12 @@ export const runMakeTool = async (
   // a slot on an EDIT" is wrong however present the person is.
   const claimed = isUnattended(ctx) ? undefined : slot;
   const stream = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
+  // The turn this call is awaited inside (`VENDO_TURN_SIGNAL`, attached by the
+  // harness tool bridge). Assembly runs a whole loop of its own inside this
+  // await, so without it the build had no way to learn the caller had hung up:
+  // measured on genbench's harness lane, an assembly ran 88s past the end of the
+  // 180s turn that asked for it, and the turn it was answering was already dead.
+  const signal = (call as VendoTurnScopedToolCall)[VENDO_TURN_SIGNAL];
   const request = args.request as string;
   const ask = withContext(request, optionalString(args.context, "context"));
   /**
@@ -313,7 +325,7 @@ export const runMakeTool = async (
       }`);
     });
   };
-  const make: MakeCall = { runtime, dependencies, ctx, ask, stream, remember };
+  const make: MakeCall = { runtime, dependencies, ctx, ask, stream, signal, remember };
   if (app === undefined) return await makeNewApp(make, claimed);
   // `slot` says where a NEW app lands. On a change it would have to mean
   // "and also move it", which evicts whatever holds that slot off the back
