@@ -65,7 +65,7 @@ const envelope = (code: string, message: string): Response =>
  *  through the other, which is the only way the two can be caught disagreeing.
  *  Deriving the paths means a verb added to the contract arrives here served,
  *  and a verb renamed there cannot leave this fake answering the old spelling. */
-const ENGINE_ROUTES = new Map(
+const ENGINE_ROUTES = new Map<string, string>(
   Object.entries(STORE_WIRE_PATHS)
     .filter(([op]) => op.startsWith("engine."))
     .map(([op, path]) => [path, op.slice("engine.".length)]),
