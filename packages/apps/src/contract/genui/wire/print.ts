@@ -191,6 +191,10 @@ const printNode = (state: PrintState, nodeId: string, depth: number): void => {
 const printQuery = (query: TreeQuery, queryNames: ReadonlySet<string>): string => {
   const attrs = [`id="${escapeString(query.name)}"`, `tool="${escapeString(query.tool)}"`];
   if (query.input !== undefined) attrs.push(`input={${printExpression(query.input, queryNames)}}`);
+  // The words this query shows in place of data — printed so the document says
+  // what the screen will say, in both of the states that are not "data".
+  if (query.whileLoading !== undefined) attrs.push(`whileLoading="${escapeString(query.whileLoading)}"`);
+  if (query.onError !== undefined) attrs.push(`onError="${escapeString(query.onError)}"`);
   return `  <Query ${attrs.join(" ")}/>`;
 };
 

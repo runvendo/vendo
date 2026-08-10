@@ -47,11 +47,21 @@ const convertNode = (node: TreeNode): TreeNode => node.props === undefined
   ? node
   : { ...node, props: convertPropValue(node.props) as Record<string, Json> };
 
-/** Query results reside at `"/" + name` — that pointer is the walk's path. */
-const convertQuery = (query: TreeQuery): { path: string; tool: string; input?: Record<string, Json> } => ({
+/** Query results reside at `"/" + name` — that pointer is the walk's path. The
+ *  two sentences travel with it: they are what a bound component renders where
+ *  its body would be in the states that are not "data". */
+const convertQuery = (query: TreeQuery): {
+  path: string;
+  tool: string;
+  input?: Record<string, Json>;
+  whileLoading?: string;
+  onError?: string;
+} => ({
   path: `/${query.name}`,
   tool: query.tool,
   ...(query.input === undefined ? {} : { input: query.input }),
+  ...(query.whileLoading === undefined ? {} : { whileLoading: query.whileLoading }),
+  ...(query.onError === undefined ? {} : { onError: query.onError }),
 });
 
 export type ConvertedPayload =

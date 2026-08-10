@@ -206,6 +206,13 @@ export const compileQuery = (state: CompileState, frames: Frame[]): void => {
       issue(state, "invalid-query-input", `query "${name}" input must be an object expression; the input was dropped`);
     }
   }
+  // The four states' copy, if the author wrote it. Absent stays absent here: the
+  // fill is the seam's (render-seam.ts), so the compiler's output keeps meaning
+  // exactly what the document said.
+  const whileLoading = attrs.props?.whileLoading;
+  if (typeof whileLoading === "string") query.whileLoading = whileLoading;
+  const onError = attrs.props?.onError;
+  if (typeof onError === "string") query.onError = onError;
   state.queries.push(query);
   state.hoistedQueryNames.add(name);
 };

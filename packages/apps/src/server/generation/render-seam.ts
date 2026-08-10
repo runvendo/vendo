@@ -49,6 +49,7 @@ import {
   type WireCompileResult,
   type AppFloor,
   stripServerAuthoritativeFields,
+  withQueryCopy,
 } from "../../contract/index.js";
 // In-package since the seam moved home to @vendoai/apps: the plan skeleton,
 // the emitted-payload assembly and the field stripping that goes with it.
@@ -302,6 +303,15 @@ export async function viewForWrite(
         );
         return undefined;
       }
+    }
+    // A query has four states and the Kit's props only ever named one of them,
+    // so a read that was still in flight — or that failed — rendered as
+    // "no accounts found". Every query that lands gets the two missing sentences
+    // filled from its name, which is what the renderer shows in place of the
+    // body and what a checkout prints back into `app.vendo`. The author's own
+    // copy is never overwritten.
+    if (compiled.tree.queries !== undefined) {
+      compiled.tree.queries = compiled.tree.queries.map(withQueryCopy);
     }
     compiledApp = compiled;
     payload = stripServerAuthoritativeFields(

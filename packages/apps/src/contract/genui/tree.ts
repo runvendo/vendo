@@ -24,6 +24,15 @@ export interface TreeQuery {
   name: string;
   tool: string;
   input?: Record<string, Json>;
+  /** The words a bound component shows where its body would be while this read
+   *  is still in flight. A query has four states and the Kit's props only ever
+   *  named one of them (`emptyState`), so a table read as "no accounts found"
+   *  before the answer arrived. */
+  whileLoading?: string;
+  /** The words a bound component shows where its body would be when this read
+   *  settled WITHOUT data. Never the empty-state copy: a failed load must not
+   *  read as "you have no spending". */
+  onError?: string;
 }
 
 /**
@@ -36,7 +45,26 @@ export const treeQuerySchema = z.object({
   name: z.string(),
   tool: z.string(),
   input: z.record(z.unknown()).optional(),
+  whileLoading: z.string().optional(),
+  onError: z.string().optional(),
 }).passthrough() satisfies z.ZodType<TreeQuery>;
+
+/** The name a sentence can say out loud: `spend_by_category` → "spend by category". */
+const spoken = (name: string): string =>
+  name.replace(/[_-]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+
+/**
+ * The two sentences every query owes its readers, filled from its name when the
+ * author left them out.
+ *
+ * Total and pure. Authored copy always wins — this is a floor under the four
+ * states, not an opinion about them.
+ */
+export const withQueryCopy = (query: TreeQuery): TreeQuery => ({
+  ...query,
+  whileLoading: query.whileLoading ?? `Loading ${spoken(query.name)}…`,
+  onError: query.onError ?? `Couldn't load ${spoken(query.name)}.`,
+});
 
 /** v2 spec §1–2 (docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md) —
  *  mirrors v1 `Tree` minus `components`: trees never carry component

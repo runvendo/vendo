@@ -319,9 +319,45 @@ interface NodeRendererProps {
   data: Record<string, Json>;
   state: Record<string, Json>;
   streaming: boolean;
+  /** Per query, the words to show in place of a body that has no data yet
+   *  (`tree.queries`' `whileLoading`/`onError`). */
+  queryCopy: Record<string, { whileLoading?: string; onError?: string }>;
   outcomes: Record<string, ToolOutcome | undefined>;
   runAction(nodeId: string, action: string, payload?: Json): Promise<ToolOutcome>;
   setViewState(key: string, value: Json): void;
+}
+
+/** The query a node's data came from: a `$path` binding's FIRST pointer segment
+ *  is the query's name by definition (the result lives at `"/" + name`). The
+ *  first one wins — a node bound to two queries says the first thing it misses. */
+function boundQuery(value: unknown): string | undefined {
+  if (isPathBinding(value)) return value.$path.split("/")[1];
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = boundQuery(item);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (typeof value === "object" && value !== null) return boundQuery(Object.values(value));
+  return undefined;
+}
+
+/**
+ * The sentence a component shows where its data would be, or undefined when the
+ * data is here.
+ *
+ * A query has FOUR states and the Kit's props only named one: `emptyState`. So a
+ * read still in flight, and a read that FAILED, both rendered as the empty state
+ * — "No accounts found" for data that was on its way, or gone. The query's own
+ * copy replaces it, and only when the query really contributed nothing: an empty
+ * ANSWER (`[]`, `0`) is present data and keeps the component's empty state.
+ */
+function queryNotice(props: NodeRendererProps, nodeProps: Record<string, Json> | undefined): string | undefined {
+  const name = boundQuery(nodeProps);
+  if (name === undefined || props.data[name] !== undefined) return undefined;
+  const copy = props.queryCopy[name];
+  return props.streaming ? copy?.whileLoading : copy?.onError;
 }
 
 const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid"]);
@@ -500,12 +536,21 @@ function NodeRenderer(props: NodeRendererProps) {
       );
     } else {
       const { bound, mismatch } = bindProps(node.props ?? {}, "host", props.data, props.state, invoke);
+      // `emptyState` is every Kit body's "words where the data would be" slot, so
+      // the query's loading/failed sentence rides the channel that already renders
+      // in exactly that place. The KIT's slot only: a host component's props are
+      // its own API, and this must not put words in it.
+      const notice = Implementation === kit ? queryNotice(props, node.props) : undefined;
       // The notice replaces only the mis-bound component, never its subtree —
       // a container (Stack/Grid) with one bad prop must not swallow its valid
       // children (same containment scope as the generated paths above).
       content = mismatch !== null
         ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>
-        : <Implementation {...bound}>{children}</Implementation>;
+        : (
+          <Implementation {...bound} {...(notice === undefined ? {} : { emptyState: notice })}>
+            {children}
+          </Implementation>
+        );
     }
   }
 
@@ -540,6 +585,25 @@ function StatefulTreeView({
   // component sources (a payload extra, like furnishings).
   const componentTools = (tree as WalkTree & { componentTools?: Record<string, string[]> }).componentTools;
   const inClient = (tree as WalkTree & { inClient?: InClientVenue }).inClient;
+  // The copy each query owes the two states that are not "data" (tree.ts
+  // `withQueryCopy` fills it when the author left it out). A payload extra, read
+  // like the rest of them: anything malformed simply contributes nothing.
+  const queryCopy = useMemo<Record<string, { whileLoading?: string; onError?: string }>>(() => {
+    const queries = (tree as WalkTree & { queries?: unknown }).queries;
+    if (!Array.isArray(queries)) return {};
+    const sentence = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+    const entries = (queries as ReadonlyArray<Record<string, unknown> | undefined>).flatMap((query) => {
+      // Both shapes reach here: the walk's converted query (`path`) and a tree
+      // handed to `TreeView` straight (`name`). The query's own name is the key
+      // either way, because that is where its result lives.
+      const name = typeof query?.name === "string"
+        ? query.name
+        : typeof query?.path === "string" ? query.path.replace(/^\//, "") : undefined;
+      if (name === undefined) return [];
+      return [[name, { whileLoading: sentence(query?.whileLoading), onError: sentence(query?.onError) }] as const];
+    });
+    return Object.fromEntries(entries);
+  }, [tree]);
   // Tolerate a malformed field (like every other payload extra): only an
   // array of well-formed entries renders the notice.
   const seedDriftRaw = (tree as WalkTree & { seedDrift?: unknown }).seedDrift;
@@ -698,6 +762,7 @@ function StatefulTreeView({
         data={data ?? validation.tree.data ?? {}}
         state={viewState}
         streaming={streaming}
+        queryCopy={queryCopy}
         outcomes={outcomes}
         runAction={runAction}
         setViewState={updateState}
