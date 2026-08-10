@@ -203,6 +203,10 @@ export interface CloudStepOptions {
   select?: (question: string, options: SelectOption[]) => Promise<string>;
   /** The masked prompt behind "bring my own key". */
   askSecret?: (question: string, hint?: string) => Promise<string>;
+  /** The pretty renderer is driving: the ceremony drops its machine-readable
+      receipt, which is noise under a rail. Every machine-consumed path keeps
+      it — see DeviceLoginOptions.pretty. */
+  pretty?: boolean;
   cloudProbe?: (options: { env?: Record<string, string | undefined> }) => Promise<CloudDoctorResult>;
   /** The whole ceremony in one seam (default: runDeviceLogin). */
   deviceLogin?: () => Promise<number>;
@@ -351,6 +355,7 @@ async function cloudStep(options: CloudStepOptions, failure: { failedStep?: stri
       root,
       isTty: tty,
       rerunHint: false,
+      ...(options.pretty === true ? { pretty: true } : {}),
       ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
       ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
     },

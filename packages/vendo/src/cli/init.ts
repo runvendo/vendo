@@ -1400,7 +1400,9 @@ async function resolveModelCredential(input: {
     // non-TTY guard, and cloud-init only reaches for either on a real TTY.
     select: pretty === null ? plainSelect : pretty.select,
     askSecret: pretty === null ? plainSecret : pretty.secret,
-    ...(pretty === null ? {} : { confirm: pretty.confirm }),
+    // The SAME gate that selected the renderer above: a rail is on screen, so
+    // the ceremony's machine-readable receipt would be noise under it.
+    ...(pretty === null ? {} : { confirm: pretty.confirm, pretty: true }),
     // --byo is an ANSWER to the models question, so it rides `models`.
     // --cloud-key is not: it lands the key in .env.local before this step
     // runs, so the probe finds it and the question never gets asked. Passing

@@ -46,6 +46,20 @@ export interface DeviceLoginOptions {
   /** init runs the ceremony inline and picks the key up in the same run —
       it suppresses the standalone "re-run `vendo init`" tail. */
   rerunHint?: boolean;
+  /**
+   * The pretty renderer is driving this ceremony, so a human is reading a rail
+   * and the machine-readable receipt below is noise sitting under the three
+   * lines of state. Suppressed there and NOWHERE else: `--agent`, `--json`,
+   * piped, non-TTY, CI and standalone `vendo login` all keep it byte for byte,
+   * because something parses each of those.
+   *
+   * Passed explicitly rather than inferred. `usePrettyOutput()` answers "is
+   * this terminal colour-capable", which is a different question — standalone
+   * `vendo login` in the same terminal has no renderer and must keep its
+   * receipt — and inferring it from `rerunHint` would give that flag a second
+   * meaning for the next reader to break silently.
+   */
+  pretty?: boolean;
   /** Where ~/.vendo lives (default: the home directory) — the pending-claim
       file that lets a fresh run resume a still-open ceremony (#479). */
   home?: string;
@@ -369,7 +383,9 @@ export async function runDeviceLogin(
         if (options.rerunHint !== false) {
           output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");
         }
-        printJson(output, { deviceLogin: true, wroteEnvLocal: true, keyLast4: key.slice(-4) });
+        if (options.pretty !== true) {
+          printJson(output, { deviceLogin: true, wroteEnvLocal: true, keyLast4: key.slice(-4) });
+        }
         return "approved";
       }
 
@@ -402,12 +418,14 @@ export async function runDeviceLogin(
     // is not a failure. A re-run resumes this same claim (#479).
     const pendingExit = (): number => {
       output.log(`Still waiting on approval — code ${userCode}. Re-run \`vendo login\` to resume (it continues this same request).`);
-      printJson(output, {
-        deviceLogin: true,
-        pending: true,
-        userCode,
-        verificationUriComplete,
-      });
+      if (options.pretty !== true) {
+        printJson(output, {
+          deviceLogin: true,
+          pending: true,
+          userCode,
+          verificationUriComplete,
+        });
+      }
       return 0;
     };
 
