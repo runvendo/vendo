@@ -1,4 +1,12 @@
-import { VendoError, canonicalJson, type BlobStore, type RecordStore, type VendoRecord } from "@vendoai/core";
+import {
+  STORE_WIRE_PATHS,
+  VendoError,
+  assertEngineCollection,
+  canonicalJson,
+  type BlobStore,
+  type RecordStore,
+  type VendoRecord,
+} from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 
 const decoder = new TextDecoder();
@@ -49,6 +57,19 @@ const STATUS: Record<string, number> = {
 const json = (body: unknown, status = 200): Response => Response.json(body, { status });
 const envelope = (code: string, message: string): Response =>
   json({ error: { code, message } }, STATUS[code] ?? 503);
+
+/** The engine door's routes, mount-relative path -> op name, read OFF the wire
+ *  contract instead of spelled out here. `engine` is the same seven verbs as
+ *  `records` over the same rows, so it reaches the same dispatcher and the same
+ *  in-memory state below — a test may write through one door and read back
+ *  through the other, which is the only way the two can be caught disagreeing.
+ *  Deriving the paths means a verb added to the contract arrives here served,
+ *  and a verb renamed there cannot leave this fake answering the old spelling. */
+const ENGINE_ROUTES = new Map(
+  Object.entries(STORE_WIRE_PATHS)
+    .filter(([op]) => op.startsWith("engine."))
+    .map(([op, path]) => [path, op.slice("engine.".length)]),
+);
 
 const sameValue = (
   current: VendoRecord,
@@ -231,6 +252,16 @@ export function fakeConsole() {
     // serving the StoreAdapter surface over the same in-memory state.
     if (rest[0] === "records" && rest.length === 2 && post) {
       return recordsOp(adapter.records(body.collection as string), rest[1]!, body, miss);
+    }
+    // The engine door: Vendo's OWN drawers, same seven verbs over the same rows,
+    // with the allowlist in front. The gate is served here rather than skipped
+    // because a fake that answers a collection the live door refuses lets a
+    // wrong call pass every test and fail in production.
+    const engineOp = post ? ENGINE_ROUTES.get(`/${rest.join("/")}`) : undefined;
+    if (engineOp !== undefined) {
+      const collection = body.collection as string;
+      assertEngineCollection(collection);
+      return recordsOp(adapter.records(collection), engineOp, body, miss);
     }
     if (rest[0] === "blobs" && rest.length === 2 && post) {
       return blobsWireOp(adapter.blobs(body.namespace as string), rest[1]!, body, miss);
