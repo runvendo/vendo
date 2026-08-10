@@ -5,6 +5,7 @@
  */
 import type { CSSProperties, ReactNode } from "react";
 import {
+  applyFormat,
   formatDateTime,
   formatMoney,
   formatNum,
@@ -12,6 +13,7 @@ import {
   type DateInput,
   type DateTimeOptions,
   type MoneyOptions,
+  type ValueFormat,
 } from "./format.js";
 import { font, t } from "./tokens.js";
 
@@ -174,10 +176,13 @@ export function EnumBadge({ value, labels, tones, tone = "neutral" }: EnumBadgeP
 export interface TextProps {
   text: ReactNode;
   variant?: "body" | "heading" | "caption" | "label";
+  /** Value-tier format, for when `text` is a bound raw value (cents, ISO date). */
+  format?: ValueFormat;
 }
 
 /** Themed text. Heading renders an <h3>; others render a <span>. */
-export function Text({ text, variant = "body" }: TextProps) {
+export function Text({ text, variant = "body", format }: TextProps) {
+  const body = format ? (applyFormat(text, format) ?? <Placeholder />) : text;
   const style: CSSProperties = {
     color: variant === "caption" ? t.muted : t.text,
     fontFamily: variant === "heading" ? t.headingFamily : t.fontFamily,
@@ -186,17 +191,18 @@ export function Text({ text, variant = "body" }: TextProps) {
     letterSpacing: "-0.011em",
     lineHeight: variant === "heading" ? 1.3 : 1.5,
     margin: 0,
+    ...(format === "money" || format === "number" || format === "percent" ? numeric : null),
   };
   if (variant === "heading") {
     return (
       <h3 data-kit="Text" data-variant={variant} style={style}>
-        {text}
+        {body}
       </h3>
     );
   }
   return (
     <span data-kit="Text" data-variant={variant} style={style}>
-      {text}
+      {body}
     </span>
   );
 }

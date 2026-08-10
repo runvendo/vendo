@@ -93,8 +93,9 @@ export const KIT_SPECS: KitComponentSpec[] = [
       // load-bearing and blocked the very common `<Text text={count}/>`.
       text: copy(z.union([z.string(), z.number()]), "the text to show", { required: true }),
       variant: config(z.enum(["body", "heading", "caption", "label"]), "text role"),
+      format: config(valueFormat, "value tier format — ONLY when `text` is a bound raw value (cents, ISO date), never beside hand-written copy"),
     },
-    examples: ['<Text text="This month" variant="heading"/>'],
+    examples: ['<Text text="This month" variant="heading"/>', '<Text text={transfer.amountCents} format="money"/>'],
   },
   {
     name: "Money",
