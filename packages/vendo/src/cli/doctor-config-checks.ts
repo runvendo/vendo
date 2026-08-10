@@ -24,13 +24,25 @@ export async function checkConfigFiles(run: DoctorRun): Promise<void> {
 
 /** Spec 2026-08-06 §B1 — the deployment's path prefix has exactly one home:
  *  VENDO_BASE_URL. A spec that declares a DIFFERENT relative server mount is the
- *  #914 shape by another route: every page renders and every tool call 404s. */
+ *  #914 shape by another route: every page renders and every tool call 404s.
+ *  An UNSET base URL is that same disagreement, and the posture it actually
+ *  bites in: with no base URL the wire learns the bare request ORIGIN
+ *  (`onRequestOrigin`), so a prefix-free stored path lands one prefix short. */
 export async function checkMountAgreement(run: DoctorRun): Promise<void> {
   const { root, env } = run;
   const specPath = await firstOpenApiSpec(root);
   const declaredMount = specPath === null ? "" : await openApiMountPath(specPath);
+  if (declaredMount === "") return;
+  const spec = relative(root, specPath!);
+  const symptom = "404s every host tool while every page renders";
+  const fix = `Set VENDO_BASE_URL to the app's FULL public URL including ${JSON.stringify(declaredMount)}, or drop the relative server from the spec.`;
   const configuredBase = env["VENDO_BASE_URL"];
-  if (declaredMount === "" || configuredBase === undefined || configuredBase.trim() === "") return;
+  if (configuredBase === undefined || configuredBase.trim() === "") {
+    run.fail("config/mount", "E-CFG-003",
+      `${spec} declares servers[0].url ${JSON.stringify(declaredMount)} but VENDO_BASE_URL is unset — the wire then serves host `
+      + `tools from the bare request origin, which ${symptom}. ${fix}`);
+    return;
+  }
   let basePath = "";
   try {
     basePath = publicBase(configuredBase).path;
@@ -39,9 +51,8 @@ export async function checkMountAgreement(run: DoctorRun): Promise<void> {
   }
   if (basePath !== declaredMount) {
     run.fail("config/mount", "E-CFG-003",
-      `${relative(root, specPath!)} declares servers[0].url ${JSON.stringify(declaredMount)} but VENDO_BASE_URL's path is `
-      + `${JSON.stringify(basePath)} — one of them is wrong, and the disagreement 404s every host tool while every page renders. `
-      + `Set VENDO_BASE_URL to the app's FULL public URL including ${JSON.stringify(declaredMount)}, or drop the relative server from the spec.`);
+      `${spec} declares servers[0].url ${JSON.stringify(declaredMount)} but VENDO_BASE_URL's path is `
+      + `${JSON.stringify(basePath)} — one of them is wrong, and the disagreement ${symptom}. ${fix}`);
   } else {
     run.pass("config/mount", `the OpenAPI server mount and VENDO_BASE_URL agree on ${JSON.stringify(declaredMount)}`);
   }

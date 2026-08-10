@@ -58,7 +58,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Account id, e.g. acct_checking"
+            "description": "Account id, e.g. acc_checking"
           }
         ],
         "responses": {

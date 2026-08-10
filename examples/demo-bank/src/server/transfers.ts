@@ -23,7 +23,7 @@ export function transferMoney(input: TransferMoneyInput = {}): Transaction {
   const store = getStore()
   const checking = store.accounts.find((a) => a.kind === "checking")
   const account = checking ?? store.accounts[0]
-  const accountId = account?.id ?? "acct_checking"
+  const accountId = account?.id ?? "acc_checking"
 
   const amount = input.amount ?? 0
   // Validate BEFORE any mutation: a finite positive integer number of cents.

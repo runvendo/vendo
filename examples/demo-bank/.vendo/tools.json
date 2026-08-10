@@ -207,7 +207,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_demo_reset_create",
@@ -236,7 +236,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Account id, e.g. acct_checking"
+            "description": "Account id, e.g. acc_checking"
           }
         },
         "required": [
@@ -311,7 +311,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_getBudgets",
@@ -373,7 +373,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_getCashflowInsights",
@@ -425,7 +425,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_getProfile",
@@ -504,7 +504,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_getRecurringInsights",
@@ -582,7 +582,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_getSpendingInsights",
@@ -641,7 +641,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_getTransaction",
@@ -771,7 +771,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_listAccounts",
@@ -851,7 +851,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_listAccountTransactions",
@@ -1001,7 +1001,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_listCards",
@@ -1085,7 +1085,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_listCardTransactions",
@@ -1235,7 +1235,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_listGoals",
@@ -1293,7 +1293,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_listNotifications",
@@ -1361,7 +1361,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_listPayees",
@@ -1416,7 +1416,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_listScheduledPayments",
@@ -1483,7 +1483,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_listTransactions",
@@ -1667,7 +1667,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_transferMoney",
@@ -1832,7 +1832,7 @@
       },
       "inputSchemaSource": "declared",
       "outputSchemaSource": "declared",
-      "srcHash": "sha256:b0e1443e377bd2e13d505fb33febab4b1c62285700fa0ccaa3993fc063f265bb"
+      "srcHash": "sha256:040140ea40d1985cef514df49fe6a915c394006acab143a09b0216dbbdc62b65"
     },
     {
       "name": "host_voice_create",

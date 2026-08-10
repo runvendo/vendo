@@ -45,8 +45,9 @@ export const mapleKnowledgeDocs: KnowledgeDoc[] = [
     visibility: "public",
     title: "Available balance",
     text: "Available balance: the money you can spend right now — the current balance minus "
-      + "pending card authorizations and holds. Checks you deposit may show in the current "
-      + "balance before they are available.",
+      + "pending card authorizations and holds. Maple does not report one: an account carries a "
+      + "single `balance` and nothing else, so there is no separate available figure to quote. "
+      + "Pending and authorized transactions are listed individually and are not deducted from it.",
     source: "help.maple.bank/glossary#available-balance",
   },
   {
@@ -54,10 +55,12 @@ export const mapleKnowledgeDocs: KnowledgeDoc[] = [
     kind: "api",
     visibility: "public",
     title: "GET /api/accounts",
-    text: "GET /api/accounts returns the authenticated customer's accounts. Response fields: id, "
-      + "type (checking | savings), name, currentBalanceCents, availableBalanceCents, currency. "
-      + "Supports ?type= to filter by account type. Balances are integers in cents — divide by "
-      + "100 for display.",
+    text: "GET /api/accounts returns the authenticated customer's accounts as { data: [...] }. "
+      + "Each account carries: id (e.g. acc_checking), name, kind (checking | savings | credit | "
+      + "investing), mask, balance, accountNumber (masked), sparkline (number[]), and optionally "
+      + "routingNumber and apy. It takes NO query parameters — there is no filter, so read every "
+      + "account and narrow by `kind` yourself. balance is an integer in cents, negative on credit "
+      + "accounts — divide by 100 for display.",
     source: "developers.maple.bank/reference/accounts",
   },
   {

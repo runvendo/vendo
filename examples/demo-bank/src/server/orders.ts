@@ -28,7 +28,7 @@ let orderCounter = 0
 export function placeOrder(input: PlaceOrderInput = {}): Transaction {
   const store = getStore()
   const checking = store.accounts.find((a) => a.kind === "checking")
-  const accountId = checking?.id ?? store.accounts[0]?.id ?? "acct_checking"
+  const accountId = checking?.id ?? store.accounts[0]?.id ?? "acc_checking"
 
   const minute = input.minute ?? 18 + ((orderCounter * 7) % 40)
   const orderNo = 9900 + ((orderCounter * 13) % 99)

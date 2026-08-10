@@ -124,8 +124,10 @@ async function readDocument(specPath: string): Promise<JsonObject> {
  * url carries its own path on `binding.baseUrl` instead), so every spec that
  * does not opt in is untouched.
  *
- * Read here and applied by the caller across ALL extractors, not folded into the
- * bindings below: see `runExtractors`.
+ * Read, never applied: stored binding paths are PREFIX-FREE (spec 2026-08-06 §B1)
+ * and core's `joinUrl` attaches the prefix once at call time from VENDO_BASE_URL —
+ * folding it in here is what produced /maple/maple/… (#914). The one consumer is
+ * doctor's mount-agreement check, which compares this against VENDO_BASE_URL.
  */
 export async function openApiMountPath(specPath: string): Promise<string> {
   const servers = (await readDocument(specPath)).servers;

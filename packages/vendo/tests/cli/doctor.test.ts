@@ -1488,6 +1488,23 @@ describe("vendo doctor error codes + fix_refs", () => {
     });
   });
 
+  /** The posture the hazard actually occurs in: no base URL at all, so the wire
+   *  learns the bare request ORIGIN and serves every host tool one prefix short.
+   *  The check used to return early here — silent in the one case that breaks. */
+  it("fails E-CFG-003 when the spec declares a mount and VENDO_BASE_URL is unset", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "openapi.json"), specWithMount, "utf8");
+    const { report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      env: {},
+    });
+    expect(report.checks.find((check) => check.id === "config/mount")).toMatchObject({
+      status: "broken",
+      error_code: "E-CFG-003",
+    });
+  });
+
   it("passes config/mount when the spec and VENDO_BASE_URL agree", async () => {
     const root = await healthy();
     await writeFile(join(root, "openapi.json"), specWithMount, "utf8");
