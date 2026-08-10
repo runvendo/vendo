@@ -324,6 +324,41 @@ describe("the escalation seam (§4.5)", () => {
   });
 });
 
+/**
+ * Measured on 98 recorded genbench screen runs: a tenth delivered NO screen, and
+ * the ones that saved nothing at all mostly stopped talking after a single host
+ * read — inside the step budget, with the budget unspent. Nothing asked them
+ * again, because the reviewer pass fires only over a screen that already exists.
+ */
+describe("the last chance (a run never ends empty-handed unasked)", () => {
+  it("asks once more when nothing was saved, with save_app the ONLY tool left", async () => {
+    const screen = harness({
+      // The shape on disk: the model speaks instead of writing, and the run is over.
+      turns: [textTurn("I would need more information to build this."), saveApp(GOOD_APP), textTurn("done")],
+    });
+    const result = await screen.assemble("show me my spending");
+
+    // The ask itself: the second prompt names the blank screen and the one move left.
+    expect(JSON.stringify(screen.model.prompts[1] ?? "")).toContain("this is your last step");
+    // A ONE-HAND loadout — no search to run, no verb to check with, nowhere for
+    // the last step to go but the document.
+    expect(screen.model.toolNamesPerCall[1]).toEqual([SAVE_APP_TOOL]);
+    // …and it went through the real write path onto the real seam.
+    expect(result.kind).toBe("assembled");
+    expect(await screen.workspace.readFile(`/user/apps/${APP}/app.vendo`)).toBe(GOOD_APP);
+    expect(screen.emitted.map((part) => part.payload.streaming)).toEqual([true, false]);
+  });
+
+  it("never fires over a screen that already painted", async () => {
+    const screen = harness({ turns: [saveApp(GOOD_APP), textTurn("done")] });
+    const result = await screen.assemble("show me my spending");
+    expect(result.kind).toBe("assembled");
+    // Two calls: the save and the sentence. A third would be the last chance
+    // spending the person's time on a screen they can already see.
+    expect(screen.model.calls).toBe(2);
+  });
+});
+
 describe("the guard is the same guard, whichever door", () => {
   it("every host read goes through the guard-bound registry", async () => {
     const screen = harness({

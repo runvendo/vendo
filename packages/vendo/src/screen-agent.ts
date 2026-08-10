@@ -82,6 +82,36 @@ import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harn
  */
 export const SCREEN_STEPS = 10;
 
+/**
+ * The wall clock on the first drive, and the budget for the LAST-CHANCE save.
+ *
+ * The step cap is not a clock: a loop that spends its ten steps thinking can
+ * outlive any caller, and the runs that end with nothing on screen are mostly
+ * that — the budget gone on `search_components` and `validate`, or the model
+ * simply stopping after one host read without ever saving. Both shapes ended at
+ * the `unavailable` return below with no second ask, because the reviewer pass is
+ * gated on a screen already existing.
+ *
+ * So assembly gets a clock, and what the clock buys is one more ask: 170s to
+ * think plus 60s to write is one save inside any five-minute caller, and the
+ * person gets a screen instead of a sentence about not having one.
+ */
+export const SCREEN_ASSEMBLY_MS = 170_000;
+export const SCREEN_LAST_CHANCE_MS = 60_000;
+
+/** Two: one step to save, one to answer. Nothing to read, nothing to check. */
+export const SCREEN_LAST_CHANCE_STEPS = 2;
+
+/** The last-chance ask. It names the ONE thing left to do and takes every excuse
+ *  for a detour away: no reading, no checking, and a `<Disclaimer>` for the part
+ *  of the ask that cannot be shown, so "I could not do all of it" stops being a
+ *  reason to deliver none of it. */
+const LAST_CHANCE_REQUEST =
+  "Nothing is on the person's screen and this is your last step. Save app.vendo now: one <App>, the <Query> "
+  + "declarations this ask needs, and the components that show them. Write it from the tool shapes in the brief "
+  + "— read nothing first, check nothing, and if part of the ask cannot be shown put that part in a <Disclaimer> "
+  + "and ship the rest.";
+
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
  *  agent's own, not a product capability anybody else may reach. */
@@ -457,6 +487,15 @@ export async function assembleScreen(
     .map((listing) => listing.name);
   loadout.push(saveApp, escalate);
 
+  /**
+   * The caller's cancellation AND assembly's own clock, kept apart on purpose:
+   * only `surface.signal` means "the caller hung up" and returns nothing, while a
+   * clock abort is this loop running out of thinking time and falls through to the
+   * last-chance save below. Every `surface.signal.aborted` check stays exactly
+   * that — reading `clock.aborted` there would turn the rescue into a hang-up.
+   */
+  const clock = AbortSignal.any([surface.signal, AbortSignal.timeout(SCREEN_ASSEMBLY_MS)]);
+
   const turn: Turn<VendoHarnessOptions> = {
     messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
     // The listings are read ONCE and handed back verbatim: a closed loadout has
@@ -468,7 +507,7 @@ export async function assembleScreen(
     models: surface.models,
     state: runState(),
     options: {},
-    signal: surface.signal,
+    signal: clock,
     // This loop talks to nobody: the front door speaks the receipt, and an
     // approval it cannot show is a denial with a reason (see `registryTools`).
     interactive: false,
@@ -502,7 +541,10 @@ export async function assembleScreen(
       if (event.type === "error") failure ??= event.message;
     }
   };
-  await drive(turn.messages);
+  // `.catch` because the clock can abort a stream mid-drain, and an aborted stream
+  // is allowed to throw out of `harness.run` rather than yield an `error` event —
+  // a throw here would skip the last chance the run has left.
+  await drive(turn.messages).catch(() => undefined);
 
   if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
   // Escalation wins over a partial paint: the builder is finishing this app, and
@@ -536,7 +578,9 @@ export async function assembleScreen(
      * time repeating it.
      */
     const appPath = `${directory}/${APP_FILE}`;
-    const instruction = record.painted
+    // …and not once the clock has run out: the repair drive would abort on its
+    // first step, so the reviewer call would be spent on a round that cannot run.
+    const instruction = record.painted && !clock.aborted
       ? repairInstruction(await validateWrittenApps({
         tools: turn.tools,
         workspace: turn.workspace,
@@ -565,6 +609,50 @@ export async function assembleScreen(
       ...(record.title === undefined ? {} : { title: record.title }),
       ...(record.decisions === undefined ? {} : { decisions: record.decisions }),
     };
+  }
+  /**
+   * THE LAST CHANCE — assembly never comes back with nothing on screen without
+   * having been asked, once, for the one thing it forgot to do.
+   *
+   * Measured on 98 recorded screen runs: a tenth of them delivered NO screen, and
+   * every one ended here. Three of the four that saved nothing at all stopped
+   * after a single host read (two model calls of a ten-step budget); the fourth
+   * spent all ten on `search_components` and `validate` and never wrote a
+   * document. None of them had heard a word about the screen still being blank —
+   * the reviewer pass above fires only when a screen already exists.
+   *
+   * A ONE-HAND loadout, not a re-prompt of the same menu: with `save_app` the only
+   * tool on the table there is no search to run and no verb to check with, so the
+   * step the model has left can only go into the document. The brief is the same
+   * brief, so this is the same job — just the last minute of it.
+   */
+  if (!surface.signal.aborted) {
+    const lastChance = vendo({
+      tools: [saveApp],
+      maxSteps: SCREEN_LAST_CHANCE_STEPS,
+      system: () => screenBrief(input, listings),
+    });
+    const messages: Turn<VendoHarnessOptions>["messages"] = [...turn.messages, {
+      id: `last_chance_${input.appId}`,
+      role: "user",
+      parts: [{ type: "text", text: LAST_CHANCE_REQUEST }],
+    }];
+    // A fresh clock: the first drive's may already have fired, and a save asked for
+    // on an expired signal is not asked for at all. `failure` is left alone — the
+    // first drive's word is the run's own reason, and this drive is the answer to
+    // it, not a better description of it.
+    const signal = AbortSignal.any([surface.signal, AbortSignal.timeout(SCREEN_LAST_CHANCE_MS)]);
+    const drain = async (): Promise<void> => {
+      for await (const _event of lastChance.run({ ...turn, messages, signal })) { /* drained */ }
+    };
+    await drain().catch(() => undefined);
+    if (record.assembled) {
+      return {
+        kind: "assembled",
+        ...(record.title === undefined ? {} : { title: record.title }),
+        ...(record.decisions === undefined ? {} : { decisions: record.decisions }),
+      };
+    }
   }
   return { kind: "unavailable", why: failure ?? "assembly produced nothing that renders" };
 }
