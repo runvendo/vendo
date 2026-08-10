@@ -265,7 +265,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Progress",
     group: "charts",
-    summary: "A progress bar from a ratio (0..1) or value/max. Clamps to 100%.",
+    summary: "A value measured against a limit — a ratio (0..1) or value/max. Reach for it on a workload-against-capacity figure: over max shows a full bar in the danger tone with its real percentage, and a zero says \"None\".",
     props: {
       value: data(z.number(), "ratio 0..1, or a raw value with max", { required: true }),
       max: data(z.number(), "denominator when value is raw"),

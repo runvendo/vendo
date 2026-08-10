@@ -30,12 +30,16 @@ export function Progress({ value, max, label, showValue = false, tone = "accent"
   const ratio = max !== undefined && max !== 0 ? value / max : value;
   const clamped = Math.max(0, Math.min(1, ratio));
   const pct = `${Math.round(clamped * 100)}%`;
+  const over = ratio > 1;
+  // The two readings a clamped track cannot draw: an empty meter looks like a missing one,
+  // and an over-capacity value is pixel-identical to exactly full — so both say it in words.
+  const readout = clamped === 0 ? "None" : over ? `${Math.round(ratio * 100)}%` : showValue ? pct : null;
   return (
     <div data-kit="Progress" style={{ ...font, display: "flex", flexDirection: "column", gap: 4 }}>
-      {(label || showValue) && (
+      {(label || readout) && (
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85em" }}>
           {label ? <span style={{ color: t.muted }}>{label}</span> : <span />}
-          {showValue ? <span style={{ fontVariantNumeric: "tabular-nums" }}>{pct}</span> : null}
+          {readout ? <span style={{ color: clamped === 0 ? t.muted : undefined, fontVariantNumeric: "tabular-nums" }}>{readout}</span> : null}
         </div>
       )}
       <div
@@ -45,15 +49,17 @@ export function Progress({ value, max, label, showValue = false, tone = "accent"
         aria-valuemax={100}
         style={{ width: "100%", height: 8, borderRadius: 999, background: `color-mix(in srgb, ${t.muted} 18%, ${t.surface})`, overflow: "hidden" }}
       >
-        <div
-          style={{
-            width: pct,
-            height: "100%",
-            borderRadius: 999,
-            background: TONE_FILL[tone],
-            transition: `width ${t.motionDuration} ${t.motionEasing}`,
-          }}
-        />
+        {clamped > 0 && (
+          <div
+            style={{
+              width: pct,
+              height: "100%",
+              borderRadius: 999,
+              background: over ? t.danger : TONE_FILL[tone],
+              transition: `width ${t.motionDuration} ${t.motionEasing}`,
+            }}
+          />
+        )}
       </div>
     </div>
   );
