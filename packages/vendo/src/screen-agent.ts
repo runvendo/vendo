@@ -268,14 +268,14 @@ theme and tool shapes, and the ask itself is the last thing you will read.`;
 /**
  * The full brief, in READING order rather than authoring order.
  *
- * Same five bodies of text as before — nothing is cut, because cutting this brief
- * is measured to cost quality. What changed is which of them the model reads LAST,
- * next to the ask: the syntax manual is a lookup table (27,593 characters of
- * grammar, worked example and component reference) and it used to sit between the
- * job description and the ask, so 31,000 characters separated "What a good screen
- * looks like" — the bar the reviewer actually grades — from the thing being graded.
- * With the manual first, the final ~3,700 characters before the ask are the quality
- * bar, this host's theme and design rules, and the tools' real shapes.
+ * Same bodies of text as before — nothing is cut, because cutting this brief is
+ * measured to cost quality. What changed is which of them the model reads LAST,
+ * next to the ask. The syntax manual is a lookup table (grammar, one worked app,
+ * the component reference) and it used to sit BETWEEN the job description and the
+ * ask, so "What a good screen looks like" — the bar the reviewer actually grades —
+ * ended ~37,000 characters before the thing being graded. With the manual moved
+ * ahead of it, that drops to ~14,000, and what the model reads last is the bar,
+ * this host's theme and design rules, and the tools' real shapes.
  *
  * The reorder costs no prompt cache. `environmentNote` interpolates `appId`, so this
  * string has always been unique per screen and no cross-screen prefix ever hit; the
