@@ -58,8 +58,20 @@ function resolvePath(row: Record<string, unknown>, path: string): unknown {
   }, row);
 }
 
-const alignCss = (a: DataTableColumn["align"]): CSSProperties["textAlign"] =>
-  a === "end" ? "right" : a === "center" ? "center" : "left";
+const isQuantity = (col?: DataTableColumn): boolean =>
+  col?.format === "money" || col?.format === "number" || col?.format === "percent";
+
+/** A quantity column right-aligns itself; an explicit `align` still wins. */
+const alignFor = (col?: DataTableColumn): CSSProperties["textAlign"] =>
+  col?.align
+    ? col.align === "end"
+      ? "right"
+      : col.align === "center"
+        ? "center"
+        : "left"
+    : isQuantity(col)
+      ? "right"
+      : "left";
 
 /**
  * The text a cell actually SHOWS, which is the only thing a filter may compare
@@ -121,7 +133,24 @@ export function DataTable(props: DataTableProps) {
           const raw = ctx.getValue();
           const formatted = applyFormat(raw, col.format ?? "text");
           if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
-          return formatted;
+          if (isQuantity(col)) return formatted;
+          // A row is one line tall: a long free-text cell (a merchant name at
+          // phone width) clips instead of wrapping the amount beside it off the
+          // row's rhythm.
+          return (
+            <span
+              style={{
+                display: "inline-block",
+                maxWidth: "20ch",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                verticalAlign: "bottom",
+              }}
+            >
+              {formatted}
+            </span>
+          );
         },
         // A dropdown lists the values that exist, so picking one means THIS
         // value — "includesString" here let a pick of "paid" list the "unpaid"
@@ -265,7 +294,7 @@ export function DataTable(props: DataTableProps) {
                         fontWeight: 700,
                         letterSpacing: "0.045em",
                         padding: cellPad,
-                        textAlign: alignCss(col?.align),
+                        textAlign: alignFor(col),
                         textTransform: "uppercase",
                         cursor: "pointer",
                         userSelect: "none",
@@ -301,8 +330,9 @@ export function DataTable(props: DataTableProps) {
                         style={{
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
                           padding: cellPad,
-                          textAlign: alignCss(col?.align),
+                          textAlign: alignFor(col),
                           fontVariantNumeric: col?.format && col.format !== "text" ? "tabular-nums" : undefined,
+                          whiteSpace: isQuantity(col) ? "nowrap" : undefined,
                         }}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}

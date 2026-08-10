@@ -142,7 +142,7 @@ One \`<App>\` document and nothing else; anything after \`</App>\` is dropped.
     <Stat label="Outstanding" value={sum(invoices.data, "amount_cents")} format="money"/>
     <Stat label="Open invoices" value={count(invoices.data)}/>
   </Grid>
-  <DataTable rows={invoices.data} columns={[{key:"client",label:"Client"},{key:"amount_cents",format:"money",align:"end"}]} emptyState="Nothing outstanding"/>
+  <DataTable rows={invoices.data} columns={[{key:"client",label:"Client"},{key:"amount_cents",format:"money"}]} emptyState="Nothing outstanding"/>
 </App>
 \`\`\`
 

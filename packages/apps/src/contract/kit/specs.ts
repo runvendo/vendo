@@ -157,7 +157,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     summary: "The smart table. Sorts, filters, searches, paginates, resolves dot-path column keys, and formats each cell — you only pass rows and columns.",
     props: {
       rows: data(rows, "rows from a tool call", { required: true }),
-      columns: config(z.array(tableColumn), "column descriptions; key supports dot-paths like client.name; format is a value tier token"),
+      columns: config(z.array(tableColumn), "column descriptions; key supports dot-paths like client.name; format is a value tier token; a money/number/percent column right-aligns itself"),
       sortBy: config(z.string(), 'initial sort, e.g. "dueDate asc"'),
       limit: config(z.number().int().positive(), "hard cap on rows shown"),
       filterableBy: config(z.array(z.string()), "column keys to expose as filter dropdowns"),
@@ -167,7 +167,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       caption: copy(z.string(), "table caption"),
     },
     examples: [
-      '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amountCents",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
+      '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amountCents",format:"money"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
     ],
   },
   {
