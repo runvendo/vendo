@@ -300,6 +300,8 @@ export function DataTable(props: DataTableProps) {
                         key={cell.id}
                         style={{
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
+                          // a date is secondary copy: it labels a row, it is never the row's value
+                          color: col?.format === "date" || col?.format === "datetime" || col?.format === "time" ? t.muted : undefined,
                           padding: cellPad,
                           textAlign: alignCss(col?.align),
                           fontVariantNumeric: col?.format && col.format !== "text" ? "tabular-nums" : undefined,

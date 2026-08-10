@@ -47,12 +47,15 @@ export interface DateTimeProps extends DateTimeOptions {
   value: DateInput;
 }
 
-/** A date/time. `<DateTime value="2026-03-14" mode="date"/>` → "Mar 14, 2026". */
+/**
+ * A date/time. `<DateTime value="2026-03-14" mode="date"/>` → "Mar 14, 2026".
+ * Muted: a date is secondary copy — it labels a value, it is never the value.
+ */
 export function DateTime({ value, mode, locale, timeZone }: DateTimeProps) {
   const formatted = formatDateTime(value, { mode, locale, timeZone });
   if (formatted === null) return <Placeholder />;
   return (
-    <span data-kit="DateTime" style={font}>
+    <span data-kit="DateTime" style={{ ...font, color: t.muted }}>
       {formatted}
     </span>
   );
