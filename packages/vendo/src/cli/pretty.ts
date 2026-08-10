@@ -168,21 +168,33 @@ const WIDE_RANGES: readonly (readonly [number, number])[] = [
   [0x20000, 0x3fffd],
 ];
 
-/** Cells ONE code point occupies. `.length` is code units, which is neither:
-    `界` is one unit and two cells, a combining mark is one unit and none, and
-    an astral glyph is two units and one code point. */
-function cellWidth(char: string): number {
-  if (ZERO_WIDTH.test(char)) return 0;
-  const point = char.codePointAt(0) ?? 0;
+/** What forces emoji presentation, whatever the base's own width would be: the
+    emoji variation selector, a skin tone modifier, or a ZWJ join. */
+const EMOJI_PRESENTATION = /[\u{FE0F}\u{200D}\u{1F3FB}-\u{1F3FF}]/u;
+/** One GRAPHEME CLUSTER is one glyph on screen, however many code points it
+    took — `👍🏽` is two, a ZWJ family is four, a decomposed `é` is two, and each
+    is drawn as a single glyph. Measuring code points instead over-counts the
+    composed ones and under-counts `✔️` (a one-cell base that the variation
+    selector promotes to two), which is the direction that overflows a row. */
+function cellWidth(cluster: string): number {
+  if (EMOJI_PRESENTATION.test(cluster)) return 2;
+  const base = String.fromCodePoint(cluster.codePointAt(0) ?? 0);
+  if (ZERO_WIDTH.test(base)) return 0;
+  const point = base.codePointAt(0) ?? 0;
   return WIDE_RANGES.some(([from, to]) => point >= from && point <= to) ? 2 : 1;
 }
+
+/** Grapheme segmentation is a built-in (ES2022 / Node 16+) — no dependency. */
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const clusters = (text: string): string[] =>
+  [...GRAPHEMES.segment(text)].map((entry) => entry.segment);
 
 /** The one measurement in this file: terminal CELLS a string occupies, with
     SGR sequences taking none. Every width, wrap point and row count derives
     from this — a miscount here puts the select's cursor-up on the wrong row. */
 export function displayWidth(text: string): number {
   let width = 0;
-  for (const char of text.replace(SGR, "")) width += cellWidth(char);
+  for (const cluster of clusters(text.replace(SGR, ""))) width += cellWidth(cluster);
   return width;
 }
 
@@ -221,6 +233,20 @@ function trackStyle(open: string[], sequence: string): void {
   }
 }
 
+/** The two things the wrapper moves: SGR sequences (no cells) and grapheme
+    clusters (one glyph each). Splitting on the sequences first keeps an ESC
+    from being folded into the cluster beside it. */
+function tokenize(text: string): string[] {
+  const tokens: string[] = [];
+  let at = 0;
+  for (const match of text.matchAll(/\u001b\[[0-9;]*m/g)) {
+    tokens.push(...clusters(text.slice(at, match.index)), match[0]);
+    at = match.index + match[0].length;
+  }
+  tokens.push(...clusters(text.slice(at)));
+  return tokens;
+}
+
 /** Wrap one composed line to the terminal, ANSI-aware: every continuation row
     carries the rail, so a long line still reads as one rail body line, and no
     emitted row is wider than the terminal — which is what makes the select's
@@ -253,9 +279,7 @@ function wrapRail(text: string, columns: number): string[] {
     word = "";
     width = 0;
   };
-  // The `u` flag makes `[\s\S]` one code POINT, so a surrogate pair is a single
-  // token and is measured once.
-  for (const token of text.match(/\u001b\[[0-9;]*m|[\s\S]/gu) ?? []) {
+  for (const token of tokenize(text)) {
     if (word === "") atWord = [...open];
     if (token.startsWith(ESC)) {
       word += token;

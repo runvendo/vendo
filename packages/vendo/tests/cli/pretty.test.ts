@@ -705,8 +705,12 @@ describe("createPrettyOutput (visual system)", () => {
     disagree with it, and would pass whatever the renderer believed. Two cells
     for the wide blocks these tests use, none for a combining mark, one else. */
 const cells = (text: string): number => {
+  const grapheme = new Intl.Segmenter(undefined, { granularity: "grapheme" });
   let width = 0;
-  for (const char of text.replace(/\u001b\[[0-9;]*m/g, "")) {
+  for (const { segment } of grapheme.segment(text.replace(/\u001b\[[0-9;]*m/g, ""))) {
+    // One cluster is one glyph: emoji presentation is always two cells.
+    if (/[\u{FE0F}\u{200D}\u{1F3FB}-\u{1F3FF}]/u.test(segment)) { width += 2; continue; }
+    const char = String.fromCodePoint(segment.codePointAt(0) ?? 0);
     if (/^[\p{Mn}\p{Me}\p{Cf}]$/u.test(char)) continue;
     const point = char.codePointAt(0) ?? 0;
     const wide = (point >= 0x1100 && point <= 0x115f)
@@ -732,8 +736,11 @@ function screen(columns: number): { write: (chunk: string) => void; rows: () => 
   const rows: string[] = [""];
   let at = 0;
   let col = 0;
+  const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
   const put = (text: string): void => {
-    for (const char of text) {
+    // A terminal places GLYPHS, so the model does too: a cluster never splits
+    // across the wrap.
+    for (const { segment: char } of graphemes.segment(text)) {
       const cell = cells(char);
       if (col + cell > columns) {
         at += 1;
@@ -928,6 +935,36 @@ describe("createPrettyOutput (display width — wide glyphs and combining marks)
     // Six graphemes are six cells: `│  ` + 6 fits in 10 and must not wrap.
     expect(rows).toHaveLength(1);
     expect(rows[0]).toBe(`│  ${ACCENTED}`);
+  });
+
+  it("measures a composed emoji as the ONE glyph a terminal draws", () => {
+    // Code-point accounting over-counts these two...
+    expect(displayWidth("\u{1F44D}\u{1F3FD}")).toBe(2);                      // thumb + skin tone
+    expect(displayWidth("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}")).toBe(2); // ZWJ family
+    // ...and UNDER-counts this one, which is the direction that overflows a
+    // row: a one-cell base the variation selector promotes to emoji width.
+    expect(displayWidth("\u2714\uFE0F")).toBe(2);
+    expect(displayWidth("\u2714")).toBe(1);
+  });
+
+  it("select: an emoji option that a code-point count would under-measure still prints once", async () => {
+    const term = screen(24);
+    const keys = fakeInput();
+    const pretty = createPrettyOutput({
+      write: term.write, input: keys.input, banner: false, columns: 24,
+    });
+    // `│  ● ` is 5 cells and each ✔️ is 2, so twelve of them is 29 cells — wider
+    // than the window. A code-point count sees 12 and thinks the row fits.
+    const options = [
+      { value: "text", label: "\u2714\uFE0F".repeat(12) },
+      { value: "emoji", label: "\u{1F680}\uFE0F".repeat(12) },
+    ];
+    const choice = pretty.select("Pick", options);
+    keys.press("2");
+    expect(await choice).toBe("emoji");
+    const rows = term.rows().filter((row) => row !== "");
+    expect(occurrences(rows.join("\n"), "●")).toBe(1);
+    for (const row of rows) expect(cells(row)).toBeLessThanOrEqual(24);
   });
 
   it("select: an answered block of wide-glyph options still prints each option once", async () => {
