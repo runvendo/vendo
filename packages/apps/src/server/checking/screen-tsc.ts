@@ -29,6 +29,13 @@
  * raw `TS2322` dump naming two anonymous object types is unactionable, where
  * "sets unknown prop \"data\" on <Table>; the renderer drops it. Allowed props:
  * columns, rows, …" is the same sentence the bespoke checks already speak.
+ *
+ * And a finding has to be REPAIRABLE, not merely true. Every sentence here
+ * carries what the author cannot get from its own file: which element of several
+ * with that tag ({@link positionSuffix}), which names are actually in scope
+ * ({@link queriesInScope}), and — for a required prop the document plainly
+ * writes — that the wire compiler DROPPED the attribute, which is the only
+ * reading under which the refusal and the file agree.
  */
 import { createRequire } from "node:module";
 import type TS from "typescript";
@@ -48,7 +55,7 @@ const REQUIRED_COMPILER_API = [
   "createProgram", "createSourceFile", "flattenDiagnosticMessageText", "forEachChild",
   "getDefaultLibFilePath", "isCallExpression", "isIdentifier", "isJsxAttribute",
   "isJsxAttributes", "isJsxExpression", "isJsxOpeningElement", "isJsxSelfClosingElement",
-  "isPropertyAccessExpression",
+  "isPropertyAccessExpression", "isStringLiteralLike",
 ] as const;
 
 let compilerModule: typeof TS | null | undefined;
@@ -175,11 +182,61 @@ const locusOf = (ts: typeof TS, file: TS.SourceFile, diagnostic: TS.Diagnostic):
   return locus;
 };
 
-const whereOf = (file: TS.SourceFile, diagnostic: TS.Diagnostic, locus: Locus): string => {
+type JsxElementNode = TS.JsxOpeningElement | TS.JsxSelfClosingElement;
+
+/** Every JSX element in the file with this tag, in source order. */
+const elementsTagged = (ts: typeof TS, file: TS.SourceFile, tag: string): JsxElementNode[] => {
+  const found: JsxElementNode[] = [];
+  const visit = (node: TS.Node): void => {
+    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(file) === tag) {
+      found.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(file, visit);
+  return found;
+};
+
+/**
+ * WHICH `<Stat>`, when the document holds more than one.
+ *
+ * A locus of `<Stat>` alone is unrepairable on a screen with four of them: the
+ * author is told a fact about a component and left to guess the element, and a
+ * guess that lands on the wrong one re-saves the same break. The rest of the
+ * floor anchors on the compiler-minted node id (`node "stat-2"`, facts.ts) —
+ * that id IS this ordinal (`mintId`: lowercase name + position in document
+ * order), so `#2 of 3` is the same address in the voice of a file the author can
+ * actually read. Empty for a tag that appears once, which is most of them: an
+ * unambiguous locus needs no coordinates.
+ */
+const positionSuffix = (ts: typeof TS, file: TS.SourceFile, element: JsxElementNode): string => {
+  const siblings = elementsTagged(ts, file, element.tagName.getText(file));
+  // Same SourceFile, so `element` IS one of these by identity.
+  return siblings.length < 2 ? "" : ` (#${siblings.indexOf(element) + 1} of ${siblings.length})`;
+};
+
+const whereOf = (ts: typeof TS, file: TS.SourceFile, diagnostic: TS.Diagnostic, locus: Locus): string => {
   if (locus.component !== undefined) {
-    return locus.prop === undefined ? `<${locus.component}>` : `<${locus.component}> prop "${locus.prop}"`;
+    const base = locus.prop === undefined ? `<${locus.component}>` : `<${locus.component}> prop "${locus.prop}"`;
+    return locus.element === undefined ? base : `${base}${positionSuffix(ts, file, locus.element)}`;
   }
   return `line ${file.getLineAndCharacterOfPosition(diagnostic.start ?? 0).line + 1}`;
+};
+
+/** The `<Query id="...">` names this screen declares, as the clause that names
+ *  them — the only data names it is allowed to read. Read off the file being
+ *  checked rather than threaded in, because the file is where they are declared. */
+const queriesInScope = (ts: typeof TS, file: TS.SourceFile): string => {
+  const declared = elementsTagged(ts, file, "Query").flatMap((element) =>
+    element.attributes.properties.flatMap((property) => {
+      if (!ts.isJsxAttribute(property) || property.name.getText(file) !== "id") return [];
+      const initializer = property.initializer;
+      const value = initializer !== undefined && ts.isJsxExpression(initializer) ? initializer.expression : initializer;
+      return value !== undefined && ts.isStringLiteralLike(value) ? [value.text] : [];
+    }));
+  return declared.length === 0
+    ? ' This document declares no queries at all: add <Query id="..." tool="..."/> and read that id'
+    : ` This document declares: ${declared.join(", ")}`;
 };
 
 // ---- translating a diagnostic --------------------------------------------
@@ -230,13 +287,14 @@ const elementPropFindings = (
   if (target === undefined) return [];
   const component = element.tagName.getText(file);
   const written = writtenProps(ts, file, element);
+  const at = positionSuffix(ts, file, element);
   const allowed = new Set(target.all);
   const findings: Finding[] = [];
   for (const prop of written) {
     if (allowed.has(prop)) continue;
     findings.push({
       severity: "block",
-      where: `<${component}> prop "${prop}"`,
+      where: `<${component}> prop "${prop}"${at}`,
       message: `sets unknown prop "${prop}" on <${component}>; the renderer drops it. Allowed props: ${target.all.join(", ") || "(none)"}`,
     });
   }
@@ -244,8 +302,19 @@ const elementPropFindings = (
     if (written.includes(prop)) continue;
     findings.push({
       severity: "block",
-      where: `<${component}>`,
-      message: `is missing required prop "${prop}" on <${component}>; the component cannot render without it. Its props are: ${target.all.join(", ")}`,
+      where: `<${component}>${at}`,
+      // The one refusal the author's own file CONTRADICTS. This check reads the
+      // COMPILED document, and the wire compiler drops an attribute whose value
+      // it cannot parse (`wire/attributes.ts`: single-quoted strings, a broken
+      // `{expression}`, a duplicate) — so a screen that plainly writes
+      // `value='x'` is told `value` is missing, reads its own file, sees `value`,
+      // and saves the same bytes again. Naming the drop is what turns that
+      // dead end back into a repair.
+      message: `is missing required prop "${prop}" on <${component}>; the component cannot render without it.`
+        + ` Its props are: ${target.all.join(", ")}.`
+        + ` If your document does write ${prop}=, the compiler DROPPED that attribute — a value that is`
+        + ` single-quoted, duplicated, or not a parsable {expression} is dropped — so write it as`
+        + ` ${prop}="text" or ${prop}={expression}`,
     });
   }
   return findings;
@@ -349,7 +418,7 @@ const translate = (
   diagnostic: TS.Diagnostic,
 ): Finding[] => {
   const locus = locusOf(ts, file, diagnostic);
-  const where = whereOf(file, diagnostic, locus);
+  const where = whereOf(ts, file, diagnostic, locus);
   const code = diagnostic.code;
 
   if (UNKNOWN_NAME.has(code)) {
@@ -360,7 +429,11 @@ const translate = (
       where,
       message: isTag
         ? `references unknown component "${name}" — no host catalog entry, Kit component or prewired primitive carries that name`
-        : `reads unknown name "${name}" — a screen may only read the queries it declares and the fixed call vocabulary`,
+        // "only the queries it declares" is the rule; WHICH ones it declares is
+        // the repair, and a mistyped or renamed query name reads exactly like
+        // this — so the list is what stops the second guess.
+        : `reads unknown name "${name}" — a screen may only read the queries it declares and the fixed call vocabulary.`
+          + queriesInScope(ts, file),
     }];
   }
 
