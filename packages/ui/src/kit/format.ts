@@ -228,6 +228,11 @@ export function formatDateTime(value: DateInput, options: DateTimeOptions = {}):
 /** The value-tier `format` union — the same tokens a DataTable column accepts. */
 export type ValueFormat = "money" | "date" | "datetime" | "time" | "percent" | "number" | "text";
 
+/** A date/time is the row's metadata, not its value — the two-tone rule puts it
+ *  in the muted tone. */
+export const isSecondaryFormat = (format: ValueFormat = "text"): boolean =>
+  format === "date" || format === "datetime" || format === "time";
+
 /** Apply a `ValueFormat` token to a raw value, returning `null` when unrenderable. */
 export function applyFormat(value: unknown, format: ValueFormat = "text"): string | null {
   switch (format) {

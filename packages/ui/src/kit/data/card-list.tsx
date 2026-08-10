@@ -1,5 +1,5 @@
 /** CardList — one branded card per record, semantically formatted (W2 §The Kit). */
-import { applyFormat, type ValueFormat } from "../format.js";
+import { applyFormat, isSecondaryFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { EnumBadge } from "../values.js";
 
@@ -90,7 +90,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
               return (
                 <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
                   <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
-                  <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatted ?? "—"}</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums", color: isSecondaryFormat(f.format) ? t.muted : undefined }}>{formatted ?? "—"}</span>
                 </div>
               );
             })}

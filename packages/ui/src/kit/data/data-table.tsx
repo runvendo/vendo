@@ -15,7 +15,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { applyFormat, type ValueFormat } from "../format.js";
+import { applyFormat, isSecondaryFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
@@ -302,6 +302,7 @@ export function DataTable(props: DataTableProps) {
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
                           padding: cellPad,
                           textAlign: alignCss(col?.align),
+                          color: isSecondaryFormat(col?.format) ? t.muted : undefined,
                           fontVariantNumeric: col?.format && col.format !== "text" ? "tabular-nums" : undefined,
                         }}
                       >

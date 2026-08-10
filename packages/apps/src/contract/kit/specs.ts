@@ -109,7 +109,8 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "DateTime",
     group: "values",
-    summary: "A date/time from an ISO string, epoch millis, or Date. Invalid input renders a dash, never 'Invalid Date'.",
+    summary:
+      "A date/time from an ISO string, epoch millis, or Date. Invalid input renders a dash, never 'Invalid Date'. A date renders in the muted tone: it is a row's metadata, not its value.",
     props: {
       value: data(z.union([z.string(), z.number()]), "ISO string or epoch millis", { required: true }),
       mode: config(z.enum(["date", "time", "datetime", "relative"]), "how to render"),

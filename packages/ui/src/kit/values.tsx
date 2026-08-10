@@ -52,7 +52,7 @@ export function DateTime({ value, mode, locale, timeZone }: DateTimeProps) {
   const formatted = formatDateTime(value, { mode, locale, timeZone });
   if (formatted === null) return <Placeholder />;
   return (
-    <span data-kit="DateTime" style={font}>
+    <span data-kit="DateTime" style={{ ...font, color: t.muted }}>
       {formatted}
     </span>
   );
