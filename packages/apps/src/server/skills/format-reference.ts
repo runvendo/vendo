@@ -181,6 +181,21 @@ An \`on*\` attribute names a host tool: \`onClick="maple_invoice_send"\`. That i
 only way anything in an app mutates. A value that is not a legal tool name drops
 the attribute.
 
+A \`<Form>\`'s submit CARRIES its fields: every field takes a \`name\`, and that
+name is the tool ARGUMENT it fills. A field with no \`name\` sends nothing, so a
+tool that needs an argument gets called without it and refuses. An empty field is
+left out rather than sent blank.
+
+That is how a tool acts on ONE row of a query without an island and without
+typing anything in — the rows go into the \`Select\`, and the chosen row's own
+field comes back out as the argument:
+
+\`\`\`
+<Form onSubmit="maple_transfer_cancel" submitLabel="Cancel transfer">
+  <Select name="id" label="Transfer" options={transfers.data} labelField="to" valueField="id"/>
+</Form>
+\`\`\`
+
 ### \`<Island name="PascalName">\` — a component you write
 
 The content is raw TSX, verbatim to the **first** \`</Island>\`, with an

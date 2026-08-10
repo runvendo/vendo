@@ -497,13 +497,25 @@ function requestAction(action: string, payload?: unknown): Promise<unknown> {
   });
 }
 
+const plainObject = (value: unknown): Record<string, unknown> | undefined =>
+  !!value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+
 function hydrate(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(hydrate);
   if (!value || typeof value !== "object") return value;
   const record = value as Record<string, unknown>;
   if (typeof record.$action === "string") {
     const payload = hydrate(record.payload);
-    return () => requestAction(record.$action as string, payload);
+    // A Kit `<Form>` inside an island hands its named fields over exactly as it
+    // does host-side (kit/forms/form.tsx): branded `{ $fields }`, second
+    // argument, authored payload still winning. Mirrored so one document does
+    // not mean two things depending on which venue it mounted in.
+    return (...args: unknown[]) => {
+      const fields = args.map((arg) => plainObject(arg)?.$fields).map(plainObject).find(Boolean);
+      const authored = plainObject(payload);
+      const merged = fields === undefined ? payload : { ...fields, ...authored };
+      return requestAction(record.$action as string, merged);
+    };
   }
   return Object.fromEntries(Object.entries(record).map(([key, child]) => [key, hydrate(child)]));
 }

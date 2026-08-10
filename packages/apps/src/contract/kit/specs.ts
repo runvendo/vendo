@@ -25,6 +25,9 @@ const tableColumn = z.object({
 });
 const cardField = z.object({ key: z.string(), label: z.string().optional(), format: valueFormat.optional() });
 const action = z.string().describe("names a host tool");
+/** A form field's `name` is the tool ARGUMENT it fills, so it obeys the same
+ *  identifier grammar tool inputs do. */
+const fieldName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
 
 // ---- specs ---------------------------------------------------------------
 export const KIT_SPECS: KitComponentSpec[] = [
@@ -282,19 +285,21 @@ export const KIT_SPECS: KitComponentSpec[] = [
     group: "forms",
     summary: "A text field. onChange names a host tool or island handler.",
     props: {
+      name: config(fieldName, "the submit tool ARGUMENT this field fills"),
       label: copy(z.string(), "field label"),
       value: data(z.string(), "initial value"),
       placeholder: copy(z.string(), "placeholder text"),
       type: config(z.enum(["text", "email", "number", "password", "search", "tel", "url"]), "input type"),
       onChange: config(action, "bound change handler"),
     },
-    examples: ['<Input label="Find a client" onChange="host_search_clients"/>'],
+    examples: ['<Input name="query" label="Find a client" onChange="host_search_clients"/>'],
   },
   {
     name: "Select",
     group: "forms",
     summary: "A dropdown over a RAW array of tool output. Map objects with labelField/valueField — no reshaping. multiple selects several.",
     props: {
+      name: config(fieldName, "the submit tool ARGUMENT this field fills"),
       options: data(z.array(z.union([z.string(), z.number(), z.record(z.string(), z.unknown())])), "raw items", { required: true }),
       label: copy(z.string(), "field label"),
       labelField: config(z.string(), "object field for the visible label"),
@@ -303,44 +308,47 @@ export const KIT_SPECS: KitComponentSpec[] = [
       multiple: config(z.boolean(), "allow several values"),
       onChange: config(action, "bound change handler"),
     },
-    examples: ['<Select label="Client" options={clients.list({}).data} labelField="name" valueField="id"/>'],
+    examples: ['<Select name="clientId" label="Client" options={clients.list({}).data} labelField="name" valueField="id"/>'],
   },
   {
     name: "DatePicker",
     group: "forms",
     summary: "A native date control (ISO yyyy-mm-dd).",
     props: {
+      name: config(fieldName, "the submit tool ARGUMENT this field fills"),
       label: copy(z.string(), "field label"),
       value: data(z.string(), "ISO date"),
       min: config(z.string(), "earliest date"),
       max: config(z.string(), "latest date"),
       onChange: config(action, "bound change handler"),
     },
-    examples: ['<DatePicker label="Due date"/>'],
+    examples: ['<DatePicker name="dueDate" label="Due date"/>'],
   },
   {
     name: "Textarea",
     group: "forms",
     summary: "A multiline text field.",
     props: {
+      name: config(fieldName, "the submit tool ARGUMENT this field fills"),
       label: copy(z.string(), "field label"),
       value: data(z.string(), "initial value"),
       placeholder: copy(z.string(), "placeholder text"),
       rows: config(z.number().int().positive(), "visible rows"),
       onChange: config(action, "bound change handler"),
     },
-    examples: ['<Textarea label="Note" rows={4}/>'],
+    examples: ['<Textarea name="note" label="Note" rows={4}/>'],
   },
   {
     name: "Checkbox",
     group: "forms",
     summary: "A boolean toggle. onChange receives the checked state.",
     props: {
+      name: config(fieldName, "the submit tool ARGUMENT this field fills"),
       label: copy(z.string(), "field label"),
       checked: data(z.boolean(), "initial checked state"),
       onChange: config(action, "bound change handler"),
     },
-    examples: ['<Checkbox label="Include paid"/>'],
+    examples: ['<Checkbox name="includePaid" label="Include paid"/>'],
   },
   {
     name: "Button",
@@ -357,12 +365,17 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Form",
     group: "forms",
-    summary: "Groups fields with a submit action. onSubmit names a host tool.",
+    summary: "Groups fields with a submit action. onSubmit names a host tool, and the submit CARRIES the fields: each field's `name` is the tool argument it fills. A field with no `name` sends nothing, so a tool that needs an argument is called without it. An empty field is left out, not sent blank.",
     props: {
       onSubmit: config(action, "the host tool to run on submit"),
       submitLabel: copy(z.string(), "submit button text"),
     },
-    examples: ['<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name"/></Form>'],
+    examples: [
+      '<Form onSubmit="clients.create" submitLabel="Add client"><Input name="name" label="Name"/></Form>',
+      // Acting on ONE row of a query, with no island and nothing typed in: the
+      // rows go into Select, the chosen row's own id comes out as the argument.
+      '<Form onSubmit="cancel_transfer" submitLabel="Cancel transfer"><Select name="id" label="Transfer" options={transfers.data} labelField="to" valueField="id"/></Form>',
+    ],
   },
   {
     name: "Disclaimer",

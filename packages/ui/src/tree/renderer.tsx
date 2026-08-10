@@ -4,6 +4,7 @@ import {
   TREE_MAX_TOTAL_COMPONENT_CHARS,
   applyReshape,
   isPathBinding,
+  isPlainObject,
   isStateBinding,
   VENDO_TREE_FORMAT,
   type Json,
@@ -190,6 +191,27 @@ export function isActionBinding(value: unknown): value is ActionBinding {
 
 type BoundMode = "host" | "jail";
 
+/** The Kit `Form`'s branded field carrier (kit/forms/form.tsx), picked out of
+ *  whatever a component handed the bound action. Branded on purpose: `Select`'s
+ *  `onChange` hands over a string and `Button`'s `onClick` hands over nothing,
+ *  so an unbranded object argument would be a guess. */
+const submittedFields = (args: readonly unknown[]): Record<string, Json> | undefined => {
+  for (const arg of args) {
+    if (!isPlainObject(arg)) continue;
+    const carried = (arg as { $fields?: unknown }).$fields;
+    if (isPlainObject(carried)) return carried as Record<string, Json>;
+  }
+  return undefined;
+};
+
+/** The payload an action actually runs with. A form's fields fill the arguments
+ *  the document did not write; an authored payload still wins, because the
+ *  document said it on purpose. */
+const actionPayload = (authored: Json | undefined, fields: Record<string, Json> | undefined): Json | undefined => {
+  if (fields === undefined) return authored;
+  return isPlainObject(authored) ? { ...fields, ...authored } as Json : fields;
+};
+
 /** Apply a binding's `$reshape` chain to the resolved value.
  *  `applyReshape` is total: absent data passes through (loading is not a
  *  mismatch); a real mismatch reports through `onMismatch` and binds
@@ -234,7 +256,8 @@ function bindValue(
     if (mode === "jail") {
       return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
     }
-    return () => action(value.$action, value.payload === undefined ? undefined : payload);
+    const authored = value.payload === undefined ? undefined : payload;
+    return (...args: unknown[]) => action(value.$action, actionPayload(authored, submittedFields(args)));
   }
   if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, onMismatch));
   if (typeof value === "object" && value !== null) {
