@@ -60,7 +60,7 @@ describe("a turn's wall clock", () => {
     // so a step that never ends is never asked about. The budget reaches the
     // provider call itself — which is the same signal a retry would inherit.
     const stalled = new MockLanguageModelV3({
-      doStream: async ({ abortSignal }) => await new Promise((_resolve, reject) => {
+      doStream: async ({ abortSignal }) => await new Promise<never>((_resolve, reject) => {
         abortSignal?.addEventListener("abort", () => reject(abortSignal.reason as Error));
       }),
     });
