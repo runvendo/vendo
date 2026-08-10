@@ -94,7 +94,7 @@ export function Tabs({ tabs, value, defaultIndex = 0, children }: TabsProps) {
           overflowX: "auto",
           border: `1px solid ${t.border}`,
           borderRadius: t.radiusMedium,
-          background: `color-mix(in srgb, ${t.background} 72%, ${t.surface})`,
+          background: `color-mix(in srgb, ${t.border} 45%, ${t.surface})`,
           padding: "var(--vendo-density-tabs-padding, 4px)",
         }}
       >
@@ -115,11 +115,10 @@ export function Tabs({ tabs, value, defaultIndex = 0, children }: TabsProps) {
               style={{
                 ...font,
                 minHeight: "var(--vendo-density-tab-height, 30px)",
-                border: selected ? `1px solid ${t.border}` : "1px solid transparent",
+                border: "1px solid transparent",
                 borderRadius: t.radiusSmall,
-                color: selected ? t.text : t.muted,
-                background: selected ? t.surface : "transparent",
-                boxShadow: selected ? `0 1px 3px color-mix(in srgb, ${t.text} 10%, transparent)` : "none",
+                color: selected ? t.accentText : t.muted,
+                background: selected ? t.accent : "transparent",
                 cursor: tab.disabled ? "not-allowed" : "pointer",
                 fontSize: "0.88em",
                 fontWeight: selected ? 650 : 550,
