@@ -63,6 +63,15 @@ async function healthy(base?: string): Promise<string> {
   return root;
 }
 
+/** A package the host can RESOLVE — the evidence the resolvability check reads
+    (#1153), which package.json cannot supply: a nested dependency is declared
+    by nobody the host imports from. */
+async function installedPackage(root: string, name: string): Promise<void> {
+  const dir = join(root, "node_modules", ...name.split("/"));
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "package.json"), JSON.stringify({ name, version: CLI_VERSION }));
+}
+
 async function expressHost(wired: boolean): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "vendo-doctor-express-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
@@ -1117,6 +1126,32 @@ describe("vendo doctor error codes + fix_refs", () => {
     // The remediation surface is broad: wiring, config, live probes, auth, turn.
     const codes = new Set(failures.map((check) => check.error_code));
     expect(codes.size).toBeGreaterThan(4);
+  });
+
+  /** #1153: the alias-only install. `vendoai` DEPENDS on @vendoai/vendo, so
+      under pnpm's strict node_modules the host cannot resolve the
+      `@vendoai/vendo/*` imports its own wiring makes: the route fails to
+      compile, every request 500s with an HTML error page, and the live probes
+      can only call that "unreachable" (E-LIVE-002 / E-AUTH-002 name none of
+      it). The static check is where the cause gets named. */
+  it("names the unresolvable @vendoai/vendo behind a vendoai-alias-only install", async () => {
+    const root = await healthy();
+    await installedPackage(root, "vendoai");
+    const { exit, report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    const check = report.checks.find((candidate) => candidate.id === "wiring/vendo-resolvable");
+    expect(check?.status).toBe("broken");
+    expect(check?.error_code).toBe("E-WIRE-011");
+    expect(check?.message).toContain("@vendoai/vendo is not resolvable");
+    expect(exit).toBe(1);
+  });
+
+  it("passes resolvability once @vendoai/vendo is reachable from the app", async () => {
+    const root = await healthy();
+    await installedPackage(root, "vendoai");
+    await installedPackage(root, "@vendoai/vendo");
+    const { exit, report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    expect(report.checks.find((candidate) => candidate.id === "wiring/vendo-resolvable")?.status).toBe("ok");
+    expect(exit).toBe(0);
   });
 
   it("keeps passing checks lean: id always, no error_code or fix_ref", async () => {

@@ -8,7 +8,7 @@ import { createStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtractionHarness } from "../../src/cli/extract/harness.js";
 import { runInit } from "../../src/cli/init.js";
-import type { Output } from "../../src/cli/shared.js";
+import { CLI_VERSION, type Output } from "../../src/cli/shared.js";
 
 const cleanup: string[] = [];
 
@@ -1495,6 +1495,30 @@ describe("vendo init (zero-question)", () => {
     expect(sink.errors.join("\n")).not.toContain("not usable");
   });
 
+
+  /** #1153: init writes `@vendoai/vendo/*` imports into the route it just
+      created, so it owes the host a resolvable @vendoai/vendo. A host that
+      installed only the `vendoai` alias keeps that package inside the alias's
+      own nested resolution — under pnpm the route never compiles and every
+      wired request 500s, which doctor's live probes could only report as an
+      unreachable server. */
+  it("adds @vendoai/vendo when the host installed only the vendoai alias", async () => {
+    const root = await fixture();
+    await mkdir(join(root, "node_modules", "vendoai"), { recursive: true });
+    await writeFile(join(root, "node_modules", "vendoai", "package.json"),
+      JSON.stringify({ name: "vendoai", version: CLI_VERSION }));
+    const installs: Array<{ command: string; args: string[] }> = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      installVendo: async (command, args) => {
+        installs.push({ command, args });
+        return 0;
+      },
+    })).toBe(0);
+    expect(installs).toEqual([{ command: "npm", args: ["install", `@vendoai/vendo@${CLI_VERSION}`] }]);
+    expect(await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
+      .toContain(`from "@vendoai/vendo/server"`);
+  });
 
   it("emits a read-only agent plan with code changes, extraction, and the layout mount", async () => {
     const root = await fixture();

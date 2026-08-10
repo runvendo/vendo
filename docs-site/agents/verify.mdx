@@ -193,6 +193,29 @@ path prefix if it has one). The props are otherwise identical. A generated
 `vendo/vendo-root.tsx` is YOUR file now — edit it in place or fold it into your
 layout.
 
+### E-WIRE-011 {#E-WIRE-011}
+
+**Symptom:** The `vendoai` alias is installed, but `@vendoai/vendo` is not
+resolvable from the app. Every wired route answers a 500 whose page reads
+`Module not found: Can't resolve '@vendoai/vendo/server'`, and the live checks
+report the server as unreachable.
+
+**Cause:** `vendoai` is a thin alias that depends on `@vendoai/vendo`, so under
+pnpm's strict (non-flat) `node_modules` that package lives inside the alias's
+own nested resolution. Host source may only resolve its DIRECT dependencies, so
+the `@vendoai/vendo/*` imports in your wiring fail at compile time. npm and yarn
+hoist, which is why the same install works there.
+
+**Fix:** Add the package your wiring imports as a direct dependency — the
+message prints the exact command for your package manager:
+
+```bash
+pnpm add @vendoai/vendo
+```
+
+Keep the alias; both names ship the same wire, and `vendo init` performs this
+repair itself on any host where it can.
+
 ### E-CFG-001 {#E-CFG-001}
 
 **Symptom:** A required `.vendo/` file is missing; the message names it, one

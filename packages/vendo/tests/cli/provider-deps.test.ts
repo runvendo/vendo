@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensureProviderDeps, ensureZodFloor, installCommandFor, providerModuleFor, zodBelowAiSdkFloor, ZOD_FLOOR_SPEC } from "../../src/cli/provider-deps.js";
+import { ensureProviderDeps, ensureVendoPackage, ensureZodFloor, installCommandFor, providerModuleFor, VENDO_PACKAGE_SPEC, zodBelowAiSdkFloor, ZOD_FLOOR_SPEC } from "../../src/cli/provider-deps.js";
 
 // Init installs the provider module the resolved credential loads at
 // runtime (0.4.1 E2E cert finding: nothing declares @ai-sdk/*, so a fresh
@@ -220,6 +220,61 @@ describe("ensureProviderDeps", () => {
     });
     expect(messages.errors.join("\n")).toContain("npm install ai@^6 @ai-sdk/anthropic@^3");
     expect(messages.errors.join("\n")).toContain("E-DEP-001");
+  });
+});
+
+/** #1153: `vendoai` is a thin alias that DEPENDS on @vendoai/vendo, so under
+ *  pnpm's strict node_modules that package sits inside the alias's own nested
+ *  resolution and the host cannot resolve the `@vendoai/vendo/*` imports every
+ *  scaffold writes — the wired route fails to compile and 500s. */
+describe("ensureVendoPackage", () => {
+  it("adds the package the wiring imports when only the alias resolves", async () => {
+    const root = await tempRoot();
+    await installModule(root, "vendoai");
+    await writeFile(join(root, "pnpm-lock.yaml"), "");
+    const calls: Array<{ command: string; args: string[]; cwd: string }> = [];
+    const messages = output();
+    await ensureVendoPackage({
+      root,
+      output: messages.sink,
+      run: async (command, args, cwd) => {
+        calls.push({ command, args, cwd });
+        return 0;
+      },
+    });
+    expect(calls).toEqual([{ command: "pnpm", args: ["add", VENDO_PACKAGE_SPEC], cwd: root }]);
+    expect(messages.logs.join("\n")).toContain(`Installed ${VENDO_PACKAGE_SPEC}.`);
+    expect(messages.errors).toEqual([]);
+  });
+
+  it("stays quiet when the host can already resolve @vendoai/vendo (a hoisted or direct install)", async () => {
+    const root = await tempRoot();
+    await installModule(root, "vendoai");
+    await installModule(root, "@vendoai/vendo");
+    const calls: unknown[] = [];
+    const messages = output();
+    await ensureVendoPackage({ root, output: messages.sink, run: async (...call) => (calls.push(call), 0) });
+    expect(calls).toEqual([]);
+    expect(messages.logs).toEqual([]);
+  });
+
+  it("is not the repair for a host that has installed nothing yet", async () => {
+    const root = await tempRoot();
+    const calls: unknown[] = [];
+    const messages = output();
+    await ensureVendoPackage({ root, output: messages.sink, run: async (...call) => (calls.push(call), 0) });
+    expect(calls).toEqual([]);
+    expect(messages.logs).toEqual([]);
+  });
+
+  it("degrades to the exact manual command when the install fails, never throws", async () => {
+    const root = await tempRoot();
+    await installModule(root, "vendoai");
+    await writeFile(join(root, "pnpm-lock.yaml"), "");
+    const messages = output();
+    await ensureVendoPackage({ root, output: messages.sink, run: async () => null });
+    expect(messages.errors.join("\n")).toContain(`pnpm add ${VENDO_PACKAGE_SPEC}`);
+    expect(messages.errors.join("\n")).toContain("E-WIRE-011");
   });
 });
 

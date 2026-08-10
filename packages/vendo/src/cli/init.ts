@@ -24,7 +24,7 @@ import {
   type ConfirmAuth,
   type SelectAuth,
 } from "./init-auth.js";
-import { ensureProviderDeps, ensureZodFloor, type InstallRunner } from "./provider-deps.js";
+import { ensureProviderDeps, ensureVendoPackage, ensureZodFloor, type InstallRunner } from "./provider-deps.js";
 import {
   customServerSource,
   expressServerSource,
@@ -204,6 +204,8 @@ export interface InitOptions {
   resolveCredential?: (options: { env: Record<string, string | undefined> }) => Promise<DevCredential>;
   /** Test seam: the provider-dependency install subprocess (provider-deps.ts). */
   installProvider?: InstallRunner;
+  /** Test seam: the `@vendoai/vendo` install subprocess (#1153). */
+  installVendo?: InstallRunner;
   /** Test seam: the zod-floor bump confirm (provider-deps.ts, FINDINGS F2),
       asked only in interactive runs. Mirrors the auth confirm's shape. */
   confirmZodBump?: (question: string, defaultYes: boolean) => Promise<boolean>;
@@ -1525,8 +1527,8 @@ async function runInstallSyncFlow(input: {
   });
 }
 
-/** The two dependency repairs a fresh install owes the host, both degrading to
- *  a printed command rather than failing the run. */
+/** The three dependency repairs a fresh install owes the host, each degrading
+ *  to a printed command rather than failing the run. */
 async function ensureHostDeps(input: {
   root: string;
   output: Output;
@@ -1536,6 +1538,15 @@ async function ensureHostDeps(input: {
   credential: DevCredential;
 }): Promise<void> {
   const { root, output, options, pretty, interactive, credential } = input;
+  // #1153: the scaffolds this run wrote import `@vendoai/vendo/*`, and a host
+  // installed under the `vendoai` alias alone cannot resolve them under pnpm's
+  // strict node_modules — the route fails to COMPILE and every request 500s.
+  await ensureVendoPackage({
+    root,
+    output,
+    ...(options.installVendo === undefined ? {} : { run: options.installVendo }),
+  });
+
   // The credential's runtime provider must be resolvable from the host or
   // the FIRST turn 500s (dev-creds/model.ts loads it host-side; nothing
   // declares @ai-sdk/* — 0.4.1 E2E cert finding). Install exactly what the

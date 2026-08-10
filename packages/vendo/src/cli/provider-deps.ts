@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import type { DevCredential, EnvKeyProvider } from "../dev-creds/resolve.js";
 import { installedVersion, installedZodVersion } from "./dep-versions.js";
-import type { Output } from "./shared.js";
+import { CLI_VERSION, type Output } from "./shared.js";
 
 /**
  * The starter model ladder resolves its provider from the HOST's
@@ -227,6 +227,49 @@ export async function ensureProviderDeps(options: EnsureProviderDepsOptions): Pr
   } else {
     options.output.error(
       `warning: could not install ${specs.join(" ")} — run \`${invocation}\` yourself before the first turn, or it fails at runtime (E-DEP-001).`,
+    );
+  }
+}
+
+/** The package every scaffold imports, pinned to the CLI that wrote them — the
+    same spec doctor's E-DEP-002 story names, so the repair can never mint the
+    split-brain install that check warns about. */
+export const VENDO_PACKAGE_SPEC = `@vendoai/vendo@${CLI_VERSION}`;
+
+/** The paste-ready `@vendoai/vendo` install for this host's package manager
+    and workspace shape — shared by init's failed-repair warning and doctor's
+    E-WIRE-011 story. */
+export async function vendoPackageInvocation(root: string): Promise<string> {
+  return invocationFor(await installCommandFor(root), [VENDO_PACKAGE_SPEC], root);
+}
+
+/**
+ * #1153: every scaffold imports `@vendoai/vendo/*`, but a host whose only
+ * direct dependency is the `vendoai` alias keeps that package inside the
+ * alias's OWN nested resolution. Under pnpm's strict node_modules host source
+ * may only resolve its direct dependencies, so the wired route never compiles
+ * ("Module not found: Can't resolve '@vendoai/vendo/server'") and every route
+ * 500s — a failure the live probes can only report as an unreachable server.
+ * Init wrote those imports, so init makes them resolvable, exactly as it does
+ * for the provider the first turn loads.
+ *
+ * Resolvability is the evidence, never package.json: a hoisting installer
+ * (npm, yarn) already satisfies the import through the alias's own dependency,
+ * and a host that has installed nothing yet is not this repair's business —
+ * its own install is the next thing to run.
+ */
+export async function ensureVendoPackage(options: { root: string; output: Output; run?: InstallRunner }): Promise<void> {
+  if (await isInstalled(options.root, "@vendoai/vendo")) return;
+  if (!(await isInstalled(options.root, "vendoai"))) return;
+
+  const install = await installCommandFor(options.root);
+  options.output.log(`Installing the package your wiring imports: ${VENDO_PACKAGE_SPEC} (${install.command})…`);
+  const code = await (options.run ?? defaultRunner)(install.command, [...install.args, VENDO_PACKAGE_SPEC], install.cwd);
+  if (code === 0) {
+    options.output.log(`Installed ${VENDO_PACKAGE_SPEC}.`);
+  } else {
+    options.output.error(
+      `warning: could not install ${VENDO_PACKAGE_SPEC} — the wiring imports @vendoai/vendo/* and the vendoai alias keeps its copy nested, so the route will not compile; run \`${await vendoPackageInvocation(options.root)}\` yourself (E-WIRE-011).`,
     );
   }
 }

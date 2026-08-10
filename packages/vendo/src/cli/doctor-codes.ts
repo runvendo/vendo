@@ -24,6 +24,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-WIRE-008": "no <VendoProvider> found in an unknown-framework host's source",
   "E-WIRE-009": "detected \"use server\" actions are not registered or not wired into createVendo",
   "E-WIRE-010": "the host still names the removed <VendoRoot> (swap it for <VendoProvider>)",
+  "E-WIRE-011": "@vendoai/vendo is not resolvable from the app (a vendoai-alias-only install under pnpm)",
   "E-CFG-001": "a required .vendo/ config file is missing",
   "E-CFG-002": ".vendo/data/.gitignore is missing",
   "E-CFG-003": "the OpenAPI spec's relative server mount and VENDO_BASE_URL's path prefix disagree",

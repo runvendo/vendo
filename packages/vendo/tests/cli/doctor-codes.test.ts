@@ -67,6 +67,7 @@ describe("doctor error-code registry", () => {
         "E-WIRE-008": "no <VendoProvider> found in an unknown-framework host's source",
         "E-WIRE-009": "detected "use server" actions are not registered or not wired into createVendo",
         "E-WIRE-010": "the host still names the removed <VendoRoot> (swap it for <VendoProvider>)",
+        "E-WIRE-011": "@vendoai/vendo is not resolvable from the app (a vendoai-alias-only install under pnpm)",
       }
     `);
   });

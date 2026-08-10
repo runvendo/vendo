@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
+import { installedVersion } from "./dep-versions.js";
 import { detectFramework, detectVendoWiring, type VendoWiring } from "./framework.js";
+import { vendoPackageInvocation } from "./provider-deps.js";
 import { importsGeneratedMap, importsSplitComposition, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
 import { checkMcpBaseUrl } from "./doctor-mcp-checks.js";
 import type { DoctorRun } from "./doctor-report.js";
@@ -164,6 +166,24 @@ async function checkLegacyRoot(run: DoctorRun, legacyRoot: boolean): Promise<voi
   }
 }
 
+/** #1153: a declared dependency the host source cannot REACH. The `vendoai`
+ *  alias keeps `@vendoai/vendo` inside its own nested resolution, and under
+ *  pnpm's strict node_modules host source may only resolve its direct
+ *  dependencies — so every `@vendoai/vendo/*` import in the wiring fails at
+ *  compile time and the route answers Next's HTML error page. The live probes
+ *  can only read that as "unreachable" (E-LIVE-002 / E-AUTH-002 named none of
+ *  it), so the cause has to be named here, statically. Silent until the host
+ *  has installed at all: an empty tree is the install story, not this one. */
+async function checkVendoResolvable(run: DoctorRun): Promise<void> {
+  const { root } = run;
+  if (await installedVersion(root, "@vendoai/vendo") !== null) {
+    run.pass("wiring/vendo-resolvable", "host source can resolve @vendoai/vendo");
+  } else if (await installedVersion(root, "vendoai") !== null) {
+    run.fail("wiring/vendo-resolvable", "E-WIRE-011",
+      `the vendoai alias is installed but @vendoai/vendo is not resolvable from this app — the alias keeps its copy nested, so under pnpm every \`@vendoai/vendo/*\` import in your wiring fails to compile ("Module not found") and the route 500s before any live check can mean anything. Fix: ${await vendoPackageInvocation(root)} (keep the alias; both names ship the same wire).`);
+  }
+}
+
 /** The static half of doctor: is this host wired at all, does anything visible
  *  reach the agent, and is the dependency declared. No network. */
 export async function checkWiring(run: DoctorRun): Promise<void> {
@@ -190,4 +210,5 @@ export async function checkWiring(run: DoctorRun): Promise<void> {
 
   if (await hasDependency(root)) run.pass("wiring/dependency", "@vendoai/vendo dependency is declared");
   else run.fail("wiring/dependency", "E-WIRE-005", "@vendoai/vendo (or vendoai alias) is not declared");
+  await checkVendoResolvable(run);
 }
