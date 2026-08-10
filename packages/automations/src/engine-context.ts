@@ -70,17 +70,15 @@ export interface AutomationsEngineContext {
   writeApp(record: VendoRecord, row: AppRow): Promise<void>;
   /** §9.3's `can(editor)`, through the config seam. */
   canEdit(ctx: RunContext, row: AppRow, appId: string): Promise<boolean>;
-  /** The app rows that fire on this trigger kind, under EITHER ref spelling. */
+  /** The app rows that fire on this trigger kind, by its per-kind ref. */
   appsFiringOn(kind: TriggerSource["kind"], refs?: Record<string, string>): Promise<VendoRecord[]>;
-  /** Move any pre-rekey schedule cursor onto its (app, trigger) key. */
-  migratePreRekeyCursors(records: RecordStore, missing: readonly string[]): Promise<VendoRecord[]>;
 
   // ── armed.ts ───────────────────────────────────────────────────────────────
   /** Turn ONE (app, trigger) arm row on or off. */
   setArmed(appId: string, triggerId: string, armed: boolean): Promise<void>;
   /** This app's armed triggers, given the armed keys already fetched. */
   armedTriggers(row: AppRow, armed: ReadonlySet<string>): Trigger[];
-  /** The armed set for these app rows, migrating any pre-list row on the way. */
+  /** The armed set for these app rows. */
   armedFor(rows: readonly AppRow[]): Promise<Set<string>>;
   /** The same question for one trigger. */
   isArmed(row: AppRow, triggerId: string): Promise<boolean>;
@@ -137,7 +135,7 @@ export interface AutomationsEngineContext {
   sponsorships(): RecordStore;
   /** The era markers that outlive an erase of the sponsor. */
   sponsoredEra(): RecordStore;
-  /** The ONE migrating sponsorship read every gate goes through. */
+  /** The ONE sponsorship read every gate goes through. */
   sponsorshipState(
     doc: AppDocument,
     triggerId: string,

@@ -9,7 +9,7 @@ import type { AutomationsEngineContext } from "./engine-context.js";
 import type { AutomationsEngine } from "./index.js";
 import { stopFor } from "./messages.js";
 import { allRecords, parseAppRow } from "./rows.js";
-import { storedSponsorshipSchema, triggerKey, triggersOf } from "./sponsorship.js";
+import { sponsorshipSchema, triggerKey, triggersOf } from "./sponsorship.js";
 import { APPS } from "./types.js";
 
 export type ListSurfaceDeps = Pick<
@@ -57,13 +57,9 @@ export const createListSurface = (deps: ListSurfaceDeps): Pick<AutomationsEngine
     // must not vanish from here, or there is no way back to it at all.
     // Deduped: sponsorship is per (app, trigger), so sponsoring two triggers of
     // one app must still fetch that app once.
-    // Read with the ON-DISK schema, not the contract one: a pre-list row carries
-    // no trigger id, so the strict parse dropped it and the person an automation
-    // was handed to could not see it here at all. Its own rekey happens below, in
-    // `sponsorshipsFor`, once the app row it names has been fetched.
     const sponsoredElsewhere = [...new Set(
       (await allRecords(sponsorships(), { refs: { subject } }))
-        .map((record) => storedSponsorshipSchema.safeParse(record.data))
+        .map((record) => sponsorshipSchema.safeParse(record.data))
         .flatMap((parsed) => parsed.success ? [parsed.data.appId] : [])
         .filter((appId) => !seen.has(appId)),
     )];

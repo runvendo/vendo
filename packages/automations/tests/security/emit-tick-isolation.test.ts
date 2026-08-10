@@ -35,6 +35,15 @@ const app = (id: string, trigger: Omit<Trigger, "id">): AppDocument =>
 
 const seedApp = async (store: StoreAdapter, doc: AppDocument, subject: string, enabled = true): Promise<void> => {
   await store.records("vendo_apps").put({ id: doc.id, data: { subject, enabled, doc }, refs: { subject, ...triggerKindRefs(doc.triggers) } });
+  // An armed automation is TWO rows on disk: the app-level `enabled` above and
+  // one armed row per (app, trigger), which is what enable() writes.
+  for (const trigger of enabled ? doc.triggers ?? [] : []) {
+    await store.records("automations:armed").put({
+      id: `${doc.id}:${trigger.id}`,
+      data: { appId: doc.id, triggerId: trigger.id },
+      refs: { app_id: doc.id },
+    });
+  }
 };
 
 class GuardDouble implements Guard {

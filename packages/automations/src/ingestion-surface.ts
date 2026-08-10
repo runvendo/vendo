@@ -32,7 +32,6 @@ export type IngestionSurfaceDeps = Pick<
   | "iso"
   | "firesLocally"
   | "appsFiringOn"
-  | "migratePreRekeyCursors"
   | "armedTriggers"
   | "armedFor"
   | "startRun"
@@ -43,11 +42,11 @@ export type IngestionSurfaceDeps = Pick<
 const createTickDoor = (
   deps: Pick<
     IngestionSurfaceDeps,
-    "config" | "now" | "firesLocally" | "appsFiringOn" | "migratePreRekeyCursors"
+    "config" | "now" | "firesLocally" | "appsFiringOn"
     | "armedTriggers" | "armedFor" | "runFiredSchedules"
   >,
 ): Pick<AutomationsEngine, "tick" | "start"> => {
-  const { config, now, firesLocally, appsFiringOn, migratePreRekeyCursors } = deps;
+  const { config, now, firesLocally, appsFiringOn } = deps;
   const { armedTriggers, armedFor, runFiredSchedules } = deps;
   let tickTail: Promise<void> = Promise.resolve();
   const runTick: AutomationsEngine["tick"] = async (providedNow) => {
@@ -75,16 +74,6 @@ const createTickDoor = (
       ? []
       : await allRecords(scheduleRecords, { ids: cursorKeys });
     const cursorById = new Map(cursorRecords.map((record) => [record.id, record]));
-    // A key that MISSED is either a schedule nobody has ever ticked or one whose
-    // cursor predates the (app, trigger) rekey. The second is indistinguishable
-    // from the first here, and reading it as the first restarts a running
-    // automation's clock — so look for the old row before concluding anything.
-    for (const record of await migratePreRekeyCursors(
-      scheduleRecords,
-      cursorKeys.filter((key) => !cursorById.has(key)),
-    )) {
-      cursorById.set(record.id, record);
-    }
     const fired: FiredSchedule[] = [];
     for (const { row, trigger: declared } of dueTriggers) {
       const trigger = validateTrigger(declared);

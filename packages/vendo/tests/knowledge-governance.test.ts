@@ -223,6 +223,13 @@ describe("visibility governance — venue leakage matrix (k8 T5)", () => {
       data: { subject: principal.subject, enabled: true, doc },
       refs: { subject: principal.subject, trigger_kind: "host-event" },
     });
+    // An armed automation is TWO rows: the app row's `enabled` above and the
+    // per-(app, trigger) armed row `enable()` writes.
+    await vendo.store.records("automations:armed").put({
+      id: `${doc.id}:${DEFAULT_TRIGGER_ID}`,
+      data: { appId: doc.id, triggerId: DEFAULT_TRIGGER_ID },
+      refs: { app_id: doc.id },
+    });
     // Away automation runs execute only under a standing grant (05 §2) — seed
     // one, exactly what enable() would have minted on approval.
     const descriptor = (await vendo.actions.descriptors()).find((entry) => entry.name === "vendo_knowledge_search");

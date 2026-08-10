@@ -72,6 +72,16 @@ const seedApp = async (
     // matches how the tick/emit filter apps in production.
     refs: { subject, ...triggerKindRefs(doc.triggers) },
   });
+  // An armed automation is TWO rows on disk: the app-level `enabled` above and
+  // one armed row per (app, trigger). Seeding only the first is a shape enable()
+  // never writes.
+  for (const trigger of enabled ? doc.triggers ?? [] : []) {
+    await store.records("automations:armed").put({
+      id: `${doc.id}:${trigger.id}`,
+      data: { appId: doc.id, triggerId: trigger.id },
+      refs: { app_id: doc.id },
+    });
+  }
 };
 
 class GuardDouble implements Guard {

@@ -79,43 +79,6 @@ describe("pre-list documents (migration)", () => {
       await stack.close();
     }
   });
-
-  it("keeps firing a pre-list row that was armed before triggers were a list", async () => {
-    const stack = await createStack();
-    try {
-      const appId = "app_legacy_armed";
-      // enabled = true and NO per-trigger armed row: exactly the state a
-      // deployment's already-armed automation is in the moment this ships. It
-      // must not go quietly dark.
-      const legacyDoc = {
-        format: "vendo/app@1",
-        id: appId,
-        name: "Legacy armed",
-        trigger: {
-          on: { kind: "host-event", event: "invoice.armed" },
-          run: { kind: "steps", steps: [listStep] },
-        },
-      };
-      const now = new Date().toISOString();
-      await stack.sql(
-        `INSERT INTO vendo_apps (id, subject, enabled, doc, created_at, updated_at)
-         VALUES ($1, $2, true, $3::jsonb, $4, $4)`,
-        [appId, ADA.subject, JSON.stringify(legacyDoc), now],
-      );
-      // Nothing has written a per-trigger armed row for it — that is the state
-      // under test, not an accident of setup.
-      expect(await stack.sql(
-        "SELECT id FROM vendo_records WHERE collection = 'automations:armed'",
-      )).toEqual([]);
-
-      const ids = await stack.automations.emit("invoice.armed", { id: "inv_2" }, ADA);
-      expect(ids).toHaveLength(1);
-      const run = await stack.automations.runs.get(ids[0]!, ownerCtx(ADA.subject, appId));
-      expect(run?.triggerId).toBe("main");
-    } finally {
-      await stack.close();
-    }
-  });
 });
 
 describe("two triggers, one app", () => {

@@ -27,10 +27,6 @@ export const CAPTURES = "automations:captures";
 export const SCHEDULE = "automations:schedule";
 export const WEBHOOK = "automations:webhook";
 export const DELIVERIES = "automations:deliveries";
-/** The app row's trigger-kind ref BEFORE the trigger list: one key holding one
- *  kind. Kept only so the queries below can still find a row nobody has
- *  rewritten yet — nothing writes it any more. */
-export const PRE_LIST_TRIGGER_KIND_REF = "trigger_kind";
 /**
  * Which TRIGGERS of an app are armed — one row per armed (app, trigger).
  *

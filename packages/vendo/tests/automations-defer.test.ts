@@ -51,12 +51,23 @@ const hostEventApp = (id: string): AppDocument => ({
   triggers: [{ id: DEFAULT_TRIGGER_ID, on: { kind: "host-event", event: "go" }, run: { kind: "steps", steps: [] } }],
 });
 
+/** The per-(app, trigger) armed row `enable()` writes — an app row's `enabled`
+ *  alone is not an armed automation. */
+async function armTrigger(store: VendoStore, appId: string): Promise<void> {
+  await store.records("automations:armed").put({
+    id: triggerKey(appId, DEFAULT_TRIGGER_ID),
+    data: { appId, triggerId: DEFAULT_TRIGGER_ID },
+    refs: { app_id: appId },
+  });
+}
+
 async function seedDueSchedule(store: VendoStore, doc: AppDocument): Promise<void> {
   await store.records("vendo_apps").put({
     id: doc.id,
     data: { subject: principal.subject, enabled: true, doc },
     refs: { subject: principal.subject, [triggerKindRefKey("schedule")]: TRIGGER_KIND_REF_PRESENT },
   });
+  await armTrigger(store, doc.id);
   await store.records("automations:schedule").put({
     id: triggerKey(doc.id, DEFAULT_TRIGGER_ID),
     data: { lastFiredAt: new Date(Date.now() - 20 * 60_000).toISOString() },
@@ -69,6 +80,7 @@ async function seedHostEventApp(store: VendoStore, doc: AppDocument): Promise<vo
     data: { subject: principal.subject, enabled: true, doc },
     refs: { subject: principal.subject, [triggerKindRefKey("host-event")]: TRIGGER_KIND_REF_PRESENT },
   });
+  await armTrigger(store, doc.id);
 }
 
 async function tempStore(prefix: string): Promise<VendoStore> {

@@ -245,6 +245,13 @@ async function runAutomations(fixture: Fixture): Promise<{ trace: Trace; finalSt
     data: { subject: principal.subject, enabled: true, doc },
     refs: { subject: principal.subject, trigger_kind: "host-event" },
   });
+  // An armed automation is TWO rows: the app row's `enabled` above and the
+  // per-(app, trigger) armed row `enable()` writes.
+  await store.records("automations:armed").put({
+    id: `${doc.id}:${DEFAULT_TRIGGER_ID}`,
+    data: { appId: doc.id, triggerId: DEFAULT_TRIGGER_ID },
+    refs: { app_id: doc.id },
+  });
 
   const engine = createAutomations({
     apps: { call: async () => ({ status: "ok", output: {} }) } as unknown as AppsRuntime,
