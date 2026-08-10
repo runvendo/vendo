@@ -487,6 +487,8 @@ export async function assembleScreen(
    * below is not born aborted by the first drive's stop.
    */
   let stop = new AbortController();
+  /** Has this drive already heard the clean verdict over painted bytes? */
+  let verdict = false;
 
   const turn: Turn<VendoHarnessOptions> = {
     messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
@@ -495,8 +497,10 @@ export async function assembleScreen(
     // of the same static menu.
     tools: {
       call: async (name, args) => {
+        const settled = verdict;
         const result = await surface.tools.call(name, args);
-        if (name === VALIDATE_TOOL && record.painted && verdictIsClean(result)) stop.abort();
+        if (name === VALIDATE_TOOL && record.painted && verdictIsClean(result)) verdict = true;
+        if (settled) stop.abort();
         return result;
       },
       list: async () => listings,
@@ -537,6 +541,7 @@ export async function assembleScreen(
    */
   const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
     stop = new AbortController();
+    verdict = false;
     const signal = AbortSignal.any([surface.signal, stop.signal]);
     for await (const event of harness.run({ ...turn, messages, signal })) {
       if (event.type === "error") failure ??= event.message;
