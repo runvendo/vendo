@@ -46,6 +46,19 @@ export function runCommand(command: string, options: RunCommandOptions): Promise
 }
 
 /**
+ * A pinned checkout's `engines.node` is about the day it was pinned, not about
+ * Vendo — with the repo's own `engine-strict=true` it fails the whole run on
+ * whatever Node the corpus host happens to have (rallly: engines.node 24 vs the
+ * sweep box's Node 26). The two pnpm generations read different env vars for it:
+ * pnpm ≤10 takes npm's (`npm_config_*`, via @pnpm/npm-conf), pnpm 11 only its
+ * own `PNPM_CONFIG_*`, and each ignores the other — so both spellings are set.
+ */
+export const ENGINE_STRICT_OFF_ENV: NodeJS.ProcessEnv = {
+  npm_config_engine_strict: "false",
+  PNPM_CONFIG_ENGINE_STRICT: "false",
+};
+
+/**
  * Host repos are third-party checkouts pinned to a sha: relax the guards that
  * would fail their install for reasons that have nothing to do with Vendo.
  */
@@ -53,6 +66,7 @@ export function corpusHostCommandEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   return {
     ...process.env,
     ...env,
+    ...ENGINE_STRICT_OFF_ENV,
     PNPM_CONFIG_MINIMUM_RELEASE_AGE: "0",
     PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: "true",
     YARN_ENABLE_IMMUTABLE_INSTALLS: "false",

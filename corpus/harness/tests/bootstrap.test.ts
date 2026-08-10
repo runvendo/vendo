@@ -93,6 +93,26 @@ describe("bootstrapRepo", () => {
     await expect(readFile(path.join(repoDir, ".corpus", "logs", "bootstrap.stdout.log"), "utf8")).rejects.toThrow();
   });
 
+  it("relaxes engine-strict for the install so a pinned checkout's engines field cannot fail it", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    await writeInstallScript(repoDir, `
+      import { writeFileSync } from "node:fs";
+      writeFileSync("engine-env.json", JSON.stringify({
+        npm: process.env.npm_config_engine_strict,
+        pnpm: process.env.PNPM_CONFIG_ENGINE_STRICT,
+      }));
+    `);
+
+    await bootstrapRepo(repo, {
+      context: createRunContext({ corpusRoot }),
+      env: { npm_config_engine_strict: "true", PNPM_CONFIG_ENGINE_STRICT: "true" },
+    });
+
+    await expect(readFile(path.join(repoDir, "engine-env.json"), "utf8")).resolves.toBe(
+      JSON.stringify({ npm: "false", pnpm: "false" }),
+    );
+  });
+
   it("materializes .env from envTemplate placeholders and literal values", async () => {
     const { corpusRoot, repo, repoDir } = await makeRepo();
     repo.bootstrap.envTemplate = {

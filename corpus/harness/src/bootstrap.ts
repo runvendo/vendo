@@ -6,7 +6,7 @@ import { normalizeBootstrapInstallCommand } from "./install-command.js";
 import { pnpmDeclaresBuiltDependencies } from "./pnpm-build-policy.js";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
-import { runCommand } from "./process.js";
+import { ENGINE_STRICT_OFF_ENV, runCommand } from "./process.js";
 import { pathExists } from "./util.js";
 
 export type BootstrapRepo = Pick<ManifestEntry, "name" | "appDir" | "localPath" | "bootstrap">;
@@ -124,7 +124,11 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
     dropIgnoreWorkspace: hasPnpmWorkspace,
     pnpmConfig: repoCuratesBuilds ? ["--config.minimumReleaseAge=0"] : undefined,
   });
-  let result = await runCommand(installCommand.command, { cwd: repoDir, env });
+  // Only the engine guard is relaxed here: the build-script and lockfile
+  // guards ride the normalized CLI flags above, which respect a repo that
+  // curates its own build allowlist.
+  const installEnv = { ...env, ...ENGINE_STRICT_OFF_ENV };
+  let result = await runCommand(installCommand.command, { cwd: repoDir, env: installEnv });
   const normalizationNote = installCommand.changed
     ? `Corpus harness normalized bootstrap install command from "${repo.bootstrap.installCommand}" to "${installCommand.command}" so lockfile updates are allowed.\n`
     : "";
@@ -134,7 +138,7 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
     const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     retryNote = `Bootstrap install for ${repo.name} failed with a transient-looking registry/resolver error on attempt 1; retrying once after ${retryDelayMs}ms...\n`;
     if (retryDelayMs > 0) await delay(retryDelayMs);
-    const retryResult = await runCommand(installCommand.command, { cwd: repoDir, env });
+    const retryResult = await runCommand(installCommand.command, { cwd: repoDir, env: installEnv });
     retryNote += retryResult.code === 0
       ? `Bootstrap retry succeeded for ${repo.name} — transient registry/resolver failure recovered on attempt 2.\n`
       : `Bootstrap retry did not recover for ${repo.name} — attempt 2 failed too.\n`;
