@@ -228,5 +228,196 @@
       "lists the two pending Maple transfers in turn 2 without confusing them with the pasted statement",
       "does not claim a tool or Maple's own records provided the reference"
     ]
+  },
+  {
+    "id": "gauntlet-dining-move-corrected",
+    "kind": "harness",
+    "turns": [
+      "What did I spend on dining and coffee this month, the two together?",
+      "Right — move that much from savings into checking.",
+      "Ugh, that should have been half that amount. Put the difference back, then show me where my balances stand."
+    ],
+    "tools": {
+      "move_money": {
+        "does": "Move money between two accounts the signed-in customer holds. `from` and `to` are account ids from `list_accounts`. `amount_cents` is in CENTS: 24975 is $249.75.",
+        "takes": { "from": "string", "to": "string", "amount_cents": "number" }
+      }
+    },
+    "expectCalls": [
+      { "tool": "get_spending" },
+      { "tool": "list_accounts" },
+      { "tool": "move_money", "args": { "from": "acc_savings", "to": "acc_checking", "amount_cents": 49950 } },
+      { "tool": "move_money", "args": { "from": "acc_checking", "to": "acc_savings", "amount_cents": 24975 } }
+    ],
+    "maxToolCalls": 7,
+    "mustSay": ["249.75"],
+    "pass": [
+      "adds dining and coffee to $499.50 in turn 1",
+      "moves exactly $499.50 out of savings in turn 2 — an amount it took from its own turn-1 answer rather than asking for it",
+      "puts $249.75 back into savings in turn 3, so half the original amount is left moved",
+      "reports the balances the accounts tool actually returned — $9,412.20 checking, $28,141.35 savings — rather than figures of its own arithmetic, and may say they do not yet reflect the moves",
+      "never asks which amount was meant"
+    ]
+  },
+  {
+    "id": "gauntlet-three-in-order",
+    "kind": "harness",
+    "turns": [
+      "Three things, in this order: cancel my smallest pending transfer, then tell me the total still pending afterwards, and how many are left.",
+      "Yes, go ahead — then give me those two numbers."
+    ],
+    "expectCalls": [{ "tool": "list_transfers" }, { "tool": "cancel_transfer", "args": { "id": "tr_2" } }],
+    "maxToolCalls": 4,
+    "mustSay": ["250.00"],
+    "pass": [
+      "cancels the $60.00 transfer to Jordan Avery, the smaller of the two pending ones",
+      "gives the total still pending AFTER the cancellation as $250.00, not the $310.00 that was pending before it",
+      "says one pending transfer is left",
+      "counts only pending transfers — neither figure includes the two completed ones"
+    ]
+  },
+  {
+    "id": "gauntlet-spending-then-dashboard",
+    "kind": "harness",
+    "turns": [
+      "Which categories am I spending the most on this month?",
+      "Useful — build me a small dashboard of that I can come back to.",
+      "One more thing before you go: what was the biggest of those categories, in dollars?"
+    ],
+    "expectCalls": [{ "tool": "get_spending" }, { "tool": "vendo_make" }],
+    "maxToolCalls": 3,
+    "mustSay": ["2,850.00"],
+    "pass": [
+      "answers turn 1 with the top categories — housing at $2,850.00, groceries at $612.45",
+      "turn 2 goes and builds a screen rather than pasting another table into the chat",
+      "what it asks the builder for is this customer's spending by category, the thing the conversation was about",
+      "turn 3 still answers from the spending figures, so going off to build did not cost it the conversation"
+    ]
+  },
+  {
+    "id": "gauntlet-interrupted-cancel",
+    "kind": "harness",
+    "turns": [
+      "I want to cancel my pending transfer to Alex Rivera.",
+      "Hold on — before that, what's sitting in my savings?",
+      "OK, continue."
+    ],
+    "expectCalls": [
+      { "tool": "list_transfers" },
+      { "tool": "list_accounts" },
+      { "tool": "cancel_transfer", "args": { "id": "tr_1" } }
+    ],
+    "maxToolCalls": 5,
+    "mustSay": ["250.00"],
+    "pass": [
+      "answers the savings question in turn 2 as $28,141.35, and cancels nothing while answering it",
+      "turn 3 resumes the cancellation of the SAME transfer — the $250.00 one to Alex Rivera — without asking which transfer was meant again",
+      "cancels that transfer and no other",
+      "ends by saying in words that it is cancelled"
+    ]
+  },
+  {
+    "id": "gauntlet-recall-arithmetic",
+    "kind": "harness",
+    "turns": [
+      "What am I worth in total across all my accounts?",
+      "And what have I spent so far this month?",
+      "So if I set this month's spending aside out of that total, what's left? Don't look anything up again — use the two figures you already gave me."
+    ],
+    "expectCalls": [{ "tool": "list_accounts" }, { "tool": "get_spending" }],
+    "maxToolCalls": 2,
+    "mustSay": ["32,022.04"],
+    "pass": [
+      "gives $36,265.15 in turn 1 and $4,243.11 in turn 2",
+      "subtracts one from the other in turn 3 for $32,022.04",
+      "reuses the two figures from earlier in the conversation instead of calling a tool again in turn 3",
+      "the turn-1 total nets the credit card's -$1,288.40 rather than adding it"
+    ]
+  },
+  {
+    "id": "gauntlet-move-fails-mid-chain",
+    "kind": "harness",
+    "turns": [
+      "What's my smallest pending transfer?",
+      "Cancel it, and move the same amount from checking into savings so I don't spend it.",
+      "So where does that leave me — what actually went through?"
+    ],
+    "tools": {
+      "move_money": {
+        "does": "Move money between two accounts the signed-in customer holds. `from` and `to` are account ids from `list_accounts`. `amount_cents` is in CENTS: 6000 is $60.00.",
+        "takes": { "from": "string", "to": "string", "amount_cents": "number" },
+        "fail": "first",
+        "error": { "code": "conflict", "message": "the source account is locked while the ledger settles" }
+      }
+    },
+    "expectCalls": [
+      { "tool": "list_transfers" },
+      { "tool": "cancel_transfer", "args": { "id": "tr_2" } },
+      { "tool": "move_money", "args": { "from": "acc_checking", "to": "acc_savings", "amount_cents": 6000 } },
+      { "tool": "move_money", "args": { "from": "acc_checking", "to": "acc_savings", "amount_cents": 6000 } }
+    ],
+    "maxToolCalls": 7,
+    "mustSay": ["60.00"],
+    "pass": [
+      "names the $60.00 transfer to Jordan Avery in turn 1 and carries that same amount into the move without asking for it",
+      "tries the move again after the first attempt was refused, rather than giving up or moving a different amount",
+      "the closing summary says both things happened — the cancellation and the $60.00 move — and neither more nor less",
+      "never reports the move as done before a successful call came back"
+    ]
+  },
+  {
+    "id": "gauntlet-statements-every-account",
+    "kind": "harness",
+    "turns": [
+      "Email me last month's statement for every account I have.",
+      "Do the same for the month before that.",
+      "And remind me what the three accounts add up to right now."
+    ],
+    "tools": {
+      "email_statement": {
+        "does": "Email the customer one account's statement for one month. `account_id` is an id from `list_accounts`; `month` is `YYYY-MM`.",
+        "takes": { "account_id": "string", "month": "string" }
+      }
+    },
+    "expectCalls": [
+      { "tool": "list_accounts" },
+      { "tool": "email_statement", "args": { "account_id": "acc_checking" } },
+      { "tool": "email_statement", "args": { "account_id": "acc_savings" } },
+      { "tool": "email_statement", "args": { "account_id": "acc_credit" } },
+      { "tool": "email_statement", "args": { "account_id": "acc_checking" } },
+      { "tool": "email_statement", "args": { "account_id": "acc_savings" } },
+      { "tool": "email_statement", "args": { "account_id": "acc_credit" } }
+    ],
+    "maxToolCalls": 8,
+    "mustSay": ["36,265.15"],
+    "pass": [
+      "sends a statement for all three accounts in turn 1 — checking, savings AND the credit card — skipping none",
+      "sends the same three again for the earlier month in turn 2",
+      "asks for July 2026 in turn 1 and June 2026 in turn 2",
+      "totals the three accounts as $36,265.15, subtracting what is owed on the credit card rather than adding it"
+    ]
+  },
+  {
+    "id": "gauntlet-four-call-workflow",
+    "kind": "harness",
+    "turns": [
+      "What are my two biggest spending categories this month?",
+      "And how much is sitting across my accounts in total?",
+      "Last thing — cancel the smaller of my two pending transfers. No need to check with me."
+    ],
+    "expectCalls": [
+      { "tool": "get_spending" },
+      { "tool": "list_accounts" },
+      { "tool": "list_transfers" },
+      { "tool": "cancel_transfer", "args": { "id": "tr_2" } }
+    ],
+    "maxToolCalls": 7,
+    "mustSay": ["60.00"],
+    "pass": [
+      "the whole conversation takes one read per question — spending, then accounts, then transfers — with no repeats",
+      "housing at $2,850.00 and groceries at $612.45 are the two biggest categories",
+      "the accounts total is $36,265.15",
+      "cancels the $60.00 transfer to Jordan Avery straight away, since it was told not to check first"
+    ]
   }
 ]
