@@ -52,13 +52,16 @@ export const control: CSSProperties = {
   padding: "var(--vendo-density-control-padding, 9px 12px)",
 };
 
-/** Recharts-friendly categorical palette derived from the host accent. */
+/** Recharts-friendly categorical palette derived from the host accent. Every
+ * series is an accent ramp: the muted grey is reserved for labels and the
+ * danger red for negatives, so neither is spent as a data colour, and the
+ * lighter steps mix only far enough to stay visible on a white surface. */
 export const chartSeries = [
   t.accent,
-  `color-mix(in srgb, ${t.accent} 55%, ${t.surface})`,
-  `color-mix(in srgb, ${t.accent} 30%, ${t.surface})`,
-  t.muted,
-  `color-mix(in srgb, ${t.danger} 70%, ${t.accent})`,
+  `color-mix(in srgb, ${t.accent} 72%, ${t.text})`,
+  `color-mix(in srgb, ${t.accent} 45%, ${t.text})`,
+  `color-mix(in srgb, ${t.accent} 62%, ${t.surface})`,
+  `color-mix(in srgb, ${t.accent} 34%, ${t.surface})`,
 ] as const;
 
 /** Nth series color, wrapping. */
