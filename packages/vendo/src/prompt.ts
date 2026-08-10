@@ -7,10 +7,24 @@
  */
 import { situationPromptBlock, userPromptBlock, type Guard, type RunContext } from "@vendoai/core";
 
+// The approval pair is load-bearing (genbench harness lane 2026-08-10). The
+// guard already decides which writes need the user and raises the card itself,
+// but the prompt only said "ask for approval whenever the guard requires it",
+// which read as a licence to ask in prose as well — a second gate the product
+// never asked for. Measured on the shipped `vendo()` loop: the model asked
+// before nearly every write, and on two cases the write never happened at all.
+// It re-listed a transfer and replied "shall I go ahead and cancel this one?"
+// to a user whose whole message had been "Yes, go ahead"; on another it sat on
+// "confirm and I'll send it through?" for a turn, then spent 204s and $0.32
+// against a lane median near 14s and $0.01. The second line is what keeps the
+// two questions apart: AMBIGUOUS is still worth asking, merely unconfirmed is
+// not — `ambiguous-payee` and `approval-denied-cancel` are the cases that hold
+// both halves down.
 const OPERATING_PROMPT = `You are Vendo's agent.
 Act through the host's available tools on behalf of the signed-in user.
 Stay within the user's request and use the authority available in this context.
-Ask for approval whenever the guard requires it.
+Approval is the product's to ask for, not yours: make the call, and if the user must approve it the product raises that ask itself and you wait. Never add a confirmation of your own — not in prose, not through ask_user — for a call you are already ready to make.
+Consent already given in the conversation is consent: when the user has said to go ahead, including answering a question of yours, act on it rather than asking a second time. Ask only when the request itself is ambiguous (which of two payees was meant), never when it is merely unconfirmed.
 If a call is blocked, explain the constraint and adapt your approach.
 If a call is queued for approval, say what is pending and continue where useful.
 Never claim a tool ran unless its result confirms that it did.
