@@ -10,16 +10,19 @@ export interface ProgressProps {
   label?: string;
   /** Show the percentage text. */
   showValue?: boolean;
-  tone?: "accent" | "success" | "danger";
+  tone?: "neutral" | "accent" | "success" | "danger";
 }
 
 const TONE_FILL: Record<NonNullable<ProgressProps["tone"]>, string> = {
+  neutral: `color-mix(in srgb, ${t.text} 70%, ${t.surface})`,
   accent: t.accent,
   success: "#1e7f53",
   danger: t.danger,
 };
 
-export function Progress({ value, max, label, showValue = false, tone = "accent" }: ProgressProps) {
+/** Neutral by default: a bar is a reading, not the screen's primary action, and
+ *  a screen of accent-filled bars leaves nothing for the accent to mean. */
+export function Progress({ value, max, label, showValue = false, tone = "neutral" }: ProgressProps) {
   if (!isRenderableNumber(value) || (max !== undefined && !isRenderableNumber(max))) {
     return (
       <div data-kit="Progress" style={{ ...font, color: t.muted }}>

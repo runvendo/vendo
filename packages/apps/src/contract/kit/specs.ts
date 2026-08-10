@@ -211,8 +211,8 @@ export const KIT_SPECS: KitComponentSpec[] = [
     name: "Badge",
     group: "data",
     summary: "A small literal status label the model writes. For enum data fields use EnumBadge instead.",
-    props: { label: copy(z.string(), "badge text", { required: true }), tone: config(z.enum(["neutral", "accent", "success", "warning", "danger"]), "color tone") },
-    examples: ['<Badge label="Beta" tone="accent"/>'],
+    props: { label: copy(z.string(), "badge text", { required: true }), tone: config(z.enum(["neutral", "accent", "success", "warning", "danger"]), "color tone — default neutral; \"accent\" fills the pill with the brand colour, which belongs to the primary action, not to a label") },
+    examples: ['<Badge label="Beta"/>'],
   },
 
   // Charts (recharts internals; data props only; $NaN is unrenderable)
@@ -281,7 +281,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       max: data(z.number(), "denominator when value is raw"),
       label: copy(z.string(), "caption"),
       showValue: config(z.boolean(), "show the percentage"),
-      tone: config(z.enum(["accent", "success", "danger"]), "fill color"),
+      tone: config(z.enum(["neutral", "accent", "success", "danger"]), "fill color — default neutral; the accent is reserved for the primary action"),
     },
     examples: ["<Progress value={goal.saved} max={goal.target} label=\"Savings goal\" showValue/>"],
   },
@@ -359,10 +359,13 @@ export const KIT_SPECS: KitComponentSpec[] = [
     props: {
       label: copy(z.string(), "button text", { required: true }),
       onClick: config(action, "the host tool to run"),
-      variant: config(z.enum(["primary", "secondary", "danger"]), "emphasis"),
+      variant: config(z.enum(["primary", "secondary", "danger"]), "emphasis — default secondary (neutral). \"primary\" is the only one that spends the brand accent, so at most ONE control on a screen gets it: the action the screen exists for. A control that cancels, deletes or refunds is \"danger\", never \"primary\""),
       disabled: config(z.boolean(), "disabled state"),
     },
-    examples: ['<Button label="Remind all" onClick="invoices.sendReminders"/>'],
+    examples: [
+      '<Button label="Remind all" onClick="invoices.sendReminders" variant="primary"/>',
+      '<Button label="Cancel transfer" onClick={{ action: "transfers.cancel", payload: { id: transfers.data.0.id } }} variant="danger"/>',
+    ],
   },
   {
     name: "Form",
@@ -371,8 +374,12 @@ export const KIT_SPECS: KitComponentSpec[] = [
     props: {
       onSubmit: config(action, "the host tool to run on submit"),
       submitLabel: copy(z.string(), "submit button text"),
+      submitVariant: config(z.enum(["primary", "secondary", "danger"]), "emphasis of the submit button, under Button's rule — default secondary; \"danger\" when submitting cancels or deletes something"),
     },
-    examples: ['<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name"/></Form>'],
+    examples: [
+      '<Form onSubmit="clients.create" submitLabel="Add client" submitVariant="primary"><Input label="Name"/></Form>',
+      '<Form onSubmit="transfers.cancel" submitLabel="Cancel transfer" submitVariant="danger"><Select label="Transfer" options={transfers.data}/></Form>',
+    ],
   },
   {
     name: "Disclaimer",

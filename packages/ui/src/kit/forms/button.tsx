@@ -16,7 +16,12 @@ export interface ButtonProps {
   type?: "button" | "submit";
 }
 
-export function Button({ label, variant = "primary", disabled = false, onClick, type = "button", children }: PropsWithChildren<ButtonProps>) {
+/** `primary` is the only variant that spends the host's accent, so it is NOT the
+ *  default: a screen that names no primary action gets no accent rather than one
+ *  accent per button. Generated screens wrote a bare `<Button>` for every
+ *  control, including destructive ones, and the brand green landed on
+ *  "Cancel transfer". */
+export function Button({ label, variant = "secondary", disabled = false, onClick, type = "button", children }: PropsWithChildren<ButtonProps>) {
   const primary = variant === "primary";
   const danger = variant === "danger";
   const background = primary ? t.accent : danger ? t.danger : t.surface;
