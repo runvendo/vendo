@@ -11,14 +11,24 @@ bespoke one-shot runner behind `/agent/task`. The duplicate is deleted. The
 supervisor's task door now drives the SAME `claude-turn.mjs` the session door
 does — one runner, two doors, three callers — keeping what only the task door
 needs: the box conventions the agent builds against, and the structured result
-the host polls for. That result now arrives as `/app/.vendo/report.json`, which
-the agent writes and the supervisor reads, instead of an in-process MCP tool.
-**The control-port protocol did not change**; nothing outside the box needed
-edits.
+the host polls for.
+
+**Box boundary — the one behavioral change.** That structured result now arrives
+as a FILE: the agent writes `/app/.vendo/report.json` and the supervisor reads
+it back, where it used to call an in-process `report_done` MCP tool. The shared
+runner's only MCP server is the host's own door, and a box task has none, so
+the report rides the one channel a box task and its supervisor already share.
+The JSON is the same shape it always was (`ok`, `summary`, `filesChanged`,
+`testsRun`, `fns?`, `servesUi?`) and it is still treated as DATA host-side —
+nothing in it can approve or authorize anything. **If you maintain a custom box
+image or your own in-box agent, this is the line to change**: end the task by
+writing that file instead of calling a tool. **The control-port protocol itself
+did not change** — `/agent/task` still answers `202 {taskId}` and
+`/agent/task/<id>` still answers `{status, result?, log}`, so nothing outside
+the box needed edits.
 
 Escalation now means exactly two rungs: the screen agent, and the box.
-`steps`/`agentic` are no longer branches of the server lane — authoring an
-automation never needed a machine, so it is its own door:
+Authoring an automation never needed a machine, so it is its own door:
 
 ```ts
 await apps.automation.author(
@@ -33,6 +43,15 @@ The planner, the trigger-id rules, the results-board rewire and the arming are
 `generation/lanes.ts` to `server/automation/{plan,lane}.ts` verbatim. An
 escalated plan that asks for an automation is routed to the same door, so both
 ways in land, arm and audit identically.
+
+**`<Server kind="steps">` and `<Server kind="agentic">` both still exist and
+still work — nothing was removed from the plan dialect.** What changed is where
+they lead: they are no longer *escalation kinds* (branches of the server lane
+that could reach for a machine), they are the escalating agent's signal INTO
+the automation door. A plan that declares either authors exactly the automation
+it always did. `steps` remains the deterministic mode — a fixed step pipeline
+with no model call per firing — and `agentic` the judgment-per-run mode. Only
+`kind="box"` still means a machine, and it is now the only rung the ladder has.
 
 **Behavior fix:** `create` and `edit` no longer disagree about escalation.
 `create` used to refuse EVERY escalation on a deployment with no sandbox while
