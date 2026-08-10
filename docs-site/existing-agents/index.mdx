@@ -6,12 +6,19 @@ description: "Keep your Vercel AI SDK or Mastra agent and add Vendo's guarded to
 
 import { AgentPrompt } from "/snippets/agent-prompt.jsx"
 
-You already have an agent: its own loop, its own model, its own chat UI.
-Vendo does not replace any of it. One tool pack, spread into your agent's
-tools, adds guarded host actions, micro-apps, and approvals to the loop
-you already run. Start with your framework's quickstart:
+You already have an agent — its own loop, model, and chat UI — and Vendo
+replaces none of it. One tool pack, spread into your agent's tools, adds
+guarded host actions, live micro-apps, and approvals to the loop you already
+run.
 
-<CardGroup cols={2}>
+If your agent runs outside your backend, or you standardize on MCP
+connectors, head to [the MCP door](/capabilities/mcp) instead.
+
+<CardGroup cols={3}>
+  <Card title="The walkthrough" icon="route" href="/existing-agents/your-agent">
+    The full on-ramp: `vendo init`, the prompt guidance, and where the screen
+    lands.
+  </Card>
   <Card title="Quickstart: AI SDK" icon="/images/logos/vercel.svg" href="/existing-agents/ai-sdk">
     `vendo init`, one spread into `streamText`, one embed component.
   </Card>
@@ -130,10 +137,3 @@ generation and the delegate: an explicit `createVendo({ model })` wins, and
 when you omit it Vendo resolves one through the
 [dev-mode credential ladder](/connect/dev-mode). In the common case that
 means zero extra model config.
-
-## In-process vs. the MCP door
-
-This seam is for your own agent running in your own backend, in process
-with `createVendo`. If you want third-party agents (Claude, ChatGPT,
-Cursor) to reach your product from outside, that is the
-[MCP door](/capabilities/mcp).

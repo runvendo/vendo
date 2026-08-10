@@ -6,17 +6,13 @@ description: "Run vendo init — it scaffolds the server side and prints the one
 
 import { AgentPrompt } from "/snippets/agent-prompt.jsx"
 
-Vendo setup is one command. `npx vendo init` scans your app, scaffolds the
-entire server side, and prints the one paste that connects your pages to it —
-`<VendoProvider>` in your layout. Start the dev server and send a turn.
+Most in-product AI describes your product. Vendo's agent operates it — the
+same API, the same identity, the same audit trail as your own UI — and it
+draws real screens instead of paragraphs about them. Vendo runs the loop, the
+chat surface, and the approvals; there is no agent for you to write.
 
-<Note>
-  Vendo's built-in agent is in beta. Most teams should bring their own agent:
-  keep the loop you already run and spread Vendo's tool pack into it. Jump
-  straight to the [AI SDK](/existing-agents/ai-sdk) or
-  [Mastra](/existing-agents/mastra) quickstart. This page wires Vendo as the
-  whole agent, loop and UI included.
-</Note>
+Beta — if you already ship your own agent loop,
+[bring your own agent](/existing-agents) instead.
 
 ## Install and init
 
@@ -114,6 +110,18 @@ The handler takes a standard `Request` and returns a standard `Response`, so
 it runs in Next.js, Express, Fastify, Hono, Bun, or any Node-compatible
 runtime (Node 20 or later); non-Next wiring is
 [below](#wire-the-express-adapter).
+
+<CardGroup cols={2}>
+  <Card title="Bring your own everything" icon="server" href="/deploy/deploying">
+    Your own Postgres, sandbox account, and model key. Every Cloud capability
+    keeps a no-key path, and an adapter you pass always wins.
+  </Card>
+  <Card title="Start on Vendo Cloud" icon="cloud" href="/deploy/vendo-cloud">
+    One key fills every adapter slot you left unset — hosted store, sandboxes,
+    sharing and publishing, metered inference — so there is nothing to run
+    yourself on day one.
+  </Card>
+</CardGroup>
 
 ## The client mount
 

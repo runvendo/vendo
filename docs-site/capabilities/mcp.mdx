@@ -4,17 +4,10 @@ sidebarTitle: "MCP door"
 description: "Serve your product's tools to Claude, ChatGPT, Cursor, and other MCP clients through one guarded, OAuth-authenticated door that shares your policy."
 ---
 
-The MCP door makes your product installable in MCP clients such as Claude,
-ChatGPT, and Cursor: your product becomes an MCP server that outside agents
-connect to over OAuth. Every door tool call runs through the same guard-bound
-registry, policy, approvals, and audit path as chat, so outside agents get no
-weaker perimeter than your own conversation surface.
-
-Opening the door is a host decision, and entirely a manual one. It is off by
-default; `vendo init` never asks about it, never turns it on, and scaffolds
-none of its wiring. You set `mcp: true`, make sure a `HostOAuthAdapter` is in
-the composition — any `auth` preset already carries one, so most hosts need
-nothing extra — and add the discovery route yourself. All three are below.
+Make your product installable in Claude, ChatGPT, Cursor, and Claude Code —
+with those agents acting as the person who signed in, not a service account.
+Every call through the door runs the same guard-bound registry, policy,
+approvals, and audit as chat.
 
 **Status: experimental.** `mcp: true` is real, guard-bound, and covered by
 protocol-level e2e (`fixtures/mcp-e2e`), but it stays out of the main
@@ -26,6 +19,16 @@ one real tool call against a running door.
 attended runs against ChatGPT and Cursor are still outstanding. The door
 graduates into the quickstart's main flow once all three are green and someone
 records the run.
+
+<CardGroup cols={2}>
+  <Card title="See it end to end" icon="route" href="/existing-agents/mcp">
+    A full walkthrough: an outside agent acting as the signed-in user, and the
+    screen landing on your own page.
+  </Card>
+  <Card title="Publish it to the MCP registry" icon="tower-broadcast" href="/capabilities/mcp-registry">
+    Make the deployed door discoverable through the official registry.
+  </Card>
+</CardGroup>
 
 ## When to use it
 
