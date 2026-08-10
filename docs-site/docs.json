@@ -65,7 +65,7 @@
         ]
       },
       {
-        "group": "You don't have an agent yet",
+        "group": "Your product has no agent",
         "tag": "Beta",
         "pages": [
           "quickstart",
