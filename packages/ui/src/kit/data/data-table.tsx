@@ -4,7 +4,7 @@
  * column keys, formats each cell by its `format` token, and shows a named-query
  * empty state — none of which the model has to author.
  */
-import { useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useMemo, useState, type CSSProperties } from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -44,6 +44,8 @@ export interface DataTableProps {
   searchable?: boolean;
   /** Page size; enables pagination when set. */
   paginate?: number;
+  /** Fields revealed under a row when it is opened. */
+  detailFields?: DataTableColumn[];
   /** Text shown when there are no rows (the named-query empty state). */
   emptyState?: string;
   /** Optional table caption. */
@@ -82,6 +84,7 @@ export function DataTable(props: DataTableProps) {
     filterableBy,
     searchable = false,
     paginate,
+    detailFields,
     emptyState = "No data",
     caption,
   } = props;
@@ -134,6 +137,7 @@ export function DataTable(props: DataTableProps) {
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
   const [globalFilter, setGlobalFilter] = useState("");
   const [columnFilters, setColumnFilters] = useState<Array<{ id: string; value: string }>>([]);
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   const table = useReactTable({
     data,
@@ -291,26 +295,86 @@ export function DataTable(props: DataTableProps) {
                 </td>
               </tr>
             ) : (
-              bodyRows.map((row, rowIndex) => (
-                <tr key={row.id}>
-                  {row.getVisibleCells().map((cell) => {
-                    const col = columns.find((c) => c.key === cell.column.id);
-                    return (
-                      <td
-                        key={cell.id}
-                        style={{
-                          borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
-                          padding: cellPad,
-                          textAlign: alignCss(col?.align),
-                          fontVariantNumeric: col?.format && col.format !== "text" ? "tabular-nums" : undefined,
-                        }}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))
+              bodyRows.map((row, rowIndex) => {
+                const open = openRow === row.id;
+                const lastRow = rowIndex === bodyRows.length - 1;
+                const rowBorder = lastRow && !open ? 0 : `1px solid ${t.border}`;
+                return (
+                  <Fragment key={row.id}>
+                    <tr>
+                      {row.getVisibleCells().map((cell, cellIndex) => {
+                        const col = columns.find((c) => c.key === cell.column.id);
+                        const content = flexRender(cell.column.columnDef.cell, cell.getContext());
+                        return (
+                          <td
+                            key={cell.id}
+                            style={{
+                              borderBottom: rowBorder,
+                              padding: cellPad,
+                              textAlign: alignCss(col?.align),
+                              fontVariantNumeric: col?.format && col.format !== "text" ? "tabular-nums" : undefined,
+                            }}
+                          >
+                            {detailFields && detailFields.length > 0 && cellIndex === 0 ? (
+                              <button
+                                type="button"
+                                aria-expanded={open}
+                                onClick={() => setOpenRow(open ? null : row.id)}
+                                style={{
+                                  ...font,
+                                  display: "flex",
+                                  width: "100%",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  gap: 8,
+                                  border: 0,
+                                  background: "transparent",
+                                  color: t.text,
+                                  cursor: "pointer",
+                                  padding: 0,
+                                  textAlign: "left",
+                                }}
+                              >
+                                {content}
+                                <span aria-hidden="true" style={{ color: t.muted, transform: open ? "rotate(90deg)" : "none", transition: `transform ${t.motionDuration} ${t.motionEasing}` }}>
+                                  ›
+                                </span>
+                              </button>
+                            ) : (
+                              content
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {open && detailFields ? (
+                      <tr>
+                        <td
+                          colSpan={Math.max(1, columns.length)}
+                          style={{
+                            borderBottom: lastRow ? 0 : `1px solid ${t.border}`,
+                            padding: cellPad,
+                            background: `color-mix(in srgb, ${t.background} 72%, ${t.surface})`,
+                          }}
+                        >
+                          <div style={{ display: "flex", flexDirection: "column", gap: "var(--vendo-density-inline-gap, 7px)" }}>
+                            {detailFields.map((f) => (
+                              <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                                <span style={{ color: t.muted }}>
+                                  {f.label ?? humanizeEnum(f.key.split(".").pop() ?? f.key)}
+                                </span>
+                                <span style={{ fontVariantNumeric: "tabular-nums" }}>
+                                  {applyFormat(resolvePath(row.original, f.key), f.format ?? "text") ?? "—"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>

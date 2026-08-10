@@ -163,11 +163,13 @@ export const KIT_SPECS: KitComponentSpec[] = [
       filterableBy: config(z.array(z.string()), "column keys to expose as filter dropdowns"),
       searchable: config(z.boolean(), "show a search box across all columns"),
       paginate: config(z.number().int().positive(), "page size (enables pagination)"),
+      detailFields: config(z.array(tableColumn), "fields revealed under a row when it is opened — the row becomes a real disclosure control and pressing it again closes it; for a short list you drill into, not a 100-row grid"),
       emptyState: copy(z.string(), "text when the query returns no rows"),
       caption: copy(z.string(), "table caption"),
     },
     examples: [
       '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amountCents",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
+      '<DataTable rows={transfers.data} columns={[{key:"to"},{key:"amount",format:"money",align:"end"}]} detailFields={[{key:"date",format:"date"},{key:"status"}]}/>',
     ],
   },
   {
