@@ -1,11 +1,12 @@
 import {
   VENDO_TREE_FORMAT,
+  VendoError,
   type AppDocument,
   type PermissionGrant,
+  type StoreOps,
   type VendoRecord,
 } from "@vendoai/core";
 import { appRowSchema } from "@vendoai/apps/contract";
-import type { VendoStore } from "@vendoai/store";
 
 export interface ToolImpact {
   tool: string;
@@ -26,11 +27,11 @@ export interface ToolImpact {
  *  stored row; this reader needs two of its three fields. */
 const storedAppSchema = appRowSchema.pick({ enabled: true, doc: true });
 
-async function allRecords(store: VendoStore, collection: string): Promise<VendoRecord[]> {
+async function allRecords(ops: StoreOps, collection: string): Promise<VendoRecord[]> {
   const records: VendoRecord[] = [];
   let cursor: string | undefined;
   do {
-    const page = await store.records(collection).list({ limit: 1_000, cursor });
+    const page = await ops.engine.list(collection, { limit: 1_000, cursor });
     records.push(...page.records);
     cursor = page.cursor;
   } while (cursor !== undefined);
@@ -85,10 +86,21 @@ function activeGrant(grant: PermissionGrant, now: string): boolean {
   return grant.revokedAt === undefined && (grant.expiresAt === undefined || grant.expiresAt > now);
 }
 
-export async function computeImpact(store: VendoStore, tools: string[]): Promise<ToolImpact[]> {
+export async function computeImpact(
+  ops: StoreOps | undefined,
+  tools: string[],
+): Promise<ToolImpact[]> {
+  if (ops === undefined) {
+    throw new VendoError(
+      "not-implemented",
+      "The impact report reads Vendo's own app and grant drawers, so it needs the store's "
+      + "named-operation surface: a SQL-backed store (`store: postgres(url)`, or the local default) "
+      + "or a StoreOps-capable store (the Cloud hosted store). The configured store is neither.",
+    );
+  }
   const [appRecords, grantRecords] = await Promise.all([
-    allRecords(store, "vendo_apps"),
-    allRecords(store, "vendo_grants"),
+    allRecords(ops, "vendo_apps"),
+    allRecords(ops, "vendo_grants"),
   ]);
   // A row that will not parse is skipped rather than thrown on: `sync` is
   // advisory and read-only, and one unreadable row must not take the whole

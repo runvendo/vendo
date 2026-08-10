@@ -4,9 +4,7 @@ import {
   type ApprovalRequest,
   type IsoDateTime,
   type Principal,
-  type RecordStore,
   type RunContext,
-  type StoreAdapter,
   type StoreOps,
   type ToolCall,
   type ToolOutcome,
@@ -104,12 +102,11 @@ export interface ByoApprovalsConfig {
   /** The guard-bound registry (the SAME binding chat, apps, and automations
    *  execute through) — both the parked call and its resume dispatch ride it. */
   tools: ToolRegistry;
-  store: StoreAdapter;
-  /** THE named-operation surface for this deployment, beside the store it runs
-   *  over — `undefined` when the configured store offers neither its own `ops`
-   *  nor a SQL handle, exactly as `selectStoreOps` reports it. Threaded here
-   *  ahead of the parked-call drawers moving onto the `engine` family; the
-   *  drawers still reach the store through the record façade below. */
+  /** THE named-operation surface for this deployment — `undefined` when the
+   *  configured store offers neither its own `ops` nor a SQL handle, exactly as
+   *  `selectStoreOps` reports it. The parked-call drawers are Vendo's own, so
+   *  they are reached through the `engine` family rather than the record
+   *  façade, and this is the only store handle this seam takes. */
   ops: StoreOps | undefined;
 }
 
@@ -121,11 +118,11 @@ function cloneJson<T>(value: T): T {
   return globalThis.structuredClone(value);
 }
 
-async function listAll(store: RecordStore): Promise<VendoRecord[]> {
+async function listAll(engine: StoreOps["engine"], collection: string): Promise<VendoRecord[]> {
   const records: VendoRecord[] = [];
   let cursor: string | undefined;
   do {
-    const page = await store.list({ ...(cursor === undefined ? {} : { cursor }) });
+    const page = await engine.list(collection, { ...(cursor === undefined ? {} : { cursor }) });
     records.push(...page.records);
     if (page.cursor === undefined || page.cursor === cursor) break;
     cursor = page.cursor;
@@ -133,12 +130,27 @@ async function listAll(store: RecordStore): Promise<VendoRecord[]> {
   return records;
 }
 
-export function createByoApprovals({ guard, tools, store }: ByoApprovalsConfig): ByoApprovals {
-  const parked = store.records(PARKED_COLLECTION);
-  const outcomes = store.records(OUTCOME_COLLECTION);
+export function createByoApprovals({ guard, tools, ops }: ByoApprovalsConfig): ByoApprovals {
+  /** The parked-call drawers are Vendo's own, so they ride the `engine` family.
+   *  Resolved per call rather than at construction: composition runs for every
+   *  deployment, including one whose store offers neither its own `ops` nor a
+   *  SQL handle, and that store only ever loses the parking seam — it must not
+   *  lose the whole umbrella at boot. */
+  const engine = (): StoreOps["engine"] => {
+    if (ops === undefined) {
+      throw new VendoError(
+        "not-implemented",
+        "Parking a BYO guarded call persists it in Vendo's own drawers, so this seam needs the "
+        + "store's named-operation surface: a SQL-backed store (`store: postgres(url)`, or the "
+        + "local default) or a StoreOps-capable store (the Cloud hosted store). The configured "
+        + "store is neither.",
+      );
+    }
+    return ops.engine;
+  };
 
   const putParked = async (record: ParkedByoCall): Promise<void> => {
-    await parked.put({
+    await engine().put(PARKED_COLLECTION, {
       id: record.approvalId,
       data: record,
       refs: { subject: record.owner, approval: record.approvalId },
@@ -146,7 +158,7 @@ export function createByoApprovals({ guard, tools, store }: ByoApprovalsConfig):
   };
 
   const putOutcome = async (record: ParkedByoOutcome): Promise<void> => {
-    await outcomes.put({
+    await engine().put(OUTCOME_COLLECTION, {
       id: record.approvalId,
       data: record,
       refs: { subject: record.owner, state: record.state },
@@ -158,7 +170,7 @@ export function createByoApprovals({ guard, tools, store }: ByoApprovalsConfig):
   // and awaits them, so the outcome row has one writer and lands before the
   // decide call returns to the wire.
   guard.onApprovalDecision(async (approvalId, approved) => {
-    const record = await parked.get(approvalId);
+    const record = await engine().get(PARKED_COLLECTION, approvalId);
     if (record === null) return;
     const data = record.data as ParkedByoCall;
     try {
@@ -178,7 +190,7 @@ export function createByoApprovals({ guard, tools, store }: ByoApprovalsConfig):
     } finally {
       // Cleared either way: approve ran it, deny fails closed. A parked record
       // exists exactly while its approval is undecided.
-      await parked.delete(approvalId);
+      await engine().delete(PARKED_COLLECTION, approvalId);
     }
   });
 
@@ -243,7 +255,7 @@ export function createByoApprovals({ guard, tools, store }: ByoApprovalsConfig):
     },
 
     async read(approvalId, principal) {
-      const record = await outcomes.get(approvalId);
+      const record = await engine().get(OUTCOME_COLLECTION, approvalId);
       if (record !== null) {
         const data = record.data as ParkedByoOutcome;
         if (data.owner === principal.subject) {
@@ -263,7 +275,7 @@ export function createByoApprovals({ guard, tools, store }: ByoApprovalsConfig):
       // record exists exactly until that write, so serve its request snapshot
       // as still-pending rather than a terminal not-found (which the embed
       // renders as expired and stops polling).
-      const stillParked = await parked.get(approvalId);
+      const stillParked = await engine().get(PARKED_COLLECTION, approvalId);
       if (stillParked !== null) {
         const data = stillParked.data as ParkedByoCall;
         if (data.owner === principal.subject && data.request !== undefined) {
@@ -275,7 +287,7 @@ export function createByoApprovals({ guard, tools, store }: ByoApprovalsConfig):
 
     async sweepExpired(ttlMs, at = Date.now()) {
       if (ttlMs <= 0) return;
-      for (const record of await listAll(parked)) {
+      for (const record of await listAll(engine(), PARKED_COLLECTION)) {
         const data = record.data as ParkedByoCall;
         const parkedAt = Date.parse(data.parkedAt);
         if (Number.isFinite(parkedAt) && parkedAt + ttlMs > at) continue;

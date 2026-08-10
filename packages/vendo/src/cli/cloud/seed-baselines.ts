@@ -140,12 +140,13 @@ export async function pushSeedBaselines(options: {
       ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
       fetch: fetchImpl,
     });
-    const records = store.records(PIN_BASELINES_COLLECTION);
+    // A pin baseline is one of Vendo's OWN drawers, so it rides the engine family.
+    const engine = store.ops.engine;
 
     const remote = new Map<string, unknown>();
     let cursor: string | undefined;
     do {
-      const page = await records.list(cursor === undefined ? {} : { cursor });
+      const page = await engine.list(PIN_BASELINES_COLLECTION, cursor === undefined ? {} : { cursor });
       for (const record of page.records) remote.set(record.id, record.data);
       if (page.cursor === undefined || page.cursor === cursor) break;
       cursor = page.cursor;
@@ -153,14 +154,14 @@ export async function pushSeedBaselines(options: {
 
     for (const [slot, baseline] of [...local.valid].sort(([left], [right]) => left.localeCompare(right))) {
       if (remote.has(slot) && upToDate(remote.get(slot), baseline)) continue;
-      await records.put({ id: slot, data: baseline as unknown as Json });
+      await engine.put(PIN_BASELINES_COLLECTION, { id: slot, data: baseline as unknown as Json });
       pushed.push(slot);
     }
     for (const slot of [...remote.keys()].sort()) {
       // Presence on disk, not parseability: an unreadable file still means the
       // host has this slot, so its Cloud row stays.
       if (local.present.has(slot)) continue;
-      await records.delete(slot);
+      await engine.delete(PIN_BASELINES_COLLECTION, slot);
       pruned.push(slot);
     }
     return done();

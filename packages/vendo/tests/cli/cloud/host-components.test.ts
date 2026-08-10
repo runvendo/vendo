@@ -201,7 +201,7 @@ describe("host component push", () => {
     // No module body is ever downloaded to decide what changed.
     expect(cloud.calls).toEqual([
       "GET /api/v1/store/blobs/vendo_host_components",
-      "POST /api/v1/store/records/vendo_host_components/list",
+      `POST /api/v1/store${STORE_WIRE_PATHS["engine.list"]}`,
     ]);
   });
 

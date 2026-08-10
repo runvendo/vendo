@@ -108,12 +108,21 @@ const machineEnvFor = (
   composition: VendoComposition,
   appTokens: ReturnType<typeof createAppTokens>,
 ): AppsSeams["machineEnv"] => {
-  const { store, urls, secrets } = composition;
+  const { ops, urls, secrets } = composition;
   const machineEnv = async (
     app: AppDocument,
     grants?: { grantedSecrets: ReadonlySet<string> },
   ): Promise<Record<string, string>> => {
-    const record = await store.records("vendo_apps").get(app.id);
+    if (ops === undefined) {
+      throw new VendoError(
+        "not-implemented",
+        "Provisioning a machine app reads the app's owner out of Vendo's own drawer, so it needs "
+        + "the store's named-operation surface: a SQL-backed store (`store: postgres(url)`, or the "
+        + "local default) or a StoreOps-capable store (the Cloud hosted store). The configured "
+        + "store is neither.",
+      );
+    }
+    const record = await ops.engine.get("vendo_apps", app.id);
     const subject = record?.refs?.["subject"];
     if (typeof subject !== "string") {
       throw new VendoError("not-found", `app not found: ${app.id}`);
