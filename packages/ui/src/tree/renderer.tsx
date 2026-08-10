@@ -35,6 +35,7 @@ import { deriveFormShape, FormingSkeleton, PendingLeaf } from "./forming-skeleto
 import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
+import { actionArgs } from "../kit/forms/form.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
 import { useKeyedState } from "../kit/state.js";
 
@@ -234,7 +235,7 @@ function bindValue(
     if (mode === "jail") {
       return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
     }
-    return () => action(value.$action, value.payload === undefined ? undefined : payload);
+    return (arg?: unknown) => action(value.$action, actionArgs(value.payload === undefined ? undefined : payload, arg));
   }
   if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, onMismatch));
   if (typeof value === "object" && value !== null) {

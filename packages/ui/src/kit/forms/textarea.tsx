@@ -4,6 +4,8 @@ import { FieldShell, useFieldIds } from "./field.js";
 
 export interface TextareaProps {
   label?: string;
+  /** Field name — what this value is called in the submit args of an enclosing Form. */
+  name?: string;
   value?: string;
   placeholder?: string;
   rows?: number;
@@ -13,13 +15,14 @@ export interface TextareaProps {
   onChange?: (value: string) => void;
 }
 
-export function Textarea({ label, value, placeholder, rows = 3, hint, disabled, required, onChange }: TextareaProps) {
+export function Textarea({ label, name, value, placeholder, rows = 3, hint, disabled, required, onChange }: TextareaProps) {
   const { fieldId, helpId } = useFieldIds("textarea");
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
       <textarea
         id={fieldId}
         data-kit="Textarea"
+        name={name}
         defaultValue={value}
         placeholder={placeholder}
         rows={rows}

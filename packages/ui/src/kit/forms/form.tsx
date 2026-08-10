@@ -1,4 +1,5 @@
 /** Form — groups fields with a submit action (W2 §The Kit). */
+import type { Json } from "@vendoai/core";
 import type { FormEvent, PropsWithChildren } from "react";
 import { font } from "../tokens.js";
 import { Button } from "./button.js";
@@ -8,6 +9,63 @@ export interface FormProps {
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
   submitLabel?: string;
   disabled?: boolean;
+}
+
+/** The fields a submitted form carries, keyed by each control's `name` and
+ *  coerced by the control's own declared type — a bound action's arguments are
+ *  typed (`limit` is a number, a Checkbox is a boolean), and raw DOM strings
+ *  would fail the tool's input schema. Controls with no `name` contribute
+ *  nothing, exactly as a native submission treats them. Read by the bound
+ *  `$action` closures (tree/renderer.tsx, tree/jail/runtime-entry.tsx), which
+ *  are the only place a submit meets a host tool. */
+export function submittedFields(form: HTMLFormElement): Record<string, Json> {
+  const fields: Record<string, Json> = {};
+  for (const element of Array.from(form.elements)) {
+    const control = element as HTMLInputElement;
+    if (!control.name || control.disabled) continue;
+    if (control.tagName === "SELECT") {
+      const select = element as HTMLSelectElement;
+      fields[control.name] = select.multiple ? Array.from(select.selectedOptions, (o) => o.value) : select.value;
+      continue;
+    }
+    if (control.type === "checkbox") {
+      fields[control.name] = control.checked;
+      continue;
+    }
+    if (control.type === "submit" || control.type === "button") continue;
+    if (control.type === "number") {
+      // An empty number field is absent, never 0 — a made-up amount is worse
+      // than a rejected call.
+      const parsed = Number(control.value);
+      if (control.value !== "" && Number.isFinite(parsed)) fields[control.name] = parsed;
+      continue;
+    }
+    fields[control.name] = control.value;
+  }
+  return fields;
+}
+
+/** The form behind a submit, or undefined for any other kind of argument — a
+ *  click event, a changed value, whatever a generated island happens to pass. */
+function submittedForm(arg: unknown): HTMLFormElement | undefined {
+  if (arg === null || typeof arg !== "object") return undefined;
+  const event = arg as { type?: unknown; currentTarget?: unknown };
+  if (event.type !== "submit" || event.currentTarget === null || typeof event.currentTarget !== "object") return undefined;
+  return "elements" in event.currentTarget ? (event.currentTarget as HTMLFormElement) : undefined;
+}
+
+/** A bound action's arguments: its static payload, with a submitted form's
+ *  named fields laid over it. This is what makes `<Form onSubmit="a_tool">`
+ *  carry its fields — the closure is the only place a press meets a host tool.
+ *  A binding that is not a submit, or a form with no named field, keeps the
+ *  payload it always had. */
+export function actionArgs(payload: Json | undefined, arg: unknown): Json | undefined {
+  const form = submittedForm(arg);
+  if (form === undefined) return payload;
+  const fields = submittedFields(form);
+  if (Object.keys(fields).length === 0) return payload;
+  const base = typeof payload === "object" && payload !== null && !Array.isArray(payload) ? payload : {};
+  return { ...base, ...fields };
 }
 
 export function Form({ onSubmit, submitLabel = "Submit", disabled, children }: PropsWithChildren<FormProps>) {

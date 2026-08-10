@@ -283,6 +283,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     summary: "A text field. onChange names a host tool or island handler.",
     props: {
       label: copy(z.string(), "field label"),
+      name: config(z.string(), "argument name this field submits under inside a Form"),
       value: data(z.string(), "initial value"),
       placeholder: copy(z.string(), "placeholder text"),
       type: config(z.enum(["text", "email", "number", "password", "search", "tel", "url"]), "input type"),
@@ -299,6 +300,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       label: copy(z.string(), "field label"),
       labelField: config(z.string(), "object field for the visible label"),
       valueField: config(z.string(), "object field for the value"),
+      name: config(z.string(), "argument name this field submits under inside a Form (defaults to valueField)"),
       placeholder: copy(z.string(), "empty-choice text"),
       multiple: config(z.boolean(), "allow several values"),
       onChange: config(action, "bound change handler"),
@@ -311,6 +313,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     summary: "A native date control (ISO yyyy-mm-dd).",
     props: {
       label: copy(z.string(), "field label"),
+      name: config(z.string(), "argument name this field submits under inside a Form"),
       value: data(z.string(), "ISO date"),
       min: config(z.string(), "earliest date"),
       max: config(z.string(), "latest date"),
@@ -324,6 +327,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     summary: "A multiline text field.",
     props: {
       label: copy(z.string(), "field label"),
+      name: config(z.string(), "argument name this field submits under inside a Form"),
       value: data(z.string(), "initial value"),
       placeholder: copy(z.string(), "placeholder text"),
       rows: config(z.number().int().positive(), "visible rows"),
@@ -337,6 +341,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     summary: "A boolean toggle. onChange receives the checked state.",
     props: {
       label: copy(z.string(), "field label"),
+      name: config(z.string(), "argument name this field submits under inside a Form"),
       checked: data(z.boolean(), "initial checked state"),
       onChange: config(action, "bound change handler"),
     },
@@ -357,12 +362,12 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Form",
     group: "forms",
-    summary: "Groups fields with a submit action. onSubmit names a host tool.",
+    summary: "Groups fields with a submit action. onSubmit names a host tool, and every child field with a `name` is submitted to it as that argument (a Select submits under its valueField).",
     props: {
       onSubmit: config(action, "the host tool to run on submit"),
       submitLabel: copy(z.string(), "submit button text"),
     },
-    examples: ['<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name"/></Form>'],
+    examples: ['<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name" name="name"/></Form>'],
   },
   {
     name: "Disclaimer",

@@ -10,6 +10,9 @@ export type SelectOption = string | number | Record<string, unknown>;
 
 export interface SelectProps {
   label?: string;
+  /** Field name in the submit args of an enclosing Form. Defaults to
+   *  `valueField`: the value a Select produces already IS that field. */
+  name?: string;
   /** Raw items — primitives or objects. */
   options: SelectOption[];
   /** Object field for the visible label (defaults to the item itself). */
@@ -37,7 +40,7 @@ function optionLabel(opt: SelectOption, labelField?: string): string {
   return String(opt);
 }
 
-export function Select({ label, options: rawOptions, labelField, valueField, value, placeholder, hint, disabled, required, multiple, onChange }: SelectProps) {
+export function Select({ label, name, options: rawOptions, labelField, valueField, value, placeholder, hint, disabled, required, multiple, onChange }: SelectProps) {
   const { fieldId, helpId } = useFieldIds("select");
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const options = Array.isArray(rawOptions) ? rawOptions : [];
@@ -46,6 +49,7 @@ export function Select({ label, options: rawOptions, labelField, valueField, val
       <select
         id={fieldId}
         data-kit="Select"
+        name={name ?? valueField}
         multiple={multiple}
         defaultValue={value}
         disabled={disabled}

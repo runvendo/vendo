@@ -4,19 +4,22 @@ import { FieldShell, useFieldIds } from "./field.js";
 
 export interface CheckboxProps {
   label?: string;
+  /** Field name — what this value is called in the submit args of an enclosing Form. */
+  name?: string;
   checked?: boolean;
   hint?: string;
   disabled?: boolean;
   onChange?: (checked: boolean) => void;
 }
 
-export function Checkbox({ label, checked, hint, disabled, onChange }: CheckboxProps) {
+export function Checkbox({ label, name, checked, hint, disabled, onChange }: CheckboxProps) {
   const { fieldId, helpId } = useFieldIds("checkbox");
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint} inline>
       <input
         id={fieldId}
         data-kit="Checkbox"
+        name={name}
         type="checkbox"
         defaultChecked={checked}
         disabled={disabled}

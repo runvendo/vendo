@@ -4,6 +4,8 @@ import { FieldShell, useFieldIds } from "./field.js";
 
 export interface DatePickerProps {
   label?: string;
+  /** Field name — what this value is called in the submit args of an enclosing Form. */
+  name?: string;
   /** ISO yyyy-mm-dd. */
   value?: string;
   min?: string;
@@ -14,13 +16,14 @@ export interface DatePickerProps {
   onChange?: (value: string) => void;
 }
 
-export function DatePicker({ label, value, min, max, hint, disabled, required, onChange }: DatePickerProps) {
+export function DatePicker({ label, name, value, min, max, hint, disabled, required, onChange }: DatePickerProps) {
   const { fieldId, helpId } = useFieldIds("date");
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
       <input
         id={fieldId}
         data-kit="DatePicker"
+        name={name}
         type="date"
         defaultValue={value}
         min={min}
