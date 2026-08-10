@@ -152,8 +152,39 @@ function styleInline(text: string, reopen = ""): string {
   return text.replace(/`([^`]+)`/g, (_match, code: string) => `${bold(lilac(code))}${reopen}`);
 }
 
-/** Visible columns: SGR sequences take none. */
-const visibleWidth = (text: string): number => text.replace(SGR, "").length;
+/** Invisible code points: combining marks (Mn/Me — the accent in a decomposed
+    `é`) and format characters (Cf — the zero-width joiner, variation
+    selectors' friends). A terminal draws them into the PREVIOUS cell. */
+const ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cf}]$/u;
+/** The blocks a terminal draws in TWO cells — East Asian Wide and Fullwidth,
+    plus the emoji planes. Coarse on purpose: the full table is enormous, and
+    these are the ranges a CLI actually meets (CJK, Kana, Hangul, fullwidth
+    forms, CJK extensions). */
+const WIDE_RANGES: readonly (readonly [number, number])[] = [
+  [0x1100, 0x115f], [0x2e80, 0x303e], [0x3041, 0x33ff], [0x3400, 0x4dbf],
+  [0x4e00, 0x9fff], [0xa000, 0xa4cf], [0xa960, 0xa97f], [0xac00, 0xd7a3],
+  [0xf900, 0xfaff], [0xfe10, 0xfe19], [0xfe30, 0xfe6f], [0xff00, 0xff60],
+  [0xffe0, 0xffe6], [0x1f300, 0x1f64f], [0x1f680, 0x1f6ff], [0x1f900, 0x1f9ff],
+  [0x20000, 0x3fffd],
+];
+
+/** Cells ONE code point occupies. `.length` is code units, which is neither:
+    `界` is one unit and two cells, a combining mark is one unit and none, and
+    an astral glyph is two units and one code point. */
+function cellWidth(char: string): number {
+  if (ZERO_WIDTH.test(char)) return 0;
+  const point = char.codePointAt(0) ?? 0;
+  return WIDE_RANGES.some(([from, to]) => point >= from && point <= to) ? 2 : 1;
+}
+
+/** The one measurement in this file: terminal CELLS a string occupies, with
+    SGR sequences taking none. Every width, wrap point and row count derives
+    from this — a miscount here puts the select's cursor-up on the wrong row. */
+export function displayWidth(text: string): number {
+  let width = 0;
+  for (const char of text.replace(SGR, "")) width += cellWidth(char);
+  return width;
+}
 
 /** What each closing SGR closes, matched on a sequence's FIRST code so the
     truecolor swatch (`48;2;r;g;b`, closed by 49) is tracked like any other. */
@@ -197,7 +228,7 @@ function trackStyle(open: string[], sequence: string): void {
     width (a pipe, a test writer) means no wrapping at all. */
 function wrapRail(text: string, columns: number): string[] {
   if (!Number.isFinite(columns) || columns <= RAIL_WIDTH + 1) return [text];
-  if (visibleWidth(text) <= columns) return [text];
+  if (displayWidth(text) <= columns) return [text];
   const rows: string[] = [];
   const open: string[] = [];
   let atWord: string[] = [];
@@ -222,7 +253,9 @@ function wrapRail(text: string, columns: number): string[] {
     word = "";
     width = 0;
   };
-  for (const token of text.match(/\u001b\[[0-9;]*m|[\s\S]/g) ?? []) {
+  // The `u` flag makes `[\s\S]` one code POINT, so a surrogate pair is a single
+  // token and is measured once.
+  for (const token of text.match(/\u001b\[[0-9;]*m|[\s\S]/gu) ?? []) {
     if (word === "") atWord = [...open];
     if (token.startsWith(ESC)) {
       word += token;
@@ -234,11 +267,13 @@ function wrapRail(text: string, columns: number): string[] {
       gap += " ";
       continue;
     }
+    // A word too long for a row of its own (a URL, an unspaced CJK run) has to
+    // be broken somewhere: break it BEFORE the glyph that would overflow a row,
+    // so a combining mark is never orphaned from the glyph it decorates.
+    const cell = cellWidth(token);
+    if (cell > 0 && width + cell > columns - RAIL_WIDTH) place();
     word += token;
-    width += 1;
-    // A word too long for a row of its own (a URL, a code snippet) has to be
-    // broken somewhere: break it where it fills a row.
-    if (width >= columns - RAIL_WIDTH) place();
+    width += cell;
   }
   place();
   if (row !== "") rows.push(row);

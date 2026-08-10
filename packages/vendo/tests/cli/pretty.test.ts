@@ -1,6 +1,6 @@
 import { PassThrough, Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPrettyOutput, plainSelect, usePrettyOutput, type SelectInput } from "../../src/cli/pretty.js";
+import { createPrettyOutput, displayWidth, plainSelect, usePrettyOutput, type SelectInput } from "../../src/cli/pretty.js";
 import { plainSecret, plainText } from "../../src/cli/pretty.js";
 
 const ESC = "\u001b";
@@ -700,19 +700,50 @@ describe("createPrettyOutput (visual system)", () => {
   });
 });
 
+/** The terminal's OWN arithmetic, deliberately independent of the renderer's:
+    a screen model that measured with the function under test could never
+    disagree with it, and would pass whatever the renderer believed. Two cells
+    for the wide blocks these tests use, none for a combining mark, one else. */
+const cells = (text: string): number => {
+  let width = 0;
+  for (const char of text.replace(/\u001b\[[0-9;]*m/g, "")) {
+    if (/^[\p{Mn}\p{Me}\p{Cf}]$/u.test(char)) continue;
+    const point = char.codePointAt(0) ?? 0;
+    const wide = (point >= 0x1100 && point <= 0x115f)
+      || (point >= 0x2e80 && point <= 0xa4cf)
+      || (point >= 0xac00 && point <= 0xd7a3)
+      || (point >= 0xf900 && point <= 0xfaff)
+      || (point >= 0xff00 && point <= 0xff60)
+      || (point >= 0x1f300 && point <= 0x1f9ff);
+    width += wide ? 2 : 1;
+  }
+  return width;
+};
+
 /** The bytes a terminal is SENT are not what a person sees: the select rewinds
-    the cursor and redraws over itself. This applies the moves the renderer
-    actually uses (newline, carriage return, cursor-up, erase-line,
-    erase-to-end-of-screen) to a row buffer, so the assertions below are about
-    the settled SCREEN — which is where every one of these bugs was visible. */
-function screen(): { write: (chunk: string) => void; rows: () => string[] } {
+    the cursor and redraws over itself, and the terminal wraps anything wider
+    than the window onto a second ROW of its own. This applies both — the moves
+    the renderer uses (newline, carriage return, cursor-up, erase-line,
+    erase-to-end-of-screen) and the wrap — to a row buffer, so the assertions
+    below are about the settled SCREEN, which is where these bugs were visible.
+    Writes only ever land at the end of a row or at column 0 after an erase,
+    which is why the model can treat column 0 as "replace the row". */
+function screen(columns: number): { write: (chunk: string) => void; rows: () => string[] } {
   const rows: string[] = [""];
   let at = 0;
   let col = 0;
   const put = (text: string): void => {
-    const row = (rows[at] ?? "").padEnd(col);
-    rows[at] = row.slice(0, col) + text + row.slice(col + text.length);
-    col += text.length;
+    for (const char of text) {
+      const cell = cells(char);
+      if (col + cell > columns) {
+        at += 1;
+        col = 0;
+        if (rows[at] === undefined) rows[at] = "";
+      }
+      if (col === 0) rows[at] = "";
+      rows[at] = (rows[at] ?? "") + char;
+      col += cell;
+    }
   };
   return {
     write: (chunk) => {
@@ -754,7 +785,7 @@ const occurrences = (text: string, needle: string): number => text.split(needle)
 
 describe("createPrettyOutput (80 columns — the width most people run)", () => {
   it("select: the answered block prints each option once, with exactly one ● bullet", async () => {
-    const term = screen();
+    const term = screen(80);
     const keys = fakeInput();
     const pretty = createPrettyOutput({
       write: term.write, input: keys.input, banner: false, columns: 80,
@@ -781,7 +812,7 @@ describe("createPrettyOutput (80 columns — the width most people run)", () => 
   });
 
   it("select: the settled long answer stays on the rail and still reads whole", async () => {
-    const term = screen();
+    const term = screen(80);
     const keys = fakeInput();
     const pretty = createPrettyOutput({
       write: term.write, input: keys.input, banner: false, columns: 80,
@@ -823,7 +854,7 @@ describe("createPrettyOutput (80 columns — the width most people run)", () => 
   });
 
   it("closes the rail with a cancel line when Ctrl-C interrupts a question", () => {
-    const term = screen();
+    const term = screen(80);
     const keys = fakeInput();
     const exit = vi.spyOn(process, "exit").mockImplementation((code) => {
       throw new Error(`exit:${String(code)}`);
@@ -858,5 +889,76 @@ describe("createPrettyOutput (80 columns — the width most people run)", () => 
       createPrettyOutput({ write: out.write, banner: false, columns: 80 }).log(message);
     } else out.write(`${message}\n`);
     expect(out.raw()).toBe(`${message}\n`);
+  });
+});
+
+/** A terminal measures CELLS, not code units. `.length` gets both directions
+    wrong — and because the select's rewind now counts the ROWS it emitted, a
+    miscount does not merely wrap badly: it puts the cursor-up on the wrong row
+    and brings back the duplicate answered block this suite exists to catch.
+    User content (tool names, product names, judgment prose) flows straight
+    through the renderer, so this is not a hypothetical width. */
+/** Six graphemes, decomposed: "e" plus a combining acute — twelve code units. */
+const ACCENTED = "e\u0301".repeat(6);
+
+describe("createPrettyOutput (display width — wide glyphs and combining marks)", () => {
+  it("counts an East Asian glyph as two cells and a combining mark as none", () => {
+    expect(displayWidth("界界界界")).toBe(8);
+    expect(displayWidth(ACCENTED)).toBe(6);
+    expect(ACCENTED.length).toBe(12); // twelve code units, six cells
+    // A surrogate pair is one code point, and this one is wide.
+    expect(displayWidth("\u{1F680}")).toBe(2);
+    expect(displayWidth(`${ESC}[2m界${ESC}[22m`)).toBe(2);
+  });
+
+  it("wraps a wide-glyph run that overflows the window", () => {
+    const out = sink();
+    createPrettyOutput({ write: out.write, banner: false, columns: 10 }).log("界界界界");
+    // `│  ` is 3 cells, so 8 more cells cannot share the row.
+    const rows = out.plain().split("\n").filter((row) => row.includes("界"));
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(cells(row)).toBeLessThanOrEqual(10);
+    expect(rows.join("").replace(/│ {2}/g, "")).toBe("界界界界");
+  });
+
+  it("keeps combining marks on one row — they cost no cells", () => {
+    const out = sink();
+    createPrettyOutput({ write: out.write, banner: false, columns: 10 }).log(ACCENTED);
+    const rows = out.plain().split("\n").filter((row) => row.includes("\u0301"));
+    // Six graphemes are six cells: `│  ` + 6 fits in 10 and must not wrap.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toBe(`│  ${ACCENTED}`);
+  });
+
+  it("select: an answered block of wide-glyph options still prints each option once", async () => {
+    const term = screen(40);
+    const keys = fakeInput();
+    const pretty = createPrettyOutput({
+      write: term.write, input: keys.input, banner: false, columns: 40,
+    });
+    const options = [
+      { value: "embedded", label: "嵌入我的应用程序中的聊天与生成式界面" },
+      { value: "mcp", label: "通过外部代理接入例如任何支持代理的客户端" },
+    ];
+    // Short in code units (a `.length` renderer thinks both fit), but 18 and 20
+    // East Asian glyphs are 36 and 40 CELLS — wider than the window with the
+    // rail in front, so the terminal wraps what the renderer thought was one row.
+    expect(options.every((option) => option.label.length < 40)).toBe(true);
+    const choice = pretty.select("用户将如何使用你的助手？", options);
+
+    keys.press("2");
+    expect(await choice).toBe("mcp");
+    const rows = term.rows().filter((row) => row !== "");
+    const settled = rows.join("\n");
+    expect(occurrences(settled, "●")).toBe(1);
+    expect(settled).not.toContain("嵌入我的应用程序");
+    // Every row the terminal shows fits the window, so no row silently became
+    // two and the rewind landed where it was drawn.
+    for (const row of rows) expect(cells(row)).toBeLessThanOrEqual(40);
+    const answer = rows.slice(rows.findIndex((row) => row.includes("●")));
+    // Whitespace-insensitive: the break may land on a space or, in an unspaced
+    // CJK run, between two glyphs.
+    const strip = (text: string): string => text.replace(/\s+/g, "");
+    expect(strip(answer.map((row) => row.slice(3)).join(""))).toBe(strip(`● ${options[1]!.label}`));
   });
 });
