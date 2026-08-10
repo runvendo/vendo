@@ -335,6 +335,32 @@ describe("built-in fact checks", () => {
     expect(finding?.message).toContain("the numeric fields are: amountCents");
   });
 
+  it("refuses a total that scales cents to dollars on the way into a money slot", async () => {
+    const layer = createCheckingLayer({ deps: deps() });
+    const findings = await layer.run(inputFor(
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat label="Outstanding" value={sum(invoices.data, "amountCents") / 100} format="money"/></Stack></App>',
+    ));
+
+    const finding = findings.find(({ where }) => where?.includes('prop "value"'));
+    expect(finding?.severity).toBe("block");
+    expect(finding?.message).toContain("this slot takes CENTS");
+    expect(finding?.message).toContain("100x too small");
+  });
+
+  it("leaves an unscaled aggregate in a money slot alone, and scaling outside one", async () => {
+    const layer = createCheckingLayer({ deps: deps() });
+    const clean = await layer.run(inputFor(
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack>'
+      + '<Stat label="Outstanding" value={sum(invoices.data, "amountCents")} format="money"/>'
+      + '<Money cents={average(invoices.data, "amountCents")}/>'
+      // No money format on this one: dividing is the author's own unit choice.
+      + '<Stat label="Average" value={average(invoices.data, "amountCents") / 100}/>'
+      + "</Stack></App>",
+    ));
+
+    expect(clean.filter(({ message }) => message.includes("takes CENTS"))).toEqual([]);
+  });
+
   it("reports an unparseable computed value as a sentence naming the bad token", async () => {
     // Hand-set: the wire compiler drops an attribute whose expression does not
     // parse, so a stored/assembled tree is the only way one arrives.

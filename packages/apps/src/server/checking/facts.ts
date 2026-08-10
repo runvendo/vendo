@@ -26,7 +26,9 @@ import {
   WIRE_COMPONENT_NAMES,
   checkBindingShapes,
   checkExpr,
+  type ExprNode,
   kitSpec,
+  parseExpr,
   printWire,
   isExprBinding,
   validateAppDocument,
@@ -238,12 +240,47 @@ export const kitSlotIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] 
   return issues;
 };
 
+/** The slots whose number is CENTS: `<Money cents>` by contract, and any value
+ *  the node itself formats as money (`<Stat value={…} format="money">`). A
+ *  `format:"money"` DataTable column names a field rather than computing one, so
+ *  it never carries an expression. */
+const isCentsSlot = (node: TreeNode, prop: string): boolean =>
+  (node.component === "Money" && prop === "cents")
+  || (prop === "value" && node.props?.format === "money");
+
+/** `… / 100` or `… * 0.01` anywhere in the expression: cents scaled to dollars.
+ *  Written into a cents slot it is a double conversion, so the figure renders
+ *  100x too small. */
+const scalesCentsToDollars = (node: ExprNode): boolean => {
+  switch (node.kind) {
+    case "binary":
+      if (node.op === "/" && node.right.kind === "number" && node.right.value === 100) return true;
+      if (node.op === "*" && [node.left, node.right].some((side) => side.kind === "number" && side.value === 0.01)) return true;
+      return scalesCentsToDollars(node.left) || scalesCentsToDollars(node.right);
+    case "negate":
+      return scalesCentsToDollars(node.operand);
+    case "call":
+    case "reshape":
+      return node.args.some(scalesCentsToDollars);
+    default:
+      return false;
+  }
+};
+
 /** A computed value (`{ $expr }`) is evaluated live in the renderer, so a bad
  *  expression is a blank stat rather than a crash — exactly the silent-breakage
- *  class facts exist to catch. Three kinds are decidable by looking things up:
+ *  class facts exist to catch. Four kinds are decidable by looking things up:
  *  the expression parses, its field paths reach fields the tool shapes really
- *  expose, and every slot's type can compute (sum over a string cannot).
- *  Whether the number MEANS anything is the reviewer's judgement, not a fact. */
+ *  expose, every slot's type can compute (sum over a string cannot), and a
+ *  cents slot is handed cents.
+ *
+ *  That last one is `kitSlotIssues`'s lesson for computed values. An aggregate
+ *  over a cents column is still cents, but a total written as
+ *  `sum(accounts.data, "balance") / 100` into `format="money"` divides twice and
+ *  renders $193.60 for $19,360.40 — a figure plausible enough that no later
+ *  check, and no reader, catches it, and it is the one number the screen exists
+ *  to report. Whether the number MEANS anything stays the reviewer's
+ *  judgement; whether it was scaled twice does not. */
 export const exprIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
   const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
   const context = {
@@ -254,23 +291,29 @@ export const exprIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => 
     },
   };
   const issues: FactIssue[] = [];
-  const walk = (nodeId: string, prop: string, value: unknown): void => {
+  const walk = (nodeId: string, prop: string, cents: boolean, value: unknown): void => {
     if (isExprBinding(value)) {
       for (const message of checkExpr(value.$expr, context)) {
         issues.push(atProp(nodeId, prop, `computes {${value.$expr}}: ${message}`));
       }
+      if (cents) {
+        const parsed = parseExpr(value.$expr);
+        if (parsed.ok && scalesCentsToDollars(parsed.node)) {
+          issues.push(atProp(nodeId, prop, `computes {${value.$expr}}: this slot takes CENTS and prints the dollars itself, so scaling by 100 here renders the figure 100x too small — an aggregate over a cents column is still cents, so pass it through unscaled.`));
+        }
+      }
       return;
     }
     if (Array.isArray(value)) {
-      for (const item of value) walk(nodeId, prop, item);
+      for (const item of value) walk(nodeId, prop, cents, item);
       return;
     }
     if (isRecord(value)) {
-      for (const child of Object.values(value)) walk(nodeId, prop, child);
+      for (const child of Object.values(value)) walk(nodeId, prop, cents, child);
     }
   };
   for (const node of tree.nodes) {
-    for (const [prop, value] of Object.entries(node.props ?? {})) walk(node.id, prop, value);
+    for (const [prop, value] of Object.entries(node.props ?? {})) walk(node.id, prop, isCentsSlot(node, prop), value);
   }
   return issues;
 };

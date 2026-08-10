@@ -277,6 +277,18 @@ nulls are skipped by the aggregates — so you never write a guard for either.
 Dividing by zero, and arithmetic on something that is not a number, are reported
 rather than rendered as nonsense.
 
+An aggregate keeps its column's UNIT. A total or an average over a whole number
+of cents is a whole number of cents, whatever the field happens to be called —
+and \`format="money"\`, \`Money\` and a \`format:"money"\` column all take cents and
+print the dollars themselves. So a total needs NO arithmetic at all: a \`/ 100\`
+on the way in converts twice and shows $193.60 where the accounts hold
+$19,360.40.
+
+\`\`\`
+<Stat label="Total balance" value={sum(accounts.data, "balance")} format="money"/>
+<Stat label="Average balance" value={average(accounts.data, "balance")} format="money"/>
+\`\`\`
+
 ### A reshape reshapes a READ, never a calculation
 
 There is exactly one \`sum\`, one \`count\`, one \`average\`, one \`min\` and one
