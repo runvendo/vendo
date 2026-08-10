@@ -134,6 +134,19 @@ const ASSEMBLY_TOOLS: readonly string[] = [
 ];
 
 /**
+ * The tools that only EXPLORING needs — closed the moment a save lands.
+ *
+ * Cline's plan/act split, transplanted: which tools exist is decided by the MODE,
+ * not by prose asking nicely. Before the first save this loop is deciding what to
+ * build and the catalog is the whole point; after it, the person is looking at a
+ * screen and every further lookup is the tail this run cannot afford (live
+ * 2026-08-10: four `search_components` round-trips between 21s and 59s, nothing
+ * painted until 107s). `validate`, `save_app`, `escalate`, `ask_user` and the
+ * host's reads stay open in both modes — finishing a document is not browsing.
+ */
+const EXPLORE_ONLY: readonly string[] = ["search_components", "vendo_apps_data_list", "vendo_apps_open"];
+
+/**
  * What the lean loop needs, and nothing else.
  *
  * A structural subset of `Turn`, so a caller already inside a turn passes its own
@@ -254,6 +267,10 @@ through two tools.
   it crowds out the one line that mattered.
 - **\`validate\`** is the floor. Call it on what you saved, fix what it names, save
   again. You are not done until it comes back clean.
+- **Your first save closes the catalog.** Look up everything you need BEFORE you
+  save; after it lands, \`search_components\`, \`vendo_apps_open\` and
+  \`vendo_apps_data_list\` are refused and only \`validate\`, \`${SAVE_APP_TOOL}\` and
+  \`${ESCALATE_TOOL}\` remain.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Assembling a document out of this
   product's components is all you can do; anything that needs real code, its own
   server, a file the person uploads, or a surface these components cannot express
@@ -510,7 +527,24 @@ export async function assembleScreen(
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: {
+      // THE MODE GATE. Every equipped registry tool executes through this one
+      // lambda (`equipClosedLoadout` calls `turn.tools.call`), so the two modes are
+      // one branch here rather than a sentence in the brief the model may ignore. A
+      // refusal, not a discouragement — and it carries the next move, because a
+      // denial with no door is just a wasted step.
+      call: async (name, args) => {
+        if (record.assembled && EXPLORE_ONLY.includes(name)) {
+          return {
+            status: "denied",
+            reason: "The screen is already up. Browsing the catalog is closed now — finish this document with "
+              + "validate and save_app, or escalate.",
+          };
+        }
+        return await surface.tools.call(name, args);
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
