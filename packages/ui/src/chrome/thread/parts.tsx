@@ -342,6 +342,7 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
         enabled={data.enabled === true}
         {...(data.trigger === undefined ? {} : { trigger: data.trigger })}
         {...(typeof data.description === "string" ? { description: data.description } : {})}
+        {...(Array.isArray(data.rules) ? { rules: data.rules.filter(rule => typeof rule === "string") } : {})}
         {...(typeof data.pendingGrants === "number" ? { pendingGrants: data.pendingGrants } : {})}
       />
     );

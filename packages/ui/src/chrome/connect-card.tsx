@@ -3,16 +3,7 @@ import { useVendoProvider } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
 import { useConnectorCatalog } from "../hooks/use-connector-catalog.js";
 import { toolkitLogoUrl } from "./build-beat.js";
-import {
-  CardActions,
-  CardHead,
-  CardLine,
-  CardShell,
-  CARD_EYEBROWS,
-  LINK_GLYPH,
-  TICK_GLYPH,
-  ToolkitLogo,
-} from "./card-shell.js";
+import { CardShell, LINK_GLYPH, TICK_GLYPH, ToolkitLogo } from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { completeConnection, connectRefusalCopy, openConnectPopup } from "./connect-dock.js";
 import { developmentMode } from "./dev-mode.js";
@@ -49,6 +40,13 @@ export interface ConnectCardProps {
  *  changed. connected/skipped → the two settled records. failed → a refusal. */
 type Phase = "idle" | "connecting" | "popup-blocked" | "timed-out" | "connected" | "skipped" | "failed";
 
+/** One item of the dot-joined line, which carries FRAGMENTS rather than
+    sentences: its two copy sources are written as a full sentence (the model's
+    message) and as a sentence body (`toolkitAccessCopy`: "read and send mail as
+    you"), so one loses its full stop and the other gains its capital. */
+const fragment = (copy: string): string =>
+  copy.charAt(0).toUpperCase() + copy.slice(1).replace(/\.$/, "");
+
 /** 04-actions §3 / 08-ui §4 — the inline connect card: a connector call ended
  * `connect-required`, so offer the broker's OAuth redirect in place, poll the
  * connection status while the user completes it, then retry the call. Follows
@@ -56,9 +54,11 @@ type Phase = "idle" | "connecting" | "popup-blocked" | "timed-out" | "connected"
  * The initiate → OAuth window → poll-to-active loop is `completeConnection`,
  * shared with the connect dock (ENG-225).
  *
- * Brand-forward: the proper-case toolkit name (never the raw
- * slug), the toolkit's real mark in the icon well (link glyph fallback), and
- * an OAuth chip. The ask reads as the product, not the plumbing.
+ * C2 · Integration row — the sentence family the approval card opened: the
+ * toolkit's RAW mark (no well — a 28px well with a radius cropped the Gmail M),
+ * the proper-case name (never the raw slug), ONE quiet line carrying why we are
+ * asking and what connecting grants, and one button. The eyebrow, the icon well
+ * and the OAuth chip are gone; what the chip said rides that line as words.
  *
  * 2026-07 demo feedback — the full lifecycle lives ON the card: a spinner-led
  * "Connecting…" button while the OAuth window is open, and a permanent quiet
@@ -183,6 +183,29 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
 
   const waiting = phase === "connecting" || phase === "popup-blocked";
 
+  // The one quiet line, in the order a person asks it: why we need this (the
+  // model's own sentence), what connecting grants in plain words (never a scope
+  // string), and how it is secured — the three facts the retired message line,
+  // access line and OAuth chip carried between them. Settled, the same line
+  // becomes the receipt of what the account can now do.
+  const notes = connected
+    ? [`We can now ${accessCopy}.`]
+    : [fragment(message), fragment(accessCopy), "Secured with OAuth"];
+
+  // Every phase says what it is doing in ONE status voice under the row, so a
+  // screen reader has exactly one live region per state to read.
+  const status = connected || phase === "idle" || phase === "failed" ? null : (
+    <span role="status" className="fl-approval-more fl-connect-note">
+      {phase === "connecting"
+        ? `Finish signing in, then come back.${waitedSeconds >= 3 ? ` Still waiting · ${waitedSeconds}s` : ""}`
+        : phase === "popup-blocked"
+          // The window never opened, but the connect did: the poll is running on
+          // the same account, so the same URL in a tab finishes it.
+          ? "Your browser blocked the sign-in window. Open it yourself — we’ll pick it up from here."
+          : "Nothing changed — the sign-in never finished."}
+    </span>
+  );
+
   return (
     <ChromeRoot>
       <CardShell
@@ -190,83 +213,65 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
         className="fl-approval fl-item-in"
         data-vendo-connect-card={connected ? "connected" : phase}
       >
-        <CardHead
-          icon={<ToolkitLogo src={toolkitLogoUrl(toolkit)} fallback={LINK_GLYPH} />}
-          eyebrow={CARD_EYEBROWS.connect}
-          title={displayName}
-          aside={
-            <span
-              className="fl-chip"
-              title={connector}
-              style={{ marginLeft: "auto", padding: "2px 7px", fontSize: "10px", cursor: "default" }}
-            >
-              OAuth
-            </span>
-          }
-        />
-        <CardLine>{message}</CardLine>
-        {/* What the person is actually agreeing to, in words — never the
-            broker's scope strings (toolkitAccessCopy). */}
-        {connected ? null : <CardLine className="fl-connect-access">Connecting lets us {accessCopy}.</CardLine>}
-        {error ? <div role="alert" className="fl-error">{error}</div> : null}
-        <CardActions>
-          {connected ? (
-            // The permanent record: the button becomes a quiet connected badge
-            // — the card stays in the transcript as proof the account is live,
-            // with the one line saying what that account can now do.
-            <>
+        <div className="fl-connect-row">
+          {/* RAW, at its own aspect ratio: the 28px well cropped the Gmail M. */}
+          <ToolkitLogo src={toolkitLogoUrl(toolkit)} fallback={LINK_GLYPH} className="fl-connect-mark" />
+          <div className="fl-connect-copy">
+            <div className="fl-connect-name">{displayName}</div>
+            {/* Law 3's line, drawn the way the approval card draws its notes:
+                ONE line to the eye, a LIST to a screen reader, with the " · "
+                between items in CSS so it is never announced. */}
+            <ul className="fl-card-line fl-approval-sub" aria-label={`What connecting ${displayName} does`}>
+              {notes.map((item, index) => <li key={index}>{item}</li>)}
+            </ul>
+          </div>
+          <div className="fl-connect-act">
+            {connected ? (
+              // The permanent record: the button becomes a quiet connected badge
+              // — the card stays in the transcript as proof the account is live,
+              // and the line above says what that account can now do.
               <span role="status" className="fl-connect-done">
                 <span className="fl-connect-done-ic" aria-hidden="true">{TICK_GLYPH}</span>
                 Connected
               </span>
-              <span className="fl-connect-receipt">We can now {accessCopy}.</span>
-            </>
-          ) : phase === "popup-blocked" ? (
-            // The window never opened, but the connect did: the poll is running
-            // on the same account, so the same URL in a tab finishes it.
-            <div role="status" className="fl-connect-blocked">
-              <span>Your browser blocked the sign-in window. Open it yourself — we’ll pick it up from here.</span>
-              {redirectUrl === undefined ? null : (
+            ) : phase === "popup-blocked" ? (
+              redirectUrl === undefined ? null : (
                 <a className="fl-btn fl-btn-primary" href={redirectUrl} target="_blank" rel="noreferrer">
                   Open sign-in in a new tab
                 </a>
-              )}
-            </div>
-          ) : phase === "timed-out" ? (
-            <>
-              <span role="status" className="fl-approval-more">Nothing changed — the sign-in never finished.</span>
+              )
+            ) : phase === "timed-out" ? (
               <button className="fl-btn fl-btn-primary" type="button" onClick={() => void connect()}>Try again</button>
-            </>
-          ) : (
-            <>
-              <button
-                className="fl-btn fl-btn-primary"
-                type="button"
-                aria-label={`Connect ${displayName}`}
-                disabled={waiting}
-                onClick={() => void connect()}
-              >
-                {phase === "connecting" ? (
-                  <>
-                    <span className="fl-connect-spin" aria-hidden="true" />
-                    Connecting…
-                  </>
-                ) : `Connect ${displayName}`}
-              </button>
-              {/* The other real answer. A stale card is a record, not an ask,
-                  so it never offers one. */}
-              {live && !waiting ? (
-                <button className="fl-btn fl-btn-quiet" type="button" onClick={decline}>Not now</button>
-              ) : null}
-              {phase === "connecting" ? (
-                <span role="status" className="fl-approval-more">
-                  Finish signing in, then come back.
-                  {waitedSeconds >= 3 ? ` Still waiting · ${waitedSeconds}s` : ""}
-                </span>
-              ) : null}
-            </>
-          )}
-        </CardActions>
+            ) : (
+              <>
+                <button
+                  className="fl-btn fl-btn-primary"
+                  type="button"
+                  // The name carries the toolkit even though the label is one
+                  // word: the row already says Gmail, a screen reader's button
+                  // list does not.
+                  aria-label={`Connect ${displayName}`}
+                  disabled={waiting}
+                  onClick={() => void connect()}
+                >
+                  {phase === "connecting" ? (
+                    <>
+                      <span className="fl-connect-spin" aria-hidden="true" />
+                      Connecting…
+                    </>
+                  ) : "Connect"}
+                </button>
+                {/* The other real answer. A stale card is a record, not an ask,
+                    so it never offers one. */}
+                {live && !waiting ? (
+                  <button className="fl-btn fl-btn-quiet" type="button" onClick={decline}>Not now</button>
+                ) : null}
+              </>
+            )}
+          </div>
+        </div>
+        {status}
+        {error ? <div role="alert" className="fl-error">{error}</div> : null}
       </CardShell>
     </ChromeRoot>
   );

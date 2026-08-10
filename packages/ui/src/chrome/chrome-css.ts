@@ -539,10 +539,27 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-connect-done-ic { display: inline-grid; place-items: center; width: 15px; height: 15px;
   border-radius: 999px; background: var(--vendo-accent); color: var(--vendo-accent-fg); }
 .fl-connect-done-ic svg { width: 9px; height: 9px; }
-/* V5 connect states: the plain-words access line, the settled receipt beside
-   the badge, the blocked-popup fallback, and the collapsed Skipped record. */
-.fl-connect-access { color: var(--vendo-fg-muted); font-size: 12px; }
-.fl-connect-receipt { color: var(--vendo-fg-muted); font-size: 11.5px; }
+/* C2 · Integration row — the connect card at rest is ONE row: the toolkit's raw
+   mark, its name over the quiet why/access line (.fl-approval-sub, the family's
+   notes line), and the button. It wraps rather than squeezing the copy when the
+   host's card is narrow. */
+.fl-connect-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* The mark is RAW: no well, no fill, no radius, no clipping. The 28px well
+   (.fl-card-ic) cropped the Gmail M — the defect this row was drawn for — so
+   the logo keeps its own aspect ratio inside a 26px box. */
+/* Aligned to the NAME, not to the row: in a host's narrow card the access line
+   wraps to three lines and a centred mark floats away from the row it labels
+   (the button stays centred — it answers the whole row). */
+.fl-connect-mark { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0;
+  align-self: flex-start; margin-top: 1px; color: var(--vendo-fg-muted); }
+.fl-connect-mark img { max-width: 26px; max-height: 26px; width: auto; height: auto;
+  object-fit: contain; display: block; }
+.fl-connect-copy { flex: 1 1 200px; min-width: 0; }
+.fl-connect-name { font: 600 14px/1.35 var(--vendo-heading-font); letter-spacing: -.012em;
+  color: var(--vendo-fg); overflow-wrap: anywhere; }
+.fl-connect-act { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
+/* The lifecycle's one status voice, under the row. */
+.fl-connect-note { display: block; margin-top: 9px; }
 .fl-connect-blocked { display: flex; flex-direction: column; align-items: flex-start; gap: 9px;
   font-size: 12.5px; line-height: 1.45; color: var(--vendo-fg); }
 /* Two classes on purpose: .fl-cardshell (column, card padding) is declared far
@@ -838,6 +855,20 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 /* Grant-set wait state (mockup §2): enabled but permissions outstanding. */
 .fl-auto-wait { background: var(--vendo-warn);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-warn) 18%, transparent); }
+/* A1 · Sentence — the RULE is the card's first line (its type rides with the
+   approval's question, below, where .fl-card-line can no longer outrank it),
+   with the live dot and the agency clause quiet under it. */
+.fl-auto-state { margin-top: 4px; display: flex; align-items: center; gap: 6px;
+  font: 400 12px/1.5 var(--vendo-font); color: var(--vendo-fg-muted); }
+/* E3 · Rule list — the agent's own sentences, each behind a quiet tick. Between
+   the rule and the status line in weight, because these are the terms. */
+.fl-auto-rules { list-style: none; margin: 11px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 7px; }
+.fl-auto-rules li { display: flex; align-items: flex-start; gap: 9px;
+  font-size: 12.5px; line-height: 1.45; color: color-mix(in srgb, var(--vendo-fg) 74%, var(--vendo-surface)); }
+.fl-auto-rules svg { flex-shrink: 0; margin-top: 2px; color: var(--vendo-indicator); }
+/* The trigger → action node diagram, still the workspace Automations panel's
+   vocabulary (the thread card says the same thing in its title line now). */
 .fl-auto-flow { display: flex; align-items: center; padding: 14px 16px 16px; border-top: 1px solid var(--vendo-border); }
 .fl-auto-node { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px;
   background: var(--vendo-bg); border: 1px solid var(--vendo-border); }
@@ -1527,9 +1558,13 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   .fl-approval-sheet-scrim { animation: fl-fade-in .3s ease both; }
 }
 @keyframes fl-sheet-up { from { transform: translateY(100%); } to { transform: none; } }
-/* 1-H · thumb-zone decision buttons (same query as the ENG-228 block). */
+/* 1-H · thumb-zone decision buttons (same query as the ENG-228 block). The
+   connect row's cluster answers here too: on a phone it drops under the copy
+   and its buttons take the full width, the treatment it had while they rode
+   .fl-card-actions. */
 @media (max-width: 767px), (pointer: coarse) {
-  .fl-card-actions .fl-btn { padding: 14px 15px; font-size: 14px; flex: 1; }
+  .fl-card-actions .fl-btn, .fl-connect-act .fl-btn { padding: 14px 15px; font-size: 14px; flex: 1; }
+  .fl-connect-act { width: 100%; margin-left: 0; }
 }
 
 /* 3-A′ · real brand marks in the tray rows (monogram = fallback). */
@@ -1637,8 +1672,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    no eyebrow, no icon well, no risk pill, no field table, no amber. The quiet
    line under it carries every real input the question doesn't already name plus
    what approving does, so nothing is ever a disclosure away (the honesty law).
-   \`color: inherit\` keeps the settled receipt muted from the shell. */
-.fl-approval-ask { margin: 0; font: 550 14px/1.45 var(--vendo-font); letter-spacing: -.012em;
+   \`color: inherit\` keeps the settled receipt muted from the shell.
+   A1 · Sentence rides the same rule: the automation card's first line is its
+   RULE, and it is the same sentence in the same type. */
+.fl-approval-ask, .fl-auto-sentence { margin: 0; font: 550 14px/1.45 var(--vendo-font); letter-spacing: -.012em;
   color: inherit; overflow-wrap: anywhere; }
 /* pre-line: a flattened object/array input keeps its one-per-line shape
    (field-rows.ts), exactly as it did in the retired dd. */

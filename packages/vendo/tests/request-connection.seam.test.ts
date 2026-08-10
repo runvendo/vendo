@@ -183,10 +183,14 @@ describe("request_connection: the agent asks, the chrome renders the ask", () =>
     const painted = await until("the connect card", card);
 
     expect(painted.getAttribute("data-vendo-connect-card")).toBe("idle");
-    // The message on the card is the sentence the MODEL wrote, carried whole.
-    expect(painted.textContent).toContain(REASON);
+    // ⚠️ TEST EDIT (C2 · Integration row): the model's sentence and the access
+    // copy used to be two card lines with their own full stops; they are the
+    // first two items of the card's ONE dot-joined line now, where a stop
+    // before " · " reads as a typo. Same two sentences, same two sources (the
+    // model's `reason` and `toolkitAccessCopy`), asserted as they render.
+    expect(painted.textContent).toContain(REASON.replace(/\.$/, ""));
     // Brand-forward, and plain about what connecting grants — never a scope.
-    expect(painted.textContent).toContain("Connecting lets us read and send mail as you.");
+    expect(painted.textContent).toContain("Read and send mail as you");
     expect(painted.textContent).not.toContain("googleapis.com");
     expect(button("Connect Gmail")).toBeTruthy();
     expect(button("Not now")).toBeTruthy();

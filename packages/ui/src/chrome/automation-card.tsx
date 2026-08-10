@@ -1,25 +1,21 @@
 import type { Trigger } from "@vendoai/core";
-import {
-  BOLT_GLYPH,
-  CardByline,
-  CardHead,
-  CardLine,
-  CardShell,
-  CARD_EYEBROWS,
-  ToolkitLogo,
-} from "./card-shell.js";
+import { CardLine, CardShell, TICK_GLYPH } from "./card-shell.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { humanizeToolName } from "./humanize.js";
 
 /** 2026-07 demo feedback — the automation, rendered AS an automation.
  *
- * The workspace Automations panel already ships the card vocabulary
- * (.fl-automation: identity head + trigger → action flow nodes); this module
- * extracts the read-only core so the THREAD can render it too — the
- * `data-vendo-automation` stream part lands one of these in the transcript
+ * The `data-vendo-automation` stream part lands one of these in the transcript
  * when a turn creates or arms an automation. No toggle, no run history, no
- * dry-run controls: management stays in the panel; the thread card is the
- * moment's record.
+ * dry-run controls: management stays in the workspace Automations panel; the
+ * thread card is the moment's record.
+ *
+ * A1 · Sentence + E3 · Rule list — the sentence family the approval card
+ * opened: the RULE is the title ("New PG&E bill → paid from Maple Checking"),
+ * one quiet status line under it says whether it is on and whose access it
+ * runs with, and the agent's own rule sentences follow as a tick list. The
+ * eyebrow, the bolt well and the trigger → action node diagram are gone — the
+ * diagram said in two boxes what the title now says in one line.
  */
 
 const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];
@@ -101,8 +97,13 @@ export interface AutomationCardProps {
   enabled: boolean;
   /** The document's trigger, for the flow nodes; omitted → identity only. */
   trigger?: Trigger;
-  /** The document's one-line description. */
+  /** The document's one-line description. Preferred over the composed
+   *  `trigger → action` title: it is the human phrasing of the same rule. */
   description?: string;
+  /** E3 — the rule, as the agent wrote it: one plain sentence per constraint
+   *  ("Caps at $200 a bill — anything higher asks you first"). Rendered as a
+   *  tick list under the status line; omitted entirely when there are none. */
+  rules?: string[];
   /** Standing-grant asks still undecided (grant sets): the state line reads
    *  "Enabled · waiting on N permissions" until the set is granted. */
   pendingGrants?: number;
@@ -125,54 +126,39 @@ export function sponsorLabel(
   return editors !== undefined && editors > 1 ? `${who} · ${editors} people can edit` : who;
 }
 
-/** The read-only automation card (same chrome as the panel's list entry). */
-export function AutomationCard({ name, enabled, trigger, description, pendingGrants = 0, sponsor, editors }: AutomationCardProps) {
+/** The read-only automation card (the thread's record of a live automation). */
+export function AutomationCard({ name, enabled, trigger, description, rules = [], pendingGrants = 0, sponsor, editors }: AutomationCardProps) {
   const flow = automationFlow(trigger);
   const waiting = enabled && pendingGrants > 0;
-  const runsAs = sponsorLabel(sponsor, editors);
+  // Law 3 and the title are ONE line now: the rule itself. The description is
+  // the human phrasing of that rule and wins when the document has one; the
+  // composed trigger → action is the honest fallback, and a document with
+  // neither is only its name. The NAME is still the card's accessible name.
+  const rule = description ?? (flow ? `${flow.trigger.title} → ${flow.action.title}` : name);
+  // Whether it is on, and whose access it runs with — the state chip and the
+  // byline row, folded into one quiet line. " · " is literal here (unlike the
+  // approval notes) because these are clauses of one sentence about one thing.
+  const state = [
+    enabled
+      ? waiting ? `Enabled · waiting on ${pendingGrants} permission${pendingGrants === 1 ? "" : "s"}` : "Enabled"
+      : "Disabled",
+    sponsorLabel(sponsor, editors),
+  ].filter(clause => clause !== null).join(" · ");
   return (
     <ChromeRoot>
       <CardShell label={`Automation — ${name}`} className="fl-automation" data-vendo-automation-card="">
-        <CardHead
-          icon={<ToolkitLogo fallback={BOLT_GLYPH} />}
-          eyebrow={CARD_EYEBROWS.automationStatus}
-          title={name}
-          aside={
-            <span className="fl-auto-sub" style={{ marginLeft: "auto" }}>
-              {enabled ? <span className={`fl-auto-live${waiting ? " fl-auto-wait" : ""}`} aria-hidden="true" /> : null}
-              {enabled
-                ? waiting
-                  ? `Enabled · waiting on ${pendingGrants} permission${pendingGrants === 1 ? "" : "s"}`
-                  : "Enabled"
-                : "Disabled"}
-            </span>
-          }
-        />
-        {/* Law 3 — what this automation DOES, in the user's words. */}
-        <CardLine>{description ?? (flow ? `${flow.trigger.title} → ${flow.action.title}` : name)}</CardLine>
-        {runsAs === null ? null : <CardByline>{runsAs}</CardByline>}
-        {/* role="group": a bare <div> may not carry aria-label
-            (aria-prohibited-attr). The panel's copy of this node was fixed at
-            integration; the thread's copy was not. */}
-        {flow ? (
-          <div className="fl-auto-flow" role="group" aria-label={`Automation flow for ${name}`}>
-            <span className="fl-auto-node" style={{ flex: 1 }}>
-              <span className="fl-auto-node-ic" aria-hidden="true">↳</span>
-              <span>
-                <span className="fl-auto-node-t">{flow.trigger.title}</span>
-                <span className="fl-auto-node-s" style={{ display: "block" }}>{flow.trigger.sub}</span>
-              </span>
-            </span>
-            <span className="fl-auto-arrow" aria-hidden="true" />
-            <span className="fl-auto-node" style={{ flex: 1 }}>
-              <span className="fl-auto-node-ic" aria-hidden="true">✓</span>
-              <span>
-                <span className="fl-auto-node-t">{flow.action.title}</span>
-                <span className="fl-auto-node-s" style={{ display: "block" }}>{flow.action.sub}</span>
-              </span>
-            </span>
-          </div>
-        ) : null}
+        <CardLine className="fl-auto-sentence">{rule}</CardLine>
+        <div className="fl-auto-state">
+          {enabled ? <span className={`fl-auto-live${waiting ? " fl-auto-wait" : ""}`} aria-hidden="true" /> : null}
+          {state}
+        </div>
+        {/* A real list: these are N distinct promises about how the automation
+            behaves, and a reader has to be able to step through them. */}
+        {rules.length === 0 ? null : (
+          <ul className="fl-auto-rules" aria-label={`Rules for ${name}`}>
+            {rules.map((sentence, index) => <li key={index}>{TICK_GLYPH}{sentence}</li>)}
+          </ul>
+        )}
       </CardShell>
     </ChromeRoot>
   );

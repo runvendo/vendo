@@ -52,13 +52,51 @@ describe("triggerLabel — which zone the clock is in", () => {
 });
 
 describe("AutomationCard", () => {
-  it("renders identity, enabled state, and the trigger → action flow", () => {
+  /** ⚠️ TEST EDIT (A1 · Sentence): this asserted the head's identity (the NAME
+      as the title) and the flow diagram's two node boxes with their sub labels
+      ("Schedule", "1 action"). The rule is the card's title now, so the same
+      facts are asserted where they render: the description IS the title, the
+      name is the card's accessible name, and the composed `trigger → action`
+      title is covered by the no-description case below (the diagram's sub
+      labels are gone with the diagram — they named the boxes, not the rule). */
+  it("renders the rule as its title, the enabled state, and the agency line", () => {
     render(
       <VendoProvider client={client}>
         <AutomationCard
           name="Low balance alert"
           enabled
           description="Emails you when checking dips below $2,000."
+          sponsor={{ subject: "user_1", display: "Dana" }}
+          trigger={{
+            on: { kind: "schedule", cron: "0 8 * * *" },
+            run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
+          }}
+        />
+      </VendoProvider>,
+    );
+    // The name is what the card is CALLED, and it stays its accessible name.
+    const card = screen.getByRole("article", { name: "Automation — Low balance alert" });
+    // The rule, in the description's human phrasing, as the card's first line.
+    expect(card.querySelector(".fl-auto-sentence")!.textContent)
+      .toBe("Emails you when checking dips below $2,000.");
+    // §13 — whether it is on AND whose access it runs with, on one quiet line
+    // (this was the state chip plus the byline row).
+    expect(card.querySelector(".fl-auto-state")!.textContent)
+      .toBe("Enabled · Runs with Dana's access");
+    // Read-only: no toggle, no run history.
+    expect(screen.queryByRole("switch")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Run history" })).toBeNull();
+    // No head, and no diagram saying in two boxes what the title says in words.
+    expect(card.querySelector(".fl-card-eyebrow")).toBeNull();
+    expect(card.querySelector(".fl-auto-flow")).toBeNull();
+  });
+
+  it("composes the rule from the trigger when the document has no description", () => {
+    render(
+      <VendoProvider client={client}>
+        <AutomationCard
+          name="Low balance alert"
+          enabled={false}
           trigger={{
             on: { kind: "schedule", cron: "0 8 * * *" },
             run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
@@ -67,19 +105,37 @@ describe("AutomationCard", () => {
       </VendoProvider>,
     );
     const card = screen.getByRole("article", { name: "Automation — Low balance alert" });
-    expect(card.textContent).toContain("Low balance alert");
-    expect(card.textContent).toContain("Enabled");
-    expect(card.textContent).toContain("Emails you when checking dips below $2,000.");
-    // The flow nodes: humanized cron trigger → humanized first step.
-    expect(card.textContent).toContain("Daily at 8:00 AM");
-    expect(card.textContent).toContain("List accounts");
-    // Read-only: no toggle, no run history.
-    expect(screen.queryByRole("switch")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Run history" })).toBeNull();
-    // M30 — a plain <div> may not carry aria-label (aria-prohibited-attr): the
-    // flow block is a real group, exactly as the panel's copy of it is.
-    const flow = screen.getByRole("group", { name: "Automation flow for Low balance alert" });
-    expect(flow.className).toContain("fl-auto-flow");
+    // The humanized cron (zone named, because it fires in UTC) → the first step.
+    expect(card.querySelector(".fl-auto-sentence")!.textContent).toBe("Daily at 8:00 AM UTC → List accounts");
+    // Disabled says so, and drops the live dot rather than colouring it.
+    expect(card.querySelector(".fl-auto-state")!.textContent).toBe("Disabled");
+    expect(card.querySelector(".fl-auto-live")).toBeNull();
+  });
+
+  /** E3 · Rule list — the agent's own sentences about how the automation
+      behaves. A real <ul> with an accessible name: these are N distinct
+      promises, and a reader has to be able to step through them. */
+  it("lists the agent's rule sentences, and renders no list at all without them", () => {
+    const rules = [
+      "Caps at $200 a bill — anything higher asks you first",
+      "Only bills from billing@pge.com count",
+    ];
+    const { rerender } = render(
+      <VendoProvider client={client}>
+        <AutomationCard name="PG&E autopay" enabled rules={rules} description="New PG&E bill → paid from Maple Checking" />
+      </VendoProvider>,
+    );
+    const list = screen.getByRole("list", { name: "Rules for PG&E autopay" });
+    expect([...list.querySelectorAll("li")].map(item => item.textContent)).toEqual(rules);
+    // The tick is decoration beside each sentence, never the sentence itself.
+    expect(list.querySelectorAll("svg[aria-hidden='true']")).toHaveLength(2);
+
+    rerender(
+      <VendoProvider client={client}>
+        <AutomationCard name="PG&E autopay" enabled description="New PG&E bill → paid from Maple Checking" />
+      </VendoProvider>,
+    );
+    expect(screen.queryByRole("list", { name: "Rules for PG&E autopay" })).toBeNull();
   });
 });
 
@@ -110,12 +166,41 @@ describe("ThreadPart data-vendo-automation", () => {
       </VendoProvider>,
     );
     const card = screen.getByRole("article", { name: "Automation — Weekly spending summary" });
-    expect(card.textContent).toContain("Fridays at 5:00 PM");
-    expect(card.textContent).toContain("2 steps");
+    // ⚠️ TEST EDIT (A1 · Sentence): the trigger and the action used to be two
+    // node boxes with sub labels ("Schedule", "2 steps"). They are one rule
+    // sentence now, so the wire→card contract is asserted on that sentence —
+    // the humanized cron and the first step still both come off the part.
+    expect(card.querySelector(".fl-auto-sentence")!.textContent)
+      .toBe("Fridays at 5:00 PM UTC → Get spending insights");
     // Backward-compat: this is the OLD wire payload (no pendingGrants) — it
     // renders the plain enabled state, never the waiting copy.
     expect(card.textContent).toContain("Enabled");
     expect(card.textContent).not.toContain("waiting on");
+  });
+
+  it("carries the part's rule sentences onto the card (the E3 list is wire-fed)", () => {
+    render(
+      <VendoProvider client={client}>
+        <ThreadPart
+          part={part({
+            appId: "app_demo",
+            name: "PG&E autopay",
+            enabled: true,
+            description: "New PG&E bill → paid from Maple Checking",
+            rules: ["Caps at $200 a bill — anything higher asks you first", "Skips if checking would drop below $500"],
+          })}
+          partKey="m-2"
+          role="assistant"
+          restored={false}
+          risks={new Map()}
+        />
+      </VendoProvider>,
+    );
+    const list = screen.getByRole("list", { name: "Rules for PG&E autopay" });
+    expect([...list.querySelectorAll("li")].map(item => item.textContent)).toEqual([
+      "Caps at $200 a bill — anything higher asks you first",
+      "Skips if checking would drop below $500",
+    ]);
   });
 
   it("reads 'waiting on N permissions' while the part carries pendingGrants (grant sets)", () => {
