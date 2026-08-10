@@ -55,10 +55,10 @@ export const control: CSSProperties = {
 /** Recharts-friendly categorical palette derived from the host accent. */
 export const chartSeries = [
   t.accent,
-  `color-mix(in srgb, ${t.accent} 55%, ${t.surface})`,
-  `color-mix(in srgb, ${t.accent} 30%, ${t.surface})`,
-  t.muted,
-  `color-mix(in srgb, ${t.danger} 70%, ${t.accent})`,
+  `color-mix(in srgb, ${t.accent} 62%, ${t.background})`,
+  `color-mix(in srgb, ${t.text} 72%, ${t.background})`,
+  `color-mix(in srgb, ${t.accent} 45%, ${t.text})`,
+  `color-mix(in srgb, ${t.text} 40%, ${t.background})`,
 ] as const;
 
 /** Nth series color, wrapping. */
