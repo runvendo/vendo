@@ -3,6 +3,8 @@ import {
   type ApprovalDecision,
   type ApprovalId,
   type ApprovalRequest,
+  assertEngineCollection,
+  type AtomicRecordStore,
   auditContext,
   type AuditEvent,
   canonicalJson,
@@ -24,6 +26,7 @@ import {
   serviceToolSlug,
   sha256Hex,
   type StoreAdapter,
+  type StoreOps,
   type ToolCall,
   type ToolDescriptor,
   type ToolListingContext,
@@ -277,15 +280,68 @@ function eventFromContext(
   };
 }
 
+/** The seven verbs every drawer in this block is reached through. */
+type EngineOps = StoreOps["engine"];
+
+/** `ops.engine` over a bare {@link StoreAdapter}, for the deployment whose
+ *  composition could not resolve a 42-op surface (`selectStoreOps` answers
+ *  `undefined` for a store with neither its own ops nor a SQL handle) and for
+ *  every host passing their own adapter. Verb for verb the local backend's
+ *  family (packages/store/src/ops.ts): the allowlist gate in front, the routed
+ *  door behind, and `not-implemented` where a door omits an optional
+ *  capability — so single-use approval transitions fail closed here exactly as
+ *  they do on the hosted wire.
+ *
+ *  `records()` is called per verb and never cached: an adapter is free to mint
+ *  a fresh handle each time, and the fixtures that wrap one to inject a failure
+ *  depend on it. */
+function adapterEngine(store: StoreAdapter): EngineOps {
+  const door = (collection: string): RecordStore => {
+    assertEngineCollection(collection);
+    return store.records(collection);
+  };
+  const atomic = (collection: string, verb: string): AtomicRecordStore => {
+    const capability = door(collection).atomic;
+    if (capability === undefined) {
+      throw new VendoError(
+        "not-implemented",
+        `${collection} does not support ${verb}: this adapter omits the optional `
+        + "atomic-revisions capability (RecordStore.atomic, 02-store §4)",
+      );
+    }
+    return capability;
+  };
+  return {
+    get: async (collection, id) => await door(collection).get(id),
+    put: async (collection, record) => await door(collection).put(record),
+    delete: async (collection, id) => {
+      await door(collection).delete(id);
+    },
+    list: async (collection, query) => await door(collection).list(query),
+    claim: async (collection, expected, replacement) => {
+      const claim = door(collection).claim;
+      if (claim === undefined) {
+        throw new VendoError("not-implemented", `${collection} does not support claim`);
+      }
+      return await claim(expected, replacement);
+    },
+    insertIfAbsent: async (collection, record) =>
+      await atomic(collection, "insertIfAbsent").insertIfAbsent(record),
+    compareAndSwap: async (collection, record, expectedRevision) =>
+      await atomic(collection, "compareAndSwap").compareAndSwap(record, expectedRevision),
+  };
+}
+
 async function listAll(
-  store: RecordStore,
+  engine: EngineOps,
+  collection: string,
   query: Omit<RecordQuery, "cursor"> = {},
 ): Promise<VendoRecord[]> {
   const records: VendoRecord[] = [];
   let cursor: string | undefined;
 
   do {
-    const page = await store.list({ ...query, ...(cursor === undefined ? {} : { cursor }) });
+    const page = await engine.list(collection, { ...query, ...(cursor === undefined ? {} : { cursor }) });
     records.push(...page.records);
     if (page.cursor === undefined || page.cursor === cursor) break;
     cursor = page.cursor;
@@ -417,7 +473,7 @@ function normalizeRememberedScope(scope: GrantScope, request: ApprovalRequest): 
 }
 
 class GuardImplementation implements VendoGuard {
-  readonly #store: StoreAdapter;
+  readonly #engine: EngineOps;
   /** Per (run, tool, exact input): which ordinal each CALL ID was assigned.
    *  Keyed by call id so a replay of one call reuses its ordinal (and dedupes)
    *  while a second, separately-intended identical call gets the next one. */
@@ -462,7 +518,7 @@ class GuardImplementation implements VendoGuard {
   };
 
   constructor(config: CreateGuardConfig) {
-    this.#store = config.store;
+    this.#engine = config.ops?.engine ?? adapterEngine(config.store);
     this.#config = config;
     // Compose time, not first call: an unknown preset name (or any other
     // policy misconfiguration `resolvePolicyConfig` catches) must fail loud
@@ -517,7 +573,7 @@ class GuardImplementation implements VendoGuard {
     };
     if (normalized.appId !== undefined) refs.app_id = normalized.appId;
     if (normalized.tool !== undefined) refs.tool = normalized.tool;
-    await this.#store.records(AUDIT_COLLECTION).put({
+    await this.#engine.put(AUDIT_COLLECTION, {
       id: normalized.id,
       data: normalized,
       refs,
@@ -574,7 +630,7 @@ class GuardImplementation implements VendoGuard {
     id: ApprovalId,
     principal: Principal,
   ): Promise<"spent" | "already-spent" | "taken-back"> {
-    const record = await this.#store.records(APPROVALS_COLLECTION).get(id);
+    const record = await this.#engine.get(APPROVALS_COLLECTION, id);
     if (record === null) return "already-spent";
     const data = approvalData(record);
     if (data.request.ctx.principal.subject !== principal.subject) return "already-spent";
@@ -596,7 +652,7 @@ class GuardImplementation implements VendoGuard {
     if (ttlMs <= 0) return 0;
     // Filtered by the store, not in JS: this runs every 60s for the life of the
     // process, and the unfiltered read grows with every approval ever decided.
-    const records = await listAll(this.#store.records(APPROVALS_COLLECTION), {
+    const records = await listAll(this.#engine, APPROVALS_COLLECTION, {
       refs: { status: "pending" },
     });
     let swept = 0;
@@ -807,7 +863,7 @@ class GuardImplementation implements VendoGuard {
   async frozen(): Promise<boolean> {
     let record: VendoRecord | null;
     try {
-      record = await this.#store.records(CONTROLS_COLLECTION).get(FREEZE_ROW);
+      record = await this.#engine.get(CONTROLS_COLLECTION, FREEZE_ROW);
     } catch (error) {
       // The kill switch could not even be READ (a store error). Fail CLOSED
       // and contain the failure into a decision, exactly as every other error
@@ -882,7 +938,7 @@ class GuardImplementation implements VendoGuard {
   /** The switch is flipped BEFORE it is reported: an audit failure must never
    *  leave the caller believing a freeze did not land. */
   async #setFrozen(frozen: boolean, by: string): Promise<void> {
-    await this.#store.records(CONTROLS_COLLECTION).put({
+    await this.#engine.put(CONTROLS_COLLECTION, {
       id: FREEZE_ROW,
       data: { frozen, by, at: now() },
     });
@@ -1377,7 +1433,7 @@ class GuardImplementation implements VendoGuard {
   }
 
   async #recordedEffect(key: string): Promise<ToolOutcome | undefined> {
-    const record = await this.#store.records(EFFECTS_COLLECTION).get(key);
+    const record = await this.#engine.get(EFFECTS_COLLECTION, key);
     if (record === null) return undefined;
     const outcome = (record.data as { outcome?: unknown }).outcome;
     const parsed = toolOutcomeSchema.safeParse(outcome);
@@ -1386,8 +1442,8 @@ class GuardImplementation implements VendoGuard {
     return parsed.success ? parsed.data : undefined;
   }
 
-  /** Write the receipt. `insertIfAbsent` where the adapter offers it, so a racing
-   *  writer cannot overwrite an already-recorded outcome.
+  /** Write the receipt through `insertIfAbsent`, so a racing writer cannot
+   *  overwrite an already-recorded outcome.
    *
    *  Note precisely what that does and does not buy: it protects the RECORD, not
    *  the execution. Nothing is reserved before the call, so two PROCESSES can
@@ -1400,14 +1456,11 @@ class GuardImplementation implements VendoGuard {
    *  erase forever. It goes in `refs` as well as the body, because that is what
    *  the 02-store §5 cascade matches on for generic collections. */
   async #recordEffect(key: string, outcome: ToolOutcome, subject: string): Promise<void> {
-    const records = this.#store.records(EFFECTS_COLLECTION);
-    const input = {
+    await this.#engine.insertIfAbsent(EFFECTS_COLLECTION, {
       id: key,
       data: { subject, outcome: cloneJson(outcome) as Json, at: now() },
       refs: { subject },
-    };
-    if (records.atomic === undefined) await records.put(input);
-    else await records.atomic.insertIfAbsent(input);
+    });
   }
 
   /** The dispatch itself, once the guard has said run and the freeze has been
@@ -1493,7 +1546,7 @@ class GuardImplementation implements VendoGuard {
   ): Promise<PermissionGrant | undefined> {
     if (decision.action !== "run") return undefined;
     if (decision.grantId !== undefined) {
-      const record = await this.#store.records(GRANTS_COLLECTION).get(decision.grantId);
+      const record = await this.#engine.get(GRANTS_COLLECTION, decision.grantId);
       return record === null ? undefined : (record.data as PermissionGrant);
     }
     if (ctx.presence !== "away") return undefined;
@@ -1503,8 +1556,9 @@ class GuardImplementation implements VendoGuard {
   /** Wins (or loses) an approval's one-time transition by inserting its
    *  receipt through the store's atomic `insertIfAbsent` — a single statement,
    *  so exactly one claimant succeeds no matter how many processes race. Fails
-   *  closed when the adapter omits the capability: single-use state cannot be
-   *  guaranteed without database-level CAS (02-store §4).
+   *  closed when the store omits the capability — the verb itself refuses with
+   *  `not-implemented`: single-use state cannot be guaranteed without
+   *  database-level CAS (02-store §4).
    *
    *  The `consumed` transition has TWO kinds of claimant: a replay spending the
    *  yes, and a void taking the decision back. They contend on the one receipt,
@@ -1516,14 +1570,7 @@ class GuardImplementation implements VendoGuard {
     subject: string,
     claimant?: "replay" | "void",
   ): Promise<boolean> {
-    const atomic = this.#store.records(APPROVAL_CLAIMS_COLLECTION).atomic;
-    if (atomic === undefined) {
-      throw new VendoError(
-        "not-implemented",
-        "approvals need a store with the atomic-revisions capability (RecordStore.atomic, 02-store §4); this adapter omits it, so single-use approval transitions fail closed",
-      );
-    }
-    const receipt = await atomic.insertIfAbsent({
+    const receipt = await this.#engine.insertIfAbsent(APPROVAL_CLAIMS_COLLECTION, {
       id: `${transition}:${approvalId}`,
       data: { approvalId, transition, at: now(), ...(claimant === undefined ? {} : { claimant }) },
       refs: { subject },
@@ -1539,7 +1586,7 @@ class GuardImplementation implements VendoGuard {
    *  is the fail-closed reading and the true one: the older build claimed this
    *  receipt only from the replay path. */
   async #consumedTransitionClaimant(approvalId: string): Promise<"replay" | "void" | undefined> {
-    const receipt = await this.#store.records(APPROVAL_CLAIMS_COLLECTION).get(`consumed:${approvalId}`);
+    const receipt = await this.#engine.get(APPROVAL_CLAIMS_COLLECTION, `consumed:${approvalId}`);
     const claimant = (receipt?.data as { claimant?: unknown } | undefined)?.claimant;
     return claimant === "void" || claimant === "replay" ? claimant : undefined;
   }
@@ -1565,13 +1612,12 @@ class GuardImplementation implements VendoGuard {
     if (!(await this.#claimApprovalTransition("consumed", id, subject, "replay"))) {
       return (await this.#consumedTransitionClaimant(id)) === "void" ? "taken-back" : "already-spent";
     }
-    const store = this.#store.records(APPROVALS_COLLECTION);
-    const current = await store.get(id);
+    const current = await this.#engine.get(APPROVALS_COLLECTION, id);
     if (current === null) return "already-spent";
     const fresh = approvalData(current);
     if (fresh.voidedAt !== undefined) return "taken-back";
     const spent: ApprovalRecordData = { ...fresh, consumedAt: now() };
-    await store.put({ id, data: spent, refs: approvalRefs(spent) });
+    await this.#engine.put(APPROVALS_COLLECTION, { id, data: spent, refs: approvalRefs(spent) });
     return "spent";
   }
 
@@ -1592,7 +1638,6 @@ class GuardImplementation implements VendoGuard {
     id: string,
     data: ApprovalRecordData,
   ): Promise<"voided" | "already-void" | "spent"> {
-    const store = this.#store.records(APPROVALS_COLLECTION);
     const claimed = await this.#claimApprovalTransition(
       "consumed",
       id,
@@ -1610,13 +1655,13 @@ class GuardImplementation implements VendoGuard {
     // landing on the same row: the receipt, not that copy, is the gate. A row
     // that is GONE was erased (02-store §5) while this was in flight; re-putting
     // it would resurrect erased data, so there is nothing left to void.
-    const current = await store.get(id);
+    const current = await this.#engine.get(APPROVALS_COLLECTION, id);
     if (current === null) return "already-void";
     const fresh = approvalData(current);
     // The take-back this call is retrying already landed: nothing to say twice.
     if (!claimed && fresh.voidedAt !== undefined) return "already-void";
     const voided: ApprovalRecordData = { ...fresh, voidedAt: fresh.voidedAt ?? now() };
-    await store.put({ id, data: voided, refs: approvalRefs(voided) });
+    await this.#engine.put(APPROVALS_COLLECTION, { id, data: voided, refs: approvalRefs(voided) });
     return "voided";
   }
 
@@ -1630,10 +1675,9 @@ class GuardImplementation implements VendoGuard {
     transition: "decided" | "consumed",
     approvalIds: string[],
   ): Promise<void> {
-    const records = this.#store.records(APPROVAL_CLAIMS_COLLECTION);
     for (const approvalId of approvalIds) {
       try {
-        await records.delete(`${transition}:${approvalId}`);
+        await this.#engine.delete(APPROVAL_CLAIMS_COLLECTION, `${transition}:${approvalId}`);
       } catch {
         // Fail closed: the stuck receipt only makes later decides conflict.
       }
@@ -1677,7 +1721,7 @@ class GuardImplementation implements VendoGuard {
     const fingerprint = descriptorHash(descriptor);
     // Indexed on the call id: chat's random ids miss here and never pay for a
     // scan of the subject's history.
-    const records = await listAll(this.#store.records(APPROVALS_COLLECTION), {
+    const records = await listAll(this.#engine, APPROVALS_COLLECTION, {
       refs: { subject: ctx.principal.subject, status: "denied", call: call.id },
     });
     return records.some((record) => {
@@ -1701,8 +1745,7 @@ class GuardImplementation implements VendoGuard {
     claim: boolean,
   ): Promise<boolean> {
     const fingerprint = descriptorHash(descriptor);
-    const store = this.#store.records(APPROVALS_COLLECTION);
-    const records = await listAll(store, {
+    const records = await listAll(this.#engine, APPROVALS_COLLECTION, {
       refs: { subject: ctx.principal.subject, status: "approved", call: call.id },
     });
     for (const record of records) {
@@ -1746,7 +1789,7 @@ class GuardImplementation implements VendoGuard {
     descriptor: ToolDescriptor,
     ctx: RunContext,
   ): Promise<{ grant?: PermissionGrant; invalidated: PermissionGrant[] }> {
-    const records = await listAll(this.#store.records(GRANTS_COLLECTION), {
+    const records = await listAll(this.#engine, GRANTS_COLLECTION, {
       refs: { subject: ctx.principal.subject },
     });
     const fingerprint = descriptorHash(descriptor);
@@ -1807,7 +1850,7 @@ class GuardImplementation implements VendoGuard {
       status: "pending",
       sessionId: ctx.sessionId,
     };
-    await this.#store.records(APPROVALS_COLLECTION).put({ id: request.id, data, refs: approvalRefs(data) });
+    await this.#engine.put(APPROVALS_COLLECTION, { id: request.id, data, refs: approvalRefs(data) });
     // Subscribers see the park only after it persisted, and a returned
     // thenable is awaited (as decision callbacks are) so check() resolves
     // only after notification work lands. A subscriber failure never turns a
@@ -1823,7 +1866,7 @@ class GuardImplementation implements VendoGuard {
   }
 
   async #pendingApprovals(principal: Principal): Promise<ApprovalRequest[]> {
-    const records = await listAll(this.#store.records(APPROVALS_COLLECTION), {
+    const records = await listAll(this.#engine, APPROVALS_COLLECTION, {
       refs: { subject: principal.subject, status: "pending" },
     });
     return records
@@ -1842,7 +1885,6 @@ class GuardImplementation implements VendoGuard {
     provenance: "human" | "system",
   ): Promise<void> {
     const normalizedIds = [...new Set(Array.isArray(ids) ? ids : [ids])];
-    const store = this.#store.records(APPROVALS_COLLECTION);
     // A multi-id decide is a SET decision (a grant set's one consent moment):
     // it must land all-or-none — never a partially-granted set.
     const batch = normalizedIds.length > 1;
@@ -1857,7 +1899,7 @@ class GuardImplementation implements VendoGuard {
     // one-time-transition semantics (any prior decision conflicts).
     const toDecide: Array<{ id: string; data: ReturnType<typeof approvalData> }> = [];
     for (const id of normalizedIds) {
-      const record = await store.get(id);
+      const record = await this.#engine.get(APPROVALS_COLLECTION, id);
       if (record === null) {
         throw new VendoError("not-found", `Approval ${id} was not found`);
       }
@@ -1936,9 +1978,8 @@ class GuardImplementation implements VendoGuard {
    * Voided rather than deleted — the audit trail keeps both answers, in order.
    */
   async #supersedeApprovedSiblings(denied: ApprovalRecordData): Promise<void> {
-    const store = this.#store.records(APPROVALS_COLLECTION);
     const fingerprint = descriptorHash(denied.request.descriptor);
-    const siblings = await listAll(store, {
+    const siblings = await listAll(this.#engine, APPROVALS_COLLECTION, {
       refs: {
         subject: denied.request.ctx.principal.subject,
         status: "approved",
@@ -1980,7 +2021,6 @@ class GuardImplementation implements VendoGuard {
     provenance: "human" | "system",
     applied: Array<{ id: string; prior: ReturnType<typeof approvalData>; grantId?: GrantId }>,
   ): Promise<void> {
-    const store = this.#store.records(APPROVALS_COLLECTION);
     const decidedAt = now();
     const status = decision.approve ? "approved" : "denied";
     const entry: { id: string; prior: ReturnType<typeof approvalData>; grantId?: GrantId } = { id, prior: data };
@@ -1990,7 +2030,7 @@ class GuardImplementation implements VendoGuard {
       decidedAt,
       ...(decision.approve ? {} : { deniedBy: provenance }),
     };
-    await store.put({ id, data: decided, refs: approvalRefs(decided) });
+    await this.#engine.put(APPROVALS_COLLECTION, { id, data: decided, refs: approvalRefs(decided) });
     applied.push(entry);
     if (!decision.approve && provenance === "human") await this.#supersedeApprovedSiblings(decided);
 
@@ -2018,7 +2058,7 @@ class GuardImplementation implements VendoGuard {
         tool: grant.tool,
       };
       if (grant.appId !== undefined) refs.app_id = grant.appId;
-      await this.#store.records(GRANTS_COLLECTION).put({
+      await this.#engine.put(GRANTS_COLLECTION, {
         id: grant.id,
         data: grant,
         refs,
@@ -2058,12 +2098,11 @@ class GuardImplementation implements VendoGuard {
     principal: Principal,
     cause: unknown,
   ): Promise<void> {
-    const store = this.#store.records(APPROVALS_COLLECTION);
     let rollbackFailed = false;
     for (const member of [...applied].reverse()) {
       try {
         if (member.grantId !== undefined) {
-          await this.#store.records(GRANTS_COLLECTION).delete(member.grantId);
+          await this.#engine.delete(GRANTS_COLLECTION, member.grantId);
         }
         // Restore only a row nothing else has acted on. In the ms between this
         // member's commit and a LATER member's store failure, a concurrent
@@ -2073,11 +2112,14 @@ class GuardImplementation implements VendoGuard {
         // happen. A gone row was erased (02-store §5) and must never be
         // re-created here. Both cases leave the member decided, which its own
         // audit line already says; the retry then reads it as decided.
-        const current = await store.get(member.id);
+        const current = await this.#engine.get(APPROVALS_COLLECTION, member.id);
         if (current === null) continue;
         const live = approvalData(current);
         if (live.consumedAt !== undefined || live.voidedAt !== undefined) continue;
-        await store.put({ id: member.id, data: member.prior, refs: approvalRefs(member.prior) });
+        await this.#engine.put(
+          APPROVALS_COLLECTION,
+          { id: member.id, data: member.prior, refs: approvalRefs(member.prior) },
+        );
         const requestCtx = member.prior.request.ctx;
         try {
           await this.report({
@@ -2131,7 +2173,7 @@ class GuardImplementation implements VendoGuard {
   }
 
   async #listGrants(principal: Principal): Promise<PermissionGrant[]> {
-    const records = await listAll(this.#store.records(GRANTS_COLLECTION), {
+    const records = await listAll(this.#engine, GRANTS_COLLECTION, {
       refs: { subject: principal.subject },
     });
     return records
@@ -2150,8 +2192,7 @@ class GuardImplementation implements VendoGuard {
    * still-pending approval is nothing to take back — deny it instead.
    */
   async #revokeApproval(id: ApprovalId, principal: Principal): Promise<void> {
-    const store = this.#store.records(APPROVALS_COLLECTION);
-    const record = await store.get(id);
+    const record = await this.#engine.get(APPROVALS_COLLECTION, id);
     if (record === null) throw new VendoError("not-found", `Approval ${id} was not found`);
     const data = approvalData(record);
     if (data.request.ctx.principal.subject !== principal.subject) {
@@ -2185,8 +2226,7 @@ class GuardImplementation implements VendoGuard {
   }
 
   async #revokeGrant(id: GrantId, principal: Principal): Promise<void> {
-    const store = this.#store.records(GRANTS_COLLECTION);
-    const record = await store.get(id);
+    const record = await this.#engine.get(GRANTS_COLLECTION, id);
     if (record === null) throw new VendoError("not-found", `Grant ${id} was not found`);
     const grant = grantData(record);
     if (grant.subject !== principal.subject) {
@@ -2201,7 +2241,7 @@ class GuardImplementation implements VendoGuard {
       tool: revoked.tool,
     };
     if (revoked.appId !== undefined) refs.app_id = revoked.appId;
-    await store.put({ id, data: revoked, refs });
+    await this.#engine.put(GRANTS_COLLECTION, { id, data: revoked, refs });
     await this.report({
       id: makeId("aud_"),
       at: now(),
@@ -2231,7 +2271,6 @@ class GuardImplementation implements VendoGuard {
     if (filter.appId !== undefined) refs.app_id = filter.appId;
 
     const events: AuditEvent[] = [];
-    const store = this.#store.records(AUDIT_COLLECTION);
     let cursor = filter.cursor;
     let resultCursor: string | undefined;
     const fromInstant = filter.from === undefined ? undefined : Date.parse(filter.from);
@@ -2239,7 +2278,7 @@ class GuardImplementation implements VendoGuard {
 
     while (events.length < limit) {
       const remaining = limit - events.length;
-      const page = await store.list({
+      const page = await this.#engine.list(AUDIT_COLLECTION, {
         ...(Object.keys(refs).length === 0 ? {} : { refs }),
         limit: remaining,
         ...(cursor === undefined ? {} : { cursor }),

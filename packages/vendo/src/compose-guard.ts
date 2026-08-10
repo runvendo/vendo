@@ -21,7 +21,7 @@ import { orgPolicyPath, orgPolicyResolver, workspacePolicySource } from "./org-p
  *  point verbatim; a spec is completed here. ONE constructor either way. */
 export const composeGuard = (composition: VendoComposition): Pick<VendoComposition,
   "guard" | "resolveRisk" | "warnPresentCredentialsNotForwarded"> => {
-  const { config, store, configCloud, readSurfaceFile } = composition;
+  const { config, store, ops, configCloud, readSurfaceFile } = composition;
   // profile.policy is the parsed policy.json document held in memory, for a
   // deployment with no filesystem — `vendo init` writes the file instead
   // (cli/init-scaffolds.ts). Precedence keeps the
@@ -62,6 +62,11 @@ export const composeGuard = (composition: VendoComposition): Pick<VendoCompositi
   // cloud policy fallback, the org layer. ONE constructor either way.
   const guard = isGuardInstance(config.guard) ? config.guard : createGuard({
     store,
+    // The engine family for the guard's own drawers, over the SAME store.
+    // Absent for a store with neither its own ops nor a SQL handle — the block
+    // then serves the same verbs off the adapter itself, so an unset slot is a
+    // route, not a downgrade.
+    ...(ops === undefined ? {} : { ops }),
     resolveRisk,
     ...(guardRules.approvals === undefined ? {} : { approvals: guardRules.approvals }),
     ...(guardRules.breakers === undefined ? {} : { breakers: guardRules.breakers }),
