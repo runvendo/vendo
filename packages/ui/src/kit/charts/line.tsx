@@ -33,12 +33,12 @@ function normalize(series: SeriesInput[]): Array<{ key: string; label: string }>
 
 const axisTick = { fill: "var(--vendo-color-muted, #6b6b76)", fontSize: 11 };
 
-export function LineChart({ data, xKey, series, format = "number", height = 220, emptyState = "No data to chart" }: LineChartProps) {
+export function LineChart({ data, xKey, series, format = "number", height = 160, emptyState = "No data to chart" }: LineChartProps) {
   const cols = normalize(series);
   const keys = cols.map((c) => c.key);
   const clean = sanitizeSeries(data, keys);
   if (clean.length === 0 || seriesIsEmpty(clean, keys)) {
-    return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
+    return <ChartEmpty>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (

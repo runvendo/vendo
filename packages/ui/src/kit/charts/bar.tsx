@@ -39,14 +39,14 @@ export function BarChart({
   format = "number",
   stacked = false,
   horizontal = false,
-  height = 220,
+  height = 160,
   emptyState = "No data to chart",
 }: BarChartProps) {
   const cols = normalize(series);
   const keys = cols.map((c) => c.key);
   const clean = sanitizeSeries(data, keys);
   if (clean.length === 0 || seriesIsEmpty(clean, keys)) {
-    return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
+    return <ChartEmpty>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
   return (

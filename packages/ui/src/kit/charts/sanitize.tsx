@@ -40,27 +40,27 @@ export interface ChartFrameProps {
 }
 
 /** Common chart wrapper providing a min-height box. */
-export function ChartFrame({ height = 220, children }: ChartFrameProps) {
+export function ChartFrame({ height = 160, children }: ChartFrameProps) {
   return <div style={{ width: "100%", height, minHeight: height }}>{children}</div>;
 }
 
 /** A designed empty/invalid state that reads as intentional, not broken. */
-export function ChartEmpty({ height = 220, children }: { height?: number; children: ReactNode }) {
+export function ChartEmpty({ children }: { children: ReactNode }) {
   const style: CSSProperties = {
     ...font,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     width: "100%",
-    height,
-    minHeight: height,
+    // Sized to the sentence it holds — a chart-height dashed box reads as a hole.
+    minHeight: 72,
     color: t.muted,
     border: `1px dashed ${t.border}`,
     borderRadius: t.radiusMedium,
     background: `color-mix(in srgb, ${t.background} 40%, transparent)`,
     fontSize: "0.9em",
     textAlign: "center",
-    padding: 12,
+    padding: "var(--vendo-density-card-padding, 16px)",
   };
   return <div data-kit="ChartEmpty">{<div style={style}>{children}</div>}</div>;
 }
