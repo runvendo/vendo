@@ -255,6 +255,9 @@ export function applyFormat(value: unknown, format: ValueFormat = "text"): strin
   }
 }
 
+/** A lowercase snake/kebab token is a machine value, not prose. */
+export const isMachineToken = (text: string): boolean => /^[a-z0-9]+([_-][a-z0-9]+)*$/.test(text);
+
 /**
  * The formatter bundle, as one object. The jail hands islands a bare `fmt`
  * (`ISLAND_AMBIENT_HELPER_NAMES`) and this barrel exports this same object into

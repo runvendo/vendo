@@ -15,7 +15,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { applyFormat, type ValueFormat } from "../format.js";
+import { applyFormat, isMachineToken, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
@@ -67,9 +67,13 @@ const alignCss = (a: DataTableColumn["align"]): CSSProperties["textAlign"] =>
  * field instead meant "$2,500.00" and "Mar 14, 2026" were unsearchable, while
  * the dropdown offered "2026-03-14" as an option for a column reading
  * "Mar 14, 2026". Unrenderable cells (the "—" placeholder) filter as empty.
+ *
+ * A raw enum ("past_due") is humanized here, so the header, the cells and the
+ * filter options all read the same words.
  */
 function displayText(row: Record<string, unknown>, column: DataTableColumn): string {
-  return applyFormat(resolvePath(row, column.key), column.format ?? "text") ?? "";
+  const text = applyFormat(resolvePath(row, column.key), column.format ?? "text") ?? "";
+  return isMachineToken(text) ? humanizeEnum(text) : text;
 }
 
 const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
@@ -118,10 +122,8 @@ export function DataTable(props: DataTableProps) {
         accessorFn: (row) => resolvePath(row, col.key),
         header: col.label ?? humanizeEnum(col.key.split(".").pop() ?? col.key),
         cell: (ctx) => {
-          const raw = ctx.getValue();
-          const formatted = applyFormat(raw, col.format ?? "text");
-          if (formatted === null) return <span style={{ color: t.muted }}>—</span>;
-          return formatted;
+          const text = displayText(ctx.row.original, col);
+          return text === "" ? <span style={{ color: t.muted }}>—</span> : text;
         },
         // A dropdown lists the values that exist, so picking one means THIS
         // value — "includesString" here let a pick of "paid" list the "unpaid"
@@ -295,11 +297,15 @@ export function DataTable(props: DataTableProps) {
                 <tr key={row.id}>
                   {row.getVisibleCells().map((cell) => {
                     const col = columns.find((c) => c.key === cell.column.id);
+                    // Tone keys off the RAW value, so it survives humanization:
+                    // a machine token is metadata, not one of the row's values.
+                    const raw = col ? resolvePath(row.original, col.key) : undefined;
                     return (
                       <td
                         key={cell.id}
                         style={{
                           borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
+                          color: typeof raw === "string" && isMachineToken(raw) ? t.muted : undefined,
                           padding: cellPad,
                           textAlign: alignCss(col?.align),
                           fontVariantNumeric: col?.format && col.format !== "text" ? "tabular-nums" : undefined,

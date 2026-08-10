@@ -97,7 +97,8 @@ export type EnumTone = "neutral" | "accent" | "success" | "warning" | "danger";
 
 const TONE_STYLE: Record<EnumTone, { color: string; background: string; border: string }> = {
   neutral: {
-    color: t.text,
+    // A pill with no tone carries no meaning, so it reads as metadata.
+    color: t.muted,
     background: `color-mix(in srgb, ${t.muted} 10%, ${t.surface})`,
     border: t.border,
   },
