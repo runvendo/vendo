@@ -31,7 +31,7 @@
   ],
   "tools": {
     "list_accounts": {
-      "does": "Every account the signed-in customer holds. The rows are the `data` array. `balance` is in CENTS: 941220 is $9,412.20.",
+      "does": "Every account the signed-in customer holds. The rows are the `data` array. `balance` is a whole number of CENTS, and is negative on an account that owes.",
       "data": {
         "data": [
           { "id": "acc_checking", "name": "Maple Checking", "kind": "checking", "mask": "4471", "balance": 941220 },
@@ -41,7 +41,7 @@
       }
     },
     "get_spending": {
-      "does": "This month's spending totalled per category, largest first. The rows are the `data` array. `amount` is in CENTS: 285000 is $2,850.00.",
+      "does": "This month's spending totalled per category, largest first. The rows are the `data` array. `amount` is a whole number of CENTS.",
       "data": {
         "data": [
           { "category": "housing", "amount": 285000 },
@@ -54,7 +54,7 @@
       }
     },
     "list_transfers": {
-      "does": "Recent transfers, newest first. The rows are the `data` array. `amount` is in CENTS: 25000 is $250.00.",
+      "does": "Recent transfers, newest first. The rows are the `data` array. `amount` is a whole number of CENTS.",
       "takes": { "limit": "number" },
       "data": {
         "data": [

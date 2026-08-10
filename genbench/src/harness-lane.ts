@@ -64,6 +64,22 @@ const PRINCIPAL: Principal = { kind: "user", subject: "genbench_harness" };
 export const TURN_TIMEOUT_MS = 3 * 60_000;
 
 /**
+ * One case's whole wall clock, and the sentence a case that ran out of it gets.
+ *
+ * The per-turn budget above rides on the model stream's abort signal, and that
+ * signal cannot rescue a host tool that never answers: the step stays pending,
+ * the turn never ends, and one hung call takes the entire lane run with it. So
+ * the lane keeps a clock of its OWN, outside the product — one turn's budget more
+ * than the case's turns could honestly spend, so it only ever fires when the
+ * product's own abort did not. Past it the turn is recorded as a failure and the
+ * lane moves on to the next case, exactly as `CASE_TIMEOUT_MS` does for a
+ * screen-lane column (run.ts).
+ */
+export const caseBudgetMs = (turns: number, turnTimeoutMs = TURN_TIMEOUT_MS): number => (turns + 1) * turnTimeoutMs;
+
+export const WALL_CLOCK_FAILURE = "the case ran out of its wall clock";
+
+/**
  * The case's half of a result's comparability stamp.
  *
  * Every field is named rather than the object stringified whole, for the same
@@ -289,6 +305,31 @@ export interface HarnessRunRequest {
   /** The metered seat — the lane's only source of tokens, dollars and time. */
   readonly meter: Meter;
   readonly turnTimeoutMs?: number;
+  /** The tools this case answers with. The lane always hands {@link benchRegistry};
+   *  a caller hands its own to put a tool that never answers behind the product,
+   *  which is the only way the wall clock can be proven from outside it. */
+  readonly registry?: ToolRegistry;
+}
+
+/**
+ * One turn as a settled value, or the case's wall clock running out first.
+ *
+ * Not the screen lane's `attempt`: a turn that lost the race is still RECORDED as
+ * a turn — its ask, its clock and its cost are the case's evidence — and the work
+ * it abandoned is left behind rather than waited on, so the case's own `finally`
+ * can close its store and the lane can go on.
+ */
+async function withinCase(turn: () => Promise<StreamRead>, leftMs: number): Promise<StreamRead> {
+  const running = turn();
+  // The abandoned turn outlives this race, and must not take the process down
+  // when the store closes under it.
+  void running.catch(() => undefined);
+  return await Promise.race([
+    running,
+    new Promise<StreamRead>((settle) =>
+      setTimeout(() => settle({ text: "", calls: [], failure: WALL_CLOCK_FAILURE }), Math.max(leftMs, 0)).unref(),
+    ),
+  ]);
 }
 
 /**
@@ -335,7 +376,7 @@ export async function runHarnessCase(request: HarnessRunRequest): Promise<readon
     instructions: designRules(world),
     theme: world.theme,
   });
-  vendo.actions.add(benchRegistry(world, testCase));
+  vendo.actions.add(request.registry ?? benchRegistry(world, testCase));
 
   const ctx: RunContext = {
     principal: PRINCIPAL,
@@ -348,6 +389,10 @@ export async function runHarnessCase(request: HarnessRunRequest): Promise<readon
   };
   const threadId = `thr_${testCase.id.replaceAll("-", "_")}`;
   const turns: RecordedTurn[] = [];
+  // From the first ask, not from this function's first line: composing the product
+  // is the lane's own setup, and charging it to the case's clock would report a
+  // timeout the conversation never had.
+  const deadline = performance.now() + caseBudgetMs(testCase.turns.length, timeoutMs);
 
   try {
     for (const [index, ask] of testCase.turns.entries()) {
@@ -355,13 +400,15 @@ export async function runHarnessCase(request: HarnessRunRequest): Promise<readon
       const startedAt = performance.now();
       let read: StreamRead;
       try {
-        const response = await vendo.harness.stream({
-          threadId,
-          message: { id: `m${index + 1}`, role: "user", parts: [{ type: "text", text: ask }] } as UIMessage,
-          ctx,
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-        read = await readTurnStream(response);
+        read = await withinCase(async () => {
+          const response = await vendo.harness.stream({
+            threadId,
+            message: { id: `m${index + 1}`, role: "user", parts: [{ type: "text", text: ask }] } as UIMessage,
+            ctx,
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+          return await readTurnStream(response);
+        }, deadline - performance.now());
       } catch (error) {
         read = { text: "", calls: [], failure: error instanceof Error ? error.message : String(error) };
       }

@@ -15,13 +15,14 @@
  * of those move, these fail. A harness bench whose harness is a mock proves
  * nothing.
  */
+import type { ToolRegistry } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { harnessChecks, harnessPasses, type HarnessCase } from "../src/harness-checks.js";
-import { harnessWorld, runHarnessCase } from "../src/harness-lane.js";
+import { benchRegistry, harnessWorld, runHarnessCase, WALL_CLOCK_FAILURE } from "../src/harness-lane.js";
 import type { Meter, UsageTotals } from "../src/meter.js";
 import { loadWorld, type World } from "../src/world.js";
 
@@ -218,5 +219,43 @@ describe("driving the real vendo() harness", () => {
       expect(JSON.stringify(turns[0]?.calls[0]?.output)).toContain("61080");
     },
     180_000,
+  );
+
+  /**
+   * A tool that never answers is a real hang: the per-turn abort signal rides on
+   * the model stream and cannot rescue a step that is still waiting on a call. Take
+   * the case's own wall clock away and this test does not fail — it never returns,
+   * and neither does the lane run it is standing in for.
+   */
+  it(
+    "gives up on a tool call that never answers, and records that case as failed instead of hanging",
+    async () => {
+      const testCase = caseOf({ id: "seam-wall-clock", turns: ["What's my smallest pending transfer?"] });
+      const scoped = harnessWorld(await world(), testCase);
+      const real = benchRegistry(scoped, testCase);
+      // The world's own listing, behind a call that never comes back.
+      const hangs: ToolRegistry = {
+        descriptors: async (ctx) => await real.descriptors(ctx),
+        execute: async () => await new Promise(() => undefined),
+      };
+      const model = scripted([invokes("list_transfers", { limit: 10 })]);
+
+      const turns = await runHarnessCase({
+        world: scoped,
+        testCase,
+        meter: meterOf(model),
+        registry: hangs,
+        turnTimeoutMs: 1_000,
+      });
+
+      expect(turns).toHaveLength(1);
+      expect(turns[0]?.failure).toBe(WALL_CLOCK_FAILURE);
+      // …and the lane scores that as the case failing, rather than dropping a case
+      // that never answered out of the run.
+      const checks = harnessChecks({ testCase, turns, worldTools: scoped.tools.map((tool) => tool.name) });
+      expect(harnessPasses(checks)).toBe(false);
+      expect(checks[0]).toMatchObject({ name: "answered", pass: false });
+    },
+    30_000,
   );
 });
