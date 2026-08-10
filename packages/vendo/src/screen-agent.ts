@@ -62,6 +62,7 @@ import {
   buildingAppsSkill,
   paintedIn,
   repairInstruction,
+  VALIDATE_TOOL,
   validateWrittenApps,
   wrapWorkspaceForRender,
   type RenderSeamOptions,
@@ -227,6 +228,10 @@ through two tools.
   them — why you narrowed something, a constraint the tools imposed, a shape you
   ruled out. Never record what you did or in what order; that is narration, and
   it crowds out the one line that mattered.
+  WRITE IT ONCE, ON THE SAVE THAT FINISHES THIS SCREEN — after \`validate\` has
+  come back clean. That save ENDS this run: nothing follows it, so leave
+  \`decisions\` off every save before it, and add it the moment the app is one you
+  would hand over.
 - **\`validate\`** is the floor. Call it on what you saved, fix what it names, save
   again. You are not done until it comes back clean.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Assembling a document out of this
@@ -280,6 +285,14 @@ interface RunRecord {
   /** The last non-empty `decisions` a save carried — this run's whole memory
    *  contribution, and what replaces the app's stored block. */
   decisions?: string;
+  /** Has `validate` ever come back clean in this run? The floor's own verdict,
+   *  read off the registry answer on its way past — it is what makes writing the
+   *  memory a claim of "finished" rather than a guess. */
+  validated: boolean;
+  /** The writer said this screen is done: it saved a painted document AND wrote
+   *  the memory for the next editor, with the floor already clean. Ends the
+   *  drive. */
+  finished: boolean;
 }
 
 /** Nothing to hire and nothing to load: the job description is already the whole
@@ -329,7 +342,7 @@ export async function assembleScreen(
 
   const directory = appDirectory(input.appId);
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
-  const record: RunRecord = { assembled: false, painted: false };
+  const record: RunRecord = { assembled: false, painted: false, validated: false, finished: false };
 
   /**
    * Write one hot-path file and land it.
@@ -359,7 +372,8 @@ export async function assembleScreen(
           description:
             "What the next person to edit this app must know: choices you made, constraints you found, things "
             + "you ruled out. Only what is invisible from the document itself — never a narration of your work. "
-            + "It REPLACES this app's decisions, so write the whole block each time, under 5 lines.",
+            + "Under 5 lines. Send it ONCE, on the save that finishes this screen, after validate came back "
+            + "clean — that save ends this run.",
         },
       },
       required: ["content"],
@@ -415,6 +429,28 @@ export async function assembleScreen(
           note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.",
         };
       }
+      /**
+       * THE FINISH LINE, and the only one besides `SCREEN_STEPS`.
+       *
+       * Writing the memory is the writer's own statement that the app now stands
+       * as described — so a painted save that carries `decisions`, with the floor
+       * already clean, is a finished screen and the drive stops there. Measured
+       * on the benchmark's own traces: the first paint lands around 34s and the
+       * loop then spends another ~90s re-saving the same screen until the step
+       * budget runs out, because nothing else in this loop can say "done".
+       *
+       * All three conditions matter. `painted` because bytes the seam declined
+       * are not a screen; `validated` because the brief's floor is `validate`
+       * coming back clean, not the writer's confidence; `decisions` because that
+       * is the sentence the writer only writes when it has nothing left to
+       * change. Whatever it hands over still faces the mandatory reviewer pass
+       * and its one repair round below — this shortens the run, it does not
+       * lower the bar.
+       */
+      if (record.validated && decisions !== undefined && decisions.trim() !== "") {
+        record.finished = true;
+        return { saved: true, note: "Saved, shown, and your decisions are on record. This screen is done." };
+      }
       return { saved: true, note: "Run validate on it now." };
     },
   };
@@ -462,7 +498,23 @@ export async function assembleScreen(
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: {
+      // `validate` is a registry verb, not a hand in this file, so its verdict is
+      // read on the way past: `ok` is the gate's own contract
+      // (`validate-gate.ts`), and a clean one is half of what makes the next save
+      // a FINISHED screen (`saveApp`).
+      call: async (name, args) => {
+        const result = await surface.tools.call(name, args);
+        if (name === VALIDATE_TOOL && result.status === "ok") {
+          const output: unknown = result.output;
+          if (typeof output === "object" && output !== null && (output as { ok?: unknown }).ok === true) {
+            record.validated = true;
+          }
+        }
+        return result;
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
@@ -498,8 +550,14 @@ export async function assembleScreen(
    * reason).
    */
   const drive = async (messages: Turn<VendoHarnessOptions>["messages"]): Promise<void> => {
+    // Per drive, not per run: the repair round is its own drive, and a finish the
+    // FIRST one declared would otherwise end it before its first event.
+    record.finished = false;
     for await (const event of harness.run({ ...turn, messages })) {
       if (event.type === "error") failure ??= event.message;
+      // The writer said done (`saveApp`). Leaving the loop closes the stream and
+      // the drive returns; the review below is what floors what it handed over.
+      if (record.finished) break;
     }
   };
   await drive(turn.messages);
