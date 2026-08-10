@@ -274,7 +274,9 @@ through two tools.
   \`<Server kind="steps"|"agentic"|"box" [served] why="…"/>\` line the skill above
   teaches. Leave it out and the builder reads the escalation itself as the answer:
   \`kind="box"\`, a machine and real code.
-- \`${SCREEN_STEPS}\` steps is the whole budget. Escalate rather than run out of it.
+- \`${SCREEN_STEPS}\` steps is the whole budget, and it is a ceiling rather than a
+  finish line: end on a save marked \`done\`, or escalate. Running out of it means
+  the person waited for steps that changed nothing on their screen.
 
 Never look for a tool that builds the app for you. There isn't one, and that is
 deliberate.
