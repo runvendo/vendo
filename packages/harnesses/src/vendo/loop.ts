@@ -103,7 +103,11 @@ const buildFailedStop: StopCondition<ToolSet> = ({ steps }) => {
  *  asking, which is precisely the invention `ask_user` exists to prevent: it
  *  guesses an answer and carries on, and the user's real reply lands a turn too
  *  late to matter. A REFUSED question (unattended, blank) is not a stop — the
- *  model still has to finish what it can. */
+ *  model still has to finish what it can.
+ *
+ *  Stopping here leaves no step in which to ASK, which is why
+ *  {@link TurnLoop.unspokenQuestion} exists: the question is delivered off the
+ *  call the model already made, not off a step this condition took away. */
 const askedUserStop: StopCondition<ToolSet> = ({ steps }) => {
   const last = steps.at(-1);
   return last !== undefined && last.toolResults.some((result) => {
@@ -586,6 +590,22 @@ export interface TurnLoop {
    * because of the cap, not because the model finished.
    */
   stepLimitPart(): Promise<VendoStepLimitPart | undefined>;
+  /**
+   * The question `askedUserStop` ended the turn on, when the ending step left
+   * the turn with nothing to say. Call after the stream drains.
+   *
+   * `ask_user` tells the model to "put the question to them in your own words as
+   * your final message" and then the stop condition takes that message away —
+   * the product asked for something the loop made impossible, and the turn went
+   * quiet on a person who was waiting to be asked something. Delivering it costs
+   * NO round-trip: the model already wrote the question as the call's argument,
+   * so this reads it back off the step that ended the turn. (Which is also why
+   * `ask-user-stop.test.ts`'s "the model is called exactly once" still holds.)
+   *
+   * Undefined when that step also SPOKE: the model's own words are then already
+   * the turn's reply, and the loop does not second-guess them.
+   */
+  unspokenQuestion(): Promise<string | undefined>;
   /** What this turn compacted, as DATA for whoever owns the state slot — the
    *  loop does not know where that is. Written by the summarizer. */
   compacted?: CompactionState;
@@ -677,6 +697,40 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     maxSteps,
     // DATA out: what this turn compacted, for whoever owns the state slot.
     ...(compacted === undefined ? {} : { compacted }),
+    async unspokenQuestion() {
+      try {
+        const last = (await result.steps).at(-1);
+        // A step that said anything has already put the turn's reply on the
+        // screen; only a WORDLESS one is the silence this repairs.
+        if (last === undefined || last.text.trim() !== "") return undefined;
+        for (const call of last.toolResults) {
+          if (call.toolName !== ASK_USER_TOOL) continue;
+          // The same `ok` the stop condition read: a refused question did not end
+          // the turn, so there is nothing here to deliver.
+          const output = call.output as { status?: unknown } | null;
+          if (typeof output !== "object" || output === null || output.status !== "ok") continue;
+          // The model's OWN words, off the call it made. Read from the input
+          // rather than the output because the input is what the one door's
+          // schema guarantees, whatever a deployment's registry echoes back.
+          const input = call.input as { question?: unknown; choices?: unknown } | null;
+          const question = typeof input?.question === "string" ? input.question.trim() : "";
+          if (question === "") continue;
+          const choices = Array.isArray(input?.choices)
+            ? input.choices.filter((choice): choice is string => typeof choice === "string")
+            : [];
+          // A multiple-choice question without its choices is not the question
+          // the model asked, and they cost nothing: same call, same argument.
+          return choices.length === 0
+            ? question
+            : `${question}\n\n${choices.map((choice) => `- ${choice}`).join("\n")}`;
+        }
+        return undefined;
+      } catch {
+        // Same posture as `stepLimitPart`: the caller's stream already surfaced
+        // the run failure, and delivering a question must never mask it.
+        return undefined;
+      }
+    },
     async stepLimitPart() {
       try {
         const [finishReason, steps] = await Promise.all([result.finishReason, result.steps]);
