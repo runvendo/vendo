@@ -177,19 +177,48 @@ searchable                       a bare flag, meaning true
 
 ### Actions
 
-An \`on*\` attribute names a host tool: \`onClick="maple_invoice_send"\`. That is the
-only way anything in an app mutates. A value that is not a legal tool name drops
-the attribute.
+An \`on*\` attribute is the only way anything in an app mutates, and it has two
+forms — the tool alone, or the tool WITH its arguments:
+
+\`\`\`
+onClick="maple_invoice_send"
+onClick={{ action: "maple_invoice_cancel", payload: { id: invoices.data.0.id } }}
+\`\`\`
+
+- \`payload\` IS the tool's arguments. Every value inside it may be a reference,
+  read fresh at the moment the control is pressed, and those references are
+  shape-checked like any other — so a field the tool does not return is a finding
+  before the app ships, not a dead button.
+- The bare string form calls the tool with NO arguments. A tool that requires one
+  fails the instant it is pressed, because nothing else on the screen supplies
+  it: if the tool takes an id, the \`payload\` is where the id comes from.
+- \`<Form>\` and its fields collect NOTHING. What a person types into an
+  \`<Input>\` never reaches the tool, so fields wrapped around a bare
+  \`onSubmit="tool"\` are a control that cannot work. Arguments come from the
+  \`payload\`, and asking a person to read a value off the screen and type it back
+  in is never the answer.
+- There is no loop variable, so an action in the markup acts on ONE row, read by
+  position (\`invoices.data.0.id\`). A control on EVERY row is an island (below),
+  whose own code calls \`tools.<tool_name>({ id: row.id })\` per row.
+- In the string form, a value that is not a legal tool name drops the attribute.
 
 ### \`<Island name="PascalName">\` — a component you write
 
 The content is raw TSX, verbatim to the **first** \`</Island>\`, with an
 \`export default\` component. There are no imports and none can be added: React
-and its hooks, the whole Kit, and \`fmt\` (\`fmt.money(cents)\`,
-\`fmt.dateTime(iso)\`, \`fmt.percent(ratio)\`, \`fmt.num(n)\`) are already in scope,
-and nothing else can load. The name must be PascalCase and must not collide with
-a host, Kit or prewired component name. Reference it as \`<PascalName/>\`.
+and its hooks, the whole Kit, \`fmt\` (\`fmt.money(cents)\`, \`fmt.dateTime(iso)\`,
+\`fmt.percent(ratio)\`, \`fmt.num(n)\`) and \`tools\` are already in scope, and
+nothing else can load. The name must be PascalCase and must not collide with
+a host, Kit or prewired component name.
 ${ISLAND_BUDGET}
+
+An island takes props like any other component — \`<RowActions rows={invoices.data}/>\`
+hands it the resolved rows, so it never re-reads what the app already has. And
+\`tools\` is its only way to reach the host: \`await tools.<tool_name>({ … })\`,
+with the tool name written out literally (never through a variable), returns that
+tool's output through the same guard an \`on*\` action passes. The island has no
+network at all — \`fetch\` and its family are refused when the app is checked — so
+\`tools\` is how island code both acts and looks anything up.
 
 Write an island for a custom visual or client-side logic. Never for a chart — the
 Kit's charts already render their own empty state.
@@ -215,7 +244,10 @@ limit={20}   flag={true}   empty={null}   text={"literal"}
 
 - The head of a path must be a declared \`<Query>\` id, or \`state\`. Anything else
   drops the attribute.
-- \`state\` takes exactly one key: \`state.a.b\` is illegal.
+- \`state\` takes exactly one key: \`state.a.b\` is illegal. Only island code writes
+  it (its own \`vendo.setState(key, value)\` prop), so in an app of Kit parts alone
+  a \`state\` read never changes — \`Tabs\` switch panels by themselves and need no
+  state at all.
 - Literals: numbers, strings (single or double quotes), \`true\`, \`false\`, \`null\`,
   arrays and objects, with trailing commas allowed. \`true\`, \`false\` and \`null\`
   win over a query of the same name.

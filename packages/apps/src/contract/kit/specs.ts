@@ -357,12 +357,12 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Form",
     group: "forms",
-    summary: "Groups fields with a submit action. onSubmit names a host tool.",
+    summary: "Groups fields with a submit action. onSubmit names a host tool; the fields' typed values do NOT reach it, so the tool's arguments ride onSubmit's payload.",
     props: {
-      onSubmit: config(action, "the host tool to run on submit"),
+      onSubmit: config(action, "the host tool to run on submit, bare or as { action, payload }"),
       submitLabel: copy(z.string(), "submit button text"),
     },
-    examples: ['<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name"/></Form>'],
+    examples: ['<Form onSubmit={{ action: "invoice_void", payload: { id: invoices.data.0.id } }} submitLabel="Void this invoice"><Text text="This cannot be undone."/></Form>'],
   },
   {
     name: "Disclaimer",
