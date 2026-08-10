@@ -107,6 +107,22 @@ export const SCREEN_STEPS = 10;
 export const SCREEN_BLIND_MS = 150_000;
 export const SCREEN_POLISH_MS = 30_000;
 
+/**
+ * The tail of the budget, where reading and checking stop.
+ *
+ * LangGraph's `create_react_agent` keeps a `remaining_steps` channel and, when
+ * fewer than two are left and the model still wants tool work, stops asking for
+ * more and takes the terminal answer instead of walking into the recursion limit.
+ * The environment note already WARNS ("escalate rather than run out"); this is the
+ * same rule as enforcement, so running out is structurally impossible rather than
+ * merely discouraged.
+ *
+ * Two, not three: the common path (search, save, validate, fix, save) never
+ * reaches step 8, so the runs this touches are the pathological ones — the four
+ * `search_components` round trips with nothing painted.
+ */
+const LAST_STEPS = 2;
+
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
  *  agent's own, not a product capability anybody else may reach. */
@@ -357,6 +373,8 @@ export async function assembleScreen(
   const directory = appDirectory(input.appId);
   const listings = await surface.tools.list().catch(() => [] as ToolListing[]);
   const record: RunRecord = { assembled: false, painted: false };
+  /** Host and assembly calls this run has spent, for the last-step gate below. */
+  let spent = 0;
 
   /**
    * The clock, as one signal the loop already obeys.
@@ -510,7 +528,29 @@ export async function assembleScreen(
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    // THE LAST-STEP GATE. Inside the tail (`LAST_STEPS`) only the two tools that
+    // END the run are still callable; everything else comes back as the same
+    // `denied` shape the guard produces, so the model reads it as a refusal it
+    // already knows how to answer. The clock bounds wall time and this bounds
+    // round trips; whichever runs out first wins.
+    tools: {
+      call: async (name, args) => {
+        spent += 1;
+        if (spent >= SCREEN_STEPS - LAST_STEPS && name !== SAVE_APP_TOOL && name !== ESCALATE_TOOL) {
+          return {
+            status: "denied",
+            reason: record.assembled
+              ? `You have used ${SCREEN_STEPS - LAST_STEPS} of your ${SCREEN_STEPS} steps and a screen is `
+                + "already up. No more reading or checking: save the finished document now, or stop."
+              : `You have used ${SCREEN_STEPS - LAST_STEPS} of your ${SCREEN_STEPS} steps and nothing is on `
+                + "the person's screen. No more reading or checking: escalate with a plan now, or save a "
+                + "document this step.",
+          };
+        }
+        return await surface.tools.call(name, args);
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
