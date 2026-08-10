@@ -155,7 +155,10 @@ shows the figures.
 **Bind the rows as they come.** Never reshape, trim or re-bucket data to fit a
 part you have already picked — pick the part that fits the data. Props are
 checked against the query's real shape, so an array you assembled yourself is a
-failed app.
+failed app. "Top three", "biggest first" and "five largest" are a ranking you
+express over the rows, never a cap on an unranked list: a table's \`limit\` cuts
+before its sort runs, so it shows the rows the query happened to hand over first,
+not the biggest ones — sort the table and let the top of it be the answer.
 
 **Group by what the person came to do**, not by which query the data came from.
 Related values sit together in one group. \`tab\` splits a screen only when the

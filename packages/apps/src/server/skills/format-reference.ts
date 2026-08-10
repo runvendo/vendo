@@ -427,6 +427,25 @@ One difference to read past: the examples below sometimes write a tool call
 inline (\`invoices.list({}).data\`). In a \`.vendo\` file, always declare the data
 with \`<Query>\` and reference it by id instead. Every prop name and type is exact.
 
+### \`limit\` and \`sortBy\` do not compose
+
+On \`DataTable\`, \`limit\` cuts the rows it is handed BEFORE the sort runs, so
+\`sortBy="amount_cents desc" limit={3}\` shows the query's FIRST three rows,
+re-ordered among themselves — not the three biggest. \`limit\` means "show me
+fewer of these"; it never means "show me the biggest". The order a query hands
+its rows over in is the host's business, never a ranking you can lean on.
+
+When the ask is "top three", "biggest first" or "the five largest": sort the
+whole table and leave \`limit\` off — the biggest rows are then the first rows on
+screen, and the rest sitting under them cost nothing. \`paginate={3}\` if only
+three should be visible at a time; paging happens after the sort, so page one is
+the real top three.
+
+Sort on the RAW numeric field. A field a \`format\` reshape has already turned
+into text sorts as text — \`format(expenses.data, "amount_cents", "currency")\`
+with \`sortBy="amount_cents desc"\` puts \`$9.10\` above \`$1,200.00\`. Bind the rows
+raw and let the column format itself: \`{key:"amount_cents",format:"money"}\`.
+
 `;
 
 /** The reference as it lands on disk. */
