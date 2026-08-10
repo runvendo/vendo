@@ -4,7 +4,7 @@
  * column keys, formats each cell by its `format` token, and shows a named-query
  * empty state — none of which the model has to author.
  */
-import { useMemo, useState, type CSSProperties } from "react";
+import { useContext, useMemo, useState, type CSSProperties } from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -18,6 +18,7 @@ import {
 import { applyFormat, type ValueFormat } from "../format.js";
 import { font, t } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
+import { KitActionDispatch, RowActionButton, type KitRowAction } from "./row-action.js";
 
 export interface DataTableColumn {
   /** Field key; supports dot-paths ("client.name"). */
@@ -48,6 +49,8 @@ export interface DataTableProps {
   emptyState?: string;
   /** Optional table caption. */
   caption?: string;
+  /** A control on every row, carrying that row's own fields as its arguments. */
+  rowAction?: KitRowAction;
 }
 
 /** Resolve a dot-path against a row. */
@@ -177,6 +180,9 @@ export function DataTable(props: DataTableProps) {
     columns.find((c) => c.key === key)?.label ?? humanizeEnum(key.split(".").pop() ?? key);
 
   const bodyRows = table.getRowModel().rows;
+  // No rows, no action column: an empty table says its empty state across the
+  // full width, and a header for a control nobody can press is noise.
+  const rowAction = useContext(KitActionDispatch) === null || bodyRows.length === 0 ? undefined : props.rowAction;
 
   return (
     <div data-kit="DataTable" style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}>
@@ -277,6 +283,13 @@ export function DataTable(props: DataTableProps) {
                     </th>
                   );
                 })}
+                {rowAction ? (
+                  <th
+                    scope="col"
+                    aria-label={rowAction.label}
+                    style={{ borderBottom: `1px solid ${t.border}`, padding: cellPad, width: "1%" }}
+                  />
+                ) : null}
               </tr>
             ))}
           </thead>
@@ -309,6 +322,22 @@ export function DataTable(props: DataTableProps) {
                       </td>
                     );
                   })}
+                  {rowAction ? (
+                    <td
+                      style={{
+                        borderBottom: rowIndex === bodyRows.length - 1 ? 0 : `1px solid ${t.border}`,
+                        padding: cellPad,
+                        textAlign: "right",
+                        whiteSpace: "nowrap",
+                        // The density vars the Kit's controls already read: a
+                        // row-height control, so the row stays one line tall.
+                        "--vendo-density-control-height": "26px",
+                        "--vendo-density-control-padding": "3px 10px",
+                      } as CSSProperties}
+                    >
+                      <RowActionButton row={row.original} action={rowAction} />
+                    </td>
+                  ) : null}
                 </tr>
               ))
             )}

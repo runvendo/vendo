@@ -36,6 +36,7 @@ import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
+import { KitActionDispatch } from "../kit/data/row-action.js";
 import { useKeyedState } from "../kit/state.js";
 
 export interface TreeViewProps {
@@ -512,7 +513,11 @@ function NodeRenderer(props: NodeRendererProps) {
   const outcome = props.outcomes[node.id];
   return (
     <div data-vendo-node-id={node.id} data-vendo-outcome={outcome?.status === "ok" ? undefined : outcome?.status}>
-      {content}
+      {/* A Kit control that carries its own arguments (DataTable's rowAction)
+          cannot be a bound prop — `bindValue` only ever mints a zero-argument
+          closure — so it dispatches through THIS node's `invoke`, and a non-ok
+          outcome lands in this node's notice like every other press. */}
+      <KitActionDispatch.Provider value={invoke}>{content}</KitActionDispatch.Provider>
       {outcomeNotice(outcome)}
     </div>
   );

@@ -32,6 +32,12 @@ export * from "./layout.js";
 export * from "./values.js";
 export { DataTable, type DataTableColumn, type DataTableProps } from "./data/data-table.js";
 export { CardList, type CardField, type CardListProps } from "./data/card-list.js";
+export {
+  KitActionDispatch,
+  RowActionButton,
+  type KitActionDispatcher,
+  type KitRowAction,
+} from "./data/row-action.js";
 export { Stat, type StatProps } from "./data/stat.js";
 export { Badge, type BadgeProps } from "./data/badge.js";
 export { LineChart, type LineChartProps, type SeriesInput } from "./charts/line.js";

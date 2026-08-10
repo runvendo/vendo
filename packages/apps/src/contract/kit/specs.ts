@@ -25,6 +25,22 @@ const tableColumn = z.object({
 });
 const cardField = z.object({ key: z.string(), label: z.string().optional(), format: valueFormat.optional() });
 const action = z.string().describe("names a host tool");
+// A control that sits ON a row and carries that row's own fields as arguments.
+// The key is `tool`, not `action`: an object with a string `action` is rewritten
+// into a zero-argument `{ $action }` binding by the renderer, which is exactly
+// the shape this exists to escape.
+const rowAction = z.object({
+  tool: z.string().describe("names a host tool"),
+  label: z.string(),
+  args: z.array(z.string()).optional(),
+  variant: z.enum(["primary", "secondary", "danger"]).optional(),
+  when: z.object({ field: z.string(), equals: z.union([z.string(), z.number(), z.boolean()]) }).optional(),
+});
+const rowActionDoc = (unit: string): string =>
+  `a control on every ${unit}: {tool,label,args?,variant?,when?}.`
+  + ` Pressing it calls \`tool\` with each \`args\` field read off THAT ${unit} (default ["id"]),`
+  + ` so it acts on the record it sits on. \`when\` shows it only on matching ${unit}s.`
+  + " This — not a Form over a Select — is how a list offers a per-record action.";
 
 // ---- specs ---------------------------------------------------------------
 export const KIT_SPECS: KitComponentSpec[] = [
@@ -165,9 +181,11 @@ export const KIT_SPECS: KitComponentSpec[] = [
       paginate: config(z.number().int().positive(), "page size (enables pagination)"),
       emptyState: copy(z.string(), "text when the query returns no rows"),
       caption: copy(z.string(), "table caption"),
+      rowAction: config(rowAction, rowActionDoc("row")),
     },
     examples: [
       '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amountCents",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
+      '<DataTable rows={transfers.list({}).data} columns={[{key:"to",label:"To"},{key:"amount",format:"money",align:"end"},{key:"status"}]} rowAction={{tool:"cancel_transfer",label:"Cancel",args:["id"],variant:"danger",when:{field:"status",equals:"pending"}}}/>',
     ],
   },
   {
@@ -181,8 +199,9 @@ export const KIT_SPECS: KitComponentSpec[] = [
       fields: config(z.array(cardField), "label/value rows shown on each card"),
       columns: config(z.number().int().positive(), "cards per row"),
       emptyState: copy(z.string(), "text when there are no items"),
+      itemAction: config(rowAction, rowActionDoc("card")),
     },
-    examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balanceCents",label:"Balance",format:"money"}]}/>'],
+    examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balanceCents",label:"Balance",format:"money"}]} itemAction={{tool:"archive_client",label:"Archive",args:["id"]}}/>'],
   },
   {
     name: "Stat",
