@@ -270,6 +270,16 @@ export function toolCallPending(part: UIMessage["parts"][number]): boolean {
     && part.state !== "output-denied";
 }
 
+/** A call PARKED on the user — the one state whose consent card is the turn's
+    live surface, so the turn's hover actions stand down and the beat above the
+    card sits directly on it. Narrower than `toolCallPending` on purpose:
+    pending is also true for a call abandoned mid-flight (Stop never reconciles
+    an aborted call out of `input-available`), and gating the actions on that
+    took Copy/Regenerate away from a stopped turn for good. */
+export function toolCallParked(part: UIMessage["parts"][number]): boolean {
+  return isToolUIPart(part) && part.state === "approval-requested";
+}
+
 /** A failed or declined call is CONTENT, not progress: its beat stays visible
     after the turn folds, and it never counts as a thing the agent did.
     Everything else is progress, and progress folds into the summary. */

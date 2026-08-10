@@ -12,7 +12,7 @@
 import type { ApprovalRequest, JsonSchema } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
+import { VendoProvider, createVendoClient, type ToolMetaMap, type VendoClient } from "../../src/index.js";
 import { ApprovalCard, GrantSetCard } from "../../src/chrome/index.js";
 import { CardFields } from "../../src/chrome/card-shell.js";
 import { venuePhrase } from "../../src/chrome/approval-card.js";
@@ -46,7 +46,7 @@ function ask(over: Partial<ApprovalRequest> & { args?: unknown; inputSchema?: Js
   } as ApprovalRequest;
 }
 
-const show = (approval: ApprovalRequest, tools?: Record<string, { label?: string; description?: string }>) =>
+const show = (approval: ApprovalRequest, tools?: ToolMetaMap) =>
   render(
     <VendoProvider client={client} {...(tools === undefined ? {} : { tools })}>
       <ApprovalCard approval={approval} onDecide={() => undefined} />
@@ -58,13 +58,25 @@ const show = (approval: ApprovalRequest, tools?: Record<string, { label?: string
     same seam — as `Label: value` notes on the one quiet line under the question,
     visible by default. `rowsOf` reads those notes; the input-formatting
     expectations below are byte-for-byte the ones the table carried. */
-const rowsOf = (container: HTMLElement): Array<[string, string]> =>
-  notesOf(container)
-    .filter(note => note.includes(": "))
-    .map(note => [note.slice(0, note.indexOf(": ")), note.slice(note.indexOf(": ") + 2)]);
+const rowsOf = (container: HTMLElement): Array<[string, string]> => {
+  // The input notes are the LEADING run of the list — `consentAsk` emits every
+  // remaining row first, then what approving does. Taking the leading run
+  // rather than scanning for ": " anywhere means a consequence sentence can
+  // never be counted as an input (nor an input skipped because the sentence
+  // above it happened to carry a colon).
+  const rows: Array<[string, string]> = [];
+  for (const note of notesOf(container)) {
+    const at = note.indexOf(": ");
+    if (at < 0) break;
+    rows.push([note.slice(0, at), note.slice(at + 2)]);
+  }
+  return rows;
+};
 
+/** One note per list item, in order — the " · " between them is CSS
+    punctuation now, so this is the exact set with no split heuristic. */
 const notesOf = (container: HTMLElement): string[] =>
-  container.querySelector(".fl-approval-sub")!.textContent!.split(" · ");
+  Array.from(container.querySelectorAll(".fl-approval-sub li")).map(li => li.textContent!);
 
 describe("degraded data never changes the card", () => {
   it("keeps the mandatory line with an empty schema, no description and no host metadata", () => {
@@ -352,7 +364,13 @@ describe("the plain-words line says what happens, not which tool", () => {
     ]);
   });
 
-  it("H-7 — one amount, however deep, still earns its question", () => {
+  it("H-7 — a NESTED amount earns no question, and prints exactly once", () => {
+    // ⚠️ TEST EDIT (review of #1149): this asserted only the question, so it
+    // could not see that the SAME $18.50 also printed as a note — the question
+    // consumed the leaf key `amount_cents`, which matches no row (the row is
+    // "Charge"). A nested amount owns no row of its own, so dropping "its" row
+    // would take its siblings dark; it earns no question instead, and the rows
+    // stay in sight exactly once each.
     const container = show(ask({
       call: {
         id: "call_send",
@@ -361,7 +379,45 @@ describe("the plain-words line says what happens, not which tool", () => {
       },
       descriptor: { name: "host_transferMoney", title: "Send money", description: "", inputSchema: {}, risk: "write" },
     } as Partial<ApprovalRequest>));
-    expect(question(container)).toBe("Send $18.50 to Acme Utilities?");
+    expect(question(container)).toBe("Send money?");
+    expect(rowsOf(container)).toEqual([
+      ["Charge", "Amount cents: $18.50"],
+      ["Recipient name", "Acme Utilities"],
+    ]);
+    expect(container.textContent!.split("$18.50")).toHaveLength(2);
+  });
+
+  it("a question consumes its inputs by KEY, so a colliding sibling still shows", () => {
+    // `humanizeToolName` is many-to-one: `recipient_name` and `recipientName`
+    // both read "Recipient name", and the label-based dedupe took Bob Smith off
+    // a card that was about to move money.
+    const container = show(ask({
+      call: {
+        id: "call_send",
+        tool: "host_transferMoney",
+        args: { amount_cents: 4750, recipient_name: "Acme Utilities", recipientName: "Bob Smith" },
+      },
+      descriptor: { name: "host_transferMoney", title: "Send money", description: "", inputSchema: {}, risk: "write" },
+    } as Partial<ApprovalRequest>));
+    expect(question(container)).toBe("Send $47.50 to Acme Utilities?");
+    expect(rowsOf(container)).toEqual([["Recipient name", "Bob Smith"]]);
+  });
+
+  it("asks with the host's own display for a value, not the raw one under it", () => {
+    // The question interpolated the RAW value while the row carrying the host's
+    // formatted one was deduped away, so "Maple Savings" appeared nowhere.
+    const container = show(
+      ask({
+        call: {
+          id: "call_send",
+          tool: "host_transferMoney",
+          args: { amount_cents: 4750, recipient_name: "acct_8820" },
+        },
+        descriptor: { name: "host_transferMoney", title: "Send money", description: "", inputSchema: {}, risk: "write" },
+      } as Partial<ApprovalRequest>),
+      { host_transferMoney: { formatField: key => key === "recipient_name" ? "Maple Savings" : undefined } },
+    );
+    expect(question(container)).toBe("Send $47.50 to Maple Savings?");
   });
 
   it("an ORDINARY ask hides nothing either — the fold is gone from every grade", () => {

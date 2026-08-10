@@ -1644,6 +1644,16 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    (field-rows.ts), exactly as it did in the retired dd. */
 .fl-approval-sub { margin: 4px 0 0; font: 400 12px/1.5 var(--vendo-font);
   color: var(--vendo-fg-muted); overflow-wrap: anywhere; white-space: pre-line; }
+/* The ask's notes are a LIST (each remaining input, what approving does, who
+   asked) that reads as one line: the items run inline and the " · " between
+   them is drawn here, as punctuation a screen reader never announces. */
+ul.fl-approval-sub { padding: 0; list-style: none; }
+.fl-approval-sub li { display: inline; }
+.fl-approval-sub li + li::before { content: " · "; }
+/* A settled receipt that FAILED keeps the thread's error register — the same
+   danger ✕ its beat wears. Colour is never the only carrier (the glyph is). */
+.fl-approval-sub--failed { color: var(--vendo-danger); }
+.fl-approval-sub--failed svg { vertical-align: -1px; margin-right: 3px; }
 /* The remember disclosure is not part of the ask, so it rides the actions row
    as the quiet trailing control and drops to its own full-width line only once
    opened — the card at rest is the question, the line, and two buttons. */

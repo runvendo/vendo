@@ -175,7 +175,14 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
             question names the action and its key values, the quiet line under it
             carries every remaining real input and what approving does. */}
         <CardLine className="fl-approval-ask">{ask.question}</CardLine>
-        <p className="fl-approval-sub">{notes.join(" · ")}</p>
+        {/* One LINE to the eye, a LIST to a screen reader: the notes are a set
+            of distinct facts (each remaining input, what approving does, who
+            asked), and a joined paragraph gave a reader no way to step through
+            them — the field table it replaced was navigable. The " · " between
+            them is punctuation, so it is drawn in CSS rather than read out. */}
+        <ul className="fl-approval-sub" aria-label="Request details">
+          {notes.map((note, index) => <li key={index}>{note}</li>)}
+        </ul>
         {approval.invalidatedGrant ? (
           <div style={{ marginTop: "12px" }}>
             <ContainedNotice label="Previous permission invalidated">

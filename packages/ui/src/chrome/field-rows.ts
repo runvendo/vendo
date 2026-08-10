@@ -13,6 +13,12 @@ import { argProperties, argValue, humanizeToolName, type ToolMeta } from "./huma
 import { truncateHead } from "./truncate.js";
 
 export interface CardFieldRow {
+  /** WHICH argument this row is — the top-level input key, verbatim ("Input"
+      for a non-object arg). Identity, never display: `humanizeToolName` is
+      many-to-one (`recipient_name`, `recipientName` and `RecipientName` all
+      read "Recipient name"), so anything matching a row against something else
+      — the consent question's `questionKeys`, say — matches on this. */
+  key: string;
   /** Humanized argument name ("recipient_name" → "Recipient name"). */
   label: string;
   /** What the person reads — host formatter first, else the shared money-safe
@@ -90,15 +96,16 @@ function display(key: string, value: unknown, schema: JsonSchema | undefined, me
 
 /** The one body, for any args a tool call can carry. */
 export function fieldRows(args: unknown, inputSchema?: JsonSchema, meta?: ToolMeta): CardFieldRow[] {
-  const row = (label: string, value: string, raw: string, numeric: boolean): CardFieldRow =>
-    ({ label, value: bound(value), raw: bound(raw), numeric });
+  const row = (key: string, label: string, value: string, raw: string, numeric: boolean): CardFieldRow =>
+    ({ key, label, value: bound(value), raw: bound(raw), numeric });
   if (args === undefined || args === null) return [];
   if (typeof args !== "object") {
-    return [row("Input", display("Input", args, inputSchema, meta), leaf(args), typeof args === "number")];
+    return [row("Input", "Input", display("Input", args, inputSchema, meta), leaf(args), typeof args === "number")];
   }
-  if (Array.isArray(args)) return [row("Input", display("Input", args, inputSchema, meta), leaf(args), false)];
+  if (Array.isArray(args)) return [row("Input", "Input", display("Input", args, inputSchema, meta), leaf(args), false)];
   const properties = argProperties(inputSchema);
   return Object.entries(args as Record<string, unknown>).map(([key, value]) => row(
+    key,
     humanizeToolName(key),
     display(key, value, properties?.[key], meta),
     leaf(value),

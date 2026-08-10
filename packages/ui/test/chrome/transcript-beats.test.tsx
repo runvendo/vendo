@@ -671,3 +671,98 @@ describe("the settled turn's duration (M26)", () => {
       .toMatch(/^Did 1 thing · \d+\.\d+s$/);
   });
 });
+
+/**
+ * The turn's hover actions, across all four states a turn can be in — and the
+ * mark on a beat that is parked on the person.
+ *
+ * The defect: the actions were gated on the broad "any call not settled yet",
+ * which is ALSO true of a call abandoned by Stop (nothing reconciles an aborted
+ * call out of `input-available`). So stopping mid-call took Copy and Regenerate
+ * off the last turn permanently — the two controls a person reaches for right
+ * after stopping. The gate is the PARKED ask, which is the thing the row was
+ * actually standing down for.
+ */
+describe("the turn's actions in every turn state", () => {
+  let wire: Awaited<ReturnType<typeof createWireServer>>;
+  let client: VendoClient;
+
+  beforeEach(async () => {
+    wire = await createWireServer();
+    client = createVendoClient({ baseUrl: wire.url });
+  });
+
+  afterEach(async () => {
+    cleanup();
+    await wire.close();
+  });
+
+  const TURN = "msg_actions";
+  const message = (state: "input-available" | "approval-requested" | "output-available"): UIMessage => ({
+    id: TURN,
+    role: "assistant",
+    parts: [
+      {
+        type: "dynamic-tool",
+        toolName: "host_send_payment",
+        toolCallId: "call_1",
+        state,
+        input: { amount_cents: 4750 },
+        ...(state === "output-available" ? { output: { ok: true } } : {}),
+        ...(state === "approval-requested" ? { approval: { id: "apr_1" } } : {}),
+      },
+      { type: "text", text: "Here's the transfer." },
+    ],
+  } as unknown as UIMessage);
+
+  const show = (state: "input-available" | "approval-requested" | "output-available", busy: boolean) =>
+    render(
+      <VendoProvider client={client}>
+        <ThreadMessage
+          message={message(state)}
+          restored={false}
+          risks={new Map()}
+          busy={busy}
+          activeAssistantId={busy ? TURN : undefined}
+          lastAssistantId={TURN}
+          onEditLast={() => undefined}
+          onRegenerateLast={() => undefined}
+        />
+      </VendoProvider>,
+    );
+
+  const actions = () => document.querySelector(".fl-turn-actions");
+
+  it("STREAMING: no actions while the turn's text is still arriving", () => {
+    show("input-available", true);
+    expect(actions()).toBeNull();
+  });
+
+  it("PARKED on a consent ask: no actions, and the beat above the card turns", () => {
+    show("approval-requested", false);
+    // The row is not merely invisible on the last turn (chrome-css reveals it
+    // there without a hover) — it would sit between the beat and the card.
+    expect(actions()).toBeNull();
+    // Nothing on our side is moving while we wait on a person, so the beat's
+    // orb becomes the launcher's indeterminate arc.
+    expect(document.querySelector(".fl-beat-orb.fl-beat-ring")).toBeTruthy();
+    expect(document.querySelector(".fl-beat")!.textContent).toContain("waiting for your approval");
+  });
+
+  it("STOPPED mid-call: Copy and Regenerate come straight back", () => {
+    // Not busy, but the aborted call still reads `input-available` forever.
+    show("input-available", false);
+    expect(actions()).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Regenerate" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy message" })).toBeTruthy();
+    // A working beat keeps its still orb; only a parked one turns.
+    expect(document.querySelector(".fl-beat-ring")).toBeNull();
+  });
+
+  it("SETTLED: the full row, unchanged", () => {
+    show("output-available", false);
+    expect(actions()).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Regenerate" })).toBeTruthy();
+    expect(document.querySelector(".fl-beat-ring")).toBeNull();
+  });
+});

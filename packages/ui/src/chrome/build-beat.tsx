@@ -60,10 +60,12 @@ export interface ToolPresentation {
       rule as `description`); absent when the inputs don't support a truthful
       one, and a consent card asks with the tool's own label instead. */
   question?: string;
-  /** The input KEYS the question already names, so a card can show the rest
-      without printing those twice. Keys, never a substring scan of the
-      question: a boolean input renders "No", and "No" lives inside plenty of
-      innocent sentences — a scan would have hidden a real input. */
+  /** The input KEYS the question already names — the TOP-LEVEL arg keys,
+      verbatim, so each one identifies its own `CardFieldRow.key` exactly.
+      Never a substring scan of the question (a boolean input renders "No", and
+      "No" lives inside plenty of innocent sentences), and never the humanized
+      LABEL: `humanizeToolName` is many-to-one, so labelling `recipient_name`
+      as consumed also hid a real `recipientName` the question never printed. */
   questionKeys?: string[];
   /** When approving takes effect and whose authority it runs on ("Sends now,
       as you"), in the ask's own verb — the promise under the question. */
@@ -159,16 +161,27 @@ export function consentAsk(
   const does = authored === undefined && presentation.question === undefined
     ? [consentClassLine(risk)]
     : [...(authored === undefined ? [] : [authored]), presentation.agency, ...(GRADE_NOTE[risk] ?? [])];
-  // `fieldRows` labels a row with `humanizeToolName(key)`, so the keys the
-  // question consumed identify their own rows exactly.
-  const named = new Set((presentation.questionKeys ?? []).map(humanizeToolName));
+  // Rung 3 of the old description ladder — `presentation.description` — is
+  // deliberately NOT read here, and the drop is loud on purpose: it is either
+  // the host's `ToolMeta.description` (already `authored` above, read from the
+  // host's own meta) or the connector sentence `toolPresentation` composes
+  // ("Vendo will post to #renewals on your behalf, running as you."), which
+  // says the question over again in weaker words. It still rides the surfaces
+  // that have no question — the standing-access rows (`grant-set-card.tsx`).
+  //
+  // The dedupe is IDENTITY: `questionKeys` are top-level arg keys and so is
+  // `CardFieldRow.key`, so a consumed input drops its own row and nothing
+  // else's. Matching on the humanized LABEL hid `recipientName: "Bob Smith"`
+  // when the question named `recipient_name` — a real input, displayed nowhere,
+  // which is exactly what the honesty law forbids.
+  const named = new Set(presentation.questionKeys ?? []);
   return {
     question,
     // THE HONESTY LAW (card-shell.tsx L37) — every real input is displayed,
     // always. The question carries the key ones; the rest are here, visible by
     // default, never behind a fold.
     notes: [
-      ...rows.filter(row => !named.has(row.label)).map(row => `${row.label}: ${row.value}`),
+      ...rows.filter(row => !named.has(row.key)).map(row => `${row.label}: ${row.value}`),
       ...does,
     ],
   };
@@ -197,10 +210,19 @@ function moneyValue(
   meta?: ToolMeta,
   inputSchema?: JsonSchema,
 ): { key: string; shown: string } | undefined {
-  const declared: { key: string; value: number; schema: JsonSchema | undefined }[] = [];
+  const declared: { path: string[]; value: number; schema: JsonSchema | undefined }[] = [];
   collectMoney(args, inputSchema, declared);
   if (declared.length !== 1) return undefined;
-  const { key, value, schema } = declared[0]!;
+  const { path, value, schema } = declared[0]!;
+  // The question may only name an input that OWNS A ROW, because dropping the
+  // row it named is the only way the amount prints exactly once. A NESTED
+  // amount has no row of its own — `{ charge: { amount_cents: 1850 } }` is one
+  // "Charge: Amount cents: $18.50" row, whose siblings would go dark if the
+  // whole row were dropped — so it earns no question, and every input stays in
+  // sight once. (The descent above still COUNTS at any depth: two amounts
+  // anywhere means no single amount the ask is about.)
+  if (path.length !== 1) return undefined;
+  const key = path[0]!;
   const shown = meta?.formatField?.(key, value as Json)
     ?? argValue(key, value, schema === undefined ? undefined : { [key]: schema });
   // An undeclared unit says so out loud; that is not a question.
@@ -225,21 +247,25 @@ function moneyValue(
 function collectMoney(
   value: unknown,
   schema: JsonSchema | undefined,
-  found: { key: string; value: number; schema: JsonSchema | undefined }[],
-  key = "",
+  found: { path: string[]; value: number; schema: JsonSchema | undefined }[],
+  /** The keys walked to get here — the LAST is the field's own name (what
+      declares the unit), the FIRST is the row it would print on. */
+  path: readonly string[] = [],
 ): void {
+  const key = path[path.length - 1] ?? "";
   if (value !== null && typeof value === "object") {
     if (Array.isArray(value)) {
-      for (const item of value) collectMoney(item, memberSchema(schema, key), found, key);
+      // An array's members share their parent's name, schema and row.
+      for (const item of value) collectMoney(item, memberSchema(schema, key), found, path);
       return;
     }
     for (const [child, item] of Object.entries(value)) {
-      collectMoney(item, memberSchema(schema, child), found, child);
+      collectMoney(item, memberSchema(schema, child), found, [...path, child]);
     }
     return;
   }
   if (typeof value === "number" && Number.isFinite(value) && declaredMoneyUnit(key, schema) !== undefined) {
-    found.push({ key, value, schema });
+    found.push({ path: [...path], value, schema });
   }
 }
 
@@ -278,25 +304,34 @@ export function toolPresentation(
   let questionKeys: string[] | undefined;
   // The neutral promise, for an ask whose inputs name no verb of their own.
   let agency = agencyLine("Runs", trigger);
+  // The host's own display for a field is its display EVERYWHERE a person reads
+  // it — most of all inside the QUESTION, which is the one place the field's row
+  // no longer prints. Interpolating the raw value instead put the formatted one
+  // nowhere on the card: with `formatField("recipient_name") → "Maple Savings"`,
+  // the ask read "Send $47.50 to acct_8820?" and the name the host wrote was
+  // gone. (`moneyValue` already reads the formatter for the amount.)
+  const shown = (key: string, value: string): string => meta?.formatField?.(key, value) ?? value;
   if (toolkit === "slack" && typeof flat.channel === "string") {
+    const channel = shown("channel", flat.channel);
     description ??= trigger
-      ? `Vendo will post to ${flat.channel} on your behalf, ${trigger}. It runs as you.`
-      : `Vendo will post to ${flat.channel} on your behalf, running as you.`;
-    sub = trigger ? `Posts to ${flat.channel} ${trigger}` : `Posts to ${flat.channel} as you`;
+      ? `Vendo will post to ${channel} on your behalf, ${trigger}. It runs as you.`
+      : `Vendo will post to ${channel} on your behalf, running as you.`;
+    sub = trigger ? `Posts to ${channel} ${trigger}` : `Posts to ${channel} as you`;
     if (typeof flat.message === "string" && flat.message.trim().length > 0) {
-      question = `Post “${flat.message}” to ${flat.channel}?`;
+      question = `Post “${shown("message", flat.message)}” to ${channel}?`;
       questionKeys = ["message", "channel"];
       agency = agencyLine("Posts", trigger);
     }
   } else if (toolkit === "gmail" && typeof flat.to === "string") {
+    const to = shown("to", flat.to);
     description ??= `Vendo will send this email as you${trigger ? `, ${trigger}` : ""}.`;
-    sub = `Emails ${flat.to} as you`;
+    sub = `Emails ${to} as you`;
     // Gmail used to synthesize nothing, because a sentence naming only `to`
     // would have FOLDED the subject/body/copied recipients out of sight. M1
     // retired the fold: every input the question doesn't name rides the quiet
     // line beneath it, visible by default — so naming the recipient in the
     // question hides nothing.
-    question = `Send an email to ${flat.to}?`;
+    question = `Send an email to ${to}?`;
     questionKeys = ["to"];
     agency = agencyLine("Sends", trigger);
   } else {
@@ -318,12 +353,13 @@ export function toolPresentation(
       .find((entry): entry is [string, string] =>
         typeof entry[1] === "string" && entry[1].trim().length > 0);
     if (money !== undefined && target !== undefined) {
-      question = `Send ${money.shown} to ${target[1]}?`;
+      const to = shown(target[0], target[1]);
+      question = `Send ${money.shown} to ${to}?`;
       questionKeys = [money.key, target[0]];
       agency = agencyLine("Sends", trigger);
       sub ??= trigger
-        ? `Sends ${money.shown} to ${target[1]} ${trigger}`
-        : `Sends ${money.shown} to ${target[1]} as you`;
+        ? `Sends ${money.shown} to ${to} ${trigger}`
+        : `Sends ${money.shown} to ${to} as you`;
     }
   }
   return { title, description, sub, toolkit, logoUrl, question, questionKeys, agency };

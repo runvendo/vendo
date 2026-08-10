@@ -108,7 +108,12 @@ function BeatLine({ state, children }: { state: "working" | "done" | "error"; ch
 
 /** The resolved approval card: the ask's own M1 shape, settled — the headline
  *  stays, muted by the shell, and the resolution is its quiet line. Same shell
- *  as the consent card (spec §16 — one shell everywhere). */
+ *  as the consent card (spec §16 — one shell everywhere).
+ *
+ *  A FAILED receipt keeps its own register: the thread's danger ✕ in front of
+ *  the line, and the line in danger colour. Muting the failure to the same grey
+ *  as "Approved — ran" left the WORDS as the only difference between a call
+ *  that landed and one that didn't, on a receipt people scan rather than read. */
 function ResolvedApprovalCard({ summary, ok, line, detail }: {
   summary: string;
   ok: boolean;
@@ -118,7 +123,10 @@ function ResolvedApprovalCard({ summary, ok, line, detail }: {
   return (
     <CardShell label={`Approval — ${line}`} className={`fl-approval${ok ? " fl-approval-approved" : ""}`} settled>
       <CardLine className="fl-approval-ask">{summary}</CardLine>
-      <p className="fl-approval-sub">{line}</p>
+      <p className={`fl-approval-sub${ok ? "" : " fl-approval-sub--failed"}`}>
+        {ok ? null : cross}
+        {line}
+      </p>
       {detail}
     </CardShell>
   );

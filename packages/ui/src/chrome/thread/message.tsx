@@ -4,7 +4,7 @@ import { Fragment, useRef, useState } from "react";
 import { BeatSummary } from "../build-beat.js";
 import { useCopyFeedback } from "../clipboard.js";
 import { SentAttachment, type FilePart } from "./attachments.js";
-import { assistantText, collapseToolRuns, isAgentContext, toolCallIsContent, toolCallPending, userText } from "./message-data.js";
+import { assistantText, collapseToolRuns, isAgentContext, toolCallIsContent, toolCallParked, toolCallPending, userText } from "./message-data.js";
 import { ThreadPart } from "./parts.js";
 import { TurnCitations } from "./turn-citations.js";
 
@@ -74,12 +74,19 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
   const items = collapseToolRuns(message.parts);
   const calls = items.filter(item => isToolUIPart(item.part));
   const pending = streamingTurn || calls.some(item => toolCallPending(item.part));
-  // An UNFINISHED turn gets no actions — not while its text is arriving, and not
-  // while a call is still working or parked on an approval. The row was
-  // invisible in that state anyway (opacity 0 until hover/last-child), but it
-  // still reserved 33px between the "waiting for your approval" beat and the
-  // consent card under it, which broke them into two separate moments.
-  const showActions = !pending && (bubbleText.length > 0 || showEdit || showRegenerate);
+  // A turn whose text is still arriving gets no actions, and neither does one
+  // PARKED on a consent card: the row reserved 33px between the "waiting for
+  // your approval" beat and the card under it, breaking them into two separate
+  // moments. On the last turn that row is not even invisible — chrome-css's
+  // `.fl-turn-assistant:last-child .fl-turn-actions` reveals it without a
+  // hover — so this is a real gap, not just reserved space.
+  //
+  // The gate is the PARKED ask, never the broad `pending`: a turn stopped
+  // mid-call keeps a tool part in `input-available` forever (thread.stop()
+  // does not reconcile the aborted call), so `pending` stays true and
+  // Copy/Regenerate would never come back on the last turn.
+  const parked = calls.some(item => toolCallParked(item.part));
+  const showActions = !streamingTurn && !parked && (bubbleText.length > 0 || showEdit || showRegenerate);
   // A failed or declined call is not one of the "things I did", and its ✕ beat
   // never folds — so the count is the work that actually landed, and
   // the failure keeps its own line right where it happened.

@@ -48,9 +48,19 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     // carries the rest, what approving does, and who asked.
     expect(container.querySelector(".fl-approval-ask")!.textContent).toBe("Delete invoice?");
     // A boolean is an answer, not a literal (this line used to pin "true").
-    expect(container.querySelector(".fl-approval-sub")!.textContent).toBe(
-      "Invoice id: inv_42 · Permanent: Yes · This makes a change you can’t undo, as you. · asked in an app",
-    );
+    //
+    // ⚠️ TEST EDIT (review of #1149): the notes are a LIST — one item per fact,
+    // so a screen reader can step through them the way it could step through
+    // the field table this replaced. The " · " between them is CSS punctuation
+    // and is deliberately not in the accessible text.
+    const notes = container.querySelector("ul.fl-approval-sub")!;
+    expect(notes.getAttribute("aria-label")).toBe("Request details");
+    expect(Array.from(notes.querySelectorAll("li")).map(item => item.textContent)).toEqual([
+      "Invoice id: inv_42",
+      "Permanent: Yes",
+      "This makes a change you can’t undo, as you.",
+      "asked in an app",
+    ]);
     // No amber and no pill: the grade is a machine affordance on the shell, and
     // its plain words are in the line above.
     expect(screen.queryByText("Irreversible")).toBeNull();
