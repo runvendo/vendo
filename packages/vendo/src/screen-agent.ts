@@ -612,6 +612,29 @@ export async function assembleScreen(
             : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
         }],
       }]);
+      /**
+       * THE REPAIR ROUND IS REVERTIBLE — aider's rule that an edit round is its own
+       * commit and a round that made things worse is undone rather than shipped
+       * (`--auto-commits`, `/undo`).
+       *
+       * The document that entered this round had already passed the mechanical
+       * floor (`review: true` only reaches the reviewer on a mechanically-clean
+       * document — `validate-gate.ts:132-140`), so a floor failure NOW is the
+       * repair's own doing: the round traded a screen that worked for one that does
+       * not paint, over a judgement call the person never saw. The mechanical half
+       * only — no reviewer, no model — because the question is not "is it better"
+       * but "did it break", and that one is decidable.
+       */
+      if (saved !== undefined && !signal.aborted) {
+        const broke = await validateWrittenApps({
+          tools: turn.tools,
+          workspace: turn.workspace,
+          paths: [appPath],
+        });
+        // `record` is left exactly as it was: the title and the decisions belong to
+        // the document being put back, and nothing about this run's memory changed.
+        if (broke.length > 0) await save(turn, APP_FILE, saved);
+      }
     }
     return {
       kind: "assembled",
