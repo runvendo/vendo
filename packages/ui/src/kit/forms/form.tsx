@@ -7,10 +7,14 @@ export interface FormProps {
   /** Bound host-tool submit action (renderer-supplied). */
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
   submitLabel?: string;
+  /** Emphasis of the submit button; Button owns the default (neutral). Without
+   *  this the form's submit was hardwired to Button's old accent default, so a
+   *  form that cancels or deletes could not be anything but brand-green. */
+  submitVariant?: "primary" | "secondary" | "danger";
   disabled?: boolean;
 }
 
-export function Form({ onSubmit, submitLabel = "Submit", disabled, children }: PropsWithChildren<FormProps>) {
+export function Form({ onSubmit, submitLabel = "Submit", submitVariant, disabled, children }: PropsWithChildren<FormProps>) {
   return (
     <form
       data-kit="Form"
@@ -34,7 +38,7 @@ export function Form({ onSubmit, submitLabel = "Submit", disabled, children }: P
     >
       {children}
       <div>
-        <Button type="submit" label={submitLabel} disabled={disabled} />
+        <Button type="submit" label={submitLabel} variant={submitVariant} disabled={disabled} />
       </div>
     </form>
   );
