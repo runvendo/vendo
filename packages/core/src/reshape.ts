@@ -48,26 +48,35 @@ export const RESHAPE_OPS = [
 export type ReshapeOp = (typeof RESHAPE_OPS)[number];
 
 /**
- * v3 spec §5 (D1/D2) — the ops the WIRE dialect can write, as a value-first
- * nested call (`pick(revenue.rows, "month")`). The aggregates left this set
- * with the pipe: an aggregate is an expression call now (genui/expr.ts's
- * `sum(rows, "field")`), so exactly ONE `sum` is reachable from the dialect.
- * `sum`/`min`/`max`/`count` stay in {@link RESHAPE_OPS} because STORED
- * documents still carry them — the same staged retirement as `asOptions` and
- * `template`; the printer refuses to print them as a chain call, so the
- * round-trip law never sees one.
+ * The aggregating ops. STORED documents still carry them; the wire dialect
+ * cannot write them, because an aggregate is an expression call now
+ * (genui/expr.ts's `sum(rows, "field")`) and exactly ONE `sum` must be
+ * reachable from the dialect.
  */
-export const WIRE_RESHAPE_OPS = [
-  "pick",
-  "rename",
-  "asPoints",
-  "asOptions",
-  "format",
-  "template",
-] as const satisfies readonly ReshapeOp[];
+export const AGGREGATE_RESHAPE_OPS = ["sum", "min", "max", "count"] as const satisfies readonly ReshapeOp[];
+
+/** v2 spec §3 — an op that reduces rows to one number. */
+export type AggregateReshapeOp = (typeof AGGREGATE_RESHAPE_OPS)[number];
+
+const AGGREGATE_RESHAPE_OP_SET: ReadonlySet<string> = new Set(AGGREGATE_RESHAPE_OPS);
+
+/**
+ * v3 spec §5 (D1/D2) — the ops the WIRE dialect can write, as a value-first
+ * nested call (`pick(revenue.rows, "month")`).
+ *
+ * DERIVED, never re-listed: the registry above is the one list, and the wire
+ * set is it minus the aggregates. Three copies of this vocabulary drifted
+ * apart before (this list, the registry, and the Kit's function bundle in
+ * `@vendoai/ui`), which is why an op added to `RESHAPE_OPS` must now land here
+ * automatically. The printer refuses to print an aggregate as a chain call, so
+ * the round-trip law never sees one.
+ */
+export const WIRE_RESHAPE_OPS: readonly WireReshapeOp[] = RESHAPE_OPS.filter(
+  (op): op is WireReshapeOp => !AGGREGATE_RESHAPE_OP_SET.has(op),
+);
 
 /** v3 spec §5 — a reshape op the wire dialect can write. */
-export type WireReshapeOp = (typeof WIRE_RESHAPE_OPS)[number];
+export type WireReshapeOp = Exclude<ReshapeOp, AggregateReshapeOp>;
 
 const WIRE_OP_SET: ReadonlySet<string> = new Set(WIRE_RESHAPE_OPS);
 
@@ -87,6 +96,10 @@ type FormatKind = (typeof FORMAT_KINDS)[number];
 const OP_SET: ReadonlySet<string> = new Set(RESHAPE_OPS);
 const FORMAT_KIND_SET: ReadonlySet<string> = new Set(FORMAT_KINDS);
 
+/** The three that reduce a FIELD to a number; `count` is an aggregate too but
+ *  takes no field, so it is not one of these. */
+const AGGREGATE_OPS: ReadonlySet<ReshapeOp> = new Set(["sum", "min", "max"]);
+
 /** Per-op arity: [min, max] (Infinity = unbounded). */
 const OP_ARITY: Record<ReshapeOp, readonly [number, number]> = {
   pick: [1, Number.POSITIVE_INFINITY],
@@ -101,7 +114,6 @@ const OP_ARITY: Record<ReshapeOp, readonly [number, number]> = {
   count: [0, 0],
 };
 
-const AGGREGATE_OPS: ReadonlySet<ReshapeOp> = new Set(["sum", "min", "max"]);
 
 /** The reductions {@link reduceNumeric} performs — the union of the stored
  *  `$reshape` aggregates and the `$expr` aggregate calls. */

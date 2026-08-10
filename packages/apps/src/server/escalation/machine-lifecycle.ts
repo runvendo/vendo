@@ -210,7 +210,7 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   const updateDocument = (
     appId: AppId,
     mutate: (doc: AppDocument) => AppDocument,
-  ): Promise<AppDocument> => updateAppRow(records, appId, mutate);
+  ): Promise<AppDocument> => updateAppRow(records, appId, mutate, "box");
 
   const armIdleTimer = (appId: AppId): void => {
     const entry = live.get(appId);

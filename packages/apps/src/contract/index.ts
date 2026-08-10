@@ -30,6 +30,11 @@ export {
   type StorageDecl,
 } from "@vendoai/core";
 export { validateAppDocument, type AppDocumentValidation } from "./app-validation.js";
+// the one door in — every app write passes admission; validateAppDocument above
+// is its inner half
+export * from "./admission.js";
+// the stored row, one definition (was five)
+export * from "./app-row.js";
 // component bundle — the seat's contents, on-disk and on the wire
 export * from "./component-bundle.js";
 export * from "./component-map.js";

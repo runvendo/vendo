@@ -27,9 +27,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMcpDoorWithState } from "../src/door.js";
 import {
   createMcpDoor,
-  type AppsPort,
   type HostOAuthAdapter,
   type McpDoor,
+  type McpDoorConfig,
   type TurnCredentialPort,
 } from "../src/index.js";
 import type {
@@ -38,6 +38,9 @@ import type {
   ReplayStateOptions,
   SessionStateRecord,
 } from "../src/state.js";
+
+/** The door's apps ride-along: three verbs off the real runtime (10-mcp §4). */
+type AppsRideAlong = NonNullable<McpDoorConfig["apps"]>;
 
 const BASE = "https://product.example/api/vendo/mcp";
 const PROXIED_BASE = "http://door.internal:8787/api/vendo/mcp";
@@ -1384,7 +1387,7 @@ describe("createMcpDoor login federation", () => {
  *  is the fourth door. */
 describe("createMcpDoor asserts the caller's orgs (§9.1)", () => {
   it("resolves the host's memberships onto every RunContext it mints", async () => {
-    const seen: Array<Parameters<AppsPort["list"]>[0]> = [];
+    const seen: Array<Parameters<AppsRideAlong["list"]>[0]> = [];
     const asked: Principal[] = [];
     const harness = makeHarness({
       memberships: async (principal) => {
@@ -1552,10 +1555,10 @@ describe("createMcpDoor MCP protocol", () => {
       name: "Dashboard",
       tree: { formatVersion: "vendo-genui/v2", root: "root", nodes: [] },
     };
-    const apps: AppsPort = {
+    const apps: AppsRideAlong = {
       async list() { return [app]; },
       async open() { return { kind: "tree", payload: app.tree! }; },
-      async call(_appId, _ref, args) { return { received: args }; },
+      async call(_appId, _ref, args) { return { status: "ok", output: { received: args } as Json }; },
     };
     const harness = makeHarness({
       apps,
@@ -1592,7 +1595,11 @@ describe("createMcpDoor MCP protocol", () => {
       name: "vendo_apps_call",
       arguments: { appId: "app_1", ref: "host_lookup", args: { query: "x" } },
     });
-    expect(called.structuredContent).toEqual({ received: { query: "x" } });
+    // The ride-along hands back the RUNTIME's own ToolOutcome, and the door
+    // wraps it as its own `ok` output — the shape a real `vendo.apps.call`
+    // produces. The deleted structural mirror typed this `unknown`, so a fake
+    // returning a bare value was indistinguishable from the real producer.
+    expect(called.structuredContent).toEqual({ status: "ok", output: { received: { query: "x" } } });
 
     const resources = await connected.client.listResources();
     expect(resources.resources).toEqual([expect.objectContaining({
@@ -1623,10 +1630,10 @@ describe("createMcpDoor MCP protocol", () => {
       data: { total: 42 },
       queries: [{ name: "total", tool: "host_total" }],
     };
-    const apps: AppsPort = {
+    const apps: AppsRideAlong = {
       async list() { return []; },
       async open() { return { kind: "tree", payload }; },
-      async call() { return null; },
+      async call() { return { status: "ok", output: null }; },
     };
     const harness = makeHarness({ apps });
     const registration = await register(harness.door);
@@ -1651,10 +1658,10 @@ describe("createMcpDoor MCP protocol", () => {
       name: "Revenue dashboard",
       ui: "http",
     };
-    const apps: AppsPort = {
+    const apps: AppsRideAlong = {
       async list() { return [app]; },
       async open() { return { kind: "http", url: "https://apps.example/revenue" }; },
-      async call() { return null; },
+      async call() { return { status: "ok", output: null }; },
     };
     const harness = makeHarness({ apps });
     const registration = await register(harness.door);
@@ -1679,10 +1686,10 @@ describe("createMcpDoor MCP protocol", () => {
   });
 
   it("gives vendo_apps_* door tools full guard treatment with venue mcp", async () => {
-    const apps: AppsPort = {
+    const apps: AppsRideAlong = {
       async list() { return []; },
       async open() { return { kind: "tree", payload: { formatVersion: "vendo-genui/v2" } }; },
-      async call() { return { done: true }; },
+      async call() { return { status: "ok", output: { done: true } }; },
     };
     const decisions: Array<{ tool: string; venue: string; risk: string }> = [];
     let action: "run" | "block" = "run";
@@ -1729,10 +1736,10 @@ describe("createMcpDoor MCP protocol", () => {
   });
 
   it("returns the executed apps-tool result even when the audit write fails", async () => {
-    const apps: AppsPort = {
+    const apps: AppsRideAlong = {
       async list() { return []; },
       async open() { return { kind: "tree", payload: { formatVersion: "vendo-genui/v2" } }; },
-      async call() { return { done: true }; },
+      async call() { return { status: "ok", output: { done: true } }; },
     };
     let failReports = false;
     const harness = makeHarness({
@@ -1763,10 +1770,10 @@ describe("createMcpDoor MCP protocol", () => {
       data: { via: "registry" },
       queries: [{ name: "via", tool: "host_source" }],
     };
-    const apps: AppsPort = {
+    const apps: AppsRideAlong = {
       async list() { return []; },
       async open() { return { kind: "http", url: "https://app.example" }; },
-      async call() { return null; },
+      async call() { return { status: "ok", output: null }; },
     };
     const harness = makeHarness({
       apps,
@@ -1804,7 +1811,7 @@ describe("createMcpDoor MCP protocol", () => {
     );
 
     // Execution routes through the registry (one guard decision), not the
-    // AppsPort — and the door unwraps its OpenSurface into a bare, shim-renderable
+    // AppsRideAlong — and the door unwraps its OpenSurface into a bare, shim-renderable
     // format-tagged UIPayload (core §8), not the {kind,payload} envelope. The
     // registry's AppsRuntime.open already resolved `queries` into `data`, so the
     // MCP projection removes those declarations rather than calling them twice.
@@ -2147,7 +2154,7 @@ describe("createMcpDoor tool menu, titles, and annotations", () => {
       apps: {
         async list() { return []; },
         async open() { return { kind: "tree" as const, payload: { formatVersion: "vendo-genui/v2", root: "root", nodes: [] } }; },
-        async call() { return {}; },
+        async call() { return { status: "ok", output: {} }; },
       },
     });
     const listed = await connected.client.listTools();
@@ -2267,7 +2274,7 @@ describe("createMcpDoor tool menu, titles, and annotations", () => {
       apps: {
         async list() { return []; },
         async open() { return { kind: "tree" as const, payload: { formatVersion: "vendo-genui/v2", root: "root", nodes: [] } }; },
-        async call() { return {}; },
+        async call() { return { status: "ok", output: {} }; },
       },
     });
 
@@ -2880,10 +2887,10 @@ describe("createMcpDoor MCP Apps on a turn-bearing session", () => {
    *  OAuth leg does to make an app render, this leg has to do too — it is the
    *  same mount and the same feature. */
   function harnessFor(payload: Record<string, unknown>) {
-    const apps: AppsPort = {
+    const apps: AppsRideAlong = {
       async list() { return []; },
       async open() { return { kind: "http", url: "https://app.example" }; },
-      async call() { return null; },
+      async call() { return { status: "ok", output: null }; },
     };
     return makeHarness({
       apps,
@@ -3135,7 +3142,7 @@ interface HarnessOptions {
   /** The call is passed so one harness can answer several tools differently. */
   getOutcome?: (call: ToolCall) => ToolOutcome;
   principal?: (subject: string) => Principal | null;
-  apps?: AppsPort;
+  apps?: AppsRideAlong;
   /** A function form lets a test GROW the surface mid-session, which is exactly
    *  what a memoized door menu would miss. */
   extraDescriptors?:

@@ -31,8 +31,7 @@
  */
 import {
   safeErrorMessage,
-  vendoViewPartSchema,
-  vendoViewStreamId,
+  vendoViewPart,
   type AppId,
   type CommitResult,
   type Json,
@@ -49,12 +48,12 @@ import {
   type Tree,
   type WireCompileResult,
   type AppFloor,
+  stripServerAuthoritativeFields,
 } from "../../contract/index.js";
 // In-package since the seam moved home to @vendoai/apps: the plan skeleton,
 // the emitted-payload assembly and the field stripping that goes with it.
 import { skeletonFromPlan } from "./skeleton.js";
 import { assembleTree } from "../runtime/runtime.js";
-import { stripServerAuthoritativeFields } from "../persistence/open.js";
 
 /** §1.6 — the two files that sync mid-turn. Everything else waits for turn end. */
 export const HOT_PATH_FILES = ["app.vendo", "plan.vendo"] as const;
@@ -232,18 +231,10 @@ const viewPart = (
   payload: UIPayload,
   streaming: boolean,
   turnId?: TurnId,
-): { streamId: string; part: VendoViewPart } | undefined => {
-  const parsed = vendoViewPartSchema.safeParse({
-    type: "data-vendo-view",
-    appId,
-    // Spread, never mutated in place: the emitted part must not change under the
-    // consumer when this function's caller fills the data in afterwards.
-    payload: { ...payload, streaming },
-    ...(turnId === undefined ? {} : { turnId }),
-  });
-  if (!parsed.success) return undefined;
-  return { streamId: vendoViewStreamId(appId), part: parsed.data };
-};
+): { streamId: string; part: VendoViewPart } | undefined =>
+  // Spread, never mutated in place: the emitted part must not change under the
+  // consumer when this function's caller fills the data in afterwards.
+  vendoViewPart({ appId, payload: { ...payload, streaming }, ...(turnId === undefined ? {} : { turnId }) });
 
 /** The view a parsing hot-path commit produces, or undefined if it does not parse. */
 export async function viewForWrite(

@@ -11,6 +11,7 @@ import {
   type ToolsFile,
 } from "@vendoai/actions";
 import type { ZodError } from "zod";
+import { isUnsafeAutoAllowed } from "./scored.js";
 import { runHostCommand } from "../process.js";
 import { errorMessage, pathExists } from "../util.js";
 
@@ -91,7 +92,6 @@ const CHECK_ORDER: StructuralCheckId[] = [
   "tools.fail-closed",
 ];
 
-const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 // The TypeScript compiler, resolved lazily and fail-closed (the same posture
 // as packages/actions/src/sync/common.ts's loadCompiler): when it cannot be
@@ -235,10 +235,12 @@ async function defaultExpectedFilesForFramework(
   const app = await findAppRouter(repoDir);
   const files = [
     ".vendo/tools.json",
+    ".vendo/catalog.json",
     ".vendo/overrides.json",
     ".vendo/policy.json",
     ".vendo/brief.md",
     ".vendo/theme.json",
+    ".vendo/theme.extracted.json",
     ".vendo/data/.gitignore",
   ];
 
@@ -619,27 +621,6 @@ async function checkIdempotency(ctx: StructuralLayerContext): Promise<Structural
     diff === undefined ? "second init diff was not provided" : `second init diff:\n${trimOutput(diff)}`,
   ];
   return { id: "init.idempotent", pass: false, detail: pieces.join("; ") };
-}
-
-/** A tRPC mutation is write-shaped exactly like a POST; a query like a GET;
- * a server action is always POST-shaped. */
-function effectiveWriteMethod(tool: ExtractedTool): string {
-  if (tool.binding.kind === "trpc") {
-    return tool.binding.type === "query" ? "GET" : "POST";
-  }
-  if (tool.binding.kind === "server-action") return "POST";
-  return tool.binding.method;
-}
-
-/** Fail-closed against PROTOCOL FACTS only (risk-grading redesign D1: a tool
- * NAME grades nothing). `ungraded` is never auto-allowed — the guard asks on
- * it — so two defects remain: a write-capable method that landed `read`, and
- * a DELETE that is not `destructive`. */
-function isUnsafeAutoAllowed(tool: ExtractedTool): boolean {
-  const method = effectiveWriteMethod(tool);
-  if (WRITE_METHODS.has(method) && tool.risk === "read") return true;
-  if (method === "DELETE" && tool.risk !== "destructive") return true;
-  return false;
 }
 
 async function checkFailClosedTools(ctx: StructuralLayerContext): Promise<StructuralCheckResult> {

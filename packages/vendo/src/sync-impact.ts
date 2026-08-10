@@ -1,12 +1,11 @@
 import {
-  appDocumentSchema,
   VENDO_TREE_FORMAT,
   type AppDocument,
   type PermissionGrant,
   type VendoRecord,
 } from "@vendoai/core";
+import { appRowSchema } from "@vendoai/apps/contract";
 import type { VendoStore } from "@vendoai/store";
-import { z } from "zod";
 
 export interface ToolImpact {
   tool: string;
@@ -23,11 +22,9 @@ export interface ToolImpact {
  *  undefined on every automation armed before the list shipped, so `vendo sync`
  *  told those deployments that changing a tool would affect NO automations —
  *  which reads as "nothing to worry about" and is the one wrong answer that
- *  costs something. Mirrors `appRowSchema` in the automations engine. */
-const storedAppSchema = z.object({
-  enabled: z.boolean(),
-  doc: appDocumentSchema,
-});
+ *  costs something. `appRowSchema` is the contract's one definition of the
+ *  stored row; this reader needs two of its three fields. */
+const storedAppSchema = appRowSchema.pick({ enabled: true, doc: true });
 
 async function allRecords(store: VendoStore, collection: string): Promise<VendoRecord[]> {
   const records: VendoRecord[] = [];

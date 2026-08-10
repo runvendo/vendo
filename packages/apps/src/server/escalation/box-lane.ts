@@ -294,7 +294,7 @@ const createSurfaceFlip = (deps: Pick<AppsRuntimeContext, "requireOwned" | "pers
         delete flipped.componentTools;
         delete flipped.pins;
         flipped.ui = "http";
-        document = await persistEdit(base, flipped, landVersion(flipped, input.request), ctx.principal.subject, undefined, {});
+        document = await persistEdit(base, flipped, landVersion(flipped, input.request), ctx.principal.subject, undefined, { origin: "box" });
       } else {
         issues.push("the box did not produce a verified served web app (GET / must answer 200 text/html) — the surface was not flipped; retry the edit");
       }

@@ -1,5 +1,6 @@
 import {
   type UIPayload,
+  vendoViewPart,
 } from "@vendoai/core";
 import {
   compileWire,
@@ -54,11 +55,11 @@ export const scriptedAssembler = (
     // workspace with, so a fixture that only stored the row would be a quieter
     // assembler than the real one — and every test of "did the view reach the
     // surface" would pass for the wrong reason.
-    request.onView?.({
-      type: "data-vendo-view",
+    const view = vendoViewPart({
       appId: request.appId,
       payload: assembleTree({ tree: compiled.tree, components: compiled.components }) as unknown as UIPayload,
     });
+    if (view !== undefined) request.onView?.(view.part);
     return { kind: "assembled" };
   },
 });

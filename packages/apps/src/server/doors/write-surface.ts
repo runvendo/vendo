@@ -25,9 +25,11 @@ import { findingLine } from "./build-messages.js";
 import { generationDependencies } from "../runtime/generation-context.js";
 import {
   compilePlan,
+  stripServerAuthoritativeFields,
+  type AppData,
   type AppPlan,
 } from "../../contract/index.js";
-import { createProgressiveQueryResolver, stripServerAuthoritativeFields } from "../persistence/open.js";
+import { createProgressiveQueryResolver } from "../persistence/open.js";
 import {
   appRecordInput,
   enabledAfterDocumentEdit,
@@ -38,8 +40,6 @@ import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import { asTree } from "../generation/engine.js";
 import type { AppsRuntime, EditResult, VersionEntry } from "../runtime/types.js";
 
-/** The stored row as `authored` reads it, so the save below can be handed it. */
-type AppRow = ReturnType<typeof rowFromRecord>;
 
 /**
  * §1.6 files-first — the app a harness wrote as `app.vendo`, as a document.
@@ -133,7 +133,7 @@ const createAuthoredSaver = (
   const { editIntents, editVersions } = deps;
   const recordRefusedSave = createRefusedSaveRecorder(deps);
   return async (
-    input: { appId: AppId; document: AppDocument; previous: AppDocument | undefined; row: AppRow | null },
+    input: { appId: AppId; document: AppDocument; previous: AppDocument | undefined; row: AppData | null },
     ctx: RunContext,
   ): Promise<void> => {
     const { document, previous, row } = input;
@@ -208,6 +208,7 @@ const createAuthoredSaver = (
         // above is what authorized this write, and the row keeps its owner.
         row?.subject ?? ctx.principal.subject,
         enabled,
+        "box",
       );
       await apps.put(appRow);
       // The write landed, so the version above is real history now: whatever

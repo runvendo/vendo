@@ -13,7 +13,7 @@
  * The harness predates `createVendo({ mcp: true })` and mounts `createMcpDoor`
  * beside `vendo.handler` on the SAME loopback origin, fed the umbrella's composed
  * parts: the guard-bound registry (`vendo.guard.bind(vendo.actions)`), the same
- * `vendo.guard`, `vendo.store`, a fixture `HostOAuthAdapter`, and an `AppsPort`
+ * `vendo.guard`, `vendo.store`, a fixture `HostOAuthAdapter`, and an apps ride-along
  * over `vendo.apps` — proving the door COMPOSES against exactly what the umbrella
  * wires (the one-flag composition itself is covered by fixtures/mcp-e2e's
  * umbrella-hookup suite).
@@ -109,7 +109,7 @@ describe("J6: MCP door round-trip composed around the umbrella", () => {
       // "no second catalog" of HOST tools) PLUS exactly the door's own three
       // apps ride-along capability tools (10-mcp §4, door = viewer + runner):
       // vendo_apps_list / vendo_apps_open / vendo_apps_call, served from the
-      // composed AppsPort, not the actions registry. Asserting equality against
+      // composed apps ride-along, not the actions registry. Asserting equality against
       // this closed union still fails on ANY unguarded extra surface — a tool in
       // tools/list that is neither a bound descriptor nor a known ride-along tool.
       const APP_RIDE_ALONG = ["vendo_apps_list", "vendo_apps_open", "vendo_apps_call"];

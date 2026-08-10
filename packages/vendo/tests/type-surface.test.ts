@@ -86,7 +86,7 @@ const HOST_FACING_TYPES = [
   "VendoClientConfig",
   // mcp — the host implements HostOAuthAdapter to open the door
   // (createVendo({ mcp: true, oauth }), 10-mcp §3). This is the gap this
-  // wave closes; the rest of @vendoai/mcp's surface (McpDoor, AppsPort,
+  // wave closes; the rest of @vendoai/mcp's surface (McpDoor,
   // McpDoorConfig, McpRunContext) is umbrella-internal — no `vendo.mcp`
   // handle exists on the Vendo interface (09 §2) — so it is deliberately
   // NOT re-exported.

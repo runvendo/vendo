@@ -295,7 +295,7 @@ describe("§9.9 — the additive, ctx-aware venue-state slot", () => {
 
 describe("§9.3 — the MCP door inherits can() rather than re-deriving it", () => {
   it("gates the door's whole surface (list · open · call) through the runtime", async () => {
-    // 10-mcp §4's AppsPort is a structural SUBSET of AppsRuntime — the umbrella
+    // 10-mcp §4's apps ride-along is a structural SUBSET of AppsRuntime — the umbrella
     // passes these three verbs essentially verbatim (server.ts's `appsPort`), so
     // there is no second permission path to police. This exercises exactly that
     // triple at viewer level and for a stranger.

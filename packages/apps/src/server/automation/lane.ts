@@ -25,11 +25,11 @@ import {
 import {
   type AppDocument,
   type PlanServer,
+  stripServerAuthoritativeFields,
 } from "../../contract/index.js";
 import type { Finding } from "../checking/types.js";
 import type { GeneratedAppDocument, GenerationDependencies } from "../generation/engine.js";
 import { rungFor, withoutId } from "../persistence/edit-journal.js";
-import { stripServerAuthoritativeFields } from "../persistence/open.js";
 import { generationDependencies } from "../runtime/generation-context.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime } from "../runtime/types.js";
@@ -424,7 +424,7 @@ export const createAutomationLane = (
             { at: new Date().toISOString(), intent: input.request, rung: rungFor(next) },
             ctx.principal.subject,
             undefined,
-            options,
+            { ...options, origin: "automation" },
           );
         },
         // The board that shows an automation's results is a SCREEN, so the thing

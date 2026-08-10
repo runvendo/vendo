@@ -75,7 +75,7 @@ const mintForkBase = async (
   // Dry-run the fork BEFORE persisting the base, so a bad baseline
   // never strands an empty app.
   forkOnto(minted);
-  await deps.apps.put(appRecordInput(minted, ctx.principal.subject));
+  await deps.apps.put(appRecordInput(minted, ctx.principal.subject, false, "seed"));
   // The empty-slot gesture means "show the remix in THIS slot": the
   // placement is a ROW now (the pin on the document stays what it
   // always was — provenance, never location).
@@ -284,7 +284,7 @@ const forkPin = async (
     intent: `Remix the host component "${input.slot}"`,
     rung: rungFor(working),
   };
-  const persisted = await persistEdit(previous, working, version, ctx.principal.subject, [input.slot], { pinIntentKind: "fork" });
+  const persisted = await persistEdit(previous, working, version, ctx.principal.subject, [input.slot], { pinIntentKind: "fork", origin: "seed" });
   await reportLifecycle("pin-fork", persisted.id, ctx, {
     slot: input.slot,
     baseHash: baseline.hash,
@@ -334,7 +334,7 @@ const rebasePin = async (
     // the new one.
     await apps.put(appRecordInput(app, ctx.principal.subject, (await apps.get(app.id).then(
       (record) => record === null ? false : rowFromRecord(record).enabled,
-    ).catch(() => false)))).catch(() => undefined);
+    ).catch(() => false)), "seed")).catch(() => undefined);
     return {
       status: "failed",
       slot: input.slot,
@@ -362,7 +362,7 @@ const rebasePin = async (
     at: new Date().toISOString(),
     intent: `Re-fork ${input.slot} onto the updated host component`,
     rung: rungFor(rebased),
-  }, ctx.principal.subject, [], { pinIntentKind: "fork" });
+  }, ctx.principal.subject, [], { pinIntentKind: "fork", origin: "seed" });
   for (const [index, intent] of replayIntents.entries()) {
     const replayedEdit = await assembleEdit(app.id, intent, ctx);
     const remaining = replayIntents.slice(index + 1);
@@ -402,7 +402,7 @@ const rebasePin = async (
   // IS this rebase's baseline — persisting against the pre-rebase document
   // would read as a concurrent change.
   const current = await requireOwned(app.id, ctx);
-  const persisted = await persistEdit(current, working, version, ctx.principal.subject, [], {});
+  const persisted = await persistEdit(current, working, version, ctx.principal.subject, [], { origin: "seed" });
   await reportLifecycle("pin-rebase", app.id, ctx, {
     slot: input.slot,
     fromBaseHash,

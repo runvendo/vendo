@@ -35,7 +35,6 @@ import {
  */
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
-const TITLE_CAP = 80;
 const SUMMARY_CAP = 500;
 
 export interface VendoToolPackCoreOptions extends VendoToolPackFilter {
@@ -66,6 +65,41 @@ export interface VendoPackTool {
   execute(input: unknown, options: VendoPackExecuteOptions): Promise<unknown>;
 }
 
+const TITLE_CAP = 80;
+
+/** The embed-chrome title known at fast-return time: the prompt itself,
+ *  collapsed to one line and capped. */
+function appRefTitleFromPrompt(prompt: unknown): string {
+  const collapsed = typeof prompt === "string" ? prompt.replace(/\s+/g, " ").trim() : "";
+  if (collapsed.length === 0) return "Vendo app";
+  return collapsed.length > TITLE_CAP ? `${collapsed.slice(0, TITLE_CAP - 1)}…` : collapsed;
+}
+
+/**
+ * A `MakeReceipt` carries its own honest status and a speakable `say` line —
+ * exactly the two fields a failed edit needs to be reported as failed. A failed
+ * receipt must NEVER become a ref: the ref schema has no room for failure
+ * (runvendo/flowlet#822 defect 2, generalized) — an id and a title are the whole
+ * shape of "this exists and is fine". Returning null here lets the caller fall
+ * back to the receipt itself, `status` and `say` intact.
+ *
+ * Local to the PACK on purpose. `vendo/app-ref@1` means "accepted, still
+ * streaming, NOT built yet"; only this fast-return path can honestly say that.
+ * The MCP door runs `vendo_make` to completion, so it answers the receipt — see
+ * `mcp-door-parity.e2e.test.ts`, which holds the door to the same output the
+ * in-process tool produces.
+ */
+function appRefFromReceipt(output: unknown, fallbackTitle: string): VendoAppRef | null {
+  const receipt = makeReceiptSchema.safeParse(output);
+  if (!receipt.success || receipt.data.status === "failed") return null;
+  return {
+    kind: VENDO_APP_REF_KIND,
+    appId: receipt.data.id,
+    title: receipt.data.title || fallbackTitle,
+    status: "building",
+  };
+}
+
 function mintCallId(): string {
   return `call_${globalThis.crypto.randomUUID()}`;
 }
@@ -94,34 +128,6 @@ function approvalSummary(descriptor: ToolDescriptor, args: unknown): string {
 
 function approvalRef(approvalId: string, descriptor: ToolDescriptor, args: unknown): VendoApprovalRef {
   return { kind: VENDO_APPROVAL_REF_KIND, approvalId, summary: approvalSummary(descriptor, args) };
-}
-
-/** The embed-chrome title known at fast-return time: the prompt itself,
- *  collapsed to one line and capped. */
-function titleFromPrompt(prompt: unknown): string {
-  const collapsed = typeof prompt === "string" ? prompt.replace(/\s+/g, " ").trim() : "";
-  if (collapsed.length === 0) return "Vendo app";
-  return collapsed.length > TITLE_CAP ? `${collapsed.slice(0, TITLE_CAP - 1)}…` : collapsed;
-}
-
-/**
- * A `MakeReceipt` carries its own honest status (`"ready" | "building" |
- * "failed"`, `packages/core/src/make-receipt.ts`) and a speakable `say` line
- * — exactly the two fields a failed edit needs to be reported as failed. A
- * failed receipt must NEVER become a ref: the ref schema has no room for
- * failure (runvendo/flowlet#822 defect 2, generalized) — an id and a title
- * are the whole shape of "this exists and is fine". Returning null here lets
- * the caller fall back to the receipt itself, `status` and `say` intact.
- */
-function appRefFromReceipt(output: unknown, fallbackTitle: string): VendoAppRef | null {
-  const receipt = makeReceiptSchema.safeParse(output);
-  if (!receipt.success || receipt.data.status === "failed") return null;
-  return {
-    kind: VENDO_APP_REF_KIND,
-    appId: receipt.data.id,
-    title: receipt.data.title || fallbackTitle,
-    status: "building",
-  };
 }
 
 async function guardedExecute(
@@ -192,7 +198,7 @@ function makeAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): VendoP
       additionalProperties: false,
     },
     async execute(input, options) {
-      const fallbackTitle = titleFromPrompt((input as { request?: unknown })?.request);
+      const fallbackTitle = appRefTitleFromPrompt((input as { request?: unknown })?.request);
       const call: VendoViewStreamingToolCall = {
         id: options.callId ?? mintCallId(),
         tool: VENDO_MAKE_TOOL,
@@ -255,7 +261,7 @@ function delegateTool(registry: ToolRegistry, runner: AgentRunner): VendoPackToo
         async execute(call, runCtx) {
           const outcome = await registry.execute(call, runCtx);
           if (call.tool === VENDO_MAKE_TOOL && outcome.status === "ok") {
-            const ref = appRefFromReceipt(outcome.output, titleFromPrompt((call.args as { request?: unknown })?.request));
+            const ref = appRefFromReceipt(outcome.output, appRefTitleFromPrompt((call.args as { request?: unknown })?.request));
             if (ref !== null) refs.push(ref);
           } else if (outcome.status === "pending-approval") {
             const descriptor = (await descriptorsByName.catch(() => undefined))?.get(call.tool)

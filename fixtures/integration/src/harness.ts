@@ -30,7 +30,7 @@ import {
   type Principal,
   type ToolRegistry,
 } from "@vendoai/core";
-import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
+import { createMcpDoor, type McpDoorConfig, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { createVendo, type CreateVendoConfig, type Vendo } from "@vendoai/vendo/server";
 import {
@@ -333,11 +333,12 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
         return control.revoked.has(subject) ? null : { kind: "user", subject };
       },
     };
-    // AppsPort adapter over vendo.apps — AppsRuntime.open has extra "resuming"
-    // and "failed" variants AppsPort does not, so map positively like the
-    // production adapter in @vendoai/vendo server.ts (the door is a viewer +
+    // The door's apps ride-along over vendo.apps. The door types these three
+    // verbs off the real `AppsRuntime`, so `open` may answer every surface;
+    // this fixture narrows positively to the two the door viewer can render,
+    // like the production adapter in @vendoai/vendo (the door is a viewer +
     // runner, 10-mcp §4).
-    const appsPort: AppsPort = {
+    const appsPort: NonNullable<McpDoorConfig["apps"]> = {
       list: (ctx) => vendo.apps.list(ctx),
       async open(appId, ctx) {
         const opened = await vendo.apps.open(appId, ctx);

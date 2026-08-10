@@ -16,6 +16,7 @@ import {
   type AppDocument,
   type ScreenAssembler,
   type Tree,
+  type AdmissionOrigin,
 } from "../../contract/index.js";
 import { appMemoryBrief } from "./app-memory.js";
 import type { PinIntentKind } from "./history.js";
@@ -177,7 +178,7 @@ const createEditPersist = (
     app: AppDocument,
     version: VersionEntry,
     subject: string,
-    pinSlots?: readonly string[],
+    pinSlots: readonly string[] | undefined,
     options: {
       /** An edit that AUTHORED the trigger arms it in the same write (the
        *  server lane's automation path); every other edit keeps the
@@ -188,7 +189,12 @@ const createEditPersist = (
        *  which is what `pins.rebase` replays the rest of the trail onto. Every
        *  other write records a replayable `"edit"`. */
       pinIntentKind?: PinIntentKind;
-    } = {},
+      /** Who is writing, for the admission audit. Required, because this is the
+       *  ONE document write and every rung reaches it: a default would let a
+       *  path write anonymously. It never changes what the door CHECKS — the
+       *  same document is admitted or refused identically on every origin. */
+      origin: AdmissionOrigin;
+    },
   ): Promise<AppDocument> => {
     // Build contract §9.5 — the ROW's subject, which for a promoted app is the
     // org id, not the editor. The routing door pins `WHERE id AND subject`, so
@@ -241,7 +247,7 @@ const createEditPersist = (
       const enabled = options.armTrigger === true && (app.triggers ?? []).length > 0
         ? true
         : enabledAfterDocumentEdit(previous, app, wasEnabled);
-      appRow = appRecordInput(app, rowSubject, enabled);
+      appRow = appRecordInput(app, rowSubject, enabled, options.origin);
       await apps.put(appRow);
     } catch (error) {
       // The version above records a state that never became the past — see

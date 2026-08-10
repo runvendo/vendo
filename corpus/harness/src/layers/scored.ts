@@ -200,7 +200,7 @@ function effectiveWriteMethod(tool: ExtractedTool): string {
  * NAME grades nothing). `ungraded` is never auto-allowed — the guard asks on
  * it — so two defects remain: a write-capable method that landed `read`, and
  * a DELETE that is not `destructive`. */
-function isUnsafeAutoAllowed(tool: ExtractedTool): boolean {
+export function isUnsafeAutoAllowed(tool: ExtractedTool): boolean {
   const method = effectiveWriteMethod(tool);
   if (WRITE_METHODS.has(method) && tool.risk === "read") return true;
   if (method === "DELETE" && tool.risk !== "destructive") return true;

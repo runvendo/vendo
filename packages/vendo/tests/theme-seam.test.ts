@@ -141,7 +141,7 @@ function makeDoor(theme: VendoTheme | undefined): McpDoor {
     guard,
     store: new MemoryStore(),
     // The shim resource is only served by a door that carries apps.
-    apps: { async list() { return []; }, async open() { return { kind: "http", url: "https://x.example" }; }, async call() { return null; } },
+    apps: { async list() { return []; }, async open() { return { kind: "http", url: "https://x.example" }; }, async call() { return { status: "ok" as const, output: null }; } },
     ...(theme === undefined ? {} : { theme }),
     mount: "/api/vendo/mcp",
     baseUrl: "https://product.example",

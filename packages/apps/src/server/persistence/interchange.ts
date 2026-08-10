@@ -181,7 +181,7 @@ export const createAppInterchange = (
         : { document: source, hasAppDirectory: false };
       const imported = validateImportedDocument(withFreshIdentity(parsed.document, appId));
       await dependencies.store.records("vendo_apps").put(
-        appRecordInput(imported, ctx.principal.subject),
+        appRecordInput(imported, ctx.principal.subject, false, "import"),
       );
       // An app/ directory in the archive is machine scratch from an older
       // export; it is ignored — the imported copy re-graduates on its own.

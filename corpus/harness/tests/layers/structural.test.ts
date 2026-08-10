@@ -144,6 +144,13 @@ async function makeTempRepo(): Promise<string> {
   await writeFile(path.join(repoDir, ".vendo/data/.gitignore"), "*\n!.gitignore\n");
   await writeFile(path.join(repoDir, ".vendo/theme.json"), JSON.stringify(theme, null, 2) + "\n");
   await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify(safeTools, null, 2) + "\n");
+  // `vendo init` runs the full sync, so a faithful fixture carries the catalog
+  // and the theme-extraction provenance too — both land on every real init.
+  await writeFile(path.join(repoDir, ".vendo/catalog.json"), '{"format":"vendo/catalog@1","entries":[]}\n');
+  await writeFile(
+    path.join(repoDir, ".vendo/theme.extracted.json"),
+    '{"format":"vendo/theme-extracted@1","slots":{}}\n',
+  );
   await mkdir(path.join(repoDir, "public/vendo"), { recursive: true });
   await writeFile(path.join(repoDir, "public/vendo/react-runtime.js"), "window.__React = {};\n");
   await writeFile(path.join(repoDir, "public/vendo/components-sandbox.js"), "window.__VENDO_COMPONENTS__ = {};\n");

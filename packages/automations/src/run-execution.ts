@@ -32,7 +32,7 @@ import {
   validateForEachItems,
   validateTrigger,
 } from "./steps.js";
-import type { AppRow, FiredSchedule, InternalRunRecord } from "./types.js";
+import type { AppData, FiredSchedule, InternalRunRecord } from "./types.js";
 
 export type RunExecutionDeps = {
   base: EngineBase;
@@ -45,21 +45,21 @@ export type RunExecutionDeps = {
 export interface RunExecutionAccess {
   /** Mint the run id synchronously; run the automation on the returned promise. */
   launchRun(
-    app: AppRow,
+    app: AppData,
     declared: Trigger,
     kind: TriggerSource["kind"],
     event: Json,
     lineage?: RunId,
   ): { runId: RunId; done: Promise<void> };
   /** The same launch, awaited — for the doors that fire one run at a time. */
-  startRun(app: AppRow, trigger: Trigger, kind: TriggerSource["kind"], event: Json): Promise<RunId>;
+  startRun(app: AppData, trigger: Trigger, kind: TriggerSource["kind"], event: Json): Promise<RunId>;
   /** Fired schedules, with bounded parallelism and an optional per-run timeout. */
   runFiredSchedules(fired: readonly FiredSchedule[]): Promise<RunId[]>;
 }
 
 type StepsRunner = {
   continueSteps(
-    app: AppRow,
+    app: AppData,
     trigger: Trigger,
     run: InternalRunRecord,
     ctx: RunContext,
@@ -95,7 +95,7 @@ const createStepsRunner = (
    *  FRESH run of the same firing (07 §5), so the only state carried between
    *  steps is the outputs they have produced. */
   const continueSteps = async (
-    app: AppRow,
+    app: AppData,
     trigger: Trigger,
     run: InternalRunRecord,
     ctx: RunContext,
@@ -256,7 +256,7 @@ const createRunLauncher = (
   // completion lets the tick collect runIds without blocking on each run to finish, and lets
   // it bound how long it waits on any single run (see runFiredSchedules).
   const launchRun = (
-    app: AppRow,
+    app: AppData,
     declared: Trigger,
     kind: TriggerSource["kind"],
     event: Json,
@@ -361,7 +361,7 @@ const createRunPacing = (
 ): Pick<RunExecutionAccess, "startRun" | "runFiredSchedules"> => {
   const { base: { config }, launchRun } = deps;
   const startRun = async (
-    app: AppRow,
+    app: AppData,
     trigger: Trigger,
     kind: TriggerSource["kind"],
     event: Json,

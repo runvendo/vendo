@@ -157,7 +157,7 @@ export {
  * package and reaches them relatively.
  */
 export { assembleTree } from "./runtime/runtime.js";
-export { stripServerAuthoritativeFields } from "./persistence/open.js";
+export { stripServerAuthoritativeFields } from "../contract/index.js";
 /**
  * The checks floor, built (§7.1). Composition reaches it through
  * `AppsRuntime.floor(ctx)`, which is the supported path; this export exists so the

@@ -15,7 +15,8 @@ import {
   type PermissionGrant,
 } from "@vendoai/core";
 import { isGrantPrincipal, type AccessLevel } from "./helpers/app-access.js";
-import type { AppRow, ApprovalRow, RunRow, ThreadRow } from "./helpers/types.js";
+import type { AppData } from "@vendoai/apps/contract";
+import type { ApprovalRow, RunRow, ThreadRow } from "./helpers/types.js";
 
 export interface ApprovalData {
   request: ApprovalRequest;
@@ -29,7 +30,7 @@ export interface ApprovalData {
 
 export type ThreadData = Pick<ThreadRow, "subject" | "messages" | "title">;
 export type RunData = Omit<RunRow, "id">;
-export type AppData = Pick<AppRow, "subject" | "enabled" | "doc">;
+export type { AppData };
 
 export function invalid(message: string): never {
   throw new VendoError("validation", message);

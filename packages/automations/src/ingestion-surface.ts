@@ -23,7 +23,7 @@ import {
   WEBHOOK_MAX_BYTES,
   scheduleSchema,
   webhookSchema,
-  type AppRow,
+  type AppData,
   type FiredSchedule,
 } from "./types.js";
 import { readLimitedBody, signedWebhookBytes, verifySignature } from "./webhook-signature.js";
@@ -279,7 +279,7 @@ const createWebhookDoor = (
     const armedKeys = await armed.armedFor(rows);
     // Verified per (app, TRIGGER): each external trigger holds its own secret, so
     // a signature that verifies for one says nothing about a sibling's.
-    const verified: Array<{ row: AppRow; trigger: Trigger }> = [];
+    const verified: Array<{ row: AppData; trigger: Trigger }> = [];
     for (const row of rows) {
       for (const trigger of armed.armedTriggers(row, armedKeys)) {
         if (trigger.on.kind !== "external" || trigger.on.connector !== source) continue;

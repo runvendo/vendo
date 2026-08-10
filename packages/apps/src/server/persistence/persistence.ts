@@ -8,7 +8,11 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import {
+  admitAppDocument,
+  stripServerAuthoritativeFields,
   validateAppDocument,
+  type AdmissionOrigin,
+  type AppData,
   type AppDocument,
 } from "../../contract/index.js";
 
@@ -29,6 +33,9 @@ export const listAllRecords = async (
   return found;
 };
 
+/** A document coming back OUT of the store. It passed admission on the way in;
+ *  this is the read-side integrity check, and it runs admission's inner half
+ *  directly because a read has no origin. */
 export const validateDocument = (input: unknown, appId: AppId): AppDocument => {
   const result = validateAppDocument(input);
   if (!result.ok || result.app.id !== appId) {
@@ -40,15 +47,29 @@ export const validateDocument = (input: unknown, appId: AppId): AppDocument => {
   return structuredClone(result.app);
 };
 
-/** The vendo_apps row shape (02-store §2: id, subject, enabled, doc). The
- *  store's reserved records("vendo_apps") routing speaks exactly this — the
- *  document alone is NOT the row; ownership and the automations arm/disarm
- *  bit ride beside it. */
-export interface AppRowData {
-  subject: string;
-  enabled: boolean;
-  doc: AppDocument;
-}
+/**
+ * The one door in, and the only call to {@link admitAppDocument} in the
+ * codebase. Every write path reaches the store through {@link appRecordInput}
+ * below, which is the only caller, so a document that has not been admitted
+ * cannot become a row.
+ *
+ * `origin` is recorded on the refusal and never changes what is checked.
+ */
+const admitDocument = (
+  input: unknown,
+  appId: AppId,
+  origin: AdmissionOrigin,
+): AppDocument => {
+  const admitted = admitAppDocument({ document: input, origin });
+  if (!admitted.ok) {
+    throw new VendoError("validation", `invalid app document for ${appId}`, {
+      appId,
+      origin,
+      reason: admitted.findings.map((finding) => finding.message).join("; "),
+    });
+  }
+  return structuredClone(admitted.document);
+};
 
 /** Trigger edits invalidate enable-time capture, cursor, and webhook state.
  *  Canonical comparison over the whole list — key order (or trigger order)
@@ -60,8 +81,8 @@ export const enabledAfterDocumentEdit = (
 ): boolean =>
   canonicalJson(previous.triggers ?? []) === canonicalJson(next.triggers ?? []) && enabled;
 
-export const rowFromRecord = (record: VendoRecord): AppRowData => {
-  const data = record.data as Partial<AppRowData> | null;
+export const rowFromRecord = (record: VendoRecord): AppData => {
+  const data = record.data as Partial<AppData> | null;
   if (
     data === null || typeof data !== "object"
     || typeof data.subject !== "string"
@@ -82,7 +103,7 @@ export const documentFromRecord = (record: VendoRecord): AppDocument =>
 
 export interface AppRecordWrite {
   id: AppId;
-  data: AppRowData;
+  data: AppData;
   refs: { subject: string } & Record<string, string>;
 }
 
@@ -111,10 +132,21 @@ export const withoutSession = <T extends object>(document: T): T => {
 export const appRecordInput = (
   app: AppDocument,
   subject: string,
-  enabled = false,
+  enabled: boolean,
+  origin: AdmissionOrigin,
 ): AppRecordWrite => {
-  const doc = validateDocument(app, app.id) as AppDocument & { session?: unknown };
+  const doc = admitDocument(app, app.id, origin) as AppDocument & { session?: unknown };
   delete doc.session;
+  // 06-apps §§8–9 — the venue verdict, the drift report, the data-unavailable
+  // claim and CDN furnishing packages are SERVER-AUTHORITATIVE: only code that
+  // verified the hash, compared the baseline, or ran the queries may assert
+  // them, and none of that is a stored fact. `open.ts` strips them on the way
+  // OUT, which kept a forged claim off the wire but left it in the row — three
+  // write paths each remembered to strip first and `importApp` did not, so an
+  // untrusted `.vendoapp` could seed one. Stripping HERE is the same argument
+  // as validating here: the door is what makes "it is in the database" mean
+  // one thing, and a reader that forgets is no longer able to be wrong.
+  if (doc.tree !== undefined) stripServerAuthoritativeFields(doc.tree);
   return {
     id: app.id,
     data: { subject, enabled, doc },
@@ -132,13 +164,14 @@ export const updateAppRow = async (
   records: RecordStore,
   appId: AppId,
   mutate: (doc: AppDocument) => AppDocument,
+  origin: AdmissionOrigin,
 ): Promise<AppDocument> => {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const record = await records.get(appId);
     if (record === null) throw new VendoError("not-found", `app not found: ${appId}`, { appId });
     const row = rowFromRecord(record);
     const next = mutate(structuredClone(row.doc));
-    const input = appRecordInput(next, row.subject, row.enabled);
+    const input = appRecordInput(next, row.subject, row.enabled, origin);
     if (records.atomic === undefined || record.revision === undefined) {
       await records.put(input);
       return next;

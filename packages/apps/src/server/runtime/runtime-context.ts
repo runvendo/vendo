@@ -23,6 +23,7 @@ import {
 import type {
   AppDocument,
   AppPlan,
+  AdmissionOrigin,
 } from "../../contract/index.js";
 import { createAccessChecks } from "../doors/access-checks.js";
 import type { AppDataAccess } from "../persistence/app-data.js";
@@ -168,8 +169,8 @@ export interface AppsRuntimeContext {
     app: AppDocument,
     version: VersionEntry,
     subject: string,
-    pinSlots?: readonly string[],
-    options?: { armTrigger?: boolean; pinIntentKind?: PinIntentKind },
+    pinSlots: readonly string[] | undefined,
+    options: { armTrigger?: boolean; pinIntentKind?: PinIntentKind; origin: AdmissionOrigin },
   ): Promise<AppDocument>;
   /** Build contract §9.9 — the ONE announcement every change to what an app IS. */
   reportDocumentEdit(previous: AppDocument, next: AppDocument, subject: string): Promise<void>;
@@ -384,7 +385,7 @@ export const createRuntimeContext = (
   const updateAppDocument = (
     appId: AppId,
     mutate: (doc: AppDocument) => AppDocument,
-  ): Promise<AppDocument> => updateAppRow(stores.apps, appId, mutate);
+  ): Promise<AppDocument> => updateAppRow(stores.apps, appId, mutate, "box");
   const base = { config, ...stores, ...audit, ...access, ...machine, updateAppDocument, runtime };
   const approvals = createApprovalFlow(base);
   const journal = createEditJournal(base);

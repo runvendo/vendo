@@ -14,7 +14,7 @@ import type {
 import { createActions } from "@vendoai/actions";
 import { createApps, type AppsRuntime } from "@vendoai/apps";
 import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
-import { createMcpDoor, type AppsPort, type HostOAuthAdapter } from "@vendoai/mcp";
+import { createMcpDoor, type McpDoorConfig, type HostOAuthAdapter } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
 
 export const SUBJECT = "user_1";
@@ -225,7 +225,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     principal: resolvePrincipal,
   };
   let origin = "";
-  const appsPort: AppsPort = {
+  const appsPort: NonNullable<McpDoorConfig["apps"]> = {
     list: (ctx) => apps.list(ctx),
     async open(appId, ctx) {
       if (appId === HTTP_FIXTURE_APP_ID) {

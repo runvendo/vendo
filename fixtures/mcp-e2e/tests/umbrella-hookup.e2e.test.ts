@@ -252,7 +252,7 @@ describe("umbrella hookup — createVendo({ mcp: true }) mounts the door", () =>
         .map(({ name, description, inputSchema }) => ({ name, description, inputSchema }))
         .sort(byName);
       expect(fromSdk).toEqual(fromRegistry);
-      // The apps ride-along tools are advertised too (the umbrella passed AppsPort).
+      // The apps ride-along tools are advertised too (the umbrella passed them).
       expect(listed.tools.map(({ name }) => name)).toEqual(expect.arrayContaining([
         "vendo_apps_list",
         "vendo_apps_open",

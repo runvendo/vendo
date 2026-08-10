@@ -97,6 +97,38 @@ export type VendoViewStreamingToolCall = ToolCall & {
 /** Stable ai-SDK data-part id so partial and final views reconcile in place. */
 export const vendoViewStreamId = (appId: AppId): string => `vendo-view:${appId}`;
 
+/**
+ * THE producer of a `data-vendo-view` part — one builder, one validator.
+ *
+ * Four writers hand-wrote this object literal (the render seam, the create
+ * door, the harness tool bridge, the authoring assembler) and only two of them
+ * validated it, so a part that could never render was emitted by two paths and
+ * silently dropped by a third. Building it here makes {@link
+ * vendoViewPartSchema} unavoidable and derives the stream id from the app id,
+ * which is the only correct source for it.
+ *
+ * A part that does not parse is NOT a view: this returns `undefined` and the
+ * caller emits nothing, which is the law the render seam already lived by for
+ * content that does not compile.
+ *
+ * `streaming` stays the CALLER's business — it rides inside `payload`, because
+ * only the mid-build emitter knows whether this is the last paint.
+ */
+export const vendoViewPart = (input: {
+  appId: AppId;
+  payload: UIPayload;
+  turnId?: TurnId;
+}): { streamId: string; part: VendoViewPart } | undefined => {
+  const parsed = vendoViewPartSchema.safeParse({
+    type: "data-vendo-view",
+    appId: input.appId,
+    payload: input.payload,
+    ...(input.turnId === undefined ? {} : { turnId: input.turnId }),
+  });
+  if (!parsed.success) return undefined;
+  return { streamId: vendoViewStreamId(parsed.data.appId), part: parsed.data };
+};
+
 /** 01-core §16 — the inline connect-card part: emitted beside the native tool
  * part when a connector call ends `connect-required` (04-actions §3), keyed by
  * `toolCallId` exactly like the approval part. */

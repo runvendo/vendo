@@ -27,7 +27,7 @@ import {
   writeSponsorship,
   type Sponsorship,
 } from "./sponsorship.js";
-import type { AppRow, InternalRunRecord } from "./types.js";
+import type { AppData, InternalRunRecord } from "./types.js";
 
 export type SponsorshipGateDeps = { base: EngineBase; appRows: AppRowsAccess };
 
@@ -42,14 +42,14 @@ export interface SponsorshipGateAccess {
     triggerId: string,
   ): Promise<{ kind: "none" } | { kind: "erased" } | { kind: "row"; row: Sponsorship; revision?: string }>;
   /** Every sponsorship row for these apps' triggers, in ONE query. */
-  sponsorshipsFor(rows: readonly AppRow[]): Promise<Map<string, Sponsorship>>;
+  sponsorshipsFor(rows: readonly AppData[]): Promise<Map<string, Sponsorship>>;
   /** The run's context before any seam is consulted. */
   baseRunContext(run: InternalRunRecord, subject: string): RunContext;
   /** §9.9 — the run's identity is its SPONSOR. */
   runContext(doc: AppDocument, run: InternalRunRecord, subject: string): Promise<RunContext>;
   /** §9.9's fire-time gate, in ONE place. */
   sponsorshipRefusal(
-    app: AppRow,
+    app: AppData,
     trigger: Trigger,
     ctx: RunContext,
   ): Promise<{ reason: NonNullable<Sponsorship["reason"]>; summary: string } | undefined>;
@@ -86,7 +86,7 @@ const createSponsorshipReader = (
   };
 
   /** Every sponsorship row for these apps' triggers, in ONE query. */
-  const sponsorshipsFor = async (rows: readonly AppRow[]): Promise<Map<string, Sponsorship>> => {
+  const sponsorshipsFor = async (rows: readonly AppData[]): Promise<Map<string, Sponsorship>> => {
     const keys = rows.flatMap((row) =>
       triggersOf(row.doc).map((trigger) => triggerKey(row.doc.id, trigger.id)));
     if (keys.length === 0) return new Map();
@@ -158,7 +158,7 @@ const createRunIdentity = (
    *  and the sponsor can still edit the app. Any failure marks the sponsorship
    *  invalidated and the caller stops the run loudly before any tool call. */
   const sponsorshipRefusal = async (
-    app: AppRow,
+    app: AppData,
     trigger: Trigger,
     ctx: RunContext,
   ): Promise<{ reason: NonNullable<Sponsorship["reason"]>; summary: string } | undefined> => {

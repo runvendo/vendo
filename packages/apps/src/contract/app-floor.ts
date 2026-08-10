@@ -13,11 +13,10 @@
  *
  *  - `compile` puts model wire through the PRODUCTION dialect. The seam used to
  *    call `compileWire(content)` with no options at all, so every files-first
- *    paint spoke a different dialect than the generation path — inline tool references
- *    did not expand (the failure recorded at `apps/generation/wire-options.ts`:
- *    "live 2026-07-23: one recompile that lacked these options failed EVERY app
- *    built on inline references") and `bindingErrors`, "the engine's unshippable
- *    gate", was `[]` unconditionally.
+ *    paint spoke a different dialect than the generation path — inline tool
+ *    references did not expand and `bindingErrors`, "the engine's unshippable
+ *    gate", was `[]` unconditionally. The incident is recorded once, at
+ *    `server/runtime/wire-options.ts`; do not re-tell it here.
  *  - `check` is the seven deterministic fact checks (plus whatever the host
  *    plugged in). A `block` means the app must not reach a screen. The AI reviewer
  *    is deliberately NOT part of this: it spends a model call, and the seam runs on

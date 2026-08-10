@@ -72,7 +72,7 @@ export const createPlacementRows = (
       id: appId,
       name,
       buildFailed: { reason, at: new Date().toISOString() },
-    }, ctx.principal.subject));
+    }, ctx.principal.subject, false, "screen-agent"));
   };
 
   /** Where a placed app's build stands, read off its record every time.

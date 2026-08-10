@@ -138,7 +138,7 @@ const createAppCopyDoors = (
       // The conversation belongs to the owner who had it, not to the copy: the
       // persist already drops it (appRecordInput takes no session here), and the
       // RETURNED document must not hand it back either.
-      await apps.put(appRecordInput(fork, ctx.principal.subject));
+      await apps.put(appRecordInput(fork, ctx.principal.subject, false, "seed"));
       await reportLifecycle("fork", fork.id, ctx, { sourceAppId: source.id });
       return withoutSession(structuredClone(fork));
     },

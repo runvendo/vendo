@@ -15,6 +15,7 @@ import {
   type RecordStore,
   type RunContext,
   type UIPayload,
+  vendoViewPart,
 } from "@vendoai/core";
 import {
   compilePlan,
@@ -24,6 +25,7 @@ import {
   type PlanDisplay,
   type ScreenAssembler,
   type Tree,
+  stripServerAuthoritativeFields,
 } from "../../contract/index.js";
 import {
   BUILD_WATCHDOG_REASON,
@@ -44,7 +46,7 @@ import { escalatedServer, escalationNeedsMachine } from "../generation/lanes.js"
 import { skeletonFromPlan } from "../generation/skeleton.js";
 import { UNSTORED_APP_ID, validateCompiledCreate } from "../generation/validation/validate.js";
 import { generationDependencies, resolveProvider } from "../runtime/generation-context.js";
-import { createProgressiveQueryResolver, stripServerAuthoritativeFields } from "../persistence/open.js";
+import { createProgressiveQueryResolver } from "../persistence/open.js";
 import { appRecordInput, documentFromRecord, withoutSession } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime } from "../runtime/types.js";
@@ -99,7 +101,7 @@ const startBuildWatchdog = (
         id: appId,
         name: fallbackAppName(prompt),
         buildFailed: { reason: BUILD_WATCHDOG_REASON, retryable: true, at: new Date().toISOString(), prompt },
-      }, subject));
+      }, subject, false, "screen-agent"));
       console.error(`[vendo] app build watchdog (${appId}): no app record and no failure landed within ${buildWatchdogMs()}ms — persisted a terminal failed record so the embed resolves instead of polling forever.`);
     })().catch(() => undefined);
   }, buildWatchdogMs());
@@ -128,7 +130,7 @@ const createBuildFailer = (bound: {
       id: appId,
       name: fallbackAppName(prompt),
       buildFailed: { reason, retryable, at: new Date().toISOString(), prompt },
-    }, subject)).catch(() => undefined);
+    }, subject, false, "screen-agent")).catch(() => undefined);
     clearTimeout(watchdog);
     console.error(`[vendo] app build failed (${appId}): ${reason}${detail.map((line) => `\n  - ${line}`).join("")}`);
     throw new VendoError(
@@ -225,10 +227,14 @@ const paintSettledTree = async (
 
 /** 06-apps §§8–9 — the venue verdict and drift report are server-authoritative
  *  and a model-written tree must never smuggle either into the live stream: a
- *  freshly generated app has no approval and no drifted pins by definition. */
+ *  freshly generated app has no approval and no drifted pins by definition.
+ *
+ *  Built through `vendoViewPart`, the ONE producer of a view part, so this door
+ *  and the render seam cannot emit two different shapes. */
 const emitView = (onView: CreateInput["onView"], appId: AppId, payload: Tree): void => {
   stripServerAuthoritativeFields(payload);
-  onView?.({ type: "data-vendo-view", appId, payload: payload as unknown as UIPayload });
+  const view = vendoViewPart({ appId, payload: payload as unknown as UIPayload });
+  if (view !== undefined) onView?.(view.part);
 };
 
 const createCreateDoor = (
@@ -302,7 +308,7 @@ const createCreateDoor = (
     // replaced by a second card.
     let unsavedReason: string | undefined;
     try {
-      await apps.put(appRecordInput(app, ctx.principal.subject));
+      await apps.put(appRecordInput(app, ctx.principal.subject, false, "screen-agent"));
     } catch (error) {
       // A persist failure degrades the app to view-only — it renders, it just
       // is not in the user's list and cannot be reopened. Far better than
