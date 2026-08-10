@@ -78,7 +78,16 @@ export const STORE_WIRE_PATHS = {
 export const STORE_WIRE_MIN_CLIENT_VERSION = "0.10.0";
 
 /** The release that DROPS the ops below. Announced now, enforced there; this
-    constant is the one place to change when the removal slice is cut. */
+    constant is the one place to change when the removal slice is cut.
+
+    THIS NUMBER IS A PROMISE TO CUSTOMERS, not an internal note: it is printed
+    verbatim in the deprecation changeset and in doctor's E-LIVE-008 warning, so
+    a reader will plan a migration around it. It is derived, not chosen — the
+    announcement rides the release after the one publishing today, and the
+    removal must be one full release later than the announcement so nobody
+    upgrades into a break they were never told about. RE-CONFIRM IT AT THE
+    RELEASE CUT: if the announcement slips into a release of its own, this moves
+    with it. */
 export const STORE_WIRE_DEPRECATED_REMOVED_IN = "0.13.0";
 
 /** Ops this wire still serves but is retiring: the generic `records.*` family,

@@ -142,7 +142,18 @@ function checkVersionSkew(run: DoctorRun, wireVersion: string): void {
  *  deprecation that becomes an outage. This is ADVERTISEMENT only: every named
  *  op still answers today, so it is a warning and never a failure — doctor is
  *  passing the mount's notice along, not refusing anything. A mount that
- *  announces nothing (older wire, or one that already dropped them) is silent. */
+ *  announces nothing (older wire, or one that already dropped them) is silent.
+ *
+ *  The asymmetry below is DELIBERATE, not a gap to close. Two different
+ *  documents are both called /status: the store-ops handshake
+ *  (`StoreWireStatus`, served by the hosted wire and forwarded by the console,
+ *  which spreads it whole) is the one that carries `deprecated`; the
+ *  composition /status this function reads (wire/misc.ts) does not, and must
+ *  not be taught to. `records.*` is a HOSTED-WIRE concern — a self-hosted
+ *  deployment on its own StoreAdapter has no `records.*` wire door to lose, so
+ *  there is nothing to warn it about. Reading the field off whatever answered
+ *  means the warning reaches exactly the population it concerns and stays quiet
+ *  for everyone else. Do not "fix" this by forwarding the field. */
 function checkStoreDeprecations(run: DoctorRun, deprecated: unknown): void {
   if (!Array.isArray(deprecated)) return;
   const ops = deprecated.filter((op): op is string => typeof op === "string" && op !== "");
