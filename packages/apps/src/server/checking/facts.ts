@@ -275,6 +275,33 @@ export const exprIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => 
   return issues;
 };
 
+/** Money slots take integer CENTS (see the `values` group in kit/specs.ts).
+ *  A host field named `balance` rather than `balance_cents` reads as dollars,
+ *  so the writer scales the expression down — and the money formatter divides
+ *  by 100 again, so a $36,265.00 net worth renders as $362.65. The value IS
+ *  bound to real rows, so no shape or expression check can see it and the
+ *  screen looks plausible; the only tell is the scale itself, sitting on a slot
+ *  that is about to format cents. Never a legitimate divisor: a real per-item
+ *  average is `/ count(...)`, not `/ 100`. */
+const CENTS_SCALE = /\/\s*100(?![\d.])|\*\s*0\.0*1(?![\d])/;
+
+const isMoneySlot = (node: TreeNode, prop: string): boolean =>
+  (node.component === "Money" && prop === "cents")
+  || (node.props !== undefined && node.props.format === "money");
+
+export const moneyScaleIssues = (tree: Tree): FactIssue[] => {
+  const issues: FactIssue[] = [];
+  for (const node of tree.nodes) {
+    if (!KIT_WIRE_SET.has(node.component)) continue;
+    for (const [prop, value] of Object.entries(node.props ?? {})) {
+      if (!isExprBinding(value) || !isMoneySlot(node, prop)) continue;
+      if (!CENTS_SCALE.test(value.$expr)) continue;
+      issues.push(atProp(node.id, prop, `computes {${value.$expr}} into a money slot, which already takes integer CENTS and formats them itself — the scale renders the amount 100x too small. Drop the "/ 100" and bind the cents straight through.`));
+    }
+  }
+  return issues;
+};
+
 /** Models write "Total: {metric.total}" inside STRING attributes; the wire
  *  has no string interpolation, so the braces render literally. Any string
  *  prop embedding a declared query reference is a repair-routed error. */
@@ -557,7 +584,7 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
     ...kitSlotIssues(tree, deps),
     ...hostReshapeIssues(tree, deps),
   ]),
-  treeCheck("expressions-compute", (tree) => exprIssues(tree, deps)),
+  treeCheck("expressions-compute", (tree) => [...exprIssues(tree, deps), ...moneyScaleIssues(tree)]),
   treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
   treeCheck("no-string-interpolation", (tree) => interpolationIssues(tree)),
 ];

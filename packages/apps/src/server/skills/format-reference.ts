@@ -287,6 +287,19 @@ is nothing left to reshape. Let the component format it: \`Stat\` takes
 \`format="money"\`, \`Money\` takes \`cents\`, a \`DataTable\` column takes
 \`format:"money"\`.
 
+### Money is CENTS, whatever the field is called
+
+Every money slot takes an integer number of cents and does the decimal point
+itself. A field named \`balance\` or \`amount\` is cents just as much as one named
+\`amount_cents\` is — the name is the host's habit, not a unit. So money is never
+scaled on the way in: \`/ 100\` on a money slot renders the amount a hundred
+times too small, and \`validate\` reports it.
+
+\`\`\`
+value={sum(accounts.data, "balance")}          format="money"   ✓  $36,265.00
+value={sum(accounts.data, "balance") / 100}    format="money"   ✗  $362.65
+\`\`\`
+
 ---
 
 ## Changing an app that already exists
