@@ -177,6 +177,16 @@ function toToolResult(outcome: Exclude<ToolOutcome, { status: "pending-approval"
   }
 }
 
+/** The recovery instruction travels WITH the failure the model reads, and the
+ *  bound on repeating is counted for it rather than left to its judgement — a
+ *  first failure says "try it once more", and a second says stop and answer with
+ *  what you have. Only the model's copy is annotated; the audit row, the
+ *  workbench event and the mirrored transcript keep the host's own words. */
+const TRY_ONCE_MORE =
+  " This may be transient — try this exact call once more; if it fails again, say what you could not get.";
+const stopTrying = (attempts: number): string =>
+  ` This exact call has now failed ${attempts} times. Do not call it again — tell the person plainly what you could not get and answer with what you do have.`;
+
 export interface RuntimeTurnTools extends TurnTools {
   /** §1.4 + the orphaned-approval fix: ids this turn raised and nobody answered. */
   unansweredApprovals(): ApprovalId[];
@@ -204,6 +214,21 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
    *  turn's audit rows without correlating out of band. */
   const mirror = (event: MirrorEvent): void => {
     options.mirror(options.ctx.turnId === undefined ? event : { ...event, turnId: options.ctx.turnId });
+  };
+
+  /** How many times each exact call has already failed THIS turn (the factory is
+   *  per turn), which is what makes the bound a real count instead of a rule the
+   *  model has to keep for itself. `ok` never counts. */
+  const failed = new Map<string, number>();
+  const withRecovery = (name: string, args: Json, result: ToolResult): ToolResult => {
+    if (result.status === "ok") return result;
+    const key = `${name}:${JSON.stringify(args)}`;
+    const attempts = (failed.get(key) ?? 0) + 1;
+    failed.set(key, attempts);
+    const advice = attempts === 1 ? TRY_ONCE_MORE : stopTrying(attempts);
+    return result.status === "error"
+      ? { ...result, error: { ...result.error, message: `${result.error.message}${advice}` } }
+      : { ...result, reason: `${result.reason}${advice}` };
   };
 
   const descriptorFor = async (name: string): Promise<ToolDescriptor | undefined> => {
@@ -279,7 +304,7 @@ export function createTurnTools(options: TurnToolsOptions): RuntimeTurnTools {
           ...(approval === undefined ? {} : { approval }),
           durationMs: Date.now() - startedAt,
         });
-        return result;
+        return withRecovery(name, args, result);
       };
 
       try {
