@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  *
  * What it holds, and why each claim is load-bearing:
  *  1. the page is published and every nav entry still resolves, with this page
- *     FIRST in its group (it is the on-ramp);
+ *     opening its group behind the door's overview (it is the on-ramp);
  *  2. every tool name the page puts in a reader's system prompt really exists
  *     in the registry the page is describing;
  *  3. `vendo_make`'s four documented arguments are its real schema properties on
@@ -31,6 +31,9 @@ const readJson = async <T>(path: string): Promise<T> => JSON.parse(await read(pa
 
 const PAGE = "docs-site/existing-agents/your-agent.mdx";
 const NAV_ENTRY = "existing-agents/your-agent";
+/** The first door's group, and the overview that opens it (#1133). */
+const NAV_GROUP = "You already have an agent";
+const NAV_OVERVIEW = "existing-agents/index";
 const AGENT_TOOLS = "packages/apps/src/server/doors/agent-tools.ts";
 const PACK = "packages/vendo/src/pack.ts";
 
@@ -53,11 +56,11 @@ describe("the BYO on-ramp page is published", () => {
     expect(text).toMatch(/^description: "/m);
   });
 
-  it("is the FIRST entry in the Bring-your-own-agent group", async () => {
+  it("opens the door's group, right behind its overview", async () => {
     const docs = await readJson<DocsJson>("docs-site/docs.json");
-    const group = docs.navigation.groups.find((entry) => entry.group === "Bring your own agent");
-    expect(group, "the 'Bring your own agent' group must exist").toBeDefined();
-    expect(group?.pages[0]).toBe(NAV_ENTRY);
+    const group = docs.navigation.groups.find((entry) => entry.group === NAV_GROUP);
+    expect(group, `the '${NAV_GROUP}' group must exist`).toBeDefined();
+    expect(group?.pages.slice(0, 2)).toEqual([NAV_OVERVIEW, NAV_ENTRY]);
   });
 
   it("leaves no nav entry pointing at a file that does not exist", async () => {

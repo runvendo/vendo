@@ -22,6 +22,8 @@ const readJson = async <T>(path: string): Promise<T> => JSON.parse(await read(pa
 
 const PAGE = "docs-site/existing-agents/mcp.mdx";
 const NAV_ENTRY = "existing-agents/mcp";
+/** The third door's group — the three MCP pages sit together here (#1133). */
+const NAV_GROUP = "Expose your product over MCP";
 
 interface DocsJson {
   navigation: { groups: { group: string; pages: string[] }[] };
@@ -42,10 +44,10 @@ describe("the BYO-over-MCP page is published", () => {
     expect(text).toMatch(/^description: "/m);
   });
 
-  it("sits in the Bring-your-own-agent nav group", async () => {
+  it("sits in the MCP door's nav group", async () => {
     const docs = await readJson<DocsJson>("docs-site/docs.json");
-    const group = docs.navigation.groups.find((entry) => entry.group === "Bring your own agent");
-    expect(group, "the 'Bring your own agent' group must exist").toBeDefined();
+    const group = docs.navigation.groups.find((entry) => entry.group === NAV_GROUP);
+    expect(group, `the '${NAV_GROUP}' group must exist`).toBeDefined();
     expect(group?.pages).toContain(NAV_ENTRY);
   });
 
