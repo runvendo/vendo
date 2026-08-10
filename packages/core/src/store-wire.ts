@@ -75,7 +75,7 @@ export const STORE_WIRE_PATHS = {
     version by `scripts/sync-version-constants.mjs` at release cut, exactly like
     the CLI and wire VERSION constants — so it always names the release that
     carried this contract and there is no number to remember. */
-export const STORE_WIRE_MIN_CLIENT_VERSION = "0.10.0";
+export const STORE_WIRE_MIN_CLIENT_VERSION = "0.12.0";
 
 /** The release that DROPS the ops below. Announced now, enforced there; this
     constant is the one place to change when the removal slice is cut.
