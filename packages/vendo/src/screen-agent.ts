@@ -215,8 +215,8 @@ export function toolBrief(listings: readonly ToolListing[]): string {
 const environmentNote = (appId: AppId, listings: readonly ToolListing[]): string => `# In this loop
 
 You have no machine: no shell, no \`Task\`, no files on disk. Everything the skill
-above tells you to read is already below, and everything it tells you to write goes
-through two tools.
+above tells you to read is already in this brief, and everything it tells you to
+write goes through two tools.
 
 - **\`${SAVE_APP_TOOL}\`** saves this app's whole document. The app is
   \`${appId}\`; you never name a path. Every save that parses repaints the person's
@@ -247,15 +247,51 @@ deliberate.
 
 ${toolBrief(listings)}`;
 
-/** The full brief: the shipped job description, the shipped syntax manual, the
- *  briefing pack, then what is different here. The manual and the environment
- *  note are this rung's own INSTRUCTIONS — the box is told a different job in
- *  its own words; the pack between them is the product knowledge both rungs
- *  read byte for byte (`contract/briefing.ts`). */
+/**
+ * The ask, at the TOP of the brief.
+ *
+ * A 45,000-character reference read with the question already in mind is read for
+ * what the question needs; read cold it is read as a whole. The ask is not moved
+ * here — it stays the user message, which is what the loop's history carries and
+ * what a repair round appends to — it is FRAMED here, so the reference below has a
+ * subject before the model starts spending attention on it.
+ */
+const askNote = (request: string): string => `# The ask
+
+One person asked for this, in their own words:
+
+${request}
+
+Everything below is reference for that one ask. It ends with this product's own
+theme and tool shapes, and the ask itself is the last thing you will read.`;
+
+/**
+ * The full brief, in READING order rather than authoring order.
+ *
+ * Same five bodies of text as before — nothing is cut, because cutting this brief
+ * is measured to cost quality. What changed is which of them the model reads LAST,
+ * next to the ask: the syntax manual is a lookup table (27,593 characters of
+ * grammar, worked example and component reference) and it used to sit between the
+ * job description and the ask, so 31,000 characters separated "What a good screen
+ * looks like" — the bar the reviewer actually grades — from the thing being graded.
+ * With the manual first, the final ~3,700 characters before the ask are the quality
+ * bar, this host's theme and design rules, and the tools' real shapes.
+ *
+ * The reorder costs no prompt cache. `environmentNote` interpolates `appId`, so this
+ * string has always been unique per screen and no cross-screen prefix ever hit; the
+ * cache that does hit is the intra-turn one, and every step of a turn shares this
+ * whole string whatever order it is in (`vendo/loop.ts:454`).
+ *
+ * The manual, the ask note and the environment note are this rung's own
+ * INSTRUCTIONS — the box is told a different job in its own words; the pack among
+ * them is the product knowledge both rungs read byte for byte
+ * (`contract/briefing.ts`), and it stays one `---`-joined section of its own.
+ */
 function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): string {
   return [
-    buildingAppsSkill.body,
+    askNote(input.request),
     buildingAppsSkill.files?.[`references/${"format.md"}`],
+    buildingAppsSkill.body,
     input.briefing,
     environmentNote(input.appId, listings),
   ]
