@@ -174,6 +174,9 @@ export default function Page() {
     const remixed = await vendo.apps.edit(appId, "Call out that it is remixed", ctx);
     expect(remixed.failure).toBeUndefined();
     expect(remixed.app.seed).toEqual({ component: slot, baseline: oldHash });
+    // The person's own change really is in the seat — otherwise "the re-seed
+    // replaces it" below would prove nothing.
+    expect(bundleOf(remixed.app.components![componentName]!).source).toContain("— remixed");
 
     // The pre-drift version gets an in-client approval (dev injection seam).
     const approval = await (await vendo.handler(request("POST", "/dev/inclient-approval", {

@@ -9,7 +9,7 @@ import { dispatchRoutes, routeSegments, type WireContext, type WireDeps } from "
  * only way to prove the one thing that can silently break here: `/apps/placements`
  * has to be matched before the `/apps/:appId/*` catch-all, whose rest pattern
  * would otherwise resolve it as the app id "placements" (the same trap
- * /apps/fork-pin and /apps/import sit in front of).
+ * /apps/seed and /apps/import sit in front of).
  */
 
 const ctx: RunContext = {
