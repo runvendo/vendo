@@ -61,6 +61,20 @@ export const DEFAULT_MAX_RETRIES = 2;
 // other provider (and by the test mocks), so marking breakpoints degrades to a no-op.
 const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral" } } } as const;
 
+/** How hard the model may think before it answers — `claudeCode()`'s spelling
+ *  ({@link ../claude-code/index.js ClaudeCodeOptions}), because it is the same
+ *  decision about the same brain and a host must not learn it twice. */
+export type ModelEffort = "low" | "medium" | "high";
+
+/**
+ * The effort knob in each provider's own spelling: `effort` for Anthropic,
+ * `reasoningEffort` for OpenAI. `providerOptions` is keyed by provider id and a
+ * provider reads only its own key, so naming both is general at the call site
+ * and a no-op on anything else (the same property `CACHE_BREAKPOINT` relies on).
+ */
+const effortOptions = (effort: ModelEffort | undefined): { providerOptions?: Record<string, Record<string, unknown>> } =>
+  effort === undefined ? {} : { providerOptions: { anthropic: { effort }, openai: { reasoningEffort: effort } } };
+
 /** 0.4.4 cert defect B — a terminally failed app BUILD ends the turn. A build
  *  is a minutes-long operation and its failure is deterministic for the same
  *  ask, so letting the model auto-retry inside the turn kept the thread
@@ -538,6 +552,19 @@ export interface TurnLoopOptions {
  *  other knob structurally unreachable from the default harness). */
 export interface TurnContext {
   maxOutputTokens?: number;
+  /**
+   * How hard the model may think before it answers ({@link ModelEffort}).
+   *
+   * Unset is the PROVIDER's default, which on the Claude 5 line is extended
+   * thinking ON and unbounded (`apps/src/server/runtime/model-params.ts` says
+   * the same about `max_tokens`). Measured 2026-08-10 on a screen-assembly
+   * turn: one unbounded call spent 240s and 13.7K output tokens to produce a
+   * 623-character tool argument — 83% of that run's wall clock inside hidden
+   * reasoning. So this is a knob a caller who knows the job needs, not a tuning
+   * detail: a specialist writing a document is not a resident reasoning about
+   * an open-ended ask.
+   */
+  effort?: ModelEffort;
   /** Bound the messages re-sent per turn to the last N whole messages. */
   historyWindow?: number;
   /** §4.1 item 2 — bound the PROMPT instead of the message count: reasoning and
@@ -606,6 +633,8 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     tools: options.tools,
     stopWhen: [stepCountIs(maxSteps), buildFailedStop, askedUserStop, ...(options.stopWhen ?? [])],
     maxOutputTokens: options.context?.maxOutputTokens,
+    // How hard the model may think, when the caller bounded it (TurnContext.effort).
+    ...effortOptions(options.context?.effort),
     // Stated rather than inherited — see DEFAULT_MAX_RETRIES.
     maxRetries: options.context?.maxRetries ?? DEFAULT_MAX_RETRIES,
     // The caller's loadout: restrict what the model may pick to the current
