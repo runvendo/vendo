@@ -78,9 +78,47 @@ const INVOIFY_PASSTHROUGH_LAYOUT = [
   "",
 ].join("\n");
 
+// teable's src/pages/_app.tsx, trimmed to its structure at the manifest's
+// pinned sha (105e0f945dd9e4181ba6f80e44056c176a9800aa): a pages-router host
+// with NO app/layout.* at baseline. Its page slot carries the host's own props
+// and sits inside a `getLayout(...)` CALL inside a conditional — so the mount
+// wraps that element in place rather than replacing it.
+const TEABLE_PAGES_APP = [
+  'import type { AppProps } from "next/app";',
+  'import Head from "next/head";',
+  'import { AppProviders } from "../AppProviders";',
+  "",
+  "const MyApp = (appProps: AppProps) => {",
+  "  const { Component, err: nextJsError, pageProps } = appProps;",
+  "  const { env = {}, err: pageError, httpError } = pageProps;",
+  "  const getLayout = Component.getLayout ?? ((page) => page);",
+  "  return (",
+  "    <>",
+  "      <AppProviders env={env}>",
+  "        <Head>",
+  '          <meta name="viewport" content="width=device-width" />',
+  "        </Head>",
+  "        {httpError && [402, 403].includes(httpError.status) ? (",
+  "          <HttpErrorPage httpError={httpError} />",
+  "        ) : (",
+  "          getLayout(<Component {...pageProps} err={nextJsError || pageError} />, {",
+  "            ...pageProps,",
+  "          })",
+  "        )}",
+  "      </AppProviders>",
+  "    </>",
+  "  );",
+  "};",
+  "",
+  "export default MyApp;",
+  "",
+].join("\n");
+
 // The canonical mount from docs-site/quickstart.mdx ("The client mount") — the
 // harness constructs this itself, independent of what init printed.
 const WRAP = '<VendoProvider baseUrl="/api/vendo">{children}</VendoProvider>';
+// The pages equivalent: same provider, wrapped around the page slot.
+const PAGES_WRAP = '<VendoProvider baseUrl="/api/vendo"><Component {...pageProps} err={nextJsError || pageError} /></VendoProvider>';
 
 describe("applyVendoRootPaste", () => {
   it("pastes the canonical import + wrap into an unwrapped app router layout", async () => {
@@ -247,9 +285,57 @@ describe("applyVendoRootPaste", () => {
     expect(result).toMatchObject({ applied: false, file: null });
   });
 
-  it("skips silently when no App Router layout exists", async () => {
+  it("skips silently when neither an App Router layout nor a pages _app exists", async () => {
     const repoDir = await makeTempRepo();
     const result = await applyVendoRootPaste(repoDir, "next");
     expect(result).toMatchObject({ applied: false, file: null });
+  });
+
+  it("wraps the page slot of a pages-router _app when the host has no app layout (teable)", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "src/pages"), { recursive: true });
+    await writeFile(path.join(repoDir, "src/pages/_app.tsx"), TEABLE_PAGES_APP);
+
+    const result = await applyVendoRootPaste(repoDir, "next");
+
+    expect(result).toMatchObject({ applied: true, file: "src/pages/_app.tsx" });
+    const app = await readFile(path.join(repoDir, "src/pages/_app.tsx"), "utf8");
+    expect(app).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
+    // Wrapped in place: the host's own props on the page element survive.
+    expect(app).toContain(PAGES_WRAP);
+    expect(ts.transpileModule(app, {
+      reportDiagnostics: true,
+      fileName: "_app.tsx",
+      compilerOptions: { jsx: ts.JsxEmit.Preserve },
+    }).diagnostics ?? []).toEqual([]);
+  });
+
+  it("leaves an already-wrapped pages _app unchanged (idempotent)", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "pages"), { recursive: true });
+    await writeFile(path.join(repoDir, "pages/_app.tsx"), TEABLE_PAGES_APP);
+
+    const first = await applyVendoRootPaste(repoDir, "next");
+    const afterFirst = await readFile(path.join(repoDir, "pages/_app.tsx"), "utf8");
+    const second = await applyVendoRootPaste(repoDir, "next");
+
+    // A root-level pages/ is the mount too — teable's just happens to live
+    // under src/.
+    expect(first).toMatchObject({ applied: true, file: "pages/_app.tsx" });
+    expect(second).toMatchObject({ applied: false, file: "pages/_app.tsx" });
+    await expect(readFile(path.join(repoDir, "pages/_app.tsx"), "utf8")).resolves.toBe(afterFirst);
+  });
+
+  it("prefers an App Router layout over a pages _app when the host has both", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "src/app"), { recursive: true });
+    await mkdir(path.join(repoDir, "src/pages"), { recursive: true });
+    await writeFile(path.join(repoDir, "src/app/layout.tsx"), UNWRAPPED_LAYOUT);
+    await writeFile(path.join(repoDir, "src/pages/_app.tsx"), TEABLE_PAGES_APP);
+
+    const result = await applyVendoRootPaste(repoDir, "next");
+
+    expect(result).toMatchObject({ applied: true, file: "src/app/layout.tsx" });
+    await expect(readFile(path.join(repoDir, "src/pages/_app.tsx"), "utf8")).resolves.toBe(TEABLE_PAGES_APP);
   });
 });

@@ -177,6 +177,40 @@ async function makeExpressRepo(): Promise<string> {
   return repoDir;
 }
 
+// teable's shape: a pages router under src/ and no app/layout.* anywhere, so
+// init scaffolds the route segment at src/app/... (appDirectory) and the mount
+// belongs in src/pages/_app.tsx (clientRoot).
+async function makePagesRepo(wrapped: boolean): Promise<string> {
+  const repoDir = await makeTempRepo();
+  await rm(path.join(repoDir, "app"), { recursive: true, force: true });
+  await mkdir(path.join(repoDir, "src/app/api/vendo/[...vendo]"), { recursive: true });
+  await writeFile(
+    path.join(repoDir, "src/app/api/vendo/[...vendo]/route.ts"),
+    [
+      'import { model } from "@/lib/ai";',
+      'import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";',
+      "const vendo = createVendo({ model, principal: async () => null });",
+      "export const { GET, POST, DELETE } = nextVendoHandler(vendo);",
+      "",
+    ].join("\n"),
+  );
+  await mkdir(path.join(repoDir, "src/pages"), { recursive: true });
+  const slot = "<Component {...pageProps} />";
+  await writeFile(
+    path.join(repoDir, "src/pages/_app.tsx"),
+    [
+      ...(wrapped ? ['import { VendoProvider } from "@vendoai/vendo/react";'] : []),
+      'import type { AppProps } from "next/app";',
+      "",
+      "export default function MyApp({ Component, pageProps }: AppProps) {",
+      `  return ${wrapped ? `<VendoProvider baseUrl="/api/vendo">${slot}</VendoProvider>` : slot};`,
+      "}",
+      "",
+    ].join("\n"),
+  );
+  return repoDir;
+}
+
 function passingContext(repoDir: string, runner: StructuralCommandRunner): StructuralLayerContext {
   return {
     repoDir,
@@ -248,6 +282,27 @@ describe("runStructuralLayer", () => {
       `pnpm typecheck @ ${repoDir}`,
       `pnpm build @ ${repoDir}`,
     ]);
+  });
+
+  it("accepts a pages-router host that mounts the provider in _app (teable)", async () => {
+    const repoDir = await makePagesRepo(true);
+    const runner: StructuralCommandRunner = async () => ({ code: 0, stdout: "ok", stderr: "" });
+
+    const results = byId(await runStructuralLayer(passingContext(repoDir, runner)));
+
+    expect(results["files.expected"]).toMatchObject({ pass: true });
+  });
+
+  it("still fails a pages-router _app that never mounts VendoProvider", async () => {
+    const repoDir = await makePagesRepo(false);
+    const runner: StructuralCommandRunner = async () => ({ code: 0, stdout: "ok", stderr: "" });
+
+    const results = byId(await runStructuralLayer(passingContext(repoDir, runner)));
+
+    expect(results["files.expected"]).toMatchObject({ pass: false });
+    expect(results["files.expected"]?.detail).toContain(
+      "src/pages/_app.tsx does not wrap <Component {...pageProps} /> with @vendoai/vendo/react VendoProvider",
+    );
   });
 
   it("accepts the generated vendo-root wrapper wiring shape for Next layouts", async () => {

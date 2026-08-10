@@ -76,9 +76,13 @@ export interface StructuralLayerContext {
   env?: NodeJS.ProcessEnv;
 }
 
-export interface AppRouterInfo {
+export interface ClientMountInfo {
+  /** Where init scaffolds api/vendo/[...vendo] — a pages host under src/ gets
+   *  its new app/ segment under src/ too (Next hard-fails on split bases). */
   appDirRel: "app" | "src/app";
-  layoutRel: string;
+  /** The file the <VendoProvider> mount belongs in. */
+  mountRel: string;
+  router: "app" | "pages";
   ts: boolean;
 }
 
@@ -170,23 +174,59 @@ function importBindingOf(mod: BoundModule, use: TS.Identifier): { specifier: str
   }
   return null;
 }
-export async function findAppRouter(repoDir: string): Promise<AppRouterInfo | null> {
+/** The host's client root: an App Router root layout when one exists, else a
+ * pages-router `_app.tsx`.
+ *
+ * SEAM — this mirrors `clientRoot` (and its app-dir choice, `appDirectory`) in
+ * packages/vendo/src/cli/shared.ts:267-292: init prints the paste for exactly
+ * that file and doctor grades it there. If the product's rule moves, this must
+ * move with it, or the corpus grades a file init never mentioned — a pages host
+ * (teable) got a `src/pages/_app.tsx` paste while the harness looked only for
+ * `src/app/layout.*`, so every layer ran with no provider mounted. */
+export async function findClientMount(repoDir: string): Promise<ClientMountInfo | null> {
   for (const appDirRel of ["app", "src/app"] as const) {
     for (const name of ["layout.tsx", "layout.jsx", "layout.js"] as const) {
-      const layoutRel = path.posix.join(appDirRel, name);
-      if (await pathExists(path.join(repoDir, layoutRel))) {
+      const mountRel = path.posix.join(appDirRel, name);
+      if (await pathExists(path.join(repoDir, mountRel))) {
         return {
           appDirRel,
-          layoutRel,
+          mountRel,
+          router: "app",
           ts: name.endsWith(".tsx") || await pathExists(path.join(repoDir, "tsconfig.json")),
         };
       }
     }
   }
+  for (const pagesRel of ["src/pages", "pages"] as const) {
+    const mountRel = path.posix.join(pagesRel, "_app.tsx");
+    if (await pathExists(path.join(repoDir, mountRel))) {
+      return { appDirRel: pagesRel === "src/pages" ? "src/app" : "app", mountRel, router: "pages", ts: true };
+    }
+  }
   return null;
 }
 
-function routeRel(info: AppRouterInfo): string {
+/** A pages `_app`'s `<Component {...pageProps} />` — the pages-router
+ * equivalent of the app-router `{children}` (the two answers `clientRoot`
+ * gives for what the provider wraps). Keyed on the pageProps spread so an
+ * unrelated <Component> element is never mistaken for the page slot. */
+export function isPageComponentElement(tsApi: typeof TS, node: TS.Node): boolean {
+  const opening = tsApi.isJsxSelfClosingElement(node)
+    ? node
+    : tsApi.isJsxElement(node) ? node.openingElement : null;
+  if (opening === null || !tsApi.isIdentifier(opening.tagName) || opening.tagName.text !== "Component") return false;
+  return opening.attributes.properties.some((attribute) =>
+    tsApi.isJsxSpreadAttribute(attribute)
+    && tsApi.isIdentifier(attribute.expression)
+    && attribute.expression.text === "pageProps");
+}
+
+/** What the provider must wrap, in words, for a check's failure detail. */
+function mountedChildLabel(mount: ClientMountInfo): string {
+  return mount.router === "pages" ? "<Component {...pageProps} />" : "children";
+}
+
+function routeRel(info: ClientMountInfo): string {
   return path.posix.join(info.appDirRel, "api/vendo/[...vendo]", info.ts ? "route.ts" : "route.js");
 }
 
@@ -231,8 +271,8 @@ async function generatedExpressServerRel(repoDir: string): Promise<string> {
 async function defaultExpectedFilesForFramework(
   repoDir: string,
   framework: "next" | "express",
-): Promise<{ files: string[]; app: AppRouterInfo | null }> {
-  const app = await findAppRouter(repoDir);
+): Promise<{ files: string[]; mount: ClientMountInfo | null }> {
+  const mount = await findClientMount(repoDir);
   const files = [
     ".vendo/tools.json",
     ".vendo/catalog.json",
@@ -250,11 +290,11 @@ async function defaultExpectedFilesForFramework(
     } else {
       files.push(await generatedExpressServerRel(repoDir));
     }
-  } else if (app) {
-    files.push(routeRel(app), app.layoutRel);
+  } else if (mount) {
+    files.push(routeRel(mount), mount.mountRel);
   }
 
-  return { files, app };
+  return { files, mount };
 }
 
 async function sourceTreeText(repoDir: string, rel: string): Promise<string> {
@@ -320,7 +360,8 @@ function vendoRootImportSpecifiers(mod: BoundModule): string[] {
   return specifiers;
 }
 
-/** True when a `{children}` JSX expression under `root` is a DESCENDANT of a
+/** True when the mounted child under `root` — a `{children}` JSX expression, or
+ * a pages `_app`'s `<Component {...pageProps} />` — is a DESCENDANT of a
  * JSX element whose tag SYMBOL resolves (compiler binder) to an import
  * accepted by `accept` — AST containment plus real symbol resolution, so a
  * self-closing `<Tag />` beside `{children}`, children BETWEEN two sibling
@@ -340,13 +381,11 @@ function childrenInsideProvider(
       const binding = importBindingOf(mod, node.openingElement.tagName);
       if (binding !== null && accept(binding)) inside = true;
     }
-    if (
-      inside
-      && ts.isJsxExpression(node)
+    const isChildren = ts.isJsxExpression(node)
       && node.expression !== undefined
       && ts.isIdentifier(node.expression)
-      && node.expression.text === "children"
-    ) {
+      && node.expression.text === "children";
+    if (inside && (isChildren || isPageComponentElement(ts, node))) {
       found = true;
       return;
     }
@@ -384,15 +423,16 @@ function exportedFunctionNode(mod: BoundModule, exportName: string): TS.Node | n
   return null;
 }
 
-/** The layout wraps children with the @vendoai/vendo/react provider either
- * directly or through ONE wrapper hop: init generates no client file at all —
- * its printed paste (init.ts's mountStep) imports <VendoProvider> from the
- * package straight into the layout — but a host may still mount its own local
- * wrapper module instead.
- * "Wraps" means the `{children}` expression is an AST descendant of a JSX
+/** The client root wraps its mounted child with the @vendoai/vendo/react
+ * provider either directly or through ONE wrapper hop: init generates no client
+ * file at all — its printed paste (init.ts's mountStep) imports <VendoProvider>
+ * from the package straight into the client root — but a host may still mount
+ * its own local wrapper module instead.
+ * "Wraps" means the mounted child (`{children}`, or a pages `_app`'s
+ * `<Component {...pageProps} />`) is an AST descendant of a JSX
  * element whose tag SYMBOL (TypeScript's own binder — hoisted vars,
  * parameter shadows, every scoping rule) resolves to the VendoProvider import;
- * and through the wrapper hop, the layout's imported EXPORT itself — never
+ * and through the wrapper hop, the client root's imported EXPORT itself — never
  * some other function in the wrapper file — must nest its children inside
  * the package's VendoProvider. Fails closed when the TypeScript compiler is
  * unavailable.
@@ -406,18 +446,18 @@ function exportedFunctionNode(mod: BoundModule, exportName: string): TS.Node | n
  *   re-assignment;
  * - render-graph reachability: a provider element inside a component that
  *   is imported but never actually rendered by the route tree. */
-async function layoutReachesVendoReact(repoDir: string, app: AppRouterInfo, layout: string): Promise<boolean> {
-  const layoutModule = boundModule(layout, app.layoutRel);
-  if (layoutModule === null) return false;
+async function mountReachesVendoReact(repoDir: string, mount: ClientMountInfo, source: string): Promise<boolean> {
+  const mountModule = boundModule(source, mount.mountRel);
+  if (mountModule === null) return false;
   const packageBinding = (binding: { specifier: string; imported: string }): boolean =>
     binding.imported === "VendoProvider" && binding.specifier === "@vendoai/vendo/react";
-  for (const specifier of vendoRootImportSpecifiers(layoutModule)) {
+  for (const specifier of vendoRootImportSpecifiers(mountModule)) {
     const fromThisImport = (binding: { specifier: string; imported: string }): boolean =>
       binding.imported === "VendoProvider" && binding.specifier === specifier;
-    if (!childrenInsideProvider(layoutModule, fromThisImport)) continue;
+    if (!childrenInsideProvider(mountModule, fromThisImport)) continue;
     if (specifier === "@vendoai/vendo/react") return true;
     if (!specifier.startsWith(".")) continue;
-    const base = path.posix.join(path.posix.dirname(app.layoutRel), specifier);
+    const base = path.posix.join(path.posix.dirname(mount.mountRel), specifier);
     for (const candidate of [base, `${base}.tsx`, `${base}.ts`, `${base}.jsx`, `${base}.js`]) {
       const source = await readText(repoDir, candidate);
       if (source === null) continue;
@@ -433,7 +473,7 @@ async function layoutReachesVendoReact(repoDir: string, app: AppRouterInfo, layo
 
 async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<StructuralCheckResult> {
   const framework = ctx.framework ?? "next";
-  const { files, app } = await defaultExpectedFilesForFramework(ctx.repoDir, framework);
+  const { files, mount } = await defaultExpectedFilesForFramework(ctx.repoDir, framework);
   const required = ctx.expectedFiles ?? files;
   const missing: string[] = [];
 
@@ -462,16 +502,16 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
           wiringProblems.push("generated vendo/server module does not compose createVendo from @vendoai/vendo/server");
         }
       }
-    } else if (!app) {
-      wiringProblems.push("no App Router root layout found at app/layout.* or src/app/layout.*");
+    } else if (!mount) {
+      wiringProblems.push("no client root found at app/layout.*, src/app/layout.*, src/pages/_app.tsx or pages/_app.tsx");
     } else {
-      const layout = await readText(ctx.repoDir, app.layoutRel);
-      const route = await readText(ctx.repoDir, routeRel(app));
-      if (layout && !await layoutReachesVendoReact(ctx.repoDir, app, layout)) {
-        wiringProblems.push(`${app.layoutRel} does not wrap children with @vendoai/vendo/react VendoProvider (directly or via a local provider wrapper module)`);
+      const clientRoot = await readText(ctx.repoDir, mount.mountRel);
+      const route = await readText(ctx.repoDir, routeRel(mount));
+      if (clientRoot && !await mountReachesVendoReact(ctx.repoDir, mount, clientRoot)) {
+        wiringProblems.push(`${mount.mountRel} does not wrap ${mountedChildLabel(mount)} with @vendoai/vendo/react VendoProvider (directly or via a local provider wrapper module)`);
       }
       if (route && (!route.includes("createVendo") || !route.includes("nextVendoHandler"))) {
-        wiringProblems.push(`${routeRel(app)} does not compose createVendo() with nextVendoHandler()`);
+        wiringProblems.push(`${routeRel(mount)} does not compose createVendo() with nextVendoHandler()`);
       }
     }
   }
