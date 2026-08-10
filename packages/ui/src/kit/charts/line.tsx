@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import { applyFormat, type ValueFormat } from "../format.js";
 import { seriesColor, t } from "../tokens.js";
-import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty } from "./sanitize.js";
+import { ChartEmpty, ChartFrame, ChartValueList, sanitizeSeries, seriesIsEmpty, textValueRows } from "./sanitize.js";
 
 export type SeriesInput = string | { key: string; label?: string };
 
@@ -38,6 +38,8 @@ export function LineChart({ data, xKey, series, format = "number", height = 220,
   const keys = cols.map((c) => c.key);
   const clean = sanitizeSeries(data, keys);
   if (clean.length === 0 || seriesIsEmpty(clean, keys)) {
+    const shown = textValueRows(data, xKey, keys[0] ?? "");
+    if (shown.length > 0) return <ChartValueList items={shown} />;
     return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
