@@ -67,7 +67,7 @@ import {
   wrapWorkspaceForRender,
   type RenderSeamOptions,
 } from "@vendoai/apps";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, StopCondition, ToolSet } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
 import type { ModelEffort } from "@vendoai/harnesses/vendo";
 
@@ -253,6 +253,12 @@ through two tools.
   them — why you narrowed something, a constraint the tools imposed, a shape you
   ruled out. Never record what you did or in what order; that is narration, and
   it crowds out the one line that mattered.
+  Its \`done\` is how you FINISH. Set it on the save that answers the whole ask —
+  everything the person asked for is on the screen and you have nothing left to
+  add — and the turn ends the moment that save reaches the screen. Nothing else
+  ends it: without \`done\` you keep going until the step budget runs out, and
+  every step after the screen was finished is the person waiting for a screen
+  they already have. Leave it off a save that still has work behind it.
 - **\`validate\`** is not your spell-checker — the save is. Every save runs the
   checks on the way in and hands you back what they found, so there is nothing left
   to discover about a document you just saved. Ask \`validate\` only for a second
@@ -392,11 +398,19 @@ export async function assembleScreen(
     description:
       "Save this app's whole document. The person's screen repaints on every save that parses, so save "
       + "as you go rather than once at the end. Returns whether the save landed, whether it reached the "
-      + "person's screen, and what the checks found on the way in — so a save is also your check.",
+      + "person's screen, and what the checks found on the way in — so a save is also your check. Set "
+      + "`done` on the save that finishes the job: that is how this turn ends.",
     inputSchema: {
       type: "object",
       properties: {
         content: { type: "string", description: "The complete app document, in the .vendo format." },
+        done: {
+          type: "boolean",
+          description:
+            "True only if this save is the FINISHED screen — everything the person asked for is on it and you "
+            + "have nothing left to add. The turn ends when a save marked this way reaches the screen, so leave "
+            + "it out on a save-as-you-go revision that still has work behind it.",
+        },
         decisions: {
           type: "string",
           description:
@@ -409,7 +423,7 @@ export async function assembleScreen(
       additionalProperties: false,
     },
     execute: async (args, turn) => {
-      const { content, decisions } = args as { content: string; decisions?: string };
+      const { content, decisions, done } = args as { content: string; decisions?: string; done?: boolean };
       const committed = await save(turn, APP_FILE, content);
       if (committed.status !== "ok") {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
@@ -477,11 +491,25 @@ export async function assembleScreen(
        * there `validate` is the only checker in the building.
        */
       if (painted !== undefined) {
+        /**
+         * THE COMPLETION SIGNAL, and the only place it can honestly be made.
+         *
+         * `done` is the model's claim; the paint is the mechanical fact. Both, or
+         * neither: a claim over bytes the seam declined to paint took the branch
+         * above and is already being repaired, and a paint alone is not
+         * completion — the brief tells this loop to save as you go, so most
+         * painted saves are half a screen. So the two are ANDed here, in the hand
+         * that holds both, and {@link finishedStop} below only has to read the
+         * verdict rather than re-derive it.
+         */
         return {
           saved: true,
           painted: true,
-          note: "Saved, and it is on the person's screen — nothing on the way in blocked it. Keep saving revisions; "
-            + "you do not need to check what you just saved.",
+          ...(done === true ? { done: true } : {}),
+          note: done === true
+            ? "Saved, and it is on the person's screen. You called this the finished screen, so your turn ends here."
+            : "Saved, and it is on the person's screen — nothing on the way in blocked it. Keep saving revisions; "
+              + "you do not need to check what you just saved.",
         };
       }
       return { saved: true, note: "Run validate on it now." };
@@ -581,12 +609,53 @@ export async function assembleScreen(
     turnId: surface.turnId ?? mintTurnId(),
   };
 
+  /**
+   * WHAT ENDS AN ASSEMBLY, other than running out of budget.
+   *
+   * `SCREEN_STEPS` was the only thing that ever ended one, and a step cap is a
+   * hang detector rather than a finish line. Measured on genbench 2026-08-10: the
+   * median screen reached the person's display at 35.8s and the run settled at
+   * 137.3s — on `spend-shares` the correct screen painted at 27.9s and the loop
+   * then spent 232 more seconds re-searching the catalog and re-saving the same
+   * answer, because nothing told it it was finished and it still had steps.
+   *
+   * Same shape as the loop's own `buildFailedStop` and `askedUserStop`: read the
+   * last step's tool RESULTS and stop on a verdict a hand has already reached.
+   * Nothing is re-derived and nothing is judged here — a stop condition that
+   * decided whether a screen was any good would be a third checker, and the two
+   * this loop has (the paint's floor, and the reviewer below) still run either
+   * way. Stopping does not skip the review; it only stops the wandering between
+   * the last good save and the budget.
+   */
+  const lastStepReported = (
+    toolName: string,
+    field: "done" | "handedOver",
+  ): StopCondition<ToolSet> => ({ steps }) => {
+    const last = steps.at(-1);
+    return last !== undefined && last.toolResults.some((result) => {
+      if (result.toolName !== toolName) return false;
+      const output = result.output as Record<string, unknown> | null;
+      return typeof output === "object" && output !== null && output[field] === true;
+    });
+  };
+
+  /** The work is DONE: a save that landed, that the seam painted, and that the
+   *  model itself called the finished screen (`saveApp` ANDs the three). */
+  const finishedStop = lastStepReported(SAVE_APP_TOOL, "done");
+  /** The door out was taken. `escalate`'s own description already promises "This
+   *  ends your turn", and nothing made that true: the plan is saved and the
+   *  outcome below is `escalate` whatever else this drive goes on to do, so every
+   *  further step is spent on an answer nobody reads. */
+  const escalatedStop = lastStepReported(ESCALATE_TOOL, "handedOver");
+
   /** The first thing that went wrong, in the shipped loop's own words
    *  (`wireErrorMessage`, applied inside `vendo()`). */
   let failure: string | undefined;
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
+    // The budget is the ceiling; these are the finish lines.
+    stopWhen: [finishedStop, escalatedStop],
     // Bounded thinking, on purpose — see SCREEN_EFFORT.
     effort: surface.effort ?? SCREEN_EFFORT,
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
@@ -671,7 +740,11 @@ export async function assembleScreen(
           type: "text",
           text: saved === undefined
             ? instruction
-            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version:\n${saved}`,
+            // Marked done: the repair round is shown exactly what is wrong, so the
+            // corrected save IS the end of it — and a repair drive that carries on
+            // afterwards spends a second fresh budget on a screen already fixed.
+            : `${instruction}\n\nThis is the document you saved. Save the whole corrected version, `
+              + `with done set on that save:\n${saved}`,
         }],
       }]);
     }
