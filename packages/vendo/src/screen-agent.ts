@@ -82,6 +82,20 @@ import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harn
  */
 export const SCREEN_STEPS = 10;
 
+/**
+ * The ceiling on ONE step's output, thinking included.
+ *
+ * The step budget bounds how many times a screen may think; nothing bounded how
+ * long a single think may be, and thinking is on by default across the Claude 5
+ * line and caps against `max_tokens` — so an unset value is no rail at all. Set
+ * off the work like `SCREEN_STEPS`: the largest app document ever saved is
+ * ~2.3KB (~700 tokens), and a step spends ~740 output tokens, so 3K is 4x both
+ * and the steps that are already cheap never feel it. This is a rail for the
+ * runaway tail, not a smaller allowance: one instrumented step billed 13,702
+ * output tokens to emit a 623-character tool argument.
+ */
+export const SCREEN_STEP_OUTPUT_TOKENS = 3_000;
+
 /** The one door out of assembly (§4.5). Never `vendo_`-prefixed: the loadout's
  *  `isAlwaysActive` would make it un-gateable, and this tool is the screen
  *  agent's own, not a product capability anybody else may reach. */
@@ -482,6 +496,7 @@ export async function assembleScreen(
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
+    maxOutputTokens: SCREEN_STEP_OUTPUT_TOKENS,
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
     // in as its first section, so letting the turn's copy through would say it
     // twice.
