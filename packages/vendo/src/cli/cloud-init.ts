@@ -309,12 +309,18 @@ async function cloudStep(options: CloudStepOptions, failure: { failedStep?: stri
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
 
+  // The select is for a terminal a human is actually watching — pretty or
+  // not. The non-TTY guard stops it PROMPTING, but it does not stop it
+  // answering: its silent fallback is the first option, and the first option
+  // is Cloud, so an unattended run would start a device login nobody asked
+  // for. The confirm's default is No, which is the answer an unshown question
+  // must have, so a non-TTY run keeps taking it.
   const confirm = options.confirm ?? askYesNo;
   const chosen: ModelsAnswer = answered
-    ?? (options.select === undefined
+    ?? (options.select === undefined || !tty
       ? (await confirm("Log in to Vendo Cloud now for a free API key (starter model allowance included)?", false) ? "cloud" : "later")
       : (await options.select(MODELS_QUESTION, MODELS_OPTIONS)) as ModelsAnswer);
-  if (chosen === "byo" && options.askSecret !== undefined) {
+  if (chosen === "byo" && tty && options.askSecret !== undefined) {
     return pasteProviderKey(options, options.askSecret);
   }
   if (chosen !== "cloud") {

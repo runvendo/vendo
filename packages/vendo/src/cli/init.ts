@@ -37,7 +37,7 @@ import {
   serverActionsWiring,
   VENDO_ENV_EXAMPLE,
 } from "./init-scaffolds.js";
-import { createPrettyOutput, plainSelect, plainText, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
+import { createPrettyOutput, plainSecret, plainSelect, plainText, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { contrastingText } from "./theme/color.js";
 import {
   applyThemeDraft,
@@ -1446,9 +1446,14 @@ async function resolveModelCredential(input: {
     env: effectiveEnv,
     // The step's own command_run row rides init's telemetry seams.
     ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
-    // A human terminal answers the models question as a select and can paste
-    // a provider key inline; a plain one keeps today's confirm.
-    ...(pretty === null ? {} : { confirm: pretty.confirm, select: pretty.select, askSecret: pretty.secret }),
+    // The models select and the bring-your-own paste belong to every human
+    // terminal, not just a colourful one: NO_COLOR is a normal thing for a
+    // developer to set, and a question that only exists in pretty mode is a
+    // feature that disappears for them. The plain pair carries plainSelect's
+    // non-TTY guard, and cloud-init only reaches for either on a real TTY.
+    select: pretty === null ? plainSelect : pretty.select,
+    askSecret: pretty === null ? plainSecret : pretty.secret,
+    ...(pretty === null ? {} : { confirm: pretty.confirm }),
     ...(options.cloudKey !== undefined ? { models: "cloud" as const } : {}),
     ...(options.byo === true ? { models: "byo" as const } : {}),
     ...(options.cloud ?? {}),

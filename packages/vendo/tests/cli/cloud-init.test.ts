@@ -156,6 +156,32 @@ describe("runCloudStep", () => {
     expect(messages.logs.join("\n")).toContain("Skipped — run `vendo login`");
   });
 
+  it("a non-TTY run never reaches the select or the paste, however they were wired", async () => {
+    // The plain pair's guard stops them PROMPTING, not answering: plainSelect's
+    // silent fallback is the first option, and the first option is Cloud — so a
+    // guard alone would turn every unattended run into a device login nobody
+    // asked for. An unshown question keeps the confirm's default: No.
+    const root = await tempRoot();
+    const messages = output();
+    let minted = 0;
+    const result = await runCloudStep({
+      root,
+      output: messages.sink,
+      yes: false,
+      isTty: false,
+      credential: noKey,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      select: async () => { throw new Error("selected on a non-TTY"); },
+      askSecret: async () => { throw new Error("prompted on a non-TTY"); },
+      deviceLogin: async () => { minted += 1; return 0; },
+    });
+    expect(minted).toBe(0);
+    expect(result).toEqual({ keyPresent: false, keyValid: false, wroteEnvLocal: false });
+    await expect(readFile(join(root, ".env.local"))).rejects.toMatchObject({ code: "ENOENT" });
+    // …and the agent pointer is what an unshown prompt leaves behind, as today.
+    expect(messages.logs.join("\n")).toContain(AUTH_MD_URL);
+  });
+
   it("bring-your-own lands the pasted key in .env.local with a masked receipt", async () => {
     const root = await tempRoot();
     const messages = output();
