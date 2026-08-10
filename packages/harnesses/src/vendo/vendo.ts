@@ -657,7 +657,12 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
                 yield { type: "error", message: wireErrorMessage(part.error), code: "model" };
                 break;
               case "abort":
-                // The caller hung up: stop cleanly, say nothing.
+                // The caller hung up: stop cleanly, say nothing. Not silently,
+                // though — the RUNTIME reports the cut-short turn (`runtime.ts`,
+                // after the event loop), because it can see `signal.aborted` and
+                // an `abort` part carries no error to report. Yielding an `error`
+                // event here instead would make an abandoned turn pay for a
+                // notice nobody is listening to (overflow.test.ts).
                 return;
               case "finish":
                 // The RESIDENT loop's own spend. Each hire's spend is yielded as

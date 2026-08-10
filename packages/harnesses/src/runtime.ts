@@ -202,6 +202,11 @@ function addUsage(totals: UsageTotals | undefined, event: Extract<HarnessEvent, 
  */
 const HARNESS_FAILED = "Something went wrong on my side, so I stopped.";
 
+/** What an aborted turn says. A cut-short turn is a FAILED turn, not a quiet one:
+ *  nothing after the abort ran, so anything the reply had started promising is
+ *  unfinished. */
+const TURN_CUT_SHORT = "This turn stopped before it finished.";
+
 export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
   const harnessState = deps.harnessState ?? memoryHarnessStateStore();
 
@@ -515,6 +520,26 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
                   usage = addUsage(usage, event);
                   break;
               }
+            }
+            // A turn the caller cut short DID NOT finish, and only the runtime can
+            // say so. The ai-SDK ends an aborted stream with an `abort` part that
+            // carries no error and swallows whatever error was behind it
+            // (`fullStream`'s pull: aborted → `abort()`, chunk dropped), so a
+            // harness has nothing to report and stops quietly — which left the run
+            // row, the transcript and the wire all reading as a silent success
+            // above a half-written reply. Reported HERE rather than as a harness
+            // event because the two channels are separate: the failure is the
+            // caller's to hear, the event stream is the thinker's, and a harness
+            // that hung up has by definition nothing more to yield.
+            if (failure === undefined && signal.aborted) {
+              failure = { message: TURN_CUT_SHORT, code: "aborted" };
+              emitWorkbench(turnId, "resident", { kind: "error", code: "aborted", message: TURN_CUT_SHORT });
+              // The same two carriers a reported `error` event uses, in the same
+              // order: the transcript's record first, then the screen's banner.
+              text.break();
+              surfaced = TURN_CUT_SHORT;
+              recordTurnError(TURN_CUT_SHORT, (part) => writer.write(part as never));
+              writeError(writer, TURN_CUT_SHORT);
             }
           } catch (error) {
             // A harness that throws is a bug in the thinker, not in the user's
