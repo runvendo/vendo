@@ -59,6 +59,34 @@ carry:
 npx vendo doctor
 ```
 
+### Two ways to run it
+
+The door runs two ways, and the URL your users paste is the same in both.
+
+**Local — the default.** Everything lives in your app: it signs the person in,
+mints its own tokens, and serves its own consent page. You generate the service
+key yourself. No Vendo key, no account, nothing to configure.
+
+**Cloud broker.** Vendo hosts the login-and-token front for you at
+`https://<your tenant>.mcp.vendo.run`. You set two lines where you deploy, and
+the service key is the console's to create instead of your repo's. Your app
+still runs every tool call — only the sign-in front moves:
+
+```bash
+VENDO_MCP_BROKER_URL=<your tenant MCP endpoint, from the console MCP page>
+VENDO_MCP_FEDERATION_SECRET=<from the console MCP page>
+```
+
+Start local — it is the whole story for previews and evaluation. Move to the
+broker when real Claude, ChatGPT, or Cursor users connect to production and you
+would rather not run a public sign-in surface of your own.
+
+Init asks which one only when it finds a Cloud key; without one, local is simply
+the default (`--posture broker` answers it for a script). Under broker it prints
+those two lines and wires nothing — setting them where you deploy stays yours.
+The full behavior:
+[Delegate to an external authorization server](/capabilities/mcp#delegate-to-an-external-authorization-server).
+
 ### By hand
 
 The same three things, for a repo init did not scaffold. First, `mcp: true`
@@ -106,6 +134,10 @@ VENDO_BASE_URL=https://your-app.example.com
 ```
 
 ## Connect — pick your client
+
+Two kinds of visitor knock: a person's own client — Claude, ChatGPT, Cursor —
+which logs them in through a browser, or your own backend, which has no browser
+and swaps a service key for a token instead.
 
 ### Claude Code
 
