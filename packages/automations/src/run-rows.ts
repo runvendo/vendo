@@ -13,20 +13,36 @@ import {
   type Step,
   type ToolOutcome,
 } from "@vendoai/core";
-import type { AutomationsEngineContext } from "./engine-context.js";
+import type { EngineBase } from "./engine-context.js";
 import type { RunRecord, RunStatus } from "./index.js";
 import { id, message, parseRunRecord, syncRun, terminalStatus } from "./rows.js";
 import { outcomeDetail } from "./steps.js";
 import { RUNS, type InternalRunRecord } from "./types.js";
 
-export type RunRowsDeps = Pick<AutomationsEngineContext, "config" | "iso" | "stopped">;
+export type RunRowsDeps = { base: EngineBase };
 
-export type RunRowsAccess = Pick<
-  AutomationsEngineContext,
-  "audit" | "writeRun" | "terminal" | "appendOutcome" | "failStep" | "finishStoppedIfNeeded"
->;
+export interface RunRowsAccess {
+  /** A `run`-kind audit event under the run's own away context. */
+  audit(ctx: RunContext, status: string, extra?: Record<string, Json>): Promise<void>;
+  /** The run row write that never overwrites a terminal row. */
+  writeRun(record: InternalRunRecord): Promise<boolean>;
+  /** The terminal landing every door ends on. */
+  terminal(
+    run: InternalRunRecord,
+    ctx: RunContext,
+    status: Extract<RunStatus, "ok" | "error" | "stopped">,
+    summary: string,
+    error?: NonNullable<RunRecord["error"]>,
+  ): Promise<void>;
+  /** Append one step outcome to the in-flight run. */
+  appendOutcome(run: InternalRunRecord, step: Step, outcome: ToolOutcome): void;
+  /** Land the run on the failure a step's own expressions produced. */
+  failStep(run: InternalRunRecord, ctx: RunContext, step: Step, error: unknown): Promise<void>;
+  /** Whether this run has already ended — stopped here, or terminal on disk. */
+  finishStoppedIfNeeded(run: InternalRunRecord): Promise<boolean>;
+}
 
-export const createRunRows = ({ config, iso, stopped }: RunRowsDeps): RunRowsAccess => {
+export const createRunRows = ({ base: { config, iso, stopped } }: RunRowsDeps): RunRowsAccess => {
   const audit = async (ctx: RunContext, status: string, extra: Record<string, Json> = {}): Promise<void> => {
     const event: AuditEvent = {
       id: id("aud_"),

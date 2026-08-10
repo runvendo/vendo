@@ -11,7 +11,8 @@ import {
   type RunContext,
   type Trigger,
 } from "@vendoai/core";
-import type { AutomationsEngineContext } from "./engine-context.js";
+import type { AppRowsAccess } from "./app-rows.js";
+import type { EngineBase } from "./engine-context.js";
 import { stopFor } from "./messages.js";
 import { allRecords } from "./rows.js";
 import {
@@ -28,26 +29,41 @@ import {
 } from "./sponsorship.js";
 import type { AppRow, InternalRunRecord } from "./types.js";
 
-export type SponsorshipGateDeps = Pick<AutomationsEngineContext, "config" | "iso" | "canEdit">;
+export type SponsorshipGateDeps = { base: EngineBase; appRows: AppRowsAccess };
 
-export type SponsorshipGateAccess = Pick<
-  AutomationsEngineContext,
-  | "sponsorships"
-  | "sponsoredEra"
-  | "sponsorshipState"
-  | "sponsorshipsFor"
-  | "baseRunContext"
-  | "runContext"
-  | "sponsorshipRefusal"
->;
+export interface SponsorshipGateAccess {
+  /** The sponsorship collection. */
+  sponsorships(): RecordStore;
+  /** The era markers that outlive an erase of the sponsor. */
+  sponsoredEra(): RecordStore;
+  /** The ONE sponsorship read every gate goes through. */
+  sponsorshipState(
+    doc: AppDocument,
+    triggerId: string,
+  ): Promise<{ kind: "none" } | { kind: "erased" } | { kind: "row"; row: Sponsorship; revision?: string }>;
+  /** Every sponsorship row for these apps' triggers, in ONE query. */
+  sponsorshipsFor(rows: readonly AppRow[]): Promise<Map<string, Sponsorship>>;
+  /** The run's context before any seam is consulted. */
+  baseRunContext(run: InternalRunRecord, subject: string): RunContext;
+  /** §9.9 — the run's identity is its SPONSOR. */
+  runContext(doc: AppDocument, run: InternalRunRecord, subject: string): Promise<RunContext>;
+  /** §9.9's fire-time gate, in ONE place. */
+  sponsorshipRefusal(
+    app: AppRow,
+    trigger: Trigger,
+    ctx: RunContext,
+  ): Promise<{ reason: NonNullable<Sponsorship["reason"]>; summary: string } | undefined>;
+}
 
 type SponsorshipReader = Pick<
-  AutomationsEngineContext,
+  SponsorshipGateAccess,
   "sponsorships" | "sponsoredEra" | "sponsorshipState" | "sponsorshipsFor"
 >;
 
 /** The sponsorship rows, and the ONE read every gate goes through. */
-const createSponsorshipReader = ({ config }: Pick<SponsorshipGateDeps, "config">): SponsorshipReader => {
+const createSponsorshipReader = (
+  { base: { config } }: Pick<SponsorshipGateDeps, "base">,
+): SponsorshipReader => {
   const sponsorships = (): RecordStore => config.store.records(SPONSORSHIPS);
   const sponsoredEra = (): RecordStore => config.store.records(SPONSORED);
 
@@ -87,10 +103,9 @@ const createSponsorshipReader = ({ config }: Pick<SponsorshipGateDeps, "config">
 
 /** §9.9 — who a firing runs as, and whether it may run at all. */
 const createRunIdentity = (
-  deps: Pick<SponsorshipGateDeps, "config" | "iso" | "canEdit">
-    & Pick<SponsorshipReader, "sponsorships" | "sponsorshipState">,
-): Pick<AutomationsEngineContext, "baseRunContext" | "runContext" | "sponsorshipRefusal"> => {
-  const { config, iso, canEdit, sponsorships, sponsorshipState } = deps;
+  deps: SponsorshipGateDeps & Pick<SponsorshipReader, "sponsorships" | "sponsorshipState">,
+): Pick<SponsorshipGateAccess, "baseRunContext" | "runContext" | "sponsorshipRefusal"> => {
+  const { base: { config, iso }, appRows, sponsorships, sponsorshipState } = deps;
   /** The run's context before any seam is consulted — a pure function of the run
    *  and a subject, so it cannot fail. It is what a failed identity resolution
    *  still audits under: a fire that cannot even resolve who it runs as must
@@ -173,7 +188,7 @@ const createRunIdentity = (
     // above), "grants" is the person still being there and having lost access —
     // which is exactly what a failed `can(editor)` means. They produce different
     // consumer sentences, so the label is not cosmetic.
-    if (!await canEdit(ctx, app, app.doc.id)) return await invalidate("grants");
+    if (!await appRows.canEdit(ctx, app, app.doc.id)) return await invalidate("grants");
     return undefined;
   };
 

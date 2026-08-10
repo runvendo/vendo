@@ -5,27 +5,28 @@
  *
  * Lifted out of `createAutomationsEngine` unchanged.
  */
-import type { AutomationsEngineContext } from "./engine-context.js";
+import type { AppRowsAccess } from "./app-rows.js";
+import type { ArmedAccess } from "./armed.js";
+import type { ConsentAccess } from "./consent.js";
+import type { EngineBase } from "./engine-context.js";
 import type { AutomationsEngine } from "./index.js";
 import { stopFor } from "./messages.js";
 import { allRecords, parseAppRow } from "./rows.js";
+import type { SponsorshipGateAccess } from "./sponsorship-gate.js";
 import { sponsorshipSchema, triggerKey, triggersOf } from "./sponsorship.js";
 import { APPS } from "./types.js";
 
-export type ListSurfaceDeps = Pick<
-  AutomationsEngineContext,
-  | "config"
-  | "canEdit"
-  | "armedTriggers"
-  | "armedFor"
-  | "pendingCaptures"
-  | "sponsorships"
-  | "sponsorshipsFor"
->;
+export type ListSurfaceDeps = {
+  base: EngineBase;
+  appRows: AppRowsAccess;
+  armed: ArmedAccess;
+  sponsorship: SponsorshipGateAccess;
+  consent: ConsentAccess;
+};
 
 export const createListSurface = (deps: ListSurfaceDeps): Pick<AutomationsEngine, "list"> => {
-  const { config, canEdit, armedTriggers, armedFor, pendingCaptures } = deps;
-  const { sponsorships, sponsorshipsFor } = deps;
+  const { base: { config }, appRows, armed } = deps;
+  const { sponsorship, consent } = deps;
 
   const list: AutomationsEngine["list"] = async (ctx) => {
     const subject = ctx.principal.subject;
@@ -42,7 +43,7 @@ export const createListSurface = (deps: ListSurfaceDeps): Pick<AutomationsEngine
       for (const record of await allRecords(config.store.records(APPS), { refs: { subject: org } })) {
         const row = parseAppRow(record);
         if (row.subject !== org || seen.has(row.doc.id)) continue;
-        if (await canEdit(ctx, row, row.doc.id)) {
+        if (await appRows.canEdit(ctx, row, row.doc.id)) {
           seen.add(row.doc.id);
           rows.push(row);
         }
@@ -58,7 +59,7 @@ export const createListSurface = (deps: ListSurfaceDeps): Pick<AutomationsEngine
     // Deduped: sponsorship is per (app, trigger), so sponsoring two triggers of
     // one app must still fetch that app once.
     const sponsoredElsewhere = [...new Set(
-      (await allRecords(sponsorships(), { refs: { subject } }))
+      (await allRecords(sponsorship.sponsorships(), { refs: { subject } }))
         .map((record) => sponsorshipSchema.safeParse(record.data))
         .flatMap((parsed) => parsed.success ? [parsed.data.appId] : [])
         .filter((appId) => !seen.has(appId)),
@@ -69,14 +70,14 @@ export const createListSurface = (deps: ListSurfaceDeps): Pick<AutomationsEngine
       const row = parseAppRow(record);
       // Sponsoring is not access: an editor whose grant was revoked keeps the
       // row but loses the door, so `can(editor)` still decides.
-      if (await canEdit(ctx, row, row.doc.id)) rows.push(row);
+      if (await appRows.canEdit(ctx, row, row.doc.id)) rows.push(row);
     }
     // Pending-captures projection: an armed trigger with outstanding standing-grant
     // asks is NOT plain enabled — surfaces render "waiting on N permissions"
     // from here (reload-safe; never from an enable() result held in memory).
     // Keyed per (app, trigger), because that is the unit a person allowed.
     const outstanding = new Map<string, { pendingGrants: number; grantSetId?: string }>();
-    for (const capture of await pendingCaptures(subject)) {
+    for (const capture of await consent.pendingCaptures(subject)) {
       const key = triggerKey(capture.data.appId, capture.data.triggerId);
       const entry = outstanding.get(key) ?? { pendingGrants: 0 };
       entry.pendingGrants += 1;
@@ -84,8 +85,8 @@ export const createListSurface = (deps: ListSurfaceDeps): Pick<AutomationsEngine
       outstanding.set(key, entry);
     }
     const automations = rows.filter((row) => triggersOf(row.doc).length > 0);
-    const sponsorRows = await sponsorshipsFor(automations);
-    const armed = await armedFor(automations);
+    const sponsorRows = await sponsorship.sponsorshipsFor(automations);
+    const armedKeys = await armed.armedFor(automations);
     const entries: Awaited<ReturnType<AutomationsEngine["list"]>> = [];
     for (const row of automations) {
       // "…and names a wider editor set when one exists": the count comes from
@@ -95,7 +96,7 @@ export const createListSurface = (deps: ListSurfaceDeps): Pick<AutomationsEngine
       const editors = config.appAccess?.list === undefined
         ? undefined
         : (await config.appAccess.list(ctx, row.doc.id)).length;
-      const armedHere = new Set(armedTriggers(row, armed).map((trigger) => trigger.id));
+      const armedHere = new Set(armed.armedTriggers(row, armedKeys).map((trigger) => trigger.id));
       entries.push({
         app: row.doc,
         triggers: triggersOf(row.doc).map((trigger) => {
@@ -105,14 +106,14 @@ export const createListSurface = (deps: ListSurfaceDeps): Pick<AutomationsEngine
           // sponsorship row (captured from their own Principal when they took the
           // automation on), so it reads the same for everyone; Vendo still holds no
           // directory and invents no name for anybody.
-          const sponsorship = sponsorRows.get(key);
-          const sponsor = sponsorship?.sponsor ?? row.subject;
-          const display = sponsorship?.display ?? (sponsor === subject ? ctx.principal.display : undefined);
+          const sponsorRow = sponsorRows.get(key);
+          const sponsor = sponsorRow?.sponsor ?? row.subject;
+          const display = sponsorRow?.display ?? (sponsor === subject ? ctx.principal.display : undefined);
           // A stopped automation says so HERE, in the same sentence the
           // stopped run row uses, so the list is a way back to it rather than a
           // place it silently disappeared from.
-          const stopped = sponsorship?.status === "invalidated"
-            ? stopFor(sponsorship.reason ?? "edit", row.doc.name)
+          const stopped = sponsorRow?.status === "invalidated"
+            ? stopFor(sponsorRow.reason ?? "edit", row.doc.name)
             : undefined;
           return {
             trigger,

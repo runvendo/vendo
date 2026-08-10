@@ -16,9 +16,13 @@ import {
   type Trigger,
   type TriggerSource,
 } from "@vendoai/core";
-import type { AutomationsEngineContext } from "./engine-context.js";
+import type { ConsentAccess } from "./consent.js";
+import type { EngineBase } from "./engine-context.js";
+import type { GrantsAccess } from "./grants.js";
 import { IDENTITY_UNAVAILABLE } from "./messages.js";
 import { clone, id, message } from "./rows.js";
+import type { RunRowsAccess } from "./run-rows.js";
+import type { SponsorshipGateAccess } from "./sponsorship-gate.js";
 import type { Sponsorship } from "./sponsorship.js";
 import {
   errorForOutcome,
@@ -30,30 +34,28 @@ import {
 } from "./steps.js";
 import type { AppRow, FiredSchedule, InternalRunRecord } from "./types.js";
 
-export type RunExecutionDeps = Pick<
-  AutomationsEngineContext,
-  | "config"
-  | "iso"
-  | "stopped"
-  | "active"
-  | "abortControllers"
-  | "grantedServiceSlugs"
-  | "audit"
-  | "writeRun"
-  | "terminal"
-  | "appendOutcome"
-  | "failStep"
-  | "finishStoppedIfNeeded"
-  | "baseRunContext"
-  | "runContext"
-  | "sponsorshipRefusal"
-  | "needsPermission"
->;
+export type RunExecutionDeps = {
+  base: EngineBase;
+  grants: GrantsAccess;
+  runRows: RunRowsAccess;
+  sponsorship: SponsorshipGateAccess;
+  consent: ConsentAccess;
+};
 
-export type RunExecutionAccess = Pick<
-  AutomationsEngineContext,
-  "launchRun" | "startRun" | "runFiredSchedules"
->;
+export interface RunExecutionAccess {
+  /** Mint the run id synchronously; run the automation on the returned promise. */
+  launchRun(
+    app: AppRow,
+    declared: Trigger,
+    kind: TriggerSource["kind"],
+    event: Json,
+    lineage?: RunId,
+  ): { runId: RunId; done: Promise<void> };
+  /** The same launch, awaited — for the doors that fire one run at a time. */
+  startRun(app: AppRow, trigger: Trigger, kind: TriggerSource["kind"], event: Json): Promise<RunId>;
+  /** Fired schedules, with bounded parallelism and an optional per-run timeout. */
+  runFiredSchedules(fired: readonly FiredSchedule[]): Promise<RunId[]>;
+}
 
 type StepsRunner = {
   continueSteps(
@@ -76,12 +78,9 @@ type AgenticRunner = {
 
 /** A steps run: the tool calls a trigger DECLARES, in order. */
 const createStepsRunner = (
-  deps: Pick<
-    RunExecutionDeps,
-    "config" | "terminal" | "appendOutcome" | "failStep" | "finishStoppedIfNeeded" | "needsPermission"
-  >,
+  deps: Pick<RunExecutionDeps, "base" | "runRows" | "consent">,
 ): StepsRunner => {
-  const { config, terminal, appendOutcome, failStep, finishStoppedIfNeeded, needsPermission } = deps;
+  const { base: { config }, runRows, consent } = deps;
   const executeCall = async (
     appId: string,
     step: Step,
@@ -106,7 +105,7 @@ const createStepsRunner = (
     const steps = trigger.run.steps;
     const stepOutputs: Record<string, Json> = {};
     for (let stepIndex = 0; stepIndex < steps.length; stepIndex += 1) {
-      if (await finishStoppedIfNeeded(run)) return;
+      if (await runRows.finishStoppedIfNeeded(run)) return;
       const step = steps[stepIndex] as Step;
       let items: Json[] | undefined;
       const outputs: Json[] = [];
@@ -119,7 +118,7 @@ const createStepsRunner = (
           items = validateForEachItems(step, evaluated);
         }
       } catch (error) {
-        await failStep(run, ctx, step, error);
+        await runRows.failStep(run, ctx, step, error);
         return;
       }
 
@@ -127,12 +126,12 @@ const createStepsRunner = (
         ? [{}]
         : items.map((item, index) => ({ item, index }));
       for (const iteration of iterations) {
-        if (await finishStoppedIfNeeded(run)) return;
+        if (await runRows.finishStoppedIfNeeded(run)) return;
         let args: Record<string, Json>;
         try {
           args = await stepArgs(step, event, stepOutputs, iteration.item);
         } catch (error) {
-          await failStep(run, ctx, step, error);
+          await runRows.failStep(run, ctx, step, error);
           return;
         }
         // Derived, not random: the guard's effect ledger tells "this call again"
@@ -155,15 +154,15 @@ const createStepsRunner = (
           args,
         };
         const outcome = await executeCall(app.doc.id, step, call, ctx);
-        if (await finishStoppedIfNeeded(run)) return;
-        appendOutcome(run, step, outcome);
+        if (await runRows.finishStoppedIfNeeded(run)) return;
+        runRows.appendOutcome(run, step, outcome);
         if (outcome.status === "pending-approval") {
-          await needsPermission(run, ctx, step, outcome.approvalId);
+          await consent.needsPermission(run, ctx, step, outcome.approvalId);
           return;
         }
         if (outcome.status !== "ok") {
           const error = errorForOutcome(outcome);
-          await terminal(run, ctx, "error", `stopped at ${step.id}: ${error.message}`, error);
+          await runRows.terminal(run, ctx, "error", `stopped at ${step.id}: ${error.message}`, error);
           return;
         }
         if (items === undefined) stepOutputs[step.id] = outcome.output;
@@ -172,7 +171,7 @@ const createStepsRunner = (
       if (items !== undefined) stepOutputs[step.id] = outputs;
     }
     const okCount = run.steps.filter((entry) => entry.outcome === "ok").length;
-    await terminal(run, ctx, "ok", `${okCount} ${okCount === 1 ? "step" : "steps"} ok`);
+    await runRows.terminal(run, ctx, "ok", `${okCount} ${okCount === 1 ? "step" : "steps"} ok`);
   };
 
   return { continueSteps };
@@ -180,9 +179,9 @@ const createStepsRunner = (
 
 /** An agentic run: one dispatch through the core `AgentRunner` seam. */
 const createAgenticRunner = (
-  deps: Pick<RunExecutionDeps, "config" | "iso" | "terminal" | "finishStoppedIfNeeded" | "grantedServiceSlugs">,
+  deps: Pick<RunExecutionDeps, "base" | "runRows" | "grants">,
 ): AgenticRunner => {
-  const { config, iso, terminal, finishStoppedIfNeeded, grantedServiceSlugs } = deps;
+  const { base: { config, iso }, runRows, grants } = deps;
   const runAgentic = async (
     trigger: Trigger,
     run: InternalRunRecord,
@@ -191,7 +190,7 @@ const createAgenticRunner = (
   ): Promise<void> => {
     if (trigger.run.kind !== "agentic") throw new VendoError("validation", "agentic run expected");
     if (config.runner === undefined) {
-      await terminal(
+      await runRows.terminal(
         run,
         ctx,
         "error",
@@ -208,7 +207,7 @@ const createAgenticRunner = (
       // guard's decision at call time.
       const listingCtx: RunContext = {
         ...ctx,
-        grantedServiceSlugs: await grantedServiceSlugs(
+        grantedServiceSlugs: await grants.grantedServiceSlugs(
           ctx.principal.subject,
           run.appId,
           run.triggerId,
@@ -226,19 +225,19 @@ const createAgenticRunner = (
       }, listingCtx);
       // Cross-instance stops cannot reach this process's controller, so the persisted
       // terminal-row check remains the best-effort fallback for a late result.
-      if (await finishStoppedIfNeeded(run)) return;
+      if (await runRows.finishStoppedIfNeeded(run)) return;
       run.steps = report.toolCalls.map(({ call, outcome }) => ({
         id: call.id,
         tool: call.tool,
         outcome,
         at: iso(),
       }));
-      await terminal(run, ctx, report.status, report.summary);
+      await runRows.terminal(run, ctx, report.status, report.summary);
     } catch (error) {
-      if (await finishStoppedIfNeeded(run)) return;
+      if (await runRows.finishStoppedIfNeeded(run)) return;
       // "error", not "not-implemented": that code means "no runner configured"
       // (above); a runner that crashed is an outage, not a missing feature.
-      await terminal(run, ctx, "error", message(error), { code: "error", message: message(error) });
+      await runRows.terminal(run, ctx, "error", message(error), { code: "error", message: message(error) });
     }
   };
 
@@ -248,14 +247,10 @@ const createAgenticRunner = (
 /** The launch every firing goes through: the §9.9 gate, then one of the two
  *  runners above. */
 const createRunLauncher = (
-  deps: Pick<
-    RunExecutionDeps,
-    "iso" | "stopped" | "active" | "abortControllers" | "audit" | "writeRun" | "terminal"
-    | "baseRunContext" | "runContext" | "sponsorshipRefusal"
-  > & StepsRunner & AgenticRunner,
-): Pick<AutomationsEngineContext, "launchRun"> => {
-  const { iso, stopped, active, abortControllers, audit, writeRun, terminal } = deps;
-  const { baseRunContext, runContext, sponsorshipRefusal, continueSteps, runAgentic } = deps;
+  deps: Pick<RunExecutionDeps, "base" | "runRows" | "sponsorship"> & StepsRunner & AgenticRunner,
+): Pick<RunExecutionAccess, "launchRun"> => {
+  const { base: { iso, stopped, active, abortControllers }, runRows, sponsorship } = deps;
+  const { continueSteps, runAgentic } = deps;
   // Mint the run and its record synchronously (so the id is known immediately), then
   // execute the whole automation on the returned `done` promise. Splitting the id from the
   // completion lets the tick collect runIds without blocking on each run to finish, and lets
@@ -306,13 +301,13 @@ const createRunLauncher = (
         //    callback or access seam threw. That throw used to escape here, and
         //    the schedule path swallows a rejected run, so the whole firing
         //    vanished: no row, no audit, nothing to look at.
-        let ctx = baseRunContext(record, app.subject);
+        let ctx = sponsorship.baseRunContext(record, app.subject);
         let stop:
           | { reason?: NonNullable<Sponsorship["reason"]>; summary: string; detail?: string }
           | undefined;
         try {
-          ctx = await runContext(app.doc, record, app.subject);
-          stop = await sponsorshipRefusal(app, trigger, ctx);
+          ctx = await sponsorship.runContext(app.doc, record, app.subject);
+          stop = await sponsorship.sponsorshipRefusal(app, trigger, ctx);
         } catch (error) {
           // The consumer sentence and the operator's detail part ways here:
           // `summary` is rendered verbatim in the automations panel, so
@@ -320,8 +315,8 @@ const createRunLauncher = (
           stop = { summary: IDENTITY_UNAVAILABLE(app.doc.name), detail: message(error) };
         }
         if (stop !== undefined) {
-          await writeRun(record);
-          await audit(
+          await runRows.writeRun(record);
+          await runRows.audit(
             ctx,
             stop.reason === undefined ? "sponsorship-check-failed" : "sponsorship-invalidated",
             {
@@ -330,14 +325,14 @@ const createRunLauncher = (
               ...(stop.detail === undefined ? {} : { detail: stop.detail }),
             },
           );
-          await terminal(record, ctx, "error", stop.summary, {
+          await runRows.terminal(record, ctx, "error", stop.summary, {
             code: stop.reason === undefined ? "error" : "blocked",
             message: stop.summary,
           });
           return;
         }
-        await writeRun(record);
-        await audit(ctx, "running");
+        await runRows.writeRun(record);
+        await runRows.audit(ctx, "running");
         active.add(runId);
         try {
           if (trigger.run.kind === "steps") {
@@ -362,9 +357,9 @@ const createRunLauncher = (
 /** How a launched run is WAITED on: one at a time for the doors that need the
  *  id back, and bounded parallelism with an optional per-run timeout for a tick. */
 const createRunPacing = (
-  deps: Pick<RunExecutionDeps, "config"> & Pick<AutomationsEngineContext, "launchRun">,
-): Pick<AutomationsEngineContext, "startRun" | "runFiredSchedules"> => {
-  const { config, launchRun } = deps;
+  deps: Pick<RunExecutionDeps, "base"> & Pick<RunExecutionAccess, "launchRun">,
+): Pick<RunExecutionAccess, "startRun" | "runFiredSchedules"> => {
+  const { base: { config }, launchRun } = deps;
   const startRun = async (
     app: AppRow,
     trigger: Trigger,

@@ -8,9 +8,12 @@
 import { webhookSubject, type Json, type Trigger } from "@vendoai/core";
 import { Cron } from "croner";
 import { z } from "zod";
-import type { AutomationsEngineContext } from "./engine-context.js";
+import type { AppRowsAccess } from "./app-rows.js";
+import type { ArmedAccess } from "./armed.js";
+import type { EngineBase } from "./engine-context.js";
 import type { AutomationsEngine } from "./index.js";
 import { allRecords, appRef, id, message, parseAppRow } from "./rows.js";
+import type { RunExecutionAccess } from "./run-execution.js";
 import { triggerKey } from "./sponsorship.js";
 import { durationMs, validateTrigger } from "./steps.js";
 import {
@@ -25,29 +28,18 @@ import {
 } from "./types.js";
 import { readLimitedBody, signedWebhookBytes, verifySignature } from "./webhook-signature.js";
 
-export type IngestionSurfaceDeps = Pick<
-  AutomationsEngineContext,
-  | "config"
-  | "now"
-  | "iso"
-  | "firesLocally"
-  | "appsFiringOn"
-  | "armedTriggers"
-  | "armedFor"
-  | "startRun"
-  | "runFiredSchedules"
->;
+export type IngestionSurfaceDeps = {
+  base: EngineBase;
+  appRows: AppRowsAccess;
+  armed: ArmedAccess;
+  execution: RunExecutionAccess;
+};
 
 /** Schedules: the cursor claim, and the convenience timer around it. */
 const createTickDoor = (
-  deps: Pick<
-    IngestionSurfaceDeps,
-    "config" | "now" | "firesLocally" | "appsFiringOn"
-    | "armedTriggers" | "armedFor" | "runFiredSchedules"
-  >,
+  deps: IngestionSurfaceDeps,
 ): Pick<AutomationsEngine, "tick" | "start"> => {
-  const { config, now, firesLocally, appsFiringOn } = deps;
-  const { armedTriggers, armedFor, runFiredSchedules } = deps;
+  const { base: { config, now, firesLocally }, appRows, armed, execution } = deps;
   let tickTail: Promise<void> = Promise.resolve();
   const runTick: AutomationsEngine["tick"] = async (providedNow) => {
     // Cloud (or whatever other authority) already fires schedule automations for this
@@ -60,12 +52,12 @@ const createTickDoor = (
     // app for every subject, then batch every schedule cursor in one query (was an N+1 get).
     // Still ONE ref query with a trigger LIST: the ref says "this app has a schedule trigger
     // somewhere in its list", and the loop below picks out which ones.
-    const appRecords = await appsFiringOn("schedule");
+    const appRecords = await appRows.appsFiringOn("schedule");
     const rows = appRecords.map(parseAppRow);
-    const armed = await armedFor(rows);
+    const armedKeys = await armed.armedFor(rows);
     // Every armed schedule trigger, as (app, trigger) pairs — the unit that fires,
     // holds a cursor, and is claimed.
-    const dueTriggers = rows.flatMap((row) => armedTriggers(row, armed)
+    const dueTriggers = rows.flatMap((row) => armed.armedTriggers(row, armedKeys)
       .filter((trigger) => trigger.on.kind === "schedule")
       .map((trigger) => ({ row, trigger })));
     const scheduleRecords = config.store.records(SCHEDULE);
@@ -122,7 +114,7 @@ const createTickDoor = (
       if (!claimed) continue;
       fired.push({ row, trigger, scheduledFor, firedAt: atIso });
     }
-    return await runFiredSchedules(fired);
+    return await execution.runFiredSchedules(fired);
   };
 
   const tick: AutomationsEngine["tick"] = (providedNow) => {
@@ -148,9 +140,9 @@ const createTickDoor = (
 
 /** Host product events — THE host seam (vendo.emit). */
 const createEmitDoor = (
-  deps: Pick<IngestionSurfaceDeps, "config" | "appsFiringOn" | "armedTriggers" | "armedFor" | "startRun">,
+  deps: IngestionSurfaceDeps,
 ): Pick<AutomationsEngine, "emit"> => {
-  const { config, appsFiringOn, armedTriggers, armedFor, startRun } = deps;
+  const { base: { config }, appRows, armed, execution } = deps;
   const emit: AutomationsEngine["emit"] = async (event, payload, principal) => {
     // Ruling 2026-08-01 — an event emitted by a MEMBER of the org fires that
     // org's automations. Matching only the emitter's own subject meant an
@@ -173,13 +165,13 @@ const createEmitDoor = (
     const ids: string[] = [];
     // Indexed refs per owner (never a scan): the emitter, then each asserted org.
     for (const subject of [principal.subject, ...orgs]) {
-      const records = await appsFiringOn("host-event", { subject });
+      const records = await appRows.appsFiringOn("host-event", { subject });
       const rows = records.map(parseAppRow).filter((row) => row.subject === subject);
-      const armed = await armedFor(rows);
+      const armedKeys = await armed.armedFor(rows);
       for (const row of rows) {
         // Every matching trigger fires, not just the first: an app may listen to
         // one event from two triggers, and they are two automations.
-        for (const trigger of armedTriggers(row, armed)) {
+        for (const trigger of armed.armedTriggers(row, armedKeys)) {
           const source = trigger.on;
           // Membership is what makes the org's row reachable; whether this run may
           // proceed at all is the ordinary fire-time gate's call inside startRun
@@ -187,7 +179,7 @@ const createEmitDoor = (
           // so an org automation nobody holds any more stops loudly instead of
           // running for whoever touched the event.
           if (source.kind === "host-event" && source.event === event) {
-            ids.push(await startRun(row, trigger, "host-event", payload));
+            ids.push(await execution.startRun(row, trigger, "host-event", payload));
           }
         }
       }
@@ -209,7 +201,7 @@ type WebhookRefusals = {
 
 /** How a delivery is turned away — with the audit row that says it was. */
 const createWebhookRefusals = (
-  { config, iso }: Pick<IngestionSurfaceDeps, "config" | "iso">,
+  { base: { config, iso } }: Pick<IngestionSurfaceDeps, "base">,
 ): WebhookRefusals => {
   const envelope = (status: number, code: string, text: string): Response => Response.json(
     { error: { code, message: text } },
@@ -241,12 +233,9 @@ const createWebhookRefusals = (
 
 /** External events (Composio/webhooks), mounted by the umbrella. */
 const createWebhookDoor = (
-  deps: Pick<
-    IngestionSurfaceDeps,
-    "config" | "now" | "iso" | "firesLocally" | "appsFiringOn" | "armedTriggers" | "armedFor" | "startRun"
-  > & WebhookRefusals,
+  deps: IngestionSurfaceDeps & WebhookRefusals,
 ): Pick<AutomationsEngine, "webhook"> => {
-  const { config, now, iso, firesLocally, appsFiringOn, armedTriggers, armedFor, startRun } = deps;
+  const { base: { config, now, iso, firesLocally }, appRows, armed, execution } = deps;
   const { envelope, rejectWebhook } = deps;
   const inFlightDeliveries = new Set<string>();
   const webhook: AutomationsEngine["webhook"] = async (request) => {
@@ -285,14 +274,14 @@ const createWebhookDoor = (
       .map((entry) => entry.slice(3));
     const signed = signedWebhookBytes(headerResult.data.id, headerResult.data.timestamp, rawBytes);
     // Indexed per-kind ref, same as the tick — never a scan of every app row.
-    const appRecords = await appsFiringOn("external");
+    const appRecords = await appRows.appsFiringOn("external");
     const rows = appRecords.map(parseAppRow);
-    const armed = await armedFor(rows);
+    const armedKeys = await armed.armedFor(rows);
     // Verified per (app, TRIGGER): each external trigger holds its own secret, so
     // a signature that verifies for one says nothing about a sibling's.
     const verified: Array<{ row: AppRow; trigger: Trigger }> = [];
     for (const row of rows) {
-      for (const trigger of armedTriggers(row, armed)) {
+      for (const trigger of armed.armedTriggers(row, armedKeys)) {
         if (trigger.on.kind !== "external" || trigger.on.connector !== source) continue;
         const secretRecord = await config.store.records(WEBHOOK).get(triggerKey(row.doc.id, trigger.id));
         if (secretRecord === null) continue;
@@ -348,7 +337,7 @@ const createWebhookDoor = (
           deduped += 1;
           continue;
         }
-        ids.push(await startRun(row, trigger, "external", body));
+        ids.push(await execution.startRun(row, trigger, "external", body));
       } finally {
         inFlightDeliveries.delete(deliveryKey);
       }

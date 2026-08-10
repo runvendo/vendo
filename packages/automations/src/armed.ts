@@ -5,19 +5,28 @@
  * Lifted out of `createAutomationsEngine` unchanged.
  */
 import { type Trigger, type VendoRecord } from "@vendoai/core";
-import type { AutomationsEngineContext } from "./engine-context.js";
+import type { AppRowsAccess } from "./app-rows.js";
+import type { EngineBase } from "./engine-context.js";
 import { allRecords } from "./rows.js";
 import { triggerKey, triggersOf } from "./sponsorship.js";
 import { ARMED, type AppRow } from "./types.js";
 
-export type ArmedDeps = Pick<AutomationsEngineContext, "config" | "writeApp">;
+export type ArmedDeps = { base: EngineBase; appRows: AppRowsAccess };
 
-export type ArmedAccess = Pick<
-  AutomationsEngineContext,
-  "setArmed" | "armedTriggers" | "armedFor" | "isArmed" | "disarmTrigger"
->;
+export interface ArmedAccess {
+  /** Turn ONE (app, trigger) arm row on or off. */
+  setArmed(appId: string, triggerId: string, armed: boolean): Promise<void>;
+  /** This app's armed triggers, given the armed keys already fetched. */
+  armedTriggers(row: AppRow, armed: ReadonlySet<string>): Trigger[];
+  /** The armed set for these app rows. */
+  armedFor(rows: readonly AppRow[]): Promise<Set<string>>;
+  /** The same question for one trigger. */
+  isArmed(row: AppRow, triggerId: string): Promise<boolean>;
+  /** Turn ONE trigger off, leaving the app's others exactly as they were. */
+  disarmTrigger(record: VendoRecord, row: AppRow, triggerId: string): Promise<void>;
+}
 
-export const createArmed = ({ config, writeApp }: ArmedDeps): ArmedAccess => {
+export const createArmed = ({ base: { config }, appRows }: ArmedDeps): ArmedAccess => {
   const setArmed = async (appId: string, triggerId: string, armed: boolean): Promise<void> => {
     const id = triggerKey(appId, triggerId);
     if (armed) await config.store.records(ARMED).put({ id, data: { appId, triggerId }, refs: { app_id: appId } });
@@ -65,7 +74,7 @@ export const createArmed = ({ config, writeApp }: ArmedDeps): ArmedAccess => {
     for (const trigger of remaining) await setArmed(row.doc.id, trigger.id, true);
     await setArmed(row.doc.id, triggerId, false);
     row.enabled = remaining.length > 0;
-    await writeApp(record, row);
+    await appRows.writeApp(record, row);
   };
 
   return { setArmed, armedTriggers, armedFor, isArmed, disarmTrigger };

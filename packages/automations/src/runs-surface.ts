@@ -5,43 +5,44 @@
  * Lifted out of `createAutomationsEngine` unchanged.
  */
 import { VendoError, type RunId } from "@vendoai/core";
-import type { AutomationsEngineContext } from "./engine-context.js";
+import type { AppRowsAccess } from "./app-rows.js";
+import type { ArmedAccess } from "./armed.js";
+import type { EngineBase } from "./engine-context.js";
 import type { AutomationsEngine, RunRecord } from "./index.js";
 import { parseRunRecord, publicRun } from "./rows.js";
+import type { RunExecutionAccess } from "./run-execution.js";
+import type { RunRowsAccess } from "./run-rows.js";
+import type { SponsorshipGateAccess } from "./sponsorship-gate.js";
 import { triggerOf } from "./sponsorship.js";
 import { RUNS, RUNS_PAGE_LIMIT } from "./types.js";
 
-export type RunsSurfaceDeps = Pick<
-  AutomationsEngineContext,
-  | "config"
-  | "stopped"
-  | "active"
-  | "abortControllers"
-  | "editableAppOrNull"
-  | "isArmed"
-  | "runContext"
-  | "terminal"
-  | "launchRun"
->;
+export type RunsSurfaceDeps = {
+  base: EngineBase;
+  appRows: AppRowsAccess;
+  armed: ArmedAccess;
+  runRows: RunRowsAccess;
+  sponsorship: SponsorshipGateAccess;
+  execution: RunExecutionAccess;
+};
 
 /** The run history anyone who can edit the app reads. */
 const createRunReadDoors = (
-  deps: Pick<RunsSurfaceDeps, "config" | "editableAppOrNull">,
+  deps: Pick<RunsSurfaceDeps, "base" | "appRows">,
 ): Pick<AutomationsEngine["runs"], "get" | "list"> => {
-  const { config, editableAppOrNull } = deps;
+  const { base: { config }, appRows } = deps;
   const runsGet: AutomationsEngine["runs"]["get"] = async (runId, ctx) => {
     const stored = await config.store.records(RUNS).get(runId);
     if (stored === null) return null;
     const run = parseRunRecord(stored);
     // §8 editor = edit: the person the automation RUNS AS sees its history, not
     // only the app's owner. Ownership-only when no access seam is configured.
-    return await editableAppOrNull(run.appId, ctx) === null ? null : publicRun(run);
+    return await appRows.editableAppOrNull(run.appId, ctx) === null ? null : publicRun(run);
   };
 
   const runsList: AutomationsEngine["runs"]["list"] = async (filter, ctx) => {
     // Scope BEFORE paginating: filtering after the page both under-fills pages
     // and leaks a cursor (an existence oracle) to non-viewers.
-    if (filter.appId !== undefined && await editableAppOrNull(filter.appId, ctx) === null) {
+    if (filter.appId !== undefined && await appRows.editableAppOrNull(filter.appId, ctx) === null) {
       return { runs: [] };
     }
     const refs = {
@@ -70,7 +71,7 @@ const createRunReadDoors = (
         if (filter.triggerId !== undefined && run.triggerId !== filter.triggerId) continue;
         let mine = visible.get(run.appId);
         if (mine === undefined) {
-          mine = await editableAppOrNull(run.appId, ctx) !== null;
+          mine = await appRows.editableAppOrNull(run.appId, ctx) !== null;
           visible.set(run.appId, mine);
         }
         if (mine) runs.push(publicRun(run));
@@ -86,27 +87,23 @@ const createRunReadDoors = (
 
 /** The two doors that CHANGE a run: the kill switch, and "run it again". */
 const createRunControlDoors = (
-  deps: Pick<
-    RunsSurfaceDeps,
-    "config" | "stopped" | "active" | "abortControllers" | "editableAppOrNull"
-    | "isArmed" | "runContext" | "terminal" | "launchRun"
-  >,
+  deps: RunsSurfaceDeps,
 ): Pick<AutomationsEngine["runs"], "stop" | "rerun"> => {
-  const { config, stopped, active, abortControllers, editableAppOrNull } = deps;
-  const { isArmed, runContext, terminal, launchRun } = deps;
+  const { base: { config, stopped, active, abortControllers }, appRows } = deps;
+  const { armed, runRows, sponsorship, execution } = deps;
   const runsStop: AutomationsEngine["runs"]["stop"] = async (runId, ctx) => {
     const stored = await config.store.records(RUNS).get(runId);
     if (stored === null) throw new VendoError("not-found", `run not found: ${runId}`);
     const run = parseRunRecord(stored);
-    const app = await editableAppOrNull(run.appId, ctx);
+    const app = await appRows.editableAppOrNull(run.appId, ctx);
     if (app === null) throw new VendoError("not-found", `run not found: ${runId}`);
     if (run.status !== "running") {
       throw new VendoError("conflict", `run cannot be stopped from status ${run.status}`);
     }
     stopped.add(runId);
     abortControllers.get(runId)?.abort();
-    const runCtx = await runContext(app.row.doc, run, app.row.subject);
-    await terminal(run, runCtx, "stopped", "stopped by user");
+    const runCtx = await sponsorship.runContext(app.row.doc, run, app.row.subject);
+    await runRows.terminal(run, runCtx, "stopped", "stopped by user");
     if (!active.has(runId)) stopped.delete(runId);
   };
 
@@ -126,13 +123,13 @@ const createRunControlDoors = (
     const stored = await config.store.records(RUNS).get(runId);
     if (stored === null) throw new VendoError("not-found", `run not found: ${runId}`);
     const run = parseRunRecord(stored);
-    const app = await editableAppOrNull(run.appId, ctx);
+    const app = await appRows.editableAppOrNull(run.appId, ctx);
     if (app === null) throw new VendoError("not-found", `run not found: ${runId}`);
     const declared = triggerOf(app.row.doc, run.triggerId);
     if (declared === undefined) {
       throw new VendoError("conflict", `app has no trigger "${run.triggerId}" any more`);
     }
-    if (!await isArmed(app.row, run.triggerId)) {
+    if (!await armed.isArmed(app.row, run.triggerId)) {
       throw new VendoError("conflict", "this automation is off — turn it on to run it again");
     }
     // A run row from before the event was persisted has nothing to re-fire.
@@ -148,7 +145,7 @@ const createRunControlDoors = (
     // what proves the trigger still exists and is armed, but firing an edited
     // step list under the original lineage would move a completed call's
     // positional id off its own receipt and run it a second time.
-    const { runId: freshId, done } = launchRun(
+    const { runId: freshId, done } = execution.launchRun(
       app.row,
       run.__trigger ?? declared,
       run.trigger.kind,

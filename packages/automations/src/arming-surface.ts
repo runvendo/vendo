@@ -6,44 +6,35 @@
  * Lifted out of `createAutomationsEngine` unchanged.
  */
 import { VendoError, type Json } from "@vendoai/core";
-import type { AutomationsEngineContext } from "./engine-context.js";
+import type { AppRowsAccess } from "./app-rows.js";
+import type { ArmedAccess } from "./armed.js";
+import type { ConsentAccess } from "./consent.js";
+import type { EngineBase } from "./engine-context.js";
+import type { GrantsAccess } from "./grants.js";
 import type { AutomationsEngine, RunPlan } from "./index.js";
 import { appRef } from "./rows.js";
+import type { SponsorshipGateAccess } from "./sponsorship-gate.js";
 import { currentIntentHash, markSponsored, triggerKey, writeSponsorship } from "./sponsorship.js";
 import { evaluate, stepArgs, validateForEachItems } from "./steps.js";
 import { SCHEDULE, WEBHOOK } from "./types.js";
 import { base64url } from "./webhook-signature.js";
 
-export type ArmingSurfaceDeps = Pick<
-  AutomationsEngineContext,
-  | "config"
-  | "iso"
-  | "firesLocally"
-  | "editableApp"
-  | "declaredTrigger"
-  | "writeApp"
-  | "setArmed"
-  | "disarmTrigger"
-  | "descriptors"
-  | "liveGrant"
-  | "captureGrants"
-  | "sponsorships"
-  | "sponsoredEra"
->;
+export type ArmingSurfaceDeps = {
+  base: EngineBase;
+  appRows: AppRowsAccess;
+  armed: ArmedAccess;
+  grants: GrantsAccess;
+  sponsorship: SponsorshipGateAccess;
+  consent: ConsentAccess;
+};
 
 /** 07 §3's arm/disarm pair. */
-const createArmDoors = (
-  deps: Pick<
-    ArmingSurfaceDeps,
-    "config" | "iso" | "firesLocally" | "editableApp" | "declaredTrigger" | "writeApp"
-    | "setArmed" | "disarmTrigger" | "descriptors" | "captureGrants" | "sponsorships" | "sponsoredEra"
-  >,
-): Pick<AutomationsEngine, "enable" | "disable"> => {
-  const { config, iso, firesLocally, editableApp, declaredTrigger, writeApp } = deps;
-  const { setArmed, disarmTrigger, descriptors, captureGrants, sponsorships, sponsoredEra } = deps;
+const createArmDoors = (deps: ArmingSurfaceDeps): Pick<AutomationsEngine, "enable" | "disable"> => {
+  const { base: { config, iso, firesLocally }, appRows, armed } = deps;
+  const { grants, sponsorship, consent } = deps;
   const enable: AutomationsEngine["enable"] = async (appId, triggerId, ctx) => {
-    const found = await editableApp(appId, ctx);
-    const trigger = declaredTrigger(found.row.doc, triggerId);
+    const found = await appRows.editableApp(appId, ctx);
+    const trigger = appRows.declaredTrigger(found.row.doc, triggerId);
     // fn: steps run in the APP's own sandbox machine (packages/apps/src/fn.ts
     // POSTs /fn/<name> to it), not in this process — so when some other
     // authority fires this trigger, that authority is the one that has to wake
@@ -59,10 +50,10 @@ const createArmDoors = (
         + "explicit local `store:` to createVendo to keep this composition firing its own schedule and external triggers.",
       );
     }
-    const { missing, grantSetId } = await captureGrants(
+    const { missing, grantSetId } = await consent.captureGrants(
       found.row.doc,
       trigger,
-      await descriptors(ctx),
+      await grants.descriptors(ctx),
       ctx,
     );
     // §9.9 — enabling is what names the sponsor: the person arming an
@@ -70,7 +61,7 @@ const createArmDoors = (
     // A re-enable refreshes both, which is how an invalidated automation comes
     // back. Per TRIGGER, because that is the thing they just looked at and
     // allowed.
-    await writeSponsorship(sponsorships(), {
+    await writeSponsorship(sponsorship.sponsorships(), {
       appId,
       triggerId: trigger.id,
       sponsor: ctx.principal.subject,
@@ -80,10 +71,10 @@ const createArmDoors = (
     });
     // The era marker outlives an erase of the sponsor, so a vanished row can
     // never be misread as "never sponsored" (§9.9 fails closed).
-    await markSponsored(sponsoredEra(), appId, trigger.id, iso());
-    await setArmed(appId, trigger.id, true);
+    await markSponsored(sponsorship.sponsoredEra(), appId, trigger.id, iso());
+    await armed.setArmed(appId, trigger.id, true);
     found.row.enabled = true;
-    await writeApp(found.record, found.row);
+    await appRows.writeApp(found.record, found.row);
     const key = triggerKey(appId, trigger.id);
     if (trigger.on.kind === "schedule") {
       const cursor = await config.store.records(SCHEDULE).get(key);
@@ -102,8 +93,8 @@ const createArmDoors = (
   };
 
   const disable: AutomationsEngine["disable"] = async (appId, triggerId, ctx) => {
-    const found = await editableApp(appId, ctx);
-    await disarmTrigger(found.record, found.row, triggerId);
+    const found = await appRows.editableApp(appId, ctx);
+    await armed.disarmTrigger(found.record, found.row, triggerId);
   };
 
   return { enable, disable };
@@ -111,13 +102,13 @@ const createArmDoors = (
 
 /** Preview: what ONE trigger would run, nothing executes. */
 const createDryRunDoor = (
-  deps: Pick<ArmingSurfaceDeps, "editableApp" | "declaredTrigger" | "descriptors" | "liveGrant">,
+  deps: Pick<ArmingSurfaceDeps, "appRows" | "grants">,
 ): Pick<AutomationsEngine, "dryRun"> => {
-  const { editableApp, declaredTrigger, descriptors, liveGrant } = deps;
+  const { appRows, grants } = deps;
   const dryRun: AutomationsEngine["dryRun"] = async (appId, triggerId, ctx, event) => {
-    const found = await editableApp(appId, ctx);
-    const trigger = declaredTrigger(found.row.doc, triggerId);
-    const byName = await descriptors(ctx);
+    const found = await appRows.editableApp(appId, ctx);
+    const trigger = appRows.declaredTrigger(found.row.doc, triggerId);
+    const byName = await grants.descriptors(ctx);
     const plan: RunPlan = { steps: [], grantsMissing: [] };
     const add = async (stepId: string, tool: string): Promise<void> => {
       if (tool.startsWith("fn:")) {
@@ -126,7 +117,7 @@ const createDryRunDoor = (
       }
       const descriptor = byName.get(tool);
       if (descriptor === undefined) throw new VendoError("validation", `unknown tool in automation: ${tool}`);
-      const granted = await liveGrant(found.row.subject, appId, triggerId, descriptor);
+      const granted = await grants.liveGrant(found.row.subject, appId, triggerId, descriptor);
       plan.steps.push({ id: stepId, tool, wouldAsk: descriptor.confirmEach === true || !granted });
       if (!descriptor.confirmEach && !granted && !plan.grantsMissing.includes(tool)) plan.grantsMissing.push(tool);
     };

@@ -16,32 +16,38 @@ import {
   type TriggerSource,
   type VendoRecord,
 } from "@vendoai/core";
-import type { AutomationsEngineContext } from "./engine-context.js";
+import type { EngineBase } from "./engine-context.js";
 import { allRecords, parseAppRow } from "./rows.js";
 import { triggerOf } from "./sponsorship.js";
 import { validateTrigger } from "./steps.js";
 import { APPS, type AppRow } from "./types.js";
 
-export type AppRowsDeps = Pick<AutomationsEngineContext, "config">;
+export type AppRowsDeps = { base: EngineBase };
 
-export type AppRowsAccess = Pick<
-  AutomationsEngineContext,
-  | "appRecord"
-  | "editableAppOrNull"
-  | "editableApp"
-  | "declaredTrigger"
-  | "writeApp"
-  | "canEdit"
-  | "appsFiringOn"
->;
+export interface AppRowsAccess {
+  /** The app row and its record, or null when there is none. */
+  appRecord(appId: string): Promise<{ record: VendoRecord; row: AppRow } | null>;
+  /** The app, for a caller allowed to CHANGE it — null when absent OR refused. */
+  editableAppOrNull(appId: string, ctx: RunContext): Promise<{ record: VendoRecord; row: AppRow } | null>;
+  /** The same door, existence-masked, for callers that must refuse. */
+  editableApp(appId: string, ctx: RunContext): Promise<{ record: VendoRecord; row: AppRow }>;
+  /** The named trigger of an app, validated. */
+  declaredTrigger(doc: AppDocument, triggerId: string): Trigger;
+  /** The app row write that re-derives the per-kind trigger refs. */
+  writeApp(record: VendoRecord, row: AppRow): Promise<void>;
+  /** §9.3's `can(editor)`, through the config seam. */
+  canEdit(ctx: RunContext, row: AppRow, appId: string): Promise<boolean>;
+  /** The app rows that fire on this trigger kind, by its per-kind ref. */
+  appsFiringOn(kind: TriggerSource["kind"], refs?: Record<string, string>): Promise<VendoRecord[]>;
+}
 
 type AppReader = Pick<
-  AutomationsEngineContext,
+  AppRowsAccess,
   "appRecord" | "canEdit" | "editableAppOrNull" | "editableApp" | "declaredTrigger" | "writeApp"
 >;
 
 /** One app row: the read, the edit gate over it, and the write. */
-const createAppReader = ({ config }: AppRowsDeps): AppReader => {
+const createAppReader = ({ base: { config } }: AppRowsDeps): AppReader => {
   const appRecord = async (appId: string): Promise<{ record: VendoRecord; row: AppRow } | null> => {
     const record = await config.store.records(APPS).get(appId);
     return record === null ? null : { record, row: parseAppRow(record) };
@@ -103,8 +109,8 @@ const createAppReader = ({ config }: AppRowsDeps): AppReader => {
 
 /** The queries the tick and emit fire from. */
 const createAppQueries = (
-  { config }: AppRowsDeps,
-): Pick<AutomationsEngineContext, "appsFiringOn"> => {
+  { base: { config } }: AppRowsDeps,
+): Pick<AppRowsAccess, "appsFiringOn"> => {
   /** The app rows that fire on this trigger kind, by its per-kind ref. */
   const appsFiringOn = async (
     kind: TriggerSource["kind"],
