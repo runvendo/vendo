@@ -510,6 +510,37 @@ export async function assembleScreen(
   // to avoid. `status: "building"` is the honest receipt, and the front door
   // stamps it.
   if (record.escalated !== undefined) return { kind: "escalate", why: record.escalated };
+  /**
+   * THE EMPTY-HAND RECOVERY — one drive, once, before this function is willing to
+   * say `unavailable`.
+   *
+   * A text-only assistant turn is a clean stop for the loop (`stepLimitPart` only
+   * speaks up when the cap was hit WHILE still calling tools), so a
+   * question-shaped request — "How many accounts do I have with you, and what do
+   * they add up to?" — gets answered in prose after one host read and this
+   * function turned that into nothing at all: two model calls, no document,
+   * nothing for the person. A run that spent its whole budget on
+   * `search_components` and `validate` without ever saving lands here too. The
+   * condition is just "nothing was ever saved", and the ask is the one thing
+   * those runs got wrong: the screen IS the answer.
+   *
+   * One round, for the reviewer pass's reason below: being told exactly what is
+   * missing fixes it on the first try or not at all. No counter guards it — this
+   * is reachable once per assembly. Whatever it saves then faces the same
+   * mandatory reviewer as any other screen.
+   */
+  if (!record.assembled && failure === undefined && !surface.signal.aborted) {
+    await drive([...turn.messages, {
+      id: `unsaved_${input.appId}`,
+      role: "user",
+      parts: [{
+        type: "text",
+        text:
+          "You answered in words and saved no document. A screen is the only answer this loop can deliver. Call save_app now with a document built from the tool results you already have; escalate only if components genuinely cannot express this.",
+      }],
+    }]);
+    if (record.escalated !== undefined) return { kind: "escalate", why: record.escalated };
+  }
   // A model failure AFTER a screen already painted is not a failed screen.
   if (record.assembled) {
     /**
