@@ -29,6 +29,7 @@ import { cloudKeyOptions, positiveIntegerEnv } from "./compose-selection.js";
 import type { VendoComposition } from "./compose-context.js";
 import { vendoVerbsRegistry } from "./vendo-verbs.js";
 import { BASE_PATH, environment } from "./wire/shared.js";
+import { workingMemoryRegistry } from "./working-memory.js";
 
 // The box env assembler the machine lifecycle calls at provision: rotate the
 // app token, compose the callback doors from the operator-set public origin
@@ -418,6 +419,11 @@ export const composeApps = (composition: VendoComposition): Pick<VendoCompositio
   // the question, the loop stops, and the answer arrives as the next turn's
   // message — so it needs no thread binding, no answer door and no surface.
   actions.add(askUserRegistry());
+  // The agent's own working-memory slot, on the same registry for the same
+  // reasons: one door, guarded and audited like any other. It is a `read`, so it
+  // never raises a card — the note it keeps is rendered back into the system
+  // prompt by `workingMemoryBlock` (compose-prompt.ts).
+  actions.add(workingMemoryRegistry());
   actions.add(vendoVerbsRegistry({
     // The ctx is the CALLER's, handed down by the registry's own `execute` — not
     // assembled here and never read off the model's input. Both app-touching

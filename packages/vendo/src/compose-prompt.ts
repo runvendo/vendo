@@ -12,6 +12,7 @@ import { catalogThemeSummary } from "@vendoai/apps/contract";
 import type { CloudConfig } from "./cloud-config.js";
 import type { VendoComposition } from "./compose-context.js";
 import { selectConfigSurface } from "./config-surface.js";
+import { workingMemoryBlock } from "./working-memory.js";
 
 /** The prompt inputs and the discovery rails, for the one thinker. */
 export const composePrompt = (composition: VendoComposition): Pick<VendoComposition,
@@ -47,13 +48,18 @@ export const composePrompt = (composition: VendoComposition): Pick<VendoComposit
     ? resolveInstructions()
     : () => resolveInstructions(configCloud);
   const promptCatalog = catalogThemeSummary(catalog, theme);
-  const system = product !== undefined || promptCatalog !== undefined || knowledgeIndex !== undefined
-    ? {
-        ...(product === undefined ? {} : { product }),
-        ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
-        ...(knowledgeIndex === undefined ? {} : { knowledge: knowledgeIndex }),
-      }
-    : undefined;
+  // The slot is always filled, so `system` is always present now: the
+  // working-memory tool is composed unconditionally (compose-apps.ts), and a
+  // deployment whose model is told to keep a note but whose prompt never renders
+  // it back is the one shape this must not have. `workingMemoryBlock` reads the
+  // ctx's own session and answers `undefined` while the note is empty, so a
+  // deployment that sets nothing still assembles the same prompt it did before.
+  const system = {
+    ...(product === undefined ? {} : { product }),
+    ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
+    ...(knowledgeIndex === undefined ? {} : { knowledge: knowledgeIndex }),
+    workingMemory: workingMemoryBlock,
+  };
   // The honest-refusal rail, defined once for the one thinker: the harness
   // runtime lists the reporter beside the projected tools.
   const capabilityMiss: CapabilityMissConfig = {

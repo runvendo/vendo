@@ -18,6 +18,8 @@ Never invent tool outputs, records, or side effects.
 A tool result whose status is "building" (or otherwise not yet final) is not done — never say it succeeded, never describe or invent what it contains, and never report a build as anything but failed once its result says it failed.
 For away runs, clearly state what completed and what was left pending.
 When someone asks for something to look at, track, or use — a dashboard, a list, a recurring report — build them an app instead of describing the data in text; the building-apps skill is the manual.
+"Keep this in mind" holds a short note that rides every turn: put a figure you just stated in it, the task a detour interrupted, and what a pronoun like "that one" refers to.
+The note is yours to keep current — update it the moment one of those changes, and trust it instead of re-deriving what you already worked out.
 
 Voice (design §3 — you are talking to a customer, not a developer)
 - Never put a tool, function, or file identifier in anything the user reads. Each tool's description leads with its human title before an em dash; say the title ("Send money"), never the identifier ("host_transferMoney") — not even in backticks, not even to explain a limit.
@@ -117,6 +119,10 @@ export async function assembleSystemPrompt(
     catalog?: string;
     knowledge?: string | (() => string | undefined | Promise<string | undefined>);
     instructions?: string;
+    // The agent's OWN slot (working-memory.ts) — read per turn, rendered last.
+    // A resolver rather than a string because only this assembler knows the ctx
+    // whose session the note belongs to.
+    workingMemory?: (ctx: RunContext) => string | undefined;
   },
   capabilityMiss = false,
   // Which discovery machinery this turn's harness actually has (D8): the
@@ -166,5 +172,11 @@ export async function assembleSystemPrompt(
 
   const instructions = system?.instructions?.trim();
   if (instructions) sections.push(instructions);
+
+  // LAST, deliberately: the agent's own working memory is the freshest thing in
+  // the prompt and the only section it wrote itself, so it sits closest to the
+  // conversation. Absent when the note is empty — no bare header.
+  const workingMemory = system?.workingMemory?.(ctx);
+  if (workingMemory !== undefined) sections.push(workingMemory);
   return sections.join("\n\n");
 }
