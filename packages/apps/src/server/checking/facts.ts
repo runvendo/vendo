@@ -26,7 +26,9 @@ import {
   WIRE_COMPONENT_NAMES,
   checkBindingShapes,
   checkExpr,
+  exprScalesAggregateDownByHundred,
   kitSpec,
+  parseExpr,
   printWire,
   isExprBinding,
   validateAppDocument,
@@ -271,6 +273,52 @@ export const exprIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => 
   };
   for (const node of tree.nodes) {
     for (const [prop, value] of Object.entries(node.props ?? {})) walk(node.id, prop, value);
+  }
+  return issues;
+};
+
+/**
+ * A money slot renders integer MINOR units: `format="money"` formats cents
+ * (kit/specs.ts:83, 190) and `<Money cents>` says so in its prop name. So a
+ * computed value that divides by 100 on the way in converts cents to dollars
+ * that the slot then converts again, and the screen ships a headline total a
+ * hundred times too small.
+ *
+ * This is the "figure worked out in the model's head" defect at its most
+ * expensive, and it is not rare: on 35 real generations of the maple world, 17
+ * money stats were written `{sum(rows, "amount") / 100} format="money"` — the
+ * $4,243.11 spend total rendered as $42.43. It is a FACT, not a judgement:
+ * the slot's unit and the literal divisor are both right there in the document.
+ *
+ * Scoped to the divisor's DIRECTION on purpose. Scaling up (`* 100`) is the
+ * legitimate repair when a tool really does report whole currency units, so the
+ * message names it rather than leaving the model to guess which way to go.
+ *
+ * Scoped to the KIT, too (kitSlotIssues's guard): the Kit's `format="money"` is
+ * the one money token whose unit this product defines. A host component may name
+ * a prop `format` and mean its own thing, and an island's props are the island's
+ * own contract — neither is a unit this check gets to assume.
+ */
+export const moneyScaleIssues = (tree: Tree): FactIssue[] => {
+  const issues: FactIssue[] = [];
+  for (const node of tree.nodes) {
+    const props = node.props;
+    if (props === undefined) continue;
+    if (node.source === "host" || node.source === "generated") continue;
+    if (!KIT_WIRE_SET.has(node.component)) continue;
+    // Two ways a slot declares minor units: the node's own money format token,
+    // and Money's `cents` prop, whose name IS the declaration.
+    const moneyFormatted = props["format"] === "money";
+    const isMoney = node.component === "Money";
+    if (!moneyFormatted && !isMoney) continue;
+    for (const [prop, value] of Object.entries(props)) {
+      if (!moneyFormatted && prop !== "cents") continue;
+      if (!isExprBinding(value)) continue;
+      const parsed = parseExpr(value.$expr);
+      // A parse failure is `expressions-compute`'s finding, not this one's.
+      if (!parsed.ok || !exprScalesAggregateDownByHundred(parsed.node)) continue;
+      issues.push(atProp(node.id, prop, `computes {${value.$expr}} into a money slot, which renders integer minor units (cents) already — dividing by 100 first converts to whole units twice and ships a figure a hundred times too small. Bind the minor-unit figure itself (drop the "/ 100"); if this tool really reports whole currency units, multiply by 100 instead.`));
+    }
   }
   return issues;
 };
@@ -558,6 +606,7 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
     ...hostReshapeIssues(tree, deps),
   ]),
   treeCheck("expressions-compute", (tree) => exprIssues(tree, deps)),
+  treeCheck("money-scale", (tree) => moneyScaleIssues(tree)),
   treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
   treeCheck("no-string-interpolation", (tree) => interpolationIssues(tree)),
 ];

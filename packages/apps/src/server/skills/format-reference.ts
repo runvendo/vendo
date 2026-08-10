@@ -272,6 +272,13 @@ Operators are \`+ - * /\`, a leading \`-\`, and \`( )\`. Values are numbers and 
 strings. Nothing else exists: no \`%\`, no comparisons, no \`&&\`, no \`? :\`, no
 \`[…]\` indexing.
 
+Money is INTEGER MINOR UNITS — cents — in the data, in a calculation, and in
+every money slot, and the slot converts for you. So you never scale it yourself:
+\`value={sum(spending.data, "amount") / 100} format="money"\` converts twice and
+renders a hundredth of the real total. Add and subtract the cents, bind the
+cents. A field's own name (\`amount\`, \`balance\`) does not change this; only a
+host that documents whole units does, and then you scale UP.
+
 A query that has not answered yet reads as nothing, and rows carrying explicit
 nulls are skipped by the aggregates — so you never write a guard for either.
 Dividing by zero, and arithmetic on something that is not a number, are reported

@@ -509,6 +509,41 @@ export function exprPathHeads(node: ExprNode): string[] {
   return heads;
 }
 
+/** The calls that reduce a column of money to one figure. `count` is absent on
+ *  purpose: a row count is never an amount. */
+const MONEY_REDUCERS: ReadonlySet<string> = new Set(["sum", "average", "min", "max", "difference"]);
+
+/**
+ * Whether the expression scales a REDUCED figure down by a hundred —
+ * `sum(rows, "amount") / 100`, `difference(a, b) * 0.01`: a cents-to-dollars
+ * conversion written by hand. Bound to a money slot, which renders integer minor
+ * units already, that conversion happens twice and the screen shows a hundredth
+ * of the real total. `checking/facts.ts` is the only caller.
+ *
+ * Two deliberate narrowings, both the "when in doubt it does not flag" rule the
+ * island scanner states (island-derived-values.ts):
+ *   - the DIRECTION: scaling up (`* 100`) is the legitimate repair when a host
+ *     really reports whole currency units, so it is not this shape;
+ *   - what is scaled: only an aggregate over rows. Dividing a plain field by 100
+ *     is how a percentage-typed rate is read (`total * (state.rate / 100)`), and
+ *     refusing that would refuse a screen that is right.
+ */
+export function exprScalesAggregateDownByHundred(node: ExprNode): boolean {
+  const reduced = (side: ExprNode): boolean => side.kind === "call" && MONEY_REDUCERS.has(side.name);
+  const isValue = (side: ExprNode, value: number): boolean => side.kind === "number" && side.value === value;
+  if (node.kind === "binary") {
+    if (node.op === "/" && isValue(node.right, 100) && reduced(node.left)) return true;
+    if (node.op === "*"
+      && ((isValue(node.right, 0.01) && reduced(node.left)) || (isValue(node.left, 0.01) && reduced(node.right)))) {
+      return true;
+    }
+    return exprScalesAggregateDownByHundred(node.left) || exprScalesAggregateDownByHundred(node.right);
+  }
+  if (node.kind === "negate") return exprScalesAggregateDownByHundred(node.operand);
+  if (node.kind === "call" || node.kind === "reshape") return node.args.some(exprScalesAggregateDownByHundred);
+  return false;
+}
+
 /** How a node reads back in an issue message. */
 const printExpr = (node: ExprNode): string => {
   if (node.kind === "number") return String(node.value);
