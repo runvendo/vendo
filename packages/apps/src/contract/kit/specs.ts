@@ -50,7 +50,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Grid",
     group: "layout",
-    summary: "Equal-width columns. Use for a grid of cards or stats.",
+    summary: "A strip of small tiles side by side — Stats or short Cards, at most three. The surface is about 440px wide, so a DataTable, a chart or a Form takes the whole row: never put one in a Grid cell. A cell that would fall under 150px wraps to the next line.",
     props: { columns: config(z.number().int().positive(), "column count"), gap: config(z.number(), "pixels between cells") },
     examples: ["<Grid columns={3}><Stat .../><Stat .../><Stat .../></Grid>"],
   },
