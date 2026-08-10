@@ -133,6 +133,7 @@ export {
 // sync-back — live with the drivers, not here; they reach it through the
 // harness runtime's injected `hotPaths` slot.
 export {
+  emptyQueriesIn,
   HOT_PATH_FILES,
   HOT_PATH_WATCH,
   hotPathAppId,

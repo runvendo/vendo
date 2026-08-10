@@ -60,6 +60,7 @@ import {
 } from "@vendoai/apps/contract";
 import {
   buildingAppsSkill,
+  emptyQueriesIn,
   paintedIn,
   repairInstruction,
   validateWrittenApps,
@@ -263,6 +264,24 @@ function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): stri
     .join("\n\n---\n\n");
 }
 
+/**
+ * What a save is told when one of its queries came back with NOTHING in it.
+ *
+ * The writer learns a query's shape off the tool listing and is told to call it
+ * only when the values matter ("know the data before you write it", the shipped
+ * skill), so until the paint runs them nothing in this loop can say "there are
+ * none of these". It therefore designs for rows it has never seen: a table of rows
+ * that do not exist, and — the part that ships broken rather than merely empty — a
+ * control that acts on one of them, which fires with an empty argument because the
+ * row it binds is not there. `emptyQueriesIn` is the paint's own answer; this is
+ * the sentence that hands it back to the writer while it can still act on it.
+ */
+const emptyResultNote = (queries: readonly string[]): string =>
+  `These queries came back with NO ROWS: ${queries.join(", ")}. Empty is the real answer, not a `
+  + "failure, so build the screen for it: say in one line that there are none, and drop every part "
+  + "and every control that acts on one of those rows — a control bound to a row that is not there "
+  + "fires with an empty argument. Save the corrected document, then run validate.";
+
 /** What the two hands recorded, for THIS run. A collector on the run rather than
  *  module state: the hands are built per run and closed over it, so two concurrent
  *  assemblies cannot read each other's verdict. */
@@ -415,6 +434,8 @@ export async function assembleScreen(
           note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.",
         };
       }
+      const nothing = emptyQueriesIn(committed, input.appId);
+      if (nothing.length > 0) return { saved: true, note: emptyResultNote(nothing) };
       return { saved: true, note: "Run validate on it now." };
     },
   };

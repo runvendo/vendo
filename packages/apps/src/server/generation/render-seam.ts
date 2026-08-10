@@ -138,6 +138,48 @@ const paintedByCommit = new WeakMap<CommitResult, readonly AppId[]>();
 export const paintedIn = (result: CommitResult): readonly AppId[] | undefined =>
   paintedByCommit.get(result);
 
+/**
+ * WHICH OF THIS PAINT'S QUERIES CAME BACK WITH NOTHING IN THEM, per app.
+ *
+ * A tool listing declares field NAMES; it never says whether anything is there.
+ * So a writer told to read the shape off the listing (the building-apps skill's
+ * "know the data before you write it") designs for rows it has never seen — a
+ * table of rows that do not exist, and worse, a control that acts on one of them,
+ * which fires with an empty argument (live: a "Cancel transfer" button over zero
+ * pending transfers). The paint is the first moment anything in this pipeline
+ * holds the real answer, so the answer travels back with the commit like
+ * `paintedIn` does, and the hand that saved is what tells the writer.
+ *
+ * Empty, never "failed": a query that could not resolve is ABSENT from the
+ * resolved data (`ProgressiveQueryResolver.recompute`) and carries its own
+ * `dataUnavailable` marker — reporting it here would tell the writer to write an
+ * empty state over data that exists and merely did not arrive.
+ */
+const emptyQueriesByCommit = new WeakMap<CommitResult, Readonly<Record<string, readonly string[]>>>();
+
+/** The names of `appId`'s queries that resolved to no rows on this commit's paint.
+ *  Empty for everything else — a paint with rows, an unwrapped workspace, a
+ *  commit this seam did not produce: in all of them there is nothing to say. */
+export const emptyQueriesIn = (result: CommitResult, appId: AppId): readonly string[] =>
+  emptyQueriesByCommit.get(result)?.[appId] ?? [];
+
+/** Does one query's resolved result carry no rows at all? `[]` and `null` are the
+ *  plain cases; a wrapper object (`{ data: [], next: null }`) counts when every
+ *  list in it is empty, which is how host list tools answer. An object with no
+ *  list in it is a record rather than a collection — a balance of 0 is data. */
+const carriesNoRows = (value: Json): boolean => {
+  if (value === null) return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value !== "object") return false;
+  const lists = Object.values(value).filter((field): field is Json[] => Array.isArray(field));
+  return lists.length > 0 && lists.every((rows) => rows.length === 0);
+};
+
+/** The query names in `data` whose result carries no rows, keyed as the resolver
+ *  keys them (by query name, `open.ts`'s `setQueryData`). */
+const emptyQueries = (data: Record<string, Json> | undefined): readonly string[] =>
+  Object.entries(data ?? {}).filter(([, value]) => carriesNoRows(value)).map(([name]) => name);
+
 export interface RenderSeamOptions {
   /** Write the part on the stable per-app stream id, so successive views
    *  reconcile in place instead of stacking. */
@@ -236,12 +278,13 @@ const viewPart = (
   // consumer when this function's caller fills the data in afterwards.
   vendoViewPart({ appId, payload: { ...payload, streaming }, ...(turnId === undefined ? {} : { turnId }) });
 
-/** The view a parsing hot-path commit produces, or undefined if it does not parse. */
+/** The view a parsing hot-path commit produces, or undefined if it does not parse.
+ *  `emptyQueries` rides along on the settled paint — see {@link emptyQueriesIn}. */
 export async function viewForWrite(
   path: string,
   content: string,
   options: RenderSeamOptions,
-): Promise<{ streamId: string; part: VendoViewPart } | undefined> {
+): Promise<{ streamId: string; part: VendoViewPart; emptyQueries?: readonly string[] } | undefined> {
   const appId = hotPathAppId(path);
   const file = hotPathFile(path);
   if (appId === undefined || file === undefined) return undefined;
@@ -380,7 +423,7 @@ export async function viewForWrite(
     );
   }
   // The app half has run: this is the finished paint, so it SETTLES.
-  return viewPart(appId, {
+  const settled = viewPart(appId, {
     ...payload,
     // §3.3's `data` law is about the DESCRIPTION, which was gated above without
     // it. This resolved data is the shipped first-paint fill, and it rides
@@ -390,6 +433,11 @@ export async function viewForWrite(
     ...(data === undefined ? {} : { data }),
     ...(dataUnavailable ? { dataUnavailable: true } : {}),
   }, false, options.turnId);
+  if (settled === undefined) return undefined;
+  // A FAILED load says nothing about emptiness: those queries are absent from
+  // `data` rather than empty, and the marker already tells the truth about them.
+  const nothing = dataUnavailable ? [] : emptyQueries(data);
+  return nothing.length === 0 ? settled : { ...settled, emptyQueries: nothing };
 }
 
 /**
@@ -397,19 +445,21 @@ export async function viewForWrite(
  * other operation passes straight through, so the result is still a `WorkspaceFs`.
  */
 export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSeamOptions): WorkspaceFs {
-  /** True iff this path put a view on screen — what the plan's yield is keyed on. */
-  const emitFor = async (path: string): Promise<boolean> => {
+  /** The paint this path produced — its empty-query names, which are usually none
+   *  — or undefined when it put nothing on screen, which is what the plan's yield
+   *  is keyed on. */
+  const emitFor = async (path: string): Promise<readonly string[] | undefined> => {
     try {
       // Read back what the store now holds rather than trusting a remembered
       // argument: append, encoding and any store-side normalization land here.
       const content = await workspace.readFile(path);
       const view = await viewForWrite(path, content, options);
-      if (view === undefined) return false;
+      if (view === undefined) return undefined;
       options.emit(view.streamId, view.part);
-      return true;
+      return view.emptyQueries ?? [];
     } catch {
       // A view is a courtesy on top of a landed commit. It can never fail one.
-      return false;
+      return undefined;
     }
   };
 
@@ -474,17 +524,25 @@ export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSe
         // leave the pane blank for the whole turn.
         const plans: Array<{ path: string; appId: AppId }> = [];
         const painted = new Set<AppId>();
+        const nothingIn: Record<string, readonly string[]> = {};
         for (const path of result.changed) {
           const appId = hotPathAppId(path);
           if (appId === undefined) continue;
           if (hotPathFile(path) === "plan.vendo") plans.push({ path, appId });
-          else if (await emitFor(path)) painted.add(appId);
+          else {
+            const empties = await emitFor(path);
+            if (empties === undefined) continue;
+            painted.add(appId);
+            if (empties.length > 0) nothingIn[appId] = empties;
+          }
         }
         for (const { path, appId } of plans) {
-          if (!painted.has(appId) && await emitFor(path)) painted.add(appId);
+          // A plan runs no queries, so its paint has nothing to say about emptiness.
+          if (!painted.has(appId) && (await emitFor(path)) !== undefined) painted.add(appId);
         }
         await persistSource(result.changed);
         paintedByCommit.set(result, [...painted]);
+        if (Object.keys(nothingIn).length > 0) emptyQueriesByCommit.set(result, nothingIn);
         return result;
       };
     },
