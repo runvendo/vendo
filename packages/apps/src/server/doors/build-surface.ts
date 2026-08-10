@@ -38,6 +38,7 @@ import {
   fallbackAppName,
   findingLine,
 } from "./build-messages.js";
+import { designCheck } from "../checking/design.js";
 import { queryEvidence } from "../checking/evidence.js";
 import { createAppFloor, floorChecks } from "../checking/floor.js";
 import { createCheckingLayer, judgmentRules } from "../checking/layer.js";
@@ -421,7 +422,7 @@ const createValidateDoor = (
       deps,
       // The thorough door: the shared floor AND the reviewer. Off the
       // scripted-create hot path, so the tsc pass is affordable here (§7.1).
-      checks: [...floorChecks(deps), reviewerCheck(deps, samples, judgmentRules(plugged)), ...plugged],
+      checks: [...floorChecks(deps), designCheck(samples), reviewerCheck(deps, samples, judgmentRules(plugged)), ...plugged],
     }).run({ document, request: "" });
     return { ok: !findings.some(({ severity }) => severity === "block"), findings };
   };
