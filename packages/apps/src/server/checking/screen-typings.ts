@@ -70,7 +70,7 @@ export const SCREEN_TYPINGS_FILE = "/vendo-screen-typings.d.ts";
  * vocabulary without a typing here fails the suite instead of silently
  * type-checking as `any`.
  */
-export const AGGREGATE_FIELD_ARITY: Readonly<Record<ExprCall, "rows-and-field" | "rows" | "values" | "grouped">> = {
+export const AGGREGATE_FIELD_ARITY: Readonly<Record<ExprCall, "rows-and-field" | "rows" | "values" | "grouped" | "joined">> = {
   sum: "rows-and-field",
   average: "rows-and-field",
   min: "rows-and-field",
@@ -79,6 +79,7 @@ export const AGGREGATE_FIELD_ARITY: Readonly<Record<ExprCall, "rows-and-field" |
   difference: "values",
   days_until: "values",
   group_by: "grouped",
+  lookup: "joined",
 };
 
 // ---- zod → TS type text ---------------------------------------------------
@@ -267,6 +268,16 @@ const aggregateDeclarations = (): string[] => {
         + " };");
     } else if (kind === "values") {
       lines.push(`declare const ${call}: (...values: any[]) => number;`);
+    } else if (kind === "joined") {
+      // Each list types its OWN field names (`keyof Row` against the rows,
+      // `keyof Other` against the rows looked up in), so naming a field on the
+      // wrong side of the join is a compile error rather than a blank column.
+      // The result stays the LEFT row type — the join retypes one field and adds
+      // and drops none — so a column key still checks against the same fields.
+      lines.push(`declare const ${call}: <Row, Other>(`
+        + "rows: readonly Row[], field: keyof Row & string,"
+        + " others: readonly Other[], key: keyof Other & string, show: keyof Other & string"
+        + ") => Row[];");
     } else {
       lines.push(`declare const ${call}: <Row, Field extends keyof Row & string>(`
         + `rows: readonly Row[], field: keyof Row & string, bucket: ${buckets},`

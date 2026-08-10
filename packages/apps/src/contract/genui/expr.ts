@@ -32,12 +32,20 @@
  * "amount_cents")`, D2) and reads it as a COLUMN off the rows — the same walk a
  * dotted path takes.
  *
+ * A path head names ONE query, so values from different queries combine here
+ * and only here: arithmetic across two heads is ordinary (`sum(invoices.data,
+ * "amount_cents") / count(clients.data)`), and `lookup` is the one call that
+ * joins two queries ROW by row — a row carrying another query's id shows that
+ * row's label instead. There is no loop variable anywhere in the dialect, which
+ * is why the join has to be a call rather than something written per cell.
+ *
  * Data that has not arrived is not a problem: it resolves to `undefined` and
  * flows through arithmetic as `undefined` — the same discipline as `$reshape`
  * (loading is never a mismatch).
  */
 
 import {
+  defineOwn,
   isPlainObject,
   isWireReshapeOp,
   type Json,
@@ -70,6 +78,7 @@ export const EXPR_CALLS = [
   "difference",
   "days_until",
   "group_by",
+  "lookup",
 ] as const;
 
 export type ExprCall = (typeof EXPR_CALLS)[number];
@@ -90,6 +99,7 @@ const ARITY: Record<ExprCall, number> = {
   difference: 2,
   days_until: 1,
   group_by: 4,
+  lookup: 5,
 };
 
 const COUNT_WORDS = ["no", "one", "two", "three", "four"] as const;
@@ -307,6 +317,27 @@ const parseGroupBy = (state: ParseState, args: readonly ExprNode[]): ExprNode | 
   return { kind: "call", name: "group_by", args };
 };
 
+/**
+ * `lookup(tasks.data, "assignee", members.data, "id", "name")` — THE join. Two
+ * queries on one screen is ordinary; two queries in one LIST is not, because a
+ * row carrying another query's id (`assignee: "m_theo"`) has no way to reach
+ * that query's rows: there is no loop variable, and a table column reads fields
+ * off its own row. So the join is written once, over both lists, and reads left
+ * to right: the rows, the field holding the reference, the rows to find it in,
+ * the field it matches, and the field to show. Both row lists are NAMED paths,
+ * as in `group_by`, so nothing has to be inferred about where they came from.
+ */
+const parseLookup = (state: ParseState, args: readonly ExprNode[]): ExprNode | ParseFailed => {
+  const [rows, field, others, key, show] = args;
+  if (rows?.kind !== "path" || others?.kind !== "path") {
+    return failParse(state, 'lookup() joins the two lists of rows you name, like lookup(tasks.data, "assignee", members.data, "id", "name")');
+  }
+  if ([field, key, show].some((name) => stringArg(name) === null)) {
+    return failParse(state, `lookup() names its three fields in quotes: lookup(${rows.text}, "the field holding the reference", ${others.text}, "the field it matches", "the field to show")`);
+  }
+  return { kind: "call", name: "lookup", args };
+};
+
 /** v3 spec §5 (D3) — `sum.of("amount_cents")` / `count.of()`. */
 const parseDescriptor = (
   state: ParseState,
@@ -374,7 +405,9 @@ const parseCall = (state: ParseState, nameToken: Token & { type: "path" }, depth
   if (args.length !== ARITY[name]) {
     return failParse(state, `${name}() takes ${argumentCount(ARITY[name])}, not ${args.length}`);
   }
-  return name === "group_by" ? parseGroupBy(state, args) : checkedCall(state, name, args);
+  if (name === "group_by") return parseGroupBy(state, args);
+  if (name === "lookup") return parseLookup(state, args);
+  return checkedCall(state, name, args);
 };
 
 const parsePrimary = (state: ParseState, depth: number): ExprNode | ParseFailed => {
@@ -738,8 +771,82 @@ const evaluateGroupBy = (state: EvalState, args: readonly ExprNode[]): unknown |
   return points;
 };
 
+/** The rows behind one of `lookup`'s two list arguments. An EMPTY list is rows
+ *  (a query that returned nothing joins to nothing); a list of non-rows is the
+ *  mis-binding the notice exists for. */
+const lookupRows = (state: EvalState, resolved: unknown, text: string): Record<string, unknown>[] | EvalFailed => {
+  if (!Array.isArray(resolved)) {
+    return failEval(state, `lookup() joins lists of rows, but "${text}" is ${describeValue(resolved)}`);
+  }
+  const rows = resolved.filter(isPlainObject);
+  if (rows.length === 0 && resolved.length > 0) {
+    return failEval(state, `lookup() joins lists of rows, but "${text}" holds ${describeValue(resolved[0])}`);
+  }
+  return rows;
+};
+
+const carries = (rows: readonly Record<string, unknown>[], field: string): boolean =>
+  rows.some((row) => Object.prototype.hasOwnProperty.call(row, field));
+
+/**
+ * `lookup(rows, "field", others, "key", "show")` — each row's `field` becomes
+ * the matching other row's `show` value, and every other field stays exactly as
+ * it was, so the joined rows are still the left query's rows and a column key
+ * still means what it meant.
+ *
+ * No row is ever dropped: a reference that matches nothing reads as empty, which
+ * is the honest answer for an unassigned row and keeps the count intact
+ * (silently losing rows is the broken-list class `asPoints` is strict about).
+ * The FIRST match wins, so duplicate keys read the same way on every render.
+ */
+const evaluateLookup = (state: EvalState, args: readonly ExprNode[]): unknown | EvalFailed => {
+  const rowsPath = args[0] as ExprNode & { kind: "path" };
+  const field = (args[1] as ExprNode & { kind: "string" }).value;
+  const othersPath = args[2] as ExprNode & { kind: "path" };
+  const key = (args[3] as ExprNode & { kind: "string" }).value;
+  const show = (args[4] as ExprNode & { kind: "string" }).value;
+
+  const resolvedRows = resolveSegments(state, rowsPath.segments);
+  if (resolvedRows === EVAL_FAILED) return EVAL_FAILED;
+  const resolvedOthers = resolveSegments(state, othersPath.segments);
+  if (resolvedOthers === EVAL_FAILED) return EVAL_FAILED;
+  // Either side still loading means the whole join is still loading.
+  if (resolvedRows === undefined || resolvedOthers === undefined) return undefined;
+
+  const rows = lookupRows(state, resolvedRows, rowsPath.text);
+  if (rows === EVAL_FAILED) return EVAL_FAILED;
+  const others = lookupRows(state, resolvedOthers, othersPath.text);
+  if (others === EVAL_FAILED) return EVAL_FAILED;
+  if (rows.length === 0) return [];
+  if (!carries(rows, field)) {
+    return failEval(state, `"${field}" is absent from the rows of "${rowsPath.text}" — the fields they carry are: ${fieldsOf(rows)}`);
+  }
+  if (others.length > 0) {
+    for (const name of [key, show]) {
+      if (!carries(others, name)) {
+        return failEval(state, `"${name}" is absent from the rows of "${othersPath.text}" — the fields they carry are: ${fieldsOf(others)}`);
+      }
+    }
+  }
+  const shown = new Map<string, unknown>();
+  for (const row of others) {
+    const at = row[key];
+    if (at === null || at === undefined) continue;
+    const matchKey = String(at);
+    if (!shown.has(matchKey)) shown.set(matchKey, row[show] ?? null);
+  }
+  return rows.map((row) => {
+    const at = row[field];
+    const joined = at === null || at === undefined ? null : (shown.get(String(at)) ?? null);
+    const next = { ...row };
+    defineOwn(next, field, joined);
+    return next;
+  });
+};
+
 const evaluateCall = (state: EvalState, node: ExprNode & { kind: "call" }): unknown | EvalFailed => {
   if (node.name === "group_by") return evaluateGroupBy(state, node.args);
+  if (node.name === "lookup") return evaluateLookup(state, node.args);
   if (node.name === "difference") {
     const first = evaluate(state, node.args[0] as ExprNode);
     if (first === EVAL_FAILED) return EVAL_FAILED;
@@ -991,8 +1098,50 @@ const requireNumeric = (state: CheckState, node: ExprNode, call: string): void =
     : `${call}() needs numeric values, but ${printExpr(node)} is ${items.kind}`);
 };
 
+/** The row fields a list of rows declares, or null when nothing is known about
+ *  them (a `json` region, or a list that is not a list of rows) — the defensive
+ *  silence, as everywhere in this check. */
+const rowFieldShapes = (shape: ShapeType): Record<string, ShapeType> | null =>
+  shape.kind === "array" && shape.items.kind === "object" ? shape.items.fields : null;
+
+/**
+ * `lookup(rows, "field", others, "key", "show")` — three field names to check
+ * against two response shapes. The result is the LEFT rows: the join retypes one
+ * field and adds and drops none, so a column key on it means what it always did.
+ *
+ * Both lists resolve ONCE here rather than through `pathShape` per field name:
+ * five reads of the same two heads would report an undeclared query five times
+ * over, where the model needs to be told once.
+ */
+const lookupShape = (state: CheckState, node: ExprNode & { kind: "call" }): ShapeType => {
+  const rows = node.args[0] as ExprNode & { kind: "path" };
+  const others = node.args[2] as ExprNode & { kind: "path" };
+  const named = (at: number): string => (node.args[at] as ExprNode & { kind: "string" }).value;
+  const field = named(1);
+  const key = named(3);
+  const show = named(4);
+  const rowsShape = pathShape(state, rows).shape;
+  const left = rowFieldShapes(rowsShape);
+  const right = rowFieldShapes(pathShape(state, others).shape);
+  const absent = (fields: Record<string, ShapeType> | null, name: string, text: string): boolean => {
+    if (fields === null || Object.prototype.hasOwnProperty.call(fields, name)) return false;
+    state.issues.push(`"${name}" is absent from the rows of "${text}" — the fields they carry are: ${Object.keys(fields).join(", ")}`);
+    return true;
+  };
+  absent(left, field, rows.text);
+  absent(right, key, others.text);
+  const shown = right !== null && !absent(right, show, others.text)
+    ? columnItems(right[show] as ShapeType)
+    : UNKNOWN;
+  if (shown.kind === "object" || shown.kind === "array") {
+    state.issues.push(`lookup() shows one value per row, and ${others.text}.${show} is ${shown.kind === "object" ? "an object" : "a list"} — name a scalar field to show`);
+  }
+  return rowsShape;
+};
+
 const callShape = (state: CheckState, node: ExprNode & { kind: "call" }): ShapeType => {
   const first = node.args[0] as ExprNode;
+  if (node.name === "lookup") return lookupShape(state, node);
   if (node.name === "difference") {
     requireNumeric(state, first, node.name);
     requireNumeric(state, node.args[1] as ExprNode, node.name);

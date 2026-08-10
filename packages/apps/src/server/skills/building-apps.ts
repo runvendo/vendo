@@ -283,8 +283,11 @@ Tell each worker:
   Write the calculation and let it compute fresh on every render:
   \`value={sum(transactions, "amount_cents")}\`. Inside those braces: field paths,
   numbers, quoted strings, \`+ - * / ( )\`, and \`sum\`, \`count\`, \`average\`,
-  \`min\`, \`max\`, \`difference\`, \`days_until\`, \`group_by\`. Nothing else. Every
-  aggregate names the field it reads, with the rows first.
+  \`min\`, \`max\`, \`difference\`, \`days_until\`, \`group_by\`, \`lookup\`. Nothing
+  else. Every aggregate names the field it reads, with the rows first.
+- **A row carrying another query's id shows that query's label, not the id.**
+  \`rows={lookup(tasks.data, "assignee", members.data, "id", "name")}\` — the join
+  is one call over both lists, never an island.
 - **Never specify a font, a colour, or anything about the branding.** The
   components already carry this product's own look; anything you add fights it.
 - When a part's data is genuinely missing, let the component render its own empty

@@ -254,6 +254,7 @@ then \`format\`.
 | \`difference(a, b)\` | 2 | a minus b |
 | \`days_until(path)\` | 1 | whole days from today to an ISO date |
 | \`group_by(rows, "dateField", bucket, aggregate)\` | 4 | buckets rows by a date field |
+| \`lookup(rows, "field", others, "key", "show")\` | 5 | joins two queries: shows a label from \`others\` where \`rows\` carry its id |
 
 Every aggregate NAMES the field it reads — there is no implicit field, and the
 rows come first. \`group_by\` is strict: the rows, then the quoted date field, then
@@ -276,6 +277,31 @@ A query that has not answered yet reads as nothing, and rows carrying explicit
 nulls are skipped by the aggregates — so you never write a guard for either.
 Dividing by zero, and arithmetic on something that is not a number, are reported
 rather than rendered as nonsense.
+
+### Two queries on one screen
+
+Declare as many \`<Query>\` elements as the screen needs; each one has its own id,
+and one calculation may read several of them — \`value={sum(payments.data,
+"amount_cents") - sum(refunds.data, "amount_cents")}\` is two queries in one
+number. Read each query for exactly what it reports and nothing else: two queries
+that overlap (a list, and the same list again with a different \`input\`) must never
+be added together, or the headline counts the same money twice.
+
+Rows are the one thing that does not combine on its own. When a row carries
+another query's id — \`assignee: "m_theo"\`, \`account_id: "acc_2"\` — the id is not
+what a person reads, and a column reads fields off its own row, so there is no way
+to reach the other query from inside it. \`lookup\` is the join, written once over
+both lists:
+
+\`\`\`
+rows={lookup(tasks.data, "assignee", members.data, "id", "name")}
+\`\`\`
+
+Every row keeps every field it had; only \`assignee\` changes, from the id to that
+member's \`name\`, so \`columns={[{key:"assignee",label:"Owner"}]}\` now reads as a
+name. Rows are never dropped — a reference matching nothing shows as empty — and
+the row's own \`id\` is untouched, so a row action still has it. Never write an
+island to do this.
 
 ### A reshape reshapes a READ, never a calculation
 

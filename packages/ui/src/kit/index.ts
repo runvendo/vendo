@@ -89,7 +89,10 @@ export type { Json, ReshapeOp, ReshapeResult, ReshapeStep, ToolOutcome } from "@
 // The projection vocabulary: nine live reshape ops.
 export { reshape } from "./reshape.js";
 
-// The aggregates — core's `$expr` engine, one wrapper per EXPR_CALLS member.
+// The aggregates — core's `$expr` engine, one wrapper per AGGREGATE in
+// EXPR_CALLS. `lookup` is in that vocabulary and is not one: it joins two
+// queries' rows, which code-land does with an ordinary map, so wrapping it here
+// would be a second implementation of nothing.
 export {
   average,
   count,
