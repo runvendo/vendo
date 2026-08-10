@@ -5,6 +5,14 @@ import { describe, expect, it, vi } from "vitest";
 import {
   STORE_WIRE_PATHS,
   VendoError,
+  storeWireAppDataDeleteFileRequestSchema,
+  storeWireAppDataDeleteRequestSchema,
+  storeWireAppDataGetFileRequestSchema,
+  storeWireAppDataGetRequestSchema,
+  storeWireAppDataListFilesRequestSchema,
+  storeWireAppDataListRequestSchema,
+  storeWireAppDataPutFileRequestSchema,
+  storeWireAppDataPutRequestSchema,
   storeWireBlobsDeleteRequestSchema,
   storeWireBlobsGetRequestSchema,
   storeWireBlobsListRequestSchema,
@@ -465,7 +473,7 @@ describe("demo-host journey through the store seam", () => {
 });
 
 // ---------------------------------------------------------------------------
-// hostedStoreOps — the 27-op client over `vendo/store-wire@1`.
+// hostedStoreOps — the 35-op client over `vendo/store-wire@1`.
 //
 // Unit tests over an injected fake fetch: they pin the route, the request body
 // and the response decoding for every op — records and blobs against the
@@ -505,6 +513,14 @@ const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
   "blobs.get": { method: "POST", path: P["blobs.get"] },
   "blobs.delete": { method: "POST", path: P["blobs.delete"], keyed: true },
   "blobs.list": { method: "POST", path: P["blobs.list"] },
+  "appData.put": { method: "POST", path: P["appData.put"], keyed: true },
+  "appData.get": { method: "POST", path: P["appData.get"] },
+  "appData.list": { method: "POST", path: P["appData.list"] },
+  "appData.delete": { method: "POST", path: P["appData.delete"], keyed: true },
+  "appData.putFile": { method: "POST", path: P["appData.putFile"], keyed: true },
+  "appData.getFile": { method: "POST", path: P["appData.getFile"] },
+  "appData.listFiles": { method: "POST", path: P["appData.listFiles"] },
+  "appData.deleteFile": { method: "POST", path: P["appData.deleteFile"], keyed: true },
   "transcripts.putThread": { method: "POST", path: P["transcripts.putThread"], keyed: true },
   "transcripts.getThread": { method: "POST", path: P["transcripts.getThread"] },
   "transcripts.listThreads": { method: "POST", path: P["transcripts.listThreads"] },
@@ -567,6 +583,14 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("blobs.get")]: { blob: { bytes: btoa("blob bytes"), contentType: "text/plain" } },
   [door("blobs.delete")]: { ok: true },
   [door("blobs.list")]: { keys: ["images/a.png"] },
+  [door("appData.put")]: { record: wireRecord },
+  [door("appData.get")]: { record: wireRecord },
+  [door("appData.list")]: { records: [wireRecord], cursor: "cur_app_data" },
+  [door("appData.delete")]: { ok: true },
+  [door("appData.putFile")]: { ok: true },
+  [door("appData.getFile")]: { blob: { bytes: btoa("file bytes"), contentType: "text/plain" } },
+  [door("appData.listFiles")]: { keys: ["receipts/a.pdf"] },
+  [door("appData.deleteFile")]: { ok: true },
   [door("transcripts.putThread")]: { record: wireRecord },
   [door("transcripts.getThread")]: { record: wireRecord },
   [door("transcripts.listThreads")]: { records: [wireRecord], cursor: "cur_threads" },
@@ -582,8 +606,12 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("workspace.history")]: { entries: [{ commitId: "wsc_1" }] },
   [door("lifecycle.erase")]: { report: { vendo_apps: 1 } },
   [door("lifecycle.promote")]: { ok: true },
-  [door("status")]: { format: "vendo/store-wire@1", ops: 27 },
+  [door("status")]: { format: "vendo/store-wire@1", ops: 35 },
 };
+
+/** Where an appData op lands: the app, the collection it invented, and the
+ * owner the runtime stamped — never a subject the caller names. */
+const APP_DATA_TARGET = { appId: "app_1", collection: "invoices", owner: "sub_1" };
 
 const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<void> => {
   await ops.records.get("invoices", "inv_1");
@@ -597,6 +625,14 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.blobs.get("uploads", "a.png");
   await ops.blobs.delete("uploads", "a.png");
   await ops.blobs.list("uploads");
+  await ops.appData.put(APP_DATA_TARGET, { id: "inv_1", data: { total: 5 } });
+  await ops.appData.get(APP_DATA_TARGET, "inv_1");
+  await ops.appData.list(APP_DATA_TARGET);
+  await ops.appData.delete(APP_DATA_TARGET, "inv_1");
+  await ops.appData.putFile(APP_DATA_TARGET, "receipts/a.pdf", new Uint8Array([1]));
+  await ops.appData.getFile(APP_DATA_TARGET, "receipts/a.pdf");
+  await ops.appData.listFiles(APP_DATA_TARGET);
+  await ops.appData.deleteFile(APP_DATA_TARGET, "receipts/a.pdf");
   await ops.transcripts.putThread({ id: "thr_1", subject: "sub_1", messages: [] });
   await ops.transcripts.getThread("thr_1");
   await ops.transcripts.listThreads();
@@ -615,24 +651,24 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.status();
 };
 
-describe("hostedStoreOps — the 27-op wire client", () => {
-  it("routes all 27 ops to the console's real door, with a key on exactly the mutations", async () => {
+describe("hostedStoreOps — the 35-op wire client", () => {
+  it("routes all 35 ops to the console's real door, with a key on exactly the mutations", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
     await driveEveryOp(ops);
 
     const expected = Object.values(DOORS);
-    expect(calls).toHaveLength(27);
+    expect(calls).toHaveLength(35);
     expect(calls.map((call) => `${call.method} ${call.path}`))
       .toEqual(expected.map((route) => `${route.method} ${route.path}`));
     expect(calls.map((call) => call.idempotencyKey === null ? "read" : "keyed"))
       .toEqual(expected.map((route) => route.keyed === true ? "keyed" : "read"));
-    // 16 mutations, 11 reads — and the /status handshake is the one GET with
+    // 20 mutations, 15 reads — and the /status handshake is the one GET with
     // no body at all.
-    expect(expected.filter((route) => route.keyed === true)).toHaveLength(16);
+    expect(expected.filter((route) => route.keyed === true)).toHaveLength(20);
     expect(calls.at(-1)).toMatchObject({ path: P.status, method: "GET", body: undefined });
     // Distinct keys across distinct operations (one per logical mutation).
     const keys = calls.map((call) => call.idempotencyKey).filter((key) => key !== null);
-    expect(new Set(keys).size).toBe(16);
+    expect(new Set(keys).size).toBe(20);
   });
 
   it("records: seven ops on the wire door, collection on the body, records/cursor decoded", async () => {
@@ -780,6 +816,39 @@ describe("hostedStoreOps — the 27-op wire client", () => {
     }
   });
 
+  it("appData requests validate against the EXPORTED store-wire v1 request schemas", async () => {
+    const { calls, ops } = wireFake(ALL_BODIES);
+    await ops.appData.put(APP_DATA_TARGET, { id: "inv_1", data: { total: 5 } });
+    await ops.appData.get(APP_DATA_TARGET, "inv_1");
+    await ops.appData.list(APP_DATA_TARGET, { limit: 10 });
+    await ops.appData.delete(APP_DATA_TARGET, "inv_1");
+    await ops.appData.putFile(APP_DATA_TARGET, "receipts/a.pdf", new Uint8Array([7]), {
+      contentType: "application/pdf",
+    });
+    await ops.appData.getFile(APP_DATA_TARGET, "receipts/a.pdf");
+    await ops.appData.listFiles(APP_DATA_TARGET, "receipts/");
+    await ops.appData.deleteFile(APP_DATA_TARGET, "receipts/a.pdf");
+
+    const CONTRACT: [keyof typeof P, { safeParse(value: unknown): { success: boolean } }][] = [
+      ["appData.put", storeWireAppDataPutRequestSchema],
+      ["appData.get", storeWireAppDataGetRequestSchema],
+      ["appData.list", storeWireAppDataListRequestSchema],
+      ["appData.delete", storeWireAppDataDeleteRequestSchema],
+      ["appData.putFile", storeWireAppDataPutFileRequestSchema],
+      ["appData.getFile", storeWireAppDataGetFileRequestSchema],
+      ["appData.listFiles", storeWireAppDataListFilesRequestSchema],
+      ["appData.deleteFile", storeWireAppDataDeleteFileRequestSchema],
+    ];
+    expect(calls).toHaveLength(CONTRACT.length);
+    for (const [index, [op, schema]] of CONTRACT.entries()) {
+      const call = calls[index]!;
+      expect(`${call.method} ${call.path}`).toBe(`POST ${P[op]}`);
+      expect(schema.safeParse(call.body).success, op).toBe(true);
+      // The whole address rides ONE target — the owner is the runtime's stamp.
+      expect(call.body).toMatchObject({ target: APP_DATA_TARGET });
+    }
+  });
+
   it("transcripts: six ops over thread ids and message payloads", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
     const thread = { id: "thr_1", subject: "sub_1", messages: [{ role: "user" }], title: "Budget" };
@@ -864,9 +933,9 @@ describe("hostedStoreOps — the 27-op wire client", () => {
 
   it("status: the GET handshake, parsed as vendo/store-wire@1", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
-    expect(await ops.status()).toMatchObject({ format: "vendo/store-wire@1", ops: 27 });
+    expect(await ops.status()).toMatchObject({ format: "vendo/store-wire@1", ops: 35 });
     expect(calls[0]).toMatchObject({ path: "/status", method: "GET" });
-    await expect(wireFake({ [door("status")]: { format: "vendo/store-wire@2", ops: 27 } }).ops.status())
+    await expect(wireFake({ [door("status")]: { format: "vendo/store-wire@2", ops: 35 } }).ops.status())
       .rejects.toThrow(/invalid status/);
   });
 
@@ -1032,7 +1101,7 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     expect(typeof store.blobs).toBe("function");
     expect(typeof store.erase.bySubject).toBe("function");
     expect(Object.keys(store.ops).sort()).toEqual([
-      "blobs", "harness", "lifecycle", "records", "status", "transcripts", "workspace",
+      "appData", "blobs", "harness", "lifecycle", "records", "status", "transcripts", "workspace",
     ]);
 
     // The op surface rides the SAME mount, key and identity headers as the
@@ -1055,8 +1124,9 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     expect(await store.ops.blobs.list("uploads", "images/")).toEqual(["images/a.png"]);
   });
 
-  // 15 of the 27 ops have no door in the fake: all 6 transcripts, all 3
-  // harness, all 4 workspace, lifecycle.promote and /status. It used to answer
+  // 23 of the 35 ops have no door in the fake: all 8 appData, all 6
+  // transcripts, all 3 harness, all 4 workspace, lifecycle.promote and
+  // /status. It used to answer
   // them with a `not-found` envelope — the SAME answer a live console sends
   // when it refuses — so a test exercising one of those families read a
   // plausible rejection and asserted nothing. The fake now throws out of

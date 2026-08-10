@@ -31,7 +31,7 @@ import { cloudSandbox } from "./sandbox.js";
 /** 09-vendo §2 — the adapter rule, applied at the one seam that may read the
  *  environment. */
 export const composeAdapters = (composition: VendoComposition): Pick<VendoComposition,
-  "store" | "files" | "sandbox" | "secrets" | "inference" | "configCloud"
+  "store" | "files" | "ops" | "sandbox" | "secrets" | "inference" | "configCloud"
   | "surfaceRoot" | "readSurfaceFile" | "memoizeOnce"> => {
   const { config, composed } = composition;
   // Persistence, selected by the adapter rule at this composition seam
@@ -40,7 +40,7 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
   // production-owned — VENDO_STORE_ENCRYPTION_KEY encrypts at rest; without
   // it dev stores locally unencrypted while production secret writes fail
   // closed).
-  const { store, files } = selectStore(
+  const { store, files, ops } = selectStore(
     composed?.store ?? config.store,
     composed?.files ?? config.files,
   );
@@ -111,6 +111,7 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
   return {
     store,
     files,
+    ops,
     sandbox,
     secrets,
     inference,

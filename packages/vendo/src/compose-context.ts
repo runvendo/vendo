@@ -35,6 +35,7 @@ import type {
   RiskLabel,
   RunContext,
   SecretsProvider,
+  StoreOps,
   ToolCall,
   ToolRegistry,
 } from "@vendoai/core";
@@ -128,6 +129,9 @@ export interface VendoComposition {
   store: VendoStore;
   /** THE files adapter for this deployment (build contract §3.4). */
   files: FilesAdapter;
+  /** The 35-op StoreOps surface for this deployment — the store's own when it
+   *  carries one, the local backend otherwise. */
+  ops: StoreOps;
   sandbox: ReturnType<typeof selectSandbox>;
   secrets: SecretsProvider;
   inference: ReturnType<typeof resolveModels>;

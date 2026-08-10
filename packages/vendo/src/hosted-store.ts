@@ -50,7 +50,7 @@ export interface HostedStore extends VendoStore {
     bySubject(subject: string): Promise<EraseReport>;
     byApp(appId: string): Promise<EraseReport>;
   };
-  /** The 27-op named-operation surface over the same mount and the same key —
+  /** The 35-op named-operation surface over the same mount and the same key —
    * `vendo/store-wire@1` (see {@link hostedStoreOps}). Additive: the
    * StoreAdapter doors above are unchanged and keep their own routes. */
   ops: StoreOps;
@@ -306,10 +306,10 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
 }
 
 // ---------------------------------------------------------------------------
-// The 27-op StoreOps client — store design v1, `vendo/store-wire@1`
+// The 35-op StoreOps client — store design v1, `vendo/store-wire@1`
 // ---------------------------------------------------------------------------
 
-/** The 27 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
+/** The 35 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
  * op names even where the console's door sits at a different path. */
 type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
 
@@ -348,7 +348,7 @@ const raiseWireError = async (response: Response): Promise<never> => {
 };
 
 /**
- * The Cloud client for the whole 27-op store contract, speaking
+ * The Cloud client for the whole 35-op store contract, speaking
  * `vendo/store-wire@1` over the console's store mount: bearer key, deployment
  * identity and per-request abort budget shared with {@link hostedStore}, the
  * same adapter rule (behavior comes ONLY from the constructor arguments),
@@ -438,6 +438,44 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
 
   const cursorQuery = (query?: { cursor?: string; limit?: number }): Record<string, unknown> => ({ ...query });
 
+  /** The one file-read posture, shared by `blobs.get` and `appData.getFile` so
+      the two can never drift: a missing file is null at the seam (01-core §12),
+      whether the service answers `{blob: null}` or an ENVELOPED not-found. A
+      bare 404 has already degraded to not-implemented and stays loud — a
+      misdeployed base URL must not read as an empty blob store forever. */
+  const fileOf = async (
+    op: StoreWireOp,
+    path: string,
+    body: unknown,
+  ): Promise<{ bytes: Uint8Array; contentType?: string } | null> => {
+    let payload: unknown;
+    try {
+      payload = await post(op, path, body);
+    } catch (error) {
+      if (error instanceof VendoError && error.code === "not-found") return null;
+      throw error;
+    }
+    const blob = field<Record<string, unknown> | null>(
+      payload,
+      "blob",
+      "invalid blob",
+      (value) => value === null || (typeof value === "object" && value !== null && typeof (value as { bytes?: unknown }).bytes === "string"),
+    );
+    if (blob === null) return null;
+    return {
+      bytes: base64ToBytes(blob["bytes"] as string),
+      ...(typeof blob["contentType"] === "string" ? { contentType: blob["contentType"] } : {}),
+    };
+  };
+
+  const keysOf = (payload: unknown): string[] =>
+    field<string[]>(
+      payload,
+      "keys",
+      "invalid blob list",
+      (value) => Array.isArray(value) && value.every((key) => typeof key === "string"),
+    );
+
   /** The workspace family's owner, passed through only when the caller named
       one — a mount that binds its own owner must not be handed `undefined`. */
   const owned = (opts?: { owner?: string }): Record<string, unknown> =>
@@ -491,42 +529,55 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
         });
       },
       async get(namespace, key) {
-        let payload: unknown;
-        try {
-          payload = await post("blobs.get", P["blobs.get"], { namespace, key });
-        } catch (error) {
-          // A missing blob is null at the seam (01-core §12), whether the
-          // service answers `{blob: null}` or an ENVELOPED not-found. A bare
-          // 404 has already degraded to not-implemented and stays loud: a
-          // misdeployed base URL must not read as an empty blob store forever.
-          if (error instanceof VendoError && error.code === "not-found") return null;
-          throw error;
-        }
-        const blob = field<Record<string, unknown> | null>(
-          payload,
-          "blob",
-          "invalid blob",
-          (value) => value === null || (typeof value === "object" && value !== null && typeof (value as { bytes?: unknown }).bytes === "string"),
-        );
-        if (blob === null) return null;
-        return {
-          bytes: base64ToBytes(blob["bytes"] as string),
-          ...(typeof blob["contentType"] === "string" ? { contentType: blob["contentType"] } : {}),
-        };
+        return fileOf("blobs.get", P["blobs.get"], { namespace, key });
       },
       async delete(namespace, key) {
         await mutate("blobs.delete", P["blobs.delete"], { namespace, key });
       },
       async list(namespace, prefix) {
-        return field<string[]>(
-          await post("blobs.list", P["blobs.list"], {
-            namespace,
-            ...(prefix === undefined || prefix === "" ? {} : { prefix }),
-          }),
-          "keys",
-          "invalid blob list",
-          (value) => Array.isArray(value) && value.every((key) => typeof key === "string"),
-        );
+        return keysOf(await post("blobs.list", P["blobs.list"], {
+          namespace,
+          ...(prefix === undefined || prefix === "" ? {} : { prefix }),
+        }));
+      },
+    },
+    // Everything generated apps invent. The whole address rides ONE `target`
+    // (appId + collection + owner) instead of a collection string, because the
+    // owner is the runtime's stamp: the service scopes reads and stamps writes
+    // from it, so no verb here takes a subject. Files are the blobs shape over
+    // the same target — base64 bytes out, the same missing-file posture back.
+    appData: {
+      async put(target, record) {
+        return recordOf(await mutate("appData.put", P["appData.put"], { target, record }));
+      },
+      async get(target, id) {
+        return nullableRecordOf(await post("appData.get", P["appData.get"], { target, id }));
+      },
+      async list(target, query) {
+        return listOf(await post("appData.list", P["appData.list"], { target, query: query ?? {} }));
+      },
+      async delete(target, id) {
+        await mutate("appData.delete", P["appData.delete"], { target, id });
+      },
+      async putFile(target, key, bytes, meta) {
+        await mutate("appData.putFile", P["appData.putFile"], {
+          target,
+          key,
+          bytes: bytesToBase64(bytes),
+          ...(meta?.contentType === undefined ? {} : { contentType: meta.contentType }),
+        });
+      },
+      async getFile(target, key) {
+        return fileOf("appData.getFile", P["appData.getFile"], { target, key });
+      },
+      async listFiles(target, prefix) {
+        return keysOf(await post("appData.listFiles", P["appData.listFiles"], {
+          target,
+          ...(prefix === undefined || prefix === "" ? {} : { prefix }),
+        }));
+      },
+      async deleteFile(target, key) {
+        await mutate("appData.deleteFile", P["appData.deleteFile"], { target, key });
       },
     },
     transcripts: {

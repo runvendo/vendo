@@ -4,9 +4,10 @@
  *
  * Moved out of server.ts with the composition that calls it.
  */
-import type { FilesAdapter } from "@vendoai/core";
+import type { FilesAdapter, StoreOps } from "@vendoai/core";
 import {
   createStore,
+  createStoreOps,
   storeFiles,
   threadMessageStore,
   type VendoStore,
@@ -93,6 +94,17 @@ export function storeServesHarnessTurns(store: VendoStore): boolean {
   }
 }
 
+/** ADAPTER RULE, the ops half of the SAME seam: one store, one named-operation
+    surface, chosen here beside it. A store that carries its own `ops` wins —
+    `VendoStore.ops` is declared optional for exactly this, and the hosted
+    store's client is the same `vendo/store-wire@1` the local backend would be
+    re-encoding, one hop shorter. Everything else gets the local backend over
+    the store's own SQL handle, holding THE files adapter so app files and blobs
+    land in the one place the erase cascade reads. */
+export function selectStoreOps(store: VendoStore, files: FilesAdapter): StoreOps {
+  return store.ops ?? createStoreOps(store, { files });
+}
+
 export function selectStore(
   configured: VendoStore | undefined,
   configuredFiles: FilesAdapter | undefined,
@@ -100,6 +112,8 @@ export function selectStore(
   store: VendoStore;
   /** THE files adapter for this deployment. Every consumer takes it from here. */
   files: FilesAdapter;
+  /** THE 35-op surface for this deployment, over that same store and adapter. */
+  ops: StoreOps;
 } {
   const selected = ((): VendoStore => {
     if (configured !== undefined) return configured;
@@ -110,7 +124,11 @@ export function selectStore(
       ? { allowUnencryptedSecrets: environment("NODE_ENV") !== "production" }
       : { encryption: { key: encryptionKey } });
   })();
-  return { store: selected, files: selectFiles(configuredFiles, selected) };
+  // ONE files instance, shared by the return and the ops surface below — the
+  // whole reason selectFiles resolves once (the workspace writes blobs, the
+  // erase cascade deletes them).
+  const files = selectFiles(configuredFiles, selected);
+  return { store: selected, files, ops: selectStoreOps(selected, files) };
 }
 
 /** The hosted-store automations notice, printed at most once per process. */
