@@ -10,7 +10,8 @@ import { describe, expect, it } from "vitest";
  *
  * What it holds, and why each claim is load-bearing:
  *  1. the page is published and every nav entry still resolves, with this page
- *     FIRST in its group (it is the on-ramp);
+ *     directly behind its group's overview (it is the on-ramp that overview
+ *     hands off to);
  *  2. every tool name the page puts in a reader's system prompt really exists
  *     in the registry the page is describing;
  *  3. `vendo_make`'s four documented arguments are its real schema properties on
@@ -53,11 +54,13 @@ describe("the BYO on-ramp page is published", () => {
     expect(text).toMatch(/^description: "/m);
   });
 
-  it("is the FIRST entry in the Bring-your-own-agent group", async () => {
+  it("follows its group's overview, ahead of the framework quickstarts", async () => {
     const docs = await readJson<DocsJson>("docs-site/docs.json");
-    const group = docs.navigation.groups.find((entry) => entry.group === "Bring your own agent");
-    expect(group, "the 'Bring your own agent' group must exist").toBeDefined();
-    expect(group?.pages[0]).toBe(NAV_ENTRY);
+    const group = docs.navigation.groups.find((entry) => entry.group === "You already have an agent");
+    expect(group, "the 'You already have an agent' group must exist").toBeDefined();
+    // The overview is the door the landing page opens; this page is the on-ramp it
+    // hands off to, so it stays directly behind the overview and ahead of the rest.
+    expect(group?.pages.slice(0, 2)).toEqual(["existing-agents/index", NAV_ENTRY]);
   });
 
   it("leaves no nav entry pointing at a file that does not exist", async () => {

@@ -42,10 +42,10 @@ describe("the BYO-over-MCP page is published", () => {
     expect(text).toMatch(/^description: "/m);
   });
 
-  it("sits in the Bring-your-own-agent nav group", async () => {
+  it("sits in the MCP nav group", async () => {
     const docs = await readJson<DocsJson>("docs-site/docs.json");
-    const group = docs.navigation.groups.find((entry) => entry.group === "Bring your own agent");
-    expect(group, "the 'Bring your own agent' group must exist").toBeDefined();
+    const group = docs.navigation.groups.find((entry) => entry.group === "Expose your product over MCP");
+    expect(group, "the 'Expose your product over MCP' group must exist").toBeDefined();
     expect(group?.pages).toContain(NAV_ENTRY);
   });
 
