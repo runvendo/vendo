@@ -214,7 +214,7 @@ async function handleRows(wire: WireContext, appId: string, owner: string): Prom
   // and the owner is the app token's subject — stamped here, on the box's
   // behalf, because the box is never told who the user is.
   const target = { appId, collection: `box:${collection}`, owner };
-  const records = deps.ops.appData;
+  const rows = deps.ops.appData;
 
   // Lane E redaction guard — nothing a box writes or reads through this door
   // may carry a known secret value into a store row or a response body.
@@ -223,7 +223,7 @@ async function handleRows(wire: WireContext, appId: string, owner: string): Prom
 
   if (segments.length === 3) {
     if (request.method !== "GET") return undefined;
-    return json(await scrub(await records.list(target, rowsQuery(url))));
+    return json(await scrub(await rows.list(target, rowsQuery(url))));
   }
   if (segments.length !== 4) return undefined;
   const id = segments[3]!;
@@ -231,12 +231,12 @@ async function handleRows(wire: WireContext, appId: string, owner: string): Prom
     throw new VendoError("validation", "row id must be 1-256 characters");
   }
   if (request.method === "GET") {
-    const record = await records.get(target, id);
+    const record = await rows.get(target, id);
     if (record === null) throw new VendoError("not-found", `row not found: ${id}`);
     return json(await scrub(record));
   }
   if (request.method === "DELETE") {
-    await records.delete(target, id);
+    await rows.delete(target, id);
     return json({ status: "ok" });
   }
   if (request.method === "PUT") {
@@ -258,7 +258,7 @@ async function handleRows(wire: WireContext, appId: string, owner: string): Prom
     }
     // Scrub BEFORE persisting: a secret value must never land in a store row,
     // even when the box itself sent it.
-    return json(await records.put(target, await scrub({
+    return json(await rows.put(target, await scrub({
       id,
       data: body["data"] as Json,
       ...(body["refs"] === undefined ? {} : { refs: body["refs"] as Record<string, string> }),
