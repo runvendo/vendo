@@ -16,7 +16,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { applyFormat, type ValueFormat } from "../format.js";
-import { font, t } from "../tokens.js";
+import { font, size, t, weight } from "../tokens.js";
 import { humanizeEnum } from "../values.js";
 
 export interface DataTableColumn {
@@ -245,7 +245,7 @@ export function DataTable(props: DataTableProps) {
       >
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           {caption ? (
-            <caption style={{ padding: cellPad, textAlign: "left", fontWeight: 650 }}>{caption}</caption>
+            <caption style={{ padding: cellPad, textAlign: "left", fontWeight: weight.strong }}>{caption}</caption>
           ) : null}
           <thead>
             {table.getHeaderGroups().map((hg) => (
@@ -261,8 +261,8 @@ export function DataTable(props: DataTableProps) {
                       style={{
                         color: t.muted,
                         borderBottom: `1px solid ${t.border}`,
-                        fontSize: "0.78em",
-                        fontWeight: 700,
+                        fontSize: size.caption,
+                        fontWeight: weight.strong,
                         letterSpacing: "0.045em",
                         padding: cellPad,
                         textAlign: alignCss(col?.align),
@@ -318,7 +318,7 @@ export function DataTable(props: DataTableProps) {
 
       {typeof paginate === "number" && paginate > 0 && table.getPageCount() > 1 && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--vendo-density-inline-gap, 7px)" }}>
-          <span style={{ color: t.muted, fontSize: "0.85em" }}>
+          <span style={{ color: t.muted, fontSize: size.caption }}>
             Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
           </span>
           <div style={{ display: "flex", gap: "var(--vendo-density-inline-gap, 7px)" }}>
@@ -349,8 +349,8 @@ function PageButton({ disabled, onClick, children }: { disabled: boolean; onClic
         color: t.text,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.5 : 1,
-        fontSize: "0.85em",
-        fontWeight: 600,
+        fontSize: size.caption,
+        fontWeight: weight.strong,
         padding: "6px 12px",
       }}
     >

@@ -1,6 +1,6 @@
 /** CardList — one branded card per record, semantically formatted (W2 §The Kit). */
 import { applyFormat, type ValueFormat } from "../format.js";
-import { font, t } from "../tokens.js";
+import { font, size, t, weight } from "../tokens.js";
 import { EnumBadge } from "../values.js";
 
 export interface CardField {
@@ -76,7 +76,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
             {(titleField || badge !== undefined) && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 {titleField ? (
-                  <span style={{ fontFamily: t.headingFamily, fontWeight: 650, letterSpacing: "-0.015em" }}>
+                  <span style={{ fontFamily: t.headingFamily, fontWeight: weight.strong, letterSpacing: "-0.015em" }}>
                     {String(resolve(item, titleField) ?? "—")}
                   </span>
                 ) : <span />}
@@ -88,7 +88,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
             {fields.map((f) => {
               const formatted = applyFormat(resolve(item, f.key), f.format ?? "text");
               return (
-                <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92em" }}>
+                <div key={f.key} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: size.caption }}>
                   <span style={{ color: t.muted }}>{f.label ?? f.key}</span>
                   <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatted ?? "—"}</span>
                 </div>

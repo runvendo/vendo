@@ -1,6 +1,6 @@
 /** Stat — a KPI/metric summary with semantic formatting (W2 §The Kit). */
 import { applyFormat, type ValueFormat } from "../format.js";
-import { font, t } from "../tokens.js";
+import { font, size, t, weight } from "../tokens.js";
 
 export interface StatProps {
   /** Metric name. */
@@ -46,14 +46,14 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         padding: "var(--vendo-density-stat-padding, 12px 14px)",
       }}
     >
-      <span style={{ color: t.muted, fontSize: "0.82em", fontWeight: 650 }}>{label}</span>
+      <span style={{ color: t.muted, fontSize: size.caption, fontWeight: weight.strong }}>{label}</span>
       <strong
         {...(empty ? { "data-empty": "", title: "No data yet" } : overflow ? { title: formatted } : {})}
         style={{
           color: empty ? t.muted : emphasis,
           fontFamily: t.headingFamily,
-          fontSize: "calc(var(--vendo-font-size, 15px) * 1.65)",
-          fontWeight: 700,
+          fontSize: size.display,
+          fontWeight: weight.strong,
           letterSpacing: "-0.025em",
           lineHeight: 1.12,
           fontVariantNumeric: "tabular-nums",
@@ -62,7 +62,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         {display}
       </strong>
       {trend ? (
-        <span style={{ color: t.muted, fontSize: "0.8em", lineHeight: 1.35 }}>{trend}</span>
+        <span style={{ color: t.muted, fontSize: size.caption, lineHeight: 1.35 }}>{trend}</span>
       ) : null}
     </article>
   );

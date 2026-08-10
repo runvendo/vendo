@@ -33,6 +33,22 @@ export const t = {
   motionEasing: "var(--vendo-motion-easing, cubic-bezier(0.2, 0.8, 0.2, 1))",
 } as const;
 
+/** The Kit's whole type scale: four tiers, so the one lead on a screen is
+ * visibly the largest text and a label is visibly not a value. Anything
+ * between these tiers reads as noise at phone width. */
+export const size = {
+  caption: "0.82em",
+  // Anchored on the theme var, not `1em`: nothing sets a root font-size, so an
+  // em body tier would inherit the browser's 16px outside a Kit container.
+  body: t.fontSize,
+  section: `calc(${t.fontSize} * 1.3)`,
+  display: `calc(${t.fontSize} * 2.2)`,
+} as const;
+
+/** Two weights only — Onest is a variable font here, so the stops between
+ * these render as real but indistinguishable interpolations. */
+export const weight = { body: 400, strong: 700 } as const;
+
 /** Base text style shared by every Kit component. */
 export const font: CSSProperties = {
   color: t.text,

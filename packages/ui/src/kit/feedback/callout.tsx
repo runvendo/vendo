@@ -4,7 +4,7 @@
  * the honesty arm for when no tool backs the ask.
  */
 import type { PropsWithChildren } from "react";
-import { font, t } from "../tokens.js";
+import { font, size, t, weight } from "../tokens.js";
 
 export type CalloutTone = "info" | "accent" | "success" | "warning" | "danger";
 
@@ -50,12 +50,12 @@ export function Callout({ tone = "info", title, children }: PropsWithChildren<Ca
         padding: "var(--vendo-density-card-padding, 12px 14px)",
       }}
     >
-      <span aria-hidden="true" style={{ color: accent, fontWeight: 700, lineHeight: 1.4 }}>
+      <span aria-hidden="true" style={{ color: accent, fontWeight: weight.strong, lineHeight: 1.4 }}>
         {icon}
       </span>
       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        {title ? <span style={{ fontWeight: 650, letterSpacing: "-0.01em" }}>{title}</span> : null}
-        <span style={{ color: t.muted, fontSize: "0.92em", lineHeight: 1.45 }}>{children}</span>
+        {title ? <span style={{ fontWeight: weight.strong, letterSpacing: "-0.01em" }}>{title}</span> : null}
+        <span style={{ color: t.muted, fontSize: size.caption, lineHeight: 1.45 }}>{children}</span>
       </div>
     </div>
   );

@@ -13,7 +13,7 @@ import {
   type DateTimeOptions,
   type MoneyOptions,
 } from "./format.js";
-import { font, t } from "./tokens.js";
+import { font, size, t, weight } from "./tokens.js";
 
 const PLACEHOLDER = "—";
 
@@ -160,8 +160,8 @@ export function EnumBadge({ value, labels, tones, tone = "neutral" }: EnumBadgeP
         borderRadius: "999px",
         color: style.color,
         background: style.background,
-        fontSize: "0.78em",
-        fontWeight: 700,
+        fontSize: size.caption,
+        fontWeight: weight.strong,
         lineHeight: 1,
         padding: "var(--vendo-density-badge-padding, 5px 9px)",
       }}
@@ -181,8 +181,8 @@ export function Text({ text, variant = "body" }: TextProps) {
   const style: CSSProperties = {
     color: variant === "caption" ? t.muted : t.text,
     fontFamily: variant === "heading" ? t.headingFamily : t.fontFamily,
-    fontSize: variant === "caption" ? "var(--vendo-font-size-caption, 12.5px)" : t.fontSize,
-    fontWeight: variant === "heading" ? 650 : variant === "label" ? 600 : 400,
+    fontSize: variant === "heading" ? size.section : variant === "caption" ? size.caption : size.body,
+    fontWeight: variant === "heading" || variant === "label" ? weight.strong : weight.body,
     letterSpacing: "-0.011em",
     lineHeight: variant === "heading" ? 1.3 : 1.5,
     margin: 0,

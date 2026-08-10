@@ -1,6 +1,6 @@
 /** Layout tier — themed containers (W2 §The Kit). */
 import type { CSSProperties, PropsWithChildren } from "react";
-import { font, t } from "./tokens.js";
+import { font, size, t, weight } from "./tokens.js";
 
 const gapVar = (gap: number | undefined): string =>
   gap === undefined ? "var(--vendo-density-content-gap, 10px)" : `${gap}px`;
@@ -108,8 +108,8 @@ export function Surface({ title, children }: PropsWithChildren<SurfaceProps>) {
         <div
           style={{
             fontFamily: t.headingFamily,
-            fontSize: "calc(var(--vendo-font-size, 15px) * 1.05)",
-            fontWeight: 650,
+            fontSize: size.section,
+            fontWeight: weight.strong,
             letterSpacing: "-0.015em",
           }}
         >
@@ -150,8 +150,8 @@ export function Card({ title, description, tone = "default", children }: PropsWi
         <div
           style={{
             fontFamily: t.headingFamily,
-            fontSize: "calc(var(--vendo-font-size, 15px) * 1.08)",
-            fontWeight: 650,
+            fontSize: size.section,
+            fontWeight: weight.strong,
             letterSpacing: "-0.015em",
             lineHeight: 1.3,
           }}
@@ -160,7 +160,7 @@ export function Card({ title, description, tone = "default", children }: PropsWi
         </div>
       ) : null}
       {description ? (
-        <div style={{ color: t.muted, fontSize: "0.9em", lineHeight: 1.45 }}>{description}</div>
+        <div style={{ color: t.muted, fontSize: size.caption, lineHeight: 1.45 }}>{description}</div>
       ) : null}
       {children}
     </article>

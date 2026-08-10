@@ -1,6 +1,6 @@
 /** Shared field chrome (label + hint/error) for Kit form controls. */
 import { useId, type PropsWithChildren, type ReactNode } from "react";
-import { font, t } from "../tokens.js";
+import { font, size, t, weight } from "../tokens.js";
 
 export function useFieldIds(prefix: string): { fieldId: string; helpId: string } {
   const id = useId().replace(/:/g, "");
@@ -32,13 +32,13 @@ export function FieldShell({ fieldId, helpId, label, hint, error, inline, childr
       }}
     >
       {label ? (
-        <label htmlFor={fieldId} style={{ color: t.text, fontSize: "0.88em", fontWeight: 600, order: inline ? 2 : 0 }}>
+        <label htmlFor={fieldId} style={{ color: t.text, fontSize: size.caption, fontWeight: weight.strong, order: inline ? 2 : 0 }}>
           {label}
         </label>
       ) : null}
       {children}
       {message ? (
-        <span id={helpId} style={{ color: error ? t.danger : t.muted, fontSize: "0.82em", lineHeight: 1.35 }}>
+        <span id={helpId} style={{ color: error ? t.danger : t.muted, fontSize: size.caption, lineHeight: 1.35 }}>
           {message}
         </span>
       ) : null}
