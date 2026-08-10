@@ -505,12 +505,53 @@ export async function assembleScreen(
     .map((listing) => listing.name);
   loadout.push(saveApp, escalate);
 
+  /**
+   * ONE call, ONE answer — the repeat detector, on one counter for the whole run.
+   *
+   * Keyed on the tool name AND its arguments VERBATIM, because a call with
+   * different arguments is progress and must not be counted. A second identical
+   * read cannot answer what the first one did not: the fourteen-transfer
+   * measurement spent 21s–59s on four `search_components` round trips and painted
+   * nothing until 107s. So the second time is a denial with the reason, and the
+   * third is the loop saying it has no next move — which is exactly what the
+   * clock's own door is for, so the limit leaves through it rather than through
+   * control flow of its own.
+   *
+   * `validate` is exempt: the brief tells this loop to validate, fix and validate
+   * again, so the identical call is the same question against a different
+   * document.
+   */
+  const seen = new Map<string, number>();
+  const callOnce: TurnTools["call"] = async (name, args) => {
+    if (name !== "validate") {
+      const key = `${name}:${JSON.stringify(args ?? {})}`;
+      const repeats = (seen.get(key) ?? 0) + 1;
+      seen.set(key, repeats);
+      if (repeats === 2) {
+        return {
+          status: "denied",
+          reason: "You already called that with exactly these arguments and read the answer. "
+            + "Use what you have, or do something different.",
+        };
+      }
+      if (repeats >= 3) {
+        record.escalated = "assembly repeated the same call three times without making progress, so this is a build";
+        clock.abort();
+        return {
+          status: "denied",
+          reason: "Repeating that call is not going to answer this. Handing it to the builder.",
+        };
+      }
+    }
+    return await surface.tools.call(name, args);
+  };
+
   const turn: Turn<VendoHarnessOptions> = {
     messages: [{ id: `screen_${input.appId}`, role: "user", parts: [{ type: "text", text: input.request }] }],
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: { call: callOnce, list: async () => listings },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
