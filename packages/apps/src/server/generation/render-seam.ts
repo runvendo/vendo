@@ -131,12 +131,38 @@ const renders = (tree: Tree): boolean => {
  * through untouched, and a `CommitResult` is what the store said, not what the
  * seam did with it.
  */
-const paintedByCommit = new WeakMap<CommitResult, readonly AppId[]>();
+const paintedByCommit = new WeakMap<CommitResult, Map<AppId, PaintedScreen | undefined>>();
+
+/**
+ * What one painted app is actually SHOWING — the query results the emitted view
+ * carries, keyed by the writer's own query names.
+ *
+ * It travels beside the commit for the same reason `painted` does: `emit` belongs
+ * to whoever wrapped the workspace, so the hand that wrote the document could
+ * otherwise never see what its save put on the screen. The queries ran either way
+ * (the `authoredApp` half below) and the answers were dropped the moment the view
+ * left; this keeps them for the one caller that can still act on them.
+ */
+export interface PaintedScreen {
+  /** Resolved query results, by query name — `{}` when nothing resolved. */
+  readonly data: Record<string, Json>;
+  /** A query FAILED, so every value bound to it renders "—". */
+  readonly dataUnavailable: boolean;
+}
 
 /** The apps `result`'s commit painted, or undefined for a result this seam did not
  *  produce — which is "not known", never "nothing painted". */
-export const paintedIn = (result: CommitResult): readonly AppId[] | undefined =>
-  paintedByCommit.get(result);
+export const paintedIn = (result: CommitResult): readonly AppId[] | undefined => {
+  const painted = paintedByCommit.get(result);
+  return painted === undefined ? undefined : [...painted.keys()];
+};
+
+/** What `appId`'s view carries after `result`'s commit painted it, or undefined when
+ *  nothing is known — this commit painted no such screen, or it painted a plan
+ *  skeleton, or the app half is unwired and no query ran. "Not known", never
+ *  "nothing on screen": the same posture as `paintedIn`'s own absence. */
+export const shownIn = (result: CommitResult, appId: AppId): PaintedScreen | undefined =>
+  paintedByCommit.get(result)?.get(appId);
 
 export interface RenderSeamOptions {
   /** Write the part on the stable per-app stream id, so successive views
@@ -236,12 +262,15 @@ const viewPart = (
   // consumer when this function's caller fills the data in afterwards.
   vendoViewPart({ appId, payload: { ...payload, streaming }, ...(turnId === undefined ? {} : { turnId }) });
 
-/** The view a parsing hot-path commit produces, or undefined if it does not parse. */
+/** The view a parsing hot-path commit produces, or undefined if it does not parse.
+ *  `shown` rides along for an `app.vendo` view: the resolved data is on the
+ *  payload either way, and the writer's hand needs it in a shape it can read
+ *  rather than off an index signature. */
 export async function viewForWrite(
   path: string,
   content: string,
   options: RenderSeamOptions,
-): Promise<{ streamId: string; part: VendoViewPart } | undefined> {
+): Promise<{ streamId: string; part: VendoViewPart; shown?: PaintedScreen } | undefined> {
   const appId = hotPathAppId(path);
   const file = hotPathFile(path);
   if (appId === undefined || file === undefined) return undefined;
@@ -380,7 +409,7 @@ export async function viewForWrite(
     );
   }
   // The app half has run: this is the finished paint, so it SETTLES.
-  return viewPart(appId, {
+  const settled = viewPart(appId, {
     ...payload,
     // §3.3's `data` law is about the DESCRIPTION, which was gated above without
     // it. This resolved data is the shipped first-paint fill, and it rides
@@ -390,6 +419,12 @@ export async function viewForWrite(
     ...(data === undefined ? {} : { data }),
     ...(dataUnavailable ? { dataUnavailable: true } : {}),
   }, false, options.turnId);
+  if (settled === undefined) return undefined;
+  // Only when the app half RAN. Unwired, no query resolved and nothing is known —
+  // and "this screen resolved no data" would then be a lie about the seam rather
+  // than a fact about the screen.
+  if (options.authoredApp === undefined) return settled;
+  return { ...settled, shown: { data: data ?? {}, dataUnavailable } };
 }
 
 /**
@@ -397,19 +432,22 @@ export async function viewForWrite(
  * other operation passes straight through, so the result is still a `WorkspaceFs`.
  */
 export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSeamOptions): WorkspaceFs {
-  /** True iff this path put a view on screen — what the plan's yield is keyed on. */
-  const emitFor = async (path: string): Promise<boolean> => {
+  /** A view for this path, or undefined if it painted nothing — what the plan's
+   *  yield is keyed on. `shown` is what the writer's hand reads back, and it is
+   *  absent for a paint whose data nobody resolved (a plan skeleton, an unwired app
+   *  half): painting is one fact and the screen's contents are another. */
+  const emitFor = async (path: string): Promise<{ shown?: PaintedScreen } | undefined> => {
     try {
       // Read back what the store now holds rather than trusting a remembered
       // argument: append, encoding and any store-side normalization land here.
       const content = await workspace.readFile(path);
       const view = await viewForWrite(path, content, options);
-      if (view === undefined) return false;
+      if (view === undefined) return undefined;
       options.emit(view.streamId, view.part);
-      return true;
+      return view.shown === undefined ? {} : { shown: view.shown };
     } catch {
       // A view is a courtesy on top of a landed commit. It can never fail one.
-      return false;
+      return undefined;
     }
   };
 
@@ -473,18 +511,23 @@ export function wrapWorkspaceForRender(workspace: WorkspaceFs, options: RenderSe
         // does not parse or does not render emits nothing, and yielding to it would
         // leave the pane blank for the whole turn.
         const plans: Array<{ path: string; appId: AppId }> = [];
-        const painted = new Set<AppId>();
+        const painted = new Map<AppId, PaintedScreen | undefined>();
         for (const path of result.changed) {
           const appId = hotPathAppId(path);
           if (appId === undefined) continue;
           if (hotPathFile(path) === "plan.vendo") plans.push({ path, appId });
-          else if (await emitFor(path)) painted.add(appId);
+          else {
+            const view = await emitFor(path);
+            if (view !== undefined) painted.set(appId, view.shown);
+          }
         }
         for (const { path, appId } of plans) {
-          if (!painted.has(appId) && await emitFor(path)) painted.add(appId);
+          if (painted.has(appId)) continue;
+          const view = await emitFor(path);
+          if (view !== undefined) painted.set(appId, view.shown);
         }
         await persistSource(result.changed);
-        paintedByCommit.set(result, [...painted]);
+        paintedByCommit.set(result, painted);
         return result;
       };
     },

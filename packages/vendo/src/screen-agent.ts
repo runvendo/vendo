@@ -62,8 +62,10 @@ import {
   buildingAppsSkill,
   paintedIn,
   repairInstruction,
+  shownIn,
   validateWrittenApps,
   wrapWorkspaceForRender,
+  type PaintedScreen,
   type RenderSeamOptions,
 } from "@vendoai/apps";
 import type { LanguageModel } from "ai";
@@ -222,6 +224,10 @@ through two tools.
   \`${appId}\`; you never name a path. Every save that parses repaints the person's
   screen, so save as you go — a save is cheap and silence is not. There is no
   edit-in-place tool: save the full document each time.
+  It answers with WHAT THE SCREEN NOW SHOWS: the real answers to your own queries,
+  already fetched to paint it. That is the only look you get at your own output, and
+  it is free — so save early, read what came back, and fix your rows and units
+  against it rather than guessing them.
   Its \`decisions\` is this app's MEMORY, and the only thing the next editor will
   have besides the document. Record what reading the document could not tell
   them — why you narrowed something, a constraint the tools imposed, a shape you
@@ -262,6 +268,56 @@ function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): stri
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
     .join("\n\n---\n\n");
 }
+
+/**
+ * How much of the painted screen's data the writer is shown.
+ *
+ * Both bounds are what the REVIEWER already spends on the same evidence
+ * (`reviewer.ts`'s per-query trim, `evidence.ts`'s eight queries): enough to read a
+ * field name and the magnitude beside it, small enough that saving three times
+ * cannot crowd out the brief.
+ */
+const SHOWN_QUERIES = 8;
+const SHOWN_CHARS = 400;
+
+/**
+ * WHAT THE SAVE PUT ON SCREEN, in the writer's own query names.
+ *
+ * The seam runs this document's queries on every save and hands the answers to the
+ * person's screen; this loop never saw them. So it writes blind — measured over the
+ * screen runs on disk, 26 of 34 saved their whole first document without reading a
+ * single row — and the only reader of the real values is a reviewer model asked to
+ * do the arithmetic in its head, which is how a $3,626,515 net worth painted as
+ * $362.65 and passed every check.
+ *
+ * Nothing here costs a call: `commit()` already awaited these queries before it
+ * returned, and this is the answer it was about to discard.
+ */
+const onScreenNow = ({ data, dataUnavailable }: PaintedScreen): string => {
+  const names = Object.keys(data);
+  if (names.length === 0) {
+    return dataUnavailable
+      ? "None of this screen's queries came back, so every value on it renders \"—\" to the person. "
+        + "Say so in words where the data would be."
+      : "This screen resolved NO query data at all, so every value on it is one you typed rather than "
+        + "the product's own. Bind the values to a query.";
+  }
+  const shown = names.slice(0, SHOWN_QUERIES).map((name) => {
+    const json = JSON.stringify(data[name]) ?? "null";
+    return `- ${name}: ${json.length > SHOWN_CHARS ? `${json.slice(0, SHOWN_CHARS)}…` : json}`;
+  });
+  return [
+    "This is what your screen is showing the person right now — the real answers to YOUR queries, "
+    + "trimmed. Check your own numbers and rows against them: a table that resolved no rows is an empty "
+    + "screen, and a cents field rendered as dollars is off by a hundred. Never copy a value out of here "
+    + "into the document — bind it.",
+    ...shown,
+    ...(names.length > shown.length ? [`- …and ${names.length - shown.length} more`] : []),
+    ...(dataUnavailable
+      ? ["One query FAILED, so every value bound to it renders \"—\" to the person."]
+      : []),
+  ].join("\n");
+};
 
 /** What the two hands recorded, for THIS run. A collector on the run rather than
  *  module state: the hands are built per run and closed over it, so two concurrent
@@ -349,7 +405,9 @@ export async function assembleScreen(
     name: SAVE_APP_TOOL,
     description:
       "Save this app's whole document. The person's screen repaints on every save that parses, so save "
-      + "as you go rather than once at the end. Returns whether the save landed.",
+      + "as you go rather than once at the end. Returns whether the save landed, and what the screen is "
+      + "now showing: the real answers to this document's queries, which is the only way you see your "
+      + "own output.",
     inputSchema: {
       type: "object",
       properties: {
@@ -415,7 +473,14 @@ export async function assembleScreen(
           note: instruction ?? "That save landed but did not reach the person's screen. Save a simpler document.",
         };
       }
-      return { saved: true, note: "Run validate on it now." };
+      // Absent for an unwrapped workspace or an unwired app half, exactly as the
+      // paint verdict is: this hand claims nothing it did not see.
+      const shown = shownIn(committed, input.appId);
+      return {
+        saved: true,
+        note: "Run validate on it now.",
+        ...(shown === undefined ? {} : { showing: onScreenNow(shown) }),
+      };
     },
   };
 

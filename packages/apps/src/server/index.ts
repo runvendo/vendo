@@ -137,8 +137,10 @@ export {
   HOT_PATH_WATCH,
   hotPathAppId,
   paintedIn,
+  shownIn,
   viewForWrite,
   wrapWorkspaceForRender,
+  type PaintedScreen,
   type RenderSeamOptions,
 } from "./generation/render-seam.js";
 // The builder's validate gate (§7.1 item 4) — "validate must pass before done",
