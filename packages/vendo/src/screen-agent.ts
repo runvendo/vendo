@@ -218,6 +218,11 @@ You have no machine: no shell, no \`Task\`, no files on disk. Everything the ski
 above tells you to read is already below, and everything it tells you to write goes
 through two tools.
 
+You also have no voice: prose you write reaches nobody, because this loop discards
+it. The screen is the only answer you can give, and \`${SAVE_APP_TOOL}\` is the only
+way to give one — a question about the data is answered by building the screen that
+shows it, never by stating it in a reply.
+
 - **\`${SAVE_APP_TOOL}\`** saves this app's whole document. The app is
   \`${appId}\`; you never name a path. Every save that parses repaints the person's
   screen, so save as you go — a save is cheap and silence is not. There is no
@@ -505,6 +510,30 @@ export async function assembleScreen(
   await drive(turn.messages);
 
   if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
+  /**
+   * ASK ONCE MORE WHEN NOTHING WAS ANSWERED.
+   *
+   * A drive that saved nothing and escalated nothing reached the person with
+   * nothing: this loop keeps only errors off the event stream, so a model that
+   * read one tool and "replied in prose" produced silence and a bare `unavailable`
+   * (three runs did exactly that in the 2026-08-10 measurement: one host read, ~120
+   * output tokens, no save). The brief now says the voice does not exist; this says
+   * it again at the only moment it is provably true, and costs nothing on a run
+   * that already delivered.
+   */
+  if (!record.assembled && record.escalated === undefined) {
+    await drive([...turn.messages, {
+      id: `unanswered_${input.appId}`,
+      role: "user",
+      parts: [{
+        type: "text",
+        text: "Nothing reached the person: nothing was saved, and words written here are discarded. Save the "
+          + `screen that answers the ask now with ${SAVE_APP_TOOL} — or ${ESCALATE_TOOL} if assembly genuinely `
+          + "cannot serve it.",
+      }],
+    }]);
+    if (surface.signal.aborted) return { kind: "unavailable", why: "the caller hung up" };
+  }
   // Escalation wins over a partial paint: the builder is finishing this app, and
   // saying "ready" over a half-assembled document would be the lie §4.5 exists
   // to avoid. `status: "building"` is the honest receipt, and the front door
