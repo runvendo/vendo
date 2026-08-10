@@ -15,7 +15,6 @@ import {
   type AppId,
   type ApprovalId,
   type Json,
-  type RecordStore,
   type RunContext,
   VendoError,
   type VendoRecord,

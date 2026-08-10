@@ -12,7 +12,6 @@ import {
   describeShapeWithSemantics,
   safeErrorMessage,
   type AppId,
-  type RecordStore,
   type RunContext,
   type UIPayload,
   vendoViewPart,

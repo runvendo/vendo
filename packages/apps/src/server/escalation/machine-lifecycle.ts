@@ -1,7 +1,6 @@
 import {
   VendoError,
   type AppId,
-  type StoreAdapter,
 } from "@vendoai/core";
 import {
   type AppDocument,
