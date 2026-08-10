@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DevCredential } from "../../src/dev-creds/resolve.js";
-import { AUTH_MD_URL, agentKeyPointerLines, runCloudStep, upsertEnvLocal } from "../../src/cli/cloud-init.js";
+import { AUTH_MD_URL, agentKeyPointerLines, providerKeyVar, runCloudStep, upsertEnvLocal } from "../../src/cli/cloud-init.js";
 import { telemetryCapture } from "../../src/cli/telemetry.test-util.js";
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -126,6 +126,79 @@ describe("runCloudStep", () => {
     expect(result).toEqual({ keyPresent: true, keyValid: true, wroteEnvLocal: true });
     const envLocal = await readFile(join(root, ".env.local"), "utf8");
     expect(envLocal).toContain(`VENDO_API_KEY=${goodKey}`);
+    // "Production always needs a real server-side key." is gone: true, and
+    // nothing a person can act on 40 seconds into a local install.
+    expect(messages.logs.join("\n")).not.toContain("Production always needs");
+  });
+
+  it("asks the models question as a select when one is available; Cloud is the first option", async () => {
+    const asked: Array<{ question: string; values: string[] }> = [];
+    const messages = output();
+    const result = await runCloudStep({
+      root: await tempRoot(),
+      output: messages.sink,
+      yes: false,
+      isTty: true,
+      credential: noKey,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      confirm: async () => { throw new Error("confirmed"); },
+      select: async (question, options) => {
+        asked.push({ question, values: options.map((option) => option.value) });
+        return "later";
+      },
+    });
+    expect(asked).toEqual([{
+      question: "How do you want to run models?",
+      values: ["cloud", "byo", "later"],
+    }]);
+    // "Decide later" leaves a fully working keyless install — OSS law intact.
+    expect(result).toEqual({ keyPresent: false, keyValid: false, wroteEnvLocal: false });
+    expect(messages.logs.join("\n")).toContain("Skipped — run `vendo login`");
+  });
+
+  it("bring-your-own lands the pasted key in .env.local with a masked receipt", async () => {
+    const root = await tempRoot();
+    const messages = output();
+    const result = await runCloudStep({
+      root,
+      output: messages.sink,
+      yes: false,
+      isTty: true,
+      byo: true,
+      credential: noKey,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      askSecret: async () => "sk-ant-api03-abcdefgh",
+    });
+    expect(result.wroteKeyVar).toBe("ANTHROPIC_API_KEY");
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain("ANTHROPIC_API_KEY=sk-ant-api03-abcdefgh");
+    const joined = messages.logs.join("\n");
+    expect(joined).toContain("ANTHROPIC_API_KEY saved to .env.local (…efgh)");
+    expect(joined).not.toContain("sk-ant-api03-abcdefgh");
+  });
+
+  it("an unrecognisable key prefix asks which variable rather than guessing one", async () => {
+    const root = await tempRoot();
+    const asked: string[] = [];
+    await runCloudStep({
+      root,
+      output: output().sink,
+      yes: false,
+      isTty: true,
+      byo: true,
+      credential: noKey,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      askSecret: async () => "opaque-token-1234",
+      select: async (question) => { asked.push(question); return "GOOGLE_GENERATIVE_AI_API_KEY"; },
+    });
+    expect(asked).toEqual(["Which variable is that key for?"]);
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain("GOOGLE_GENERATIVE_AI_API_KEY=opaque-token-1234");
+  });
+
+  it("reads the variable off the key's own prefix, and says so honestly when it cannot", () => {
+    expect(providerKeyVar("sk-ant-api03-x")).toBe("ANTHROPIC_API_KEY");
+    expect(providerKeyVar("sk-proj-x")).toBe("OPENAI_API_KEY");
+    expect(providerKeyVar("AIzaSyX")).toBe("GOOGLE_GENERATIVE_AI_API_KEY");
+    expect(providerKeyVar("opaque")).toBeNull();
   });
 
   it("runs the REAL default ceremony against a scripted console and lands the key", async () => {

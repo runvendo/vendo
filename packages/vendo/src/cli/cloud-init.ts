@@ -2,9 +2,10 @@ import { execFile, type ExecFileException } from "node:child_process";
 import { realpath } from "node:fs/promises";
 import { stdin, stdout } from "node:process";
 import { dirname, join, relative, resolve } from "node:path";
-import type { DevCredential } from "../dev-creds/resolve.js";
+import { ENV_KEY_VARS, type DevCredential } from "../dev-creds/resolve.js";
 import { runDeviceLogin } from "./cloud/device-login.js";
 import { cloudDoctor, type CloudDoctorResult } from "./doctor-live.js";
+import type { SelectOption } from "./pretty.js";
 import {
   askYesNo,
   cloudProjectProps,
@@ -28,8 +29,9 @@ import {
 
 /** Upsert one NAME=value line in .env.local without clobbering other lines.
     Exported for init's --cloud-key flag, which lands a supplied key exactly
-    where the mint below would. Every caller follows the write with
-    `warnEnvLocalNotIgnored` — a secret just landed on disk. */
+    where the mint below would, and for the bring-your-own-key paste. Every
+    caller follows the write with `ensureEnvLocalIgnored` — a secret just
+    landed on disk. */
 export async function upsertEnvLocal(root: string, name: string, value: string): Promise<void> {
   const path = join(root, ".env.local");
   const current = (await readOptional(path)) ?? "";
@@ -40,11 +42,17 @@ export async function upsertEnvLocal(root: string, name: string, value: string):
     : `${current}${current === "" || current.endsWith("\n") ? "" : "\n"}${line}\n`);
 }
 
-/** One loud line when the file we just wrote a secret into would be committed.
-    Never blocks the write (the key is already minted and unrecoverable) — the
-    dev needs to know, not to be stopped. Three honest outcomes, each with the
-    remediation that actually works for it. */
-export async function warnEnvLocalNotIgnored(root: string, output: Output): Promise<void> {
+/** What git says about the .env.local a secret just landed in. */
+type EnvLocalState =
+  /** Ignored, or outside a work tree — nothing to leak into. */
+  | { kind: "safe" }
+  /** Not ignored and not tracked: one line in .gitignore fixes it. */
+  | { kind: "add"; name: string }
+  /** Already in the index — .gitignore alone will not stop the next commit. */
+  | { kind: "tracked"; name: string }
+  | { kind: "unknown"; name: string; reason: string };
+
+async function envLocalState(root: string): Promise<EnvLocalState> {
   // The write follows symlinks, so the file git must be asked about is the REAL
   // one: a .env.local that is itself gitignored can point straight at a tracked
   // file, and asking about the link would call that safe. Both sides resolved,
@@ -56,23 +64,66 @@ export async function warnEnvLocalNotIgnored(root: string, output: Output): Prom
   const file = await realpath(link).catch(() => link);
   const name = relative(await realpath(root).catch(() => root), file);
   const where = dirname(file);
-  if (!(await insideWorkTree(where))) return;
+  if (!(await insideWorkTree(where))) return { kind: "safe" };
 
   const verdict = await gitCheckIgnore(where, file);
-  if (verdict.kind === "ignored") return;
-  if (verdict.kind === "unknown") {
-    output.error(`warning: ${name} holds a secret and git could not say whether it is ignored (${verdict.reason}) — check it yourself before you commit.`);
-    return;
-  }
+  if (verdict.kind === "ignored") return { kind: "safe" };
+  if (verdict.kind === "unknown") return { kind: "unknown", name, reason: verdict.reason };
   // check-ignore answers from the patterns alone, so it calls a TRACKED file
   // "not ignored" even when a pattern matches it — and a file already in the
   // index commits no matter what .gitignore says. Only `git rm --cached` undoes
   // that, so the index is what decides between the two remedies.
-  if (await gitTracks(where, file)) {
-    output.error(`warning: ${name} holds a secret and is TRACKED by git — .gitignore alone will NOT stop the next commit: run \`git rm --cached ${name}\`, then add \`${name}\` to .gitignore.`);
-    return;
+  if (await gitTracks(where, file)) return { kind: "tracked", name };
+  return { kind: "add", name };
+}
+
+function reportEnvLocalRisk(state: EnvLocalState, output: Output): void {
+  if (state.kind === "unknown") {
+    output.error(`warning: ${state.name} holds a secret and git could not say whether it is ignored (${state.reason}) — check it yourself before you commit.`);
+  } else if (state.kind === "tracked") {
+    output.error(`warning: ${state.name} holds a secret and is TRACKED by git — .gitignore alone will NOT stop the next commit: run \`git rm --cached ${state.name}\`, then add \`${state.name}\` to .gitignore.`);
   }
-  output.error(`warning: ${name} holds a secret and is NOT gitignored — add \`${name}\` to .gitignore before you commit.`);
+}
+
+/** One loud line when the file we just wrote a secret into would be committed.
+    Never blocks the write (the key is already minted and unrecoverable) — the
+    dev needs to know, not to be stopped. Three honest outcomes, each with the
+    remediation that actually works for it. Kept for `vendo login`, which
+    writes the key from OUTSIDE an install and so has no mandate to edit the
+    repo's .gitignore; init uses `ensureEnvLocalIgnored` instead. */
+export async function warnEnvLocalNotIgnored(root: string, output: Output): Promise<void> {
+  const state = await envLocalState(root);
+  reportEnvLocalRisk(state, output);
+  if (state.kind === "add") {
+    output.error(`warning: ${state.name} holds a secret and is NOT gitignored — add \`${state.name}\` to .gitignore before you commit.`);
+  }
+}
+
+/** init's version: a secret in an unignored, UNTRACKED file is a one-line fix
+    init can simply make, so it makes it and says so. The tracked case is the
+    one branch init must not silently fix — .gitignore does nothing for a file
+    already in the index — so it keeps the warning, verbatim. Returns the line
+    added, or null when nothing was written. */
+export async function ensureEnvLocalIgnored(root: string, output: Output): Promise<string | null> {
+  const state = await envLocalState(root);
+  reportEnvLocalRisk(state, output);
+  if (state.kind !== "add") return null;
+  const path = join(root, ".gitignore");
+  const current = (await readOptional(path)) ?? "";
+  await writeText(path, `${current}${current === "" || current.endsWith("\n") ? "" : "\n"}${state.name}\n`);
+  output.log(`Added ${state.name} to .gitignore`);
+  return state.name;
+}
+
+/** Which variable a pasted provider key belongs in, read off the key's own
+    prefix. null means "cannot tell" — ask, never guess: a key in the wrong
+    variable fails at the first turn as a provider mismatch, not a bad key. */
+export function providerKeyVar(key: string): string | null {
+  const value = key.trim();
+  if (value.startsWith("sk-ant-")) return "ANTHROPIC_API_KEY";
+  if (value.startsWith("sk-")) return "OPENAI_API_KEY";
+  if (value.startsWith("AIza")) return "GOOGLE_GENERATIVE_AI_API_KEY";
+  return null;
 }
 
 /** Is this path inside a git working tree? Answered by walking up for a `.git`
@@ -152,8 +203,17 @@ export interface CloudStepOptions {
   apiUrl?: string;
   /** Fetch seam for the default ceremony (tests script the console with it). */
   fetchImpl?: typeof fetch;
+  /** How models run, answered up front instead of asked (--cloud-key ⇒
+      "cloud", --byo ⇒ "byo"). */
+  models?: ModelsAnswer;
   /** Seams (tests). */
   confirm?: (question: string, defaultYes?: boolean) => Promise<boolean>;
+  /** The models question as a select — Cloud first and recommended, BYO one
+      keystroke away, "decide later" the graceful exit. Absent (plain
+      terminals, tests) keeps today's confirm. */
+  select?: (question: string, options: SelectOption[]) => Promise<string>;
+  /** The masked prompt behind "bring my own key". */
+  askSecret?: (question: string, hint?: string) => Promise<string>;
   cloudProbe?: (options: { env?: Record<string, string | undefined> }) => Promise<CloudDoctorResult>;
   /** The whole ceremony in one seam (default: runDeviceLogin). */
   deviceLogin?: () => Promise<number>;
@@ -166,7 +226,21 @@ export interface CloudStepResult {
   keyPresent: boolean;
   keyValid: boolean;
   wroteEnvLocal: boolean;
+  /** The provider variable a bring-your-own-key paste landed in this run —
+      re-merged by the caller exactly like a minted VENDO_API_KEY, so THIS
+      run's model passes already benefit from the key just pasted. */
+  wroteKeyVar?: string;
 }
+
+/** The three answers to "how do you want to run models?". */
+export type ModelsAnswer = "cloud" | "byo" | "later";
+
+const MODELS_QUESTION = "How do you want to run models?";
+const MODELS_OPTIONS: SelectOption[] = [
+  { value: "cloud", label: "Vendo Cloud — free key in ~30s", hint: "recommended" },
+  { value: "byo", label: "Bring my own key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_…)" },
+  { value: "later", label: "Decide later" },
+];
 
 /** init's cloud step (design §6). Never changes init's exit code. Tracked as
     `command_run` command "cloud-init" (TELEMETRY.md): ok is "the step ended
@@ -223,6 +297,16 @@ async function cloudStep(options: CloudStepOptions, failure: { failedStep?: stri
 
   // A starter model key only helps when the local ladder has nothing better.
   const laddersWantKey = credential.rung === "none" || credential.rung === "vendo-cloud";
+  const tty = options.isTty ?? (stdin.isTTY === true && stdout.isTTY === true);
+  const answered = options.models ?? (options.byo === true ? "byo" : undefined);
+
+  // Bring-your-own with no key in the environment: the branch that settles
+  // itself instead of assigning homework. Only where a human can actually
+  // paste — unattended runs keep the one-line pointer below.
+  if (answered === "byo" && laddersWantKey && tty && options.askSecret !== undefined) {
+    return pasteProviderKey(options, options.askSecret);
+  }
+
   if (options.yes || options.byo === true || !laddersWantKey) {
     if (laddersWantKey) {
       if (options.byo === true) {
@@ -236,9 +320,15 @@ async function cloudStep(options: CloudStepOptions, failure: { failedStep?: stri
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
 
-  const tty = options.isTty ?? (stdin.isTTY === true && stdout.isTTY === true);
   const confirm = options.confirm ?? askYesNo;
-  if (!(await confirm("Log in to Vendo Cloud now for a free API key (starter model allowance included)?", false))) {
+  const chosen: ModelsAnswer = answered
+    ?? (options.select === undefined
+      ? (await confirm("Log in to Vendo Cloud now for a free API key (starter model allowance included)?", false) ? "cloud" : "later")
+      : (await options.select(MODELS_QUESTION, MODELS_OPTIONS)) as ModelsAnswer);
+  if (chosen === "byo" && options.askSecret !== undefined) {
+    return pasteProviderKey(options, options.askSecret);
+  }
+  if (chosen !== "cloud") {
     if (tty) {
       output.log("Skipped — run `vendo login` any time; the key lands in .env.local.");
     } else {
@@ -248,6 +338,12 @@ async function cloudStep(options: CloudStepOptions, failure: { failedStep?: stri
     }
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
+
+  // The key is about to land in .env.local, so make the file safe to hold a
+  // secret BEFORE it holds one: one consented line instead of a wall of
+  // yellow after the fact. Doing it here also keeps the ceremony's own
+  // after-the-write check silent, so the run reports the fix once.
+  await ensureEnvLocalIgnored(root, output);
 
   // The `vendo login` ceremony end to end: approve a code in the browser
   // (TTY opens it), and the minted key lands in .env.local — init picks it
@@ -269,6 +365,35 @@ async function cloudStep(options: CloudStepOptions, failure: { failedStep?: stri
     output.error("Vendo Cloud login did not complete; run `vendo login` and re-run `vendo init`.");
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
-  output.log("Production always needs a real server-side key.");
   return { keyPresent: true, keyValid: true, wroteEnvLocal: true };
+}
+
+/** "Bring my own key", answered at the moment the user has already decided,
+    with the key on their clipboard: paste it, land it in .env.local through
+    the same generic writer the mint uses, and report only the last four
+    characters. An unrecognisable prefix asks which variable rather than
+    guessing one. */
+async function pasteProviderKey(
+  options: CloudStepOptions,
+  askSecret: NonNullable<CloudStepOptions["askSecret"]>,
+): Promise<CloudStepResult> {
+  const { root, output } = options;
+  const key = (await askSecret(
+    "Paste your key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_…) — lands in .env.local, never committed:",
+  )).trim();
+  if (key === "") {
+    output.log("Run `vendo login` to claim a free API key; it lands in .env.local.");
+    return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
+  }
+  const detected = providerKeyVar(key);
+  const name = detected ?? (options.select === undefined
+    ? ENV_KEY_VARS[0]!.envVar
+    : await options.select(
+      "Which variable is that key for?",
+      ENV_KEY_VARS.map(({ envVar, provider }) => ({ value: envVar, label: envVar, hint: provider })),
+    ));
+  await upsertEnvLocal(root, name, key);
+  output.log(`${name} saved to .env.local (…${key.slice(-4)})`);
+  await ensureEnvLocalIgnored(root, output);
+  return { keyPresent: false, keyValid: false, wroteEnvLocal: false, wroteKeyVar: name };
 }

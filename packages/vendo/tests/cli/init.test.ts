@@ -1,4 +1,3 @@
-import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +7,7 @@ import { createGuard } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtractionHarness } from "../../src/cli/extract/harness.js";
-import { runInit, starViaGh } from "../../src/cli/init.js";
+import { runInit } from "../../src/cli/init.js";
 import type { Output } from "../../src/cli/shared.js";
 
 const cleanup: string[] = [];
@@ -299,7 +298,9 @@ describe("vendo init (zero-question)", () => {
         return true; // Enter/Y
       },
     })).toBe(0);
-    expect(asked).toEqual([{ question: "Detected next-auth — wire auth: authJs()?", defaultYes: true }]);
+    // The question says what is being DECIDED — whether the agent acts as the
+    // person at the keyboard — not the mechanism it wires.
+    expect(asked).toEqual([{ question: "Should the agent act as your signed-in Auth.js user?", defaultYes: true }]);
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
     expect(route).toContain("auth: authJs(),");
     expect(sink.logs.join("\n")).not.toContain("Auth:");
@@ -1494,139 +1495,6 @@ describe("vendo init (zero-question)", () => {
     expect(sink.errors.join("\n")).not.toContain("not usable");
   });
 
-  // Agent-install-dx (§CLI-5): the star ask — ONE consent question at the end
-  // of a fully successful INTERACTIVE run. Yes stars via gh (any failure
-  // degrades to the repo URL, one line, no error noise); no does nothing.
-  // Never shown non-interactively, and never able to change init's exit code.
-  it("interactive success ends with the star ask; yes stars runvendo/vendo via gh", async () => {
-    const root = await fixture();
-    const asked: Array<{ question: string; defaultYes: boolean }> = [];
-    const spawned: Array<{ command: string; args: string[] }> = [];
-    const sink = output();
-    expect(await run(root, sink, {
-      interactive: true,
-      confirmStar: async (question, defaultYes) => {
-        asked.push({ question, defaultYes });
-        return true; // Enter/Y
-      },
-      spawnStar: (command, args) => {
-        spawned.push({ command, args });
-        const child = new EventEmitter();
-        setImmediate(() => child.emit("exit", 0));
-        return child;
-      },
-    })).toBe(0);
-    expect(asked).toEqual([{ question: "Star runvendo/vendo to support the project?", defaultYes: true }]);
-    expect(spawned).toEqual([{ command: "gh", args: ["api", "-X", "PUT", "user/starred/runvendo/vendo"] }]);
-    // The star landed: no fallback URL line.
-    expect(sink.logs.join("\n")).not.toContain("github.com/runvendo/vendo");
-  });
-
-  it("a missing or failing gh degrades to one repo-URL line and leaves the exit code alone", async () => {
-    // gh absent: spawn emits ENOENT.
-    const missing = await fixture();
-    const missingSink = output();
-    expect(await run(missing, missingSink, {
-      interactive: true,
-      confirmStar: async () => true,
-      spawnStar: () => {
-        const child = new EventEmitter();
-        setImmediate(() => child.emit("error", new Error("spawn gh ENOENT")));
-        return child;
-      },
-    })).toBe(0);
-    const missingUrls = missingSink.logs.filter((line) => line.includes("https://vendo.run/star?src=cli"));
-    expect(missingUrls).toHaveLength(1);
-    expect(missingSink.errors.join("\n")).not.toContain("gh"); // no error noise
-
-    // gh present but the call fails (non-zero exit): same one-line fallback.
-    const failing = await fixture();
-    const failingSink = output();
-    expect(await run(failing, failingSink, {
-      interactive: true,
-      confirmStar: async () => true,
-      spawnStar: () => {
-        const child = new EventEmitter();
-        setImmediate(() => child.emit("exit", 1));
-        return child;
-      },
-    })).toBe(0);
-    expect(failingSink.logs.filter((line) => line.includes("https://vendo.run/star?src=cli"))).toHaveLength(1);
-
-    // Even a spawn seam that throws synchronously never fails the init.
-    const throwing = await fixture();
-    const throwingSink = output();
-    expect(await run(throwing, throwingSink, {
-      interactive: true,
-      confirmStar: async () => true,
-      spawnStar: () => { throw new Error("no spawn at all"); },
-    })).toBe(0);
-    expect(throwingSink.logs.filter((line) => line.includes("https://vendo.run/star?src=cli"))).toHaveLength(1);
-  });
-
-  it("declining the star ask does nothing: no gh, no URL, no guilt text", async () => {
-    const root = await fixture();
-    let spawnCount = 0;
-    const sink = output();
-    expect(await run(root, sink, {
-      interactive: true,
-      confirmStar: async () => false,
-      spawnStar: () => {
-        spawnCount += 1;
-        return new EventEmitter();
-      },
-    })).toBe(0);
-    expect(spawnCount).toBe(0);
-    const logs = sink.logs.join("\n");
-    expect(logs).not.toContain("github.com/runvendo/vendo");
-    expect(logs).not.toContain("vendo.run/star");
-    expect(logs).not.toContain("Star");
-  });
-
-  it("the star ask never fires non-interactively: --yes, non-TTY, and --agent stay deterministic", async () => {
-    const seams = {
-      confirmStar: async () => { throw new Error("star prompted"); },
-      spawnStar: (): EventEmitter => { throw new Error("star spawned"); },
-    };
-    // Non-TTY (vitest default interactivity): no prompt.
-    const nonTty = await fixture();
-    expect(await run(nonTty, output(), seams)).toBe(0);
-    // --yes on a TTY: no prompt.
-    const flagged = await fixture();
-    expect(await run(flagged, output(), { yes: true, interactive: true, ...seams })).toBe(0);
-    // --agent: the read-only JSON plan carries no prompt either.
-    const agent = await fixture();
-    const agentSink = output();
-    expect(await run(agent, agentSink, { agent: true, ...seams })).toBe(0);
-    expect(agentSink.logs.join("\n")).not.toContain("Star");
-  });
-
-  it("an unshown prompt is never a yes: interactive override without a TTY stdin means no star", async () => {
-    // A programmatic runInit({ interactive: true }) with piped stdin (vitest
-    // has no TTY) must not auto-star off the confirm's Y default — the
-    // question was never actually shown, so the answer is false.
-    const root = await fixture();
-    const sink = output();
-    expect(await run(root, sink, {
-      interactive: true,
-      // No confirmStar seam: the real default path must decline on its own.
-      spawnStar: (): EventEmitter => { throw new Error("star spawned"); },
-    })).toBe(0);
-    expect(sink.logs.join("\n")).not.toContain("github.com/runvendo/vendo");
-  });
-
-  it("a gh that hangs resolves the star as false after the timeout", async () => {
-    // A child that never emits: the timer settles the promise instead.
-    await expect(starViaGh(() => new EventEmitter(), 25)).resolves.toBe(false);
-  });
-
-  it("a star step that blows up entirely never changes init's exit code", async () => {
-    const root = await fixture();
-    expect(await run(root, output(), {
-      interactive: true,
-      confirmStar: async () => { throw new Error("terminal went away"); },
-    })).toBe(0);
-  });
 
   it("emits a read-only agent plan with code changes, extraction, and the layout mount", async () => {
     const root = await fixture();
@@ -1681,7 +1549,6 @@ describe("the AI flag matrix — identical on init and sync (decision 2)", () =>
           harnesses: [themeHarness({ slots: {} })],
           confirm: async (question: string) => { asked.push(question); return false; },
         },
-        confirmStar: async () => false,
       })).toBe(0);
       // The prompt fires on the FIRST run and again on the second: nothing
       // about the answer is persisted to .vendo/ or anywhere else.
@@ -1693,7 +1560,7 @@ describe("the AI flag matrix — identical on init and sync (decision 2)", () =>
 
   it("interactive with --ai runs without asking; with --no-ai it is off", async () => {
     const on = output();
-    expect(await run(await fixture(), on, { interactive: true, ai: true, extract: probeOnly, confirmStar: async () => false })).toBe(0);
+    expect(await run(await fixture(), on, { interactive: true, ai: true, extract: probeOnly })).toBe(0);
     expect(on.logs.join("\n")).toContain("AI polish: unavailable"); // the gate opened
 
     const off = output();
@@ -1705,7 +1572,6 @@ describe("the AI flag matrix — identical on init and sync (decision 2)", () =>
         availability: async () => { throw new Error("must not probe"); },
         run: async () => { throw new Error("must not run"); },
       }], confirm: async () => { throw new Error("prompted"); } },
-      confirmStar: async () => false,
     })).toBe(0);
     expect(off.logs.join("\n")).toContain("off (--no-ai)");
   });
@@ -1920,54 +1786,6 @@ describe("init telemetry enrichment", () => {
     return { events, telemetry: { home, env, posthogKey: "phc_test", fetchImpl } };
   }
 
-  it("star_prompt telemetry mirrors the ask's closed outcomes and stays silent non-interactively", async () => {
-    // Consented + gh succeeds → starred.
-    const starredRoot = await fixture();
-    const starredTele = await telemetrySink();
-    expect(await run(starredRoot, output(), {
-      interactive: true,
-      telemetry: starredTele.telemetry,
-      confirmStar: async () => true,
-      spawnStar: () => {
-        const child = new EventEmitter();
-        setImmediate(() => child.emit("exit", 0));
-        return child;
-      },
-    })).toBe(0);
-    expect(starredTele.events().find((e) => e.event === "star_prompt")?.properties.outcome).toBe("starred");
-
-    // Consented + gh fails → star-failed.
-    const failedRoot = await fixture();
-    const failedTele = await telemetrySink();
-    expect(await run(failedRoot, output(), {
-      interactive: true,
-      telemetry: failedTele.telemetry,
-      confirmStar: async () => true,
-      spawnStar: () => {
-        const child = new EventEmitter();
-        setImmediate(() => child.emit("exit", 1));
-        return child;
-      },
-    })).toBe(0);
-    expect(failedTele.events().find((e) => e.event === "star_prompt")?.properties.outcome).toBe("star-failed");
-
-    // Declined → declined.
-    const declinedRoot = await fixture();
-    const declinedTele = await telemetrySink();
-    expect(await run(declinedRoot, output(), {
-      interactive: true,
-      telemetry: declinedTele.telemetry,
-      confirmStar: async () => false,
-      spawnStar: () => new EventEmitter(),
-    })).toBe(0);
-    expect(declinedTele.events().find((e) => e.event === "star_prompt")?.properties.outcome).toBe("declined");
-
-    // Non-interactive default run: the ask never shows, so no event at all.
-    const silentRoot = await fixture();
-    const silentTele = await telemetrySink();
-    expect(await run(silentRoot, output(), { telemetry: silentTele.telemetry })).toBe(0);
-    expect(silentTele.events().some((e) => e.event === "star_prompt")).toBe(false);
-  });
 
 
   it("init_completed carries the project-shape enums and versions (anonymous lane)", async () => {
@@ -2100,5 +1918,99 @@ describe("vendo init (custom runtime)", () => {
     const plan = JSON.parse(sink.logs.join("\n")) as { framework: string; writes: string[] };
     expect(plan.framework).toBe("custom");
     expect(plan.writes.join("\n")).not.toContain("app/api/vendo");
+  });
+});
+
+describe("the five questions", () => {
+  it("asks the use case first and takes embedded unattended; --use-case answers it without asking", async () => {
+    const asked: Array<{ question: string; values: string[] }> = [];
+    const root = await fixture();
+    expect(await run(root, output(), {
+      interactive: true,
+      selectUseCase: async (question, options) => {
+        asked.push({ question, values: options.map((option) => option.value) });
+        return "embedded";
+      },
+    })).toBe(0);
+    expect(asked).toEqual([{
+      question: "How will people use your agent?",
+      values: ["embedded", "agent-loop", "mcp"],
+    }]);
+
+    // Unattended: no question, and the plan stays byte-identical to today's.
+    const quiet = await fixture();
+    const quietSink = output();
+    expect(await run(quiet, quietSink, {
+      yes: true,
+      selectUseCase: async () => { throw new Error("prompted"); },
+    })).toBe(0);
+    expect(quietSink.logs.join("\n")).not.toContain("How will people use your agent?");
+  });
+
+  it("--use-case agent-loop adds the snippet for the loop package.json already names", async () => {
+    const aiSdk = await fixture();
+    await writeFile(join(aiSdk, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", ai: "6.0.0" },
+    }));
+    const aiSink = output();
+    expect(await run(aiSdk, aiSink, { useCase: "agent-loop" })).toBe(0);
+    const aiLogs = aiSink.logs.join("\n");
+    expect(aiLogs).toContain("2 STEPS LEFT");
+    expect(aiLogs).toContain('import { vendoTools } from "@vendoai/vendo/ai-sdk";');
+
+    // Mastra's principal step is a step of its own — a call without one fails
+    // closed, so an install that skips it looks broken at the first tool call.
+    const mastra = await fixture();
+    await writeFile(join(mastra, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@mastra/core": "1.0.0" },
+    }));
+    const mastraSink = output();
+    expect(await run(mastra, mastraSink, { useCase: "agent-loop" })).toBe(0);
+    const mastraLogs = mastraSink.logs.join("\n");
+    expect(mastraLogs).toContain("3 STEPS LEFT");
+    expect(mastraLogs).toContain("vendoMastraTools");
+    expect(mastraLogs).toContain("VENDO_PRINCIPAL_KEY");
+  });
+
+  it("--base-url replaces init's own .env.example placeholder and never touches .env.local", async () => {
+    const root = await fixture();
+    expect(await run(root, output(), { baseUrl: "https://app.acme.com" })).toBe(0);
+    const example = await readFile(join(root, ".env.example"), "utf8");
+    expect(example).toContain("VENDO_BASE_URL=https://app.acme.com");
+    expect(example).not.toContain("VENDO_BASE_URL=http://localhost:3000");
+    // A production URL in .env.local would repoint local dev's discovery,
+    // callbacks and forwarding at the deployed origin.
+    await expect(readFile(join(root, ".env.local"))).rejects.toMatchObject({ code: "ENOENT" });
+
+    // Enter declines: the placeholder stands, byte for byte.
+    const skipped = await fixture();
+    expect(await run(skipped, output(), { interactive: true, askText: async () => "" })).toBe(0);
+    expect(await readFile(join(skipped, ".env.example"), "utf8")).toContain("VENDO_BASE_URL=http://localhost:3000");
+  });
+
+  it("offers the live check only when nothing is left to paste, and never changes the exit code", async () => {
+    // A run that still owes the mount paste: doctor would grade that paste,
+    // so offering the check would fail a run that did nothing wrong.
+    const owing = await fixture();
+    expect(await run(owing, output(), {
+      interactive: true,
+      confirmCheck: async () => { throw new Error("prompted"); },
+      runCheck: async () => { throw new Error("ran"); },
+    })).toBe(0);
+
+    // Already mounted: the ask fires, and a check that blows up is still 0.
+    const mounted = await fixture();
+    await writeFile(join(mounted, "app", "layout.tsx"),
+      'import { VendoProvider } from "@vendoai/vendo/react";\n'
+      + "export default function Layout({ children }) { return <VendoProvider>{children}</VendoProvider>; }\n");
+    const asked: string[] = [];
+    expect(await run(mounted, output(), {
+      interactive: true,
+      confirmCheck: async (question) => { asked.push(question); return true; },
+      runCheck: async () => { throw new Error("doctor exploded"); },
+    })).toBe(0);
+    expect(asked).toEqual(["Start your dev server and run a live check now?"]);
   });
 });

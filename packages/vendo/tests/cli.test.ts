@@ -31,6 +31,11 @@ describe("vendo CLI commands", () => {
     expect(help).toContain("--ai");
     expect(help).toContain("--no-ai");
     expect(help).toContain("--theme <slot=value>");
+    expect(help).toContain("--use-case <name>");
+    expect(help).toContain("--base-url <url>");
+    expect(help).toContain("--posture <name>");
+    expect(help).toContain("--service-key");
+    expect(help).toContain("--check / --no-check");
     // The interview flags are gone with the interview.
     expect(help).not.toContain("--brief <text>");
     expect(help).not.toContain("Init/refine: module exporting");
@@ -91,14 +96,17 @@ describe("vendo CLI commands", () => {
     cleanup.push(root);
 
     expect(await main(["init", root, "--agent", "--yes", "--force", "--byo", "--ai",
-      "--auth", "clerk", "--framework", "next", "--theme", "accent=#7c3bed"])).toBe(0);
+      "--auth", "clerk", "--framework", "next", "--theme", "accent=#7c3bed",
+      "--use-case", "mcp", "--base-url", "https://app.acme.com", "--posture", "broker",
+      "--service-key", "--no-check"])).toBe(0);
 
     expect(await readdir(root)).toEqual([]); // --agent stayed read-only
     // Value-flag values are never mistaken for the target dir, and the
-    // --framework answer reaches the plan.
-    const plan = JSON.parse(log.mock.calls.flat().join("\n")) as { root: string; framework: string };
+    // --framework and --use-case answers reach the plan.
+    const plan = JSON.parse(log.mock.calls.flat().join("\n")) as { root: string; framework: string; useCase: string };
     expect(plan.root).toBe(root);
     expect(plan.framework).toBe("next");
+    expect(plan.useCase).toBe("mcp");
 
     // --cloud-key parses too — and --agent STILL writes nothing (the
     // read-only promise beats the key-landing side effect).
@@ -131,6 +139,25 @@ describe("vendo CLI commands", () => {
     // The two answers to the one Cloud question are mutually exclusive.
     expect(await main(["init", root, "--cloud-key", `vnd_${"a".repeat(40)}`, "--byo"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("--cloud-key and --byo answer the same question");
+
+    expect(await main(["init", root, "--use-case", "sidecar"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--use-case must be one of embedded, agent-loop, mcp");
+
+    expect(await main(["init", root, "--base-url", "app.acme.com"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--base-url must be this deployment's full public URL");
+
+    expect(await main(["init", root, "--use-case", "mcp", "--posture", "hybrid"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--posture must be local or broker");
+
+    // The MCP-only answers fail loudly outside the MCP path rather than
+    // being dropped, which would leave an operator believing they took hold.
+    expect(await main(["init", root, "--posture", "broker"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--posture only applies to --use-case mcp");
+    expect(await main(["init", root, "--service-key"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--service-key only applies to --use-case mcp");
+
+    expect(await main(["init", root, "--check", "--no-check"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--check and --no-check answer the same question");
 
     expect(await readdir(root)).toEqual([]); // nothing ever ran
     error.mockRestore();

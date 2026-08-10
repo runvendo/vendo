@@ -21,6 +21,13 @@ npm install @vendoai/vendo
 npx vendo init
 ```
 
+Init asks five questions, and the last one is a single Enter to decline: how
+people will use your agent (embedded, your own agent loop, or MCP), whether
+the agent acts as your signed-in user, how models run, whether an AI pass may
+read your source, and where this will deploy. Every one has a flag answer, so
+an unattended run never needs a prompt — `--use-case`, `--auth`, `--cloud-key`
+/ `--byo`, `--ai` / `--no-ai`, and `--base-url`.
+
 <Note>
   Right after a Vendo release, package managers with a release cooldown hold
   the new version back. pnpm 11 (`minimumReleaseAge`, one day by default)
@@ -126,14 +133,23 @@ runtime (Node 20 or later); non-Next wiring is
 ## The client mount
 
 Init never writes a client file: it prints one paste, naming your layout file
-and the exact lines.
+and the exact lines. The wrapped child differs by router — this page carries
+both, which is why the terminal block links here.
 
 ```tsx
-// app/layout.tsx
+// app/layout.tsx — App Router
 import { VendoProvider } from "@vendoai/vendo/react";
 
 // then wrap the app:
 <VendoProvider baseUrl="/api/vendo">{children}</VendoProvider>
+```
+
+```tsx
+// pages/_app.tsx — Pages Router
+import { VendoProvider } from "@vendoai/vendo/react";
+
+// then wrap the app:
+<VendoProvider baseUrl="/api/vendo"><Component {...pageProps} /></VendoProvider>
 ```
 
 `baseUrl` is where the wire is mounted, path prefix included — a deployment

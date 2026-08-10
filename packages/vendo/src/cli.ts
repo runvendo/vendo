@@ -38,6 +38,11 @@ Options:
   --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
+  --use-case <name>          Init only: how people will use the agent (embedded, agent-loop, mcp)
+  --base-url <url>           Init only: this deployment's public URL — written to .env.example, never .env.local
+  --posture <name>           Init only, --use-case mcp: how outside agents sign in (local, broker)
+  --service-key              Init only, --use-case mcp: set up a machine-to-machine service key
+  --check / --no-check       Init only: run vendo doctor at the end (offered only when no paste is outstanding)
   --ai                       Init/sync: run the AI judgment pass without asking (works non-interactively)
   --engine <name>            Init/sync: pin the AI engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
@@ -75,12 +80,17 @@ function options(args: string[], name: string): string[] {
 /** `--ai`/`--no-ai` is the canonical pair on BOTH init and sync (decision 2).
     `--ai-polish` (init) and `--no-watermark` (sync) are the documented older
     spellings and stay accepted so pinned scripts and hooks keep working. */
-const INIT_FLAGS = new Set(["--agent", "--yes", "--force", "--byo", "--ai", "--ai-polish", "--no-ai"]);
-const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme", "--engine"];
+const INIT_FLAGS = new Set([
+  "--agent", "--yes", "--force", "--byo", "--ai", "--ai-polish", "--no-ai",
+  "--service-key", "--check", "--no-check",
+]);
+const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme", "--engine", "--use-case", "--base-url", "--posture"];
 /** Agent-install-dx: every init wizard question has a value-flag answer; a
     bad value fails as loudly as an unknown flag, with the valid choices. */
 const INIT_AUTH_VALUES = ["authJs", "clerk", "supabase", "auth0", "jwt", "none"];
 const INIT_FRAMEWORK_VALUES = ["next", "express", "custom"];
+const INIT_USE_CASE_VALUES = ["embedded", "agent-loop", "mcp"];
+const INIT_POSTURE_VALUES = ["local", "broker"];
 /** The user-facing engine families (judge/engine.ts's ENGINE_FAMILIES values) —
     one ladder, so `init --engine` and `sync --engine` accept the same names. */
 const ENGINE_VALUES = ["claude", "codex", "npx"];
@@ -121,7 +131,8 @@ function optionErrors(args: string[], flags: Set<string>, valueOptions: string[]
 function target(args: string[]): string {
   const optionValues = new Set<string>();
   for (const name of ["--url", "--key", "--api-url", "--apply",
-    "--auth", "--framework", "--cloud-key", "--theme", "--engine"]) {
+    "--auth", "--framework", "--cloud-key", "--theme", "--engine",
+    "--use-case", "--base-url", "--posture"]) {
     for (let index = 0; index < args.length; index += 1) {
       if (args[index] === name && args[index + 1] !== undefined) optionValues.add(args[index + 1]!);
     }
@@ -176,6 +187,27 @@ async function initCommand(args: string[]): Promise<number> {
   if (badTheme !== undefined) {
     problems.push(`--theme takes slot=value (example: vendo init --theme accent=#7c3bed), got ${JSON.stringify(badTheme)}`);
   }
+  const useCase = option(args, "--use-case");
+  if (useCase !== undefined && !INIT_USE_CASE_VALUES.includes(useCase)) {
+    problems.push(`--use-case must be one of ${INIT_USE_CASE_VALUES.join(", ")} (example: vendo init --use-case mcp)`);
+  }
+  const baseUrl = option(args, "--base-url");
+  if (baseUrl !== undefined && !/^https?:\/\/\S+$/.test(baseUrl)) {
+    problems.push(`--base-url must be this deployment's full public URL (example: vendo init --base-url https://app.acme.com), got ${JSON.stringify(baseUrl)}`);
+  }
+  const posture = option(args, "--posture");
+  if (posture !== undefined && !INIT_POSTURE_VALUES.includes(posture)) {
+    problems.push(`--posture must be local or broker (example: vendo init --use-case mcp --posture broker)`);
+  }
+  // Both answers belong to questions only the MCP path asks — silently
+  // ignoring them would leave an operator believing they took effect.
+  const serviceKey = args.includes("--service-key");
+  if ((posture !== undefined || serviceKey) && useCase !== "mcp") {
+    problems.push(`${posture === undefined ? "--service-key" : "--posture"} only applies to --use-case mcp (pass --use-case mcp, or drop it)`);
+  }
+  if (args.includes("--check") && args.includes("--no-check")) {
+    problems.push("--check and --no-check answer the same question — pass one or the other");
+  }
   if (problems.length > 0) {
     console.error(`vendo init: ${problems.join("; ")}\n\n${HELP}`);
     return 1;
@@ -191,6 +223,11 @@ async function initCommand(args: string[]): Promise<number> {
     ...(args.includes("--byo") ? { byo: true } : {}),
     ...(initAi ? { ai: true } : args.includes("--no-ai") ? { ai: false } : {}),
     ...(engine === undefined ? {} : { engine }),
+    ...(useCase === undefined ? {} : { useCase: useCase as InitOptions["useCase"] }),
+    ...(baseUrl === undefined ? {} : { baseUrl }),
+    ...(posture === undefined ? {} : { posture: posture as InitOptions["posture"] }),
+    ...(serviceKey ? { serviceKey: true } : {}),
+    ...(args.includes("--check") ? { check: true } : args.includes("--no-check") ? { check: false } : {}),
     ...(themePairs.length === 0 ? {} : {
       themeAnswers: Object.fromEntries(themePairs.map((pair) => {
         const at = pair.indexOf("=");
