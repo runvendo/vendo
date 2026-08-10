@@ -21,6 +21,10 @@ const STAT_VALUE_MAX_CHARS = 40;
 
 export function Stat({ label, value, format = "text", trend, tone = "default" }: StatProps) {
   const emphasis = tone === "accent" ? t.accent : tone === "danger" ? t.danger : t.text;
+  /** The rail is the host's brand MARK, not a highlight: a default-tone Stat
+   *  painted it in text color, so a screen of Stats carried no brand color at
+   *  all and read as unthemed. The VALUE keeps `emphasis`. */
+  const rail = tone === "danger" ? t.danger : t.accent;
   const formatted = applyFormat(value, format);
   const empty = formatted === null;
   const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;
@@ -40,7 +44,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         flexDirection: "column",
         gap: "var(--vendo-density-field-gap, 6px)",
         minWidth: 0,
-        borderLeft: `3px solid ${emphasis}`,
+        borderLeft: `3px solid ${rail}`,
         borderRadius: t.radiusSmall,
         background: `color-mix(in srgb, ${t.surface} 90%, ${t.background})`,
         padding: "var(--vendo-density-stat-padding, 12px 14px)",
