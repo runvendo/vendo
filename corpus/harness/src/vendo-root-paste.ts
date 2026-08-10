@@ -8,7 +8,11 @@ export interface VendoRootPasteResult {
   reason: string;
 }
 
-const WRAP_LINE = /…\s*then wrap:\s*(.+)$/;
+const IMPORT_LINE = 'import { VendoProvider } from "@vendoai/vendo/react";';
+// Theme-less on purpose: a `import theme from "../vendo/theme"` line would make
+// every corpus host's tsconfig need resolveJsonModule. Layer 2 scores the theme
+// from .vendo/theme.json on disk, never from the mount.
+const WRAP_EXPRESSION = '<VendoProvider baseUrl="/api/vendo">{children}</VendoProvider>';
 // Tolerates formatting whitespace — a layout rendering `{ children }` is as
 // paste-able as `{children}` (corpus-triage review finding: cubic P2).
 const CHILDREN_EXPRESSION = /\{\s*children\s*\}/g;
@@ -44,37 +48,18 @@ function directivePrologueEnd(lines: readonly string[]): number {
   return end;
 }
 
-/** The step init prints for `file` inside its STEPS-LEFT frame (see the
- * `handSteps` block at the end of packages/vendo/src/cli/init.ts's runInit):
- * a `File: <path>` line, then the paste lines, then a blank line. Keyed on the
- * file so an unrelated step in the same frame — a stale registration map, an
- * unwired route — can never be mistaken for the mount paste. */
-function extractPasteBlock(output: string, file: string): string[] | null {
-  const lines = output.split(/\r?\n/);
-  const headerIndex = lines.findIndex((line) => line.trim() === `File: ${file}`);
-  if (headerIndex === -1) return null;
-  const block: string[] = [];
-  for (let index = headerIndex + 1; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    if (line.trim() === "") break;
-    block.push(line);
-  }
-  return block;
-}
-
-/** Deliberately dumb string surgery that mirrors the ONE paste `vendo init`
- * prints and no longer performs itself (init dropped its layout codemod —
- * see f2c23568; init.ts's mountStep is the source of truth for
- * what a human is told to paste). The corpus harness plays that human: it
- * reads the exact lines init printed to stdout this run and pastes them,
- * so a green corpus run still means the app is wired end to end, not just
- * that init exited 0. This is not a codemod — it does no parsing beyond the
- * printed block and the app-router path the harness already resolves for
+/** Deliberately dumb string surgery: init dropped its layout codemod (see
+ * f2c23568) and only prints a paste, so the corpus harness plays the human and
+ * pastes the documented canonical mount — docs-site/quickstart.mdx, "The client
+ * mount". It does NOT mirror init's printed block: init's copy is init's own
+ * contract (packages/vendo/tests/cli/init.test.ts owns it), and wording changes
+ * there must never fail the corpus. A green corpus run still means the app is
+ * wired end to end, not just that init exited 0. This is not a codemod — the
+ * only thing it resolves is the app-router path the harness already needs for
  * the files.expected check (see layers/structural.ts's findAppRouter). */
 export async function applyVendoRootPaste(
   repoDir: string,
   framework: "next" | "express" | undefined,
-  initStdout: string,
 ): Promise<VendoRootPasteResult> {
   if ((framework ?? "next") === "express") {
     return {
@@ -95,46 +80,25 @@ export async function applyVendoRootPaste(
     return { applied: false, file: app.layoutRel, reason: "layout already wraps <VendoProvider> — left unchanged" };
   }
 
-  const block = extractPasteBlock(initStdout, app.layoutRel);
-  if (block === null) {
-    throw new Error(
-      `vendo init did not print a "File: ${app.layoutRel}" paste step in its stdout; ` +
-      `nothing to paste into ${app.layoutRel}`,
-    );
-  }
+  const eol = original.includes("\r\n") ? "\r\n" : "\n";
+  const lines = original.split(/\r?\n/);
+  const prologueEnd = directivePrologueEnd(lines);
+  const withImport = [...lines.slice(0, prologueEnd), IMPORT_LINE, ...lines.slice(prologueEnd)].join(eol);
 
-  const wrapMatch = block.map((line) => line.match(WRAP_LINE)).find((match) => match !== null);
-  if (!wrapMatch) {
-    throw new Error(`printed paste instructions did not include a "… then wrap:" line for ${app.layoutRel}`);
-  }
-  const importLines = block
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("import "));
-  const wrapExpression = (wrapMatch[1] ?? "").trim();
-
-  let withImports = original;
-  if (importLines.length > 0) {
-    const eol = original.includes("\r\n") ? "\r\n" : "\n";
-    const lines = original.split(/\r?\n/);
-    const prologueEnd = directivePrologueEnd(lines);
-    withImports = [...lines.slice(0, prologueEnd), ...importLines, ...lines.slice(prologueEnd)].join(eol);
-  }
   // Replace the LAST children occurrence, not the first: a destructure
   // param — `function RootLayout({children}: ...)` — puts a "{children}"
   // in the signature ahead of the JSX one we actually want to wrap
-  // (corpus-triage review finding #2). Matching withImports is equivalent to
-  // matching original — init's printed import lines never contain a children
-  // expression.
-  const occurrences = [...withImports.matchAll(CHILDREN_EXPRESSION)];
+  // (corpus-triage review finding #2).
+  const occurrences = [...withImport.matchAll(CHILDREN_EXPRESSION)];
   const last = occurrences[occurrences.length - 1];
   if (last === undefined) {
-    throw new Error(`${app.layoutRel} has no "{children}" expression for the printed wrap to replace`);
+    throw new Error(`${app.layoutRel} has no "{children}" expression for the mount to wrap`);
   }
   const pasted =
-    withImports.slice(0, last.index) +
-    wrapExpression +
-    withImports.slice(last.index + last[0].length);
+    withImport.slice(0, last.index) +
+    WRAP_EXPRESSION +
+    withImport.slice(last.index + last[0].length);
   await writeFile(filePath, pasted, "utf8");
 
-  return { applied: true, file: app.layoutRel, reason: "pasted the printed VendoProvider import(s) + wrap into the layout" };
+  return { applied: true, file: app.layoutRel, reason: "pasted the VendoProvider import + wrap into the layout" };
 }

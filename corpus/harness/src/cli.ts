@@ -104,7 +104,6 @@ export interface CorpusCliDependencies {
   applyVendoRootPaste?: (
     repoDir: string,
     framework: "next" | "express" | undefined,
-    initStdout: string,
   ) => Promise<VendoRootPasteResult>;
   runStructuralLayer?: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
   runScoredLayer?: (ctx: ScoredLayerContext) => Promise<ScoredLayerRunResult>;
@@ -130,7 +129,6 @@ interface ResolvedDeps {
   applyVendoRootPaste: (
     repoDir: string,
     framework: "next" | "express" | undefined,
-    initStdout: string,
   ) => Promise<VendoRootPasteResult>;
   runStructuralLayer: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
   runScoredLayer: (ctx: ScoredLayerContext) => Promise<ScoredLayerRunResult>;
@@ -475,7 +473,7 @@ async function runRepoThroughLayerOne(
     // plays the human it printed those instructions for, so "files.expected"
     // below still means the app is wired end to end, not just that init ran.
     if (firstInit.exitCode === 0) {
-      await deps.applyVendoRootPaste(appRoot, repo.framework, await readOptional(firstInit.artifacts.log) ?? "");
+      await deps.applyVendoRootPaste(appRoot, repo.framework);
     }
     const secondInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.second", diffBase: "pre-run" });
     logPaths.push(...artifactPaths(secondInit.artifacts));

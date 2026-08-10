@@ -56,41 +56,21 @@ const UNWRAPPED_LAYOUT_SPACELESS_DESTRUCTURE = [
   "",
 ].join("\n");
 
-const WRAP = '<VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}</VendoProvider>';
-
-// The exact shape `vendo init` prints today: its STEPS-LEFT frame (init.ts's
-// mountStep lines, printed under a `File:` header) — the harness paste helper
-// reads THIS, it does not regenerate its own copy of it.
-const INIT_STDOUT = [
-  "some other init noise",
-  "",
-  "────────────────────────────────────────────────────────────────",
-  "ONE STEP LEFT — paste this yourself (init never edits your files)",
-  "",
-  "  File: app/layout.tsx",
-  '    import { VendoProvider } from "@vendoai/vendo/react";',
-  '    import theme from "../vendo/theme";',
-  '    import type { VendoTheme } from "@vendoai/vendo";',
-  `    … then wrap: ${WRAP}`,
-  "",
-  "  <VendoProvider> is what the @vendoai/ui hooks and embeds read.",
-  "  Then confirm it landed: npx vendo doctor",
-  "────────────────────────────────────────────────────────────────",
-].join("\n");
+// The canonical mount from docs-site/quickstart.mdx ("The client mount") — the
+// harness constructs this itself, independent of what init printed.
+const WRAP = '<VendoProvider baseUrl="/api/vendo">{children}</VendoProvider>';
 
 describe("applyVendoRootPaste", () => {
-  it("pastes the printed import + wrap into an unwrapped app router layout", async () => {
+  it("pastes the canonical import + wrap into an unwrapped app router layout", async () => {
     const repoDir = await makeTempRepo();
     await mkdir(path.join(repoDir, "app"), { recursive: true });
     await writeFile(path.join(repoDir, "app/layout.tsx"), UNWRAPPED_LAYOUT);
 
-    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+    const result = await applyVendoRootPaste(repoDir, "next");
 
     expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
     expect(layout).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
-    expect(layout).toContain('import theme from "../vendo/theme";');
-    expect(layout).toContain('import type { VendoTheme } from "@vendoai/vendo";');
     expect(layout).toContain(WRAP);
   });
 
@@ -99,7 +79,7 @@ describe("applyVendoRootPaste", () => {
     await mkdir(path.join(repoDir, "app"), { recursive: true });
     await writeFile(path.join(repoDir, "app/layout.tsx"), UNWRAPPED_LAYOUT_SPACELESS_DESTRUCTURE);
 
-    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+    const result = await applyVendoRootPaste(repoDir, "next");
 
     expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
@@ -114,7 +94,7 @@ describe("applyVendoRootPaste", () => {
     await mkdir(path.join(repoDir, "app"), { recursive: true });
     await writeFile(path.join(repoDir, "app/layout.tsx"), `"use client";\n\n${UNWRAPPED_LAYOUT}`);
 
-    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+    const result = await applyVendoRootPaste(repoDir, "next");
 
     expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
@@ -139,7 +119,7 @@ describe("applyVendoRootPaste", () => {
     ].join("\n");
     await writeFile(path.join(repoDir, "app/layout.tsx"), original);
 
-    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+    const result = await applyVendoRootPaste(repoDir, "next");
 
     expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
@@ -155,7 +135,7 @@ describe("applyVendoRootPaste", () => {
       `"use client"; // needed for the theme hooks\n\n${UNWRAPPED_LAYOUT}`,
     );
 
-    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+    const result = await applyVendoRootPaste(repoDir, "next");
 
     expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
@@ -168,7 +148,7 @@ describe("applyVendoRootPaste", () => {
     await mkdir(path.join(repoDir, "app"), { recursive: true });
     await writeFile(path.join(repoDir, "app/layout.tsx"), UNWRAPPED_LAYOUT.replaceAll("\n", "\r\n"));
 
-    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+    const result = await applyVendoRootPaste(repoDir, "next");
 
     expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
@@ -180,13 +160,14 @@ describe("applyVendoRootPaste", () => {
   it("fails when the layout has no children expression to wrap", async () => {
     const repoDir = await makeTempRepo();
     await mkdir(path.join(repoDir, "app"), { recursive: true });
-    await writeFile(
-      path.join(repoDir, "app/layout.tsx"),
-      "export default function RootLayout() {\n  return <html><body /></html>;\n}\n",
-    );
+    const original = "export default function RootLayout() {\n  return <html><body /></html>;\n}\n";
+    await writeFile(path.join(repoDir, "app/layout.tsx"), original);
 
-    await expect(applyVendoRootPaste(repoDir, "next", INIT_STDOUT))
+    await expect(applyVendoRootPaste(repoDir, "next"))
       .rejects.toThrow(/no "\{children\}" expression/);
+
+    // Untouched — a failed wrap must not leave a half-applied import behind.
+    await expect(readFile(path.join(repoDir, "app/layout.tsx"), "utf8")).resolves.toBe(original);
   });
 
   it("wraps a whitespace-formatted { children } JSX expression", async () => {
@@ -197,24 +178,11 @@ describe("applyVendoRootPaste", () => {
       UNWRAPPED_LAYOUT.replace("<body>{children}</body>", "<body>{ children }</body>"),
     );
 
-    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+    const result = await applyVendoRootPaste(repoDir, "next");
 
     expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
     expect(layout).toContain(`<body>${WRAP}</body>`);
-  });
-
-  it("fails when vendo init's stdout did not print the paste instructions", async () => {
-    const repoDir = await makeTempRepo();
-    await mkdir(path.join(repoDir, "app"), { recursive: true });
-    await writeFile(path.join(repoDir, "app/layout.tsx"), UNWRAPPED_LAYOUT);
-
-    await expect(applyVendoRootPaste(repoDir, "next", "vendo init finished with no summary"))
-      .rejects.toThrow(/did not print a "File: app\/layout\.tsx" paste step/);
-
-    // Untouched — the failed assertion must not half-apply the paste.
-    const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
-    expect(layout).toBe(UNWRAPPED_LAYOUT);
   });
 
   it("leaves an already-wrapped layout unchanged (idempotent)", async () => {
@@ -222,7 +190,7 @@ describe("applyVendoRootPaste", () => {
     await mkdir(path.join(repoDir, "app"), { recursive: true });
     await writeFile(path.join(repoDir, "app/layout.tsx"), WRAPPED_LAYOUT);
 
-    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+    const result = await applyVendoRootPaste(repoDir, "next");
 
     expect(result).toMatchObject({ applied: false, file: "app/layout.tsx" });
     const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
@@ -231,13 +199,13 @@ describe("applyVendoRootPaste", () => {
 
   it("skips express hosts — init prints server/client wiring, not a layout paste", async () => {
     const repoDir = await makeTempRepo();
-    const result = await applyVendoRootPaste(repoDir, "express", "anything");
+    const result = await applyVendoRootPaste(repoDir, "express");
     expect(result).toMatchObject({ applied: false, file: null });
   });
 
   it("skips silently when no App Router layout exists", async () => {
     const repoDir = await makeTempRepo();
-    const result = await applyVendoRootPaste(repoDir, "next", "anything");
+    const result = await applyVendoRootPaste(repoDir, "next");
     expect(result).toMatchObject({ applied: false, file: null });
   });
 });
