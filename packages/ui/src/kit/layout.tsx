@@ -2,19 +2,23 @@
 import type { CSSProperties, PropsWithChildren } from "react";
 import { font, t } from "./tokens.js";
 
-const gapVar = (gap: number | undefined): string =>
-  gap === undefined ? "var(--vendo-density-content-gap, 10px)" : `${gap}px`;
+/** Container spacing is the theme's box step — the SAME value as a card's
+ * padding, so a screen's gutters and its insets are one rhythm. The `gap` prop
+ * is still accepted (saved apps and wire trees carry it) but no longer wins:
+ * per-instance pixels are how one screen ends up with 4px, 12px and 16px
+ * between rows, which reads as a design system that does not repeat. */
+const boxGap = "var(--vendo-density-card-padding, 16px)";
 
 export interface StackProps {
   gap?: number;
 }
 
 /** Vertical flow. */
-export function Stack({ gap, children }: PropsWithChildren<StackProps>) {
+export function Stack({ children }: PropsWithChildren<StackProps>) {
   return (
     <div
       data-kit="Stack"
-      style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: gapVar(gap) }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: boxGap }}
     >
       {children}
     </div>
@@ -42,7 +46,7 @@ const justifyMap: Record<string, CSSProperties["justifyContent"]> = {
 };
 
 /** Horizontal flow. */
-export function Row({ gap, align = "center", justify = "start", wrap = true, children }: PropsWithChildren<RowProps>) {
+export function Row({ align = "center", justify = "start", wrap = true, children }: PropsWithChildren<RowProps>) {
   return (
     <div
       data-kit="Row"
@@ -52,7 +56,7 @@ export function Row({ gap, align = "center", justify = "start", wrap = true, chi
         flexWrap: wrap ? "wrap" : "nowrap",
         alignItems: alignMap[align],
         justifyContent: justifyMap[justify],
-        gap: gapVar(gap),
+        gap: boxGap,
       }}
     >
       {children}
@@ -66,7 +70,7 @@ export interface GridProps {
 }
 
 /** Equal-width columns. */
-export function Grid({ columns = 2, gap, children }: PropsWithChildren<GridProps>) {
+export function Grid({ columns = 2, children }: PropsWithChildren<GridProps>) {
   const safe = Number.isFinite(columns) ? Math.max(1, Math.floor(columns)) : 2;
   return (
     <div
@@ -75,7 +79,7 @@ export function Grid({ columns = 2, gap, children }: PropsWithChildren<GridProps
         display: "grid",
         gridTemplateColumns: `repeat(${safe}, minmax(0, 1fr))`,
         alignItems: "stretch",
-        gap: gapVar(gap),
+        gap: boxGap,
       }}
     >
       {children}

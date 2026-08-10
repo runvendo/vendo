@@ -47,7 +47,7 @@ export function Callout({ tone = "info", title, children }: PropsWithChildren<Ca
         borderLeftWidth: 3,
         borderRadius: t.radiusMedium,
         background: `color-mix(in srgb, ${accent} 7%, ${t.surface})`,
-        padding: "var(--vendo-density-card-padding, 12px 14px)",
+        padding: "var(--vendo-density-card-padding, 16px)",
       }}
     >
       <span aria-hidden="true" style={{ color: accent, fontWeight: 700, lineHeight: 1.4 }}>

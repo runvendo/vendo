@@ -41,7 +41,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
           textAlign: "center",
           border: `1px dashed ${t.border}`,
           borderRadius: t.radiusMedium,
-          padding: "calc(var(--vendo-font-size, 15px) * 1.6)",
+          padding: "var(--vendo-density-card-padding, 16px)",
         }}
       >
         {emptyState}
@@ -54,7 +54,7 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
   return (
     <div
       data-kit="CardList"
-      style={{ display: "grid", gridTemplateColumns: gridTemplate, gap: "var(--vendo-density-content-gap, 10px)" }}
+      style={{ display: "grid", gridTemplateColumns: gridTemplate, gap: "var(--vendo-density-card-padding, 16px)" }}
     >
       {items.map((item, index) => {
         const badge = badgeField ? resolve(item, badgeField) : undefined;

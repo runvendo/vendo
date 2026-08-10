@@ -43,7 +43,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
         borderLeft: `3px solid ${emphasis}`,
         borderRadius: t.radiusSmall,
         background: `color-mix(in srgb, ${t.surface} 90%, ${t.background})`,
-        padding: "var(--vendo-density-stat-padding, 12px 14px)",
+        padding: "var(--vendo-density-card-padding, 16px)",
       }}
     >
       <span style={{ color: t.muted, fontSize: "0.82em", fontWeight: 650 }}>{label}</span>

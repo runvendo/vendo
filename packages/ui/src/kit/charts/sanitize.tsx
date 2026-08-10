@@ -60,7 +60,7 @@ export function ChartEmpty({ height = 220, children }: { height?: number; childr
     background: `color-mix(in srgb, ${t.background} 40%, transparent)`,
     fontSize: "0.9em",
     textAlign: "center",
-    padding: 12,
+    padding: "var(--vendo-density-card-padding, 16px)",
   };
   return <div data-kit="ChartEmpty">{<div style={style}>{children}</div>}</div>;
 }

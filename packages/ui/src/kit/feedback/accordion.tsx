@@ -48,7 +48,7 @@ export function Accordion({ items, multiple = false, defaultOpen = [] }: Accordi
                 background: "transparent",
                 cursor: "pointer",
                 fontWeight: 600,
-                padding: "var(--vendo-density-card-padding, 12px 14px)",
+                padding: "var(--vendo-density-card-padding, 16px)",
                 textAlign: "left",
               }}
             >
@@ -58,7 +58,16 @@ export function Accordion({ items, multiple = false, defaultOpen = [] }: Accordi
               </span>
             </button>
             {isOpen ? (
-              <div style={{ padding: "0 14px var(--vendo-density-card-padding, 14px)", color: t.text }}>{item.content}</div>
+              <div
+                style={{
+                  // Sides match the header's padding exactly, so an open panel's
+                  // text lines up with its own label instead of shifting 2px.
+                  padding: "0 var(--vendo-density-card-padding, 16px) var(--vendo-density-card-padding, 16px)",
+                  color: t.text,
+                }}
+              >
+                {item.content}
+              </div>
             ) : null}
           </div>
         );

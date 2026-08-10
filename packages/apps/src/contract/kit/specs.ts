@@ -33,15 +33,15 @@ export const KIT_SPECS: KitComponentSpec[] = [
     name: "Stack",
     group: "layout",
     summary: "Vertical flow of children. The default container for a section.",
-    props: { gap: config(z.number(), "pixels between children") },
-    examples: ["<Stack gap={12}><Stat .../><DataTable .../></Stack>"],
+    props: { gap: config(z.number(), "legacy, ignored — spacing comes from the theme; omit it") },
+    examples: ["<Stack><Stat .../><DataTable .../></Stack>"],
   },
   {
     name: "Row",
     group: "layout",
     summary: "Horizontal flow; wraps by default. Use for a row of stats or buttons.",
     props: {
-      gap: config(z.number(), "pixels between children"),
+      gap: config(z.number(), "legacy, ignored — spacing comes from the theme; omit it"),
       align: config(z.enum(["start", "center", "end", "stretch"]), "cross-axis alignment"),
       justify: config(z.enum(["start", "center", "end", "between"]), "main-axis distribution"),
     },
@@ -51,7 +51,10 @@ export const KIT_SPECS: KitComponentSpec[] = [
     name: "Grid",
     group: "layout",
     summary: "Equal-width columns. Use for a grid of cards or stats.",
-    props: { columns: config(z.number().int().positive(), "column count"), gap: config(z.number(), "pixels between cells") },
+    props: {
+      columns: config(z.number().int().positive(), "column count"),
+      gap: config(z.number(), "legacy, ignored — spacing comes from the theme; omit it"),
+    },
     examples: ["<Grid columns={3}><Stat .../><Stat .../><Stat .../></Grid>"],
   },
   {
