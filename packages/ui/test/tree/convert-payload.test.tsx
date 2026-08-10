@@ -3,13 +3,15 @@ import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
-  compileWire,
   VENDO_TREE_FORMAT,
   type Json,
   type ToolOutcome,
-  type Tree,
   type UIPayload,
 } from "@vendoai/core";
+import {
+  compileWire,
+  type Tree,
+} from "@vendoai/apps/contract";
 import { PayloadView, TreeView } from "../../src/tree/index.js";
 
 afterEach(() => {

@@ -3,7 +3,7 @@
  * the hosted-config reader, and the `.vendo` surface root every later lazy read
  * resolves against — plus the boot-once readiness latch they all hang off.
  */
-import { selectSandbox } from "@vendoai/apps/sandbox-ladder";
+import { selectSandbox } from "@vendoai/apps";
 import { isGuardInstance } from "@vendoai/guard";
 import { bindVendoModelSlots } from "#dev-creds/model";
 import { cloudConfig, type CloudConfig } from "./cloud-config.js";

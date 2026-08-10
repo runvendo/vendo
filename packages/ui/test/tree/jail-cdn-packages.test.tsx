@@ -1,6 +1,8 @@
 import { render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { JAIL_PACKAGE_CDN_ORIGIN } from "@vendoai/core";
+import {
+  JAIL_PACKAGE_CDN_ORIGIN,
+} from "@vendoai/apps/contract";
 import { JailedComponent, type JailFurnishing } from "../../src/tree/jail/JailedComponent.js";
 
 /**

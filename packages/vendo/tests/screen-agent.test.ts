@@ -24,8 +24,10 @@ import {
   type Json,
   type ToolDescriptor,
   type VendoViewPart,
-  type WireCompileResult,
 } from "@vendoai/core";
+import {
+  type WireCompileResult,
+} from "@vendoai/apps/contract";
 import { describe, expect, it } from "vitest";
 import { ESCALATE_TOOL, SAVE_APP_TOOL, SCREEN_STEPS, screenAssembler } from "../src/screen-agent.js";
 import {

@@ -24,32 +24,24 @@
   },
   "type": "module",
   "sideEffects": false,
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/server/index.js",
+  "types": "./dist/server/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/server/index.d.ts",
+      "default": "./dist/server/index.js"
+    },
+    "./contract": {
+      "types": "./dist/contract/index.d.ts",
+      "default": "./dist/contract/index.js"
     },
     "./e2b": {
-      "types": "./dist/e2b/index.d.ts",
-      "default": "./dist/e2b/index.js"
-    },
-    "./sandbox-ladder": {
-      "types": "./dist/sandbox-ladder.d.ts",
-      "default": "./dist/sandbox-ladder.js"
-    },
-    "./adapter-conformance": {
-      "types": "./dist/adapter-conformance.d.ts",
-      "default": "./dist/adapter-conformance.js"
+      "types": "./dist/server/escalation/e2b/index.d.ts",
+      "default": "./dist/server/escalation/e2b/index.js"
     },
     "./testing": {
-      "types": "./dist/testing/index.d.ts",
-      "default": "./dist/testing/index.js"
-    },
-    "./internal": {
-      "types": "./dist/internal.d.ts",
-      "default": "./dist/internal.js"
+      "types": "./dist/server/testing/index.d.ts",
+      "default": "./dist/server/testing/index.js"
     }
   },
   "files": [

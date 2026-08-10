@@ -1,12 +1,18 @@
-import type { RunContext, ScreenAssembler, ToolRegistry } from "@vendoai/core";
-import { VendoError } from "@vendoai/core";
+import {
+  type RunContext,
+  type ToolRegistry,
+  VendoError,
+} from "@vendoai/core";
+import type {
+  ScreenAssembler,
+} from "../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
-import { buildFailureReason } from "../src/build-messages.js";
-import { createApps, type AppsRuntime } from "../src/index.js";
-import { scriptedAssembler } from "../src/testing/authoring-assembler.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
+import { buildFailureReason } from "../src/server/doors/build-messages.js";
+import { createApps, type AppsRuntime } from "../src/server/index.js";
+import { scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
 
 // Incident (runvendo/vendo#492): the pack's vendo_make returns fast with a
 // vendo/app-ref@1 while the build streams server-side. When the build turn

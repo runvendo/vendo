@@ -6,16 +6,19 @@
  * index.ts — nothing here is exported from the package root.
  */
 import {
-  appDocumentSchema,
   approvalRequestSchema,
   DEFAULT_TRIGGER_ID,
-  type AppDocument,
   type Json,
   type RunId,
   type Trigger,
 } from "@vendoai/core";
 import { z } from "zod";
 import type { RunRecord } from "./index.js";
+
+/** The stored app row, declared once in `@vendoai/apps/contract`. This engine
+ *  reads the record's DATA half, which is what `AppData` is. */
+import { appRowSchema, type AppData } from "@vendoai/apps/contract";
+export { appRowSchema, type AppData };
 
 export const APPS = "vendo_apps";
 export const RUNS = "vendo_runs";
@@ -41,11 +44,6 @@ export const ARMED = "automations:armed";
 export const WEBHOOK_MAX_BYTES = 1024 * 1024;
 export const FOREACH_MAX_ITEMS = 1000;
 
-export const appRowSchema = z.object({
-  subject: z.string(),
-  enabled: z.boolean(),
-  doc: appDocumentSchema,
-});
 
 /** The guard's approval row as this engine reads it. `passthrough`, because the
  *  guard owns this shape and keeps adding to it (`deniedBy`, `voidedAt`): a
@@ -90,16 +88,11 @@ export type Capture = z.infer<typeof captureSchema>;
 export const scheduleSchema = z.object({ lastFiredAt: z.string(), firedAt: z.string().optional() });
 export const webhookSchema = z.object({ secret: z.string() });
 
-export interface AppRow {
-  subject: string;
-  enabled: boolean;
-  doc: AppDocument;
-}
 
 /** One (app, trigger) a tick claimed the cursor for, and the schedule event it
  *  fires with. */
 export interface FiredSchedule {
-  row: AppRow;
+  row: AppData;
   trigger: Trigger;
   scheduledFor: string;
   firedAt: string;

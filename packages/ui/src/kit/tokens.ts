@@ -3,7 +3,9 @@
  * theme variable with a porcelain default — so a Kit component is brand-native
  * on any host and never hardcodes Vendo's own brand (W2 §The Kit, axis 1).
  */
-import { defaultVendoTheme } from "@vendoai/core";
+import {
+  defaultVendoTheme,
+} from "@vendoai/apps/contract";
 import type { CSSProperties } from "react";
 
 /** Every fallback is READ OFF `defaultVendoTheme` rather than retyped, because

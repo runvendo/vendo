@@ -45,8 +45,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BASE_PATH } from "@/lib/base-path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_TRIGGER_ID, UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
-import type { AppDocument, Principal, Step, ToolDescriptor, ToolRegistry } from "@vendoai/core";
+import {
+  type AppDocument,
+  DEFAULT_TRIGGER_ID,
+  type Principal,
+  type Step,
+  type ToolDescriptor,
+  type ToolRegistry,
+  UNATTENDED_DESTRUCTIVE_REASON,
+} from "@vendoai/core";
 import { createActions } from "@vendoai/actions";
 import { authJsPreset } from "@vendoai/actions/presets/auth-js";
 import { createApps } from "@vendoai/apps";

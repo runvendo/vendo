@@ -24,7 +24,7 @@ import type {
   ServerActionHandler,
 } from "@vendoai/actions";
 import type { AgentComposition } from "@vendoai/agents";
-import type { AppsRuntime, PinBaseline } from "@vendoai/apps";
+import type { AppsRuntime, SeedBaseline } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
 import type {
   ActAs,
@@ -37,8 +37,11 @@ import type {
   SecretsProvider,
   ToolCall,
   ToolRegistry,
-  VendoTheme,
 } from "@vendoai/core";
+import type {
+  BriefingPack,
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import type { VendoGuard, RiskResolver } from "@vendoai/guard";
 import type { CapabilityMissConfig } from "@vendoai/harnesses";
 import type { VendoToolSearchConfig } from "@vendoai/harnesses/vendo";
@@ -72,7 +75,7 @@ import type { resolveVendoUrls } from "./urls.js";
 import type { WireDeps } from "./wire/shared.js";
 import type { createConnectGate, mergedHostSemantics } from "@vendoai/actions";
 import type { createAppTokens } from "@vendoai/apps";
-import type { selectSandbox } from "@vendoai/apps/sandbox-ladder";
+import type { selectSandbox } from "@vendoai/apps";
 import type { appAccess } from "@vendoai/store";
 import type { HostAuthPreset } from "./auth-presets/index.js";
 
@@ -166,8 +169,10 @@ export interface VendoComposition {
   theme: VendoTheme | undefined;
   themeProvider: () => VendoTheme | undefined;
   designRules: string | (() => string | undefined);
-  writerDesignBrief: () => string;
-  pinBaselines: PinBaseline[];
+  /** THE briefing pack — assembled once (compose-surfaces.ts), read by both
+   *  generation rungs. */
+  briefing: (ctx: RunContext) => Promise<BriefingPack>;
+  seedBaselines: SeedBaseline[];
   hostSemanticsProvider: () => ReturnType<typeof mergedHostSemantics>;
   capability: MergedCapability;
   catalog: ReturnType<typeof mergeRuntimeCatalog>;

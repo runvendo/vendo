@@ -16,11 +16,11 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { toolLine } from "../src/automation-plan.js";
-import { createApps } from "../src/index.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { scriptedLanguageModel } from "../src/testing/scripted-model.js";
+import { toolLine } from "../src/server/automation/plan.js";
+import { createApps } from "../src/server/index.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_shapes" },

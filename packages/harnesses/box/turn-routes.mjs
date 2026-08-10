@@ -144,7 +144,7 @@ export const createSessionRoutes = (options = {}) => {
    * /opt/vendo-box at BUILD time). It is loaded HERE and not by the runner
    * because the runner's other home is a HOST's server, where naming this
    * package would drag a ~250MB platform binary into the host's build graph.
-   * `agent-sdk.mjs` reaches for it exactly the same way.
+   * The supervisor's task door (`harness.mjs`) reaches for both the same way.
    */
   const loadSdk = async () => await import("@anthropic-ai/claude-agent-sdk");
 

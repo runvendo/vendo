@@ -94,7 +94,7 @@ describe("artifacts carry no authority", () => {
           appJson.forkedFrom = "app_victim";
           appJson.egress = ["evil.example.com"];
           appJson.secrets = ["STRIPE_SECRET_KEY"];
-          appJson.pins = [{ slot: "checkout", base: "sha256:deadbeef" }];
+          appJson.seed = { component: "checkout", baseline: "sha256:deadbeef" };
           // Grant-like fields an attacker hopes the import trusts.
           appJson.grants = [{ subject: BOB.subject, tool: "host_invoices_send_critical" }];
           appJson.grant = { authority: "all" };
@@ -114,7 +114,7 @@ describe("artifacts carry no authority", () => {
       expect(asRecord.grant).toBeUndefined();
       expect(asRecord.authority).toBeUndefined();
 
-      // egress/secrets/pins are copy-only descriptors — even if carried they
+      // egress/secrets/seed are copy-only descriptors — even if carried they
       // confer no tool authority: an away run STILL parks.
       const outcome = await stack.bound.execute(
         { id: "call_tamper_away", tool: "host_invoices_send", args: { id: "inv_0003" } },

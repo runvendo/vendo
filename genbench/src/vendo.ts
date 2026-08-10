@@ -1,4 +1,5 @@
-import { createApps, hostDesignBrief } from "@vendoai/apps";
+import { createApps } from "@vendoai/apps";
+import { renderBriefingPack, type BriefingPack } from "@vendoai/apps/contract";
 import type { AppId, Principal, RunContext, ToolRegistry, UIPayload } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
 import { createStore, workspaceStore } from "@vendoai/store";
@@ -28,9 +29,17 @@ export function worldRegistry(world: World): ToolRegistry {
 }
 
 /** Identity plus the style rubric, in the one field the product already feeds to
- *  `hostDesignBrief`. Every contender is handed this same text. */
+ *  the briefing pack. Every contender is handed this same text. */
 export function designRules(world: World): string {
   return [`${world.app}.`, "", ...world.style.map((line) => `- ${line}`)].join("\n");
+}
+
+/** THE briefing pack for a world — the product knowledge the real screen agent
+ *  reads (`contract/briefing.ts`), with the two halves a bench world has. The
+ *  catalog is empty here and there is no host semantics card, exactly as the
+ *  driver below composes it. */
+export function worldBriefing(world: World): BriefingPack {
+  return { theme: world.theme, designRules: designRules(world), catalog: [], hostSemantics: "" };
 }
 
 /**
@@ -40,7 +49,7 @@ export function designRules(world: World): string {
  *
  * ONE serializer for both baselines, because two drifted: the same world was
  * described in two formats, and only one of them said what a write tool
- * answers with. `diy.test.ts` compares this against `hostDesignBrief`,
+ * answers with. `diy.test.ts` compares this against `renderBriefingPack`,
  * `worldRegistry`'s descriptors and `worldRegistry`'s real outputs, for every
  * baseline that sends it. Each tool sits at top-level indentation on purpose —
  * nesting them in one array re-indents the schemas and there is nothing left to
@@ -53,7 +62,7 @@ export function worldBlock(world: World): string {
         `${JSON.stringify(tool.descriptor, null, 2)}\nreturns: ${JSON.stringify(cannedResponse(tool), null, 2)}`,
     )
     .join("\n\n");
-  return `${hostDesignBrief({ theme: world.theme, designRules: designRules(world) })}
+  return `${renderBriefingPack(worldBriefing(world))}
 
 HOST TOOLS — a control on the page calls one as \`window.vendo.callTool(name, args)\`, which answers
 with { status: "ok", output: <the value shown under \`returns\`> } or { status: "error", error: {
@@ -141,7 +150,7 @@ async function run(request: RunRequest): Promise<RunOutcome> {
       commitSource: (input) => appsRef!.commitSource(input, screenCtx),
       floor: appsRef!.floor(screenCtx),
     }),
-    design: () => hostDesignBrief({ theme: world.theme, designRules: designRules(world) }),
+    briefing: async () => worldBriefing(world),
   });
 
   const apps = createApps({
@@ -151,7 +160,7 @@ async function run(request: RunRequest): Promise<RunOutcome> {
     catalog: [],
     model: meter.model,
     theme: world.theme,
-    designRules: designRules(world),
+    briefing: async () => worldBriefing(world),
     screen: assembler,
   });
   appsRef = apps;

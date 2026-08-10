@@ -1,6 +1,6 @@
-import { sandboxAdapterConformance } from "../../src/adapter-conformance.js";
-import type { SandboxConformanceHarness } from "../../src/adapter-conformance.js";
-import { FakeSandboxMachine, fakeSandbox, type MachineApp, type MachineResponse } from "../../src/testing/fake-sandbox.js";
+import { sandboxAdapterConformance } from "../../src/server/testing/adapter-conformance.js";
+import type { SandboxConformanceHarness } from "../../src/server/testing/adapter-conformance.js";
+import { FakeSandboxMachine, fakeSandbox, type MachineApp, type MachineResponse } from "../../src/server/testing/fake-sandbox.js";
 
 const encoder = new TextEncoder();
 

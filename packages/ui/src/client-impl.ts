@@ -227,9 +227,8 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
         }),
       fork: id => json(`/apps/${idPath(id)}/fork`, "POST"),
       shipDiff: id => readJson(`/apps/${idPath(id)}/ship-diff`),
-      rebasePin: (id, slot) => json(`/apps/${idPath(id)}/rebase-pin`, "POST", { slot }),
-      forkPin: ({ appId, ...body }) =>
-        json(appId === undefined ? "/apps/fork-pin" : `/apps/${idPath(appId)}/fork-pin`, "POST", body),
+      reseed: id => json(`/apps/${idPath(id)}/reseed`, "POST"),
+      seedFrom: body => json("/apps/seed", "POST", body),
       pingMachine: id => json(`/apps/${idPath(id)}/machine/ping`, "POST"),
       place: (id, slot) => json(`/apps/${idPath(id)}/place`, "POST", { slot }),
       unplace: async (id, slot) => {

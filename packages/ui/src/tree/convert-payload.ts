@@ -1,12 +1,14 @@
 import type { WalkTree } from "./renderer.js";
 import {
-  validateTree,
   type Json,
   type TreeNode,
-  type TreeQuery,
-  type Tree,
   type UIPayload,
 } from "@vendoai/core";
+import {
+  validateTree,
+  type TreeQuery,
+  type Tree,
+} from "@vendoai/apps/contract";
 
 /**
  * The `vendo-genui/v2` payload converts mechanically to the walk tree TreeView

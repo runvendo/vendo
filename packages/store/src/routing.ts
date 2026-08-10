@@ -242,6 +242,15 @@ function stateRecord(row: StateRow): VendoRecord {
 }
 
 /**
+ * `vendo_state` has TWO tenants, and this is the line between them.
+ *
+ *  - An APP's own data — `app_<id>:<subject>` — which is what this routed
+ *    records door serves, and the only thing it will accept.
+ *  - HARNESS continuity — `harness_state:<threadId>` — which reaches the table
+ *    only through `ops.harness` (`store/src/harness-state.ts`) and raw SQL,
+ *    never through this door. The `app_` prefix check below is what keeps the
+ *    two from ever addressing each other's rows.
+ *
  * apps writes state through `records("vendo_state")` with id `${appId}:${subject}`.
  * App ids are `app_...` and never contain a colon, so the first colon splits id into
  * its app_id and subject (subjects may themselves contain colons).
@@ -258,7 +267,9 @@ function splitStateId(id: string): { appId: string; subject: string } {
   if (colon === -1) invalid(`vendo_state record id must be "<appId>:<subject>": ${id}`);
   const appId = id.slice(0, colon);
   if (!APP_ID_SEGMENT.test(appId)) {
-    invalid(`vendo_state record id must start with a colon-free app id ("app_..."): ${id}`);
+    // Names the OTHER tenant on purpose: a `harness_state:` id arriving here is
+    // a caller reaching for the wrong door, not a malformed app id.
+    invalid(`vendo_state record id must start with a colon-free app id ("app_..."); harness continuity rows ("harness_state:...") belong to ops.harness, not this door: ${id}`);
   }
   const subject = id.slice(colon + 1);
   // An empty subject ("app_x:") would route a state row to no principal — reject it

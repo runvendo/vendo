@@ -12,9 +12,15 @@
  * through one guard, one audit row and one mirror like every other call. There is
  * no second validate.
  */
-import type { Finding, Json, ToolResult } from "@vendoai/core";
+import type {
+  Json,
+  ToolResult,
+} from "@vendoai/core";
+import type {
+  Finding,
+} from "../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
-import { repairInstruction, validateWrittenApps } from "../src/validate-gate.js";
+import { repairInstruction, validateWrittenApps } from "../src/server/generation/validate-gate.js";
 
 const APP = "/user/apps/app_1/app.vendo";
 const OTHER = "/user/apps/app_2/app.vendo";

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { SandboxAdapter } from "../../src/sandbox.js";
-import { fakeBoxSandbox } from "../../src/testing/fake-box.js";
-import { fakeSandbox } from "../../src/testing/fake-sandbox.js";
-import { fakeStatefulSandbox } from "../../src/testing/fake-sandbox-stateful.js";
+import type { SandboxAdapter } from "../../src/server/escalation/sandbox.js";
+import { fakeBoxSandbox } from "../../src/server/testing/fake-box.js";
+import { fakeSandbox } from "../../src/server/testing/fake-sandbox.js";
+import { fakeStatefulSandbox } from "../../src/server/testing/fake-sandbox-stateful.js";
 
 /**
  * `inMemoryBoxFiles` serves `files` for every fake sandbox, and each fake

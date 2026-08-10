@@ -26,10 +26,12 @@ import {
   VENDO_APPS_PIN_TOOL,
   VENDO_APPS_UNPIN_TOOL,
   VENDO_MAKE_TOOL,
-  makeReceiptSchema,
   type ToolListing,
   type ToolResult,
 } from "@vendoai/core";
+import {
+  makeReceiptSchema,
+} from "@vendoai/apps/contract";
 import { defineHarness } from "@vendoai/harnesses";
 import type { VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";

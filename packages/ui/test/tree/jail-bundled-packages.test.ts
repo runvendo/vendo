@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { transform } from "sucrase";
 import { clsx } from "clsx";
 import * as tailwindMerge from "tailwind-merge";
-import { JAIL_BUNDLED_PACKAGES } from "@vendoai/core";
+import {
+  JAIL_BUNDLED_PACKAGES,
+} from "@vendoai/apps/contract";
 import { zodShim, JailZodShimError } from "../../src/tree/jail/zod-shim.js";
 
 /**

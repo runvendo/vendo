@@ -1,6 +1,8 @@
-import { KIT_WIRE_COMPONENT_NAMES } from "@vendoai/core";
+import {
+  KIT_WIRE_COMPONENT_NAMES,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { wirePropNames } from "../src/prewired-schema.js";
+import { wirePropNames } from "../src/server/escalation/prewired-schema.js";
 
 describe("wire built-in prop names", () => {
   it("covers exactly the wire component names (no drift)", () => {

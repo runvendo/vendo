@@ -10,7 +10,7 @@
  * adapter (`@vendoai/apps/e2b`) driving the harness driver (`@vendoai/harnesses`)
  * — and harnesses no longer depends on apps.
  */
-import { e2bSandbox } from "@vendoai/apps/e2b";
+import { e2bSandbox } from "@vendoai/apps";
 import type { Json, ToolResult, Turn } from "@vendoai/core";
 import { afterAll, describe, expect, test } from "vitest";
 import { createTurnState } from "@vendoai/harnesses";

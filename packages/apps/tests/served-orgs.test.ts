@@ -1,17 +1,19 @@
 import {
   VENDO_APP_FORMAT,
   type AppAccess,
-  type AppDocument,
   type RunContext,
   type ToolRegistry,
-  type VendoTheme,
 } from "@vendoai/core";
+import {
+  type AppDocument,
+  type VendoTheme,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createApps, type AppsConfig, type AppsRuntime, type BoxRequest } from "../src/index.js";
-import { fakeBoxSandbox } from "../src/testing/fake-box.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createApps, type AppsConfig, type AppsRuntime, type BoxRequest } from "../src/server/index.js";
+import { fakeBoxSandbox } from "../src/server/testing/fake-box.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 import { storeAccessFixture, seedGrantRows } from "./app-access-fixture.js";
 
 /**

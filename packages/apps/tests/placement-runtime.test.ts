@@ -1,17 +1,24 @@
-import type { AppDocument, RunContext, StoreAdapter, ToolRegistry } from "@vendoai/core";
+import type {
+  RunContext,
+  StoreAdapter,
+  ToolRegistry,
+} from "@vendoai/core";
+import type {
+  AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createApps, type AppsRuntime } from "../src/index.js";
+import { createApps, type AppsRuntime } from "../src/server/index.js";
 import {
   PLACEMENTS_COLLECTION,
   PLACEMENT_SLOTS_COLLECTION,
   placementStore,
-} from "../src/placements.js";
+} from "../src/server/persistence/placements.js";
 import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
-import { authoringAssembler, scriptedAssembler } from "../src/testing/authoring-assembler.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel, scriptedLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { authoringAssembler, scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel, scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_ada" },
@@ -560,7 +567,7 @@ describe("the empty-slot Remix gesture places its mint", () => {
       guard: guardFixture(),
       tools,
       catalog: [],
-      pinBaselines: [{
+      seedBaselines: [{
         slot: "net-worth-card",
         source: "export default function NetWorthCard() { return <strong>$1.2M</strong>; }",
         hash: "sha256:maple-base",
@@ -569,9 +576,9 @@ describe("the empty-slot Remix gesture places its mint", () => {
       }],
     });
 
-    const forked = await runtime.pins.fork({ slot: "net-worth-card" }, ctx);
+    const forked = await runtime.seed.from({ component: "net-worth-card", slot: "net-worth-card" }, ctx);
     expect(await runtime.placements({}, ctx)).toEqual([
-      { slot: "net-worth-card", app: forked.app.id, title: forked.app.name, status: "ready" },
+      { slot: "net-worth-card", app: forked.id, title: forked.name, status: "ready" },
     ]);
   });
 });

@@ -1,4 +1,4 @@
-# The box (execution-v2 Wave 3; agent engine = Claude Agent SDK since Wave 8)
+# The box (execution-v2 Wave 3; agent engine = the `claudeCode()` runner)
 
 The reproducible base box template: **Node + the in-box coding agent harness**.
 Every graduated app's machine boots from this snapshot. The agent lives in the
@@ -9,21 +9,20 @@ code, runs it, curls its own endpoints, and reports a structured result.
 
 - `bootstrap.mjs` — the entrypoint the template's start command runs.
 - `harness.mjs` — `createHarness()`: the control-port server + app supervisor
-  (zero-dependency).
-- `agent-sdk.mjs` — `runAgentTask()`: the agent engine — the **Claude Agent
-  SDK** (Claude Code as a library, `@anthropic-ai/claude-agent-sdk`), headless
-  `query()` with its shell + file tools, working dir `/app`, structured result
-  via an in-process `report_done` MCP tool. The SDK (plus its peers) is
-  npm-installed into `/opt/vendo-box/node_modules` at **template-build time**,
-  so install size is a template concern, never a wake concern.
+  (zero-dependency), and the `/agent/task` door's own half of the coding agent:
+  the box conventions the agent builds against, and the structured result the
+  host polls for (`/app/.vendo/report.json`, which the agent writes).
 - `build-template.mjs` — the e2b template builder (the recipe).
-- The conversational session door and its SDK loop — `turn-routes.mjs` and
-  `claude-turn.mjs` — are baked from `@vendoai/harnesses` (the claude-code
-  driver owns its box-side half): the routes from that package's
-  `box/turn-routes.mjs`, the runner from its compiled
+- `turn-routes.mjs` and `claude-turn.mjs` are baked from `@vendoai/harnesses`
+  (the claude-code driver owns its box-side half): the routes from that
+  package's `box/turn-routes.mjs`, the runner from its compiled
   `dist/claude-code/claude-turn.js`, both staged in here at bake time for the
   e2b `copy()` reason below. The supervisor delegates every `/session/*`
-  request to them.
+  request to the routes — and its own `/agent/task` door drives the SAME
+  `claude-turn.mjs`. **ONE Claude Code integration**: the runner is also what
+  `machine: "local"` runs on a host. The Agent SDK (plus its peers) is
+  npm-installed into `/opt/vendo-box/node_modules` at **template-build time**,
+  so install size is a template concern, never a wake concern.
 - The universal app template — Vite + React 19 with `@vendoai/ui` installed —
   is baked from `packages/box-template` (staged in here at bake time, for the
   same e2b `copy()` reason as `claude-turn.mjs`). It lands at
@@ -48,14 +47,17 @@ code, runs it, curls its own endpoints, and reports a structured result.
   - `GET  /agent/task/<id>` → `{ status, result?, log }`
   - `POST /agent/restart-app`
 
-The control-port protocol is engine-agnostic and did NOT change in the Wave-8
-engine swap — nothing outside the box needed edits.
+The control-port protocol is engine-agnostic and did NOT change when the task
+door moved onto `claude-turn.mjs` — nothing outside the box needed edits.
 
 ## The app the agent maintains
 
 - `/app/.vendo/run` — a Procfile-style one-line start command (e.g.
   `node server.js`). The supervisor runs it with the boundary env and restarts
   it on edits and env re-injection.
+- `/app/.vendo/report.json` — the agent's structured result for the task in
+  flight, written by the agent and read by the supervisor. Data, never
+  authority.
 - `/app/vendo.json` — the manifest (`schedules`, `egress`).
 
 ## Inference

@@ -98,7 +98,7 @@ export const isVendoAppsTool = (name: string): boolean =>
 export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   vendo_make: "Make you a screen",
   vendo_apps_open: "Open the app",
-  vendo_apps_rebase_pin: "Refresh a remixed piece",
+  vendo_apps_reseed: "Refresh a remixed piece",
   vendo_apps_pin: "Pin the app to your page",
   vendo_apps_unpin: "Take the app off your page",
   vendo_apps_data_list: "Read the app's saved items",

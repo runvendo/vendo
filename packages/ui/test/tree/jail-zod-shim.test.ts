@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { JAIL_BUNDLED_PACKAGES, ISLAND_RESOLVABLE_SPECIFIERS } from "@vendoai/core";
+import {
+  JAIL_BUNDLED_PACKAGES,
+  ISLAND_RESOLVABLE_SPECIFIERS,
+} from "@vendoai/apps/contract";
 import { zodShim } from "../../src/tree/jail/zod-shim.js";
 
 /** The `z` namespace as jail code receives it. */

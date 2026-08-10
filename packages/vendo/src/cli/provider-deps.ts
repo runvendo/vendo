@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import type { DevCredential, EnvKeyProvider } from "../dev-creds/resolve.js";
 import { installedVersion, installedZodVersion } from "./dep-versions.js";
 import type { Output } from "./shared.js";
@@ -40,13 +40,16 @@ async function isInstalled(root: string, moduleName: string): Promise<boolean> {
   return (await installedVersion(root, moduleName)) !== null;
 }
 
-async function fileExists(root: string, name: string): Promise<boolean> {
+async function readIfExists(root: string, name: string): Promise<string | null> {
   try {
-    await readFile(join(root, name));
-    return true;
+    return await readFile(join(root, name), "utf8");
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function fileExists(root: string, name: string): Promise<boolean> {
+  return (await readIfExists(root, name)) !== null;
 }
 
 export interface InstallCommand {
@@ -55,6 +58,82 @@ export interface InstallCommand {
   /** Where to run it. The app dir for pnpm/yarn/bun (they locate their own
       workspace root); the lockfile root for a nested npm-workspace app. */
   cwd: string;
+}
+
+/** The `packages:` globs of a pnpm-workspace.yaml, or null when the block is
+    not in the plain block-sequence form this reader understands. A missing
+    `packages:` key is an empty member list, which is what pnpm does with a
+    settings-only workspace file. */
+function workspacePackageGlobs(manifest: string): string[] | null {
+  const lines = manifest.split("\n");
+  const start = lines.findIndex((line) => /^packages:\s*(#.*)?$/.test(line));
+  if (start === -1) return /^packages:/m.test(manifest) ? null : [];
+  const globs: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\s*(#.*)?$/.test(line)) continue;
+    const entry = /^\s*-\s+(.*)$/.exec(line);
+    if (entry === null) break;
+    globs.push((entry[1] as string).replace(/\s+#.*$/, "").trim().replace(/^(["'])(.*)\1$/, "$2"));
+  }
+  return globs;
+}
+
+/** The `*` / `**` / `?` subset of pnpm's package patterns, or null for a
+    pattern using brace/extglob syntax this does not model. */
+function globToRegExp(pattern: string): RegExp | null {
+  if (/[{}()[\]+@|!]/.test(pattern)) return null;
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index] as string;
+    if (char === "*" && pattern[index + 1] === "*") {
+      const slash = pattern[index + 2] === "/";
+      source += slash ? "(?:.*/)?" : ".*";
+      index += slash ? 2 : 1;
+    } else if (char === "*") source += "[^/]*";
+    else if (char === "?") source += "[^/]";
+    else source += char.replace(/[.\\^$+?()[\]{}|]/, "\\$&");
+  }
+  return new RegExp(`^${source}$`);
+}
+
+/** Whether a workspace root's `packages:` globs claim this relative path.
+    Anything unreadable counts as a member — the conservative answer, since a
+    member is what init already treats every nested app as today. */
+function workspaceClaims(manifest: string, relativePath: string): boolean {
+  const globs = workspacePackageGlobs(manifest);
+  if (globs === null) return true;
+  const path = relativePath.split(sep).join("/");
+  let claimed = false;
+  for (const glob of globs) {
+    const negated = glob.startsWith("!");
+    const pattern = globToRegExp(negated ? glob.slice(1) : glob);
+    if (pattern === null) return true;
+    if (!pattern.test(path)) continue;
+    if (negated) return false;
+    claimed = true;
+  }
+  return claimed;
+}
+
+/** True when the host is an independent pnpm project sitting INSIDE someone
+    else's pnpm workspace — a repo cloned into an unrelated monorepo. pnpm
+    picks its workspace root by walking up to the nearest
+    `pnpm-workspace.yaml`, so an unqualified `pnpm add` there installs against
+    the ANCESTOR: under pnpm 11 the ancestor's overrides rewrite the host's
+    own pins (this repo's `next: ">=16.2.11"` gave a host pinning 14.2.5 a
+    next 16 tree), and under pnpm 9 the add aborts on the ancestor's store
+    (ERR_PNPM_UNEXPECTED_STORE), so the repair never happens at all.
+    Membership is the workspace's own answer — its `packages:` globs — not the
+    presence of a leaf lockfile: a real member can carry a stale or copied one,
+    and cutting it loose would write the repair to that leaf instead of the
+    workspace. An app that is its own workspace root already wins pnpm's walk. */
+async function nestedOutsidePnpmWorkspace(appRoot: string): Promise<boolean> {
+  if (await fileExists(appRoot, "pnpm-workspace.yaml")) return false;
+  for (let dir = dirname(appRoot); ; dir = dirname(dir)) {
+    const manifest = await readIfExists(dir, "pnpm-workspace.yaml");
+    if (manifest !== null) return !workspaceClaims(manifest, relative(dir, appRoot));
+    if (dirname(dir) === dir) return false;
+  }
 }
 
 /** Lockfile-sniffed installer, resolved the way package managers resolve
@@ -67,7 +146,8 @@ export async function installCommandFor(root: string): Promise<InstallCommand> {
   const appRoot = resolve(root);
   for (let dir = appRoot; ; dir = dirname(dir)) {
     if ((await fileExists(dir, "pnpm-lock.yaml")) || (await fileExists(dir, "pnpm-workspace.yaml"))) {
-      return { command: "pnpm", args: ["add"], cwd: appRoot };
+      const args = (await nestedOutsidePnpmWorkspace(appRoot)) ? ["add", "--ignore-workspace"] : ["add"];
+      return { command: "pnpm", args, cwd: appRoot };
     }
     if (await fileExists(dir, "yarn.lock")) return { command: "yarn", args: ["add"], cwd: appRoot };
     if ((await fileExists(dir, "bun.lockb")) || (await fileExists(dir, "bun.lock"))) {

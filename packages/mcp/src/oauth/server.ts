@@ -5,8 +5,10 @@ import type {
   RecordStore,
   StoreAdapter,
   VendoRecord,
-  VendoTheme,
 } from "@vendoai/core";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import { z } from "zod";
 import type { HostOAuthAdapter } from "./adapter.js";
 import { consentPage } from "./consent-page.js";

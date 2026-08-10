@@ -14,4 +14,4 @@ export {
   type KitComponentSpec,
   type PropClass,
   type PropSpec,
-} from "@vendoai/core";
+} from "@vendoai/apps/contract";

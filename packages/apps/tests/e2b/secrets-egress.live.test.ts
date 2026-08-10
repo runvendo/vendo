@@ -1,15 +1,22 @@
-import type { AppDocument, RunContext, SecretsProvider, ToolRegistry } from "@vendoai/core";
-import { VENDO_APP_FORMAT } from "@vendoai/core";
+import {
+  type RunContext,
+  type SecretsProvider,
+  type ToolRegistry,
+  VENDO_APP_FORMAT,
+} from "@vendoai/core";
+import type {
+  AppDocument,
+} from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { buildEnv } from "../../src/box-env.js";
-import { boxAllowlist } from "../../src/egress-approval.js";
-import { createApps } from "../../src/index.js";
-import type { BuildMachineEnv } from "../../src/machine-lifecycle.js";
-import type { SandboxMachine } from "../../src/sandbox.js";
-import { guardFixture } from "../../src/testing/guard-fixture.js";
-import { memoryStore } from "../../src/testing/memory-store.js";
-import { seedAppRow } from "../../src/testing/seed-app-row.js";
-import { e2bSandbox } from "../../src/e2b/index.js";
+import { buildEnv } from "../../src/server/escalation/box-env.js";
+import { boxAllowlist } from "../../src/server/escalation/egress-approval.js";
+import { createApps } from "../../src/server/index.js";
+import type { BuildMachineEnv } from "../../src/server/escalation/machine-lifecycle.js";
+import type { SandboxMachine } from "../../src/server/escalation/sandbox.js";
+import { guardFixture } from "../../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../../src/server/testing/memory-store.js";
+import { seedAppRow } from "../../src/server/testing/seed-app-row.js";
+import { e2bSandbox } from "../../src/server/escalation/e2b/index.js";
 
 // ============================================================================
 // execution-v2 Lane E LIVE gate — real E2B, real network policy, real secrets.

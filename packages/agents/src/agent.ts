@@ -10,9 +10,9 @@ import {
   validateWrittenApps,
   type SandboxAdapter,
   type SandboxMachine,
+  e2bSandbox,
+  selectSandbox,
 } from "@vendoai/apps";
-import { e2bSandbox } from "@vendoai/apps/e2b";
-import { selectSandbox } from "@vendoai/apps/sandbox-ladder";
 import {
   VendoError,
   type FilesAdapter,

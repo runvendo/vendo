@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const here = join(dirname(fileURLToPath(import.meta.url)), "../../src/checking");
+const here = join(dirname(fileURLToPath(import.meta.url)), "../../src/server/checking");
 
 const sources = readdirSync(here).filter((name) => name.endsWith(".ts"));
 

@@ -1,28 +1,18 @@
-import type {
-  AppDocument,
-  AppId,
-  ApprovalId,
-  ApprovalRequest,
-  IsoDateTime,
-  Json,
-  RunId,
-  ThreadId,
-  TriggerSource,
+import {
+  type AppId,
+  type ApprovalId,
+  type ApprovalRequest,
+  type IsoDateTime,
+  type Json,
+  type RunId,
+  type ThreadId,
+  type TriggerSource,
 } from "@vendoai/core";
 
-/** 02-store §3 */
-export interface AppRow {
-  id: AppId;
-  subject: string;
-  enabled: boolean;
-  doc: AppDocument;
-  createdAt: IsoDateTime;
-  updatedAt: IsoDateTime;
-  /** Opaque write counter backing the routed atomic capability (01 §12); bumped
-   *  on every write. Wave 7 — arbitration for the machine lifecycle and the
-   *  schedule engine's fire claims (updateAppRow's read-mutate-CAS). */
-  revision?: string;
-}
+/** 02-store §3 — declared once, in `@vendoai/apps/contract`. The store is a
+ *  dumb adapter for a shape app generation owns; re-declaring it here is how
+ *  the two drifted. */
+export type { AppRow } from "@vendoai/apps/contract";
 
 /** 02-store §3 */
 export interface ThreadRow {

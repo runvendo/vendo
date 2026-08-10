@@ -1,5 +1,13 @@
-import type { Json, ToolOutcome, TreeQuery, UIPayload } from "@vendoai/core";
-import { isPlainObject as isRecord, VENDO_TREE_FORMAT } from "@vendoai/core";
+import {
+  isPlainObject as isRecord,
+  type Json,
+  type ToolOutcome,
+  type UIPayload,
+  VENDO_TREE_FORMAT,
+} from "@vendoai/core";
+import type {
+  TreeQuery,
+} from "@vendoai/apps/contract";
 
 export interface BridgeContentBlock {
   type: string;

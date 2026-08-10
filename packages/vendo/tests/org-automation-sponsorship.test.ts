@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   DEFAULT_TRIGGER_ID,
   VENDO_APP_FORMAT,
+  seedComponentName,
   type AppDocument,
   type Membership,
   type Principal,
@@ -49,7 +50,12 @@ const BASELINE = {
   sampleProps: { valueCents: 120_000_000 },
 };
 
-/** An automation app: a v2 tree to open AND a schedule to fire. */
+const SEED_COMPONENT = seedComponentName(SLOT);
+const SEED_NODE = `${SEED_COMPONENT.toLowerCase()}-1`;
+
+/** An automation app: a v2 tree to open AND a schedule to fire — seeded from a
+ *  STALE capture of the host slot, so a re-seed is the smallest model-free write
+ *  that reaches the apps runtime's persist choke point. */
 const automationApp = (id: string): AppDocument => ({
   format: VENDO_APP_FORMAT,
   id,
@@ -58,8 +64,13 @@ const automationApp = (id: string): AppDocument => ({
   tree: {
     formatVersion: "vendo-genui/v2",
     root: "root",
-    nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+    nodes: [
+      { id: "root", component: "Stack", source: "prewired", children: [SEED_NODE] },
+      { id: SEED_NODE, component: SEED_COMPONENT, source: "generated" },
+    ],
   },
+  components: { [SEED_COMPONENT]: { source: BASELINE.source, origin: "seeded" } },
+  seed: { component: SLOT, baseline: "sha256:maple-stale" },
   triggers: [{
     id: DEFAULT_TRIGGER_ID,
     on: { kind: "schedule", every: "1h" },
@@ -193,10 +204,10 @@ describe("a third party's edit through the real apps path invalidates the sponso
     expect(await sponsorship()).toMatchObject({ sponsor: dana.subject, status: "active" });
 
     // The smallest MODEL-FREE write that reaches the apps runtime's persist choke
-    // point: the Remix gesture's deterministic pin fork.
+    // point: the deterministic re-seed onto the host's current capture.
     acting = kim;
-    const forked = await booted.vendo.apps.pins.fork({ appId: app.id, slot: SLOT }, ctxOf(kim));
-    expect(forked.slot).toBe(SLOT);
+    const reseeded = await booted.vendo.apps.seed.reseed({ appId: app.id }, ctxOf(kim));
+    expect(reseeded.seed?.baseline).toBe(BASELINE.hash);
 
     expect(await sponsorship()).toMatchObject({ status: "invalidated", reason: "edit" });
   });

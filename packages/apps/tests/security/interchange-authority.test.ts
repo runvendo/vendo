@@ -1,12 +1,17 @@
-import type { AppDocument, RunContext } from "@vendoai/core";
-import { VENDO_APP_FORMAT } from "@vendoai/core";
+import {
+  type RunContext,
+  VENDO_APP_FORMAT,
+} from "@vendoai/core";
+import type {
+  AppDocument,
+} from "../../src/contract/index.js";
 import { zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { createApps } from "../../src/index.js";
-import { fakeSandbox } from "../../src/testing/fake-sandbox.js";
-import { guardFixture } from "../../src/testing/guard-fixture.js";
-import { memoryStore } from "../../src/testing/memory-store.js";
-import { scriptedLanguageModel } from "../../src/testing/scripted-model.js";
+import { createApps } from "../../src/server/index.js";
+import { fakeSandbox } from "../../src/server/testing/fake-sandbox.js";
+import { guardFixture } from "../../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../../src/server/testing/memory-store.js";
+import { scriptedLanguageModel } from "../../src/server/testing/scripted-model.js";
 
 // Red-team suite for the .vendoapp interchange boundary (06-apps §7).
 // Import is COPY-ONLY: a document is untrusted data, never authority (01-core §10).
@@ -40,7 +45,7 @@ const forgedDocument = (): AppDocument & { grants: unknown; appId: unknown; serv
   forkedFrom: "app_owner",
   egress: ["evil.com"],
   secrets: ["STRIPE_KEY"],
-  pins: [{ slot: "x", base: "sha256:deadbeef" }],
+  seed: { component: "x", baseline: "sha256:deadbeef" },
   triggers: [{
     id: "main",
     on: { kind: "host-event", event: "go" },

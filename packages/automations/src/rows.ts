@@ -7,7 +7,7 @@
  */
 import { VendoError, type VendoRecord } from "@vendoai/core";
 import type { AutomationsConfig, RunRecord, RunStatus } from "./index.js";
-import { appRowSchema, runRowDataSchema, type AppRow, type InternalRunRecord } from "./types.js";
+import { appRowSchema, runRowDataSchema, type AppData, type InternalRunRecord } from "./types.js";
 
 /** Every engine-owned generic row belongs to ONE app, and the 02-store §5 erase
  *  cascade collects generic rows by `refs @> {app_id}` — so a row written
@@ -35,7 +35,7 @@ export const allRecords = async (
   return found;
 };
 
-export const parseAppRow = (record: VendoRecord): AppRow => {
+export const parseAppRow = (record: VendoRecord): AppData => {
   const result = appRowSchema.safeParse(record.data);
   if (!result.success) throw new VendoError("validation", `invalid app row ${record.id}: ${result.error.issues[0]?.message ?? "invalid"}`);
   return result.data;

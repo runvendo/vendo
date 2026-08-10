@@ -5,8 +5,8 @@ import {
   type ConformanceSuite,
 } from "@vendoai/core/conformance";
 import type { RunContext, ToolCall, ToolDescriptor } from "@vendoai/core";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
 
 /** Mount a core conformance suite as vitest cases. */
 const mount = (suite: ConformanceSuite): void => {

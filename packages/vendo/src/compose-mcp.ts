@@ -8,8 +8,8 @@ import {
   canonicalUri,
   createMcpDoor,
   createTurnCredentials,
-  type AppsPort,
   type McpDoor,
+  type McpDoorConfig,
   type TurnCredentials,
 } from "@vendoai/mcp";
 import type { VendoComposition } from "./compose-context.js";
@@ -17,7 +17,7 @@ import { basePathOf, doorWellKnownPaths, MCP_MOUNT } from "./door-paths.js";
 import { environment } from "./wire/shared.js";
 
 /** The apps ride-along the door serves as a viewer + runner (10-mcp §4). */
-const appsPortFor = (composition: VendoComposition): AppsPort => {
+const appsPortFor = (composition: VendoComposition): McpDoorConfig["apps"] => {
   const { apps } = composition;
   return {
       list: (ctx) => apps.list(ctx),

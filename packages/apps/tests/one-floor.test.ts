@@ -24,22 +24,24 @@
  * real store, and the island really renders (and really crashes) in a worker.
  */
 import {
-  compileWire,
   VENDO_APP_FORMAT,
-  type AppDocument,
-  type NormalizedCatalog,
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
+import {
+  compileWire,
+  type AppDocument,
+  type NormalizedCatalog,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createApps } from "../src/index.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { scriptedLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
-import type { FloorDependencies } from "../src/checking/deps.js";
-import { blocks } from "../src/checking/floor.js";
-import { wireCompileOptionsFor } from "../src/wire-options.js";
+import { createApps } from "../src/server/index.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
+import type { FloorDependencies } from "../src/server/checking/deps.js";
+import { blocks } from "../src/server/checking/floor.js";
+import { wireCompileOptionsFor } from "../src/server/runtime/wire-options.js";
 
 /** Renders once, reaches for a name nothing in the ambient scope carries, and
  *  takes the whole app down with it. It passes ADMISSION — valid TSX, no

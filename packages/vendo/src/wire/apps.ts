@@ -134,8 +134,8 @@ const op = (wire: WireContext, method: string, operation: string, length = 3): b
   wire.request.method === method && wire.segments[2] === operation && wire.segments.length === length;
 
 /** 06-apps / 09 §3 — the /apps wire area: CRUD, open/call/edit, history,
-    ship-diff, pin drift/rebase, the gesture fork (fork-pin), export/import,
-    fork (whole-app copy — a different feature from fork-pin). */
+    ship-diff, seed drift/re-seed, the ✦ gesture (seed), export/import,
+    fork (whole-app copy — a different feature from seeding). */
 export const appRoutes: RouteEntry[] = [
   // Grouped like the old if-chain arm: ANY method on /apps resolves context
   // first; an unhandled method falls through to the table's not-found.
@@ -150,26 +150,19 @@ export const appRoutes: RouteEntry[] = [
     }
     return undefined;
   }),
-  // 06-apps §8 — gesture-owned forking (2026-07-21): the deterministic fork
-  // the user's Remix gesture on an EMPTY slot invokes. The engine mints a
-  // minimal app, copies the captured baseline, and records the pin — no model
-  // call. An optional instruction then rides the ordinary edit path, already
-  // scoped to the forked component. The model never decides to fork.
+  // 06-apps §8 — the ✦ gesture (2026-07-21): the deterministic seed the user's
+  // Remix gesture invokes. The engine mints an ordinary app whose seeded seat
+  // holds the captured baseline — no model call, and the model never decides to
+  // seed. An optional instruction then rides the ordinary edit path on it.
   // ORDER IS LOAD-BEARING: this entry (and /apps/import below) must stay
   // ahead of the "/apps/:appId/*" catch-all, whose rest pattern would
-  // otherwise capture appId="fork-pin".
-  route("POST", "/apps/fork-pin", async ({ request, deps, context }) => {
+  // otherwise capture appId="seed".
+  route("POST", "/apps/seed", async ({ request, deps, context }) => {
     const ctx = await context("app");
     const body = await requestJson(request);
-    // 2026-08-02 final shape — `props` is the wrapper's serializable live
-    // props at fork time, stored on the fork as its dashboard seed.
-    const props = body["props"];
-    if (props !== undefined && (typeof props !== "object" || props === null || Array.isArray(props))) {
-      throw new VendoError("validation", "props must be an object");
-    }
-    return json(await deps.apps.pins.fork({
-      slot: string(body["slot"], "slot"),
-      ...(props === undefined ? {} : { props: props as Record<string, Json> }),
+    return json(await deps.apps.seed.from({
+      component: string(body["component"], "component"),
+      ...(body["slot"] === undefined ? {} : { slot: string(body["slot"], "slot") }),
       ...(body["instruction"] === undefined ? {} : { instruction: string(body["instruction"], "instruction") }),
     }, ctx));
   }),
@@ -186,7 +179,7 @@ export const appRoutes: RouteEntry[] = [
   // EMPTY queue — masked, never a probe. Production reviews ride Cloud's
   // console, or the self-hoster's own admin-authenticated route over the
   // runtime surface (apps.review).
-  // Like fork-pin above, this entry must stay ahead of the "/apps/:appId/*"
+  // Like /apps/seed above, this entry must stay ahead of the "/apps/:appId/*"
   // catch-all, whose rest pattern would otherwise capture
   // appId="review-queue".
   route("GET", "/apps/review-queue", async ({ deps, context }) => {
@@ -200,7 +193,7 @@ export const appRoutes: RouteEntry[] = [
   // Placement (2026-08-05) — the slots' own read: what is in each of the
   // caller's mounted slots, and where each of those builds stands. ONE request
   // for every slot on the page, which is why the slot list is a query param.
-  // ORDER IS LOAD-BEARING, exactly like /apps/fork-pin above: the
+  // ORDER IS LOAD-BEARING, exactly like /apps/seed above: the
   // "/apps/:appId/*" catch-all would otherwise capture appId="placements".
   route("GET", "/apps/placements", async ({ url, deps, context }) => {
     const ctx = await context("app");
@@ -267,23 +260,12 @@ export const appRoutes: RouteEntry[] = [
     if (op(wire, "GET", "ship-diff")) {
       return json(await deps.apps.inClient.shipDiff(appId, ctx));
     }
-    // 06-apps §8 — additive rebase surface. A rebase rewrites content and is
-    // editor-scoped; the runtime owns the level. It is only ever invoked
-    // explicitly here or via the vendo_apps_rebase_pin agent tool — the drift
-    // report open() carries never auto-rebases.
-    if (op(wire, "POST", "rebase-pin")) {
-      const body = await requestJson(request);
-      return json(await deps.apps.pins.rebase({ appId, slot: string(body["slot"], "slot") }, ctx));
-    }
-    // 06-apps §8 — the same gesture fork landing in an EXISTING app (the
-    // filled-slot / driver surface). Editor-scoped: it lands a change.
-    if (op(wire, "POST", "fork-pin")) {
-      const body = await requestJson(request);
-      return json(await deps.apps.pins.fork({
-        appId,
-        slot: string(body["slot"], "slot"),
-        ...(body["instruction"] === undefined ? {} : { instruction: string(body["instruction"], "instruction") }),
-      }, ctx));
+    // 06-apps §8 — the re-seed. It rewrites content and is editor-scoped; the
+    // runtime owns the level. Only ever invoked explicitly, here or via the
+    // vendo_apps_reseed agent tool — the drift warning open() carries never
+    // acts on its own, because acting means replacing what the person made.
+    if (op(wire, "POST", "reseed")) {
+      return json(await deps.apps.seed.reseed({ appId }, ctx));
     }
     // Placement (2026-08-05) — one app per slot. The level lives in the
     // runtime (viewer: putting an app you can see into your own slot), and

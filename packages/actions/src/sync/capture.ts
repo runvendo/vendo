@@ -1,7 +1,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { isIslandResolvableSpecifier, isPinnedJailPackage, JAIL_BUNDLED_PACKAGES } from "@vendoai/core";
-import type { CapturedPinSubSource } from "../formats.js";
+import {
+  isIslandResolvableSpecifier,
+  isPinnedJailPackage,
+  JAIL_BUNDLED_PACKAGES,
+} from "@vendoai/apps/contract";
+import type { SeedSubSource } from "../formats.js";
 import {
   isInside,
   isPackageSpecifier,
@@ -33,7 +37,7 @@ const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/u;
 
 export interface CapturedClosure {
   sourceImports: Record<string, string>;
-  subSources: Record<string, CapturedPinSubSource>;
+  subSources: Record<string, SeedSubSource>;
   /** Entry source plus every captured module, in UTF-8 bytes. */
   bytes: number;
   /**
@@ -252,7 +256,7 @@ export async function captureClosure(options: {
   const unloadablePackages: Record<string, string> = {};
   const BUNDLED: ReadonlySet<string> = new Set(JAIL_BUNDLED_PACKAGES);
   const sourceImports: Record<string, string> = {};
-  const captured = new Map<string, CapturedPinSubSource>();
+  const captured = new Map<string, SeedSubSource>();
   const sizes = new Map<string, number>();
   const primaryId = portablePath(realRoot, primaryFile);
   let bytes = Buffer.byteLength(primarySource, "utf8");

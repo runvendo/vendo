@@ -14,11 +14,13 @@ import { join } from "node:path";
 import {
   VENDO_MAKE_TOOL,
   VENDO_TOOL_TITLES,
-  makeReceiptSchema,
   type Principal,
   type ToolListing,
   type ToolResult,
 } from "@vendoai/core";
+import {
+  makeReceiptSchema,
+} from "@vendoai/apps/contract";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";

@@ -18,18 +18,20 @@
  */
 import {
   type JsonSchema,
-  type NormalizedCatalog,
   type RunContext,
-  type StandardSchema,
   type ToolDescriptor,
   type ToolRegistry,
 } from "@vendoai/core";
+import {
+  type NormalizedCatalog,
+  type StandardSchema,
+} from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { createApps } from "../../src/index.js";
-import { guardFixture } from "../../src/testing/guard-fixture.js";
-import { memoryStore } from "../../src/testing/memory-store.js";
-import { scriptedLanguageModel } from "../../src/testing/scripted-model.js";
+import { createApps } from "../../src/server/index.js";
+import { guardFixture } from "../../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../../src/server/testing/memory-store.js";
+import { scriptedLanguageModel } from "../../src/server/testing/scripted-model.js";
 
 const TOOL = "host_getSpendingInsights";
 const CATEGORIES = ["dining", "groceries", "other"] as const;

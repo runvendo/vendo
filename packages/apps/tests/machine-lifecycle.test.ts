@@ -1,12 +1,14 @@
-import type { AppDocument } from "@vendoai/core";
+import type {
+  AppDocument,
+} from "../src/contract/index.js";
 import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { createMachineLifecycle, type LifecycleClock } from "../src/machine-lifecycle.js";
-import { documentFromRecord } from "../src/persistence.js";
-import { inMemoryBoxFiles } from "../src/testing/box-files.js";
-import { fakeStatefulSandbox } from "../src/testing/fake-sandbox-stateful.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createMachineLifecycle, type LifecycleClock } from "../src/server/escalation/machine-lifecycle.js";
+import { documentFromRecord } from "../src/server/persistence/persistence.js";
+import { inMemoryBoxFiles } from "../src/server/testing/box-files.js";
+import { fakeStatefulSandbox } from "../src/server/testing/fake-sandbox-stateful.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const app = (id = "app_machine_test"): AppDocument => ({
   format: VENDO_APP_FORMAT,
@@ -394,7 +396,7 @@ describe("machine lifecycle: stale-live-ref eviction (Wave 7)", () => {
     const resume = sandbox.resume.bind(sandbox);
     sandbox.resume = async (ref, policy) => {
       const machine = await resume(ref, policy);
-      (machine as InstanceType<typeof import("../src/testing/fake-sandbox-stateful.js").FakeStatefulMachine>).reap();
+      (machine as InstanceType<typeof import("../src/server/testing/fake-sandbox-stateful.js").FakeStatefulMachine>).reap();
       return machine;
     };
 

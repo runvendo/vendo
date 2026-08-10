@@ -1,7 +1,11 @@
-import type { AppDocument, AppId, Principal } from "@vendoai/core";
+import {
+  type AppDocument,
+  type AppId,
+  type Principal,
+  VendoError,
+} from "@vendoai/core";
 import { dbFor, type VendoStore } from "../store.js";
 import type { AppRow } from "./types.js";
-import { VendoError } from "@vendoai/core";
 import { appFromRow, putAppRow } from "./rows.js";
 import { parseAppDocument } from "../validate.js";
 

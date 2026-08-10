@@ -7,8 +7,15 @@
  * These suites assert the LOOP, not a model: the thinker is scripted so what is
  * measured is the lift.
  */
-import { createTurnSkills, renderSkillMd, skillPath } from "@vendoai/core";
-import type { HarnessEvent, Json, ToolDescriptor, Turn } from "@vendoai/core";
+import {
+  createTurnSkills,
+  type HarnessEvent,
+  type Json,
+  renderSkillMd,
+  skillPath,
+  type ToolDescriptor,
+  type Turn,
+} from "@vendoai/core";
 import { APICallError } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it } from "vitest";

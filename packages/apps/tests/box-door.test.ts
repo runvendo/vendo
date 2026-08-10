@@ -1,13 +1,20 @@
-import { VENDO_APP_FORMAT, type AppDocument, type RunContext, type ToolRegistry } from "@vendoai/core";
+import {
+  VENDO_APP_FORMAT,
+  type RunContext,
+  type ToolRegistry,
+} from "@vendoai/core";
+import {
+  type AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { inMemoryBoxFiles } from "../src/testing/box-files.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
-import { createMachineLane } from "../src/box-lane.js";
-import { createApps, type AppsConfig } from "../src/index.js";
-import type { SandboxAdapter, SandboxMachine } from "../src/sandbox.js";
+import { inMemoryBoxFiles } from "../src/server/testing/box-files.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
+import { createMachineLane } from "../src/server/escalation/box-lane.js";
+import { createApps, type AppsConfig } from "../src/server/index.js";
+import type { SandboxAdapter, SandboxMachine } from "../src/server/escalation/sandbox.js";
 
 const model = basicLanguageModel();
 const decoder = new TextDecoder();

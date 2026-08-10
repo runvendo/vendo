@@ -20,7 +20,12 @@
  * re-exported `evaluateExpr` directly.
  */
 
-import { evaluateExpr, type Json } from "@vendoai/core";
+import {
+  type Json,
+} from "@vendoai/core";
+import {
+  evaluateExpr,
+} from "@vendoai/apps/contract";
 
 /** The root name the collection is bound to inside the built source. Ours, not
  *  the app author's, so it can never collide with a field name. */

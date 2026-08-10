@@ -1,5 +1,5 @@
 import { isValidElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { pinComponentName, type AppDocument, type Json, type TreeNode } from "@vendoai/core";
+import { seedComponentName, type AppDocument, type Json, type TreeNode } from "@vendoai/core";
 import { useVendoProvider } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useResource } from "../hooks/use-resource.js";
@@ -96,15 +96,13 @@ function serializableProps(children: ReactNode): Record<string, Json> {
 
 const NO_APPS: AppDocument[] = [];
 
-/** Fork discovery: the user's fork for this slot is the app whose `pins` name
- *  it (provenance — the 2026-08-02 pins/placements split). An in-place fork
- *  needs no placement: its location IS the wrapper it replaced, so this reads
- *  pins, never placements.
+/** Remix discovery: the user's remix for this component is the app whose `seed`
+ *  names it (provenance — the 2026-08-02 provenance/placement split). An
+ *  in-place remix needs no placement: its location IS the wrapper it replaced,
+ *  so this reads the seed, never placements.
  *
  *  The OLDEST matching row wins, and deliberately: `.at(-1)` over a newest-first
- *  list is the same winner the SERVER's fork-pin dedupe converges on (runtime.ts
- *  — "the OLDEST matching row, so every dedupe path converges"). Newest-wins
- *  here would put the wrapper and the server on different apps whenever a slot
+ *  list keeps the wrapper and the server on the same app whenever a component
  *  somehow carries two. (This comment used to say "latest wins, like slot
  *  discovery"; slot discovery genuinely meant latest and was reading the oldest
  *  — see use-slot-app.ts. Here the code was right and the comment was wrong.) */
@@ -115,7 +113,7 @@ function useRemixFork(slot: string | null) {
     [client, slot],
   );
   const { data, refresh } = useResource(list, NO_APPS, { pollMs: slot === null ? 0 : DISCOVERY_POLL_MS });
-  const appId = data.filter(app => app.pins?.some(pin => pin.slot === slot)).at(-1)?.id;
+  const appId = data.filter(app => app.seed?.component === slot).at(-1)?.id;
   return { appId, refresh };
 }
 
@@ -193,7 +191,7 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
     if (surface?.kind !== "tree") return surface;
     const payload = structuredClone(surface.payload);
     const nodes = payload.nodes as TreeNode[] | undefined;
-    const pinned = nodes?.find(node => node.component === pinComponentName(slot) && node.source === "generated");
+    const pinned = nodes?.find(node => node.component === seedComponentName(slot) && node.source === "generated");
     if (pinned) pinned.props = { ...pinned.props, ...(JSON.parse(livePropsKey) as Record<string, Json>) };
     return { ...surface, payload };
   }, [surface, slot, livePropsKey]);
@@ -334,15 +332,14 @@ export function Remixable({ review = false, children }: RemixableProps) {
     grace.current = window.setTimeout(() => setRevealed(false), GRACE_MS);
   };
 
-  // Gesture-owned forking (2026-07-21, the unchanged trust foundation): the ✦
-  // gesture executes the deterministic fork through the wire, carrying the
-  // wrapper's serializable live props as the fork's seed. No model call — and
-  // nothing here can fire a turn.
+  // The ✦ gesture is pure sugar over create-with-seed (2026-07-21, the unchanged
+  // trust foundation): it asks the wire for an ordinary app that starts from this
+  // component. No model call — and nothing here can fire a turn.
   const fork = () => {
     if (forking.current || appId !== undefined) return;
     forking.current = true;
     setLatched(true);
-    client.apps.forkPin({ slot, props: serializableProps(children) })
+    client.apps.seedFrom({ component: slot })
       .then(() => refresh())
       .catch((reason: unknown) => {
         setLatched(false);

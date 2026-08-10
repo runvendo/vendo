@@ -1,14 +1,22 @@
-import type { AppDocument, RunContext, ScreenAssembler, ToolRegistry } from "@vendoai/core";
-import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
+import {
+  type RunContext,
+  type ToolRegistry,
+  VENDO_APP_FORMAT,
+  VendoError,
+} from "@vendoai/core";
+import type {
+  AppDocument,
+  ScreenAssembler,
+} from "../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
-import { createApps, type AppsRuntime } from "../src/index.js";
-import { createAppHistory } from "../src/history.js";
-import { enabledAfterDocumentEdit } from "../src/persistence.js";
-import { scriptedAssembler } from "../src/testing/authoring-assembler.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createApps, type AppsRuntime } from "../src/server/index.js";
+import { createAppHistory } from "../src/server/persistence/history.js";
+import { enabledAfterDocumentEdit } from "../src/server/persistence/persistence.js";
+import { scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const tools: ToolRegistry = {
   async descriptors() {
@@ -240,7 +248,7 @@ describe("apps lifecycle", () => {
       format: VENDO_APP_FORMAT,
       id: "app_pin_intent_history",
       name: "Pinned app",
-      pins: [{ slot: "net-worth-card", base: "sha256:base" }],
+      seed: { component: "net-worth-card", baseline: "sha256:base" },
     };
     await seedAppRow(store, app, "user_ada");
     for (let index = 1; index <= 51; index += 1) {
@@ -248,7 +256,7 @@ describe("apps lifecycle", () => {
         at: new Date(1_720_000_000_000 + index).toISOString(),
         intent: `Pin edit ${index}`,
         rung: 1,
-      }, ["net-worth-card"]);
+      });
       // The cap is applied by the caller once its write has LANDED — an append
       // is speculative until then, and pruning inside it charged a refused write
       // the oldest real version (see AppHistoryAccess.prune).
@@ -256,8 +264,6 @@ describe("apps lifecycle", () => {
     }
 
     expect(await history.surface(app.id).list()).toHaveLength(50);
-    expect((await history.pinIntents(app.id, "net-worth-card")).map(({ intent }) => intent))
-      .toEqual(Array.from({ length: 51 }, (_, index) => `Pin edit ${index + 1}`));
   });
 
   it("rejects invalid stored documents on reads with the app id in detail", async () => {

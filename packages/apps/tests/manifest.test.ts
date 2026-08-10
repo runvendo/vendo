@@ -1,6 +1,6 @@
 import { VendoError } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { parseVendoManifest, vendoManifestSchema } from "../src/manifest.js";
+import { parseVendoManifest, vendoManifestSchema } from "../src/server/escalation/manifest.js";
 
 describe("vendo.json manifest (execution-v2 skin contract)", () => {
   it("accepts an empty manifest", () => {

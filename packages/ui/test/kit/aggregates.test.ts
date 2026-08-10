@@ -1,4 +1,9 @@
-import { evaluateExpr, type Json } from "@vendoai/core";
+import {
+  type Json,
+} from "@vendoai/core";
+import {
+  evaluateExpr,
+} from "@vendoai/apps/contract";
 import { describe, expect, it } from "vitest";
 import { average, count, daysUntil, difference, groupBy, max, min, sum } from "../../src/kit/aggregates.js";
 

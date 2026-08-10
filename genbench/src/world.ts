@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import type { JsonSchema, ToolDescriptor, VendoTheme } from "@vendoai/core";
+import type {
+  JsonSchema,
+  ToolDescriptor,
+} from "@vendoai/core";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
 
 /** The world file, as authored. `theme` is a VendoTheme verbatim and is handed
  *  to every contender unchanged. */

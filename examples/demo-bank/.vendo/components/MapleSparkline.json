@@ -1,10 +1,10 @@
 {
   "name": "MapleSparkline",
-  "hash": "sha256:878aa2c780c613efaf72b8f30cb7613d0b08dcc4c28514b5bcfd1dce051f032d",
-  "capturedAt": "2026-08-06T11:22:01.888Z",
+  "hash": "sha256:f86cf3823d4108c44fa6cbcbe6bdc6f489cf71dc7473ea50b0ae83d454332558",
+  "capturedAt": "2026-08-10T00:40:03.495Z",
   "module": "src/vendo/registry.tsx",
   "export": "MapleSparkline",
-  "entry": "ff9eb194f3b09e308ae62c2acff935360b34f6ec47013e6f832ada1e8b8fb88d",
+  "entry": "1da99f3c4b9b547279f368f000019bd3958c57442e744a1eff6eeeea4c7844d9",
   "modules": {
     "src/components/charts/colors.ts": "86c8b59ecc843e1d4549847b254c7647d568a4a8fe96f0d7048dad184ecd72ab",
     "src/components/charts/donut.tsx": "499fc969edce5dee3823d9d27b914ed39cabb90845b726478a24b59ada47d145",
@@ -19,7 +19,7 @@
       "ref": "9283964eac86c1f84276b7f21e362a195256a1d1e8f8e8929a4e875487bd9fb4"
     }
   ],
-  "bytes": 20093,
+  "bytes": 20105,
   "requires": [
     "clsx",
     "recharts",

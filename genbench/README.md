@@ -20,8 +20,8 @@ All three are handed the same thing, and that is asserted rather than
 asserted-to-be. There is exactly **one world serializer** — `worldBlock` in
 `src/vendo.ts` — and both baselines send it. `tests/diy.test.ts` then compares the
 prompt each baseline really put on the wire (the model `diy` streamed through,
-the session `claude-code` opened) against the design brief the vendo driver
-composes (`hostDesignBrief`), the descriptors its registry serves, and the
+the session `claude-code` opened) against the briefing pack the vendo driver
+composes (`renderBriefingPack`), the descriptors its registry serves, and the
 responses that registry really returns — byte for byte, for every baseline. If
 any side drifts, the test fails and the comparison is void. It is the
 benchmark's credibility, so it is the first test to read.

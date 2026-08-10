@@ -31,7 +31,7 @@ const readJson = async <T>(path: string): Promise<T> => JSON.parse(await read(pa
 
 const PAGE = "docs-site/existing-agents/your-agent.mdx";
 const NAV_ENTRY = "existing-agents/your-agent";
-const AGENT_TOOLS = "packages/apps/src/agent-tools.ts";
+const AGENT_TOOLS = "packages/apps/src/server/doors/agent-tools.ts";
 const PACK = "packages/vendo/src/pack.ts";
 
 interface DocsJson {
@@ -112,7 +112,7 @@ describe("the page's argument tables match the real schemas", () => {
     const source = await read(AGENT_TOOLS);
     const start = source.indexOf("name: VENDO_MAKE_TOOL");
     expect(start, "the make descriptor must still exist").toBeGreaterThan(-1);
-    const schema = source.slice(start, source.indexOf('name: "vendo_apps_rebase_pin"', start));
+    const schema = source.slice(start, source.indexOf('name: "vendo_apps_reseed"', start));
     for (const argument of ["request", "context", "app", "slot"]) {
       expect(schema, `vendo_make must accept \`${argument}\``).toMatch(
         new RegExp(`\\b${argument}: \\{ type: "string"`),
@@ -156,7 +156,7 @@ describe("the page's argument tables match the real schemas", () => {
 
 describe("the receipt law the page teaches is the real receipt", () => {
   it("has exactly id, title, status, say — and status's three values", async () => {
-    const source = await read("packages/core/src/make-receipt.ts");
+    const source = await read("packages/apps/src/contract/make-receipt.ts");
     expect(source).toContain("id: appIdSchema");
     expect(source).toContain("title: z.string().min(1)");
     expect(source).toContain('status: z.enum(["ready", "building", "failed"])');

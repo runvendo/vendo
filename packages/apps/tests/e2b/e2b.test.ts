@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { e2bSandbox } from "../../src/e2b/index.js";
+import { e2bSandbox } from "../../src/server/escalation/e2b/index.js";
 
 /** The adapter-private bootstrap/diagnostics extras (not part of the seam). */
 interface AdapterPrivateMachine {

@@ -1,4 +1,6 @@
-import type { VendoTheme } from "@vendoai/core";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import { escapeHtml, htmlPage, themeAttribute } from "./page-chrome.js";
 
 /**

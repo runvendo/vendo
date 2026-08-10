@@ -1,5 +1,8 @@
 /** App collection transport (08-ui §3). */
-import type { AppDocument, AppId } from "@vendoai/core";
+import {
+  type AppDocument,
+  type AppId,
+} from "@vendoai/core";
 import { useCallback } from "react";
 import { useVendoProvider } from "../context.js";
 import { type PollOptions, useResource } from "./use-resource.js";

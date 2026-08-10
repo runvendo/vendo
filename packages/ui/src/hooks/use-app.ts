@@ -1,5 +1,10 @@
 /** Single-app transport (08-ui §3). */
-import type { AppDocument, AppId, Json, ToolOutcome } from "@vendoai/core";
+import {
+  type AppDocument,
+  type AppId,
+  type Json,
+  type ToolOutcome,
+} from "@vendoai/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVendoProvider } from "../context.js";
 import type { EditResult, OpenSurface, VersionEntry } from "../wire-types.js";

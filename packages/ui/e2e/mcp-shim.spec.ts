@@ -1,5 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { UIPayload, VendoTheme } from "@vendoai/core";
+import type {
+  UIPayload,
+} from "@vendoai/core";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import { mkdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { themeCssVariables } from "../src/theme.js";

@@ -4,18 +4,20 @@ import {
   VENDO_TOOL_TITLES,
   toolDescriptorSchema,
   type RunContext,
-  type ScreenAssembler,
   type ToolRegistry,
 } from "@vendoai/core";
+import {
+  type ScreenAssembler,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { agentToolDescriptors } from "../src/agent-tools.js";
-import { createApps, type AppsRuntime, type PlacementEntry } from "../src/index.js";
-import { authoringAssembler, scriptedAssembler } from "../src/testing/authoring-assembler.js";
-import { fakeBoxSandbox } from "../src/testing/fake-box.js";
-import { bindTools, guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel, scriptedLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { agentToolDescriptors } from "../src/server/doors/agent-tools.js";
+import { createApps, type AppsRuntime, type PlacementEntry } from "../src/server/index.js";
+import { authoringAssembler, scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { fakeBoxSandbox } from "../src/server/testing/fake-box.js";
+import { bindTools, guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel, scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 import { seedGrantRows, storeAccessFixture } from "./app-access-fixture.js";
 
 const ctx: RunContext = {
@@ -48,7 +50,7 @@ describe("apps agent tools", () => {
 
     expect(descriptors.map((descriptor) => descriptor.name)).toEqual([
       "vendo_make",
-      "vendo_apps_rebase_pin",
+      "vendo_apps_reseed",
       "vendo_apps_open",
       "vendo_apps_pin",
       "vendo_apps_unpin",
@@ -413,20 +415,20 @@ describe("apps agent tools", () => {
       status: "error",
       error: { code: "validation" },
     });
-    // The rebase tool routes through runtime.pins.rebase with the same
+    // The re-seed tool routes through runtime.seed.reseed with the same
     // ownership scoping and contained VendoError codes as every other tool.
     await expect(registry.execute({
-      id: "call_rebase_missing",
-      tool: "vendo_apps_rebase_pin",
-      args: { appId: "app_missing", slot: "net-worth-card" },
+      id: "call_reseed_missing",
+      tool: "vendo_apps_reseed",
+      args: { appId: "app_missing" },
     }, ctx)).resolves.toEqual({
       status: "error",
       error: { code: "not-found", message: "app not found: app_missing" },
     });
     await expect(registry.execute({
-      id: "call_rebase_bad_input",
-      tool: "vendo_apps_rebase_pin",
-      args: { appId: "app_missing" },
+      id: "call_reseed_bad_input",
+      tool: "vendo_apps_reseed",
+      args: {},
     }, ctx)).resolves.toMatchObject({
       status: "error",
       error: { code: "validation" },

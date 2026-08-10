@@ -12,7 +12,6 @@
  * handshake the shim resource sits behind.
  */
 import {
-  VENDO_THEME_VARIABLE_NAMES,
   canonicalJson,
   type BlobStore,
   type Guard,
@@ -21,8 +20,11 @@ import {
   type StoreAdapter,
   type ToolRegistry,
   type VendoRecord,
-  type VendoTheme,
 } from "@vendoai/core";
+import {
+  VENDO_THEME_VARIABLE_NAMES,
+  type VendoTheme,
+} from "@vendoai/apps/contract";
 import { createMcpDoor, type McpDoor } from "@vendoai/mcp";
 import { themeCssVariables } from "@vendoai/ui";
 import { describe, expect, it } from "vitest";
@@ -139,7 +141,7 @@ function makeDoor(theme: VendoTheme | undefined): McpDoor {
     guard,
     store: new MemoryStore(),
     // The shim resource is only served by a door that carries apps.
-    apps: { async list() { return []; }, async open() { return { kind: "http", url: "https://x.example" }; }, async call() { return null; } },
+    apps: { async list() { return []; }, async open() { return { kind: "http", url: "https://x.example" }; }, async call() { return { status: "ok" as const, output: null }; } },
     ...(theme === undefined ? {} : { theme }),
     mount: "/api/vendo/mcp",
     baseUrl: "https://product.example",

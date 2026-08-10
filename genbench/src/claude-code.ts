@@ -1,7 +1,7 @@
 /**
  * The claude-code contender — the strong in-house baseline: a coding agent with
  * hands, working in a scratch directory, writing and rewriting one page. It is
- * handed the SAME world every other column gets — `hostDesignBrief` for the
+ * handed the SAME world every other column gets — the briefing pack for the
  * theme and the host's rules, the derived tool schemas, the rows each read
  * answers with — and the page contract the Vendo column gets from the renderer.
  *

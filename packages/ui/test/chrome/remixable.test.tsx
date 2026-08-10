@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 // 2026-08-02 remix final shape (lane W1b) — <Remixable> owns the whole remix
-// surface: the ✦ gesture executes the DETERMINISTIC wire fork carrying the
-// wrapper's serializable live props, the fork mounts JAILED, IN PLACE of the
-// wrapped child, live call-site props keep flowing into it, and the ✦ mark on
-// a remixed component is the management handle (status / open in panel /
-// revert). The old context-chip behavior is deleted, not renamed.
+// surface: the ✦ gesture executes the DETERMINISTIC wire seed, the seeded app
+// mounts JAILED, IN PLACE of the wrapped child, live call-site props keep
+// flowing into it, and the ✦ mark on a remixed component is the management
+// handle (status / open in panel / revert). The old context-chip behavior is
+// deleted, not renamed.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,7 +51,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   const forkPill = () => screen.getByRole("button", { name: `Remix ${SLOT} with Vendo` });
   const managePill = () => screen.getByRole("button", { name: `Manage the ${SLOT} remix` });
   const revealed = () => wrapper().hasAttribute("data-vendo-revealed");
-  const forkCalls = () => wire.requests.filter(r => r.method === "POST" && r.path === "/apps/fork-pin");
+  const forkCalls = () => wire.requests.filter(r => r.method === "POST" && r.path === "/apps/seed");
   const forkIframe = () => screen.queryByTitle(`Generated component: ${FORK_COMPONENT}`) as HTMLIFrameElement | null;
 
   function mount(node = <Remixable><TopMerchants title="Top merchants" /></Remixable>, strict = false) {
@@ -93,28 +93,24 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
     expect(revealed()).toBe(true);
   });
 
-  it("✦ gesture → ONE deterministic fork-pin call carrying ONLY the serializable live props", async () => {
+  it("✦ gesture → ONE deterministic seed call naming the component, and nothing else", async () => {
     mount(
       <Remixable>
         <TopMerchants
           title="Top merchants"
           rows={[{ merchant: "Blue Bottle", amountCents: 1250 }]}
           onSelect={() => undefined}
-          icon={<span>✦</span>}
-          asOf={new Date("2026-08-01T00:00:00Z")}
-          ratio={Number.NaN}
         />
       </Remixable>,
     );
     fireEvent.click(forkPill());
     await waitFor(() => expect(forkCalls()).toHaveLength(1));
-    // Functions, elements, Dates, and non-finite numbers dropped SILENTLY —
-    // the snapshot is exactly the JSON-serializable call-site props.
-    expect(forkCalls()[0]?.body).toEqual({
-      slot: SLOT,
-      props: { title: "Top merchants", rows: [{ merchant: "Blue Bottle", amountCents: 1250 }] },
-    });
-    // No model turn: the model lost the fork decision entirely.
+    // A remix is an ordinary create that starts from something: the call names
+    // the host component and carries no snapshot — call-site props are LIVE,
+    // streamed into the mounted remix on every render (below), never frozen
+    // into the document at mint time.
+    expect(forkCalls()[0]?.body).toEqual({ component: SLOT });
+    // No model turn: the model lost the remix decision entirely.
     expect(wire.requests.filter(r => r.method === "POST" && r.path === "/threads")).toHaveLength(0);
   });
 
@@ -132,10 +128,19 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
     expect(screen.queryByRole("button", { name: `Remix ${SLOT} with Vendo` })).toBeNull();
   });
 
-  it("streams live call-site props into the mounted fork on every render", async () => {
+  it("streams ONLY the serializable live call-site props into the mounted fork on every render", async () => {
     const view = (title: string) => (
       <VendoProvider client={client}>
-        <Remixable><TopMerchants title={title} /></Remixable>
+        <Remixable>
+          <TopMerchants
+            title={title}
+            rows={[{ merchant: "Blue Bottle", amountCents: 1250 }]}
+            onSelect={() => undefined}
+            icon={<span>✦</span>}
+            asOf={new Date("2026-08-01T00:00:00Z")}
+            ratio={Number.NaN}
+          />
+        </Remixable>
       </VendoProvider>
     );
     const { rerender } = render(view("July"));
@@ -143,13 +148,17 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
     await waitFor(() => expect(forkIframe()).toBeTruthy());
     const posted = vi.spyOn(forkIframe()!.contentWindow!, "postMessage");
     rerender(view("August"));
-    // The jail's render message carries the NEW call-site props merged over
-    // the fork-time seed (data route 1: nothing captured, nothing stale).
+    // The jail's render message carries the NEW call-site props (data route 1:
+    // nothing captured, nothing stale) — and functions, elements, Dates and
+    // non-finite numbers are dropped SILENTLY on the way in.
     await waitFor(() => {
-      expect(posted.mock.calls.some(([message]) =>
-        (message as { kind?: string; props?: { title?: string } }).kind === "render"
-        && (message as { props?: { title?: string } }).props?.title === "August",
-      )).toBe(true);
+      const renders = posted.mock.calls
+        .map(([message]) => message as { kind?: string; props?: Record<string, unknown> })
+        .filter((message) => message.kind === "render");
+      expect(renders.at(-1)?.props).toEqual({
+        title: "August",
+        rows: [{ merchant: "Blue Bottle", amountCents: 1250 }],
+      });
     });
   });
 
@@ -178,7 +187,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
     // Flush any trailing effects — still exactly one fork, one minted app.
     await new Promise(resolve => setTimeout(resolve, 80));
     expect(forkCalls()).toHaveLength(1);
-    expect(wire.state.apps.filter(app => app.pins?.some(pin => pin.slot === SLOT))).toHaveLength(1);
+    expect(wire.state.apps.filter(app => app.seed?.component === SLOT)).toHaveLength(1);
   });
 
   it("latches the pill while the fork is in flight (no second tap, cosmetic — the server dedupes anyway)", async () => {
@@ -222,8 +231,8 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   });
 
   it("keeps the ORIGINAL rendered for a REJECTED review-kind remix, with the note in the ✦ popover", async () => {
-    const forked = await client.apps.forkPin({ slot: SLOT, props: {} });
-    const stored = wire.state.apps.find(app => app.id === forked.app.id)!;
+    const forked = await client.apps.seedFrom({ component: SLOT });
+    const stored = wire.state.apps.find(app => app.id === forked.id)!;
     (stored.tree as unknown as { inClient: unknown }).inClient = {
       granted: false,
       versionHash: "sha256:v1",
@@ -241,8 +250,8 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   });
 
   it("reports BOTH states when an older approved version serves while the current one is pending review", async () => {
-    const forked = await client.apps.forkPin({ slot: SLOT, props: {} });
-    const stored = wire.state.apps.find(app => app.id === forked.app.id)!;
+    const forked = await client.apps.seedFrom({ component: SLOT });
+    const stored = wire.state.apps.find(app => app.id === forked.id)!;
     (stored.tree as unknown as { inClient: unknown }).inClient = {
       granted: true,
       versionHash: "sha256:v1",
@@ -258,8 +267,8 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   });
 
   it("reports BOTH states when an older approved version serves and the current one was rejected", async () => {
-    const forked = await client.apps.forkPin({ slot: SLOT, props: {} });
-    const stored = wire.state.apps.find(app => app.id === forked.app.id)!;
+    const forked = await client.apps.seedFrom({ component: SLOT });
+    const stored = wire.state.apps.find(app => app.id === forked.id)!;
     (stored.tree as unknown as { inClient: unknown }).inClient = {
       granted: true,
       versionHash: "sha256:v1",
@@ -277,8 +286,8 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   it("the ✦ popover surfaces a server-granted venue verdict verbatim", async () => {
     // Seed a fork whose open payload carries the SERVER-authoritative venue
     // verdict (lane W1c owns minting it; the popover only renders it).
-    const forked = await client.apps.forkPin({ slot: SLOT, props: {} });
-    const stored = wire.state.apps.find(app => app.id === forked.app.id)!;
+    const forked = await client.apps.seedFrom({ component: SLOT });
+    const stored = wire.state.apps.find(app => app.id === forked.id)!;
     (stored.tree as unknown as { inClient: unknown }).inClient = {
       granted: true, versionHash: "sha256:v1", approvedBy: "host-admin", at: "2026-08-02T00:00:00.000Z",
     };
@@ -297,7 +306,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
     // The prefill NAMES THE THING and carries no id: this used to read
     // "…remix (app app_…): ", and an app id is our plumbing, not something a
     // person types (spec §16 law 3, LEAK 4).
-    const appId = wire.state.apps.find(app => app.pins?.some(pin => pin.slot === SLOT))!.id;
+    const appId = wire.state.apps.find(app => app.seed?.component === SLOT)!.id;
     fireEvent.click(managePill());
     fireEvent.click(screen.getByRole("button", { name: "Open in panel" }));
     const panel = await screen.findByRole("dialog", { name: "Vendo assistant" });
@@ -314,7 +323,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
     mount();
     fireEvent.click(forkPill());
     await waitFor(() => expect(forkIframe()).toBeTruthy());
-    const appId = wire.state.apps.find(app => app.pins?.some(pin => pin.slot === SLOT))!.id;
+    const appId = wire.state.apps.find(app => app.seed?.component === SLOT)!.id;
     fireEvent.click(managePill());
     fireEvent.click(screen.getByRole("button", { name: "Open in panel" }));
     const panel = await screen.findByRole("dialog", { name: "Vendo assistant" });
@@ -340,7 +349,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   });
 
   it("discovers an existing fork on mount, so a remix survives a reload", async () => {
-    await client.apps.forkPin({ slot: SLOT, props: { title: "Persisted" } });
+    await client.apps.seedFrom({ component: SLOT });
     mount();
     await waitFor(() => expect(forkIframe()).toBeTruthy());
     expect(screen.getByRole("button", { name: `Manage the ${SLOT} remix` })).toBeTruthy();
@@ -362,7 +371,7 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
   it("warns in development when the fork call fails, and unlatches", async () => {
     vi.stubEnv("NODE_ENV", "development");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    wire.state.failures.push({ method: "POST", path: "/apps/fork-pin", code: "not-found", message: "no captured baseline", status: 404 });
+    wire.state.failures.push({ method: "POST", path: "/apps/seed", code: "not-found", message: "no captured baseline", status: 404 });
     mount();
     fireEvent.click(forkPill());
     await waitFor(() => expect(warn.mock.calls.some(([first]) => String(first).includes("no captured baseline"))).toBe(true));

@@ -19,16 +19,18 @@ import {
   VendoError,
   WORKSPACE_INLINE_MAX_BYTES,
   sha256Hex,
-  type AppDocument,
   type AppId,
-  type AppSourceFile,
   type FilesAdapter,
   type Membership,
   type RunContext,
   type WorkspaceFs,
 } from "@vendoai/core";
+import {
+  type AppDocument,
+  type AppSourceFile,
+} from "../src/contract/index.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { appMountFor, checkoutApp, commitApp, invalidSourcePath, type AppSourceSeam } from "../src/app-source.js";
+import { appMountFor, checkoutApp, commitApp, invalidSourcePath, type AppSourceSeam } from "../src/server/persistence/app-source.js";
 
 const APP = "app_source" as AppId;
 const ADA = "user_ada";

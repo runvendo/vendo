@@ -15,7 +15,7 @@
  * model `diy` streamed through and off the session `claude-code` opened. Only
  * the model and the SDK are doubles.
  */
-import { hostDesignBrief } from "@vendoai/apps";
+import { renderBriefingPack } from "@vendoai/apps/contract";
 import type { RunContext } from "@vendoai/core";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { writeFile } from "node:fs/promises";
@@ -26,7 +26,7 @@ import { claudeCodeDriver, type AgentSdk } from "../src/claude-code.js";
 import { diyDriver, diySystemPrompt } from "../src/diy.js";
 import type { Meter } from "../src/meter.js";
 import { authoredPage, openBrowser } from "../src/render.js";
-import { designRules, worldRegistry } from "../src/vendo.js";
+import { worldBriefing, worldRegistry } from "../src/vendo.js";
 import { cannedResponse, loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
 
 type Sent = Parameters<MockLanguageModelV3["doStream"]>[0]["prompt"];
@@ -144,7 +144,7 @@ const BASELINES: ReadonlyArray<{ name: string; briefFor(scoped: World, testCase:
 describe.each(BASELINES)("$name is handed exactly what vendo is handed", ({ briefFor }) => {
   it("carries the product's own design brief verbatim — identity, theme JSON and style lines", async () => {
     const sent = await briefFor(world, cases[0]!);
-    const brief = hostDesignBrief({ theme: world.theme, designRules: designRules(world) });
+    const brief = renderBriefingPack(worldBriefing(world));
 
     // Not a substring of a substring: the whole block, exactly as the vendo
     // driver hands it to the screen assembler.

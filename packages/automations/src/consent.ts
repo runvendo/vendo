@@ -21,8 +21,12 @@ import {
   type Trigger,
   type VendoRecord,
 } from "@vendoai/core";
-import type { AutomationsEngineContext } from "./engine-context.js";
+import type { AppRowsAccess } from "./app-rows.js";
+import type { ArmedAccess } from "./armed.js";
+import type { EngineBase } from "./engine-context.js";
+import type { GrantsAccess } from "./grants.js";
 import { allRecords, clone, id, parseRunRecord } from "./rows.js";
+import type { RunRowsAccess } from "./run-rows.js";
 import { declaredSurface } from "./sponsorship.js";
 import { consentKey, declaredSlug } from "./steps.js";
 import {
@@ -36,35 +40,48 @@ import {
   type InternalRunRecord,
 } from "./types.js";
 
-export type ConsentDeps = Pick<
-  AutomationsEngineContext,
-  | "config"
-  | "iso"
-  | "appRecord"
-  | "disarmTrigger"
-  | "liveGrant"
-  | "anyLiveAutomationGrant"
-  | "mintGrant"
-  | "terminal"
->;
+export type ConsentDeps = {
+  base: EngineBase;
+  appRows: AppRowsAccess;
+  armed: ArmedAccess;
+  grants: GrantsAccess;
+  runRows: RunRowsAccess;
+};
 
-export type ConsentAccess = Pick<
-  AutomationsEngineContext,
-  | "writeCapture"
-  | "isPendingAsk"
-  | "pendingCaptures"
-  | "spendApproval"
-  | "handleDecision"
-  | "consentSurface"
-  | "captureGrants"
-  | "needsPermission"
->;
+export interface ConsentAccess {
+  /** A capture row, keyed by the approval it is the ask for. */
+  writeCapture(approvalId: string, capture: Capture): Promise<void>;
+  /** Is this approval still an open question? */
+  isPendingAsk(approvalId: string): Promise<boolean>;
+  /** Every still-pending capture for the subject, parsed. */
+  pendingCaptures(subject: string): Promise<Array<{ id: string; data: Capture }>>;
+  /** Claim the approval's one-time transition before granting anything. */
+  spendApproval(record: VendoRecord): Promise<boolean>;
+  /** The guard's decision subscriber: mint, clear, and disarm on a bare no. */
+  handleDecision(approvalId: string, approved: boolean): Promise<void>;
+  /** The tools a consent moment covers. */
+  consentSurface(trigger: Trigger, byName: Map<string, ToolDescriptor>): Promise<ConsentItem[]>;
+  /** 07 §3 — the asks arming has to raise for this subject. */
+  captureGrants(
+    doc: AppDocument,
+    trigger: Trigger,
+    byName: Map<string, ToolDescriptor>,
+    ctx: RunContext,
+  ): Promise<{ missing: ApprovalRequest[]; grantSetId: string }>;
+  /** A step met a permission nobody has granted. The run ends HERE, loudly. */
+  needsPermission(
+    run: InternalRunRecord,
+    ctx: RunContext,
+    step: Step,
+    approvalId: string,
+  ): Promise<void>;
+}
 
-type CaptureRows = Pick<AutomationsEngineContext, "writeCapture" | "isPendingAsk" | "pendingCaptures">;
+type CaptureRows = Pick<ConsentAccess, "writeCapture" | "isPendingAsk" | "pendingCaptures">;
 
 /** The capture collection itself: the row a pending ask is remembered by, and
  *  the two reads that say which asks are still open. */
-const createCaptureRows = ({ config }: Pick<ConsentDeps, "config">): CaptureRows => {
+const createCaptureRows = ({ base: { config } }: Pick<ConsentDeps, "base">): CaptureRows => {
   /** A capture row, keyed by the approval it is the ask for. Captures are a
    *  GENERIC collection and the 02-store §5 erase cascade finds generic rows by
    *  their refs, so the refs are derived HERE rather than at each writer: an
@@ -109,13 +126,11 @@ const createCaptureRows = ({ config }: Pick<ConsentDeps, "config">): CaptureRows
 /** The one `onApprovalDecision` half: spend the approval, mint the standing
  *  grant, and disarm a consent moment that ended with nothing granted. */
 const createDecisionSubscriber = (
-  deps: Pick<
-    ConsentDeps,
-    "config" | "iso" | "appRecord" | "disarmTrigger" | "anyLiveAutomationGrant" | "mintGrant"
-  > & Pick<CaptureRows, "pendingCaptures">,
-): Pick<AutomationsEngineContext, "spendApproval" | "handleDecision"> => {
-  const { config, iso, appRecord, disarmTrigger } = deps;
-  const { anyLiveAutomationGrant, mintGrant, pendingCaptures } = deps;
+  deps: Pick<ConsentDeps, "base" | "appRows" | "armed" | "grants">
+    & Pick<CaptureRows, "pendingCaptures">,
+): Pick<ConsentAccess, "spendApproval" | "handleDecision"> => {
+  const { base: { config, iso }, appRows, armed } = deps;
+  const { grants, pendingCaptures } = deps;
   /**
    * Spends the approval this consent moment rode in on — through the guard when
    * it offers the seam, so the spend contends with a concurrent
@@ -154,7 +169,7 @@ const createDecisionSubscriber = (
         const data = approvalRowSchema.parse(approval.data);
         // Spend before granting: a yes the person took back at this instant
         // must arm nothing, and only one of the two can win the transition.
-        if (await spendApproval(approval)) await mintGrant(data.request, parsed.triggerId);
+        if (await spendApproval(approval)) await grants.mintGrant(data.request, parsed.triggerId);
       }
       await config.store.records(CAPTURES).delete(approvalId);
       if (!approved) {
@@ -167,10 +182,13 @@ const createDecisionSubscriber = (
         // trigger's ask must never disarm a sibling that is running fine.
         const outstanding = (await pendingCaptures(parsed.subject)).some((candidate) =>
           candidate.data.appId === parsed.appId && candidate.data.triggerId === parsed.triggerId);
-        if (!outstanding && !(await anyLiveAutomationGrant(parsed.subject, parsed.appId, parsed.triggerId))) {
-          const found = await appRecord(parsed.appId);
+        if (
+          !outstanding
+          && !(await grants.anyLiveAutomationGrant(parsed.subject, parsed.appId, parsed.triggerId))
+        ) {
+          const found = await appRows.appRecord(parsed.appId);
           if (found !== null && found.row.subject === parsed.subject && found.row.enabled) {
-            await disarmTrigger(found.record, found.row, parsed.triggerId);
+            await armed.disarmTrigger(found.record, found.row, parsed.triggerId);
           }
         }
       }
@@ -199,7 +217,7 @@ const createDecisionSubscriber = (
       const runId = data.request.ctx.trigger?.runId;
       const runRow = runId === undefined ? null : await config.store.records(RUNS).get(runId);
       const triggerId = runRow === null ? undefined : parseRunRecord(runRow).triggerId;
-      if (await spendApproval(approval)) await mintGrant(data.request, triggerId);
+      if (await spendApproval(approval)) await grants.mintGrant(data.request, triggerId);
     }
   };
 
@@ -207,7 +225,7 @@ const createDecisionSubscriber = (
 };
 
 /** What a consent moment COVERS, before anything is asked. */
-const createConsentSurface = (): Pick<AutomationsEngineContext, "consentSurface"> => {
+const createConsentSurface = (): Pick<ConsentAccess, "consentSurface"> => {
   /** The tools a consent moment covers. Steps DECLARE their surface; an agentic
    *  run declares one too when it was authored with one (`run.tools`), and falls
    *  back to every bound descriptor THE LAW would still let it reach away when it
@@ -275,11 +293,11 @@ const createConsentSurface = (): Pick<AutomationsEngineContext, "consentSurface"
 
 /** 07 §3's arming half: the asks enable() has to raise for this subject. */
 const createGrantCapture = (
-  deps: Pick<ConsentDeps, "config" | "iso" | "liveGrant">
+  deps: Pick<ConsentDeps, "base" | "grants">
     & Pick<CaptureRows, "writeCapture" | "pendingCaptures">
-    & Pick<AutomationsEngineContext, "consentSurface">,
-): Pick<AutomationsEngineContext, "captureGrants"> => {
-  const { config, iso, liveGrant, writeCapture, pendingCaptures, consentSurface } = deps;
+    & Pick<ConsentAccess, "consentSurface">,
+): Pick<ConsentAccess, "captureGrants"> => {
+  const { base: { config, iso }, grants, writeCapture, pendingCaptures, consentSurface } = deps;
   /** The tools a consent moment has to ask THIS subject about: the automation's
    *  surface minus whatever they already hold a live standing grant for.
    *
@@ -325,7 +343,7 @@ const createGrantCapture = (
             authored,
             await config.resolveRisk?.({ id: id("call_"), tool, args: { slug } }, authored, ctx),
           );
-      if (await liveGrant(subject, appId, triggerId, descriptor, slug)) continue;
+      if (await grants.liveGrant(subject, appId, triggerId, descriptor, slug)) continue;
       const pending = pendingForApp.get(consentKey(item));
       if (pending !== undefined) {
         const approval = await config.store.records(APPROVALS).get(pending.id);
@@ -382,10 +400,10 @@ const createGrantCapture = (
 
 /** The fire-time half: a step met a permission nobody granted. */
 const createPermissionMiss = (
-  deps: Pick<ConsentDeps, "config" | "terminal">
+  deps: Pick<ConsentDeps, "base" | "runRows">
     & Pick<CaptureRows, "writeCapture" | "isPendingAsk" | "pendingCaptures">,
-): Pick<AutomationsEngineContext, "needsPermission"> => {
-  const { config, terminal, writeCapture, isPendingAsk, pendingCaptures } = deps;
+): Pick<ConsentAccess, "needsPermission"> => {
+  const { base: { config }, runRows, writeCapture, isPendingAsk, pendingCaptures } = deps;
   /**
    * A step met a permission nobody has granted. The run ends HERE, loudly.
    *
@@ -477,7 +495,7 @@ const createPermissionMiss = (
       }
     }
     const named = slug === undefined ? `use ${step.tool}` : serviceToolPhrase(slug);
-    await terminal(
+    await runRows.terminal(
       run,
       ctx,
       "error",

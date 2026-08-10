@@ -16,31 +16,47 @@ import {
   type RunContext,
   type ToolDescriptor,
 } from "@vendoai/core";
-import type { AutomationsEngineContext } from "./engine-context.js";
+import type { EngineBase } from "./engine-context.js";
 import { allRecords, id } from "./rows.js";
 import { scopeCovers } from "./steps.js";
 import { GRANTS } from "./types.js";
 
-export type GrantsDeps = Pick<AutomationsEngineContext, "config" | "now" | "iso">;
+export type GrantsDeps = { base: EngineBase };
 
-export type GrantsAccess = Pick<
-  AutomationsEngineContext,
-  | "descriptors"
-  | "liveAutomationGrants"
-  | "liveGrant"
-  | "grantedServiceSlugs"
-  | "anyLiveAutomationGrant"
-  | "mintGrant"
->;
+export interface GrantsAccess {
+  /** The bound tool surface, by name, for a present-time ceremony. */
+  descriptors(ctx: RunContext): Promise<Map<string, ToolDescriptor>>;
+  /** Every LIVE standing grant this (app, trigger) holds for the subject. */
+  liveAutomationGrants(
+    subject: string,
+    appId: string,
+    triggerId: string,
+    tool?: string,
+  ): Promise<PermissionGrant[]>;
+  /** Whether this exact descriptor (and service action) is already granted. */
+  liveGrant(
+    subject: string,
+    appId: string,
+    triggerId: string,
+    descriptor: ToolDescriptor,
+    slug?: string,
+  ): Promise<boolean>;
+  /** The service-action slugs THIS firing holds a live grant for. */
+  grantedServiceSlugs(subject: string, appId: string, triggerId: string): Promise<string[]>;
+  /** Whether the TRIGGER holds ANY live automation-source standing grant. */
+  anyLiveAutomationGrant(subject: string, appId: string, triggerId: string): Promise<boolean>;
+  /** The standing grant a decided approval mints, scoped to its slug. */
+  mintGrant(request: ApprovalRequest, triggerId: string | undefined): Promise<string>;
+}
 
 type GrantReads = Pick<
-  AutomationsEngineContext,
+  GrantsAccess,
   "descriptors" | "liveAutomationGrants" | "liveGrant" | "grantedServiceSlugs" | "anyLiveAutomationGrant"
 >;
 
 /** The reads: the bound surface, and the ONE live-grant query the three
  *  fire-time questions are asked from. */
-const createGrantReads = ({ config, now }: Pick<GrantsDeps, "config" | "now">): GrantReads => {
+const createGrantReads = ({ base: { config, now } }: GrantsDeps): GrantReads => {
   // `ctx` rides through so the projection seam (design §12) is not silently
   // dropped here. Both callers — enable and dryRun — are PRESENT-time
   // ceremonies, so nothing is withheld: the owner must still see and grant
@@ -132,8 +148,8 @@ const createGrantReads = ({ config, now }: Pick<GrantsDeps, "config" | "now">): 
 
 /** The write: what a decided approval turns into. */
 const createGrantMint = (
-  { config, iso }: Pick<GrantsDeps, "config" | "iso">,
-): Pick<AutomationsEngineContext, "mintGrant"> => {
+  { base: { config, iso } }: GrantsDeps,
+): Pick<GrantsAccess, "mintGrant"> => {
   const mintGrant = async (request: ApprovalRequest, triggerId: string | undefined): Promise<string> => {
     // A connector dispatch is granted at the width of its SLUG, never its tool
     // name: "allow use_service_tool" would be consent to the broker's whole

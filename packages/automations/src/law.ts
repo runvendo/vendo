@@ -11,7 +11,9 @@
  * scheduled step moves money or messages a person, so it joins the reviewer's
  * rubric as its own line.
  */
-import type { Check } from "@vendoai/core";
+import type {
+  Check,
+} from "@vendoai/apps/contract";
 
 export const UNATTENDED_IRREVERSIBILITY_RULE =
   "Work that runs while nobody is watching may read and write, but it must never move money, message a person, or delete anything — not with a limit, not with an approval. An app that schedules one of those is wrong even if it looks careful: the honest shape is that the scheduled part PREPARES and a person sends, with the real amounts and recipients in front of them.";

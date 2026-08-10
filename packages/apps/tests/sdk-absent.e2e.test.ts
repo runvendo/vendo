@@ -2,7 +2,7 @@
  * D1, the APPS half — a consumer who has NOT installed the ~250MB Agent SDK
  * can still import this package.
  *
- * The measured failure this pins: `@vendoai/apps/internal` re-exported the SDK
+ * The measured failure this pins: an apps entry re-exported the SDK
  * turn, the render seam imports `./internal` statically on every composed
  * host's server path, and a bundler that folds `import(CONST)` therefore
  * demanded `@anthropic-ai/claude-agent-sdk` at BUILD time from a Next.js host
@@ -70,10 +70,9 @@ describe("D1 · a host that never installed the Agent SDK", () => {
 
   test("@vendoai/apps and its cross-block internals both import", () => {
     const output = runProbe(`
-      const apps = await import(${JSON.stringify(dist("dist/index.js"))});
-      const internal = await import(${JSON.stringify(dist("dist/internal.js"))});
+      const apps = await import(${JSON.stringify(dist("dist/server/index.js"))});
       if (typeof apps.createApps !== "function") throw new Error("apps did not load");
-      if (typeof internal.assembleTree !== "function") throw new Error("internals did not load");
+      if (typeof apps.assembleTree !== "function") throw new Error("internals did not load");
       console.log("APPS_OK");
     `);
     expect(output).toContain("APPS_OK");

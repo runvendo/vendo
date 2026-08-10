@@ -1,12 +1,17 @@
-import { VENDO_APP_FORMAT, type AppDocument } from "@vendoai/core";
+import {
+  VENDO_APP_FORMAT,
+} from "@vendoai/core";
+import {
+  type AppDocument,
+} from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { sandboxAdapterConformance, type SandboxConformanceHarness } from "../../src/adapter-conformance.js";
-import { requestAppWithBootRetry } from "../../src/box-agent.js";
-import { createMachineLifecycle } from "../../src/machine-lifecycle.js";
-import type { SandboxMachine } from "../../src/sandbox.js";
-import { memoryStore } from "../../src/testing/memory-store.js";
-import { seedAppRow } from "../../src/testing/seed-app-row.js";
-import { e2bSandbox } from "../../src/e2b/index.js";
+import { sandboxAdapterConformance, type SandboxConformanceHarness } from "../../src/server/testing/adapter-conformance.js";
+import { requestAppWithBootRetry } from "../../src/server/escalation/box-agent.js";
+import { createMachineLifecycle } from "../../src/server/escalation/machine-lifecycle.js";
+import type { SandboxMachine } from "../../src/server/escalation/sandbox.js";
+import { memoryStore } from "../../src/server/testing/memory-store.js";
+import { seedAppRow } from "../../src/server/testing/seed-app-row.js";
+import { e2bSandbox } from "../../src/server/escalation/e2b/index.js";
 
 // ============================================================================
 // execution-v2 Lane A LIVE lane — real E2B, real network, real snapshots.

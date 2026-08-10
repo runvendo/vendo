@@ -1,12 +1,22 @@
-import { VENDO_APP_FORMAT, VendoError, type AppDocument, type RunContext, type ScreenAssembler, type ToolRegistry, type VendoTheme } from "@vendoai/core";
+import {
+  VENDO_APP_FORMAT,
+  VendoError,
+  type RunContext,
+  type ToolRegistry,
+} from "@vendoai/core";
+import {
+  type AppDocument,
+  type ScreenAssembler,
+  type VendoTheme,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createAppHistory } from "../src/history.js";
-import { createApps } from "../src/index.js";
-import { fakeBoxSandbox, type FakeBoxAgent } from "../src/testing/fake-box.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createAppHistory } from "../src/server/persistence/history.js";
+import { createApps } from "../src/server/index.js";
+import { fakeBoxSandbox, type FakeBoxAgent } from "../src/server/testing/fake-box.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 /**
  * execution-v2 Wave 4 — layer 3 (machine-everything), experimental, on the

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  islandToolFallbackManifest,
-  islandVendoActionNames,
-  JAIL_PACKAGE_CDN_ORIGIN,
   type Json,
   type ToolOutcome,
 } from "@vendoai/core";
+import {
+  islandToolFallbackManifest,
+  islandVendoActionNames,
+  JAIL_PACKAGE_CDN_ORIGIN,
+} from "@vendoai/apps/contract";
 import { useVendoIntl } from "../../context.js";
 import { ContainedNotice } from "../notice.js";
 import { FormingSkeleton } from "../forming-skeleton.js";

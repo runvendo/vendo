@@ -6,27 +6,25 @@
  * Lifted out of `createAutomationsEngine` unchanged.
  */
 import type { AppDocument, Trigger } from "@vendoai/core";
-import type { AutomationsEngineContext } from "./engine-context.js";
+import type { EngineBase } from "./engine-context.js";
 import type { AutomationsEngine } from "./index.js";
+import type { SponsorshipGateAccess } from "./sponsorship-gate.js";
 import { currentIntentHash, triggersOf, writeSponsorship } from "./sponsorship.js";
 
-export type DocumentEditSurfaceDeps = Pick<
-  AutomationsEngineContext,
-  "iso" | "sponsorships" | "sponsorshipState"
->;
+export type DocumentEditSurfaceDeps = { base: EngineBase; sponsorship: SponsorshipGateAccess };
 
 export const createDocumentEditSurface = (
-  { iso, sponsorships, sponsorshipState }: DocumentEditSurfaceDeps,
+  { base: { iso }, sponsorship }: DocumentEditSurfaceDeps,
 ): Pick<AutomationsEngine, "onDocumentEdit"> => {
   const onTriggerEdit = async (next: AppDocument, trigger: Trigger, editor: string): Promise<void> => {
     // Through the migrating door: an edit is the other way a pre-list row can be
     // reached before its automation ever fires again, and a row nobody can see
     // is a row a third party's edit cannot invalidate.
-    const state = await sponsorshipState(next, trigger.id);
+    const state = await sponsorship.sponsorshipState(next, trigger.id);
     if (state.kind !== "row" || state.row.status !== "active") return;
     const row = state.row;
     if (editor !== row.sponsor) {
-      await writeSponsorship(sponsorships(), {
+      await writeSponsorship(sponsorship.sponsorships(), {
         ...row,
         status: "invalidated",
         reason: "edit",
@@ -43,7 +41,7 @@ export const createDocumentEditSurface = (
     // card rather than here.
     const hash = currentIntentHash(next, trigger);
     if (hash !== row.intentHash) {
-      await writeSponsorship(sponsorships(), { ...row, intentHash: hash });
+      await writeSponsorship(sponsorship.sponsorships(), { ...row, intentHash: hash });
     }
   };
 

@@ -9,4 +9,4 @@ export {
   defaultVendoTheme,
   resolveTheme,
   themeCssVariables,
-} from "@vendoai/core";
+} from "@vendoai/apps/contract";

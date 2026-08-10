@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createAppData } from "../../src/app-data.js";
-import { memoryStore } from "../../src/testing/memory-store.js";
+import { createAppData } from "../../src/server/persistence/app-data.js";
+import { memoryStore } from "../../src/server/testing/memory-store.js";
 
 // Red-team suite for per-app state isolation (06-apps §6).
 // App state is keyed by the TRUSTED appId (derived from the run token / ctx in the

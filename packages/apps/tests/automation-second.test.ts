@@ -18,13 +18,22 @@
  * an agentic automation is one harness run on the agents runtime, and it authors
  * and arms with no machine anywhere.
  */
-import { VENDO_APP_FORMAT, type AppDocument, type AppId, type RunContext, type ScreenAssembler, type ToolRegistry } from "@vendoai/core";
+import {
+  VENDO_APP_FORMAT,
+  type AppId,
+  type RunContext,
+  type ToolRegistry,
+} from "@vendoai/core";
+import {
+  type AppDocument,
+  type ScreenAssembler,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createApps } from "../src/index.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { scriptedLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createApps } from "../src/server/index.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { scriptedLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 const APP_ID = "app_two_automations";
 

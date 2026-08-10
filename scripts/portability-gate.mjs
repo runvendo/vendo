@@ -56,8 +56,8 @@ const FORBIDDEN_INPUTS = [
   { fragment: "packages/store/dist/crypto.js", seam: "#store/crypto conditions" },
   { fragment: "node_modules/.pnpm/pg@", seam: "#store/db conditions" },
   { fragment: "node_modules/.pnpm/typescript@", seam: "@vendoai/actions/sync subpath split" },
-  { fragment: "node_modules/.pnpm/e2b@", seam: "bundler-blind e2b specifier (apps/src/e2b)" },
-  { fragment: "node_modules/.pnpm/esbuild@", seam: "bundler-blind esbuild specifier (apps/src/engine island validator)" },
+  { fragment: "node_modules/.pnpm/e2b@", seam: "bundler-blind e2b specifier (apps/src/server/escalation/e2b)" },
+  { fragment: "node_modules/.pnpm/esbuild@", seam: "bundler-blind esbuild specifier (apps/src/server/checking/islands)" },
 ];
 
 /** Raw source patterns whose fix classes this gate owns. */
@@ -68,7 +68,7 @@ const SOURCE_GUARDS = [
   },
   {
     pattern: /await import\((?:\/\*[^*]*\*\/\s*)*["']e2b["']\)/,
-    message: "literal import(\"e2b\") — esbuild hard-resolves it; route through the bundler-blind specifier in packages/apps/src/e2b",
+    message: "literal import(\"e2b\") — esbuild hard-resolves it; route through the bundler-blind specifier in packages/apps/src/server/escalation/e2b",
   },
   {
     pattern: /await import\((?:\/\*[^*]*\*\/\s*)*["']esbuild["']\)/,
@@ -230,6 +230,32 @@ try {
   }
 } catch (error) {
   fail(`fixture worker did not boot under workerd: ${error instanceof Error ? error.message : String(error)}`);
+}
+
+// ---- Leg D: the app-generation CONTRACT door bundles for a BROWSER ----
+// `@vendoai/apps/contract` is the browser-safe half of the app engine, and
+// `scripts/dependency-guard.mjs`'s ONLY_SUBPATHS rule makes it the one door
+// @vendoai/ui may reach. That rule enforces which SPECIFIER ui writes; nothing
+// enforced what the specifier RESOLVES to. A single `import "node:fs"` inside
+// src/contract/ passed lint, typecheck and the whole suite, and surfaced only
+// in a customer's `next build` — so the headline layering claim was a
+// convention, not a mechanism. This is the mechanism.
+try {
+  await esbuild.build({
+    entryPoints: [join(root, "packages/apps/dist/contract/index.js")],
+    bundle: true,
+    format: "esm",
+    platform: "browser",
+    write: false,
+  });
+  ok("@vendoai/apps/contract bundles for a browser target (no node built-ins)");
+} catch (error) {
+  fail(
+    "@vendoai/apps/contract does NOT bundle for a browser target — something under "
+    + "packages/apps/src/contract/ reached a node built-in or a node-only package. "
+    + "That door is imported by @vendoai/ui and by browser consumers; it must stay "
+    + `platform-clean. ${error instanceof Error ? error.message : String(error)}`,
+  );
 }
 
 if (failures > 0) {

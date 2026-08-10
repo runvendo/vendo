@@ -12,7 +12,7 @@ import {
   UNKNOWN_MODEL_MAX_OUTPUT_TOKENS,
   acceptsSamplingParams,
   modelCallParams,
-} from "../src/model-params.js";
+} from "../src/server/runtime/model-params.js";
 
 /** Only the id matters to the rule, so the model body can be a stub. */
 const idOnly = (modelId: string): LanguageModel =>

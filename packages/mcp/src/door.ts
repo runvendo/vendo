@@ -1,18 +1,27 @@
-import type {
-  Guard,
-  Json,
-  Membership,
-  Principal,
-  RiskLabel,
-  RunContext,
-  StoreAdapter,
-  ToolDescriptor,
-  ToolOutcome,
-  ToolRegistry,
-  ToolResult,
-  VendoTheme,
+import {
+  auditContext,
+  type Guard,
+  type Json,
+  type Membership,
+  type Principal,
+  publicBase,
+  type RiskLabel,
+  type RunContext,
+  type StoreAdapter,
+  stripPathPrefix,
+  type ToolDescriptor,
+  type ToolOutcome,
+  type ToolRegistry,
+  type ToolResult,
+  withPathPrefix,
 } from "@vendoai/core";
-import { auditContext, publicBase, stripPathPrefix, themeCssVariables, withPathPrefix } from "@vendoai/core";
+import type { AppsRuntime } from "@vendoai/apps";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
+import {
+  themeCssVariables,
+} from "@vendoai/apps/contract";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
@@ -26,7 +35,6 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { connectPage } from "./connect-page.js";
 import type { HostOAuthAdapter } from "./oauth/adapter.js";
-import type { AppsPort } from "./apps-port.js";
 import { handleFederation } from "./oauth/federation.js";
 import { RemoteAsVerifier } from "./oauth/remote-as.js";
 import { canonicalUri, json, OAuthServer, randomHex, sameCanonicalUri, TOKEN_EXCHANGE_GRANT_TYPE } from "./oauth/server.js";
@@ -103,8 +111,11 @@ export interface McpDoorConfig {
   oauth?: HostOAuthAdapter;
   /** Door-owned protocol state (clients, codes, refresh grants) — wired like every other block. */
   store: StoreAdapter;
-  /** §4 — saved apps ride along as MCP Apps; absent → tools-only door. */
-  apps?: AppsPort;
+  /** §4 — saved apps ride along as MCP Apps; absent → tools-only door. The
+   *  three verbs come off the real runtime (10-mcp §4); the umbrella passes
+   *  `vendo.apps` essentially verbatim, narrowing only what `open` may
+   *  answer. */
+  apps?: Pick<AppsRuntime, "list" | "open" | "call">;
   /** Build contract §9.1 — the host's org query, keyed on `Principal` (never on
    * a Request), resolved once per authenticated request and ridden onto every
    * RunContext this door mints.
@@ -900,7 +911,7 @@ class Door {
    * decide → (maybe park) → execute → report here: guard.check parks on "ask",
    * VendoError codes are preserved, the call is audited. Output scanning is a
    * bind-internal stage not exposed on the seam, but it still runs where it
-   * matters: the forwarded host-tool ref executes inside AppsPort.call, which
+   * matters: the forwarded host-tool ref executes inside the runtime's own `call`, which
    * the umbrella guard-BINDS (06 §1), under its own venue="app" context. Two
    * perimeters, one decision each; the door wrapper only adds Vendo's own
    * app-list / tree-payload envelope, which carries no host data to scan. */

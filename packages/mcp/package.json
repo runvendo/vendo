@@ -1,7 +1,7 @@
 {
   "name": "@vendoai/mcp",
   "version": "0.9.0",
-  "description": "The door: serve your product's tools to outside agents over MCP — OAuth, tool serving, and MCP Apps rendering behind one flag.",
+  "description": "The door: serve your product's tools to outside agents over MCP \u2014 OAuth, tool serving, and MCP Apps rendering behind one flag.",
   "keywords": [
     "ai",
     "agent",
@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@vendoai/apps": "workspace:*",
     "@vendoai/core": "workspace:*",
     "jose": "^6.2.3",
     "zod": "^3.25.0"

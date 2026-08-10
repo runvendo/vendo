@@ -1,10 +1,18 @@
-import type { AppDocument, RunContext, ToolCall, ToolDescriptor, ToolRegistry } from "@vendoai/core";
-import { VENDO_APP_FORMAT } from "@vendoai/core";
+import {
+  type RunContext,
+  type ToolCall,
+  type ToolDescriptor,
+  type ToolRegistry,
+  VENDO_APP_FORMAT,
+} from "@vendoai/core";
+import type {
+  AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createApps } from "../src/index.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
+import { createApps } from "../src/server/index.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
 
 /**
  * A READ through `apps.call` takes the QUERY arm.

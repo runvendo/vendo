@@ -1,11 +1,13 @@
 import {
   VENDO_APP_REF_KIND,
   VendoError,
-  effectiveAppBuildUiDeadlineMs,
   parseVendoToolEnvelope,
   type ApprovalDecision,
   type ToolOutcome,
 } from "@vendoai/core";
+import {
+  effectiveAppBuildUiDeadlineMs,
+} from "@vendoai/apps/contract";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../context.js";
 import type {

@@ -1,14 +1,22 @@
-import { VENDO_APP_FORMAT, type AppDocument, type RunContext, type ToolRegistry } from "@vendoai/core";
+import {
+  VENDO_APP_FORMAT,
+  type RunContext,
+  type ToolRegistry,
+} from "@vendoai/core";
+import {
+  type AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { createInClientApprovals } from "../src/inclient.js";
-import { createApps, type AppsRuntime } from "../src/index.js";
-import { pinComponentName, type InClientApproval, type PinBaseline } from "../src/pins.js";
-import { authoringAssembler, scriptedAssembler } from "../src/testing/authoring-assembler.js";
-import { guardFixture } from "../src/testing/guard-fixture.js";
-import { memoryStore } from "../src/testing/memory-store.js";
-import { basicLanguageModel } from "../src/testing/scripted-model.js";
-import { seedAppRow } from "../src/testing/seed-app-row.js";
-import { appVersionHash } from "../src/version-hash.js";
+import { createInClientApprovals } from "../src/server/remix/inclient.js";
+import { createApps, type AppsRuntime } from "../src/server/index.js";
+import { seedComponentName, type SeedBaseline } from "../src/contract/index.js";
+import type { InClientApproval } from "../src/server/index.js";
+import { authoringAssembler, scriptedAssembler } from "../src/server/testing/authoring-assembler.js";
+import { guardFixture } from "../src/server/testing/guard-fixture.js";
+import { memoryStore } from "../src/server/testing/memory-store.js";
+import { basicLanguageModel } from "../src/server/testing/scripted-model.js";
+import { seedAppRow } from "../src/server/testing/seed-app-row.js";
+import { appVersionHash } from "../src/server/remix/version-hash.js";
 
 const tools: ToolRegistry = {
   async descriptors() {
@@ -152,7 +160,7 @@ describe("createInClientApprovals", () => {
 });
 
 describe("runtime in-client surface", () => {
-  const baseline: PinBaseline = {
+  const baseline: SeedBaseline = {
     slot: "hero-card",
     source: "export default function Hero() { return <b>host</b>; }",
     hash: "sha256:hero-base",
@@ -169,7 +177,7 @@ describe("runtime in-client surface", () => {
       guard,
       tools,
       catalog: [],
-      pinBaselines: [baseline],
+      seedBaselines: [baseline],
       model: basicLanguageModel(),
       // A rename through the ONE engine: the assembler opens the app, rewrites
       // it under the instruction's name and saves the whole thing through the
@@ -186,10 +194,10 @@ describe("runtime in-client surface", () => {
 
   const seeded = async (store: ReturnType<typeof memoryStore>, subject = "user_ada") => {
     const app = doc({
-      pins: [{ slot: "hero-card", base: "sha256:hero-base" }],
+      seed: { component: "hero-card", baseline: "sha256:hero-base" },
       components: {
         Widget: "export default function Widget() { return null; }",
-        [pinComponentName("hero-card")]: "export default function Hero() { return <b>fork</b>; }",
+        [seedComponentName("hero-card")]: "export default function Hero() { return <b>fork</b>; }",
       },
     });
     await seedAppRow(store, app, subject);

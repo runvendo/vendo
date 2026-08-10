@@ -1,5 +1,9 @@
 /** VendoProvider + the internal context every hook and surface reads (08 §2). */
-import type { ComponentRegistry, ComponentRegistryEntry, VendoTheme } from "@vendoai/core";
+import type {
+  ComponentRegistry,
+  ComponentRegistryEntry,
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import type { ChatTransport, UIMessage } from "ai";
 import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
 import { createVendoClient, type VendoClient } from "./client.js";

@@ -7,7 +7,7 @@ import {
   vendoAutomationPartSchema,
   vendoCitationsPartSchema,
   vendoKnowledgeCitationSchema,
-  vendoViewStreamId,
+  vendoViewPart,
   vendoViewPartSchema,
   isVendoAppsTool,
   type ApprovalId,
@@ -22,6 +22,7 @@ import {
   type VendoAutomationPart,
   type VendoBuildFailedPart,
   type VendoCitationsPart,
+  type UIPayload,
   type VendoConnectPart,
   type VendoViewPart,
   type VendoViewStreamingToolCall,
@@ -204,17 +205,18 @@ export async function guardedCall(
     const args = typeof input === "object" && input !== null
       ? input as Record<string, unknown>
       : undefined;
-    const candidate = surface?.kind === "tree" && surface.payload !== undefined
-      ? {
-          type: "data-vendo-view",
+    // Built through `vendoViewPart`, the ONE producer of a view part — the
+    // same builder the app runtime's own emitters use, so a part this bridge
+    // publishes cannot differ in shape or stream id from theirs.
+    const view = surface?.kind === "tree" && surface.payload !== undefined
+      ? vendoViewPart({
           // OpenSurface carries no app id (06 §1); the open call's own appId
           // argument identifies the app this payload belongs to.
-          appId: surface.appId ?? args?.appId,
-          payload: surface.payload,
-        }
-      : null;
-    const view = vendoViewPartSchema.safeParse(candidate);
-    if (view.success) writePart(options.writer, view.data, vendoViewStreamId(view.data.appId));
+          appId: (surface.appId ?? args?.appId) as string,
+          payload: surface.payload as UIPayload,
+        })
+      : undefined;
+    if (view !== undefined) writePart(options.writer, view.part, view.streamId);
     // The automation card used to be reconstructed HERE, out of the edit tool's
     // returned document. `vendo_make` returns a receipt — four fields of words —
     // so the card is published by the apps runtime through the stream seam above,

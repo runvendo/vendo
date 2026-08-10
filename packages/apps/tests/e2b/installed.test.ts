@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { e2bInstalled } from "../../src/e2b/index.js";
+import { e2bInstalled } from "../../src/server/escalation/e2b/index.js";
 
 /** 0.4.4 defect C — e2bInstalled must test USABILITY (the runtime can resolve
  *  the SDK), never blanket-pass: the old "no import.meta.resolve ⇒ bundler

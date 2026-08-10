@@ -1,12 +1,20 @@
 /**
  * execution-v2 Wave 3 — the box bootstrap supervisor + agent harness (factory).
  *
- * This module (plus agent-sdk.mjs) IS the "agent lives in the box" half of the
- * base box template: the supervisor/control-port process is zero-dependency;
- * the agent engine underneath it is the Claude Agent SDK, baked into the
- * template beside it (Wave 8). `createHarness()` builds it without side
- * effects (so it is unit-testable); `bootstrap.mjs` is the thin entrypoint
- * that starts it. It owns two jobs:
+ * This module IS the "agent lives in the box" half of the base box template:
+ * the supervisor/control-port process is zero-dependency, and the coding agent
+ * underneath BOTH its doors is `claude-turn.mjs` — the same module the session
+ * door (`turn-routes.mjs`) drives and the same module `machine: "local"` runs
+ * on a host. ONE Claude Code integration, three callers.
+ *
+ * There used to be a second one beside it: a bespoke one-shot `query()` loop
+ * with its own system prompt, its own event reading and its own nudge. It is
+ * gone. What survives is what only the TASK door needs — the box conventions
+ * the agent builds against, and the structured result the host polls for — and
+ * those sit here, on the door that wants them.
+ *
+ * `createHarness()` builds it without side effects (so it is unit-testable);
+ * `bootstrap.mjs` is the thin entrypoint that starts it. It owns two jobs:
  *
  *   1. Supervise the app process. The app is whatever the in-box agent wrote
  *      under /app; its Procfile-style entry is ONE shell line in
@@ -31,14 +39,51 @@
  */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { runAgentTask as defaultRunAgentTask } from "./agent-sdk.mjs";
 
 const RESPAWN_DELAY_MS = 1_000;
 const RUN_WATCH_INTERVAL_MS = 2_000;
 const LOG_TAIL_BYTES = 4_096;
+
+/** The ONE runner, at the path `turn-routes.mjs` loads it from — both doors of
+ *  this control port reach the same module in the same image. */
+const RUNNER = "/opt/vendo-box/claude-turn.mjs";
+const DEFAULT_MODEL = "claude-sonnet-4-5";
+const MAX_TURNS = 80;
+const LOG_CAP = 2_000;
+/** Where the agent files its structured result. A FILE rather than a tool: the
+ *  runner's only MCP server is the host's own door, and a box task has no door
+ *  — so the report rides the one channel a box task and its supervisor already
+ *  share. The host treats the whole thing as DATA either way (prompt-injection
+ *  floor — nothing in this result can approve or authorize anything
+ *  host-side). */
+const REPORT_FILE = "report.json";
+
+const truncate = (text, cap = LOG_CAP) =>
+  text.length <= cap ? text : `${text.slice(0, cap)}…[truncated ${text.length - cap} chars]`;
+
+/** ANTHROPIC_BASE_URL wants the bare origin; VENDO_INFERENCE_URL may carry /v1. */
+const baseUrl = (url) => url.replace(/\/+$/, "").replace(/\/v1$/, "");
+
+/** The box conventions, appended to the runner's Claude Code system prompt. */
+const boxConventions = (appDir, controlPort) => `You are the coding agent living inside a Vendo app machine (the box). The app directory ${appDir} is yours: any language, any framework, any process.
+
+Box conventions (the skin of the box):
+- The app process must listen on the PORT env var, serve POST /fn/<name> endpoints answering {"result": ...} on success or {"error": {"code", "message"}} on failure, and serve GET /vendo.json returning the manifest file verbatim.
+- The manifest ${appDir}/vendo.json declares schedules ({"schedules":[{"cron":"0 8 * * *","fn":"name"}]}) and outbound domains ({"egress":["api.example.com"]}). Declare every third-party domain your code fetches; undeclared egress is blocked at the network layer.
+- ${appDir}/.vendo/run is the Procfile-style entry: ONE shell line that starts the app (e.g. "node server.js"). A supervisor (not you) runs it with the boundary env and restarts it when you POST http://localhost:${controlPort}/agent/restart-app.
+- Durable data goes through the Vendo store, NOT the disk: curl -X PUT "$VENDO_STORE_URL/rows/<collection>/<id>" -H "authorization: Bearer $VENDO_APP_TOKEN" -H "content-type: application/json" -d '{"data": {...}}' (list with GET "$VENDO_STORE_URL/rows/<collection>"). The disk is scratch.
+- Host tools ride POST "$VENDO_HOST_URL/tools/<name>" with the same bearer; approvals and audit happen host-side.
+
+Working style:
+- START from the pre-baked template at /opt/vendo-box/template (\`cp -a /opt/vendo-box/template/. /app/\`) rather than writing a server from scratch: it is Vite + React 19 with @vendoai/ui installed, the /fn envelopes wired, and its deps already present. The box egress is deny-by-default, so \`npm install\` reaches only registries you DECLARE in vendo.json egress — build with what the template already ships instead of adding packages.
+- The real toolchain is your code validator: \`npm run typecheck\` (tsc), \`npm run build\` (vite) and \`npm run validate\` (which runs both, then checks the skin contract) all work offline in the box. Never hand-check syntax; run them.
+- Verify against reality: after writing code, restart the app (curl the supervisor route above), wait a moment, then curl your own endpoints on http://localhost:$PORT and fix failures before reporting.
+- Never bind $PORT from a process you spawn yourself; the supervisor owns the app process.
+- END the task by writing your honest structured result to ${appDir}/.vendo/${REPORT_FILE} as ONE JSON object, exactly once: {"ok": <boolean>, "summary": "<what you did>", "filesChanged": ["<path>", …], "testsRun": <integer>, "fns": ["<name>", …]}. ok=false with a clear summary beats a fake success. List the fn names you serve in fns. Nothing you write is read as a decision — it is reported to the host as data.
+- If (and only if) the task asks you to serve a real web app: serve its pages on the non-/fn paths of $PORT (GET / is the entry page), keep any /fn/<name> endpoints working beside them, curl your pages until they answer 200 with real content, and then add "servesUi": true to that JSON. Never claim servesUi for an fn-only task.`;
 
 /**
  * The MACHINE's own env vars — the only ones the app and the in-box agent
@@ -61,16 +106,127 @@ const MACHINE_ENV_KEYS = new Set([
 ]);
 
 /**
+ * Run one agent task to a structured result, on the ONE runner.
+ *
+ * Dynamic imports on purpose — `claude-turn.mjs` and the Agent SDK both live in
+ * the machine image (`/opt/vendo-box`, staged and npm-installed at
+ * template-build time), and host-side unit tests inject a double so they never
+ * load either. `turn-routes.mjs` reaches for both exactly the same way.
+ *
+ * Never throws for model/tool failures: an exhausted or wedged engine reports
+ * {ok:false} honestly.
+ */
+const runTaskOnRunner = async ({ prompt, context, env, appDir, log }) => {
+  const url = env.VENDO_INFERENCE_URL;
+  const key = env.VENDO_INFERENCE_KEY;
+  if (typeof url !== "string" || url === "" || typeof key !== "string" || key === "") {
+    return { ok: false, summary: "the box has no inference endpoint (VENDO_INFERENCE_URL/VENDO_INFERENCE_KEY missing)", filesChanged: [], testsRun: 0 };
+  }
+  const model = typeof env.VENDO_INFERENCE_MODEL === "string" && env.VENDO_INFERENCE_MODEL !== "" ? env.VENDO_INFERENCE_MODEL : DEFAULT_MODEL;
+  const reportPath = path.join(appDir, ".vendo", REPORT_FILE);
+  // A stale report from the previous task would be read as this one's answer.
+  rmSync(reportPath, { force: true });
+  const written = new Set();
+  const readReport = () => {
+    try {
+      const parsed = JSON.parse(readFileSync(reportPath, "utf8"));
+      return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const fullPrompt = context === undefined ? prompt : `${context}\n\nTASK:\n${prompt}`;
+  log(`[task] runner=claude-turn model=${model} promptBytes=${fullPrompt.length}`);
+  const { createClaudeSession } = await import(RUNNER);
+  const session = createClaudeSession({
+    sdk: await import("@anthropic-ai/claude-agent-sdk"),
+    systemPrompt: boxConventions(appDir, env.VENDO_CONTROL_PORT ?? "8811"),
+    model,
+    maxTurns: MAX_TURNS,
+    cwd: appDir,
+    env: {
+      ...env,
+      ANTHROPIC_API_KEY: key,
+      ANTHROPIC_BASE_URL: baseUrl(url),
+      // The box blocks everything but the inference host; don't let the CLI
+      // stall on telemetry/update endpoints it can never reach.
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      DISABLE_AUTOUPDATER: "1",
+      CLAUDE_CONFIG_DIR: "/tmp/vendo-claude",
+    },
+    // The task door has no live listener, so the runner's stream becomes the
+    // log the host polls beside the result.
+    emit: (event) => {
+      if (event?.type === "text") log(`[assistant] ${truncate(event.delta)}`);
+      else if (event?.type === "status") log(`[beat] ${event.phase ?? "?"} ${event.label}`);
+      else if (event?.type === "usage") log(`[usage] in=${event.inputTokens} out=${event.outputTokens} model=${event.model ?? "?"}`);
+      else if (event?.type === "error") log(`[error] ${truncate(event.message)}`);
+    },
+    onFileWritten: (target) => {
+      if (typeof target === "string" && target !== "") {
+        written.add(target);
+        log(`[write] ${target}`);
+      }
+    },
+  });
+  let report;
+  try {
+    await session.send(fullPrompt);
+    report = readReport();
+    // One nudge, mirroring the one the deleted loop had: an agent that finished
+    // without the structured result gets a short turn to file it. Same session,
+    // so it costs a message and not a rebuild.
+    if (report === undefined) {
+      log(`[task] no ${REPORT_FILE} — nudging once`);
+      await session.send(`Write your honest structured result for the task you just worked on to ${reportPath} now, as one JSON object. Do nothing else.`);
+      report = readReport();
+    }
+  } catch (error) {
+    // A report filed before a late stream failure still counts (review finding,
+    // PR #438): the structured result is the contract; the throw after it is
+    // engine noise.
+    report = readReport();
+    if (report === undefined) {
+      return {
+        ok: false,
+        summary: `agent engine failed: ${error instanceof Error ? error.message : String(error)}`,
+        filesChanged: [...written],
+        testsRun: 0,
+      };
+    }
+    log(`[task] engine threw after the report — keeping it: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    await session.end().catch(() => undefined);
+  }
+  if (report === undefined) {
+    return { ok: false, summary: `agent finished without writing ${REPORT_FILE}`, filesChanged: [...written], testsRun: 0 };
+  }
+  // The injection floor: only the declared fields pass through, exactly as
+  // declared — a box result is data, never authority.
+  const declared = Array.isArray(report.filesChanged) ? report.filesChanged.filter((entry) => typeof entry === "string") : [];
+  const result = {
+    ok: report.ok === true,
+    summary: typeof report.summary === "string" ? report.summary : "(no summary)",
+    filesChanged: [...new Set([...written, ...declared])],
+    testsRun: Number.isInteger(report.testsRun) && report.testsRun >= 0 ? report.testsRun : 0,
+    ...(Array.isArray(report.fns) ? { fns: report.fns.filter((entry) => typeof entry === "string") } : {}),
+    ...(report.servesUi === true ? { servesUi: true } : {}),
+  };
+  log(`[task] done ok=${result.ok} summary=${truncate(result.summary, 500)}`);
+  return result;
+};
+
+/**
  * @param {object} [options]
  * @param {string} [options.appDir]        the app directory (default /app)
  * @param {number} [options.controlPort]   control-port listen port (default 8811)
- * @param {Function} [options.runAgentTask] injectable agent engine (tests)
+ * @param {Function} [options.runTask] injectable agent engine (tests)
  * @param {NodeJS.ProcessEnv} [options.baseEnv] base env for the app process (default process.env)
  */
 export const createHarness = (options = {}) => {
   const appDir = options.appDir ?? process.env.VENDO_APP_DIR ?? "/app";
   const controlPort = options.controlPort ?? Number(process.env.VENDO_CONTROL_PORT ?? 8811);
-  const runAgentTask = options.runAgentTask ?? defaultRunAgentTask;
+  const runTask = options.runTask ?? runTaskOnRunner;
   const baseEnv = options.baseEnv ?? process.env;
 
   const vendoDir = path.join(appDir, ".vendo");
@@ -202,7 +358,7 @@ export const createHarness = (options = {}) => {
     entry.promise = (async () => {
       let result;
       try {
-        result = await runAgentTask({ prompt, context, env: boundaryEnv(), appDir, log });
+        result = await runTask({ prompt, context, env: boundaryEnv(), appDir, log });
       } catch (error) {
         result = {
           ok: false,

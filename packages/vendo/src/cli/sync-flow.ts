@@ -8,7 +8,7 @@ import {
   readPushComponents,
   writePushComponents,
 } from "./cloud/host-components.js";
-import { pushPinBaselines } from "./cloud/pin-baselines.js";
+import { pushSeedBaselines } from "./cloud/seed-baselines.js";
 import { AGENT_ENDPOINT_ENV_VAR } from "./extract/gateway-fuel.js";
 import type { ThemeStageInput } from "./extract/stages.js";
 import { runProseStages } from "./init-judgment.js";
@@ -167,8 +167,9 @@ export function printSyncReport(report: SyncReportWithWarnings, output: Output):
     output.log(`pruned: ${name} — stale component capture deleted (your app no longer registers it)`);
   }
   if (report.pins.drifted.length > 0) {
-    // 06-apps §8 — drift never auto-rebases: the fork's owner decides.
-    output.log(`drifted: ${report.pins.drifted.join(", ")} — existing forks stay on the old capture until each owner rebases (POST /apps/:id/rebase-pin or the vendo_apps_rebase_pin agent tool)`);
+    // 06-apps §8 — drift never updates anything on its own: the owner decides,
+    // because updating REPLACES whatever they changed about the component.
+    output.log(`drifted: ${report.pins.drifted.join(", ")} — remixes of these stay on the old capture until each owner updates (POST /apps/:id/reseed or the vendo_apps_reseed agent tool). Updating replaces their changes with the new component.`);
   }
   // A `<Remixable>` wrapper that cannot capture is a hard error (final-shape
   // spec 2026-08-02): the constraint — one statically importable child — is
@@ -552,7 +553,7 @@ async function pushBaselinesToCloud(input: {
     return null;
   }
   // Never throws: whatever landed before a failure is still accounted for.
-  const result = await pushPinBaselines({
+  const result = await pushSeedBaselines({
     vendoDir,
     apiKey: cloudKey!,
     ...(options.apiUrl === undefined ? {} : { baseUrl: options.apiUrl }),

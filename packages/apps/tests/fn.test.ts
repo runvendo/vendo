@@ -1,9 +1,17 @@
-import { VENDO_APP_FORMAT, VendoError, type AppDocument, type RunContext, type ToolOutcome } from "@vendoai/core";
+import {
+  VENDO_APP_FORMAT,
+  VendoError,
+  type RunContext,
+  type ToolOutcome,
+} from "@vendoai/core";
+import {
+  type AppDocument,
+} from "../src/contract/index.js";
 import { describe, expect, it, vi } from "vitest";
-import { inMemoryBoxFiles } from "../src/testing/box-files.js";
-import type { AppCaller } from "../src/call.js";
-import { createFnCaller } from "../src/fn.js";
-import type { SandboxMachine } from "../src/sandbox.js";
+import { inMemoryBoxFiles } from "../src/server/testing/box-files.js";
+import type { AppCaller } from "../src/server/persistence/call.js";
+import { createFnCaller } from "../src/server/escalation/fn.js";
+import type { SandboxMachine } from "../src/server/escalation/sandbox.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

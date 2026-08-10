@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { pushBoxEnv, readBoxManifest, requestAppWithBootRetry, runBoxEdit, type BoxAgentClock } from "../src/box-agent.js";
-import type { SandboxMachine } from "../src/sandbox.js";
-import { fakeBoxSandbox, type FakeBoxAgent } from "../src/testing/fake-box.js";
-import { inMemoryBoxFiles } from "../src/testing/box-files.js";
+import { pushBoxEnv, readBoxManifest, requestAppWithBootRetry, runBoxEdit, type BoxAgentClock } from "../src/server/escalation/box-agent.js";
+import type { SandboxMachine } from "../src/server/escalation/sandbox.js";
+import { fakeBoxSandbox, type FakeBoxAgent } from "../src/server/testing/fake-box.js";
+import { inMemoryBoxFiles } from "../src/server/testing/box-files.js";
 
 /** Instant clock so the poll loop runs without real time. */
 const instantClock = (): BoxAgentClock => ({ sleep: async () => undefined, now: () => 0 });

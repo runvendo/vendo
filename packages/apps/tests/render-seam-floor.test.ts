@@ -22,11 +22,20 @@
  * with a green suite and a dead feature because the producer and the consumer
  * each mocked the other, so they could never disagree."
  */
-import { createAppFloor } from "../src/checking/floor.js";
-import type { AppFloor, NormalizedCatalog, ShapeType, VendoViewPart } from "@vendoai/core";
+import { createAppFloor } from "../src/server/checking/floor.js";
+import type {
+  ShapeType,
+  VendoViewPart,
+} from "@vendoai/core";
+import type {
+  AppFloor,
+} from "../src/contract/index.js";
+import type {
+  NormalizedCatalog,
+} from "../src/contract/index.js";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { wrapWorkspaceForRender } from "../src/render-seam.js";
+import { wrapWorkspaceForRender } from "../src/server/generation/render-seam.js";
 import { testWorkspace } from "./test-doubles.test-util.js";
 
 const APP = "app_1";

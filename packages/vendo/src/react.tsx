@@ -78,10 +78,9 @@ export {
   // wire-types.ts
   type OpenSurface,
   type InClientVenue,
-  type PinDrift,
+  type SeedDrift,
   type ShipDiff,
   type EditResult,
-  type PinRebaseResult,
   type VersionEntry,
   type ConnectionAccount,
   type InitiatedConnection,

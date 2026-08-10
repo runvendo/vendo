@@ -2,10 +2,15 @@
  * The static half's own contract: real compiler diagnostics, translated into
  * findings a model can act on — and total silence when there is no compiler.
  */
-import type { JsonSchema, NormalizedCatalog } from "@vendoai/core";
+import type {
+  JsonSchema,
+} from "@vendoai/core";
+import type {
+  NormalizedCatalog,
+} from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { screenTypings } from "../../src/checking/screen-typings.js";
-import { screenTscFindings, __setCompilerForTests } from "../../src/checking/screen-tsc.js";
+import { screenTypings } from "../../src/server/checking/screen-typings.js";
+import { screenTscFindings, __setCompilerForTests } from "../../src/server/checking/screen-tsc.js";
 
 /** The tool's DECLARED response contract — the only source the screen type
  *  check reads. */
