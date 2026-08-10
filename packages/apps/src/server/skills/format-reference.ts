@@ -181,6 +181,20 @@ An \`on*\` attribute names a host tool: \`onClick="maple_invoice_send"\`. That i
 only way anything in an app mutates. A value that is not a legal tool name drops
 the attribute.
 
+That bare form calls the tool with **no arguments**, so it is only right for a tool
+that needs none. A tool that takes arguments needs them written beside the name,
+each one read from the data:
+
+\`\`\`
+onClick={{ action: "maple_invoice_send", payload: { id: invoices.data.0.id } }}
+\`\`\`
+
+A control on a row reads that row: one control per row, each naming its own index.
+Nothing else reaches the tool — a field's own value does not, so
+\`<Input onChange="…">\` fires with the payload you wrote and nothing more.
+A required argument you leave out fails validation, because the press it produces
+is refused and the control is dead.
+
 ### \`<Island name="PascalName">\` — a component you write
 
 The content is raw TSX, verbatim to the **first** \`</Island>\`, with an
