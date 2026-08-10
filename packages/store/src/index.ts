@@ -17,6 +17,9 @@ export {
   appDataFileKey,
   APP_DATA_OWNER_REF,
 } from "./app-data-rows.js";
+// The one-shot migration for appData that predates the owner stamp: without it
+// every such row goes invisible the moment a door flips onto the family.
+export { backfillAppDataStamps, type AppDataBackfillReport } from "./backfill-app-data.js";
 // The reserved-collection map (02-store §2): exported so remote StoreAdapters
 // (the umbrella's hostedStore) can mirror this engine's per-collection
 // capability shape — claim on non-routed collections, atomic on generic

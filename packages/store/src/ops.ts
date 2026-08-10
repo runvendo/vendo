@@ -8,12 +8,13 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import { appDataFiles, appDataRows } from "./app-data-rows.js";
+import { backfillAppDataOnDb, reownAppData } from "./backfill-app-data.js";
 import type { Db, Query } from "./db.js";
 import { eraseStore } from "./erase.js";
 import { storeFiles, storeFilesForDb } from "./files-store.js";
 import { harnessStateKey } from "./harness-state.js";
 import { putStateRow, putThreadRow, THREAD_MESSAGES_AGGREGATE, threadFromRow } from "./helpers/rows.js";
-import { iso, pageLimit, text } from "./helpers/utils.js";
+import { iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
 import { createRecordStore } from "./records.js";
 import { createReservedRecordStore, threadRecord } from "./routing.js";
 import { dbFor, type VendoStore } from "./store.js";
@@ -25,6 +26,14 @@ import { workspaceRows, type PreparedWrite } from "./workspace-rows.js";
  *  idempotency-key replay — no new table. Rows carry the workspace owner as a
  *  subject ref, so the erase cascade reaches them. */
 const WORKSPACE_COMMITS = "vendo_workspace_commits";
+
+/** The per-app bearer's collection in the generic records table: one row per
+ *  live app token, `refs = { app_id, subject }`, minted and read by
+ *  `packages/apps/src/server/persistence/app-token.ts` — the source of truth
+ *  for this name. Spelled here rather than imported: `@vendoai/apps`'s entry is
+ *  the whole apps server, and dragging it into this module's graph for one
+ *  string costs the store its edge portability. */
+const APP_TOKENS = "vendo_app_tokens";
 
 interface WorkspaceEntry {
   path: string;
@@ -605,7 +614,8 @@ export function createStoreOps(
         invalid("lifecycle.erase needs a subject or an appId");
       },
       /** §9.5 — the app row flip and the workspace document move, which the
-       *  umbrella ran as a two-step seam, are ONE transaction here. */
+       *  umbrella ran as a two-step seam, are ONE transaction here, and so is
+       *  everything else the app owns: its appData and its bearer token. */
       async promote(appId, orgId) {
         await db.transaction(async (q) => {
           const tdb = txDb(q);
@@ -615,6 +625,14 @@ export function createStoreOps(
             throw new VendoError("not-found", `App ${appId} was not found`);
           }
           if (from === orgId) return; // already the org's — idempotent
+          // Legacy appData carries no owner stamp, and this runs BEFORE the row
+          // flip on purpose: the stamp it writes is `vendo_apps.subject`, still
+          // `from` at this point, so the reown below is ONE uniform
+          // `from` → `orgId` rename with no legacy-vs-stamped ambiguity left in
+          // the table. Do not "simplify" it to after the flip: the stamp would
+          // then write `orgId` while the rename still looks for `from`, and the
+          // two halves would disagree about which rows are legacy.
+          await backfillAppDataOnDb(tdb, { appId });
           await workspaceRows(tdb, filesFor(tdb)).moveApp(
             appId,
             { kind: "user", subject: from },
@@ -630,6 +648,21 @@ export function createStoreOps(
           if (flipped.rows[0] === undefined) {
             throw new VendoError("conflict", `app ${appId} belongs to another subject`);
           }
+          // The app's data changes hands with the app: appData is auto-scoped
+          // to the owner, and the owner IS `vendo_apps.subject`, so without
+          // this the org goes blind to its own app's rows and files. A blob
+          // primary-key collision here throws and rolls the whole promote back
+          // — §9.5 is all-or-nothing, and there is no resolution to invent.
+          await reownAppData(tdb, appId, from, orgId);
+          // And so does the app's bearer. The box keeps calling back with the
+          // token it already holds; left on the departed personal subject it
+          // would keep writing rows stamped with a subject that no longer owns
+          // the app (`refs.subject` is exactly what apps' `verify` returns).
+          await q(
+            `UPDATE vendo_records SET refs = refs || $2::jsonb
+             WHERE collection = $1 AND refs @> $3::jsonb`,
+            [APP_TOKENS, jsonParam({ subject: orgId }), jsonParam({ app_id: appId })],
+          );
         });
       },
     },
