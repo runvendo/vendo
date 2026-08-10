@@ -66,7 +66,7 @@ import {
   wrapWorkspaceForRender,
   type RenderSeamOptions,
 } from "@vendoai/apps";
-import type { LanguageModel } from "ai";
+import { wrapLanguageModel, type LanguageModel, type LanguageModelMiddleware } from "ai";
 import { vendo, type HarnessHand, type VendoHarnessOptions } from "@vendoai/harnesses";
 
 /**
@@ -307,6 +307,48 @@ const runState = (): TurnState => {
 };
 
 /**
+ * The effort every step AFTER the document exists runs at.
+ *
+ * Measured 2026-08-10: a screen writes and PAINTS in 19–27s, and the rest of a
+ * 165s run is one or two calls that rewrite the same document to satisfy
+ * `validate` — one billed 13.7k output tokens whose only product was a
+ * 623-character `validate` argument. Deep thinking is what WRITING a screen
+ * needs; naming a shape that is already wrong is mechanical, and the person is
+ * looking at the screen for every second of it. Low effort UNIFORMLY costs real
+ * quality (measured -13pp judged), so the write keeps every token it has and
+ * only the repairs after it are starved.
+ */
+const REPAIR_EFFORT = "low";
+
+/**
+ * The thinking seat, tapered: today's call for as long as the document is still
+ * being written, {@link REPAIR_EFFORT} once a save has landed one.
+ *
+ * The boundary is the first landed save rather than the first step, because the
+ * write is not always the first call — a run that searches the catalog first
+ * writes on step three, and starving that call would starve the writing.
+ *
+ * A seat named as a STRING has no instance to wrap (`streamText` resolves it), and
+ * middleware is a v3 thing; either way the seat rides through untapered rather
+ * than being refused — the same boundary `turnModel` draws for failover.
+ */
+function taperedSeat(model: LanguageModel, written: () => boolean): LanguageModel {
+  if (typeof model === "string" || model.specificationVersion !== "v3") return model;
+  const middleware: LanguageModelMiddleware = {
+    specificationVersion: "v3",
+    transformParams: async ({ params }) =>
+      !written() ? params : {
+        ...params,
+        providerOptions: {
+          ...params.providerOptions,
+          anthropic: { ...params.providerOptions?.anthropic, effort: REPAIR_EFFORT },
+        },
+      },
+  };
+  return wrapLanguageModel({ model, middleware });
+}
+
+/**
  * ONE assembly run, over any surface a `Turn` satisfies.
  *
  * Every host effect goes through `surface.tools.call()` and every file write
@@ -465,7 +507,7 @@ export async function assembleScreen(
     tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
     skills: NO_SKILLS,
     workspace: surface.workspace,
-    models: surface.models,
+    models: { ...surface.models, default: taperedSeat(surface.models.default, () => record.assembled) },
     state: runState(),
     options: {},
     signal: surface.signal,
