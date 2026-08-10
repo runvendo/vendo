@@ -284,6 +284,19 @@ describe("runStructuralLayer", () => {
     ]);
   });
 
+  it("accepts an i18n host whose ROOT layout is nested, with no app/layout.tsx (nextcrm)", async () => {
+    const repoDir = await makeTempRepo();
+    const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
+    await rm(path.join(repoDir, "app/layout.tsx"));
+    await mkdir(path.join(repoDir, "app/[locale]"), { recursive: true });
+    await writeFile(path.join(repoDir, "app/[locale]/layout.tsx"), layout);
+    const runner: StructuralCommandRunner = async () => ({ code: 0, stdout: "ok", stderr: "" });
+
+    const results = byId(await runStructuralLayer(passingContext(repoDir, runner)));
+
+    expect(results["files.expected"]).toMatchObject({ pass: true });
+  });
+
   it("accepts a pages-router host that mounts the provider in _app (teable)", async () => {
     const repoDir = await makePagesRepo(true);
     const runner: StructuralCommandRunner = async () => ({ code: 0, stdout: "ok", stderr: "" });
@@ -358,7 +371,7 @@ describe("runStructuralLayer", () => {
 
     const direct = byId(await runStructuralLayer(passingContext(repoDir, runner)));
     expect(direct["files.expected"]).toMatchObject({ pass: false });
-    expect(direct["files.expected"]?.detail).toContain("does not wrap children with @vendoai/vendo/react VendoProvider");
+    expect(direct["files.expected"]?.detail).toContain("does not wrap {children} with @vendoai/vendo/react VendoProvider");
 
     // Same sibling shape through the generated wrapper import.
     await mkdir(path.join(repoDir, "vendo"), { recursive: true });
@@ -409,7 +422,7 @@ describe("runStructuralLayer", () => {
     const results = byId(await runStructuralLayer(passingContext(repoDir, runner)));
 
     expect(results["files.expected"]).toMatchObject({ pass: false });
-    expect(results["files.expected"]?.detail).toContain("does not wrap children with @vendoai/vendo/react VendoProvider");
+    expect(results["files.expected"]?.detail).toContain("does not wrap {children} with @vendoai/vendo/react VendoProvider");
   });
 
   it("still fails a local declaration SHADOWING the imported VendoProvider alias (symbol resolution, not names)", async () => {
@@ -433,7 +446,7 @@ describe("runStructuralLayer", () => {
     const results = byId(await runStructuralLayer(passingContext(repoDir, runner)));
 
     expect(results["files.expected"]).toMatchObject({ pass: false });
-    expect(results["files.expected"]?.detail).toContain("does not wrap children with @vendoai/vendo/react VendoProvider");
+    expect(results["files.expected"]?.detail).toContain("does not wrap {children} with @vendoai/vendo/react VendoProvider");
   });
 
   it("still fails a HOISTED var shadowing the import from a nested block (binder ground truth, checker round 6)", async () => {
@@ -514,7 +527,7 @@ describe("runStructuralLayer", () => {
     const results = byId(await runStructuralLayer(passingContext(repoDir, runner)));
 
     expect(results["files.expected"]).toMatchObject({ pass: false });
-    expect(results["files.expected"]?.detail).toContain("does not wrap children with @vendoai/vendo/react VendoProvider");
+    expect(results["files.expected"]?.detail).toContain("does not wrap {children} with @vendoai/vendo/react VendoProvider");
   });
 
   it("still fails a local VendoProvider wrapper that never reaches @vendoai/vendo/react", async () => {
@@ -545,7 +558,7 @@ describe("runStructuralLayer", () => {
     const results = byId(await runStructuralLayer(passingContext(repoDir, runner)));
 
     expect(results["files.expected"]).toMatchObject({ pass: false });
-    expect(results["files.expected"]?.detail).toContain("does not wrap children with @vendoai/vendo/react VendoProvider");
+    expect(results["files.expected"]?.detail).toContain("does not wrap {children} with @vendoai/vendo/react VendoProvider");
   });
 
   it("reports targeted failures without throwing and still runs every check", async () => {

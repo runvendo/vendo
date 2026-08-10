@@ -1,7 +1,8 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
-import { findClientMount, isPageComponentElement } from "./layers/structural.js";
+import { findClientMount, isPageComponentElement, mountedChild } from "./layers/structural.js";
+import { readOptional } from "./util.js";
 
 export interface VendoRootPasteResult {
   applied: boolean;
@@ -110,20 +111,21 @@ export async function applyVendoRootPaste(
   }
 
   const mount = await findClientMount(repoDir);
-  if (!mount) {
-    return { applied: false, file: null, reason: "no client root found (app router layout or pages _app) — nothing to paste" };
-  }
-
   const filePath = path.join(repoDir, mount.mountRel);
-  const original = await readFile(filePath, "utf8");
+  // clientRoot names the conventional app/layout.tsx as its last resort even
+  // when no such file exists — init asks the host to create it. The corpus
+  // plays the human who pastes, never the one who scaffolds a root layout.
+  const original = await readOptional(filePath);
+  if (original === undefined) {
+    return { applied: false, file: mount.mountRel, reason: `client root ${mount.mountRel} does not exist — nothing to paste into` };
+  }
   if (original.includes("<VendoProvider")) {
     return { applied: false, file: mount.mountRel, reason: "client root already wraps <VendoProvider> — left unchanged" };
   }
 
-  const child = mount.router === "pages" ? "<Component {...pageProps} />" : "{children}";
   const span = mountSpan(original, mount.mountRel, mount.router);
   if (span === null) {
-    throw new Error(`${mount.mountRel} has no "${child}" expression for the mount to wrap`);
+    throw new Error(`${mount.mountRel} has no "${mountedChild(mount)}" expression for the mount to wrap`);
   }
   // The app-router paste is the canonical docs block verbatim; the pages paste
   // wraps in place instead, so the host's own props on <Component …> survive.

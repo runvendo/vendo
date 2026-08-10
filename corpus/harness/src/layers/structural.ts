@@ -174,36 +174,66 @@ function importBindingOf(mod: BoundModule, use: TS.Identifier): { specifier: str
   }
   return null;
 }
-/** The host's client root: an App Router root layout when one exists, else a
- * pages-router `_app.tsx`.
+const LAYOUT_FILE = /(^|\/)layout\.(?:tsx|jsx|js)$/;
+const SKIP_DIRECTORIES = new Set(["node_modules", "dist", ".next"]);
+
+/** Every `layout.*` under `dirRel`, repo-relative and lexicographically sorted
+ * — the same shape the product's `walk` returns (same skip set, same sort).
+ * Its 5,000-file cap is not mirrored: a host that hides its root layout behind
+ * five thousand files is not a shape the corpus grades. */
+async function layoutFiles(repoDir: string, dirRel: string): Promise<string[]> {
+  const entries = await readdir(path.join(repoDir, dirRel), { withFileTypes: true }).catch(() => []);
+  const found: string[] = [];
+  for (const entry of entries) {
+    const rel = path.posix.join(dirRel, entry.name);
+    if (entry.isDirectory()) {
+      if (!entry.name.startsWith(".") && !SKIP_DIRECTORIES.has(entry.name)) {
+        found.push(...await layoutFiles(repoDir, rel));
+      }
+    } else if (LAYOUT_FILE.test(rel)) {
+      found.push(rel);
+    }
+  }
+  return found.sort();
+}
+
+/** Where init scaffolds the route segment — mirrors `appDirectory`. */
+async function appDirectoryRel(repoDir: string): Promise<"app" | "src/app"> {
+  if (await pathExists(path.join(repoDir, "src/app"))) return "src/app";
+  if (await pathExists(path.join(repoDir, "src/pages"))) return "src/app";
+  return "app";
+}
+
+/** The host's client root: the SHALLOWEST app-router layout (an i18n or
+ * route-group host has no `app/layout.tsx` at all — `app/[locale]/layout.tsx`
+ * is its root), else a pages-router `_app.tsx`, else the conventional
+ * `app/layout.tsx` that does not exist yet.
  *
  * SEAM — this mirrors `clientRoot` (and its app-dir choice, `appDirectory`) in
- * packages/vendo/src/cli/shared.ts:267-292: init prints the paste for exactly
- * that file and doctor grades it there. If the product's rule moves, this must
- * move with it, or the corpus grades a file init never mentioned — a pages host
- * (teable) got a `src/pages/_app.tsx` paste while the harness looked only for
- * `src/app/layout.*`, so every layer ran with no provider mounted. */
-export async function findClientMount(repoDir: string): Promise<ClientMountInfo | null> {
-  for (const appDirRel of ["app", "src/app"] as const) {
-    for (const name of ["layout.tsx", "layout.jsx", "layout.js"] as const) {
-      const mountRel = path.posix.join(appDirRel, name);
-      if (await pathExists(path.join(repoDir, mountRel))) {
-        return {
-          appDirRel,
-          mountRel,
-          router: "app",
-          ts: name.endsWith(".tsx") || await pathExists(path.join(repoDir, "tsconfig.json")),
-        };
-      }
-    }
+ * packages/vendo/src/cli/shared.ts: init prints the paste for exactly that file
+ * (init.ts's mountStep) and doctor grades it there. If the product's rule moves,
+ * this must move with it, or the corpus grades a file init never mentioned —
+ * that has now cost two hosts (teable's pages `_app`, nextcrm's nested
+ * `[locale]` layout), so the rule is pinned by an executable seam test:
+ * tests/layers/client-mount-seam.test.ts runs the BUILT CLI over a fixture
+ * matrix and fails the moment its answer and this one differ. */
+export async function findClientMount(repoDir: string): Promise<ClientMountInfo> {
+  const appDirRel = await appDirectoryRel(repoDir);
+  // Shallowest wins, lexicographic on a tie: sort() above is lexicographic and
+  // Array#sort is stable, so the depth sort keeps it — as in clientRoot.
+  const [layout] = (await layoutFiles(repoDir, appDirRel))
+    .sort((a, b) => a.split("/").length - b.split("/").length);
+  const tsHost = async (mountRel: string): Promise<boolean> =>
+    mountRel.endsWith(".tsx") || await pathExists(path.join(repoDir, "tsconfig.json"));
+  if (layout !== undefined) {
+    return { appDirRel, mountRel: layout, router: "app", ts: await tsHost(layout) };
   }
   for (const pagesRel of ["src/pages", "pages"] as const) {
-    const mountRel = path.posix.join(pagesRel, "_app.tsx");
-    if (await pathExists(path.join(repoDir, mountRel))) {
-      return { appDirRel: pagesRel === "src/pages" ? "src/app" : "app", mountRel, router: "pages", ts: true };
+    if (await pathExists(path.join(repoDir, pagesRel))) {
+      return { appDirRel, mountRel: path.posix.join(pagesRel, "_app.tsx"), router: "pages", ts: true };
     }
   }
-  return null;
+  return { appDirRel, mountRel: path.posix.join(appDirRel, "layout.tsx"), router: "app", ts: true };
 }
 
 /** A pages `_app`'s `<Component {...pageProps} />` — the pages-router
@@ -221,9 +251,9 @@ export function isPageComponentElement(tsApi: typeof TS, node: TS.Node): boolean
     && attribute.expression.text === "pageProps");
 }
 
-/** What the provider must wrap, in words, for a check's failure detail. */
-function mountedChildLabel(mount: ClientMountInfo): string {
-  return mount.router === "pages" ? "<Component {...pageProps} />" : "children";
+/** The expression the provider must wrap — clientRoot's own `children` answer. */
+export function mountedChild(mount: ClientMountInfo): "{children}" | "<Component {...pageProps} />" {
+  return mount.router === "pages" ? "<Component {...pageProps} />" : "{children}";
 }
 
 function routeRel(info: ClientMountInfo): string {
@@ -271,7 +301,7 @@ async function generatedExpressServerRel(repoDir: string): Promise<string> {
 async function defaultExpectedFilesForFramework(
   repoDir: string,
   framework: "next" | "express",
-): Promise<{ files: string[]; mount: ClientMountInfo | null }> {
+): Promise<{ files: string[]; mount: ClientMountInfo }> {
   const mount = await findClientMount(repoDir);
   const files = [
     ".vendo/tools.json",
@@ -290,7 +320,7 @@ async function defaultExpectedFilesForFramework(
     } else {
       files.push(await generatedExpressServerRel(repoDir));
     }
-  } else if (mount) {
+  } else {
     files.push(routeRel(mount), mount.mountRel);
   }
 
@@ -502,13 +532,11 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
           wiringProblems.push("generated vendo/server module does not compose createVendo from @vendoai/vendo/server");
         }
       }
-    } else if (!mount) {
-      wiringProblems.push("no client root found at app/layout.*, src/app/layout.*, src/pages/_app.tsx or pages/_app.tsx");
     } else {
       const clientRoot = await readText(ctx.repoDir, mount.mountRel);
       const route = await readText(ctx.repoDir, routeRel(mount));
       if (clientRoot && !await mountReachesVendoReact(ctx.repoDir, mount, clientRoot)) {
-        wiringProblems.push(`${mount.mountRel} does not wrap ${mountedChildLabel(mount)} with @vendoai/vendo/react VendoProvider (directly or via a local provider wrapper module)`);
+        wiringProblems.push(`${mount.mountRel} does not wrap ${mountedChild(mount)} with @vendoai/vendo/react VendoProvider (directly or via a local provider wrapper module)`);
       }
       if (route && (!route.includes("createVendo") || !route.includes("nextVendoHandler"))) {
         wiringProblems.push(`${routeRel(mount)} does not compose createVendo() with nextVendoHandler()`);

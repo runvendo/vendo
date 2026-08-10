@@ -285,10 +285,41 @@ describe("applyVendoRootPaste", () => {
     expect(result).toMatchObject({ applied: false, file: null });
   });
 
-  it("skips silently when neither an App Router layout nor a pages _app exists", async () => {
+  it("skips, naming the client root, when the host has no layout and no pages router", async () => {
     const repoDir = await makeTempRepo();
+
     const result = await applyVendoRootPaste(repoDir, "next");
-    expect(result).toMatchObject({ applied: false, file: null });
+
+    // clientRoot's last resort: init names app/layout.tsx for the host to
+    // create. The corpus pastes; it does not scaffold a root layout.
+    expect(result).toMatchObject({ applied: false, file: "app/layout.tsx" });
+    expect(result.reason).toContain("does not exist");
+  });
+
+  it("wraps the shallowest layout of an i18n host with no app/layout.tsx (nextcrm)", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "app/[locale]"), { recursive: true });
+    await writeFile(path.join(repoDir, "app/[locale]/layout.tsx"), UNWRAPPED_LAYOUT);
+
+    const result = await applyVendoRootPaste(repoDir, "next");
+
+    expect(result).toMatchObject({ applied: true, file: "app/[locale]/layout.tsx" });
+    const layout = await readFile(path.join(repoDir, "app/[locale]/layout.tsx"), "utf8");
+    expect(layout).toContain('import { VendoProvider } from "@vendoai/vendo/react";');
+    expect(layout).toContain(WRAP);
+  });
+
+  it("wraps the ROOT layout, not a deeper one, when the host has both", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "app/(dashboard)"), { recursive: true });
+    await writeFile(path.join(repoDir, "app/layout.tsx"), UNWRAPPED_LAYOUT);
+    await writeFile(path.join(repoDir, "app/(dashboard)/layout.tsx"), UNWRAPPED_LAYOUT);
+
+    const result = await applyVendoRootPaste(repoDir, "next");
+
+    expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
+    // A second provider deeper in the tree would mount twice.
+    await expect(readFile(path.join(repoDir, "app/(dashboard)/layout.tsx"), "utf8")).resolves.toBe(UNWRAPPED_LAYOUT);
   });
 
   it("wraps the page slot of a pages-router _app when the host has no app layout (teable)", async () => {
