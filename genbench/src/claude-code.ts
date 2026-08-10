@@ -19,8 +19,8 @@ import { worldBlock } from "./vendo.js";
 import type { Case, World } from "./world.js";
 
 /** The bits of the Agent SDK this driver uses. Narrow on purpose, exactly as
- *  `packages/apps/src/claude-turn.ts` keeps it: the real message union has ~40
- *  members and this loop branches on one. */
+ *  `packages/harnesses/src/claude-code/claude-turn.ts` keeps it: the real
+ *  message union has ~40 members and this loop branches on one. */
 export interface AgentSdk {
   query(params: {
     prompt: string;

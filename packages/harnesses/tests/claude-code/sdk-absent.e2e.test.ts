@@ -22,8 +22,6 @@ import { afterAll, describe, expect, test } from "vitest";
 
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const dist = (path: string): string => pathToFileURL(join(PACKAGE_DIR, path)).href;
-const appsDist = (path: string): string =>
-  pathToFileURL(join(PACKAGE_DIR, "..", "apps", path)).href;
 
 const work = mkdtempSync(join(tmpdir(), "vendo-sdk-absent-"));
 afterAll(() => { rmSync(work, { recursive: true, force: true }); });
@@ -66,17 +64,18 @@ describe("D1 · a host that never installed the Agent SDK", () => {
     expect(output).toContain("HIDDEN ERR_MODULE_NOT_FOUND");
   });
 
-  test("@vendoai/apps, its cross-block internals, and the turn runner itself all import", () => {
+  test("the built turn runner itself imports — the artifact the machine image carries", () => {
+    // Only THIS package's dist: the apps-side halves of the same pin (the apps
+    // root and `./internal` importing SDK-free) live in apps' own suite
+    // (`packages/apps/tests/sdk-absent.e2e.test.ts`), because a test here
+    // reading apps' dist by file path needs apps BUILT, and since the
+    // claude-turn rehome nothing orders apps' build before this suite.
     const output = runProbe(`
-      const apps = await import(${JSON.stringify(appsDist("dist/index.js"))});
-      const internal = await import(${JSON.stringify(appsDist("dist/internal.js"))});
       const runner = await import(${JSON.stringify(dist("dist/claude-code/claude-turn.js"))});
-      if (typeof apps.createApps !== "function") throw new Error("apps did not load");
-      if (typeof internal.assembleTree !== "function") throw new Error("internals did not load");
       if (typeof runner.createClaudeSession !== "function") throw new Error("runner did not load");
-      console.log("APPS_OK");
+      console.log("RUNNER_OK");
     `);
-    expect(output).toContain("APPS_OK");
+    expect(output).toContain("RUNNER_OK");
   });
 
   test("claudeCode() composes with a sandbox and passes the boot gate", () => {
