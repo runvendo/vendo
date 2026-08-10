@@ -1,5 +1,6 @@
 /** CardList — one branded card per record, semantically formatted (W2 §The Kit). */
 import { applyFormat, type ValueFormat } from "../format.js";
+import { Button } from "../forms/button.js";
 import { font, t } from "../tokens.js";
 import { EnumBadge } from "../values.js";
 
@@ -22,13 +23,37 @@ export interface CardListProps {
   columns?: number;
   /** Text shown when there are no items. */
   emptyState?: string;
+  /** One-line rows instead of cards — the dense shape at phone width. */
+  layout?: "cards" | "rows";
+  /** Bound host-tool action for each row's trailing control (rows layout). */
+  onRowAction?: (args?: Record<string, unknown>) => void;
+  /** Label of that control. */
+  rowActionLabel?: string;
+  /** Row fields sent as the action's arguments. */
+  rowActionArgs?: string[];
+  /** Emphasis of that control. */
+  rowActionVariant?: "secondary" | "danger";
 }
 
 function resolve(row: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((acc, k) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[k] : undefined), row);
 }
 
-export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items" }: CardListProps) {
+const isNumericField = (f: CardField): boolean => f.format === "money" || f.format === "number" || f.format === "percent";
+
+export function CardList({
+  items: rawItems,
+  titleField,
+  badgeField,
+  fields = [],
+  columns,
+  emptyState = "No items",
+  layout = "cards",
+  onRowAction,
+  rowActionLabel = "Open",
+  rowActionArgs = ["id"],
+  rowActionVariant = "secondary",
+}: CardListProps) {
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const items = Array.isArray(rawItems) ? rawItems : [];
   if (items.length === 0) {
@@ -45,6 +70,52 @@ export function CardList({ items: rawItems, titleField, badgeField, fields = [],
         }}
       >
         {emptyState}
+      </div>
+    );
+  }
+  if (layout === "rows") {
+    // One line per record: the row IS the label, so a field carries no label
+    // text. Amounts sit last-but-one so the column lines up across rows even
+    // when badge widths differ.
+    return (
+      <div
+        data-kit="CardList"
+        style={{ ...font, border: `1px solid ${t.border}`, borderRadius: t.radiusMedium, background: t.surface, overflow: "hidden" }}
+      >
+        {items.map((item, index) => {
+          const badge = badgeField ? resolve(item, badgeField) : undefined;
+          const cell = (f: CardField): string => applyFormat(resolve(item, f.key), f.format ?? "text") ?? "—";
+          return (
+            <div
+              key={String(resolve(item, "id") ?? index)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                borderTop: index === 0 ? 0 : `1px solid ${t.border}`,
+                padding: "var(--vendo-density-table-padding, 10px 12px)",
+              }}
+            >
+              <span style={{ flex: "1 1 auto", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {titleField ? String(resolve(item, titleField) ?? "—") : ""}
+              </span>
+              {fields.filter((f) => !isNumericField(f)).map((f) => (
+                <span key={f.key} style={{ color: t.muted, whiteSpace: "nowrap" }}>{cell(f)}</span>
+              ))}
+              {badge !== undefined && badge !== null && badge !== "" ? <EnumBadge value={String(badge)} /> : null}
+              {fields.filter(isNumericField).map((f) => (
+                <span key={f.key} style={{ color: t.text, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>{cell(f)}</span>
+              ))}
+              {onRowAction ? (
+                <Button
+                  label={rowActionLabel}
+                  variant={rowActionVariant}
+                  onClick={() => onRowAction(Object.fromEntries(rowActionArgs.map((k) => [k, resolve(item, k)])))}
+                />
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     );
   }

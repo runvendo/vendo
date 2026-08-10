@@ -208,6 +208,21 @@ function resolveReshaped(
   return reshaped.value;
 }
 
+/** A bound press takes optional per-press args — a list row passes its OWN
+ *  fields, so one action node serves every row — merged over the node's
+ *  static payload. */
+function withPressArgs(
+  name: string,
+  payload: Json | undefined,
+  action: (name: string, payload?: Json) => Promise<ToolOutcome>,
+): (args?: Record<string, unknown>) => Promise<ToolOutcome> {
+  return (args) => {
+    if (args === undefined) return action(name, payload);
+    const base = payload !== null && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+    return action(name, { ...base, ...args } as Record<string, Json>);
+  };
+}
+
 function bindValue(
   value: unknown,
   mode: BoundMode,
@@ -234,7 +249,7 @@ function bindValue(
     if (mode === "jail") {
       return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
     }
-    return () => action(value.$action, value.payload === undefined ? undefined : payload);
+    return withPressArgs(value.$action, value.payload === undefined ? undefined : payload, action);
   }
   if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, onMismatch));
   if (typeof value === "object" && value !== null) {

@@ -173,7 +173,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "CardList",
     group: "data",
-    summary: "One branded card per record. Use when rows read better as cards than a table.",
+    summary: 'One branded card per record, or with layout="rows" one dense line per record with an optional per-row control. Use when rows read better as cards than a table.',
     props: {
       items: data(rows, "items from a tool call", { required: true }),
       titleField: config(z.string(), "field for each card title"),
@@ -181,8 +181,16 @@ export const KIT_SPECS: KitComponentSpec[] = [
       fields: config(z.array(cardField), "label/value rows shown on each card"),
       columns: config(z.number().int().positive(), "cards per row"),
       emptyState: copy(z.string(), "text when there are no items"),
+      layout: config(z.enum(["cards", "rows"]), 'one-line rows instead of cards; prefer "rows" for a long list'),
+      onRowAction: config(action, "the host tool each row's trailing control runs, with that row's fields as arguments"),
+      rowActionLabel: copy(z.string(), "label of that control"),
+      rowActionArgs: config(z.array(z.string()), 'row fields sent as the action arguments (default ["id"])'),
+      rowActionVariant: config(z.enum(["secondary", "danger"]), "emphasis of that control"),
     },
-    examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balanceCents",label:"Balance",format:"money"}]}/>'],
+    examples: [
+      '<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balanceCents",label:"Balance",format:"money"}]}/>',
+      '<CardList items={transfers.data} layout="rows" titleField="to" badgeField="status" fields={[{key:"date",format:"date"},{key:"amountCents",format:"money"}]} onRowAction="cancel_transfer" rowActionLabel="Cancel" rowActionVariant="danger"/>',
+    ],
   },
   {
     name: "Stat",
