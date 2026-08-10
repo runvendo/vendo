@@ -40,6 +40,7 @@ import {
   type RunContext,
   type ToolListing,
   type ToolRegistry,
+  type ToolResult,
   type TurnId,
   type TurnSkills,
   type TurnState,
@@ -198,6 +199,31 @@ export const escalatedPlanPath = (appId: AppId): string => `${appDirectory(appId
 const nameOf = (content: string): string | undefined => {
   const match = /<App\b[^>]*\bname="([^"]+)"/.exec(content);
   return match?.[1]?.trim() || undefined;
+};
+
+/** Arguments as one key, with object fields in a fixed order — two calls that
+ *  differ only in the order they spelled their arguments are one question. */
+const stableArgs = (args: unknown): string =>
+  JSON.stringify(args, (_key: string, value: unknown) =>
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+      : value);
+
+/**
+ * LangGraph marks a memoized node invocation `cached: True`; here it is a line the
+ * MODEL reads, on the result it already has.
+ *
+ * That is the point of porting the marker rather than serving the memo silently: a
+ * loop that asked the same question four different ways is not learning, and the
+ * only party that can stop is the one being handed the answer. Object outputs
+ * only — a bare string or list has nowhere to carry a note, and inventing a
+ * wrapper would change the shape the model was told to expect.
+ */
+const markCached = (hit: ToolResult): ToolResult => {
+  if (hit.status !== "ok") return hit;
+  const output = hit.output;
+  if (typeof output !== "object" || output === null || Array.isArray(output)) return hit;
+  return { status: "ok", output: { ...output, cached: "this is the answer you already got for the same question" } };
 };
 
 /**
@@ -359,6 +385,50 @@ export async function assembleScreen(
   const record: RunRecord = { assembled: false, painted: false };
 
   /**
+   * THE REPEAT-READ MEMO — LangGraph's node `CachePolicy(ttl, key_func)`, scoped
+   * to one run (docs.langchain.com/oss/python/langgraph/graph-api).
+   *
+   * Measured 2026-08-10 ("pending transfers"): four `search_components`
+   * round-trips between 21s and 59s and nothing on screen until 107s. Asking the
+   * same catalog the same question in four wordings is one answer paid for four
+   * times, and the step budget spent asking is budget not spent assembling. So a
+   * read's result is remembered under a normalised key of its input, the repeat is
+   * served from memory, and the answer says it is a repeat.
+   *
+   * Run-scoped for the same reason `record` is: two concurrent assemblies must not
+   * read each other's answers.
+   */
+  const memo = new Map<string, ToolResult>();
+
+  /**
+   * LangGraph's `key_func`: what may be memoized, and under what key. `undefined`
+   * means uncacheable, and uncacheable is the default — only a plain read of
+   * something this run cannot have changed gets a key.
+   *
+   * `validate` is excluded BY NAME even though it is graded `read`. Its real input
+   * is the SAVED DOCUMENT, not its arguments — `validate({appId})` judges whatever
+   * the last save landed — so keying it by arguments would hand the loop a stale
+   * verdict about a document it has since rewritten, which is the one failure this
+   * whole memo must not cause. `ask_user` is a person, not a read, and the two
+   * hands write.
+   */
+  const cacheKey = (name: string, args: unknown): string | undefined => {
+    if (name === SAVE_APP_TOOL || name === ESCALATE_TOOL || name === "validate" || name === "ask_user") {
+      return undefined;
+    }
+    // The catalog search is the repeat this exists for, and it is the one place a
+    // `key_func` earns its keep: "chart of spend by category" and "spend category
+    // chart" are the same question, so the key is the word SET, not the wording.
+    if (name === "search_components") {
+      const query = (args as { query?: unknown } | null)?.query;
+      if (typeof query !== "string") return undefined;
+      return `search_components:${query.toLowerCase().split(/\W+/).filter(Boolean).sort().join(" ")}`;
+    }
+    if (listings.find((listing) => listing.name === name)?.risk !== "read") return undefined;
+    return `${name}:${stableArgs(args)}`;
+  };
+
+  /**
    * The clock, as one signal the loop already obeys.
    *
    * `AbortSignal.timeout` rather than a timer this function has to remember to
@@ -416,6 +486,10 @@ export async function assembleScreen(
       if (committed.status !== "ok") {
         return { saved: false, note: "The save did not land — someone else changed this app. Save again." };
       }
+      // The memo's TTL, expressed against the one event that can invalidate
+      // anything derived from this app's state: the app just changed, so every
+      // remembered answer about it is now a guess.
+      memo.clear();
       // The FIRST landed save is when the person stops waiting and starts
       // looking, so it is what starts the short clock.
       if (!record.assembled) fuse(SCREEN_POLISH_MS);
@@ -510,7 +584,22 @@ export async function assembleScreen(
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    // Every call still goes to the surface — the memo only answers the SECOND time
+    // the loop asks the same cacheable question, and only with an answer that
+    // already came back `ok`. A denial or an error is never remembered: those are
+    // the answers a retry can legitimately change.
+    tools: {
+      call: async (name, args) => {
+        const key = cacheKey(name, args);
+        if (key === undefined) return await surface.tools.call(name, args);
+        const hit = memo.get(key);
+        if (hit !== undefined) return markCached(hit);
+        const result = await surface.tools.call(name, args);
+        if (result.status === "ok") memo.set(key, result);
+        return result;
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
