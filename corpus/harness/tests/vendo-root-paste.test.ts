@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import ts from "typescript";
 import { afterEach, describe, expect, it } from "vitest";
 import { applyVendoRootPaste } from "../src/vendo-root-paste.js";
 
@@ -56,6 +57,27 @@ const UNWRAPPED_LAYOUT_SPACELESS_DESTRUCTURE = [
   "",
 ].join("\n");
 
+// invoify's app/layout.tsx, verbatim at the manifest's pinned sha
+// (93b21a22e902de0ce25c43933d5ef2d50f30c7e3): a pass-through root layout with
+// NO JSX, so its destructured parameter is the file's ONLY `{children}`.
+// A last-occurrence text scan pasted the mount into the parameter list and made
+// the file unparseable ("Expected yield, an identifier, [ or {").
+const INVOIFY_PASSTHROUGH_LAYOUT = [
+  'import { ReactNode } from "react";',
+  'import "@/app/globals.css";',
+  "",
+  "type Props = {",
+  "    children: ReactNode;",
+  "};",
+  "",
+  "// Since we have a `not-found.tsx` page on the root, a layout file",
+  "// is required, even if it's just passing children through.",
+  "export default function RootLayout({ children }: Props) {",
+  "    return children;",
+  "}",
+  "",
+].join("\n");
+
 // The canonical mount from docs-site/quickstart.mdx ("The client mount") — the
 // harness constructs this itself, independent of what init printed.
 const WRAP = '<VendoProvider baseUrl="/api/vendo">{children}</VendoProvider>';
@@ -87,6 +109,28 @@ describe("applyVendoRootPaste", () => {
     expect(layout).toContain("function RootLayout({children}: { children: ReactNode }) {");
     // JSX usage wrapped instead.
     expect(layout).toContain(`<body>${WRAP}</body>`);
+  });
+
+  it("wraps the returned children of a pass-through layout that renders no JSX (invoify)", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "app"), { recursive: true });
+    await writeFile(path.join(repoDir, "app/layout.tsx"), INVOIFY_PASSTHROUGH_LAYOUT);
+
+    const result = await applyVendoRootPaste(repoDir, "next");
+
+    expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
+    const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
+    // The parameter destructure — the file's only literal `{children}` — is
+    // left alone; the RETURNED children is what the mount wraps.
+    expect(layout).toContain("export default function RootLayout({ children }: Props) {");
+    expect(layout).toContain(`return ${WRAP};`);
+    // And the result still parses: pasting JSX into the parameter list failed
+    // host.typecheck and host.build with a parse error, not just files.expected.
+    expect(ts.transpileModule(layout, {
+      reportDiagnostics: true,
+      fileName: "layout.tsx",
+      compilerOptions: { jsx: ts.JsxEmit.Preserve },
+    }).diagnostics ?? []).toEqual([]);
   });
 
   it("keeps a leading 'use client' directive first — pasted imports go after it", async () => {

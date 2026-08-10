@@ -91,8 +91,10 @@ the orchestrating environment; Vendo-specific wiring never belongs here.
 
 ## Running the sweep
 
-The sweep is run on demand, never in CI. Layer 1 is free — the structural clean
-room, no model credentials — so run
+Run `pnpm build` first: the harness imports `@vendoai/core` at load, so a cold
+checkout fails before the first repo is cloned. Then, on demand — the sweep
+never runs in CI. Layer 1 is free — the structural clean room, no model
+credentials — so run
 `pnpm corpus run --layer 1 --json --strict` before any PR that touches init
 (`--strict` makes a hard structural failure exit nonzero);
 `corpus/scripts/corpus-trend.mjs` appends a trend delta versus the previous
