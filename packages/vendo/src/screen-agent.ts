@@ -253,12 +253,13 @@ through two tools.
   them — why you narrowed something, a constraint the tools imposed, a shape you
   ruled out. Never record what you did or in what order; that is narration, and
   it crowds out the one line that mattered.
-  Its \`done\` is how you FINISH. Set it on the save that answers the whole ask —
-  everything the person asked for is on the screen and you have nothing left to
-  add — and the turn ends the moment that save reaches the screen. Nothing else
-  ends it: without \`done\` you keep going until the step budget runs out, and
-  every step after the screen was finished is the person waiting for a screen
-  they already have. Leave it off a save that still has work behind it.
+  Its \`done\` is how you FINISH. Set it on the save that answers the whole ask,
+  and the turn ends the moment that save reaches the screen. Nothing else ends it:
+  without \`done\` you keep going until the step budget runs out, and every step
+  after the screen was finished is the person waiting for a screen they already
+  have. Before you set it, read the ask again clause by clause and find each one on
+  the screen you just wrote — a screen the person would have to ask a second time
+  for is not finished, and the steps you have left are what it costs to fix that.
 - **\`validate\`** is not your spell-checker — the save is. Every save runs the
   checks on the way in and hands you back what they found, so there is nothing left
   to discover about a document you just saved. Ask \`validate\` only for a second
