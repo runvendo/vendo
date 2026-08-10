@@ -62,20 +62,59 @@ describe("installCommandFor", () => {
     expect(await installCommandFor(app)).toEqual({ command: "pnpm", args: ["add"], cwd: app });
   });
 
+  /** An app nested under a workspace root that claims `globs`. */
+  async function nestedUnderWorkspace(globs: string, appPath: string[], leafLockfile = true): Promise<string> {
+    const ancestor = await tempRoot();
+    await writeFile(join(ancestor, "pnpm-workspace.yaml"), `packages:\n${globs}overrides:\n  next: '>=16'\n`);
+    const app = join(ancestor, ...appPath);
+    await mkdir(app, { recursive: true });
+    await writeFile(join(app, "package.json"), JSON.stringify({ name: appPath.at(-1) }));
+    if (leafLockfile) await writeFile(join(app, "pnpm-lock.yaml"), "");
+    return app;
+  }
+
   it("ignores an ANCESTOR workspace the host is not a member of", async () => {
     // A repo cloned into an unrelated monorepo (the corpus clones hosts into
     // this repo's own tree). pnpm walks up to the nearest pnpm-workspace.yaml,
     // so an unqualified `pnpm add` installs against the ancestor: its
     // overrides rewrite the host's pins under pnpm 11, and the add aborts on
-    // the ancestor's store under pnpm 9. The host's own lockfile is the proof
-    // it is not a member — pnpm keeps one lockfile, at the workspace root.
-    const ancestor = await tempRoot();
-    await writeFile(join(ancestor, "pnpm-workspace.yaml"), "packages:\n  - pkgs/*\noverrides:\n  next: '>=16'\n");
-    const app = join(ancestor, ".repos", "skateshop");
-    await mkdir(app, { recursive: true });
-    await writeFile(join(app, "package.json"), JSON.stringify({ name: "skateshop" }));
-    await writeFile(join(app, "pnpm-lock.yaml"), "");
+    // the ancestor's store under pnpm 9.
+    const app = await nestedUnderWorkspace("  - pkgs/*\n", [".repos", "skateshop"]);
     expect(await installCommandFor(app)).toEqual({ command: "pnpm", args: ["add", "--ignore-workspace"], cwd: app });
+  });
+
+  it("ignores it for a non-member that never installed, lockfile or not", async () => {
+    // Membership is the workspace's answer, not the leaf's install state — a
+    // freshly cloned host has no lockfile yet and is still not a member.
+    const app = await nestedUnderWorkspace("  - pkgs/*\n", [".repos", "skateshop"], false);
+    expect(await installCommandFor(app)).toEqual({ command: "pnpm", args: ["add", "--ignore-workspace"], cwd: app });
+  });
+
+  it("keeps a real member on the workspace even when it carries a stale lockfile", async () => {
+    // A member can retain a copied or stale leaf pnpm-lock.yaml. Reading that
+    // as "not a member" cut it loose from its own workspace and wrote the
+    // repair into the leaf lockfile instead (Greptile P1, live reproduction).
+    const app = await nestedUnderWorkspace("  - pkgs/*\n", ["pkgs", "web"]);
+    expect(await installCommandFor(app)).toEqual({ command: "pnpm", args: ["add"], cwd: app });
+  });
+
+  it("honors a `!` exclusion — an excluded dir is not a member", async () => {
+    const app = await nestedUnderWorkspace("  - pkgs/*\n  - '!pkgs/vendored'\n", ["pkgs", "vendored"]);
+    expect(await installCommandFor(app)).toEqual({ command: "pnpm", args: ["add", "--ignore-workspace"], cwd: app });
+  });
+
+  it("treats a pattern it cannot model as a member — the conservative side", async () => {
+    // Brace/extglob syntax is not modelled; guessing "not a member" would cut
+    // a real member loose, so an unreadable pattern keeps today's behavior.
+    const app = await nestedUnderWorkspace("  - '{apps,pkgs}/*'\n", ["apps", "web"]);
+    expect(await installCommandFor(app)).toEqual({ command: "pnpm", args: ["add"], cwd: app });
+  });
+
+  it("matches deep globs the way pnpm does", async () => {
+    const nested = await nestedUnderWorkspace("  - 'apps/**'\n", ["apps", "team", "web"]);
+    expect((await installCommandFor(nested)).args).toEqual(["add"]);
+    const tooDeep = await nestedUnderWorkspace("  - 'apps/*'\n", ["apps", "team", "web"]);
+    expect((await installCommandFor(tooDeep)).args).toEqual(["add", "--ignore-workspace"]);
   });
 
   it("leaves a nested app that is its own workspace root alone", async () => {

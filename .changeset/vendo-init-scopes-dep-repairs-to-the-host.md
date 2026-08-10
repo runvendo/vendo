@@ -15,7 +15,9 @@ next 16 tree), and under an older pnpm the add aborts against the ancestor's
 store, so init only warns (E-DEP-003) and the zod floor never applies —
 leaving the build red on `zod ./v4 not exported`.
 
-The host's own `pnpm-lock.yaml` is what proves it is not a member: pnpm keeps
-exactly one lockfile, at the workspace root, never inside a member package.
-Genuine workspace members — and hosts that are their own workspace root —
-keep today's behavior exactly.
+Membership is decided by the ancestor workspace's own `packages:` globs
+matched against the host's relative path, so a genuine member keeps ordinary
+workspace behavior even if it carries a stale leaf lockfile, and a host that
+has never installed is still recognized as a non-member. A pattern form the
+reader does not model resolves to "member", which is the pre-existing
+behavior.
