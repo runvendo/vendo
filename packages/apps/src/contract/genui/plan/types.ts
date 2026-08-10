@@ -8,7 +8,7 @@
  * (island, server work) and honest refusals. Structure is exactly two levels
  * deep — groups hold leaves, nothing holds groups — because a group is the
  * coherence unit one fill worker writes whole. Arrangement inside a group is
- * attributes (col/row/span), never nesting.
+ * the group's own `layout`, never nesting.
  *
  * Tabs are NOT part of the shape: they derive from the groups' tab labels
  * (see {@link planTabs}).
@@ -22,14 +22,13 @@ export interface PlanQuery {
   input: Record<string, unknown>;
 }
 
-/** One part of a group: which component shows it, which query feeds it, and
- *  one sentence of what it is for. `attrs` carries arrangement hints
- *  (col/row/span) as written. */
+/** One part of a group: which component shows it, and one sentence of what it
+ *  is for. Nothing else — the skeleton reads the component, the fill worker
+ *  reads the purpose, and a field no consumer reads is a field the format
+ *  would have to define normatively for nothing. */
 export interface PlanLeaf {
   component: string;
-  query?: string;
   purpose: string;
-  attrs?: Record<string, string>;
 }
 
 /** A handful of parts that must tell one story — written by one worker. */

@@ -29,7 +29,6 @@
 
 import { Cron } from "croner";
 import {
-  defineOwn,
   isPlainObject,
   type Json,
   safeErrorMessage,
@@ -66,10 +65,6 @@ export interface PlanCompileResult {
 /** One worker writes one whole group, and five parts is the most a group can
  *  hold together (spec: groups are the coherence unit). */
 const PLAN_MAX_GROUP_LEAVES = 5;
-
-/** A leaf's own fields; every other attribute is an arrangement hint
- *  (col/row/span) and rides along in `attrs`. */
-const LEAF_FIELDS: ReadonlySet<string> = new Set(["component", "query", "purpose"]);
 
 const PLAN_CLOSE = "</Plan>";
 const CANNOT_CLOSE = "</Cannot>";
@@ -114,9 +109,6 @@ interface PlanState {
   facts: PlanFacts;
   tools: ReadonlySet<string>;
   components: ReadonlySet<string>;
-  /** Every grammar-valid `<Query id>` in the document, pre-scanned, so a leaf
-   *  may reference a query declared further down. */
-  queryIds: ReadonlySet<string>;
 }
 
 /** The tokenizer records its own kebab-coded issues on the compile state; the
@@ -238,29 +230,10 @@ const compileLeaf = (plan: PlanState, group: PlanGroup): PlanLeaf | undefined =>
       `there is no component called "${component}". The components you can use are: ${nameList(plan.facts.components)}. Pick the closest fit.`,
     );
   }
-  const leaf: PlanLeaf = { component, purpose };
-  const query = stringAttr(props, "query");
-  if (query !== undefined) {
-    leaf.query = query;
-    if (!plan.queryIds.has(query)) {
-      plan.issues.push(
-        `the ${component} leaf reads a query called "${query}", but this plan declares no <Query id="${query}">. Declare it at the top of the plan, or drop the query attribute.`,
-      );
-    }
-  }
-  const arrangement: Record<string, string> = {};
-  for (const [key, value] of Object.entries(props)) {
-    if (LEAF_FIELDS.has(key)) continue;
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      defineOwn(arrangement, key, String(value));
-    } else {
-      plan.issues.push(
-        `the ${component} leaf's "${key}" is an arrangement hint like col="2", and ${describe(value)} cannot be one. It was dropped.`,
-      );
-    }
-  }
-  if (Object.keys(arrangement).length > 0) leaf.attrs = arrangement;
-  return leaf;
+  // Any other attribute is ignored: a leaf's whole contract is the component
+  // and the sentence, and the compiler is TOTAL — an extra attribute costs the
+  // plan nothing rather than dropping it.
+  return { component, purpose };
 };
 
 /** A group's children: `<Leaf>` elements only. Returns how many leaves the
@@ -508,7 +481,6 @@ const compilePlanUnsafe = (text: string, facts: PlanFacts): PlanCompileResult =>
     facts,
     tools: new Set(facts.tools),
     components: new Set(facts.components),
-    queryIds: declared.queryNames,
   };
   skipWhitespace(state);
   if (!opensRoot(state, "Plan")) {

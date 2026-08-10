@@ -10,6 +10,7 @@
  * does not throw in the first place).
  */
 import {
+  componentSources,
   printWire,
   type AppDocument,
   type AppPlan,
@@ -93,7 +94,7 @@ const printedApp = (app: AppDocument): string | undefined => {
   const tree = treeOf(app);
   if (tree === undefined) return undefined;
   return printWire(
-    { tree, components: app.components ?? {}, name: app.name },
+    { tree, components: componentSources(app.components), name: app.name },
     { includeIds: false },
   );
 };

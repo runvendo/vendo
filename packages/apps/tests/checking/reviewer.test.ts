@@ -93,7 +93,7 @@ const reported = (findings: unknown): { tool: string; input: unknown } =>
 const scheduledPlan = (): AppPlan => ({
   name: "Invoices",
   queries: [{ id: "invoices", tool: "host_listInvoices", input: {} }],
-  groups: [{ tab: "Overview", leaves: [{ component: "DataTable", query: "invoices", purpose: "open invoices" }] }],
+  groups: [{ tab: "Overview", leaves: [{ component: "DataTable", purpose: "open invoices" }] }],
   server: { kind: "steps", schedule: "every Friday", why: "Chasing overdue invoices happens when nobody has the app open." },
   cannot: [],
 });

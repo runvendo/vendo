@@ -376,7 +376,9 @@ const prewiredPropsIssues = (node: TreeNode): FactIssue[] => {
 
 export const catalogIssues = async (
   tree: Tree,
-  components: Record<string, string> | undefined,
+  /** Names only — the generated map's KEYS are the vocabulary this check
+   *  measures against, so an entry's shape is none of its business. */
+  components: Record<string, unknown> | undefined,
   catalog: NormalizedCatalog,
 ): Promise<FactIssue[]> => {
   const hostCatalog = new Map(catalog.map((component) => [component.name, component]));

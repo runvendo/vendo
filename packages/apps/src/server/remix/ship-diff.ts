@@ -1,8 +1,9 @@
 import type {
   AppId,
 } from "@vendoai/core";
-import type {
-  AppDocument,
+import {
+  bundleOf,
+  type AppDocument,
 } from "../../contract/index.js";
 import { appVersionHash } from "./version-hash.js";
 import { pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
@@ -61,7 +62,7 @@ export const computeShipDiff = (
   const pins = (doc.pins ?? []).map((pin): ShipDiffPin => {
     const component = pinComponentName(pin.slot);
     const baseline = baselines.find((candidate) => candidate.slot === pin.slot);
-    const shipped = doc.components?.[component] ?? "";
+    const shipped = bundleOf(doc.components?.[component] ?? "").source;
     return {
       slot: pin.slot,
       component,
@@ -77,9 +78,9 @@ export const computeShipDiff = (
   const pinnedComponents = new Set(pins.map((pin) => pin.component));
   const generated = Object.entries(doc.components ?? {})
     .filter(([name]) => !pinnedComponents.has(name))
-    .map(([name, source]): ShipDiffGenerated => ({
+    .map(([name, entry]): ShipDiffGenerated => ({
       component: name,
-      diff: unifiedDiff(`generated/${name}.tsx`, "", source),
+      diff: unifiedDiff(`generated/${name}.tsx`, "", bundleOf(entry).source),
     }));
   return {
     appId: doc.id,

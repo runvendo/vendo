@@ -48,24 +48,14 @@ describe("compilePlan", () => {
           title: "Health",
           layout: "grid",
           leaves: [
-            {
-              component: "StatTile",
-              query: "invoices",
-              purpose: "Total outstanding across every open invoice",
-              attrs: { col: "1" },
-            },
-            {
-              component: "BarChart",
-              query: "invoices",
-              purpose: "Invoiced amount per month over the last year",
-              attrs: { col: "2", span: "2" },
-            },
+            { component: "StatTile", purpose: "Total outstanding across every open invoice" },
+            { component: "BarChart", purpose: "Invoiced amount per month over the last year" },
           ],
         },
         {
           tab: "Overview",
           leaves: [
-            { component: "DataTable", query: "clients", purpose: "Clients with the most outstanding, worst first" },
+            { component: "DataTable", purpose: "Clients with the most outstanding, worst first" },
           ],
         },
         {
@@ -73,7 +63,7 @@ describe("compilePlan", () => {
           title: "Payment history",
           waitsForServer: true,
           leaves: [
-            { component: "DataTable", query: "invoices", purpose: "Every payment recorded against an invoice" },
+            { component: "DataTable", purpose: "Every payment recorded against an invoice" },
           ],
         },
       ],
@@ -109,7 +99,7 @@ describe("compilePlan", () => {
       {
         title: "Everyone",
         leaves: [
-          { component: "DataTable", query: "clients", purpose: "Every client with their outstanding balance" },
+          { component: "DataTable", purpose: "Every client with their outstanding balance" },
         ],
       },
     ]);
@@ -190,18 +180,6 @@ describe("compilePlan", () => {
     expect(result.issues).toEqual([
       'the schedule "0 9 * *" reads as a cron but has 4 fields instead of 5. Write a 5-field cron ("0 9 * * 5"), or just say the cadence in words ("every Friday morning").',
     ]);
-  });
-
-  it("reports a leaf reading a query the plan never declared", () => {
-    const result = compilePlan(
-      `<Plan name="Dangling"><Query id="invoices" tool="host_listInvoices"/>
-         <Group><Leaf component="DataTable" query="overdue" purpose="Overdue invoices, worst first"/></Group></Plan>`,
-      FACTS,
-    );
-    expect(result.issues).toEqual([
-      'the DataTable leaf reads a query called "overdue", but this plan declares no <Query id="overdue">. Declare it at the top of the plan, or drop the query attribute.',
-    ]);
-    expect(result.plan?.groups[0]?.leaves[0]?.query).toBe("overdue");
   });
 
   it("reports missing structure instead of throwing", () => {
@@ -314,28 +292,6 @@ describe("compilePlan", () => {
       "<Leaf> holds nothing — write it as one self-closing element; its content was ignored.",
     );
     expect(result.plan?.groups[0]?.leaves).toStrictEqual([{ component: "StatTile", purpose: "Total outstanding" }]);
-  });
-
-  it("drops a leaf's arrangement hint when its value is a list, not a primitive", () => {
-    const result = compilePlan(
-      `<Plan name="List hint"><Group><Leaf component="StatTile" purpose="Total outstanding" tags={[1,2]}/></Group></Plan>`,
-      FACTS,
-    );
-    expect(result.issues).toEqual([
-      'the StatTile leaf\'s "tags" is an arrangement hint like col="2", and a list cannot be one. It was dropped.',
-    ]);
-    expect(result.plan?.groups[0]?.leaves[0]?.attrs).toBeUndefined();
-  });
-
-  it("drops a leaf's arrangement hint when its value is null, not a primitive", () => {
-    const result = compilePlan(
-      `<Plan name="Null hint"><Group><Leaf component="StatTile" purpose="Total outstanding" tags={null}/></Group></Plan>`,
-      FACTS,
-    );
-    expect(result.issues).toEqual([
-      'the StatTile leaf\'s "tags" is an arrangement hint like col="2", and null cannot be one. It was dropped.',
-    ]);
-    expect(result.plan?.groups[0]?.leaves[0]?.attrs).toBeUndefined();
   });
 
   it("reports loose text sitting inside a group", () => {

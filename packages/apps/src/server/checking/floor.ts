@@ -22,6 +22,7 @@ import {
   type AppId,
 } from "@vendoai/core";
 import {
+  bundleOf,
   compileWire,
   type AppDocument,
   type Check,
@@ -65,7 +66,8 @@ const islandsCheck = (deps: FloorDependencies): Check => ({
   kind: "fact",
   run: async ({ document, request }) => {
     const components = Object.fromEntries(Object.entries(document.components ?? {})
-      .filter(([name]) => !isPinComponentName(name)));
+      .filter(([name]) => !isPinComponentName(name))
+      .map(([name, entry]) => [name, bundleOf(entry).source]));
     if (Object.keys(components).length === 0) return [];
     const prepared = await prepareIslands(
       components,

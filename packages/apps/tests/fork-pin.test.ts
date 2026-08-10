@@ -8,10 +8,11 @@ import type {
   StoreAdapter,
   ToolRegistry,
 } from "@vendoai/core";
-import type {
-  AppDocument,
-  ScreenAssembler,
-  Tree,
+import {
+  bundleOf,
+  type AppDocument,
+  type ScreenAssembler,
+  type Tree,
 } from "../src/contract/index.js";
 import { describe, expect, it } from "vitest";
 import { createApps, type AppsConfig, type AppsRuntime, type PinBaseline } from "../src/server/index.js";
@@ -90,7 +91,8 @@ const labelAsked = (instruction: string): string | undefined => {
 const relabelScreen = (runtime: () => AppsRuntime, seen: string[] = []): ScreenAssembler =>
   scriptedAssembler(runtime, (request, current) => {
     seen.push(request.request);
-    const source = current?.components?.[COMPONENT];
+    const entry = current?.components?.[COMPONENT];
+    const source = entry === undefined ? undefined : bundleOf(entry).source;
     const label = labelAsked(request.request);
     if (source === undefined || label === undefined) {
       return { kind: "unavailable", why: `nothing in "${request.request}" names a change I can make to ${COMPONENT}` };

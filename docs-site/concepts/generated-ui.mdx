@@ -107,6 +107,14 @@ Failure handling for both hops is specified in
 The exact flags, environment contracts, and failure rules behind the model
 above.
 
+### Component limits
+
+A generated app carries at most **16** generated components, each at most
+**64 KB** of source, and **256 KB** across all of them together. The document
+validator enforces all three, and the format manual the agent reads is
+generated from the same three constants — so a build that obeys the manual
+never runs into a budget the manual did not mention.
+
 ### Environment
 
 The [app machine environment](/reference/environment-variables#app-machine-environment)

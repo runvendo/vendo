@@ -8,7 +8,31 @@
  * in to speak the format. `@vendoai/actions` re-exports every name from here, so
  * its public surface is unchanged.
  */
+import { bundleOf, type ComponentEntry } from "@vendoai/core";
 import { z } from "zod";
+
+/**
+ * The bundle itself, and the entry it sits in. Declared in `@vendoai/core`
+ * beside the `AppDocument.components` field it types — core's store conformance
+ * kit parses a stored row with `appDocumentSchema` and may not reach up into
+ * this package — and re-exported here, never re-declared, so the format door
+ * is the one place a consumer reads. Same rule as the three bundle limits.
+ */
+export {
+  bundleOf,
+  componentBundleSchema,
+  componentEntrySchema,
+  type ComponentBundle,
+  type ComponentEntry,
+} from "@vendoai/core";
+
+/** The stored map as bare sources — what the printer, the tree assembler and
+ *  the jail all want. The only place the whole map is unwrapped, so no caller
+ *  has to know a legacy entry from a bundle. */
+export const componentSources = (
+  components: Record<string, ComponentEntry> | undefined,
+): Record<string, string> =>
+  Object.fromEntries(Object.entries(components ?? {}).map(([name, entry]) => [name, bundleOf(entry).source]));
 
 /**
  * One captured module, content-addressed by the sha-256 hex of its canonical

@@ -7,6 +7,8 @@ import {
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
+  bundleOf,
+  componentEntrySchema,
 } from "@vendoai/core";
 import { KIT_COMPONENT_NAMES } from "./kit/specs.js";
 
@@ -35,11 +37,13 @@ export function componentMapError(components: Record<string, unknown>): string |
     if (KIT_COMPONENT_NAMES.includes(name)) {
       return `generated component name "${name}" is reserved (Kit component)`;
     }
-    const source = components[name];
-    if (typeof source !== "string") {
+    // A stored entry is the legacy bare source string or a bundle; the byte
+    // budget is measured on the source either way, through the ONE reader.
+    const entry = componentEntrySchema.safeParse(components[name]);
+    if (!entry.success) {
       return `generated component "${name}" source must be a string`;
     }
-    const sourceBytes = utf8ByteLength(source);
+    const sourceBytes = utf8ByteLength(bundleOf(entry.data).source);
     if (sourceBytes > TREE_MAX_COMPONENT_SOURCE_BYTES) {
       return `generated component "${name}" source too large (max ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes)`;
     }

@@ -19,6 +19,7 @@ import {
 import {
   compilePlan,
   compileWire,
+  componentSources,
   type AppDocument,
   type AppPlan,
   type PlanDisplay,
@@ -215,7 +216,11 @@ const paintSettledTree = async (
   appId: AppId,
 ): Promise<void> => {
   if (onView === undefined || app.tree?.formatVersion !== VENDO_TREE_FORMAT) return;
-  const tree = assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools });
+  const tree = assembleTree({
+    tree: app.tree,
+    components: componentSources(app.components),
+    componentTools: app.componentTools,
+  });
   stripServerAuthoritativeFields(tree);
   const resolver = createProgressiveQueryResolver(caller, app, ctx);
   resolver.update(tree);

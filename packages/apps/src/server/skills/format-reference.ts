@@ -12,7 +12,23 @@
  * worse than a missing one. The component half is INTERPOLATED from the same
  * generated schemas the engine's workers read, so it cannot drift from the code.
  */
+import {
+  TREE_MAX_COMPONENT_SOURCE_BYTES,
+  TREE_MAX_GENERATED_COMPONENTS,
+  TREE_MAX_TOTAL_COMPONENT_BYTES,
+} from "../../contract/index.js";
 import { componentsPromptSection } from "../generation/contracts/sections.js";
+
+/** The bundle budgets as the manual says them. Written from the contract's own
+ *  constants, never typed in: the manual used to state a count and a
+ *  per-island cap and never mention the TOTAL the validator also enforces, so
+ *  a model that obeyed the manual could build a megabyte of islands and watch
+ *  the app fail to validate for a budget it was never told about.
+ *  `format-conformance.e2e.test.ts` holds all three mirrors together. */
+const KB = 1_024;
+const ISLAND_BUDGET = `At most ${TREE_MAX_GENERATED_COMPONENTS} islands, ${
+  TREE_MAX_COMPONENT_SOURCE_BYTES / KB} KB of source each, and ${
+  TREE_MAX_TOTAL_COMPONENT_BYTES / KB} KB across all of them together. Past any one of those the app stops validating.`;
 
 const DIALECT = `# The .vendo format
 
@@ -37,11 +53,11 @@ read from the first \`<Plan\` to the last \`</Plan>\`.
 <Plan name="Invoices workspace">
   <Query id="invoices" tool="maple_invoices_list" input={{ limit: 100 }}/>
   <Group tab="Overview" title="Health" layout="grid">
-    <Leaf component="Stat" query="invoices" purpose="Total outstanding across every open invoice" col="1"/>
-    <Leaf component="BarChart" query="invoices" purpose="Invoiced amount per month over the last year" col="2"/>
+    <Leaf component="Stat" purpose="Total outstanding across every open invoice"/>
+    <Leaf component="BarChart" purpose="Invoiced amount per month over the last year"/>
   </Group>
   <Group tab="Overdue">
-    <Leaf component="DataTable" query="invoices" purpose="Overdue invoices, worst first"/>
+    <Leaf component="DataTable" purpose="Overdue invoices, worst first"/>
   </Group>
   <Cannot>This product has no way to send email, so reminders land in the app's own log instead.</Cannot>
 </Plan>
@@ -80,22 +96,19 @@ element and you never write one. A group with no \`tab\` sits above the tab bar.
 A group holds \`<Leaf>\` elements only — **at most five**; extras are dropped. A
 group inside a group does not exist.
 
-### \`<Leaf component query purpose …/>\` — self-closing
+### \`<Leaf component purpose/>\` — self-closing
 
 | attribute | | |
 |---|---|---|
 | \`component\` | required | the component that shows this part. One that does not exist is kept and reported. |
 | \`purpose\` | required | one sentence, written so a stranger could build the part from it and nothing else. |
-| \`query\` | optional | the \`id\` of a \`<Query>\` anywhere in the document — declaring it later is fine. |
 
-Any other attribute is kept verbatim as an arrangement HINT for whoever fills the
-leaf in (\`col="1"\`, \`row="2"\`, \`span="2"\` by convention). Nothing enforces a hint
-and nothing renders one: real arrangement is \`<Group layout="grid">\` and the
-\`Grid\` component in app.vendo. Never copy a hint onto a component in app.vendo —
-an unknown prop fails validation.
+Those two are the whole leaf; any other attribute is ignored. Arrangement is
+\`<Group layout="grid">\` and the \`Grid\` component in app.vendo, and which query
+feeds a part is decided in app.vendo, where the part is actually written.
 
-A misspelled \`purpose\` becomes a hint, and the leaf is then dropped for having no
-purpose. Read the findings.
+A misspelled \`purpose\` leaves the leaf with no purpose, and it is dropped. Read
+the findings.
 
 ### \`<Server kind why served schedule/>\` — self-closing, at most one
 
@@ -175,8 +188,8 @@ The content is raw TSX, verbatim to the **first** \`</Island>\`, with an
 and its hooks, the whole Kit, and \`fmt\` (\`fmt.money(cents)\`,
 \`fmt.dateTime(iso)\`, \`fmt.percent(ratio)\`, \`fmt.num(n)\`) are already in scope,
 and nothing else can load. The name must be PascalCase and must not collide with
-a host, Kit or prewired component name. Reference it as \`<PascalName/>\`. At most
-16 islands, 64 KB each.
+a host, Kit or prewired component name. Reference it as \`<PascalName/>\`.
+${ISLAND_BUDGET}
 
 Write an island for a custom visual or client-side logic. Never for a chart — the
 Kit's charts already render their own empty state.
@@ -313,13 +326,13 @@ The ask: "show me where my spend is going, and which invoices are late."
   <Query id="expenses" tool="maple_expenses_list" input={{ limit: 500 }}/>
   <Query id="invoices" tool="maple_invoices_list" input={{ status: "overdue" }}/>
   <Group tab="Spend" title="Where it goes" layout="grid">
-    <Leaf component="Stat" query="expenses" purpose="Total spend across every expense in the window" col="1"/>
-    <Leaf component="BarChart" query="expenses" purpose="Spend per month, so a rising trend is visible" col="2"/>
-    <Leaf component="DataTable" query="expenses" purpose="Every expense, biggest first, with vendor and date"/>
+    <Leaf component="Stat" purpose="Total spend across every expense in the window"/>
+    <Leaf component="BarChart" purpose="Spend per month, so a rising trend is visible"/>
+    <Leaf component="DataTable" purpose="Every expense, biggest first, with vendor and date"/>
   </Group>
   <Group tab="Late">
-    <Leaf component="Stat" query="invoices" purpose="How many invoices are overdue right now"/>
-    <Leaf component="DataTable" query="invoices" purpose="Overdue invoices, longest overdue first"/>
+    <Leaf component="Stat" purpose="How many invoices are overdue right now"/>
+    <Leaf component="DataTable" purpose="Overdue invoices, longest overdue first"/>
   </Group>
   <Cannot>This product cannot send email, so chasing a late invoice still happens outside it.</Cannot>
 </Plan>

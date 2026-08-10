@@ -5,6 +5,54 @@ import { sha256Hex } from "./sha256.js";
 import { DEFAULT_TRIGGER_ID, triggerSchema, type Trigger } from "./triggers.js";
 import { uiPayloadSchema, type UIPayload } from "./genui/tree-node.js";
 
+/**
+ * The seat's contents — what one entry of {@link AppDocument.components} holds.
+ *
+ * A bundle has exactly two origins and both live INSIDE the document, so
+ * nothing is attached at open time by hash-matching a baseline the fork may
+ * have drifted from.
+ *
+ * It is declared HERE, beside the field it types, for the same reason
+ * `appDocumentSchema` is: core's own store conformance kit parses a stored app
+ * row with that schema, and core may not reach up into `@vendoai/apps`. The
+ * format door (`@vendoai/apps/contract`) re-exports these names rather than
+ * re-declaring them, so consumers still read one place.
+ */
+export interface ComponentBundle {
+  source: string;
+  /** Sub-modules the entry imports, keyed by the specifier that names them. */
+  modules?: Record<string, string>;
+  styles?: string;
+  /** The rehearsal seed a preview renders with, spread onto the props. */
+  sampleProps?: Record<string, unknown>;
+  /** `"authored"` — a generated island. `"seeded"` — captured from a host
+   *  component the person forked. */
+  origin: "authored" | "seeded";
+}
+
+/** 01-core §9 */
+export const componentBundleSchema = z.object({
+  source: z.string(),
+  modules: z.record(z.string()).optional(),
+  styles: z.string().optional(),
+  sampleProps: z.record(z.unknown()).optional(),
+  origin: z.enum(["authored", "seeded"]),
+}).passthrough() satisfies z.ZodType<ComponentBundle>;
+
+/**
+ * Backward compatible by construction: a stored `components` value is either
+ * the legacy bare source string every app written before bundles carries, or a
+ * bundle. Nothing migrates — every reader goes through {@link bundleOf}.
+ */
+export type ComponentEntry = string | ComponentBundle;
+
+/** 01-core §9 */
+export const componentEntrySchema: z.ZodType<ComponentEntry> = z.union([z.string(), componentBundleSchema]);
+
+/** The one reader. A bare source string reads as an authored bundle. */
+export const bundleOf = (entry: ComponentEntry): ComponentBundle =>
+  typeof entry === "string" ? { source: entry, origin: "authored" } : entry;
+
 /** 01-core §9 */
 export interface StorageDecl {
   about: string;
@@ -174,7 +222,7 @@ export interface AppDocument {
   description?: string;
   ui?: "tree" | "http";
   tree?: UIPayload;
-  components?: Record<string, string>;
+  components?: Record<string, ComponentEntry>;
   /**
    * W4b — the compiler-stamped per-island tool manifest: for each generated
    * component, the registry tool names its source reaches through the ambient
@@ -249,7 +297,7 @@ const appDocumentShapeSchema = z.object({
   description: z.string().optional(),
   ui: z.enum(["tree", "http"]).optional(),
   tree: uiPayloadSchema.optional(),
-  components: z.record(z.string()).optional(),
+  components: z.record(componentEntrySchema).optional(),
   componentTools: z.record(z.array(z.string())).optional(),
   storage: z.record(storageDeclSchema).optional(),
   source: z.record(appSourceFileSchema).optional(),

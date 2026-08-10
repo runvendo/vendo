@@ -4,6 +4,7 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import {
+  bundleOf,
   compileWire,
   type AppDocument,
 } from "../src/contract/index.js";
@@ -98,7 +99,8 @@ const buildingScreen = (
   runtime: () => AppsRuntime,
   options: BuilderOptions,
 ) => scriptedAssembler(runtime, (request, current) => {
-  const source = current?.components?.[COMPONENT];
+  const entry = current?.components?.[COMPONENT];
+  const source = entry === undefined ? undefined : bundleOf(entry).source;
   options.seen?.push({ instruction: request.request, source });
   const overridden = options.override?.(request.request);
   if (overridden !== undefined) return overridden;

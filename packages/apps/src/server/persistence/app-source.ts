@@ -30,6 +30,7 @@ import {
   type WorkspaceFs,
 } from "@vendoai/core";
 import {
+  componentSources,
   printWire,
   appSourceFileSchema,
   type AppDocument,
@@ -204,7 +205,7 @@ export async function checkoutApp(
   if (tree !== undefined) {
     await workspace.writeFile(
       `${directory}/app.vendo`,
-      printWire({ tree, components: doc.components ?? {}, name: doc.name }, { includeIds: true }),
+      printWire({ tree, components: componentSources(doc.components), name: doc.name }, { includeIds: true }),
     );
   }
 

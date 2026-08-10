@@ -95,7 +95,7 @@ describe("skeletonFromPlan", () => {
 
   it("carries the plan's queries onto the tree so fragments have something to bind to", () => {
     const skeleton = skeletonFromPlan(plan(
-      [{ leaves: [{ component: "DataTable", query: "invoices", purpose: "invoices" }] }],
+      [{ leaves: [{ component: "DataTable", purpose: "invoices" }] }],
       { queries: [{ id: "invoices", tool: "host_listInvoices", input: { status: "overdue" } }] },
     ));
     expect(skeleton.tree.queries).toEqual([

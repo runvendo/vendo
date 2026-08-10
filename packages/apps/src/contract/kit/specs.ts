@@ -428,18 +428,22 @@ export const KIT_SPECS: KitComponentSpec[] = [
   },
 ];
 
-/** All registered component names. */
+/**
+ * THE component vocabulary — one list, derived from the specs, and the single
+ * definition every other name here is a view of (the ui renderer maps them to
+ * `KIT_COMPONENTS`). Nothing recomputes `KIT_SPECS.map(name)` a second time.
+ */
+export const KIT_COMPONENT_NAMES: readonly string[] = KIT_SPECS.map((spec) => spec.name);
+
+/** The same list, as the mutable array `@vendoai/ui`'s registry wants. */
 export function kitComponentNames(): string[] {
-  return KIT_SPECS.map((s) => s.name);
+  return [...KIT_COMPONENT_NAMES];
 }
 
 /** Look up a single spec by name. */
 export function kitSpec(name: string): KitComponentSpec | undefined {
   return KIT_SPECS.find((s) => s.name === name);
 }
-
-/** Every Kit component name (the ui renderer maps them to `KIT_COMPONENTS`). */
-export const KIT_COMPONENT_NAMES: readonly string[] = KIT_SPECS.map((spec) => spec.name);
 
 /** Kit components whose props cannot be expressed as wire attribute values
  *  (element-valued `content` slots). They stay renderable and usable inside
@@ -456,8 +460,10 @@ export const KIT_WIRE_COMPONENT_NAMES: readonly string[] = KIT_COMPONENT_NAMES.f
   !KIT_WIRE_UNSAFE_NAMES.includes(name));
 
 /** The full component vocabulary a wire tree may name without a source map.
- *  One family since V4: the Kit is the only built-in set. */
-export const WIRE_COMPONENT_NAMES: readonly string[] = KIT_WIRE_COMPONENT_NAMES;
+ *  One family since V4: the Kit is the only built-in set, so this is the same
+ *  list under the name the compiler and the fact checks read it by — a
+ *  re-export, never a second list to keep in step. */
+export { KIT_WIRE_COMPONENT_NAMES as WIRE_COMPONENT_NAMES };
 
 /** Prop name → class for one Kit component (law-1 enforcement handle). */
 export function kitPropClasses(name: string): Readonly<Record<string, PropClass>> | undefined {

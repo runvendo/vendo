@@ -7,6 +7,7 @@ import {
   type UIPayload,
 } from "@vendoai/core";
 import {
+  componentSources,
   validateTree,
   type AppDocument,
   type TreeQuery,
@@ -345,14 +346,14 @@ export const createAppOpener = (
     }
     const payload = {
       ...tree,
-      ...(app.components === undefined ? {} : { components: structuredClone(app.components) }),
+      ...(app.components === undefined ? {} : { components: componentSources(app.components) }),
       // W4b — the stamped per-island tool manifests ride the payload beside
       // the sources; the renderer exposes ONLY these tools to each island.
       ...(app.componentTools === undefined ? {} : { componentTools: structuredClone(app.componentTools) }),
     } as unknown as UIPayload;
     return app.components === undefined
       ? { kind: "tree", payload }
-      : { kind: "tree", payload, components: structuredClone(app.components) };
+      : { kind: "tree", payload, components: componentSources(app.components) };
   }
   // 01-core §8 — an unregistered format tag is a contained failure: the payload
   // passes through untouched (no query resolution) and the renderer shows the
@@ -360,5 +361,5 @@ export const createAppOpener = (
   const payload = stripServerAuthoritativeFields(structuredClone(app.tree));
   return app.components === undefined
     ? { kind: "tree", payload }
-    : { kind: "tree", payload, components: structuredClone(app.components) };
+    : { kind: "tree", payload, components: componentSources(app.components) };
 };
