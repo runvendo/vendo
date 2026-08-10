@@ -1,0 +1,45 @@
+
+Vendo Cloud (optional): not configured. A key unlocks a free starter model allowance — no card, no model key of your own; hosted automations, team sharing, and the console.
+Vendo Cloud key (agent path): run `vendo login` — it prints a code your human approves in the browser, and the minted VENDO_API_KEY lands in .env.local (never printed).
+Then re-run `vendo init` (it picks the key up) or pass --cloud-key <key>. Protocol: https://vendo.run/auth.md
+No Cloud account wanted? Re-run with --byo and set a provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY).
+
+Wired (2 files):
+  + app/api/vendo/[...vendo]/route.ts
+  ~ package.json
+tools: +0 -0 ~0
+tool schemas: inputs 0/0 · outputs 0/0
+pins: 0 captured, 0 drifted
+catalog.json: 0 discovered, 0 registered
+components: 0 captured, 0 updated
+judgment: skipped — this run cannot ask (pass `--ai` to judge non-interactively, `--no-ai` to say so explicitly)
+Theme: accent #2563eb · background #ffffff · surface #f8fafc · text #171717 · mutedText #64748b · border #e2e8f0 · danger #dc2626
+Type: Geist, sans-serif · radius 8px
+No host evidence for accent, border, danger, surface, mutedText — neutral defaults used.
+Theme lives in .vendo/theme.json — edit it anytime; it is the source of truth.
+judgment: structural-only — only protocol facts are graded, so every ungraded tool asks on each call (add a model key and run `vendo sync` to grade the catalog)
+No model key yet: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or run `vendo login` for a free dev key.
+
+────────────────────────────────────────────────────────────────
+ONE STEP LEFT — paste this yourself (init never edits your files)
+
+  File: app/layout.tsx
+    import { VendoProvider } from "@vendoai/vendo/react";
+    import theme from "../.vendo/theme.json";
+    import type { VendoTheme } from "@vendoai/vendo";
+    … then wrap: <VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}</VendoProvider>
+
+  <VendoProvider> is what the @vendoai/ui hooks and embeds read; baseUrl is the wire mount, path prefix included. Until this lands, Vendo is wired but nothing on the page can reach it.
+  Then confirm it landed: npx vendo doctor
+────────────────────────────────────────────────────────────────
+
+Verify everything: `npx vendo doctor` (it can start the server and run a live turn).
+
+Agent tail:
+  auth: clerk() wired (detected @clerk/nextjs)
+  edit app/layout.tsx — wrap the app in the <VendoProvider> lines above (without it, nothing on the page can reach Vendo)
+  edit .vendo/brief.md — replace the placeholder with what this product does and for whom
+  cloud key: none — for Vendo Cloud, fetch https://vendo.run/auth.md and run `vendo login` (your human approves a code in the browser; the key lands in .env.local), then re-run init or pass --cloud-key <key>; --byo with a provider key also works
+  gate: run `vendo doctor --json` — done when every check reports green
+
+→ Don't forget the paste in app/layout.tsx (frame above)

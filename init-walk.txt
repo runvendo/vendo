@@ -1,0 +1,85 @@
+
+                ▄▄█████▄
+   ████   ██████████████▄
+   ████▄▄▄██▀▀▀▀█████████
+       ███     ▄████████                                     ██
+ ▄▄▄▄  ▀▀▀ ▄▄▄█████████     ██    ██ ▄██████▄ ██▄████▄ ▄████▄██ ▄██████▄
+ ████      ███████████      ▀█▄  ▄█▀ ██▄▄▄▄██ ██    ██ ██    ██ ██    ██
+       ███    ▀████████▄     ██  ██  ██▀▀▀▀▀▀ ██    ██ ██    ██ ██    ██
+       ███  ▄▄▄█████████▄     ▀██▀    ▀████▀  ██    ██ ▀██████▀ ▀██████▀
+           ██████████████
+           ▀▀▀▀████████▀
+                 ▀▀▀▀
+
+ Customize your product with an embedded agent — docs.vendo.run
+
+┌  vendo init
+│
+◆  Your stack
+│  Next.js · App Router · TypeScript · pnpm
+│  Clerk auth (@clerk/nextjs)
+│
+◇  How will people use your agent?
+│  ● Embedded in my app — chat + generated UI
+│
+◇  Should the agent act as your signed-in Clerk user?
+│  Y/n ›
+│  ● Yes
+│
+◆  Vendo Cloud
+│  ✦ a free starter model allowance — no card, no model key of your own
+│  ✦ hosted automations, team sharing, and the console
+│
+◇  How do you want to run models?
+│  ● Decide later
+│  → Skipped — run vendo login any time; the key lands in .env.local.
+│
+◆  Wired (2 files)
+│  + app/api/vendo/[...vendo]/route.ts
+│  ~ package.json
+│
+◆  Catalog
+│  tools: +0 -0 ~0 · tool schemas: inputs 0/0 · outputs 0/0 · pins: 0 captured, 0 drifted · catalog.json: 0
+│  discovered, 0 registered
+│  components: 0 captured, 0 updated
+│
+◇  Let a coding agent read this codebase to draft tool descriptions, review risk, write the product brief, and
+│  fill unresolved theme slots? Source goes to the chosen provider under your account.
+│  ● your Claude Code login
+│
+│  Reading your product (your Claude Code login)…
+│  judgment: up to date
+│    brief: drafting the product brief
+│  brief: drafted → .vendo/brief.md
+│    theme: filling brand slots
+Theme surface is uncertain (app/page.module.css defines two neutrals: `--background: #fafafa` on the full-height `.page` wrapper and `--foreground: #fff` painting the `.main` content panel. I picked #fafafa because it is the only neutral distinct from the already-fixed background (#ffffff); a literal cards/panels reading of `.main` would instead give #ffffff, identical to background.); extracted #fafafa. Replacement value, or Enter to keep:
+│
+◆  Your brand, captured
+│     #171717 accent      #ffffff background      #171717 text      #dc2626 danger
+│  Type: Geist, sans-serif · radius 128px
+│  No host evidence for danger — neutral defaults used.
+│  Theme lives in .vendo/theme.json — edit it anytime; it is the source of truth.
+│  → No model key yet: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or
+│  run vendo login for a free dev key.
+│
+◇  Where will this deploy?
+│  e.g. https://app.acme.com — Enter to skip
+│  ›
+│  ● skipped
+│
+◇  One paste left — app/layout.tsx
+│    import { VendoProvider } from "@vendoai/vendo/react";
+│    import theme from "../.vendo/theme.json";
+│    import type { VendoTheme } from "@vendoai/vendo";
+│    … then wrap: <VendoProvider baseUrl="/api/vendo" theme={theme as VendoTheme}>{children}</VendoProvider>
+│    docs.vendo.run/quickstart#the-client-mount — exact wording for layout.tsx and _app.tsx
+│
+│  <VendoProvider> is what the @vendoai/ui hooks and embeds read; baseUrl is the wire mount, path prefix
+│  included. Until this lands, Vendo is wired but nothing on the page can reach it.
+│  Then confirm it landed: npx vendo doctor
+│  init never edits your files
+│
+│  Verify everything: npx vendo doctor (it can start the server and run a live turn).
+│
+└  Done in 159.3s — 0 tools · brand captured · 1 paste left
+   Star us: vendo.run/star · docs.vendo.run

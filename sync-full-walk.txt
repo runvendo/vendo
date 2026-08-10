@@ -1,0 +1,30 @@
+
+                ▄▄█████▄
+   ████   ██████████████▄
+   ████▄▄▄██▀▀▀▀█████████
+       ███     ▄████████                                     ██
+ ▄▄▄▄  ▀▀▀ ▄▄▄█████████     ██    ██ ▄██████▄ ██▄████▄ ▄████▄██ ▄██████▄
+ ████      ███████████      ▀█▄  ▄█▀ ██▄▄▄▄██ ██    ██ ██    ██ ██    ██
+       ███    ▀████████▄     ██  ██  ██▀▀▀▀▀▀ ██    ██ ██    ██ ██    ██
+       ███  ▄▄▄█████████▄     ▀██▀    ▀████▀  ██    ██ ▀██████▀ ▀██████▀
+           ██████████████
+           ▀▀▀▀████████▀
+                 ▀▀▀▀
+
+ Customize your product with an embedded agent — docs.vendo.run
+
+┌  vendo sync
+│
+◆  Catalog
+│  tools: +0 -0 ~0 · tool schemas: inputs 0/0 · outputs 0/0 · pins: 0 captured, 0 drifted · catalog.json: 0
+│  discovered, 0 registered
+│  components: 0 captured, 0 updated
+│
+◇  Let a coding agent read this codebase to draft tool descriptions, review risk, write the product brief, and
+│  fill unresolved theme slots? Source goes to the chosen provider under your account.
+│  ● your Claude Code login
+│  judgment: up to date
+│    brief: drafting the product brief
+│
+└  Done in 38.8s
+   Star us: vendo.run/star · docs.vendo.run
