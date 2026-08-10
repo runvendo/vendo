@@ -172,6 +172,19 @@ export interface VendoHarnessDeps {
    * and the system precedence are the ones above, not a fork of them.
    */
   tools?: readonly (string | HarnessHand)[];
+  /**
+   * WHICH SEAT SERVES THE STEP ABOUT TO RUN, and which hands it may not pick.
+   *
+   * Re-read before every step. Returning `undefined` — every caller but the
+   * screen agent — leaves the step on the turn's own seat with the whole
+   * loadout, which is the loop exactly as it was.
+   *
+   * The seat and the withheld hands are ONE answer on purpose. A step served by
+   * a cheaper seat is safe only because it structurally cannot do the expensive
+   * job: two hooks could be moved apart, and then a small model would be holding
+   * the hand that writes the document.
+   */
+  stepSeat?: () => { model: LanguageModel; withhold?: readonly string[] } | undefined;
 }
 
 /**
@@ -570,7 +583,32 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
         equipped = await equipClosedLoadout(turn, residentTools, deps.tools, hireSubagent);
         activeToolNames = () => equipped;
       }
+      // The stepped seat's hands, subtracted from whatever the path above built —
+      // one place, so open and closed loadouts cannot answer this differently.
+      // Which seat runs the step is `stepModel` below; the two read the same hook.
+      const seatHook = deps.stepSeat;
+      if (seatHook !== undefined) {
+        const offered = activeToolNames;
+        activeToolNames = () => {
+          const withheld = seatHook()?.withhold ?? [];
+          return withheld.length === 0
+            ? offered()
+            : offered().filter((name) => !withheld.includes(name));
+        };
+      }
       emitLoadout();
+
+      /** Which seat served the step now running — the turn's own unless the hook
+       *  substituted one. Read by `finish-step` below, which is the only place
+       *  that learns a seat's real model id and must not file it under the wrong
+       *  seat. `prepareStep` always runs before the step it prepares, so this is
+       *  never one step stale. */
+      let servingSeat: LanguageModel = model;
+      const stepModel = (): LanguageModel | undefined => {
+        const seat = seatHook?.()?.model;
+        servingSeat = seat ?? model;
+        return seat;
+      };
 
       // ONE attempt at the turn. The overflow retry re-enters through the same
       // function so the two attempts cannot drift on any input but the two the
@@ -599,6 +637,7 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           // one outside the loadout never is. Gates CHOICE only — execution is
           // always the guard-bound `turn.tools.call()`.
           activeTools: activeToolNames,
+          ...(seatHook === undefined ? {} : { stepModel }),
           // How big this seat's window is, and what the thread remembers about
           // filling it. Always passed: a deployment that never set a knob is
           // exactly the deployment that has never had a context rail at all.
@@ -637,7 +676,7 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
                 // usage event's and the audit ledger's, and it drives no decision
                 // (see `compaction.ts`'s header for the four bugs it caused when
                 // it drove the trigger).
-                rememberResolvedModelId(model, part.response.modelId);
+                rememberResolvedModelId(servingSeat, part.response.modelId);
                 break;
               case "error":
                 // A prompt that did not fit is the ONE provider failure this loop

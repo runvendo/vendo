@@ -332,6 +332,38 @@ export async function assembleScreen(
   const record: RunRecord = { assembled: false, painted: false };
 
   /**
+   * THE CHEAP SEAT, for the one part of this loop that is not writing the
+   * document: reading the host's shapes and the component catalog.
+   *
+   * `fill` is the seat, not a new one — it is the seat every composed deployment
+   * already resolves to its family's FAST model (`resolveModels`, "the paint lane
+   * composes the family fast pick"), and reading a catalog is the same kind of
+   * work as painting. A deployment that never set it, or set it to the same model
+   * as `default`, has ONE seat: `recon` is then undefined and every line below is
+   * inert, so the loop is the loop it was.
+   */
+  const recon = surface.models.fill === surface.models.default ? undefined : surface.models.fill;
+  /** Has this run read anything yet? The cheap seat serves until it has, and the
+   *  first tool result ends it — so the recon phase is one step in practice and
+   *  cannot outlive the step that does the reading. Flipped by the wrapper below,
+   *  which every host read, `search_components` and `validate` passes through;
+   *  the two writing hands are `HarnessHand`s and never reach it. */
+  let read = false;
+  /**
+   * WHAT A RECON STEP MAY DO — the whole safety argument, in one list.
+   *
+   * The document and the escalation plan are withheld, so the step served by the
+   * cheap seat structurally CANNOT write either of them: they are not in the
+   * request's tool list, so there is no "the small model tried and wrote a worse
+   * one". What is left is reading — a catalog query, a host query, `validate` —
+   * which is judged by its result, not by the prose around it. The write, the
+   * repair and the plan stay on `default` for the rest of the run.
+   */
+  const reconStep = (seat: LanguageModel) => () =>
+    read ? undefined : { model: seat, withhold: [SAVE_APP_TOOL, ESCALATE_TOOL] };
+  const stepSeat = recon === undefined ? undefined : reconStep(recon);
+
+  /**
    * Write one hot-path file and land it.
    *
    * The commit IS the store write and the paint (§1.6), and the seam answers BOTH
@@ -462,7 +494,13 @@ export async function assembleScreen(
     // The listings are read ONCE and handed back verbatim: a closed loadout has
     // nothing to discover, so re-reading them mid-run would be a second projection
     // of the same static menu.
-    tools: { call: (name, args) => surface.tools.call(name, args), list: async () => listings },
+    tools: {
+      call: (name, args) => {
+        read = true;
+        return surface.tools.call(name, args);
+      },
+      list: async () => listings,
+    },
     skills: NO_SKILLS,
     workspace: surface.workspace,
     models: surface.models,
@@ -486,6 +524,7 @@ export async function assembleScreen(
     // in as its first section, so letting the turn's copy through would say it
     // twice.
     system: () => screenBrief(input, listings),
+    ...(stepSeat === undefined ? {} : { stepSeat }),
   });
   /**
    * One drive of the loop. The events MUST be drained or nothing runs. Nothing is

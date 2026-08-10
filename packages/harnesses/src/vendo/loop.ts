@@ -521,6 +521,18 @@ export interface TurnLoopOptions {
    *  always the guard-bound path. Re-read each step via `prepareStep`, so a tool
    *  the caller equips mid-turn is choosable on the very next step. */
   activeTools?: () => string[];
+  /**
+   * A seat OTHER than `model` for the step about to run — re-read each step,
+   * beside the loadout, because both answer the same question ("what may this
+   * step do?") and a caller that moves one without the other has handed a
+   * different model the same hands.
+   *
+   * `undefined` (every caller but the screen agent) leaves the step on `model`,
+   * so the call is byte-for-byte what it was. Failover is deliberately NOT
+   * applied to a stepped seat: {@link failoverModel} ladders the turn's own
+   * model, and a per-step substitute is already the caller's fallback choice.
+   */
+  stepModel?: () => LanguageModel | undefined;
   /** The window this turn has, and what the thread already remembers about
    *  filling it. Unset means no window awareness at all — the loop's behaviour
    *  before this shipment. */
@@ -621,12 +633,14 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     // a second per-step hook beside it.
     prepareStep: ({ messages, stepNumber }) => {
       const active = activeTools?.();
+      const seat = options.stepModel?.();
       step = stepNumber;
       stepStartedAt = Date.now();
       debug({ kind: "step-start", step, maxSteps, activeTools: active ?? [] });
       return {
         messages: advanceCacheBreakpoint(messages),
         ...(active === undefined ? {} : { activeTools: active }),
+        ...(seat === undefined ? {} : { model: seat }),
       };
     },
     onStepFinish: (finished) => {
