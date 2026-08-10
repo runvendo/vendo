@@ -11,7 +11,7 @@ import { assembleSystemPrompt } from "./prompt.js";
 /** The automations engine, and the arming seam the apps runtime reads back. */
 export const composeAutomations = (composition: VendoComposition): Pick<VendoComposition,
   "hostedStoreComposed" | "automations" | "automationsForArming"> => {
-  const { store, apps, boundTools, guard, harness, files, capability, inference } = composition;
+  const { store, ops, apps, boundTools, guard, harness, files, capability, inference } = composition;
   const { system, resolveRisk, access, membershipsSeam, automationsMounted } = composition;
   // Wave 2 (Cloud auto): a keyed deployment's schedule- and external-triggered
   // automations already run on Vendo Cloud — its scheduler fires due schedules and
@@ -30,6 +30,11 @@ export const composeAutomations = (composition: VendoComposition): Pick<VendoCom
     tools: boundTools,
     guard,
     store,
+    // The engine family for this block's own drawers, over the SAME store.
+    // Absent for a store with neither its own ops nor a SQL handle — the block
+    // then serves the same verbs off the adapter itself, so an unset slot is a
+    // route, not a downgrade.
+    ...(ops === undefined ? {} : { ops }),
     // An agentic firing is ONE non-interactive harness run on the deployment's
     // own brain — the same runtime, the same guard-bound choke point and the same
     // durable workspace a chat turn gets, with `interactive: false` and the

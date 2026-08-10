@@ -42,7 +42,7 @@ export interface RunRowsAccess {
   finishStoppedIfNeeded(run: InternalRunRecord): Promise<boolean>;
 }
 
-export const createRunRows = ({ base: { config, iso, stopped } }: RunRowsDeps): RunRowsAccess => {
+export const createRunRows = ({ base: { config, engine, iso, stopped } }: RunRowsDeps): RunRowsAccess => {
   const audit = async (ctx: RunContext, status: string, extra: Record<string, Json> = {}): Promise<void> => {
     const event: AuditEvent = {
       id: id("aud_"),
@@ -58,7 +58,7 @@ export const createRunRows = ({ base: { config, iso, stopped } }: RunRowsDeps): 
   };
 
   const writeRun = async (record: InternalRunRecord): Promise<boolean> => {
-    const stored = await config.store.records(RUNS).get(record.id);
+    const stored = await engine.get(RUNS, record.id);
     if (stored !== null) {
       const current = parseRunRecord(stored);
       if (terminalStatus(current.status)) {
@@ -66,7 +66,7 @@ export const createRunRows = ({ base: { config, iso, stopped } }: RunRowsDeps): 
         return false;
       }
     }
-    await config.store.records(RUNS).put({
+    await engine.put(RUNS, {
       id: record.id,
       data: {
         appId: record.appId,
@@ -113,7 +113,7 @@ export const createRunRows = ({ base: { config, iso, stopped } }: RunRowsDeps): 
       run.status = "stopped";
       return true;
     }
-    const stored = await config.store.records(RUNS).get(run.id);
+    const stored = await engine.get(RUNS, run.id);
     if (stored !== null) {
       const current = parseRunRecord(stored);
       if (terminalStatus(current.status)) {

@@ -46,15 +46,17 @@ export function engineOverAdapter(store: StoreAdapter): StoreOps["engine"] {
       if (await records.get(record.id) !== null) return null;
       return await records.put(record);
     },
-    /** No emulation here, deliberately: a revision is the token this compares
-     *  against, and an adapter with no `atomic` never issues one — so a caller
-     *  holding a revision is talking to a door that has the capability. A
-     *  last-write-wins stand-in would silently drop the staleness check. */
+    /** Same degradation, and it is narrower than it looks. A revision is the
+     *  token this compares against, and `VendoRecord.revision` is documented as
+     *  present only when the store exposes `atomic` — so on a door that honors
+     *  that, no caller can ever hold a revision and this path is unreachable.
+     *  It is reached only by a door that hands out revisions it cannot enforce,
+     *  where the token means nothing and there is genuinely nothing to compare.
+     *  Last write wins, which is what the blocks did in their own
+     *  `atomic === undefined` branches before they moved onto this family. */
     compareAndSwap: async (collection, record, expectedRevision) => {
       const records = door(collection);
-      if (records.atomic === undefined) {
-        throw new VendoError("not-implemented", `${collection} does not support compareAndSwap`);
-      }
+      if (records.atomic === undefined) return await records.put(record);
       return await records.atomic.compareAndSwap(record, expectedRevision);
     },
   };

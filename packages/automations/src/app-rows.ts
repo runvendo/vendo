@@ -47,9 +47,9 @@ type AppReader = Pick<
 >;
 
 /** One app row: the read, the edit gate over it, and the write. */
-const createAppReader = ({ base: { config } }: AppRowsDeps): AppReader => {
+const createAppReader = ({ base: { config, engine } }: AppRowsDeps): AppReader => {
   const appRecord = async (appId: string): Promise<{ record: VendoRecord; row: AppData } | null> => {
-    const record = await config.store.records(APPS).get(appId);
+    const record = await engine.get(APPS, appId);
     return record === null ? null : { record, row: parseAppRow(record) };
   };
 
@@ -97,7 +97,7 @@ const createAppReader = ({ base: { config } }: AppRowsDeps): AppReader => {
     // derives them from columns and ignores caller refs; a generic StoreAdapter honors what we
     // pass here). ONE KEY PER KIND, because an app's triggers are a LIST: a single-valued ref
     // could only name one of them, and the others would never be queried at all.
-    await config.store.records(APPS).put({
+    await engine.put(APPS, {
       id: record.id,
       data: row,
       refs: { subject: row.subject, ...triggerKindRefs(row.doc.triggers) },
@@ -109,14 +109,14 @@ const createAppReader = ({ base: { config } }: AppRowsDeps): AppReader => {
 
 /** The queries the tick and emit fire from. */
 const createAppQueries = (
-  { base: { config } }: AppRowsDeps,
+  { base: { engine } }: AppRowsDeps,
 ): Pick<AppRowsAccess, "appsFiringOn"> => {
   /** The app rows that fire on this trigger kind, by its per-kind ref. */
   const appsFiringOn = async (
     kind: TriggerSource["kind"],
     refs: Record<string, string> = {},
   ): Promise<VendoRecord[]> =>
-    await allRecords(config.store.records(APPS), {
+    await allRecords(engine, APPS, {
       refs: { ...refs, [triggerKindRefKey(kind)]: TRIGGER_KIND_REF_PRESENT },
     });
 

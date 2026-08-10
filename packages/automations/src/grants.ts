@@ -56,7 +56,7 @@ type GrantReads = Pick<
 
 /** The reads: the bound surface, and the ONE live-grant query the three
  *  fire-time questions are asked from. */
-const createGrantReads = ({ base: { config, now } }: GrantsDeps): GrantReads => {
+const createGrantReads = ({ base: { config, engine, now } }: GrantsDeps): GrantReads => {
   // `ctx` rides through so the projection seam (design §12) is not silently
   // dropped here. Both callers — enable and dryRun — are PRESENT-time
   // ceremonies, so nothing is withheld: the owner must still see and grant
@@ -80,7 +80,7 @@ const createGrantReads = ({ base: { config, now } }: GrantsDeps): GrantReads => 
     triggerId: string,
     tool?: string,
   ): Promise<PermissionGrant[]> => {
-    const records = await allRecords(config.store.records(GRANTS), {
+    const records = await allRecords(engine, GRANTS, {
       refs: { subject, app_id: appId, ...(tool === undefined ? {} : { tool }) },
     });
     const at = now().getTime();
@@ -148,7 +148,7 @@ const createGrantReads = ({ base: { config, now } }: GrantsDeps): GrantReads => 
 
 /** The write: what a decided approval turns into. */
 const createGrantMint = (
-  { base: { config, iso } }: GrantsDeps,
+  { base: { engine, iso } }: GrantsDeps,
 ): Pick<GrantsAccess, "mintGrant"> => {
   const mintGrant = async (request: ApprovalRequest, triggerId: string | undefined): Promise<string> => {
     // A connector dispatch is granted at the width of its SLUG, never its tool
@@ -171,7 +171,7 @@ const createGrantMint = (
       source: "automation",
       grantedAt: iso(),
     };
-    await config.store.records(GRANTS).put({
+    await engine.put(GRANTS, {
       id: grant.id,
       data: grant,
       refs: {
