@@ -36,6 +36,7 @@ import {
   mintTurnId,
   type AppId,
   type CommitResult,
+  type Json,
   type SeatModels,
   type RunContext,
   type ToolListing,
@@ -247,17 +248,78 @@ deliberate.
 
 ${toolBrief(listings)}`;
 
+/** A tool a prefetch may call with nothing. A BLIND schema is not a no-argument
+ *  tool (`inputSchemaIsBlind`) — that is the whole point of the note it prints —
+ *  so those are left for the writer, which can reason about what they take. */
+const takesNoArguments = (listing: ToolListing): boolean =>
+  !inputSchemaIsBlind(listing.inputSchema)
+  && ((listing.inputSchema?.["required"] as unknown[] | undefined) ?? []).length === 0;
+
+/**
+ * What the first steps would have been spent discovering, resolved BEFORE the
+ * first model call.
+ *
+ * All of it is static: what the catalog answers for this ask, and every host read
+ * that takes no arguments. Live 2026-08-09, one screen spent seven
+ * `search_components` calls and nineteen seconds learning that this deployment
+ * registers no components — the writer cannot know the answer is empty without
+ * asking, and asking costs a model step each time. `Promise.all` pays ONE round
+ * of latency for what cost N steps.
+ *
+ * Nothing here is a substitute for the tools, which stay on the loadout: a call
+ * that fails, is denied, or takes arguments is simply omitted, and the writer
+ * makes it itself. A prefetch must never be able to fail a screen.
+ */
+async function prefetchedReads(
+  tools: TurnTools,
+  listings: readonly ToolListing[],
+  request: string,
+): Promise<string | undefined> {
+  const wanted = listings
+    .filter((listing) => listing.risk === "read" && takesNoArguments(listing))
+    .map((listing) => ({ name: listing.name, args: {} as Json }));
+  // The one call worth an argument: the query the loop's own first search would
+  // carry is the person's ask, verbatim.
+  if (listings.some((listing) => listing.name === "search_components")) {
+    wanted.unshift({ name: "search_components", args: { query: request } });
+  }
+  const answers = await Promise.all(wanted.map(async ({ name, args }) => {
+    const result = await tools.call(name, args).catch(() => undefined);
+    return result?.status === "ok"
+      ? `### ${name}(${JSON.stringify(args)})\n${JSON.stringify(result.output)}`
+      : undefined;
+  }));
+  const sections = answers.filter((section): section is string => section !== undefined);
+  if (sections.length === 0) return undefined;
+  return `# Already answered, before your turn started
+
+These calls were made for you, with the arguments shown. They are this product's
+real answers right now — an empty result means there is nothing to find, not that
+the call failed. Do not spend a step re-asking.
+
+Still write the \`<Query>\` bindings you always would: these values are for getting
+the shape, the field names and the arithmetic right on the FIRST save, and a
+screen with numbers typed into it is stale the moment the data moves.
+
+${sections.join("\n\n")}`;
+}
+
 /** The full brief: the shipped job description, the shipped syntax manual, the
  *  briefing pack, then what is different here. The manual and the environment
  *  note are this rung's own INSTRUCTIONS — the box is told a different job in
  *  its own words; the pack between them is the product knowledge both rungs
  *  read byte for byte (`contract/briefing.ts`). */
-function screenBrief(input: ScreenInput, listings: readonly ToolListing[]): string {
+function screenBrief(
+  input: ScreenInput,
+  listings: readonly ToolListing[],
+  prefetched: string | undefined,
+): string {
   return [
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
     input.briefing,
     environmentNote(input.appId, listings),
+    prefetched,
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
     .join("\n\n---\n\n");
@@ -479,13 +541,14 @@ export async function assembleScreen(
   /** The first thing that went wrong, in the shipped loop's own words
    *  (`wireErrorMessage`, applied inside `vendo()`). */
   let failure: string | undefined;
+  const prefetched = await prefetchedReads(turn.tools, listings, input.request);
   const harness = vendo({
     tools: loadout,
     maxSteps: SCREEN_STEPS,
     // The brief WINS over `turn.system`: it already folds the deployment's prompt
     // in as its first section, so letting the turn's copy through would say it
     // twice.
-    system: () => screenBrief(input, listings),
+    system: () => screenBrief(input, listings, prefetched),
   });
   /**
    * One drive of the loop. The events MUST be drained or nothing runs. Nothing is
