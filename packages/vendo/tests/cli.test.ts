@@ -263,6 +263,28 @@ describe("vendo CLI commands", () => {
     log.mockRestore();
   });
 
+  // #1154: an agent's first move on a command it does not know is
+  // `vendo <command> --help`. Before the fix that reached optionErrors and came
+  // back as `unknown option: --help`, exit 1 — no help, no flags discovered.
+  it("prints help for --help/-h after any command name (#1154)", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const root = await mkdtemp(join(tmpdir(), "vendo-cli-help-"));
+    cleanup.push(root);
+
+    for (const argv of [["doctor", "--help"], ["init", "--help"], ["sync", "--help"],
+      ["login", "--help"], ["eject", "--help"], ["doctor", root, "-h"]]) {
+      log.mockClear();
+      expect(await main(argv)).toBe(0);
+      expect(log.mock.calls.flat().join("\n")).toContain("Usage: vendo <command>");
+    }
+    expect(error).not.toHaveBeenCalled();
+    expect(await readdir(root)).toEqual([]); // no command ever ran
+
+    log.mockRestore();
+    error.mockRestore();
+  });
+
   it("wires eject: --list routes, surface + dir + --force parse, help documents it", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const error = vi.spyOn(console, "error").mockImplementation(() => {});

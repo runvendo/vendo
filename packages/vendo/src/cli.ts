@@ -302,6 +302,12 @@ async function syncCommand(args: string[]): Promise<number> {
   });
 }
 
+/** #1154: `--help`/`-h` after one of these command names asks for the help
+    text — without this it reaches optionErrors and comes back as
+    `unknown option: --help`, exit 1. The group commands (cloud/config/
+    knowledge/mcp) print their own help, and an unknown command stays loud. */
+const HELP_COMMANDS = new Set(["login", "init", "eject", "doctor", "sync"]);
+
 export async function main(argv: string[]): Promise<number> {
   const [command, ...args] = argv;
   if (command === undefined || command === "--help" || command === "-h") {
@@ -310,6 +316,10 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (command === "--version" || command === "-v") {
     console.log(CLI_VERSION);
+    return 0;
+  }
+  if (HELP_COMMANDS.has(command) && (args.includes("--help") || args.includes("-h"))) {
+    console.log(HELP);
     return 0;
   }
   if (command === "login") return loginCommand(args);
