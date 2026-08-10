@@ -109,7 +109,7 @@ const CATALOG_PREFIXES = ["tools: ", "tool schemas: ", "pins: ", "catalog.json: 
 const CATALOG_COMPONENTS = "components: ";
 const JUDGMENT_HEAD = /^judgment \(.+\): (.+)$/;
 const JUDGMENT_QUEUED = "loosenings queued";
-/** A judgment detail that is a TALLY — `hardened (18): …`, `loosenings
+/** A judgment detail that is a TALLY — `hardened fields (18): …`, `loosenings
     approved (1)`. The pass emits the model's free-text prose at the same
     indent as its tallies, so "indented" cannot decide what belongs in the
     counts summary; this shape can. */

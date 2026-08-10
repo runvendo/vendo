@@ -223,17 +223,17 @@ describe("createPrettyOutput (visual system)", () => {
     const out = sink();
     const pretty = createPrettyOutput({ write: out.write, banner: false });
     pretty.log("judgment (claude-code): 12 tools judged");
-    pretty.log("  hardened (3): createInvoice, sendEmail, refund");
+    pretty.log("  hardened fields (3): createInvoice.risk, sendEmail.audience, refund.confirmEach");
     pretty.log("  schemas inferred (4): createInvoice.input, refund.output");
     pretty.log("  2 loosenings queued — review with `vendo sync --review`");
     pretty.log("  rejected by the skeptic (1): deleteAccount");
     pretty.log("\nTheme: accent #7c3bed");
     const plain = out.plain();
     expect(plain).toContain("◆  Judgment");
-    expect(plain).toContain("│  12 tools judged · hardened (3) · schemas inferred (4) · rejected by the skeptic (1)");
+    expect(plain).toContain("│  12 tools judged · hardened fields (3) · schemas inferred (4) · rejected by the skeptic (1)");
     expect(plain).toContain("│  2 loosenings queued — review with vendo sync --review");
     // The long name lists are gone; --json and `vendo sync` still carry them.
-    expect(plain).not.toContain("createInvoice, sendEmail, refund");
+    expect(plain).not.toContain("createInvoice.risk, sendEmail.audience, refund.confirmEach");
     // The block settles before the next section opens.
     expect(plain.indexOf("◆  Judgment")).toBeLessThan(plain.indexOf("◆  Your brand"));
   });
@@ -245,7 +245,7 @@ describe("createPrettyOutput (visual system)", () => {
     // multi-sentence narrative emitted at the same indent as the tallies —
     // blank separator lines and internal `: ` included.
     pretty.log("judgment (claude-code): 4 tools judged");
-    pretty.log("  hardened (18): createInvoice.risk, createInvoice.description, listInvoices.title");
+    pretty.log("  hardened fields (18): createInvoice.risk, createInvoice.description, listInvoices.title");
     pretty.log("  schemas inferred (6): createInvoice.inputSchema, listInvoices.outputSchema");
     pretty.log("  loosenings approved (1)");
     pretty.log("  rejected by the skeptic (1): deleteInvoice");
@@ -260,7 +260,7 @@ describe("createPrettyOutput (visual system)", () => {
     const summary = body.find((entry) => entry.includes("4 tools judged"))!;
 
     // Counts only — every segment is a tally, and the prose is nowhere in it.
-    expect(summary).toBe("│  4 tools judged · hardened (18) · schemas inferred (6) · loosenings approved (1) · rejected by the skeptic (1)");
+    expect(summary).toBe("│  4 tools judged · hardened fields (18) · schemas inferred (6) · loosenings approved (1) · rejected by the skeptic (1)");
     expect(summary).not.toContain("·  ·");
     expect(summary).not.toContain("handler files");
     expect(summary).not.toContain("On semantics");

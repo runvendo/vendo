@@ -1029,7 +1029,9 @@ function reportNarrative(input: {
   const { output, credential, judged, routed, patched, repairedStages, notes } = input;
   const { approved, declined, queued } = input.loosenings;
   output.log(`judgment (${sanitize(credential)}): ${routed.judgedNames.length} tools judged`);
-  if (routed.hardenedFields.length > 0) output.log(`  hardened (${routed.hardenedFields.length}): ${listed(routed.hardenedFields)}`);
+  // "fields", not "tools": one entry per hardened FIELD (see hardenedFields
+  // above), so this count routinely exceeds the tool count beside it.
+  if (routed.hardenedFields.length > 0) output.log(`  hardened fields (${routed.hardenedFields.length}): ${listed(routed.hardenedFields)}`);
   if (patched.written.length > 0) {
     output.log(`  schemas inferred (${patched.written.length}): ${listed(patched.written.map((entry) => `${entry.tool}.${entry.slot}`))}`);
   }
