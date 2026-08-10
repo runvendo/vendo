@@ -107,17 +107,36 @@ export function FormingSkeleton({ name }: { name: string }) {
   );
 }
 
+const PENDING_WORDS: Record<FormShape, string> = {
+  rows: "Still loading these rows…",
+  tiles: "Still loading this figure…",
+  chart: "Still loading this chart…",
+  control: "Still loading this action…",
+  pill: "Still loading this status…",
+  slab: "Still loading this section…",
+};
+
 /**
  * One PLAN LEAF that has not been filled yet (generation pipeline rebuild,
- * Task 5). A leaf is exactly one component, so a stat-shaped leaf is one tile —
- * the three-tile band above is the silhouette of a whole forming REGION, and
- * repeating it per leaf would show nine tiles for three stats.
+ * Task 5). Unlike a streaming node, a leaf can sit unfilled for a whole fill
+ * round, so it STATES that in words sized to the sentence instead of holding a
+ * wordless accent-tinted band — a silhouette that large reads as decoration.
+ * The shape only picks the noun; no `aria-hidden`, the words are the state.
  */
 export function PendingLeaf({ name }: { name: string }) {
-  if (deriveFormShape(name) !== "tiles") return <FormingSkeleton name={name} />;
   return (
-    <span data-form-shape="tile" style={{ display: "block", width: "100%" }} aria-hidden="true">
-      <Skeleton height={64} />
+    <span
+      data-form-shape="pending"
+      style={{
+        display: "block",
+        width: "100%",
+        color: "var(--vendo-color-muted, #6b6b76)",
+        fontFamily: "var(--vendo-font-family, system-ui, sans-serif)",
+        fontSize: "var(--vendo-font-size, 15px)",
+        lineHeight: 1.4,
+      }}
+    >
+      {PENDING_WORDS[deriveFormShape(name)]}
     </span>
   );
 }
