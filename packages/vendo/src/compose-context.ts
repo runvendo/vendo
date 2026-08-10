@@ -130,8 +130,9 @@ export interface VendoComposition {
   /** THE files adapter for this deployment (build contract §3.4). */
   files: FilesAdapter;
   /** The 35-op StoreOps surface for this deployment — the store's own when it
-   *  carries one, the local backend otherwise. */
-  ops: StoreOps;
+   *  carries one, the local backend over its SQL handle otherwise, and absent
+   *  when the store offers neither (`backendOf`'s third answer). */
+  ops: StoreOps | undefined;
   sandbox: ReturnType<typeof selectSandbox>;
   secrets: SecretsProvider;
   inference: ReturnType<typeof resolveModels>;

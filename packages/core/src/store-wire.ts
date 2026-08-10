@@ -152,8 +152,7 @@ export const storeWireBlobsListRequestSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /** The owner on the target is the runtime's stamp from the host's login
-    session, never something generated code names. File bytes are base64 on the
-    wire, exactly like `blobs.put`. */
+    session, never something generated code names. */
 export const appDataTargetSchema = z.object({
   appId: z.string().min(1),
   collection: z.string().regex(APP_DATA_COLLECTION_PATTERN),
@@ -180,6 +179,7 @@ export const storeWireAppDataDeleteRequestSchema = z.object({
   id: z.string().min(1),
 }).passthrough();
 
+/** File bytes are base64-encoded on the wire, exactly like `blobs.put`. */
 export const storeWireAppDataPutFileRequestSchema = z.object({
   target: appDataTargetSchema,
   key: z.string().min(1),

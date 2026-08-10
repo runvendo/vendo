@@ -8,6 +8,7 @@ import type { FilesAdapter, StoreOps } from "@vendoai/core";
 import {
   createStore,
   createStoreOps,
+  maybeDbFor,
   storeFiles,
   threadMessageStore,
   type VendoStore,
@@ -98,11 +99,18 @@ export function storeServesHarnessTurns(store: VendoStore): boolean {
     surface, chosen here beside it. A store that carries its own `ops` wins —
     `VendoStore.ops` is declared optional for exactly this, and the hosted
     store's client is the same `vendo/store-wire@1` the local backend would be
-    re-encoding, one hop shorter. Everything else gets the local backend over
-    the store's own SQL handle, holding THE files adapter so app files and blobs
-    land in the one place the erase cascade reads. */
-export function selectStoreOps(store: VendoStore, files: FilesAdapter): StoreOps {
-  return store.ops ?? createStoreOps(store, { files });
+    re-encoding, one hop shorter. A store with a SQL handle gets the local
+    backend over it, holding THE files adapter so app files and blobs land in
+    the one place the erase cascade reads.
+
+    `undefined` for a store with NEITHER — the same three-way answer
+    `@vendoai/store`'s own `backendOf` gives, and the reason this resolves the
+    handle here instead of calling `createStoreOps` unconditionally: that call
+    opens the handle eagerly, so composition would crash at boot for a host
+    whose store has none, where today it refuses at the op that needed one. */
+export function selectStoreOps(store: VendoStore, files: FilesAdapter): StoreOps | undefined {
+  if (store.ops !== undefined) return store.ops;
+  return maybeDbFor(store) === undefined ? undefined : createStoreOps(store, { files });
 }
 
 export function selectStore(
@@ -112,8 +120,9 @@ export function selectStore(
   store: VendoStore;
   /** THE files adapter for this deployment. Every consumer takes it from here. */
   files: FilesAdapter;
-  /** THE 35-op surface for this deployment, over that same store and adapter. */
-  ops: StoreOps;
+  /** THE 35-op surface for this deployment, over that same store and adapter —
+      absent when the store offers neither its own ops nor a SQL handle. */
+  ops: StoreOps | undefined;
 } {
   const selected = ((): VendoStore => {
     if (configured !== undefined) return configured;
