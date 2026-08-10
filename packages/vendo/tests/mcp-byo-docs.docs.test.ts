@@ -8,8 +8,9 @@ import { describe, expect, it } from "vitest";
  * package import, so it runs without a build.
  *
  * What it holds:
- *  1. the page exists, is in the nav, and every nav entry still resolves;
- *  2. the page names the door's make-and-place contract and its links resolve;
+ *  1. the setup page exists, is in the nav, and every nav entry still resolves;
+ *  2. the setup page opens the door, the playbook teaches the make-and-place
+ *     contract, and both pages' links resolve;
  *  3. capabilities/mcp.mdx no longer claims the door cannot create;
  *  4. the HTTP reference carries the three placement routes;
  *  5. the plugin skill teaches slot targeting and pin etiquette;
@@ -20,8 +21,16 @@ const REPO_ROOT = new URL("../../../", import.meta.url);
 const read = (path: string): Promise<string> => readFile(new URL(path, REPO_ROOT), "utf8");
 const readJson = async <T>(path: string): Promise<T> => JSON.parse(await read(path)) as T;
 
-const PAGE = "docs-site/existing-agents/mcp.mdx";
+/** Opening the door and connecting a client. */
+const SETUP_PAGE = "docs-site/existing-agents/mcp.mdx";
 const NAV_ENTRY = "existing-agents/mcp";
+/** #1139 split the story in two, and this gate follows the split rather than
+    holding the docs to a shape they deliberately left: the setup page opens the
+    door, and the make-and-place CONTRACT — what `vendo_make` answers with, where
+    the screen lands, how a pin replaces what held a slot — is taught on the
+    product-agent playbook. Every fact below is still pinned; each is pinned in
+    the page whose job it is. Move a fact between the pages and move it here. */
+const CONTRACT_PAGE = "docs-site/existing-agents/your-agent.mdx";
 
 interface DocsJson {
   navigation: { groups: { group: string; pages: string[] }[] };
@@ -33,10 +42,10 @@ const pageExists = (id: string): boolean =>
   existsSync(new URL(`docs-site/${id}.mdx`, REPO_ROOT)) ||
   existsSync(new URL(`docs-site/${id}/index.mdx`, REPO_ROOT));
 
-describe("the BYO-over-MCP page is published", () => {
-  it("exists with Mintlify frontmatter", async () => {
-    expect(existsSync(new URL(PAGE, REPO_ROOT)), `${PAGE} must exist`).toBe(true);
-    const text = await read(PAGE);
+describe("the BYO-over-MCP pages are published", () => {
+  it.each([SETUP_PAGE, CONTRACT_PAGE])("%s exists with Mintlify frontmatter", async (page) => {
+    expect(existsSync(new URL(page, REPO_ROOT)), `${page} must exist`).toBe(true);
+    const text = await read(page);
     expect(text.startsWith("---\n")).toBe(true);
     expect(text).toMatch(/^title: "/m);
     expect(text).toMatch(/^description: "/m);
@@ -58,7 +67,21 @@ describe("the BYO-over-MCP page is published", () => {
   });
 });
 
-describe("the page teaches the door's make-and-place contract", () => {
+describe("the setup page opens the door", () => {
+  const mustMention: [label: string, needle: string | RegExp][] = [
+    ["the door URL to paste", "/api/vendo/mcp"],
+    ["the marketplace install", "/plugin marketplace add runvendo/vendo"],
+    ["the plugin install", "/plugin install vendo@vendo"],
+    ["the plugin's env var", "VENDO_MCP_URL"],
+    ["the door internals link", "/capabilities/mcp"],
+  ];
+
+  it.each(mustMention)("names %s", async (_label, needle) => {
+    expect(await read(SETUP_PAGE)).toMatch(needle);
+  });
+});
+
+describe("the playbook teaches the door's make-and-place contract", () => {
   const mustMention: [label: string, needle: string | RegExp][] = [
     ["the make tool", "vendo_make"],
     ["the slot argument", /`slot`/],
@@ -68,19 +91,16 @@ describe("the page teaches the door's make-and-place contract", () => {
     ["the building status", /"building"/],
     ["the host-side slot component", "VendoSlot"],
     ["the in-process embed it is not", "VendoToolResult"],
-    ["the door URL to paste", "/api/vendo/mcp"],
-    ["the marketplace install", "/plugin marketplace add runvendo/vendo"],
-    ["the plugin install", "/plugin install vendo@vendo"],
-    ["the plugin's env var", "VENDO_MCP_URL"],
-    ["the door internals link", "/capabilities/mcp"],
   ];
 
   it.each(mustMention)("names %s", async (_label, needle) => {
-    expect(await read(PAGE)).toMatch(needle);
+    expect(await read(CONTRACT_PAGE)).toMatch(needle);
   });
+});
 
-  it("links only to pages that exist", async () => {
-    const text = await read(PAGE);
+describe("both pages link only to pages that exist", () => {
+  it.each([SETUP_PAGE, CONTRACT_PAGE])("%s", async (page) => {
+    const text = await read(page);
     const targets = [...text.matchAll(/\]\((\/[^)\s#]*)(#[^)\s]*)?\)/g)].map((match) => match[1]!);
     const broken = [...new Set(targets)].filter((target) => !pageExists(target.replace(/^\//, "")));
     expect(broken).toEqual([]);
