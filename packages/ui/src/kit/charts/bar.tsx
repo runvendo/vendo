@@ -3,14 +3,16 @@ import {
   Bar,
   BarChart as RBarChart,
   CartesianGrid,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { applyFormat, type ValueFormat } from "../format.js";
+import { applyFormat, isRenderableNumber, type ValueFormat } from "../format.js";
 import { seriesColor, t } from "../tokens.js";
 import { ChartEmpty, ChartFrame, sanitizeSeries, seriesIsEmpty } from "./sanitize.js";
+import { ChartValues } from "./value-legend.js";
 import type { SeriesInput } from "./line.js";
 
 export interface BarChartProps {
@@ -49,11 +51,16 @@ export function BarChart({
     return <ChartEmpty height={height}>{emptyState}</ChartEmpty>;
   }
   const fmt = (v: unknown) => applyFormat(v, format) ?? "";
+  // One series is the ranked-category case, and the only one where the exact
+  // number fits on the mark: a ranked bar carries it at the bar's end, a
+  // vertical bar's slot is too narrow so the values are listed underneath.
+  const single = cols.length === 1 && !stacked;
+  const onBar = single && horizontal;
   return (
     <div data-kit="BarChart">
       <ChartFrame height={height}>
         <ResponsiveContainer width="100%" height="100%">
-          <RBarChart data={clean} layout={horizontal ? "vertical" : "horizontal"} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
+          <RBarChart data={clean} layout={horizontal ? "vertical" : "horizontal"} margin={{ top: 8, right: onBar ? 76 : 12, bottom: 4, left: 4 }}>
             <CartesianGrid stroke={t.border} strokeDasharray="3 3" vertical={horizontal} horizontal={!horizontal} />
             {horizontal ? (
               <>
@@ -76,11 +83,21 @@ export function BarChart({
                 radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
                 stackId={stacked ? "stack" : undefined}
                 isAnimationActive={false}
-              />
+              >
+                {onBar ? <LabelList dataKey={c.key} position="right" formatter={fmt} fill={t.text} fontSize={11} /> : null}
+              </Bar>
             ))}
           </RBarChart>
         </ResponsiveContainer>
       </ChartFrame>
+      {single && !horizontal ? (
+        <ChartValues
+          format={format}
+          items={clean
+            .filter((row) => isRenderableNumber(row[keys[0]!]))
+            .map((row) => ({ name: String(row[xKey] ?? ""), value: row[keys[0]!] as number }))}
+        />
+      ) : null}
     </div>
   );
 }

@@ -223,7 +223,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "BarChart",
     group: "charts",
-    summary: "A bar chart. Set horizontal for ranked lists, stacked to combine series.",
+    summary: "A bar chart. Set horizontal for ranked lists, stacked to combine series. One series prints each category's exact formatted value with the chart, so it answers on its own — never repeat it in a table beside it.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       xKey: config(z.string(), "category field", { required: true }),
@@ -239,7 +239,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "DonutChart",
     group: "charts",
-    summary: "A donut/pie of category shares. Zero and invalid slices are dropped.",
+    summary: "A donut/pie of category shares. Zero and invalid slices are dropped. Each slice's exact formatted value is listed under the chart, so it answers on its own.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       categoryKey: config(z.string(), "slice-label field", { required: true }),

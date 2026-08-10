@@ -3,6 +3,7 @@ import { Cell, Pie, PieChart as RPieChart, ResponsiveContainer, Tooltip } from "
 import { isRenderableNumber, applyFormat, type ValueFormat } from "../format.js";
 import { seriesColor, t } from "../tokens.js";
 import { ChartEmpty, ChartFrame } from "./sanitize.js";
+import { ChartValues } from "./value-legend.js";
 
 export interface DonutChartProps {
   data: Array<Record<string, unknown>>;
@@ -60,6 +61,10 @@ export function DonutChart({
           </RPieChart>
         </ResponsiveContainer>
       </ChartFrame>
+      <ChartValues
+        format={format}
+        items={slices.map((slice, i) => ({ name: slice.name, value: slice.value, color: seriesColor(i) }))}
+      />
     </div>
   );
 }
