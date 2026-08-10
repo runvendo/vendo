@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 export type FormShape = "slab" | "tiles" | "rows" | "pill" | "chart" | "control";
 
 /**
- * The shimmer bar every silhouette below is built from. V4 (one component
+ * The placeholder bar every silhouette below is built from. V4 (one component
  * family) took `Skeleton` off the component vocabulary and the public
  * `@vendoai/ui/tree` surface — a loading placeholder is renderer chrome, not
  * something a model names. It lives here, with its only two consumers (this
@@ -15,7 +15,7 @@ export type FormShape = "slab" | "tiles" | "rows" | "pill" | "chart" | "control"
 export function Skeleton(props: { width?: string | number; height?: string | number }) {
   return (
     <span
-      className="fl-glass fl-glass-shimmer"
+      className="fl-glass"
       data-skeleton=""
       aria-hidden="true"
       style={{
@@ -23,12 +23,8 @@ export function Skeleton(props: { width?: string | number; height?: string | num
         width: props.width ?? "100%",
         height: props.height ?? "var(--vendo-skeleton-height, 16px)",
         minHeight: props.height ?? "var(--vendo-skeleton-height, 16px)",
-        background: `linear-gradient(100deg,
-          color-mix(in srgb, var(--vendo-color-accent, #111111) 10%, transparent) 30%,
-          color-mix(in srgb, var(--vendo-color-accent, #111111) 22%, transparent) 50%,
-          color-mix(in srgb, var(--vendo-color-accent, #111111) 10%, transparent) 70%)`,
-        backgroundSize: "200% 100%",
-        borderRadius: "var(--vendo-radius-medium, 10px)",
+        background: "var(--vendo-color-border, #e3e3e8)",
+        borderRadius: "var(--vendo-radius-small, 6px)",
       }}
     />
   );
@@ -37,10 +33,10 @@ export function Skeleton(props: { width?: string | number; height?: string | num
 /**
  * The tree streams before generated component SOURCES arrive, so a forming
  * node's silhouette can only come from what its name says the component is.
- * Anything unrecognized keeps the plain 72px slab.
+ * Anything unrecognized keeps the plain 24px slab.
  */
 export function deriveFormShape(componentName: string): FormShape {
-  // A plot is the tallest thing in an app; a 72px slab that becomes a 180px
+  // A plot is the tallest thing in an app; a 24px slab that becomes a 72px
   // chart is the layout jump the skeleton exists to prevent. Sparkline is
   // deliberately excluded — it is an inline mark, not a plot.
   if (/chart|graph|plot/i.test(componentName)) return "chart";
@@ -57,32 +53,32 @@ export function deriveFormShape(componentName: string): FormShape {
 const band: CSSProperties = { display: "flex", gap: 10, width: "100%" };
 const cell: CSSProperties = { flex: 1, minWidth: 0 };
 
-/** The shape-aware streaming placeholder: shimmer silhouettes of the final
+/** The shape-aware streaming placeholder: border-grey silhouettes of the final
  *  geometry, so arrival is a crossfade instead of a slab popping into a view. */
 export function FormingSkeleton({ name }: { name: string }) {
   const shape = deriveFormShape(name);
   if (shape === "tiles") {
     return (
       <span data-form-shape="tiles" style={band} aria-hidden="true">
-        <span style={cell}><Skeleton height={64} /></span>
-        <span style={cell}><Skeleton height={64} /></span>
-        <span style={cell}><Skeleton height={64} /></span>
+        <span style={cell}><Skeleton height={28} /></span>
+        <span style={cell}><Skeleton height={28} /></span>
+        <span style={cell}><Skeleton height={28} /></span>
       </span>
     );
   }
   if (shape === "rows") {
     return (
       <span data-form-shape="rows" style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }} aria-hidden="true">
-        <Skeleton height={40} />
-        <Skeleton height={40} />
-        <Skeleton height={40} />
+        <Skeleton height={14} />
+        <Skeleton height={14} />
+        <Skeleton height={14} />
       </span>
     );
   }
   if (shape === "chart") {
     return (
       <span data-form-shape="chart" style={{ display: "block", width: "100%" }} aria-hidden="true">
-        <Skeleton height={180} />
+        <Skeleton height={72} />
       </span>
     );
   }
@@ -96,13 +92,13 @@ export function FormingSkeleton({ name }: { name: string }) {
   if (shape === "pill") {
     return (
       <span data-form-shape="pill" style={{ display: "flex", justifyContent: "flex-end", width: "100%" }} aria-hidden="true">
-        <Skeleton width={110} height={22} />
+        <Skeleton width={110} height={14} />
       </span>
     );
   }
   return (
     <span data-form-shape="slab" style={{ display: "block", width: "100%" }} aria-hidden="true">
-      <Skeleton height="72px" />
+      <Skeleton height="24px" />
     </span>
   );
 }
