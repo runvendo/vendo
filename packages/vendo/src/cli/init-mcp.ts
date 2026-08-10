@@ -95,6 +95,27 @@ export interface McpPlan {
   blocked?: string;
 }
 
+/** The plan's closing block, as a pretty run reads it: each step numbered by
+    its headline, its detail indented under it, and the environment values as a
+    closing group under one sentence that says where they go. A flat list of
+    `headline\ndetail` strings reads as a wall — the numbers and the indent are
+    what make it read as steps. (Plain runs print the same strings unnumbered:
+    the newline becomes an indent and nothing else, since a plain transcript is
+    parsed as often as it is read.) */
+export function mcpStepLines(plan: Pick<McpPlan, "steps" | "envLines">): string[] {
+  const lines: string[] = [];
+  plan.steps.forEach((step, index) => {
+    const [headline, ...detail] = step.split("\n");
+    lines.push(`${index + 1}. ${headline}`);
+    for (const rest of detail) lines.push(`   ${rest}`);
+  });
+  if (plan.envLines.length > 0) {
+    lines.push("", "Set where you deploy — both values live on the console's MCP page:");
+    for (const env of plan.envLines) lines.push(`   ${env}`);
+  }
+  return lines;
+}
+
 /** A fresh service key: 32 random bytes, hex. `planMcp` mints one itself when
     the answers call for it; this is separately callable so the shape can be
     asserted without a plan. */
@@ -179,19 +200,20 @@ export function planMcp(input: McpPlanInput): McpPlan {
   // URL, so it is the same in both postures — switching posture later invalidates
   // nothing a user already configured in Claude, ChatGPT or Cursor.
   const clientBase = baseUrl ?? "https://<your deployment>";
+  // Each step is "headline\ndetail…" — the caller numbers the headlines and
+  // indents the detail lines, so a step never wraps mid-phrase into a wall.
   const steps = [
     baseUrl === null
-      ? "Set VENDO_BASE_URL in your deploy platform to this deployment's public origin — without it the door's discovery points at the wrong origin and clients cannot find your server"
-      : `Set VENDO_BASE_URL in your deploy platform — ${baseUrl}, captured earlier, is in .env.example`,
-    `Point any MCP client at ${clientBase}${MCP_MOUNT}`,
-    `Setup page for your users ships free at ${MCP_MOUNT}/connect (Claude · ChatGPT · Cursor copy included)`,
-    "Claude Code: /plugin marketplace add runvendo/vendo → /plugin install vendo@vendo",
+      ? "Set `VENDO_BASE_URL` in your deploy platform to this deployment's public origin\nwithout it, discovery points at the wrong origin and clients cannot find your server"
+      : `Set \`VENDO_BASE_URL\` in your deploy platform\n\`${baseUrl}\` — captured earlier, already in .env.example`,
+    `Point any MCP client at \`${clientBase}${MCP_MOUNT}\`\nyour users' setup page ships free at \`${MCP_MOUNT}/connect\` — copy for Claude · ChatGPT · Cursor included`,
+    "Claude Code: `/plugin marketplace add runvendo/vendo` then `/plugin install vendo@vendo`",
   ];
   if (!cloudKey) steps.push(KEYLESS_SIGN_IN);
   if (serviceKey) {
     steps.push(serviceAuth
-      ? `Your backend exchanges VENDO_SERVICE_KEY at ${clientBase}${MCP_MOUNT}/token for a 10-minute token acting as a named user — svc: attribution in the audit`
-      : "Create the service key on the console's keys page (Service keys) — it lands in the broker; exchange it at your tenant URL /token");
+      ? `Your backend exchanges \`VENDO_SERVICE_KEY\` at \`${clientBase}${MCP_MOUNT}/token\`\nfor a 10-minute token acting as a named user — svc: attribution in the audit`
+      : "Create the service key on the console's keys page (Service keys)\nit lands in the broker — exchange it at `<your tenant URL>/token`");
   }
 
   return {
@@ -201,8 +223,8 @@ export function planMcp(input: McpPlanInput): McpPlan {
     steps,
     envLines: posture === "broker"
       ? [
-          "VENDO_MCP_BROKER_URL=<your tenant MCP endpoint, from the console MCP page>",
-          "VENDO_MCP_FEDERATION_SECRET=<from the console MCP page>",
+          "`VENDO_MCP_BROKER_URL=<your tenant MCP endpoint>`",
+          "`VENDO_MCP_FEDERATION_SECRET=<secret>`",
         ]
       : [],
   };

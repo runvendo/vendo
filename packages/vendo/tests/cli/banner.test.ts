@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BANNER_COMPACT,
   BANNER_CONCEPT,
@@ -13,6 +13,10 @@ import {
 
 const ESC = "\u001b";
 const CONCEPTS: BannerConcept[] = ["assembly", "flow", "shimmer"];
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 /** Drop SGR/cursor sequences so the art itself can be asserted. */
 function stripAnsi(text: string): string {
@@ -123,13 +127,15 @@ describe("bannerFrames", () => {
   });
 });
 
-/** One in-place frame redraw, exactly as playBanner writes it. */
-function redraw(frame: string): string {
-  return `${ESC}[${BANNER_COMPACT.length}A${frame.split("\n").map((row) => `${ESC}[2K${row}`).join("\n")}\n`;
+/** One in-place frame repaint, exactly as playBanner writes it: save the
+    cursor, rewind over the content below plus the art, paint, restore. */
+function redraw(frame: string, below = 0): string {
+  return `${ESC}7${ESC}[${BANNER_COMPACT.length + below}A`
+    + `${frame.split("\n").map((row) => `${ESC}[2K${row}`).join("\n")}${ESC}8`;
 }
 
 describe("playBanner", () => {
-  it("redraws in place, plays once, and ends on the settled frame", async () => {
+  it("repaints in place, plays once, and ends on the settled frame", async () => {
     const chunks: string[] = [];
     const frames = bannerFrames(BANNER_COMPACT, "ansi", BANNER_CONCEPT);
     await playBanner((chunk) => { chunks.push(chunk); }, frames, 0);
@@ -138,8 +144,11 @@ describe("playBanner", () => {
     // alternate screen buffer, ever.
     expect(written.split(`${ESC}[${BANNER_COMPACT.length}A`)).toHaveLength(frames.length);
     expect(written).not.toContain("?1049h");
-    expect(written.endsWith(`${frames.at(-1)!.split("\n").map((row) => `${ESC}[2K${row}`).join("\n")}\n`))
-      .toBe(true);
+    // Every repaint is bracketed: the cursor ends where the caller left it, so
+    // a run printing below the art is never moved by a frame.
+    expect(written.split(`${ESC}7`)).toHaveLength(frames.length);
+    expect(written.split(`${ESC}8`)).toHaveLength(frames.length);
+    expect(written.endsWith(redraw(frames.at(-1)!))).toBe(true);
 
     // Played once: nothing is written after it resolves.
     const settled = chunks.length;
@@ -161,14 +170,49 @@ describe("playBanner", () => {
     expect(chunks.join("")).toBe(`${frames[0]!}\n`);
 
     arrival.abort();
-    // Synchronously, before abort() returned: whatever the caller prints on the
-    // very next statement lands under the FINISHED mark, never a half-drawn one.
+    // Synchronously, before abort() returned: an interrupted run leaves the
+    // FINISHED mark on screen, never a half-drawn one.
     expect(chunks.join("")).toBe(`${frames[0]!}\n${redraw(frames.at(-1)!)}`);
 
     const settled = chunks.length;
     await played;
     await new Promise((resolve) => { setTimeout(resolve, 20); });
     expect(chunks).toHaveLength(settled);
+  });
+
+  it("below mode: every frame rewinds over the caller's content as it grows", async () => {
+    vi.useFakeTimers();
+    const chunks: string[] = [];
+    const frames = bannerFrames(BANNER_COMPACT, "ansi", BANNER_CONCEPT);
+    // The caller prints two more rows between every frame, exactly as a run
+    // that keeps talking under the wave does.
+    const below = { rows: 0 };
+    const played = playBanner((chunk) => { chunks.push(chunk); }, frames, 10, undefined, below);
+    const growth: number[] = [];
+    for (let at = 1; at < frames.length; at += 1) {
+      below.rows += 2;
+      growth.push(below.rows);
+      await vi.advanceTimersByTimeAsync(10);
+    }
+    await played;
+
+    // One rewind per frame after the first, each over art + the content that
+    // existed when it painted — the arithmetic the art depends on.
+    const offsets = [...chunks.join("").matchAll(new RegExp(`${ESC}7${ESC}\\[(\\d+)A`, "g"))]
+      .map((match) => Number(match[1]));
+    expect(offsets).toEqual(growth.map((rows) => BANNER_COMPACT.length + rows));
+    // And the paint still ends on the settled frame, still bracketed.
+    expect(chunks.join("").endsWith(redraw(frames.at(-1)!, below.rows))).toBe(true);
+  });
+
+  it("below mode: an abort settles the mark above the content, not over it", () => {
+    const chunks: string[] = [];
+    const frames = bannerFrames(BANNER_COMPACT, "ansi", BANNER_CONCEPT);
+    const arrival = new AbortController();
+    const below = { rows: 5 };
+    void playBanner((chunk) => { chunks.push(chunk); }, frames, 5, arrival.signal, below);
+    arrival.abort();
+    expect(chunks.join("")).toBe(`${frames[0]!}\n${redraw(frames.at(-1)!, 5)}`);
   });
 
   it("an abort after it already settled redraws nothing", async () => {

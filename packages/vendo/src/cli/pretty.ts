@@ -94,20 +94,37 @@ export interface PrettyOutput extends Output {
       keep emitting their plain lines, and this restyles nothing — it is for
       blocks the pretty run composes itself. */
   block(title: string, lines: string[], marker?: "◆" | "◇"): void;
+  /** The staggered sibling of block(): waits for the banner arrival, plays an
+      optional spinner beat (the detection narration), then lands the lines
+      ~stepMs apart so the section arrives as a rhythm instead of a burst.
+      A line carrying its own beat gets a labeled spinner moment first — the
+      scan finds things one at a time. Pretty-only, like block(). */
+  revealBlock(
+    title: string,
+    lines: Array<string | { beat?: string; text: string }>,
+    options?: { stepMs?: number; beat?: string },
+  ): Promise<void>;
   /** The `└ Done in Xs` footer (red `Failed` when the command exits non-zero);
       `stats` is the dim tail that says what the run actually achieved, and a
       dim star line closes the run. */
   done(durationMs: number, ok: boolean, stats?: string): void;
   /** Settles when the banner has finished arriving. Printing never waits on it
-      — the first line cuts the arrival to the settled mark — so this is for the
-      one caller that wants the arrival SEEN: it awaits whatever is left of it
-      after its own detection work, and pays nothing it did not already spend. */
+      and nothing cuts it short: the tagline, the header and the scan all print
+      BELOW the art while the frames repaint above them, so the run keeps
+      talking through the wave. This is for the one caller that wants the
+      arrival SEEN — it awaits whatever is left after its own work, and pays
+      nothing it did not already spend. A cancel still settles it instantly:
+      Ctrl-C aborts, which paints the finished mark before the run ends. */
   arrived: Promise<void>;
 }
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const BAR = dim("│");
 const CLEAR_LINE = `\r${ESC}[2K`;
+/** Splits a chunk into text, CSI sequences (none of which costs a cell) and the
+    two control characters that move the cursor on their own. Captured, so
+    `split` keeps them. */
+const SPLIT_CSI = new RegExp(`(${ESC}\\[[0-9;?]*[A-Za-z]|[\\n\\r])`);
 const RESET = `${ESC}[0m`;
 const SHOW_CURSOR = `${ESC}[?25h`;
 /** Columns the rail costs a continuation row: `│` plus the two-space body gap. */
@@ -703,12 +720,15 @@ export interface PrettyOptions {
 export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
   const {
     command = "vendo init",
-    write = (chunk: string): void => { stdout.write(chunk); },
     input = stdin as SelectInput,
     promptOutput = stdout,
     banner = true,
     env = process.env,
   } = options;
+  // `write` is a mutable binding: once the arrival starts, it is swapped for a
+  // row-counting wrapper so the paint loop knows how much content sits below
+  // the animating art. Everything in this closure writes through it.
+  let write = options.write ?? ((chunk: string): void => { stdout.write(chunk); });
   let headerPrinted = false;
   let lastWasBar = false;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -751,25 +771,80 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
     accent: lilac,
   };
   /** The arrival, started at construction — so the frames play over the stack
-      detection the run does before its first line, and cost nothing. It is
-      never awaited: ensureHeader settles it, so the animation can only ever be
-      a faster way to arrive at the banner that printed here before. */
+      detection the run does before its first line, and cost nothing. The
+      signal is the interrupt path only (cancel settles the mark); ordinary
+      lines print below the art and let the wave finish. */
   const arrival = banner ? new AbortController() : null;
+  /** Content rows printed below the art while the wave still plays — the art
+      repaints in place above them each frame. Counted by wrapping the writer,
+      which is the ONLY thing that models the cursor: everything in this closure
+      writes through it, and the art's own paint (which saves and restores the
+      cursor) is the one thing that does not. */
+  const below = { rows: 0 };
+  const rawWrite = write;
+  let arrivalLive = arrival !== null;
+  /** Column the cursor sits in, carried across chunks: a write that does not
+      end in a newline leaves the next one mid-row. */
+  let column = 0;
+  /** ROWS a chunk moves the cursor down, which is NOT its newline count: a line
+      wider than the window wraps onto rows of its own, and an art repaint that
+      rewound by the newline count would land inside the content — the desync
+      #1152 fixed for the rail, measured with the same `displayWidth`. */
+  const rowsWritten = (chunk: string): number => {
+    const limit = columns();
+    let rows = 0;
+    for (const token of chunk.split(SPLIT_CSI)) {
+      if (token === "") continue;
+      if (token === "\n") {
+        rows += 1;
+        column = 0;
+        continue;
+      }
+      if (token === "\r") {
+        column = 0;
+        continue;
+      }
+      if (token.startsWith(ESC)) {
+        // A cursor-up (the select's rewind, the scan's tick) gives rows back:
+        // what gets repainted under it is counted again as it is written.
+        const up = /^\[(\d*)A$/.exec(token.slice(1));
+        if (up !== null) rows -= Math.max(1, Number(up[1] === "" ? "1" : up[1]));
+        continue;
+      }
+      const width = displayWidth(token);
+      if (width === 0) continue;
+      if (!Number.isFinite(limit)) {
+        column += width;
+        continue;
+      }
+      rows += Math.floor((column + width - 1) / limit);
+      column = (column + width - 1) % limit + 1;
+    }
+    return rows;
+  };
+  write = (chunk: string): void => {
+    if (arrivalLive) below.rows += rowsWritten(chunk);
+    rawWrite(chunk);
+  };
   const arrived = arrival === null
     ? Promise.resolve()
     : playBanner(
-      write,
+      rawWrite,
       bannerFrames(BANNER_COMPACT, bannerColorMode(env), BANNER_CONCEPT),
-      undefined,
+      // 90ms/frame ≈ 1.3s wave — it no longer holds anything hostage: the
+      // header, the scan and its checkmarks all land BELOW the art while it
+      // plays, so a longer wave is spectacle over work, not before it.
+      90,
       arrival.signal,
-    );
+      below,
+    ).finally(() => { arrivalLive = false; });
   const ensureHeader = (): void => {
     if (headerPrinted) return;
     headerPrinted = true;
-    // The mark is already on screen (abort settles it if it is still moving);
-    // this only adds the gap and the tagline under it.
+    // The wave keeps playing ABOVE this — content builds below the art and
+    // the paint loop clears over it each frame. Nothing aborts the arrival
+    // anymore; it finishes on its own while the run talks.
     if (arrival !== null) {
-      arrival.abort();
       write(`\n${dim(BANNER_TAGLINE)}\n\n`);
     }
     line(`${dim("┌")}  ${bold(command)}`);
@@ -802,6 +877,10 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
       code is the caller's — this only draws. */
   const cancel = (): void => {
     stopSpin();
+    // The one path that still cuts the wave: an interrupted run must not leave
+    // a half-drawn mark in the scrollback, and abort() paints the settled frame
+    // synchronously, before the `└ Cancelled` line lands under it.
+    arrival?.abort();
     write(SHOW_CURSOR);
     ensureHeader();
     rail.bar();
@@ -1020,6 +1099,41 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
       const tail = stats === undefined ? "" : ` ${dim(`— ${stats}`)}`;
       line(`${dim("└")}  ${ok ? green(`Done in ${seconds}`) : red(`Failed after ${seconds}`)}${tail}`);
       line(`   ${dim(STAR_FOOTER)}`);
+    },
+    async revealBlock(title, lines, options = {}) {
+      const { stepMs = 120, beat } = options;
+      const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+      const items = lines.map((entry) => (typeof entry === "string" ? { text: entry } : entry));
+      // The scan builds BELOW the art while the wave still plays: header, then
+      // per-fact spinner lines that flip to a green ✓ when "found". The facts
+      // were computed before any of this — the beats are pacing that spends
+      // the wave's time on the user's app, not on the logo. Each tick rewinds
+      // the ROWS the last one took (a wrapped line is more than one) and erases
+      // to the end of the screen; the writer counts the rewind, so the art's
+      // repaint above stays exactly as far up as the content really reaches.
+      const scanLine = async (label: string, ms: number, resolveTo?: string): Promise<void> => {
+        let rows = line(`${BAR}  ${FRAMES[0]!} ${dim(label)}`);
+        const rewind = (): void => { write(`${ESC}[${rows}A${ESC}[0J`); };
+        const ticks = Math.max(1, Math.round(ms / 80));
+        for (let i = 1; i <= ticks; i += 1) {
+          await pause(80);
+          rewind();
+          rows = line(`${BAR}  ${lilac(FRAMES[i % FRAMES.length]!)} ${dim(label)}`);
+        }
+        rewind();
+        if (resolveTo !== undefined) line(`${BAR}  ${green("✓")} ${resolveTo}`);
+      };
+      settle();
+      rail.section(lilac("◆"), bold(title));
+      if (beat !== undefined) await scanLine(beat, 380);
+      for (const item of items) {
+        if (item.beat !== undefined) await scanLine(item.beat, 480, item.text);
+        else {
+          await pause(stepMs);
+          rail.body(`${green("✓")} ${item.text}`);
+        }
+      }
+      await arrived;
     },
   };
 }

@@ -192,6 +192,35 @@ describe("vendo init (zero-question)", () => {
     expect(logs).not.toContain("vendo refine");
   });
 
+  // A plain transcript is parsed as often as it is read, so the MCP steps keep
+  // their exact strings there — the newline inside a step becomes an indent and
+  // nothing else. (The pretty run numbers the same strings; mcpStepLines owns
+  // that half.)
+  it("mcp: the plain transcript indents each step's detail under its headline", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-mcp-plain-"));
+    cleanup.push(root);
+    await mkdir(join(root, "app"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "mcp-host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" },
+    }));
+    await writeFile(join(root, "tsconfig.json"), "{}\n");
+    await writeFile(join(root, "app", "layout.tsx"),
+      "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
+    const sink = output();
+    expect(await run(root, sink, {
+      useCase: "mcp", yes: true, auth: "clerk", baseUrl: "https://app.acme.com",
+    })).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain(
+      "  Set `VENDO_BASE_URL` in your deploy platform\n"
+      + "    `https://app.acme.com` — captured earlier, already in .env.example",
+    );
+    // The headline of a step is never indented past two spaces, so a reader
+    // (and a grep) can still tell a step from its detail.
+    expect(logs).toContain("  Point any MCP client at `https://app.acme.com/api/vendo/mcp`\n    your users' setup page");
+  });
+
   it("is idempotent: a re-run changes nothing and says so", async () => {
     const root = await fixture();
     expect(await run(root, output())).toBe(0);

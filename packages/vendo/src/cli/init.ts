@@ -10,7 +10,7 @@ import { detectDepVersions, installedAiVersion } from "./dep-versions.js";
 import { AUTH_MD_URL, ensureEnvLocalIgnored, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { runDoctor } from "./doctor.js";
 import type { InitPolishSeam } from "./init-judgment.js";
-import { planMcp, type McpPosture } from "./init-mcp.js";
+import { mcpStepLines, planMcp, type McpPosture } from "./init-mcp.js";
 import { rendererFlowOptions, runSyncFlow, type SyncFlowResult } from "./sync-flow.js";
 import { BRIEF_TEMPLATE } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
@@ -1653,9 +1653,11 @@ async function finishRun(input: {
   ];
   printClosingSteps({ output, handSteps, manualSteps, credential, cloud, compositionPath });
   if (mcp !== null) {
-    const lines = [...mcp.steps, ...mcp.envLines];
-    if (pretty === null) for (const line of lines) output.log(`  ${line}`);
-    else pretty.block("Steps that are yours", lines, "◇");
+    // A step is `headline\ndetail`: the pretty block numbers and indents it,
+    // and a plain transcript keeps the detail on its own indented line.
+    if (pretty === null) {
+      for (const line of [...mcp.steps, ...mcp.envLines]) output.log(`  ${line.replace(/\n/g, "\n    ")}`);
+    } else pretty.block("Steps that are yours", mcpStepLines(mcp), "◇");
   }
 
   // The live check offers itself ONLY when nothing is left to paste: doctor
@@ -1724,12 +1726,17 @@ export async function runInit(options: InitOptions): Promise<number> {
   // reasons, and showing it is the moment the tool proves it looked.
   if (pretty !== null) {
     // Detect FIRST, print second: the banner's arrival plays over this work.
-    // It reads a handful of files, though, so the arrival is the longer of the
-    // two — awaiting the remainder is what makes it an arrival instead of a
-    // flash, and it is bounded by the frame budget (~1.3s), not by this run.
+    // The reveal then narrates it — a beat of "Reading your app…" and the
+    // facts landing one by one — so the wave reads as detection time, and the
+    // section arrives as a rhythm instead of a burst after the arrival.
     const stack = await stackLines(root, await resolveFramework(root, options));
-    await pretty.arrived;
-    pretty.block("Your stack", stack);
+    // Each fact gets a labeled beat — the scan narrates what it is looking at
+    // while it lands the answer it already has.
+    const facts = stack.map((text, index) => ({
+      beat: index === 0 ? "Detecting your framework…" : index === 1 ? "Checking auth…" : undefined,
+      text,
+    }));
+    await pretty.revealBlock("Your stack", facts, { beat: "Reading your app…" });
   }
   const useCase = await resolveUseCase({ options, pretty, interactive });
 
