@@ -238,6 +238,8 @@ export function DataTable(props: DataTableProps) {
         style={{
           width: "100%",
           overflowX: "auto",
+          overflowY: "auto",
+          maxHeight: "min(70vh, 600px)",
           border: `1px solid ${t.border}`,
           borderRadius: t.radiusMedium,
           background: t.surface,
@@ -249,7 +251,7 @@ export function DataTable(props: DataTableProps) {
           ) : null}
           <thead>
             {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id} style={{ background: `color-mix(in srgb, ${t.background} 72%, ${t.surface})` }}>
+              <tr key={hg.id}>
                 {hg.headers.map((header) => {
                   const col = columns.find((c) => c.key === header.column.id);
                   const sorted = header.column.getIsSorted();
@@ -270,6 +272,11 @@ export function DataTable(props: DataTableProps) {
                         cursor: "pointer",
                         userSelect: "none",
                         whiteSpace: "nowrap",
+                        // sticky through the wrapper's own scroll; needs its own background or rows show through
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 1,
+                        background: `color-mix(in srgb, ${t.background} 72%, ${t.surface})`,
                       }}
                     >
                       {flexRender(header.column.columnDef.header, header.getContext())}
@@ -315,6 +322,12 @@ export function DataTable(props: DataTableProps) {
           </tbody>
         </table>
       </div>
+
+      {bodyRows.length > 12 && !(typeof paginate === "number" && paginate > 0) && (
+        <span style={{ color: t.muted, fontSize: "0.85em" }}>
+          {`All ${bodyRows.length} rows are here — scroll inside the table for the rest.`}
+        </span>
+      )}
 
       {typeof paginate === "number" && paginate > 0 && table.getPageCount() > 1 && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--vendo-density-inline-gap, 7px)" }}>
