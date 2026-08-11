@@ -1,4 +1,5 @@
 import {
+  log,
   VENDO_KNOWLEDGE_RESULT_KIND,
   VENDO_TOOL_TITLES,
   VendoError,
@@ -262,7 +263,11 @@ export function createKnowledgeTools(
       // Deduped by cause: a permanently broken engine costs one log line per
       // distinct failure, not one per turn.
       warned.add(full);
-      console.warn(`[vendo] knowledge engine failed — ${VENDO_KNOWLEDGE_SEARCH_TOOL} answers "unavailable" until this is fixed: ${full}`);
+      log({
+        code: "knowledge.engine-failed",
+        level: "warn",
+        message: `[vendo] knowledge engine failed — ${VENDO_KNOWLEDGE_SEARCH_TOOL} answers "unavailable" until this is fixed: ${full}`,
+      });
     }
     return raw.split(" — ")[0]!;
   };
