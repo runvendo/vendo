@@ -46,6 +46,15 @@ const isUnder = (path: string, dir: string): boolean =>
  *  /tmp is what doctor sees on a laptop and a false warning on every local run
  *  is worse than no warning. */
 export async function checkStorePersistence(run: DoctorRun): Promise<void> {
+  // …but only when the local PGlite default is the store at all. `selectStore`
+  // prefers hostedStore(VENDO_API_KEY) over createStore() (compose-store.ts), so
+  // on a Cloud deployment this path is a directory nothing ever writes and the
+  // warning would name it to every single Cloud user. A host that sets the key
+  // and STILL passes `store: createStore()` is not visible from here — no
+  // doctor check can see a programmatic override (doctor-report.ts's DoctorRun;
+  // same limit checkSurfaceOwnership states) — and that host still gets the
+  // store's own boot warning, which fires on the real dataDir at runtime.
+  if ((run.env.VENDO_API_KEY ?? "").trim() !== "") return;
   const dataDir = join(run.root, ".vendo", "data");
   const platform = EPHEMERAL_PLATFORM_ENVS.find(([name]) => (run.env[name] ?? "").trim() !== "")?.[1];
   const wiper = platform

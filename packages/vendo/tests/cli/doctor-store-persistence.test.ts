@@ -75,6 +75,32 @@ describe("store/persistence (E-STORE-001)", () => {
     expect(doctor.warnings).toBe(0);
   });
 
+  // The local PGlite default is only the store when no Cloud key fills the slot
+  // (selectStore, compose-store.ts). Warning on a Cloud deployment names a
+  // directory nothing writes — to every Cloud user, on every doctor run.
+  it.each([
+    ["RAILWAY_ENVIRONMENT", "production"],
+    ["RENDER", "true"],
+    ["FLY_APP_NAME", "maple"],
+    ["DYNO", "web.1"],
+  ])("stays silent on %s when VENDO_API_KEY composes the hosted store", async (marker, value) => {
+    const doctor = run("/srv/maple", { [marker]: value, VENDO_API_KEY: "vk_live_test" });
+
+    await checkStorePersistence(doctor);
+
+    expect(doctor.checks).toEqual([]);
+    expect(doctor.warnings).toBe(0);
+  });
+
+  it("still warns when VENDO_API_KEY is present but blank", async () => {
+    const doctor = run("/srv/maple", { RAILWAY_ENVIRONMENT: "production", VENDO_API_KEY: "  " });
+
+    await checkStorePersistence(doctor);
+
+    expect(doctor.checks.find((candidate) => candidate.id === "store/persistence")?.error_code)
+      .toBe("E-STORE-001");
+  });
+
   it("stays silent for a scratch project under /tmp with no database in it", async () => {
     const root = await project({ booted: false });
     const doctor = run(root);
