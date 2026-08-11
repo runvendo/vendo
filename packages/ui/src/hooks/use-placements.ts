@@ -16,6 +16,7 @@
  * slots telling the registry they exist, deduped and batched into one write.
  */
 import {
+  log,
   SLOTS_REPORT_MAX,
   SLOT_ID_MAX_CHARS,
   SLOT_LABEL_MAX_CHARS,
@@ -193,7 +194,11 @@ function createPoller(client: VendoClient): Poller {
       // report to fit instead; the route stays the strict backstop.
       if (slot.length === 0 || slot.length > SLOT_ID_MAX_CHARS) {
         if (developmentMode()) {
-          console.warn(`[vendo] VendoSlot id must be 1-${SLOT_ID_MAX_CHARS} characters — this slot is not reported, so nothing can offer it as a destination.`);
+          log({
+            code: "ui.vendo-slot-id-invalid",
+            level: "warn",
+            message: `[vendo] VendoSlot id must be 1-${SLOT_ID_MAX_CHARS} characters — this slot is not reported, so nothing can offer it as a destination.`,
+          });
         }
         return;
       }
@@ -222,7 +227,11 @@ function createPoller(client: VendoClient): Poller {
           // that mounts it, once the slots already in the registry are quiet.
           forget(batch.slice(SLOTS_REPORT_MAX));
           if (developmentMode()) {
-            console.warn(`[vendo] a page may report at most ${SLOTS_REPORT_MAX} slots at once — ${batch.length - sending.length} were held back for a later render.`);
+            log({
+              code: "ui.slots-report-overflow",
+              level: "warn",
+              message: `[vendo] a page may report at most ${SLOTS_REPORT_MAX} slots at once — ${batch.length - sending.length} were held back for a later render.`,
+            });
           }
         }
         void client.slots.report(sending).catch(() => forget(sending));

@@ -22,6 +22,7 @@
  * Lifted from the Keystone demo's `pin-flight.ts`, which is where the sequence
  * was designed and proven on stage.
  */
+import { log } from "@vendoai/core";
 import { useCallback, useEffect, useState } from "react";
 import { useVendoProvider } from "../context.js";
 import { announcePin, onPinAnnounced, pinTaken } from "../pin-events.js";
@@ -366,7 +367,11 @@ export function usePinAction(): ((app: { appId: string; payload: unknown }) => v
             // toast because this path's surface is already dismissed by the
             // time the write answers, so there is nowhere inline left to say it.
             if (developmentMode()) {
-              console.warn(`[vendo] pin: placing ${app.appId} in "${pinSlot}" failed — ${String(reason)}`);
+              log({
+                code: "ui.pin-ceremony-place-failed",
+                level: "warn",
+                message: `[vendo] pin: placing ${app.appId} in "${pinSlot}" failed — ${String(reason)}`,
+              });
             }
             vendoToast({ text: "That didn’t go through — try again.", state: "error" });
             return;

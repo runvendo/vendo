@@ -1,4 +1,4 @@
-import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
+import { log, type Json, type ToolOutcome, type UIPayload } from "@vendoai/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../context.js";
 import { announcePin } from "../pin-events.js";
@@ -279,7 +279,11 @@ export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, discover
   const suggest = (prompt: string) => {
     const opened = openVendoConversation({ prompt, send: false });
     if (!opened && developmentMode()) {
-      console.warn(`[vendo] VendoSlot "${id}": suggestions open the conversation surface — mount a VendoOverlay for them to land in.`);
+      log({
+        code: "ui.vendo-slot-no-overlay",
+        level: "warn",
+        message: `[vendo] VendoSlot "${id}": suggestions open the conversation surface — mount a VendoOverlay for them to land in.`,
+      });
     }
   };
 

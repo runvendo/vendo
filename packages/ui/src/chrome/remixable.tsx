@@ -1,5 +1,5 @@
 import { isValidElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { seedComponentName, type AppDocument, type Json, type TreeNode } from "@vendoai/core";
+import { log, seedComponentName, type AppDocument, type Json, type TreeNode } from "@vendoai/core";
 import { useVendoProvider } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useResource } from "../hooks/use-resource.js";
@@ -177,7 +177,11 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
 
   useEffect(() => {
     if (!isLoading && error !== undefined && developmentMode()) {
-      console.warn(`[vendo] Remixable "${slot}": the fork failed to load — ${error.message}`);
+      log({
+        code: "ui.remixable-fork-load-failed",
+        level: "warn",
+        message: `[vendo] Remixable "${slot}": the fork failed to load — ${error.message}`,
+      });
     }
   }, [error, isLoading, slot]);
 
@@ -206,7 +210,11 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
       })
       .catch((reason: unknown) => {
         if (developmentMode()) {
-          console.warn(`[vendo] Remixable "${slot}": revert failed — ${reason instanceof Error ? reason.message : String(reason)}`);
+          log({
+            code: "ui.remixable-revert-failed",
+            level: "warn",
+            message: `[vendo] Remixable "${slot}": revert failed — ${reason instanceof Error ? reason.message : String(reason)}`,
+          });
         }
       })
       .finally(() => setReverting(false));
@@ -274,7 +282,11 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
                     send: false,
                   });
                   if (!opened && developmentMode()) {
-                    console.warn(`[vendo] Remixable "${slot}": "Open in panel" opens the conversation surface — mount a VendoOverlay for it to land in.`);
+                    log({
+                    code: "ui.remixable-no-overlay",
+                    level: "warn",
+                    message: `[vendo] Remixable "${slot}": "Open in panel" opens the conversation surface — mount a VendoOverlay for it to land in.`,
+                  });
                   }
                 }}
               >
@@ -317,7 +329,11 @@ export function Remixable({ review = false, children }: RemixableProps) {
 
   useEffect(() => {
     if (slot === null && developmentMode()) {
-      console.warn("[vendo] <Remixable> must wrap exactly one statically importable component element; extract a component and wrap that (vendo sync says the same, loudly).");
+      log({
+        code: "ui.remixable-invalid-child",
+        level: "warn",
+        message: "[vendo] <Remixable> must wrap exactly one statically importable component element; extract a component and wrap that (vendo sync says the same, loudly).",
+      });
     }
   }, [slot]);
 
@@ -344,7 +360,11 @@ export function Remixable({ review = false, children }: RemixableProps) {
       .catch((reason: unknown) => {
         setLatched(false);
         if (developmentMode()) {
-          console.warn(`[vendo] Remixable "${slot}": the remix fork failed — ${reason instanceof Error ? reason.message : String(reason)}`);
+          log({
+            code: "ui.remixable-fork-create-failed",
+            level: "warn",
+            message: `[vendo] Remixable "${slot}": the remix fork failed — ${reason instanceof Error ? reason.message : String(reason)}`,
+          });
         }
       })
       .finally(() => {

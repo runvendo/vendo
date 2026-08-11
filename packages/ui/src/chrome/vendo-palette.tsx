@@ -1,3 +1,4 @@
+import { log } from "@vendoai/core";
 import { useEffect, useMemo } from "react";
 import { useApps } from "../hooks/use-apps.js";
 import { developmentMode } from "./dev-mode.js";
@@ -58,12 +59,20 @@ export function VendoPalette({ onCommand, hotkey }: { onCommand?(command: VendoC
       if (command.kind === "new-conversation") {
         const opened = openVendoConversation({ newConversation: true });
         if (!opened && developmentMode()) {
-          console.warn("[vendo] VendoPalette: \"New conversation\" opens the conversation surface — mount a VendoOverlay for it to land in (or supply onCommand).");
+          log({
+            code: "ui.vendo-palette-no-overlay",
+            level: "warn",
+            message: "[vendo] VendoPalette: \"New conversation\" opens the conversation surface — mount a VendoOverlay for it to land in (or supply onCommand).",
+          });
         }
         return;
       }
       if (developmentMode()) {
-        console.warn(`[vendo] VendoPalette: "${command.label}" needs an onCommand handler to route (kind "${command.kind}").`);
+        log({
+          code: "ui.vendo-palette-no-oncommand",
+          level: "warn",
+          message: `[vendo] VendoPalette: "${command.label}" needs an onCommand handler to route (kind "${command.kind}").`,
+        });
       }
     },
   }), [commands, onCommand]);
@@ -73,7 +82,11 @@ export function VendoPalette({ onCommand, hotkey }: { onCommand?(command: VendoC
   useEffect(() => registerPaletteOpener(() => {
     const opened = openVendoConversation();
     if (!opened && developmentMode()) {
-      console.warn("[vendo] VendoPalette: nothing to open — mount a VendoOverlay for the conversation surface to land in.");
+      log({
+        code: "ui.vendo-palette-no-overlay",
+        level: "warn",
+        message: "[vendo] VendoPalette: nothing to open — mount a VendoOverlay for the conversation surface to land in.",
+      });
     }
   }), []);
 
@@ -94,7 +107,11 @@ export function VendoPalette({ onCommand, hotkey }: { onCommand?(command: VendoC
       event.preventDefault();
       const opened = openVendoConversation({ toggle: true });
       if (!opened && developmentMode()) {
-        console.warn("[vendo] VendoPalette: ⌘K opens the conversation surface — mount a VendoOverlay for it to land in.");
+        log({
+          code: "ui.vendo-palette-no-overlay",
+          level: "warn",
+          message: "[vendo] VendoPalette: ⌘K opens the conversation surface — mount a VendoOverlay for it to land in.",
+        });
       }
     };
     return registerPaletteHotkey(handler);

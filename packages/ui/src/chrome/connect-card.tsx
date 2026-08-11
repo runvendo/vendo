@@ -1,3 +1,4 @@
+import { log } from "@vendoai/core";
 import { useEffect, useRef, useState } from "react";
 import { useVendoProvider } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
@@ -147,7 +148,11 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
       // Where a developer reads it: the host who forgot the connector needs the
       // sentence that names what to configure, and only they should see it.
       if (developmentMode()) {
-        console.warn(`[vendo] ConnectCard "${toolkit}": ${reason instanceof Error ? reason.message : String(reason)}`);
+        log({
+          code: "ui.connect-card-failed",
+          level: "warn",
+          message: `[vendo] ConnectCard "${toolkit}": ${reason instanceof Error ? reason.message : String(reason)}`,
+        });
       }
     }
   };
