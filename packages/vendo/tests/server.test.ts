@@ -669,7 +669,7 @@ describe("09 §3 public wire", () => {
     });
   });
 
-  it("selects explicit, E2B, Cloud, and dark venues with the required precedence", async () => {
+  it("selects explicit, Cloud, and dark venues with the required precedence", async () => {
     const custom: SandboxAdapter = {
       create: vi.fn(async () => { throw new Error("not called"); }),
       resume: vi.fn(async () => { throw new Error("not called"); }),
@@ -691,16 +691,18 @@ describe("09 §3 public wire", () => {
       return (await status.json() as { blocks: { sandbox: unknown } }).blocks.sandbox;
     };
 
-    // Adapter rule (2026-07-17 cloud definition): the explicit adapter always
-    // wins; BYO sandbox env beats the Vendo key (the Cloud default fills ONLY
-    // the slot the host left unfilled); no key and no BYO env → dark.
+    // Adapter rule (2026-07-17 cloud definition) as the SELECTION LAW sharpened
+    // it: the explicit adapter always wins; VENDO_API_KEY fills ONLY the slot the
+    // host left unfilled; nothing else selects. A stray E2B_API_KEY is a
+    // credential now — present or absent, it changes no answer here.
     const allKeys = {
       E2B_API_KEY: "e2b-key",
       VENDO_API_KEY: "vnd_cloud_key",
     };
     expect(await statusFor(allKeys, custom)).toBe("custom");
-    expect(await statusFor(allKeys)).toBe("e2b");
+    expect(await statusFor(allKeys)).toBe("cloud");
     expect(await statusFor({ ...allKeys, E2B_API_KEY: "" })).toBe("cloud");
+    expect(await statusFor({ ...allKeys, VENDO_API_KEY: "" })).toBe(false);
     expect(await statusFor({ ...allKeys, E2B_API_KEY: "", VENDO_API_KEY: "" })).toBe(false);
     expect(custom.create).not.toHaveBeenCalled();
     expect(custom.resume).not.toHaveBeenCalled();
@@ -1082,9 +1084,14 @@ describe("09 §3 public wire", () => {
     // ensureSchema is a client no-op — the service owns its migrations.
     const hosted = compose({});
     cleanups.push(async () => { await hosted.store.close(); });
-    expect(await hosted.store.records("invoices").get("inv_1")).toBeNull();
+    // An ENGINE collection, not a host-invented one: since the generic records
+    // family left the wire the hosted façade has two doors, and a name outside
+    // the allowlist has no home on that mount at all. The probe has to be a
+    // call the live console would actually serve, or it proves the seam is
+    // wired by exercising something that could only ever be refused.
+    expect(await hosted.store.records("vendo_apps").get("app_1")).toBeNull();
     expect(consoleCalls).toEqual([{
-      url: "https://cloud-store.test/api/v1/store/records/invoices/get",
+      url: "https://cloud-store.test/api/v1/store/engine/get",
       authorization: "Bearer vnd_store_key",
     }]);
     expect(() => hosted.store.raw()).toThrow(/no local database/);

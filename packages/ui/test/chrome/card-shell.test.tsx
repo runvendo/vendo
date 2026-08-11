@@ -50,12 +50,15 @@ afterEach(async () => {
 const provider = (node: React.ReactNode) => <VendoProvider client={client}>{node}</VendoProvider>;
 
 /** Every card kind, as a host actually mounts it. */
-/** ⚠️ TEST EDIT (M1 · Sentence): the approval card is the one kind with no HEAD.
-    Its ask is the card — a bold question plus one quiet line — so it wears no
-    eyebrow, no icon well and no title, and law 2's ONE-well rule is asserted
-    over the kinds that still have one. Law 1 (one shell, no bespoke geometry)
-    and law 3 (it always says what it does) still cover every kind. */
-const HEADLESS = new Set(["approval"]);
+/** ⚠️ TEST EDIT (M1 · Sentence, then C2 + A1): the SENTENCE FAMILY has no HEAD.
+    Each of these cards is its own first line — the approval's question, the
+    connect row's toolkit name, the automation's rule — so none wears an eyebrow
+    or a title, and law 2's ONE-well rule is asserted over the kinds that still
+    have a head. Connect does show a mark, deliberately NOT in the well: the
+    28px well's radius and fill cropped the Gmail M (connect.test.tsx pins the
+    raw mark). Law 1 (one shell, no bespoke geometry) and law 3 (it always says
+    what it does) still cover every kind, headless ones included. */
+const HEADLESS = new Set(["approval", "connect", "automation"]);
 
 const KINDS: Array<[string, React.ReactNode]> = [
   ["approval", <ApprovalCard approval={approval} onDecide={() => undefined} />],
@@ -118,8 +121,11 @@ describe("one card shell, three laws", () => {
   });
 
   it("keeps one icon-well size and one primary-button style in the sheet itself", () => {
-    // Law 2, at the source: the shell owns 28px, and the only other well sizes
-    // left in the stylesheet belong to non-card furniture (rows, docks, pills).
+    // Law 2, at the source: the shell owns ONE well size, 28px, and the cards
+    // that kept a head use it. The sentence family's cards have no well at all;
+    // where they show a brand's logo they show it raw (`.fl-mark-raw`, 26px, no
+    // fill and no radius), because a well is drawn for a glyph and cropped the
+    // real marks — see connect.test.tsx and approval-degraded.test.tsx.
     expect(CHROME_CSS).toContain(".fl-card-ic { display: grid; place-items: center; width: 28px; height: 28px;");
     // Law 1: the ancestors that touch a shell may only size it.
     const ancestorRules = CHROME_CSS.split("\n").filter(line => /\.fl-\S+ (?:>\s*)?\.fl-cardshell/.test(line));

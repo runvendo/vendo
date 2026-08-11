@@ -1,6 +1,7 @@
 import {
   VendoError,
   accessForPath,
+  engineOverAdapter,
   grantMatches,
   holdsLevel,
   parseGrantPrincipal,
@@ -40,16 +41,26 @@ const GRANT_PAGE_SIZE = 500;
  * from the ctx ONLY — the host asserted them this request and `can()` never
  * queries an org chart, because Vendo does not have one (§9.1).
  *
- * Everything goes through the ADAPTER interface (`store.records`), never raw
- * SQL: multi-party deployments are exactly the ones running on a hosted store,
- * which has no local db handle.
+ * Every row is read and written through the `engine` family, never raw SQL:
+ * multi-party deployments are exactly the ones running on a hosted store, which
+ * has no local db handle. `vendo_apps` and `vendo_app_grants` are Vendo's OWN
+ * drawers, so they are named to the family that knows that (the allowlist gate
+ * in front, the same routed doors behind) rather than to the generic
+ * `records.*` door a host reaches its own rows through.
+ *
+ * The store's own `ops` when it carries one — the hosted store does, and its
+ * client is one hop shorter than its `records` façade, which is built on these
+ * very ops. Otherwise the family over the adapter's record doors
+ * (`engineOverAdapter`), which is what a store this package minted and every
+ * host's BYO adapter gets. No `ops` parameter: unlike guard or mcp, this helper
+ * lives INSIDE @vendoai/store and takes the store itself, whose `ops` slot
+ * (store.ts:17-22) already IS the surface a composition would have threaded.
  */
 export function appAccess(store: VendoStore): AppAccess {
-  const grants = store.records("vendo_app_grants");
-  const apps = store.records("vendo_apps");
+  const engine = store.ops?.engine ?? engineOverAdapter(store);
 
   const rowSubject = async (appId: AppId): Promise<string | undefined> => {
-    const record = await apps.get(appId);
+    const record = await engine.get("vendo_apps", appId);
     return record === null ? undefined : record.refs?.["subject"];
   };
 
@@ -70,7 +81,7 @@ export function appAccess(store: VendoStore): AppAccess {
     const rows: AppGrantRecord[] = [];
     let cursor: string | undefined;
     do {
-      const page = await grants.list({
+      const page = await engine.list("vendo_app_grants", {
         refs: { app_id: appId },
         limit: GRANT_PAGE_SIZE,
         ...(cursor === undefined ? {} : { cursor }),
@@ -184,7 +195,7 @@ export function appAccess(store: VendoStore): AppAccess {
       }
       // ONE row per (app, principal), enforced HERE rather than by the local
       // engine's `ON CONFLICT (app_id, principal)` — a constraint no hosted or
-      // BYO records adapter has, and `records.put` is keyed by id alone. A
+      // BYO records adapter has, and `engine.put` is keyed by id alone. A
       // second row for one principal is an unrevokable grant: `levelFor` folds
       // every match with `strongerLevel`, so a downgrade does nothing, and
       // `revoke` would have to find them all.
@@ -204,7 +215,7 @@ export function appAccess(store: VendoStore): AppAccess {
       // its own id through `ON CONFLICT (app_id, principal) DO UPDATE`, which
       // never writes the id column, so nothing already stored is re-keyed.
       const existing = (await grantsFor(appId)).find((row) => row.principal === principal);
-      await grants.put({
+      await engine.put("vendo_app_grants", {
         id: existing?.id ?? `ag_${appId}_${principal}`,
         data: { appId, orgId, principal, level, createdBy: ctx.principal.subject },
         // The door writes the refs it queries by. The local engine derives them
@@ -223,7 +234,7 @@ export function appAccess(store: VendoStore): AppAccess {
       // before `grant` reused ids would otherwise keep the person granted, and
       // a revoke that leaves access standing is the worst possible outcome here.
       const matching = (await grantsFor(appId)).filter((row) => row.principal === principal);
-      for (const row of matching) await grants.delete(row.id);
+      for (const row of matching) await engine.delete("vendo_app_grants", row.id);
     },
 
     async list(ctx, appId) {

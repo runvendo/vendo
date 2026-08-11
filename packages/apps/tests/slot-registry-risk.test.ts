@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 // RISK ROUND — the decay boundary, and what a row the server did not write does
 // to the read. Both hold today; this pins them.
 //
@@ -24,7 +25,7 @@ afterEach(() => {
 describe("the decay window's edge and its junk rows", () => {
   it("keeps a slot last seen EXACTLY at the decay boundary", async () => {
     const store = memoryStore();
-    const slots = createSlotRegistry(store);
+    const slots = createSlotRegistry(engineOverAdapter(store));
     const now = Date.parse("2026-08-06T00:00:00.000Z");
     vi.useFakeTimers();
 
@@ -41,7 +42,7 @@ describe("the decay window's edge and its junk rows", () => {
 
   it("drops a row whose lastSeen is not a readable instant instead of answering with it", async () => {
     const store = memoryStore();
-    const slots = createSlotRegistry(store);
+    const slots = createSlotRegistry(engineOverAdapter(store));
     const rows = store.records(SLOTS_COLLECTION);
 
     await slots.report({ slots: [{ id: "real", label: "Real" }] }, ada);

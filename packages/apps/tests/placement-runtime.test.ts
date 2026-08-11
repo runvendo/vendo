@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import type {
   RunContext,
   StoreAdapter,
@@ -68,7 +69,7 @@ const pointerApps = async (store: StoreAdapter, subject: string): Promise<string
 describe("AppsRuntime placement verbs", () => {
   it("places an app in a slot and reads it back as ready", async () => {
     const store = memoryStore();
-    await seedAppRow(store, doc("app_1", "Spending"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc("app_1", "Spending"), ctx.principal.subject);
     const runtime = runtimeWith(store);
 
     expect(await runtime.place({ app: "app_1", slot: "home-hero" }, ctx)).toEqual({});
@@ -79,8 +80,8 @@ describe("AppsRuntime placement verbs", () => {
 
   it("evicts the app already in that slot and names it", async () => {
     const store = memoryStore();
-    await seedAppRow(store, doc("app_1", "Spending"), ctx.principal.subject);
-    await seedAppRow(store, doc("app_2", "Savings"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc("app_1", "Spending"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc("app_2", "Savings"), ctx.principal.subject);
     const runtime = runtimeWith(store);
 
     await runtime.place({ app: "app_1", slot: "home-hero" }, ctx);
@@ -95,7 +96,7 @@ describe("AppsRuntime placement verbs", () => {
 
   it("masks an app the caller cannot see, and refuses an empty slot", async () => {
     const store = memoryStore();
-    await seedAppRow(store, doc("app_mia", "Mia's view"), "user_mia");
+    await seedAppRow(engineOverAdapter(store), doc("app_mia", "Mia's view"), "user_mia");
     const runtime = runtimeWith(store);
 
     await expect(runtime.place({ app: "app_mia", slot: "home-hero" }, ctx))
@@ -114,7 +115,7 @@ describe("AppsRuntime placement verbs", () => {
     // she can no longer open. The three other read paths are checked alongside
     // it, because a placement that disagreed with them would be the leak.
     const store = memoryStore();
-    await seedAppRow(store, doc("app_mia", "Mia's Q3 severance model"), "user_mia");
+    await seedAppRow(engineOverAdapter(store), doc("app_mia", "Mia's Q3 severance model"), "user_mia");
     await seedGrantRows(store, "app_mia", { "user:user_ada": "viewer" });
     const runtime = createApps({
       store,
@@ -135,8 +136,8 @@ describe("AppsRuntime placement verbs", () => {
 
   it("unplaces only the row that names the app, and is idempotent", async () => {
     const store = memoryStore();
-    await seedAppRow(store, doc("app_1", "Spending"), ctx.principal.subject);
-    await seedAppRow(store, doc("app_2", "Savings"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc("app_1", "Spending"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc("app_2", "Savings"), ctx.principal.subject);
     const runtime = runtimeWith(store);
     await runtime.place({ app: "app_1", slot: "home-hero" }, ctx);
 
@@ -152,8 +153,8 @@ describe("AppsRuntime placement verbs", () => {
 
   it("answers only the slots asked for", async () => {
     const store = memoryStore();
-    await seedAppRow(store, doc("app_1", "Spending"), ctx.principal.subject);
-    await seedAppRow(store, doc("app_2", "Savings"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc("app_1", "Spending"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc("app_2", "Savings"), ctx.principal.subject);
     const runtime = runtimeWith(store);
     await runtime.place({ app: "app_1", slot: "home-hero" }, ctx);
     await runtime.place({ app: "app_2", slot: "sidebar" }, ctx);
@@ -169,7 +170,7 @@ describe("AppsRuntime placement verbs", () => {
     // query parser trims each name itself, so only a host calling the runtime
     // or the client's `placements([...])` directly would ever see it.
     const store = memoryStore();
-    await seedAppRow(store, doc("app_1", "Spending"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc("app_1", "Spending"), ctx.principal.subject);
     const runtime = runtimeWith(store);
     await runtime.place({ app: "app_1", slot: " home-hero " }, ctx);
 
@@ -179,7 +180,7 @@ describe("AppsRuntime placement verbs", () => {
   it("reads status off the app record: no record is building, a failed record is failed", async () => {
     const store = memoryStore();
     const runtime = runtimeWith(store);
-    const rows = placementStore(store);
+    const rows = placementStore(engineOverAdapter(store));
     const subject = ctx.principal.subject;
 
     // A build in flight: the row exists, the app record does not (yet).
@@ -195,7 +196,7 @@ describe("AppsRuntime placement verbs", () => {
 
     // The terminal failed record the build watchdog / failBuild persists.
     await seedAppRow(
-      store,
+      engineOverAdapter(store),
       doc("app_failed", "Show my spending", {
         buildFailed: { reason: "the model quit", retryable: true, at: "2026-08-05T12:00:00.000Z" },
       }),
@@ -215,7 +216,7 @@ describe("AppsRuntime placement verbs", () => {
   it("stops calling a vanished app 'building' once the build window has passed", async () => {
     const store = memoryStore();
     const runtime = runtimeWith(store);
-    await placementStore(store).put(ctx.principal.subject, {
+    await placementStore(engineOverAdapter(store)).put(ctx.principal.subject, {
       slot: "home-hero",
       appId: "app_gone",
       placedBy: ctx.principal.subject,
@@ -230,7 +231,7 @@ describe("AppsRuntime placement verbs", () => {
 
   it("deleting an app clears the placements that pointed at it, pointer and all", async () => {
     const store = memoryStore();
-    await seedAppRow(store, doc("app_1", "Spending"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc("app_1", "Spending"), ctx.principal.subject);
     const runtime = runtimeWith(store);
     await runtime.place({ app: "app_1", slot: "home-hero" }, ctx);
 
@@ -250,8 +251,8 @@ describe("AppsRuntime placement verbs", () => {
     // — as `failed`, which REPLACES the host's own markup. One person deleting
     // their own app must not leave an error card standing on somebody else's.
     const store = memoryStore();
-    await seedAppRow(store, doc("app_mia", "Mia's view"), mia.principal.subject);
-    await placementStore(store).put(ctx.principal.subject, {
+    await seedAppRow(engineOverAdapter(store), doc("app_mia", "Mia's view"), mia.principal.subject);
+    await placementStore(engineOverAdapter(store)).put(ctx.principal.subject, {
       slot: "home-hero",
       appId: "app_mia",
       placedBy: ctx.principal.subject,
@@ -297,7 +298,7 @@ describe("AppsRuntime placement verbs", () => {
         };
       },
     } as StoreAdapter;
-    await seedAppRow(base, doc("app_1", "Spending"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(base), doc("app_1", "Spending"), ctx.principal.subject);
     const runtime = runtimeWith(store);
 
     await expect(runtime.place({ app: "app_1", slot: "home-hero" }, ctx)).rejects.toThrow();
@@ -310,7 +311,7 @@ describe("AppsRuntime placement verbs", () => {
   it("reports place and unplace to the guard's lifecycle feed", async () => {
     const store = memoryStore();
     const guard = guardFixture();
-    await seedAppRow(store, doc("app_1", "Spending"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc("app_1", "Spending"), ctx.principal.subject);
     const runtime = createApps({ store, guard, tools, catalog: [] });
 
     await runtime.place({ app: "app_1", slot: "home-hero" }, ctx);
@@ -331,8 +332,8 @@ describe("two writers racing for one slot", () => {
     // pointer, so the loser sees the winner's revision, retries against it, and
     // exactly one of the two receipts names the app that lost the slot.
     const store = memoryStore();
-    await seedAppRow(store, doc("app_1", "Spending"), ctx.principal.subject);
-    await seedAppRow(store, doc("app_2", "Savings"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc("app_1", "Spending"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc("app_2", "Savings"), ctx.principal.subject);
     const runtime = runtimeWith(store);
 
     const [first, second] = await Promise.all([
@@ -376,8 +377,8 @@ describe("two writers racing for one slot", () => {
       },
     } as StoreAdapter;
 
-    await seedAppRow(base, doc("app_1", "Spending"), ctx.principal.subject);
-    await seedAppRow(base, doc("app_2", "Savings"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(base), doc("app_1", "Spending"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(base), doc("app_2", "Savings"), ctx.principal.subject);
     const runtime = runtimeWith(store);
     await runtime.place({ app: "app_1", slot: "home-hero" }, ctx);
 
@@ -437,8 +438,8 @@ describe("two writers racing for one slot", () => {
       },
     } as StoreAdapter;
 
-    await seedAppRow(base, doc("app_1", "Spending"), ctx.principal.subject);
-    await seedAppRow(base, doc("app_2", "Savings"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(base), doc("app_1", "Spending"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(base), doc("app_2", "Savings"), ctx.principal.subject);
     const runtime = runtimeWith(store);
     await runtime.place({ app: "app_1", slot: "home-hero" }, ctx);
 

@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { doorWellKnownPaths } from "../../src/door-paths.js";
-import { generateServiceKey, planMcp, wellKnownRouteSource, type McpPlan, type McpPlanInput } from "../../src/cli/init-mcp.js";
+import { generateServiceKey, mcpStepLines, planMcp, wellKnownRouteSource, type McpPlan, type McpPlanInput } from "../../src/cli/init-mcp.js";
 
 const cleanup: string[] = [];
 afterEach(async () => {
@@ -117,28 +117,28 @@ describe("planMcp — the service key", () => {
 
 describe("planMcp — the two steps that stay the user's", () => {
   it("puts the base URL FIRST, always", () => {
-    expect(plan().steps[0]).toContain("Set VENDO_BASE_URL");
-    expect(plan({ baseUrl: null }).steps[0]).toContain("Set VENDO_BASE_URL");
-    expect(plan({ posture: "broker", serviceKey: true }).steps[0]).toContain("Set VENDO_BASE_URL");
+    expect(plan().steps[0]).toContain("Set `VENDO_BASE_URL`");
+    expect(plan({ baseUrl: null }).steps[0]).toContain("Set `VENDO_BASE_URL`");
+    expect(plan({ posture: "broker", serviceKey: true }).steps[0]).toContain("Set `VENDO_BASE_URL`");
   });
 
   it("names the captured origin when there is one, and the risk when there is not", () => {
-    expect(plan().steps[0]).toContain("https://app.acme.com, captured earlier, is in .env.example");
+    expect(plan().steps[0]).toContain("`https://app.acme.com` — captured earlier, already in .env.example");
     expect(plan({ baseUrl: null }).steps[0]).toContain("points at the wrong origin");
   });
 
   it("points clients at the same URL in BOTH postures — it derives from the base URL, never the broker", () => {
-    const client = "Point any MCP client at https://app.acme.com/api/vendo/mcp";
-    expect(plan().steps).toContain(client);
-    expect(plan({ posture: "broker" }).steps).toContain(client);
+    const client = "Point any MCP client at `https://app.acme.com/api/vendo/mcp`";
+    expect(plan().steps.map((step) => step.split("\n")[0])).toContain(client);
+    expect(plan({ posture: "broker" }).steps.map((step) => step.split("\n")[0])).toContain(client);
   });
 });
 
 describe("planMcp — the sign-in posture", () => {
   it("prints the operator's two broker lines under broker posture, and nothing under local", () => {
     expect(plan({ posture: "broker" }).envLines).toEqual([
-      "VENDO_MCP_BROKER_URL=<your tenant MCP endpoint, from the console MCP page>",
-      "VENDO_MCP_FEDERATION_SECRET=<from the console MCP page>",
+      "`VENDO_MCP_BROKER_URL=<your tenant MCP endpoint>`",
+      "`VENDO_MCP_FEDERATION_SECRET=<secret>`",
     ]);
     expect(plan().envLines).toEqual([]);
   });
@@ -148,6 +148,39 @@ describe("planMcp — the sign-in posture", () => {
   it("adds the keyless pointer only when no Cloud key is in hand", () => {
     expect(plan({ cloudKey: false }).steps.join("\n")).toContain("Sign-in: your app serves its own OAuth");
     expect(plan().steps.join("\n")).not.toContain("Sign-in: your app serves its own OAuth");
+  });
+});
+
+describe("mcpStepLines — the closing block reads as steps, not a wall", () => {
+  it("numbers every headline and indents its detail under it", () => {
+    const broker = plan({ posture: "broker", serviceKey: true });
+    const lines = mcpStepLines(broker);
+    // Every step's headline is numbered in order...
+    const numbered = lines.filter((line) => /^\d+\. /.test(line));
+    expect(numbered).toHaveLength(broker.steps.length);
+    expect(numbered.map((line) => line.split(". ")[0])).toEqual(
+      broker.steps.map((_step, index) => String(index + 1)),
+    );
+    // ...and every detail line is indented under the headline it belongs to,
+    // never left at the margin where it would read as another step.
+    for (const [index, step] of broker.steps.entries()) {
+      const [headline, ...detail] = step.split("\n");
+      const at = lines.indexOf(`${index + 1}. ${headline!}`);
+      expect(at).toBeGreaterThanOrEqual(0);
+      expect(lines.slice(at + 1, at + 1 + detail.length)).toEqual(detail.map((rest) => `   ${rest}`));
+    }
+  });
+
+  it("closes with the env values as their own group, and skips the group under local", () => {
+    const broker = plan({ posture: "broker" });
+    const lines = mcpStepLines(broker);
+    const at = lines.indexOf("");
+    // A blank line, one sentence saying where they go, then the values.
+    expect(at).toBeGreaterThan(0);
+    expect(lines[at + 1]).toContain("Set where you deploy");
+    expect(lines.slice(at + 2)).toEqual(broker.envLines.map((env) => `   ${env}`));
+    // Local posture has no env lines, so it gets no group and no blank line.
+    expect(mcpStepLines(plan()).filter((line) => line === "")).toEqual([]);
   });
 });
 

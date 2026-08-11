@@ -54,6 +54,16 @@ async function rejection(call: Promise<unknown>): Promise<VendoError> {
   return error as VendoError;
 }
 
+/** The env-key rungs, as they are reachable AFTER the selection law: a provider
+ *  key in the environment selects nothing on its own, so a case that exercises
+ *  one of those rungs names it through the internal VENDO_DEV_CREDENTIAL pin.
+ *  The rejected-key and missing-install rails below are unchanged; what changed
+ *  is who may ask for the rung. */
+const BYO = {
+  anthropic: { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-a" },
+  openai: { VENDO_DEV_CREDENTIAL: "env-key:openai", OPENAI_API_KEY: "sk-o" },
+} as const;
+
 describe("the keyless model failure", () => {
   it("throws a VendoError so the safe-error gate carries the fix instead of genericizing it", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -68,7 +78,7 @@ describe("the keyless model failure", () => {
   it("throws a VendoError naming the missing provider install", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const controller = new DevModelController({
-      env: { ANTHROPIC_API_KEY: "sk-a" },
+      env: { ...BYO.anthropic },
       importModule: async (_root, specifier) => { throw new Error(`Cannot find module '${specifier}'`); },
     });
     const error = await rejection(controller.doGenerate({ prompt: [] }));
@@ -97,7 +107,7 @@ describe("a rejected key names the rung it was rejected on", () => {
   it("sends an env-key rung to its own env var, never to `vendo login`", async () => {
     const refused = unauthorized();
     const controller = new DevModelController({
-      env: { OPENAI_API_KEY: "sk-o" },
+      env: { ...BYO.openai },
       importModule: failingProvider("createOpenAI", refused),
     });
     const error = await rejection(controller.doGenerate({ prompt: [] }));
@@ -127,7 +137,7 @@ describe("a rejected key names the rung it was rejected on", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const patterns = { "image/*": [/^https:\/\/example\.test\/.*$/] };
     const controller = new DevModelController({
-      env: { OPENAI_API_KEY: "sk-o" },
+      env: { ...BYO.openai },
       importModule: failingProvider("createOpenAI", unauthorized(), patterns),
     });
     expect(await lazy(controller.model()).supportedUrls).toEqual(patterns);
@@ -144,7 +154,7 @@ describe("a rejected key names the rung it was rejected on", () => {
 
     const overloaded = Object.assign(new Error("Overloaded"), { statusCode: 529 });
     const transient = new DevModelController({
-      env: { ANTHROPIC_API_KEY: "sk-a" },
+      env: { ...BYO.anthropic },
       importModule: failingProvider("createAnthropic", overloaded),
     });
     await expect(transient.doGenerate({ prompt: [] })).rejects.toBe(overloaded);
@@ -177,7 +187,12 @@ describe("end to end: a keyless turn through the real composed door", () => {
     });
     expect(response.status).toBe(200);
     const stream = await response.text();
-    expect(stream).toContain(`Vendo: ${NO_CREDENTIAL_MESSAGE} (validation)`);
+    // The frame carries the sentence JSON-encoded, and the sentence quotes a code
+    // snippet — models: { default: anthropic("claude-sonnet-4-6") } — so the raw
+    // bytes contain the ESCAPED form. Compare against that, not the plain string,
+    // or this passes for the wrong reason the day the message loses its quotes.
+    const framed = JSON.stringify(`Vendo: ${NO_CREDENTIAL_MESSAGE} (validation)`).slice(1, -1);
+    expect(stream).toContain(framed);
     expect(stream).not.toContain("An error occurred while generating the response.");
 
     // The same frame, read by `vendo doctor`'s live-turn check.

@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   VENDO_APP_FORMAT,
   type AppAccess,
@@ -81,7 +82,7 @@ const setup = async (over: Partial<AppsConfig> = {}, guard = guardFixture()): Pr
     async seed(id, subject, egress) {
       const box = await sandbox.create({ env: {}, template: "node" });
       const snapshotRef = await box.snapshot();
-      await seedAppRow(store, servedApp(id, snapshotRef, egress), subject);
+      await seedAppRow(engineOverAdapter(store), servedApp(id, snapshotRef, egress), subject);
     },
   };
 };

@@ -7,19 +7,21 @@ import {
   encodeGrantPrincipal,
   type AccessLevel,
   type AppId,
-  type RecordStore,
   type RunContext,
-  type StoreAdapter,
   type VendoRecord,
 } from "@vendoai/core";
 import {
   type AppDocument,
 } from "../../contract/index.js";
-import { documentFromRecord, listAllRecords } from "../persistence/persistence.js";
+import type { EngineOps } from "../persistence/engine.js";
+import { APPS_COLLECTION, documentFromRecord, listAllEngineRecords } from "../persistence/persistence.js";
 import type { AppsConfig } from "../runtime/types.js";
 
-export const allRecords = (store: StoreAdapter, refs: Record<string, string>): Promise<VendoRecord[]> =>
-  listAllRecords(store.records("vendo_apps"), { refs });
+/** The grant rows the app-access door reads; one drawer, its own name. */
+const APP_GRANTS_COLLECTION = "vendo_app_grants";
+
+export const allRecords = (engine: EngineOps, refs: Record<string, string>): Promise<VendoRecord[]> =>
+  listAllEngineRecords(engine, APPS_COLLECTION, { refs });
 
 /** Build contract §9.2 — the grant-principal encodings THIS ctx satisfies.
     Derived from the asserted memberships alone, so a team the host did not
@@ -36,8 +38,8 @@ const grantPrincipalsOf = (ctx: RunContext): string[] => {
   return encodings;
 };
 
-export const createAccessChecks = (deps: { config: AppsConfig; apps: RecordStore }) => {
-  const { config, apps } = deps;
+export const createAccessChecks = (deps: { config: AppsConfig; engine: EngineOps }) => {
+  const { config, engine } = deps;
   /**
    * Build contract §9.3 — the ONE permission check, widened rather than
    * duplicated: the wire and the MCP door reach it through this runtime.
@@ -54,7 +56,7 @@ export const createAccessChecks = (deps: { config: AppsConfig; apps: RecordStore
         every render, so the single-player path must stay ONE read. */
     known?: VendoRecord | null,
   ): Promise<boolean> => {
-    const record = known === undefined ? await apps.get(appId) : known;
+    const record = known === undefined ? await engine.get(APPS_COLLECTION, appId) : known;
     // The owner fast path. Ownership is the TOP level, so the row the caller
     // already read answers every level for its own subject — no grants query,
     // no second read. This is what keeps get()/open() at ONE store read on the
@@ -70,7 +72,7 @@ export const createAccessChecks = (deps: { config: AppsConfig; apps: RecordStore
     ctx: RunContext,
     level: AccessLevel = "editor",
   ): Promise<AppDocument | null> => {
-    const record = await apps.get(appId);
+    const record = await engine.get(APPS_COLLECTION, appId);
     if (record === null || !(await holds(appId, ctx, level, record))) return null;
     return documentFromRecord(record);
   };
@@ -83,18 +85,18 @@ export const createAccessChecks = (deps: { config: AppsConfig; apps: RecordStore
     const ids = new Set<string>();
     const found: VendoRecord[] = [];
     for (const principal of grantPrincipalsOf(ctx)) {
-      for (const row of await listAllRecords(config.store.records("vendo_app_grants"), { refs: { principal } })) {
+      for (const row of await listAllEngineRecords(engine, APP_GRANTS_COLLECTION, { refs: { principal } })) {
         const appId = (row.data as { appId?: string }).appId;
         if (appId !== undefined && !already.has(appId)) ids.add(appId);
       }
     }
     for (const membership of ctx.memberships ?? []) {
       if (membership.admin !== true) continue;
-      for (const row of await allRecords(config.store, { subject: membership.org })) {
+      for (const row of await allRecords(engine, { subject: membership.org })) {
         if (!already.has(row.id)) found.push(row);
       }
     }
-    for (const record of await listAllRecords(apps, { ids: [...ids] })) {
+    for (const record of await listAllEngineRecords(engine, APPS_COLLECTION, { ids: [...ids] })) {
       if (!found.some((row) => row.id === record.id)) found.push(record);
     }
     // The grant/admin sets can overlap the caller's own rows only through a

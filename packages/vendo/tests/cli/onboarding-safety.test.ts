@@ -219,7 +219,11 @@ describe("the closing line tells the truth about the model key", () => {
 
   it("keyed: live in your app", async () => {
     const sink = output();
-    expect(await run(await mountedPagesHost(), sink, { env: { ANTHROPIC_API_KEY: "sk-a" } })).toBe(0);
+    // A RESOLVING credential — which a bare provider key stopped being under the
+    // selection law, so the env-key rung is named through the internal pin.
+    expect(await run(await mountedPagesHost(), sink, {
+      env: { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-a" },
+    })).toBe(0);
     expect(sink.logs.join("\n")).toContain(LIVE);
   });
 

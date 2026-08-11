@@ -186,33 +186,41 @@ export function bannerColorMode(
  * settled one.
  *
  * `signal` cuts it short, and the settled frame is drawn INSIDE abort() —
- * synchronously, before abort() returns — so a caller that needs the screen
- * mid-arrival prints its next line under the finished mark and never on top of
- * a half-drawn one. That is what lets the arrival play over work the run was
- * doing anyway without ever delaying a line.
+ * synchronously, before abort() returns — so a run that has to end mid-arrival
+ * (an interrupt) leaves the finished mark behind, never a half-drawn one.
+ * Ordinary printing needs no abort: it goes BELOW the art (see `below`).
  */
 export async function playBanner(
   write: (chunk: string) => void,
   frames: readonly string[],
   frameMs = 90,
   signal?: AbortSignal,
+  /** SCREEN rows of content the caller has printed BELOW the art since it
+      started. When provided, each frame repaints the art in place above that
+      content (save cursor → up over content+art → paint → restore), so the run
+      keeps talking while the wave still plays. The caller maintains the count
+      and owes screen rows, not lines — a line that wraps is more than one. */
+  below?: { rows: number },
 ): Promise<void> {
   const [first, ...rest] = frames;
   if (first === undefined) return;
   const rows = first.split("\n").length;
-  const redraw = (frame: string): void => {
-    write(`${ESC}[${rows}A`);
-    write(`${frame.split("\n").map((row) => `${ESC}[2K${row}`).join("\n")}\n`);
+  const paint = (frame: string): void => {
+    const offset = rows + (below?.rows ?? 0);
+    write(`${ESC}7${ESC}[${offset}A`);
+    write(frame.split("\n").map((row) => `${ESC}[2K${row}`).join("\n"));
+    write(`${ESC}8`);
   };
   write(`${first}\n`);
   let playing = true;
+  const settleFrame = (): void => { paint(frames.at(-1)!); };
   signal?.addEventListener("abort", () => {
-    if (playing) redraw(frames.at(-1)!);
+    if (playing) settleFrame();
   }, { once: true });
   for (const frame of rest) {
     await new Promise<void>((settle) => { setTimeout(settle, frameMs); });
     if (signal?.aborted === true) return;
-    redraw(frame);
+    paint(frame);
   }
   playing = false;
 }

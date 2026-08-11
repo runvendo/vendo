@@ -1,6 +1,7 @@
 import { catalogFileSchema, type CatalogFile } from "@vendoai/actions";
 import {
   type JsonSchema,
+  log,
   VendoError,
 } from "@vendoai/core";
 import {
@@ -55,9 +56,12 @@ function diskPropsValidator(schema: JsonSchema, name: string): StandardSchema {
       },
     };
   } catch (error) {
-    console.warn(
-      `[vendo] catalog entry "${name}" has a props schema ajv could not compile (${error instanceof Error ? error.message : String(error)}); validating permissively.`,
-    );
+    log({
+      code: "vendo.catalog-props-schema-uncompilable",
+      level: "warn",
+      message:
+        `[vendo] catalog entry "${name}" has a props schema ajv could not compile (${error instanceof Error ? error.message : String(error)}); validating permissively.`,
+    });
     return permissivePropsSchema();
   }
 }
@@ -118,7 +122,11 @@ export function runtimeCatalogFromFile(
   for (const entry of parsed.entries) {
     const refusal = projectionRefusal(entry.name, source);
     if (refusal !== undefined) {
-      console.warn(`[vendo] ${refusal.message} Skipping that entry; the rest of the catalog loads. Rename the component to recover it.`);
+      log({
+        code: "vendo.catalog-entry-refused",
+        level: "warn",
+        message: `[vendo] ${refusal.message} Skipping that entry; the rest of the catalog loads. Rename the component to recover it.`,
+      });
       continue;
     }
     catalog.push({
@@ -144,9 +152,12 @@ export function runtimeCatalogFromJson(
   try {
     return runtimeCatalogFromFile(catalogFileSchema.parse(JSON.parse(raw)), file);
   } catch (error) {
-    console.error(
-      `[vendo] Failed to load host components from ${file}: ${parseIssue(error)}. Run "vendo sync" to regenerate the file.`,
-    );
+    log({
+      code: "vendo.catalog-load-failed",
+      level: "error",
+      message:
+        `[vendo] Failed to load host components from ${file}: ${parseIssue(error)}. Run "vendo sync" to regenerate the file.`,
+    });
     return [];
   }
 }
@@ -168,9 +179,12 @@ function derivedJsonSchema(schema: StandardSchema | undefined, name: string): Js
     ).jsonSchema as Record<string, unknown>;
     return derived;
   } catch (error) {
-    console.warn(
-      `[vendo] could not derive a JSON Schema for catalog entry "${name}" (${error instanceof Error ? error.message : String(error)}); the prompt will carry its description only.`,
-    );
+    log({
+      code: "vendo.catalog-json-schema-derivation-failed",
+      level: "warn",
+      message:
+        `[vendo] could not derive a JSON Schema for catalog entry "${name}" (${error instanceof Error ? error.message : String(error)}); the prompt will carry its description only.`,
+    });
     return undefined;
   }
 }

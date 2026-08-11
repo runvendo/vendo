@@ -19,7 +19,7 @@ import { randomBytes } from "node:crypto";
 import { join, relative, sep } from "node:path";
 import { MCP_MOUNT } from "../door-paths.js";
 import type { AuthMatch } from "./init-auth.js";
-import { compositionModuleSource, routeSource } from "./init-scaffolds.js";
+import { compositionModuleSource, routeSource, type ScaffoldModel } from "./init-scaffolds.js";
 
 /** Which authorization server fronts the door. DECLARED by the operator and
     nothing else (10-mcp §3.1) — init prints environment lines, it never
@@ -55,6 +55,10 @@ export interface McpPlanInput {
   /** The public origin captured earlier this run, or null when the user skipped
       the question. */
   baseUrl: string | null;
+  /** The provider key init found in the environment. This path's composition
+      module is the ONLY place it may land: the thin route composes nothing, so
+      writing it there too would be a second, dead selection. */
+  models?: ScaffoldModel | null;
 }
 
 /** A file the MCP path creates. Always new — `before` is null for every one of
@@ -91,8 +95,35 @@ export interface McpPlan {
   steps: string[];
   /** Environment lines the operator sets where they deploy (broker posture). */
   envLines: string[];
+  /** The provider and file of the `models` line this plan wrote — the
+      composition module, never the route it replaced. The caller's closing
+      summary names this file, so it can never point a reader at a route that
+      holds nothing. Null when no provider key resolved or the plan is
+      `blocked`. */
+  modelWritten: { provider: ScaffoldModel["provider"]; path: string } | null;
   /** Why nothing was written. Set means the other fields are empty. */
   blocked?: string;
+}
+
+/** The plan's closing block, as a pretty run reads it: each step numbered by
+    its headline, its detail indented under it, and the environment values as a
+    closing group under one sentence that says where they go. A flat list of
+    `headline\ndetail` strings reads as a wall — the numbers and the indent are
+    what make it read as steps. (Plain runs print the same strings unnumbered:
+    the newline becomes an indent and nothing else, since a plain transcript is
+    parsed as often as it is read.) */
+export function mcpStepLines(plan: Pick<McpPlan, "steps" | "envLines">): string[] {
+  const lines: string[] = [];
+  plan.steps.forEach((step, index) => {
+    const [headline, ...detail] = step.split("\n");
+    lines.push(`${index + 1}. ${headline}`);
+    for (const rest of detail) lines.push(`   ${rest}`);
+  });
+  if (plan.envLines.length > 0) {
+    lines.push("", "Set where you deploy — both values live on the console's MCP page:");
+    for (const env of plan.envLines) lines.push(`   ${env}`);
+  }
+  return lines;
 }
 
 /** A fresh service key: 32 random bytes, hex. `planMcp` mints one itself when
@@ -138,7 +169,8 @@ const KEYLESS_SIGN_IN =
 
 export function planMcp(input: McpPlanInput): McpPlan {
   const { root, appDir, framework, authWired, serverActions, cloudKey, posture, serviceKey, baseUrl } = input;
-  const refuse = (why: string): McpPlan => ({ changes: [], routeSource: null, steps: [], envLines: [], blocked: why });
+  const models = input.models ?? null;
+  const refuse = (why: string): McpPlan => ({ changes: [], routeSource: null, steps: [], envLines: [], modelWritten: null, blocked: why });
 
   if (framework !== "next") {
     return refuse(
@@ -167,8 +199,11 @@ export function planMcp(input: McpPlanInput): McpPlan {
 
   // `serviceAuth` is wired only under local posture: see McpPlan.serviceKeyValue.
   const serviceAuth = posture === "local" && serviceKey;
+  // The one file on this path that composes, so the one that may carry the
+  // models line — named here because the closing summary points at it.
+  const compositionChange = change(composition, compositionModuleSource({ serverActions, auth: authWired, serviceAuth, models }));
   const changes: McpChange[] = [
-    change(composition, compositionModuleSource({ serverActions, auth: authWired, serviceAuth })),
+    compositionChange,
     change(
       join(wellKnownDir, "route.ts"),
       wellKnownRouteSource(specifierBetween(wellKnownDir, join(wiringDir, "vendo"))),
@@ -179,30 +214,33 @@ export function planMcp(input: McpPlanInput): McpPlan {
   // URL, so it is the same in both postures — switching posture later invalidates
   // nothing a user already configured in Claude, ChatGPT or Cursor.
   const clientBase = baseUrl ?? "https://<your deployment>";
+  // Each step is "headline\ndetail…" — the caller numbers the headlines and
+  // indents the detail lines, so a step never wraps mid-phrase into a wall.
   const steps = [
     baseUrl === null
-      ? "Set VENDO_BASE_URL in your deploy platform to this deployment's public origin — without it the door's discovery points at the wrong origin and clients cannot find your server"
-      : `Set VENDO_BASE_URL in your deploy platform — ${baseUrl}, captured earlier, is in .env.example`,
-    `Point any MCP client at ${clientBase}${MCP_MOUNT}`,
-    `Setup page for your users ships free at ${MCP_MOUNT}/connect (Claude · ChatGPT · Cursor copy included)`,
-    "Claude Code: /plugin marketplace add runvendo/vendo → /plugin install vendo@vendo",
+      ? "Set `VENDO_BASE_URL` in your deploy platform to this deployment's public origin\nwithout it, discovery points at the wrong origin and clients cannot find your server"
+      : `Set \`VENDO_BASE_URL\` in your deploy platform\n\`${baseUrl}\` — captured earlier, already in .env.example`,
+    `Point any MCP client at \`${clientBase}${MCP_MOUNT}\`\nyour users' setup page ships free at \`${MCP_MOUNT}/connect\` — copy for Claude · ChatGPT · Cursor included`,
+    "Claude Code: `/plugin marketplace add runvendo/vendo` then `/plugin install vendo@vendo`",
   ];
   if (!cloudKey) steps.push(KEYLESS_SIGN_IN);
   if (serviceKey) {
     steps.push(serviceAuth
-      ? `Your backend exchanges VENDO_SERVICE_KEY at ${clientBase}${MCP_MOUNT}/token for a 10-minute token acting as a named user — svc: attribution in the audit`
-      : "Create the service key on the console's keys page (Service keys) — it lands in the broker; exchange it at your tenant URL /token");
+      ? `Your backend exchanges \`VENDO_SERVICE_KEY\` at \`${clientBase}${MCP_MOUNT}/token\`\nfor a 10-minute token acting as a named user — svc: attribution in the audit`
+      : "Create the service key on the console's keys page (Service keys)\nit lands in the broker — exchange it at `<your tenant URL>/token`");
   }
 
   return {
     changes,
+    // No `models` on this arm, and never one: the thin route composes nothing.
     routeSource: routeSource({ serverActions, auth: authWired, mcp: { serviceAuth } }),
     ...(serviceAuth ? { serviceKeyValue: generateServiceKey() } : {}),
+    modelWritten: models === null ? null : { provider: models.provider, path: compositionChange.path },
     steps,
     envLines: posture === "broker"
       ? [
-          "VENDO_MCP_BROKER_URL=<your tenant MCP endpoint, from the console MCP page>",
-          "VENDO_MCP_FEDERATION_SECRET=<from the console MCP page>",
+          "`VENDO_MCP_BROKER_URL=<your tenant MCP endpoint>`",
+          "`VENDO_MCP_FEDERATION_SECRET=<secret>`",
         ]
       : [],
   };

@@ -5,6 +5,7 @@
  *  engine they can't run. The PGlite dev-mode default layers on top of this
  *  module in ./db.ts. Enforced by scripts/portability-gate.mjs. */
 import { Client, Pool } from "pg";
+import { log } from "@vendoai/core";
 
 /** 02-store §1 */
 export interface StoreConfig {
@@ -48,7 +49,12 @@ const ADVISORY_LOCK_KEY = 7_461_001;
 export function createPostgresDb(url: string): Db {
   const pool = new Pool({ connectionString: url });
   pool.on("error", (error) => {
-    console.error("[vendo] postgres pool: idle connection error (recovering)", error);
+    log({
+      code: "store.postgres-pool-error",
+      level: "error",
+      message: "[vendo] postgres pool: idle connection error (recovering)",
+      data: { error },
+    });
   });
   let closed = false;
   return {

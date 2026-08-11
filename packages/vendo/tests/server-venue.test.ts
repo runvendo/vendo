@@ -9,13 +9,15 @@ import { createStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // 0.4.4 defect C — the field host (Turbopack server bundle, no e2b install)
-// had e2bInstalled() blanket-passing, so a stray E2B_API_KEY outranked the
-// Cloud sandbox and the first build died in an unusable venue. This file pins
-// the ADAPTER RULE's ladder against exactly that: an e2b the runtime cannot
-// load is never selected. Cloud-audit fix 5 sharpened the answer — half a BYO
-// sandbox is now a LOUD compose-time misconfig instead of a silent demotion to
-// Cloud (or to the dark venue), so the operator learns at startup rather than
-// at the first server-app build.
+// had e2bInstalled() blanket-passing, so a stray E2B_API_KEY outranked the Cloud
+// sandbox and the first build died in an unusable venue. Two answers were tried:
+// blanket-pass, then a LOUD compose-time misconfig. The SELECTION LAW removes the
+// question instead — E2B_API_KEY is a credential, not a rung, so no stray key can
+// flip a deployment's venue in either direction.
+//
+// The unloadable-SDK mock stays as the TRIPWIRE for that: this is the field host's
+// exact shape, and nothing in the composition path may consult installability any
+// more. Re-introduce an env-driven e2b rung and every case below changes answer.
 vi.mock("@vendoai/apps/e2b", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@vendoai/apps/e2b")>()),
   e2bInstalled: () => false,
@@ -64,27 +66,28 @@ describe("venue ladder with an unloadable e2b SDK (0.4.4 defect C)", () => {
     })).toBe("cloud");
   });
 
-  it("refuses to compose: an E2B_API_KEY without a loadable SDK is a misconfig, not a demotion to Cloud", async () => {
-    await expect(venueFor({
+  it("resolves cloud with the SAME stray E2B_API_KEY added — the key does not select, so nothing changes", async () => {
+    expect(await venueFor({
       E2B_API_KEY: "e2b_leaked_from_shell",
       VENDO_API_KEY: "vnd_cloud_key",
       ANTHROPIC_API_KEY: "sk-ant-byo",
-    })).rejects.toThrow("E2B_API_KEY is set but the e2b package is not installed");
+    })).toBe("cloud");
   });
 
-  it("names the exact fix rather than going dark when the SDK is unloadable and no Vendo key is set", async () => {
-    await expect(venueFor({ E2B_API_KEY: "e2b_leaked_from_shell" }))
-      .rejects.toThrow("install e2b, or unset E2B_API_KEY to use another sandbox");
+  it("goes dark rather than refusing when a stray E2B_API_KEY is the only key set", async () => {
+    // The required breaking-change case: composing must SUCCEED and report the
+    // dark venue. A tree-only host is fine here; a server-work attempt is what
+    // reports sandbox-unavailable, one layer up.
+    expect(await venueFor({ E2B_API_KEY: "e2b_leaked_from_shell" })).toBe(false);
   });
 
-  it("treats a whitespace-only E2B_API_KEY as unset, the way doctor's check reads it", async () => {
-    // environment() only strips "", so a stray-space value used to reach the
-    // throw above while `vendo doctor` (which trims) reported no key set.
+  it("reads a whitespace-only E2B_API_KEY the same as any other value: not a selector", async () => {
     expect(await venueFor({
       E2B_API_KEY: "   ",
       VENDO_API_KEY: "vnd_cloud_key",
       ANTHROPIC_API_KEY: "sk-ant-byo",
     })).toBe("cloud");
+    expect(await venueFor({ E2B_API_KEY: "   " })).toBe(false);
   });
 
   it("still lets an explicit sandbox: adapter win before any env check", async () => {

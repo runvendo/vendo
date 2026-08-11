@@ -3,7 +3,6 @@ import {
   type AppId,
   type ApprovalRequest,
   type RunContext,
-  type StoreAdapter,
   type Trigger,
 } from "@vendoai/core";
 import {
@@ -13,7 +12,8 @@ import { Cron } from "croner";
 import { requestAppWithBootRetry } from "./box-agent.js";
 import type { MachineLifecycle } from "./machine-lifecycle.js";
 import { parseVendoManifest } from "./manifest.js";
-import { listAllRecords, rowFromRecord } from "../persistence/persistence.js";
+import type { EngineOps } from "../persistence/engine.js";
+import { APPS_COLLECTION, listAllEngineRecords, rowFromRecord } from "../persistence/persistence.js";
 
 /**
  * There is exactly ONE scheduling system: doc triggers fired by the automations
@@ -84,7 +84,7 @@ export interface AppMachineStatus {
 }
 
 export interface ManifestTriggerConfig {
-  store: StoreAdapter;
+  engine: EngineOps;
   lifecycle: MachineLifecycle;
   /** Bounded read-mutate-CAS on the app row (the runtime's own recipe). */
   updateDocument(appId: AppId, mutate: (doc: AppDocument) => AppDocument): Promise<AppDocument>;
@@ -129,8 +129,6 @@ const declaredFn = (trigger: Trigger): string | undefined => {
 };
 
 export const createManifestTriggers = (config: ManifestTriggerConfig) => {
-  const apps = config.store.records("vendo_apps");
-
   /** The box's declared schedules. A 404 is a valid box that declares none. */
   const declaredSchedules = async (app: AppDocument): Promise<Array<{ cron: string; fn: string }>> => {
     const machine = await config.lifecycle.wake(app);
@@ -211,7 +209,7 @@ export const createManifestTriggers = (config: ManifestTriggerConfig) => {
     /** Dev-only doctor reporting: machine-bearing apps and what they schedule. */
     async report(): Promise<AppMachineStatus[]> {
       const statuses: AppMachineStatus[] = [];
-      for (const record of await listAllRecords(apps, {})) {
+      for (const record of await listAllEngineRecords(config.engine, APPS_COLLECTION, {})) {
         let row;
         try {
           row = rowFromRecord(record);

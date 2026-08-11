@@ -13,16 +13,16 @@ import {
 import {
   effectiveAppBuildUiDeadlineMs,
 } from "../../contract/index.js";
-import { appRecordInput } from "../persistence/persistence.js";
+import { APPS_COLLECTION, appRecordInput } from "../persistence/persistence.js";
 import type { PlacementRow } from "../persistence/placements.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime, PlacementEntry } from "../runtime/types.js";
 
 /** The slot bookkeeping a build does before there is an app record to place. */
 export const createPlacementRows = (
-  deps: Pick<AppsRuntimeContext, "apps" | "placementRows" | "holds" | "reportLifecycle">,
+  deps: Pick<AppsRuntimeContext, "engine" | "placementRows" | "holds" | "reportLifecycle">,
 ) => {
-  const { apps, placementRows, holds, reportLifecycle } = deps;
+  const { engine, placementRows, holds, reportLifecycle } = deps;
   /** A slot name is host-authored and arrives from a wire body or a tool call,
    *  so it is checked here — the one place every caller passes through. */
   const requireSlot = (slot: string): string => {
@@ -67,7 +67,7 @@ export const createPlacementRows = (
     reason: string,
     ctx: RunContext,
   ): Promise<void> => {
-    await apps.put(appRecordInput({
+    await engine.put(APPS_COLLECTION, appRecordInput({
       format: "vendo/app@1",
       id: appId,
       name,
@@ -84,7 +84,7 @@ export const createPlacementRows = (
    *  it is not forming, and a slot that says "building" forever is the exact
    *  failure the build watchdog exists to prevent. */
   const entryFor = async (row: PlacementRow, ctx: RunContext): Promise<PlacementEntry | undefined> => {
-    const record = await apps.get(row.appId);
+    const record = await engine.get(APPS_COLLECTION, row.appId);
     if (record === null) {
       const forming = Date.now() - Date.parse(row.placedAt) < effectiveAppBuildUiDeadlineMs();
       return { slot: row.slot, app: row.appId, title: "", status: forming ? "building" : "failed" };

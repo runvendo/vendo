@@ -1,5 +1,4 @@
-import { VendoError, type Json, type RunContext } from "@vendoai/core";
-import type { VendoStore } from "@vendoai/store";
+import { VendoError, type Json, type RunContext, type StoreOps } from "@vendoai/core";
 import { json, requestJson, route, string, type RouteEntry, type WireContext } from "./shared.js";
 
 /** What the ?pending=1 disambiguation learned about a record open() refused
@@ -17,7 +16,7 @@ interface UnownedAppProbe {
     the latter two as pending is the infinite skeleton (0.4.1 E2E cert B4;
     0.4.6 cert defect D2).
 
-    The read goes through the ADAPTER interface (store.records), never
+    The read goes through the named-operation surface (ops.engine), never
     appStore(): appStore speaks raw SQL over a local db handle, which a
     hosted wire-door store doesn't have — through it this probe answered
     false on every Cloud-hosted-store deployment, so every owner-scoped
@@ -25,11 +24,15 @@ interface UnownedAppProbe {
     reached the embed (defect D2). The only document content that leaves this
     check is the buildFailed marker, which is server-written by construction
     (runtime.create strips any model-emitted buildFailed): canned reasons,
-    never user content. A store that still can't answer keeps the pending
-    window. */
-async function probeUnownedAppRecord(store: VendoStore, appId: string): Promise<UnownedAppProbe> {
+    never user content. A store that still can't answer — including one with no
+    ops surface at all — keeps the pending window. */
+async function probeUnownedAppRecord(
+  ops: StoreOps | undefined,
+  appId: string,
+): Promise<UnownedAppProbe> {
+  if (ops === undefined) return { exists: false };
   try {
-    const record = await store.records("vendo_apps").get(appId);
+    const record = await ops.engine.get("vendo_apps", appId);
     if (record === null) return { exists: false };
     const doc = (record.data as { doc?: { buildFailed?: { reason?: unknown; retryable?: unknown } } } | null)?.doc;
     const failed = doc?.buildFailed;
@@ -84,7 +87,7 @@ async function openWithPendingWindow(wire: WireContext, appId: string, ctx: RunC
     // learned whether a team app was real, at HTTP 200, while the same
     // request without the flag correctly 404'd. A non-viewer now gets
     // exactly what a non-existent app gets.
-    const probe = await probeUnownedAppRecord(deps.store, appId);
+    const probe = await probeUnownedAppRecord(deps.ops, appId);
     if (await deps.apps.access.levelFor(appId, ctx) === null) {
       // The principal-mismatch diagnosis (0.4.1 E2E cert B4) is a HOST
       // wiring problem in a developer's voice, so it keeps its signal

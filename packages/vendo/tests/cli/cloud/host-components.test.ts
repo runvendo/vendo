@@ -2,9 +2,10 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { STORE_WIRE_PATHS } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runSync } from "../../../src/cli/sync.js";
-import { pushHostComponents, readPushComponents } from "../../../src/cli/cloud/host-components.js";
+import { HOST_COMPONENTS_COLLECTION, pushHostComponents, readPushComponents } from "../../../src/cli/cloud/host-components.js";
 
 const roots: string[] = [];
 
@@ -64,6 +65,24 @@ const remoteRow = (id: string, data?: unknown): [string, unknown] => [id, data !
   modules: { "src/lib/format.ts": hex("shared") },
 }];
 
+const VERBS = ["list", "put", "delete"] as const;
+
+/**
+ * Which engine verb a request is. The named-operation surface (`ops.engine.*`)
+ * addresses the verb and carries the collection in the body; the routes are read
+ * off `STORE_WIRE_PATHS` rather than written out here, so this cannot drift from
+ * the contract the client actually routes by — the literal 35 paths stay pinned
+ * in `packages/core/tests/store-wire.test.ts`, which is where a path belongs.
+ */
+function engineVerb(pathname: string, body: { collection?: string }): typeof VERBS[number] | undefined {
+  for (const verb of VERBS) {
+    if (pathname.endsWith(STORE_WIRE_PATHS[`engine.${verb}`]) && body.collection === HOST_COMPONENTS_COLLECTION) {
+      return verb;
+    }
+  }
+  return undefined;
+}
+
 /** The console store wire, as a fake: blob keys, blob bodies, and rows. */
 function fakeCloud(seed: { blobs?: string[]; records?: Array<[string, unknown]> } = {}) {
   const blobs = new Set(seed.blobs ?? []);
@@ -74,33 +93,34 @@ function fakeCloud(seed: { blobs?: string[]; records?: Array<[string, unknown]> 
     const method = init?.method ?? "GET";
     calls.push(`${method} ${url.pathname}${url.search}`);
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
-    if (url.pathname.endsWith("/blobs/vendo_host_components")) return json({ keys: [...blobs] });
-    const blob = /\/blobs\/vendo_host_components\/([0-9a-f]{64})$/u.exec(url.pathname);
-    if (blob !== null) {
-      if (method === "PUT") blobs.add(blob[1]!);
-      if (method === "DELETE") blobs.delete(blob[1]!);
-      return json({});
+    const body = (init?.body === undefined || init.body === null
+      ? {}
+      : JSON.parse(String(init.body))) as { collection?: string; namespace?: string; key?: string; record?: { id: string; data: unknown }; id?: string };
+    // The blobs family: namespace + key ride the JSON body; list is keys-only.
+    if (url.pathname.endsWith(STORE_WIRE_PATHS["blobs.list"])) return json({ keys: [...blobs] });
+    if (url.pathname.endsWith(STORE_WIRE_PATHS["blobs.put"])) { blobs.add(body.key!); return json({}); }
+    if (url.pathname.endsWith(STORE_WIRE_PATHS["blobs.delete"])) { blobs.delete(body.key!); return json({}); }
+    switch (engineVerb(url.pathname, body)) {
+      case "list":
+        return json({
+          records: [...records].map(([id, data]) => ({
+            id,
+            data,
+            createdAt: "2026-08-02T00:00:00.000Z",
+            updatedAt: "2026-08-02T00:00:00.000Z",
+          })),
+        });
+      case "put": {
+        const record = body.record!;
+        records.set(record.id, record.data);
+        return json({ record: { ...record, createdAt: "2026-08-02T00:00:00.000Z", updatedAt: "2026-08-02T00:00:00.000Z" } });
+      }
+      case "delete":
+        records.delete(body.id!);
+        return json({});
+      default:
+        return json({ records: [] });
     }
-    if (url.pathname.endsWith("/records/vendo_host_components/list")) {
-      return json({
-        records: [...records].map(([id, data]) => ({
-          id,
-          data,
-          createdAt: "2026-08-02T00:00:00.000Z",
-          updatedAt: "2026-08-02T00:00:00.000Z",
-        })),
-      });
-    }
-    if (url.pathname.endsWith("/records/vendo_host_components/put")) {
-      const record = (JSON.parse(String(init?.body)) as { record: { id: string; data: unknown } }).record;
-      records.set(record.id, record.data);
-      return json({ record: { ...record, createdAt: "2026-08-02T00:00:00.000Z", updatedAt: "2026-08-02T00:00:00.000Z" } });
-    }
-    if (url.pathname.endsWith("/records/vendo_host_components/delete")) {
-      records.delete((JSON.parse(String(init?.body)) as { id: string }).id);
-      return json({});
-    }
-    return json({ records: [] });
   }) as unknown as typeof fetch;
   return { fetchImpl, calls, blobs, records };
 }
@@ -170,8 +190,8 @@ describe("host component push", () => {
     // The whole round trip: list the blob KEYS, list the (source-free) index.
     // No module body is ever downloaded to decide what changed.
     expect(cloud.calls).toEqual([
-      "GET /api/v1/store/blobs/vendo_host_components",
-      "POST /api/v1/store/records/vendo_host_components/list",
+      `POST /api/v1/store${STORE_WIRE_PATHS["blobs.list"]}`,
+      `POST /api/v1/store${STORE_WIRE_PATHS["engine.list"]}`,
     ]);
   });
 

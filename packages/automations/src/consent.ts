@@ -81,7 +81,7 @@ type CaptureRows = Pick<ConsentAccess, "writeCapture" | "isPendingAsk" | "pendin
 
 /** The capture collection itself: the row a pending ask is remembered by, and
  *  the two reads that say which asks are still open. */
-const createCaptureRows = ({ base: { config } }: Pick<ConsentDeps, "base">): CaptureRows => {
+const createCaptureRows = ({ base: { engine } }: Pick<ConsentDeps, "base">): CaptureRows => {
   /** A capture row, keyed by the approval it is the ask for. Captures are a
    *  GENERIC collection and the 02-store §5 erase cascade finds generic rows by
    *  their refs, so the refs are derived HERE rather than at each writer: an
@@ -89,7 +89,7 @@ const createCaptureRows = ({ base: { config } }: Pick<ConsentDeps, "base">): Cap
    *  asked. (Approvals need none: `vendo_approvals` is reserved, derives its own
    *  refs, and is erased by its subject column.) */
   const writeCapture = async (approvalId: string, capture: Capture): Promise<void> => {
-    await config.store.records(CAPTURES).put({
+    await engine.put(CAPTURES, {
       id: approvalId,
       data: { ...capture },
       refs: { subject: capture.subject, app_id: capture.appId, trigger_id: capture.triggerId },
@@ -100,7 +100,7 @@ const createCaptureRows = ({ base: { config } }: Pick<ConsentDeps, "base">): Cap
    *  or already decided is stale, and stale asks are not what a person is
    *  waiting on. */
   const isPendingAsk = async (approvalId: string): Promise<boolean> => {
-    const approval = await config.store.records(APPROVALS).get(approvalId);
+    const approval = await engine.get(APPROVALS, approvalId);
     if (approval === null) return false;
     const parsed = approvalRowSchema.safeParse(approval.data);
     return parsed.success && parsed.data.status === "pending" && parsed.data.voidedAt === undefined;
@@ -111,7 +111,7 @@ const createCaptureRows = ({ base: { config } }: Pick<ConsentDeps, "base">): Cap
    *  "capture exists" ≈ "ask is pending"; volume stays tiny (undecided asks
    *  only), so an unindexed scan is fine on every adapter. */
   const pendingCaptures = async (subject: string): Promise<Array<{ id: string; data: Capture }>> => {
-    const records = await allRecords(config.store.records(CAPTURES));
+    const records = await allRecords(engine, CAPTURES);
     const captures: Array<{ id: string; data: Capture }> = [];
     for (const record of records) {
       const parsed = captureSchema.safeParse(record.data);
@@ -129,7 +129,7 @@ const createDecisionSubscriber = (
   deps: Pick<ConsentDeps, "base" | "appRows" | "armed" | "grants">
     & Pick<CaptureRows, "pendingCaptures">,
 ): Pick<ConsentAccess, "spendApproval" | "handleDecision"> => {
-  const { base: { config, iso }, appRows, armed } = deps;
+  const { base: { config, engine, iso }, appRows, armed } = deps;
   const { grants, pendingCaptures } = deps;
   /**
    * Spends the approval this consent moment rode in on — through the guard when
@@ -153,7 +153,7 @@ const createDecisionSubscriber = (
       return await config.guard.spendApproval(record.id, data.request.ctx.principal) === "spent";
     }
     if (data.voidedAt !== undefined) return false;
-    await config.store.records(APPROVALS).put({
+    await engine.put(APPROVALS, {
       id: record.id,
       data: { ...data, consumedAt: iso() },
     });
@@ -161,17 +161,17 @@ const createDecisionSubscriber = (
   };
 
   const handleDecision = async (approvalId: string, approved: boolean): Promise<void> => {
-    const capture = await config.store.records(CAPTURES).get(approvalId);
+    const capture = await engine.get(CAPTURES, approvalId);
     if (capture !== null) {
       const parsed = captureSchema.parse(capture.data);
-      const approval = await config.store.records(APPROVALS).get(approvalId);
+      const approval = await engine.get(APPROVALS, approvalId);
       if (approved && approval !== null) {
         const data = approvalRowSchema.parse(approval.data);
         // Spend before granting: a yes the person took back at this instant
         // must arm nothing, and only one of the two can win the transition.
         if (await spendApproval(approval)) await grants.mintGrant(data.request, parsed.triggerId);
       }
-      await config.store.records(CAPTURES).delete(approvalId);
+      await engine.delete(CAPTURES, approvalId);
       if (!approved) {
         // Deny is transactional at the DECISION (criterion 19, deny half),
         // but disarms ONLY a consent moment that ended with NOTHING granted:
@@ -194,7 +194,7 @@ const createDecisionSubscriber = (
       }
       return;
     }
-    const approval = await config.store.records(APPROVALS).get(approvalId);
+    const approval = await engine.get(APPROVALS, approvalId);
     if (approval === null || !approved) return;
     const data = approvalRowSchema.parse(approval.data);
     if (
@@ -215,7 +215,7 @@ const createDecisionSubscriber = (
       // Without it the grant would be app-wide and the next firing of a DIFFERENT
       // trigger would inherit authority nobody consented to for it.
       const runId = data.request.ctx.trigger?.runId;
-      const runRow = runId === undefined ? null : await config.store.records(RUNS).get(runId);
+      const runRow = runId === undefined ? null : await engine.get(RUNS, runId);
       const triggerId = runRow === null ? undefined : parseRunRecord(runRow).triggerId;
       if (await spendApproval(approval)) await grants.mintGrant(data.request, triggerId);
     }
@@ -297,7 +297,7 @@ const createGrantCapture = (
     & Pick<CaptureRows, "writeCapture" | "pendingCaptures">
     & Pick<ConsentAccess, "consentSurface">,
 ): Pick<ConsentAccess, "captureGrants"> => {
-  const { base: { config, iso }, grants, writeCapture, pendingCaptures, consentSurface } = deps;
+  const { base: { config, engine, iso }, grants, writeCapture, pendingCaptures, consentSurface } = deps;
   /** The tools a consent moment has to ask THIS subject about: the automation's
    *  surface minus whatever they already hold a live standing grant for.
    *
@@ -346,7 +346,7 @@ const createGrantCapture = (
       if (await grants.liveGrant(subject, appId, triggerId, descriptor, slug)) continue;
       const pending = pendingForApp.get(consentKey(item));
       if (pending !== undefined) {
-        const approval = await config.store.records(APPROVALS).get(pending.id);
+        const approval = await engine.get(APPROVALS, pending.id);
         const parsed = approval === null ? undefined : approvalRowSchema.safeParse(approval.data);
         if (parsed?.success === true && parsed.data.status === "pending") {
           // Adopt pre-set rows (and any stray sibling) into THE app's set so
@@ -359,7 +359,7 @@ const createGrantCapture = (
         }
         // A capture whose approval is gone or already decided is stale —
         // clear it and fall through to a fresh mint.
-        await config.store.records(CAPTURES).delete(pending.id);
+        await engine.delete(CAPTURES, pending.id);
       }
       const request: ApprovalRequest = {
         id: id("apr_"),
@@ -377,7 +377,7 @@ const createGrantCapture = (
         },
         createdAt: iso(),
       };
-      await config.store.records(APPROVALS).put({
+      await engine.put(APPROVALS, {
         id: request.id,
         data: { request, status: "pending", sessionId: ctx.sessionId },
       });
@@ -403,7 +403,7 @@ const createPermissionMiss = (
   deps: Pick<ConsentDeps, "base" | "runRows">
     & Pick<CaptureRows, "writeCapture" | "isPendingAsk" | "pendingCaptures">,
 ): Pick<ConsentAccess, "needsPermission"> => {
-  const { base: { config }, runRows, writeCapture, isPendingAsk, pendingCaptures } = deps;
+  const { base: { config, engine }, runRows, writeCapture, isPendingAsk, pendingCaptures } = deps;
   /**
    * A step met a permission nobody has granted. The run ends HERE, loudly.
    *
@@ -447,7 +447,7 @@ const createPermissionMiss = (
     step: Step,
     approvalId: string,
   ): Promise<void> => {
-    const approval = await config.store.records(APPROVALS).get(approvalId);
+    const approval = await engine.get(APPROVALS, approvalId);
     const parsed = approval === null ? undefined : approvalRowSchema.safeParse(approval.data);
     const request = parsed?.success === true ? parsed.data.request : undefined;
     const slug = request === undefined ? undefined : serviceToolSlug(request.call);
@@ -477,7 +477,7 @@ const createPermissionMiss = (
         // on the panel, and — when the ask below is closed — a capture still
         // sitting here would make the decision subscriber read a supersede as a
         // person's denial and disarm an automation nobody said no to.
-        await config.store.records(CAPTURES).delete(asked.id);
+        await engine.delete(CAPTURES, asked.id);
         // A STILL-OPEN arming ask for this same thing is now redundant: the
         // question is one question, and the run's ask is the one that carries
         // where it was met (`presence: "away"`, the appId, the run id). Left

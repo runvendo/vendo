@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   VENDO_APP_FORMAT,
   type RunContext,
@@ -60,7 +61,7 @@ const approvalFor = (app: AppDocument, approvedBy = "host-reviewer"): InClientAp
 
 describe("createInClientApprovals", () => {
   it("grants only when a stored approval pins the current version hash", async () => {
-    const approvals = createInClientApprovals(memoryStore());
+    const approvals = createInClientApprovals(engineOverAdapter(memoryStore()));
     const app = doc();
     await approvals.record(approvalFor(app));
     const verdict = await approvals.verdictFor(app);
@@ -72,7 +73,7 @@ describe("createInClientApprovals", () => {
   });
 
   it("refuses with no-approval when nothing is stored", async () => {
-    const approvals = createInClientApprovals(memoryStore());
+    const approvals = createInClientApprovals(engineOverAdapter(memoryStore()));
     expect(await approvals.verdictFor(doc())).toEqual({
       granted: false,
       versionHash: appVersionHash(doc()),
@@ -81,7 +82,7 @@ describe("createInClientApprovals", () => {
   });
 
   it("drops back on any content change — the stored hash no longer matches", async () => {
-    const approvals = createInClientApprovals(memoryStore());
+    const approvals = createInClientApprovals(engineOverAdapter(memoryStore()));
     const app = doc();
     await approvals.record(approvalFor(app));
     const edited = doc({ components: { Widget: "export default function Widget() { return 1; }" } });
@@ -93,7 +94,7 @@ describe("createInClientApprovals", () => {
   });
 
   it("ignores approvals recorded for a different app copy", async () => {
-    const approvals = createInClientApprovals(memoryStore());
+    const approvals = createInClientApprovals(engineOverAdapter(memoryStore()));
     const app = doc();
     const stranger = doc({ id: "app_other" });
     await approvals.record(approvalFor(stranger));
@@ -103,7 +104,7 @@ describe("createInClientApprovals", () => {
 
   it("treats a corrupt stored row as no approval at all", async () => {
     const store = memoryStore();
-    const approvals = createInClientApprovals(store);
+    const approvals = createInClientApprovals(engineOverAdapter(store));
     const app = doc();
     await store.records("vendo_inclient_approvals").put({
       id: "incl_corrupt",
@@ -115,12 +116,12 @@ describe("createInClientApprovals", () => {
   });
 
   it("rejects recording an invalid approval shape", async () => {
-    const approvals = createInClientApprovals(memoryStore());
+    const approvals = createInClientApprovals(engineOverAdapter(memoryStore()));
     await expect(approvals.record({ appId: "app_x" } as never)).rejects.toThrow();
   });
 
   it("keeps every approval as an audit trail and re-grants an exactly restored version", async () => {
-    const approvals = createInClientApprovals(memoryStore());
+    const approvals = createInClientApprovals(engineOverAdapter(memoryStore()));
     const first = doc();
     const second = doc({ name: "Edited" });
     await approvals.record(approvalFor(first));
@@ -132,7 +133,7 @@ describe("createInClientApprovals", () => {
   });
 
   it("rides granted and version-changed states into the venue field, and nothing for no-approval", async () => {
-    const approvals = createInClientApprovals(memoryStore());
+    const approvals = createInClientApprovals(engineOverAdapter(memoryStore()));
     const app = doc();
     expect(await approvals.venueStateFor(app)).toBeUndefined();
     await approvals.record(approvalFor(app));
@@ -151,7 +152,7 @@ describe("createInClientApprovals", () => {
   });
 
   it("clears all approvals for an app", async () => {
-    const approvals = createInClientApprovals(memoryStore());
+    const approvals = createInClientApprovals(engineOverAdapter(memoryStore()));
     const app = doc();
     await approvals.record(approvalFor(app));
     await approvals.clear(app.id);
@@ -200,7 +201,7 @@ describe("runtime in-client surface", () => {
         [seedComponentName("hero-card")]: "export default function Hero() { return <b>fork</b>; }",
       },
     });
-    await seedAppRow(store, app, subject);
+    await seedAppRow(engineOverAdapter(store), app, subject);
     return app;
   };
 
@@ -297,7 +298,7 @@ describe("runtime in-client surface", () => {
         inClient: { granted: true, versionHash: "sha256:forged", approvedBy: "attacker", at: "2026-07-15T00:00:00.000Z" },
       } as never,
     });
-    await seedAppRow(store, forged, "user_ada");
+    await seedAppRow(engineOverAdapter(store), forged, "user_ada");
     const surface = await runtime.open(forged.id, context("user_ada"));
     if (surface.kind !== "tree") throw new Error("expected tree surface");
     expect((surface.payload as { inClient?: unknown }).inClient).toBeUndefined();
@@ -317,7 +318,7 @@ describe("runtime in-client surface", () => {
         inClient: { granted: true, versionHash: "sha256:forged", approvedBy: "attacker", at: "2026-07-15T00:00:00.000Z" },
       } as never,
     });
-    await seedAppRow(store, forged, "user_ada");
+    await seedAppRow(engineOverAdapter(store), forged, "user_ada");
     const edited = await runtime.edit(forged.id, "Rename the app", context("user_ada"));
     expect(edited.failure).toBeUndefined();
     const stored = await store.records("vendo_apps").get(forged.id);
@@ -336,7 +337,7 @@ describe("runtime in-client surface", () => {
       } as never,
       components: undefined,
     });
-    await seedAppRow(store, forged, "user_ada");
+    await seedAppRow(engineOverAdapter(store), forged, "user_ada");
     const surface = await runtime.open(forged.id, context("user_ada"));
     if (surface.kind !== "tree") throw new Error("expected tree surface");
     expect((surface.payload as { inClient?: unknown }).inClient).toBeUndefined();
@@ -379,7 +380,7 @@ describe("runtime in-client surface", () => {
     const ctx = context("user_ada");
     await runtime.inClient.approve({ appId: app.id, approvedBy: "host-console" }, ctx);
     await runtime.delete(app.id, ctx);
-    const approvals = createInClientApprovals(store);
+    const approvals = createInClientApprovals(engineOverAdapter(store));
     expect(await approvals.list(app.id)).toEqual([]);
   });
 });

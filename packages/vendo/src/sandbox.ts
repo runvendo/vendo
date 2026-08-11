@@ -1,5 +1,5 @@
 import type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "@vendoai/apps";
-import { defaultFetch, VendoError } from "@vendoai/core";
+import { defaultFetch, log, VendoError } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
 import { raiseCloudError } from "./cloud-console.js";
 import {
@@ -88,49 +88,174 @@ const toBase64Url = (value: string): string =>
 const encodeSnapshotRef = (state: CloudSnapshotState): string =>
   `${CLOUD_SNAPSHOT_REF_PREFIX}${toBase64Url(JSON.stringify(state))}`;
 
-const decodeSnapshotRef = (snapshotRef: string): CloudSnapshotState => {
-  try {
-    if (!snapshotRef.startsWith(CLOUD_SNAPSHOT_REF_PREFIX)
-      || snapshotRef.length <= CLOUD_SNAPSHOT_REF_PREFIX.length) {
-      throw new Error("unknown prefix");
-    }
-    const payload = snapshotRef.slice(CLOUD_SNAPSHOT_REF_PREFIX.length)
-      .replaceAll("-", "+").replaceAll("_", "/");
-    const state = JSON.parse(decoder.decode(
-      Uint8Array.from(atob(payload), (character) => character.charCodeAt(0)),
-    )) as Record<string, unknown>;
-    if (state.version !== 2
-      || typeof state.machineId !== "string" || state.machineId.length === 0
-      || typeof state.ref !== "string" || !state.ref.startsWith(CONSOLE_SNAPSHOT_REF_PREFIX)) {
-      throw new Error("invalid payload");
-    }
-    if (state.allowedDomains !== undefined && !(Array.isArray(state.allowedDomains)
-      && state.allowedDomains.every((host) => typeof host === "string"))) {
-      throw new Error("invalid allowedDomains policy");
-    }
-    if (state.port !== undefined && !(Number.isInteger(state.port)
-      && (state.port as number) > 0 && (state.port as number) <= 65_535)) {
-      throw new Error("invalid port");
-    }
-    return {
-      version: 2,
-      machineId: state.machineId,
-      ref: state.ref,
-      ...(state.allowedDomains === undefined ? {} : { allowedDomains: [...state.allowedDomains as string[]] }),
-      ...(state.port === undefined ? {} : { port: state.port as number }),
-    };
-  } catch {
-    throw new VendoError(
+/** The scheme a ref announces itself with — what a provider mismatch is read
+ * from. BOUNDED on purpose: the scheme is the only part of a caller's ref that
+ * reaches a message, so an unbounded capture turns a stored ref into an error
+ * as long as the ref itself. Nothing this long is a URI scheme, and a ref that
+ * leads with one is not a reference at all. */
+const REF_SCHEME_PATTERN = /^([a-z0-9][a-z0-9+.-]{0,31}):/;
+
+/** The other providers' schemes, with the adapter that resumes one, so a
+ * cross-provider ref can name the fix instead of the failure. */
+const FOREIGN_PROVIDERS: Record<string, { name: string; adapter: string }> = {
+  e2b: { name: "e2b", adapter: "e2bSandbox()" },
+};
+
+/** The console-minted artifact id a composite carries (sandbox-wire.ts). A
+ * SHAPE check, not a prefix check: CONSOLE_SNAPSHOT_REF_PREFIX ("vendo:") is a
+ * strict prefix of the composite prefix ("vendo:v2:"), so a prefix test would
+ * accept a composite nested inside a composite. */
+const CONSOLE_ARTIFACT_PATTERN = /^vendo:snap_[0-9a-f]{40}$/;
+
+/** The offending value's SHAPE, never its content — a ref's payload is the
+ * caller's data, and a message is a log line. */
+const shapeOf = (value: unknown): string => {
+  if (value === undefined) return "nothing";
+  if (value === null) return "null";
+  if (typeof value === "string") {
+    return value.length === 0 ? '""' : `a string of ${value.length} characters`;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return `an array of ${value.length} entries`;
+  return "an object";
+};
+
+const invalidField = (field: string, expected: string, value: unknown): VendoError =>
+  new VendoError(
+    "validation",
+    `Vendo Cloud snapshot reference has an invalid "${field}": expected ${expected}, got ${shapeOf(value)}. Rebuild the app to mint a current reference.`,
+  );
+
+/** A ref this adapter did not mint: say WHICH of the three ways it is wrong —
+ * another provider's ref, a bare console artifact id, or not a reference at
+ * all. One relabelling catch made all three read as the same sentence, which
+ * sent every one of them down the same wrong fix. */
+const notMintedHere = (snapshotRef: string): VendoError => {
+  const scheme = REF_SCHEME_PATTERN.exec(snapshotRef)?.[1];
+  if (scheme === undefined) {
+    return new VendoError(
       "validation",
-      `Vendo Cloud snapshot references must start with "${CLOUD_SNAPSHOT_REF_PREFIX}" and carry a valid payload`,
+      `This is not a sandbox snapshot reference: Vendo Cloud snapshot references start with "${CLOUD_SNAPSHOT_REF_PREFIX}". Rebuild the app to mint a current reference.`,
     );
   }
+  if (scheme === "vendo") {
+    return new VendoError(
+      "validation",
+      `This is a raw Vendo Cloud artifact id, not a sandbox snapshot reference. Snapshot references start with "${CLOUD_SNAPSHOT_REF_PREFIX}" and carry the machine id alongside the artifact. Rebuild the app to mint a current reference.`,
+    );
+  }
+  const provider = FOREIGN_PROVIDERS[scheme];
+  return new VendoError(
+    "validation",
+    `This snapshot was minted by ${provider?.name ?? `"${scheme}"`}, but the resuming sandbox is Vendo Cloud. A snapshot cannot move between providers — resume it with the same sandbox that made it${provider === undefined ? "" : ` (pass sandbox: ${provider.adapter})`}, or rebuild the app on Cloud.`,
+  );
+};
+
+const decodeSnapshotRef = (snapshotRef: string): CloudSnapshotState => {
+  if (!snapshotRef.startsWith(CLOUD_SNAPSHOT_REF_PREFIX)) throw notMintedHere(snapshotRef);
+  const payload = snapshotRef.slice(CLOUD_SNAPSHOT_REF_PREFIX.length);
+  let state: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(decoder.decode(Uint8Array.from(
+      atob(payload.replaceAll("-", "+").replaceAll("_", "/")),
+      (character) => character.charCodeAt(0),
+    ))) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new Error("not an object");
+    }
+    state = parsed as Record<string, unknown>;
+  } catch {
+    // The payload NEVER goes in the message — its length is what says "cut off".
+    throw new VendoError(
+      "validation",
+      `Vendo Cloud snapshot reference is truncated or corrupt: ${payload.length} characters after the "${CLOUD_SNAPSHOT_REF_PREFIX}" prefix, expected 120-400. The stored reference was cut off — rebuild the app.`,
+    );
+  }
+  if (state.version !== 2) throw invalidField("version", "2", state.version);
+  if (typeof state.machineId !== "string" || state.machineId.length === 0) {
+    throw invalidField("machineId", "a non-empty string", state.machineId);
+  }
+  if (typeof state.ref !== "string" || !CONSOLE_ARTIFACT_PATTERN.test(state.ref)) {
+    throw invalidField("ref", 'a Vendo Cloud artifact id ("vendo:snap_<40 hex>")', state.ref);
+  }
+  if (state.allowedDomains !== undefined && !(Array.isArray(state.allowedDomains)
+    && state.allowedDomains.every((host) => typeof host === "string"))) {
+    throw invalidField("allowedDomains", "an array of hostname strings", state.allowedDomains);
+  }
+  if (state.port !== undefined && !(Number.isInteger(state.port)
+    && (state.port as number) > 0 && (state.port as number) <= 65_535)) {
+    throw invalidField("port", "an integer between 1 and 65535", state.port);
+  }
+  return {
+    version: 2,
+    machineId: state.machineId,
+    ref: state.ref,
+    ...(state.allowedDomains === undefined ? {} : { allowedDomains: [...state.allowedDomains as string[]] }),
+    ...(state.port === undefined ? {} : { port: state.port as number }),
+  };
 };
 
 /** True exactly for the "that state is already gone" answer that the seam's
  * idempotent transitions (destroy twice, stop of a dead machine) absorb. */
 const isGone = (error: unknown): boolean =>
   error instanceof VendoError && error.code === "not-found";
+
+/** Every snapshot-ref scheme this repo mints, longest match first — "vendo:"
+ * is a strict prefix of "vendo:v2:". Classification reports the MATCHED
+ * CONSTANT from this list, never a slice of the input. */
+const KNOWN_REF_SCHEMES = [
+  CLOUD_SNAPSHOT_REF_PREFIX,
+  "e2b:v2:",
+  "fake-v2:",
+  "fake:",
+  CONSOLE_SNAPSHOT_REF_PREFIX,
+] as const;
+
+const UNKNOWN_REF_SCHEME = "(no known scheme)";
+
+/** Decode a ref, and report which ref failed when it will not decode.
+ *
+ * The decoder's message says which WAY a ref is wrong; it cannot say which
+ * one, because it is one authored sentence and a ref does not belong inside
+ * one. That left an operator reading "a ref was malformed" with no way to tell
+ * them apart. A CLASSIFICATION of the ref reaches the `sdk_error` stream from
+ * here instead (allowlisted in sdk-events.ts).
+ *
+ * Classification, never an echo: `resume` and `destroy` are public methods, so
+ * their argument is the caller's, and a ref that failed to decode is BY
+ * DEFINITION not one Vendo minted — it is arbitrary caller content, up to and
+ * including a secret passed to the wrong function. A prefix of that content is
+ * still that content, so the scheme is matched against the closed set above
+ * and reported as the constant that matched; the rest travels only as a length.
+ *
+ * NOTHING here reads the whole value. There is deliberately no digest: an
+ * unkeyed hash of caller content is a confirmation oracle (hash your candidate
+ * secrets offline, compare), and hashing an unbounded argument on a public
+ * failure path is a free CPU sink. Cross-report correlation of the same bad ref
+ * is the accepted cost — do not re-add one. The error the caller sees is
+ * unchanged; this only observes it on the way past. */
+const decodeOrReport = (snapshotRef: string): CloudSnapshotState => {
+  try {
+    return decodeSnapshotRef(snapshotRef);
+  } catch (error) {
+    log({
+      code: "vendo.snapshot-ref-undecodable",
+      level: "error",
+      // Vendo's OWN fixed sentence, not the decoder's. The decoder writes for
+      // the CALLER and names the unrecognised scheme it read out of the ref
+      // (`notMintedHere`), so relaying that sentence here would carry a
+      // caller-controlled slice into telemetry. The caller still gets the full
+      // sentence — it is on the error being rethrown, untouched.
+      message: "[vendo] a Vendo Cloud snapshot reference could not be decoded:",
+      data: {
+        snapshotRefScheme: KNOWN_REF_SCHEMES.find((scheme) => snapshotRef.startsWith(scheme))
+          ?? UNKNOWN_REF_SCHEME,
+        snapshotRefLength: snapshotRef.length,
+      },
+    });
+    throw error;
+  }
+};
 
 /** The Cloud sandbox adapter — the OSS side of the managed-sandbox seam: the
  * execution-v2 SandboxAdapter speaking HTTP to the console's /api/v1/sandboxes
@@ -402,7 +527,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       });
     },
     async resume(snapshotRef, policy?: SandboxResumePolicy) {
-      const state = decodeSnapshotRef(snapshotRef);
+      const state = decodeOrReport(snapshotRef);
       // The new machine inherits NO network config from the artifact
       // (sandbox-wire.ts), so every resume states the applicable allowlist:
       // Lane E's replace semantics when the caller re-polices the wake, the
@@ -418,7 +543,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       });
     },
     async destroy(snapshotRef) {
-      const state = decodeSnapshotRef(snapshotRef);
+      const state = decodeOrReport(snapshotRef);
       // Best-effort reap of the recorded source machine (it is usually
       // already gone — the sleep flow destroyed it), then the artifact GC.
       // A 404 from either is the seam's idempotent no-op.

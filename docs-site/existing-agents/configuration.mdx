@@ -35,23 +35,25 @@ the full examples do), and never trust a client-supplied principal.
 ## Two models, two credentials
 
 Your agent's own loop keeps its own model and key — no Vendo key replaces
-it. Vendo's internal turns (micro-app builds, the delegate) resolve their
-model through the [dev-mode credential ladder](/connect/dev-mode), where an
-explicit provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-`GOOGLE_GENERATIVE_AI_API_KEY`) always beats `VENDO_API_KEY`:
+it. Vendo's internal turns (micro-app builds, the delegate) need a model of
+their own, and they will not borrow your loop's: env keys are credentials,
+config selects.
 
-- With a provider key in the environment for your loop, Vendo's builds ride
-  that key too, NOT your Cloud key. On an OpenAI key, the default build
-  model can be noticeably slower than the Cloud aliases.
-- To force builds through the Vendo Cloud gateway, set
-  `VENDO_DEV_CREDENTIAL=vendo-cloud`. The gateway rides the stock
-  `@ai-sdk/anthropic` provider, which Vendo ships (your app's own install
-  wins when present).
-- No `VENDO_API_KEY` yet? `npx vendo login` mints a free metered API key
-  straight into `.env.local`.
-- If your loop's model has no key on this machine, either set one or point
-  your `model` at `vendoModel()` from `@vendoai/vendo/server` to ride the
-  same ladder.
+- Name Vendo's model in the composition — `models: { default: … }` on
+  `createVendo` — and Vendo's builds ride exactly that, whatever your loop
+  uses.
+- Or leave the seat unset and set `VENDO_API_KEY`, which fills it with the
+  Vendo Cloud gateway. The gateway rides the stock `@ai-sdk/anthropic`
+  provider, which Vendo ships (your app's own install wins when present). No
+  key yet? `npx vendo login` mints a free metered one straight into
+  `.env.local`.
+- With neither, Vendo's internal turns fail on first use and say so. An
+  `ANTHROPIC_API_KEY` sitting in the environment for your loop does **not**
+  quietly become Vendo's model — that used to happen, and it meant your Cloud
+  key was shadowed by a key you set for something else.
+- If your loop's own model has no key on this machine, either set one or point
+  your `model` at `vendoModel()` from `@vendoai/vendo/server` to ride the same
+  ladder Vendo does.
 
 The done-criterion for an install is a REAL chat turn that renders a Vendo
 tool output — `vendo doctor` cannot check your loop's model.

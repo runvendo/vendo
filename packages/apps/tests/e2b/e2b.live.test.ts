@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   VENDO_APP_FORMAT,
 } from "@vendoai/core";
@@ -207,7 +208,7 @@ describe.skipIf(!LIVE)("e2bSandbox live", () => {
     const store = memoryStore();
     const doc: AppDocument = { format: VENDO_APP_FORMAT, id: "app_wave7_reap", name: "Wave 7 reap gate" };
     const lifecycle = createMachineLifecycle({
-      store,
+      engine: engineOverAdapter(store),
       sandbox: adapter,
       buildEnv: () => ({ PORT: "8080", HELLO: "wave7 survives the reap" }),
       // The conformance app serves locally and calls nothing out, so deny-all
@@ -223,7 +224,7 @@ describe.skipIf(!LIVE)("e2bSandbox live", () => {
       await bootstrap(seeded);
       ref = await seeded.snapshot();
       await seeded.destroy();
-      await seedAppRow(store, {
+      await seedAppRow(engineOverAdapter(store), {
         ...doc,
         machine: { snapshotRef: ref, provisionedAt: new Date().toISOString() },
       }, "owner");

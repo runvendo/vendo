@@ -13,7 +13,11 @@ function sseResponse(frames: string[]): Response {
 }
 
 describe("liveModelTurn", () => {
-  const env = { ANTHROPIC_API_KEY: "sk-test" };
+  // The rung doctor reports is the one the RUNTIME would ride, and since the
+  // selection law a bare provider key rides nothing — so a host whose credential
+  // is a real, selecting one sets VENDO_API_KEY (or pins the internal env-key
+  // rung, as this case does, to keep exercising that branch).
+  const env = { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-test" };
 
   it("streams a UI-message SSE reply and reports ok with the rung", async () => {
     const deltas: string[] = [];

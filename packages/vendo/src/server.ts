@@ -8,7 +8,7 @@
  * is where a host names it.
  */
 import { provideCloudAdapters } from "@vendoai/agents";
-import { VendoError } from "@vendoai/core";
+import { log, VendoError } from "@vendoai/core";
 import { createComposition } from "./compose-context.js";
 import { vendoInstance, wireDepsFor } from "./compose-wire.js";
 import { setDelegateRunner } from "./delegate.js";
@@ -328,7 +328,11 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
     // rejection, so a route that asked for the sweep still answers with it.
     let sweepPass = startSweep(false);
     await sweepPass?.catch((error: unknown) => {
-      console.warn(`[vendo] TTL sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
+      log({
+        code: "vendo.ttl-sweep-retry",
+        level: "warn",
+        message: `[vendo] TTL sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`,
+      });
     });
     // The one shared context-resolution pass (see wire/shared.ts).
     const context = createContextResolver(deps);
@@ -383,7 +387,12 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
       if (error instanceof VendoError) return errorResponse(error);
       // The wire response stays generic (no internals leak to clients), but
       // the host operator gets the real failure on their own server log.
-      console.error("[vendo] unhandled wire error:", error);
+      log({
+        code: "vendo.unhandled-wire-error",
+        level: "error",
+        message: "[vendo] unhandled wire error:",
+        data: { error },
+      });
       return internalError();
     }
   };

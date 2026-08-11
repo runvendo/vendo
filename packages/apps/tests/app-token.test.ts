@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { memoryStore } from "../src/server/testing/memory-store.js";
 import { APP_TOKEN_COLLECTION, createAppTokens } from "../src/server/persistence/app-token.js";
@@ -8,7 +9,7 @@ const OWNER = "user_ada";
 describe("per-app box tokens (execution-v2 skin contract)", () => {
   it("mints a bearer that verifies back to its app and owner", async () => {
     const store = memoryStore();
-    const tokens = createAppTokens(store);
+    const tokens = createAppTokens(engineOverAdapter(store));
     const token = await tokens.mint(APP, OWNER);
     expect(token).toMatch(/^vat_[0-9a-f]{64}$/);
     expect(await tokens.verify(token)).toEqual({ appId: APP, subject: OWNER });
@@ -16,7 +17,7 @@ describe("per-app box tokens (execution-v2 skin contract)", () => {
 
   it("stores the token HASH, never the token", async () => {
     const store = memoryStore();
-    const tokens = createAppTokens(store);
+    const tokens = createAppTokens(engineOverAdapter(store));
     const token = await tokens.mint(APP, OWNER);
     const { records } = await store.records(APP_TOKEN_COLLECTION).list();
     expect(records).toHaveLength(1);
@@ -27,7 +28,7 @@ describe("per-app box tokens (execution-v2 skin contract)", () => {
 
   it("rejects a forged, malformed, or unknown token", async () => {
     const store = memoryStore();
-    const tokens = createAppTokens(store);
+    const tokens = createAppTokens(engineOverAdapter(store));
     await tokens.mint(APP, OWNER);
     expect(await tokens.verify("")).toBeNull();
     expect(await tokens.verify("vat_" + "0".repeat(64))).toBeNull();
@@ -36,7 +37,7 @@ describe("per-app box tokens (execution-v2 skin contract)", () => {
 
   it("re-minting rotates: the previous token stops verifying", async () => {
     const store = memoryStore();
-    const tokens = createAppTokens(store);
+    const tokens = createAppTokens(engineOverAdapter(store));
     const first = await tokens.mint(APP, OWNER);
     const second = await tokens.mint(APP, OWNER);
     expect(await tokens.verify(first)).toBeNull();
@@ -45,7 +46,7 @@ describe("per-app box tokens (execution-v2 skin contract)", () => {
 
   it("revoke(appId) kills the app's token without touching another app's", async () => {
     const store = memoryStore();
-    const tokens = createAppTokens(store);
+    const tokens = createAppTokens(engineOverAdapter(store));
     const mine = await tokens.mint(APP, OWNER);
     const other = await tokens.mint("app_box_2", "user_bob");
     await tokens.revoke(APP);

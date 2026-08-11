@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   VENDO_APP_FORMAT,
   type RunContext,
@@ -55,7 +56,7 @@ describe("interchange authority (e2e)", () => {
 
     // The victim owns app_victim.
     const victim = treeApp("app_victim", "Victim App");
-    await seedAppRow(store, victim, "user_victim", true);
+    await seedAppRow(engineOverAdapter(store), victim, "user_victim", true);
 
     // An attacker imports an artifact whose embedded id claims the victim's app.
     const doctored = treeApp("app_victim", "Attacker Payload");
@@ -79,7 +80,7 @@ describe("interchange authority (e2e)", () => {
   it("mints a fresh id for a doctored .vendoapp archive claiming a victim's app id", async () => {
     const store = memoryStore();
     const runtime = createApps({ store, guard: guardFixture(), tools: inertTools, catalog: [] });
-    await seedAppRow(store, treeApp("app_target", "Target"), "user_target", true);
+    await seedAppRow(engineOverAdapter(store), treeApp("app_target", "Target"), "user_target", true);
 
     // A hand-built archive whose app.json even carries the victim id inside the document body.
     const archive = zipSync({

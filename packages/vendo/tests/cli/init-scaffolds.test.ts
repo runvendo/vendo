@@ -106,3 +106,60 @@ describe("the MCP path's split composition", () => {
     expect(service).not.toContain("./vendo-actions");
   });
 });
+
+/** SPEC 4b: env keys are credentials and CONFIG selects the model, so a stray
+    ANTHROPIC_API_KEY no longer picks one. The scaffold is the migration path —
+    init writes the explicit selection into the composition it authors, ONCE. */
+describe("the models line a detected provider key writes", () => {
+  const clerk = { preset: "clerk", dependency: "@clerk/nextjs" } as const;
+  const anthropicKey = { provider: "anthropic", envVar: "ANTHROPIC_API_KEY" } as const;
+
+  it("writes the import and the config line exactly once into the Next route", () => {
+    const route = routeSource({ serverActions: false, auth: null, models: anthropicKey });
+    expect(route).toContain(`import { anthropic } from "@ai-sdk/anthropic";\n`);
+    expect(route).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key\n`);
+    expect(route.match(/@ai-sdk\/anthropic/g)).toHaveLength(1);
+    expect(route.match(/models:/g)).toHaveLength(1);
+    // The import leads the file — the same order the runtime-neutral scaffold
+    // already uses — and the line lands inside the createVendo call.
+    expect(route.indexOf("@ai-sdk/anthropic")).toBeLessThan(route.indexOf("@vendoai/vendo/server"));
+    expect(route.indexOf("createVendo({")).toBeLessThan(route.indexOf("models:"));
+  });
+
+  it("names each provider's own default instance and flagship id", () => {
+    expect(routeSource({ serverActions: false, auth: null, models: { provider: "openai", envVar: "OPENAI_API_KEY" } }))
+      .toContain(`  models: { default: openai("gpt-5") }, // OPENAI_API_KEY supplies the key\n`);
+    expect(routeSource({ serverActions: false, auth: null, models: { provider: "google", envVar: "GOOGLE_GENERATIVE_AI_API_KEY" } }))
+      .toContain(`  models: { default: google("gemini-2.5-flash") }, // GOOGLE_GENERATIVE_AI_API_KEY supplies the key\n`);
+  });
+
+  it("writes neither the import nor the line when no provider key resolved", () => {
+    for (const route of [
+      routeSource({ serverActions: false, auth: null }),
+      routeSource({ serverActions: false, auth: null, models: null }),
+    ]) {
+      expect(route).not.toContain("@ai-sdk/");
+      expect(route).not.toContain("models:");
+    }
+  });
+
+  it("keeps it out of the thin MCP route and in the composition module — one models line per host", () => {
+    // The MCP route composes nothing (it imports ./vendo), so a models line
+    // there would be a second, dead selection plus a dangling import.
+    const thin = routeSource({ serverActions: false, auth: clerk, models: anthropicKey, mcp: { serviceAuth: false } });
+    expect(thin).not.toContain("@ai-sdk/anthropic");
+    expect(thin).not.toContain("models:");
+
+    const composition = compositionModuleSource({ serverActions: false, auth: clerk, serviceAuth: false, models: anthropicKey });
+    expect(composition).toContain(`import { anthropic } from "@ai-sdk/anthropic";\n`);
+    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key\n`);
+    expect(composition.match(/@ai-sdk\/anthropic/g)).toHaveLength(1);
+    expect(composition.match(/models:/g)).toHaveLength(1);
+    // The pair init writes on that path carries exactly one of each.
+    expect(`${thin}${composition}`.match(/models:/g)).toHaveLength(1);
+
+    const keyless = compositionModuleSource({ serverActions: false, auth: clerk, serviceAuth: false });
+    expect(keyless).not.toContain("@ai-sdk/");
+    expect(keyless).not.toContain("models:");
+  });
+});

@@ -30,6 +30,11 @@ async function tempStore(prefix: string): Promise<VendoStore> {
   return store;
 }
 
+/** The app-token rows are one of Vendo's own drawers, reached by name through
+ *  the engine family. This store is really SQL-backed, so it gets the REAL
+ *  engine rather than the adapter shim. */
+const engineFor = (store: VendoStore) => createStoreOps(store, { files: storeFiles(store) }).engine;
+
 const ADA: Principal = { kind: "user", subject: "user_ada" };
 
 const decoder = new TextDecoder();
@@ -113,7 +118,7 @@ async function setup(handler: BoxHandler = () => ({ status: 200 })): Promise<Ski
   });
   // The bearer graduation minted lives in the token store, not in the row; the
   // test holds a KNOWN one by rotating it through the same door.
-  const token = await createAppTokens(store).mint("app_skin", ADA.subject);
+  const token = await createAppTokens(engineFor(store)).mint("app_skin", ADA.subject);
   return { vendo, store, token };
 }
 
@@ -297,7 +302,7 @@ describe("the /box callback surface (app-token bearer)", () => {
     // Minting ROTATES — one live token per app (app-token.ts) — so the two
     // subjects hold the app's bearer in turn rather than at once. Same app,
     // same collection, same ids throughout: the subject is the only variable.
-    const bobToken = await createAppTokens(store).mint("app_skin", "user_bob");
+    const bobToken = await createAppTokens(engineFor(store)).mint("app_skin", "user_bob");
     expect((await read(bobToken, "note_1")).status).toBe(404);
     expect(await listed(bobToken)).toEqual([]);
     // Ada's row is UNWRITABLE to bob, not merely unreadable: he can neither
@@ -306,7 +311,7 @@ describe("the /box callback surface (app-token bearer)", () => {
     expect((await write(bobToken, "note_2", "bob's note")).status).toBe(200);
     expect(await listed(bobToken)).toEqual(["note_2"]);
 
-    const adaAgain = await createAppTokens(store).mint("app_skin", ADA.subject);
+    const adaAgain = await createAppTokens(engineFor(store)).mint("app_skin", ADA.subject);
     expect(await (await read(adaAgain, "note_1")).json()).toMatchObject({ data: { text: "ada's note" } });
     expect((await read(adaAgain, "note_2")).status).toBe(404);
     expect(await listed(adaAgain)).toEqual(["note_1"]);
@@ -387,7 +392,7 @@ describe("the Lane E redaction guard on the box seams", () => {
       sandbox: boxSandbox(handler),
       secrets: { get: async (name) => (name === "STRIPE_KEY" ? STRIPE_VALUE : undefined) },
       });
-    const token = await createAppTokens(store).mint("app_skin", ADA.subject);
+    const token = await createAppTokens(engineFor(store)).mint("app_skin", ADA.subject);
     return { vendo, store, token };
   }
 

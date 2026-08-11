@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 /**
  * The automation ladder's two REPORTED facts: the audit row it writes, and the
  * armed state it hands back.
@@ -118,7 +119,7 @@ const rideTheLadder = async (
   armAutomation?: () => Promise<{ enabled: boolean; missing: never[] }>,
 ) => {
   const { store, guard, runtime } = setup(armAutomation);
-  await seedAppRow(store, seedDoc, ctx.principal.subject);
+  await seedAppRow(engineOverAdapter(store), seedDoc, ctx.principal.subject);
   const edited = await runtime.edit(APP_ID, "nudge everyone with an overdue invoice every day", ctx);
   return { guard, edited };
 };

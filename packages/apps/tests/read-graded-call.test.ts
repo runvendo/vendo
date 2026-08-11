@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   type RunContext,
   type ToolCall,
@@ -83,7 +84,7 @@ describe("a read-graded call through apps.call takes the derived-id query arm", 
   it("gives a read the SAME call id every time, so an approved read's refetch is the same call", async () => {
     const calls: ToolCall[] = [];
     const { store, runtime } = setup(recordingTools(calls));
-    await seedAppRow(store, app("app_read"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_read"), "user_ada");
     const ctx = context("user_ada");
 
     await runtime.call("app_read", "host_listSpending", { month: "2026-08" }, ctx);
@@ -98,8 +99,8 @@ describe("a read-graded call through apps.call takes the derived-id query arm", 
   it("keys a read's id to (app, tool, args), so different args are different calls", async () => {
     const calls: ToolCall[] = [];
     const { store, runtime } = setup(recordingTools(calls));
-    await seedAppRow(store, app("app_read"), "user_ada");
-    await seedAppRow(store, app("app_other"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_read"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_other"), "user_ada");
     const ctx = context("user_ada");
 
     await runtime.call("app_read", "host_listSpending", { month: "2026-08" }, ctx);
@@ -113,7 +114,7 @@ describe("a read-graded call through apps.call takes the derived-id query arm", 
   it("keeps a WRITE on the action arm: two identical mutations are two separate acts", async () => {
     const calls: ToolCall[] = [];
     const { store, runtime } = setup(recordingTools(calls));
-    await seedAppRow(store, app("app_write"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_write"), "user_ada");
     const ctx = context("user_ada");
 
     await runtime.call("app_write", "host_payBill", { billId: "b_1" }, ctx);
@@ -136,7 +137,7 @@ describe("a read-graded call through apps.call takes the derived-id query arm", 
       },
     };
     const { store, runtime } = setup(tools);
-    await seedAppRow(store, app("app_ungraded"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_ungraded"), "user_ada");
     const ctx = context("user_ada");
 
     await runtime.call("app_ungraded", "host_mystery", {}, ctx);
@@ -164,7 +165,7 @@ describe("a read-graded call through apps.call takes the derived-id query arm", 
       },
     };
     const { store, runtime } = setup(tools);
-    await seedAppRow(store, app("app_read"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_read"), "user_ada");
     const ctx = context("user_ada");
 
     const first = await runtime.call("app_read", "host_listSpending", { month: "2026-08" }, ctx);

@@ -17,8 +17,9 @@
  * (`vendo_records WHERE refs @> '{"subject": …}'::jsonb`, `packages/store/src/
  * erase.ts`), and the only query this surface ever makes.
  */
-import { SLOT_DECAY_MS, type RunContext, type StoreAdapter, type VendoRecord } from "@vendoai/core";
-import { listAllRecords } from "./persistence.js";
+import { SLOT_DECAY_MS, type RunContext, type VendoRecord } from "@vendoai/core";
+import type { EngineOps } from "./engine.js";
+import { listAllEngineRecords } from "./persistence.js";
 
 /** The generic collection the slot rows live in (never a dedicated table). */
 export const SLOTS_COLLECTION = "vendo_slots";
@@ -60,8 +61,7 @@ const slotOf = (record: VendoRecord): SlotRecord | undefined => {
   return { id, label, lastSeen };
 };
 
-export const createSlotRegistry = (store: StoreAdapter): SlotRegistry => {
-  const rows = store.records(SLOTS_COLLECTION);
+export const createSlotRegistry = (engine: EngineOps): SlotRegistry => {
 
   return {
     async report({ slots }, ctx) {
@@ -70,7 +70,7 @@ export const createSlotRegistry = (store: StoreAdapter): SlotRegistry => {
       // Plain put, last write wins, no compare-and-swap: two tabs reporting the
       // same slot are reporting the SAME fact, so there is nothing to
       // arbitrate — and a renamed label is meant to overwrite the old one.
-      await Promise.all(slots.map(({ id, label }) => rows.put({
+      await Promise.all(slots.map(({ id, label }) => engine.put(SLOTS_COLLECTION, {
         id: rowId(subject, id),
         data: { id, label, lastSeen },
         refs: { subject },
@@ -78,7 +78,7 @@ export const createSlotRegistry = (store: StoreAdapter): SlotRegistry => {
     },
 
     async list(ctx) {
-      const found = await listAllRecords(rows, { refs: { subject: ctx.principal.subject } });
+      const found = await listAllEngineRecords(engine, SLOTS_COLLECTION, { refs: { subject: ctx.principal.subject } });
       const floor = Date.now() - SLOT_DECAY_MS;
       // Sorted HERE, not by the store: the generic collection orders by
       // created_at — when the slot was FIRST seen, which is the opposite of

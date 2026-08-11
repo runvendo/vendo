@@ -1,5 +1,39 @@
 # @vendoai/guard
 
+## 0.14.0
+
+### Patch Changes
+
+- Updated dependencies [954ad09]
+  - @vendoai/core@0.14.0
+
+## 0.13.0
+
+### Patch Changes
+
+- 9034bcc: guard's own drawers ride the `engine` family
+
+  Approvals, grants, the audit log, the effect ledger, the freeze switch and the
+  one-time transition receipts all reached the store through the generic
+  `records.*` door a host uses for its own rows. They now go through
+  `ops.engine.*` — the same seven verbs, the same collections, the same order,
+  with the allowlist gate in front of every one of them.
+
+  `createGuard` takes an optional `ops: StoreOps` beside `store`, threaded from
+  the composition. Unset (a `StoreAdapter` with neither its own ops nor a SQL
+  handle — every BYO adapter), the same seven verbs are served off the adapter's
+  own record doors, gate included.
+
+- Updated dependencies [395fc1e]
+- Updated dependencies [031195f]
+  - @vendoai/core@0.13.0
+
+## 0.12.0
+
+### Patch Changes
+
+- @vendoai/core@0.12.0
+
 ## 0.11.0
 
 ### Patch Changes

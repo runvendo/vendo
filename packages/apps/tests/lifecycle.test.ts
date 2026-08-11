@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   type RunContext,
   type ToolRegistry,
@@ -174,7 +175,7 @@ describe("apps lifecycle", () => {
       name: "Machine source",
       machine: { snapshotRef: "fake:snap_legacy", provisionedAt: "2026-07-19T00:00:00.000Z" },
     };
-    await seedAppRow(store, source, "user_ada");
+    await seedAppRow(engineOverAdapter(store), source, "user_ada");
 
     const fork = await runtime.fork(source.id, context("user_ada"));
 
@@ -243,14 +244,14 @@ describe("apps lifecycle", () => {
 
   it("keeps the full per-pin replay trail when public version history is capped", async () => {
     const store = memoryStore();
-    const history = createAppHistory(store);
+    const history = createAppHistory(engineOverAdapter(store));
     const app: AppDocument = {
       format: VENDO_APP_FORMAT,
       id: "app_pin_intent_history",
       name: "Pinned app",
       seed: { component: "net-worth-card", baseline: "sha256:base" },
     };
-    await seedAppRow(store, app, "user_ada");
+    await seedAppRow(engineOverAdapter(store), app, "user_ada");
     for (let index = 1; index <= 51; index += 1) {
       await history.append(app.id, app, {
         at: new Date(1_720_000_000_000 + index).toISOString(),

@@ -15,6 +15,7 @@ import {
   type RiskResolver,
   type RunContext,
   type StoreAdapter,
+  type StoreOps,
   type ToolCall,
   type ToolDescriptor,
   type ToolRegistry,
@@ -212,6 +213,14 @@ export interface GuardRules {
 
 export interface CreateGuardConfig extends GuardRules {
   store: StoreAdapter;
+  /** The 42-op surface over that SAME store, when the composition could resolve
+   *  one (`selectStoreOps` answers `undefined` for a store with neither its own
+   *  ops nor a SQL handle). Every drawer this block owns — approvals, grants,
+   *  audit, the effect ledger, the freeze switch, the transition receipts —
+   *  goes through `ops.engine.*`, so the allowlist gate applies to all of them.
+   *  Unset, the same seven verbs are served straight off the adapter's own
+   *  record doors, which is what a host's BYO `StoreAdapter` gets. */
+  ops?: StoreOps;
   resolveRisk?: RiskResolver;
   /** A source for a cloud-published policy.json body, consulted
    *  by the PolicyResolver STRICTLY AFTER the local file and only when policy

@@ -73,7 +73,7 @@ const openDoor = (
   doorBaseUrl: string | undefined,
   turnCredentials: TurnCredentials,
 ): { door: McpDoor; posture: "local" | "broker" } => {
-  const { boundTools, guard, store, oauthSeam, actions, membershipsSeam, theme } = composition;
+  const { boundTools, guard, store, ops, oauthSeam, actions, membershipsSeam, theme } = composition;
   if (oauthSeam === undefined) {
     throw new VendoError(
       "validation",
@@ -116,6 +116,11 @@ const openDoor = (
       tools: boundTools,
       guard,
       store,
+      // The engine family for the door's own two drawers, over the SAME store.
+      // Absent for a store with neither its own `ops` nor a SQL handle — the
+      // door then serves the same verbs off the adapter itself, so an unset
+      // slot is a route, not a downgrade.
+      ...(ops === undefined ? {} : { ops }),
       oauth: oauthSeam,
       apps: appsPortFor(composition),
       // The host's curated door menu (`surfaces.mcp`). Passed as a provider

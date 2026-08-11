@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 /**
  * Build contract §1.6 / redesign D4 — a FILES-FIRST app is a first-class app.
  *
@@ -306,7 +307,7 @@ describe("an app.vendo the harness wrote", () => {
   it("never rewrites an app the caller may not edit", async () => {
     const { runtime, store, edits } = stand();
     const theirs: AppDocument = { format: "vendo/app@1", id: APP_ID, name: "Theirs" };
-    await seedAppRow(store, theirs, "u2");
+    await seedAppRow(engineOverAdapter(store), theirs, "u2");
 
     // `/user/**` is its subject's at every level, so the workspace will land this
     // file in u1's own mount. This door is the only thing standing between that
@@ -332,7 +333,7 @@ describe("an app.vendo the harness wrote", () => {
       name: "Theirs",
       machine: { snapshotRef: "fake:theirs", provisionedAt: "2026-08-03T00:00:00.000Z" },
     };
-    await seedAppRow(store, theirs, "u2");
+    await seedAppRow(engineOverAdapter(store), theirs, "u2");
 
     // u1 writes THEIR OWN file at u2's app id (the workspace lands it — `/user/**`
     // is its subject's at every level) and asks it for an `fn:` query. The refused
@@ -388,7 +389,7 @@ describe("§9.9 — the announcement a files-first save owes", () => {
   it("announces a third party's rewrite of a sponsored app, under THEIR subject", async () => {
     const { runtime, store, edits } = stand({ shared: true });
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx("u1"));
-    await seedAppRow(store, { ...(await rowOf(store))!.doc!, triggers: [trigger] }, "u1", true);
+    await seedAppRow(engineOverAdapter(store), { ...(await rowOf(store))!.doc!, triggers: [trigger] }, "u1", true);
     // u2 holds editor on u1's app (a shared automation) and rewrites the file.
     await seedGrantRows(store, APP_ID, { "user:u2": "editor" });
 
@@ -408,7 +409,7 @@ describe("§9.9 — the announcement a files-first save owes", () => {
   it("announces the sponsor's OWN rename, so their automation is re-bound not killed", async () => {
     const { runtime, store, edits } = stand();
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
-    await seedAppRow(store, { ...(await rowOf(store))!.doc!, triggers: [trigger] }, "u1", true);
+    await seedAppRow(engineOverAdapter(store), { ...(await rowOf(store))!.doc!, triggers: [trigger] }, "u1", true);
 
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND.replace("Spending", "Money")) }, ctx());
 
@@ -449,7 +450,7 @@ describe("a save whose text left a seeded component out", () => {
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
     // A remixed host component: `seed` names it, `components` holds the captured
     // host source as a seeded bundle. `Extra` is the model's own island, beside it.
-    await seedAppRow(store, {
+    await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
       seed: { component: slot, baseline: "sha256:hostsource" },
       components: {
@@ -476,7 +477,7 @@ describe("a save whose text left a seeded component out", () => {
     // `componentEntrySchema` still accepts a bare source string, and that is how
     // every remix forked before the seeded bundle existed sits in the store.
     // `bundleOf` reads it as `authored`, so a carry keyed on the origin drops it.
-    await seedAppRow(store, {
+    await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
       seed: { component: slot, baseline: "sha256:hostsource" },
       components: { [name]: "export default () => null;" },
@@ -490,7 +491,7 @@ describe("a save whose text left a seeded component out", () => {
   it("still lets the file EDIT a seeded component, exactly as an engine edit may", async () => {
     const { runtime, store } = stand();
     await runtime.authored({ appId: APP_ID, compiled: compiled(SPEND) }, ctx());
-    await seedAppRow(store, {
+    await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
       seed: { component: slot, baseline: "sha256:hostsource" },
       components: { [name]: { source: "export default () => null;", origin: "seeded" as const } },
@@ -549,7 +550,7 @@ describe("a refused write at the history cap", () => {
   /** Fill the log to exactly the cap with versions of the app as it stands. */
   const fillToCap = async (store: Stand["store"]): Promise<string[]> => {
     const doc = (await rowOf(store))!.doc!;
-    const history = createAppHistory(store);
+    const history = createAppHistory(engineOverAdapter(store));
     for (let index = 1; index <= 50; index += 1) {
       await history.append(APP_ID, doc, {
         at: new Date(1_754_000_000_000 + index).toISOString(),
@@ -575,7 +576,7 @@ describe("a refused write at the history cap", () => {
       // The edit lands after the first concurrency check, so the append runs and
       // the second check refuses the write — the round-7 case, now at the cap.
       arm(async () => {
-        await seedAppRow(store, { ...stored, description: "the person's own edit" }, "u1");
+        await seedAppRow(engineOverAdapter(store), { ...stored, description: "the person's own edit" }, "u1");
       }, 1);
 
       await runtime.authored(
@@ -609,7 +610,7 @@ describe("a refused write at the history cap", () => {
     // A seeded app sitting on the OLD baseline, so the re-seed below has real
     // work to do. `reseed` is the deterministic, model-less persistEdit path
     // the fork gesture used to be.
-    await seedAppRow(store, {
+    await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
       seed: { component: slot, baseline: "sha256:host-old" },
       components: { [seedComponentName(slot)]: { source: "export default () => null;", origin: "seeded" as const } },
@@ -617,7 +618,7 @@ describe("a refused write at the history cap", () => {
     const stored = (await rowOf(store))!.doc!;
     const before = await fillToCap(store);
     arm(async () => {
-      await seedAppRow(store, { ...stored, description: "the person's own edit" }, "u1");
+      await seedAppRow(engineOverAdapter(store), { ...stored, description: "the person's own edit" }, "u1");
     }, 2);
 
     await expect(runtime.seed.reseed({ appId: APP_ID }, ctx())).rejects.toMatchObject({
@@ -656,7 +657,7 @@ describe("a save computed over a row that changed under it", () => {
       // What a UI `edit()` lands in the window: this save's baseline is now stale,
       // and the document it computed carries the PRE-edit description forward.
       arm(async () => {
-        await seedAppRow(store, { ...stored, description: "the person's own edit" }, "u1");
+        await seedAppRow(engineOverAdapter(store), { ...stored, description: "the person's own edit" }, "u1");
       });
 
       const result = await runtime.authored(
@@ -691,7 +692,7 @@ describe("a save computed over a row that changed under it", () => {
       // straight over it — the append is a store round trip, so the whole of it
       // sits inside the window.
       arm(async () => {
-        await seedAppRow(store, { ...stored, description: "the person's own edit" }, "u1");
+        await seedAppRow(engineOverAdapter(store), { ...stored, description: "the person's own edit" }, "u1");
       }, 1);
 
       await runtime.authored(
@@ -750,7 +751,7 @@ describe("a save computed over a row that changed under it", () => {
     // A seeded app sitting on the OLD baseline, so the re-seed below has real
     // work to do. `reseed` is the deterministic, model-less persistEdit path
     // the fork gesture used to be.
-    await seedAppRow(store, {
+    await seedAppRow(engineOverAdapter(store), {
       ...(await rowOf(store))!.doc!,
       seed: { component: slot, baseline: "sha256:host-old" },
       components: { [seedComponentName(slot)]: { source: "export default () => null;", origin: "seeded" as const } },
@@ -760,7 +761,7 @@ describe("a save computed over a row that changed under it", () => {
     // then the edit lands right after the first concurrency check — so the append
     // runs and the second check refuses the write.
     arm(async () => {
-      await seedAppRow(store, { ...stored, description: "the person's own edit" }, "u1");
+      await seedAppRow(engineOverAdapter(store), { ...stored, description: "the person's own edit" }, "u1");
     }, 2);
 
     await expect(runtime.seed.reseed({ appId: APP_ID }, ctx())).rejects.toMatchObject({

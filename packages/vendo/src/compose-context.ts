@@ -65,7 +65,7 @@ import { composeMcp } from "./compose-mcp.js";
 import { composePrompt } from "./compose-prompt.js";
 import { composeSurfaces } from "./compose-surfaces.js";
 import { composeSweep } from "./compose-sweep.js";
-import { composeTools } from "./compose-tools.js";
+import { composeTools, emitDeploymentBoot } from "./compose-tools.js";
 import type { ConfigSurfaceName } from "./config-surface.js";
 import type { ResolvedSweep } from "./compose-config.js";
 import type { ConnectionsService } from "./connections.js";
@@ -278,5 +278,9 @@ export const createComposition = (input: CreateVendoConfig): VendoComposition =>
   Object.assign(composition, composeAutomations(composition));
   Object.assign(composition, composeConnections(composition));
   Object.assign(composition, composeMcp(composition));
+  // LAST, and it has to be: `deployment_boot` names the adapters this
+  // deployment RUNS, and the connections adapter is not selected until
+  // compose-discovery.ts above.
+  emitDeploymentBoot(composition);
   return composition;
 };

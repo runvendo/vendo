@@ -5,6 +5,7 @@
  * `tools` member chains (validated against the live registry when the host
  * supplied one).
  */
+import { log } from "@vendoai/core";
 import {
   KIT_COMPONENT_NAMES,
   WIRE_COMPONENT_NAMES,
@@ -275,7 +276,11 @@ export const prepareIslands = async (
       if (typeof error === "object" && error !== null && Array.isArray((error as { errors?: unknown }).errors)) {
         issues.push(`island "${name}" is not valid TSX: ${error instanceof Error ? error.message.split("\n")[0] : "syntax error"}`);
       } else {
-        console.warn(`[vendo] island TSX validation unavailable on this runtime (${error instanceof Error ? error.message.split("\n")[0] : String(error)}); islands ship unvalidated`);
+        log({
+          code: "apps.island-validation-unavailable",
+          level: "warn",
+          message: `[vendo] island TSX validation unavailable on this runtime (${error instanceof Error ? error.message.split("\n")[0] : String(error)}); islands ship unvalidated`,
+        });
         transform = undefined;
       }
     }

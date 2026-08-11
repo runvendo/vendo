@@ -3,15 +3,14 @@ import {
   isoDateTimeSchema,
   type AppId,
   type IsoDateTime,
-  type RecordStore,
   type ReviewStanding,
-  type StoreAdapter,
 } from "@vendoai/core";
 import { z } from "zod";
 import type {
   AppDocument,
 } from "../../contract/index.js";
-import { listAllRecords } from "../persistence/persistence.js";
+import type { EngineOps } from "../persistence/engine.js";
+import { listAllEngineRecords } from "../persistence/persistence.js";
 import { appVersionHash } from "./version-hash.js";
 
 /** 06-apps §9 — approval to mount one exact app version in the host page. */
@@ -79,16 +78,15 @@ const COLLECTION = "vendo_inclient_approvals";
  *  cascade's byApp leg matches `refs @> {"app_id": …}` (store/src/erase.ts).
  *  Rows written under the camelCase key were never swept with their app and
  *  outlived it forever — `backfillAppRefKey` renames the ones already on disk. */
-const allRecords = (records: RecordStore, appId: AppId) =>
-  listAllRecords(records, { refs: { app_id: appId } });
+const allRecords = (engine: EngineOps, appId: AppId) =>
+  listAllEngineRecords(engine, COLLECTION, { refs: { app_id: appId } });
 
 /** 06-apps §9 — hash-pinned in-client approvals over the store seam. */
-export const createInClientApprovals = (store: StoreAdapter): InClientApprovalAccess => {
-  const records = store.records(COLLECTION);
+export const createInClientApprovals = (engine: EngineOps): InClientApprovalAccess => {
 
   const list = async (appId: AppId): Promise<InClientApproval[]> => {
     const approvals: InClientApproval[] = [];
-    for (const record of await allRecords(records, appId)) {
+    for (const record of await allRecords(engine, appId)) {
       const parsed = inClientApprovalSchema.safeParse(record.data);
       // A corrupt row can never grant a mount; it is simply not an approval.
       if (parsed.success && parsed.data.appId === appId) approvals.push(parsed.data);
@@ -113,7 +111,7 @@ export const createInClientApprovals = (store: StoreAdapter): InClientApprovalAc
     list,
     async record(approval) {
       const validated = inClientApprovalSchema.parse(approval);
-      await records.put({
+      await engine.put(COLLECTION, {
         id: `incl_${globalThis.crypto.randomUUID()}`,
         data: validated,
         refs: { app_id: validated.appId },
@@ -139,8 +137,8 @@ export const createInClientApprovals = (store: StoreAdapter): InClientApprovalAc
       return undefined;
     },
     async clear(appId) {
-      for (const record of await allRecords(records, appId)) {
-        await records.delete(record.id);
+      for (const record of await allRecords(engine, appId)) {
+        await engine.delete(COLLECTION, record.id);
       }
     },
   };

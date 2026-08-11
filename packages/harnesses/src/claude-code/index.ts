@@ -16,6 +16,7 @@
  */
 import {
   VENDO_MAKE_TOOL,
+  log,
   type BeatPhase,
   type Harness,
   type HarnessEvent,
@@ -142,12 +143,27 @@ export interface ClaudeCodeDeps
   sandbox?: SandboxAdapterLike;
 }
 
-/** The recorded v0 inference exception (design §9): a boxed harness must reach a
- *  model to think, and that is the ONLY credential in the machine. */
+/**
+ * The recorded v0 inference exception (design §9): a boxed harness must reach a
+ * model to think, and that is the ONLY credential in the machine.
+ *
+ * SELECTION LAW, the same one `boxInference()` in the umbrella obeys: the
+ * explicit VENDO_INFERENCE_URL+KEY pair — which is what the box env door sets —
+ * wins; otherwise VENDO_API_KEY funds the box's model through the console's
+ * Anthropic-compatible gateway at `<console>/api/v1`; otherwise the box gets no
+ * inference credential at all.
+ *
+ * A stray ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL selects NOTHING. It used to
+ * outrank both rungs, so a provider key sitting in the deployment's environment
+ * silently decided which account every box billed. Naming an own endpoint is
+ * still fully supported — as the explicit pair, which is config.
+ */
 export function inferenceEnv(): Record<string, string> {
   const source = globalThis.process?.env ?? {};
-  let key = source["ANTHROPIC_API_KEY"] ?? source["VENDO_INFERENCE_KEY"];
-  let url = source["ANTHROPIC_BASE_URL"] ?? source["VENDO_INFERENCE_URL"];
+  const set = (name: string): string | undefined => {
+    const value = source[name];
+    return value === undefined || value === "" ? undefined : value;
+  };
   const env: Record<string, string> = {
     // Nothing the CLI reaches for on the side: its telemetry and update hosts are
     // not on the box's allowlist (`boxEgress` below), so those calls fail rather
@@ -155,28 +171,31 @@ export function inferenceEnv(): Record<string, string> {
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     DISABLE_AUTOUPDATER: "1",
   };
-  // The third rung, mirroring server.ts's `boxInference()`: no Anthropic
-  // credential and no pre-resolved gateway means VENDO_API_KEY — the same key
-  // that provisions the Cloud machine — funds the box's model through the
-  // console's Anthropic-compatible gateway at `<console>/api/v1`. The gateway
-  // serves the vendo model family as literal ids, so the DEFAULT model is
-  // pinned to the family name — the SDK's own default is a raw claude-* id the
-  // gateway would grace-remap. Only the default: an explicit `options.model`
-  // rides the session-open payload, which beats ANTHROPIC_MODEL.
-  const cloudKey = source["VENDO_API_KEY"];
-  if ((key === undefined || key === "") && (url === undefined || url === "")
-    && cloudKey !== undefined && cloudKey !== "") {
-    const cloudUrl = source["VENDO_CLOUD_URL"];
-    const base = (cloudUrl === undefined || cloudUrl === "" ? "https://console.vendo.run" : cloudUrl)
-      .replace(/\/+$/, "");
+  // The PAIR, both halves or neither: half an endpoint is a misconfiguration, and
+  // quietly completing it from somewhere else is how a box ends up billing an
+  // account nobody chose.
+  const pairKey = set("VENDO_INFERENCE_KEY");
+  const pairUrl = set("VENDO_INFERENCE_URL");
+  const cloudKey = set("VENDO_API_KEY");
+  let key: string | undefined;
+  let url: string | undefined;
+  if (pairKey !== undefined && pairUrl !== undefined) {
+    key = pairKey;
+    url = pairUrl;
+  } else if (cloudKey !== undefined) {
+    const base = (set("VENDO_CLOUD_URL") ?? "https://console.vendo.run").replace(/\/+$/, "");
     key = cloudKey;
     url = base.endsWith("/api/v1") ? base : `${base}/api/v1`;
+    // The gateway serves the vendo model family as literal ids, so the DEFAULT
+    // model is pinned to the family name — the SDK's own default is a raw
+    // claude-* id the gateway would grace-remap. Only the default: an explicit
+    // `options.model` rides the session-open payload, which beats ANTHROPIC_MODEL.
     env["ANTHROPIC_MODEL"] = "vendo";
   }
-  if (key !== undefined && key !== "") env["ANTHROPIC_API_KEY"] = key;
-  if (url !== undefined && url !== "") {
-    env["ANTHROPIC_BASE_URL"] = url.replace(/\/+$/, "").replace(/\/v1$/, "");
-  }
+  if (key === undefined || url === undefined) return env;
+  env["ANTHROPIC_API_KEY"] = key;
+  // The bare origin: the SDK re-appends /v1 and wants no trailing slash.
+  env["ANTHROPIC_BASE_URL"] = url.replace(/\/+$/, "").replace(/\/v1$/, "");
   return env;
 }
 
@@ -348,13 +367,16 @@ let noOriginWarned = false;
 function warnNoOriginOnce(): void {
   if (noOriginWarned) return;
   noOriginWarned = true;
-  console.error(
-    "[vendo] claudeCode() has no origin to reach the MCP door, so this agent has "
-    + "NONE of your product's actions — only its own workspace. Set VENDO_BASE_URL "
-    + "(or `mcp: { baseUrl }`) to an origin this machine can reach. In development "
-    + "the wire learns its own LOOPBACK origin instead, so seeing this locally means "
-    + "NODE_ENV is not \"development\" or the host is not served over localhost.",
-  );
+  log({
+    code: "harnesses.claude-code-no-origin",
+    level: "error",
+    message:
+      "[vendo] claudeCode() has no origin to reach the MCP door, so this agent has "
+      + "NONE of your product's actions — only its own workspace. Set VENDO_BASE_URL "
+      + "(or `mcp: { baseUrl }`) to an origin this machine can reach. In development "
+      + "the wire learns its own LOOPBACK origin instead, so seeing this locally means "
+      + "NODE_ENV is not \"development\" or the host is not served over localhost.",
+  });
 }
 
 /**
@@ -369,12 +391,15 @@ let noAppsHooksWarned = false;
 function warnNoAppsHooksOnce(): void {
   if (noAppsHooksWarned) return;
   noAppsHooksWarned = true;
-  console.error(
-    "[vendo] claudeCode() is running without the apps hooks (hotPaths / validateApps / "
-    + "repairInstruction), so mid-turn hot-path sync and the finish-line validate gate are "
-    + "OFF. Compose through createVendo/createAgent to get them, or pass them to claudeCode() "
-    + "directly.",
-  );
+  log({
+    code: "harnesses.claude-code-no-apps-hooks",
+    level: "error",
+    message:
+      "[vendo] claudeCode() is running without the apps hooks (hotPaths / validateApps / "
+      + "repairInstruction), so mid-turn hot-path sync and the finish-line validate gate are "
+      + "OFF. Compose through createVendo/createAgent to get them, or pass them to claudeCode() "
+      + "directly.",
+  });
 }
 
 /** A callback-driven producer, consumed by the generator that must `yield`. */
@@ -467,11 +492,14 @@ export function claudeCode(
         // so without that check this branch also swallows every workspace-only
         // deployment that simply never named an origin, which is a supported
         // shape and not an error. Those fall through to the warning below.
-        console.error(
-          "[vendo] claudeCode() cannot reach the MCP door: set VENDO_BASE_URL (or "
-          + "`mcp: { baseUrl }`) to the deployment's public origin. The agent's tools "
-          + "travel over that door, so without it the model has no way to act.",
-        );
+        log({
+          code: "harnesses.claude-code-no-mcp-door",
+          level: "error",
+          message:
+            "[vendo] claudeCode() cannot reach the MCP door: set VENDO_BASE_URL (or "
+            + "`mcp: { baseUrl }`) to the deployment's public origin. The agent's tools "
+            + "travel over that door, so without it the model has no way to act.",
+        });
         yield { type: "error", message: "I can't use this product's actions right now." };
         return;
       }
@@ -501,11 +529,14 @@ export function claudeCode(
           // Still reachable by a host driving the runtime directly without a
           // sandbox — and it has to be loud for the operator and quiet for
           // the user.
-          console.error(
-            "[vendo] claudeCode() has no sandbox adapter. Hand it one directly — "
-            + "`harness: claudeCode({ sandbox: e2bSandbox({ apiKey }) })` — or pass "
-            + "`sandbox` into createHarnessTurns so composition fills the slot.",
-          );
+          log({
+            code: "harnesses.claude-code-no-sandbox",
+            level: "error",
+            message:
+              "[vendo] claudeCode() has no sandbox adapter. Hand it one directly — "
+              + "`harness: claudeCode({ sandbox: e2bSandbox({ apiKey }) })` — or pass "
+              + "`sandbox` into createHarnessTurns so composition fills the slot.",
+          });
           yield { type: "error", message: "I can't run right now — this assistant is missing its workspace machine." };
           return;
         }
@@ -651,7 +682,12 @@ export function claudeCode(
           }).then(() => events.close(), (error: unknown) => {
             // The thinker failed; the user hears one plain sentence and the turn
             // still lands whatever work reached the disk.
-            console.error("[vendo] claude-code turn failed", error);
+            log({
+              code: "harnesses.claude-code-turn-failed",
+              level: "error",
+              message: "[vendo] claude-code turn failed",
+              data: { error },
+            });
             events.push({ type: "error", message: "Something went wrong while I was working on that." });
             events.close();
           });
@@ -715,12 +751,22 @@ export function claudeCode(
         try {
           collected = await machine.collect();
         } catch (error) {
-          console.error("[vendo] claude-code could not read the workspace back", error);
+          log({
+            code: "harnesses.claude-code-workspace-read-failed",
+            level: "error",
+            message: "[vendo] claude-code could not read the workspace back",
+            data: { error },
+          });
         }
         if (collected !== undefined) {
           const files = collected;
           await serialize(() => checkout.syncAll(files)).catch((error: unknown) => {
-            console.error("[vendo] claude-code sync-back failed", error);
+            log({
+              code: "harnesses.claude-code-sync-back-failed",
+              level: "error",
+              message: "[vendo] claude-code sync-back failed",
+              data: { error },
+            });
           });
         }
         try {

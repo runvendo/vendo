@@ -10,7 +10,7 @@ import { detectDepVersions, installedAiVersion } from "./dep-versions.js";
 import { AUTH_MD_URL, ensureEnvLocalIgnored, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { runDoctor } from "./doctor.js";
 import type { InitPolishSeam } from "./init-judgment.js";
-import { planMcp, type McpPosture } from "./init-mcp.js";
+import { mcpStepLines, planMcp, type McpPosture } from "./init-mcp.js";
 import { rendererFlowOptions, runSyncFlow, type SyncFlowResult } from "./sync-flow.js";
 import { BRIEF_TEMPLATE } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
@@ -36,6 +36,7 @@ import {
   serverActionsModuleSource,
   serverActionsWiring,
   VENDO_ENV_EXAMPLE,
+  type ScaffoldModel,
 } from "./init-scaffolds.js";
 import { createPrettyOutput, plainSecret, plainSelect, plainText, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { contrastingText } from "./theme/color.js";
@@ -835,6 +836,10 @@ async function planMcpScaffold(input: {
     cloudKey,
     posture,
     serviceKey,
+    // The composition moves into ./vendo on this path, so the models line the
+    // route scaffold planned moves with it — resolved the same way, written in
+    // exactly one of the two files.
+    models: scaffoldModel(root, options),
     // Not optional: a null base URL is an ANSWER the plan reads, and it is
     // what makes steps[] lead with the recoverable version of E-MCP-009's
     // failure instead of assuming an origin.
@@ -939,6 +944,17 @@ interface ScaffoldPlan {
   authWired: AuthMatch | null;
   compositionPath: string | null;
   layout: LayoutWiring;
+  /** The provider and file of the `models` line this run wrote — the migration
+      path off the removed ambient-key behaviour, and what the closing summary
+      reports. Null when no provider key resolved, or when the composition
+      already existed (init never edits a file it did not author). */
+  modelWritten: { provider: ScaffoldModel["provider"]; path: string } | null;
+  /** Re-render the composition this run authored with an explicit `models` line,
+      for a provider key that only arrives AFTER planning: the `--byo` paste lands
+      in .env.local during the cloud step, which runs after the plan is built but
+      before a single file is written. Returns the modelWritten to report. Null
+      when this run authored no composition. */
+  rewriteModels: ((model: ScaffoldModel) => ScaffoldPlan["modelWritten"]) | null;
 }
 
 const emptyScaffold = (layout: LayoutWiring): ScaffoldPlan => ({
@@ -948,6 +964,8 @@ const emptyScaffold = (layout: LayoutWiring): ScaffoldPlan => ({
   authWired: null,
   compositionPath: null,
   layout,
+  modelWritten: null,
+  rewriteModels: null,
 });
 
 async function planCustomComposition(
@@ -1069,11 +1087,22 @@ async function planNextComposition(
     const path = relative(root, route);
     // Detect + confirm happens only on fresh composition creation.
     const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
-    const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired });
-    scaffold.changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
+    const models = scaffoldModel(root, options);
+    const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, models });
+    const routeChange = { absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) };
+    scaffold.changes.push(routeChange);
     scaffold.authAdvice = auth.advice;
     scaffold.authWired = auth.wired;
     scaffold.compositionPath = path;
+    if (models !== null) scaffold.modelWritten = { provider: models.provider, path };
+    // Same renderer, same arguments, one late model — never a second way to
+    // write this line. The change object is still unwritten at this point.
+    scaffold.rewriteModels = (model) => {
+      const rewritten = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, models: model });
+      routeChange.after = rewritten;
+      routeChange.diff = diff(path, routeBefore, rewritten);
+      return { provider: model.provider, path };
+    };
   } else if (registrations.length > 0) {
     // The route already exists but server actions appeared since it was
     // generated: name the wiring the existing createVendo is missing, so
@@ -1106,6 +1135,10 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   compositionPath: string | null;
   /** How the visible surface reached (or didn't reach) the layout. */
   layout: LayoutWiring;
+  /** The `models` line this run wrote, and where (ScaffoldPlan.modelWritten). */
+  modelWritten: ScaffoldPlan["modelWritten"];
+  /** See ScaffoldPlan.rewriteModels — the `--byo` paste arrives after this plan. */
+  rewriteModels: ScaffoldPlan["rewriteModels"];
 }> {
   const root = resolve(options.targetDir);
   // The non-interactive guard still demands an explicit --framework, so
@@ -1116,7 +1149,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     : framework === "express"
       ? await planExpressComposition(root, options, confirmAuth, selectAuth)
       : await planNextComposition(root, options, confirmAuth, selectAuth);
-  const { changes, edits, authAdvice, authWired, compositionPath, layout } = scaffold;
+  const { changes, edits, authAdvice, authWired, compositionPath, layout, modelWritten, rewriteModels } = scaffold;
 
   const packageJson = join(root, "package.json");
   const packageBefore = await readOptional(packageJson);
@@ -1171,6 +1204,8 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     authWired,
     compositionPath,
     layout,
+    modelWritten,
+    rewriteModels,
     plan: {
       framework,
       // Only when the run named one: an unattended plan stays byte-identical
@@ -1377,6 +1412,45 @@ async function guardUndetectedFramework(input: {
   return true;
 }
 
+/** The env every credential consumer reads. Dev keys may live in .env.local
+    rather than this process's env — a PRIOR run's minted starter key, or
+    hand-added provider keys — so they are merged in for the credential ladder,
+    the cloud step, the theme model pass and the AI polish. An explicit env
+    value always wins over .env.local. */
+function credentialEnv(root: string, env: Record<string, string | undefined>): Record<string, string | undefined> {
+  let effective = env;
+  for (const name of [...ENV_KEY_VARS.map((entry) => entry.envVar), "VENDO_API_KEY"]) {
+    if ((env[name] ?? "").trim() !== "") continue;
+    const stored = envFileValueSync(root, name);
+    if (stored !== null) effective = { ...effective, [name]: stored };
+  }
+  return effective;
+}
+
+/** The provider key a scaffold written THIS run should name in `models`, or
+ *  null when the host has no provider key at all. A Cloud key is not one: its
+ *  models resolve through the gateway's own family names, so nothing is written.
+ *
+ *  This sweeps ENV_KEY_VARS directly instead of asking `resolveDevCredential`.
+ *  "Which provider key is lying around for me to write an explicit selection
+ *  for?" is a DIFFERENT question from "what selects the model at runtime?", and
+ *  since the selection law a bare provider key answers the second one with
+ *  nothing — so routing this through the runtime ladder silently returned null
+ *  for every real host and wrote no line at all. That is backwards: the ambient
+ *  key is exactly the signal that this host needs the explicit selection, since
+ *  it is the host whose boot the law just broke. The ladder's own env-key rung
+ *  is reachable only through the internal VENDO_DEV_CREDENTIAL pin, which no
+ *  host running `vendo init` sets.
+ *
+ *  Resolved here, at scaffold time, because the file is authored before the
+ *  interactive credential step runs — detection is pure and read-only, so
+ *  asking twice costs nothing. */
+function scaffoldModel(root: string, options: InitOptions): ScaffoldModel | null {
+  const env = credentialEnv(root, options.env ?? process.env);
+  const found = ENV_KEY_VARS.find((entry) => (env[entry.envVar] ?? "").trim() !== "");
+  return found === undefined ? null : { provider: found.provider, envVar: found.envVar };
+}
+
 /** Key first (product order fix): the model-credential story — env keys,
  *  else the Vendo Cloud offer — runs BEFORE the AI-assisted passes, so a
  *  starter key minted here powers the SAME run's theme model pass and AI
@@ -1390,17 +1464,7 @@ async function resolveModelCredential(input: {
   pretty: PrettyOutput | null;
 }): Promise<{ credential: DevCredential; cloud: Awaited<ReturnType<typeof runCloudStep>> }> {
   const { root, env, options, output, pretty } = input;
-  // Dev keys may live in .env.local rather than this process's env — a
-  // PRIOR run's minted starter key, or hand-added provider keys. Merge
-  // them into the env every credential consumer reads (credential ladder,
-  // cloud step, theme model pass, AI polish); an explicit env value
-  // always wins over .env.local.
-  let effectiveEnv = env;
-  for (const name of [...ENV_KEY_VARS.map((entry) => entry.envVar), "VENDO_API_KEY"]) {
-    if ((env[name] ?? "").trim() !== "") continue;
-    const stored = envFileValueSync(root, name);
-    if (stored !== null) effectiveEnv = { ...effectiveEnv, [name]: stored };
-  }
+  let effectiveEnv = credentialEnv(root, env);
   let credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
   if (credential.rung === "env-key") {
     // Their key is a decision already made, so this stays a statement and
@@ -1571,8 +1635,10 @@ async function ensureHostDeps(input: {
   pretty: PrettyOutput | null;
   interactive: boolean;
   credential: DevCredential;
+  /** The provider whose import this run wrote into the composition, if any. */
+  wrote: ScaffoldModel["provider"] | undefined;
 }): Promise<void> {
-  const { root, output, options, pretty, interactive, credential } = input;
+  const { root, output, options, pretty, interactive, credential, wrote } = input;
   // #1153: the scaffolds this run wrote import `@vendoai/vendo/*`, and a host
   // installed under the `vendoai` alias alone cannot resolve them under pnpm's
   // strict node_modules — the route fails to COMPILE and every request 500s.
@@ -1582,13 +1648,18 @@ async function ensureHostDeps(input: {
     ...(options.installVendo === undefined ? {} : { run: options.installVendo }),
   });
 
-  // The credential's runtime provider must be resolvable from the host or
-  // the FIRST turn 500s (dev-creds/model.ts loads it host-side; nothing
-  // declares @ai-sdk/* — 0.4.1 E2E cert finding). Install exactly what the
-  // resolved credential needs; a failure degrades to the manual command.
+  // The provider must be resolvable from the host or the FIRST turn 500s
+  // (dev-creds/model.ts loads it host-side; nothing declares @ai-sdk/* — 0.4.1
+  // E2E cert finding). Two sources, because since the selection law they differ:
+  // the resolved CREDENTIAL names what a runtime turn loads, and `wrote` names
+  // the import this run just authored — a bare provider key is `rung: "none"`,
+  // so the credential alone said "nothing to install" for a route that had just
+  // been given an `@ai-sdk/*` import, and the host's build could not resolve it.
+  // A failure degrades to the manual command.
   await ensureProviderDeps({
     root,
     credential,
+    ...(wrote === undefined ? {} : { wrote }),
     output,
     ...(options.installProvider === undefined ? {} : { run: options.installProvider }),
   });
@@ -1653,9 +1724,11 @@ async function finishRun(input: {
   ];
   printClosingSteps({ output, handSteps, manualSteps, credential, cloud, compositionPath });
   if (mcp !== null) {
-    const lines = [...mcp.steps, ...mcp.envLines];
-    if (pretty === null) for (const line of lines) output.log(`  ${line}`);
-    else pretty.block("Steps that are yours", lines, "◇");
+    // A step is `headline\ndetail`: the pretty block numbers and indents it,
+    // and a plain transcript keeps the detail on its own indented line.
+    if (pretty === null) {
+      for (const line of [...mcp.steps, ...mcp.envLines]) output.log(`  ${line.replace(/\n/g, "\n    ")}`);
+    } else pretty.block("Steps that are yours", mcpStepLines(mcp), "◇");
   }
 
   // The live check offers itself ONLY when nothing is left to paste: doctor
@@ -1724,12 +1797,17 @@ export async function runInit(options: InitOptions): Promise<number> {
   // reasons, and showing it is the moment the tool proves it looked.
   if (pretty !== null) {
     // Detect FIRST, print second: the banner's arrival plays over this work.
-    // It reads a handful of files, though, so the arrival is the longer of the
-    // two — awaiting the remainder is what makes it an arrival instead of a
-    // flash, and it is bounded by the frame budget (~1.3s), not by this run.
+    // The reveal then narrates it — a beat of "Reading your app…" and the
+    // facts landing one by one — so the wave reads as detection time, and the
+    // section arrives as a rhythm instead of a burst after the arrival.
     const stack = await stackLines(root, await resolveFramework(root, options));
-    await pretty.arrived;
-    pretty.block("Your stack", stack);
+    // Each fact gets a labeled beat — the scan narrates what it is looking at
+    // while it lands the answer it already has.
+    const facts = stack.map((text, index) => ({
+      beat: index === 0 ? "Detecting your framework…" : index === 1 ? "Checking auth…" : undefined,
+      text,
+    }));
+    await pretty.revealBlock("Your stack", facts, { beat: "Reading your app…" });
   }
   const useCase = await resolveUseCase({ options, pretty, interactive });
 
@@ -1743,7 +1821,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
   const detectStarted = Date.now();
-  const { plan, changes, edits, manualSteps, mount, authAdvice, authWired, compositionPath, layout } = await buildPlan(options, confirmAuth, selectAuth);
+  const { plan, changes, edits, manualSteps, mount, authAdvice, authWired, compositionPath, layout, modelWritten, rewriteModels } = await buildPlan(options, confirmAuth, selectAuth);
   const detectMs = Date.now() - detectStarted;
   let telemetry = telemetryFor(options, output, root);
   await telemetry.track("init_started", { framework: plan.framework });
@@ -1777,6 +1855,21 @@ export async function runInit(options: InitOptions): Promise<number> {
         root, options, output, pretty, interactive, changes, baseUrl,
         framework: plan.framework, authWired, cloudKey: cloud.keyValid,
       });
+    }
+
+    // A provider key pasted THIS run (`vendo init --byo`) lands in .env.local
+    // during the cloud step — after the plan was built, before anything is
+    // written. Re-render the composition so the key the user just handed over
+    // selects a model instead of sitting dead in a file the run also told them
+    // was wired. Written exactly ONCE: the MCP arm plans after the cloud step,
+    // so its own scaffold already saw the key (hence the mcp === null gate), and
+    // a run whose plan already carries a line never reaches this.
+    let pastedModel: ScaffoldPlan["modelWritten"] = null;
+    if (mcp === null && modelWritten === null && rewriteModels !== null) {
+      const pasted = ENV_KEY_VARS.find((entry) => entry.envVar === cloud.wroteKeyVar);
+      if (pasted !== undefined) {
+        pastedModel = rewriteModels({ provider: pasted.provider, envVar: pasted.envVar });
+      }
     }
 
     pretty?.spin("Wiring your app…");
@@ -1851,12 +1944,37 @@ export async function runInit(options: InitOptions): Promise<number> {
       ...(await cloudProjectProps(root)),
     });
 
-    await ensureHostDeps({ root, output, options, pretty, interactive, credential });
+    // What the run actually WROTE, resolved before the install step because the
+    // install has to cover the import this run authored — not only what the
+    // runtime credential would load.
+    //
+    // It only ever names the file that actually holds the line. The MCP arm
+    // REPLACES the route this planned for with the thin handler over ./vendo (a
+    // route module may export only handlers), so the line lives in that plan's
+    // composition module and `planMcp` reports which file that is.
+    const modelLanded = mcp === null ? (modelWritten ?? pastedModel) : mcp.modelWritten;
 
-    // The one short Cloud reminder in the end-of-run summary — ONLY while no
-    // key exists (the full emphasized block already ran up top; no repeat).
-    if (credential.rung === "none") {
-      output.log("No model key yet: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or run `vendo login` for a free dev key.");
+    await ensureHostDeps({
+      root, output, options, pretty, interactive, credential,
+      wrote: modelLanded?.provider,
+    });
+
+    // The one line that closes the model story. A provider key is a credential
+    // now, not a selection: nothing picks a model off the environment any more,
+    // so the run says which model it SELECTED for them and in which file — the
+    // explicit config is already there to edit, and no first boot fails on the
+    // removed ambient behaviour.
+    if (modelLanded !== null) {
+      output.log(`models: ${modelLanded.provider} — written into ${modelLanded.path}`);
+    }
+    // The one short Cloud reminder in the end-of-run summary — ONLY while this
+    // host has no model at all (the full emphasized block already ran up top; no
+    // repeat). A provider key resolves to `rung: "none"` since the selection law,
+    // so the models line above is the other half of the test: without it this
+    // line contradicted the line directly above it. And it names what the key
+    // alone no longer does — advising the bare variable was the whole bug.
+    if (credential.rung === "none" && modelLanded === null) {
+      output.log("No model key yet: select one in your composition — models: { default: anthropic(\"claude-sonnet-4-6\") } — with ANTHROPIC_API_KEY in .env.local, or run `vendo login` for a free dev key (VENDO_API_KEY). A provider key alone no longer selects a model.");
     }
 
     // #478 short-term — npm installs the ai@7 peer conflict without failing

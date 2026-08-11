@@ -102,7 +102,7 @@ const decoder = new TextDecoder();
 
 /**
  * 02-store — the LOCAL backend of the StoreOps named-operation contract
- * (core/store.ts): the 42 ops served straight off this store's own Postgres,
+ * (core/store.ts): the 35 ops served straight off this store's own Postgres,
  * through the EXISTING helpers — routing doors, thread rows, workspace rows, the
  * erase cascade. Logic unchanged; what this layer adds is the atomic scope:
  * every multi-statement verb runs inside ONE
@@ -190,55 +190,10 @@ export function createStoreOps(
 
   return {
     // -----------------------------------------------------------------------
-    // records — the routed doors, verbatim; per-collection policy lives there.
-    // -----------------------------------------------------------------------
-    records: {
-      async get(collection, id) {
-        return await recordsDoor(db, collection).get(id);
-      },
-      async put(collection, record) {
-        return await db.transaction((q) => recordsDoor(txDb(q), collection).put(record));
-      },
-      async delete(collection, id) {
-        await db.transaction((q) => recordsDoor(txDb(q), collection).delete(id));
-      },
-      async list(collection, query) {
-        return await recordsDoor(db, collection).list(query);
-      },
-      async claim(collection, expected, replacement) {
-        return await db.transaction(async (q) => {
-          const door = recordsDoor(txDb(q), collection);
-          if (door.claim === undefined) {
-            throw new VendoError("not-implemented", `${collection} does not support claim`);
-          }
-          return await door.claim(expected, replacement);
-        });
-      },
-      async insertIfAbsent(collection, record) {
-        return await db.transaction(async (q) => {
-          const door = recordsDoor(txDb(q), collection);
-          if (door.atomic === undefined) {
-            throw new VendoError("not-implemented", `${collection} does not support insertIfAbsent`);
-          }
-          return await door.atomic.insertIfAbsent(record);
-        });
-      },
-      async compareAndSwap(collection, record, expectedRevision) {
-        return await db.transaction(async (q) => {
-          const door = recordsDoor(txDb(q), collection);
-          if (door.atomic === undefined) {
-            throw new VendoError("not-implemented", `${collection} does not support compareAndSwap`);
-          }
-          return await door.atomic.compareAndSwap(record, expectedRevision);
-        });
-      },
-    },
-
-    // -----------------------------------------------------------------------
-    // engine — the same seven verbs onto the same routed doors, with the same
-    // per-collection policy living there; the ONE addition is the allowlist
-    // gate, which is why the audit door is still append-only and the effects
-    // door still insert-once through this family.
+    // engine — seven verbs onto the routed doors, with the per-collection
+    // policy living there; the ONE addition is the allowlist gate, which is why
+    // the audit door is still append-only and the effects door still
+    // insert-once through this family.
     // -----------------------------------------------------------------------
     engine: {
       async get(collection, id) {
@@ -724,7 +679,7 @@ export function createStoreOps(
     },
 
     async status() {
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 42 };
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 35 };
     },
   };
 }

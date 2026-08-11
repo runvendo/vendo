@@ -5,7 +5,7 @@
  * Lifted out of `createApps` unchanged.
  */
 import { VendoError } from "@vendoai/core";
-import { documentFromRecord } from "../persistence/persistence.js";
+import { APPS_COLLECTION, documentFromRecord } from "../persistence/persistence.js";
 import { collectSecretValues, redactSecretJson } from "../persistence/redaction.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime } from "../runtime/types.js";
@@ -42,9 +42,9 @@ export const createMachineSurface = (
  *  require — the wake, the egress pre-flight and the redaction guard are one
  *  forwarder (`box-lane.ts`). */
 export const createServedDoors = (
-  deps: Pick<AppsRuntimeContext, "config" | "apps" | "lifecycle" | "requireOwned" | "forwardToBox">,
+  deps: Pick<AppsRuntimeContext, "config" | "engine" | "lifecycle" | "requireOwned" | "forwardToBox">,
 ): Pick<AppsRuntime, "serve" | "box"> => {
-  const { config, apps, lifecycle, requireOwned, forwardToBox } = deps;
+  const { config, engine, lifecycle, requireOwned, forwardToBox } = deps;
   return {
     async serve(appId, request, ctx) {
       // §9.8 — LIVE rows, every request. `viewer` is the level because a
@@ -67,7 +67,7 @@ export const createServedDoors = (
       },
 
       async redact(appId, value) {
-        const record = await apps.get(appId);
+        const record = await engine.get(APPS_COLLECTION, appId);
         if (record === null) return value;
         // issue #566 — same per-box cache preference as box.request: an
         // injected value redacts without a refetch that could fail.

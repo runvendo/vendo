@@ -13,16 +13,16 @@ import {
 } from "../../contract/index.js";
 import { createAgentTools } from "./agent-tools.js";
 import { allRecords } from "./access-checks.js";
-import { appRecordInput, documentFromRecord, withoutSession } from "../persistence/persistence.js";
+import { APPS_COLLECTION, appRecordInput, documentFromRecord, withoutSession } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime } from "../runtime/types.js";
 
 const createAppReadDoors = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "caller" | "history" | "review" | "opener" | "owned" | "requireOwned"
+    "config" | "engine" | "caller" | "history" | "review" | "opener" | "owned" | "requireOwned"
     | "grantedRecords">,
 ): Pick<AppsRuntime, "get" | "list" | "history" | "open" | "call"> => {
-  const { config, caller, history, review, opener, owned, requireOwned } = deps;
+  const { config, engine, caller, history, review, opener, owned, requireOwned } = deps;
   const { grantedRecords } = deps;
   return {
     async get(appId, ctx) {
@@ -31,7 +31,7 @@ const createAppReadDoors = (
     },
 
     async list(ctx) {
-      const records = await allRecords(config.store, { subject: ctx.principal.subject });
+      const records = await allRecords(engine, { subject: ctx.principal.subject });
       // Build contract §9.3 — owned ∪ granted. The grant rows already name the
       // apps this caller reaches, so the union is one extra id fetch rather
       // than a scan; `can()` still decides each one (a grant to a team the
@@ -106,9 +106,9 @@ const createAppReadDoors = (
 };
 
 const createAppCopyDoors = (
-  deps: Pick<AppsRuntimeContext, "config" | "apps" | "interchange" | "requireOwned" | "reportLifecycle">,
+  deps: Pick<AppsRuntimeContext, "config" | "engine" | "interchange" | "requireOwned" | "reportLifecycle">,
 ): Pick<AppsRuntime, "fork" | "exportApp" | "importApp" | "share" | "publish"> => {
-  const { config, apps, interchange, requireOwned, reportLifecycle } = deps;
+  const { config, engine, interchange, requireOwned, reportLifecycle } = deps;
   return {
     async fork(appId, ctx) {
       const source = await requireOwned(appId, ctx, "viewer");
@@ -138,7 +138,7 @@ const createAppCopyDoors = (
       // The conversation belongs to the owner who had it, not to the copy: the
       // persist already drops it (appRecordInput takes no session here), and the
       // RETURNED document must not hand it back either.
-      await apps.put(appRecordInput(fork, ctx.principal.subject, false, "seed"));
+      await engine.put(APPS_COLLECTION, appRecordInput(fork, ctx.principal.subject, false, "seed"));
       await reportLifecycle("fork", fork.id, ctx, { sourceAppId: source.id });
       return withoutSession(structuredClone(fork));
     },
@@ -179,7 +179,7 @@ const createAppCopyDoors = (
 /** The app-record slice of `AppsRuntime`. */
 export const createAppsSurface = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "apps" | "caller" | "data" | "history" | "review" | "opener" | "interchange"
+    "config" | "engine" | "caller" | "data" | "history" | "review" | "opener" | "interchange"
     | "inClientApprovals" | "egressApprovals" | "parkedActions" | "placementRows"
     | "lifecycle" | "owned" | "requireOwned"
     | "grantedRecords" | "reportLifecycle" | "claimSlot" | "markUnbuilt"
@@ -187,7 +187,7 @@ export const createAppsSurface = (
 ): Pick<AppsRuntime,
   "get" | "list" | "delete" | "fork" | "share" | "publish"
   | "exportApp" | "importApp" | "history" | "open" | "call" | "agentTools"> => {
-  const { config, apps, data, history, review, inClientApprovals } = deps;
+  const { config, engine, data, history, review, inClientApprovals } = deps;
   const { egressApprovals, parkedActions, placementRows, lifecycle } = deps;
   const { requireOwned, reportLifecycle, claimSlot, markUnbuilt, runtime } = deps;
   return {
@@ -206,7 +206,7 @@ export const createAppsSurface = (
       await review.clear(appId);
       await egressApprovals.clearForApp(appId);
       await parkedActions.clearForApp(appId);
-      await apps.delete(appId);
+      await engine.delete(APPS_COLLECTION, appId);
       // A deleted app can never mount again, so its placement rows are dead
       // weight — and a row with no app record reads as a build in flight, which
       // would park a skeleton in the slot until the build window elapsed and

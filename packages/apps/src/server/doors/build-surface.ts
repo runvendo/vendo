@@ -11,10 +11,10 @@ import {
   VENDO_TREE_FORMAT,
   VendoError,
   describeShapeWithSemantics,
+  log,
   safeErrorMessage,
   type AppId,
   type Json,
-  type RecordStore,
   type RunContext,
   type UIPayload,
   vendoViewPart,
@@ -57,7 +57,8 @@ import { skeletonFromPlan } from "../generation/skeleton.js";
 import { UNSTORED_APP_ID, validateCompiledCreate } from "../generation/validation/validate.js";
 import { generationDependencies, resolveProvider } from "../runtime/generation-context.js";
 import { createProgressiveQueryResolver } from "../persistence/open.js";
-import { appRecordInput, documentFromRecord, withoutSession } from "../persistence/persistence.js";
+import type { EngineOps } from "../persistence/engine.js";
+import { APPS_COLLECTION, appRecordInput, documentFromRecord, withoutSession } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime } from "../runtime/types.js";
 import { wireCompileOptionsFor } from "../runtime/wire-options.js";
@@ -103,21 +104,25 @@ export const assembleTree = (source: {
  * reverse.
  */
 const startBuildWatchdog = (
-  apps: RecordStore,
+  engine: EngineOps,
   appId: AppId,
   prompt: string,
   subject: string,
 ): ReturnType<typeof setTimeout> => {
   const watchdog = setTimeout(() => {
     void (async () => {
-      if (await apps.get(appId) !== null) return;
-      await apps.put(appRecordInput({
+      if (await engine.get(APPS_COLLECTION, appId) !== null) return;
+      await engine.put(APPS_COLLECTION, appRecordInput({
         format: "vendo/app@1",
         id: appId,
         name: fallbackAppName(prompt),
         buildFailed: { reason: BUILD_WATCHDOG_REASON, retryable: true, at: new Date().toISOString(), prompt },
       }, subject, false, "screen-agent"));
-      console.error(`[vendo] app build watchdog (${appId}): no app record and no failure landed within ${buildWatchdogMs()}ms — persisted a terminal failed record so the embed resolves instead of polling forever.`);
+      log({
+        code: "apps.build-watchdog-fired",
+        level: "error",
+        message: `[vendo] app build watchdog (${appId}): no app record and no failure landed within ${buildWatchdogMs()}ms — persisted a terminal failed record so the embed resolves instead of polling forever.`,
+      });
     })().catch(() => undefined);
   }, buildWatchdogMs());
   (watchdog as { unref?: () => void }).unref?.();
@@ -127,27 +132,31 @@ const startBuildWatchdog = (
 /** The terminal failed record + the classified throw, shared by a thrown
  *  build turn and an honest refusal. */
 const createBuildFailer = (bound: {
-  apps: RecordStore;
+  engine: EngineOps;
   appId: AppId;
   prompt: string;
   subject: string;
   watchdog: ReturnType<typeof setTimeout>;
 }) => {
-  const { apps, appId, prompt, subject, watchdog } = bound;
+  const { engine, appId, prompt, subject, watchdog } = bound;
   return async (
     reason: string,
     retryable: boolean,
     detail: readonly string[],
     code: VendoError["code"] = "validation",
   ): Promise<never> => {
-    await apps.put(appRecordInput({
+    await engine.put(APPS_COLLECTION, appRecordInput({
       format: "vendo/app@1",
       id: appId,
       name: fallbackAppName(prompt),
       buildFailed: { reason, retryable, at: new Date().toISOString(), prompt },
     }, subject, false, "screen-agent")).catch(() => undefined);
     clearTimeout(watchdog);
-    console.error(`[vendo] app build failed (${appId}): ${reason}${detail.map((line) => `\n  - ${line}`).join("")}`);
+    log({
+      code: "apps.build-failed",
+      level: "error",
+      message: `[vendo] app build failed (${appId}): ${reason}${detail.map((line) => `\n  - ${line}`).join("")}`,
+    });
     throw new VendoError(
       code,
       `${VENDO_APP_BUILD_FAILED_PREFIX}: ${reason}`,
@@ -168,7 +177,7 @@ const createBuildFailer = (bound: {
  * name.
  */
 const routeThroughAssembler = async (
-  bound: Pick<AppsRuntimeContext, "config" | "apps"> & {
+  bound: Pick<AppsRuntimeContext, "config" | "engine"> & {
     appId: AppId;
     createStartedAt: number;
     watchdog: ReturnType<typeof setTimeout>;
@@ -177,7 +186,7 @@ const routeThroughAssembler = async (
   input: CreateInput,
   ctx: RunContext,
 ): Promise<{ kind: "assembled"; document: AppDocument } | { kind: "plan"; planText: string | undefined }> => {
-  const { config, apps, appId, createStartedAt, watchdog, failBuild } = bound;
+  const { config, engine, appId, createStartedAt, watchdog, failBuild } = bound;
   if (config.screen === undefined) {
     return failBuild(NO_ASSEMBLER, false, [NO_ASSEMBLER], "not-implemented");
   }
@@ -204,10 +213,14 @@ const routeThroughAssembler = async (
     // The row is the check that "assembled" is true rather than merely
     // intended: `authored` upserts it iff the seam really compiled and
     // painted the document, so a save nobody can render leaves no row.
-    const stored = await apps.get(appId).catch(() => null);
+    const stored = await engine.get(APPS_COLLECTION, appId).catch(() => null);
     if (stored === null) return failBuild(NOTHING_RENDERABLE, true, [NOTHING_RENDERABLE]);
     clearTimeout(watchdog);
-    console.info(`[vendo] assembled app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`);
+    log({
+      code: "apps.assembled",
+      level: "info",
+      message: `[vendo] assembled app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`,
+    });
     return { kind: "assembled", document: withoutSession(documentFromRecord(stored)) };
   }
   if (routed.kind === "unavailable") {
@@ -258,10 +271,10 @@ const emitView = (onView: CreateInput["onView"], appId: AppId, payload: Tree): v
 
 const createCreateDoor = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "apps" | "caller" | "lifecycle" | "claimSlot" | "generationToolContext"
+    "config" | "engine" | "caller" | "lifecycle" | "claimSlot" | "generationToolContext"
     | "reportLifecycle" | "runServerWork">,
 ): AppsRuntime["create"] => {
-  const { config, apps, caller, lifecycle, claimSlot, generationToolContext } = deps;
+  const { config, engine, caller, lifecycle, claimSlot, generationToolContext } = deps;
   const { reportLifecycle, runServerWork } = deps;
   return async (input, ctx) => {
     if (config.model === undefined) {
@@ -275,15 +288,15 @@ const createCreateDoor = (
     // B1, for a caller that minted its id HERE. The front door claims before
     // it routes (it minted earlier), so it passes no slot down.
     if (input.slot !== undefined) await claimSlot(appId, input.slot, ctx);
-    const watchdog = startBuildWatchdog(apps, appId, input.prompt, ctx.principal.subject);
+    const watchdog = startBuildWatchdog(engine, appId, input.prompt, ctx.principal.subject);
     const generationDeps = generationDependencies(config, config.model, await generationToolContext(ctx));
 
-    const failBuild = createBuildFailer({ apps, appId, prompt: input.prompt, subject: ctx.principal.subject, watchdog });
+    const failBuild = createBuildFailer({ engine, appId, prompt: input.prompt, subject: ctx.principal.subject, watchdog });
 
     let planText = input.plan;
     if (planText === undefined) {
       const routed = await routeThroughAssembler(
-        { config, apps, appId, createStartedAt, watchdog, failBuild }, input, ctx);
+        { config, engine, appId, createStartedAt, watchdog, failBuild }, input, ctx);
       if (routed.kind === "assembled") return routed.document;
       planText = routed.planText;
     }
@@ -327,13 +340,17 @@ const createCreateDoor = (
     // replaced by a second card.
     let unsavedReason: string | undefined;
     try {
-      await apps.put(appRecordInput(app, ctx.principal.subject, false, "screen-agent"));
+      await engine.put(APPS_COLLECTION, appRecordInput(app, ctx.principal.subject, false, "screen-agent"));
     } catch (error) {
       // A persist failure degrades the app to view-only — it renders, it just
       // is not in the user's list and cannot be reopened. Far better than
       // discarding a working view, but never silent.
       unsavedReason = safeErrorMessage(error);
-      console.error(`[vendo] app not saved (${appId}): the view rendered but the store rejected it — ${unsavedReason}`);
+      log({
+        code: "apps.create-not-saved",
+        level: "error",
+        message: `[vendo] app not saved (${appId}): the view rendered but the store rejected it — ${unsavedReason}`,
+      });
     }
     clearTimeout(watchdog);
     if (unsavedReason !== undefined) {
@@ -355,10 +372,18 @@ const createCreateDoor = (
         console.info(findingLine(finding));
       }
     } catch (error) {
-      console.warn(`[vendo] server work skipped for ${appId} (the app stands without it): ${safeErrorMessage(error)}`);
+      log({
+        code: "apps.server-work-skipped",
+        level: "warn",
+        message: `[vendo] server work skipped for ${appId} (the app stands without it): ${safeErrorMessage(error)}`,
+      });
     }
     await paintSettledTree(caller, app, ctx, input.onView, appId);
-    console.info(`[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`);
+    log({
+      code: "apps.gen-create-complete",
+      level: "info",
+      message: `[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`,
+    });
     return structuredClone(app);
   };
 };
@@ -530,7 +555,7 @@ const createValidateDoor = (
 /** The build slice of `AppsRuntime`. */
 export const createBuildSurface = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "apps" | "caller" | "lifecycle" | "claimSlot" | "generationToolContext"
+    "config" | "engine" | "caller" | "lifecycle" | "claimSlot" | "generationToolContext"
     | "reportLifecycle" | "runServerWork" | "requireOwned" | "runtime">,
 ): Pick<AppsRuntime, "create" | "toolShapeBrief" | "floor" | "agentToolRisk" | "validate"> => {
   const { config, generationToolContext } = deps;

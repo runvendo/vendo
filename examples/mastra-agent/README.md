@@ -44,10 +44,11 @@ cp .env.example .env   # add OPENAI_API_KEY (the starter agent's model)
 pnpm dev               # http://localhost:3000
 ```
 
-App generation resolves a model key from the environment independently
-(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `VENDO_API_KEY`) — two models,
-deliberately: your agent keeps its model, Vendo's `model` seam powers
-generation and the delegate.
+Two models, deliberately: your agent keeps its own, and Vendo's `models` block
+powers generation and the delegate. That block is in `src/lib/vendo.ts` and it
+is what SELECTS — `OPENAI_API_KEY` only funds it. With no provider key, set
+`VENDO_API_KEY` instead and the composition leaves both seats to the Cloud
+gateway; a provider key sitting in the environment selects nothing on its own.
 
 ## Demo script
 

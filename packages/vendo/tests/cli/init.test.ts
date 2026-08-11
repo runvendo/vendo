@@ -192,6 +192,35 @@ describe("vendo init (zero-question)", () => {
     expect(logs).not.toContain("vendo refine");
   });
 
+  // A plain transcript is parsed as often as it is read, so the MCP steps keep
+  // their exact strings there — the newline inside a step becomes an indent and
+  // nothing else. (The pretty run numbers the same strings; mcpStepLines owns
+  // that half.)
+  it("mcp: the plain transcript indents each step's detail under its headline", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-mcp-plain-"));
+    cleanup.push(root);
+    await mkdir(join(root, "app"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "mcp-host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" },
+    }));
+    await writeFile(join(root, "tsconfig.json"), "{}\n");
+    await writeFile(join(root, "app", "layout.tsx"),
+      "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
+    const sink = output();
+    expect(await run(root, sink, {
+      useCase: "mcp", yes: true, auth: "clerk", baseUrl: "https://app.acme.com",
+    })).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain(
+      "  Set `VENDO_BASE_URL` in your deploy platform\n"
+      + "    `https://app.acme.com` — captured earlier, already in .env.example",
+    );
+    // The headline of a step is never indented past two spaces, so a reader
+    // (and a grep) can still tell a step from its detail.
+    expect(logs).toContain("  Point any MCP client at `https://app.acme.com/api/vendo/mcp`\n    your users' setup page");
+  });
+
   it("is idempotent: a re-run changes nothing and says so", async () => {
     const root = await fixture();
     expect(await run(root, output())).toBe(0);
@@ -573,7 +602,10 @@ describe("vendo init (zero-question)", () => {
 
     const keyed = await fixture();
     const keyedSink = output();
-    expect(await run(keyed, keyedSink, { env: { ANTHROPIC_API_KEY: "sk-ant-test" } })).toBe(0);
+    expect(await run(keyed, keyedSink, {
+      // A resolving credential, which a bare provider key no longer is.
+      env: { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-ant-test" },
+    })).toBe(0);
     const keyedTail = keyedSink.logs.join("\n").split("Agent tail:")[1]!;
     expect(keyedTail).not.toContain("cloud key: none");
   });
@@ -821,12 +853,198 @@ describe("vendo init (zero-question)", () => {
   it("states an env key in one line and skips the cloud offer", async () => {
     const root = await fixture();
     const sink = output();
-    expect(await run(root, sink, { env: { ANTHROPIC_API_KEY: "sk-a" } })).toBe(0);
+    // A bare provider key selects nothing since the selection law, so a host on
+    // the env-key rung got there through the internal VENDO_DEV_CREDENTIAL pin —
+    // which is what keeps this line (init's REPORT of the winning rung) covered.
+    expect(await run(root, sink, {
+      env: { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-a" },
+    })).toBe(0);
     const logs = sink.logs.join("\n");
     expect(logs).toContain("Model: explicit ANTHROPIC_API_KEY (anthropic)");
     expect(logs).not.toContain("No model key yet");
     // The credential story leads the run — before the AI passes and the summary.
     expect(logs.indexOf("Model: explicit")).toBeLessThan(logs.indexOf("Wired ("));
+  });
+
+  /** SPEC 4b: a provider key in the environment is a CREDENTIAL now — it no
+      longer selects a model by itself. Init detected the key, so init writes
+      the explicit selection into the composition it authors; without it a host
+      that "just worked" off an ambient key would fail on its first boot. */
+  it("writes the models line and its import once into the route it authors, and names the file", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      env: { ANTHROPIC_API_KEY: "sk-a" },
+      installProvider: async () => 0,
+    })).toBe(0);
+
+    const routePath = join("app", "api", "vendo", "[...vendo]", "route.ts");
+    const route = await readFile(join(root, routePath), "utf8");
+    expect(route).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
+    expect(route).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
+    expect(route.match(/@ai-sdk\/anthropic/g)).toHaveLength(1);
+    expect(route.match(/models:/g)).toHaveLength(1);
+
+    expect(sink.logs.join("\n")).toContain(`models: anthropic — written into ${routePath}`);
+  });
+
+  /** A key that only ever lived in .env.local counts the same way — it is the
+      same key the runtime will read, and the ONLY reason the old ambient
+      behaviour looked like it worked. */
+  it("counts a provider key that lives only in .env.local", async () => {
+    const root = await fixture();
+    await writeFile(join(root, ".env.local"), 'ANTHROPIC_API_KEY="sk-ant-local"\n');
+    const sink = output();
+    expect(await run(root, sink, { installProvider: async () => 0 })).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain(`models: { default: anthropic("claude-sonnet-4-6") }`);
+  });
+
+  /** `vendo init --byo` asks for a provider key and lands it in .env.local — but
+      the ceremony runs AFTER the composition was planned, so the key used to be
+      saved into a run that had already authored a keyless composition: a key that
+      selected nothing, in a file the same run reported as wired. Real cloud step,
+      real paste, real file on disk — only the TTY and the secret prompt are
+      seams. */
+  it("--byo: a key pasted mid-run still lands in the composition it authored", async () => {
+    const root = await fixture();
+    const installs: Array<{ args: string[] }> = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      byo: true,
+      cloud: { ...NO_CLOUD, isTty: true, askSecret: async () => "sk-ant-api03-pasted" },
+      installProvider: async (_command, args) => {
+        installs.push({ args });
+        return 0;
+      },
+    })).toBe(0);
+
+    // The re-render's provider is also the one that gets INSTALLED — a written
+    // import the host cannot resolve is the same dead end one file over.
+    expect(installs).toEqual([{ args: ["install", "ai@^6", "@ai-sdk/anthropic@^3"] }]);
+
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain("ANTHROPIC_API_KEY=sk-ant-api03-pasted");
+    const routePath = join("app", "api", "vendo", "[...vendo]", "route.ts");
+    const route = await readFile(join(root, routePath), "utf8");
+    expect(route).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
+    expect(route).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
+    // Exactly once, and the run says where — never the dead-end advice.
+    expect(route.match(/models:/g)).toHaveLength(1);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain(`models: anthropic — written into ${routePath}`);
+    expect(logs).not.toContain("No model key yet");
+  });
+
+  /** The same contradiction one step later: a provider key in the environment
+      resolves to `rung: "none"` since the selection law, so the closing summary
+      printed "No model key yet" directly under the models line it had just
+      written into the file. */
+  it("never advises a model key on a run that wrote the models line", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      env: { ANTHROPIC_API_KEY: "sk-a" },
+      installProvider: async () => 0,
+    })).toBe(0);
+    expect(sink.logs.join("\n")).not.toContain("No model key yet");
+  });
+
+  /** The import init writes has to RESOLVE when the host builds. `ensureProviderDeps`
+      asked the runtime credential which provider to install, and since the
+      selection law a bare OPENAI_API_KEY is `rung: "none"` — so init wrote
+      `import { openai } from "@ai-sdk/openai"` and installed nothing, leaving a
+      generated app that cannot resolve its own import. Whole path, one run: the
+      real scaffold decides, the real install seam records. */
+  it.each([
+    ["OPENAI_API_KEY", "openai", "@ai-sdk/openai@^3"],
+    ["GOOGLE_GENERATIVE_AI_API_KEY", "google", "@ai-sdk/google@^3"],
+  ])("installs the provider it wrote for a bare %s", async (envVar, provider, spec) => {
+    const root = await fixture();
+    const installs: Array<{ args: string[] }> = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      env: { [envVar]: "sk-test" },
+      installProvider: async (_command, args) => {
+        installs.push({ args });
+        return 0;
+      },
+    })).toBe(0);
+
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain(`import { ${provider} } from "@ai-sdk/${provider}";`);
+    // The import is written AND the dependency that satisfies it is installed.
+    expect(installs).toEqual([{ args: ["install", "ai@^6", spec] }]);
+  });
+
+  it("leaves a keyless host's route model-free — no line, no dangling import", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).not.toContain("@ai-sdk/");
+    expect(route).not.toContain("models:");
+    const logs = sink.logs.join("\n");
+    expect(logs).not.toContain("models: anthropic");
+    expect(logs).toContain("No model key yet");
+  });
+
+  /** The MCP arm replaces the route this planned for with the thin handler over
+      ./vendo, so the line moves into that path's composition module — and the
+      summary must name THAT file. Naming route.ts here would send the reader
+      to a file with no `models:` in it (the bug this pins). */
+  it("moves the models line into the MCP composition module, and names that file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-mcp-models-"));
+    cleanup.push(root);
+    await mkdir(join(root, "app"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "mcp-host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" },
+    }));
+    await writeFile(join(root, "app", "layout.tsx"),
+      "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
+    const sink = output();
+    expect(await run(root, sink, {
+      useCase: "mcp",
+      yes: true,
+      auth: "clerk",
+      baseUrl: "https://app.acme.com",
+      env: { ANTHROPIC_API_KEY: "sk-a" },
+      installProvider: async () => 0,
+    })).toBe(0);
+
+    const wiringDir = join(root, "app", "api", "vendo", "[...vendo]");
+    const route = await readFile(join(wiringDir, "route.ts"), "utf8");
+    // The thin route carries neither half — it composes nothing at all.
+    expect(route).toContain(`import { vendo } from "./vendo";`);
+    expect(route).not.toContain("@ai-sdk/");
+    expect(route).not.toContain("models:");
+
+    const composition = await readFile(join(wiringDir, "vendo.ts"), "utf8");
+    expect(composition).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
+    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
+    // One selection per host, across BOTH files init wrote on this path.
+    expect(`${route}${composition}`.match(/models:/g)).toHaveLength(1);
+    expect(`${route}${composition}`.match(/@ai-sdk\/anthropic/g)).toHaveLength(1);
+
+    // The summary names the composition module, not the route it replaced.
+    expect(sink.logs.join("\n")).toContain(
+      `models: anthropic — written into ${join("app", "api", "vendo", "[...vendo]", "vendo.ts")}`,
+    );
+  });
+
+  /** A Cloud key is not a provider key: its models resolve through the
+      gateway's own family names, so nothing is written for it. */
+  it("writes nothing for a Vendo Cloud key", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      env: { VENDO_API_KEY: `vnd_${"c".repeat(40)}` },
+      installProvider: async () => 0,
+    })).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).not.toContain("@ai-sdk/");
+    expect(route).not.toContain("models:");
+    expect(sink.logs.join("\n")).not.toContain("written into");
   });
 
   it("points a keyless host at .env.local and `vendo login`", async () => {

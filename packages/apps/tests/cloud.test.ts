@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import type {
   AppDocument,
 } from "../src/contract/index.js";
@@ -32,7 +33,7 @@ const doc: AppDocument = {
 
 const runtime = async (cloud?: CloudAppsClient) => {
   const store = memoryStore();
-  await seedAppRow(store, doc, ctx.principal.subject);
+  await seedAppRow(engineOverAdapter(store), doc, ctx.principal.subject);
   return createApps({
     store,
     guard: guardFixture(),
@@ -100,7 +101,7 @@ describe("cloud interchange", () => {
       session: [{ role: "user", text: "an invoices workspace", at: "2026-07-28T00:00:00.000Z" }],
     } as AppDocument;
     const store = memoryStore();
-    await seedAppRow(store, approvedDoc, ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), approvedDoc, ctx.principal.subject);
     const shared: AppDocument[] = [];
     const apps = createApps({
       store,

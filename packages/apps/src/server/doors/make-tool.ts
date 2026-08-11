@@ -7,6 +7,7 @@
  */
 import {
   isUnattended,
+  log,
   VENDO_VIEW_STREAM,
   VendoError,
   vendoViewStreamId,
@@ -144,7 +145,11 @@ const makeNewApp = async (
       }),
     }, ctx).catch((error: unknown) => {
       threw = error instanceof Error ? error.message : String(error);
-      console.warn(`[vendo] the screen agent could not serve ${appId} — ${threw}`);
+      log({
+        code: "apps.screen-agent-serve-failed",
+        level: "warn",
+        message: `[vendo] the screen agent could not serve ${appId} — ${threw}`,
+      });
       return undefined;
     });
   if (routed?.kind === "assembled") {
@@ -251,6 +256,11 @@ const changeExistingApp = async (
   // Wave 9 — a ladder-authored automation raises its own card. Published
   // HERE, by the side that knows, rather than duck-typed out of this tool's
   // return value at the bridge: the receipt carries words only.
+  //
+  // The trigger goes over WHOLE, which is what carries the automation's terms
+  // (`Trigger.rules` — the sentences its author wrote) to the card with no
+  // second field to disagree with the document. The document's trigger is the
+  // one this edit authored and landed, so what the card lists is what runs.
   if (result.automation !== undefined && stream !== undefined) {
     stream({
       id: `vendo-automation-${result.app.id}`,
@@ -315,9 +325,13 @@ export const runMakeTool = async (
    */
   const remember = async (appId: string): Promise<void> => {
     await runtime.remember({ appId, ask: request }, ctx).catch((error: unknown) => {
-      console.warn(`[vendo] the ask was not recorded on ${appId}: ${
-        error instanceof Error ? error.message : String(error)
-      }`);
+      log({
+        code: "apps.ask-not-recorded",
+        level: "warn",
+        message: `[vendo] the ask was not recorded on ${appId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
     });
   };
   const make: MakeCall = { runtime, dependencies, ctx, ask, stream, remember };

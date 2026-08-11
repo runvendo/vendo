@@ -28,6 +28,18 @@ import type { ExtractionHarness } from "../extract/harness.js";
  * deletes. The four harnesses survive and are imported directly.
  */
 
+/** The provider keys a ladder rung authenticates with DIRECTLY — the claude
+ *  rungs read ANTHROPIC_API_KEY (claude-cli-harness.ts:112,
+ *  npx-engine-harness.ts:240) and the codex rung reads OPENAI_API_KEY
+ *  (codex-cli-harness.ts:159). Since the selection law resolveDevCredential no
+ *  longer sweeps them at all, so without them here the gate starved harnesses
+ *  that run on exactly these keys and told a developer whose only credential is
+ *  ANTHROPIC_API_KEY to set ANTHROPIC_API_KEY. Deliberately NOT folded into
+ *  OWN_CREDENTIAL_ENV_VARS: that set also decides gateway fuel, where an OpenAI
+ *  key must not stop an Anthropic rung from being fuelled. No
+ *  GOOGLE_GENERATIVE_AI_API_KEY either — no rung can run on it. */
+const ENGINE_PROVIDER_KEY_VARS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"] as const;
+
 /** Rung id → user-facing engine family (`--engine` values). The Agent SDK and
  *  the claude CLI are ONE family: same provider, same credential story. An
  *  unknown id (test seams, future rungs) is its own family. */
@@ -80,6 +92,14 @@ export async function selectJudgmentEngines(input: {
   return available;
 }
 
+/** Any credential SOME rung of this ladder can run on, read off the env alone
+ *  (no probe): Claude Code's own-credential vars, or a provider key a harness
+ *  authenticates with directly. */
+function hasEngineCredential(env: Record<string, string | undefined>): boolean {
+  if (hasOwnAnthropicEnvOverride(env)) return true;
+  return ENGINE_PROVIDER_KEY_VARS.some((name) => (env[name] ?? "").trim() !== "");
+}
+
 export async function resolveJudgmentEngine(
   options: ResolveEngineOptions,
 ): Promise<{ engine: AvailableEngine | null; reason?: string }> {
@@ -94,7 +114,13 @@ export async function resolveJudgmentEngine(
   // the ONE path that falls back to this resolver instead of sweeping the
   // ladder — told those devs they had no engine while `vendo init` and an
   // interactive `vendo sync` ran fine on the same credentials.
-  if (credential.rung === "none" && !hasOwnAnthropicEnvOverride(options.env)) {
+  //
+  // The widening covers the coding-agent env vars AND the two provider keys a
+  // rung authenticates with itself (ENGINE_PROVIDER_KEY_VARS), which is also
+  // what keeps the reason below honest: it can only be reached when every
+  // credential it names is genuinely absent, so it never advises setting a key
+  // the developer already set.
+  if (credential.rung === "none" && !hasEngineCredential(options.env)) {
     return {
       engine: null,
       reason: "no model credential — set ANTHROPIC_API_KEY / OPENAI_API_KEY (BYO) or VENDO_API_KEY (`vendo login`)",

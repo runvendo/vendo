@@ -13,7 +13,6 @@ import type { EngineBase } from "./engine-context.js";
 import type { GrantsAccess } from "./grants.js";
 import type { AutomationsEngine, RunPlan } from "./index.js";
 import { appRef } from "./rows.js";
-import type { SponsorshipGateAccess } from "./sponsorship-gate.js";
 import { currentIntentHash, markSponsored, triggerKey, writeSponsorship } from "./sponsorship.js";
 import { evaluate, stepArgs, validateForEachItems } from "./steps.js";
 import { SCHEDULE, WEBHOOK } from "./types.js";
@@ -24,14 +23,13 @@ export type ArmingSurfaceDeps = {
   appRows: AppRowsAccess;
   armed: ArmedAccess;
   grants: GrantsAccess;
-  sponsorship: SponsorshipGateAccess;
   consent: ConsentAccess;
 };
 
 /** 07 §3's arm/disarm pair. */
 const createArmDoors = (deps: ArmingSurfaceDeps): Pick<AutomationsEngine, "enable" | "disable"> => {
-  const { base: { config, iso, firesLocally }, appRows, armed } = deps;
-  const { grants, sponsorship, consent } = deps;
+  const { base: { engine, iso, firesLocally }, appRows, armed } = deps;
+  const { grants, consent } = deps;
   const enable: AutomationsEngine["enable"] = async (appId, triggerId, ctx) => {
     const found = await appRows.editableApp(appId, ctx);
     const trigger = appRows.declaredTrigger(found.row.doc, triggerId);
@@ -61,7 +59,7 @@ const createArmDoors = (deps: ArmingSurfaceDeps): Pick<AutomationsEngine, "enabl
     // A re-enable refreshes both, which is how an invalidated automation comes
     // back. Per TRIGGER, because that is the thing they just looked at and
     // allowed.
-    await writeSponsorship(sponsorship.sponsorships(), {
+    await writeSponsorship(engine, {
       appId,
       triggerId: trigger.id,
       sponsor: ctx.principal.subject,
@@ -71,22 +69,22 @@ const createArmDoors = (deps: ArmingSurfaceDeps): Pick<AutomationsEngine, "enabl
     });
     // The era marker outlives an erase of the sponsor, so a vanished row can
     // never be misread as "never sponsored" (§9.9 fails closed).
-    await markSponsored(sponsorship.sponsoredEra(), appId, trigger.id, iso());
+    await markSponsored(engine, appId, trigger.id, iso());
     await armed.setArmed(appId, trigger.id, true);
     found.row.enabled = true;
     await appRows.writeApp(found.record, found.row);
     const key = triggerKey(appId, trigger.id);
     if (trigger.on.kind === "schedule") {
-      const cursor = await config.store.records(SCHEDULE).get(key);
+      const cursor = await engine.get(SCHEDULE, key);
       if (cursor === null) {
-        await config.store.records(SCHEDULE).put({ id: key, data: { lastFiredAt: iso() }, refs: appRef(appId) });
+        await engine.put(SCHEDULE, { id: key, data: { lastFiredAt: iso() }, refs: appRef(appId) });
       }
     }
     if (trigger.on.kind === "external") {
-      const secret = await config.store.records(WEBHOOK).get(key);
+      const secret = await engine.get(WEBHOOK, key);
       if (secret === null) {
         const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
-        await config.store.records(WEBHOOK).put({ id: key, data: { secret: base64url(bytes) }, refs: appRef(appId) });
+        await engine.put(WEBHOOK, { id: key, data: { secret: base64url(bytes) }, refs: appRef(appId) });
       }
     }
     return { enabled: true, missing, ...(missing.length === 0 ? {} : { grantSetId }) };

@@ -5,8 +5,6 @@ import {
   sha256Hex,
   type AppId,
   type IsoDateTime,
-  type RecordStore,
-  type StoreAdapter,
 } from "@vendoai/core";
 import {
   type AppDocument,
@@ -15,7 +13,8 @@ import { z } from "zod";
 import type { AppHistoryAccess } from "../persistence/history.js";
 import type { InClientApprovalAccess, InClientVenueState, ReviewStanding } from "./inclient.js";
 import type { SeedBaseline } from "../../contract/index.js";
-import { documentFromRecord, listAllRecords, rowFromRecord } from "../persistence/persistence.js";
+import type { EngineOps } from "../persistence/engine.js";
+import { APPS_COLLECTION, documentFromRecord, listAllEngineRecords, rowFromRecord } from "../persistence/persistence.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
 
@@ -101,14 +100,13 @@ export interface ReviewLifecycle {
 }
 
 export interface ReviewLifecycleDeps {
-  store: StoreAdapter;
+  engine: EngineOps;
   baselines: readonly SeedBaseline[] | undefined;
   approvals: InClientApprovalAccess;
   history: Pick<AppHistoryAccess, "documents">;
 }
 
 export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycle => {
-  const rejections: RecordStore = deps.store.records(COLLECTION);
   const baselines = (): readonly SeedBaseline[] => deps.baselines ?? [];
 
   const isReviewKind = (doc: AppDocument): boolean =>
@@ -118,7 +116,7 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
   const rejectionsFor = async (appId: AppId): Promise<RemixRejection[]> => {
     // `app_id`, not `appId` — see the note on inclient.ts's `allRecords`: the
     // erase cascade's byApp leg matches this exact ref key.
-    const records = await listAllRecords(rejections, { refs: { app_id: appId } });
+    const records = await listAllEngineRecords(deps.engine, COLLECTION, { refs: { app_id: appId } });
     return records
       .flatMap((record) => {
         const parsed = remixRejectionSchema.safeParse(record.data);
@@ -168,7 +166,7 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
     // silently drop the "sent for review" indicator. A granted serve is the
     // one case where the snapshot's kind can differ, so it re-reads too.
     if (!isReviewKind(doc) && base?.granted !== true) return base;
-    const record = await deps.store.records("vendo_apps").get(doc.id);
+    const record = await deps.engine.get(APPS_COLLECTION, doc.id);
     const current = record === null ? doc : documentFromRecord(record);
     if (!isReviewKind(current)) return base;
     const currentHash = appVersionHash(current);
@@ -194,7 +192,7 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
 
     async queue() {
       const entries: ReviewQueueEntry[] = [];
-      for (const record of await listAllRecords(deps.store.records("vendo_apps"))) {
+      for (const record of await listAllEngineRecords(deps.engine, APPS_COLLECTION)) {
         let row;
         try {
           row = rowFromRecord(record);
@@ -258,7 +256,7 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
       // above being check-then-write racy cannot double-record: concurrent
       // rejections of the same version upsert the SAME row and converge on
       // one note.
-      await rejections.put({
+      await deps.engine.put(COLLECTION, {
         id: `remrej_${sha256Hex(`${rejection.appId}:${versionHash}`)}`,
         data: rejection,
         refs: { app_id: rejection.appId },
@@ -269,8 +267,8 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
     rejections: rejectionsFor,
 
     async clear(appId) {
-      for (const record of await listAllRecords(rejections, { refs: { app_id: appId } })) {
-        await rejections.delete(record.id);
+      for (const record of await listAllEngineRecords(deps.engine, COLLECTION, { refs: { app_id: appId } })) {
+        await deps.engine.delete(COLLECTION, record.id);
       }
     },
   };

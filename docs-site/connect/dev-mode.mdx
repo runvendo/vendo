@@ -1,33 +1,30 @@
 ---
 title: "Dev-mode credential ladder: resolving a model without wiring one"
 sidebarTitle: "Dev-mode credentials"
-description: "How devModel() resolves a model in development from env keys or a Vendo Cloud key, with pinning, production behavior, and verification."
+description: "How vendoModel() resolves a model when your composition names none, why a provider key in the environment selects nothing, and how to bring your own."
 ---
 
 Vendo runs on any AI SDK `LanguageModel`, and in production you set an API key
 for the provider you chose. `createVendo`'s `model` is optional: when you omit
-it, the runtime resolves a model through `devModel()`, a resolver that tries a
-short ladder of credential sources so a fresh clone can send a first turn with
-whatever key is already around.
+it, the runtime resolves a model through `devModel()`, a resolver that walks a
+short ladder of credential sources so a fresh clone can send a first turn on a
+free Vendo Cloud dev key.
 
 Model credentials are real keys only. A coding-agent login (Claude Code,
 Codex) can help at *init* time, but it never serves product turns.
 
+**Env keys are credentials; config selects.** A provider key sitting in your
+environment does not pick a model — `models` on `createVendo` does, and
+`VENDO_API_KEY` is the one key that fills the seat you left empty. So the ladder
+below is two rungs long, and `ANTHROPIC_API_KEY` is not one of them: it is what
+the `@ai-sdk/anthropic` provider *you* pass authenticates with.
+
 ## Ladder
 
 `vendoModel()` (formerly `devModel()`, which remains as a deprecated alias)
-walks these rungs in order and stops at the first one that resolves. Explicit
-keys always beat implicit ones.
+walks these rungs in order and stops at the first one that resolves.
 
 <Steps>
-  <Step title="Env key">
-    Reads the first of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
-    `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` or the shell. An
-    `ANTHROPIC_API_KEY` works alone — Vendo ships `@ai-sdk/anthropic`, and
-    your app's own install wins when present; a non-Anthropic key needs its
-    matching `@ai-sdk/*@^3` provider installed in your app. This rung runs
-    the full native tool loop and works in production.
-  </Step>
   <Step title="Vendo Cloud key">
     `VENDO_API_KEY` delegates to the Vendo Cloud model gateway (Anthropic
     Messages wire, served through the stock `@ai-sdk/anthropic` provider,
@@ -38,40 +35,51 @@ keys always beat implicit ones.
     metered API key.
   </Step>
   <Step title="None">
-    No credential resolves. The wire returns a generic error and the server
-    log prints the exact set of instructions to unblock: install a provider
-    and set a key, or mint a Cloud key.
+    No credential resolves, and the first turn says exactly that:
+
+    ```
+    Vendo has no model. Pass one — models: { default: anthropic("claude-sonnet-4-6") }
+    in createVendo — or set VENDO_API_KEY for the Vendo Cloud gateway (`vendo login`
+    mints a free dev key). A provider key alone no longer selects a model; Vendo
+    never picks a provider for you.
+    ```
   </Step>
 </Steps>
 
-## Pinning a rung
+## Bringing your own provider
 
-Force a specific rung for reproducible runs or E2E matrices:
+Pass it. An explicit model always wins, in development and in production alike,
+and the key its provider reads (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`GOOGLE_GENERATIVE_AI_API_KEY`, …) is the provider's business, not Vendo's:
 
-```bash
-VENDO_DEV_CREDENTIAL=env-key:anthropic   # or env-key:openai / env-key:google
-VENDO_DEV_CREDENTIAL=vendo-cloud         # only use VENDO_API_KEY
-VENDO_DEV_CREDENTIAL=none                # force the honest failure
+```ts
+import { anthropic } from "@ai-sdk/anthropic";
+import { createVendo } from "@vendoai/vendo/server";
+
+const vendo = createVendo({
+  models: { default: anthropic("claude-sonnet-4-6") },
+  catalog: registry,
+});
 ```
 
-Pinning a rung that cannot resolve produces the same honest error as the
-unpinned `none` case.
+`VENDO_DEV_CREDENTIAL` pins a ladder rung, including the `env-key` rungs that
+nothing else can reach any more. It is **internal** — Vendo's own E2E rung matrix
+and escape hatch, not a host knob, and it can change without notice. Pinning a
+rung that cannot resolve produces the same honest error as the `none` case.
 
 ## The generated composition
 
 The route init scaffolds calls `createVendo()` without a `model`, so the runtime
 resolves the ladder above on every turn. Init does not scaffold a model file. To
-pin a provider, add `model` to the composition with any AI SDK `LanguageModel`:
+pin a provider, add `models` to the composition with any AI SDK `LanguageModel`:
 
 ```ts
-import { createVendo } from "@vendoai/vendo/server";
-import { vendoModel } from "@vendoai/vendo/server";
+import { createVendo, vendoModel } from "@vendoai/vendo/server";
 
-// Omit `model` to keep the dev-mode ladder, or set it to pin a provider.
-// In production, set ANTHROPIC_API_KEY (works alone — Vendo ships
-// @ai-sdk/anthropic), or OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY
-// with the matching @ai-sdk/* provider installed.
-const vendo = createVendo({ model: vendoModel(), catalog: registry });
+// Omit the seat to keep the VENDO_API_KEY rung, or pass a model to pin a
+// provider — that is the only thing that selects one. A provider key in the
+// environment selects nothing on its own.
+const vendo = createVendo({ models: { default: vendoModel() }, catalog: registry });
 ```
 
 The [handler](/reference/handler-options) contract does not change either way.

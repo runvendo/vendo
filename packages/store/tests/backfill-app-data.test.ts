@@ -283,11 +283,11 @@ for (const backend of backends()) {
       const made = await make();
       try {
         await appStore(made.store).put(dana, appFixture("app_bearer"));
-        const token = await createAppTokens(made.store).mint("app_bearer", "dana");
+        const token = await createAppTokens(createStoreOps(made.store).engine).mint("app_bearer", "dana");
 
         await createStoreOps(made.store).lifecycle.promote("app_bearer", "acme");
 
-        expect(await createAppTokens(made.store).verify(token))
+        expect(await createAppTokens(createStoreOps(made.store).engine).verify(token))
           .toEqual({ appId: "app_bearer", subject: "acme" });
       } finally {
         await made.cleanup();

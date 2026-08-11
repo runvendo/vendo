@@ -1,5 +1,150 @@
 # @vendoai/core
 
+## 0.14.0
+
+### Minor Changes
+
+- 954ad09: **Breaking.** The generic `records.*` store ops are gone. `/records/*` now
+  answers `not-implemented` (501), naming the op you called. There is no flag,
+  no fallback and no deprecation window left — this release IS the removal.
+
+  **Do this.** Find every `ops.records.*` call and move it to the family that owns
+  the data:
+
+  - Rows and files a generated app invents → `ops.appData.put/get/list/delete` and
+    `ops.appData.putFile/getFile/listFiles/deleteFile`. The target carries
+    `{ appId, collection, owner }`; the owner is stamped on writes and scopes
+    reads, so you no longer prefix a collection name to keep users apart.
+  - Vendo's own collections (threads, runs, grants, audit, effects, apps,
+    automations schedules and deliveries) → `ops.engine.*`. Same seven verbs, same
+    arguments, same returns, behind the `ENGINE_COLLECTIONS` allowlist. A name
+    outside it is refused with `blocked` and told where its data belongs.
+
+  **If you wrote raw HTTP against the store wire,** the seven `/records/*` routes
+  are the break: `POST /records/put` now returns
+
+  ```json
+  {
+    "error": {
+      "code": "not-implemented",
+      "message": "the store wire no longer serves records.put — …"
+    }
+  }
+  ```
+
+  with HTTP 501. `STORE_WIRE_PATHS` holds 35 ops across 8 families, and
+  `status()` reports `ops: 35`.
+
+  **The `StoreAdapter` façade is unchanged and still supported.**
+  `store.records(collection)` and `store.blobs(namespace)` keep working exactly as
+  they did — including `claim` and `atomic` feature detection. On `hostedStore`
+  they are now built on the two surviving families: an `app:<appId>:<name>`
+  collection or namespace rides `appData`, everything else rides `engine`. Two
+  consequences on the hosted adapter only:
+
+  - A collection outside the engine allowlist (a host's own `"invoices"`) no
+    longer has a home on the hosted mount and is refused with `blocked`. Local
+    and BYO stores are untouched.
+  - An app-scoped drawer is owner-scoped now, like every other appData read.
+    `hostedStore({ owner })` names the owner; it defaults to the single-player
+    `"user_local"`, matching `createStoreOps`' bound workspace owner. **If you
+    serve more than one end user through one `hostedStore` instance, set it** —
+    on the default, every user's app rows and files land in one owner's drawer
+    and read each other. Construct one `hostedStore` per end user, or use
+    `ops.appData`, whose every verb names its owner at the call. Because
+    `appData` has no compare-and-set verbs, an app-scoped `RecordStore` omits
+    `claim` and `atomic` rather than advertising what it cannot serve.
+  - One error string changed: a bare, envelope-less 404 from a blob read on the
+    hosted adapter now says `Vendo Cloud store request failed with 404` instead
+    of naming a "bare 404". Same behaviour — it still throws loudly rather than
+    reading as a missing blob — but stop grepping for the old wording.
+
+  **Also removed, because they only existed to announce the retirement:**
+  `STORE_WIRE_DEPRECATED_OPS`, `STORE_WIRE_DEPRECATED_REMOVED_IN` and
+  `STORE_WIRE_MIN_CLIENT_VERSION` (all `@vendoai/core`), the `deprecated` and
+  `minClientVersion` fields on `StoreWireStatus`, the seven deprecated
+  `storeWireRecords*RequestSchema` aliases (use `storeWireCollection*RequestSchema`),
+  and doctor's `E-LIVE-008` warning. The `E-LIVE-008` code stays listed in the
+  registry and on the verify page — doctor codes are never reused — but nothing
+  emits it any more. The handshake body still passes unknown keys through, so a
+  client on this release reads an older mount's `/status` without complaint.
+
+## 0.13.0
+
+### Minor Changes
+
+- 031195f: The generic `records.*` store ops are deprecated. They still work; they will be
+  removed in `0.13.0`.
+
+  **What is happening.** `records.*` was one untyped door onto every row in the
+  store — a host's data, an app's data and Vendo's own bookkeeping all went through
+  the same seven verbs, and nothing in the call said which was which. Two named
+  families replaced it: `appData.*` for the rows and files a generated app invents
+  (the owner is stamped for you, so one user's data cannot be read by another's app
+  session), and `engine.*` for Vendo's own collections (the same seven verbs, behind
+  the `ENGINE_COLLECTIONS` allowlist). Everything `records.*` can do, one of those
+  two can do with the ownership question answered.
+
+  **Nothing breaks in this release.** All seven `records.*` ops stay on the wire and
+  keep their exact behaviour. This release only _announces_ the retirement, in the
+  two places a caller will actually see it:
+
+  - `status()` (`GET /status`) now returns `minClientVersion` and `deprecated` — the
+    seven `records.*` op names — beside the existing `format` and `ops: 42`. Clients
+    that already parse the handshake get the notice for free; the fields are
+    optional on `StoreWireStatus`, so an older client ignores them.
+  - `vendo doctor` warns `E-LIVE-008` when a mount advertises deprecated ops, naming
+    them and the removal release. It is a warning, never a failure — doctor still
+    exits 0.
+
+  **What you need to do before `0.13.0`.** Find your `records.*` calls and move each
+  one to the family that owns the data:
+
+  - Rows and files belonging to a generated app → `appData.put/get/list/delete` and
+    `appData.putFile/getFile/listFiles/deleteFile`. The target carries `appId`,
+    `collection` and `owner`; you no longer invent a collection-name prefix to keep
+    users apart.
+  - Vendo's own collections (threads, runs, grants, the audit log, effects, apps,
+    automations schedules and deliveries) → `engine.*`, same arguments, same
+    returns. A name outside the allowlist is refused with `blocked` and told where
+    its data belongs.
+
+  If you host your own store mount, `STORE_WIRE_DEPRECATED_OPS` and
+  `STORE_WIRE_DEPRECATED_REMOVED_IN` (both `@vendoai/core`) are what the handshake
+  advertises, so your mount can say the same thing without hardcoding the list.
+  `STORE_WIRE_MIN_CLIENT_VERSION` names the release the mount was built from.
+
+  After `0.13.0`, a `records.*` call answers `not-implemented` (501). There is no
+  flag to keep the old door open.
+
+### Patch Changes
+
+- 395fc1e: automations reaches its own drawers through the `engine` op family
+
+  Every collection this engine owns — `vendo_apps`, `vendo_runs`, `vendo_grants`,
+  `vendo_approvals`, the captures, the arm rows, the schedule cursors, the webhook
+  secrets, the delivery ledger, and both sponsorship drawers — was reached through
+  the generic `store.records(...)` door a host uses for its own data. All 41 call
+  sites now go through `ops.engine.*`, so the allowlist gate in
+  `assertEngineCollection` applies to every one of them.
+
+  `AutomationsConfig` gains an optional `ops: StoreOps` beside `store`, threaded
+  from composition. It stays optional because `selectStoreOps` answers `undefined`
+  for a store with neither its own ops surface nor a SQL handle, and because a
+  host may construct the block directly with nothing but a `StoreAdapter`.
+
+  `engineOverAdapter` (new, in core) is that store's engine family: the allowlist
+  gate in front, the adapter's own record door behind. It lives in core because
+  automations, guard and apps all need it and none of them may import
+  `@vendoai/store`. Where `RecordStore.atomic` is absent it keeps exactly the
+  degradation those blocks used to hand-roll — `insertIfAbsent` becomes a
+  check-then-put, `compareAndSwap` a last write — so moving onto the family does
+  not turn a working BYO adapter into a `not-implemented`.
+
+  No behavior change: same collection, same verb, same arguments, same order.
+
+## 0.12.0
+
 ## 0.11.0
 
 ### Minor Changes

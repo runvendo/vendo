@@ -5,6 +5,9 @@ import {
   serverActionRegistrations,
   type ServerActionRegistration,
 } from "@vendoai/actions/sync";
+// Relative (not the #dev-creds condition): the CLI is Node-only and the edge
+// condition would resolve the browser-safe half here.
+import type { EnvKeyProvider } from "../dev-creds/resolve.js";
 import { AUTH_FAMILY_INFO, AUTH_PRESET_SPECIFIER, type AuthMatch } from "./init-auth.js";
 import { readOptional } from "./shared.js";
 
@@ -48,9 +51,49 @@ function authImportLine(auth: AuthMatch | null): string {
   return auth === null ? "" : `import { ${auth.preset} } from ${JSON.stringify(AUTH_PRESET_SPECIFIER[auth.preset])};\n`;
 }
 
+/** What each env-key provider's `models.default` line names: the AI SDK's
+    DEFAULT provider instance — it reads the key straight out of the
+    environment, so the scaffold never touches key material — and the flagship
+    id that provider's ladder resolves (dev-creds/model.ts DEFAULT_MODELS). */
+const MODEL_PROVIDERS: Record<EnvKeyProvider, { specifier: string; model: string }> = {
+  anthropic: { specifier: "@ai-sdk/anthropic", model: "claude-sonnet-4-6" },
+  openai: { specifier: "@ai-sdk/openai", model: "gpt-5" },
+  google: { specifier: "@ai-sdk/google", model: "gemini-2.5-flash" },
+};
+
+/** The provider key init found in the host's environment at scaffold time.
+ *  Env keys are CREDENTIALS and composition SELECTS the model, so a stray
+ *  ANTHROPIC_API_KEY no longer picks one by itself — the explicit line has to
+ *  exist in the config. Init detected the key, so init writes that line; a
+ *  host that "just worked" off an ambient key keeps working. */
+export interface ScaffoldModel {
+  provider: EnvKeyProvider;
+  /** The variable the key came from — named in the line's comment so the
+      reader knows what still supplies it. */
+  envVar: string;
+}
+
+function modelImportLine(model: ScaffoldModel | null): string {
+  if (model === null) return "";
+  return `import { ${model.provider} } from ${JSON.stringify(MODEL_PROVIDERS[model.provider].specifier)};\n`;
+}
+
+/** The `models` line inside a `createVendo({ … })` call. Emitted by exactly
+    ONE scaffold per host: the MCP path's route composes nothing (it imports
+    `./vendo`), so its models line lives in the composition module and nowhere
+    else. */
+function modelConfigLine(model: ScaffoldModel | null): string {
+  if (model === null) return "";
+  const { model: id } = MODEL_PROVIDERS[model.provider];
+  return `  models: { default: ${model.provider}(${JSON.stringify(id)}) }, // ${model.envVar} supplies the key\n`;
+}
+
 export function routeSource(options: {
   serverActions: boolean;
   auth: AuthMatch | null;
+  /** The provider key init found, written as the explicit `models` selection.
+      Ignored on the MCP arm below — that route composes nothing. */
+  models?: ScaffoldModel | null;
   /** The MCP path (10-mcp): the composition moves to its own module and this
       file becomes the thin handler over it. A Next.js route module may not
       export anything but route handlers, and the origin-root discovery route
@@ -65,12 +108,15 @@ export function routeSource(options: {
       `import { vendo } from "./vendo";\n\n` +
       `export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n`;
   }
-  return authImportLine(options.auth) +
+  const model = options.models ?? null;
+  return modelImportLine(model) +
+    authImportLine(options.auth) +
     `import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";\n` +
     (options.serverActions ? `import { serverActions } from "./vendo-actions";\n` : "") +
     `\nconst vendo = createVendo({\n` +
     // The Next route is always TypeScript (app/api/vendo/[...vendo]/route.ts).
     (options.auth === null ? anonymousPrincipalLines(true) : authConfigLines(options.auth)) +
+    modelConfigLine(model) +
     (options.serverActions ? `  serverActions,\n` : "") +
     `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
@@ -91,8 +137,13 @@ export function compositionModuleSource(options: {
   auth: AuthMatch;
   /** Wire first-party service auth off the environment (local posture only). */
   serviceAuth: boolean;
+  /** The provider key init found. This module is the MCP path's ONLY
+      composition, so it is the only place the models line may appear there —
+      the thin route it feeds composes nothing. */
+  models?: ScaffoldModel | null;
 }): string {
-  return authImportLine(options.auth) +
+  return modelImportLine(options.models ?? null) +
+    authImportLine(options.auth) +
     `import { createVendo, guard } from "@vendoai/vendo/server";\n` +
     (options.serverActions ? `import { serverActions } from "./vendo-actions";\n` : "") +
     (options.serviceAuth
@@ -103,6 +154,7 @@ export function compositionModuleSource(options: {
       : "") +
     `\nexport const vendo = createVendo({\n` +
     authConfigLines(options.auth) +
+    modelConfigLine(options.models ?? null) +
     (options.serverActions ? `  serverActions,\n` : "") +
     `  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run\n` +
     `  // The door outside agents reach, through the SAME guard-bound path your own\n` +

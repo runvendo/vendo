@@ -11,6 +11,7 @@
  */
 import {
   auditContext,
+  log,
   mintTurnId,
   VendoError,
   withSseKeepalive,
@@ -37,7 +38,7 @@ import {
   validateUpsert,
 } from "./transcript-rules.js";
 import { createCapabilityMissDetector, type CapabilityMissConfig } from "./capability-miss.js";
-import type { ToolBridgeOptions } from "./tool-bridge.js";
+import { mergeToolCallHooks, type ToolBridgeOptions } from "./tool-bridge.js";
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
@@ -393,7 +394,12 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             // in one turn reports itself, wherever the failure came from.
             bridge: {
               ...deps.bridge,
-              ...(capabilityMiss === undefined ? {} : { onCall: capabilityMiss.onCall }),
+              // MERGED, not assigned: the detector's hook used to be assigned into
+              // this slot, replacing whatever composition had already put there —
+              // the turn's own tool counting — so every composed deployment
+              // reported zero tool calls and an empty tool list. One
+              // unconditional merge, and a fourth watcher joins the argument list.
+              onCall: mergeToolCallHooks(deps.bridge?.onCall, capabilityMiss?.onCall),
               writer,
               connectCards: new Set<string>(),
             },
@@ -425,9 +431,16 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             } catch (error) {
               // A failed commit is the harness's to notice through its next read;
               // it must never take down a turn that already has a reply.
-              console.error("[vendo] harness runtime: workspace commit failed", {
-                threadId: input.threadId,
-                error: error instanceof Error ? error.message : String(error),
+              log({
+                code: "harnesses.runtime-commit-failed",
+                level: "error",
+                message: "[vendo] harness runtime: workspace commit failed",
+                data: {
+                  detail: {
+                    threadId: input.threadId,
+                    error: error instanceof Error ? error.message : String(error),
+                  },
+                },
               });
             }
           };
@@ -527,10 +540,17 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             // A harness that throws is a bug in the thinker, not in the user's
             // day. The real error goes to the operator's terminal; the user gets
             // a plain sentence, and NOTHING of the internals travels.
-            console.error("[vendo] harness run failed", {
-              harness: input.harness.name,
-              threadId: input.threadId,
-              error: error instanceof Error ? error.message : String(error),
+            log({
+              code: "harnesses.runtime-run-failed",
+              level: "error",
+              message: "[vendo] harness run failed",
+              data: {
+                detail: {
+                  harness: input.harness.name,
+                  threadId: input.threadId,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+              },
             });
             // …unless the error is one Vendo itself crafted (the credential
             // ladder's `vendo login` guidance, the Cloud meter refusal), which
@@ -579,7 +599,14 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
         // error we deliberately surfaced is NOT logged a second time here.
         onError: (error) => {
           const text = error instanceof Error ? error.message : String(error);
-          if (text !== surfaced) console.error("[vendo] harness stream error:", error);
+          if (text !== surfaced) {
+            log({
+              code: "harnesses.runtime-stream-error",
+              level: "error",
+              message: "[vendo] harness stream error:",
+              data: { error },
+            });
+          }
           // The record for failures the harness loop can never see: `execute`
           // itself rejecting (building the toolset, mounting the workspace,
           // minting a turn credential) — those never become a harness `error`
@@ -702,11 +729,18 @@ async function persistTurn(
         // By the time onFinish runs the reply is already on the wire, so throwing
         // here would corrupt a delivered stream. A thread silently vanishing after a
         // successful reply is data loss, so it is named LOUDLY instead.
-        console.error("[vendo] harness runtime: transcript persist failed — this turn was NOT saved", {
-          threadId: input.threadId,
-          subject: input.ctx.principal.subject,
-          attempts: attempt + 1,
-          error: error instanceof Error ? error.message : String(error),
+        log({
+          code: "harnesses.runtime-transcript-persist-failed",
+          level: "error",
+          message: "[vendo] harness runtime: transcript persist failed — this turn was NOT saved",
+          data: {
+            detail: {
+              threadId: input.threadId,
+              subject: input.ctx.principal.subject,
+              attempts: attempt + 1,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          },
         });
         return;
       }
@@ -726,10 +760,17 @@ async function saveHarnessState(
   } catch (error) {
     // `turn.state` is disposable by contract: losing it costs a re-seed, never
     // correctness, so it must never take a delivered turn down with it.
-    console.error("[vendo] harness runtime: harness state not saved", {
-      threadId: input.threadId,
-      harness: input.harness.name,
-      error: error instanceof Error ? error.message : String(error),
+    log({
+      code: "harnesses.runtime-state-not-saved",
+      level: "error",
+      message: "[vendo] harness runtime: harness state not saved",
+      data: {
+        detail: {
+          threadId: input.threadId,
+          harness: input.harness.name,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      },
     });
   }
 }

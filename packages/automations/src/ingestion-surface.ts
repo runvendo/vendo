@@ -39,7 +39,7 @@ export type IngestionSurfaceDeps = {
 const createTickDoor = (
   deps: IngestionSurfaceDeps,
 ): Pick<AutomationsEngine, "tick" | "start"> => {
-  const { base: { config, now, firesLocally }, appRows, armed, execution } = deps;
+  const { base: { engine, now, firesLocally }, appRows, armed, execution } = deps;
   let tickTail: Promise<void> = Promise.resolve();
   const runTick: AutomationsEngine["tick"] = async (providedNow) => {
     // Cloud (or whatever other authority) already fires schedule automations for this
@@ -60,11 +60,10 @@ const createTickDoor = (
     const dueTriggers = rows.flatMap((row) => armed.armedTriggers(row, armedKeys)
       .filter((trigger) => trigger.on.kind === "schedule")
       .map((trigger) => ({ row, trigger })));
-    const scheduleRecords = config.store.records(SCHEDULE);
     const cursorKeys = dueTriggers.map(({ row, trigger }) => triggerKey(row.doc.id, trigger.id));
     const cursorRecords = cursorKeys.length === 0
       ? []
-      : await allRecords(scheduleRecords, { ids: cursorKeys });
+      : await allRecords(engine, SCHEDULE, { ids: cursorKeys });
     const cursorById = new Map(cursorRecords.map((record) => [record.id, record]));
     const fired: FiredSchedule[] = [];
     for (const { row, trigger: declared } of dueTriggers) {
@@ -91,10 +90,7 @@ const createTickDoor = (
         scheduledFor = trigger.on.at;
       }
       if (scheduledFor === undefined) {
-        if (cursorRecord === null) {
-          if (scheduleRecords.atomic === undefined) await scheduleRecords.put(cursorRow(cursor));
-          else await scheduleRecords.atomic.insertIfAbsent(cursorRow(cursor));
-        }
+        if (cursorRecord === null) await engine.insertIfAbsent(SCHEDULE, cursorRow(cursor));
         continue;
       }
       const nextCursor = {
@@ -104,12 +100,15 @@ const createTickDoor = (
       };
       let claimed = true;
       if (cursorRecord === null) {
-        if (scheduleRecords.atomic === undefined) await scheduleRecords.put(cursorRow(nextCursor));
-        else claimed = await scheduleRecords.atomic.insertIfAbsent(cursorRow(nextCursor)) !== null;
-      } else if (scheduleRecords.atomic !== undefined && cursorRecord.revision !== undefined) {
-        claimed = await scheduleRecords.atomic.compareAndSwap(cursorRow(nextCursor), cursorRecord.revision) !== null;
+        claimed = await engine.insertIfAbsent(SCHEDULE, cursorRow(nextCursor)) !== null;
+      } else if (cursorRecord.revision !== undefined) {
+        claimed = await engine.compareAndSwap(SCHEDULE, cursorRow(nextCursor), cursorRecord.revision) !== null;
       } else {
-        await scheduleRecords.put(cursorRow(nextCursor));
+        // The cursor exists but carries NO revision, so there is nothing to
+        // compare against: an adapter without the optional atomic capability
+        // issues none. Last write wins, which is what a store that cannot
+        // linearize this can offer — one tick at a time is the norm.
+        await engine.put(SCHEDULE, cursorRow(nextCursor));
       }
       if (!claimed) continue;
       fired.push({ row, trigger, scheduledFor, firedAt: atIso });
@@ -235,7 +234,7 @@ const createWebhookRefusals = (
 const createWebhookDoor = (
   deps: IngestionSurfaceDeps & WebhookRefusals,
 ): Pick<AutomationsEngine, "webhook"> => {
-  const { base: { config, now, iso, firesLocally }, appRows, armed, execution } = deps;
+  const { base: { engine, now, iso, firesLocally }, appRows, armed, execution } = deps;
   const { envelope, rejectWebhook } = deps;
   const inFlightDeliveries = new Set<string>();
   const webhook: AutomationsEngine["webhook"] = async (request) => {
@@ -283,7 +282,7 @@ const createWebhookDoor = (
     for (const row of rows) {
       for (const trigger of armed.armedTriggers(row, armedKeys)) {
         if (trigger.on.kind !== "external" || trigger.on.connector !== source) continue;
-        const secretRecord = await config.store.records(WEBHOOK).get(triggerKey(row.doc.id, trigger.id));
+        const secretRecord = await engine.get(WEBHOOK, triggerKey(row.doc.id, trigger.id));
         if (secretRecord === null) continue;
         const secret = webhookSchema.safeParse(secretRecord.data);
         if (!secret.success) continue;
@@ -316,7 +315,6 @@ const createWebhookDoor = (
       }
       inFlightDeliveries.add(deliveryKey);
       try {
-        const deliveries = config.store.records(DELIVERIES);
         const delivery = {
           id: deliveryKey,
           data: {
@@ -327,13 +325,9 @@ const createWebhookDoor = (
           },
           refs: appRef(row.doc.id),
         };
-        if (deliveries.atomic === undefined) {
-          if (await deliveries.get(deliveryKey) !== null) {
-            deduped += 1;
-            continue;
-          }
-          await deliveries.put(delivery);
-        } else if (await deliveries.atomic.insertIfAbsent(delivery) === null) {
+        // Insert-ONCE: the delivery ledger is the only thing standing between a
+        // redelivered webhook and a second run of the automation.
+        if (await engine.insertIfAbsent(DELIVERIES, delivery) === null) {
           deduped += 1;
           continue;
         }

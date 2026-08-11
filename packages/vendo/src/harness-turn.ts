@@ -15,6 +15,7 @@
 import {
   VendoError,
   createTurnSkills,
+  emitUsage,
   hostSkillFiles,
   isUnattended,
   type FilesAdapter,
@@ -165,6 +166,17 @@ export interface HarnessTurns {
   };
   /** D6 — drop every thread a subject owns. */
   evictSubject(subject: string): Promise<void>;
+}
+
+/** `agent_run`'s `modelFamily`: the id the THINKING seat resolved to — the
+ *  finest family the ai-SDK exposes, and a name rather than a key or a URL. A
+ *  harness that brings its own brain (`claudeCode()`) has no seat to read, so
+ *  `null` is the whole truth. */
+function modelFamilyOf(models: ResolvedModels<LanguageModel>): string | null {
+  const model = models.default as LanguageModel | undefined;
+  if (typeof model === "string") return model;
+  const id = (model as { modelId?: unknown } | undefined)?.modelId;
+  return typeof id === "string" ? id : null;
 }
 
 export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
@@ -355,6 +367,27 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // runtime's generic `wrapWorkspace` slot: the runtime owns WHERE the wrap
       // happens and what `emit` writes to; composition owns WHAT wraps.
       const render = config.render === undefined ? undefined : config.render(input.ctx);
+      // The turn's own SHAPE, counted on the two rails this file already owns:
+      // every tool call passes the bridge's `onCall`, and `liveTurn`'s disposer
+      // is the runtime's turn end (it retracts the publication in the run's
+      // `finally`). Names and counts only — no argument and no result.
+      const startedAt = Date.now();
+      const toolNames = new Set<string>();
+      let toolCalls = 0;
+      const emitRun = (outcome: "ok" | "error", errorCode: string | null): void => emitUsage({
+        name: "agent_run",
+        durationMs: Date.now() - startedAt,
+        // No rail carries the thinker's step count out of the harness runtime
+        // (the workbench's `step-start` is dev-only, gated on VENDO_WORKBENCH),
+        // so this stays 0 until the runtime publishes one.
+        steps: 0,
+        toolCalls,
+        tools: [...toolNames].sort(),
+        modelFamily: modelFamilyOf(config.models),
+        outcome,
+        errorCode,
+      });
+      const bridge = config.bridge?.(input.ctx, thread.id) as ToolBridgeOptions | undefined;
       const runtime = createHarnessRuntime({
         tools: config.tools,
         guard: config.guard,
@@ -370,11 +403,22 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
             emit: opts.emit,
           }),
         }),
-        ...(config.bridge === undefined
-          ? {}
-          : { bridge: config.bridge(input.ctx, thread.id) as ToolBridgeOptions | undefined }),
+        bridge: {
+          ...bridge,
+          onCall: (call) => {
+            toolCalls += 1;
+            toolNames.add(call.tool);
+            return bridge?.onCall?.(call) ?? (() => {});
+          },
+        },
         ...(config.approvalWaitMs === undefined ? {} : { approvalWaitMs: config.approvalWaitMs }),
-        ...(config.liveTurn === undefined ? {} : { liveTurn: config.liveTurn }),
+        liveTurn: (published) => {
+          const unpublish = config.liveTurn?.(published);
+          return () => {
+            unpublish?.();
+            emitRun("ok", null);
+          };
+        },
       });
 
       // Assembled once, per turn, for WHOEVER thinks. The venue gate and the guard's
@@ -409,6 +453,12 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         // fail loudly with a standing card.
         interactive: !isUnattended(input.ctx),
         ...(input.signal === undefined ? {} : { signal: input.signal }),
+      }).catch((error: unknown) => {
+        // The turn ended before it ran: mounting the toolset, minting a turn
+        // credential or building the stream threw, so nothing was published and
+        // the disposer above will never fire.
+        emitRun("error", error instanceof VendoError ? error.code : "unknown");
+        throw error;
       });
       // A caller may begin without an id; hand the effective one back on every
       // turn, like `createAgent` does, so the wire can register turn liveness.

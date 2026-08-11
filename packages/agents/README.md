@@ -49,7 +49,10 @@ Every tool call passes the guard (`run` / `ask` / `block`); the dev's risk
 label is final and an unlabeled tool asks. Unset slots resolve down the
 ladder: store → the embedded zero-config store (with `VENDO_API_KEY` set,
 pass `store` explicitly — Cloud tenant-store access is not wired yet);
-sandbox → `E2B_API_KEY` or the Cloud pool. Egress binds at
+sandbox → the Cloud pool with `VENDO_API_KEY`, else a boot error naming both
+ways out. `E2B_API_KEY` is not a rung — it is the credential an explicit
+`sandbox: e2b()` reads, so a key in the shell can no longer flip which venue a
+deployment runs on. Egress binds at
 box boot from host code only — a list adds to the harness's minimum, `"all"`
 lifts it, and every box boot writes one audit row saying which skin it got.
 

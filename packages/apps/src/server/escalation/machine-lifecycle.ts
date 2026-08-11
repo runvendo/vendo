@@ -1,12 +1,12 @@
 import {
   VendoError,
   type AppId,
-  type StoreAdapter,
 } from "@vendoai/core";
 import {
   type AppDocument,
 } from "../../contract/index.js";
-import { rowFromRecord, updateAppRow } from "../persistence/persistence.js";
+import type { EngineOps } from "../persistence/engine.js";
+import { APPS_COLLECTION, rowFromRecord, updateAppRow } from "../persistence/persistence.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 
 /** Execution-v2 wake/sleep policy: auto-sleep after 5 minutes idle. */
@@ -63,7 +63,7 @@ export type BuildMachineAllowlist = (
 ) => Promise<string[]> | string[];
 
 export interface MachineLifecycleConfig {
-  store: StoreAdapter;
+  engine: EngineOps;
   sandbox?: SandboxAdapter;
   buildEnv?: BuildMachineEnv;
   /**
@@ -145,7 +145,7 @@ interface LiveEntry {
 }
 
 export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineLifecycle => {
-  const records = config.store.records("vendo_apps");
+  const engine = config.engine;
   const buildEnv: BuildMachineEnv = config.buildEnv ?? (() => ({}));
 
   /**
@@ -199,7 +199,7 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
 
   /** Authoritative document read — the caller's copy may predate a sleep's re-snapshot. */
   const currentDocument = async (appId: AppId): Promise<AppDocument> => {
-    const record = await records.get(appId);
+    const record = await engine.get(APPS_COLLECTION, appId);
     if (record === null) {
       throw new VendoError("not-found", `app ${appId} does not exist`, { appId });
     }
@@ -210,7 +210,7 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   const updateDocument = (
     appId: AppId,
     mutate: (doc: AppDocument) => AppDocument,
-  ): Promise<AppDocument> => updateAppRow(records, appId, mutate, "box");
+  ): Promise<AppDocument> => updateAppRow(engine, appId, mutate, "box");
 
   const armIdleTimer = (appId: AppId): void => {
     const entry = live.get(appId);

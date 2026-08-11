@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   type RunContext,
   type SecretsProvider,
@@ -144,7 +145,7 @@ describe.skipIf(!LIVE)("Lane E live gate: secrets + egress allowlist on real E2B
       egress: [ALLOWED_DOMAIN],
       secrets: [SECRET_NAME],
     };
-    await seedAppRow(store, doc, ada.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc, ada.principal.subject);
     const runtime = createApps({
       store,
       guard,

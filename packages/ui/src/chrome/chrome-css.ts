@@ -539,10 +539,31 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-connect-done-ic { display: inline-grid; place-items: center; width: 15px; height: 15px;
   border-radius: 999px; background: var(--vendo-accent); color: var(--vendo-accent-fg); }
 .fl-connect-done-ic svg { width: 9px; height: 9px; }
-/* V5 connect states: the plain-words access line, the settled receipt beside
-   the badge, the blocked-popup fallback, and the collapsed Skipped record. */
-.fl-connect-access { color: var(--vendo-fg-muted); font-size: 12px; }
-.fl-connect-receipt { color: var(--vendo-fg-muted); font-size: 11.5px; }
+/* C2 · Integration row — the connect card at rest is ONE row: the toolkit's raw
+   mark, its name over the quiet why/access line (.fl-approval-sub, the family's
+   notes line), and the button. It wraps rather than squeezing the copy when the
+   host's card is narrow. */
+.fl-connect-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* A brand's mark, RAW: no well, no fill, no radius, no clipping. The 28px well
+   (.fl-card-ic) cropped the Gmail M — the defect this row was drawn for — so
+   the logo keeps its own aspect ratio inside a 26px box. Shared with the
+   standing-access card's permission rows, which carried the same crop.
+   Aligned to the NAME, not to the row: in a host's narrow card the access line
+   wraps to three lines and a centred mark floats away from the row it labels
+   (the button stays centred — it answers the whole row).
+   Both children are sized: the remote logo can 404, and its fallback glyph
+   drawn at its own 15px beside 26px marks reads as a different component. */
+.fl-mark-raw { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0;
+  align-self: flex-start; margin-top: 1px; color: var(--vendo-fg-muted); }
+.fl-mark-raw img { max-width: 26px; max-height: 26px; width: auto; height: auto;
+  object-fit: contain; display: block; }
+.fl-mark-raw svg { width: 20px; height: 20px; display: block; }
+.fl-connect-copy { flex: 1 1 200px; min-width: 0; }
+.fl-connect-name { font: 600 14px/1.35 var(--vendo-heading-font); letter-spacing: -.012em;
+  color: var(--vendo-fg); overflow-wrap: anywhere; }
+.fl-connect-act { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
+/* The lifecycle's one status voice, under the row. */
+.fl-connect-note { display: block; margin-top: 9px; }
 .fl-connect-blocked { display: flex; flex-direction: column; align-items: flex-start; gap: 9px;
   font-size: 12.5px; line-height: 1.45; color: var(--vendo-fg); }
 /* Two classes on purpose: .fl-cardshell (column, card padding) is declared far
@@ -838,6 +859,32 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 /* Grant-set wait state (mockup §2): enabled but permissions outstanding. */
 .fl-auto-wait { background: var(--vendo-warn);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-warn) 18%, transparent); }
+/* A1 · Sentence — the RULE is the card's first line (its type rides with the
+   approval's question, below, where .fl-card-line can no longer outrank it),
+   with the live dot and the agency clause quiet under it. */
+/* min-width/overflow-wrap on the TEXT half, not the row: a flex item refuses to
+   shrink below its content by default, and this card sets overflow: hidden — so
+   an unbroken token (the sponsor's subject fallback is an opaque id) was clipped
+   at the card's edge instead of wrapping. The dot stays unshrinkable. */
+.fl-auto-state { margin-top: 4px; display: flex; align-items: flex-start; gap: 6px;
+  font: 400 12px/1.5 var(--vendo-font); color: var(--vendo-fg-muted); }
+/* Optically centred on the FIRST line rather than on the block, so the dot
+   still sits beside "Enabled" when the agency clause wraps. */
+.fl-auto-state .fl-auto-live { margin-top: 6px; flex-shrink: 0; }
+.fl-auto-state-copy { min-width: 0; overflow-wrap: anywhere; }
+/* E3 · Rule list — the agent's own sentences, each behind a quiet tick. Between
+   the rule and the status line in weight, because these are the terms. */
+.fl-auto-rules { list-style: none; margin: 11px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 7px; }
+/* min-width:0 + overflow-wrap: a flex item will not shrink below its content,
+   and this card clips (overflow: hidden), so one long unbroken token in an
+   authored sentence was cut off at the card's edge instead of wrapping. */
+.fl-auto-rules li { display: flex; align-items: flex-start; gap: 9px; min-width: 0;
+  overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.45;
+  color: color-mix(in srgb, var(--vendo-fg) 74%, var(--vendo-surface)); }
+.fl-auto-rules svg { flex-shrink: 0; margin-top: 2px; color: var(--vendo-indicator); }
+/* The trigger → action node diagram, still the workspace Automations panel's
+   vocabulary (the thread card says the same thing in its title line now). */
 .fl-auto-flow { display: flex; align-items: center; padding: 14px 16px 16px; border-top: 1px solid var(--vendo-border); }
 .fl-auto-node { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px;
   background: var(--vendo-bg); border: 1px solid var(--vendo-border); }
@@ -1000,8 +1047,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   .fl-act-pulse, .fl-connect-spin { animation: none; }
   .fl-picker-item.is-just-connected, .fl-picker-item.is-just-connected .fl-picker-on { animation: none; }
   .fl-msglist-wrap, .fl-jump, .fl-md--streaming > * { animation: none; opacity: 1; }
-  /* The launcher blob rests as a plain circle; the panel resize snaps. */
-  .fl-launcher-blob { animation: none; border-radius: 50%; }
+  /* The panel resize snaps. */
   .fl-overlay-panel { transition: none; }
 }
 
@@ -1077,17 +1123,12 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-launcher[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
 .fl-launcher[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
 
-/* The launcher mark: an accent-colored blob that
-   continuously morphs shape — the recognition cue, in place of any glyph or
-   product name. Quickens on hover; a static circle under reduced motion. */
+/* The launcher mark: a plain accent circle — the recognition cue, in place of
+   any glyph or product name. Static by design (2026-08-11: the morphing blob
+   read as a loading animation and is gone); anything that actually loads says
+   so with the progress ring below. */
 .fl-launcher-blob { width: 20px; height: 20px; flex: none; background: var(--vendo-accent);
-  animation: fl-blob-morph 7s ease-in-out infinite; }
-.fl-launcher:hover .fl-launcher-blob { animation-duration: 2.4s; }
-@keyframes fl-blob-morph {
-  0%, 100% { border-radius: 58% 42% 55% 45% / 48% 55% 45% 52%; transform: rotate(0deg) scale(1); }
-  25% { border-radius: 45% 55% 48% 52% / 58% 42% 58% 42%; transform: rotate(12deg) scale(1.05); }
-  50% { border-radius: 52% 48% 42% 58% / 45% 52% 48% 55%; transform: rotate(-8deg) scale(.96); }
-  75% { border-radius: 42% 58% 55% 45% / 52% 48% 55% 45%; transform: rotate(6deg) scale(1.03); } }
+  border-radius: 50%; }
 /* Blob-only orb: the host cleared the label (launcher.label: null). */
 .fl-launcher[data-vendo-launcher-bare] { padding: 11px; gap: 0; border-radius: 50%; }
 
@@ -1527,14 +1568,17 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   .fl-approval-sheet-scrim { animation: fl-fade-in .3s ease both; }
 }
 @keyframes fl-sheet-up { from { transform: translateY(100%); } to { transform: none; } }
-/* 1-H · thumb-zone decision buttons (same query as the ENG-228 block). */
+/* 1-H · thumb-zone decision buttons (same query as the ENG-228 block). The
+   connect row's cluster answers here too: on a phone it drops under the copy
+   and its buttons take the full width, the treatment it had while they rode
+   .fl-card-actions. */
 @media (max-width: 767px), (pointer: coarse) {
-  .fl-card-actions .fl-btn { padding: 14px 15px; font-size: 14px; flex: 1; }
+  .fl-card-actions .fl-btn, .fl-connect-act .fl-btn { padding: 14px 15px; font-size: 14px; flex: 1; }
+  .fl-connect-act { width: 100%; margin-left: 0; }
 }
 
 /* 3-A′ · real brand marks in the tray rows (monogram = fallback). */
 .fl-picker-ic img { width: 15px; height: 15px; object-fit: contain; display: block; }
-.fl-automation .fl-auto-arrow { position: relative; }
 @media (prefers-reduced-motion: reduce) {
   .fl-approval-sheet { animation: fl-fade-in .18s ease both; }
 }
@@ -1564,21 +1608,37 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   transition: border-color .12s ease, background .12s ease; }
 .fl-cite-btn svg { flex: none; color: var(--vendo-fg-muted); }
 .fl-cite-btn:hover, .fl-cite--open .fl-cite-btn { border-color: var(--vendo-border-strong); }
-/* The snippet popover: click-toggled everywhere, hover-revealed on pointer
-   devices (the mockup's chip:hover behavior). */
+/* The snippet popover. Open state is the ONE source of truth (turn-citations.tsx
+   drives it from hover intent, click-to-pin, Escape and outside-click): the card
+   sits 8px below its chip, and a :hover rule cannot survive that gap — nor could
+   an open card be dismissed under a pointer still resting on the chip. The left
+   below is only the resting anchor: a chip near a narrow surface's right edge
+   gets an inline left from the same component, so nothing here may shorthand it. */
 .fl-cite-pop { position: absolute; left: 0; top: calc(100% + 8px); width: 292px; z-index: 5;
   background: var(--vendo-surface); border: 1px solid var(--vendo-border); border-radius: 10px;
   box-shadow: var(--vendo-shadow-float); padding: 12px 14px; text-align: left; cursor: default;
   display: none; }
 .fl-cite--open .fl-cite-pop { display: block; }
-@media (hover: hover) { .fl-cite:hover .fl-cite-pop { display: block; } }
 .fl-cite-ptitle { font-size: 12.5px; font-weight: 600; color: var(--vendo-fg);
   display: flex; align-items: center; gap: 6px; }
 .fl-cite-ptitle svg { color: var(--vendo-fg-muted); }
 .fl-cite-psnippet { display: block; font-size: 12px; color: var(--vendo-fg-muted); line-height: 1.6;
   margin: 7px 0 9px; border-left: 2px solid var(--vendo-border); padding-left: 9px; }
+/* nowrap + wrap, together: a nowrap container makes each segment unbreakable —
+   kind and visibility are anonymous flex items, so this is the only place they
+   can be reached — and wrapping then happens only BETWEEN them. Without the
+   pair the row is one nowrap line whose items shrink to min-content, which is
+   what split the kind label "Product docs" down the middle next to a long
+   help.maple.bank source.
+   The source is the one segment that can outgrow the card by itself, and nowrap
+   leaves it no break at all: a 64-char help.maple.bank path painted 77px past
+   the border and handed .fl-msglist horizontal scroll. So it is a real element
+   rather than a third anonymous item — min-width:0 lifts the min-content floor
+   every flex item carries, and the ellipsis spends the cut on the tail, which
+   restates the card's own title, keeping the origin host readable. */
 .fl-cite-porigin { font-size: 11px; color: var(--vendo-fg-muted);
-  display: flex; align-items: center; gap: 5px; }
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap; white-space: nowrap; }
+.fl-cite-psource { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .fl-cite-sep { color: var(--vendo-border-strong); }
 .fl-know-searched { display: flex; align-items: center; gap: 7px; margin-top: 10px;
   font-size: 11.5px; color: var(--vendo-fg-muted); }
@@ -1637,8 +1697,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
    no eyebrow, no icon well, no risk pill, no field table, no amber. The quiet
    line under it carries every real input the question doesn't already name plus
    what approving does, so nothing is ever a disclosure away (the honesty law).
-   \`color: inherit\` keeps the settled receipt muted from the shell. */
-.fl-approval-ask { margin: 0; font: 550 14px/1.45 var(--vendo-font); letter-spacing: -.012em;
+   \`color: inherit\` keeps the settled receipt muted from the shell.
+   A1 · Sentence rides the same rule: the automation card's first line is its
+   RULE, and it is the same sentence in the same type. */
+.fl-approval-ask, .fl-auto-sentence { margin: 0; font: 550 14px/1.45 var(--vendo-font); letter-spacing: -.012em;
   color: inherit; overflow-wrap: anywhere; }
 /* pre-line: a flattened object/array input keeps its one-per-line shape
    (field-rows.ts), exactly as it did in the retired dd. */
@@ -1747,15 +1809,12 @@ ul.fl-approval-sub { padding: 0; list-style: none; }
 /* Law 1 — the ancestors that size the shell (width only, never its dress):
    the strip, the mobile sheet, and the activities stack. */
 .fl-approval-sheet .fl-cardshell { width: 100%; max-width: none; min-width: 0; }
-/* The automation card's flow nodes are CONTENTS now: the panel's padded block
-   loses its own box because the shell owns the padding. */
-.fl-cardshell > .fl-auto-flow { margin-top: 12px; padding: 12px 0 0; }
 /* The morph pill's mark comes from the shared <ToolkitLogo> (which owns the
    onError fallback), so its size rides the CSS instead of img attributes. */
 .fl-morph-logo img, .fl-morph-logo svg { display: block; width: 18px; height: 18px; object-fit: contain; }
 
 /* ---------- background attention (spec §2 G1, §3 H1, §4 N1) ---------- */
-/* The pill while a run keeps going without the user: the morph blob gives way
+/* The pill while a run keeps going without the user: the mark gives way
    to a progress ring and the label to the live beat. Nothing here opens or
    folds a surface — the pill only tells the truth about what is happening. */
 .fl-launcher-ring { width: 18px; height: 18px; flex: none; border-radius: 50%;

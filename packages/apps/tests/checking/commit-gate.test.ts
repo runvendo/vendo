@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 /**
  * The checks floor STOPS a bad app at the commit path (design §7).
  *
@@ -311,7 +312,7 @@ describe("the host's own rules bite", () => {
       ui: "tree",
       tree: compiled.tree,
     } as unknown as AppDocument;
-    await seedAppRow(store, seeded, ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), seeded, ctx.principal.subject);
     const before = await rowOf(store, seeded.id);
 
     const result = await runtime.edit(seeded.id, "rename it", ctx);

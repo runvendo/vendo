@@ -39,6 +39,7 @@
  */
 import {
   VENDO_MAKE_TOOL,
+  log,
   mintTurnId,
   type AppId,
   type CommitResult,
@@ -1079,9 +1080,13 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
       if (result.kind !== "assembled") return result;
       if (result.decisions !== undefined) {
         await deps.remember?.(request.appId, result.decisions, ctx).catch((error: unknown) => {
-          console.warn(`[vendo] the screen agent's decisions were not recorded on ${request.appId} — ${
-            error instanceof Error ? error.message : String(error)
-          }`);
+          log({
+            code: "vendo.screen-agent-decisions-not-recorded",
+            level: "warn",
+            message: `[vendo] the screen agent's decisions were not recorded on ${request.appId} — ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          });
         });
       }
       // The run's own closing words travel — `vendo_make` speaks them verbatim as

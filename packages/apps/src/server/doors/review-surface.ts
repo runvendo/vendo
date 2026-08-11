@@ -7,17 +7,17 @@
  * host's reviewer assertion (`AppsConfig.review.reviewer`).
  */
 import { VendoError } from "@vendoai/core";
-import { rowFromRecord } from "../persistence/persistence.js";
+import { APPS_COLLECTION, rowFromRecord } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import type { AppsRuntime } from "../runtime/types.js";
 
 export type ReviewSurfaceDeps = Pick<
   AppsRuntimeContext,
-  "config" | "apps" | "review" | "reviewerAsserted" | "reportGuard"
+  "config" | "engine" | "review" | "reviewerAsserted" | "reportGuard"
 >;
 
 export const createReviewSurface = (deps: ReviewSurfaceDeps): AppsRuntime["review"] => {
-  const { config, apps, review, reviewerAsserted, reportGuard } = deps;
+  const { config, engine, review, reviewerAsserted, reportGuard } = deps;
   return {
   async queue(ctx) {
     const entries = await review.queue();
@@ -38,7 +38,7 @@ export const createReviewSurface = (deps: ReviewSurfaceDeps): AppsRuntime["revie
     }
     // Reviewer-side, cross-subject by design: the app is looked up
     // WITHOUT owner scoping (the reviewer assertion above stands in front).
-    const record = await apps.get(input.appId);
+    const record = await engine.get(APPS_COLLECTION, input.appId);
     if (record === null) throw new VendoError("not-found", `app not found: ${input.appId}`);
     const row = rowFromRecord(record);
     const doc = row.doc;

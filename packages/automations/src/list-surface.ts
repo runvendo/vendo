@@ -13,7 +13,7 @@ import type { AutomationsEngine } from "./index.js";
 import { stopFor } from "./messages.js";
 import { allRecords, parseAppRow } from "./rows.js";
 import type { SponsorshipGateAccess } from "./sponsorship-gate.js";
-import { sponsorshipSchema, triggerKey, triggersOf } from "./sponsorship.js";
+import { SPONSORSHIPS, sponsorshipSchema, triggerKey, triggersOf } from "./sponsorship.js";
 import { APPS } from "./types.js";
 
 export type ListSurfaceDeps = {
@@ -25,12 +25,12 @@ export type ListSurfaceDeps = {
 };
 
 export const createListSurface = (deps: ListSurfaceDeps): Pick<AutomationsEngine, "list"> => {
-  const { base: { config }, appRows, armed } = deps;
+  const { base: { config, engine }, appRows, armed } = deps;
   const { sponsorship, consent } = deps;
 
   const list: AutomationsEngine["list"] = async (ctx) => {
     const subject = ctx.principal.subject;
-    const records = await allRecords(config.store.records(APPS), { refs: { subject } });
+    const records = await allRecords(engine, APPS, { refs: { subject } });
     const rows = records.map(parseAppRow).filter((row) => row.subject === subject);
     const seen = new Set(rows.map((row) => row.doc.id));
     // An ORG-held app's row subject is the org id (§9.5), so matching only the
@@ -40,7 +40,7 @@ export const createListSurface = (deps: ListSurfaceDeps): Pick<AutomationsEngine
     // come from the ctx (§9.1: asserted, never stored) and `can(editor)` still
     // decides each row.
     for (const org of new Set((ctx.memberships ?? []).map(({ org: id }) => id))) {
-      for (const record of await allRecords(config.store.records(APPS), { refs: { subject: org } })) {
+      for (const record of await allRecords(engine, APPS, { refs: { subject: org } })) {
         const row = parseAppRow(record);
         if (row.subject !== org || seen.has(row.doc.id)) continue;
         if (await appRows.canEdit(ctx, row, row.doc.id)) {
@@ -59,14 +59,14 @@ export const createListSurface = (deps: ListSurfaceDeps): Pick<AutomationsEngine
     // Deduped: sponsorship is per (app, trigger), so sponsoring two triggers of
     // one app must still fetch that app once.
     const sponsoredElsewhere = [...new Set(
-      (await allRecords(sponsorship.sponsorships(), { refs: { subject } }))
+      (await allRecords(engine, SPONSORSHIPS, { refs: { subject } }))
         .map((record) => sponsorshipSchema.safeParse(record.data))
         .flatMap((parsed) => parsed.success ? [parsed.data.appId] : [])
         .filter((appId) => !seen.has(appId)),
     )];
     for (const record of sponsoredElsewhere.length === 0
       ? []
-      : await allRecords(config.store.records(APPS), { ids: sponsoredElsewhere })) {
+      : await allRecords(engine, APPS, { ids: sponsoredElsewhere })) {
       const row = parseAppRow(record);
       // Sponsoring is not access: an editor whose grant was revoked keeps the
       // row but loses the door, so `can(editor)` still decides.

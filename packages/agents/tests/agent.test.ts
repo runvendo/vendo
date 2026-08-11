@@ -106,12 +106,14 @@ describe("the sandbox ladder", () => {
     expect(harnessAdapters(harness).sandbox).toBeDefined();
   });
 
-  it("E2B_API_KEY fills the slot when nothing was passed", () => {
+  it("E2B_API_KEY does NOT fill the slot — a key is a credential, not a choice", () => {
+    // The breaking change (selection law): a key in the shell used to compose the
+    // e2b adapter for a harness nobody handed one to. Now it is a boot error that
+    // names the two ways out.
     vi.stubEnv("VENDO_API_KEY", "");
     vi.stubEnv("E2B_API_KEY", "e2b_test");
-    const harness = boxy();
-    agent({ name: "support", harness, store: memoryStore(), guard: fakeGuard() });
-    expect(harnessAdapters(harness).sandbox).toBeDefined();
+    expect(() => agent({ name: "support", harness: boxy(), store: memoryStore(), guard: fakeGuard() }))
+      .toThrow(/runs on a sandbox and none resolved/);
   });
 
   it("a VENDO_API_KEY reaches the Cloud rung — unwired, that is a clear error", () => {
@@ -131,11 +133,17 @@ describe("the sandbox ladder", () => {
     expect(harnessAdapters(harness).sandbox).toBeDefined();
   });
 
-  it("no rung answering is a boot error with every way out named", () => {
+  it("no rung answering is a boot error naming BOTH ways out, config first", () => {
     vi.stubEnv("E2B_API_KEY", "");
     vi.stubEnv("VENDO_API_KEY", "");
-    expect(() => agent({ name: "support", harness: boxy(), store: memoryStore(), guard: fakeGuard() }))
-      .toThrow(/e2b|E2B_API_KEY|VENDO_API_KEY/);
+    const boot = (): unknown =>
+      agent({ name: "support", harness: boxy(), store: memoryStore(), guard: fakeGuard() });
+    // (1) explicit config, (2) VENDO_API_KEY — the order the law states, because
+    // a loose alternation matched the old message that pointed at E2B_API_KEY as
+    // a way out and would have kept passing after the law changed.
+    expect(boot).toThrow(/pass one — `sandbox: e2b\(\)`, which reads E2B_API_KEY as its credential/);
+    expect(boot).toThrow(/or set VENDO_API_KEY for the Vendo Cloud sandbox pool/);
+    expect(boot).toThrow(/An E2B_API_KEY alone no longer selects a sandbox/);
   });
 
   it("a harness that thinks in-process never resolves a sandbox", () => {

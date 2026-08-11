@@ -30,6 +30,7 @@ import type {
   Skill,
   ToolDefinition,
   ToolRegistry,
+  VendoLogger,
 } from "@vendoai/core";
 import type {
   ComponentCatalog,
@@ -218,6 +219,11 @@ export interface CreateVendoConfig {
       always did. */
   guard?: VendoGuard | GuardRules;
   secrets?: SecretsProvider;
+  /** Where everything Vendo says out loud goes (core's `log.ts`): one structured
+      event per line Vendo would have written to the console, so a host can route
+      it into its own observability or quieten it. A host-passed logger ALWAYS
+      wins; unset is today's console lines, unchanged. */
+  logger?: VendoLogger;
   telemetry?: boolean;
   /** Development-only surfaces: the injection seams (/dev/inclient-approval),
       the `vendo sync` blast-radius probe (POST /sync/impact), and the

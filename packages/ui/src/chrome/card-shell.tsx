@@ -2,15 +2,17 @@
  *
  *  Every consent/status card in the product is this shell with different
  *  CONTENTS: eyebrow · one-size icon well · title · the mandatory plain-words
- *  line · field rows or a list · actions · byline. Connect, standing-access,
- *  automation and the resolved record are contents only, and every surface that
- *  shows one (thread, waiting strip, activities, mobile sheet, voice, embeds)
- *  renders the SAME shell.
+ *  line · field rows or a list · actions · byline. Standing-access and the
+ *  resolved record are contents only, and every surface that shows one (thread,
+ *  waiting strip, activities, mobile sheet, voice, embeds) renders the SAME
+ *  shell.
  *
- *  The APPROVAL ask (M1 · Sentence) is the one card with no head and no rows:
- *  the ask itself is a bold question, and one quiet line under it carries every
- *  real input the question doesn't name plus what approving does. It is still
- *  this shell, and law 3 lives across that pair.
+ *  The SENTENCE family — the approval ask (M1), the connect row (C2) and the
+ *  automation rule (A1) — is headless: its first line IS the card (a question,
+ *  a toolkit name, a rule), with one quiet line under it carrying the rest.
+ *  Those three wear no eyebrow and no icon well (connect shows the toolkit's
+ *  raw mark, deliberately not a well: the well cropped the Gmail M). They are
+ *  still this shell, and law 3 lives across each pair of lines.
  *
  *  1. Ancestors may set width/max-width on `.fl-cardshell` — never undress it.
  *  2. ONE icon well (28px), ONE primary button (`.fl-btn-primary`), ONE
@@ -32,13 +34,12 @@ import { useState, type HTMLAttributes, type ReactNode } from "react";
 import { developmentMode } from "./dev-mode.js";
 import type { CardFieldRow } from "./field-rows.js";
 
-/** The eyebrow strings, once (six were hardcoded across the card files). The
-    approval ASK has no eyebrow: its question is the whole card (M1 · Sentence),
-    so the two approval entries are gone with it. */
+/** The eyebrow strings, once (six were hardcoded across the card files). Each
+    card that joined the sentence family took its entry with it: the approval
+    ask, the connect row and the automation rule are their own first line, so
+    only the kinds that still wear a head are left here. */
 export const CARD_EYEBROWS = {
-  connect: "Connect",
   standingAccess: "Standing access",
-  automationStatus: "Automation",
   resolved: "Approval",
   waiting: "Waiting on you",
 } as const;
@@ -68,7 +69,6 @@ export const TOOL_GLYPH = glyph(
   13,
 );
 export const LINK_GLYPH = glyph(<path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 1 1 0 10h-2M8 12h8" />);
-export const BOLT_GLYPH = glyph(<path d="m13 2-9 12h8l-1 8 9-12h-8l1-8Z" />);
 export const CLOCK_GLYPH = glyph(<><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></>);
 /** The settled mark (was inlined five times). */
 export const TICK_GLYPH = (

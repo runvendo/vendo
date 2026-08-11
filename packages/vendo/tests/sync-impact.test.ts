@@ -9,7 +9,7 @@ import {
   type PermissionGrant,
   type Principal,
 } from "@vendoai/core";
-import { appStore, createStore, grantStore, type VendoStore } from "@vendoai/store";
+import { appStore, createStore, createStoreOps, grantStore, type VendoStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { computeImpact } from "../src/sync-impact.js";
 
@@ -90,7 +90,7 @@ describe("computeImpact", () => {
     await grants.create(principal, grant("grt_revoked", { revokedAt: "2026-07-14T12:30:00.000Z" }));
     await grants.create(principal, grant("grt_expired", { expiresAt: "2020-01-01T00:00:00.000Z" }));
 
-    await expect(computeImpact(store, ["host_get_widgets", "host_absent"])).resolves.toEqual([
+    await expect(computeImpact(createStoreOps(store), ["host_get_widgets", "host_absent"])).resolves.toEqual([
       {
         tool: "host_get_widgets",
         apps: [{ id: "app_widgets", title: "Widget viewer" }],
@@ -121,7 +121,7 @@ describe("computeImpact", () => {
       componentTools: { OrdersPanel: ["host_get_orders"] },
     });
 
-    await expect(computeImpact(store, ["host_get_orders"])).resolves.toEqual([
+    await expect(computeImpact(createStoreOps(store), ["host_get_orders"])).resolves.toEqual([
       {
         tool: "host_get_orders",
         apps: [{ id: "app_island", title: "Island dashboard" }],
@@ -156,7 +156,7 @@ describe("computeImpact", () => {
     // off an unnormalized row reports "0 automations affected" for a deployment
     // whose automations all predate the trigger list — the most dangerous
     // possible answer, since it reads as "nothing to worry about".
-    await expect(computeImpact(store, ["host_get_widgets"])).resolves.toEqual([
+    await expect(computeImpact(createStoreOps(store), ["host_get_widgets"])).resolves.toEqual([
       {
         tool: "host_get_widgets",
         apps: [],

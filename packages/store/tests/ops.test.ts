@@ -46,10 +46,10 @@ for (const backend of backends()) {
       const { made, ops } = await makeOps();
       try {
         const event = auditFixture("aud_ops_1");
-        await ops.records.put("vendo_audit", { id: event.id, data: event });
-        await expect(ops.records.put("vendo_audit", { id: event.id, data: event }))
+        await ops.engine.put("vendo_audit", { id: event.id, data: event });
+        await expect(ops.engine.put("vendo_audit", { id: event.id, data: event }))
           .rejects.toMatchObject({ code: "conflict" });
-        await expect(ops.records.delete("vendo_audit", event.id))
+        await expect(ops.engine.delete("vendo_audit", event.id))
           .rejects.toMatchObject({ code: "blocked" });
       } finally {
         await made.cleanup();
@@ -60,14 +60,27 @@ for (const backend of backends()) {
       const { made, ops } = await makeOps();
       try {
         const receipt = { subject: "user_fx", outcome: { sent: true } };
-        const first = await ops.records.insertIfAbsent("vendo_effects", { id: "fx_1", data: receipt });
+        const first = await ops.engine.insertIfAbsent("vendo_effects", { id: "fx_1", data: receipt });
         expect(first?.id).toBe("fx_1");
-        expect(await ops.records.insertIfAbsent("vendo_effects", { id: "fx_1", data: { subject: "user_fx", outcome: { sent: false } } })).toBeNull();
+        expect(await ops.engine.insertIfAbsent("vendo_effects", { id: "fx_1", data: { subject: "user_fx", outcome: { sent: false } } })).toBeNull();
         // Even the plain put hands back the RECORDED receipt, never a rewrite.
-        const replayed = await ops.records.put("vendo_effects", { id: "fx_1", data: { subject: "user_fx", outcome: { sent: false } } });
+        const replayed = await ops.engine.put("vendo_effects", { id: "fx_1", data: { subject: "user_fx", outcome: { sent: false } } });
         expect(replayed.data).toMatchObject({ outcome: { sent: true } });
-        await expect(ops.records.compareAndSwap("vendo_effects", { id: "fx_1", data: receipt }, "1"))
+        await expect(ops.engine.compareAndSwap("vendo_effects", { id: "fx_1", data: receipt }, "1"))
           .rejects.toMatchObject({ code: "blocked" });
+      } finally {
+        await made.cleanup();
+      }
+    });
+
+    it("status() reports the 35 ops this wire serves", async () => {
+      const { made, ops } = await makeOps();
+      try {
+        const status = await ops.status();
+        expect(status.ops).toBe(35);
+        // Nothing left to announce: the handshake carries the format and the
+        // count, and the retired generic family is not advertised as anything.
+        expect(Object.keys(status).sort()).toEqual(["format", "ops"]);
       } finally {
         await made.cleanup();
       }
@@ -76,11 +89,11 @@ for (const backend of backends()) {
     it("subject-guarded upserts refuse a cross-subject flip", async () => {
       const { made, ops } = await makeOps();
       try {
-        await ops.records.put("vendo_threads", {
+        await ops.engine.put("vendo_threads", {
           id: "thr_guard",
           data: { subject: "user_a", messages: [] },
         });
-        await expect(ops.records.put("vendo_threads", {
+        await expect(ops.engine.put("vendo_threads", {
           id: "thr_guard",
           data: { subject: "user_b", messages: [] },
         })).rejects.toMatchObject({ code: "conflict" });

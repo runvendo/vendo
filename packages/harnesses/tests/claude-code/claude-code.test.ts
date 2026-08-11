@@ -387,14 +387,16 @@ describe("options — declared, then overridable per turn", () => {
 describe("E7 · the credential law — build list item 8", () => {
   test("only the recorded v0 inference exception enters the machine", () => {
     const env = withEnv({
-      ANTHROPIC_API_KEY: "sk-test",
-      ANTHROPIC_BASE_URL: "https://gateway.example/v1/",
+      VENDO_INFERENCE_KEY: "gw-key",
+      VENDO_INFERENCE_URL: "https://gateway.example/v1/",
+      ANTHROPIC_API_KEY: "sk-should-never-travel",
+      ANTHROPIC_BASE_URL: "https://api.anthropic.com",
       E2B_API_KEY: "e2b-should-never-travel",
       DATABASE_URL: "postgres://should-never-travel",
       VENDO_API_KEY: "vnd-should-never-travel",
     }, inferenceEnv);
     expect(env).toEqual({
-      ANTHROPIC_API_KEY: "sk-test",
+      ANTHROPIC_API_KEY: "gw-key",
       // The bare origin: the SDK wants no /v1 and no trailing slash.
       ANTHROPIC_BASE_URL: "https://gateway.example",
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
@@ -428,6 +430,50 @@ describe("E7 · the credential law — build list item 8", () => {
     ]);
   });
 
+  // The SELECTION LAW's breaking change on this door. ANTHROPIC_* used to outrank
+  // BOTH rungs, so a provider key or endpoint sitting in the deployment's
+  // environment silently decided which account every box billed.
+  test("a stray ANTHROPIC_API_KEY selects nothing — it never reaches the box", () => {
+    const env = withEnv({
+      ANTHROPIC_API_KEY: "sk-test",
+      ANTHROPIC_BASE_URL: undefined,
+      VENDO_INFERENCE_KEY: undefined,
+      VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: undefined,
+    }, inferenceEnv);
+    expect(Object.keys(env).sort()).toEqual([
+      "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+      "DISABLE_AUTOUPDATER",
+    ]);
+  });
+
+  test("a stray ANTHROPIC_BASE_URL selects nothing either", () => {
+    const env = withEnv({
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_BASE_URL: "https://gateway.example",
+      VENDO_INFERENCE_KEY: undefined,
+      VENDO_INFERENCE_URL: undefined,
+      VENDO_API_KEY: undefined,
+    }, inferenceEnv);
+    expect(env["ANTHROPIC_BASE_URL"]).toBeUndefined();
+  });
+
+  test("half the pair selects nothing — an endpoint is both halves or neither", () => {
+    for (const half of [
+      { VENDO_INFERENCE_KEY: "gw-key", VENDO_INFERENCE_URL: undefined },
+      { VENDO_INFERENCE_KEY: undefined, VENDO_INFERENCE_URL: "https://gateway.example" },
+    ]) {
+      const env = withEnv({
+        ANTHROPIC_API_KEY: undefined,
+        ANTHROPIC_BASE_URL: undefined,
+        VENDO_API_KEY: undefined,
+        ...half,
+      }, inferenceEnv);
+      expect(env["ANTHROPIC_API_KEY"]).toBeUndefined();
+      expect(env["ANTHROPIC_BASE_URL"]).toBeUndefined();
+    }
+  });
+
   test("VENDO_API_KEY is the third rung — the box thinks through the Vendo Cloud gateway", () => {
     const env = withEnv({
       ANTHROPIC_API_KEY: undefined,
@@ -459,19 +505,9 @@ describe("E7 · the credential law — build list item 8", () => {
     expect(env["ANTHROPIC_BASE_URL"]).toBe("https://cloud.example/api");
   });
 
-  test("the Cloud rung yields to every higher rung — and an empty string counts as absent", () => {
-    // An explicit Anthropic key wins; no gateway pin rides along.
-    const anthropic = withEnv({
-      ANTHROPIC_API_KEY: "sk-test",
-      ANTHROPIC_BASE_URL: undefined,
-      VENDO_INFERENCE_KEY: undefined,
-      VENDO_INFERENCE_URL: undefined,
-      VENDO_API_KEY: "vnd-key",
-    }, inferenceEnv);
-    expect(anthropic["ANTHROPIC_API_KEY"]).toBe("sk-test");
-    expect(anthropic["ANTHROPIC_MODEL"]).toBeUndefined();
-
-    // So does a pre-resolved VENDO_INFERENCE_* gateway.
+  test("the Cloud rung yields only to the explicit pair — and an empty string counts as absent", () => {
+    // A pre-resolved VENDO_INFERENCE_* gateway is the one thing above it; no
+    // gateway model pin rides along, because the host chose the endpoint.
     const preResolved = withEnv({
       ANTHROPIC_API_KEY: undefined,
       ANTHROPIC_BASE_URL: undefined,
@@ -482,20 +518,26 @@ describe("E7 · the credential law — build list item 8", () => {
     expect(preResolved["ANTHROPIC_API_KEY"]).toBe("gw-key");
     expect(preResolved["ANTHROPIC_MODEL"]).toBeUndefined();
 
-    // A bare BYO endpoint (URL, no key — mTLS/proxy auth) is an own credential
-    // too: routing it through Vendo's gateway would silently rebill the org.
-    const byoEndpoint = withEnv({
-      ANTHROPIC_API_KEY: undefined,
-      ANTHROPIC_BASE_URL: "https://gateway.example",
-      VENDO_INFERENCE_KEY: undefined,
-      VENDO_INFERENCE_URL: undefined,
-      VENDO_API_KEY: "vnd-key",
-    }, inferenceEnv);
-    expect(byoEndpoint["ANTHROPIC_API_KEY"]).toBeUndefined();
-    expect(byoEndpoint["ANTHROPIC_MODEL"]).toBeUndefined();
-    expect(byoEndpoint["ANTHROPIC_BASE_URL"]).toBe("https://gateway.example");
+    // A stray provider key or endpoint does NOT yield to it — and does not win:
+    // the Cloud rung answers, because it is the only thing anyone configured.
+    // (Before the law, either ANTHROPIC_* var silently rebilled the org.)
+    for (const stray of [
+      { ANTHROPIC_API_KEY: "sk-test", ANTHROPIC_BASE_URL: undefined },
+      { ANTHROPIC_API_KEY: undefined, ANTHROPIC_BASE_URL: "https://gateway.example" },
+    ]) {
+      const env = withEnv({
+        VENDO_INFERENCE_KEY: undefined,
+        VENDO_INFERENCE_URL: undefined,
+        VENDO_API_KEY: "vnd-key",
+        VENDO_CLOUD_URL: undefined,
+        ...stray,
+      }, inferenceEnv);
+      expect(env["ANTHROPIC_API_KEY"]).toBe("vnd-key");
+      expect(env["ANTHROPIC_BASE_URL"]).toBe("https://console.vendo.run/api");
+      expect(env["ANTHROPIC_MODEL"]).toBe("vendo");
+    }
 
-    // "" is absent, exactly as the higher rungs already treat it.
+    // "" is absent, exactly as the pair already treats it.
     const blanks = withEnv({
       ANTHROPIC_API_KEY: "",
       ANTHROPIC_BASE_URL: "",

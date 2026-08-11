@@ -184,7 +184,9 @@ export async function pushHostComponents(options: {
       ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
       fetch: fetchImpl,
     });
-    const records = store.records(HOST_COMPONENTS_COLLECTION);
+    // The component index is one of Vendo's OWN drawers, so it rides the engine
+    // family; the module bodies stay on the blob door, which is unchanged.
+    const engine = store.ops.engine;
     const blobs = store.blobs(HOST_COMPONENTS_COLLECTION);
 
     // ONE keys-only call answers the whole "what do you already have?"
@@ -205,7 +207,7 @@ export async function pushHostComponents(options: {
     const remote = new Map<string, unknown>();
     let cursor: string | undefined;
     do {
-      const page = await records.list({ limit: RECORD_PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) });
+      const page = await engine.list(HOST_COMPONENTS_COLLECTION, { limit: RECORD_PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) });
       for (const record of page.records) remote.set(record.id, record.data);
       if (page.cursor === undefined || page.cursor === cursor) break;
       cursor = page.cursor;
@@ -214,7 +216,7 @@ export async function pushHostComponents(options: {
     for (const [name, record] of [...local.records].sort(([left], [right]) => left.localeCompare(right))) {
       const parsed = capturedHostComponentSchema.safeParse(remote.get(name));
       if (parsed.success && parsed.data.hash === record.hash) continue;
-      await records.put({ id: name, data: record as unknown as Json });
+      await engine.put(HOST_COMPONENTS_COLLECTION, { id: name, data: record as unknown as Json });
       // `remote` tracks what Cloud HOLDS, so the blob keep-set below is
       // computed against the post-reconcile truth, not the pre-push snapshot.
       remote.set(name, record);
@@ -224,7 +226,7 @@ export async function pushHostComponents(options: {
       // Presence on disk, not parseability: an unreadable file still means the
       // host registers this component, so its Cloud row stays.
       if (local.present.has(name)) continue;
-      await records.delete(name);
+      await engine.delete(HOST_COMPONENTS_COLLECTION, name);
       pruned.push(name);
       remote.delete(name);
     }

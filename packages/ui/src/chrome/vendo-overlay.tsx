@@ -38,7 +38,7 @@ export interface VendoOverlayProps {
   onOpenChange?(open: boolean): void;
   /**
    * Built-in launcher placement and content. The default is a fixed pill in
-   * the given viewport corner carrying the morphing accent blob and a
+   * the given viewport corner carrying the accent-circle mark and a
    * WHITE-LABEL text — "AI agent", never a product name. Pass
    * `"none"` to hide it and drive the overlay programmatically (via
    * `open`/`onOpenChange` or the `useVendoOverlay` hook), or the object form
@@ -49,7 +49,7 @@ export interface VendoOverlayProps {
     position?: "bottom-right" | "bottom-left";
     /** Pill text. Default "AI agent"; `null` renders the blob-only orb. */
     label?: string | null;
-    /** Replaces the morph-blob mark (a host logo, custom glyph, …). */
+    /** Replaces the circle mark (a host logo, custom glyph, …). */
     icon?: ReactNode;
   };
   /**

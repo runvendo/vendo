@@ -4,7 +4,7 @@
  * agent reports an unfulfillable ask through.
  */
 import type { Connector } from "@vendoai/actions";
-import type { Json } from "@vendoai/core";
+import { consoleLogger, emitUsage, setLogger, setUsageSink, type Json } from "@vendoai/core";
 import { createKnowledgeTools, knowledgeIndexResolver } from "@vendoai/knowledge";
 import {
   capabilitySurfaceSnapshot,
@@ -19,6 +19,8 @@ import {
 } from "./compose-selection.js";
 import { connectorDiscoveryRegistry } from "./connector-discovery.js";
 import { dotVendoFile } from "./dot-vendo.js";
+import { createSdkEvents, sdkRuntime, withSdkErrorReporting } from "./sdk-events.js";
+import { environment } from "./wire/shared.js";
 
 /** The discovery tools' ports. Each body only runs on a real tool call, long
  *  after createVendo has returned, so the seams it reads may be composed later. */
@@ -69,6 +71,61 @@ const connectorDiscoveryPorts = (
       return entry === undefined ? undefined : { connector: entry.connector, toolkit: entry.toolkit };
     },
 });
+
+/** `deployment_boot`'s three lists: which adapters this deployment is RUNNING,
+ *  which optional BLOCKS mounted, and the host framework when its runtime
+ *  announces itself. NAMES only — never a URL, a key, or a host identifier.
+ *
+ *  Every name is read from what the adapter rule SELECTED, never from the slot
+ *  the host filled. The two disagree on every Cloud-defaulted seam: a
+ *  deployment that passes no `sandbox` and runs the Cloud sandbox is running a
+ *  sandbox, and a list built from `config` reports none — an undercount that
+ *  looks exactly like a deployment with no sandbox at all. */
+const bootShape = (
+  composition: VendoComposition,
+): { adapters: string[]; blocks: string[]; framework: string | null } => {
+  const {
+    config, sandbox, connections, resolvedConnectors, knowledgeIndex, appsMounted, automationsMounted,
+  } = composition;
+  // The knowledge adapter and its prompt index compose together or not at all
+  // (composeTools below), so the resolver's presence IS the adapter's.
+  const knowledge = knowledgeIndex !== undefined;
+  const running = (name: string, live: boolean): string[] => (live ? [name] : []);
+  return {
+    adapters: [
+      // Persistence, blob storage, secrets and the thinker always resolve to
+      // something — the local store, the store-backed files adapter, the env
+      // provider, the composed `vendo()` harness — so every deployment runs one
+      // of each, whether or not it passed one.
+      "store",
+      "files",
+      ...running("sandbox", sandbox.venue !== false),
+      "secrets",
+      "harness",
+      ...running("connections", connections.posture !== false),
+      ...running("knowledge", knowledge),
+      ...running("connectors", resolvedConnectors.length > 0),
+    ],
+    blocks: [
+      ...(appsMounted ? ["apps"] : []),
+      ...(automationsMounted ? ["automations"] : []),
+      ...(knowledge ? ["knowledge"] : []),
+      ...(config.mcp === undefined || config.mcp === false ? [] : ["mcp"]),
+    ],
+    // Next sets NEXT_RUNTIME in every server runtime it serves from. No other
+    // supported framework announces itself to a RUNNING deployment, so anything
+    // else is honestly unknown rather than guessed.
+    framework: environment("NEXT_RUNTIME") === undefined ? null : "next",
+  };
+};
+
+/** One deployment came up. Emitted by `createComposition` once every phase has
+ *  run, because that is the first moment the answer exists: the connections
+ *  adapter is not chosen until compose-discovery.ts, so a boot event raised
+ *  mid-composition could only report the host's config. */
+export const emitDeploymentBoot = (composition: VendoComposition): void => {
+  emitUsage({ name: "deployment_boot", ...bootShape(composition) });
+};
 
 /** The discovery pair, the knowledge tool, and the capability-miss surface. */
 export const composeTools = (composition: VendoComposition): Pick<VendoComposition,
@@ -150,5 +207,17 @@ export const composeTools = (composition: VendoComposition): Pick<VendoCompositi
     surface: missSurface,
     ...(missCloud === undefined ? {} : { cloud: missCloud }),
   });
+  // Everything Vendo says out loud, and everything it reports about itself,
+  // gets its sink here — the same seam and the same Cloud slot the miss stream
+  // above rides. A host-passed logger always wins; unset keeps today's console
+  // lines byte for byte, with a warn/error ALSO reported as an `sdk_error`.
+  setLogger(withSdkErrorReporting(config.logger ?? consoleLogger));
+  setUsageSink(createSdkEvents({
+    ...(missCloud === undefined ? {} : { cloud: missCloud }),
+    runtime: sdkRuntime(),
+  })?.record);
+  // The boot event itself is raised by `createComposition`, after every phase
+  // has run — see emitDeploymentBoot above. The SINK still has to be installed
+  // here, before the phases below it can warn.
   return { toolOutputCap, catalogConnectors, serviceCatalog, knowledgeIndex, missSurface, missCapture };
 };

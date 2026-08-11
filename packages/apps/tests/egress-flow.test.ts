@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   type Guard,
   type RunContext,
@@ -57,7 +58,7 @@ const setup = async (options: {
   const guard = options.guard ?? guardFixture();
   const sandbox = fakeStatefulSandbox();
   const doc = options.doc ?? app();
-  await seedAppRow(store, doc, "user_ada");
+  await seedAppRow(engineOverAdapter(store), doc, "user_ada");
   const config: AppsConfig = {
     store,
     guard,

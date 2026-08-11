@@ -112,10 +112,13 @@ describe("degraded data never changes the card", () => {
   });
 
   it("brands a connector ask by its toolkit and survives a logo 404", () => {
-    // ⚠️ TEST EDIT (M1 · Sentence): the approval card has no icon well any more —
-    // the question is the whole card — so the toolkit mark and its 404 fallback
-    // are asserted where the ONE 28px well still lives: the standing-access
-    // card's permission rows. Nothing about the fallback changed.
+    // ⚠️ TEST EDIT (M1 · Sentence, then C2): the approval card has no icon well
+    // any more — the question is the whole card — so the toolkit mark and its
+    // 404 fallback are asserted on the standing-access card's permission rows,
+    // which still carry a mark. That mark is now RAW (`.fl-mark-raw`, shared
+    // with the connect row): it is the same remote logo, and the 28px well's
+    // radius and fill cropped it. The fallback contract is unchanged — a glyph,
+    // never an empty box — and the raw box sizes it.
     const grants = render(
       <VendoProvider client={client}>
         <GrantSetCard
@@ -125,14 +128,33 @@ describe("degraded data never changes the card", () => {
         />
       </VendoProvider>,
     ).container;
-    const well = grants.querySelector(".fl-grant .fl-card-ic")!;
-    const logo = well.querySelector("img")!;
+    const mark = grants.querySelector(".fl-grant .fl-mark-raw")!;
+    // Nothing crops a brand's logo on this card either: a row WITH a logo wears
+    // the raw mark. (A host tool has no logo, so its glyph keeps the well it was
+    // drawn for — asserted below.)
+    expect(grants.querySelector(".fl-grant .fl-card-ic")).toBeNull();
+    const logo = mark.querySelector("img")!;
     expect(logo.getAttribute("src")).toContain("logos.composio.dev");
-    // The CDN fails (unknown slug, offline, blocked): the well keeps a glyph
+    // The CDN fails (unknown slug, offline, blocked): the mark keeps a glyph
     // rather than an empty box — three of the four call sites had no onError.
     fireEvent.error(logo);
-    expect(well.querySelector("img")).toBeNull();
-    expect(well.querySelector("svg")).not.toBeNull();
+    expect(mark.querySelector("img")).toBeNull();
+    expect(mark.querySelector("svg")).not.toBeNull();
+    cleanup();
+
+    // A HOST tool has no brand mark to show raw, so its glyph keeps the 28px
+    // well — the shape a glyph was drawn for, and law 2's one well size.
+    const hostRow = render(
+      <VendoProvider client={client}>
+        <GrantSetCard
+          name="Low balance alert"
+          permissions={[{ approvalId: "apr_2", tool: "host_listAccounts", risk: "read" }]}
+          state="parked"
+        />
+      </VendoProvider>,
+    ).container;
+    expect(hostRow.querySelector(".fl-grant .fl-mark-raw")).toBeNull();
+    expect(hostRow.querySelector(".fl-grant .fl-card-ic svg")).not.toBeNull();
     cleanup();
 
     // The slug never reads as the ask.

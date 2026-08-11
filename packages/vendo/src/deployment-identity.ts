@@ -1,13 +1,16 @@
 /** Deployment-identity headers (cloud definition, interaction model): every
- * key-authenticated Vendo Cloud request carries `x-vendo-deployment-host` and
- * `x-vendo-deployment-name`; the console's shared auth middleware upserts the
- * deployment inventory and meters usage from these on real service calls —
- * there is no heartbeat. Shared by the CLI cloud client and the runtime Cloud
- * adapters (connections, sandbox), so this module carries NO static Node
- * import: builtins load through the runtime accessor (server.ts precedent)
- * and every lookup fails soft to "unknown" on edge/Worker targets — identity
- * headers must never take a request down. The console truncates and fails
- * open on its side (parseDeploymentHeaders), so sending is always safe. */
+ * key-authenticated Vendo Cloud request carries `x-vendo-deployment-host`,
+ * `x-vendo-deployment-name`, and `x-vendo-deployment-version`; the console's
+ * shared auth middleware upserts the deployment inventory and meters usage
+ * from these on real service calls — there is no heartbeat. Shared by the
+ * CLI cloud client and the runtime Cloud adapters (connections, sandbox), so
+ * this module carries NO static Node import: builtins load through the
+ * runtime accessor (server.ts precedent) and every lookup fails soft to
+ * "unknown" on edge/Worker targets — identity headers must never take a
+ * request down. The console truncates and fails open on its side
+ * (parseDeploymentHeaders), so sending is always safe. */
+
+import { VERSION } from "./wire/shared.js";
 
 type RuntimeProcess = {
   getBuiltinModule?: (id: string) => unknown;
@@ -59,7 +62,7 @@ function resolveDeploymentName(cwd: string): Promise<string> {
   return name;
 }
 
-/** The two identity headers for a key-authenticated Cloud request. */
+/** The three identity headers for a key-authenticated Cloud request. */
 export async function deploymentIdentityHeaders(): Promise<Record<string, string>> {
   const os = builtinModule<typeof import("node:os")>("node:os");
   let cwd: string | undefined;
@@ -71,5 +74,6 @@ export async function deploymentIdentityHeaders(): Promise<Record<string, string
   return {
     "x-vendo-deployment-host": headerSafe(os === undefined ? "" : os.hostname()),
     "x-vendo-deployment-name": headerSafe(cwd === undefined ? "" : await resolveDeploymentName(cwd)),
+    "x-vendo-deployment-version": headerSafe(VERSION),
   };
 }

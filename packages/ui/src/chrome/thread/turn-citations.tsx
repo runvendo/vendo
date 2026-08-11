@@ -1,7 +1,23 @@
 import type { VendoKnowledgeCitation } from "@vendoai/core";
 import type { UIMessage } from "ai";
-import { useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { sourcesFor } from "./message-data.js";
+
+/** The popover opens 8px below its chip, and that gap belongs to neither: a pure
+    CSS :hover card dies in it before the pointer arrives, and no bridge survives
+    a diagonal approach (a path that leaves the chip sideways is over nothing at
+    all). Hover opens the card from JS and closes it on this grace instead —
+    long enough for an unhurried hand to cross, short enough that the card still
+    reads as tied to the pointer. Being reachable and dismissible is also what
+    WCAG 1.4.13 asks of content shown on hover. */
+const GRACE_MS = 260;
+
+/** Room left between a clamped popover and the edge it was clamped against. */
+const EDGE_GUTTER = 8;
+
+/** Exactly one card is open at a time: whoever opens dismisses the incumbent,
+    so travelling along a chip row never stacks two 292px cards on each other. */
+let closeOpenCitation: (() => void) | undefined;
 
 /** Knowledge K1 — the origin byline's kind label (mockup: "Product docs"). */
 function kindLabel(kind: VendoKnowledgeCitation["kind"]): string {
@@ -16,28 +32,108 @@ const DocIcon = () => (
   </svg>
 );
 
-/** One citation chip: the bordered pill that expands (click; hover on pointer
-    devices, via CSS) into the snippet popover with the origin byline. */
+/** One citation chip: the bordered pill that expands into the snippet popover
+    with the origin byline. Hover opens it and a grace timer closes it (the card
+    lives inside .fl-cite, so arriving on it cancels the close whatever path the
+    pointer took); a click pins it, so it also survives the pointer leaving. */
 function CitationChip({ citation }: { citation: VendoKnowledgeCitation }) {
   const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  const card = useRef<HTMLSpanElement>(null);
+  const grace = useRef<number | undefined>(undefined);
+  const pinned = useRef(false);
+
+  // Stale copies of this closer are harmless — closing a closed chip is a no-op,
+  // which is why nothing has to track whose closer is parked in the module slot.
+  const close = useCallback(() => {
+    window.clearTimeout(grace.current);
+    pinned.current = false;
+    setOpen(false);
+  }, []);
+
+  const show = () => {
+    window.clearTimeout(grace.current);
+    // Already ours: cancelling the pending close is the whole job. Re-opening
+    // would run this chip's own closer and silently drop its pin.
+    if (open) return;
+    closeOpenCitation?.();
+    closeOpenCitation = close;
+    setOpen(true);
+  };
+
+  const release = () => {
+    window.clearTimeout(grace.current);
+    if (!pinned.current) grace.current = window.setTimeout(close, GRACE_MS);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node) || !wrap.current?.contains(event.target)) close();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [open, close]);
+
+  // A chip unmounted mid-hover must not fire its grace timer into a dead tree.
+  useEffect(() => () => window.clearTimeout(grace.current), []);
+
+  // The card is anchored to its chip (left: 0) at a fixed width, so a chip near
+  // the right edge of a wrapped row pushes it outside a narrow surface. Measure
+  // on open and slide it back inside whatever is doing the clipping.
+  useLayoutEffect(() => {
+    if (!open || card.current === null || wrap.current === null) return;
+    const edge = (wrap.current.closest(".fl-msglist") ?? document.documentElement).getBoundingClientRect();
+    if (edge.width === 0) return;
+    const anchored = wrap.current.getBoundingClientRect().left;
+    const rightmost = edge.right - EDGE_GUTTER - card.current.offsetWidth;
+    const clamped = Math.max(edge.left + EDGE_GUTTER, Math.min(anchored, rightmost));
+    card.current.style.left = `${clamped - anchored}px`;
+  }, [open]);
+
   return (
-    <span className={`fl-cite${open ? " fl-cite--open" : ""}`}>
+    <span
+      className={`fl-cite${open ? " fl-cite--open" : ""}`}
+      ref={wrap}
+      // Touch has no hover to intend with, and a tap fires pointerenter before
+      // click — it would open the card and then immediately pin it.
+      onPointerEnter={event => {
+        if (event.pointerType !== "touch") show();
+      }}
+      onPointerLeave={event => {
+        if (event.pointerType !== "touch") release();
+      }}
+    >
       <button
         type="button"
         className="fl-cite-btn"
         aria-expanded={open}
-        onClick={() => setOpen(value => !value)}
+        onClick={() => {
+          if (pinned.current) {
+            close();
+            return;
+          }
+          show();
+          pinned.current = true;
+        }}
       >
         <DocIcon />
         {citation.title}
       </button>
-      <span className="fl-cite-pop" role="note">
+      <span className="fl-cite-pop" role="note" ref={card}>
         <span className="fl-cite-ptitle"><DocIcon />{citation.title}</span>
         <span className="fl-cite-psnippet">&ldquo;{citation.snippet}&rdquo;</span>
         <span className="fl-cite-porigin">
           {typeof citation.source === "string" && citation.source.length > 0 ? (
             <>
-              {citation.source}
+              <span className="fl-cite-psource">{citation.source}</span>
               <span className="fl-cite-sep" aria-hidden="true">·</span>
             </>
           ) : null}

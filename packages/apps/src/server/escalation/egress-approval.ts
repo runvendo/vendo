@@ -3,13 +3,13 @@ import {
   type AppId,
   type ApprovalId,
   type IsoDateTime,
-  type StoreAdapter,
   type VendoRecord,
 } from "@vendoai/core";
 import {
   type AppDocument,
 } from "../../contract/index.js";
-import { listAllRecords } from "../persistence/persistence.js";
+import type { EngineOps } from "../persistence/engine.js";
+import { listAllEngineRecords } from "../persistence/persistence.js";
 
 /**
  * execution-v2 Wave 2 Lane E — grant-style egress approval (the design's
@@ -97,8 +97,8 @@ const COLLECTION = "vendo_egress_approval";
 
 const requestData = (record: VendoRecord): EgressApprovalRequest => record.data as EgressApprovalRequest;
 
-const listAll = (store: StoreAdapter, refs: Record<string, string>): Promise<VendoRecord[]> =>
-  listAllRecords(store.records(COLLECTION), { refs });
+const listAll = (engine: EngineOps, refs: Record<string, string>): Promise<VendoRecord[]> =>
+  listAllEngineRecords(engine, COLLECTION, { refs });
 
 /**
  * Persistence for PARKED egress approvals only. Approved state lives on the
@@ -117,8 +117,7 @@ export interface EgressApprovals {
   clearForApp(appId: AppId): Promise<void>;
 }
 
-export const createEgressApprovals = (store: StoreAdapter): EgressApprovals => {
-  const collection = store.records(COLLECTION);
+export const createEgressApprovals = (engine: EngineOps): EgressApprovals => {
 
   const refsFor = (request: EgressApprovalRequest): Record<string, string> => ({
     subject: request.owner,
@@ -129,21 +128,21 @@ export const createEgressApprovals = (store: StoreAdapter): EgressApprovals => {
 
   return {
     async putPending(request) {
-      await collection.put({
+      await engine.put(COLLECTION, {
         id: recordId(request.appId, request.domain),
         data: request,
         refs: refsFor(request),
       });
     },
     async byApproval(approvalId) {
-      return (await listAll(store, { approval: approvalId })).map(requestData);
+      return (await listAll(engine, { approval: approvalId })).map(requestData);
     },
     async remove(appId, domain) {
-      await collection.delete(recordId(appId, domain));
+      await engine.delete(COLLECTION, recordId(appId, domain));
     },
     async clearForApp(appId) {
-      for (const record of await listAll(store, { app_id: appId })) {
-        await collection.delete(record.id);
+      for (const record of await listAll(engine, { app_id: appId })) {
+        await engine.delete(COLLECTION, record.id);
       }
     },
   };

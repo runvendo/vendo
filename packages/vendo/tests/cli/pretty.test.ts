@@ -2,7 +2,7 @@ import { PassThrough, Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPrettyOutput, displayWidth, plainSelect, usePrettyOutput, type SelectInput } from "../../src/cli/pretty.js";
 import { plainSecret, plainText } from "../../src/cli/pretty.js";
-import { BANNER_COMPACT, BANNER_CONCEPT, bannerFrames } from "../../src/cli/banner.js";
+import { BANNER_COMPACT, BANNER_CONCEPT, BANNER_TAGLINE, bannerFrames } from "../../src/cli/banner.js";
 
 const ESC = "\u001b";
 
@@ -100,15 +100,25 @@ describe("createPrettyOutput (visual system)", () => {
     expect(out.plain()).toContain("┌  vendo sync");
   });
 
-  it("prints the settled banner and the tagline above the header, and skips both when asked", () => {
+  it("prints the banner and the tagline above the header, and skips both when asked", async () => {
+    vi.useFakeTimers();
     const withBanner = sink();
-    createPrettyOutput({ write: withBanner.write, env: { COLORTERM: "truecolor" } }).log("hello");
+    const frames = bannerFrames(BANNER_COMPACT, "truecolor", BANNER_CONCEPT);
+    const pretty = createPrettyOutput({ write: withBanner.write, env: { COLORTERM: "truecolor" } });
+    pretty.log("hello");
     const plain = withBanner.plain();
-    expect(plain).toContain("▄▄█████▄");
+    // The art is on screen first and everything else lands under it — the
+    // tagline, then the header.
+    expect(plain.indexOf(stripAnsi(frames[0]!))).toBe(0);
     expect(plain).toContain("Customize your product with an embedded agent");
-    expect(plain.indexOf("▄▄█████▄")).toBeLessThan(plain.indexOf("┌  vendo init"));
+    expect(plain.indexOf("Customize your product")).toBeLessThan(plain.indexOf("┌  vendo init"));
     // Truecolor terminals get the real brand ramp.
     expect(withBanner.raw()).toContain(`${ESC}[38;2;`);
+    // …and the mark the wave settles on is the whole one.
+    await vi.advanceTimersByTimeAsync(90 * frames.length);
+    await pretty.arrived;
+    expect(withBanner.plain()).toContain("▄▄█████▄");
+    expect(withBanner.plain()).toContain(BANNER_COMPACT.join("\n"));
 
     const without = sink();
     createPrettyOutput({ write: without.write, banner: false }).log("hello");
@@ -143,20 +153,30 @@ describe("createPrettyOutput (visual system)", () => {
     expect(plain.lastIndexOf(BANNER_COMPACT.join("\n"))).toBeLessThan(plain.indexOf("┌  vendo init"));
   });
 
-  it("a line printed mid-arrival settles the mark first — the header never lands on a half-drawn one", () => {
+  // The header used to CUT the arrival. It does not any more: it prints below
+  // the art and the frames keep repainting above it, which is the whole point
+  // of the composited arrival.
+  it("a line printed mid-arrival lands below the art and never cuts the wave", async () => {
+    vi.useFakeTimers();
     const out = sink();
     const frames = bannerFrames(BANNER_COMPACT, "truecolor", BANNER_CONCEPT);
     const pretty = createPrettyOutput({ write: out.write, env: { COLORTERM: "truecolor" } });
     // Not one frame has had time to tick; the run wants the screen anyway.
     expect(out.raw()).toBe(`${frames[0]!}\n`);
     pretty.log("hello");
-    const plain = out.plain();
-    // The mark is whole, and everything else is under it: the animation can
-    // never delay a line, and never costs one either.
-    expect(plain).toContain(BANNER_COMPACT.join("\n"));
-    expect(plain.indexOf(BANNER_COMPACT.join("\n")))
-      .toBeLessThan(plain.indexOf("Customize your product with an embedded agent"));
-    expect(plain.indexOf("Customize your product")).toBeLessThan(plain.indexOf("┌  vendo init"));
+    // Frame one still stands: nothing settled the mark, and the header is under
+    // it. The wave was not aborted, it was composited over.
+    expect(out.plain()).not.toContain(BANNER_COMPACT.join("\n"));
+    expect(out.plain().indexOf("Customize your product")).toBeLessThan(out.plain().indexOf("┌  vendo init"));
+
+    // The next frame rewinds over the art AND the six rows the header cost
+    // (blank, tagline, blank, `┌`, `│`, the line itself).
+    await vi.advanceTimersByTimeAsync(90);
+    expect(out.raw()).toContain(`${ESC}7${ESC}[${BANNER_COMPACT.length + 6}A`);
+
+    await vi.advanceTimersByTimeAsync(90 * frames.length);
+    await expect(pretty.arrived).resolves.toBeUndefined();
+    expect(out.plain()).toContain(BANNER_COMPACT.join("\n"));
   });
 
   it("banner: false starts no arrival — no frames, no cursor games, and nothing to await", async () => {
@@ -168,14 +188,17 @@ describe("createPrettyOutput (visual system)", () => {
   });
 
   // `arrived` is what init awaits before its first block. It must settle on a
-  // run that never let the arrival finish too, or the wait becomes a hang.
-  it("arrived settles even when a line cut the arrival short", async () => {
+  // run that talked all the way through the wave, or the wait becomes a hang.
+  it("arrived settles on a run that printed all through the arrival", async () => {
     vi.useFakeTimers();
     const out = sink();
+    const frames = bannerFrames(BANNER_COMPACT, "truecolor", BANNER_CONCEPT);
     const pretty = createPrettyOutput({ write: out.write, env: { COLORTERM: "truecolor" } });
-    pretty.log("hello");
     const waited = pretty.arrived;
-    await vi.advanceTimersByTimeAsync(90);
+    for (let at = 0; at < frames.length; at += 1) {
+      pretty.log(`line ${at}`);
+      await vi.advanceTimersByTimeAsync(90);
+    }
     await expect(waited).resolves.toBeUndefined();
   });
 
@@ -923,10 +946,16 @@ const cells = (text: string): number => {
     below are about the settled SCREEN, which is where these bugs were visible.
     Writes only ever land at the end of a row or at column 0 after an erase,
     which is why the model can treat column 0 as "replace the row". */
-function screen(columns: number): { write: (chunk: string) => void; rows: () => string[] } {
+function screen(columns: number): {
+  write: (chunk: string) => void;
+  rows: () => string[];
+  /** Which row the cursor sits on — what the art's repaint has to rewind to. */
+  cursor: () => number;
+} {
   const rows: string[] = [""];
   let at = 0;
   let col = 0;
+  let saved = { at: 0, col: 0 };
   const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
   const put = (text: string): void => {
     // A terminal places GLYPHS, so the model does too: a cluster never splits
@@ -945,7 +974,7 @@ function screen(columns: number): { write: (chunk: string) => void; rows: () => 
   };
   return {
     write: (chunk) => {
-      for (const token of chunk.match(/\u001b\[[0-9;?]*[A-Za-z]|\n|\r|[^\u001b\n\r]+/g) ?? []) {
+      for (const token of chunk.match(/\u001b[78]|\u001b\[[0-9;?]*[A-Za-z]|\n|\r|[^\u001b\n\r]+/g) ?? []) {
         if (token === "\n") {
           at += 1;
           col = 0;
@@ -954,6 +983,10 @@ function screen(columns: number): { write: (chunk: string) => void; rows: () => 
         }
         if (token === "\r") { col = 0; continue; }
         if (token.startsWith(ESC)) {
+          // Save/restore (ESC 7 / ESC 8) is how the art repaints above the
+          // content without moving the cursor the run prints at.
+          if (token === `${ESC}7`) { saved = { at, col }; continue; }
+          if (token === `${ESC}8`) { ({ at, col } = saved); continue; }
           const up = /^\u001b\[(\d*)A$/.exec(token);
           if (up !== null) { at = Math.max(0, at - (up[1] === "" ? 1 : Number(up[1]))); continue; }
           if (token === `${ESC}[2K`) { rows[at] = ""; continue; }
@@ -968,6 +1001,7 @@ function screen(columns: number): { write: (chunk: string) => void; rows: () => 
       }
     },
     rows: () => rows,
+    cursor: () => at,
   };
 }
 
@@ -1195,5 +1229,130 @@ describe("createPrettyOutput (display width — wide glyphs and combining marks)
     // CJK run, between two glyphs.
     const strip = (text: string): string => text.replace(/\s+/g, "");
     expect(strip(answer.map((row) => row.slice(3)).join(""))).toBe(strip(`● ${options[1]!.label}`));
+  });
+});
+
+/** THE COMPOSITED ARRIVAL. The wave plays while the run keeps printing under
+    it, and the art repaints itself by rewinding a ROW COUNT — so every
+    assertion here is really about that count. They are made against the screen
+    model above, which measures the terminal's own way, and never against the
+    renderer's belief about its own output: a model that asked the renderer how
+    wide its lines were could not disagree with it.
+
+    72 columns is the width the art fits EXACTLY, so the only thing that wraps
+    is a content line — which is the desync a newline count cannot see. */
+describe("createPrettyOutput (the composited arrival)", () => {
+  /** A host with three auth dependencies. 73 cells + the rail is 76: two
+      screen rows at 72 columns, one newline either way. */
+  const LONG_FACT = "Clerk / Auth.js / Supabase auth (@clerk/nextjs, next-auth, @supabase/ssr)";
+  const STACK_FACT = "Next.js · App Router · TypeScript · pnpm";
+  const SPINNER = /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/;
+
+  const artRows = (term: { rows: () => string[] }): string[] =>
+    term.rows().slice(0, BANNER_COMPACT.length);
+
+  /** init's own reveal, verbatim in shape: a leading beat, then one labelled
+      beat per fact. Returns the settled screen, plus — for every frame the art
+      painted — the rows it rewound by and the row the cursor was really on. */
+  async function reveal(columns: number): Promise<{
+    term: ReturnType<typeof screen>;
+    paints: { rewound: number; cursorWas: number }[];
+  }> {
+    const term = screen(columns);
+    const paints: { rewound: number; cursorWas: number }[] = [];
+    const startsPaint = new RegExp(`^${ESC}7${ESC}\\[(\\d+)A$`);
+    const pretty = createPrettyOutput({
+      write: (chunk) => {
+        const paint = startsPaint.exec(chunk);
+        if (paint !== null) paints.push({ rewound: Number(paint[1]), cursorWas: term.cursor() });
+        term.write(chunk);
+      },
+      columns,
+      env: { COLORTERM: "truecolor" },
+    });
+    // The wrapping fact resolves FIRST, so it lands while the wave is still
+    // playing — which is where a mis-counted row shows up. (A narrow window
+    // does this to every fact; here one long one is enough.)
+    const revealed = pretty.revealBlock("Your stack", [
+      { beat: "Checking auth…", text: LONG_FACT },
+      { beat: "Detecting your framework…", text: STACK_FACT },
+    ], { beat: "Reading your app…" });
+    await vi.advanceTimersByTimeAsync(5000);
+    await revealed;
+    return { term, paints };
+  }
+
+  it("keeps the mark whole above a scan whose fact WRAPS — the row count, not the newline count", async () => {
+    vi.useFakeTimers();
+    const { term, paints } = await reveal(72);
+
+    // The arithmetic first, because everything else follows from it: the art
+    // starts at row zero, so the rows a frame rewinds by must equal the row the
+    // cursor was really on. A newline count is short from the wrapping line on.
+    expect(paints.length).toBeGreaterThan(8);
+    expect(paints.map((paint) => paint.rewound)).toEqual(paints.map((paint) => paint.cursorWas));
+
+    // The art is untouched and exactly where it started.
+    expect(artRows(term)).toEqual([...BANNER_COMPACT]);
+    const below = term.rows().slice(BANNER_COMPACT.length);
+    const settled = below.join("\n");
+    expect(settled).toContain(BANNER_TAGLINE.trim());
+    expect(settled).toContain("┌  vendo init");
+    expect(settled).toContain("◆  Your stack");
+    expect(settled).toContain(`│  ✓ ${STACK_FACT}`);
+
+    // The wrapping fact is one rail body line over two screen rows, and every
+    // row the terminal shows fits the window.
+    const at = below.findIndex((row) => row.includes("✓ Clerk"));
+    expect(below[at + 1]!.startsWith("│  ")).toBe(true);
+    // Whitespace-insensitive: the row break lands ON the space it broke at.
+    const strip = (text: string): string => text.replace(/\s+/g, "");
+    expect(strip(below.slice(at, at + 2).map((row) => row.slice(3)).join("")))
+      .toBe(strip(`✓ ${LONG_FACT}`));
+    for (const row of term.rows()) expect(cells(row)).toBeLessThanOrEqual(72);
+
+  });
+
+  it("resolves every beat into a ✓ fact and leaves no spinner behind", async () => {
+    vi.useFakeTimers();
+    const { term } = await reveal(100);
+    const settled = term.rows().slice(BANNER_COMPACT.length).join("\n");
+    // The scan narrated, then answered: the labels are rewritten in place, so
+    // the settled transcript is facts only.
+    expect(settled).toContain(`✓ ${STACK_FACT}`);
+    expect(settled).toContain(`✓ ${LONG_FACT}`);
+    expect(settled).not.toContain("Reading your app");
+    expect(settled).not.toContain("Detecting your framework");
+    expect(settled).not.toContain("Checking auth");
+    expect(settled).not.toMatch(SPINNER);
+    // …in the order they were handed over, under the section title.
+    expect(settled.indexOf("◆  Your stack")).toBeLessThan(settled.indexOf("✓ Clerk"));
+    expect(settled.indexOf("✓ Clerk")).toBeLessThan(settled.indexOf(STACK_FACT));
+    expect(artRows(term)).toEqual([...BANNER_COMPACT]);
+  });
+
+  it("Ctrl-C mid-wave settles the mark and closes the rail under it", () => {
+    const term = screen(72);
+    const keys = fakeInput();
+    const exit = vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit:${String(code)}`);
+    });
+    try {
+      const pretty = createPrettyOutput({
+        write: term.write, input: keys.input, columns: 72, env: { COLORTERM: "truecolor" },
+      });
+      // Not one frame has ticked: the mark on screen is the first frame.
+      expect(artRows(term)).not.toEqual([...BANNER_COMPACT]);
+      void pretty.select("How will people use your agent?", [...USE_CASE_OPTIONS]).catch(() => undefined);
+      expect(() => keys.press("\u0003")).toThrow("exit:130");
+    } finally {
+      exit.mockRestore();
+    }
+    // The interrupt is the one path that still cuts the wave, and it leaves the
+    // FINISHED mark behind — with the rail closed under it, not over it.
+    expect(artRows(term)).toEqual([...BANNER_COMPACT]);
+    const rows = term.rows().filter((row) => row !== "");
+    expect(rows.at(-1)).toBe("└  Cancelled");
+    expect(rows.join("\n")).not.toContain("○");
   });
 });

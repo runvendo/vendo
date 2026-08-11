@@ -74,14 +74,14 @@ const numberField = (entry: unknown, field: string, message: string): number => 
 
 /** A thread's harness state rides the harness slot under this synthetic appId
     (the store's `harnessStateKey`), which is what makes deleteThread's cascade
-    onto harness state observable through the 42 ops. */
+    onto harness state observable through the 35 ops. */
 const harnessSlot = (threadId: string): string => `harness_state:${threadId}`;
 
 /** appData rows live in the app's own drawer, and the local backend fails an
     app-scoped write closed when the app has no row — so every appData case
     seeds one first, with the shape the typed `vendo_apps` door accepts. */
 const seedApp = async (ops: StoreOps, appId: string): Promise<void> => {
-  await ops.records.put("vendo_apps", {
+  await ops.engine.put("vendo_apps", {
     id: appId,
     data: {
       subject: "user_1",
@@ -121,139 +121,58 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
     seam: "StoreOps",
     cases: [
       // =====================================================================
-      // records
+      // engine
       // =====================================================================
 
-      opsCase(opts, "records.put echoes fields and stamps ISO timestamps", async (ops) => {
-        const input = { id: "put_echo", data: { nested: [1, "two"] }, refs: { owner: "user_1" } };
-        const record = await ops.records.put("conf_put", input);
-        assert(record.id === input.id, "put did not echo the record id");
-        assertDeepEqual(record.data, input.data, "put did not echo record data");
-        assertDeepEqual(record.refs, input.refs, "put did not echo record refs");
-        isoDateTimeSchema.parse(record.createdAt);
-        isoDateTimeSchema.parse(record.updatedAt);
-      }),
-
-      opsCase(opts, "records.get round-trips a put record", async (ops) => {
-        const put = await ops.records.put("conf_get", { id: "rt", data: { ok: true }, refs: { h: "1" } });
-        const got = await ops.records.get("conf_get", "rt");
-        assertDeepEqual(got, put, "get did not round-trip the stored record");
-      }),
-
-      opsCase(opts, "records.get missing returns null", async (ops) => {
-        assert(await ops.records.get("conf_miss", "absent") === null, "missing record did not return null");
-      }),
-
-      opsCase(opts, "records.put same id updates without timestamp regression", async (ops) => {
-        const first = await ops.records.put("conf_upd", { id: "s", data: { v: 1 }, refs: { o: "a" } });
-        const second = await ops.records.put("conf_upd", { id: "s", data: { v: 2 }, refs: { o: "b" } });
-        assertDeepEqual(second.data, { v: 2 }, "update did not replace data");
-        assertDeepEqual(second.refs, { o: "b" }, "update did not replace refs");
-        assert(second.createdAt === first.createdAt, "update changed createdAt");
-        assert(second.updatedAt >= first.updatedAt, "updatedAt regressed");
-      }),
-
-      opsCase(opts, "records.delete makes get return null", async (ops) => {
-        await ops.records.put("conf_del", { id: "del", data: {} });
-        await ops.records.delete("conf_del", "del");
-        assert(await ops.records.get("conf_del", "del") === null, "deleted record remained readable");
-      }),
-
-      opsCase(opts, "records.delete missing resolves", async (ops) => {
-        await ops.records.delete("conf_delmiss", "absent");
-      }),
-
-      opsCase(opts, "records.list returns everything put", async (ops) => {
-        for (const id of ["a", "b", "c"]) await ops.records.put("conf_la", { id, data: { id } });
-        const result = await ops.records.list("conf_la");
-        assertDeepEqual(result.records.map((r) => r.id).sort(), ["a", "b", "c"], "list omitted or added records");
-      }),
-
-      opsCase(opts, "records.list ids filters exactly", async (ops) => {
-        for (const id of ["ia", "ib", "ic"]) await ops.records.put("conf_li", { id, data: { id } });
-        const result = await ops.records.list("conf_li", { ids: ["ia", "ic"] });
-        assertDeepEqual(result.records.map((r) => r.id).sort(), ["ia", "ic"], "ids filter returned the wrong records");
-      }),
-
-      opsCase(opts, "records.list refs filters by exact containment", async (ops) => {
-        await ops.records.put("conf_lr", { id: "match", data: {}, refs: { owner: "one", kind: "inv" } });
-        await ops.records.put("conf_lr", { id: "wrong", data: {}, refs: { owner: "two", kind: "inv" } });
-        await ops.records.put("conf_lr", { id: "miss", data: {}, refs: { owner: "one" } });
-        const result = await ops.records.list("conf_lr", { refs: { owner: "one", kind: "inv" } });
-        assertDeepEqual(result.records.map((r) => r.id), ["match"], "refs filter was not exact key/value containment");
-      }),
-
-      opsCase(opts, "records.list limit and cursor paginate without loss or duplicates", async (ops) => {
-        const expected = ["pa", "pb", "pc", "pd", "pe"];
-        for (const id of expected) await ops.records.put("conf_pg", { id, data: { id } });
-        await assertPaginates("records.list", expected, async (cursor) => {
-          const page = await ops.records.list("conf_pg", { limit: PAGE, cursor });
-          return { ids: page.records.map((r) => r.id), cursor: page.cursor };
-        });
-      }),
-
-      opsCase(opts, "records.list repeats an identical query in the same order", async (ops) => {
-        for (const id of ["da", "db", "dc", "dd"]) await ops.records.put("conf_det", { id, data: { id } });
-        const first = await ops.records.list("conf_det");
-        const repeat = await ops.records.list("conf_det");
-        assertDeepEqual(repeat.records.map((r) => r.id), first.records.map((r) => r.id), "identical list calls returned different orders");
-        const firstPage = await ops.records.list("conf_det", { limit: PAGE });
-        const repeatPage = await ops.records.list("conf_det", { limit: PAGE });
-        assertDeepEqual(repeatPage.records.map((r) => r.id), firstPage.records.map((r) => r.id), "identical first pages returned different records");
-        assert(repeatPage.cursor === firstPage.cursor, "identical first pages returned different cursors");
-      }),
-
-      /** Store wire v1: every list op defaults to 100 per page and caps at 1000. */
-      opsCase(opts, "records.list defaults to 100 per page and refuses or clamps a limit above 1000", async (ops) => {
+      /** Store wire v1: every list op defaults to 100 per page and caps at
+          1000. Pinned on `engine.list` — the generic records family that used
+          to carry this case is gone, and the rule is the WIRE's, not the
+          StoreAdapter's, so it stays in this suite. */
+      opsCase(opts, "engine.list defaults to 100 per page and refuses or clamps a limit above 1000", async (ops) => {
+        const collection = engineAppHistory("conf_cap");
         const ids = Array.from({ length: 101 }, (_, i) => `cap_${String(i).padStart(3, "0")}`);
-        for (const id of ids) await ops.records.put("conf_cap", { id, data: { id } });
-        const defaulted = await ops.records.list("conf_cap");
+        for (const id of ids) await ops.engine.put(collection, { id, data: { id } });
+        const defaulted = await ops.engine.list(collection);
         assert(defaulted.records.length === 100, `the default page should hold 100 records, got ${defaulted.records.length}`);
         assert(defaulted.cursor !== undefined, "a truncated default page must return a cursor");
-        const overMax = await ops.records.list("conf_cap", { limit: 5000 }).catch((error: unknown) => {
+        const overMax = await ops.engine.list(collection, { limit: 5000 }).catch((error: unknown) => {
           assert((error as { code?: unknown }).code === "validation", `a limit above the 1000 max must be refused as validation, got ${String(error)}`);
           return null;
         });
         if (overMax !== null) assert(overMax.records.length <= 1000, "an accepted over-max limit was not clamped to 1000");
       }),
 
-      opsCase(opts, "records.claim returns true on match, false on mismatch", async (ops) => {
-        await ops.records.put("conf_cl", { id: "cl1", data: { v: 1 }, refs: { o: "a" } });
-        const miss = await ops.records.claim("conf_cl", { id: "cl1", data: { v: 999 } });
-        assert(miss === false, "claim should return false on mismatch");
-        const hit = await ops.records.claim("conf_cl", { id: "cl1", data: { v: 1 }, refs: { o: "a" } }, { data: { v: 2 }, refs: { o: "b" } });
-        assert(hit === true, "claim should return true on match");
-        const after = await ops.records.get("conf_cl", "cl1");
-        assertDeepEqual(after?.data, { v: 2 }, "claim did not apply replacement");
+      /** Store wire v1: a cursor is only followable if an identical query comes
+          back in an identical order. Same reason as the case above for living
+          on `engine.list`. */
+      opsCase(opts, "engine.list repeats an identical query in the same order", async (ops) => {
+        const collection = engineAppHistory("conf_det");
+        for (const id of ["da", "db", "dc", "dd"]) await ops.engine.put(collection, { id, data: { id } });
+        const first = await ops.engine.list(collection);
+        const repeat = await ops.engine.list(collection);
+        assertDeepEqual(repeat.records.map((r) => r.id), first.records.map((r) => r.id), "identical list calls returned different orders");
+        const firstPage = await ops.engine.list(collection, { limit: PAGE });
+        const repeatPage = await ops.engine.list(collection, { limit: PAGE });
+        assertDeepEqual(repeatPage.records.map((r) => r.id), firstPage.records.map((r) => r.id), "identical first pages returned different records");
+        assert(repeatPage.cursor === firstPage.cursor, "identical first pages returned different cursors");
       }),
 
-      opsCase(opts, "records.insertIfAbsent returns record on first call, null on second", async (ops) => {
-        const first = await ops.records.insertIfAbsent("conf_iia", { id: "iia1", data: { n: 1 } });
-        assert(first !== null, "insertIfAbsent first call should return a record");
-        assert(first!.id === "iia1", "insertIfAbsent did not echo id");
-        const second = await ops.records.insertIfAbsent("conf_iia", { id: "iia1", data: { n: 2 } });
-        assert(second === null, "insertIfAbsent second call should return null");
-        // original data unchanged
-        const got = await ops.records.get("conf_iia", "iia1");
-        assertDeepEqual(got?.data, { n: 1 }, "insertIfAbsent overwrote existing record");
+      /** Store wire v1: keyset pagination over `engine.list` walks the whole
+          set exactly once. */
+      opsCase(opts, "engine.list limit and cursor paginate without loss or duplicates", async (ops) => {
+        const collection = engineAppHistory("conf_pg");
+        const expected = ["pa", "pb", "pc", "pd", "pe"];
+        for (const id of expected) await ops.engine.put(collection, { id, data: { id } });
+        await assertPaginates("engine.list", expected, async (cursor) => {
+          const page = await ops.engine.list(collection, { limit: PAGE, cursor });
+          return { ids: page.records.map((r) => r.id), cursor: page.cursor };
+        });
       }),
-
-      opsCase(opts, "records.compareAndSwap succeeds on matching revision, null on stale", async (ops) => {
-        const created = await ops.records.put("conf_cas", { id: "cas1", data: { v: 1 } });
-        assert(created.revision, "put must return a revision for CAS");
-        const swapped = await ops.records.compareAndSwap("conf_cas", { id: "cas1", data: { v: 2 } }, created.revision!);
-        assert(swapped !== null, "compareAndSwap should succeed on matching revision");
-        assertDeepEqual(swapped!.data, { v: 2 }, "compareAndSwap did not update data");
-        const stale = await ops.records.compareAndSwap("conf_cas", { id: "cas1", data: { v: 3 } }, created.revision!);
-        assert(stale === null, "compareAndSwap should return null on stale revision");
-      }),
-
-      // =====================================================================
-      // engine
-      // =====================================================================
 
       opsCase(opts, "engine round-trips a record on an engine collection", async (ops) => {
         const put = await ops.engine.put("vendo_workspace_commits", { id: "wc_1", data: { v: 1 }, refs: { subject: "user_1" } });
+        isoDateTimeSchema.parse(put.createdAt);
+        isoDateTimeSchema.parse(put.updatedAt);
         const got = await ops.engine.get("vendo_workspace_commits", "wc_1");
         assertDeepEqual(got, put, "engine.get did not round-trip the stored record");
         const listed = await ops.engine.list("vendo_workspace_commits", { ids: ["wc_1"] });
@@ -322,8 +241,20 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(message.includes(`v${ENGINE_ALLOWLIST_VERSION}`), `the refusal should name the allowlist version, got ${message}`);
         assert(message.includes("appData"), `the refusal should point at the appData family, got ${message}`);
 
-        // A gate that throws after writing is not a gate.
-        assert(await ops.records.get("host_invoices", "inv_1") === null, "the refused put wrote its row anyway");
+        // A gate that throws after writing is not a gate. The probe is an
+        // app-scoped name — outside the allowlist exactly like `host_invoices`,
+        // but reachable through the ONE surviving door onto those rows, so the
+        // refused write can be looked for instead of assumed away.
+        await seedApp(ops, "app_gate");
+        await assertThrowsCode(
+          () => ops.engine.put("app:app_gate:invoices", { id: "inv_1", data: { total: 1 } }),
+          "blocked",
+          "an app-scoped collection on engine.put",
+        );
+        assert(
+          await ops.appData.get({ appId: "app_gate", collection: "invoices", owner: "user_1" }, "inv_1") === null,
+          "the refused put wrote its row anyway",
+        );
       }),
 
       /** `engine` is a NEW door onto the same routed doors the local backend
@@ -502,7 +433,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         assert(await ops.appData.get(owner, "keep") === null, "delete left the owner's own row behind");
       }),
 
-      /** `put` has `records.put`'s blast radius — an unconditional upsert on
+      /** `put` has an unconditional upsert's blast radius — an unconditional upsert on
           (collection, id) — so an id another owner holds must be refused, not
           overwritten and re-stamped into a row the loser can neither read nor
           delete. */
@@ -1133,16 +1064,16 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
       // =====================================================================
 
       opsCase(opts, "lifecycle.erase removes one subject's records, threads, and harness state", async (ops) => {
-        await ops.records.put("conf_erase", { id: "gone", data: {}, refs: { subject: "erase_me" } });
-        await ops.records.put("conf_erase", { id: "keep", data: {}, refs: { subject: "other" } });
+        await ops.engine.put("vendo_parked_call", { id: "gone", data: {}, refs: { subject: "erase_me" } });
+        await ops.engine.put("vendo_parked_call", { id: "keep", data: {}, refs: { subject: "other" } });
         await ops.transcripts.putThread({ id: "thr_erase", subject: "erase_me", messages: [] });
         await ops.transcripts.putThread({ id: "thr_keep", subject: "other", messages: [] });
         await ops.harness.set("app_erase", "erase_me", { v: 1 });
 
         const report = await ops.lifecycle.erase({ subject: "erase_me" });
         assert(report !== null && report !== undefined, "erase must return a report");
-        assert(await ops.records.get("conf_erase", "gone") === null, "erase left the subject's record behind");
-        assert(await ops.records.get("conf_erase", "keep") !== null, "erase removed another subject's record");
+        assert(await ops.engine.get("vendo_parked_call", "gone") === null, "erase left the subject's record behind");
+        assert(await ops.engine.get("vendo_parked_call", "keep") !== null, "erase removed another subject's record");
         assert(await ops.transcripts.getThread("thr_erase") === null, "erase left the subject's thread behind");
         assert(await ops.transcripts.getThread("thr_keep") !== null, "erase removed another subject's thread");
         assert(await ops.harness.get("app_erase", "erase_me") === null, "erase left the subject's harness state behind");
@@ -1154,7 +1085,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
       opsCase(opts, "lifecycle.promote hands the app record to the org; an unknown app is not-found", async (ops) => {
         // A SHAPE-VALID app record: vendo_apps is a typed door, and a real
         // backend refuses data that does not parse as {subject, enabled, doc}.
-        await ops.records.put("vendo_apps", {
+        await ops.engine.put("vendo_apps", {
           id: "app_promote",
           data: {
             subject: "user_1",
@@ -1164,7 +1095,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
           refs: { subject: "user_1" },
         });
         await ops.lifecycle.promote("app_promote", "org_1");
-        const promoted = await ops.records.get("vendo_apps", "app_promote");
+        const promoted = await ops.engine.get("vendo_apps", "app_promote");
         assert(
           promoted?.refs?.["subject"] === "org_1",
           `promote should hand the app to the org, got subject ${String(promoted?.refs?.["subject"])}`,
@@ -1180,7 +1111,7 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         const status = await ops.status();
         assert(status.format === VENDO_STORE_WIRE_FORMAT, `status.format should be ${VENDO_STORE_WIRE_FORMAT}`);
         assert(typeof status.ops === "number", "status.ops should be a number");
-        assert(status.ops === 42, `status.ops should be 42, got ${status.ops}`);
+        assert(status.ops === 35, `status.ops should be 35, got ${status.ops}`);
       }),
     ],
   };

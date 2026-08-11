@@ -40,8 +40,9 @@
  * name `egress-approval.ts` clears an app by) — a shared app is placed by
  * people its owner cannot enumerate.
  */
-import type { RecordInput, StoreAdapter, VendoRecord } from "@vendoai/core";
-import { listAllRecords } from "./persistence.js";
+import type { RecordInput, VendoRecord } from "@vendoai/core";
+import type { EngineOps } from "./engine.js";
+import { listAllEngineRecords } from "./persistence.js";
 
 /** The generic collection the LIVE rows live in (never a dedicated table).
  *  Exactly one row per live placement, which is what the seam readers count. */
@@ -99,9 +100,7 @@ const tokenOf = (record: VendoRecord): string | undefined => {
   return typeof data.token === "string" ? data.token : undefined;
 };
 
-export function placementStore(store: StoreAdapter): PlacementStore {
-  const rows = store.records(PLACEMENTS_COLLECTION);
-  const pointers = store.records(PLACEMENT_SLOTS_COLLECTION);
+export function placementStore(engine: EngineOps): PlacementStore {
 
   const dataFor = (row: PlacementRow): Record<string, string> => ({
     slot: row.slot,
@@ -126,10 +125,10 @@ export function placementStore(store: StoreAdapter): PlacementStore {
   });
 
   const get = async (subject: string, slot: string): Promise<PlacementRow | undefined> => {
-    const pointer = await pointers.get(pointerId(subject, slot));
+    const pointer = await engine.get(PLACEMENT_SLOTS_COLLECTION, pointerId(subject, slot));
     const token = pointer === null ? undefined : tokenOf(pointer);
     if (token === undefined) return undefined;
-    const live = await rows.get(liveId(subject, slot, token));
+    const live = await engine.get(PLACEMENTS_COLLECTION, liveId(subject, slot, token));
     return live === null ? undefined : rowOf(live);
   };
 
@@ -137,41 +136,33 @@ export function placementStore(store: StoreAdapter): PlacementStore {
    * The eviction receipt is only true if the read and the write are ONE
    * decision: read-then-put let two places into the same slot both answer
    * "nothing was replaced" while one of them was silently displaced. The
-   * pointer carries a revision on every adapter Vendo ships, so the loser
-   * sees the winner's pointer and retries against it.
+   * engine family carries insertIfAbsent and compareAndSwap on every verb set,
+   * so the loser sees the winner's pointer and retries against it.
    */
   const swingPointer = async (
     subject: string,
     row: PlacementRow,
     token: string,
   ): Promise<PlacementRow | undefined> => {
-    const atomic = pointers.atomic;
-    if (atomic === undefined) {
-      // A BYO adapter with no compare-and-swap keeps the old read-then-write
-      // and its old race; there is nothing else to arbitrate on.
-      const previous = await get(subject, row.slot);
-      await pointers.put(pointerInput(subject, row, token));
-      return previous;
-    }
     for (;;) {
-      const current = await pointers.get(pointerId(subject, row.slot));
+      const current = await engine.get(PLACEMENT_SLOTS_COLLECTION, pointerId(subject, row.slot));
       const input = pointerInput(subject, row, token);
       if (current === null) {
-        if (await atomic.insertIfAbsent(input) === null) continue;
+        if (await engine.insertIfAbsent(PLACEMENT_SLOTS_COLLECTION, input) === null) continue;
         return undefined;
       }
       if (current.revision === undefined) throw new Error("placement pointer is missing its revision");
       // Losing the CAS retries under the SAME token, so the live row already
       // down is the one the next attempt names; there is nothing to collect.
-      if (await atomic.compareAndSwap(input, current.revision) === null) continue;
+      if (await engine.compareAndSwap(PLACEMENT_SLOTS_COLLECTION, input, current.revision) === null) continue;
       // The slot is ours. Whatever the pointer named before us is strictly
       // older than this placement, so clearing it can never take out a newer
       // one, and it is what the caller is owed as the eviction receipt.
       const displaced = tokenOf(current);
       if (displaced === undefined) return undefined;
-      const previous = await rows.get(liveId(subject, row.slot, displaced));
+      const previous = await engine.get(PLACEMENTS_COLLECTION, liveId(subject, row.slot, displaced));
       if (previous === null) return undefined;
-      await rows.delete(liveId(subject, row.slot, displaced));
+      await engine.delete(PLACEMENTS_COLLECTION, liveId(subject, row.slot, displaced));
       return rowOf(previous);
     }
   };
@@ -183,30 +174,30 @@ export function placementStore(store: StoreAdapter): PlacementStore {
     // still resolves the app that is really there. The cost is that until then
     // nothing names this row, so a swing that throws has to take it back out —
     // otherwise every retry strands one more row nobody reads or collects.
-    await rows.put(liveInput(subject, row, token));
+    await engine.put(PLACEMENTS_COLLECTION, liveInput(subject, row, token));
     try {
       return await swingPointer(subject, row, token);
     } catch (error) {
-      await rows.delete(liveId(subject, row.slot, token));
+      await engine.delete(PLACEMENTS_COLLECTION, liveId(subject, row.slot, token));
       throw error;
     }
   };
 
   const remove = async (subject: string, slot: string, appId: string): Promise<void> => {
-    const pointer = await pointers.get(pointerId(subject, slot));
+    const pointer = await engine.get(PLACEMENT_SLOTS_COLLECTION, pointerId(subject, slot));
     if (pointer === null) return;
     const token = tokenOf(pointer);
     if (token === undefined || rowOf(pointer)?.appId !== appId) return;
     // Names THIS placement's token: a place that lands between the read above
     // and this write installs a new token, so the app that replaced ours is in
     // a row this delete cannot address.
-    await rows.delete(liveId(subject, slot, token));
+    await engine.delete(PLACEMENTS_COLLECTION, liveId(subject, slot, token));
     // The pointer is shared by every placement into this slot, so it goes only
     // while it still names OUR token — re-read, because a place may have taken
     // the slot since. Removing it rather than leaving it vacant is what lets a
     // deleted app leave nothing behind: nothing else in the tree ever collects
     // a pointer, and only a full subject erase would reach it.
-    const current = await pointers.get(pointerId(subject, slot));
+    const current = await engine.get(PLACEMENT_SLOTS_COLLECTION, pointerId(subject, slot));
     if (current === null || tokenOf(current) !== token) return;
     // The token check has to ride the WRITE, not merely precede it. A delete
     // keyed on the slot alone lands on whatever the pointer names when it
@@ -214,13 +205,7 @@ export function placementStore(store: StoreAdapter): PlacementStore {
     // deleted out from under it — its live row orphaned and the slot the person
     // just filled reading empty. `claim` with no replacement is the store
     // contract's compare-and-delete, keyed on the row this read saw.
-    if (pointers.claim === undefined) {
-      // A BYO adapter with no compare-and-delete keeps the read-then-delete and
-      // its race, the same concession `swingPointer` makes without CAS.
-      await pointers.delete(pointerId(subject, slot));
-      return;
-    }
-    await pointers.claim({
+    await engine.claim(PLACEMENT_SLOTS_COLLECTION, {
       id: current.id,
       data: current.data,
       ...(current.refs === undefined ? {} : { refs: current.refs }),
@@ -240,7 +225,7 @@ export function placementStore(store: StoreAdapter): PlacementStore {
      *  cannot enumerate, and a row left behind reads as a build that never
      *  landed — a failure card standing on somebody else's page. */
     async clearForApp(appId) {
-      for (const pointer of await listAllRecords(pointers, { refs: { app_id: appId } })) {
+      for (const pointer of await listAllEngineRecords(engine, PLACEMENT_SLOTS_COLLECTION, { refs: { app_id: appId } })) {
         const subject = pointer.refs?.subject;
         const slot = rowOf(pointer)?.slot;
         if (subject === undefined || slot === undefined) continue;
@@ -254,8 +239,8 @@ export function placementStore(store: StoreAdapter): PlacementStore {
         return found.filter((row): row is PlacementRow => row !== undefined);
       }
       const [pointerRecords, liveRecords] = await Promise.all([
-        listAllRecords(pointers, { refs: { subject } }),
-        listAllRecords(rows, { refs: { subject } }),
+        listAllEngineRecords(engine, PLACEMENT_SLOTS_COLLECTION, { refs: { subject } }),
+        listAllEngineRecords(engine, PLACEMENTS_COLLECTION, { refs: { subject } }),
       ]);
       const live = new Map(liveRecords.map((record) => [record.id, record]));
       const found: PlacementRow[] = [];

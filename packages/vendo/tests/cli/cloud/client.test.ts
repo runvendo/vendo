@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CloudError, cloudFetch, isVendoKey, resolveCloudBaseUrl } from "../../../src/cli/cloud/client.js";
 import { CLI_VERSION } from "../../../src/cli/shared.js";
+import { VERSION } from "../../../src/wire/shared.js";
 
 const cleanup: string[] = [];
 afterEach(async () => {
@@ -91,6 +92,7 @@ describe("cloud client", () => {
       headers: expect.objectContaining({
         "x-vendo-deployment-host": expect.any(String),
         "x-vendo-deployment-name": expect.any(String),
+        "x-vendo-deployment-version": VERSION,
       }),
     }));
   });

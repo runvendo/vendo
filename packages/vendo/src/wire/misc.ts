@@ -153,7 +153,7 @@ export const syncImpactRoutes: RouteEntry[] = [
     if (!Array.isArray(tools) || tools.length > 200 || tools.some((tool) => typeof tool !== "string")) {
       throw new VendoError("validation", "tools must be an array of at most 200 strings");
     }
-    return json({ impact: await computeImpact(deps.store, tools) });
+    return json({ impact: await computeImpact(deps.ops, tools) });
   }),
 ];
 

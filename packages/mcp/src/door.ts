@@ -2,12 +2,14 @@ import {
   auditContext,
   type Guard,
   type Json,
+  log,
   type Membership,
   type Principal,
   publicBase,
   type RiskLabel,
   type RunContext,
   type StoreAdapter,
+  type StoreOps,
   stripPathPrefix,
   type ToolDescriptor,
   type ToolOutcome,
@@ -111,6 +113,13 @@ export interface McpDoorConfig {
   oauth?: HostOAuthAdapter;
   /** Door-owned protocol state (clients, codes, refresh grants) — wired like every other block. */
   store: StoreAdapter;
+  /** The 42-op surface over that SAME store, when the composition could resolve
+   *  one. The OAuth space reaches its two drawers through `ops.engine.*` so the
+   *  engine allowlist gates every one of them; unset, it serves the same verbs
+   *  off the adapter itself (`engineOverAdapter`), which is what a host's BYO
+   *  `StoreAdapter` gets. An `internal` door has no OAuth space and reads no
+   *  drawer, so it needs none. */
+  ops?: StoreOps;
   /** §4 — saved apps ride along as MCP Apps; absent → tools-only door. The
    *  three verbs come off the real runtime (10-mcp §4); the umbrella passes
    *  `vendo.apps` essentially verbatim, narrowing only what `open` may
@@ -567,8 +576,13 @@ class Door {
     try {
       return await this.#config.turnCredentials.resolve(token);
     } catch (error) {
-      console.error("[vendo] mcp door: turn credential lookup failed", {
-        error: error instanceof Error ? error.message : String(error),
+      log({
+        code: "mcp.turn-credential-lookup-failed",
+        level: "error",
+        message: "[vendo] mcp door: turn credential lookup failed",
+        data: {
+          detail: { error: error instanceof Error ? error.message : String(error) },
+        },
       });
       return null;
     }
@@ -955,10 +969,17 @@ class Door {
         decidedBy: decision.decidedBy,
       });
     } catch (error) {
-      console.error("[vendo] mcp door: apps-tool audit report failed", {
-        tool: name,
-        outcome: outcome.status,
-        error: error instanceof Error ? error.message : String(error),
+      log({
+        code: "mcp.apps-tool-audit-failed",
+        level: "error",
+        message: "[vendo] mcp door: apps-tool audit report failed",
+        data: {
+          detail: {
+            tool: name,
+            outcome: outcome.status,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        },
       });
     }
     return mapOutcome(outcome, identity.name);
@@ -1454,11 +1475,14 @@ function wireSchemaCompiler(): (wire: Record<string, unknown>, serialized: strin
     } catch (error) {
       if (error instanceof EvalError && !codegenWarned) {
         codegenWarned = true;
-        console.warn(
-          "[vendo] mcp door: this runtime forbids code generation, so declared tool output schemas "
-          + "cannot be validated before they are advertised and are omitted from tools/list. "
-          + "Tools still list and still run; the model just loses the declared result fields.",
-        );
+        log({
+          code: "mcp.output-schema-validation-off",
+          level: "warn",
+          message:
+            "[vendo] mcp door: this runtime forbids code generation, so declared tool output schemas "
+            + "cannot be validated before they are advertised and are omitted from tools/list. "
+            + "Tools still list and still run; the model just loses the declared result fields.",
+        });
       }
       return rememberVerdict(serialized, false);
     }
@@ -1770,11 +1794,14 @@ async function readHostIdentity(): Promise<HostIdentity> {
   const warnFallback = (reason: string): HostIdentity => {
     if (!identityFallbackWarned) {
       identityFallbackWarned = true;
-      console.warn(
-        `[vendo] mcp door: could not read a product name from ${path ?? "the host package"} (${reason}); `
-        + "the server card and the connect page will say \"vendo\". Set `name` in the host's "
-        + "package.json or run the door from the host's package root.",
-      );
+      log({
+        code: "mcp.product-name-unresolved",
+        level: "warn",
+        message:
+          `[vendo] mcp door: could not read a product name from ${path ?? "the host package"} (${reason}); `
+          + "the server card and the connect page will say \"vendo\". Set `name` in the host's "
+          + "package.json or run the door from the host's package root.",
+      });
     }
     return fallback;
   };

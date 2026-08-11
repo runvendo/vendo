@@ -1,7 +1,7 @@
 import { composioToolRisk, normalizeToolName, type Connector, type ConnectorAccountIdentity } from "@vendoai/actions";
 import type { RunContext, ToolCall, ToolDescriptor, ToolOutcome } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
-import { debugConnectorHttp, defaultFetch } from "@vendoai/core";
+import { debugConnectorHttp, defaultFetch, log } from "@vendoai/core";
 
 /** The Cloud tools adapter — the execution half of the zero-key Composio
  * seam (cloudConnections is the account half). Tools list and execute ride
@@ -81,15 +81,23 @@ export function cloudTools(options: CloudToolsOptions): Connector {
           response = await cloudFetch(`/api/v1/tools?toolkits=${encodeURIComponent(toolkits)}`);
         } catch (error) {
           toolkitToolCache.delete(toolkits);
-          console.warn("[vendo] Vendo Cloud tools broker unreachable; no connector tools loaded:", error instanceof Error ? error.message : error);
+          log({
+            code: "vendo.cloud-tools-unreachable",
+            level: "warn",
+            message: "[vendo] Vendo Cloud tools broker unreachable; no connector tools loaded:",
+            data: { error: error instanceof Error ? error.message : error },
+          });
           return [];
         }
         if (!response.ok) {
           toolkitToolCache.delete(toolkits);
           const message = (response.payload as { error?: { message?: unknown } }).error?.message;
-          console.warn(
-            `[vendo] Vendo Cloud tools broker returned ${response.status}; no connector tools loaded${typeof message === "string" && message ? `: ${message}` : "."}`,
-          );
+          log({
+            code: "vendo.cloud-tools-broker-error",
+            level: "warn",
+            message:
+              `[vendo] Vendo Cloud tools broker returned ${response.status}; no connector tools loaded${typeof message === "string" && message ? `: ${message}` : "."}`,
+          });
           return [];
         }
         const items = response.payload && typeof response.payload === "object"
@@ -131,7 +139,11 @@ export function cloudTools(options: CloudToolsOptions): Connector {
         // Degrade, do not throw: the console repeating a slug must not delete
         // the host's own tools. First one wins so the list stays stable.
         if (nextNormalizedToRaw.has(name)) {
-          console.warn(`[vendo] Cloud tools: skipping duplicate tool name ${name}`);
+          log({
+            code: "vendo.cloud-tools-duplicate-tool",
+            level: "warn",
+            message: `[vendo] Cloud tools: skipping duplicate tool name ${name}`,
+          });
           continue;
         }
         nextNormalizedToRaw.set(name, { raw: item.slug, toolkit: item.toolkit });

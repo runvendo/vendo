@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import type {
   AppDocument,
 } from "../src/contract/index.js";
@@ -63,9 +64,9 @@ const setup = async (options: {
   const sandbox = fakeStatefulSandbox();
   const timers = fakeClock();
   const doc = options.doc ?? app();
-  await seedAppRow(store, doc, "owner");
+  await seedAppRow(engineOverAdapter(store), doc, "owner");
   const lifecycle = createMachineLifecycle({
-    store,
+    engine: engineOverAdapter(store),
     sandbox: options.withAdapter === false ? undefined : sandbox,
     buildEnv: () => options.env ?? { PORT: "8080" },
     // Deny-all when a case names no policy: the seam requires one, and the
@@ -265,10 +266,10 @@ describe("machine lifecycle: provider snapshot hygiene", () => {
     const sandbox = fakeStatefulSandbox();
     const timers = fakeClock();
     const doc = app();
-    await seedAppRow(store, doc, "owner");
+    await seedAppRow(engineOverAdapter(store), doc, "owner");
     const winner = { snapshotRef: "fake-v2:winner", provisionedAt: "2026-07-19T01:00:00.000Z" };
     const lifecycle = createMachineLifecycle({
-      store,
+      engine: engineOverAdapter(store),
       sandbox,
       allowedDomains: () => [],
       // Another app server wins the provision race while this one assembles env:
@@ -311,7 +312,7 @@ describe("machine lifecycle: in-flight requests defer auto-sleep", () => {
     const timers = fakeClock();
     const doc = app();
     await seedAppRow(
-      store,
+      engineOverAdapter(store),
       { ...doc, machine: { snapshotRef: "slow:snap", provisionedAt: "2026-07-19T00:00:00.000Z" } },
       "owner",
     );
@@ -335,7 +336,7 @@ describe("machine lifecycle: in-flight requests defer auto-sleep", () => {
       destroy: async () => undefined,
     };
     const lifecycle = createMachineLifecycle({
-      store,
+      engine: engineOverAdapter(store),
       sandbox: {
         create: async () => slowMachine,
         resume: async () => slowMachine,

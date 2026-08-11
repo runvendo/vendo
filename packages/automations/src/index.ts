@@ -19,6 +19,7 @@ import type {
   RunContext,
   RunId,
   StoreAdapter,
+  StoreOps,
   ToolOutcome,
   ToolRegistry,
   Trigger,
@@ -53,6 +54,15 @@ export interface AutomationsConfig {
   /** Core seam: run audit events + approval resumption (onApprovalDecision). */
   guard: Guard;
   store: StoreAdapter;
+  /** The 42-op surface over that SAME store, when the composition could resolve
+   *  one (`selectStoreOps` answers `undefined` for a store with neither its own
+   *  ops nor a SQL handle). Every drawer this engine owns — apps, runs, grants,
+   *  approvals, captures, the arm rows, the schedule cursors, the webhook
+   *  secrets, the delivery ledger, sponsorship — is reached through
+   *  `ops.engine.*`, so the allowlist gate applies to all of them. Unset, the
+   *  same seven verbs are served straight off the adapter's own record doors
+   *  (`engineOverAdapter`), which is what a host's BYO `StoreAdapter` gets. */
+  ops?: StoreOps;
   /** Absent → agentic runs unavailable, steps still work. */
   runner?: AgentRunner;
   /** The SAME per-call risk resolver the composition gave the guard. Arm-time

@@ -2,6 +2,7 @@
  * The TTL sweep: expired parked BYO calls and stranded approvals, on one pass
  * and one cadence.
  */
+import { log } from "@vendoai/core";
 import type { VendoComposition } from "./compose-context.js";
 
 /** The sweep pass, and the unref'd timer that drives it on a long-lived host. */
@@ -23,8 +24,13 @@ export const composeSweep = (composition: VendoComposition): Pick<VendoCompositi
         try {
           await guard.sweepExpiredApprovals(parkedCallTtlMs, sweepNow());
         } catch (error) {
-          console.error("[vendo] approval TTL sweep failed", {
-            error: error instanceof Error ? error.message : String(error),
+          log({
+            code: "vendo.approval-ttl-sweep-failed",
+            level: "error",
+            message: "[vendo] approval TTL sweep failed",
+            data: {
+              detail: { error: error instanceof Error ? error.message : String(error) },
+            },
           });
         }
       }
@@ -42,7 +48,11 @@ export const composeSweep = (composition: VendoComposition): Pick<VendoCompositi
     startBackgroundSweep = (): void => {
       const sweepTimer = setInterval(() => {
         runSweep().catch((error: unknown) => {
-          console.warn(`[vendo] TTL sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
+          log({
+            code: "vendo.ttl-sweep-retry",
+            level: "warn",
+            message: `[vendo] TTL sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`,
+          });
         });
       }, sweepConfig.intervalMs);
       (sweepTimer as unknown as { unref?: () => void }).unref?.();

@@ -158,7 +158,15 @@ export function GrantSetCard({ name, permissions, state, onDecide }: GrantSetCar
             const description = (presentation.description ?? "").trim();
             return (
               <li className="fl-grant" key={permission.approvalId}>
-                <ToolkitLogo {...(presentation.logoUrl === undefined ? {} : { src: presentation.logoUrl })} />
+                {/* A glyph is DRAWN for a well; a brand's logo is not — the 28px
+                    well's radius and fill cropped the real marks (the Gmail M),
+                    which is the defect the connect row was redrawn for. So a row
+                    that has a logo shows it RAW, and a host tool's glyph keeps
+                    the well it was drawn for (law 2's one size, unchanged). */}
+                <ToolkitLogo
+                  className={presentation.logoUrl === undefined ? "fl-card-ic" : "fl-mark-raw"}
+                  {...(presentation.logoUrl === undefined ? {} : { src: presentation.logoUrl })}
+                />
                 <span className="fl-grant-copy">
                   <b>{grantRowWord(permission.risk)}: {presentation.title}</b>
                   {description.length > 0 ? <span>{description}</span> : null}

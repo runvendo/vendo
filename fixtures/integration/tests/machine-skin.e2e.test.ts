@@ -29,6 +29,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildEnv, createAppTokens, type SandboxAdapter, type SandboxMachine } from "@vendoai/apps";
 import { descriptorHash, VENDO_APP_FORMAT, VENDO_TREE_FORMAT, type AppDocument, type PermissionGrant } from "@vendoai/core";
+import { createStoreOps, storeFiles, type VendoStore } from "@vendoai/store";
 import {
   ADA,
   BOB,
@@ -38,6 +39,11 @@ import {
   resetFixture,
   type Stack,
 } from "../src/harness.js";
+
+/** The app-token rows are one of Vendo's own drawers, reached by name through
+ *  the engine family. The harness store is really SQL-backed, so it gets the
+ *  REAL engine rather than the adapter shim. */
+const engineFor = (store: VendoStore) => createStoreOps(store, { files: storeFiles(store) }).engine;
 
 let stack: Stack;
 afterEach(async () => {
@@ -168,7 +174,7 @@ describe("machine skin: fn proxy, buildEnv, and the callback surface through the
     // The journey pins its own bearer + env so the fake box can act on a KNOWN
     // provision-time environment; the granted-secrets half of the composed
     // assembler is the Wave-2 secrets lane.
-    const token = await createAppTokens(stack.vendo.store).mint(app.id, ADA.subject);
+    const token = await createAppTokens(engineFor(stack.vendo.store)).mint(app.id, ADA.subject);
     const built = await buildEnv(app, {
       granted: new Set(["STRIPE_KEY"]),
       secrets: { get: async (name) => (name === "STRIPE_KEY" ? "sk_live_integration" : undefined) },

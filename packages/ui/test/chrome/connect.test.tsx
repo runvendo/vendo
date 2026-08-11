@@ -55,9 +55,19 @@ describe("ConnectCard", () => {
       </VendoProvider>,
     );
 
-    expect(screen.getByRole("article", { name: "Connect Gmail" }).textContent).toContain(
-      "Connect your gmail account to run gmail_GMAIL_SEND_EMAIL.",
-    );
+    // ⚠️ TEST EDIT (C2 · Integration row): the model's sentence used to be its
+    // own card line and kept its full stop. It is now the first item of the
+    // dot-joined notes line, where a trailing stop before " · " reads as a typo.
+    // Asserted as the EXACT items the line renders — a substring check would
+    // pass just as well if the fragment shaping (stop dropped, access copy
+    // capitalized) were deleted, which is the whole reason it exists.
+    const notes = screen.getByRole("article", { name: "Connect Gmail" })
+      .querySelector("ul.fl-approval-sub")!;
+    expect([...notes.querySelectorAll("li")].map(item => item.textContent)).toEqual([
+      "Connect your gmail account to run gmail_GMAIL_SEND_EMAIL",
+      "Read and send mail as you",
+      "Secured with OAuth",
+    ]);
     fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
 
     // THE defect this design exists for: Safari and Firefox judge a popup by
@@ -81,8 +91,12 @@ describe("ConnectCard", () => {
     expect(screen.queryByText(/retrying/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Connect Gmail" })).toBeNull();
     // The receipt: what the account can now do, in the same plain words the ask
-    // used — never an OAuth scope string.
+    // used — never an OAuth scope string. The line's NAME follows its contents
+    // into the past tense; "what connecting Gmail does" over a receipt is a
+    // screen reader being told the wrong thing.
     expect(screen.getByText("We can now read and send mail as you.")).toBeTruthy();
+    expect(screen.getByRole("list", { name: "What Gmail can now do" })).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "What connecting Gmail does" })).toBeNull();
     expect(wire.requests).toContainEqual(
       expect.objectContaining({ method: "POST", path: "/connections/initiate", body: { toolkit: "gmail", connector: "composio" } }),
     );
@@ -99,7 +113,11 @@ describe("ConnectCard", () => {
       </VendoProvider>,
     );
     const card = screen.getByRole("article", { name: "Connect Gmail" });
-    expect(card.textContent).toContain("Connecting lets us read and send mail as you.");
+    // ⚠️ TEST EDIT (C2 · Integration row): the access copy used to be wrapped in
+    // its own sentence ("Connecting lets us …"). It is now a note on the one
+    // quiet line, so it is asserted as that note — same words, same source
+    // (`toolkitAccessCopy`), same law: what this grants, before anyone clicks.
+    expect(card.textContent).toContain("Read and send mail as you");
     // The scope strings the broker actually asks for are the grant's IDENTIFIER,
     // not its meaning — a consent surface that shows them has said nothing.
     expect(card.textContent).not.toContain("googleapis.com");
@@ -120,7 +138,66 @@ describe("ConnectCard", () => {
       </VendoProvider>,
     );
     expect(screen.getByRole("article", { name: "Connect Gmail" }).textContent)
-      .toContain("Connecting lets us read your last 30 days of mail.");
+      .toContain("Read your last 30 days of mail");
+  });
+
+  /** C2 · Integration row — THE defect this layout was drawn for: the toolkit's
+   *  mark rode the shell's 28px icon well, whose radius and fill cropped the
+   *  Gmail M. The mark is now raw — its own aspect ratio, no well behind it. */
+  it("shows the toolkit's mark RAW: no icon well, nothing to crop it", async () => {
+    allowPopups();
+    const { container } = render(
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={() => undefined} />
+      </VendoProvider>,
+    );
+    expect(container.querySelector(".fl-card-ic")).toBeNull();
+    const mark = container.querySelector(".fl-mark-raw img")!;
+    expect(mark.getAttribute("src")).toContain("gmail");
+    // The well's rule is `width: 100%; height: 100%` inside a 28px box with a
+    // radius and a fill; the raw mark caps both edges instead, so a wide logo
+    // letterboxes rather than filling, and nothing clips it.
+    const { CHROME_CSS } = await import("../../src/chrome/chrome-css.js");
+    expect(CHROME_CSS).toContain(".fl-mark-raw img { max-width: 26px; max-height: 26px;");
+    expect(CHROME_CSS).toMatch(/\.fl-mark-raw \{(?![^}]*overflow: hidden)[^}]*\}/);
+    expect(CHROME_CSS).toMatch(/\.fl-mark-raw \{(?![^}]*background)[^}]*\}/);
+  });
+
+  /** The mark is REMOTE, so it can 404 — and the fallback is a glyph, which the
+      raw box must size like the logo it replaces. Undressed it drew at its own
+      15px beside 26px marks and read as a different component. */
+  it("sizes the fallback glyph when the logo 404s", async () => {
+    allowPopups();
+    const { container } = render(
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={() => undefined} />
+      </VendoProvider>,
+    );
+    const mark = container.querySelector(".fl-mark-raw")!;
+    fireEvent.error(mark.querySelector("img")!);
+    expect(mark.querySelector("img")).toBeNull();
+    expect(mark.querySelector("svg")).not.toBeNull();
+    const { CHROME_CSS } = await import("../../src/chrome/chrome-css.js");
+    expect(CHROME_CSS).toContain(".fl-mark-raw svg { width: 20px; height: 20px;");
+  });
+
+  it("wears no eyebrow and no OAuth chip — the row says both in words", async () => {
+    allowPopups();
+    const { container } = render(
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={() => undefined} />
+      </VendoProvider>,
+    );
+    const card = screen.getByRole("article", { name: "Connect Gmail" });
+    expect(container.querySelector(".fl-card-eyebrow")).toBeNull();
+    expect(container.querySelector(".fl-chip")).toBeNull();
+    // What the chip said, said as a word on the line the person actually reads.
+    expect(card.textContent).toContain("Secured with OAuth");
+    // The toolkit's name is the row's first line, not an eyebrow's afterthought.
+    expect(card.querySelector(".fl-connect-name")!.textContent).toBe("Gmail");
+    // ONE primary button, and it reads as the row's one action.
+    expect(card.querySelectorAll(".fl-btn-primary")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Connect Gmail" }).textContent).toBe("Connect");
   });
 
   it("a blocked popup keeps the flow alive behind a plain link, and still completes", async () => {
@@ -142,7 +219,14 @@ describe("ConnectCard", () => {
 
     const link = await screen.findByRole("link", { name: "Open sign-in in a new tab" });
     expect(link.getAttribute("href")).toBe("https://connect.test/oauth/1");
-    expect(screen.getByRole("status").textContent).toContain("blocked the sign-in window");
+    const region = screen.getByRole("status");
+    expect(region.textContent).toContain("blocked the sign-in window");
+    // The REASON is read before the instruction: an "Open sign-in in a new tab"
+    // button reached first is an order with no explanation. Same order main had,
+    // and the recovery lives inside the one live region either way.
+    expect(region.contains(link)).toBe(true);
+    expect(region.textContent!.indexOf("blocked the sign-in window"))
+      .toBeLessThan(region.textContent!.indexOf("Open sign-in in a new tab"));
     // The poll never stopped: finishing in the tab settles the card as normal.
     const account = wire.state.connections.find(item => item.id === "ca_new")!;
     (account as { status: string }).status = "active";

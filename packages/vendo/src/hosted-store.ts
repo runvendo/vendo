@@ -19,8 +19,7 @@ import {
   type EraseReport,
   type VendoStore,
 } from "@vendoai/store";
-import { consoleSender, raiseCloudError, toArrayBuffer } from "./cloud-console.js";
-import { deploymentIdentityHeaders } from "./deployment-identity.js";
+import { consoleSender, raiseCloudError } from "./cloud-console.js";
 
 /** The console mounts the hosted-store surface here
  * (apps/console/app/api/v1/store/*). */
@@ -37,6 +36,29 @@ export interface HostedStoreOptions {
   baseUrl?: string;
   /** Per-request abort timeout, in milliseconds. */
   timeoutMs?: number;
+  /** Whose drawer the StoreAdapter façade addresses when the collection (or
+   * blob namespace) is app-scoped — `app:<appId>:<name>`, which the appData
+   * family serves, and appData scopes every read and stamps every write with an
+   * owner. The op surface (`ops.appData`) is unaffected: every one of its verbs
+   * already carries the owner in its target.
+   *
+   * This option exists because the façade's signature has nowhere to put one:
+   * `records(collection)` takes a string, and the caller never had to think
+   * about ownership while the generic records family served these rows
+   * unscoped. It cannot be inferred — an owner is the host's own user id in the
+   * host's own spelling — so it is bound here, once, exactly as
+   * `createStoreOps`' `workspaceOwner` binds the workspace drawer.
+   *
+   * READ THIS BEFORE LEAVING IT UNSET. The default is the single-player
+   * `"user_local"`, and it is a real footgun for anyone else: a host that
+   * serves MORE THAN ONE end user through one `hostedStore` instance and takes
+   * the default puts every user's app rows and files in ONE owner's drawer,
+   * where they read each other's data. Nothing refuses it — `"user_local"` is a
+   * legal owner — so the symptom is cross-user reads in production, not an
+   * error at composition. A multi-user mount constructs one `hostedStore` per
+   * end user with that user's subject here, or stays on `ops.appData`, whose
+   * every verb names its owner at the call. */
+  owner?: string;
   fetch?: typeof fetch;
 }
 
@@ -50,9 +72,10 @@ export interface HostedStore extends VendoStore {
     bySubject(subject: string): Promise<EraseReport>;
     byApp(appId: string): Promise<EraseReport>;
   };
-  /** The 42-op named-operation surface over the same mount and the same key —
-   * `vendo/store-wire@1` (see {@link hostedStoreOps}). Additive: the
-   * StoreAdapter doors above are unchanged and keep their own routes. */
+  /** The 35-op named-operation surface over the same mount and the same key —
+   * `vendo/store-wire@1` (see {@link hostedStoreOps}). The StoreAdapter doors
+   * above are built ON these ops: engine for Vendo's own collections, appData
+   * for an app's own drawers. */
   ops: StoreOps;
 }
 
@@ -84,16 +107,18 @@ function parseNullableRecord(value: unknown): VendoRecord | null {
   return parseRecord(value);
 }
 
-/** The console's records door is PER COLLECTION: the collection rides the
- * path, the method is the next segment (`/records/{collection}/put`). */
-const recordsPath = (collection: string): string => `/records/${encodeURIComponent(collection)}`;
+/** `app:<appId>:<collection>` is the app-scoped spelling of a record collection
+ * and of a blob namespace alike (01-core §12). Split back into the appData
+ * target it addresses, or undefined for a name that is not app-scoped. The
+ * appId segment is colon-free by construction, so the FIRST colon after the
+ * prefix ends it and everything after is the collection (`box:`-prefixed names
+ * keep their own colon). */
+const APP_SCOPE = /^app:([^:]+):(.+)$/;
 
-const blobsPath = (namespace: string): string => `/blobs/${encodeURIComponent(namespace)}`;
-
-/** Blob keys are paths ("images/a.png"); encode per segment so the key's own
- * separators survive as URL structure while each segment stays safe. */
-const blobKeyPath = (namespace: string, key: string): string =>
-  `${blobsPath(namespace)}/${key.split("/").map(encodeURIComponent).join("/")}`;
+const appScope = (scope: string): { appId: string; collection: string } | undefined => {
+  const match = APP_SCOPE.exec(scope);
+  return match === null ? undefined : { appId: match[1]!, collection: match[2]! };
+};
 
 /** The Cloud hosted-store adapter — the OSS side of the hosted-store seam
  * (docs/superpowers/specs/2026-07-18-hosted-store-onepager.md): a plain
@@ -133,33 +158,39 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
   };
   const sendJson = postJson(send);
 
+  // The StoreAdapter façade rides the SAME 35 ops as `ops` below — it has no
+  // doors of its own since the generic records family left the wire. A
+  // collection (or blob namespace) either names an app's own drawer, which the
+  // appData family serves with the owner stamped on, or it names one of Vendo's
+  // own, which the engine family serves behind its allowlist. There is no third
+  // home, so a host collection the allowlist does not know is refused by the
+  // service rather than quietly written somewhere. It reads a failure the way
+  // this adapter always has (raiseStoreError), not the way the protocol client
+  // does — see storeWireClient.
+  const facade = storeWireClient(options, raiseStoreError);
+  const owner = options.owner ?? "user_local";
+  const targetFor = (scope: { appId: string; collection: string }) => ({ ...scope, owner });
+
   const records = (collection: string): RecordStore => {
-    const prefix = recordsPath(collection);
+    const scope = appScope(collection);
+    if (scope !== undefined) {
+      const target = targetFor(scope);
+      // No claim and no atomic: the appData family has no compare-and-set verbs
+      // on the wire, and an adapter that advertises a capability it cannot
+      // serve is worse than one that omits it (01-core §12 makes both optional).
+      return {
+        get: (id) => facade.appData.get(target, id),
+        put: (record) => facade.appData.put(target, record),
+        delete: (id) => facade.appData.delete(target, id),
+        list: (query?: RecordQuery) => facade.appData.list(target, query),
+      };
+    }
+
     const store: RecordStore = {
-      async get(id) {
-        const payload = await sendJson(`${prefix}/get`, { id }) as { record?: unknown };
-        if (payload.record === undefined) invalidResponse("invalid record");
-        return parseNullableRecord(payload.record);
-      },
-      async put(record) {
-        const payload = await sendJson(`${prefix}/put`, { record }) as { record?: unknown };
-        if (payload.record === undefined || payload.record === null) invalidResponse("invalid record");
-        return parseRecord(payload.record);
-      },
-      async delete(id) {
-        await sendJson(`${prefix}/delete`, { id });
-      },
-      async list(query?: RecordQuery) {
-        const payload = await sendJson(
-          `${prefix}/list`,
-          { query: query ?? {} },
-        ) as { records?: unknown; cursor?: unknown };
-        if (!Array.isArray(payload.records)) invalidResponse("invalid list");
-        return {
-          records: (payload.records as unknown[]).map(parseRecord),
-          ...(typeof payload.cursor === "string" ? { cursor: payload.cursor } : {}),
-        };
-      },
+      get: (id) => facade.engine.get(collection, id),
+      put: (record) => facade.engine.put(collection, record),
+      delete: (id) => facade.engine.delete(collection, id),
+      list: (query?: RecordQuery) => facade.engine.list(collection, query),
     };
 
     // Capability mirror of the store engine's routing (02-store §2): routed
@@ -170,99 +201,34 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
     const reserved = (RESERVED_COLLECTIONS as readonly string[]).includes(collection);
     const dedicated = (DEDICATED_RECORD_COLLECTIONS as readonly string[]).includes(collection);
     if (!reserved) {
-      store.claim = async (expected: RecordInput, replacement?: Pick<VendoRecord, "data" | "refs">) => {
-        const payload = await sendJson(`${prefix}/claim`, {
-          expected,
-          ...(replacement === undefined ? {} : { replacement }),
-        }) as { claimed?: unknown };
-        if (typeof payload.claimed !== "boolean") invalidResponse("invalid claim");
-        return payload.claimed as boolean;
-      };
+      store.claim = (expected: RecordInput, replacement?: Pick<VendoRecord, "data" | "refs">) =>
+        facade.engine.claim(collection, expected, replacement);
     }
     if ((!reserved && !dedicated) || collection === "vendo_threads") {
       store.atomic = {
-        async insertIfAbsent(record) {
-          const payload = await sendJson(`${prefix}/atomic/insert-if-absent`, { record }) as { record?: unknown };
-          if (payload.record === undefined) invalidResponse("invalid record");
-          return parseNullableRecord(payload.record);
-        },
-        async compareAndSwap(record, expectedRevision) {
-          const payload = await sendJson(`${prefix}/atomic/compare-and-swap`, {
-            record,
-            expectedRevision,
-          }) as { record?: unknown };
-          if (payload.record === undefined) invalidResponse("invalid record");
-          return parseNullableRecord(payload.record);
-        },
+        insertIfAbsent: (record) => facade.engine.insertIfAbsent(collection, record),
+        compareAndSwap: (record, expectedRevision) => facade.engine.compareAndSwap(collection, record, expectedRevision),
       };
     }
     return store;
   };
 
   const blobs = (namespace: string): BlobStore => {
-    const prefix = blobsPath(namespace);
-    const keyPath = (key: string): string => blobKeyPath(namespace, key);
+    const scope = appScope(namespace);
+    if (scope !== undefined) {
+      const target = targetFor(scope);
+      return {
+        put: (key, bytes, meta) => facade.appData.putFile(target, key, bytes, meta),
+        get: (key) => facade.appData.getFile(target, key),
+        delete: (key) => facade.appData.deleteFile(target, key),
+        list: (prefix) => facade.appData.listFiles(target, prefix),
+      };
+    }
     return {
-      async put(key, bytes, meta) {
-        await send(keyPath(key), {
-          method: "PUT",
-          ...(meta?.contentType === undefined ? {} : { headers: { "content-type": meta.contentType } }),
-          body: toArrayBuffer(bytes),
-        });
-      },
-      async get(key) {
-        const response = await fetchImpl(`${base}${CONSOLE_STORE_PATH}${keyPath(key)}`, {
-          headers: {
-            authorization: `Bearer ${options.apiKey}`,
-            ...(await deploymentIdentityHeaders()),
-          },
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-        // A missing blob is null at the seam (01-core §12) — but ONLY the
-        // console's enveloped not-found says "missing blob". A bare 404 (no
-        // envelope) is some other server answering — a misdeployed base URL
-        // must fail loudly, not read as an empty blob store forever.
-        if (response.status === 404) {
-          let payload: unknown;
-          try {
-            payload = JSON.parse(await response.text());
-          } catch {
-            payload = undefined;
-          }
-          const code = typeof payload === "object" && payload !== null && "error" in payload
-            ? (payload as { error?: { code?: unknown } }).error?.code
-            : undefined;
-          if (code === "not-found") return null;
-          throw new Error(
-            "Vendo Cloud store request failed with a bare 404 (no error envelope) — is the base URL a Vendo console?",
-          );
-        }
-        if (!response.ok) await raiseStoreError(response);
-        const contentType = response.headers.get("content-type");
-        return {
-          bytes: new Uint8Array(await response.arrayBuffer()),
-          ...(contentType === null ? {} : { contentType }),
-        };
-      },
-      async delete(key) {
-        await send(keyPath(key), { method: "DELETE" });
-      },
-      async list(prefixFilter?: string) {
-        const query = prefixFilter === undefined || prefixFilter === ""
-          ? ""
-          : `?prefix=${encodeURIComponent(prefixFilter)}`;
-        const response = await send(`${prefix}${query}`);
-        let payload: { keys?: unknown };
-        try {
-          payload = await response.json() as { keys?: unknown };
-        } catch {
-          payload = {};
-        }
-        if (!Array.isArray(payload.keys) || !payload.keys.every((key) => typeof key === "string")) {
-          invalidResponse("invalid blob list");
-        }
-        return payload.keys as string[];
-      },
+      put: (key, bytes, meta) => facade.blobs.put(namespace, key, bytes, meta),
+      get: (key) => facade.blobs.get(namespace, key),
+      delete: (key) => facade.blobs.delete(namespace, key),
+      list: (prefix) => facade.blobs.list(namespace, prefix),
     };
   };
 
@@ -306,10 +272,10 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
 }
 
 // ---------------------------------------------------------------------------
-// The 42-op StoreOps client — store design v1, `vendo/store-wire@1`
+// The 35-op StoreOps client — store design v1, `vendo/store-wire@1`
 // ---------------------------------------------------------------------------
 
-/** The 42 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
+/** The 35 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
  * op names even where the console's door sits at a different path. */
 type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
 
@@ -348,22 +314,37 @@ const raiseWireError = async (response: Response): Promise<never> => {
 };
 
 /**
- * The Cloud client for the whole 42-op store contract, speaking
+ * The Cloud client for the whole 35-op store contract, speaking
  * `vendo/store-wire@1` over the console's store mount: bearer key, deployment
  * identity and per-request abort budget shared with {@link hostedStore}, the
  * same adapter rule (behavior comes ONLY from the constructor arguments),
  * cursors passed through untouched (the server paginates, never the client),
  * and ONE Idempotency-Key per logical mutation, replayed verbatim on a retry.
  *
- * Records and blobs speak the EXPORTED contract: STORE_WIRE_PATHS routes with
- * the storeWire*RequestSchema bodies — collection/namespace/key ride the JSON
- * body and blob bytes are base64 on the wire — so any conforming Store Wire v1
+ * Every family speaks the EXPORTED contract: STORE_WIRE_PATHS routes with the
+ * storeWire*RequestSchema bodies — collection/namespace/key ride the JSON body
+ * and blob bytes are base64 on the wire — so any conforming Store Wire v1
  * service (the console's wire mount, a BYO httpStore) accepts them verbatim.
  * Transcripts, harness, workspace, `lifecycle.promote` and `/status` answer at
  * their STORE_WIRE_PATHS path too; erase keeps `/erase` — T5's own note: it
  * "keeps its existing door until the cloud client moves it".
  */
 export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
+  return storeWireClient(options, raiseWireError);
+}
+
+/** The client above, with the error mapping left to the caller. The two
+ * surfaces over this ONE wire read a failure differently and always have: the
+ * op surface is the PROTOCOL's client, so it reads the protocol's own envelope
+ * ({@link parseStoreWireError}); the StoreAdapter façade is the CONSOLE's
+ * client, so it keeps the console's mapping — the 402 meter refusal's crafted
+ * dollar sentence and the 401 key story are console answers no BYO mount
+ * sends. Same routes, same bodies, same key; only the reading of a non-2xx
+ * differs, exactly as it did when the façade had doors of its own. */
+function storeWireClient(
+  options: HostedStoreOptions,
+  raise: (response: Response) => Promise<never>,
+): StoreOps {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const send = consoleSender({
     base,
@@ -371,7 +352,7 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
     apiKey: options.apiKey,
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     fetchImpl: options.fetch ?? defaultFetch,
-    raise: raiseWireError,
+    raise,
   });
 
   const call = async (op: StoreWireOp, path: string, init?: RequestInit): Promise<Response> => {
@@ -484,44 +465,8 @@ export function hostedStoreOps(options: HostedStoreOptions): StoreOps {
   const P = STORE_WIRE_PATHS;
 
   return {
-    records: {
-      async get(collection, id) {
-        return nullableRecordOf(await post("records.get", P["records.get"], { collection, id }));
-      },
-      async put(collection, record) {
-        return recordOf(await mutate("records.put", P["records.put"], { collection, record }));
-      },
-      async delete(collection, id) {
-        await mutate("records.delete", P["records.delete"], { collection, id });
-      },
-      async list(collection, query) {
-        return listOf(await post("records.list", P["records.list"], { collection, query: query ?? {} }));
-      },
-      async claim(collection, expected, replacement) {
-        return claimedOf(await mutate("records.claim", P["records.claim"], {
-          collection,
-          expected,
-          ...(replacement === undefined ? {} : { replacement }),
-        }));
-      },
-      async insertIfAbsent(collection, record) {
-        return nullableRecordOf(
-          await mutate("records.insertIfAbsent", P["records.insertIfAbsent"], { collection, record }),
-        );
-      },
-      async compareAndSwap(collection, record, expectedRevision) {
-        return nullableRecordOf(
-          await mutate("records.compareAndSwap", P["records.compareAndSwap"], {
-            collection,
-            record,
-            expectedRevision,
-          }),
-        );
-      },
-    },
-    // Vendo's OWN engine drawers, over the same collection-addressed bodies as
-    // `records` — a separate door so the service can gate the collection name
-    // (the allowlist) without gating the host's own `records` traffic.
+    // Vendo's OWN engine drawers, over collection-addressed bodies, with the
+    // allowlist gated service-side on every verb.
     engine: {
       async get(collection, id) {
         return nullableRecordOf(await post("engine.get", P["engine.get"], { collection, id }));

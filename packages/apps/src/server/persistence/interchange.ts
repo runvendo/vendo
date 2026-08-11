@@ -5,7 +5,6 @@ import {
   type Guard,
   type Json,
   type RunContext,
-  type StoreAdapter,
 } from "@vendoai/core";
 import {
   validateAppDocument,
@@ -13,7 +12,8 @@ import {
 } from "../../contract/index.js";
 import { unzipSync, zipSync, type Zippable } from "fflate";
 import { appLifecycleEvent } from "./audit.js";
-import { appRecordInput } from "./persistence.js";
+import type { EngineOps } from "./engine.js";
+import { APPS_COLLECTION, appRecordInput } from "./persistence.js";
 import { type SeedBaseline } from "../../contract/index.js";
 
 /**
@@ -192,7 +192,7 @@ const parseArchive = (source: Uint8Array): ParsedArchive => {
 
 /** Dependencies for the 06-apps §7 interchange boundary. */
 export interface AppInterchangeDependencies {
-  store: StoreAdapter;
+  engine: EngineOps;
   guard: Guard;
   seedBaselines?: readonly SeedBaseline[];
   requireOwned(appId: AppId, ctx: RunContext): Promise<AppDocument>;
@@ -240,7 +240,8 @@ export const createAppInterchange = (
         : { document: source, hasAppDirectory: false };
       assertPortableSource(parsed.document);
       const imported = validateImportedDocument(withFreshIdentity(parsed.document, appId));
-      await dependencies.store.records("vendo_apps").put(
+      await dependencies.engine.put(
+        APPS_COLLECTION,
         appRecordInput(imported, ctx.principal.subject, false, "import"),
       );
       // An app/ directory in the archive is machine scratch from an older

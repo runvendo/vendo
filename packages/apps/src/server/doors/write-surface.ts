@@ -7,6 +7,7 @@
  */
 import {
   VENDO_APP_FORMAT,
+  log,
   VendoError,
   safeErrorMessage,
   seedComponentName,
@@ -35,11 +36,7 @@ import {
   type AppPlan,
 } from "../../contract/index.js";
 import { createProgressiveQueryResolver } from "../persistence/open.js";
-import {
-  appRecordInput,
-  enabledAfterDocumentEdit,
-  rowFromRecord,
-} from "../persistence/persistence.js";
+import { APPS_COLLECTION, appRecordInput, enabledAfterDocumentEdit, rowFromRecord } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
 import { asTree } from "../generation/engine.js";
 import type { AppsRuntime, EditResult, VersionEntry } from "../runtime/types.js";
@@ -116,7 +113,11 @@ const createRefusedSaveRecorder = (
     // screen, it just is not in the list. Never silent — and never a reason
     // to withhold the data the person can already see.
     const reason = safeErrorMessage(error);
-    console.error(`[vendo] app not saved (${appId}): the harness wrote it as a file but it did not land — ${reason}`);
+    log({
+      code: "apps.edit-not-saved",
+      level: "error",
+      message: `[vendo] app not saved (${appId}): the harness wrote it as a file but it did not land — ${reason}`,
+    });
     // …and when the save was an EDIT's, the refusal is that edit's answer:
     // the row still holds the pre-edit document, so `assembleEdit` reading
     // it back would report an unchanged app as the change (`editRefusals`).
@@ -134,10 +135,10 @@ const createRefusedSaveRecorder = (
 
 const createAuthoredSaver = (
   deps: Pick<AppsRuntimeContext,
-    "apps" | "history" | "pruneHistory" | "reportLifecycle" | "reportDocumentEdit"
+    "engine" | "history" | "pruneHistory" | "reportLifecycle" | "reportDocumentEdit"
     | "editIntents" | "editVersions" | "discardVersion" | "editRefusals">,
 ) => {
-  const { apps, history, pruneHistory, reportLifecycle, reportDocumentEdit } = deps;
+  const { engine, history, pruneHistory, reportLifecycle, reportDocumentEdit } = deps;
   const { editIntents, editVersions } = deps;
   const recordRefusedSave = createRefusedSaveRecorder(deps);
   return async (
@@ -163,7 +164,7 @@ const createAuthoredSaver = (
         // re-reads its own baseline. Only ever re-reads a row this caller was
         // already authorized to read.
         const assertCurrent = async (): Promise<boolean> => {
-          const current = await apps.get(input.appId);
+          const current = await engine.get(APPS_COLLECTION, input.appId);
           const stored = current === null ? null : rowFromRecord(current);
           if (stored === null
             // The subject too, for persistEdit's reason: a promote that landed
@@ -210,7 +211,7 @@ const createAuthoredSaver = (
         enabled,
         "box",
       );
-      await apps.put(appRow);
+      await engine.put(APPS_COLLECTION, appRow);
       // The write landed, so the version above is real history now: whatever
       // the announcements below do, it must not be cleaned up — and the cap
       // applies to it (pruneHistory).
@@ -238,13 +239,13 @@ const createAuthoredSaver = (
 };
 
 const createAuthoredDoor = (
-  deps: Pick<AppsRuntimeContext, "apps" | "caller" | "holds"> & {
+  deps: Pick<AppsRuntimeContext, "engine" | "caller" | "holds"> & {
     saveAuthoredDocument: ReturnType<typeof createAuthoredSaver>;
   },
 ): AppsRuntime["authored"] => {
-  const { apps, caller, holds, saveAuthoredDocument } = deps;
+  const { engine, caller, holds, saveAuthoredDocument } = deps;
   return async (input, ctx) => {
-    const record = await apps.get(input.appId);
+    const record = await engine.get(APPS_COLLECTION, input.appId);
     const row = record === null ? null : rowFromRecord(record);
     // A row that already exists belongs to whoever holds it. `/user/**` is its
     // subject's at EVERY level (core `accessForPath`), so a harness can write
@@ -347,13 +348,13 @@ const screenDocument = (
  * own mount.
  */
 const createAuthoredScreenDoor = (
-  deps: Pick<AppsRuntimeContext, "apps" | "holds"> & {
+  deps: Pick<AppsRuntimeContext, "engine" | "holds"> & {
     saveAuthoredDocument: ReturnType<typeof createAuthoredSaver>;
   },
 ): AppsRuntime["authoredScreen"] => {
-  const { apps, holds, saveAuthoredDocument } = deps;
+  const { engine, holds, saveAuthoredDocument } = deps;
   return async (input, ctx) => {
-    const record = await apps.get(input.appId);
+    const record = await engine.get(APPS_COLLECTION, input.appId);
     const row = record === null ? null : rowFromRecord(record);
     if (row !== null && !await holds(input.appId, ctx, "editor", record)) return;
     // `open()` re-runs the stored screen through this same gauntlet, so this fires
@@ -519,7 +520,11 @@ const createEditDoor = (
         }
       } catch (error) {
         const reason = safeErrorMessage(error);
-        console.warn(`[vendo] the build this edit asked for did not run for ${appId}: ${reason}`);
+        log({
+          code: "apps.edit-build-skipped",
+          level: "warn",
+          message: `[vendo] the build this edit asked for did not run for ${appId}: ${reason}`,
+        });
         return failedEdit(previous, instruction, [reason]);
       }
     }
@@ -545,14 +550,14 @@ const createEditDoor = (
 /** The write slice of `AppsRuntime`. */
 export const createWriteSurface = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "apps" | "caller" | "history" | "holds" | "lifecycle" | "requireOwned"
+    "config" | "engine" | "caller" | "history" | "holds" | "lifecycle" | "requireOwned"
     | "updateAppDocument" | "assembleEdit" | "failedEdit" | "takeEditVersion"
     | "generationToolContext" | "runServerWork" | "editServerViaBox" | "pruneHistory"
     | "reportLifecycle" | "reportDocumentEdit" | "discardVersion"
     | "editIntents" | "editVersions" | "editRefusals">,
 ): Pick<AppsRuntime,
   "authored" | "authoredScreen" | "refusedScreen" | "commitSource" | "edit" | "remember" | "schedule"> => {
-  const { config, apps, requireOwned, updateAppDocument } = deps;
+  const { config, engine, requireOwned, updateAppDocument } = deps;
   const saveAuthoredDocument = createAuthoredSaver(deps);
   const editServedApp = createServedAppEditor(deps);
   return {
@@ -566,7 +571,7 @@ export const createWriteSurface = (
       // id, verbatim). Read here, never remembered: permission cannot choose an
       // address, because an org app's editor can usually write their own `/user`
       // mount too.
-      const subject = (await apps.get(input.appId))?.refs?.subject;
+      const subject = (await engine.get(APPS_COLLECTION, input.appId))?.refs?.subject;
       // NO ROW YET IS NOT A FAILURE. A paint is what creates the row (`authored`),
       // so a save the seam declined to paint has none — and the source is already
       // in the workspace files, so the next save that paints persists it. This

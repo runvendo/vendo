@@ -7,6 +7,7 @@
 import { mergedHostSemantics, VENDO_TOOLS_FORMAT } from "@vendoai/actions";
 import { agentToolDescriptors, buildingAppsSkill } from "@vendoai/apps";
 import {
+  log,
   VendoError,
   type RunContext,
   type ToolRegistry,
@@ -139,7 +140,11 @@ export const composeSurfaces = (composition: VendoComposition): Pick<VendoCompos
           ?? (overridesRaw === undefined ? undefined : JSON.parse(overridesRaw) as unknown),
       });
     } catch (error) {
-      console.error(`[vendo] Failed to load .vendo tool semantics: ${error instanceof Error ? error.message : String(error)}. Run "vendo sync" to regenerate .vendo/tools.json.`);
+      log({
+        code: "vendo.tool-semantics-load-failed",
+        level: "error",
+        message: `[vendo] Failed to load .vendo tool semantics: ${error instanceof Error ? error.message : String(error)}. Run "vendo sync" to regenerate .vendo/tools.json.`,
+      });
       return undefined;
     }
   };

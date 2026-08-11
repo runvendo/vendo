@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   STORE_WIRE_PATHS,
   VendoError,
+  engineAppHistory,
+  parseStoreWireError,
   storeWireAppDataDeleteFileRequestSchema,
   storeWireAppDataDeleteRequestSchema,
   storeWireAppDataGetFileRequestSchema,
@@ -24,13 +26,6 @@ import {
   storeWireCollectionInsertIfAbsentRequestSchema,
   storeWireCollectionListRequestSchema,
   storeWireCollectionPutRequestSchema,
-  storeWireRecordsClaimRequestSchema,
-  storeWireRecordsCompareAndSwapRequestSchema,
-  storeWireRecordsDeleteRequestSchema,
-  storeWireRecordsGetRequestSchema,
-  storeWireRecordsInsertIfAbsentRequestSchema,
-  storeWireRecordsListRequestSchema,
-  storeWireRecordsPutRequestSchema,
   type StoreAdapter,
 } from "@vendoai/core";
 import { storeAdapterConformance } from "@vendoai/core/conformance";
@@ -49,77 +44,176 @@ const hosted = (console_: ReturnType<typeof fakeConsole>) => hostedStore({
 describe("hostedStore conformance", () => {
   // The EXISTING StoreAdapter conformance suite (01-core §12 / 02-store §4),
   // run over the full HTTP round-trip against the in-memory console fake.
+  //
+  // The suite's own collection names are host-flavoured ("conformance_put"),
+  // and since the generic records family left the wire there is no door on the
+  // hosted mount that takes a name like that: every non-app-scoped collection
+  // now rides the engine family, whose allowlist the console enforces. So each
+  // case gets its own drawer under the ONE dynamic engine name
+  // (`vendo:app-history:<id>`) — the suite's assertions are untouched, the
+  // adapter under test is the real façade, and the allowlist stays a real gate
+  // instead of one this test asks the fake to drop.
+  const engineNamed = (adapter: StoreAdapter): StoreAdapter => ({
+    records: (collection) => adapter.records(engineAppHistory(collection)),
+    blobs: (namespace) => adapter.blobs(namespace),
+    ensureSchema: () => adapter.ensureSchema(),
+  });
   const suite = storeAdapterConformance({
     async makeAdapter() {
-      return { adapter: hosted(fakeConsole()) as StoreAdapter };
+      return { adapter: engineNamed(hosted(fakeConsole()) as StoreAdapter) };
     },
   });
   for (const c of suite.cases) it(c.name, c.run);
 });
 
-describe("hostedStore wire", () => {
-  it("speaks the console record wire shapes exactly, with key + deployment identity on every request", async () => {
+describe("hostedStore façade routing — the two homes a collection can have", () => {
+  it("an engine collection rides the engine door, over the collection-addressed body", async () => {
     const console_ = fakeConsole();
     const store = hosted(console_);
-    const records = store.records("invoices");
+    const apps = store.records("vendo_apps");
 
-    const put = await records.put({ id: "inv_1", data: { total: 5 }, refs: { owner: "user_a" } });
-    expect(put).toMatchObject({ id: "inv_1", data: { total: 5 }, refs: { owner: "user_a" } });
+    const doc = { format: "vendo/app@1", id: "app_1", name: "App" };
+    await apps.put({ id: "app_1", data: { subject: "user_1", enabled: true, doc } });
     expect(console_.requests[0]).toMatchObject({
       method: "POST",
-      url: "https://cloud.test/api/v1/store/records/invoices/put",
-      contentType: "application/json",
-      json: { record: { id: "inv_1", data: { total: 5 }, refs: { owner: "user_a" } } },
+      url: "https://cloud.test/api/v1/store/engine/put",
+      json: { collection: "vendo_apps", record: { id: "app_1" } },
     });
-
-    expect(await records.get("inv_1")).toEqual(put);
+    expect((await apps.get("app_1"))?.id).toBe("app_1");
     expect(console_.requests[1]).toMatchObject({
-      url: "https://cloud.test/api/v1/store/records/invoices/get",
-      json: { id: "inv_1" },
+      url: "https://cloud.test/api/v1/store/engine/get",
+      json: { collection: "vendo_apps", id: "app_1" },
     });
-    expect(await records.get("missing")).toBeNull();
+  });
 
-    const listed = await records.list({ refs: { owner: "user_a" }, limit: 10 });
-    expect(listed.records.map((record) => record.id)).toEqual(["inv_1"]);
+  it("an app-scoped collection rides the appData door, with the owner stamped on", async () => {
+    const console_ = fakeConsole();
+    const store = hostedStore({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      owner: "user_1",
+      fetch: console_.handler as unknown as typeof fetch,
+    });
+    const notes = store.records("app:x:notes");
+
+    const put = await notes.put({ id: "n_1", data: { text: "hi" } });
+    expect(console_.requests[0]).toMatchObject({
+      method: "POST",
+      url: "https://cloud.test/api/v1/store/app-data/put",
+      json: { target: { appId: "x", collection: "notes", owner: "user_1" }, record: { id: "n_1" } },
+    });
+    // The owner is the RUNTIME's stamp, not something the caller named.
+    expect(put.refs).toMatchObject({ subject: "user_1" });
+    expect((await notes.get("n_1"))?.data).toEqual({ text: "hi" });
+    expect((await notes.list()).records.map((record) => record.id)).toEqual(["n_1"]);
+
+    // Another owner's façade cannot see the row — the appData scoping the
+    // generic records door never had.
+    const other = hostedStore({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      owner: "user_2",
+      fetch: console_.handler as unknown as typeof fetch,
+    });
+    expect(await other.records("app:x:notes").get("n_1")).toBeNull();
+
+    // appData has no compare-and-set verbs on the wire, so the façade does not
+    // pretend to offer them.
+    expect(notes.claim).toBeUndefined();
+    expect(notes.atomic).toBeUndefined();
+  });
+
+  it("a retired /records/* path answers an enveloped 501 naming the op", async () => {
+    const console_ = fakeConsole();
+    const response = await console_.handler("https://cloud.test/api/v1/store/records/put", {
+      method: "POST",
+      headers: { authorization: "Bearer vnd_secret", "content-type": "application/json" },
+      body: JSON.stringify({ collection: "invoices", record: { id: "inv_1", data: {} } }),
+    });
+    expect(response.status).toBe(501);
+    const body = await response.json() as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("not-implemented");
+    expect(body.error.message).toContain("records.put");
+    // The client half reads that envelope back as the wire's own refusal.
+    expect(parseStoreWireError(response.status, body)).toMatchObject({ code: "not-implemented" });
+  });
+});
+
+describe("hostedStore wire", () => {
+  it("speaks the engine door's wire shapes exactly, with key + deployment identity on every request", async () => {
+    const console_ = fakeConsole();
+    const store = hosted(console_);
+    const runs = store.records("vendo_runs");
+
+    const run = {
+      appId: "app_1",
+      trigger: { kind: "schedule" },
+      status: "ok",
+      record: { steps: 1 },
+      startedAt: "2026-01-01T00:00:00.000Z",
+      finishedAt: "2026-01-01T00:00:01.000Z",
+    };
+    const put = await runs.put({ id: "run_1", data: run });
+    expect(put).toMatchObject({ id: "run_1" });
+    expect(console_.requests[0]).toMatchObject({
+      method: "POST",
+      url: "https://cloud.test/api/v1/store/engine/put",
+      contentType: "application/json",
+      json: { collection: "vendo_runs", record: { id: "run_1", data: run } },
+    });
+
+    expect(await runs.get("run_1")).toEqual(put);
+    expect(console_.requests[1]).toMatchObject({
+      url: "https://cloud.test/api/v1/store/engine/get",
+      json: { collection: "vendo_runs", id: "run_1" },
+    });
+    expect(await runs.get("missing")).toBeNull();
+
+    const listed = await runs.list({ refs: { app_id: "app_1" }, limit: 10 });
+    expect(listed.records.map((record) => record.id)).toEqual(["run_1"]);
     expect(console_.requests[3]).toMatchObject({
-      url: "https://cloud.test/api/v1/store/records/invoices/list",
-      json: { query: { refs: { owner: "user_a" }, limit: 10 } },
+      url: "https://cloud.test/api/v1/store/engine/list",
+      json: { collection: "vendo_runs", query: { refs: { app_id: "app_1" }, limit: 10 } },
     });
 
-    // claim: present on non-reserved collections, absent on routed ones.
+    // The capability mirror is UNCHANGED by the move onto the engine door:
+    // claim is absent on routed reserved collections, atomic rides generic
+    // collections and vendo_threads' revision counter only. mcp and knowledge
+    // feature-detect on exactly this shape.
     expect(store.records("vendo_apps").claim).toBeUndefined();
-    expect(records.claim).toBeDefined();
-    await expect(records.claim!({ id: "inv_1", data: { total: 5 }, refs: { owner: "user_a" } })).resolves.toBe(true);
-    expect(console_.requests[4]).toMatchObject({
-      url: "https://cloud.test/api/v1/store/records/invoices/claim",
-      json: { expected: { id: "inv_1", data: { total: 5 }, refs: { owner: "user_a" } } },
-    });
-    expect(await records.get("inv_1")).toBeNull();
-
-    // atomic: generic collections and vendo_threads carry it; other routed
-    // collections and the dedicated door tables do not (engine mirror).
     expect(store.records("vendo_threads").atomic).toBeDefined();
     expect(store.records("vendo_apps").atomic).toBeUndefined();
     expect(store.records("vendo_mcp_clients").atomic).toBeUndefined();
     expect(store.records("vendo_mcp_clients").claim).toBeDefined();
-    const inserted = await records.atomic!.insertIfAbsent({ id: "inv_2", data: { total: 7 } });
+
+    const slots = store.records("vendo_placement_slots");
+    await slots.put({ id: "slot_1", data: { holder: null } });
+    await expect(slots.claim!({ id: "slot_1", data: { holder: null } }, { data: { holder: "run_1" } }))
+      .resolves.toBe(true);
+    expect(console_.requests.at(-1)).toMatchObject({
+      url: "https://cloud.test/api/v1/store/engine/claim",
+      json: { collection: "vendo_placement_slots", expected: { id: "slot_1", data: { holder: null } } },
+    });
+
+    const history = store.records(engineAppHistory("app_1"));
+    const inserted = await history.atomic!.insertIfAbsent({ id: "ver_1", data: { version: 1 } });
     expect(inserted?.revision).toBe("1");
     expect(console_.requests.at(-1)).toMatchObject({
-      url: "https://cloud.test/api/v1/store/records/invoices/atomic/insert-if-absent",
-      json: { record: { id: "inv_2", data: { total: 7 } } },
+      url: "https://cloud.test/api/v1/store/engine/insertIfAbsent",
+      json: { collection: "vendo:app-history:app_1", record: { id: "ver_1", data: { version: 1 } } },
     });
-    const swapped = await records.atomic!.compareAndSwap({ id: "inv_2", data: { total: 8 } }, "1");
+    const swapped = await history.atomic!.compareAndSwap({ id: "ver_1", data: { version: 2 } }, "1");
     expect(swapped?.revision).toBe("2");
     expect(console_.requests.at(-1)).toMatchObject({
-      url: "https://cloud.test/api/v1/store/records/invoices/atomic/compare-and-swap",
-      json: { record: { id: "inv_2", data: { total: 8 } }, expectedRevision: "1" },
+      url: "https://cloud.test/api/v1/store/engine/compareAndSwap",
+      json: { collection: "vendo:app-history:app_1", expectedRevision: "1" },
     });
-    await expect(records.atomic!.compareAndSwap({ id: "inv_2", data: { total: 9 } }, "1")).resolves.toBeNull();
+    await expect(history.atomic!.compareAndSwap({ id: "ver_1", data: { version: 3 } }, "1")).resolves.toBeNull();
 
-    await records.delete("inv_2");
+    await history.delete("ver_1");
     expect(console_.requests.at(-1)).toMatchObject({
-      url: "https://cloud.test/api/v1/store/records/invoices/delete",
-      json: { id: "inv_2" },
+      url: "https://cloud.test/api/v1/store/engine/delete",
+      json: { collection: "vendo:app-history:app_1", id: "ver_1" },
     });
 
     for (const request of console_.requests) {
@@ -131,17 +225,29 @@ describe("hostedStore wire", () => {
     }
   });
 
-  it("speaks the blob wire: raw bytes through the API, per-segment key encoding, prefix list, 404 → null", async () => {
+  it("a collection the allowlist does not know is refused by the service, not written somewhere", async () => {
+    // The one behavior change the removal makes visible at the façade: a host's
+    // own collection has no home on the hosted mount any more.
+    const store = hosted(fakeConsole());
+    await expect(store.records("host_invoices").put({ id: "inv_1", data: {} }))
+      .rejects.toMatchObject({ code: "blocked" });
+  });
+
+  it("speaks the appData file wire for an app-scoped namespace: base64 JSON, owner-prefixed keys", async () => {
     const console_ = fakeConsole();
     const blobs = hosted(console_).blobs("app:app_x:uploads");
 
     const bytes = new Uint8Array([0, 1, 2, 255]);
     await blobs.put("images/a b.png", bytes, { contentType: "image/png" });
     expect(console_.requests[0]).toMatchObject({
-      method: "PUT",
-      url: "https://cloud.test/api/v1/store/blobs/app%3Aapp_x%3Auploads/images/a%20b.png",
-      contentType: "image/png",
-      bytes,
+      method: "POST",
+      url: "https://cloud.test/api/v1/store/app-data/putFile",
+      contentType: "application/json",
+      json: {
+        target: { appId: "app_x", collection: "uploads", owner: "user_local" },
+        key: "images/a b.png",
+        contentType: "image/png",
+      },
     });
 
     const got = await blobs.get("images/a b.png");
@@ -151,18 +257,32 @@ describe("hostedStore wire", () => {
     expect(await blobs.get("missing.bin")).toBeNull();
 
     await blobs.put("docs/readme.txt", encoder.encode("hi"));
+    // Keys come back the caller's own — the `<owner>/` leg is the seam's.
     expect(await blobs.list("images/")).toEqual(["images/a b.png"]);
     expect(console_.requests.at(-1)).toMatchObject({
-      method: "GET",
-      url: "https://cloud.test/api/v1/store/blobs/app%3Aapp_x%3Auploads?prefix=images%2F",
+      url: "https://cloud.test/api/v1/store/app-data/listFiles",
+      json: { target: { appId: "app_x", collection: "uploads", owner: "user_local" }, prefix: "images/" },
     });
 
     await blobs.delete("docs/readme.txt");
     expect(console_.requests.at(-1)).toMatchObject({
-      method: "DELETE",
-      url: "https://cloud.test/api/v1/store/blobs/app%3Aapp_x%3Auploads/docs/readme.txt",
+      url: "https://cloud.test/api/v1/store/app-data/deleteFile",
+      json: { key: "docs/readme.txt" },
     });
     expect(await blobs.list("")).toEqual(["images/a b.png"]);
+  });
+
+  it("a plain blob namespace rides the blobs door, bytes base64 on the body", async () => {
+    const console_ = fakeConsole();
+    const blobs = hosted(console_).blobs("uploads");
+    await blobs.put("a.png", new Uint8Array([7]), { contentType: "image/png" });
+    expect(console_.requests[0]).toMatchObject({
+      method: "POST",
+      url: "https://cloud.test/api/v1/store/blobs/put",
+      json: { namespace: "uploads", key: "a.png", bytes: btoa("\u0007"), contentType: "image/png" },
+    });
+    expect((await blobs.get("a.png"))?.contentType).toBe("image/png");
+    expect(await blobs.list("")).toEqual(["a.png"]);
   });
 
   it("speaks the erase wire: one POST per cascade, subject or app scoped", async () => {
@@ -182,8 +302,8 @@ describe("hostedStore wire", () => {
   it("defaults the base URL to the Vendo console", async () => {
     const cloudFetch = vi.fn<typeof fetch>(async () => Response.json({ record: null }));
     const store = hostedStore({ apiKey: "vnd_secret", fetch: cloudFetch });
-    await store.records("invoices").get("x");
-    expect(cloudFetch.mock.calls[0]![0]).toBe("https://console.vendo.run/api/v1/store/records/invoices/get");
+    await store.records("vendo_apps").get("x");
+    expect(cloudFetch.mock.calls[0]![0]).toBe("https://console.vendo.run/api/v1/store/engine/get");
   });
 
   it("ensureSchema and close are client no-ops; raw has no local handle", async () => {
@@ -264,10 +384,11 @@ describe("hostedStore error mapping", () => {
       Response.json({ error: { code: "not-found", message: "Blob not found." } }, { status: 404 }));
     await expect(adapterFor(enveloped).blobs("files").get("absent.bin")).resolves.toBeNull();
     // A bare 404 (no envelope) is some other server — a misdeployed base URL
-    // must not read as an empty blob store forever.
+    // must not read as an empty blob store forever. Only the ENVELOPED
+    // not-found is absence; anything else stays an error, loudly.
     const bare = vi.fn(async () => new Response("<html>not here</html>", { status: 404 }));
     await expect(adapterFor(bare).blobs("files").get("absent.bin"))
-      .rejects.toThrow(/bare 404/);
+      .rejects.toThrow(/failed with 404/);
   });
 
   it("carries unknown codes on a plain error and survives non-JSON bodies", async () => {
@@ -332,7 +453,7 @@ describe("adapter rule", () => {
         baseUrl: "https://arg.test",
         fetch: console_.handler as unknown as typeof fetch,
       });
-      await store.records("invoices").put({ id: "r", data: {} });
+      await store.records("vendo_placement_slots").put({ id: "r", data: {} });
       await store.blobs("files").put("k", new Uint8Array([1]));
       expect(console_.requests[0]!.url).toContain("https://arg.test/");
       expect(console_.requests[0]!.authorization).toBe("Bearer vnd_arg");
@@ -480,10 +601,10 @@ describe("demo-host journey through the store seam", () => {
 });
 
 // ---------------------------------------------------------------------------
-// hostedStoreOps — the 42-op client over `vendo/store-wire@1`.
+// hostedStoreOps — the 35-op client over `vendo/store-wire@1`.
 //
 // Unit tests over an injected fake fetch: they pin the route, the request body
-// and the response decoding for every op — records and blobs against the
+// and the response decoding for every op — engine, appData and blobs against the
 // EXPORTED store-wire v1 contract, the rest against the console's doors
 // (vendo-web apps/console/lib/api/store-handlers.ts + store-doors.ts). A fake
 // fetch proves only that the client talks to ITSELF — the real proof is this
@@ -509,13 +630,6 @@ const wireRecord = {
  * erase keeps the console's own route. `keyed` marks the mutations that carry
  * an Idempotency-Key. */
 const DOORS: Record<string, { method: string; path: string; keyed?: true }> = {
-  "records.get": { method: "POST", path: P["records.get"] },
-  "records.put": { method: "POST", path: P["records.put"], keyed: true },
-  "records.delete": { method: "POST", path: P["records.delete"], keyed: true },
-  "records.list": { method: "POST", path: P["records.list"] },
-  "records.claim": { method: "POST", path: P["records.claim"], keyed: true },
-  "records.insertIfAbsent": { method: "POST", path: P["records.insertIfAbsent"], keyed: true },
-  "records.compareAndSwap": { method: "POST", path: P["records.compareAndSwap"], keyed: true },
   "engine.get": { method: "POST", path: P["engine.get"] },
   "engine.put": { method: "POST", path: P["engine.put"], keyed: true },
   "engine.delete": { method: "POST", path: P["engine.delete"], keyed: true },
@@ -586,13 +700,6 @@ const wireFake = (bodies: Record<string, unknown> = {}) => {
 
 /** One well-formed answer per op, so the whole contract can be driven once. */
 const ALL_BODIES: Record<string, unknown> = {
-  [door("records.get")]: { record: wireRecord },
-  [door("records.put")]: { record: wireRecord },
-  [door("records.delete")]: { ok: true },
-  [door("records.list")]: { records: [wireRecord], cursor: "cur_records" },
-  [door("records.claim")]: { claimed: true },
-  [door("records.insertIfAbsent")]: { record: wireRecord },
-  [door("records.compareAndSwap")]: { record: null },
   [door("engine.get")]: { record: wireRecord },
   [door("engine.put")]: { record: wireRecord },
   [door("engine.delete")]: { ok: true },
@@ -627,7 +734,7 @@ const ALL_BODIES: Record<string, unknown> = {
   [door("workspace.history")]: { entries: [{ commitId: "wsc_1" }] },
   [door("lifecycle.erase")]: { report: { vendo_apps: 1 } },
   [door("lifecycle.promote")]: { ok: true },
-  [door("status")]: { format: "vendo/store-wire@1", ops: 42 },
+  [door("status")]: { format: "vendo/store-wire@1", ops: 35 },
 };
 
 /** Where an appData op lands: the app, the collection it invented, and the
@@ -639,13 +746,6 @@ const APP_DATA_TARGET = { appId: "app_1", collection: "invoices", owner: "sub_1"
 const ENGINE_COLLECTION = "vendo_workspace_commits";
 
 const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<void> => {
-  await ops.records.get("invoices", "inv_1");
-  await ops.records.put("invoices", { id: "inv_1", data: { total: 5 } });
-  await ops.records.delete("invoices", "inv_1");
-  await ops.records.list("invoices");
-  await ops.records.claim("invoices", { id: "inv_1", data: { total: 5 } });
-  await ops.records.insertIfAbsent("invoices", { id: "inv_2", data: {} });
-  await ops.records.compareAndSwap("invoices", { id: "inv_2", data: {} }, "1");
   await ops.engine.get(ENGINE_COLLECTION, "wsc_1");
   await ops.engine.put(ENGINE_COLLECTION, { id: "wsc_1", data: { paths: 1 } });
   await ops.engine.delete(ENGINE_COLLECTION, "wsc_1");
@@ -683,74 +783,24 @@ const driveEveryOp = async (ops: ReturnType<typeof wireFake>["ops"]): Promise<vo
   await ops.status();
 };
 
-describe("hostedStoreOps — the 42-op wire client", () => {
-  it("routes all 42 ops to the console's real door, with a key on exactly the mutations", async () => {
+describe("hostedStoreOps — the 35-op wire client", () => {
+  it("routes all 35 ops to the console's real door, with a key on exactly the mutations", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
     await driveEveryOp(ops);
 
     const expected = Object.values(DOORS);
-    expect(calls).toHaveLength(42);
+    expect(calls).toHaveLength(35);
     expect(calls.map((call) => `${call.method} ${call.path}`))
       .toEqual(expected.map((route) => `${route.method} ${route.path}`));
     expect(calls.map((call) => call.idempotencyKey === null ? "read" : "keyed"))
       .toEqual(expected.map((route) => route.keyed === true ? "keyed" : "read"));
-    // 25 mutations, 17 reads — and the /status handshake is the one GET with
+    // 20 mutations, 15 reads — and the /status handshake is the one GET with
     // no body at all.
-    expect(expected.filter((route) => route.keyed === true)).toHaveLength(25);
+    expect(expected.filter((route) => route.keyed === true)).toHaveLength(20);
     expect(calls.at(-1)).toMatchObject({ path: P.status, method: "GET", body: undefined });
     // Distinct keys across distinct operations (one per logical mutation).
     const keys = calls.map((call) => call.idempotencyKey).filter((key) => key !== null);
-    expect(new Set(keys).size).toBe(25);
-  });
-
-  it("records: seven ops on the wire door, collection on the body, records/cursor decoded", async () => {
-    const { calls, ops } = wireFake(ALL_BODIES);
-
-    expect(await ops.records.get("invoices", "inv_1")).toMatchObject({ id: "inv_1", data: { total: 5 } });
-    expect(calls[0]).toMatchObject({ path: P["records.get"], body: { collection: "invoices", id: "inv_1" } });
-
-    expect(await ops.records.put("invoices", { id: "inv_1", data: { total: 5 } })).toMatchObject({ id: "inv_1" });
-    expect(calls[1]!.body).toEqual({ collection: "invoices", record: { id: "inv_1", data: { total: 5 } } });
-
-    await ops.records.delete("invoices", "inv_1");
-    expect(calls[2]!.body).toEqual({ collection: "invoices", id: "inv_1" });
-
-    expect(await ops.records.list("invoices", { refs: { owner: "user_a" }, limit: 10 })).toEqual({
-      records: [expect.objectContaining({ id: "inv_1" })],
-      cursor: "cur_records",
-    });
-    expect(calls[3]!.body).toEqual({ collection: "invoices", query: { refs: { owner: "user_a" }, limit: 10 } });
-    // An unqueried list still sends a query object, so a door reading
-    // `body.query ?? {}` never sees a bare body.
-    await ops.records.list("invoices");
-    expect(calls[4]!.body).toEqual({ collection: "invoices", query: {} });
-
-    expect(await ops.records.claim("invoices", { id: "inv_1", data: { total: 5 } }, { data: { total: 6 } })).toBe(true);
-    expect(calls[5]!.body).toEqual({
-      collection: "invoices",
-      expected: { id: "inv_1", data: { total: 5 } },
-      replacement: { data: { total: 6 } },
-    });
-
-    expect(await ops.records.insertIfAbsent("invoices", { id: "inv_2", data: {} })).toMatchObject({ id: "inv_1" });
-    expect(calls[6]).toMatchObject({
-      path: P["records.insertIfAbsent"],
-      body: { collection: "invoices", record: { id: "inv_2", data: {} } },
-    });
-
-    // A lost compare-and-swap is null at the seam, not an error.
-    expect(await ops.records.compareAndSwap("invoices", { id: "inv_2", data: {} }, "1")).toBeNull();
-    expect(calls[7]).toMatchObject({
-      path: P["records.compareAndSwap"],
-      body: { collection: "invoices", record: { id: "inv_2", data: {} }, expectedRevision: "1" },
-    });
-
-    // The collection rides the body VERBATIM — no path encoding to get wrong.
-    await ops.records.get("app:app_1:orders", "o_1");
-    expect(calls[8]).toMatchObject({
-      path: P["records.get"],
-      body: { collection: "app:app_1:orders", id: "o_1" },
-    });
+    expect(new Set(keys).size).toBe(20);
   });
 
   it("blobs: JSON POST on the wire door, bytes base64 on the body", async () => {
@@ -813,15 +863,8 @@ describe("hostedStoreOps — the 42-op wire client", () => {
     await expect(bare.blobs.get("uploads", "gone.png")).rejects.toMatchObject({ code: "not-implemented" });
   });
 
-  it("records, engine and blobs requests validate against the EXPORTED store-wire v1 request schemas", async () => {
+  it("engine and blobs requests validate against the EXPORTED store-wire v1 request schemas", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
-    await ops.records.get("invoices", "inv_1");
-    await ops.records.put("invoices", { id: "inv_1", data: { total: 5 } });
-    await ops.records.delete("invoices", "inv_1");
-    await ops.records.list("invoices", { limit: 10 });
-    await ops.records.claim("invoices", { id: "inv_1", data: { total: 5 } }, { data: { total: 6 } });
-    await ops.records.insertIfAbsent("invoices", { id: "inv_2", data: {} });
-    await ops.records.compareAndSwap("invoices", { id: "inv_2", data: {} }, "1");
     await ops.engine.get(ENGINE_COLLECTION, "wsc_1");
     await ops.engine.put(ENGINE_COLLECTION, { id: "wsc_1", data: { paths: 1 } });
     await ops.engine.delete(ENGINE_COLLECTION, "wsc_1");
@@ -835,16 +878,8 @@ describe("hostedStoreOps — the 42-op wire client", () => {
     await ops.blobs.list("uploads", "a");
 
     const CONTRACT: [keyof typeof P, { safeParse(value: unknown): { success: boolean } }][] = [
-      ["records.get", storeWireRecordsGetRequestSchema],
-      ["records.put", storeWireRecordsPutRequestSchema],
-      ["records.delete", storeWireRecordsDeleteRequestSchema],
-      ["records.list", storeWireRecordsListRequestSchema],
-      ["records.claim", storeWireRecordsClaimRequestSchema],
-      ["records.insertIfAbsent", storeWireRecordsInsertIfAbsentRequestSchema],
-      ["records.compareAndSwap", storeWireRecordsCompareAndSwapRequestSchema],
-      // ONE collection-addressed body shape, two doors: the engine ops send
-      // exactly what /records/* sends, so they validate against the same
-      // schema objects (the storeWireRecords* names above are its aliases).
+      // The collection-addressed body shape, named for its SHAPE rather than
+      // for a family — the engine ops are its one door now.
       ["engine.get", storeWireCollectionGetRequestSchema],
       ["engine.put", storeWireCollectionPutRequestSchema],
       ["engine.delete", storeWireCollectionDeleteRequestSchema],
@@ -982,22 +1017,22 @@ describe("hostedStoreOps — the 42-op wire client", () => {
 
   it("status: the GET handshake, parsed as vendo/store-wire@1", async () => {
     const { calls, ops } = wireFake(ALL_BODIES);
-    expect(await ops.status()).toMatchObject({ format: "vendo/store-wire@1", ops: 42 });
+    expect(await ops.status()).toMatchObject({ format: "vendo/store-wire@1", ops: 35 });
     expect(calls[0]).toMatchObject({ path: "/status", method: "GET" });
-    await expect(wireFake({ [door("status")]: { format: "vendo/store-wire@2", ops: 42 } }).ops.status())
+    await expect(wireFake({ [door("status")]: { format: "vendo/store-wire@2", ops: 35 } }).ops.status())
       .rejects.toThrow(/invalid status/);
   });
 
   it("passes cursors through untouched — the server paginates, never the client", async () => {
     const { calls, ops } = wireFake({
-      [door("records.list")]: { records: [], cursor: "opaque||server||cursor" },
+      [door("engine.list")]: { records: [], cursor: "opaque||server||cursor" },
       [door("workspace.history")]: { entries: [] },
     });
-    expect(await ops.records.list("invoices", { cursor: "opaque||prev", limit: 1000 })).toEqual({
+    expect(await ops.engine.list(ENGINE_COLLECTION, { cursor: "opaque||prev", limit: 1000 })).toEqual({
       records: [],
       cursor: "opaque||server||cursor",
     });
-    expect(calls[0]!.body).toEqual({ collection: "invoices", query: { cursor: "opaque||prev", limit: 1000 } });
+    expect(calls[0]!.body).toEqual({ collection: ENGINE_COLLECTION, query: { cursor: "opaque||prev", limit: 1000 } });
     // No cursor from the server means the page is the last one.
     expect(await ops.workspace.history({ cursor: "opaque||prev" })).toEqual({ entries: [] });
     expect(calls[1]!.body).toEqual({ cursor: "opaque||prev" });
@@ -1018,13 +1053,13 @@ describe("hostedStoreOps — the 42-op wire client", () => {
 
     // The write still resolves, and the server's ledger sees ONE logical
     // mutation: the retry replays the key verbatim rather than minting one.
-    expect(await ops.records.put("invoices", { id: "inv_1", data: { total: 5 } })).toMatchObject({ id: "inv_1" });
+    expect(await ops.engine.put(ENGINE_COLLECTION, { id: "inv_1", data: { total: 5 } })).toMatchObject({ id: "inv_1" });
     expect(seen).toHaveLength(2);
     expect(seen[0]).toBe(seen[1]);
     expect(seen[0]).toEqual(expect.stringMatching(/^idm_/));
 
     // A NEW logical operation mints a new key.
-    await ops.records.put("invoices", { id: "inv_1", data: { total: 6 } });
+    await ops.engine.put(ENGINE_COLLECTION, { id: "inv_1", data: { total: 6 } });
     expect(seen[2]).not.toBe(seen[0]);
   });
 
@@ -1055,7 +1090,7 @@ describe("hostedStoreOps — the 42-op wire client", () => {
         return Response.json({ error: { code: "conflict", message: "taken" } }, { status: 409 });
       }) as unknown as typeof fetch,
     });
-    await expect(ops.records.put("invoices", { id: "inv_1", data: {} }))
+    await expect(ops.engine.put(ENGINE_COLLECTION, { id: "inv_1", data: {} }))
       .rejects.toMatchObject({ code: "conflict" });
     expect(attempts).toBe(1);
   });
@@ -1067,10 +1102,10 @@ describe("hostedStoreOps — the 42-op wire client", () => {
       fetch: (async () => Response.json({ error: { code, message } }, { status })) as unknown as typeof fetch,
     });
     await expect(enveloped("conflict", "belongs to another subject", 409)
-      .records.put("vendo_threads", { id: "thr_1", data: {} }))
+      .engine.put("vendo_threads", { id: "thr_1", data: {} }))
       .rejects.toMatchObject({ code: "conflict", message: "belongs to another subject" });
     await expect(enveloped("blocked", "vendo_audit is append-only", 403)
-      .records.delete("vendo_audit", "aud_1"))
+      .engine.delete("vendo_audit", "aud_1"))
       .rejects.toMatchObject({ code: "blocked", message: "vendo_audit is append-only" });
     // The idempotency ledger's own refusal — same key, different body — is a
     // conflict the caller must see, never a swallowed replay.
@@ -1079,14 +1114,14 @@ describe("hostedStoreOps — the 42-op wire client", () => {
       .rejects.toMatchObject({ code: "conflict" });
     // An enveloped not-found stays not-found; a BARE 404 is a mount failure
     // and degrades to not-implemented rather than reading as absence.
-    await expect(enveloped("not-found", "unknown record", 404).records.get("invoices", "r"))
+    await expect(enveloped("not-found", "unknown record", 404).engine.get(ENGINE_COLLECTION, "r"))
       .rejects.toMatchObject({ code: "not-found" });
     const bare = hostedStoreOps({
       apiKey: "vnd_secret",
       baseUrl: "https://cloud.test",
       fetch: (async () => new Response("<html>nginx</html>", { status: 404 })) as unknown as typeof fetch,
     });
-    await expect(bare.records.get("invoices", "r")).rejects.toMatchObject({ code: "not-implemented" });
+    await expect(bare.engine.get(ENGINE_COLLECTION, "r")).rejects.toMatchObject({ code: "not-implemented" });
   });
 
   it("surfaces an unsupported op cleanly, naming it — never a silent fallback", async () => {
@@ -1129,9 +1164,9 @@ describe("hostedStoreOps — the 42-op wire client", () => {
       baseUrl: "https://cloud.test",
       fetch: (async () => Response.json(body)) as unknown as typeof fetch,
     });
-    await expect(answering({}).records.get("invoices", "r")).rejects.toThrow(/invalid record/);
-    await expect(answering({ records: "nope" }).records.list("invoices")).rejects.toThrow(/invalid list/);
-    await expect(answering({ claimed: "yes" }).records.claim("invoices", { id: "r", data: {} }))
+    await expect(answering({}).engine.get(ENGINE_COLLECTION, "r")).rejects.toThrow(/invalid record/);
+    await expect(answering({ records: "nope" }).engine.list(ENGINE_COLLECTION)).rejects.toThrow(/invalid list/);
+    await expect(answering({ claimed: "yes" }).engine.claim(ENGINE_COLLECTION, { id: "r", data: {} }))
       .rejects.toThrow(/invalid claim/);
     await expect(answering({ keys: [1] }).blobs.list("uploads")).rejects.toThrow(/invalid blob list/);
     await expect(answering({ blob: {} }).blobs.get("uploads", "a.png")).rejects.toThrow(/invalid blob/);
@@ -1149,33 +1184,32 @@ describe("hostedStore keeps its StoreAdapter surface and gains the op surface", 
     expect(typeof store.records).toBe("function");
     expect(typeof store.blobs).toBe("function");
     expect(typeof store.erase.bySubject).toBe("function");
+    // Eight families — the generic records family is gone from the op surface.
     expect(Object.keys(store.ops).sort()).toEqual([
-      "appData", "blobs", "engine", "harness", "lifecycle", "records", "status", "transcripts", "workspace",
+      "appData", "blobs", "engine", "harness", "lifecycle", "status", "transcripts", "workspace",
     ]);
 
     // The op surface rides the SAME mount, key and identity headers as the
-    // StoreAdapter surface, over its own wire doors — a record written through
+    // StoreAdapter surface, over the same wire doors — a record written through
     // one is readable through the other, which is what "one home, two
     // surfaces" has to mean.
-    await store.ops.records.put("invoices", { id: "inv_1", data: { total: 5 } });
+    await store.ops.engine.put(ENGINE_COLLECTION, { id: "wsc_1", data: { paths: 1 } });
     expect(console_.requests.at(-1)).toMatchObject({
-      url: "https://cloud.test/api/v1/store/records/put",
+      url: "https://cloud.test/api/v1/store/engine/put",
       authorization: "Bearer vnd_secret",
     });
-    expect(await store.records("invoices").get("inv_1")).toMatchObject({ id: "inv_1", data: { total: 5 } });
-    await store.ops.records.delete("invoices", "inv_1");
-    expect(await store.ops.records.get("invoices", "inv_1")).toBeNull();
+    expect(await store.records(ENGINE_COLLECTION).get("wsc_1")).toMatchObject({ id: "wsc_1", data: { paths: 1 } });
+    await store.ops.engine.delete(ENGINE_COLLECTION, "wsc_1");
+    expect(await store.ops.engine.get(ENGINE_COLLECTION, "wsc_1")).toBeNull();
 
-    // Blobs too: base64 JSON on the ops wire, REST bytes on the adapter, both
-    // surfaces on the same key.
+    // Blobs too, on the one door both surfaces now share.
     await store.ops.blobs.put("uploads", "images/a.png", new Uint8Array([7]), { contentType: "image/png" });
     expect(await store.blobs("uploads").get("images/a.png")).toMatchObject({ contentType: "image/png" });
     expect(await store.ops.blobs.list("uploads", "images/")).toEqual(["images/a.png"]);
   });
 
-  // 30 of the 42 ops have no door in the fake: all 7 engine, all 8 appData,
-  // all 6 transcripts, all 3 harness, all 4 workspace, lifecycle.promote and
-  // /status. It used to answer
+  // 16 of the 35 ops have no door in the fake: all 6 transcripts, all 3
+  // harness, all 4 workspace, lifecycle.promote and /status. It used to answer
   // them with a `not-found` envelope — the SAME answer a live console sends
   // when it refuses — so a test exercising one of those families read a
   // plausible rejection and asserted nothing. The fake now throws out of

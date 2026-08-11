@@ -15,7 +15,6 @@ import {
   type AppId,
   type ApprovalId,
   type Json,
-  type RecordStore,
   type RunContext,
   VendoError,
   type VendoRecord,
@@ -27,6 +26,7 @@ import type {
 } from "../../contract/index.js";
 import { createAccessChecks } from "../doors/access-checks.js";
 import type { AppDataAccess } from "../persistence/app-data.js";
+import { engineOf, type EngineOps } from "../persistence/engine.js";
 import { createAuditReporters } from "../persistence/audit-reports.js";
 import { createApprovalFlow } from "../persistence/approval-flow.js";
 import type { createAutomationLane } from "../automation/lane.js";
@@ -66,8 +66,8 @@ import type {
 
 export interface AppsRuntimeContext {
   config: AppsConfig;
-  /** The `vendo_apps` collection every door reads and writes. */
-  apps: RecordStore;
+  /** Vendo's own drawers, by name — `vendo_apps` above all (engine.ts). */
+  engine: EngineOps;
   /** Placement rows — "show this app in that slot" (placements.ts). */
   placementRows: PlacementStore;
   /** The host's mounted slots, reported by the surfaces that render them
@@ -251,37 +251,37 @@ export interface AppsRuntimeContext {
 const createStores = (
   config: AppsConfig,
 ): Pick<AppsRuntimeContext,
-  "apps" | "placementRows" | "slots" | "data" | "history" | "egressApprovals"
+  "engine" | "placementRows" | "slots" | "data" | "history" | "egressApprovals"
   | "parkedActions" | "inClientApprovals"> => {
-  const apps = config.store.records("vendo_apps");
-  const placementRows = placementStore(config.store);
-  const slots = createSlotRegistry(config.store);
+  const engine = engineOf(config.ops, config.store);
+  const placementRows = placementStore(engine);
+  const slots = createSlotRegistry(engine);
   const data = createAppData({ ops: config.ops, store: config.store });
-  const history = createAppHistory(config.store);
+  const history = createAppHistory(engine);
   // Lane E — parked egress approvals (approved state lives on the document's
   // egressApproved field; this collection holds only undecided cards).
-  const egressApprovals = createEgressApprovals(config.store);
+  const egressApprovals = createEgressApprovals(engine);
   // W0 — parked in-app actions: a mutating action the guard sent to approval
   // is recorded here (keyed by its approval) so onApprovalDecision can
   // re-dispatch the exact call the instant the owner approves. Holds only
   // undecided actions; both decisions clear it.
-  const parkedActions = createParkedActions(config.store);
-  const inClientApprovals = createInClientApprovals(config.store);
-  return { apps, placementRows, slots, data, history, egressApprovals, parkedActions, inClientApprovals };
+  const parkedActions = createParkedActions(engine);
+  const inClientApprovals = createInClientApprovals(engine);
+  return { engine, placementRows, slots, data, history, egressApprovals, parkedActions, inClientApprovals };
 };
 
 /** The composed seams the doors call through: interchange, the review-kind
  *  lifecycle, the box-aware caller, and the one opener. */
 const createDoors = (
   deps: Pick<AppsRuntimeContext,
-    "config" | "history" | "inClientApprovals" | "parkedActions" | "lifecycle"
+    "config" | "engine" | "history" | "inClientApprovals" | "parkedActions" | "lifecycle"
     | "requireOwned" | "updateAppDocument" | "runtime">,
 ): Pick<AppsRuntimeContext,
   "review" | "reviewerAsserted" | "interchange" | "fnCaller" | "manifestTriggers" | "caller" | "opener"> => {
   const { config, history, inClientApprovals, parkedActions, lifecycle } = deps;
   const { requireOwned, updateAppDocument } = deps;
   const interchange = createAppInterchange({
-    store: config.store,
+    engine: deps.engine,
     guard: config.guard,
     seedBaselines: config.seedBaselines,
     requireOwned,
@@ -292,7 +292,7 @@ const createDoors = (
   // client resolves ("pending-review" = show the ORIGINAL, never a jailed
   // fork; a served older approved version carries the current standing).
   const review = createReviewLifecycle({
-    store: config.store,
+    engine: deps.engine,
     baselines: config.seedBaselines,
     approvals: inClientApprovals,
     history,
@@ -308,7 +308,7 @@ const createDoors = (
   // actions at call().
   const fnCaller = createFnCaller({ wake: (app) => lifecycle.wake(app) });
   const manifestTriggers = createManifestTriggers({
-    store: config.store,
+    engine: deps.engine,
     lifecycle,
     updateDocument: updateAppDocument,
     ...(config.armAutomation === undefined ? {} : { armAutomation: config.armAutomation }),
@@ -399,12 +399,12 @@ export const createRuntimeContext = (
 ): AppsRuntimeContext => {
   const stores = createStores(config);
   const audit = createAuditReporters(config);
-  const access = createAccessChecks({ config, apps: stores.apps });
+  const access = createAccessChecks({ config, engine: stores.engine });
   const machine = createMachineLane(config);
   const updateAppDocument = (
     appId: AppId,
     mutate: (doc: AppDocument) => AppDocument,
-  ): Promise<AppDocument> => updateAppRow(stores.apps, appId, mutate, "box");
+  ): Promise<AppDocument> => updateAppRow(stores.engine, appId, mutate, "box");
   const base = { config, ...stores, ...audit, ...access, ...machine, updateAppDocument, runtime };
   const approvals = createApprovalFlow(base);
   const journal = createEditJournal(base);

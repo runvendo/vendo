@@ -79,7 +79,10 @@ describe("connect card in the thread (both wire shapes)", () => {
 
     // Brand-forward: the toolkit's display name, never the raw slug.
     const card = await screen.findByRole("article", { name: "Connect Gmail" });
-    expect(card.textContent).toContain("Connect Gmail so the digest can land as a draft.");
+    // ⚠️ TEST EDIT (C2 · Integration row): the wire's message is the first item
+    // of the card's dot-joined notes line now, so its full stop is dropped —
+    // same sentence, same source (the part's `message`), asserted as it renders.
+    expect(card.textContent).toContain("Connect Gmail so the digest can land as a draft");
     expect(screen.getByRole("button", { name: "Connect Gmail" })).toBeTruthy();
     expect(cards()).toHaveLength(1);
   });

@@ -477,21 +477,47 @@ describe("cloudSandbox", () => {
     expect(console_.requests.at(-1)!.json).toMatchObject({ egress: ["example.com"] });
   });
 
-  it("rejects snapshot refs it did not mint before anything rides the wire", async () => {
+  it("rejects snapshot refs it did not mint before anything rides the wire, saying WHICH way each is wrong", async () => {
     const console_ = fakeConsole();
     const adapter = adapterFor(console_);
-    for (const foreign of [
-      "bogus:not-a-real-ref",
-      "e2b:v2:abc",
-      "snap_nocolon",
-      `vendo:snap_${"a".repeat(40)}`, // a bare console ref is not a seam ref
-      "vendo:v2:", // bare prefix
-      "vendo:v2:!!!not-base64url!!!", // garbage payload
-      `vendo:v2:${btoa(JSON.stringify({ version: 2, machineId: "", ref: "vendo:snap_x" }))}`, // empty machine id
-    ]) {
-      await expect(adapter.resume(foreign)).rejects.toMatchObject({ code: "validation" });
-      await expect(adapter.destroy(foreign)).rejects.toMatchObject({ code: "validation" });
+    const composite = (state: unknown): string =>
+      `${CLOUD_SNAPSHOT_REF_PREFIX}${btoa(JSON.stringify(state))}`;
+    const garbage = "!!!not-base64url!!!";
+    // A composite carried as another composite's inner artifact ref: the
+    // console prefix ("vendo:") is a strict prefix of the composite prefix, so
+    // a startsWith check on the inner ref accepted this.
+    const inner = composite({ version: 2, machineId: "m_1", ref: `vendo:snap_${"a".repeat(40)}` });
+
+    // Seven distinct failures, seven distinct sentences. One blind catch used
+    // to relabel all of them as "must start with vendo:v2: and carry a valid
+    // payload", which named the wrong fix for six of the seven.
+    for (const [ref, message] of [
+      // Another provider's ref — the scheme says who minted it.
+      ["bogus:not-a-real-ref", 'This snapshot was minted by "bogus", but the resuming sandbox is Vendo Cloud. A snapshot cannot move between providers — resume it with the same sandbox that made it, or rebuild the app on Cloud.'],
+      ["e2b:v2:abc", "This snapshot was minted by e2b, but the resuming sandbox is Vendo Cloud. A snapshot cannot move between providers — resume it with the same sandbox that made it (pass sandbox: e2bSandbox()), or rebuild the app on Cloud."],
+      // No scheme at all: not a snapshot reference of any provider.
+      ["snap_nocolon", 'This is not a sandbox snapshot reference: Vendo Cloud snapshot references start with "vendo:v2:". Rebuild the app to mint a current reference.'],
+      // A bare console artifact id — the shape a raw console read hands back.
+      [`vendo:snap_${"a".repeat(40)}`, 'This is a raw Vendo Cloud artifact id, not a sandbox snapshot reference. Snapshot references start with "vendo:v2:" and carry the machine id alongside the artifact. Rebuild the app to mint a current reference.'],
+      // Right prefix, unusable payload: the LENGTH is the evidence, and the
+      // payload itself never reaches the message.
+      ["vendo:v2:", 'Vendo Cloud snapshot reference is truncated or corrupt: 0 characters after the "vendo:v2:" prefix, expected 120-400. The stored reference was cut off — rebuild the app.'],
+      [`vendo:v2:${garbage}`, `Vendo Cloud snapshot reference is truncated or corrupt: ${garbage.length} characters after the "vendo:v2:" prefix, expected 120-400. The stored reference was cut off — rebuild the app.`],
+      // A decodable payload with one bad field names the field.
+      [composite({ version: 2, machineId: "", ref: "vendo:snap_x" }), 'Vendo Cloud snapshot reference has an invalid "machineId": expected a non-empty string, got "". Rebuild the app to mint a current reference.'],
+      [composite({ version: 2, machineId: "m_1", ref: inner }), `Vendo Cloud snapshot reference has an invalid "ref": expected a Vendo Cloud artifact id ("vendo:snap_<40 hex>"), got a string of ${inner.length} characters. Rebuild the app to mint a current reference.`],
+    ] as const) {
+      await expect(adapter.resume(ref)).rejects.toMatchObject({ code: "validation", message });
+      await expect(adapter.destroy(ref)).rejects.toMatchObject({ code: "validation", message });
     }
+
+    // The scheme is the ONE piece of a caller's ref that reaches a message, so
+    // it is bounded: an unbounded capture made a 200k-character lead a
+    // 200k-character error and a 200k-character log line. It is not a scheme.
+    await expect(adapter.resume(`${"a".repeat(200_000)}:x`)).rejects.toMatchObject({
+      code: "validation",
+      message: 'This is not a sandbox snapshot reference: Vendo Cloud snapshot references start with "vendo:v2:". Rebuild the app to mint a current reference.',
+    });
     expect(console_.requests).toEqual([]);
   });
 

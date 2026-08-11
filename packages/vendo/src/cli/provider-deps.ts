@@ -202,25 +202,46 @@ const defaultRunner: InstallRunner = (command, args, cwd) =>
 export interface EnsureProviderDepsOptions {
   root: string;
   credential: DevCredential;
+  /** The provider init WROTE into the composition this run (scaffoldModel's
+      answer), when it wrote one. */
+  wrote?: EnvKeyProvider;
   output: Output;
   run?: InstallRunner;
 }
 
-/** Installs `ai@^6` + the credential's provider when the host can't resolve
-    them. Never fatal: a failed install degrades to the exact manual command
-    (the same one doctor's E-DEP-001 story names). */
+/** Every `@ai-sdk` provider this host must be able to resolve: the one the
+    resolved credential loads at runtime, PLUS the one init just wrote an import
+    for. Since the selection law those are different questions — a bare provider
+    key is `rung: "none"`, so asking the credential alone answered "no provider"
+    for the very host whose freshly authored route now imports one, and the
+    generated app could not resolve its own import when it built. Deduped by
+    module, because the ordinary case is one provider named twice. */
+function providerModulesFor(options: Pick<EnsureProviderDepsOptions, "credential" | "wrote">):
+Array<{ module: string; spec: string }> {
+  const wanted = [
+    providerModuleFor(options.credential),
+    options.wrote === undefined ? null : PROVIDER_SPECS[options.wrote],
+  ].filter((entry): entry is { module: string; spec: string } => entry !== null);
+  return [...new Map(wanted.map((entry) => [entry.module, entry])).values()];
+}
+
+/** Installs `ai@^6` + every provider this host needs (see providerModulesFor)
+    when it can't resolve them. Never fatal: a failed install degrades to the
+    exact manual command (the same one doctor's E-DEP-001 story names). */
 export async function ensureProviderDeps(options: EnsureProviderDepsOptions): Promise<void> {
-  const provider = providerModuleFor(options.credential);
-  if (provider === null) return;
+  const providers = providerModulesFor(options);
+  if (providers.length === 0) return;
 
   const specs: string[] = [];
   if (!(await isInstalled(options.root, "ai"))) specs.push(AI_SPEC);
-  if (!(await isInstalled(options.root, provider.module))) specs.push(provider.spec);
+  for (const provider of providers) {
+    if (!(await isInstalled(options.root, provider.module))) specs.push(provider.spec);
+  }
   if (specs.length === 0) return;
 
   const install = await installCommandFor(options.root);
   const invocation = invocationFor(install, specs, options.root);
-  options.output.log(`Installing the model provider this credential uses: ${specs.join(" ")} (${install.command})…`);
+  options.output.log(`Installing the model provider this composition needs: ${specs.join(" ")} (${install.command})…`);
   const code = await (options.run ?? defaultRunner)(install.command, [...install.args, ...specs], install.cwd);
   if (code === 0) {
     options.output.log(`Installed ${specs.join(" ")}.`);

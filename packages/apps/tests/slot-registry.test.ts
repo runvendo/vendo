@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import type { RunContext } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SLOTS_COLLECTION, SLOT_DECAY_MS, createSlotRegistry } from "../src/server/persistence/slots.js";
@@ -20,7 +21,7 @@ afterEach(() => {
 describe("the slot registry — one row per (subject, slot)", () => {
   it("refreshes a re-reported slot in place instead of growing the registry", async () => {
     const store = memoryStore();
-    const slots = createSlotRegistry(store);
+    const slots = createSlotRegistry(engineOverAdapter(store));
     vi.useFakeTimers();
 
     vi.setSystemTime(new Date("2026-08-01T00:00:00.000Z"));
@@ -38,7 +39,7 @@ describe("the slot registry — one row per (subject, slot)", () => {
 
   it("updates a renamed label in place, and keeps two subjects' slots apart", async () => {
     const store = memoryStore();
-    const slots = createSlotRegistry(store);
+    const slots = createSlotRegistry(engineOverAdapter(store));
 
     // One page mounts several slots and reports them together.
     await slots.report({
@@ -59,7 +60,7 @@ describe("the slot registry — one row per (subject, slot)", () => {
 
   it("keys every row on the subject alone, which is what the erase cascade matches", async () => {
     const store = memoryStore();
-    await createSlotRegistry(store).report({ slots: [{ id: "hero", label: "Hero" }] }, ada);
+    await createSlotRegistry(engineOverAdapter(store)).report({ slots: [{ id: "hero", label: "Hero" }] }, ada);
 
     const rows = await store.records(SLOTS_COLLECTION).list({ refs: { subject: "user_ada" } });
     expect(rows.records.map((record) => record.refs)).toEqual([{ subject: "user_ada" }]);
@@ -67,7 +68,7 @@ describe("the slot registry — one row per (subject, slot)", () => {
 
   it("drops a slot last seen past the decay window and answers newest-seen first", async () => {
     const store = memoryStore();
-    const slots = createSlotRegistry(store);
+    const slots = createSlotRegistry(engineOverAdapter(store));
     const now = Date.parse("2026-08-06T00:00:00.000Z");
     vi.useFakeTimers();
 

@@ -4,16 +4,16 @@
  * (`agent({ sandbox })`).
  *
  * Every rung here is a promise the docs make to an operator, and each one is a
- * different way to get a deployment silently wrong: a Vendo key shadowing an
- * existing E2B account, a half-installed BYO sandbox riding Cloud instead of
- * saying so, a whitespace key that `vendo doctor` and this function disagree
- * about. So the ladder is tested as a ladder — precedence and all — rather than
- * one rung at a time.
+ * different way to get a deployment silently wrong. The biggest one is gone
+ * since the SELECTION LAW: E2B_API_KEY is a credential, not a rung, so a key
+ * lying in a shell can no longer choose a deployment's execution venue. What is
+ * left is short enough to state in one line — explicit adapter, VENDO_API_KEY,
+ * dark — and it is still tested as a ladder, precedence and all, because the
+ * precedence is the promise.
  *
- * The env is driven for real (`vi.stubEnv`) and `e2bInstalled()` really probes
- * the installed `e2b` package: nothing here stubs the thing it is asking about.
+ * The env is driven for real (`vi.stubEnv`); nothing here stubs the thing it is
+ * asking about.
  */
-import { VendoError } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SandboxAdapter } from "../src/server/escalation/sandbox.js";
 import { selectSandbox, type CloudSandboxRung } from "../src/server/escalation/sandbox-ladder.js";
@@ -22,7 +22,8 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-/** The four env vars the ladder reads. Cleared per case so a developer's own
+/** Every env var this file speaks about — the two the ladder still reads, plus
+ *  the ones it deliberately no longer does. Cleared per case so a developer's own
  *  shell (a real E2B_API_KEY is common) cannot decide the answer. */
 const clearLadderEnv = (): void => {
   for (const name of ["E2B_API_KEY", "VENDO_API_KEY", "VENDO_CLOUD_URL", "VENDO_E2B_TIMEOUT_MS", "VENDO_BOX_EDIT_TIMEOUT_MS"]) {
@@ -68,72 +69,55 @@ describe("rung 1 — an explicitly passed adapter always wins (the hard BYO rule
   });
 });
 
-describe("rung 2 — E2B_API_KEY, the BYO sandbox env", () => {
-  it("composes the e2b adapter and reports the e2b venue", () => {
+describe("E2B_API_KEY is a CREDENTIAL, not a rung (the selection law)", () => {
+  // The breaking change, stated as tests. Before this, a key left in a shell —
+  // or inherited by a container — selected the e2b venue for the whole
+  // deployment, which is how 0.4.4 defect C shipped: nobody wrote it down, so
+  // nobody could see it was wrong.
+  it("a stray E2B_API_KEY selects nothing at all — the venue stays dark", () => {
     clearLadderEnv();
     vi.stubEnv("E2B_API_KEY", "e2b_key");
 
-    const selection = selectSandbox(undefined);
-
-    expect(selection.venue).toBe("e2b");
-    expect(selection.adapter).toBeDefined();
+    expect(selectSandbox(undefined)).toEqual({ adapter: undefined, venue: false });
   });
 
-  it("beats VENDO_API_KEY, so a Vendo key never shadows an existing provider account", () => {
+  it("a stray E2B_API_KEY does NOT outrank VENDO_API_KEY — Cloud fills the unset slot", () => {
     clearLadderEnv();
     vi.stubEnv("E2B_API_KEY", "e2b_key");
     vi.stubEnv("VENDO_API_KEY", "vendo_key");
     const cloud = cloudRung();
 
-    expect(selectSandbox(undefined, cloud).venue).toBe("e2b");
-    expect(cloud.calls).toEqual([]);
+    expect(selectSandbox(undefined, cloud).venue).toBe("cloud");
+    expect(cloud.calls).toEqual([{ apiKey: "vendo_key" }]);
   });
 
-  it("does NOT treat a whitespace-only key as a key — the same trim `vendo doctor` does", () => {
-    // Disagreeing with doctor's E-LIVE-007 about whether the operator set a key
-    // means one of the two is lying to the operator.
-    clearLadderEnv();
-    vi.stubEnv("E2B_API_KEY", "   ");
+  it("no shape of E2B_API_KEY changes the answer — set, whitespace, or empty", () => {
+    for (const value of ["e2b_key", "   ", "  \t ", ""]) {
+      clearLadderEnv();
+      vi.stubEnv("E2B_API_KEY", value);
+      expect(selectSandbox(undefined).venue, value).toBe(false);
 
-    expect(selectSandbox(undefined).venue).toBe(false);
+      clearLadderEnv();
+      vi.stubEnv("E2B_API_KEY", value);
+      vi.stubEnv("VENDO_API_KEY", "vendo_key");
+      expect(selectSandbox(undefined, cloudRung()).venue, value).toBe("cloud");
+    }
   });
 
-  it("falls to Cloud when the E2B key is whitespace, rather than refusing", () => {
-    clearLadderEnv();
-    vi.stubEnv("E2B_API_KEY", "  \t ");
-    vi.stubEnv("VENDO_API_KEY", "vendo_key");
-
-    expect(selectSandbox(undefined, cloudRung()).venue).toBe("cloud");
-  });
-});
-
-describe("rung 2's machine lifetime knobs", () => {
-  // Not observable on the selection object, so these assert the ladder ACCEPTS
-  // each spelling and still lands on e2b — the regression they guard is a throw
-  // or a dropped rung from a malformed value, not a specific timeout number.
-  const e2bWith = (env: Record<string, string>): ReturnType<typeof selectSandbox> => {
-    clearLadderEnv();
-    vi.stubEnv("E2B_API_KEY", "e2b_key");
-    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
-    return selectSandbox(undefined);
-  };
-
-  it("takes an explicit VENDO_E2B_TIMEOUT_MS", () => {
-    expect(e2bWith({ VENDO_E2B_TIMEOUT_MS: "900000" }).venue).toBe("e2b");
-  });
-
-  it("derives a machine lifetime from a raised box-edit budget", () => {
-    expect(e2bWith({ VENDO_BOX_EDIT_TIMEOUT_MS: "600000" }).venue).toBe("e2b");
-  });
-
-  it("ignores a non-numeric or non-positive knob instead of throwing", () => {
-    expect(e2bWith({ VENDO_E2B_TIMEOUT_MS: "not-a-number" }).venue).toBe("e2b");
-    expect(e2bWith({ VENDO_E2B_TIMEOUT_MS: "0" }).venue).toBe("e2b");
-    expect(e2bWith({ VENDO_BOX_EDIT_TIMEOUT_MS: "-1" }).venue).toBe("e2b");
+  it("neither do the e2b machine-lifetime knobs, which are the adapter's business now", () => {
+    // VENDO_E2B_TIMEOUT_MS / VENDO_BOX_EDIT_TIMEOUT_MS moved into e2bSandbox()
+    // with the credential (tests/e2b/e2b.test.ts asserts the real timeout they
+    // produce). Here they must not resurrect a rung.
+    for (const knob of ["VENDO_E2B_TIMEOUT_MS", "VENDO_BOX_EDIT_TIMEOUT_MS"]) {
+      clearLadderEnv();
+      vi.stubEnv("E2B_API_KEY", "e2b_key");
+      vi.stubEnv(knob, "900000");
+      expect(selectSandbox(undefined).venue, knob).toBe(false);
+    }
   });
 });
 
-describe("rung 3 — VENDO_API_KEY defaults the Cloud managed pool", () => {
+describe("rung 2 — VENDO_API_KEY defaults the Cloud managed pool", () => {
   it("builds the Cloud rung with the console credential", () => {
     clearLadderEnv();
     vi.stubEnv("VENDO_API_KEY", "vendo_key");
@@ -177,7 +161,7 @@ describe("rung 3 — VENDO_API_KEY defaults the Cloud managed pool", () => {
   });
 });
 
-describe("rung 4 — nothing", () => {
+describe("rung 3 — nothing", () => {
   it("answers with no adapter and no venue, leaving the meaning to the caller", () => {
     clearLadderEnv();
 
@@ -191,34 +175,16 @@ describe("rung 4 — nothing", () => {
     expect(selectSandbox(undefined, cloud)).toEqual({ adapter: undefined, venue: false });
     expect(cloud.calls).toEqual([]);
   });
-});
 
-describe("half a BYO sandbox is a MISCONFIG, not a fallback (0.4.4 defect C)", () => {
-  it("refuses at boot when E2B_API_KEY is set but the e2b package is absent", () => {
-    // The probe is `e2bInstalled(specifier)` over the real module resolver, so
-    // an absent package is spelled here the honest way — by asking about one
-    // that genuinely is not installed — rather than by stubbing the probe.
-    clearLadderEnv();
-    vi.stubEnv("E2B_API_KEY", "e2b_key");
-
-    const attempt = (): unknown => selectSandbox(undefined, cloudRung(), "e2b-not-a-real-package");
-
-    expect(attempt).toThrow(VendoError);
-    expect(attempt).toThrow(/E2B_API_KEY is set but the e2b package is not installed/);
-    // The remedy names BOTH ways out, because either is legitimate.
-    expect(attempt).toThrow(/install e2b/);
-    expect(attempt).toThrow(/unset E2B_API_KEY/);
-  });
-
-  it("does NOT quietly fall through to Cloud when the install is missing", () => {
+  it("never throws — the ladder has no misconfiguration left to refuse", () => {
+    // Half a BYO sandbox (0.4.4 defect C) used to be refused HERE, because the
+    // env chose the venue. It is refused in e2bSandbox() now, where the host
+    // actually asked for e2b (tests/e2b/e2b.test.ts). Selection itself is total.
     clearLadderEnv();
     vi.stubEnv("E2B_API_KEY", "e2b_key");
     vi.stubEnv("VENDO_API_KEY", "vendo_key");
-    const cloud = cloudRung();
 
-    expect(() => selectSandbox(undefined, cloud, "e2b-not-a-real-package")).toThrow(VendoError);
-    // Silently riding Cloud is exactly the defect: it hides the missing install
-    // until the first box boot dies somewhere else entirely.
-    expect(cloud.calls).toEqual([]);
+    expect(() => selectSandbox(undefined)).not.toThrow();
+    expect(() => selectSandbox(undefined, cloudRung())).not.toThrow();
   });
 });

@@ -256,6 +256,8 @@ export const vendoAutomationPartSchema = z.object({
   appId: appIdSchema,
   name: z.string().min(1),
   enabled: z.boolean(),
+  // The trigger carries the automation's terms as words (`Trigger.rules`) — the
+  // card lists them, and no second field on this part can disagree with it.
   trigger: triggerSchema.optional(),
   description: z.string().optional(),
   pendingGrants: z.number().int().nonnegative().optional(),

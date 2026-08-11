@@ -308,9 +308,18 @@ describe("buildFailureReason", () => {
     expect(buildFailureReason(new VendoError("validation", "model could not produce a valid app", [
       `model generation failed: ${installLine}`,
     ]))).toEqual({ reason: installLine, retryable: false });
-    const noKeyLine = "Vendo found no model key. Set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY "
-      + "in .env.local (with the matching @ai-sdk provider installed), or run `vendo login` for a "
-      + "free dev key. Production always needs a real server-side key.";
+    // THE COUPLING, from the consumer's side. This is NO_CREDENTIAL_MESSAGE in
+    // @vendoai/vendo (dev-creds/model.ts), which this package may not import, so
+    // the literal is pinned from both sides: here against the real
+    // MODEL_UNAVAILABLE_SIGNAL, and there against the real constant
+    // (tests/dev-creds/model.test.ts, "keeps the exact bytes @vendoai/apps'
+    // MODEL_UNAVAILABLE_SIGNAL anchors on"). Reword the message and that one
+    // fails; retune the pattern and this one does. Neither can drift quietly —
+    // which the old wording did, and the actionable line then reaches only the
+    // operator's terminal (0.4.x, measured twice).
+    const noKeyLine = "Vendo has no model. Pass one — models: { default: anthropic(\"claude-sonnet-4-6\") } in "
+      + "createVendo — or set VENDO_API_KEY for the Vendo Cloud gateway (`vendo login` mints a free "
+      + "dev key). A provider key alone no longer selects a model; Vendo never picks a provider for you.";
     expect(buildFailureReason(new Error(noKeyLine))).toEqual({ reason: noKeyLine, retryable: false });
   });
 

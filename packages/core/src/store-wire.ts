@@ -17,14 +17,6 @@ export const VENDO_STORE_WIRE_FORMAT = "vendo/store-wire@1" as const;
     ONE keyset cursor (default 100, max 1000) on every list op.
     Unknown op → enveloped `not-implemented` (501). */
 export const STORE_WIRE_PATHS = {
-  // records (7)
-  "records.get": "/records/get",
-  "records.put": "/records/put",
-  "records.delete": "/records/delete",
-  "records.list": "/records/list",
-  "records.claim": "/records/claim",
-  "records.insertIfAbsent": "/records/insertIfAbsent",
-  "records.compareAndSwap": "/records/compareAndSwap",
   // engine (7)
   "engine.get": "/engine/get",
   "engine.put": "/engine/put",
@@ -86,12 +78,12 @@ const cursorQuerySchema = z.object({
 }).passthrough();
 
 // ---------------------------------------------------------------------------
-// records + engine — one collection-addressed body shape serves both
+// engine — the collection-addressed body shape
 //
-// The two families take the same seven verbs over the same `collection` + args
-// bodies; only the allowlist behind the door differs (engine names are gated by
-// assertEngineCollection). So the bodies are named for their SHAPE, not for one
-// family — a second copy would only be a copy that could drift.
+// Named for its SHAPE, not for the family: `engine` takes seven verbs over a
+// `collection` + args body, and the appData family addresses the same rows
+// through a `target` instead. The generic records family that once shared
+// these bodies is gone; its paths answer an enveloped 501.
 // ---------------------------------------------------------------------------
 
 export const storeWireCollectionGetRequestSchema = z.object({
@@ -133,23 +125,6 @@ export const storeWireCollectionCompareAndSwapRequestSchema = z.object({
   record: recordInputSchema,
   expectedRevision: z.string().min(1),
 }).passthrough();
-
-/** @deprecated Renamed to storeWireCollection*RequestSchema — one
-    collection-addressed body shape now serves both /records/* and /engine/*.
-    Removed in a later slice; nothing new should import these. */
-export const storeWireRecordsGetRequestSchema = storeWireCollectionGetRequestSchema;
-/** @deprecated Use storeWireCollectionPutRequestSchema. */
-export const storeWireRecordsPutRequestSchema = storeWireCollectionPutRequestSchema;
-/** @deprecated Use storeWireCollectionDeleteRequestSchema. */
-export const storeWireRecordsDeleteRequestSchema = storeWireCollectionDeleteRequestSchema;
-/** @deprecated Use storeWireCollectionListRequestSchema. */
-export const storeWireRecordsListRequestSchema = storeWireCollectionListRequestSchema;
-/** @deprecated Use storeWireCollectionClaimRequestSchema. */
-export const storeWireRecordsClaimRequestSchema = storeWireCollectionClaimRequestSchema;
-/** @deprecated Use storeWireCollectionInsertIfAbsentRequestSchema. */
-export const storeWireRecordsInsertIfAbsentRequestSchema = storeWireCollectionInsertIfAbsentRequestSchema;
-/** @deprecated Use storeWireCollectionCompareAndSwapRequestSchema. */
-export const storeWireRecordsCompareAndSwapRequestSchema = storeWireCollectionCompareAndSwapRequestSchema;
 
 // ---------------------------------------------------------------------------
 // blobs
@@ -367,21 +342,17 @@ export const storeWireLifecyclePromoteRequestSchema = z.object({
 // status
 // ---------------------------------------------------------------------------
 
-/** GET /status — the discovery handshake. Clients learn the protocol version,
-    the min client version for negotiation, and counts. */
+/** GET /status — the discovery handshake. Clients learn the protocol version
+    and the op count. The body passes unknown keys through, so a mount that
+    still sends fields this build dropped is read, not refused. */
 export interface StoreWireStatus {
   format: typeof VENDO_STORE_WIRE_FORMAT;
-  minClientVersion?: string;
   ops: number;
-  /** Op names this mount still serves but is retiring. */
-  deprecated?: readonly string[];
 }
 
 export const storeWireStatusSchema = z.object({
   format: z.literal(VENDO_STORE_WIRE_FORMAT),
-  minClientVersion: z.string().optional(),
   ops: z.number(),
-  deprecated: z.array(z.string()).optional(),
 }).passthrough() satisfies z.ZodType<StoreWireStatus>;
 
 // ---------------------------------------------------------------------------

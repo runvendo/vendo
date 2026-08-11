@@ -1,6 +1,7 @@
 /** The connect dock's effective catalog: the host's explicit `connectors`
     prop when it passed one, else the wire's auto catalog — everything the
     server-side connectors advertise (`GET /connections/catalog`). */
+import { log } from "@vendoai/core";
 import { useCallback, useEffect, useState } from "react";
 import type { VendoClient } from "../client.js";
 import { useVendoProvider, type ConnectorOption } from "../context.js";
@@ -31,7 +32,12 @@ function fetchCatalog(client: VendoClient): Promise<CatalogResult> {
       // stays and the tray shows an honest error state with a retry. Warn
       // (never silently) and forget the promise so a retry refetches.
       catalogByClient.delete(client);
-      console.warn("[vendo] connector catalog fetch failed; the connect tray will offer a retry:", reason);
+      log({
+        code: "ui.connector-catalog-fetch-failed",
+        level: "warn",
+        message: "[vendo] connector catalog fetch failed; the connect tray will offer a retry:",
+        data: { reason },
+      });
       return { options: [], failed: true };
     },
   );

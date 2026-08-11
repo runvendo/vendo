@@ -26,11 +26,11 @@ export interface ArmedAccess {
   disarmTrigger(record: VendoRecord, row: AppData, triggerId: string): Promise<void>;
 }
 
-export const createArmed = ({ base: { config }, appRows }: ArmedDeps): ArmedAccess => {
+export const createArmed = ({ base: { engine }, appRows }: ArmedDeps): ArmedAccess => {
   const setArmed = async (appId: string, triggerId: string, armed: boolean): Promise<void> => {
     const id = triggerKey(appId, triggerId);
-    if (armed) await config.store.records(ARMED).put({ id, data: { appId, triggerId }, refs: { app_id: appId } });
-    else await config.store.records(ARMED).delete(id);
+    if (armed) await engine.put(ARMED, { id, data: { appId, triggerId }, refs: { app_id: appId } });
+    else await engine.delete(ARMED, id);
   };
 
   /**
@@ -56,7 +56,7 @@ export const createArmed = ({ base: { config }, appRows }: ArmedDeps): ArmedAcce
     );
     return new Set<string>(keys.length === 0
       ? []
-      : (await allRecords(config.store.records(ARMED), { ids: keys })).map((record) => record.id));
+      : (await allRecords(engine, ARMED, { ids: keys })).map((record) => record.id));
   };
 
   /** The same question for one trigger, for the paths that hold a single app. */

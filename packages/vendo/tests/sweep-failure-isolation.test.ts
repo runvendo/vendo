@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createStore } from "@vendoai/store";
+import { createStore, createStoreOps } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo } from "../src/server.js";
@@ -36,16 +36,19 @@ describe("on-request sweep failure isolation", () => {
     cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
     await store.ensureSchema();
 
-    // Fault injection at the real store boundary: only the parked-call scan
-    // fails, everything the request itself reads stays real.
-    const realRecords = store.records.bind(store);
-    store.records = (collection: string) => {
-      const records = realRecords(collection);
-      if (collection !== "vendo_parked_call") return records;
-      return {
-        ...records,
-        list: async () => { throw new Error("sweep boom (transient store failure)"); },
-      };
+    // Fault injection at the real named-operation boundary: the parked-call
+    // scan rides ops.engine now, so only that one collection's list fails and
+    // everything the request itself reads stays real.
+    const realOps = createStoreOps(store);
+    store.ops = {
+      ...realOps,
+      engine: {
+        ...realOps.engine,
+        list: async (collection, opts) => {
+          if (collection === "vendo_parked_call") throw new Error("sweep boom (transient store failure)");
+          return realOps.engine.list(collection, opts);
+        },
+      },
     };
 
     let now = 0;

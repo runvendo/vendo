@@ -13,6 +13,7 @@ import {
 import { unattendedIrreversibilityCheck } from "@vendoai/automations";
 import { escalatedPlanPath, screenAssembler } from "./screen-agent.js";
 import {
+  engineOverAdapter,
   joinUrl,
   VendoError,
   type AppDocument,
@@ -38,21 +39,23 @@ import { BASE_PATH, environment } from "./wire/shared.js";
 // key is just such a secret: declare it, grant it, and it rides the same
 // injection path as any other key.
 // execution-v2 Wave 3 — the box's inference door (the in-box coding agent's
-// model). Explicit VENDO_INFERENCE_URL/KEY win; otherwise the BYO Anthropic
-// key rides api.anthropic.com; otherwise VENDO_API_KEY rides the console's
-// Anthropic-compatible model gateway — the same key that provisions the
-// Cloud machine funds its model (chat inference already does, via vendoModel's
-// vendo-cloud rung; a machine without this rung fails every in-box task).
+// model). SELECTION LAW: the explicit VENDO_INFERENCE_URL+KEY pair wins;
+// otherwise VENDO_API_KEY rides the console's Anthropic-compatible model gateway
+// — the same key that provisions the Cloud machine funds its model (chat
+// inference already does, via vendoModel's vendo-cloud rung; a machine without
+// this rung fails every in-box task); otherwise the box gets no inference door
+// and says so.
+//
+// There is deliberately no ANTHROPIC_API_KEY rung: a provider key in the
+// deployment's environment used to point every box at api.anthropic.com and bill
+// that account, chosen by nothing anyone wrote down. A host who wants their own
+// endpoint names it — both halves of the pair, explicitly.
 const boxInference = (): { url: string; key: string; model?: string } | undefined => {
   const url = environment("VENDO_INFERENCE_URL");
   const key = environment("VENDO_INFERENCE_KEY");
   const model = environment("VENDO_INFERENCE_MODEL");
   if (url !== undefined && key !== undefined) {
     return { url, key, ...(model === undefined ? {} : { model }) };
-  }
-  const anthropic = environment("ANTHROPIC_API_KEY");
-  if (anthropic !== undefined) {
-    return { url: "https://api.anthropic.com", key: anthropic, ...(model === undefined ? {} : { model }) };
   }
   const cloud = cloudKeyOptions();
   if (cloud !== undefined) {
@@ -108,12 +111,21 @@ const machineEnvFor = (
   composition: VendoComposition,
   appTokens: ReturnType<typeof createAppTokens>,
 ): AppsSeams["machineEnv"] => {
-  const { store, urls, secrets } = composition;
+  const { ops, urls, secrets } = composition;
   const machineEnv = async (
     app: AppDocument,
     grants?: { grantedSecrets: ReadonlySet<string> },
   ): Promise<Record<string, string>> => {
-    const record = await store.records("vendo_apps").get(app.id);
+    if (ops === undefined) {
+      throw new VendoError(
+        "not-implemented",
+        "Provisioning a machine app reads the app's owner out of Vendo's own drawer, so it needs "
+        + "the store's named-operation surface: a SQL-backed store (`store: postgres(url)`, or the "
+        + "local default) or a StoreOps-capable store (the Cloud hosted store). The configured "
+        + "store is neither.",
+      );
+    }
+    const record = await ops.engine.get("vendo_apps", app.id);
     const subject = record?.refs?.["subject"];
     if (typeof subject !== "string") {
       throw new VendoError("not-found", `app not found: ${app.id}`);
@@ -360,11 +372,13 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
  *  tool registry the moment it exists. */
 export const composeApps = (composition: VendoComposition): Pick<VendoComposition,
   "appTokens" | "access" | "apps" | "appsRuntime" | "resolveAppToolRisk"> => {
-  const { store, actions, catalog, capability } = composition;
+  const { store, ops, actions, catalog, capability } = composition;
   // execution-v2 Lane C — the per-app box bearer store (hash rows are the
   // authority) shared by the machine-env assembler below (mint at provision)
-  // and the wire's /box verification.
-  const appTokens = createAppTokens(store);
+  // and the wire's /box verification. The hash rows are one of Vendo's own
+  // drawers, so they are reached by name through the engine family — the
+  // deployment's own ops surface, or core's gate over a BYO adapter.
+  const appTokens = createAppTokens(ops?.engine ?? engineOverAdapter(store));
   const machineEnv = machineEnvFor(composition, appTokens);
   const boxTemplate = environment("VENDO_BOX_TEMPLATE");
   const boxEditTimeoutMs = positiveIntegerEnv("VENDO_BOX_EDIT_TIMEOUT_MS");

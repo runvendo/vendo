@@ -29,9 +29,9 @@ export type RunsSurfaceDeps = {
 const createRunReadDoors = (
   deps: Pick<RunsSurfaceDeps, "base" | "appRows">,
 ): Pick<AutomationsEngine["runs"], "get" | "list"> => {
-  const { base: { config }, appRows } = deps;
+  const { base: { engine }, appRows } = deps;
   const runsGet: AutomationsEngine["runs"]["get"] = async (runId, ctx) => {
-    const stored = await config.store.records(RUNS).get(runId);
+    const stored = await engine.get(RUNS, runId);
     if (stored === null) return null;
     const run = parseRunRecord(stored);
     // §8 editor = edit: the person the automation RUNS AS sees its history, not
@@ -58,7 +58,7 @@ const createRunReadDoors = (
     // the store cursor always sits at the consumption boundary: pages never
     // overfill and the returned cursor never skips rows.
     for (let pages = 0; pages < 20 && runs.length < RUNS_PAGE_LIMIT; pages += 1) {
-      const page = await config.store.records(RUNS).list({
+      const page = await engine.list(RUNS, {
         refs,
         limit: RUNS_PAGE_LIMIT - runs.length,
         ...(cursor === undefined ? {} : { cursor }),
@@ -89,10 +89,10 @@ const createRunReadDoors = (
 const createRunControlDoors = (
   deps: RunsSurfaceDeps,
 ): Pick<AutomationsEngine["runs"], "stop" | "rerun"> => {
-  const { base: { config, stopped, active, abortControllers }, appRows } = deps;
+  const { base: { engine, stopped, active, abortControllers }, appRows } = deps;
   const { armed, runRows, sponsorship, execution } = deps;
   const runsStop: AutomationsEngine["runs"]["stop"] = async (runId, ctx) => {
-    const stored = await config.store.records(RUNS).get(runId);
+    const stored = await engine.get(RUNS, runId);
     if (stored === null) throw new VendoError("not-found", `run not found: ${runId}`);
     const run = parseRunRecord(stored);
     const app = await appRows.editableAppOrNull(run.appId, ctx);
@@ -120,7 +120,7 @@ const createRunControlDoors = (
    *  for anyone who cannot. A trigger nobody has armed is refused rather than
    *  fired — "run it again" may not be a way to run something switched off. */
   const runsRerun: AutomationsEngine["runs"]["rerun"] = async (runId, ctx) => {
-    const stored = await config.store.records(RUNS).get(runId);
+    const stored = await engine.get(RUNS, runId);
     if (stored === null) throw new VendoError("not-found", `run not found: ${runId}`);
     const run = parseRunRecord(stored);
     const app = await appRows.editableAppOrNull(run.appId, ctx);

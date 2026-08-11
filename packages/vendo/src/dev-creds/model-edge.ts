@@ -14,6 +14,7 @@
  *  magic. Keep this module free of node builtins and CLI imports; the
  *  portability gate bundles it. */
 import type { LanguageModel } from "ai";
+import { log } from "@vendoai/core";
 
 import type { ConfigurableSlotModels, DevModelOptions, VendoModelOptions, VendoModelSlot } from "./model.js";
 
@@ -38,7 +39,11 @@ function refusingModel(provider: string, modelId: string): LanguageModel {
   const refuse = (): never => {
     if (!announced) {
       announced = true;
-      console.error(`[vendo] model: ${EDGE_MESSAGE}`);
+      log({
+        code: "vendo.model-edge-refused",
+        level: "error",
+        message: `[vendo] model: ${EDGE_MESSAGE}`,
+      });
     }
     throw new Error(EDGE_MESSAGE);
   };

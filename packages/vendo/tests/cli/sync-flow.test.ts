@@ -1,7 +1,9 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { STORE_WIRE_PATHS } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PIN_BASELINES_COLLECTION } from "../../src/cli/cloud/seed-baselines.js";
 import { describeDevCredential, resolveDevCredential } from "../../src/dev-creds/resolve.js";
 import { claudeCliHarness } from "../../src/cli/extract/claude-cli-harness.js";
 import type { ExtractionHarness } from "../../src/cli/extract/harness.js";
@@ -686,10 +688,17 @@ describe("pin baselines reach Vendo Cloud (decision 4)", () => {
   function fakeStore(seed: Record<string, unknown> = {}) {
     const rows = new Map<string, unknown>(Object.entries(seed));
     const calls: string[] = [];
+    // The engine door carries the collection in the BODY, not the path, so the
+    // fake records it separately — otherwise "which drawer did the CLI write?"
+    // stops being answerable from this double at all.
+    const collections = new Set<string>();
     const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
       const path = new URL(String(url)).pathname;
       calls.push(path);
-      const body = JSON.parse(String(init?.body ?? "{}")) as { record?: { id: string; data: unknown }; id?: string };
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        collection?: string; record?: { id: string; data: unknown }; id?: string;
+      };
+      if (typeof body.collection === "string") collections.add(body.collection);
       const stamp = { createdAt: "2026-08-02T00:00:00.000Z", updatedAt: "2026-08-02T00:00:00.000Z" };
       if (path.endsWith("/list")) {
         return new Response(JSON.stringify({
@@ -706,7 +715,7 @@ describe("pin baselines reach Vendo Cloud (decision 4)", () => {
       }
       throw new Error(`unexpected store call ${path}`);
     }) as unknown as typeof fetch;
-    return { fetchImpl, rows, calls };
+    return { fetchImpl, rows, calls, collections };
   }
 
   it("pushes the captured baseline verbatim through the public store door", async () => {
@@ -722,8 +731,10 @@ describe("pin baselines reach Vendo Cloud (decision 4)", () => {
       apiUrl: "https://console.test",
       fetchImpl: store.fetchImpl,
     });
-    // The collection the console reads, and the exact shape it validates.
-    expect(store.calls.some((path) => path.includes("/api/v1/store/records/vendo_pin_baselines"))).toBe(true);
+    // The door the CLI knocks on, and the collection the console reads — the
+    // engine door names the drawer in the body, so both halves are asserted.
+    expect(store.calls).toContain(`/api/v1/store${STORE_WIRE_PATHS["engine.list"]}`);
+    expect([...store.collections]).toEqual([PIN_BASELINES_COLLECTION]);
     expect(store.rows.get("NetWorthCard")).toEqual(baseline("NetWorthCard", "aa"));
     expect(messages.logs.join("\n")).toContain("baselines → Vendo Cloud: 1 pushed, 0 pruned");
   });

@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   type RunContext,
   type SecretsProvider,
@@ -82,7 +83,7 @@ describe("the box door scrubs responses (integration)", () => {
       name: "Redaction fixture",
       secrets: ["STRIPE_KEY"],
     };
-    await seedAppRow(store, doc, "user_ada");
+    await seedAppRow(engineOverAdapter(store), doc, "user_ada");
     const config: AppsConfig = {
       store,
       guard: guardFixture(),
@@ -224,7 +225,7 @@ describe("issue #566 — injected secret values redact without a refetch", () =>
       name: "Redaction fixture",
       secrets: ["STRIPE_KEY"],
     };
-    await seedAppRow(store, doc, "user_ada");
+    await seedAppRow(engineOverAdapter(store), doc, "user_ada");
     return doc;
   };
 

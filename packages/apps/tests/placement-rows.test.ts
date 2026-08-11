@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import {
   PLACEMENTS_COLLECTION,
@@ -12,7 +13,7 @@ const row = (slot: string, appId: string, placedAt = "2026-08-05T12:00:00.000Z")
 
 describe("placementStore — one row per (subject, slot)", () => {
   it("puts, gets and deletes a row, keyed by the pair", async () => {
-    const rows = placementStore(memoryStore());
+    const rows = placementStore(engineOverAdapter(memoryStore()));
     expect(await rows.get("user_ada", "home-hero")).toBeUndefined();
 
     await rows.put("user_ada", row("home-hero", "app_1"));
@@ -29,14 +30,14 @@ describe("placementStore — one row per (subject, slot)", () => {
   });
 
   it("a second place in the same slot REPLACES the row rather than adding one", async () => {
-    const rows = placementStore(memoryStore());
+    const rows = placementStore(engineOverAdapter(memoryStore()));
     await rows.put("user_ada", row("home-hero", "app_1"));
     await rows.put("user_ada", row("home-hero", "app_2", "2026-08-05T13:00:00.000Z"));
     expect(await rows.list("user_ada")).toEqual([row("home-hero", "app_2", "2026-08-05T13:00:00.000Z")]);
   });
 
   it("lists a subject's rows, and only the asked-for slots when slots are named", async () => {
-    const rows = placementStore(memoryStore());
+    const rows = placementStore(engineOverAdapter(memoryStore()));
     await rows.put("user_ada", row("home-hero", "app_1"));
     await rows.put("user_ada", row("sidebar", "app_2"));
     await rows.put("user_mia", row("home-hero", "app_3"));
@@ -49,7 +50,7 @@ describe("placementStore — one row per (subject, slot)", () => {
 
   it("writes the refs the erase cascade and the slot query read, on BOTH rows", async () => {
     const store = memoryStore();
-    await placementStore(store).put("user_ada", row("home-hero", "app_1"));
+    await placementStore(engineOverAdapter(store)).put("user_ada", row("home-hero", "app_1"));
     // The live row's id carries the placement's token, so it is found the way
     // the cascade finds it — by refs — rather than by a spelled-out id.
     const live = await store.records(PLACEMENTS_COLLECTION).list({ refs: { subject: "user_ada" } });
@@ -66,7 +67,7 @@ describe("placementStore — one row per (subject, slot)", () => {
     // people its owner cannot enumerate, and a row left behind is a failure
     // card standing on somebody else's page.
     const store = memoryStore();
-    const rows = placementStore(store);
+    const rows = placementStore(engineOverAdapter(store));
     await rows.put("user_ada", row("home-hero", "app_shared"));
     await rows.put("user_mia", row("sidebar", "app_shared"));
     await rows.put("user_mia", row("home-hero", "app_other"));
@@ -84,7 +85,7 @@ describe("placementStore — one row per (subject, slot)", () => {
 
   it("leaves exactly one live row per slot — the count the seam readers take", async () => {
     const store = memoryStore();
-    const rows = placementStore(store);
+    const rows = placementStore(engineOverAdapter(store));
     const live = async (): Promise<number> =>
       (await store.records(PLACEMENTS_COLLECTION).list({ refs: { subject: "user_ada" } })).records.length;
 
@@ -97,7 +98,7 @@ describe("placementStore — one row per (subject, slot)", () => {
   });
 
   it("keeps ':' inside a subject or slot from shifting the pair", async () => {
-    const rows = placementStore(memoryStore());
+    const rows = placementStore(engineOverAdapter(memoryStore()));
     await rows.put("a:b", row("c", "app_1"));
     await rows.put("a", row("b:c", "app_2"));
     expect((await rows.get("a:b", "c"))?.appId).toBe("app_1");

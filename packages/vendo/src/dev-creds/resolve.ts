@@ -3,12 +3,19 @@
  * Runtime model credentials are REAL KEYS ONLY — CLI-session rungs were removed
  * (a coding-agent login helps at init time only, never serves product turns).
  * Detection is PURE and read-only — no network, no writes, no key material in
- * the result (consumers read the env variable themselves). Order (explicit
- * beats implicit):
+ * the result (consumers read the env variable themselves).
  *
- *   1. explicit env key (ANTHROPIC / OPENAI / GOOGLE)
- *   2. VENDO_API_KEY (Vendo Cloud starter allowance / gateway)
- *   3. none (honest failure with exact instructions)
+ * SELECTION LAW (2026-08-11): env keys are credentials, config selects. A
+ * provider key lying around in the environment no longer selects a model —
+ * `models: { default: … }` on createVendo does, and `VENDO_API_KEY` is the only
+ * blessed default-filler for the slot a host left unset. Order:
+ *
+ *   1. VENDO_API_KEY (Vendo Cloud starter allowance / gateway)
+ *   2. none (honest failure with exact instructions — NO_CREDENTIAL_MESSAGE)
+ *
+ * The `env-key` rung still EXISTS, and `ENV_KEY_VARS` is still its credential
+ * table, but nothing arrives at it by accident: only the internal
+ * `VENDO_DEV_CREDENTIAL` pin below can name it.
  */
 
 export type EnvKeyProvider = "anthropic" | "openai" | "google";
@@ -34,9 +41,11 @@ function present(env: Record<string, string | undefined>, name: string): boolean
 }
 
 /** Detect the best available model credential. `VENDO_DEV_CREDENTIAL`
- *  (env-key:anthropic | vendo-cloud | none) pins the rung explicitly — used by
- *  E2E rung matrices and escape hatches. Async for seam stability (callers and
- *  test seams predate the session-rung removal). */
+ *  (env-key:anthropic | vendo-cloud | none) pins the rung explicitly.
+ *  INTERNAL ONLY — it is Vendo's own E2E rung matrix and escape hatch, not a
+ *  documented host knob, and since the selection law it is the ONLY way to reach
+ *  the `env-key` rung at all. Async for seam stability (callers and test seams
+ *  predate the session-rung removal). */
 export async function resolveDevCredential(
   options: ResolveDevCredentialOptions = {},
 ): Promise<DevCredential> {
@@ -61,10 +70,10 @@ export async function resolveDevCredential(
     }
   }
 
-  for (const { envVar, provider } of ENV_KEY_VARS) {
-    if (present(env, envVar)) return { rung: "env-key", provider, envVar };
-  }
-
+  // No provider-key sweep here, deliberately: a stray ANTHROPIC_API_KEY (or an
+  // OPENAI / GOOGLE one) used to WIN this ladder, so a key left in a shell chose
+  // the model — and the provider — for the host. Keys are credentials; the
+  // `models` block on createVendo is what selects.
   if (present(env, "VENDO_API_KEY")) return { rung: "vendo-cloud" };
   return { rung: "none" };
 }

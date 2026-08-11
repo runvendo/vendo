@@ -33,8 +33,8 @@ const openWire = (options: {
       async open() { throw new VendoError("not-found", `app not found: ${options.appId}`); },
       access: { async levelFor() { return options.level; } },
     },
-    store: {
-      records: () => ({ async get() { return options.record ?? null; } }),
+    ops: {
+      engine: { async get() { return options.record ?? null; } },
     },
   } as unknown as WireDeps;
   return {
