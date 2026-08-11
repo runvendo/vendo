@@ -206,6 +206,7 @@ const makeNewApp = async (
     );
   }
   let unsaved: string | undefined;
+  let serverWork: string | undefined;
   const created = await runtime.create({
     appId,
     prompt: ask,
@@ -213,6 +214,12 @@ const makeNewApp = async (
     // No `slot`: the claim went down at the mint above, which is the
     // same instant `create` would have made it for an id of its own.
     onUnsaved: (reason) => { unsaved = reason; },
+    // The screen landed but the server work its plan required did not, so
+    // the person is looking at an app whose sections have nothing behind
+    // them. Said plainly here for the same reason `onUnsaved` is: the door
+    // reports the app as ready either way, and an unqualified "it's on your
+    // screen" is how an empty app gets declared successful.
+    onServerWork: ({ reasons }) => { serverWork = reasons.join("; "); },
     ...(stream === undefined ? {} : {
       onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
     }),
@@ -230,9 +237,11 @@ const makeNewApp = async (
     id: created.id,
     title: created.name,
     status: "ready",
-    say: unsaved === undefined
-      ? `${created.name} is on your screen.`
-      : `${created.name} is on your screen, though I couldn't save it to your apps.`,
+    say: serverWork !== undefined
+      ? `I built the screen, but the server-side part didn't get built: ${serverWork}. The app works for viewing — ask me to try the build again.`
+      : unsaved === undefined
+        ? `${created.name} is on your screen.`
+        : `${created.name} is on your screen, though I couldn't save it to your apps.`,
   });
 };
 

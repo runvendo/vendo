@@ -416,6 +416,14 @@ export interface AppsRuntime {
      *  the agent bridge turns it into an honest sentence instead of an
      *  apology for something the user can see. */
     onUnsaved?: (reason: string) => void;
+    /** Called when the screen was built and saved but the SERVER work its plan
+     *  required was not: the sections that waited on it have nothing to show.
+     *  The create still resolves with the document — the app is real and on
+     *  screen — so this is the only signal that its server side is missing, and
+     *  without it a half-built app reports a plain success (a live empty app was
+     *  declared complete this way). The agent bridge turns it into an honest
+     *  sentence, exactly as it does for {@link onUnsaved}. */
+    onServerWork?: (result: { ok: false; reasons: string[] }) => void;
   }, ctx: RunContext): Promise<AppDocument>;
   /**
    * Build contract §1.6 / redesign D4 — the files-first counterpart of
