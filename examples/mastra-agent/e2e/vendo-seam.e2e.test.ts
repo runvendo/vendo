@@ -129,7 +129,13 @@ async function setup() {
   });
   // The example pins a newer `ai` than the umbrella's dev pin, so the two
   // LanguageModel type identities differ under tsc; runtime-compatible.
-  const vendo = composeVendo({ model: vendoModel.model as never, store });
+  //
+  // The SEAT, not the deprecated `model` key: composeVendo already fills
+  // `models.default` when an OpenAI key is in the environment, and `model` +
+  // `models.default` is two knobs on one seat, which createVendo refuses
+  // (models-config.ts). Overriding the same key is what keeps this suite
+  // hermetic whether or not the developer has OPENAI_API_KEY exported.
+  const vendo = composeVendo({ models: { default: vendoModel.model as never }, store });
   await vendo.store.ensureSchema();
   return { vendo };
 }
