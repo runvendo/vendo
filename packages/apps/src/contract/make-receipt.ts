@@ -21,7 +21,15 @@
  * 3. **`"building"` is an honest answer.** An escalated build is not finished when
  *    the call returns, and pretending otherwise is what makes an agent narrate a
  *    screen that is not there yet.
- * 4. **No consent ceremony.** Cost governance is host config, never a question
+ * 4. **`"partial"` is the other honest answer.** The screen landed and the server
+ *    work its plan required did not, so the person is looking at sections with
+ *    nothing behind them. `"ready"` here was the original silent-success bug one
+ *    field over: the `say` said "the server-side part didn't get built" while
+ *    anything BRANCHING on `status` — a host, the pack's ref capture, an outside
+ *    agent over MCP — read plain success off a half-built app (2026-08-11). Not
+ *    `"failed"`, which means nothing is painted and sends the agent to rebuild:
+ *    this view is real, reopenable, and worth keeping.
+ * 5. **No consent ceremony.** Cost governance is host config, never a question
  *    asked here.
  */
 import { z } from "zod";
@@ -32,7 +40,7 @@ export interface MakeReceipt {
   id: AppId;
   /** The app's name, in human words — never a slug or an identifier. */
   title: string;
-  status: "ready" | "building" | "failed";
+  status: "ready" | "partial" | "building" | "failed";
   /** Speakable as it stands, consumer voice — the builder's own summary where
    *  there was one to relay. */
   say: string;
@@ -42,6 +50,6 @@ export interface MakeReceipt {
 export const makeReceiptSchema = z.object({
   id: appIdSchema,
   title: z.string().min(1),
-  status: z.enum(["ready", "building", "failed"]),
+  status: z.enum(["ready", "partial", "building", "failed"]),
   say: z.string().min(1),
 }).passthrough() satisfies z.ZodType<MakeReceipt>;

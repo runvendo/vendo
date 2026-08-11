@@ -71,6 +71,17 @@ const brokenBox: FakeBoxAgent = () => ({ ok: false, summary: BOX_GAVE_UP, filesC
 const unservedBox: FakeBoxAgent = () =>
   ({ ok: true, summary: "wrote the drag-and-drop server", filesChanged: ["/app/server.js"], testsRun: 1, servesUi: true });
 
+/** The real front door (`vendo_make`) over the real create door, with nothing
+ *  stubbed between them — the seam a receipt's `status` is actually read at. */
+const bridge = (agent: FakeBoxAgent) => createAgentTools(setup(agent), {
+  data: {} as never,
+  requireOwned: async () => { throw new Error("unused"); },
+  claimSlot: async () => { throw new Error("unused"); },
+  markUnbuilt: async () => { throw new Error("unused"); },
+  screen: escalating,
+  escalatedPlan: async () => SERVED_PLAN,
+});
+
 const workingBox: FakeBoxAgent = ({ box }) => {
   box.pages.set("/", "<!doctype html><title>Invoice kanban</title><h1>Kanban</h1>");
   box.manifest = {};
@@ -123,18 +134,10 @@ describe("a create whose server work could not be built", () => {
     // with nothing stubbed between them. This is what the person actually
     // hears, and an unqualified "on your screen" here is the whole bug —
     // the app is empty and the turn calls it done.
-    const runtime = setup(brokenBox);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     try {
-      const agentTools = createAgentTools(runtime, {
-        data: {} as never,
-        requireOwned: async () => { throw new Error("unused"); },
-        claimSlot: async () => { throw new Error("unused"); },
-        markUnbuilt: async () => { throw new Error("unused"); },
-        screen: escalating,
-        escalatedPlan: async () => SERVED_PLAN,
-      });
+      const agentTools = bridge(brokenBox);
 
       const outcome = await agentTools.execute({
         id: "call_1",
@@ -153,6 +156,38 @@ describe("a create whose server work could not be built", () => {
       );
       // Contract §3.1 — four fields of words, and no document among them.
       expect(Object.keys(output).sort()).toEqual(["id", "say", "status", "title"]);
+    } finally {
+      errorSpy.mockRestore();
+      infoSpy.mockRestore();
+    }
+  });
+
+  it("says so in `status`, not only in `say` — a host branching on the field must not read plain success", async () => {
+    // The bug one field over (found 2026-08-11, the cold walk after the `say`
+    // fix above shipped): the sentence told the truth and `status` still said
+    // `"ready"`, so everything that BRANCHES rather than reads — a host's own
+    // if, the pack's ref capture, an outside agent over MCP — saw a clean build
+    // of a half-built app. Not `"failed"` either: the screen is real and
+    // reopenable, and `"failed"` means nothing was painted.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const broken = (await bridge(brokenBox).execute({
+        id: "call_broken",
+        tool: "vendo_make",
+        args: { request: "Make me a full kanban board for my invoices with drag-and-drop between columns" },
+      }, ctx) as { output: Record<string, unknown> }).output;
+      expect(broken.status).toBe("partial");
+
+      // The control, through the SAME door: a box that builds what the plan
+      // asked for is still plainly `"ready"`. Without this, a `status` hardwired
+      // to `"partial"` would pass the assertion above.
+      const built = (await bridge(workingBox).execute({
+        id: "call_built",
+        tool: "vendo_make",
+        args: { request: "Make me a full kanban board for my invoices with drag-and-drop between columns" },
+      }, ctx) as { output: Record<string, unknown> }).output;
+      expect(built.status).toBe("ready");
     } finally {
       errorSpy.mockRestore();
       infoSpy.mockRestore();

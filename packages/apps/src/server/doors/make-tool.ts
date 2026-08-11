@@ -223,9 +223,10 @@ const makeNewApp = async (
     onUnsaved: (reason) => { unsaved = reason; },
     // The screen landed but the server work its plan required did not, so
     // the person is looking at an app whose sections have nothing behind
-    // them. Said plainly here for the same reason `onUnsaved` is: the door
-    // reports the app as ready either way, and an unqualified "it's on your
-    // screen" is how an empty app gets declared successful.
+    // them. Said plainly here for the same reason `onUnsaved` is: `create`
+    // resolves with the document either way, and an unqualified "it's on your
+    // screen" is how an empty app gets declared successful. It carries the
+    // receipt's STATUS too, not just its words — see the return below.
     onServerWork: ({ reasons }) => { serverWork = reasons.join("; "); },
     ...(stream === undefined ? {} : {
       onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
@@ -240,10 +241,15 @@ const makeNewApp = async (
   // it twice more — three cards, one prompt (live 2026-07-27). The
   // caveat rides `say`, which is the whole point of `say`: one true
   // sentence, and nothing to react to.
+  //
+  // FAILED SERVER WORK is not that: the app on screen is missing the half its
+  // plan asked for, so it is `"partial"` (§3.1 law 4). `say` alone was the same
+  // silent success one field over — the sentence said the server side did not
+  // get built while every reader that BRANCHES on `status` saw plain "ready".
   return receipt({
     id: created.id,
     title: created.name,
-    status: "ready",
+    status: serverWork === undefined ? "ready" : "partial",
     say: serverWork !== undefined
       ? `I built the screen, but the server-side part didn't get built: ${serverWork}. The app works for viewing — ask me to try the build again.`
       : unsaved === undefined

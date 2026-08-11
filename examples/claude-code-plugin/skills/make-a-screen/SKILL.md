@@ -71,6 +71,9 @@ So:
   request. If it fails again, say so plainly and stop.
 - If `status` is `"building"`, that is the honest answer: it is on its way.
   Say the line and move on.
+- If `status` is `"partial"`, the screen is on their page but the server-side
+  part of it did not get built. Say the line and offer to try that part again —
+  never rebuild the app from scratch.
 
 ## Moving something they already have
 

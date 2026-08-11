@@ -168,6 +168,8 @@ are not on. So:
 - status "failed": try once more on the same `app`, narrower, then stop and say
   so plainly.
 - status "building": honest, not an error. Say the line and move on.
+- status "partial": the screen is on their page, the server-side part of it is
+  not. Say the line and offer to try that part again. Never rebuild it.
 ```
 
 Add this second block too. `WHERE IT LANDS` is both paths; add `MOVING ONE THEY
@@ -217,11 +219,13 @@ your agent gets exactly this:
 richer one.** The earlier version handed the agent the whole document, and a
 model handed a tree eventually talks about the tree: narrating a screen it has
 not seen, to someone looking at a different one. So the receipt is deliberately
-unusable for narration. `status` is `"ready"`, `"building"`, or `"failed"`, and
-`"building"` is honest — an escalated build outlives the call and there is
-nothing to poll. `"failed"` means the checks floor rejected a view whose
+unusable for narration. `status` is `"ready"`, `"partial"`, `"building"`, or
+`"failed"`, and `"building"` is honest — an escalated build outlives the call and
+there is nothing to poll. `"failed"` means the checks floor rejected a view whose
 bindings claim data your host does not return, or whose props do not type-check;
-nothing is painted.
+nothing is painted. `"partial"` is the one in between: the view IS painted, and
+the server-side work its plan required is not, so a host branching on `status`
+sees a half-built app for what it is instead of plain success.
 
 In process the call returns fast: the first streamed view part carries the app's
 permanent id, so your loop gets a `vendo/app-ref@1`
