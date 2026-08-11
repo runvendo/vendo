@@ -200,7 +200,9 @@ const defaultStore = (): VendoStore => {
 /** The ladder itself lives in @vendoai/apps (`selectSandbox`) — ONE
  *  implementation, shared with the umbrella's composition seam. This function
  *  is only what an EMPTY ladder means here: a harness that needs a machine and
- *  has none is a boot error, not a turn that dies in front of a user. */
+ *  has none is a boot error, not a turn that dies in front of a user. Both
+ *  messages name the two ways out in the same order the law states them:
+ *  explicit config first, then VENDO_API_KEY. */
 const resolveSandbox = (explicit: SandboxAdapter | undefined): SandboxAdapter => {
   const { adapter } = selectSandbox(explicit, cloudAdapters.sandbox);
   if (adapter !== undefined) return adapter;
@@ -208,13 +210,15 @@ const resolveSandbox = (explicit: SandboxAdapter | undefined): SandboxAdapter =>
     throw new VendoError(
       "not-implemented",
       "A VENDO_API_KEY is set but this build has no Cloud sandbox rung wired. "
-      + "Pass `sandbox: e2b({ apiKey })` or set E2B_API_KEY.",
+      + "Pass a sandbox explicitly — `sandbox: e2b()`, which reads E2B_API_KEY as its credential "
+      + "— or use a build that ships the Cloud sandbox rung for VENDO_API_KEY to fill.",
     );
   }
   throw new VendoError(
     "validation",
-    "This harness runs on a sandbox and none resolved: pass `sandbox: e2b({ apiKey })`, "
-    + "set E2B_API_KEY, or set VENDO_API_KEY for the Cloud pool.",
+    "This harness runs on a sandbox and none resolved: pass one — `sandbox: e2b()`, which reads "
+    + "E2B_API_KEY as its credential — or set VENDO_API_KEY for the Vendo Cloud sandbox pool. "
+    + "An E2B_API_KEY alone no longer selects a sandbox.",
   );
 };
 

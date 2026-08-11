@@ -1,3 +1,4 @@
+import { VendoError } from "@vendoai/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { e2bSandbox } from "../../src/server/escalation/e2b/index.js";
 
@@ -308,5 +309,75 @@ describe("e2bSandbox", () => {
     expect(sdk.sandbox.kill).not.toHaveBeenCalled();
     await created.destroy();
     expect(sdk.sandbox.kill).toHaveBeenCalledOnce();
+  });
+});
+
+/**
+ * What the sandbox ladder used to own, moved here by the SELECTION LAW: since
+ * E2B_API_KEY no longer selects a venue, the only place that knows a host chose
+ * e2b is `e2bSandbox()` itself — so the install refusal and the machine-lifetime
+ * knobs live where the choice was made.
+ */
+describe("e2bSandbox's install refusal (0.4.4 defect C, moved off the ladder)", () => {
+  it("refuses at construction when the e2b package does not resolve", () => {
+    // The probe is `e2bInstalled(specifier)` over the REAL module resolver, so an
+    // absent package is spelled the honest way — by naming one that genuinely is
+    // not installed — rather than by stubbing the probe.
+    const attempt = (): unknown => e2bSandbox({ apiKey: "key_test", specifier: "e2b-not-a-real-package" });
+
+    expect(attempt).toThrow(VendoError);
+    // Both ways out, in the order the law states them: make the explicit config
+    // work, then VENDO_API_KEY.
+    expect(attempt).toThrow(/e2bSandbox\(\) needs the "e2b" package, which does not resolve from this project/);
+    expect(attempt).toThrow(/Install it \(npm install e2b\)/);
+    expect(attempt).toThrow(/remove sandbox: e2bSandbox\(\) to use the Vendo Cloud sandbox with VENDO_API_KEY/);
+  });
+
+  it("does not refuse when the package is really there", () => {
+    expect(() => e2bSandbox({ apiKey: "key_test" })).not.toThrow();
+  });
+});
+
+describe("e2bSandbox's machine-lifetime knobs", () => {
+  /** The knobs are real env, and the assertion is the REAL timeout the provider
+   *  is handed — the old ladder tests could only assert "still lands on e2b". */
+  const timeoutFor = async (
+    env: Record<string, string>,
+    options: Parameters<typeof e2bSandbox>[0] = { apiKey: "key_test" },
+  ): Promise<unknown> => {
+    for (const name of ["VENDO_E2B_TIMEOUT_MS", "VENDO_BOX_EDIT_TIMEOUT_MS"]) vi.stubEnv(name, "");
+    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
+    try {
+      await e2bSandbox(options).create({ env: {} });
+      return (sdk.create.mock.calls.at(-1)?.[0] as { timeoutMs?: unknown }).timeoutMs;
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  };
+
+  it("takes an explicit VENDO_E2B_TIMEOUT_MS", async () => {
+    await expect(timeoutFor({ VENDO_E2B_TIMEOUT_MS: "900000" })).resolves.toBe(900_000);
+  });
+
+  it("derives a machine lifetime from a raised box-edit budget (budget + 5-minute slack)", async () => {
+    await expect(timeoutFor({ VENDO_BOX_EDIT_TIMEOUT_MS: "600000" })).resolves.toBe(900_000);
+  });
+
+  it("lets the explicit knob win over the derived one, so the two cannot disagree", async () => {
+    await expect(timeoutFor({ VENDO_E2B_TIMEOUT_MS: "120000", VENDO_BOX_EDIT_TIMEOUT_MS: "600000" }))
+      .resolves.toBe(120_000);
+  });
+
+  it("ignores a non-numeric or non-positive knob instead of throwing", async () => {
+    await expect(timeoutFor({ VENDO_E2B_TIMEOUT_MS: "not-a-number" })).resolves.toBe(300_000);
+    await expect(timeoutFor({ VENDO_E2B_TIMEOUT_MS: "0" })).resolves.toBe(300_000);
+    await expect(timeoutFor({ VENDO_BOX_EDIT_TIMEOUT_MS: "-1" })).resolves.toBe(300_000);
+  });
+
+  it("an inline timeoutMs outranks both knobs — it is config, they are environment", async () => {
+    await expect(timeoutFor(
+      { VENDO_E2B_TIMEOUT_MS: "900000" },
+      { apiKey: "key_test", timeoutMs: 42_000 },
+    )).resolves.toBe(42_000);
   });
 });

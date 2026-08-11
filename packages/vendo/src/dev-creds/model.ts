@@ -20,7 +20,11 @@ import {
  * resolving the credential lazily on first use:
  *
  * - env-key rungs delegate to the host-installed @ai-sdk provider (^3, spec
- *   v3) with full native tool calling — works in production too.
+ *   v3) with full native tool calling — works in production too. Since the
+ *   selection law they are reachable only through the internal
+ *   VENDO_DEV_CREDENTIAL pin: a host's own provider key belongs in `models`,
+ *   where it is a CHOICE (`models: { default: anthropic(key) }`), not in an env
+ *   var Vendo sniffs.
  * - VENDO_API_KEY delegates to the Vendo Cloud model gateway: the
  *   host-installed @ai-sdk/anthropic pointed at `<console>/api/v1`, whose
  *   Anthropic-compatible /messages endpoint serves the metered allowance
@@ -146,10 +150,16 @@ export const SLOT_PIN_ENV: Record<VendoModelSlot, string> = {
   extract: "VENDO_MODEL_EXTRACT",
 };
 
+/** The keyless boot error. Both ways out, in order: explicit config first, then
+ *  VENDO_API_KEY. Byte-for-byte coupled to `MODEL_UNAVAILABLE_SIGNAL` in
+ *  `@vendoai/apps` (server/doors/build-messages.ts), which anchors on this
+ *  sentence's opening so the actionable line survives the build door's fold —
+ *  change one and the other stops matching. The seam is tested in
+ *  tests/dev-creds/model.test.ts, through the real regex. */
 export const NO_CREDENTIAL_MESSAGE =
-  "Vendo found no model key. Set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY "
-  + "in .env.local (with the matching @ai-sdk provider installed), or run `vendo login` for a "
-  + "free dev key. Production always needs a real server-side key.";
+  "Vendo has no model. Pass one — models: { default: anthropic(\"claude-sonnet-4-6\") } in "
+  + "createVendo — or set VENDO_API_KEY for the Vendo Cloud gateway (`vendo login` mints a free "
+  + "dev key). A provider key alone no longer selects a model; Vendo never picks a provider for you.";
 
 function nonBlank(value: string | undefined): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
@@ -226,8 +236,8 @@ async function dynamicImport(url: string): Promise<Record<string, unknown>> {
  *  provider in a repo that has it (the dual-package hazard). Only when the
  *  host root resolves nothing do we resolve from vendo's own module context
  *  (createRequire off import.meta.url): @ai-sdk/anthropic ships as a real
- *  dependency of @vendoai/vendo, so an ANTHROPIC_API_KEY — or VENDO_API_KEY
- *  via the Anthropic-compatible Cloud gateway — lights up live chat under
+ *  dependency of @vendoai/vendo, so a VENDO_API_KEY — via the
+ *  Anthropic-compatible Cloud gateway — lights up live chat under
  *  `npx vendo try` with nothing installed in the repo. Scoped to @ai-sdk/*
  *  provider modules; arbitrary specifiers keep strict host-root resolution.
  *  (Exported for the resolution tests; the injectable seam is `importModule`.) */
@@ -360,6 +370,8 @@ export class DevModelController {
     const options: ResolveDevCredentialOptions = { env: this.env };
     const credential = await resolveDevCredential(options);
 
+    // Reachable only through the internal VENDO_DEV_CREDENTIAL pin now (see
+    // resolve.ts): a bare provider key in the environment selects nothing.
     if (credential.rung === "env-key") {
       return this.delegate(
         credential,

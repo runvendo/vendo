@@ -10,8 +10,13 @@ const SNAPSHOT_REF_PREFIX = "e2b:v2:";
 export interface E2BSandboxOptions {
   /** E2B API key. When omitted, the SDK reads E2B_API_KEY. */
   apiKey?: string;
-  /** Provider machine lifetime and reconnect timeout, in milliseconds. */
+  /** Provider machine lifetime and reconnect timeout, in milliseconds. When
+   *  omitted, the operator knobs below decide, then DEFAULT_TIMEOUT_MS. */
   timeoutMs?: number;
+  /** @internal Which module the install probe asks about. Tests name a package
+   *  that genuinely is not installed, so the refusal below is exercised over the
+   *  real module resolver rather than by stubbing the probe. */
+  specifier?: string;
 }
 
 type E2BMachine = InstanceType<typeof import("e2b").Sandbox>;
@@ -94,6 +99,24 @@ const decodeSnapshotRef = (snapshotRef: string): Omit<E2BSnapshotState, "version
   } catch {
     throw new VendoError("validation", "E2B snapshot references must start with e2b:v2: and carry a valid payload");
   }
+};
+
+const environment = (name: string): string | undefined => {
+  if (typeof process === "undefined") return undefined;
+  const value = process.env[name]?.trim();
+  return value === undefined || value === "" ? undefined : value;
+};
+
+/** Operator knob for the provider machine lifetime: the default 5-minute TTL
+ *  kills a box mid-way through a long in-box agent build. Explicit
+ *  VENDO_E2B_TIMEOUT_MS wins; otherwise a raised box-edit budget implies a
+ *  matching machine lifetime (budget + 5-minute slack), so the two knobs cannot
+ *  silently disagree. An inline `timeoutMs` outranks both — it is config. */
+const envTimeoutMs = (): number | undefined => {
+  const configured = Number(environment("VENDO_E2B_TIMEOUT_MS"));
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  const editBudget = Number(environment("VENDO_BOX_EDIT_TIMEOUT_MS"));
+  return Number.isFinite(editBudget) && editBudget > 0 ? editBudget + 5 * 60_000 : undefined;
 };
 
 const networkOptions = (allowedDomains: string[] | undefined, allTraffic: string) =>
@@ -195,7 +218,20 @@ const loadE2b = async (): Promise<E2BModule> => {
  * the box). The optional SDK is imported only when create/resume is called.
  */
 export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  // Half a BYO sandbox is a MISCONFIG, not a fallback (0.4.4 defect C): an
+  // adapter whose first create() dies on a missing module hides the missing
+  // install until a box boot fails somewhere else entirely. Asking HERE — where
+  // the host explicitly chose e2b — is the only place the answer is unambiguous:
+  // selection is config now, so a bare E2B_API_KEY never reaches this code.
+  if (!e2bInstalled(options.specifier)) {
+    throw new VendoError(
+      "validation",
+      "e2bSandbox() needs the \"e2b\" package, which does not resolve from this project. "
+      + "Install it (npm install e2b), or remove sandbox: e2bSandbox() to use the Vendo Cloud "
+      + "sandbox with VENDO_API_KEY.",
+    );
+  }
+  const timeoutMs = options.timeoutMs ?? envTimeoutMs() ?? DEFAULT_TIMEOUT_MS;
 
   const wrap = (
     sandbox: E2BMachine,

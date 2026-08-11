@@ -38,6 +38,93 @@ async function resolvedId(model: LanguageModel): Promise<string> {
   return (await record.doGenerate({ prompt: [] })).modelId;
 }
 
+/**
+ * The env-key rungs, as they are reachable AFTER the selection law: a provider
+ * key in the environment selects nothing on its own, so every case that
+ * exercises one of those rungs names it through the internal
+ * `VENDO_DEV_CREDENTIAL` pin. The rung's own behaviour — per-slot precedence,
+ * per-provider defaults, sampling params, host-first module resolution — is
+ * unchanged and still fully covered; what changed is who may ask for it.
+ * The keyless cases below prove the bare-key path is genuinely dead.
+ */
+const BYO = {
+  anthropic: { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-a" },
+  openai: { VENDO_DEV_CREDENTIAL: "env-key:openai", OPENAI_API_KEY: "sk-o" },
+  google: { VENDO_DEV_CREDENTIAL: "env-key:google", GOOGLE_GENERATIVE_AI_API_KEY: "g" },
+} as const;
+
+describe("THE SELECTION LAW — a provider key is a credential, not a choice", () => {
+  it("a stray ANTHROPIC_API_KEY with no models config gets the boot error, not a model", async () => {
+    // The breaking change. A key left in a shell (or inherited by a container)
+    // used to pick both the provider and the model for the whole deployment.
+    const controller = new DevModelController({
+      env: { ANTHROPIC_API_KEY: "sk-a" },
+      // Would answer happily if it were ever reached — and it must not be.
+      importModule: scriptedProvider("createAnthropic"),
+    });
+    await expect(controller.doGenerate({ prompt: [] })).rejects.toThrow(NO_CREDENTIAL_MESSAGE);
+    await expect(controller.doStream({ prompt: [] })).rejects.toThrow(NO_CREDENTIAL_MESSAGE);
+  });
+
+  it("says so for every provider key, and for all of them at once", async () => {
+    for (const env of [
+      { ANTHROPIC_API_KEY: "sk-a" },
+      { OPENAI_API_KEY: "sk-o" },
+      { GOOGLE_GENERATIVE_AI_API_KEY: "g" },
+      { ANTHROPIC_API_KEY: "sk-a", OPENAI_API_KEY: "sk-o", GOOGLE_GENERATIVE_AI_API_KEY: "g" },
+    ]) {
+      const model = vendoModel(undefined, { env, importModule: scriptedProvider("createAnthropic") });
+      await expect(resolvedId(model)).rejects.toThrow(NO_CREDENTIAL_MESSAGE);
+    }
+  });
+
+  it("teaches both ways out, in order: explicit config first, then VENDO_API_KEY", () => {
+    expect(NO_CREDENTIAL_MESSAGE).toContain("models: { default: anthropic(\"claude-sonnet-4-6\") }");
+    expect(NO_CREDENTIAL_MESSAGE).toContain("set VENDO_API_KEY for the Vendo Cloud gateway");
+    expect(NO_CREDENTIAL_MESSAGE).toContain("`vendo login` mints a free dev key");
+    expect(NO_CREDENTIAL_MESSAGE.indexOf("models: { default:"))
+      .toBeLessThan(NO_CREDENTIAL_MESSAGE.indexOf("VENDO_API_KEY"));
+  });
+
+  it("still serves VENDO_API_KEY when a provider key sits beside it", async () => {
+    // The Cloud key is the ONE blessed default-filler; a provider key next to it
+    // no longer shadows it (nor does it get used).
+    const seen: Array<{ apiKey: string; baseURL?: string }> = [];
+    expect(await resolvedId(vendoModel(undefined, {
+      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_API_KEY: "vnd_x" },
+      importModule: scriptedProvider("createAnthropic", seen),
+    }))).toBe("vendo");
+    expect(seen).toEqual([{ apiKey: "vnd_x", baseURL: "https://console.vendo.run/api/v1" }]);
+  });
+
+  /**
+   * THE COUPLING, from the producer's side.
+   *
+   * `MODEL_UNAVAILABLE_SIGNAL` in `@vendoai/apps` (server/doors/build-messages.ts)
+   * is anchored BYTE-FOR-BYTE to this sentence's opening: it is what lets the
+   * app-build door surface the actionable line instead of collapsing it to
+   * "generation failed · retry", where it reaches only the operator's terminal
+   * (0.4.x, measured twice). apps may not import vendo and this test may not
+   * import apps' internals, so the coupling is pinned from BOTH sides against one
+   * literal — this assertion, and the same literal fed through the real
+   * `buildFailureReason` in packages/apps/tests/build-failure.test.ts ("passes the
+   * dev-model's own unavailable-credential lines through verbatim"). Reword the
+   * message and THIS fails; retune the pattern away from the literal and THAT
+   * fails. Neither can drift quietly.
+   */
+  it("keeps the exact bytes @vendoai/apps' MODEL_UNAVAILABLE_SIGNAL anchors on", () => {
+    // The anchored prefix — the pattern is ^-anchored, so this opening is the
+    // load-bearing part.
+    expect(NO_CREDENTIAL_MESSAGE.startsWith("Vendo has no model.")).toBe(true);
+    // And the whole line, which is what the door surfaces verbatim.
+    expect(NO_CREDENTIAL_MESSAGE).toBe(
+      "Vendo has no model. Pass one — models: { default: anthropic(\"claude-sonnet-4-6\") } in "
+      + "createVendo — or set VENDO_API_KEY for the Vendo Cloud gateway (`vendo login` mints a free "
+      + "dev key). A provider key alone no longer selects a model; Vendo never picks a provider for you.",
+    );
+  });
+});
+
 describe("devModel (env-resolving default model)", () => {
   it("is an ai-SDK LanguageModel", () => {
     const model = devModel({ env: {} });
@@ -141,7 +228,7 @@ describe("devModel (env-resolving default model)", () => {
 
   it("names the missing provider install for an env-key rung without the package", async () => {
     const controller = new DevModelController({
-      env: { OPENAI_API_KEY: "sk-o" },
+      env: { ...BYO.openai },
       importModule: async (_root, specifier) => {
         throw new Error(`Cannot find module '${specifier}'`);
       },
@@ -152,7 +239,7 @@ describe("devModel (env-resolving default model)", () => {
   it("delegates env-key calls to the host provider model with full fidelity", async () => {
     const seen: unknown[] = [];
     const controller = new DevModelController({
-      env: { ANTHROPIC_API_KEY: "sk-a" },
+      env: { ...BYO.anthropic },
       importModule: async () => ({
         createAnthropic: (config: { apiKey: string }) => {
           seen.push(config.apiKey);
@@ -175,7 +262,7 @@ describe("devModel (env-resolving default model)", () => {
 
   it("honors the model-override env var for the resolved provider", async () => {
     const controller = new DevModelController({
-      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_DEV_ANTHROPIC_MODEL: "claude-opus-4-8" },
+      env: { ...BYO.anthropic, VENDO_DEV_ANTHROPIC_MODEL: "claude-opus-4-8" },
       importModule: async () => ({
         createAnthropic: () => (modelId: string) => ({
           specificationVersion: "v3",
@@ -212,7 +299,7 @@ describe("call-time sampling params on the resolved rung", () => {
 
   it("drops temperature/topP/topK and caps output for a ladder-resolved Claude 5 model", async () => {
     const controller = new DevModelController({
-      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-sonnet-5" },
+      env: { ...BYO.anthropic, VENDO_MODEL: "claude-sonnet-5" },
       importModule: optionsEcho("createAnthropic"),
     });
     expect(await controller.doGenerate({ prompt: [], temperature: 0, topP: 0.9, topK: 40 })).toEqual({
@@ -227,7 +314,7 @@ describe("call-time sampling params on the resolved rung", () => {
 
   it("keeps a caller's explicit output cap while dropping the sampling params", async () => {
     const controller = new DevModelController({
-      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-opus-5" },
+      env: { ...BYO.anthropic, VENDO_MODEL: "claude-opus-5" },
       importModule: optionsEcho("createAnthropic"),
     });
     expect(await controller.doGenerate({ prompt: [], temperature: 0, maxOutputTokens: 9_000 })).toEqual({
@@ -238,7 +325,7 @@ describe("call-time sampling params on the resolved rung", () => {
 
   it("leaves a non-Claude resolution untouched — temperature still flows", async () => {
     const controller = new DevModelController({
-      env: { OPENAI_API_KEY: "sk-o" },
+      env: { ...BYO.openai },
       importModule: optionsEcho("createOpenAI"),
     });
     expect(await controller.doGenerate({ prompt: [], temperature: 0 })).toEqual({
@@ -249,7 +336,7 @@ describe("call-time sampling params on the resolved rung", () => {
 
   it("leaves a sampling-era Claude resolution untouched", async () => {
     const controller = new DevModelController({
-      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-sonnet-4-6" },
+      env: { ...BYO.anthropic, VENDO_MODEL: "claude-sonnet-4-6" },
       importModule: optionsEcho("createAnthropic"),
     });
     expect(await controller.doGenerate({ prompt: [], temperature: 0 })).toEqual({
@@ -299,7 +386,7 @@ describe("provider module resolution (host first, vendo's copy as fallback)", ()
 
   it("falls back to vendo's own @ai-sdk/anthropic when the host has no provider install", async () => {
     const root = await fixtureRoot();
-    const controller = new DevModelController({ root, env: { ANTHROPIC_API_KEY: "sk-a" } });
+    const controller = new DevModelController({ root, env: { ...BYO.anthropic } });
     const resolution = await withoutGlobalPaths(() => controller.resolve());
     expect(resolution.mode).toBe("delegate");
     if (resolution.mode !== "delegate") return;
@@ -332,7 +419,7 @@ describe("provider module resolution (host first, vendo's copy as fallback)", ()
       }
       `,
     );
-    const controller = new DevModelController({ root, env: { ANTHROPIC_API_KEY: "sk-a" } });
+    const controller = new DevModelController({ root, env: { ...BYO.anthropic } });
     expect(await controller.doGenerate({ prompt: [] })).toEqual({ from: "host" });
   });
 
@@ -369,14 +456,14 @@ describe("vendoModel (the vendo model family entry)", () => {
 
   it("passes an explicit name VERBATIM to the provider rung — no client-side mapping", async () => {
     const model = vendoModel("claude-opus-4-8", {
-      env: { ANTHROPIC_API_KEY: "sk-a" },
+      env: { ...BYO.anthropic },
       importModule: scriptedProvider("createAnthropic"),
     });
     expect(await resolvedId(model)).toBe("claude-opus-4-8");
     // Even a vendo-* family name goes through untouched: the provider's own
     // error is the surface for unknown names, never a client-side remap.
     const family = vendoModel("vendo-paint", {
-      env: { ANTHROPIC_API_KEY: "sk-a" },
+      env: { ...BYO.anthropic },
       importModule: scriptedProvider("createAnthropic"),
     });
     expect(await resolvedId(family)).toBe("vendo-paint");
@@ -398,11 +485,11 @@ describe("vendoModel (the vendo model family entry)", () => {
       importModule: scriptedProvider("createAnthropic"),
     }))).toBe("vendo");
     expect(await resolvedId(vendoModel(undefined, {
-      env: { ANTHROPIC_API_KEY: "sk-a" },
+      env: { ...BYO.anthropic },
       importModule: scriptedProvider("createAnthropic"),
     }))).toBe("claude-sonnet-4-6");
     expect(await resolvedId(vendoModel(undefined, {
-      env: { OPENAI_API_KEY: "sk-o" },
+      env: { ...BYO.openai },
       importModule: scriptedProvider("createOpenAI"),
     }))).toBe("gpt-5");
   });
@@ -415,30 +502,30 @@ describe("vendoModel (the vendo model family entry)", () => {
     }))).toBe("vendo-paint");
     expect(await resolvedId(vendoModel(undefined, {
       slot: "paint",
-      env: { ANTHROPIC_API_KEY: "sk-a" },
+      env: { ...BYO.anthropic },
       importModule: scriptedProvider("createAnthropic"),
     }))).toBe("claude-haiku-4-5");
     expect(await resolvedId(vendoModel(undefined, {
       slot: "paint",
-      env: { OPENAI_API_KEY: "sk-o" },
+      env: { ...BYO.openai },
       importModule: scriptedProvider("createOpenAI"),
     }))).toBe("gpt-5-mini");
     expect(await resolvedId(vendoModel(undefined, {
       slot: "paint",
-      env: { GOOGLE_GENERATIVE_AI_API_KEY: "g" },
+      env: { ...BYO.google },
       importModule: scriptedProvider("createGoogleGenerativeAI"),
     }))).toBe("gemini-2.5-flash-lite");
   });
 
   it("VENDO_MODEL pins the agent slot above a configured name string", async () => {
     expect(await resolvedId(vendoModel("claude-opus-4-8", {
-      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-sonnet-4-6" },
+      env: { ...BYO.anthropic, VENDO_MODEL: "claude-sonnet-4-6" },
       importModule: scriptedProvider("createAnthropic"),
     }))).toBe("claude-sonnet-4-6");
     // The new pin outranks the deprecated per-provider var.
     expect(await resolvedId(vendoModel(undefined, {
       env: {
-        ANTHROPIC_API_KEY: "sk-a",
+        ...BYO.anthropic,
         VENDO_MODEL: "claude-sonnet-4-6",
         VENDO_DEV_ANTHROPIC_MODEL: "claude-opus-4-8",
       },
@@ -448,7 +535,7 @@ describe("vendoModel (the vendo model family entry)", () => {
 
   it("keeps the deprecated VENDO_DEV_*_MODEL / VENDO_CLOUD_MODEL pins working on the agent slot only", async () => {
     expect(await resolvedId(vendoModel(undefined, {
-      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_DEV_ANTHROPIC_MODEL: "claude-opus-4-8" },
+      env: { ...BYO.anthropic, VENDO_DEV_ANTHROPIC_MODEL: "claude-opus-4-8" },
       importModule: scriptedProvider("createAnthropic"),
     }))).toBe("claude-opus-4-8");
     expect(await resolvedId(vendoModel(undefined, {
@@ -458,7 +545,7 @@ describe("vendoModel (the vendo model family entry)", () => {
     // The deprecated pins never leak onto the paint slot.
     expect(await resolvedId(vendoModel(undefined, {
       slot: "paint",
-      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_DEV_ANTHROPIC_MODEL: "claude-opus-4-8" },
+      env: { ...BYO.anthropic, VENDO_DEV_ANTHROPIC_MODEL: "claude-opus-4-8" },
       importModule: scriptedProvider("createAnthropic"),
     }))).toBe("claude-haiku-4-5");
   });
@@ -466,12 +553,12 @@ describe("vendoModel (the vendo model family entry)", () => {
   it("VENDO_MODEL_PAINT pins the paint slot; VENDO_MODEL does not", async () => {
     expect(await resolvedId(vendoModel(undefined, {
       slot: "paint",
-      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-opus-4-8", VENDO_MODEL_PAINT: "claude-haiku-4-5" },
+      env: { ...BYO.anthropic, VENDO_MODEL: "claude-opus-4-8", VENDO_MODEL_PAINT: "claude-haiku-4-5" },
       importModule: scriptedProvider("createAnthropic"),
     }))).toBe("claude-haiku-4-5");
     expect(await resolvedId(vendoModel(undefined, {
       slot: "paint",
-      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-opus-4-8" },
+      env: { ...BYO.anthropic, VENDO_MODEL: "claude-opus-4-8" },
       importModule: scriptedProvider("createAnthropic"),
     }))).toBe("claude-haiku-4-5");
   });

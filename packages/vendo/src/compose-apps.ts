@@ -38,21 +38,23 @@ import { BASE_PATH, environment } from "./wire/shared.js";
 // key is just such a secret: declare it, grant it, and it rides the same
 // injection path as any other key.
 // execution-v2 Wave 3 — the box's inference door (the in-box coding agent's
-// model). Explicit VENDO_INFERENCE_URL/KEY win; otherwise the BYO Anthropic
-// key rides api.anthropic.com; otherwise VENDO_API_KEY rides the console's
-// Anthropic-compatible model gateway — the same key that provisions the
-// Cloud machine funds its model (chat inference already does, via vendoModel's
-// vendo-cloud rung; a machine without this rung fails every in-box task).
+// model). SELECTION LAW: the explicit VENDO_INFERENCE_URL+KEY pair wins;
+// otherwise VENDO_API_KEY rides the console's Anthropic-compatible model gateway
+// — the same key that provisions the Cloud machine funds its model (chat
+// inference already does, via vendoModel's vendo-cloud rung; a machine without
+// this rung fails every in-box task); otherwise the box gets no inference door
+// and says so.
+//
+// There is deliberately no ANTHROPIC_API_KEY rung: a provider key in the
+// deployment's environment used to point every box at api.anthropic.com and bill
+// that account, chosen by nothing anyone wrote down. A host who wants their own
+// endpoint names it — both halves of the pair, explicitly.
 const boxInference = (): { url: string; key: string; model?: string } | undefined => {
   const url = environment("VENDO_INFERENCE_URL");
   const key = environment("VENDO_INFERENCE_KEY");
   const model = environment("VENDO_INFERENCE_MODEL");
   if (url !== undefined && key !== undefined) {
     return { url, key, ...(model === undefined ? {} : { model }) };
-  }
-  const anthropic = environment("ANTHROPIC_API_KEY");
-  if (anthropic !== undefined) {
-    return { url: "https://api.anthropic.com", key: anthropic, ...(model === undefined ? {} : { model }) };
   }
   const cloud = cloudKeyOptions();
   if (cloud !== undefined) {

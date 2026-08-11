@@ -16,6 +16,9 @@ describe("doctor error-code registry", () => {
   it("locks the registry append-only: renumbering, removing, or reusing a code fails here", () => {
     // A NEW code extends this snapshot; touching an existing entry rewrites
     // published fix_ref anchors and agents' remediation notes — never do it.
+    // A check that goes away leaves its KEY behind, marked RETIRED (E-LIVE-007,
+    // 2026-08-11): the verify page anchors on it, so deleting the entry breaks a
+    // published URL for the sake of tidiness.
     expect(DOCTOR_ERROR_CODES).toMatchInlineSnapshot(`
       {
         "E-AUTH-001": "present credentials did not reach the host API",
@@ -39,7 +42,7 @@ describe("doctor error-code registry", () => {
         "E-LIVE-004": "no execution venue is configured",
         "E-LIVE-005": "the host /status does not report an execution venue (version skew)",
         "E-LIVE-006": "the app's root page returns a server error while the wire answers",
-        "E-LIVE-007": "the selected e2b execution venue is unusable (E2B_API_KEY or the e2b package is missing)",
+        "E-LIVE-007": "RETIRED — doctor no longer emits this; E2B_API_KEY does not select an execution venue",
         "E-LIVE-008": "the host still calls store ops the wire has deprecated and will remove",
         "E-MCP-001": "MCP protected-resource metadata did not resolve",
         "E-MCP-002": "MCP authorization-server metadata did not resolve",

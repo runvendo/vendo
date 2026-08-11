@@ -20,13 +20,13 @@ import { cloudSandbox } from "./sandbox.js";
    (models-config.ts). Precedence per slot: an explicitly passed model object
    always wins (BYO-LLM) → env pin (VENDO_MODEL / VENDO_MODEL_<SLOT>) →
    `models` string → the per-rung default. Every string rides vendoModel()'s
-   env ladder, whose rungs live INSIDE it (resolveDevCredential): a provider
-   key (ANTHROPIC / OPENAI / GOOGLE) via the host-installed @ai-sdk provider,
-   then VENDO_API_KEY via @ai-sdk/anthropic pointed at the Cloud model gateway
-   (`<console>/api/v1` — Anthropic-compatible /messages), then the honest
-   keyless failure with exact instructions on first use. vendoModel is the one
-   seam-sanctioned lazy env resolver; every other adapter still never reads
-   the environment. */
+   env ladder, whose rungs live INSIDE it (resolveDevCredential): VENDO_API_KEY
+   via @ai-sdk/anthropic pointed at the Cloud model gateway (`<console>/api/v1`
+   — Anthropic-compatible /messages), then the honest keyless failure with exact
+   instructions on first use. A provider key (ANTHROPIC / OPENAI / GOOGLE) in
+   the environment selects NOTHING — the selection law: keys are credentials,
+   `models` selects. vendoModel is the one seam-sanctioned lazy env resolver;
+   every other adapter still never reads the environment. */
 
 /** 09-vendo §2 — the adapter rule, applied at the one seam that may read the
  *  environment. */
@@ -45,7 +45,8 @@ export const composeAdapters = (composition: VendoComposition): Pick<VendoCompos
     composed?.files ?? config.files,
   );
   // The sandbox seam, resolved by THE ladder — the one in @vendoai/apps that
-  // `agent()` calls too (explicit → E2B_API_KEY → the Cloud rung → nothing).
+  // `agent()` calls too (explicit → the Cloud rung → nothing; E2B_API_KEY is a
+  // credential for an explicit `e2bSandbox()`, never a rung).
   // "Nothing" is this deployment's dark venue: server apps answer
   // sandbox-unavailable and assertHarnessComposable below refuses a harness
   // that needed a machine.

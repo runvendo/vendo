@@ -549,51 +549,26 @@ describe("vendo doctor", () => {
     expect(messages.logs).toContain(`ok: execution venue: ${sandbox}`);
   });
 
-  // 0.4.4 defect C — an e2b venue is blessed only when it is USABLE: key set
-  // and SDK resolvable from the project. "ok: execution venue: e2b" on a
-  // keyless host certified a composition whose every server-app build died
-  // (the venue ladder had picked e2b over the Cloud sandbox).
-  it("reports a lit e2b execution venue when the key is set and the SDK resolves", async () => {
-    const messages = output();
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch({ store: true, sandbox: "e2b" }),
-      env: { E2B_API_KEY: "e2b_key" },
-      e2bResolvable: () => true,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(0);
-    expect(messages.logs).toContain("ok: execution venue: e2b");
-  });
-
-  it("fails when the wire selected e2b but no E2B_API_KEY is set", async () => {
+  // 0.4.4 defect C used to be doctor's problem: E2B_API_KEY selected the venue,
+  // so a host could be handed an e2b venue it never asked for, and doctor had to
+  // second-guess it (E-LIVE-007, now RETIRED). The selection law removed the
+  // question — nothing but explicit config produces an e2b box, and an explicit
+  // `e2bSandbox()` refuses at BOOT when the SDK does not resolve, which is
+  // earlier and louder than any probe. So an "e2b" venue on the wire (only older
+  // wires still send one) is simply reported, with no usability verdict attached.
+  it("reports an e2b execution venue from an older wire without second-guessing it", async () => {
     const messages = output();
     expect(await doctor({
       targetDir: await healthy(),
       fetchImpl: successfulProbeFetch({ store: true, sandbox: "e2b" }),
       env: {},
-      e2bResolvable: () => true,
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(1);
-    expect(messages.errors).toContain(
-      "broken: the running wire selected the e2b execution venue but E2B_API_KEY is not set; server-app builds will fail in an unusable sandbox. Fix: install the e2b package and set E2B_API_KEY, or remove E2B_API_KEY from the server env (with VENDO_API_KEY set, the managed Cloud sandbox takes over), then restart the dev server and re-run doctor",
-    );
-  });
-
-  it("fails when the wire selected e2b but the SDK does not resolve from the project", async () => {
-    const messages = output();
-    expect(await doctor({
-      targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch({ store: true, sandbox: "e2b" }),
-      env: { E2B_API_KEY: "e2b_key" },
-      e2bResolvable: () => false,
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    })).toBe(1);
-    expect(messages.errors).toContain(
-      "broken: the running wire selected the e2b execution venue but the e2b package does not resolve from this project; server-app builds will fail in an unusable sandbox. Fix: install the e2b package and set E2B_API_KEY, or remove E2B_API_KEY from the server env (with VENDO_API_KEY set, the managed Cloud sandbox takes over), then restart the dev server and re-run doctor",
-    );
+    })).toBe(0);
+    expect(messages.logs).toContain("ok: execution venue: e2b");
+    // No E2B key, no e2b install check, no failure: the venue is not doctor's to
+    // re-derive any more.
+    expect(messages.errors.join("\n")).not.toContain("unusable sandbox");
   });
 
   it("warns with actionable guidance when the execution venue is dark", async () => {
@@ -604,8 +579,11 @@ describe("vendo doctor", () => {
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
+    // Both ways out, in the order the law states them: explicit config first,
+    // then VENDO_API_KEY. "set E2B_API_KEY" is deliberately NOT one of them any
+    // more — it selects nothing, so offering it would send the reader in circles.
     expect(messages.errors).toContain(
-      "warning: install the e2b package and set E2B_API_KEY, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable",
+      "warning: pass sandbox: to createVendo (e.g. sandbox: e2bSandbox(), which reads E2B_API_KEY as its credential), or set VENDO_API_KEY for the managed Cloud sandbox; without one, server apps (rungs 2-4) return sandbox-unavailable",
     );
     expect(messages.logs).toContain(
       "Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.",
@@ -814,6 +792,10 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       targetDir: await healthy(),
       fetchImpl: probeFetchWithTurn(),
       env: {
+        // The rung doctor reports is the one the RUNTIME would ride. Since the
+        // selection law a bare provider key rides nothing (asserted below), so a
+        // host on the env-key rung got there through the internal pin.
+        VENDO_DEV_CREDENTIAL: "env-key:anthropic",
         ANTHROPIC_API_KEY: "sk-test",
         VENDO_MODEL: "claude-opus-4-8",
         VENDO_MODEL_PAINT: "claude-haiku-4-5",
@@ -833,7 +815,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     expect(await runDoctor({
       targetDir: await healthy(),
       fetchImpl: probeFetchWithTurn(),
-      env: { ANTHROPIC_API_KEY: "sk-test" },
+      env: { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-test" },
       interactive: false,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
       npmLatest: async () => null,
@@ -842,6 +824,28 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     })).toBe(0);
     expect(bare.logs.some((line) => line.includes("model pins:"))).toBe(false);
     expect(bare.logs).toContain("ok: model credential: explicit ANTHROPIC_API_KEY (anthropic)");
+  });
+
+  it("reports NO winning credential for a bare provider key — doctor tells the runtime's truth", async () => {
+    // The selection law's honesty requirement: doctor reads the same resolver the
+    // runtime rides, so a host whose only key is ANTHROPIC_API_KEY must be told it
+    // has no model — not blessed with "ok: model credential". Blessing it is how a
+    // certified-healthy composition failed its first turn.
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl: probeFetchWithTurn(),
+      env: { ANTHROPIC_API_KEY: "sk-test" },
+      interactive: false,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      npmLatest: async () => null,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.logs).toContain(
+      "model credential: none found — the live turn check below carries the honest failure",
+    );
+    expect(messages.logs.some((line) => line.startsWith("ok: model credential:"))).toBe(false);
   });
 
   it("runs one real model turn over the wired route and exits 0 when it answers", async () => {

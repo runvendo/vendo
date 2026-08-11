@@ -602,7 +602,10 @@ describe("vendo init (zero-question)", () => {
 
     const keyed = await fixture();
     const keyedSink = output();
-    expect(await run(keyed, keyedSink, { env: { ANTHROPIC_API_KEY: "sk-ant-test" } })).toBe(0);
+    expect(await run(keyed, keyedSink, {
+      // A resolving credential, which a bare provider key no longer is.
+      env: { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-ant-test" },
+    })).toBe(0);
     const keyedTail = keyedSink.logs.join("\n").split("Agent tail:")[1]!;
     expect(keyedTail).not.toContain("cloud key: none");
   });
@@ -850,7 +853,12 @@ describe("vendo init (zero-question)", () => {
   it("states an env key in one line and skips the cloud offer", async () => {
     const root = await fixture();
     const sink = output();
-    expect(await run(root, sink, { env: { ANTHROPIC_API_KEY: "sk-a" } })).toBe(0);
+    // A bare provider key selects nothing since the selection law, so a host on
+    // the env-key rung got there through the internal VENDO_DEV_CREDENTIAL pin —
+    // which is what keeps this line (init's REPORT of the winning rung) covered.
+    expect(await run(root, sink, {
+      env: { VENDO_DEV_CREDENTIAL: "env-key:anthropic", ANTHROPIC_API_KEY: "sk-a" },
+    })).toBe(0);
     const logs = sink.logs.join("\n");
     expect(logs).toContain("Model: explicit ANTHROPIC_API_KEY (anthropic)");
     expect(logs).not.toContain("No model key yet");

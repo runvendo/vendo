@@ -8,7 +8,8 @@ import { CLI_VERSION } from "./shared.js";
  * eject drift, DEV probe server, LIVE composition/status, AUTH credentials,
  * MCP door, TURN model turn, CLOUD key). Codes are append-only: never renumber or reuse one — the
  * verify page anchors (`fix_ref`) and agents' remediation notes depend on
- * them staying put.
+ * them staying put. A check that goes away leaves its entry behind, marked
+ * RETIRED, for the same reason.
  *
  * This is the ONE module a CI check enumerates to assert every code has a
  * matching verify-page anchor (no registry rot).
@@ -39,7 +40,12 @@ export const DOCTOR_ERROR_CODES = {
   "E-LIVE-004": "no execution venue is configured",
   "E-LIVE-005": "the host /status does not report an execution venue (version skew)",
   "E-LIVE-006": "the app's root page returns a server error while the wire answers",
-  "E-LIVE-007": "the selected e2b execution venue is unusable (E2B_API_KEY or the e2b package is missing)",
+  // RETIRED 2026-08-11 (the selection law): E2B_API_KEY no longer selects a
+  // venue, so no host can be handed an e2b venue it did not ask for. An explicit
+  // `sandbox: e2bSandbox()` refuses at boot when the SDK does not resolve, which
+  // is earlier and louder than a probe. The ENTRY stays — the registry is
+  // append-only and the verify page anchors on it.
+  "E-LIVE-007": "RETIRED — doctor no longer emits this; E2B_API_KEY does not select an execution venue",
   "E-LIVE-008": "the host still calls store ops the wire has deprecated and will remove",
   "E-AUTH-001": "present credentials did not reach the host API",
   "E-AUTH-002": "the present credential probe is unreachable",

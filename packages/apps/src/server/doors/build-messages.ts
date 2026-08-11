@@ -96,9 +96,16 @@ const MODEL_ERROR_PREFIX = /^model generation failed: /;
  *  same swallowing was measured again 2026-08-03 for the 401 lines, where the
  *  generic reason was ALSO wrongly retryable — a revoked key fails identically
  *  on every retry). Anchored to the exact shapes in vendo/dev-creds
- *  (`rejectedKey`, `noModelKey`) so a provider error that merely mentions a key
- *  can never leak through. */
-const MODEL_UNAVAILABLE_SIGNAL = /^(?:[A-Z][A-Z0-9_]* is set but @ai-sdk\/[\w-]+ is not installed in this app|Vendo found no model key|your [A-Za-z]+ API key was rejected \(401\)|VENDO_API_KEY was rejected by the Vendo Cloud model gateway \(401\))/;
+ *  (`rejectedKey`, `NO_CREDENTIAL_MESSAGE`) so a provider error that merely
+ *  mentions a key can never leak through.
+ *
+ *  BYTE-FOR-BYTE COUPLED to those sentences, in another package this one may not
+ *  import: reword a message without reworking this pattern and the actionable
+ *  line silently stops reaching users (it lands only in the operator terminal —
+ *  the 0.4.x defect, twice). The `Vendo has no model.` alternative below is
+ *  `NO_CREDENTIAL_MESSAGE` in `@vendoai/vendo` (dev-creds/model.ts); the seam is
+ *  tested against the real constant in that package's tests/dev-creds/model.test.ts. */
+const MODEL_UNAVAILABLE_SIGNAL = /^(?:[A-Z][A-Z0-9_]* is set but @ai-sdk\/[\w-]+ is not installed in this app|Vendo has no model\.|your [A-Za-z]+ API key was rejected \(401\)|VENDO_API_KEY was rejected by the Vendo Cloud model gateway \(401\))/;
 
 /**
  * Map a generation-turn throw to the short, honest, NON-LEAKY reason persisted

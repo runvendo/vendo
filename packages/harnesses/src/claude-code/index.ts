@@ -142,12 +142,27 @@ export interface ClaudeCodeDeps
   sandbox?: SandboxAdapterLike;
 }
 
-/** The recorded v0 inference exception (design §9): a boxed harness must reach a
- *  model to think, and that is the ONLY credential in the machine. */
+/**
+ * The recorded v0 inference exception (design §9): a boxed harness must reach a
+ * model to think, and that is the ONLY credential in the machine.
+ *
+ * SELECTION LAW, the same one `boxInference()` in the umbrella obeys: the
+ * explicit VENDO_INFERENCE_URL+KEY pair — which is what the box env door sets —
+ * wins; otherwise VENDO_API_KEY funds the box's model through the console's
+ * Anthropic-compatible gateway at `<console>/api/v1`; otherwise the box gets no
+ * inference credential at all.
+ *
+ * A stray ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL selects NOTHING. It used to
+ * outrank both rungs, so a provider key sitting in the deployment's environment
+ * silently decided which account every box billed. Naming an own endpoint is
+ * still fully supported — as the explicit pair, which is config.
+ */
 export function inferenceEnv(): Record<string, string> {
   const source = globalThis.process?.env ?? {};
-  let key = source["ANTHROPIC_API_KEY"] ?? source["VENDO_INFERENCE_KEY"];
-  let url = source["ANTHROPIC_BASE_URL"] ?? source["VENDO_INFERENCE_URL"];
+  const set = (name: string): string | undefined => {
+    const value = source[name];
+    return value === undefined || value === "" ? undefined : value;
+  };
   const env: Record<string, string> = {
     // Nothing the CLI reaches for on the side: its telemetry and update hosts are
     // not on the box's allowlist (`boxEgress` below), so those calls fail rather
@@ -155,28 +170,31 @@ export function inferenceEnv(): Record<string, string> {
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     DISABLE_AUTOUPDATER: "1",
   };
-  // The third rung, mirroring server.ts's `boxInference()`: no Anthropic
-  // credential and no pre-resolved gateway means VENDO_API_KEY — the same key
-  // that provisions the Cloud machine — funds the box's model through the
-  // console's Anthropic-compatible gateway at `<console>/api/v1`. The gateway
-  // serves the vendo model family as literal ids, so the DEFAULT model is
-  // pinned to the family name — the SDK's own default is a raw claude-* id the
-  // gateway would grace-remap. Only the default: an explicit `options.model`
-  // rides the session-open payload, which beats ANTHROPIC_MODEL.
-  const cloudKey = source["VENDO_API_KEY"];
-  if ((key === undefined || key === "") && (url === undefined || url === "")
-    && cloudKey !== undefined && cloudKey !== "") {
-    const cloudUrl = source["VENDO_CLOUD_URL"];
-    const base = (cloudUrl === undefined || cloudUrl === "" ? "https://console.vendo.run" : cloudUrl)
-      .replace(/\/+$/, "");
+  // The PAIR, both halves or neither: half an endpoint is a misconfiguration, and
+  // quietly completing it from somewhere else is how a box ends up billing an
+  // account nobody chose.
+  const pairKey = set("VENDO_INFERENCE_KEY");
+  const pairUrl = set("VENDO_INFERENCE_URL");
+  const cloudKey = set("VENDO_API_KEY");
+  let key: string | undefined;
+  let url: string | undefined;
+  if (pairKey !== undefined && pairUrl !== undefined) {
+    key = pairKey;
+    url = pairUrl;
+  } else if (cloudKey !== undefined) {
+    const base = (set("VENDO_CLOUD_URL") ?? "https://console.vendo.run").replace(/\/+$/, "");
     key = cloudKey;
     url = base.endsWith("/api/v1") ? base : `${base}/api/v1`;
+    // The gateway serves the vendo model family as literal ids, so the DEFAULT
+    // model is pinned to the family name — the SDK's own default is a raw
+    // claude-* id the gateway would grace-remap. Only the default: an explicit
+    // `options.model` rides the session-open payload, which beats ANTHROPIC_MODEL.
     env["ANTHROPIC_MODEL"] = "vendo";
   }
-  if (key !== undefined && key !== "") env["ANTHROPIC_API_KEY"] = key;
-  if (url !== undefined && url !== "") {
-    env["ANTHROPIC_BASE_URL"] = url.replace(/\/+$/, "").replace(/\/v1$/, "");
-  }
+  if (key === undefined || url === undefined) return env;
+  env["ANTHROPIC_API_KEY"] = key;
+  // The bare origin: the SDK re-appends /v1 and wants no trailing slash.
+  env["ANTHROPIC_BASE_URL"] = url.replace(/\/+$/, "").replace(/\/v1$/, "");
   return env;
 }
 

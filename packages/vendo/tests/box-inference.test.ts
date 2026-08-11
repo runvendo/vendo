@@ -13,9 +13,12 @@ import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo } from "../src/server.js";
 
-// The box's inference-door ladder (release-gap fix, 2026-07-20): explicit
-// VENDO_INFERENCE_URL/KEY → BYO ANTHROPIC_API_KEY → VENDO_API_KEY via the
-// console's Anthropic-compatible model gateway. Before the Cloud rung landed,
+// The box's inference-door ladder (release-gap fix, 2026-07-20; narrowed by the
+// SELECTION LAW 2026-08-11): the explicit VENDO_INFERENCE_URL+KEY pair →
+// VENDO_API_KEY via the console's Anthropic-compatible model gateway → nothing.
+// A stray ANTHROPIC_API_KEY is no longer a rung: it used to point every box at
+// api.anthropic.com and bill that account, chosen by nothing anyone wrote down.
+// Before the Cloud rung landed,
 // a zero-key Cloud host provisioned billed machines whose in-box agent had no
 // model (the box harness refuses: "the box has no inference endpoint" —
 // The box's task door maps VENDO_INFERENCE_URL/KEY onto
@@ -190,15 +193,25 @@ describe("boxInference ladder (the in-box agent's model door)", () => {
     expect(env["VENDO_INFERENCE_KEY"]).toBe("own_key");
   });
 
-  it("a BYO ANTHROPIC_API_KEY beats the Cloud rung", async () => {
+  it("a stray ANTHROPIC_API_KEY does NOT beat the Cloud rung — it selects nothing", async () => {
     const env = await boxEnv({
       ANTHROPIC_API_KEY: "sk-ant-byo",
       VENDO_API_KEY: "vnd_cloud_key",
     });
-    expect(env["VENDO_INFERENCE_URL"]).toBe("https://api.anthropic.com");
-    expect(env["VENDO_INFERENCE_KEY"]).toBe("sk-ant-byo");
-    // BYO keeps the box harness's own real-model default — no alias pin.
-    expect(env["VENDO_INFERENCE_MODEL"]).toBeUndefined();
+    // The key that provisions the machine funds its model; the provider key in
+    // the deployment's environment is not consulted.
+    expect(env["VENDO_INFERENCE_URL"]).toBe("https://console.vendo.run/api/v1");
+    expect(env["VENDO_INFERENCE_KEY"]).toBe("vnd_cloud_key");
+    expect(env["VENDO_INFERENCE_MODEL"]).toBe("vendo");
+  });
+
+  it("a stray ANTHROPIC_API_KEY alone leaves the box without an inference door", async () => {
+    // There is deliberately NO middle rung: a host who wants their own endpoint
+    // names both halves of the pair. Silently routing every box to
+    // api.anthropic.com on a key nobody pointed at Vendo is the thing being removed.
+    const env = await boxEnv({ ANTHROPIC_API_KEY: "sk-ant-byo" });
+    expect(env["VENDO_INFERENCE_URL"]).toBeUndefined();
+    expect(env["VENDO_INFERENCE_KEY"]).toBeUndefined();
   });
 
   it("no key on any rung leaves the box without an inference door", async () => {

@@ -39,7 +39,6 @@ export interface DoctorOptions {
   liveTurn?: (base: string) => Promise<LiveTurnResult>;
   cloudProbe?: (options: { env?: Record<string, string | undefined> }) => Promise<CloudDoctorResult>;
   startDevServer?: (options: { root: string; statusUrl: string; env?: Record<string, string | undefined>; fetchImpl?: typeof fetch }) => Promise<{ ok: boolean; stop: () => void }>;
-  e2bResolvable?: (root: string) => boolean;
   /** The npm `latest` lookup behind the version-skew line — its own seam, not
       fetchImpl, so a scripted wire probe never doubles as a registry answer. */
   npmLatest?: () => Promise<string | null>;
@@ -127,7 +126,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   await checkEjectDrift(run);
 
   const devServerStop = await startDevServerIfOffered(run, options);
-  const { mcpPosture, live } = await checkLiveStatus(run, options.e2bResolvable);
+  const { mcpPosture, live } = await checkLiveStatus(run);
   if (live) await checkRootRender(run);
   await checkAuthProbes(run, live);
   if (mcpPosture !== false) await checkMcpDiscovery(run, mcpPosture);

@@ -1,24 +1,8 @@
-import { createRequire } from "node:module";
-import { join } from "node:path";
 import { stdin, stdout } from "node:process";
 import { startDevServerForProbe } from "./doctor-live.js";
 import { CLI_VERSION, askYesNo } from "./shared.js";
 import { probeBody, type DoctorRun } from "./doctor-report.js";
 import type { DoctorOptions } from "./doctor.js";
-
-/** Whether the optional `e2b` SDK resolves from the target project — the same
- *  node_modules walk the running wire's dynamic `import("e2b")` performs, so
- *  doctor certifies the venue against the resolution that will actually be
- *  asked to load it (0.4.4 defect C: /status said e2b on a host without the
- *  SDK, and the first build died in an unusable venue). */
-function e2bResolvableFrom(root: string): boolean {
-  try {
-    createRequire(join(root, "__vendo-doctor-probe__.js")).resolve("e2b");
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /** NOTHING doctor can observe proves WHY the auth probes 404, so neither
     message below asserts a cause — they report what was seen, name the
@@ -86,34 +70,16 @@ export async function startDevServerIfOffered(run: DoctorRun, options: DoctorOpt
   return null;
 }
 
-/** 0.4.4 defect C — "ok: execution venue: e2b" on a host that cannot
- *  actually run e2b is a false blessing: the venue must be USABLE
- *  (key set and SDK resolvable from this project), or every server-app
- *  build dies in it instead of riding the Cloud sandbox. */
-function checkE2bVenue(run: DoctorRun, e2bResolvable: ((root: string) => boolean) | undefined): void {
-  const { env, root } = run;
-  const keyPresent = typeof env.E2B_API_KEY === "string" && env.E2B_API_KEY.trim() !== "";
-  const installed = (e2bResolvable ?? e2bResolvableFrom)(root);
-  if (keyPresent && installed) {
-    run.pass("live/venue", "execution venue: e2b");
-    return;
-  }
-  const missing = [
-    ...(keyPresent ? [] : ["E2B_API_KEY is not set"]),
-    ...(installed ? [] : ["the e2b package does not resolve from this project"]),
-  ].join(" and ");
-  // This reads doctor's OWN env and project root, not the server's, so
-  // a live e2b venue failing here means the two disagree.
-  run.fail("live/venue", "E-LIVE-007", `the running wire selected the e2b execution venue but ${missing}; server-app builds will fail in an unusable sandbox. Fix: install the e2b package and set E2B_API_KEY, or remove E2B_API_KEY from the server env (with VENDO_API_KEY set, the managed Cloud sandbox takes over), then restart the dev server and re-run doctor`);
-}
-
-function checkVenue(run: DoctorRun, sandboxVenue: unknown, e2bResolvable: ((root: string) => boolean) | undefined): void {
-  if (sandboxVenue === "e2b") {
-    checkE2bVenue(run, e2bResolvable);
-  } else if (sandboxVenue === "cloud" || sandboxVenue === "custom") {
+/** No E2B-specific usability check any more (E-LIVE-007, retired): E2B_API_KEY
+ *  no longer selects a venue, so there is no such thing as a venue the operator
+ *  did not ask for. An explicit `sandbox: e2bSandbox()` reports "custom" and
+ *  refuses at boot when the SDK does not resolve, which is both earlier and
+ *  louder than a doctor probe. `"e2b"` still arrives from older wires. */
+function checkVenue(run: DoctorRun, sandboxVenue: unknown): void {
+  if (sandboxVenue === "e2b" || sandboxVenue === "cloud" || sandboxVenue === "custom") {
     run.pass("live/venue", `execution venue: ${sandboxVenue}`);
   } else if (sandboxVenue === false) {
-    run.warn("live/venue", "E-LIVE-004", "install the e2b package and set E2B_API_KEY, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
+    run.warn("live/venue", "E-LIVE-004", "pass sandbox: to createVendo (e.g. sandbox: e2bSandbox(), which reads E2B_API_KEY as its credential), or set VENDO_API_KEY for the managed Cloud sandbox; without one, server apps (rungs 2-4) return sandbox-unavailable");
   } else if (sandboxVenue === undefined) {
     // Older hosts predate blocks.sandbox — version skew, not a broken install.
     run.warn("live/venue", "E-LIVE-005", "host /status does not report an execution venue; upgrade @vendoai/vendo to enable the venue check");
@@ -144,7 +110,7 @@ export interface LiveComposition {
   live: boolean;
 }
 
-export async function checkLiveStatus(run: DoctorRun, e2bResolvable: ((root: string) => boolean) | undefined): Promise<LiveComposition> {
+export async function checkLiveStatus(run: DoctorRun): Promise<LiveComposition> {
   const { statusUrl, fetchImpl } = run;
   try {
     const response = await fetchImpl(`${statusUrl}/status`, {
@@ -166,7 +132,7 @@ export async function checkLiveStatus(run: DoctorRun, e2bResolvable: ((root: str
     const mcpPosture = body.blocks.mcp === "broker" ? "broker"
       : body.blocks.mcp === true || body.blocks.mcp === "local" ? "local"
       : false;
-    checkVenue(run, body.blocks.sandbox, e2bResolvable);
+    checkVenue(run, body.blocks.sandbox);
     return { mcpPosture, live: true };
   } catch {
     run.fail("live/status", "E-LIVE-002", `/status is unreachable at ${statusUrl}/status — doctor expects the WIRE BASE (your app origin plus the mount path, e.g. http://localhost:3000/api/vendo); a bare site origin passed to --url is missing the /api/vendo part`);
