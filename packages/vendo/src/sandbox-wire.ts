@@ -100,6 +100,27 @@ export const CLOUD_SNAPSHOT_REF_PREFIX = "vendo:v2:";
  * adapter's composite ref, never handed to the seam bare. */
 export const CONSOLE_SNAPSHOT_REF_PREFIX = "vendo:";
 
+/** Every snapshot-ref scheme this repo mints, longest match first — "vendo:"
+ * is a strict prefix of "vendo:v2:". Classification reports the MATCHED
+ * CONSTANT from this list, never a slice of the input.
+ *
+ * It lives HERE, in the module with no imports, because it has two readers that
+ * must never drift: `decodeOrReport` (sandbox.ts) PRODUCES a classification
+ * from it, and the telemetry boundary (sdk-events.ts) VALIDATES an emitted
+ * classification against it before letting one travel verbatim. A scheme added
+ * to the producer's copy alone would be silently shaped by the validator. */
+export const KNOWN_REF_SCHEMES = [
+  CLOUD_SNAPSHOT_REF_PREFIX,
+  "e2b:v2:",
+  "fake-v2:",
+  "fake:",
+  CONSOLE_SNAPSHOT_REF_PREFIX,
+] as const;
+
+/** The classification for a ref that matches no {@link KNOWN_REF_SCHEMES}
+ *  entry — a Vendo-authored sentence, never any part of the input. */
+export const UNKNOWN_REF_SCHEME = "(no known scheme)";
+
 /** The canonical box port the relay targets when no port rides the wire
  * (and the one the public ingress `https://<id-suffix>-m.vendo.run`
  * serves). */

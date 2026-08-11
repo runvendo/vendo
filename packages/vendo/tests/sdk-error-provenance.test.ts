@@ -6,19 +6,23 @@ import { withSdkErrorReporting } from "../src/sdk-events.js";
 
 /**
  * What `sdk_error.data` is allowed to say. CLASSIFICATION ONLY: no
- * caller-influenced value leaves the customer's servers, so the one question a
- * candidate key has to answer is whether a CALLER CAN INFLUENCE ITS VALUE — not
- * whether its name sits in Vendo's namespace. A classification against a
- * Vendo-authored closed set travels; every other value travels as its shape,
- * and so does every key nobody has allowlisted, which is the property that
- * keeps a log site added tomorrow from leaking by default.
+ * caller-influenced value leaves the customer's servers.
  *
- * `appId` and `turnId` are the worked examples, and the reason the name is not
- * the test: both are spelled in Vendo's own id namespace, and both are supplied
- * by the caller on a live path, so both report their type and nothing else. A
- * value that failed to decode is the caller's input for the same reason —
+ * The rule is about VALUES, not key names. An allowlisted key's value is
+ * validated against a closed set or a scalar type, and anything that does not
+ * conform is reduced to its type name — exactly as a key nobody allowlisted
+ * already is. Allowlisting a NAME was the earlier, weaker version of this and
+ * it shipped a leak: `errorCode` promised a closed union while nothing checked
+ * for one, so caller content travelled verbatim under it.
+ *
+ * Two failure modes, and the cases below hold both:
+ *   - a key whose value a caller supplies (`appId`, `turnId` — both spelled in
+ *     Vendo's own id namespace, which is exactly why the NAME is not the test)
+ *   - an allowlisted key handed something outside its closed set
+ *
+ * A value that failed to decode is the caller's input for the same reason —
  * classified against a closed set, never echoed, not even a prefix of it. That
- * distinction is what the marker cases below hold in place.
+ * distinction is what the marker cases hold in place.
  */
 
 /** Caller-suppliable on a live path, so neither may travel: `input.appId ??
@@ -77,13 +81,33 @@ describe("sdk_error.data reports classifications and shapes everything else", ()
     expect(dataOf({ turnId: TURN_ID })).toEqual({ turnId: "string" });
   });
 
-  /** The cap is a VOLUME gate on the passthrough, independent of what the key
-   *  means: `data` is `Record<string, unknown>`, so an allowlisted key CAN be
-   *  handed something unbounded, and when it is, the shape travels instead. */
-  it("falls back to the shape when an allowlisted value exceeds the length cap", () => {
-    const atCap = "a".repeat(512);
-    expect(dataOf({ errorCode: atCap })).toEqual({ errorCode: atCap });
-    expect(dataOf({ errorCode: `${atCap}a` })).toEqual({ errorCode: "string" });
+  /** Being allowlisted buys the KEY nothing on its own — the value still has to
+   *  be one of the six constants `sandbox-wire.ts` names, or the sentinel. A
+   *  scheme-shaped string that is not on that list is caller content wearing a
+   *  classification's name. */
+  it("passes a snapshot scheme from the closed set, and shapes anything else under that key", () => {
+    expect(dataOf({ snapshotRefScheme: "(no known scheme)" }))
+      .toEqual({ snapshotRefScheme: "(no known scheme)" });
+    expect(dataOf({ snapshotRefScheme: "s3cret-leak:" })).toEqual({ snapshotRefScheme: "string" });
+  });
+
+  /** The length key means a LENGTH. A string under it is a whole ref smuggled
+   *  through a key whose name promised a scalar. */
+  it("passes a numeric snapshotRefLength, and shapes a non-number under that key", () => {
+    expect(dataOf({ snapshotRefLength: 42 })).toEqual({ snapshotRefLength: 42 });
+    expect(dataOf({ snapshotRefLength: "vendo:v2:eyJzZWNyZXQiOiJsZWFrIn0" }))
+      .toEqual({ snapshotRefLength: "string" });
+  });
+
+  /** Greptile's finding on #1222, pinned so it cannot come back. The key name
+   *  claimed the closed `VendoErrorCode` union while NOTHING checked for one,
+   *  and the old length cap approved any string under 512 characters — so a
+   *  410-character caller-controlled value travelled verbatim under a name that
+   *  promised a classification. The VALUE is checked now, against core's
+   *  `vendoErrorCodeSchema` rather than a re-listing that could drift from it. */
+  it("passes a real VendoErrorCode, and shapes a long non-union string under that key", () => {
+    expect(dataOf({ errorCode: "validation" })).toEqual({ errorCode: "validation" });
+    expect(dataOf({ errorCode: "x".repeat(410) })).toEqual({ errorCode: "string" });
   });
 });
 

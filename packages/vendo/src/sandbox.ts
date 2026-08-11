@@ -8,6 +8,8 @@ import {
   CLOUD_SNAPSHOT_REF_PREFIX,
   CLOUD_SNAPSHOTS_SUBPATH,
   CONSOLE_SNAPSHOT_REF_PREFIX,
+  KNOWN_REF_SCHEMES,
+  UNKNOWN_REF_SCHEME,
 } from "./sandbox-wire.js";
 
 /** Same default as the e2b adapter and the retired ENG-295 broker client:
@@ -199,19 +201,6 @@ const decodeSnapshotRef = (snapshotRef: string): CloudSnapshotState => {
  * idempotent transitions (destroy twice, stop of a dead machine) absorb. */
 const isGone = (error: unknown): boolean =>
   error instanceof VendoError && error.code === "not-found";
-
-/** Every snapshot-ref scheme this repo mints, longest match first — "vendo:"
- * is a strict prefix of "vendo:v2:". Classification reports the MATCHED
- * CONSTANT from this list, never a slice of the input. */
-const KNOWN_REF_SCHEMES = [
-  CLOUD_SNAPSHOT_REF_PREFIX,
-  "e2b:v2:",
-  "fake-v2:",
-  "fake:",
-  CONSOLE_SNAPSHOT_REF_PREFIX,
-] as const;
-
-const UNKNOWN_REF_SCHEME = "(no known scheme)";
 
 /** Decode a ref, and report which ref failed when it will not decode.
  *

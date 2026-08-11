@@ -15,9 +15,10 @@
  *
  * Keep this module free of node builtins; the portability gate bundles it.
  */
-import { emitUsage, type VendoLogger, type VendoUsageEvent } from "@vendoai/core";
+import { emitUsage, vendoErrorCodeSchema, type VendoLogger, type VendoUsageEvent } from "@vendoai/core";
 import { envOptOut } from "@vendoai/telemetry";
 import { createBatchedUploader } from "./batched-uploader.js";
+import { KNOWN_REF_SCHEMES, UNKNOWN_REF_SCHEME } from "./sandbox-wire.js";
 import { VERSION } from "./wire/shared.js";
 
 /** The console door this stream POSTs to. ONE constant: the route is the
@@ -120,29 +121,36 @@ export function withSdkErrorReporting(logger: VendoLogger): VendoLogger {
 }
 
 /**
- * The `data` keys that travel VERBATIM.
+ * The `data` keys that may travel VERBATIM, each with the CLOSED SET its value
+ * has to belong to before it does.
  *
- * A CLOSED set of KEY NAMES, the same discipline as the CLI lane's
- * `CLOUD_PROP_KEYS`: a key nobody listed here — including every key a log site
- * added tomorrow — is shapes-only, so the default leaks nothing and opting a
- * key in is a deliberate edit to this list.
+ * A closed set of KEY NAMES was not enough, and this map is the correction: the
+ * name said `errorCode` while nothing checked the value WAS an error code, so
+ * any string a caller could reach that key with travelled unchanged, up to a
+ * length cap that was never the point. A key name is a CLAIM about a value.
+ * This checks the claim.
  *
- * CLASSIFICATION ONLY. The test for membership is ONE question — CAN A CALLER
- * INFLUENCE THIS VALUE? — and it is not the question the key's NAME answers. A
- * name in Vendo's own namespace proves nothing: what matters is whether every
- * value that can reach the key was produced here, on every path, including the
- * failure paths. If a caller can put arbitrary content there by any route, no
- * caller-influenced value leaves the customer's servers: the verbatim value
- * stays in their local logs and their hosted-DB lookup, and only a
- * classification of it travels.
+ * CLASSIFICATION ONLY. The rule: an allowlisted key's value is validated
+ * against a closed set or a scalar type, and anything that does not conform is
+ * reduced to its type name — exactly as a key nobody allowlisted already is.
+ * So no caller-influenced value leaves the customer's servers; the verbatim
+ * value stays in their local logs and their hosted-DB lookup, and only a
+ * classification of it travels. A key nobody listed here — including every key
+ * a log site adds tomorrow — is shapes-only, so the default still leaks
+ * nothing.
  *
- * So the set needs no per-key argument, and that is the property to preserve:
- * every entry is a CLASSIFICATION against a Vendo-authored closed set, a
- * NON-CONTENT SCALAR, or a CLOSED UNION. A candidate that is none of those
- * three does not belong here, whatever it is called.
+ * That makes the boundary safe BY CONSTRUCTION rather than by argument: what
+ * can travel is ENUMERABLE, and every one of those values is Vendo-authored. A
+ * candidate key with no closed set to check against does not belong here,
+ * whatever it is called.
+ *
+ * Each check reads its vocabulary from that vocabulary's OWNER — the schemes
+ * from `sandbox-wire.ts`, the codes from core's `vendoErrorCodeSchema` — never
+ * a local re-listing, so a check and the thing it checks cannot drift apart.
  *
  * REMOVED, and not to be re-added by reasoning that the namespaces are Vendo's
- * — both are caller-suppliable on a live path:
+ * — both are caller-suppliable on a live path, and neither has any closed set
+ * to be validated against:
  *   - `appId`: `apps/src/server/doors/build-surface.ts:286` is
  *     `input.appId ?? mint`, and `appIdSchema` pins only the `app_` prefix, so
  *     a caller's app id is `app_` followed by anything at all.
@@ -151,41 +159,42 @@ export function withSdkErrorReporting(logger: VendoLogger): VendoLogger {
  *     parses that path through it — a `TurnId` is a bare `string`, and the
  *     type's stated contract is that it is opaque and nobody parses it.
  */
-const VERBATIM_DATA_KEYS: ReadonlySet<string> = new Set([
-  // A CLASSIFICATION of a snapshot ref, never the ref (sandbox.ts): a matched
-  // constant from Vendo's closed set of schemes, and a length. A raw
-  // `snapshotRef` is deliberately NOT here — the only path that reports one is
-  // the path where it FAILED to decode, and a ref that failed to decode is by
-  // definition not Vendo-minted but whatever a caller handed a public method.
-  // Nor is a DIGEST of one: an unkeyed hash of caller content confirms guesses
-  // offline, which is a quieter version of the same leak.
-  "snapshotRefScheme",
-  "snapshotRefLength",
-  // A `VendoErrorCode` — a closed eight-member union in core, already
-  // travelling verbatim on the `tool_call` event. FORWARD-LOOKING on purpose:
-  // no log site puts one in `data` today (it rides `agent_run` instead), so
-  // this entry is deliberate rather than an oversight, and it is here so the
-  // first log site that does report one is not silently reduced to "string".
-  "errorCode",
+const VERBATIM_DATA_VALUES: ReadonlyMap<string, (value: unknown) => boolean> = new Map([
+  // A CLASSIFICATION of a snapshot ref, never the ref (sandbox.ts): the matched
+  // constant from Vendo's closed set of schemes, or the sentinel for no match.
+  // A raw `snapshotRef` is deliberately NOT a key here — the only path that
+  // reports one is the path where it FAILED to decode, and a ref that failed to
+  // decode is by definition not Vendo-minted but whatever a caller handed a
+  // public method. Nor is a DIGEST of one: an unkeyed hash of caller content
+  // confirms guesses offline, which is a quieter version of the same leak.
+  ["snapshotRefScheme", (value) => typeof value === "string"
+    && (value === UNKNOWN_REF_SCHEME || KNOWN_REF_SCHEMES.some((scheme) => scheme === value))],
+  // How long the ref was, which says nothing about what was in it.
+  ["snapshotRefLength", (value) => typeof value === "number" && Number.isFinite(value)],
+  // A `VendoErrorCode`, checked against core's schema rather than a re-listing
+  // of its members. FORWARD-LOOKING on purpose: no log site puts one in `data`
+  // today (it rides `agent_run` instead), so this entry is deliberate rather
+  // than an oversight, and it is here so the first log site that does report
+  // one is not silently reduced to "string".
+  ["errorCode", (value) => vendoErrorCodeSchema.safeParse(value).success],
 ]);
 
-/** No classification Vendo emits comes near this. The cap is a VOLUME gate — an
- *  allowlisted key that unexpectedly holds something unbounded reports its
- *  shape instead, so no key on the list can become a content channel. */
-const MAX_IDENTIFIER_CHARS = 512;
-
-/** A log event's `data` carries a call site's ACTUAL arguments. The allowlisted
- *  keys ({@link VERBATIM_DATA_KEYS}) travel as themselves — strings within the
- *  cap, and finite numbers, which are bounded by their own type. Every other
- *  key travels as its own name and the SHAPE of its value. */
+/** A log event's `data` carries a call site's ACTUAL arguments. A key travels
+ *  verbatim only when it is allowlisted AND its value passes that key's check
+ *  ({@link VERBATIM_DATA_VALUES}); everything else — an unlisted key, and a
+ *  listed key holding something it should never hold — travels as its own name
+ *  and the SHAPE of its value.
+ *
+ *  There is deliberately no length cap any more. One used to stand in for this
+ *  check, and it was the bug: it let 512 characters of anything through under a
+ *  name that promised a classification. Now that every conforming value is one
+ *  of a handful of Vendo-authored constants or a number, a cap could never
+ *  fire, and keeping an unreachable one would only re-suggest that volume is
+ *  the risk. It is not; provenance is. */
 function dataByProvenance(data: Record<string, unknown> | undefined): Record<string, unknown> {
   const reported: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data ?? {})) {
-    const verbatim = VERBATIM_DATA_KEYS.has(key)
-      && (typeof value === "number"
-        ? Number.isFinite(value)
-        : typeof value === "string" && value.length <= MAX_IDENTIFIER_CHARS);
-    reported[key] = verbatim ? value : shapeOf(value);
+    reported[key] = VERBATIM_DATA_VALUES.get(key)?.(value) === true ? value : shapeOf(value);
   }
   return reported;
 }
