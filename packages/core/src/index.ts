@@ -22,6 +22,7 @@ export * from "./ids.js";
 export * from "./jcs.js";
 export * from "./knowledge.js";
 export * from "./knowledge-wire.js";
+export * from "./log.js";
 export * from "./meter-exhausted.js";
 export * from "./model-seats.js";
 export * from "./capability.js";
