@@ -14,8 +14,10 @@
  */
 
 export type VendoUsageEvent =
-  /** One deployment came up: which adapter slots it filled, which blocks
-   *  mounted, and the host framework when its runtime announces itself. */
+  /** One deployment came up: which adapters it is RUNNING (after the adapter
+   *  rule has filled every slot the host left unset — not the slots themselves),
+   *  which blocks mounted, and the host framework when its runtime announces
+   *  itself. */
   | { name: "deployment_boot"; adapters: string[]; blocks: string[]; framework: string | null }
   /** One agent turn ended. `tools` are NAMES; `modelFamily` is the model id the
    *  thinking seat resolved to, never a key or a URL. */
