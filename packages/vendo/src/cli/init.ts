@@ -36,6 +36,7 @@ import {
   serverActionsModuleSource,
   serverActionsWiring,
   VENDO_ENV_EXAMPLE,
+  type ScaffoldModel,
 } from "./init-scaffolds.js";
 import { createPrettyOutput, plainSecret, plainSelect, plainText, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { contrastingText } from "./theme/color.js";
@@ -939,6 +940,11 @@ interface ScaffoldPlan {
   authWired: AuthMatch | null;
   compositionPath: string | null;
   layout: LayoutWiring;
+  /** The provider and file of the `models` line this run wrote — the migration
+      path off the removed ambient-key behaviour, and what the closing summary
+      reports. Null when no provider key resolved, or when the composition
+      already existed (init never edits a file it did not author). */
+  modelWritten: { provider: ScaffoldModel["provider"]; path: string } | null;
 }
 
 const emptyScaffold = (layout: LayoutWiring): ScaffoldPlan => ({
@@ -948,6 +954,7 @@ const emptyScaffold = (layout: LayoutWiring): ScaffoldPlan => ({
   authWired: null,
   compositionPath: null,
   layout,
+  modelWritten: null,
 });
 
 async function planCustomComposition(
@@ -1069,11 +1076,13 @@ async function planNextComposition(
     const path = relative(root, route);
     // Detect + confirm happens only on fresh composition creation.
     const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
-    const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired });
+    const models = await scaffoldModel(root, options);
+    const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, models });
     scaffold.changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
     scaffold.authAdvice = auth.advice;
     scaffold.authWired = auth.wired;
     scaffold.compositionPath = path;
+    if (models !== null) scaffold.modelWritten = { provider: models.provider, path };
   } else if (registrations.length > 0) {
     // The route already exists but server actions appeared since it was
     // generated: name the wiring the existing createVendo is missing, so
@@ -1106,6 +1115,8 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   compositionPath: string | null;
   /** How the visible surface reached (or didn't reach) the layout. */
   layout: LayoutWiring;
+  /** The `models` line this run wrote, and where (ScaffoldPlan.modelWritten). */
+  modelWritten: ScaffoldPlan["modelWritten"];
 }> {
   const root = resolve(options.targetDir);
   // The non-interactive guard still demands an explicit --framework, so
@@ -1116,7 +1127,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     : framework === "express"
       ? await planExpressComposition(root, options, confirmAuth, selectAuth)
       : await planNextComposition(root, options, confirmAuth, selectAuth);
-  const { changes, edits, authAdvice, authWired, compositionPath, layout } = scaffold;
+  const { changes, edits, authAdvice, authWired, compositionPath, layout, modelWritten } = scaffold;
 
   const packageJson = join(root, "package.json");
   const packageBefore = await readOptional(packageJson);
@@ -1171,6 +1182,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     authWired,
     compositionPath,
     layout,
+    modelWritten,
     plan: {
       framework,
       // Only when the run named one: an unattended plan stays byte-identical
@@ -1377,6 +1389,37 @@ async function guardUndetectedFramework(input: {
   return true;
 }
 
+/** The env every credential consumer reads. Dev keys may live in .env.local
+    rather than this process's env — a PRIOR run's minted starter key, or
+    hand-added provider keys — so they are merged in for the credential ladder,
+    the cloud step, the theme model pass and the AI polish. An explicit env
+    value always wins over .env.local. */
+function credentialEnv(root: string, env: Record<string, string | undefined>): Record<string, string | undefined> {
+  let effective = env;
+  for (const name of [...ENV_KEY_VARS.map((entry) => entry.envVar), "VENDO_API_KEY"]) {
+    if ((env[name] ?? "").trim() !== "") continue;
+    const stored = envFileValueSync(root, name);
+    if (stored !== null) effective = { ...effective, [name]: stored };
+  }
+  return effective;
+}
+
+/** The provider key a scaffold written THIS run should name in `models`, or
+ *  null when no provider key resolved. Only the env-key rungs qualify: they
+ *  are the rung whose meaning changed (a key in the environment no longer
+ *  picks a model on its own), and the Cloud rung resolves its model through
+ *  the gateway's own family names instead. Resolved here, at scaffold time,
+ *  because the file is authored before the interactive credential step runs —
+ *  detection is pure and read-only, so asking twice costs nothing. */
+async function scaffoldModel(root: string, options: InitOptions): Promise<ScaffoldModel | null> {
+  const credential = await (options.resolveCredential ?? resolveDevCredential)({
+    env: credentialEnv(root, options.env ?? process.env),
+  });
+  return credential.rung === "env-key"
+    ? { provider: credential.provider, envVar: credential.envVar }
+    : null;
+}
+
 /** Key first (product order fix): the model-credential story — env keys,
  *  else the Vendo Cloud offer — runs BEFORE the AI-assisted passes, so a
  *  starter key minted here powers the SAME run's theme model pass and AI
@@ -1390,17 +1433,7 @@ async function resolveModelCredential(input: {
   pretty: PrettyOutput | null;
 }): Promise<{ credential: DevCredential; cloud: Awaited<ReturnType<typeof runCloudStep>> }> {
   const { root, env, options, output, pretty } = input;
-  // Dev keys may live in .env.local rather than this process's env — a
-  // PRIOR run's minted starter key, or hand-added provider keys. Merge
-  // them into the env every credential consumer reads (credential ladder,
-  // cloud step, theme model pass, AI polish); an explicit env value
-  // always wins over .env.local.
-  let effectiveEnv = env;
-  for (const name of [...ENV_KEY_VARS.map((entry) => entry.envVar), "VENDO_API_KEY"]) {
-    if ((env[name] ?? "").trim() !== "") continue;
-    const stored = envFileValueSync(root, name);
-    if (stored !== null) effectiveEnv = { ...effectiveEnv, [name]: stored };
-  }
+  let effectiveEnv = credentialEnv(root, env);
   let credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
   if (credential.rung === "env-key") {
     // Their key is a decision already made, so this stays a statement and
@@ -1750,7 +1783,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
   const detectStarted = Date.now();
-  const { plan, changes, edits, manualSteps, mount, authAdvice, authWired, compositionPath, layout } = await buildPlan(options, confirmAuth, selectAuth);
+  const { plan, changes, edits, manualSteps, mount, authAdvice, authWired, compositionPath, layout, modelWritten } = await buildPlan(options, confirmAuth, selectAuth);
   const detectMs = Date.now() - detectStarted;
   let telemetry = telemetryFor(options, output, root);
   await telemetry.track("init_started", { framework: plan.framework });
@@ -1860,6 +1893,14 @@ export async function runInit(options: InitOptions): Promise<number> {
 
     await ensureHostDeps({ root, output, options, pretty, interactive, credential });
 
+    // The one line that closes the model story. A provider key is a credential
+    // now, not a selection: nothing picks a model off the environment any more,
+    // so the run says which model it SELECTED for them and in which file — the
+    // explicit config is already there to edit, and no first boot fails on the
+    // removed ambient behaviour.
+    if (modelWritten !== null) {
+      output.log(`models: ${modelWritten.provider} — written into ${modelWritten.path}`);
+    }
     // The one short Cloud reminder in the end-of-run summary — ONLY while no
     // key exists (the full emphasized block already ran up top; no repeat).
     if (credential.rung === "none") {

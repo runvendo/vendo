@@ -858,6 +858,67 @@ describe("vendo init (zero-question)", () => {
     expect(logs.indexOf("Model: explicit")).toBeLessThan(logs.indexOf("Wired ("));
   });
 
+  /** SPEC 4b: a provider key in the environment is a CREDENTIAL now — it no
+      longer selects a model by itself. Init detected the key, so init writes
+      the explicit selection into the composition it authors; without it a host
+      that "just worked" off an ambient key would fail on its first boot. */
+  it("writes the models line and its import once into the route it authors, and names the file", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      env: { ANTHROPIC_API_KEY: "sk-a" },
+      installProvider: async () => 0,
+    })).toBe(0);
+
+    const routePath = join("app", "api", "vendo", "[...vendo]", "route.ts");
+    const route = await readFile(join(root, routePath), "utf8");
+    expect(route).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
+    expect(route).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
+    expect(route.match(/@ai-sdk\/anthropic/g)).toHaveLength(1);
+    expect(route.match(/models:/g)).toHaveLength(1);
+
+    expect(sink.logs.join("\n")).toContain(`models: anthropic — written into ${routePath}`);
+  });
+
+  /** A key that only ever lived in .env.local counts the same way — it is the
+      same key the runtime will read, and the ONLY reason the old ambient
+      behaviour looked like it worked. */
+  it("counts a provider key that lives only in .env.local", async () => {
+    const root = await fixture();
+    await writeFile(join(root, ".env.local"), 'ANTHROPIC_API_KEY="sk-ant-local"\n');
+    const sink = output();
+    expect(await run(root, sink, { installProvider: async () => 0 })).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain(`models: { default: anthropic("claude-sonnet-4-6") }`);
+  });
+
+  it("leaves a keyless host's route model-free — no line, no dangling import", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).not.toContain("@ai-sdk/");
+    expect(route).not.toContain("models:");
+    const logs = sink.logs.join("\n");
+    expect(logs).not.toContain("models: anthropic");
+    expect(logs).toContain("No model key yet");
+  });
+
+  /** A Cloud key is not a provider key: its models resolve through the
+      gateway's own family names, so nothing is written for it. */
+  it("writes nothing for a Vendo Cloud key", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      env: { VENDO_API_KEY: `vnd_${"c".repeat(40)}` },
+      installProvider: async () => 0,
+    })).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).not.toContain("@ai-sdk/");
+    expect(route).not.toContain("models:");
+    expect(sink.logs.join("\n")).not.toContain("written into");
+  });
+
   it("points a keyless host at .env.local and `vendo login`", async () => {
     const root = await fixture();
     const sink = output();
