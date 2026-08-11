@@ -492,12 +492,12 @@ describe("apps agent tools", () => {
   });
 });
 
-describe("§9.4 — a refused EDIT hands the model the fork offer, not the raw code", () => {
+describe("§9.4 — a refused EDIT hands the model the FACTS, not the raw code", () => {
   // The tool result was `{code:"forbidden", message:"editor access is required
   // for app_7c2f…"}` — an app id and a level name, which the model then relays
   // to a person. §9.4 invented `forbidden` for exactly this case BECAUSE it is
-  // answerable: the caller provably sees the app, so "you can't" comes with
-  // "…but here's what I can do".
+  // answerable: the caller provably sees the app, so "it did not happen" comes
+  // with why, and with the way through.
   const setup = async (): Promise<{ tools: ToolRegistry; appId: string }> => {
     const store = memoryStore();
     let runtime: AppsRuntime;
@@ -517,7 +517,7 @@ describe("§9.4 — a refused EDIT hands the model the fork offer, not the raw c
     return { tools: runtime.agentTools(), appId: "app_teamdash" };
   };
 
-  it("says what it can do instead, and names neither the app id nor the level", async () => {
+  it("states the three facts, and names neither the app id nor the level", async () => {
     const { tools, appId } = await setup();
     const outcome = await tools.execute({
       id: "call_denied",
@@ -529,11 +529,18 @@ describe("§9.4 — a refused EDIT hands the model the fork offer, not the raw c
     const error = (outcome as { error: { code: string; message: string } }).error;
     // The CODE is machine-facing and stays exactly as the contract froze it.
     expect(error.code).toBe("forbidden");
-    // The MESSAGE is what reaches a person through the model.
+    // The MESSAGE is what reaches a person through the model, and it is FACTS
+    // rather than a script: the first-person sentence with stage directions ("I
+    // can't change the team's copy… say so plainly, and offer them…") put our
+    // words in the model's mouth. The three facts, all three asserted, because
+    // dropping any one of them is what makes a model invent the rest.
     expect(error.message).not.toContain(appId);
     expect(error.message).not.toMatch(/editor|access is required/i);
-    expect(error.message).toMatch(/can’t change the team’s copy/i);
-    expect(error.message).toMatch(/own copy/i);
+    expect(error.message).toMatch(/The change was not made/);
+    expect(error.message).toMatch(/team's copy of the app and this user has read-only access/i);
+    expect(error.message).toMatch(/A copy of their own would be theirs to change/i);
+    // Including the fact that stops a model promising a fork it has no tool for.
+    expect(error.message).toMatch(/there is no fork tool here/i);
   });
 
   it("leaves every other refusal exactly as it was", async () => {

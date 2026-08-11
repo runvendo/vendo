@@ -56,7 +56,7 @@ import { skeletonFromPlan } from "./skeleton.js";
 import { assembleTree } from "../runtime/runtime.js";
 
 /** §1.6 — the two files that sync mid-turn. Everything else waits for turn end. */
-export const HOT_PATH_FILES = ["app.vendo", "plan.vendo"] as const;
+export const HOT_PATH_FILES = ["app.vendo", "plan.vendo", "app.tsx"] as const;
 
 /** §3.1, frozen: `/user/apps/<appId>/**` and — since wave 3 (§9.7) —
  *  `/orgs/<orgId>/apps/<appId>/**`. `appId` is the store's app id verbatim in
@@ -250,7 +250,26 @@ export async function viewForWrite(
   /** Set for `app.vendo` only: a plan is a skeleton, not an app document — there
    *  is nothing to store and no query to run until the app itself is written. */
   let compiledApp: WireCompileResult | undefined;
-  if (file === "app.vendo") {
+  if (file === "app.tsx") {
+    // The component gauntlet lives behind the floor, like every other check —
+    // the seam never learns how to read TSX. No door means this build carries
+    // no screen engine: nothing paints, the last good view stays.
+    const door = options.floor?.component?.bind(options.floor);
+    if (door === undefined) return undefined;
+    const result = await door({ appId, source: content });
+    if (!result.ok) {
+      console.error(
+        `[vendo] ${appId} did not pass the checks floor; nothing painted and the last good view stays — `
+        + result.blocking.join("; "),
+      );
+      return undefined;
+    }
+    const assembled = stripServerAuthoritativeFields(
+      assembleTree({ tree: { nodes: Object.values(result.nodes), root: result.root } }),
+    ) as unknown as UIPayload;
+    (assembled as { interactive?: unknown }).interactive = result.interactive;
+    payload = assembled;
+  } else if (file === "app.vendo") {
     // compileWire is TOTAL and valid-while-partial: every prefix of a wire
     // compiles, which is what makes a mid-generation save renderable. Only a
     // `compile-failed` issue means it truly did not parse.
@@ -342,8 +361,9 @@ export async function viewForWrite(
   }
 
   // A plan IS the mid-build state: its skeleton stays streaming until the app
-  // document itself lands.
-  if (compiledApp === undefined) return viewPart(appId, payload, true, options.turnId);
+  // document itself lands. A component screen has no wire document either, but
+  // its paint is FINAL — the gauntlet already ran.
+  if (compiledApp === undefined) return viewPart(appId, payload, file === "plan.vendo", options.turnId);
   // "The skeleton renders the moment the plan file exists" is a promise about
   // SECONDS, and the app half runs real host queries. So the skeleton goes out
   // first and the same stream id is written again when the data lands — the

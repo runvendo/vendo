@@ -156,6 +156,13 @@ const appsStoreSeams = (composition: VendoComposition, seams: AppsSeams): Partia
     guard,
     tools: boundTools,
     model: inference.agent.model,
+    // The AI reviewer's own seat — the FAST pick. `fill` is the seat that
+    // resolves through the family fast path (`resolveModels`: the paint model
+    // when the default rode the ladder, else the default itself), so a
+    // deployment with a fast model reviews on it and one without keeps
+    // reviewing on the flagship. Judging a finished screen against its own
+    // rows is a reading job; it was paying flagship rates for it.
+    reviewModel: inference.seats.fill,
     catalog,
     seedBaselines,
     // Contract §3.2 — the SAME `FilesAdapter` the workspace rows spill to (one
@@ -240,7 +247,7 @@ const appsHostSeams = (composition: VendoComposition, seams: AppsSeams): Partial
 /** THE SEAM (blueprint §1 point 2) — the screen agent in front of the
  *  conductor, joined here because composition is what holds every half. */
 const appsScreenSeam = (composition: VendoComposition, seams: AppsSeams): AppsConfig["screen"] => {
-  const { inference, boundTools, briefing } = composition;
+  const { inference, boundTools, briefing, catalog } = composition;
   const { screenWorkspace } = seams;
   return screenAssembler({
       // The SAME seats every other thinker runs on.
@@ -248,6 +255,9 @@ const appsScreenSeam = (composition: VendoComposition, seams: AppsSeams): AppsCo
       // The SAME guard-bound registry. There is no second choke point.
       tools: boundTools,
       workspace: screenWorkspace,
+      // Composition is what holds the catalog, so it is what answers whether
+      // there is anything for `search_components` to find.
+      hasComponents: catalog.length > 0,
       // The SAME seam options the harness turns pass below — every one of them,
       // because a screen assembled here lands on the same store through the same
       // `commit()`. §1.6's app half (the row that makes a written file an app,

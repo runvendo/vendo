@@ -43,11 +43,13 @@ export const reshape = {
   /** Rows → `{ label, value }` points, for the Kit's charts. */
   asPoints: (value: Json | undefined, labelField: string, valueField: string): Json | undefined =>
     projected(step(value, "asPoints", [labelField, valueField])),
-  /** `format(value, kind)` on a scalar, `format(rows, field, kind)` per row.
-   *  The kind vocabulary is core's and is checked there: an unknown kind is a
-   *  mismatch, and `applyReshape` names the valid ones in its reason. */
-  format: (value: Json | undefined, ...args: [kind: string] | [field: string, kind: string]): Json | undefined =>
-    projected(step(value, "format", args)),
+  /** `format(value, kind)` on a SINGLE value — there is no row form: a table's
+   *  money goes through the column's own `format` token so the rows stay
+   *  numeric and `sortBy` still sorts. The kind vocabulary is core's and is
+   *  checked there: an unknown kind is a mismatch, and `applyReshape` names the
+   *  valid ones in its reason. */
+  format: (value: Json | undefined, kind: string): Json | undefined =>
+    projected(step(value, "format", [kind])),
   sum: (value: Json | undefined, field: string): number | undefined =>
     reduced(step(value, "sum", [field])),
   min: (value: Json | undefined, field: string): number | undefined =>

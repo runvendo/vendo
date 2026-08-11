@@ -13,9 +13,11 @@ import {
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 
-/** `vendo_`-prefixed so the loadout policy keeps it always active
-    (tool-search isAlwaysActive); a bare name could be gated out on hosts with
-    a large tool surface. */
+/** `vendo_`-prefixed for namespacing only — loadout exemption is declared, not
+    prefix-based (the composition names its prompt-taught tools via
+    `toolSearch.alwaysActive`, compose-harness.ts). This tool is not one of
+    them: on a host past the loadout cap it can be gated out and loaded back
+    through `find_tools`. */
 export const VENDO_KNOWLEDGE_SEARCH_TOOL = "vendo_knowledge_search";
 
 /** The envelope tag core names once (stream-parts.ts) — re-exported so tool

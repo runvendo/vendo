@@ -25,11 +25,12 @@ export const fallbackAppName = (prompt: string): string => {
  *  seam is entered — `vendo_make`'s front door and the public create/edit API are
  *  the same engine now, so they must not grow two vocabularies for one failure. */
 export const NO_ASSEMBLER = "nothing in this deployment builds screens.";
-export const NOTHING_RENDERABLE = "what came back wasn't something I could show.";
+export const NOTHING_RENDERABLE = "the build produced nothing renderable.";
 /** The one capability gap a person can act on, in their terms — no flag name and
  *  no adapter name. An escalation is a request for the box, and a deployment with
- *  no sandbox has no box to give it. */
-export const NO_MACHINE = "That one needs a real build — code running on a server — and I can't do that here.";
+ *  no sandbox has no box to give it. Third person: these strings surface as
+ *  SYSTEM notices, never in the assistant's voice. */
+export const NO_MACHINE = "This needs a real build — code running on a server — and this deployment has no build machine.";
 
 /** 0.4.5 E2E cert (defect D) — the terminal record the build watchdog writes
  *  when a create neither persisted an app nor a failure inside its window:

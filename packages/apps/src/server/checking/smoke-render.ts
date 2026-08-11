@@ -36,7 +36,7 @@ import {
   ISLAND_AMBIENT_KIT_NAMES,
   ISLAND_AMBIENT_REACT_NAMES,
 } from "../../contract/index.js";
-import type { HostToolInfo } from "./deps.js";
+import { isMutatingTool, type HostToolInfo } from "./deps.js";
 
 export interface SmokeRenderOptions {
   /** name → island TSX source (post-prepare, canonical). */
@@ -73,9 +73,6 @@ export const sampleFromShape = (shape: ShapeType): unknown => {
     }
   }
 };
-
-const isMutating = (tool: HostToolInfo | undefined): boolean =>
-  tool?.risk === "write" || tool?.risk === "destructive";
 
 /** Teaching messages per crash class — routed to repair like any issue. */
 const HOOKS_ORDER = /rendered (more|fewer) hooks|change in the order of hooks|#31[01]\b/i;
@@ -390,7 +387,7 @@ export const smokeRenderIslands = async (options: SmokeRenderOptions): Promise<s
     const manifest = options.componentTools[island] ?? [];
     const toolResults: Record<string, unknown> = {};
     for (const tool of manifest) {
-      if (isMutating(byName.get(tool))) {
+      if (isMutatingTool(byName.get(tool))) {
         toolResults[tool] = { status: "pending-approval" };
       } else {
         const shape = options.toolShapes?.[tool];

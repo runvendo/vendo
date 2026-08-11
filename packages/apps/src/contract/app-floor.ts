@@ -26,6 +26,7 @@ import {
   type AppDocument,
   type AppId,
   type Finding,
+  type TreeNode,
 } from "@vendoai/core";
 import type { AppPlan } from "./genui/plan/types.js";
 import type { WireCompileResult } from "./genui/wire/compile.js";
@@ -42,7 +43,29 @@ export interface AppFloor {
    * whole `AppDocument`, and a document has an id.
    */
   check(input: { appId: AppId; compiled: WireCompileResult }): Promise<Finding[]>;
+  /**
+   * The component-screen gauntlet (`app.tsx`): compile, scan, typecheck, render
+   * once in the sealed VM, tree-check the output. Optional because a floor
+   * predating the screen engine still satisfies this contract; the seam paints
+   * nothing for `app.tsx` without it.
+   */
+  component?(input: { appId: AppId; source: string }): Promise<ComponentPaintResult>;
 }
+
+/** What the floor's component gauntlet hands the render seam: a refusal with
+ *  the blocking lines, or everything one paint needs. */
+export type ComponentPaintResult =
+  | { ok: false; blocking: readonly string[] }
+  | {
+    ok: true;
+    nodes: Record<string, TreeNode>;
+    root: string;
+    interactive: {
+      compiledSource: string;
+      queries: Record<string, unknown>;
+      queryPlan: readonly { tool: string; input?: unknown }[];
+    };
+  };
 export interface CheckInput {
   document: AppDocument;
   /** The user's own words — what the app was asked to be. */

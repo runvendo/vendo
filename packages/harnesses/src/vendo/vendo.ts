@@ -26,7 +26,7 @@ import {
   computeInitialLoadout,
   FIND_TOOLS_DESCRIPTION,
   FIND_TOOLS_TOOL_NAME,
-  isAlwaysActive,
+  alwaysActivePredicate,
   searchListings,
   type VendoToolSearchConfig,
 } from "./tool-search.js";
@@ -423,6 +423,9 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       // host-constructed vendo().
       const searchCfg = (deps.toolSearch
         ?? harnessAdapters(harness).toolSearch) as VendoToolSearchConfig | undefined;
+      // Exemption from loadout gating is config-declared (plus the harness's own
+      // capability-miss hand) — the loop carries no product tool names.
+      const isAlwaysActive = alwaysActivePredicate(searchCfg);
       // …and a slot the thread has OUTGROWN reads as no state too. §1.3 clears
       // the slot for an arbitrary edit and keeps it for a rewind, because a
       // harness with a native session rewinds that session itself. This one
@@ -747,11 +750,11 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
 
       const stepLimit = await loop.stepLimitPart();
       if (stepLimit !== undefined) {
-        // Exhausting the cap is VISIBLE (today's `data-vendo-step-limit` banner).
-        // `HarnessEvent` is closed and has no member for it, so it goes out in the
-        // assistant's own voice — screen AND transcript, which is what the banner
-        // did. The sentence is the loop's, so both callers say the same thing.
-        yield { type: "text", delta: `\n\n${stepLimit.message}` };
+        // Exhausting the cap is a SYSTEM fact: it rides the typed part core
+        // defines, persisted as chrome — never spliced into the assistant's
+        // voice (2026-08-10 ruling). The sentence is still the loop's, so both
+        // callers say the same thing.
+        yield { type: "notice", notice: stepLimit };
       }
     },
   });

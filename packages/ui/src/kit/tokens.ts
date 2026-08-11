@@ -52,13 +52,33 @@ export const control: CSSProperties = {
   padding: "var(--vendo-density-control-padding, 9px 12px)",
 };
 
-/** Recharts-friendly categorical palette derived from the host accent. */
+/**
+ * Series lightness ladder, as `[lightness, chroma scale]` in OKLCH. Absolute
+ * lightness rather than `calc(l ± n)` because relative steps collapse for a
+ * near-black or near-white accent (the default accent is #111111), and chroma
+ * eases off as lightness rises so the pale steps stay in sRGB gamut. Ordered so
+ * neighbouring series sit far apart on the ladder.
+ */
+const seriesRamp: ReadonlyArray<readonly [number, number]> = [
+  [0.7, 0.9],
+  [0.46, 1],
+  [0.86, 0.5],
+  [0.54, 1],
+  [0.78, 0.65],
+  [0.38, 1],
+  [0.62, 0.95],
+];
+
+/**
+ * Recharts-friendly categorical palette: the host accent, then shades and tints
+ * of it that keep its hue (`h`) exactly — so a chart is brand-native on any host
+ * and never invents a color. The old cycle reached for `muted` and a
+ * danger×accent mix, which read as slate-purple and rust wedges on a green
+ * brand.
+ */
 export const chartSeries = [
   t.accent,
-  `color-mix(in srgb, ${t.accent} 55%, ${t.surface})`,
-  `color-mix(in srgb, ${t.accent} 30%, ${t.surface})`,
-  t.muted,
-  `color-mix(in srgb, ${t.danger} 70%, ${t.accent})`,
+  ...seriesRamp.map(([l, c]) => `oklch(from ${t.accent} ${l} calc(c * ${c}) h)`),
 ] as const;
 
 /** Nth series color, wrapping. */

@@ -43,7 +43,7 @@ export interface RunOutcome {
   /** Said by a contender whose `artifact` is ALREADY a document — the one way a
    *  contender reports a page it wrote itself. There is no compile between the
    *  bytes it saved and the page that mounts, so the artifact lands once, as
-   *  `page.html`, and never as `artifact.vendo`. */
+   *  `page.html`, and never as `artifact.tsx`. */
   readonly format?: "html";
   /** A contender billed by its own engine reports its spend here — the run's
    *  meter never saw those tokens. Priced through the same table all the same. */
@@ -112,7 +112,6 @@ const DEFAULT_WORLD = "maple";
 
 export interface Args {
   readonly only?: string;
-  readonly lane: Lane;
   readonly models: readonly ModelAlias[];
   /** A folder under `worlds/`, holding `world.json`, `cases.json` and any face. */
   readonly world: string;
@@ -121,7 +120,6 @@ export interface Args {
 export function parseArgs(argv: readonly string[]): Args {
   const rest = argv[0] === "run" ? argv.slice(1) : argv;
   let only: string | undefined;
-  let lane: Lane = "screen";
   let models: readonly ModelAlias[] = ["sonnet"];
   let world = DEFAULT_WORLD;
   let index = 0;
@@ -130,18 +128,12 @@ export function parseArgs(argv: readonly string[]): Args {
     const value = rest[index + 1];
     if (value === undefined) throw new Error(`genbench: "${flag}" needs a value`);
     if (flag === "--prompt") only = value;
-    else if (flag === "--lane") lane = asLane(value);
     else if (flag === "--models") models = value.split(",").map(asAlias);
     else if (flag === "--world") world = value;
     else throw new Error(`genbench: unexpected argument "${flag}"`);
     index += 2;
   }
-  return { ...(only === undefined ? {} : { only }), lane, models, world };
-}
-
-function asLane(value: string): Lane {
-  if (value !== "screen" && value !== "build") throw new Error(`genbench: unknown lane "${value}"`);
-  return value;
+  return { ...(only === undefined ? {} : { only }), models, world };
 }
 
 function asAlias(value: string): ModelAlias {
@@ -270,7 +262,7 @@ export async function writeCase(
   await mkdir(caseDir, { recursive: true });
   // Only a compiled artifact gets its own file.
   if (wrote.outcome?.artifact !== undefined && wrote.outcome.format !== "html") {
-    await writeFile(join(caseDir, "artifact.vendo"), wrote.outcome.artifact);
+    await writeFile(join(caseDir, "artifact.tsx"), wrote.outcome.artifact);
   }
   if (wrote.html !== undefined) await writeFile(join(caseDir, "page.html"), wrote.html);
   if (wrote.shot !== undefined) await writeFile(join(caseDir, "screenshot.png"), wrote.shot.png);
@@ -279,10 +271,6 @@ export async function writeCase(
 
 async function main(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv);
-  if (args.lane === "build") {
-    console.log("build lane: deferred");
-    return 0;
-  }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (apiKey === undefined || apiKey === "") {
     console.error("genbench: ANTHROPIC_API_KEY is not set");
@@ -293,7 +281,7 @@ async function main(argv: readonly string[]): Promise<number> {
   const worldDir = join(root, "worlds", args.world);
   const world = await loadWorld(worldDir);
   const all = await loadCases(join(worldDir, "cases.json"));
-  const cases = all.filter((entry) => entry.lane === args.lane && (args.only === undefined || entry.id === args.only));
+  const cases = all.filter((entry) => args.only === undefined || entry.id === args.only);
   if (cases.length === 0) throw new Error(`genbench: no case matches --prompt "${args.only ?? ""}"`);
 
   const runId = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -343,10 +331,10 @@ async function main(argv: readonly string[]): Promise<number> {
     const shot: Shot | undefined = done?.shot;
     const trace = done?.trace ?? [];
     const artifact = outcome?.artifact;
-    // Tier 2 of the fabrication check, and outside the contender's budget for
-    // the same reason the judge is: the wait is the benchmark's, not the
-    // column's. A screen the deterministic pass cleared outright — the common
-    // case — calls nobody and costs nothing.
+    // The fabrication check's verdict — every number on the screen answered for
+    // by a program the harness ran — and outside the contender's budget for the
+    // same reason the judge is: the wait is the benchmark's, not the column's.
+    // Only a screen with no numbers on it calls nobody and costs nothing.
     const floor = await auditFloor(
       runFloor({ world: scoped, artifact, blocking: outcome?.blocking ?? [], trace, shot }),
       scoped,

@@ -173,6 +173,13 @@ export { stripServerAuthoritativeFields } from "../contract/index.js";
  * harness which mocks its counterparty proves nothing.
  */
 export { createAppFloor, type AppFloorOptions } from "./checking/floor.js";
+// The component screen's own two facts every writer of one needs: which file it
+// is, and the title it gives itself. Public because the hand that SAVES a screen
+// is not in this package — the screen agent lives in the umbrella, and a harness
+// with its own hands writes the same file — and two spellings of the basename is
+// a save that paints nothing.
+export { SCREEN_FILE } from "../contract/genui/component/index.js";
+export { screenName } from "./checking/component-screen.js";
 // The E2B sandbox adapter and the sandbox ladder, previously the
 // `@vendoai/apps/{e2b,sandbox-ladder}` subpaths. Both are node-only like
 // everything else here, and both are optional-peer-guarded at their own call

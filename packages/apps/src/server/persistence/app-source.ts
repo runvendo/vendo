@@ -30,6 +30,7 @@ import {
   type WorkspaceFs,
 } from "@vendoai/core";
 import {
+  SCREEN_FILE,
   componentSources,
   printWire,
   appSourceFileSchema,
@@ -38,10 +39,24 @@ import {
 } from "../../contract/index.js";
 import { treeOf } from "../checking/facts.js";
 
-/** The two files the render seam owns. A checkout writes `app.vendo` as the
- *  projection of `doc.tree`; a commit never reads either back into `source`,
- *  because the seam has already turned them into the app. */
+/** The two files that are not `doc.source` KEYS at all. A checkout writes
+ *  `app.vendo` as the projection of `doc.tree`, so reading it back would store the
+ *  app twice; `plan.vendo` is a skeleton the app never keeps. */
 const HOT_FILES = new Set(["app.vendo", "plan.vendo"]);
+
+/**
+ * The files the render seam OWNS, which a commit must never diff back into
+ * `source`: the seam has already turned each of them into the app.
+ *
+ * `app.tsx` is the third and the different one. It IS the app's stored screen
+ * (`open()` reads it before the tree), so it stays a legal source key and a
+ * checkout still writes it for the builder to edit — but the component gauntlet is
+ * what decides a screen may become the app, so the PAINT stores it
+ * (`AppsRuntime.authoredScreen`) and a screen the floor refused stores nothing.
+ * Landed by this generic diff instead, a REFUSED save stored its bytes anyway and
+ * `open()` served the very screen the floor would not render.
+ */
+const SEAM_OWNED = new Set([...HOT_FILES, SCREEN_FILE]);
 
 /**
  * What the seam needs from the store, passed in rather than imported: `@vendoai/apps`
@@ -92,6 +107,16 @@ const blobKey = (appId: AppId, path: string): string => `apps/${appId}/${sha256H
 
 const encoder = new TextEncoder();
 const contentHash = (text: string): string => `sha256:${sha256Hex(text)}`;
+
+/** One file stored INLINE, carrying the identity {@link sourceText} checks it
+ *  against on the way back out. The one place that computes a stored entry's hash
+ *  and byte count, so the paint that stores a screen and the commit that diffs a
+ *  file cannot disagree about what "the content stored" means. */
+export const inlineSourceFile = (text: string): AppSourceFile => ({
+  hash: contentHash(text),
+  bytes: encoder.encode(text).byteLength,
+  text,
+});
 
 /**
  * A source key is a POSIX-relative path inside the app directory, and nothing
@@ -241,7 +266,7 @@ export async function commitApp(
   const paths = changed
     .filter((path) => path.startsWith(prefix))
     .map((path) => path.slice(prefix.length))
-    .filter((path) => invalidSourcePath(path) === null);
+    .filter((path) => invalidSourcePath(path) === null && !SEAM_OWNED.has(path));
   if (paths.length === 0) return;
 
   const landed = new Map<string, AppSourceFile>();
@@ -271,11 +296,11 @@ export async function commitApp(
       continue;
     }
     const bytes = encoder.encode(text).byteLength;
-    const hash = contentHash(text);
     if (bytes <= WORKSPACE_INLINE_MAX_BYTES) {
-      landed.set(path, { hash, bytes, text });
+      landed.set(path, inlineSourceFile(text));
       continue;
     }
+    const hash = contentHash(text);
     if (seam.blobs === undefined) {
       throw new VendoError(
         "validation",

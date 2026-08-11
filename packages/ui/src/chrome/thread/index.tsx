@@ -9,7 +9,7 @@ import { MorphToast, type MorphToastProps } from "../morph-toast.js";
 import { Composer, dragHasFiles, useComposer } from "./composer.js";
 import { MessageList } from "./message-list.js";
 import { useMessageWindow, useStickToBottom } from "./scrolling.js";
-import { approvalByCall, grantSetByCall, riskByCall, toolCallPending, turnErrorSentence, userText } from "./message-data.js";
+import { approvalByCall, grantSetByCall, riskByCall, toolCallPending, TURN_FAILURE_NOTICE, turnErrorSentence, userText } from "./message-data.js";
 
 /** A rich landing suggestion: two-line starter card. */
 export interface VendoSuggestionCard {
@@ -288,20 +288,20 @@ export function VendoThread({
 
   // A broken turn (failed send, mid-stream drop, any thread.error)
   // surfaces VISIBLY in the thread, not only through the hidden status span.
-  // The copy stays friendly — raw transport errors are announced to assistive
-  // tech below but never printed to end users.
-  // A "Vendo: " prefixed message is the agent's OWN safe error (VendoError
-  // code + operator-crafted text, wireErrorMessage in @vendoai/harnesses) — the
-  // ONE error shape end users may see in detail. Raw transport/provider
-  // Strings never match the prefix and stay hidden.
+  // This band is the SYSTEM talking, in third person: a "Vendo: " prefixed
+  // message is our own error (VendoError code + operator-crafted text,
+  // wireErrorMessage in @vendoai/harnesses) and reaches the reader as written;
+  // raw transport/provider strings never match the marker and stay hidden, so
+  // the chrome says what it knows instead.
   // self-serve P — a live turn error now ALSO lands in the turn itself (the
   // data-vendo-turn-error part, which survives reload); when that part is
-  // already saying it, the banner keeps only its headline + Retry so the same
+  // already saying it, the banner keeps only its headline so the same
   // sentence isn't printed twice.
   const turnErrorInThread = activeAssistant?.parts.some(part => part.type === "data-vendo-turn-error") ?? false;
-  const errorDetail = turnErrorInThread ? undefined : turnErrorSentence(thread.error?.message);
-  // The copy law governs the surfaces where the AGENT CAN SPEAK, and this is
-  // one: the banner used to carry its own Retry button, a bespoke failure
+  const errorDetail = turnErrorInThread
+    ? undefined
+    : turnErrorSentence(thread.error?.message) ?? TURN_FAILURE_NOTICE;
+  // The banner used to carry its own Retry button, a bespoke failure
   // control beside a conversation that already has one recovery path (the turn's
   // Regenerate action, and the composer). The banner states what happened and
   // stops there.

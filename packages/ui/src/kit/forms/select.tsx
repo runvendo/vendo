@@ -4,6 +4,7 @@
  * `multiple` folds in MultiSelect.
  */
 import { control } from "../tokens.js";
+import { controlledHandler } from "../handler.js";
 import { FieldShell, useFieldIds } from "./field.js";
 
 export type SelectOption = string | number | Record<string, unknown>;
@@ -41,18 +42,23 @@ export function Select({ label, options: rawOptions, labelField, valueField, val
   const { fieldId, helpId } = useFieldIds("select");
   // W3 — fail SOFT on missing data (a failed query resolves to undefined).
   const options = Array.isArray(rawOptions) ? rawOptions : [];
+  // Single choice only: `value` is one string, and a controlled `multiple` select
+  // needs a list, so a multi-select on a screen keeps the uncontrolled DOM.
+  const screen = controlledHandler(value !== undefined && multiple !== true, onChange);
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
       <select
         id={fieldId}
         data-kit="Select"
         multiple={multiple}
-        defaultValue={value}
+        {...(screen === null ? { defaultValue: value } : { value: value ?? "" })}
         disabled={disabled}
         required={required}
         aria-describedby={hint ? helpId : undefined}
         onChange={(e) => {
-          if (multiple) {
+          if (screen !== null) {
+            screen({ target: { value: e.target.value } });
+          } else if (multiple) {
             onChange?.(Array.from(e.target.selectedOptions, (o) => o.value));
           } else {
             onChange?.(e.target.value);

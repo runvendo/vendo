@@ -4,13 +4,13 @@ import { describe, expect, it } from "vitest";
 import { DateTime, EnumBadge, Money, Num, Percent, Text } from "../../src/kit/values.js";
 
 describe("Money", () => {
-  it("formats integer cents as currency", () => {
-    render(<Money cents={123456} />);
+  it("formats a dollar amount as currency", () => {
+    render(<Money amount={1234.56} />);
     expect(screen.getByText("$1,234.56")).toBeTruthy();
   });
 
   it("renders a placeholder for NaN — never $NaN", () => {
-    const { container } = render(<Money cents={Number.NaN} />);
+    const { container } = render(<Money amount={Number.NaN} />);
     expect(container.textContent).toBe("—");
     expect(container.textContent).not.toContain("NaN");
   });

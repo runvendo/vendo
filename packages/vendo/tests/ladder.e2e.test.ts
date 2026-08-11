@@ -128,16 +128,27 @@ const AMENDMENT = `<Plan name="Invoice board">
 </Plan>`;
 
 /** The rewire the automation lane asks for once its trigger is authored, as the
- *  ONE builder performs it: the whole document again, with a query over the
- *  results rows and a node that shows them. */
-const REBOUND = `<App name="Invoice board">
-  <Query id="results" tool="vendo_apps_data_list" input={{appId:"${APP_ID}", collection:"digest"}}/>
-  <Stack>
-    <Text text="Invoices"/>
-    <Text text="Refreshed every morning by the digest automation."/>
-    <Text text={results.records.0.data.summary}/>
-  </Stack>
-</App>`;
+ *  ONE builder performs it: the whole `app.tsx` again, with a `useQuery` over the
+ *  results rows and a node that shows them. The screen has to render for every
+ *  answer the tool can give — the gauntlet boots it on the REAL rows, and at save
+ *  time the collection is still empty — so the empty case is spelled out.
+ *
+ *  The app's name is the default export's, split on camel case (`screenName`), so
+ *  `InvoiceBoard` is what keeps this app called "Invoice board" across the rewire. */
+const REBOUND = `import { Stack, Text, useQuery } from "@vendo/screen";
+
+export default function InvoiceBoard() {
+  const results = useQuery("vendo_apps_data_list", { appId: "${APP_ID}", collection: "digest" });
+  const latest = results.records[0];
+  return (
+    <Stack>
+      <Text text="Invoices" />
+      <Text text="Refreshed every morning by the digest automation." />
+      <Text text={latest === undefined ? "No digest yet." : latest.data.summary} />
+    </Stack>
+  );
+}
+`;
 
 /** The planner's FIRST answer: the person asked to be emailed, so the model
  *  reaches for the send tool. §12 refuses that at authoring time now — a send is
@@ -185,7 +196,7 @@ const SCREEN_BRIEF_MARKER = "# In this loop";
 const REBIND_MARKER = "The app now has a steps automation";
 /** The two hands' own replies. A tool RESULT in the prompt means this run has
  *  already played its one move, and the only thing left is to stop talking. */
-const SAVED_MARKER = "Run validate on it now.";
+const SAVED_MARKER = "That save landed.";
 const HANDED_OVER_MARKER = "handedOver";
 
 /** Which turn this is, and what it answers. The AI reviewer rides the same model
@@ -341,6 +352,24 @@ async function harness(): Promise<{
   return { store, guard, apps, automations, emails };
 }
 
+/**
+ * What the board actually SHOWS: the text of every rendered node.
+ *
+ * Read off the NODES rather than by stringifying the whole surface, because a
+ * component screen's payload also carries `interactive.queries` — the raw rows
+ * the screen was booted on (`persistence/open.ts`) — so searching the payload for
+ * a value the query returned passes whether or not one node displays it. Measured
+ * that way this assertion could not fail: renaming the field the screen binds
+ * still left the rows in the payload.
+ */
+const boardText = (surface: { kind: string; payload?: unknown }): unknown[] => {
+  if (surface.kind !== "tree") throw new Error("expected the tree surface");
+  const { nodes } = surface.payload as {
+    nodes: Array<{ component: string; props?: Record<string, unknown> }>;
+  };
+  return nodes.filter((node) => node.component === "Text").map((node) => node.props?.["text"]);
+};
+
 describe.sequential("Wave 9 rung (a) e2e — the 8am digest rides the automations engine, no machine anywhere", () => {
   it("edit authors+arms the away-safe half of the ask, and the tick fires it onto the board", async () => {
     const { guard, apps, automations, emails } = await harness();
@@ -415,7 +444,7 @@ describe.sequential("Wave 9 rung (a) e2e — the 8am digest rides the automation
     //    into the rendered payload.
     const surface = await apps.open(APP_ID, ctx);
     expect(surface.kind).toBe("tree");
-    expect(JSON.stringify(surface)).toContain("1 unpaid invoice");
+    expect(boardText(surface)).toContain("1 unpaid invoice");
 
     // 6. ZERO sandbox creation: the document never grew a machine (and no
     //    sandbox adapter was configured to begin with).
@@ -441,7 +470,6 @@ describe.sequential("Wave 9 rung (a) e2e — the 8am digest rides the automation
 
     const surface = await apps.open(APP_ID, ctx);
     expect(surface.kind).toBe("tree");
-    if (surface.kind !== "tree") throw new Error("expected the tree surface");
-    expect(JSON.stringify(surface.payload)).toContain("1 unpaid invoice");
+    expect(boardText(surface)).toContain("1 unpaid invoice");
   });
 });

@@ -55,18 +55,24 @@ function scripted(turns: StreamPart[][]): Meter {
   };
 }
 
-/** One node under the root is the render seam's whole gate, so this is the
- *  smallest document that legitimately paints. */
-const PAINTS = `<App name="Spending">
-  <Stack>
-    <Text text="This month" />
-  </Stack>
-</App>`;
+/** One default-exported component rendering one Kit tree is the whole of the
+ *  gauntlet's gate, so this is the smallest screen that legitimately paints. */
+const PAINTS = `import { Stack, Text } from "@vendo/screen";
 
-/** Compiles clean and reports NO issues, but leaves a childless root — the
- *  compiler's degraded floor. The seam lands its bytes and paints nothing. */
-const LANDS_UNPAINTED = `<App name="Spending">
-</App>`;
+export default function Spending() {
+  return (
+    <Stack gap={12}>
+      <Text text="This month" />
+    </Stack>
+  );
+}`;
+
+/** Compiles, scans and type-checks clean — and then paints nothing, because the
+ *  component returns null. The seam lands its bytes and the gauntlet refuses it
+ *  at the stage that RUNS the screen, which is the only stage that could tell. */
+const LANDS_UNPAINTED = `export default function Spending() {
+  return null;
+}`;
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 let world: World;
@@ -88,8 +94,11 @@ describe("the vendo driver reports one revision", () => {
     expect(outcome.snapshots.length).toBeGreaterThan(0);
     expect(outcome.artifact).toBe(LANDS_UNPAINTED);
     expect(outcome.payload).toBeUndefined();
-    expect(outcome.blocking.join(" ")).toContain("render");
-    expect(outcome.failure).toBeDefined();
+    // The gauntlet's own verdict on the bytes that landed, verbatim and alone —
+    // one finding, naming the stage that ran the screen.
+    expect(outcome.blocking).toHaveLength(1);
+    expect(outcome.blocking[0]).toContain("this screen painted nothing");
+    expect(outcome.failure).toBe("the delivered document does not render, so no screen is reported for it");
   });
 
   it("keeps the view when the final save is the one that painted", async () => {

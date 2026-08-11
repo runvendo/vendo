@@ -147,7 +147,16 @@ function traceText(trace: readonly Probed[]): string {
     .map((probed) => {
       const asked = probed.calls.map((call) => `${call.name}(${JSON.stringify(call.args)})`).join(", ");
       const step = probed.confirmed ? " (a confirmation step appeared, and was confirmed)" : "";
-      return `pressed "${probed.label}"${step} — ${asked === "" ? "called nothing" : `called ${asked}`}`;
+      // A control that only changes local state asked the host for nothing and is
+      // still a working control; "called nothing" alone would read to the judge as
+      // a dead button and cost the screen a correctness line it earned.
+      const did =
+        asked !== ""
+          ? `called ${asked}`
+          : probed.changed
+            ? "called nothing, and changed the screen"
+            : "called nothing, and changed nothing";
+      return `pressed "${probed.label}"${step} — ${did}`;
     })
     .join("\n");
 }

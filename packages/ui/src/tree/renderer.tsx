@@ -14,12 +14,15 @@ import {
 } from "@vendoai/core";
 import {
   KIT_COMPONENT_NAMES,
+  SCREEN_TEXT_NODE,
   evaluateExpr,
   isExprBinding,
+  warmExprRuntime,
 } from "@vendoai/apps/contract";
 import { convertPayload } from "./convert-payload.js";
 import {
   useCallback,
+  useEffect,
   useMemo,
   useState,
   type ComponentType,
@@ -36,7 +39,10 @@ import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
+import { markHandlerCallback, screenEvent } from "../kit/handler.js";
 import { useKeyedState } from "../kit/state.js";
+import type { ScreenInteractive, ScreenQuery } from "./screen-engine.js";
+import { useScreen, type ScreenBridge } from "./use-screen.js";
 
 export interface TreeViewProps {
   tree: WalkTree;
@@ -54,6 +60,14 @@ export interface TreeViewProps {
    * It fires with the complete state map after every jail `state-set` message.
    */
   onStateChange?(state: Record<string, Json>): void;
+  /**
+   * A component screen's live half: the compiled source and the query results it
+   * was painted against. `tree` is that screen's FIRST paint and renders on its
+   * own; supplying this additionally boots the screen behind it, so its
+   * `{$handler}` props become real callbacks (use-screen.ts). Absent — every
+   * payload before component screens — nothing boots and nothing changes.
+   */
+  interactive?: ScreenInteractive;
 }
 
 export interface PayloadRendererProps {
@@ -144,10 +158,27 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
   return { ok: true, tree: input };
 };
 
+/** A payload's interactive half, read like every other payload extra: it is a
+ *  wire value, so only a well-formed one speaks and a malformed one leaves the
+ *  tree exactly as static as it was. */
+const readInteractive = (payload: UIPayload): ScreenInteractive | undefined => {
+  const value = (payload as { interactive?: unknown }).interactive;
+  if (!isPlainRecord(value) || typeof value.compiledSource !== "string") return undefined;
+  const plan = Array.isArray(value.queryPlan)
+    ? value.queryPlan.filter((entry): entry is ScreenQuery => isPlainRecord(entry) && typeof entry.tool === "string")
+    : [];
+  return {
+    compiledSource: value.compiledSource,
+    queries: isPlainRecord(value.queries) ? value.queries : {},
+    ...(plan.length === 0 ? {} : { queryPlan: plan }),
+  };
+};
+
 /** A validated payload converts to the walk tree and renders through the same
  *  TreeView (convert-payload.ts documents the mapping). */
 function VendoTreeRenderer({ payload, ...props }: PayloadRendererProps) {
   const converted = useMemo(() => convertPayload(payload), [payload]);
+  const interactive = useMemo(() => readInteractive(payload), [payload]);
   if (!converted.ok) {
     // A mid-stream partial legitimately passes through shapes the validator
     // has not admitted yet — hold the forming skeleton; the notice is a
@@ -161,7 +192,7 @@ function VendoTreeRenderer({ payload, ...props }: PayloadRendererProps) {
       </ContainedNotice>
     );
   }
-  return <TreeView tree={converted.tree} {...props} />;
+  return <TreeView tree={converted.tree} {...(interactive === undefined ? {} : { interactive })} {...props} />;
 }
 
 /** Dispatch is exclusively by the payload tag. */
@@ -187,6 +218,22 @@ export function isActionBinding(value: unknown): value is ActionBinding {
     && value !== null
     && typeof (value as { $action?: unknown }).$action === "string";
 }
+
+interface HandlerBinding {
+  $handler: string;
+}
+
+/** `isActionBinding`'s sibling: a component screen's event props name one of the
+ *  screen's own handlers. Handler ids stay as opaque as action names — the
+ *  renderer routes `"h3"` to the live screen and never reads it. */
+export function isHandlerBinding(value: unknown): value is HandlerBinding {
+  return typeof value === "object"
+    && value !== null
+    && typeof (value as { $handler?: unknown }).$handler === "string";
+}
+
+/** The node's own handler dispatch, node-scoped by NodeRenderer. */
+type HandlerDispatch = (handlerId: string, event?: unknown) => void;
 
 type BoundMode = "host" | "jail";
 
@@ -214,13 +261,15 @@ function bindValue(
   data: Record<string, Json>,
   state: Record<string, Json>,
   action: (name: string, payload?: Json) => Promise<ToolOutcome>,
+  handle: HandlerDispatch | undefined,
   onMismatch?: (reason: string) => void,
 ): unknown {
   if (isPathBinding(value)) return resolveReshaped(resolvePointer(data, value.$path), value.$reshape, onMismatch);
   if (isStateBinding(value)) return resolveReshaped(state[value.$state] as Json | undefined, value.$reshape, onMismatch);
   // A computed value is evaluated HERE, on every bind resolution, against the
   // data this render holds — so it re-computes the moment the query data
-  // changes. Nothing about it is ever cached across renders.
+  // changes. Nothing about it is ever cached across renders. The expression is
+  // JavaScript, run in a sealed interpreter that cannot reach this page.
   if (isExprBinding(value)) {
     const computed = evaluateExpr(value.$expr, data);
     if (!computed.ok) {
@@ -230,17 +279,29 @@ function bindValue(
     return computed.value;
   }
   if (isActionBinding(value)) {
-    const payload = bindValue(value.payload, mode, data, state, action, onMismatch) as Json;
+    const payload = bindValue(value.payload, mode, data, state, action, handle, onMismatch) as Json;
     if (mode === "jail") {
       return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
     }
     return () => action(value.$action, value.payload === undefined ? undefined : payload);
   }
-  if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, onMismatch));
+  // A handler becomes a LIVE callback only where a screen can receive the event.
+  // In the jail it falls through and travels as the data it is. In the host page
+  // with no screen behind it, it becomes an inert callback instead: the prop is a
+  // callback SLOT, and a control that calls `onClick?.()` on the binding object
+  // raises a TypeError no boundary catches. Unmarked, so the control keeps the
+  // uncontrolled DOM it has — a marked no-op would freeze the box a person types
+  // in (kit/handler.ts).
+  if (isHandlerBinding(value) && mode === "host") {
+    return handle === undefined
+      ? () => undefined
+      : markHandlerCallback((event?: unknown) => handle(value.$handler, screenEvent(event)));
+  }
+  if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, handle, onMismatch));
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(Object.entries(value).map(([key, child]) => [
       key,
-      bindValue(child, mode, data, state, action, onMismatch),
+      bindValue(child, mode, data, state, action, handle, onMismatch),
     ]));
   }
   return value;
@@ -254,6 +315,7 @@ function bindProps(
   data: Record<string, Json>,
   state: Record<string, Json>,
   action: (name: string, payload?: Json) => Promise<ToolOutcome>,
+  handle?: HandlerDispatch,
 ): { bound: Record<string, unknown> | undefined; mismatch: string | null } {
   if (props === undefined) return { bound: undefined, mismatch: null };
   let mismatch: string | null = null;
@@ -263,10 +325,17 @@ function bindProps(
   };
   const bound = Object.fromEntries(Object.entries(props).map(([key, child]) => {
     currentProp = key;
-    return [key, bindValue(child, mode, data, state, action, onMismatch)];
+    return [key, bindValue(child, mode, data, state, action, handle, onMismatch)];
   }));
   return { bound, mismatch };
 }
+
+/** Single-flight: while one of this node's handlers has an intent in flight the
+ *  control that fired it renders disabled, so the second click on a cancel button
+ *  cannot send a second cancel. */
+const handlerBusy = (props: Record<string, Json> | undefined, inFlight: ReadonlySet<string>): boolean =>
+  props !== undefined
+  && Object.values(props).some((value) => isHandlerBinding(value) && inFlight.has(value.$handler));
 
 /** The contained data-shape notice: the region says the data
  *  didn't match instead of mounting the component with garbage props. While
@@ -322,9 +391,32 @@ interface NodeRendererProps {
   outcomes: Record<string, ToolOutcome | undefined>;
   runAction(nodeId: string, action: string, payload?: Json): Promise<ToolOutcome>;
   setViewState(key: string, value: Json): void;
+  /** The live screen behind this tree, when there is one. */
+  screen?: Pick<ScreenBridge, "fire" | "inFlight">;
 }
 
 const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid"]);
+
+/**
+ * The `$expr` interpreter is a WebAssembly module that loads once. Evaluation
+ * itself is synchronous, so the only thing this hook buys is ONE re-render when
+ * the module lands — otherwise a computed value would stay empty until some
+ * other state moved. It costs nothing in the common case: query data arrives
+ * over the network, so a tree that has anything to compute is re-rendering
+ * anyway by the time the boot finishes.
+ */
+const useExprRuntime = (): void => {
+  const [, setReady] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void warmExprRuntime().then(() => {
+      if (live) setReady(true);
+    }, () => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+};
 
 const hasRenderableTreeContent = (tree: WalkTree): boolean => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
@@ -349,6 +441,159 @@ const hasRenderableTreeContent = (tree: WalkTree): boolean => {
   return false;
 };
 
+/** What one node's content is built from, once {@link NodeRenderer} has settled
+ *  the node, its children and the dispatchers they close over. */
+interface NodeContent {
+  props: NodeRendererProps;
+  node: TreeNode;
+  children: ReactNode;
+  invoke: (action: string, payload?: Json) => Promise<ToolOutcome>;
+  handle: HandlerDispatch | undefined;
+}
+
+/** 06-apps §9 — the approved venue: this exact version's content hash matched a
+ *  stored approval, so generated code mounts in the host page. The jail element
+ *  stays wired as the drop-back for any mount failure. */
+function inClientContent(
+  { props, node, children, invoke, handle }: NodeContent,
+  source: string,
+  toolManifest: string[] | undefined,
+): ReactNode {
+  const hostBind = bindProps(node.props, "host", props.data, props.state, invoke, handle);
+  const jailBind = bindProps(node.props, "jail", props.data, props.state, invoke);
+  // Reshape mismatches are mode-independent, so both binds report the same one.
+  const mismatch = hostBind.mismatch;
+  if (mismatch !== null) {
+    return <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>;
+  }
+  const jailFallback = (
+    <JailedComponent
+      name={node.component}
+      source={source}
+      props={jailBind.bound}
+      furnishing={props.furnishings[node.component]}
+      themeVars={props.themeVars}
+      toolManifest={toolManifest}
+      streaming={props.streaming}
+      onAction={invoke}
+      onStateSet={props.setViewState}
+    />
+  );
+  return (
+    <>
+      <InClientMount
+        name={node.component}
+        source={source}
+        props={hostBind.bound}
+        furnishing={props.furnishings[node.component]}
+        fallback={jailFallback}
+        onAction={invoke}
+        onStateSet={props.setViewState}
+      />
+      {children}
+    </>
+  );
+}
+
+/** The `source: "generated"` branch — an island, mounted in the host page when
+ *  the venue was granted and in the jail otherwise. */
+function generatedContent(context: NodeContent): ReactNode {
+  const { props, node, children, invoke } = context;
+  const source = props.generated[node.component];
+  const revealKey = source === undefined ? "forming" : "ready";
+  // Stamped era: a missing entry means "this island calls no tools" (least
+  // privilege). No stamping at all: undefined, so JailedComponent derives
+  // the manifest from the source the host holds.
+  const toolManifest = props.componentTools === undefined
+    ? undefined
+    : props.componentTools[node.component] ?? [];
+  let content: ReactNode;
+  if (source === undefined) {
+    content = props.streaming ? (
+      <span data-streaming-component={node.component} style={{ display: "block", width: "100%" }}>
+        <FormingSkeleton name={node.component} />
+      </span>
+    ) : (
+      <ContainedNotice label="Unknown generated component">
+        {`Generated component "${node.component}" has no source.`}
+      </ContainedNotice>
+    );
+  } else if (props.inClientGranted) {
+    content = inClientContent(context, source, toolManifest);
+  } else {
+    const { bound, mismatch } = bindProps(node.props, "jail", props.data, props.state, invoke);
+    content = mismatch !== null ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</> : (
+      <>
+        <JailedComponent
+          name={node.component}
+          source={source}
+          props={bound}
+          furnishing={props.furnishings[node.component]}
+          themeVars={props.themeVars}
+          toolManifest={toolManifest}
+          streaming={props.streaming}
+          onAction={invoke}
+          onStateSet={props.setViewState}
+        />
+        {children}
+      </>
+    );
+  }
+  // ENG-205 render-slot morph: the streaming placeholder and the arrived
+  // component share this wrapper, so the swap morphs instead of popping.
+  // Pick A: a shape-derived silhouette already holds (approximately) the
+  // final geometry, so its reveal crossfades in place (.fl-reveal-fill)
+  // instead of running the rise/settle morph; slab fallbacks keep the morph.
+  return (
+    <FluidReveal
+      stateKey={revealKey}
+      className={deriveFormShape(node.component) === "slab" ? undefined : "fl-reveal-fill"}
+    >
+      {content}
+    </FluidReveal>
+  );
+}
+
+/** V4 — one component family: the Kit is the only built-in set. */
+function builtinContent({ props, node, children, invoke, handle }: NodeContent): ReactNode {
+  const kit = KIT_COMPONENTS[node.component] as ComponentType<Record<string, unknown>> | undefined;
+  const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;
+  // An explicit `source: "host"` means the host brand won the name. An
+  // undefined (or "prewired") source keeps the built-in first, so a stored
+  // app whose node collides with a host catalog name still renders the
+  // built-in it was written against.
+  const Implementation = node.source === "host" ? host ?? kit : kit ?? host;
+  if (!Implementation) {
+    // Mid-stream, an unresolved name is a transient (the defining island or
+    // a corrected reference may still arrive) — hold the silhouette; the
+    // notice is a verdict for FINAL payloads.
+    return props.streaming ? (
+      <span data-streaming-component={node.component} style={{ display: "block", width: "100%" }}>
+        <FormingSkeleton name={node.component} />
+      </span>
+    ) : (
+      <ContainedNotice label="Unknown component">
+        {`Unknown component "${node.component}".`}
+      </ContainedNotice>
+    );
+  }
+  const { bound, mismatch } = bindProps(node.props ?? {}, "host", props.data, props.state, invoke, handle);
+  // The notice replaces only the mis-bound component, never its subtree —
+  // a container (Stack/Grid) with one bad prop must not swallow its valid
+  // children (same containment scope as the generated paths above).
+  const screen = props.screen;
+  return mismatch !== null
+    ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>
+    : (
+      <Implementation
+        {...bound}
+        {...(screen !== undefined && handlerBusy(node.props, screen.inFlight) ? { disabled: true } : {})}
+      >
+        {children}
+      </Implementation>
+    );
+}
+
 function NodeRenderer(props: NodeRendererProps) {
   const node = props.nodes.get(props.nodeId);
   if (!node) {
@@ -360,6 +605,13 @@ function NodeRenderer(props: NodeRendererProps) {
   }
   if (props.ancestry.has(node.id)) {
     return <ContainedNotice label="Cyclic tree node">{`Node "${node.id}" forms a cycle.`}</ContainedNotice>;
+  }
+  // A run of text — the screen engine's own node kind, minted for every string
+  // child a component wrote (`<Callout>Three invoices are overdue.</Callout>`).
+  // It is not a component anybody registered, so it renders as the text itself,
+  // with no wrapper: a div around a word would break the line it belongs to.
+  if (node.component === SCREEN_TEXT_NODE) {
+    return <>{String(node.props?.text ?? "")}</>;
   }
   // The plan's skeleton (packages/apps generation/skeleton.ts) prewires one
   // `pending` placeholder per plan leaf and a fill worker later replaces it
@@ -379,135 +631,18 @@ function NodeRenderer(props: NodeRendererProps) {
   const ancestry = new Set(props.ancestry);
   ancestry.add(node.id);
   const invoke = (action: string, payload?: Json) => props.runAction(node.id, action, payload);
+  const screen = props.screen;
+  const handle = screen === undefined
+    ? undefined
+    : (handlerId: string, event?: unknown) => screen.fire(node.id, handlerId, event);
   const children = node.children?.map((childId) => (
     <NodeErrorBoundary key={childId} nodeId={childId} retryKey={props.data} streaming={props.streaming}>
       <NodeRenderer {...props} nodeId={childId} ancestry={ancestry} />
     </NodeErrorBoundary>
   ));
 
-  let content: ReactNode;
-  if (node.source === "generated") {
-    const source = props.generated[node.component];
-    const revealKey = source === undefined ? "forming" : "ready";
-    // Stamped era: a missing entry means "this island calls no tools" (least
-    // privilege). No stamping at all: undefined, so JailedComponent derives
-    // the manifest from the source the host holds.
-    const toolManifest = props.componentTools === undefined
-      ? undefined
-      : props.componentTools[node.component] ?? [];
-    if (source === undefined) {
-      content = props.streaming ? (
-        <span data-streaming-component={node.component} style={{ display: "block", width: "100%" }}>
-          <FormingSkeleton name={node.component} />
-        </span>
-      ) : (
-        <ContainedNotice label="Unknown generated component">
-          {`Generated component "${node.component}" has no source.`}
-        </ContainedNotice>
-      );
-    } else if (props.inClientGranted) {
-      // 06-apps §9 — the approved venue: this exact version's content hash
-      // matched a stored approval, so generated code mounts in the host page.
-      // The jail element stays wired as the drop-back for any mount failure.
-      const hostBind = bindProps(node.props, "host", props.data, props.state, invoke);
-      const jailBind = bindProps(node.props, "jail", props.data, props.state, invoke);
-      // Reshape mismatches are mode-independent, so both binds report the same one.
-      const mismatch = hostBind.mismatch;
-      if (mismatch !== null) {
-        content = <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>;
-      } else {
-        const jailFallback = (
-          <JailedComponent
-            name={node.component}
-            source={source}
-            props={jailBind.bound}
-            furnishing={props.furnishings[node.component]}
-            themeVars={props.themeVars}
-            toolManifest={toolManifest}
-            streaming={props.streaming}
-            onAction={invoke}
-            onStateSet={props.setViewState}
-          />
-        );
-        content = (
-          <>
-            <InClientMount
-              name={node.component}
-              source={source}
-              props={hostBind.bound}
-              furnishing={props.furnishings[node.component]}
-              fallback={jailFallback}
-              onAction={invoke}
-              onStateSet={props.setViewState}
-            />
-            {children}
-          </>
-        );
-      }
-    } else {
-      const { bound, mismatch } = bindProps(node.props, "jail", props.data, props.state, invoke);
-      content = mismatch !== null ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</> : (
-        <>
-          <JailedComponent
-            name={node.component}
-            source={source}
-            props={bound}
-            furnishing={props.furnishings[node.component]}
-            themeVars={props.themeVars}
-            toolManifest={toolManifest}
-            streaming={props.streaming}
-            onAction={invoke}
-            onStateSet={props.setViewState}
-          />
-          {children}
-        </>
-      );
-    }
-    // ENG-205 render-slot morph: the streaming placeholder and the arrived
-    // component share this wrapper, so the swap morphs instead of popping.
-    // Pick A: a shape-derived silhouette already holds (approximately) the
-    // final geometry, so its reveal crossfades in place (.fl-reveal-fill)
-    // instead of running the rise/settle morph; slab fallbacks keep the morph.
-    content = (
-      <FluidReveal
-        stateKey={revealKey}
-        className={deriveFormShape(node.component) === "slab" ? undefined : "fl-reveal-fill"}
-      >
-        {content}
-      </FluidReveal>
-    );
-  } else {
-    // V4 — one component family: the Kit is the only built-in set.
-    const kit = KIT_COMPONENTS[node.component] as ComponentType<Record<string, unknown>> | undefined;
-    const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;
-    // An explicit `source: "host"` means the host brand won the name. An
-    // undefined (or "prewired") source keeps the built-in first, so a stored
-    // app whose node collides with a host catalog name still renders the
-    // built-in it was written against.
-    const Implementation = node.source === "host" ? host ?? kit : kit ?? host;
-    if (!Implementation) {
-      // Mid-stream, an unresolved name is a transient (the defining island or
-      // a corrected reference may still arrive) — hold the silhouette; the
-      // notice is a verdict for FINAL payloads.
-      content = props.streaming ? (
-        <span data-streaming-component={node.component} style={{ display: "block", width: "100%" }}>
-          <FormingSkeleton name={node.component} />
-        </span>
-      ) : (
-        <ContainedNotice label="Unknown component">
-          {`Unknown component "${node.component}".`}
-        </ContainedNotice>
-      );
-    } else {
-      const { bound, mismatch } = bindProps(node.props ?? {}, "host", props.data, props.state, invoke);
-      // The notice replaces only the mis-bound component, never its subtree —
-      // a container (Stack/Grid) with one bad prop must not swallow its valid
-      // children (same containment scope as the generated paths above).
-      content = mismatch !== null
-        ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>
-        : <Implementation {...bound}>{children}</Implementation>;
-    }
-  }
+  const context: NodeContent = { props, node, children, invoke, handle };
+  const content = node.source === "generated" ? generatedContent(context) : builtinContent(context);
 
   const outcome = props.outcomes[node.id];
   return (
@@ -526,14 +661,51 @@ function NodeRenderer(props: NodeRendererProps) {
  * receives the complete state map after every change for app-state persistence.
  */
 function StatefulTreeView({
-  tree,
+  tree: painted,
   components,
   data,
   onAction,
   onStateChange,
+  interactive,
 }: TreeViewProps) {
   const theme = useVendoThemeOrDefault();
+  useExprRuntime();
   const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
+  // The keyed `$state` store lives in the Kit bundle, shared with code-land's
+  // `useVendoState` (kit/state.ts) — one implementation, two venues.
+  const [viewState, updateState] = useKeyedState(onStateChange);
+  const [outcomes, setOutcomes] = useState<Record<string, ToolOutcome | undefined>>({});
+
+  const runAction = useCallback(async (nodeId: string, action: string, payload?: Json) => {
+    let outcome: ToolOutcome;
+    try {
+      outcome = await onAction({ nodeId, action, ...(payload === undefined ? {} : { payload }) });
+    } catch (error) {
+      outcome = {
+        status: "error",
+        error: {
+          code: "action",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+    setOutcomes((current) => ({ ...current, [nodeId]: outcome.status === "ok" ? undefined : outcome }));
+    return outcome;
+  }, [onAction]);
+
+  // A screen's own failure (a VM that will not boot, a handler that threw) lands
+  // in the same per-node slot a failed action does — one place a region reports
+  // that something didn't work.
+  const failNode = useCallback((nodeId: string, message: string) => {
+    setOutcomes((current) => ({ ...current, [nodeId]: { status: "error", error: { code: "screen", message } } }));
+  }, []);
+  // What the screen may render: the Kit plus whatever this host registered.
+  const catalog = useMemo(() => [...KIT_COMPONENT_NAMES, ...Object.keys(components)], [components]);
+  const screen = useScreen({ interactive, base: painted, catalog, runAction, onFailure: failNode });
+  // The served paint until a handler moves the screen, and the screen's own tree
+  // after — one walk, so validation, bindings, `$state` and outcomes are the ones
+  // already here rather than a second renderer for interactive trees.
+  const tree = screen.tree ?? painted;
   const streaming = (tree as WalkTree & { streaming?: unknown }).streaming === true;
   const furnishings = (tree as WalkTree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
   // The stamped per-island tool manifests ride the payload beside the
@@ -562,27 +734,6 @@ function StatefulTreeView({
         .map((node) => [node.component, tree.components?.[node.component] ?? ""]),
     ]),
   } : tree);
-  // The keyed `$state` store lives in the Kit bundle, shared with code-land's
-  // `useVendoState` (kit/state.ts) — one implementation, two venues.
-  const [viewState, updateState] = useKeyedState(onStateChange);
-  const [outcomes, setOutcomes] = useState<Record<string, ToolOutcome | undefined>>({});
-
-  const runAction = useCallback(async (nodeId: string, action: string, payload?: Json) => {
-    let outcome: ToolOutcome;
-    try {
-      outcome = await onAction({ nodeId, action, ...(payload === undefined ? {} : { payload }) });
-    } catch (error) {
-      outcome = {
-        status: "error",
-        error: {
-          code: "action",
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
-    }
-    setOutcomes((current) => ({ ...current, [nodeId]: outcome.status === "ok" ? undefined : outcome }));
-    return outcome;
-  }, [onAction]);
 
   const nodes = useMemo(
     () => new Map(validation.ok ? validation.tree.nodes.map((node) => [node.id, node]) : []),
@@ -701,6 +852,7 @@ function StatefulTreeView({
         outcomes={outcomes}
         runAction={runAction}
         setViewState={updateState}
+        {...(interactive === undefined ? {} : { screen })}
       />
     </NodeErrorBoundary>
   );

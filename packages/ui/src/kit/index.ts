@@ -89,7 +89,9 @@ export type { Json, ReshapeOp, ReshapeResult, ReshapeStep, ToolOutcome } from "@
 // The projection vocabulary: nine live reshape ops.
 export { reshape } from "./reshape.js";
 
-// The aggregates — core's `$expr` engine, one wrapper per EXPR_CALLS member.
+// The aggregates — the reductions an island reaches for by name, over core's
+// one numeric reduce. A `{...}` gap is JavaScript, so these are a convenience,
+// not a dialect.
 export {
   average,
   count,

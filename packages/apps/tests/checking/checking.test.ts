@@ -27,6 +27,26 @@ const tools: HostToolInfo[] = [
     description: "Open invoices",
     risk: "read",
     inputSchema: { type: "object", properties: {} },
+    // The SAME response as `toolShapes` below, declared: the structural form is
+    // what the bespoke walkers read, the JSON Schema is what the compiler half
+    // (`screen-types`) reads, and a fixture where the two disagreed would prove
+    // nothing about either.
+    outputSchema: {
+      type: "object",
+      properties: {
+        data: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { id: { type: "string" }, client: { type: "string" }, amountCents: { type: "number" } },
+            required: ["id", "client", "amountCents"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["data"],
+      additionalProperties: false,
+    },
   },
   {
     name: "host_listClients",
@@ -275,7 +295,7 @@ describe("built-in fact checks", () => {
   it("names the real fields when a binding reaches a field the tool shape has not got", async () => {
     const layer = createCheckingLayer({ deps: deps() });
     const findings = await layer.run(inputFor(
-      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Text text={invoices.data.0.customer}/></Stack></App>',
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Text text={invoices.data[0].customer}/></Stack></App>',
     ));
 
     const finding = findings.find(({ where }) => where?.includes('prop "text"'));
@@ -311,52 +331,61 @@ describe("built-in fact checks", () => {
     expect(finding?.message).toContain("rows");
   });
 
+  /**
+   * A computed value's FIELDS belong to `screen-types` now, not to
+   * `expressions-compute`: the gap is real JavaScript, so the printed screen
+   * type-checks against the query's own DECLARED result type under the real
+   * compiler, and a second bespoke shape walker could only disagree with it
+   * (facts.ts `exprIssues`). So the layer is composed the way the two gates that
+   * run the compiler half compose it — the floor and the validate door.
+   *
+   * The seam is real on both ends: the wire compiles the expression into the
+   * tree, `screenTypeFindings` prints that tree back to wire, and tsc reads the
+   * printed text. Nothing here stubs either side.
+   */
   it("names the real fields when a computed value reaches a field the tool shape has not got", async () => {
-    const layer = createCheckingLayer({ deps: deps() });
+    const layer = createCheckingLayer({ deps: deps(), checks: [screenTypesCheck(deps())] });
     const findings = await layer.run(inputFor(
-      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data, "amountCent")}/></Stack></App>',
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack>'
+      + '<Stat label="Total" value={invoices.data.reduce((total, row) => total + row.amountCent, 0)}/></Stack></App>',
     ));
 
     const finding = findings.find(({ where }) => where?.includes('prop "value"'));
+    expect(finding?.check).toBe("screen-types");
     expect(finding?.severity).toBe("block");
-    expect(finding?.message).toContain('computes {sum(invoices.data, "amountCent")}');
+    expect(finding?.message).toContain('reads field "amountCent"');
     expect(finding?.message).toContain("the real fields are: id, client, amountCents");
   });
 
-  it("names the numeric fields when a computed value sums a string field", async () => {
-    const layer = createCheckingLayer({ deps: deps() });
-    const findings = await layer.run(inputFor(
-      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data, "client") / count(invoices.data)}/></Stack></App>',
-    ));
-
-    const finding = findings.find(({ where }) => where?.includes('prop "value"'));
-    expect(finding?.severity).toBe("block");
-    expect(finding?.message).toContain("sum() needs numeric values");
-    expect(finding?.message).toContain("the numeric fields are: amountCents");
-  });
-
-  it("reports an unparseable computed value as a sentence naming the bad token", async () => {
+  it("reports an unparseable computed value as the sentence the parser wrote", async () => {
     // Hand-set: the wire compiler drops an attribute whose expression does not
     // parse, so a stored/assembled tree is the only way one arrives.
     const layer = createCheckingLayer({ deps: deps() });
     const app = documentFrom(cleanApp);
     const tree = structuredClone(app.tree) as NonNullable<AppDocument["tree"]>;
     const table = (tree as unknown as Tree).nodes.find((node) => node.component === "DataTable");
-    (table as { props?: Record<string, unknown> }).props = { rows: { $expr: 'sum(invoices.data, "amountCents") + * 2' } };
+    (table as { props?: Record<string, unknown> }).props = { rows: { $expr: "invoices.data.reduce((t, r) => t + r.amountCents, 0) + * 2" } };
     const findings = await layer.run({ document: { ...app, tree }, request: "invoices" });
 
     const finding = findings.find(({ where }) => where?.includes('prop "rows"'));
     expect(finding?.severity).toBe("block");
-    expect(finding?.message).toContain('"*"');
+    expect(finding?.message).toBe(
+      "computes {invoices.data.reduce((t, r) => t + r.amountCents, 0) + * 2}:"
+      + " this expression is not valid JavaScript: Unexpected token",
+    );
   });
 
   it("passes a computed value whose fields and types all check out", async () => {
-    const layer = createCheckingLayer({ deps: deps() });
-    const findings = await layer.run(inputFor(
-      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data, "amountCents") / count(invoices.data)}/></Stack></App>',
-    ));
+    const value = "invoices.data.reduce((total, row) => total + row.amountCents, 0) / invoices.data.length";
+    const wire = `<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat label="Average" value={${value}}/></Stack></App>`;
+    // Non-vacuous by construction: the compiler must have KEPT the computed
+    // value. An expression it DROPS instead leaves no prop for any check to have
+    // an opinion about, and this test would pass on a screen with no value at all.
+    const stat = (documentFrom(wire).tree as unknown as Tree).nodes.find((node) => node.component === "Stat");
+    expect((stat?.props as { value?: unknown } | undefined)?.value).toEqual({ $expr: value });
 
-    expect(findings).toEqual([]);
+    const layer = createCheckingLayer({ deps: deps() });
+    expect(await layer.run(inputFor(wire))).toEqual([]);
   });
 
   it("blocks a document with no title and says what name is for", async () => {

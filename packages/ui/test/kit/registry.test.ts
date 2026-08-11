@@ -69,9 +69,10 @@ describe("kitPrompt()", () => {
     expect(prompt.toLowerCase()).toContain("tool");
   });
 
-  it("includes canonical examples and money-takes-cents guidance", () => {
+  it("includes canonical examples and the money rule — dollars in, /100 at the read", () => {
     expect(prompt).toContain("Money");
-    expect(prompt.toLowerCase()).toContain("cents");
+    expect(prompt).toContain("formatters never convert units");
+    expect(prompt).toContain("/ 100");
   });
 
   it("can scope to a subset of components", () => {

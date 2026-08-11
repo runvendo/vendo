@@ -38,13 +38,41 @@ const read = <T,>(id: string): T => JSON.parse(document.getElementById(id)!.text
 applyThemeVars(themeCssVariables(resolveTheme(defaultVendoTheme, read<VendoTheme>("theme"))));
 const payload = read<UIPayload>("payload");
 
+/**
+ * A screen `PayloadView` has to boot a runtime for before it can paint.
+ *
+ * The tag is the payload's own: an interactive payload carries `interactive`
+ * ({ compiledSource, queries }), and the renderer boots the VM behind that same
+ * entry point. Nothing here reaches into it — the bundle already carries whatever
+ * `PayloadView` imports.
+ */
+const interactive = (payload as { interactive?: unknown }).interactive !== undefined;
+
+/**
+ * The grace an interactive screen gets on top of its two frames, before the shot
+ * is taken and the probe starts pressing.
+ *
+ * Flat, and only for those payloads. The tempting alternative — settle once the
+ * DOM has been quiet for a frame or two — cannot tell "the VM has finished" from
+ * "the VM has not started yet", which is precisely the race this exists to lose.
+ * A second is nothing against a case that takes minutes, and it is spent by no
+ * static screen.
+ */
+const VM_BOOT_MS = 1_000;
+
 function Screen(): JSX.Element {
   // Two frames after the commit: the Kit's charts size themselves off a
   // ResizeObserver, so the frame that mounts one is never the frame that draws it.
   useEffect(() => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        window.__settled = true;
+        if (!interactive) {
+          window.__settled = true;
+          return;
+        }
+        setTimeout(() => {
+          window.__settled = true;
+        }, VM_BOOT_MS);
       });
     });
   }, []);

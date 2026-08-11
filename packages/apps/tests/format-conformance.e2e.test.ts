@@ -1,13 +1,18 @@
 /**
  * THE FORMAT CONSTITUTION.
  *
- * The app format has four mirrors — the contract, `@vendoai/core`'s pinned
- * limits, the manual the model reads (`skills/format-reference.ts`) and the
- * public docs page. Every one of them used to be maintained by hand, and they
- * disagreed: the manual promised "16 islands, 64 KB each" and never mentioned
- * the 256 KB TOTAL the validator also enforces, so a model that obeyed the
- * manual could write a megabyte of islands and watch the whole app fail to
- * validate for a reason it was never told about.
+ * The app format has mirrors — the contract, `@vendoai/core`'s pinned limits,
+ * the manual the model reads (`skills/format-reference.ts`) and the public docs
+ * page. Every one of them used to be maintained by hand, and they disagreed: the
+ * manual promised "16 islands, 64 KB each" and never mentioned the 256 KB TOTAL
+ * the validator also enforces, so a model that obeyed the manual could write a
+ * megabyte of islands and watch the whole app fail to validate for a reason it
+ * was never told about.
+ *
+ * The manual is no longer one of those mirrors for the byte budgets: a screen is
+ * `app.tsx` now and has no byte budget, so what is asserted of the manual here is
+ * that it quotes none. The budgets themselves still bind stored wire documents,
+ * so core, the contract and the docs page still have to agree.
  *
  * This file is the one place a format number or a component name is written by
  * hand. Everything else derives, and this test fails the moment any mirror
@@ -69,29 +74,16 @@ describe("the three bundle limits have ONE definition", () => {
   });
 });
 
-describe("the manual states every limit, generated from the contract", () => {
-  it("says all three numbers in one sentence", () => {
-    expect(VENDO_FORMAT_REFERENCE).toContain(
-      `At most ${LIMITS.generatedComponents} islands, ${LIMITS.componentSourceBytes / KB} KB of source each, and ${
-        LIMITS.totalComponentBytes / KB} KB across all of them together.`,
-    );
-  });
-
-  it("never states a budget the validator does not enforce", () => {
-    // Any KB figure in the manual has to be one of the two the enforcer knows.
-    const stated = [...VENDO_FORMAT_REFERENCE.matchAll(/(\d+) KB/g)].map((match) => Number(match[1]));
-    expect(stated.length).toBeGreaterThan(0);
-    expect([...new Set(stated)].sort((left, right) => left - right)).toEqual([
-      LIMITS.componentSourceBytes / KB,
-      LIMITS.totalComponentBytes / KB,
-    ]);
-  });
-
-  it("teaches the plan dialect's leaf as component + purpose, and nothing else", () => {
-    // d2 — `leaf.attrs` and `leaf.query` are gone from the grammar, so the
-    // manual must not send a model writing either.
-    expect(VENDO_FORMAT_REFERENCE).toContain("### `<Leaf component purpose/>` — self-closing");
-    expect(VENDO_FORMAT_REFERENCE).not.toContain('<Leaf component="Stat" query=');
+describe("the manual states no budget, because the artifact it teaches has none", () => {
+  it("quotes no KB figure at all", () => {
+    // The three limits above govern the WIRE dialect's islands
+    // (`contract/component-map.ts`), and nothing generates one any more: the
+    // artifact a model writes is `app.tsx`, which the save-time gauntlet
+    // (`checking/component-screen.ts`) measures for compilation, types and one
+    // real render — never for bytes. A KB sentence in this manual would teach a
+    // budget nothing enforces on the file it is about, which is this file's own
+    // failure mode pointed the other way.
+    expect(VENDO_FORMAT_REFERENCE).not.toMatch(/\d+ KB/);
   });
 });
 

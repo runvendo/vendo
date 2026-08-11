@@ -275,7 +275,7 @@ const createStores = (
 const createDoors = (
   deps: Pick<AppsRuntimeContext,
     "config" | "history" | "inClientApprovals" | "parkedActions" | "lifecycle"
-    | "requireOwned" | "updateAppDocument">,
+    | "requireOwned" | "updateAppDocument" | "runtime">,
 ): Pick<AppsRuntimeContext,
   "review" | "reviewerAsserted" | "interchange" | "fnCaller" | "manifestTriggers" | "caller" | "opener"> => {
   const { config, history, inClientApprovals, parkedActions, lifecycle } = deps;
@@ -363,6 +363,27 @@ const createDoors = (
           ? proxy(app.id)
           : `${proxy(app.id)}?vendoTheme=${encodeURIComponent(JSON.stringify(theme))}`;
       },
+    },
+    // A stored `app.tsx` opens by RUNNING, through the same floor door the render
+    // seam paints a save with — one gauntlet, so a reopened screen and a
+    // just-saved one are the same picture with this instant's numbers.
+    async (input, ctx) => {
+      // `saves: false` — the same gauntlet, with the row half off. An open is a
+      // READ: it must not create a row, must not record a refusal, and above all
+      // must not store what it painted. A review-kind app serving an older
+      // APPROVED snapshot (`serveDocFor`) paints that snapshot, and a writing
+      // floor wrote it back over the row — silently reverting the app and
+      // destroying the version awaiting review.
+      const paint = deps.runtime().floor(ctx, { saves: false }).component;
+      // Optional only for a floor that predates the screen engine; this runtime
+      // composes its own (checking/floor.ts), so absence is a build mismatch.
+      if (paint === undefined) {
+        throw new VendoError(
+          "not-implemented",
+          "this build of @vendoai/apps carries no screen engine, so a saved screen cannot be opened",
+        );
+      }
+      return await paint(input);
     },
     // §9.9 — the additive, ctx-aware venue-state slot lane H's adoption card
     // rides. Forwarded straight through; the runtime never interprets it.

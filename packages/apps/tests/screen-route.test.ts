@@ -278,7 +278,7 @@ describe("assembly that produces no screen fails honestly", () => {
     const receipt = unbuilt(await make(agentTools));
 
     expect(receipt.status).toBe("failed");
-    expect(receipt.say).toContain("wasn't something I could show");
+    expect(receipt.say).toContain("the build produced nothing renderable");
     expect(briefs).toHaveLength(0);
   });
 });

@@ -1,4 +1,4 @@
-import { AGENT_CONTEXT_MARK, isAgentContextText, isVendoAppsTool, riskLabelSchema, VENDO_MAKE_TOOL, vendoErrorCodeSchema, type ApprovalRequest, type JsonSchema, type RiskLabel, type VendoCitationsPart, type VendoErrorCode, type VendoKnowledgeCitation } from "@vendoai/core";
+import { AGENT_CONTEXT_MARK, isAgentContextText, isVendoAppsTool, riskLabelSchema, VENDO_APP_BUILD_FAILED_PREFIX, VENDO_MAKE_TOOL, type ApprovalRequest, type JsonSchema, type RiskLabel, type VendoCitationsPart, type VendoKnowledgeCitation } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { previewArgs } from "../humanize.js";
 import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
@@ -14,70 +14,50 @@ export function partData(part: UIMessage["parts"][number]): unknown {
 export const VENDO_ERROR_PREFIX = "Vendo: ";
 
 /**
- * What a PERSON is told about a broken turn, BY CODE.
+ * The sentence a broken turn CARRIES, verbatim — minus the marker — or nothing.
  *
- * The `"Vendo: "` marker only says a sentence is safe to put on the WIRE — not
- * that it was written for a reader. Our own code raises sandbox ids, nested
- * provider exceptions and shell commands behind that marker, so the reader gets
- * copy chosen by the VendoError CODE instead and the operator's sentence is
- * never printed (it keeps the server log and the console line
- * `wireErrorMessage` writes).
+ * The marker says the sentence is OURS: a VendoError's operator-crafted message
+ * plus its code, which is the one error shape a reader may see in detail. It
+ * reaches them unedited. This used to look the code up in a dictionary of canned
+ * first-person lines and print that instead, which spoke as the agent AND threw
+ * the actionable half away — "Vendo: check ANTHROPIC_API_KEY in .env.local
+ * (validation)" arrived as "I couldn't make that request work".
  *
- * One exception: core's `formatMeterExhausted` composes a sentence that IS
- * consumer copy, recognized by the head that function always writes.
+ * An UNPREFIXED string is a raw transport/provider error (those carry request
+ * URLs, keys and prompts), so it still yields nothing and the surface says
+ * {@link TURN_FAILURE_NOTICE} in its own voice instead.
  */
-const TURN_ERROR_COPY: Record<VendoErrorCode, string> = {
-  validation: "I couldn’t make that request work — nothing was changed. Ask again and I’ll try a different approach.",
-  blocked: "That isn’t something I’m allowed to do here, so I stopped — nothing was changed.",
-  "not-implemented": "That isn’t something this workspace can do yet — nothing was changed.",
-  "sandbox-unavailable": "I couldn’t reach the place I run things just now — nothing was changed. Ask again in a moment.",
-  "cloud-required": "That isn’t turned on for this workspace yet — nothing was changed.",
-  "not-found": "What that was about isn’t there any more — nothing was changed.",
-  conflict: "Something else changed this while I was working — nothing was changed. Ask again and I’ll pick up where things stand now.",
-  forbidden: "That isn’t yours to change — nothing was changed.",
-};
-
-/** The head `formatMeterExhausted` always writes (01-core meter-exhausted.ts). */
-const METER_SENTENCE = /^Vendo Cloud paused /;
-
 export function turnErrorSentence(message: string | undefined): string | undefined {
   if (message === undefined || !message.startsWith(VENDO_ERROR_PREFIX)) return undefined;
-  let body = message.slice(VENDO_ERROR_PREFIX.length).trim();
-  let code: VendoErrorCode | undefined;
-  // The closed 01-core code enum, so stripping a token can never eat a
-  // sentence's own parenthetical ("(1,204,000 of 1,000,000 used; …)"). EVERY
-  // trailing token comes off, not just the first: a message that crossed the
-  // gate twice ("… (validation) (cloud-required)") left one of them on screen.
-  // The outermost is the one `wireErrorMessage` added last, so it is the code.
-  for (;;) {
-    const trailing = vendoErrorCodeSchema.options.find(option => body.endsWith(`(${option})`));
-    if (trailing === undefined) break;
-    code ??= trailing;
-    body = body.slice(0, -`(${trailing})`.length).trimEnd();
-  }
-  if (METER_SENTENCE.test(body)) return body;
-  // No code, or one this build does not know: the surfaces' own headline
-  // ("Something went wrong and the response didn't finish.") is the honest
-  // answer, and printing the wire instead of it is the whole defect.
-  return code === undefined ? undefined : TURN_ERROR_COPY[code];
+  const body = message.slice(VENDO_ERROR_PREFIX.length).trim();
+  return body.length === 0 ? undefined : body;
 }
 
+/** What the CHROME says when a turn broke with nothing of ours to repeat: the
+ *  system in third person, never the agent in first. */
+export const TURN_FAILURE_NOTICE = "This request couldn’t be completed — nothing was changed.";
+
 /**
- * What a PERSON is told when an app build fails.
+ * What a person is told when an app build fails: the runtime's own reason.
  *
- * The wire's `reason` is written for whoever can FIX the build — it names
- * components, expressions, environment variables and npm packages — so it stays
- * in the server log and the person gets this instead.
+ * `buildFailureReason` (apps' build-messages.ts) emits only classified,
+ * non-leaky text — "timed out", "quota exhausted", the watchdog's line — and
+ * passes the dev-model's actionable lines through verbatim (a missing
+ * `@ai-sdk/*` package, a rejected key). Those are exactly what the reader needs,
+ * and one canned first-person sentence used to replace all of them. The
+ * operator's fuller record — the reason plus every blocking finding — keeps its
+ * home in the server's `[vendo] app build failed (app_…)` line.
  *
- * ONE sentence for every failure class, deliberately: the runtime's
- * classification is a substring scan over the concatenated findings, so
- * `host_listScheduledPayments` in a tool inventory makes an ordinary validation
- * failure read as "quota exhausted". Copy that branches on an unreliable label
- * just tells a different lie. Asking again is true for every class.
+ * A reason off the WIRE arrives behind the build-failed marker ("app build
+ * failed: timed out"), because the bridge sends the VendoError's whole message;
+ * the marker is plumbing, so it comes off.
  */
-export const BUILD_FAILURE_COPY =
-  "I couldn't finish building that view — nothing was changed."
-  + " Ask again and I'll try a different approach.";
+export function buildFailureNotice(reason: string | undefined): string {
+  const marker = `${VENDO_APP_BUILD_FAILED_PREFIX}:`;
+  const body = (reason ?? "").trim();
+  const detail = (body.startsWith(marker) ? body.slice(marker.length) : body).trim();
+  return detail.length === 0 ? "This view couldn’t be built — nothing was changed." : detail;
+}
 
 // A stable placeholder for the in-thread synthesized ApprovalRequest's required
 // `createdAt`: the wire approval part carries no timestamp, and the value is

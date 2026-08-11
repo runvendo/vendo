@@ -80,7 +80,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     examples: ["<Divider/>"],
   },
 
-  // Values (money takes CENTS; dates take ISO/epoch)
+  // Values (money takes MAJOR units — dollars; dates take ISO/epoch)
   {
     name: "Text",
     group: "values",
@@ -99,12 +99,12 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Money",
     group: "values",
-    summary: "Currency from an integer number of CENTS. Never pass dollars.",
+    summary: "Currency from an amount ALREADY in dollars. Formatters never convert units: a minor-unit (cents) field is divided by 100 where you read it.",
     props: {
-      cents: data(z.number(), "amount in integer cents (minor units)", { required: true }),
+      amount: data(z.number(), "the amount in dollars (major units)", { required: true }),
       currency: config(z.string(), "ISO 4217 code, default USD"),
     },
-    examples: ["<Money cents={invoices.total({}).amountCents}/>"],
+    examples: ["<Money amount={invoices.total({}).amountCents / 100}/>"],
   },
   {
     name: "DateTime",
@@ -167,7 +167,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       caption: copy(z.string(), "table caption"),
     },
     examples: [
-      '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amountCents",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
+      '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
     ],
   },
   {
@@ -182,12 +182,12 @@ export const KIT_SPECS: KitComponentSpec[] = [
       columns: config(z.number().int().positive(), "cards per row"),
       emptyState: copy(z.string(), "text when there are no items"),
     },
-    examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balanceCents",label:"Balance",format:"money"}]}/>'],
+    examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance",format:"money"}]}/>'],
   },
   {
     name: "Stat",
     group: "data",
-    summary: "A KPI/metric summary. Formats its value (money takes cents) and shows an optional trend.",
+    summary: "A KPI/metric summary. Formats its value (money takes dollars — divide a cents field by 100 where you read it) and shows an optional trend.",
     props: {
       label: copy(z.string(), "metric name", { required: true }),
       value: data(z.union([z.number(), z.string()]), "raw value", { required: true }),
@@ -195,7 +195,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       trend: copy(z.string(), "delta caption, e.g. +12% MoM"),
       tone: config(z.enum(["default", "accent", "danger"]), "emphasis"),
     },
-    examples: ['<Stat label="Total overdue" value={invoices.total({}).amountCents} format="money" trend="+12% MoM"/>'],
+    examples: ['<Stat label="Total overdue" value={invoices.total({}).amountCents / 100} format="money" trend="+12% MoM"/>'],
   },
   {
     name: "Badge",
@@ -218,7 +218,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
     },
-    examples: ['<LineChart data={revenue.byMonth({}).data} xKey="month" series={["amountCents"]} format="money"/>'],
+    examples: ['<LineChart data={revenue.byMonth({}).data} xKey="month" series={["amount"]} format="money"/>'],
   },
   {
     name: "BarChart",
@@ -249,7 +249,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
     },
-    examples: ['<DonutChart data={spend.byCategory({}).data} categoryKey="category" valueKey="amountCents" format="money"/>'],
+    examples: ['<DonutChart data={spend.byCategory({}).data} categoryKey="category" valueKey="amount" format="money"/>'],
   },
   {
     name: "Sparkline",
@@ -280,13 +280,13 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Input",
     group: "forms",
-    summary: "A text field. onChange names a host tool or island handler.",
+    summary: "A text field. Controlled: `value` plus an `onChange` function.",
     props: {
       label: copy(z.string(), "field label"),
-      value: data(z.string(), "initial value"),
+      value: config(z.string(), "the current value (controlled)"),
       placeholder: copy(z.string(), "placeholder text"),
       type: config(z.enum(["text", "email", "number", "password", "search", "tel", "url"]), "input type"),
-      onChange: config(action, "bound change handler"),
+      onChange: config(action, "called on change"),
     },
     examples: ['<Input label="Find a client" onChange="host_search_clients"/>'],
   },
@@ -301,7 +301,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       valueField: config(z.string(), "object field for the value"),
       placeholder: copy(z.string(), "empty-choice text"),
       multiple: config(z.boolean(), "allow several values"),
-      onChange: config(action, "bound change handler"),
+      onChange: config(action, "called on change"),
     },
     examples: ['<Select label="Client" options={clients.list({}).data} labelField="name" valueField="id"/>'],
   },
@@ -311,10 +311,10 @@ export const KIT_SPECS: KitComponentSpec[] = [
     summary: "A native date control (ISO yyyy-mm-dd).",
     props: {
       label: copy(z.string(), "field label"),
-      value: data(z.string(), "ISO date"),
+      value: config(z.string(), "the current ISO date (controlled)"),
       min: config(z.string(), "earliest date"),
       max: config(z.string(), "latest date"),
-      onChange: config(action, "bound change handler"),
+      onChange: config(action, "called on change"),
     },
     examples: ['<DatePicker label="Due date"/>'],
   },
@@ -324,31 +324,31 @@ export const KIT_SPECS: KitComponentSpec[] = [
     summary: "A multiline text field.",
     props: {
       label: copy(z.string(), "field label"),
-      value: data(z.string(), "initial value"),
+      value: config(z.string(), "the current value (controlled)"),
       placeholder: copy(z.string(), "placeholder text"),
       rows: config(z.number().int().positive(), "visible rows"),
-      onChange: config(action, "bound change handler"),
+      onChange: config(action, "called on change"),
     },
     examples: ['<Textarea label="Note" rows={4}/>'],
   },
   {
     name: "Checkbox",
     group: "forms",
-    summary: "A boolean toggle. onChange receives the checked state.",
+    summary: "A boolean toggle. Controlled: `checked` plus an `onChange` function.",
     props: {
       label: copy(z.string(), "field label"),
-      checked: data(z.boolean(), "initial checked state"),
-      onChange: config(action, "bound change handler"),
+      checked: config(z.boolean(), "the current checked state (controlled)"),
+      onChange: config(action, "called on toggle"),
     },
     examples: ['<Checkbox label="Include paid"/>'],
   },
   {
     name: "Button",
     group: "forms",
-    summary: "Action-gated button. onClick NAMES a host tool; the runtime routes it through the guard + approval pipe. This is the only way the UI mutates.",
+    summary: "A button. `onClick` takes a function; calling a tool in it is the only way the UI changes anything, and the runtime routes that call through the guard + approval pipe.",
     props: {
       label: copy(z.string(), "button text", { required: true }),
-      onClick: config(action, "the host tool to run"),
+      onClick: config(action, "called on click; call a tool in it"),
       variant: config(z.enum(["primary", "secondary", "danger"]), "emphasis"),
       disabled: config(z.boolean(), "disabled state"),
     },
@@ -357,9 +357,9 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Form",
     group: "forms",
-    summary: "Groups fields with a submit action. onSubmit names a host tool.",
+    summary: "Groups fields with a submit action. `onSubmit` takes a function.",
     props: {
-      onSubmit: config(action, "the host tool to run on submit"),
+      onSubmit: config(action, "called on submit; call a tool in it"),
       submitLabel: copy(z.string(), "submit button text"),
     },
     examples: ['<Form onSubmit="clients.create" submitLabel="Add client"><Input label="Name"/></Form>'],

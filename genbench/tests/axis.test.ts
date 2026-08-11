@@ -3,13 +3,13 @@
  *
  * A chart has to invent numbers to measure with: recharts picks a scale and
  * draws "$0.00 / $750.00 / $1,500.00 / $3,000.00" down the axis, and not one of
- * those is a value a tool returned. Grading them as fabrication fails every
+ * those is a value a tool returned. Asking the auditor to derive them fails every
  * honest chart, so the axis containers are cut out of the text the floor reads.
  *
  * Cutting anything out of a fabrication check is only safe if the cut is exactly
- * that: so this pins the pair. The scale labels really are in the page's own
- * text (and really would fail), they are gone from the extraction, and a
- * fabricated number in the screen's OWN copy still fails.
+ * that: so this pins the pair. The scale labels really are in the page's own text
+ * (and really would be put to the auditor), they are gone from the extraction,
+ * and the screen's OWN copy is still asked about.
  *
  * A real browser, the real bundle, real recharts — no doubles.
  */
@@ -17,7 +17,7 @@ import type { UIPayload } from "@vendoai/core";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildIndex, honestData } from "../src/floor.js";
+import { honestData } from "../src/floor.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "../src/render.js";
 import { loadWorld, type World } from "../src/world.js";
 
@@ -78,13 +78,15 @@ describe("chart axis ticks are measuring marks, not data", () => {
     // in the text the page reports for itself.
     expect(scale.length).toBeGreaterThan(1);
     expect(scale.filter((tick) => raw.includes(tick))).toEqual(scale);
-    // …and, ungraded, they really would read as fabrication.
-    expect(honestData(raw, buildIndex(world)).pass).toBe(false);
+    // …and, ungraded, every one of them would be a value the auditor is asked to
+    // derive from data that never held it.
+    const askedOfRaw = honestData(raw).offenders.map((offender) => offender.text);
+    expect(askedOfRaw).toEqual(expect.arrayContaining(scale));
 
     // What the floor actually reads: none of them, and the screen intact.
     expect(scale.filter((tick) => shot.visibleText.includes(tick))).toEqual([]);
     expect(shot.visibleText).toContain("Total spent $4,243.11");
-    expect(honestData(shot.visibleText, buildIndex(world)).pass).toBe(true);
+    expect(honestData(shot.visibleText).offenders.map((offender) => offender.text)).toEqual(["$4,243.11"]);
 
     // The cost, pinned rather than hidden: the exclusion is a whole tick layer,
     // so the category axis goes with the scale. Numbers and dates that appear
@@ -93,14 +95,16 @@ describe("chart axis ticks are measuring marks, not data", () => {
     expect(shot.visibleText).not.toContain("housing");
   }, 120_000);
 
-  it("still fails a fabricated number in the screen's own copy", async () => {
-    // One cent off the real total — the same perturbation floor.test.ts pins,
-    // now on a page that also carries a chart.
+  it("still puts a fabricated number in the screen's own copy to the auditor", async () => {
+    // One cent off the real total, on a page that also carries a chart: the
+    // exclusion takes the axis and leaves the copy, so this value is examined and
+    // nothing but an execution can clear it.
     const { shot } = await seen("Total spent $4,243.12");
-    const result = honestData(shot.visibleText, buildIndex(world));
+    const result = honestData(shot.visibleText);
 
     expect(shot.visibleText).toContain("$4,243.12");
     expect(result.pass).toBe(false);
+    expect(result.examined).toBe(1);
     expect(result.offenders).toEqual([expect.objectContaining({ kind: "number", text: "$4,243.12" })]);
   }, 120_000);
 
@@ -121,12 +125,15 @@ describe("chart axis ticks are measuring marks, not data", () => {
     const visit = await shooter.visit(authoredPage(forged, world, "diy-sonnet"), { authored: true });
     try {
       const shot = await visit.shot();
-      const result = honestData(shot.visibleText, buildIndex(world));
+      const result = honestData(shot.visibleText);
 
+      // Both are still in the text the floor reads — the container bought no
+      // hiding place. The number is a question for the auditor; the date is only
+      // consumed, because clearing a value is a numeric comparison.
       expect(shot.visibleText).toContain("$9,999.99");
       expect(shot.visibleText).toContain("2031-01-01");
       expect(result.pass).toBe(false);
-      expect(result.offenders.map((offender) => offender.text).sort()).toEqual(["$9,999.99", "2031-01-01"]);
+      expect(result.offenders.map((offender) => offender.text)).toEqual(["$9,999.99"]);
     } finally {
       await visit.close();
     }

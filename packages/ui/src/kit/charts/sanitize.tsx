@@ -39,9 +39,19 @@ export interface ChartFrameProps {
   children: ReactNode;
 }
 
-/** Common chart wrapper providing a min-height box. */
+/** Common chart wrapper providing a min-height box, and an intrinsic WIDTH.
+ *
+ *  `width: 100%` alone measures zero wherever the parent sizes itself to its
+ *  content — the Kit's own `Row` is exactly that (flex, basis auto), so
+ *  `<Row><DonutChart/></Row>` gave recharts a 0-wide container and it drew
+ *  nothing: an empty 220px gap where the chart should be, and with it the only
+ *  brand-accent pixels a screen usually has (genbench spend-overview,
+ *  2026-08-11). The ratio transfers the definite height into a width for a
+ *  parent that has to ASK, and is ignored by one that already has a width — so a
+ *  narrow Grid track still squeezes the chart instead of overflowing it, which a
+ *  `min-width` floor would not do. */
 export function ChartFrame({ height = 220, children }: ChartFrameProps) {
-  return <div style={{ width: "100%", height, minHeight: height }}>{children}</div>;
+  return <div style={{ width: "100%", aspectRatio: 1, height, minHeight: height }}>{children}</div>;
 }
 
 /** A designed empty/invalid state that reads as intentional, not broken. */

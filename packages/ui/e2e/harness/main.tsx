@@ -1478,7 +1478,7 @@ const SHAPE_WIRE = `<App name="Revenue by month">
   <Stack gap={14}>
     <Text text="Shape-aware binding: reshape calls, no code island" variant="heading"/>
     <Stat label="Total revenue" value={sum(revenue.rows, "revenue")}/>
-    <DataTable caption="Monthly revenue" rows={rename(format(revenue.rows, "revenue", "currency"), "month", "Month", "revenue", "Revenue")}/>
+    <DataTable caption="Monthly revenue" rows={rename(revenue.rows, "revenue", "amount")} columns={[{key:"month",label:"Month"},{key:"amount",label:"Revenue",format:"money",align:"end"}]}/>
   </Stack>
 </App>`;
 

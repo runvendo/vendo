@@ -1,6 +1,6 @@
 /**
  * The value tier — semantic, Intl-formatted, `$NaN`-proof (W2 §The Kit).
- * Money takes integer CENTS; dates take ISO/epoch/Date; percent takes a ratio.
+ * Money takes MAJOR units (dollars); dates take ISO/epoch/Date; percent takes a ratio.
  * Any unrenderable value collapses to a muted placeholder, never bad text.
  */
 import type { CSSProperties, ReactNode } from "react";
@@ -28,13 +28,14 @@ function Placeholder(): ReactNode {
 const numeric: CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
 export interface MoneyProps extends MoneyOptions {
-  /** Amount in integer cents (minor units). */
-  cents: number;
+  /** The amount in MAJOR units (dollars) — formatters never convert, so a cents
+   *  field is divided by 100 before it gets here. */
+  amount: number;
 }
 
-/** Currency from integer cents. `<Money cents={123456}/>` → "$1,234.56". */
-export function Money({ cents, currency, locale }: MoneyProps) {
-  const formatted = formatMoney(cents, { currency, locale });
+/** Currency from a major-unit amount. `<Money amount={1234.56}/>` → "$1,234.56". */
+export function Money({ amount, currency, locale }: MoneyProps) {
+  const formatted = formatMoney(amount, { currency, locale });
   if (formatted === null) return <Placeholder />;
   return (
     <span data-kit="Money" style={{ ...font, ...numeric }}>

@@ -104,7 +104,20 @@ afterAll(async () => {
 });
 
 const DELEGATE_MARKER = "Compile a weather brief for the ops team";
-const APP_MARKUP = '<App name="Weather comparison"><Text text="Paris vs Tokyo vs NYC"/><Disclaimer reason="Fixture app."/></App>';
+/** The screen as the one engine now writes it: an `app.tsx` React component the
+ *  gauntlet compiles, type-checks and renders. The component's own name is the
+ *  app's title (`WeatherComparison` → "Weather comparison"). */
+const APP_MARKUP = `import { Disclaimer, Stack, Text } from "@vendo/screen";
+
+export default function WeatherComparison() {
+  return (
+    <Stack>
+      <Text text="Paris vs Tokyo vs NYC" />
+      <Disclaimer reason="Fixture app." />
+    </Stack>
+  );
+}
+`;
 
 async function setup() {
   const dataDir = await mkdtemp(join(tmpdir(), "mastra-example-store-"));

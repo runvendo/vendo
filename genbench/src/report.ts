@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { checks, type Binding, type HonestDataResult, type Offender } from "./floor.js";
+import { checks, holds, type Binding, type HonestDataResult, type Offender } from "./floor.js";
 import type { JudgeResult, LineVerdict, Verdict } from "./judge.js";
 import type { UsageTotals } from "./meter.js";
 import type { CaseResult } from "./run.js";
@@ -33,6 +33,9 @@ const offenderList = (offenders: readonly Offender[]): string =>
     ? ""
     : notes(offenders.map((o) => `<li><code>${escape(o.text)}</code> <span>${escape(o.why)}</span></li>`));
 
+/** One row per press, under the mark the floor gave it. The row's words are the
+ *  binding's own `why` — which is what makes a state-only pass readable as a pass
+ *  and not as a control nobody could explain. */
 const bindingList = (bindings: readonly Binding[]): string =>
   notes(
     bindings.length === 0
@@ -42,7 +45,7 @@ const bindingList = (bindings: readonly Binding[]): string =>
             `<li><code>${escape(b.where)}</code> <span>${[b.tool, b.why]
               .filter((part) => part !== undefined)
               .map(escape)
-              .join(" — ")}</span> ${b.known && b.argsValid ? '<i class="ok">✓</i>' : '<i class="no">✕</i>'}</li>`,
+              .join(" — ")}</span> ${holds(b) ? '<i class="ok">✓</i>' : '<i class="no">✕</i>'}</li>`,
         ),
   );
 

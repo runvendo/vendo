@@ -12,17 +12,32 @@
  * deduping by tool + args (the two refs above share one fetch). Output is
  * ordinary vendo-genui/v2 wire, so the rest of the pipeline — shape checks,
  * limits, validation — is unchanged. Islands are passed through untouched
- * (their ambient `tools.x.y(args)` calls are NOT data references).
+ * (their ambient `tools.x.y(args)` calls are NOT data references), and so is
+ * every call on a query's own data — a `{...}` gap is JavaScript, so
+ * `spending.data.reduce(…)` is arithmetic, not a fetch.
  *
  * Deliberately a source-to-source pre-pass, not a grammar change: it keeps the
  * frozen expression grammar and the canonical tree identical between the
  * `<Query>` arm and the inline arm, so the A/B measures the surface only.
  */
 
-/** An identifier chain followed by `(` — the head of a tool call. A DOTTED
- *  head is always a candidate (dots exclude the single-segment reshape ops:
- *  format/asOptions/asPoints/…); a SINGLE-segment head counts only when it is
- *  a KNOWN tool name (W3 — production extraction names are `host_listX`). */
+/**
+ * An identifier chain followed by `(` — a CANDIDATE head. Two gates decide
+ * whether it is really a tool call (see {@link rewriteExpr}), and both exist
+ * because a `{...}` gap is JavaScript now, where a dotted chain before `(` is
+ * overwhelmingly a method on data (`spending.data.reduce(…)`,
+ * `rows.map(…)`, `name.slice(…)`) rather than a tool:
+ *
+ *   1. the chain's ROOT must not be a declared `<Query>` id — a chain rooted at
+ *      a query reads that query's data, so it is a formula, always;
+ *   2. the WHOLE chain must name a known tool.
+ *
+ * Gate 2 used to apply to single-segment heads only, on the theory that a
+ * dotted head could only ever be `invoices.list(…)`. Under the JavaScript
+ * grammar that theory is false, and it minted `<Query tool="spending.data.reduce"/>`
+ * out of a perfectly good total — a phantom query, an unknown tool, and a
+ * binding smuggled into a query input, all from one arithmetic expression.
+ */
 const CALL_HEAD = /([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\(/g;
 
 const camel = (tool: string): string => {
@@ -86,6 +101,7 @@ const rewriteExpr = (
   expr: string,
   mint: (tool: string, argsRaw: string) => string,
   knownTools: ReadonlySet<string>,
+  queryIds: ReadonlySet<string>,
 ): string => {
   const spans = stringSpans(expr);
   let out = "";
@@ -94,15 +110,16 @@ const rewriteExpr = (
   let m: RegExpExecArray | null;
   while ((m = CALL_HEAD.exec(expr)) !== null) {
     const tool = m[1]!;
-    // Single-segment heads are tool calls only when the registry says so —
-    // otherwise they are reshape ops or plain text and stay untouched.
-    if (!tool.includes(".") && !knownTools.has(tool)) continue;
+    // Gate 1 — a chain rooted at a declared query reads DATA. Only a literal
+    // `<Query tool="…"/>` may create a query; every call on a query's data is a
+    // formula the renderer evaluates.
+    if (queryIds.has(tool.split(".")[0] as string)) continue;
+    // Gate 2 — the registry decides what is a tool, dotted or not. Minting a
+    // query for a name the host does not have only ever produced a blocking
+    // "names unknown tool" finding one layer down.
+    if (!knownTools.has(tool)) continue;
     if (spans.some(([start, end]) => m!.index > start && m!.index < end)) continue;
     const parenOpen = m.index + m[0].length - 1;
-    // A reshape call (`format(...)`) is never a data source; skip if the
-    // token is immediately preceded by `|`.
-    const before = expr.slice(0, m.index).replace(/\s+$/, "");
-    if (before.endsWith("|")) continue;
     const parenClose = matchBracket(expr, parenOpen);
     if (parenClose === -1) continue;
     const argsRaw = expr.slice(parenOpen + 1, parenClose - 1).trim();
@@ -147,6 +164,7 @@ const rewriteAttributes = (
   wire: string,
   mint: (tool: string, argsRaw: string) => string,
   knownTools: ReadonlySet<string>,
+  queryIds: ReadonlySet<string>,
 ): string => {
   let out = "";
   let copied = 0;
@@ -182,7 +200,7 @@ const rewriteAttributes = (
           break;
         }
         if (!island) {
-          out += wire.slice(copied, i + 1) + rewriteExpr(wire.slice(i + 1, end - 1), mint, knownTools);
+          out += wire.slice(copied, i + 1) + rewriteExpr(wire.slice(i + 1, end - 1), mint, knownTools, queryIds);
           copied = end - 1;
         }
         i = end;
@@ -219,7 +237,14 @@ export const expandInlineRefs = (wire: string, options?: InlineRefsOptions): Inl
   // and <Island name="…"> — so a minted name can never collide with one the
   // author declared (which would otherwise produce a duplicate-query / shadow).
   const usedNames = new Set<string>();
-  for (const m of wire.matchAll(/<Query\b[^>]*?\bid="([^"]+)"/g)) usedNames.add(m[1]!);
+  // The declared query ids are also the roots a call chain may NOT start at
+  // (gate 1 in rewriteExpr): `spending.data.reduce(…)` is spending's data, not
+  // a tool named "spending.data.reduce".
+  const queryIds = new Set<string>();
+  for (const m of wire.matchAll(/<Query\b[^>]*?\bid="([^"]+)"/g)) {
+    usedNames.add(m[1]!);
+    queryIds.add(m[1]!);
+  }
   for (const m of wire.matchAll(/<Island\b[^>]*?\bname="([^"]+)"/g)) usedNames.add(m[1]!);
   const mint = (tool: string, argsRaw: string): string => {
     const key = `${tool}|${argsRaw.replace(/\s+/g, "")}`;
@@ -234,7 +259,7 @@ export const expandInlineRefs = (wire: string, options?: InlineRefsOptions): Inl
     return name;
   };
 
-  const rewritten = rewriteAttributes(wire, mint, knownTools);
+  const rewritten = rewriteAttributes(wire, mint, knownTools, queryIds);
 
   if (queries.size === 0) return { wire: rewritten, minted: 0 };
 

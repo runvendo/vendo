@@ -1,15 +1,20 @@
 /** J3 — APP EDIT + HISTORY through the composed wire.
  *
- * Create an app (POST /apps — the screen agent saves the whole `<App …>`
- * document with its own hands), then edit it (POST /apps/:id/edit — the SAME
- * loop, asked to rewrite that app's document, answering with another whole-
- * document `save_app`). Both saves land through the real render seam and
- * `AppsRuntime.authored`. The wire returns an EditResult; history surfaces the
- * prior version.
+ * Create an app (POST /apps — the screen agent saves the whole `app.tsx` screen
+ * with its own hands), then edit it (POST /apps/:id/edit — the SAME loop, asked
+ * to rewrite that app's screen, answering with another whole-file `save_app`).
+ * Both saves land through the real render seam, the real component gauntlet and
+ * `AppsRuntime.authoredScreen`. The wire returns an EditResult; history surfaces
+ * the prior version.
+ *
+ * A component screen keeps NO tree on its document — a screen's tree is what
+ * running it produces — so what the person sees is read back off a real render
+ * (`GET /apps/:id/open` re-runs the stored screen in the sealed VM).
  *
  * History note: the frozen history surface (06 §1) lists prior snapshots,
  * appended only on edit — so one edit yields exactly one entry (the original).
  */
+import { SCREEN_FILE } from "@vendoai/apps";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ADA,
@@ -21,24 +26,34 @@ import {
 
 interface TreeNode {
   id: string;
+  component: string;
   props?: { text?: string };
 }
 interface AppDoc {
   id: string;
-  tree: { nodes: TreeNode[] };
+  source?: Record<string, { text?: string }>;
 }
 
-const CREATE_DIALECT = '<App name="Greeting"><Text text="Hello"/><Disclaimer reason="Fixture app."/></App>';
+/** The screen, and the same screen with the greeting changed. There is no quoted
+ *  old/new pair and no edit-in-place tool here — a screen edit IS the app's own
+ *  file saved back, which is the only write path there is. */
+const screenSaying = (greeting: string): string => `import { Disclaimer, Stack, Text } from "@vendo/screen";
 
-// The edit answer: the whole document again, with the greeting changed. There is
-// no quoted old/new pair and no edit-in-place tool — a screen edit IS the app's
-// own document saved back, which is the only write path there is. Identity is
-// carried by the document's own shape, so the greeting node keeps the id the
-// screen already mounted.
-const EDIT_DIALECT = '<App name="Greeting"><Text text="Goodbye"/><Disclaimer reason="Fixture app."/></App>';
+export default function Greeting() {
+  return (
+    <Stack gap={12}>
+      <Text text="${greeting}" variant="heading" />
+      <Disclaimer reason="Fixture app." />
+    </Stack>
+  );
+}
+`;
 
-const greetingText = (doc: AppDoc): string | undefined =>
-  doc.tree.nodes.find((node) => node.id === "text-1")?.props?.text;
+const CREATE_SCREEN = screenSaying("Hello");
+const EDIT_SCREEN = screenSaying("Goodbye");
+
+/** The screen text as the app STORES it — the source the save landed. */
+const storedGreeting = (doc: AppDoc): string | undefined => doc.source?.[SCREEN_FILE]?.text;
 
 let stack: Stack;
 afterEach(async () => {
@@ -46,12 +61,21 @@ afterEach(async () => {
 });
 
 describe("J3: app edit + history through the composed wire", () => {
-  it("creates, edits by saving the app's own document back, and lists the prior version", async () => {
+  /** What the person's screen really shows: the stored `app.tsx`, RENDERED — the
+   *  wire's own open path, which re-runs it in the sealed VM. */
+  const paintedGreeting = async (appId: string): Promise<string | undefined> => {
+    const opened = (await (await stack.wireFetch(`/apps/${appId}/open`, {}, ADA)).json()) as {
+      payload: { nodes: TreeNode[] };
+    };
+    return opened.payload.nodes.find((node) => node.component === "Text")?.props?.text;
+  };
+
+  it("creates, edits by saving the app's own screen back, and lists the prior version", async () => {
     await resetFixture();
     stack = await createStack({
       turns: [
-        ...screenAgentCreateTurns(CREATE_DIALECT),
-        ...screenAgentCreateTurns(EDIT_DIALECT),
+        ...screenAgentCreateTurns(CREATE_SCREEN),
+        ...screenAgentCreateTurns(EDIT_SCREEN),
       ],
     });
 
@@ -61,7 +85,8 @@ describe("J3: app edit + history through the composed wire", () => {
       body: JSON.stringify({ prompt: "Build a greeting card" }),
     }, ADA)).json()) as AppDoc;
     const appId = created.id;
-    expect(greetingText(created)).toBe("Hello");
+    expect(storedGreeting(created)).toBe(CREATE_SCREEN);
+    expect(await paintedGreeting(appId)).toBe("Hello");
     expect(await stack.sql("SELECT id FROM vendo_apps WHERE subject = $1", [ADA.subject])).toHaveLength(1);
 
     // --- Edit ---------------------------------------------------------------
@@ -72,11 +97,12 @@ describe("J3: app edit + history through the composed wire", () => {
     expect(edited.version.rung).toBe(1);
     // IN PLACE: the same app, not a second one.
     expect(edited.app.id).toBe(appId);
-    expect(greetingText(edited.app)).toBe("Goodbye");
+    expect(storedGreeting(edited.app)).toBe(EDIT_SCREEN);
 
-    // Current app now reads the edited text.
+    // Current app now reads the edited text — stored, and on screen.
     const current = (await (await stack.wireFetch(`/apps/${appId}`, {}, ADA)).json()) as AppDoc;
-    expect(greetingText(current)).toBe("Goodbye");
+    expect(storedGreeting(current)).toBe(EDIT_SCREEN);
+    expect(await paintedGreeting(appId)).toBe("Goodbye");
 
     // --- History lists the prior version ----------------------------------
     const history = (await (await stack.wireFetch(`/apps/${appId}/history`, {}, ADA)).json()) as Array<{

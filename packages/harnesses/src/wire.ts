@@ -18,6 +18,7 @@
  */
 import {
   toVendoWirePart,
+  type VendoStepLimitPart,
   vendoViewStreamId,
   type AppId,
   type BeatPhase,
@@ -139,6 +140,15 @@ export function writeError(writer: Writer, message: string): void {
  */
 export function writeTurnError(write: (part: unknown) => void, message: string): void {
   write(toVendoWirePart({ type: "data-vendo-turn-error", message }));
+}
+
+/**
+ * §1.5 `notice` → a SYSTEM fact persisted into the transcript (2026-08-10
+ * ruling: code never speaks in the assistant's voice). Not transient — the
+ * note must survive settle and reload, unlike a status beat.
+ */
+export function writeNotice(writer: Writer, notice: VendoStepLimitPart): void {
+  writer.write(toVendoWirePart(notice) as never);
 }
 
 /**

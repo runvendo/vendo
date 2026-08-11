@@ -3,8 +3,9 @@ import {
 } from "@vendoai/core";
 import {
   evaluateExpr,
+  warmExprRuntime,
 } from "@vendoai/apps/contract";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { average, count, daysUntil, difference, groupBy, max, min, sum } from "../../src/kit/aggregates.js";
 
 const invoices = [
@@ -60,63 +61,86 @@ describe("the aggregates read naturally in code-land", () => {
 });
 
 /**
- * THE SEAM (§0): there is exactly ONE aggregate implementation. Each wrapper is
- * asserted against `evaluateExpr` over the equivalent `.vendo` expression
- * source — the same call a `.vendo` screen's `$expr` takes. No stub on either
- * side. Break the shim's `sum` into its own reduce and this goes red.
+ * THE SEAM: `sum(rows, "amount")` here and the plain-JavaScript reduce a screen
+ * writes in a `{…}` gap are the same language reaching the same arithmetic
+ * (kit/aggregates.ts §doc), so they must agree to the digit. Each wrapper is
+ * asserted against `evaluateExpr` — the real sealed QuickJS VM a screen's
+ * `$expr` runs in, no stub on either side — over the hand-written expression a
+ * screen would use instead of the wrapper. Give the shim its own reduce and
+ * these go red.
+ *
+ * Only the cases where JavaScript HAS an equivalent live here. The wrappers'
+ * degradations (a non-numeric column, a mislabelled field, no clock) are the
+ * kit's own posture, not shared arithmetic, and are asserted above.
  */
-describe("the shim's aggregates ARE core's $expr, not a second implementation", () => {
+describe("the aggregates agree with the same arithmetic in a real $expr", () => {
   const rows: Json = [
     { amount: 10, when: "2026-03-01T00:00:00.000Z" },
     { amount: -4.5, when: "2026-03-09T00:00:00.000Z" },
     { amount: null, when: "2026-04-02T00:00:00.000Z" },
   ];
-  const strings: Json = [{ amount: "10" }, { amount: "4" }];
-  const missing: Json = [{ other: 1 }, { other: 2 }];
   const empty: Json = [];
 
-  const expected = (source: string, data: Record<string, Json>): Json | undefined => {
+  // Evaluation is synchronous, but the VM behind it boots once, asynchronously —
+  // an expression evaluated before the boot lands reads as `undefined`, which
+  // would make every comparison below pass against nothing.
+  beforeAll(async () => {
+    await warmExprRuntime();
+  });
+
+  /** The rows the kit's `column` keeps: an explicit null is sparse data, so a
+   *  screen writing the reduce by hand filters the same way. */
+  const NUMERIC = 'v.filter((r) => typeof r.amount === "number")';
+  const SUM = `${NUMERIC}.reduce((total, r) => total + r.amount, 0)`;
+  /** The distinct `YYYY-MM` buckets, oldest first — `groupBy`'s own ordering. */
+  const MONTHS = "v.map((r) => r.when.slice(0, 7))"
+    + ".filter((key, index, keys) => keys.indexOf(key) === index).sort()";
+
+  const evaluated = (source: string, data: Record<string, Json>): Json | undefined => {
     const result = evaluateExpr(source, data);
-    return result.ok ? result.value : undefined;
+    // An expression that could not run would compare equal to every wrapper
+    // answer that is `undefined`, which is exactly how this seam went blind.
+    if (!result.ok) throw new Error(`\`${source}\` did not evaluate: ${result.issue}`);
+    return result.value;
   };
 
   const cases: Array<[string, Json | undefined, string, Record<string, Json>]> = [
-    ["sum over numbers with a null", sum(rows, "amount"), 'sum(v, "amount")', { v: rows }],
-    ["sum over strings", sum(strings, "amount"), 'sum(v, "amount")', { v: strings }],
-    ["sum over rows missing the field", sum(missing, "amount"), 'sum(v, "amount")', { v: missing }],
-    ["sum over no rows", sum(empty, "amount"), 'sum(v, "amount")', { v: empty }],
-    ["count of rows", count(rows), "count(v)", { v: rows }],
-    ["count of no rows", count(empty), "count(v)", { v: empty }],
-    ["average over numbers with a null", average(rows, "amount"), 'average(v, "amount")', { v: rows }],
-    ["average over no rows", average(empty, "amount"), 'average(v, "amount")', { v: empty }],
-    ["min over numbers with a null", min(rows, "amount"), 'min(v, "amount")', { v: rows }],
-    ["min over strings", min(strings, "amount"), 'min(v, "amount")', { v: strings }],
-    ["max over numbers with a null", max(rows, "amount"), 'max(v, "amount")', { v: rows }],
-    ["max over no rows", max(empty, "amount"), 'max(v, "amount")', { v: empty }],
-    ["difference of two numbers", difference(10, 4), "difference(a, b)", { a: 10, b: 4 }],
+    ["sum over numbers with a null", sum(rows, "amount"), SUM, { v: rows }],
+    ["sum over no rows", sum(empty, "amount"), SUM, { v: empty }],
+    ["count of rows", count(rows), "v.length", { v: rows }],
+    ["count of no rows", count(empty), "v.length", { v: empty }],
+    ["average over numbers with a null", average(rows, "amount"), `${SUM} / ${NUMERIC}.length`, { v: rows }],
+    [
+      "min over numbers with a null",
+      min(rows, "amount"),
+      `${NUMERIC}.reduce((low, r) => (r.amount < low ? r.amount : low), ${NUMERIC}[0].amount)`,
+      { v: rows },
+    ],
+    [
+      "max over numbers with a null",
+      max(rows, "amount"),
+      `${NUMERIC}.reduce((high, r) => (r.amount > high ? r.amount : high), ${NUMERIC}[0].amount)`,
+      { v: rows },
+    ],
+    ["difference of two numbers", difference(10, 4), "a - b", { a: 10, b: 4 }],
     [
       "group_by month, summed",
       groupBy(rows, "when", "month", "sum", "amount"),
-      'group_by(v, "when", "month", sum.of("amount"))',
+      `${MONTHS}.map((key) => ({ key, value: v.filter((r) => r.when.slice(0, 7) === key`
+      + ' && typeof r.amount === "number").reduce((total, r) => total + r.amount, 0) }))',
       { v: rows },
     ],
     [
       "group_by month, counted",
       groupBy(rows, "when", "month", "count"),
-      'group_by(v, "when", "month", count.of())',
+      `${MONTHS}.map((key) => ({ key, value: v.filter((r) => r.when.slice(0, 7) === key).length }))`,
       { v: rows },
     ],
   ];
 
   for (const [name, wrapped, source, data] of cases) {
     it(`${name} — same answer as \`${source}\``, () => {
-      expect(wrapped).toEqual(expected(source, data));
+      expect(wrapped).toEqual(evaluated(source, data));
     });
   }
-
-  it("agrees with $expr on days_until at a fixed now", () => {
-    const now = Date.parse("2026-03-01T00:00:00.000Z");
-    const direct = evaluateExpr("days_until(d)", { d: "2026-03-11T00:00:00.000Z" }, { now });
-    expect(daysUntil("2026-03-11T00:00:00.000Z", { now })).toEqual(direct.ok ? direct.value : undefined);
-  });
 });

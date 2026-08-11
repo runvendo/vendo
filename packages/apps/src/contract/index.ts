@@ -82,6 +82,8 @@ export {
 // genui/expr — the brace grammar
 export * from "./genui/expr.js";
 export * from "./genui/screen.js";
+// genui/component — the sealed screen engine (Preact in the VM)
+export * from "./genui/component/index.js";
 // kit — the component vocabulary
 export * from "./kit/index.js";
 // catalog + theme — one catalog shape, one summary

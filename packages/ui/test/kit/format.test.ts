@@ -23,16 +23,22 @@ describe("applyFormat text tier", () => {
   });
 });
 
-describe("formatMoney (takes integer cents)", () => {
-  it("formats cents as currency, dividing by 100", () => {
-    expect(formatMoney(123456)).toBe("$1,234.56");
+describe("formatMoney (takes major units)", () => {
+  it("pretty-prints an amount that is already dollars", () => {
+    expect(formatMoney(1234.56)).toBe("$1,234.56");
     expect(formatMoney(0)).toBe("$0.00");
-    expect(formatMoney(-500)).toBe("-$5.00");
+    expect(formatMoney(-5)).toBe("-$5.00");
   });
 
-  it("honors currency + locale", () => {
-    expect(formatMoney(100000, { currency: "EUR", locale: "de-DE" })).toContain("1.000,00");
-    // JPY has 0 minor digits, so the integer IS whole yen (no ÷100).
+  it("never converts units — a raw cents value formats 100x, which is the caller's bug", () => {
+    // The contract: formatters pretty-print, callers divide. A cents field is
+    // `/100` in the expression that reads it, never here.
+    expect(formatMoney(123456)).toBe("$123,456.00");
+  });
+
+  it("honors currency + locale, and the ISO minor unit sets the decimals shown", () => {
+    expect(formatMoney(1000, { currency: "EUR", locale: "de-DE" })).toContain("1.000,00");
+    // JPY has 0 minor digits, so whole yen show no decimals.
     expect(formatMoney(100000, { currency: "JPY" })).toBe("¥100,000");
   });
 

@@ -26,8 +26,13 @@ export function Sparkline({ data, valueKey = "value", height = 40, emptyState = 
     );
   }
   const points = clean.map((v, i) => ({ i, v }));
+  // The ratio is `ChartFrame`'s intrinsic-width trick (charts/sanitize.tsx) at
+  // this form's own proportion: a parent that sizes to its content (the Kit's
+  // `Row`) measures `width: 100%` as zero and recharts draws nothing, and a trend
+  // strip transferred from its height as a SQUARE would be 40px of illegible
+  // line. A parent with a real width still wins.
   return (
-    <div data-kit="Sparkline" style={{ width: "100%", height, minHeight: height }}>
+    <div data-kit="Sparkline" style={{ width: "100%", aspectRatio: "4 / 1", height, minHeight: height }}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={points} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
           <defs>

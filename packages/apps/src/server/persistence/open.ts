@@ -2,6 +2,7 @@ import {
   VENDO_TREE_FORMAT,
   VendoError,
   safeErrorMessage,
+  type AppId,
   type Json,
   type RunContext,
   type UIPayload,
@@ -10,10 +11,13 @@ import {
   componentSources,
   validateTree,
   type AppDocument,
+  type ComponentPaintResult,
   type TreeQuery,
   type Tree,
   stripServerAuthoritativeFields,
 } from "../../contract/index.js";
+// The screen engine, by its own path: the contract door does not carry it yet.
+import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import type { AppCaller } from "./call.js";
 import type { InClientVenueState } from "../remix/inclient.js";
 import { bundleOf, seedDrift, type SeedBaseline, type SeedDrift } from "../../contract/index.js";
@@ -200,6 +204,60 @@ export interface ServedSurface {
   urlFor(app: AppDocument): Promise<string>;
 }
 
+/** The seams an open reads a venue verdict through, passed as one so the two
+ *  artifact paths can share them without a five-argument call. */
+interface VenueSeams {
+  inClient: ((app: AppDocument) => Promise<InClientVenueState | undefined>) | undefined;
+  venueState: ((app: AppDocument, ctx: RunContext) => Promise<Record<string, unknown> | undefined>) | undefined;
+  seedBaselines: readonly SeedBaseline[];
+}
+
+/**
+ * The open surface of a COMPONENT screen, once the gauntlet has rendered it.
+ *
+ * Its own function because it carries the SAME venue states the tree path does —
+ * they are facts about the app and its viewer, not about which artifact the app
+ * happens to be written in, and a screen that skipped them opened a review-kind
+ * remix with no verdict on it at all.
+ */
+const paintedScreenSurface = async (
+  app: AppDocument,
+  ctx: RunContext,
+  painted: Extract<ComponentPaintResult, { ok: true }>,
+  seams: VenueSeams,
+): Promise<OpenSurface> => {
+  // The payload a save paints, field for field (generation/render-seam.ts): the
+  // format tag, the flattened nodes, and the interactive half the renderer boots
+  // its own live VM from.
+  const payload: Record<string, Json> = {
+    formatVersion: VENDO_TREE_FORMAT,
+    root: painted.root,
+    nodes: Object.values(painted.nodes) as unknown as Json,
+  };
+  // Written HERE, after the render, so nothing a screen produced can forge one.
+  const inClient = await seams.inClient?.(app);
+  if (inClient !== undefined) payload.inClient = inClient as unknown as Json;
+  for (const [key, value] of Object.entries(await additionalVenueState(seams.venueState, app, ctx))) {
+    if (key === "inClient" || key === "data" || key === "seedDrift" || key === "dataUnavailable") continue;
+    payload[key] = value as Json;
+  }
+  const drift = seedDrift(app, seams.seedBaselines);
+  if (drift !== null) payload.seedDrift = drift as unknown as Json;
+  // The review-kind gate, for the same reason and with the same teeth as the
+  // tree path's: an unapproved review-kind version ships NO executable source.
+  // A screen's `interactive` half IS that source — the compiled module plus the
+  // query answers it rendered on — so it is what must not leave here. The client
+  // keeps the ORIGINAL host component and surfaces the standing `inClient`.
+  if (inClient?.granted === false && inClient.reason === "pending-review") {
+    return { kind: "tree", payload: payload as unknown as UIPayload };
+  }
+  payload.interactive = painted.interactive as unknown as Json;
+  attachSeedFurnishings(payload as unknown as Tree, app);
+  return app.components === undefined
+    ? { kind: "tree", payload: payload as unknown as UIPayload }
+    : { kind: "tree", payload: payload as unknown as UIPayload, components: componentSources(app.components) };
+};
+
 /** The additive venue states for this open, or none when the seam fails.
  *  Reported once per failure so a broken seam is visible to an operator without
  *  costing the person their app. */
@@ -222,6 +280,15 @@ export const createAppOpener = (
   seedBaselines: readonly SeedBaseline[] = [],
   inClientVenue: ((app: AppDocument) => Promise<InClientVenueState | undefined>) | undefined,
   served: ServedSurface,
+  /**
+   * The COMPONENT screen half of an open: the app's own `app.tsx`, RUN.
+   *
+   * `AppFloor.component` — the same gauntlet a save paints through — bound by
+   * composition to this caller's ctx, because it runs the screen's queries
+   * through the guard-bound caller (one guard decision per query, this person's
+   * authority, the app venue) and boots the screen on their answers.
+   */
+  screen: (input: { appId: AppId; source: string }, ctx: RunContext) => Promise<ComponentPaintResult>,
   /**
    * Build contract §9.9 — the ADDITIVE venue-state slot, ctx-aware because the
    * states that ride it are per-caller (lane H's adoption card is served only
@@ -260,6 +327,40 @@ export const createAppOpener = (
     // (no v1 cover or screenshot machinery); the embed's keepalive ping is what
     // notices a machine that went back to sleep.
     return { kind: "http", url: await served.urlFor(app) };
+  }
+
+  // A COMPONENT screen (`app.tsx`) has no stored tree, and never will: a screen's
+  // tree is what RENDERING it produces, so the screen is re-run HERE, on every
+  // open — its queries resolve against the world as it is this instant and the
+  // payload carries today's numbers. `authoredScreen` deliberately stores no
+  // snapshot, so there is nothing stale to be tempted by.
+  //
+  // Read BEFORE `app.tree`, the same way the row-scoped `validate` reads a stored
+  // app (`componentScreenOf`, doors/build-surface.ts): when a document carries
+  // both, the screen IS the app and the tree is an older picture of it. Inline
+  // text only, for that door's reason too — a spilled screen's bytes are a blob
+  // fetch, which would be a second way to read an app.
+  const screenSource = app.source?.[SCREEN_FILE]?.text;
+  if (screenSource !== undefined && screenSource.trim() !== "") {
+    const painted = await screen({ appId: app.id, source: screenSource }, ctx);
+    if (!painted.ok) {
+      // The gauntlet's own repair instructions, verbatim: they name the line and
+      // what to write instead, and they are the only thing that says why the app
+      // the person just had will not open (a host tool that has since changed
+      // shape, a query that no longer answers).
+      throw new VendoError(
+        "validation",
+        `this screen did not render: ${painted.blocking.join("; ")}`,
+        { appId: app.id },
+      );
+    }
+    // The venue states this payload carries are the tree path's, on identical
+    // terms (`paintedScreenSurface`).
+    return await paintedScreenSurface(app, ctx, painted, {
+      inClient: inClientVenue,
+      venueState,
+      seedBaselines,
+    });
   }
 
   if (app.tree === undefined) {

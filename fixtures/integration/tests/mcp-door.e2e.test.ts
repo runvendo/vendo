@@ -48,7 +48,20 @@ import {
 } from "../src/harness.js";
 import { connectWithSdk, descriptorShape, textOf } from "../src/mcp-support.js";
 
-const CREATE_DIALECT = `<App name="MCP ride-along app"><Text text="Hello over MCP"/><Disclaimer reason="Fixture app."/></App>`;
+/** The screen the agent saves for the ride-along app: one `app.tsx` component,
+ *  which the floor's own gauntlet renders before anything paints — and a paint is
+ *  what creates the row the door then opens. */
+const CREATE_SCREEN = `import { Disclaimer, Stack, Text } from "@vendo/screen";
+
+export default function McpRideAlong() {
+  return (
+    <Stack gap={12}>
+      <Text text="Hello over MCP" variant="heading" />
+      <Disclaimer reason="Fixture app." />
+    </Stack>
+  );
+}
+`;
 
 let stack: Stack;
 afterEach(async () => {
@@ -58,7 +71,7 @@ afterEach(async () => {
 describe("J6: MCP door round-trip composed around the umbrella", () => {
   it("discovers, authenticates, lists verbatim, parks in-band, shares one approvals plane with the wire, and opens an app", async () => {
     await resetFixture();
-    stack = await createStack({ mcp: true, turns: screenAgentCreateTurns(CREATE_DIALECT) });
+    stack = await createStack({ mcp: true, turns: screenAgentCreateTurns(CREATE_SCREEN) });
     const { origin, endpoint } = stack.mcp!;
 
     // A wire-created app to ride along over the door (store-only, no host auth).

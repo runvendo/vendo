@@ -43,7 +43,10 @@ const convertPropValue = (value: unknown): unknown => {
   return Object.fromEntries(Object.entries(record).map(([key, child]) => [key, convertPropValue(child)]));
 };
 
-const convertNode = (node: TreeNode): TreeNode => node.props === undefined
+/** One node's props, converted. Exported for the interactive swap: a tree the
+ *  screen VM produced enters the walk the same way the served payload did
+ *  (use-screen.ts). */
+export const convertNode = (node: TreeNode): TreeNode => node.props === undefined
   ? node
   : { ...node, props: convertPropValue(node.props) as Record<string, Json> };
 

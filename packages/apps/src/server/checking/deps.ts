@@ -37,6 +37,13 @@ export interface HostToolInfo {
   outputSchema?: JsonSchema;
 }
 
+/** A tool that CHANGES something. The smoke-render gate stubs these with the
+ *  approval pipe's answer instead of a sample, and a component screen may not
+ *  name one in `useQuery` — a read runs on every render. It lives here with
+ *  {@link HostToolInfo}, so the two readers share one definition. */
+export const isMutatingTool = (tool: HostToolInfo | undefined): boolean =>
+  tool?.risk === "write" || tool?.risk === "destructive";
+
 /**
  * The host surface a check measures against.
  *
@@ -53,6 +60,16 @@ export interface HostToolInfo {
  */
 export interface FloorDependencies {
   model?: LanguageModel;
+  /**
+   * The seat the AI REVIEWER's own call rides, when the deployment composed a
+   * cheaper one (`AppsConfig.reviewModel`).
+   *
+   * Judging a finished screen against its own rows is a reading job, not a
+   * writing one, and it is the only check that spends a model call — so it runs
+   * on the family's fast pick rather than on the model that wrote the app.
+   * Absent, it rides `model` above, exactly as it always did.
+   */
+  reviewModel?: LanguageModel;
   /** The composition-normalized catalog (01 §14): propsJsonSchema is derived. */
   catalog: NormalizedCatalog;
   /** Each tool's declared response schema in structural form

@@ -58,10 +58,11 @@ const isFinding = (value: unknown): value is Finding =>
   && (value["severity"] === "block" || value["severity"] === "warn")
   && typeof value["message"] === "string";
 
-/** An `app.vendo` path, or undefined for anything else. A `plan.vendo` is a
- *  skeleton rather than an app document — there is nothing to validate yet. */
+/** An `app.vendo` or `app.tsx` path, or undefined for anything else. A
+ *  `plan.vendo` is a skeleton rather than an app document — there is nothing to
+ *  validate yet. */
 const appDocumentAt = (path: string): AppId | undefined =>
-  path.endsWith("/app.vendo") ? hotPathAppId(path) : undefined;
+  path.endsWith("/app.vendo") || path.endsWith("/app.tsx") ? hotPathAppId(path) : undefined;
 
 /** One `validate` call, or undefined for every way it could not reach a verdict —
  *  each of which is reported to the OPERATOR and to nobody else. */

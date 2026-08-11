@@ -3,15 +3,17 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DataTable } from "../../src/kit/data/data-table.js";
 
+// Money in the rows is DOLLARS: a `format:"money"` column pretty-prints the
+// value as it stands, so a host's cents field is divided by 100 upstream.
 const rows = [
-  { id: 1, client: { name: "Hartwell" }, amountCents: 250000, dueDate: "2026-03-14", status: "overdue" },
-  { id: 2, client: { name: "Acme" }, amountCents: 90000, dueDate: "2026-01-02", status: "paid" },
-  { id: 3, client: { name: "Borealis" }, amountCents: 175000, dueDate: "2026-02-20", status: "overdue" },
+  { id: 1, client: { name: "Hartwell" }, amount: 2500, dueDate: "2026-03-14", status: "overdue" },
+  { id: 2, client: { name: "Acme" }, amount: 900, dueDate: "2026-01-02", status: "paid" },
+  { id: 3, client: { name: "Borealis" }, amount: 1750, dueDate: "2026-02-20", status: "overdue" },
 ];
 
 const columns = [
   { key: "client.name", label: "Client" },
-  { key: "amountCents", label: "Amount", format: "money" as const, align: "end" as const },
+  { key: "amount", label: "Amount", format: "money" as const, align: "end" as const },
   { key: "dueDate", label: "Due", format: "date" as const },
 ];
 
@@ -24,10 +26,10 @@ describe("DataTable", () => {
   });
 
   it("applies an initial sortBy", () => {
-    render(<DataTable rows={rows} columns={columns} sortBy="amountCents asc" />);
+    render(<DataTable rows={rows} columns={columns} sortBy="amount asc" />);
     const bodyRows = screen.getAllByRole("row").slice(1); // drop header
     const firstCells = bodyRows.map((r) => within(r).getAllByRole("cell")[0]?.textContent);
-    expect(firstCells[0]).toBe("Acme"); // 90000 is smallest
+    expect(firstCells[0]).toBe("Acme"); // 900 is smallest
   });
 
   it("caps rows with limit", () => {
@@ -49,7 +51,7 @@ describe("DataTable", () => {
   });
 
   it("renders an unrenderable numeric cell as a placeholder, never $NaN", () => {
-    render(<DataTable rows={[{ id: 9, client: { name: "X" }, amountCents: Number.NaN }]} columns={columns} />);
+    render(<DataTable rows={[{ id: 9, client: { name: "X" }, amount: Number.NaN }]} columns={columns} />);
     expect(screen.queryByText(/NaN/)).toBeNull();
   });
 
@@ -76,7 +78,7 @@ describe("DataTable", () => {
 
   // Every filter compares against the text the cell SHOWS. The columns are
   // formatted — "$2,500.00", "Mar 14, 2026" — while the filters read the raw
-  // field ("250000", "2026-03-14"), so a person searching for what is in front
+  // field ("2500", "2026-03-14"), so a person searching for what is in front
   // of them got the empty state, and one searching the raw form got rows whose
   // text does not contain what they typed.
   it("searches the text the cells actually show", () => {

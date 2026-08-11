@@ -44,37 +44,30 @@ afterEach(async () => {
 const principal: Principal = { kind: "user", subject: "user_memory" };
 const ctx = { principal, venue: "chat" as const, presence: "present" as const, sessionId: "ses_memory" };
 
-/** The smallest document the compiler renders and the seam paints. */
-const SPENDING = `<App name="Spending">
-  <Stack>
-    <Text text="This month" />
-  </Stack>
-</App>`;
+/** The smallest `app.tsx` the gauntlet renders and the seam paints. */
+const spending = (...lines: string[]): string => `import { Stack, Text } from "@vendo/screen";
+
+export default function Spending() {
+  return (
+    <Stack>
+${lines.map((text) => `      <Text text="${text}" />`).join("\n")}
+    </Stack>
+  );
+}
+`;
+
+const SPENDING = spending("This month");
 
 /** The second save of the same run — same app, refined. */
-const SPENDING_REFINED = `<App name="Spending">
-  <Stack>
-    <Text text="This month" />
-    <Text text="Trip only" />
-  </Stack>
-</App>`;
+const SPENDING_REFINED = spending("This month", "Trip only");
 
-/** The first edit's whole rewritten document — "say last month instead". There
- *  is no edit-in-place dialect any more: the one builder saves the full
- *  document each time. */
-const SPENDING_LAST_MONTH = `<App name="Spending">
-  <Stack>
-    <Text text="Last month" />
-    <Text text="Trip only" />
-  </Stack>
-</App>`;
+/** The first edit's whole rewritten screen — "say last month instead". There is
+ *  no edit-in-place dialect any more: the one builder saves the full file each
+ *  time. */
+const SPENDING_LAST_MONTH = spending("Last month", "Trip only");
 
 /** The second edit's — "and drop the trip-only line". */
-const SPENDING_WITHOUT_TRIP = `<App name="Spending">
-  <Stack>
-    <Text text="Last month" />
-  </Stack>
-</App>`;
+const SPENDING_WITHOUT_TRIP = spending("Last month");
 
 const DECISIONS_FIRST = "Started from the full account list.";
 const DECISIONS_LAST = "Filtered to 2 accounts — the ask was trip-only. Ruled out a chart: one number.";

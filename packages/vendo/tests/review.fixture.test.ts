@@ -8,10 +8,6 @@ import {
   type AppDocument,
   type Principal,
 } from "@vendoai/core";
-import {
-  componentSources,
-  printWire,
-} from "@vendoai/apps/contract";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
@@ -30,26 +26,35 @@ interface ModelCall {
 const SCREEN_BRIEF_MARKER = "# In this loop";
 /** `save_app`'s own reply, which is a tool RESULT rather than text — its presence
  *  is how this model knows the current run already saved. */
-const SAVED_MARKER = "Run validate on it now.";
+const SAVED_MARKER = "That save landed.";
 
 /** The whole prompt as text, tool results included. */
 const promptText = (call: ModelCall): string => JSON.stringify(call.prompt ?? "");
 
 /**
- * Renames, as the one builder performs them: open this app's document, put the
- * new name on its opening `<App>` line, save the whole thing back. One save per
- * assembly run, then a closing word.
+ * Renames, as the one builder performs them: write this app's whole `app.tsx`
+ * with the new title on it and save it. One save per assembly run, then a
+ * closing word.
  */
-const screenModel = (renames: string[], document: () => Promise<string>): LanguageModel => {
+const screenModel = (renames: string[]): LanguageModel => {
   let saves = 0;
   const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
   const saving = (prompt: string): boolean =>
     prompt.includes(SCREEN_BRIEF_MARKER) && !prompt.includes(SAVED_MARKER);
-  const rewrite = async (): Promise<string> => {
+  const rewrite = (): string => {
     const rename = renames[Math.min(saves, renames.length - 1)];
     saves += 1;
     if (rename === undefined) throw new Error("scripted model exhausted");
-    return (await document()).replace(/^<App name="[^"]*"/, `<App name="${rename}"`);
+    return `import { Stack, Text } from "@vendo/screen";
+
+export default function TransferRemix() {
+  return (
+    <Stack>
+      <Text text="${rename}" />
+    </Stack>
+  );
+}
+`;
   };
   return {
     specificationVersion: "v2",
@@ -65,14 +70,14 @@ const screenModel = (renames: string[], document: () => Promise<string>): Langua
           type: "tool-call" as const,
           toolCallId: "call_save_app",
           toolName: "save_app",
-          input: JSON.stringify({ content: await rewrite() }),
+          input: JSON.stringify({ content: rewrite() }),
         }],
         finishReason: "tool-calls" as const,
         usage,
       };
     },
     async doStream(modelCall: ModelCall) {
-      const content = saving(promptText(modelCall)) ? await rewrite() : undefined;
+      const content = saving(promptText(modelCall)) ? rewrite() : undefined;
       return {
         stream: new ReadableStream({
           start(controller) {
@@ -150,26 +155,8 @@ export default function Page() {
     process.chdir(root);
     const user = "user_ada";
     const reviewer = "host_reviewer";
-    /** The app under edit, and the document the assembler opens: printed exactly
-     *  as a checkout prints it. Read off the ROW (never `open()`, which serves the
-     *  last APPROVED version) because a rewrite amends the pending one. */
-    let appUnderEdit: string | undefined;
-    let composed: ReturnType<typeof createVendo> | undefined;
-    const asItStands = async (): Promise<string> => {
-      const app = await composed!.apps.get(appUnderEdit!, {
-        principal: { kind: "user", subject: user },
-        venue: "app",
-        presence: "present",
-        sessionId: "ses_review_fixture",
-      });
-      if (app === null) throw new Error("no app row to rewrite");
-      return printWire(
-        { tree: app.tree as never, components: componentSources(app.components), name: app.name },
-        { includeIds: true },
-      );
-    };
     const vendo = createVendo({
-      model: screenModel(["Transfer remix v2", "Transfer remix v3"], asItStands),
+      model: screenModel(["Transfer remix v2", "Transfer remix v3"]),
       // Host-resolved principal from the fixture header; absent = no identity,
       // which the wire refuses with `forbidden`.
       principal: async (req): Promise<Principal | null> => {
@@ -182,14 +169,12 @@ export default function Page() {
       // assertion — even a dev composition never infers it from a principal.
       apps: { review: { reviewer: (ctx) => ctx.principal.subject === reviewer } },
     });
-    composed = vendo;
 
     // 1. The user's Remix gesture seeds an app from the review-kind component.
     const seedResponse = await vendo.handler(request("POST", "/apps/seed", { as: user, body: { component: "TransferPanel" } }));
     expect(seedResponse.status).toBe(200);
     const seeded = await seedResponse.json() as AppDocument;
     const appId = seeded.id;
-    appUnderEdit = appId;
     const v1Hash = appVersionHash(seeded);
 
     // 2. Unapproved: the user gets the pending state and the ORIGINAL — the
@@ -321,7 +306,10 @@ export default function Page() {
     });
     expect(granted.payload.inClient.review).toBeUndefined();
     const componentName = seedComponentName("TransferPanel");
-    expect(granted.components?.[componentName]).toContain("TransferPanel");
+    // The seat ships the person's own screen, so the assertion names the version:
+    // an edit writes `app.tsx` and the save puts it in the seat, which is what the
+    // ship-diff a reviewer reads is a diff OF.
+    expect(granted.components?.[componentName]).toContain("Transfer remix v2");
 
     // 7. Another edit: the LAST approved version keeps rendering natively
     // while the new one is pending — never a gap, never unreviewed code.
@@ -333,7 +321,10 @@ export default function Page() {
       versionHash: v2Hash,
       review: { status: "pending", versionHash: v3Hash },
     });
-    expect(during.components?.[componentName]).toContain("TransferPanel");
+    // v2's screen, NOT v3's — naming the version is the whole claim here: the last
+    // APPROVED source keeps rendering while the new one waits, so unreviewed code
+    // never ships.
+    expect(during.components?.[componentName]).toContain("Transfer remix v2");
     // ...and the pending version is back in the reviewer's queue.
     const pendingAgain = await (await vendo.handler(request("GET", "/apps/review-queue", { as: reviewer }))).json();
     expect(pendingAgain[0]).toMatchObject({ appId, versionHash: v3Hash, resubmissions: 1 });

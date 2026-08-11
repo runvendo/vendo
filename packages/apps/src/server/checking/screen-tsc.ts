@@ -86,18 +86,25 @@ export interface ScreenTscInput {
   readonly screen: string;
   /** The ambient declarations from {@link screenTypings}. */
   readonly typings: string;
+  /**
+   * The standard library, when the default is too small. The wire screen is
+   * declarative and needs nothing past ES5; a COMPONENT screen awaits tool
+   * calls, so it needs a `Promise`. No DOM lib is available in either case —
+   * that is deliberate, not an omission.
+   */
+  readonly lib?: readonly string[];
 }
 
 /** Parsed lib files, keyed by path. A program costs ~450ms cold and ~5ms warm,
  *  and the lib files are immutable for the process. */
 const libCache = new Map<string, TS.SourceFile>();
 
-const compilerOptions = (ts: typeof TS): TS.CompilerOptions => ({
+const compilerOptions = (ts: typeof TS, input: ScreenTscInput): TS.CompilerOptions => ({
   jsx: ts.JsxEmit.Preserve,
   target: ts.ScriptTarget.ES2020,
   // The smallest lib carrying Array/ReadonlyArray/Record — a screen is
   // declarative, so nothing here needs a newer standard library.
-  lib: ["lib.es5.d.ts"],
+  lib: [...(input.lib ?? ["lib.es5.d.ts"])],
   module: ts.ModuleKind.ESNext,
   types: [],
   noEmit: true,
@@ -111,7 +118,7 @@ const compilerOptions = (ts: typeof TS): TS.CompilerOptions => ({
 });
 
 const buildProgram = (ts: typeof TS, input: ScreenTscInput): TS.Program => {
-  const options = compilerOptions(ts);
+  const options = compilerOptions(ts, input);
   const files = new Map([[SCREEN_FILE, input.screen], [SCREEN_TYPINGS_FILE, input.typings]]);
   const create = (name: string, text: string, version: TS.ScriptTarget | TS.CreateSourceFileOptions): TS.SourceFile =>
     ts.createSourceFile(name, text, version, true, name.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
@@ -395,34 +402,88 @@ const translate = (
 };
 
 /**
+ * One compiled screen, for a caller that writes its OWN sentences.
+ *
+ * `ok: false` NAMES why nothing was checked, instead of returning silence a
+ * caller cannot tell apart from a clean screen. That distinction is the point:
+ * the wire screen's check degrades to no findings by policy (below), while the
+ * component screen's gauntlet treats an unreachable compiler as a failure —
+ * a gate that cannot read the file must not pass it.
+ */
+export type ScreenProgram =
+  | {
+      ok: true;
+      ts: typeof TS;
+      file: TS.SourceFile;
+      checker: TS.TypeChecker;
+      /** Syntax errors. Semantic diagnostics over a file that does not parse
+       *  are a cascade of consequences of the same break, so `semantic` is
+       *  empty whenever this is not. */
+      syntactic: readonly TS.Diagnostic[];
+      semantic: readonly TS.Diagnostic[];
+    }
+  | { ok: false; why: string };
+
+/** Build the program and collect its diagnostics. Never throws. */
+export function screenProgram(input: ScreenTscInput): ScreenProgram {
+  const ts = loadCompiler();
+  if (ts === null) {
+    return { ok: false, why: "no usable TypeScript compiler is reachable from @vendoai/apps" };
+  }
+  try {
+    const program = buildProgram(ts, input);
+    const file = program.getSourceFile(SCREEN_FILE);
+    if (file === undefined) return { ok: false, why: "the compiler did not accept the screen file" };
+    const syntactic = program.getSyntacticDiagnostics(file);
+    return {
+      ok: true,
+      ts,
+      file,
+      checker: program.getTypeChecker(),
+      syntactic,
+      semantic: syntactic.length > 0 ? [] : program.getSemanticDiagnostics(file),
+    };
+  } catch (error) {
+    return { ok: false, why: `the TypeScript compiler threw: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+/** One diagnostic as the floor's sentence. Exported for the component screen's
+ *  gauntlet, which overrides the handful of classes whose prose is specific to
+ *  the wire dialect and reuses the rest of this translation. */
+export function translateDiagnostic(
+  ts: typeof TS,
+  file: TS.SourceFile,
+  checker: TS.TypeChecker,
+  diagnostic: TS.Diagnostic,
+): Finding[] {
+  return translate(ts, file, checker, diagnostic);
+}
+
+/** A diagnostic's 1-based line in the screen file — the author's own line. */
+export const diagnosticLine = (file: TS.SourceFile, diagnostic: TS.Diagnostic): number =>
+  file.getLineAndCharacterOfPosition(diagnostic.start ?? 0).line + 1;
+
+/**
  * Type-check one screen against its generated declarations.
  *
  * Returns `[]` for a clean screen, `[]` when no usable compiler is available,
  * and never throws.
  */
 export function screenTscFindings(input: ScreenTscInput): Finding[] {
-  const ts = loadCompiler();
-  if (ts === null) return [];
-  try {
-    const program = buildProgram(ts, input);
-    const file = program.getSourceFile(SCREEN_FILE);
-    if (file === undefined) return [];
-    const syntactic = program.getSyntacticDiagnostics(file);
-    if (syntactic.length > 0) {
-      // Semantic diagnostics over a file that does not parse are a cascade of
-      // consequences of the same break; report the break itself, once.
-      const first = syntactic[0] as TS.Diagnostic;
-      return [{
-        severity: "block",
-        where: `line ${file.getLineAndCharacterOfPosition(first.start ?? 0).line + 1}`,
-        message: `does not parse as a screen: ${ts.flattenDiagnosticMessageText(first.messageText, " ")}`,
-      }];
-    }
-    const checker = program.getTypeChecker();
-    return program.getSemanticDiagnostics(file).flatMap((diagnostic) => translate(ts, file, checker, diagnostic));
-  } catch {
-    // The compiler is the check, not the product: a compiler that throws
-    // degrades to no findings, exactly like one that would not load.
-    return [];
+  const program = screenProgram(input);
+  // The compiler is the check, not the product: a compiler that would not load,
+  // or that threw, degrades to no findings.
+  if (!program.ok) return [];
+  const { ts, file, checker, syntactic, semantic } = program;
+  if (syntactic.length > 0) {
+    // Report the break itself, once.
+    const first = syntactic[0] as TS.Diagnostic;
+    return [{
+      severity: "block",
+      where: `line ${diagnosticLine(file, first)}`,
+      message: `does not parse as a screen: ${ts.flattenDiagnosticMessageText(first.messageText, " ")}`,
+    }];
   }
+  return semantic.flatMap((diagnostic) => translate(ts, file, checker, diagnostic));
 }

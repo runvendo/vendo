@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { FloorResult } from "../src/floor.js";
+import { wiredActions, type FloorResult } from "../src/floor.js";
 import { JudgeContract, type JudgeResult } from "../src/judge.js";
 import { writePreview } from "../src/report.js";
 import type { CaseResult } from "../src/run.js";
@@ -215,6 +215,41 @@ describe("the preview page", () => {
     expect(html).toContain(`<ol id="feed">`);
     expect(html).toContain(`addEventListener("message"`);
     expect(html).toContain(`call.genbench !== "call"`);
+  });
+
+  /**
+   * The floor decides a press holds; this page is where anyone reads that. Both
+   * halves run for real here — the grader's own bindings go to the real reporter,
+   * with nothing hand-written between them — because the two spell the same
+   * verdict separately and a state-only pass showing a red ✕ is the kind of
+   * disagreement neither side can see alone.
+   */
+  it("marks a state-only control as a pass, with the reason it passed, and a dead one as a fail", async () => {
+    const graded = wiredActions(
+      [
+        { label: "Details", confirmed: false, changed: true, calls: [] },
+        { label: "Refresh", confirmed: false, changed: false, calls: [] },
+      ],
+      world,
+    );
+    const html = await preview(
+      [
+        {
+          ...resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."),
+          floor: { ...PASSING, wiredActions: graded, pass: false },
+        },
+      ],
+      { "pending-transfers": world },
+    );
+
+    // Opening a dialog, switching a tab, dismissing a row: it asked the host for
+    // nothing and it is not dead, and the page says which of the two it is.
+    expect(html).toContain(
+      `<li><code>Details</code> <span>changed the screen without calling a tool</span> <i class="ok">✓</i></li>`,
+    );
+    expect(html).toContain(
+      `<li><code>Refresh</code> <span>pressing it called nothing and changed nothing</span> <i class="no">✕</i></li>`,
+    );
   });
 
   it("shows a vacuous honestData pass as muted, not a clean checkmark", async () => {

@@ -157,7 +157,14 @@ const makeNewApp = async (
         id: stored.id,
         title: stored.name,
         status: "ready",
-        say: `${stored.name} is on your screen.`,
+        // THE BUILDER'S OWN WORDS, verbatim (`ScreenOutcome.say`). It is the
+        // only thing that knows what it built — which saves painted, and
+        // what each query delivered — and the sentence below knows only a
+        // name, which is why the calling agent used to describe parts of a
+        // screen nothing had claimed. The fallback stands for a run that
+        // said nothing at all: `say` is required, and a name on a screen is
+        // the one thing still true.
+        say: routed.say ?? `${stored.name} is on your screen.`,
       });
     }
   }

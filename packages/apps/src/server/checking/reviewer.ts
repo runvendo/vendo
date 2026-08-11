@@ -123,7 +123,10 @@ const planLines = (plan: AppPlan | undefined): string => {
     : `\nALREADY PLANNED (do NOT report these as missing — they are committed, and some of them land after you read this):\n${lines.join("\n")}`;
 };
 
-const sampleLines = (samples: Readonly<Record<string, unknown>>): string => {
+/** The resolved data block, exported because the COMPONENT screen's reviewer
+ *  input needs the same truncation discipline (checking/component-screen.ts) and
+ *  a second copy of the cap would drift from this one. */
+export const sampleLines = (samples: Readonly<Record<string, unknown>>): string => {
   const lines = Object.entries(samples).map(([query, value]) => {
     const text = JSON.stringify(value) ?? "null";
     return `${query}: ${text.length > MAX_SAMPLE_CHARS ? `${text.slice(0, MAX_SAMPLE_CHARS)}…` : text}`;
@@ -152,6 +155,17 @@ export const reviewerCheck = (
   deps: FloorDependencies,
   samples?: Readonly<Record<string, unknown>>,
   rubric: readonly string[] = [],
+  /**
+   * The app as the reviewer should READ it, when the caller has a truer rendering
+   * than printed wire.
+   *
+   * A COMPONENT screen is the case: its app is one `.tsx` file, so there is nothing
+   * to print — the file the model wrote is the file the reviewer reads
+   * (`reviewComponentScreenInput`, which the caller builds because it is the half
+   * that holds the source and the query results). Absent, the document is printed
+   * as wire exactly as it always was.
+   */
+  app?: string,
 ): Check => ({
   name: REVIEWER_CHECK_NAME,
   // `fact` is about WHO RUNS IT, not about how sure it is: the two kinds are
@@ -160,15 +174,24 @@ export const reviewerCheck = (
   // handed to — it can hardly be one of them.
   kind: "fact",
   run: async ({ document, request, plan }): Promise<Finding[]> => {
-    const printed = printedApp(document);
+    const printed = app ?? printedApp(document);
     if (printed === undefined) return [];
+    // A caller's own rendering arrives already labelled and with its data already
+    // beside it, so it takes neither the wire header nor a second data block.
+    const body = app === undefined
+      ? `APP (wire markup):\n${printed}${planLines(plan)}${samples === undefined ? "" : sampleLines(samples)}`
+      : `${app}${planLines(plan)}`;
     const reported = await strictToolCall(
-      deps,
+      // The one model call the floor spends rides the REVIEW seat when the
+      // deployment composed one — spread over `model` rather than read inside
+      // `strictToolCall`, so the caller that owns the seat is the one that
+      // chooses it and every other strict call is untouched.
+      deps.reviewModel === undefined ? deps : { ...deps, model: deps.reviewModel },
       REPORT_FINDINGS_TOOL,
       REPORT_FINDINGS_DESCRIPTION,
       REPORT_FINDINGS_SCHEMA,
       `${REVIEWER_SYSTEM}${rubricSection(rubric)}`,
-      `USER_REQUEST: ${request}\nAPP (wire markup):\n${printed}${planLines(plan)}${samples === undefined ? "" : sampleLines(samples)}`,
+      `USER_REQUEST: ${request}\n${body}`,
     );
     return reported === undefined ? [] : findingsFrom(reported.findings);
   },

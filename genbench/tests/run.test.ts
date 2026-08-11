@@ -195,7 +195,6 @@ describe("a column with no screen", () => {
 describe("opening the preview", () => {
   const args = (only?: string): Args => ({
     ...(only === undefined ? {} : { only }),
-    lane: "screen",
     models: ["sonnet"],
     world: "maple",
   });

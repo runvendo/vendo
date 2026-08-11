@@ -55,7 +55,7 @@ import {
 import { createTurnTools, type MirrorEvent } from "./turn-tools.js";
 import { specificWireErrorMessage } from "./wire-error.js";
 import { emitWorkbench, openWorkbench } from "./workbench.js";
-import { TextChannel, writeDebug, writeError, writeMirror, writeStatus, writeTurnError, writeView } from "./wire.js";
+import { TextChannel, writeDebug, writeError, writeMirror, writeNotice, writeStatus, writeTurnError, writeView } from "./wire.js";
 
 /**
  * `turn.messages` is OURS and read-only (§1). A frozen array still hands out live
@@ -507,6 +507,13 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
                   // instead would read as the agent talking and would offer the
                   // user nothing to act on.
                   writeError(writer, event.message);
+                  break;
+                case "notice":
+                  // A SYSTEM fact — persisted chrome in the transcript, never
+                  // the assistant's voice (2026-08-10 ruling). Break the text
+                  // channel first so the note lands after the model's words.
+                  text.break();
+                  writeNotice(writer, event.notice);
                   break;
                 case "usage":
                   // Audit/metering only — never the screen, never the transcript.

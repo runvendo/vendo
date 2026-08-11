@@ -52,7 +52,21 @@ export interface ScreenRequest {
  * broken instead of being served by an engine nobody chose.
  */
 export type ScreenOutcome =
-  | { kind: "assembled" }
+  | {
+      kind: "assembled";
+      /**
+       * What the assembling agent SAID when it finished — its own closing words,
+       * verbatim, which `vendo_make` puts in the receipt's `say`.
+       *
+       * It travels because the builder is the only thing that knows what it built:
+       * whether every save painted, and what each query actually delivered. The
+       * front door used to compose that sentence from the app's name alone, so the
+       * calling agent had a title and no facts and invented the rest. Absent when
+       * the run said nothing (it ran out of steps, or was cut off) — the caller
+       * falls back, and nothing here writes a sentence on the agent's behalf.
+       */
+      say?: string;
+    }
   | { kind: "escalate"; why: string }
   | { kind: "unavailable"; why: string };
 

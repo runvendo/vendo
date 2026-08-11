@@ -46,14 +46,9 @@ describe("failed-build banner in the thread (0.4.4 cert defect B)", () => {
     const banner = document.querySelector("[data-vendo-build-failed]");
     expect(banner).toBeTruthy();
     expect(banner?.querySelector(".fl-beat-error")).toBeTruthy();
-    // TEST CHANGE, STATED OUT LOUD: this line used to assert
-    //   expect(banner?.textContent).toContain("app build failed: generation failed")
-    // — it PINNED the defect the wave E2E caught. `reason` is the runtime's
-    // sentence for whoever can fix the build (it reaches an end user carrying
-    // `amount / sum(spending.data.amount)`, env-var names, "check the host
-    // server log"), and asserting it renders verbatim demanded the developer's
-    // voice on an end-user surface, against §16 law 3. What the banner must
-    // carry is asserted in the consumer-voice test below.
+    // The reason the runtime classified, minus the wire marker.
+    expect(banner?.textContent).toContain("generation failed");
+    expect(banner?.textContent).not.toContain("app build failed:");
   });
 
   it("renders nothing for a malformed part (no reason)", async () => {
@@ -78,12 +73,13 @@ describe("failed-build banner in the thread (0.4.4 cert defect B)", () => {
   });
 });
 
-/** Spec §15 + §16 law 3 — the sentence a PERSON reads when a build fails.
+/** The sentence a person reads when a build fails: the runtime's own reason.
  *
- *  The wave E2E caught the runtime's reason rendering verbatim in a real user's
- *  thread. Every one of these is a real string the runtime puts on this part,
- *  and every one of them is written for whoever can fix the build. */
-describe("the build-failure sentence is the user's, not the developer's", () => {
+ *  Every string below is a real one the runtime puts on this part, and each one
+ *  names the thing that has to change — the package to install, the expression
+ *  to fix, the retry to make. One canned first-person line used to stand in for
+ *  all three, which threw exactly that half away. */
+describe("the build-failure sentence is the runtime's own reason", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
 
@@ -96,24 +92,24 @@ describe("the build-failure sentence is the user's, not the developer's", () => 
     await wire.close();
   });
 
+  /** The wire marker the bridge puts in front of the reason (core's
+      VENDO_APP_BUILD_FAILED_PREFIX + ":"): plumbing, so it comes off. */
+  const MARKER = "app build failed: ";
+
   /** Verbatim from the live capture (fault-live/fault-03), plus the other two
-      developer-voiced classes the runtime can put on this part. */
-  const LEAKED: [string, string][] = [
+      classes the runtime can put on this part. */
+  const REASONS: [string, string][] = [
     ["the honesty gate's teaching sentence (the live capture)",
-      "app build failed: This app wasn't created, because it didn't pass the checks that keep an app honest:"
+      "This app wasn't created, because it didn't pass the checks that keep an app honest:"
       + " The percent column uses the same raw `amount` field as its value instead of computing"
       + " `amount / sum(spending.data.amount)` — the `value` expression is a declarative string that the"
       + " DataTable does not evaluate, so every row will render the raw cent-scale integer (e.g. 285000)."],
     ["the no-model-key line",
-      "app build failed: ANTHROPIC_API_KEY is set but @ai-sdk/anthropic is not installed in this app"],
+      "ANTHROPIC_API_KEY is set but @ai-sdk/anthropic is not installed in this app"],
     ["the build watchdog's line",
-      "app build failed: the build never finished — the server-side build task stalled or died without"
+      "the build never finished — the server-side build task stalled or died without"
       + " reporting a failure. Retry the request; if this repeats, check the host server log."],
   ];
-
-  /** Code the user should never be shown: call syntax, dotted paths,
-      snake_case/SCREAMING_SNAKE identifiers, backticked source. */
-  const CODE_SHAPED = [/\w\(/, /[A-Za-z]\.[A-Za-z]/, /[A-Za-z]_[A-Za-z]/, /`/, /@[a-z-]+\//];
 
   async function mountFailure(reason: string) {
     const existing = wire.state.threads.get("thr_1")!;
@@ -134,21 +130,18 @@ describe("the build-failure sentence is the user's, not the developer's", () => 
     return document.querySelector("[data-vendo-build-failed]")!.textContent ?? "";
   }
 
-  it.each(LEAKED)("says what it means for the reader, not %s", async (_label, reason) => {
-    const shown = await mountFailure(reason);
-    expect(shown).toContain("I couldn't finish building that view");
-    expect(shown).toContain("nothing was changed");
-    for (const pattern of CODE_SHAPED) expect(shown, `${pattern} in: ${shown}`).not.toMatch(pattern);
+  it.each(REASONS)("reaches the reader whole — %s", async (_label, reason) => {
+    const shown = await mountFailure(`${MARKER}${reason}`);
+    expect(shown).toContain(reason);
+    expect(shown).not.toContain("app build failed");
   });
 
-  // ONE sentence for every class, on purpose: the runtime's classification is a
-  // substring scan over the concatenated findings, and `host_listScheduledPayments`
-  // in a tool inventory makes an ordinary validation failure land as "quota
-  // exhausted" (observed live 2026-08-03). Copy that branches on that label
-  // would just tell a different lie.
-  it("says the same true thing for a mislabelled class", async () => {
-    expect(await mountFailure("app build failed: quota exhausted"))
-      .toContain("I couldn't finish building that view");
+  // The one case with nothing of the runtime's to repeat: the marker arrived
+  // with no reason behind it. The chrome then says the honest generic thing in
+  // its own third-person voice rather than inventing a cause.
+  it("falls back to the chrome's own notice when the reason carries no detail", async () => {
+    expect(await mountFailure(MARKER.trimEnd()))
+      .toContain("This view couldn’t be built — nothing was changed.");
   });
 });
 

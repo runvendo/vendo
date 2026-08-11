@@ -18,8 +18,8 @@ const PNG = Buffer.from(
 );
 
 const TRACE: Probed[] = [
-  { label: "Cancel", confirmed: true, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
-  { label: "Refresh", confirmed: false, calls: [] },
+  { label: "Cancel", confirmed: true, changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+  { label: "Refresh", confirmed: false, changed: false, calls: [] },
 ];
 
 const CASE_LINES = ["alpha shows every row", "bravo totals the rows", "charlie confirms deletions"];
@@ -114,7 +114,7 @@ describe("blindness", () => {
         artifact: `{"format":"vendo/app@1","tree":{"formatVersion":"vendo-genui/v2"}}
 <button onclick="window.vendo.callTool('cancel_transfer', { id: 'tr_1' })">Cancel</button>`,
         // A control's label is page text, and page text can sign its own work.
-        trace: [{ label: "Built with Vendo", confirmed: false, calls: [{ name: "cancel_transfer", args: {} }] }],
+        trace: [{ label: "Built with Vendo", confirmed: false, changed: false, calls: [{ name: "cancel_transfer", args: {} }] }],
       }),
       contender: "vendo-sonnet",
       harness: "claude-code",

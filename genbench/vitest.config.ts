@@ -6,8 +6,8 @@ import { configDefaults, defineConfig } from "vitest/config";
  * CI installs no Playwright browsers — `release.yml` is the only workflow that
  * runs `playwright install`, and only for `@vendoai/ui` — and `ci.yml` says why:
  * headless CI mis-resolves `:focus-visible` and `light-dark()`, so browser runs
- * stay a LOCAL gate on purpose. These five would therefore not fail on their
- * findings there, they would fail on a missing executable.
+ * stay a LOCAL gate on purpose. These would therefore not fail on their findings
+ * there, they would fail on a missing executable.
  *
  * So they are dropped where the browser is missing and nowhere else. `CI` is the
  * flag because CI is the environment that lacks the browsers, and because it is
@@ -24,6 +24,7 @@ const BROWSER_SUITES = [
   "tests/diy.test.ts",
   "tests/extraction.test.ts",
   "tests/font.test.ts",
+  "tests/mount.test.ts",
   "tests/probe.test.ts",
   "tests/seam.test.ts",
 ];

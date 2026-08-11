@@ -219,8 +219,13 @@ describe("the seven fact checks all reach the seam", () => {
     },
     {
       check: "expressions-compute",
-      why: "a computed value over a field that is not there — a blank stat, not a crash",
-      wire: app(`<Stack><Text text={spend.nope * 2} /></Stack>`),
+      // FIELDS are `screen-types`' job now (one compiler, not a bespoke walker);
+      // what this check still decides is that every name a computed value reads
+      // is a query the document declares. It reaches the seam through a query
+      // the compiler DROPPED: the reference lowered against the pre-scan, so the
+      // `$expr` lands in the tree reading a query the tree does not carry.
+      why: "a computed value reading a query the document does not declare — a blank stat, not a crash",
+      wire: `<App name="Spending"><Query id="spend" tool="${TOOL}" /><Query id="ghost" tool="" /><Stack><Text text={ghost.total * 2} /></Stack></App>`,
     },
     {
       check: "query-inputs-literal",

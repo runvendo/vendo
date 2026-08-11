@@ -13,7 +13,8 @@
  * (or a composed registry search), and remembers what it loaded in
  * `turn.state` — the brain's own memory slot.
  */
-import { CONNECTOR_DISCOVERY_TOOLS, type ToolListing } from "@vendoai/core";
+import type { ToolListing } from "@vendoai/core";
+import { CAPABILITY_MISS_TOOL_NAME } from "../capability-miss.js";
 
 export const FIND_TOOLS_TOOL_NAME = "find_tools";
 
@@ -37,14 +38,23 @@ export interface VendoToolSearchConfig {
   /** Explicit curated starting set. When set, exactly these (that exist) start
    *  active and the cap is not applied. */
   loadout?: string[];
+  /** Names never hidden behind the cap. The COMPOSITION declares the tools its
+   *  prompt teaches by name (uiaudit 2026-08-06 — a host past the cap lost
+   *  `request_connection` while the prompt kept teaching it); the harness
+   *  itself exempts only its own capability-miss hand. */
+  alwaysActive?: readonly string[];
 }
 
-/** Vendo's own tools and the connector-discovery four are never loadout-gated:
- *  gating them out would break the product surface (uiaudit 2026-08-06 — a host
- *  past the cap lost `request_connection` while the prompt kept teaching it). */
-const ALWAYS_ACTIVE: ReadonlySet<string> = new Set<string>(CONNECTOR_DISCOVERY_TOOLS);
-export const isAlwaysActive = (name: string): boolean =>
-  name.startsWith("vendo_") || ALWAYS_ACTIVE.has(name);
+/** The harness's ONE native exemption: its own capability-miss listing. Every
+ *  product name is the composition's to declare through
+ *  {@link VendoToolSearchConfig.alwaysActive} — this file knows no product
+ *  tools. */
+export const alwaysActivePredicate = (
+  config: VendoToolSearchConfig = {},
+): ((name: string) => boolean) => {
+  const names = new Set<string>([CAPABILITY_MISS_TOOL_NAME, ...(config.alwaysActive ?? [])]);
+  return (name: string): boolean => names.has(name);
+};
 
 /** Safest first, ungraded last — an uncapped tool nobody has graded is the
  *  weakest claim on the budget. */
@@ -59,6 +69,7 @@ export function computeInitialLoadout(
   listings: readonly ToolListing[],
   config: VendoToolSearchConfig,
 ): Set<string> {
+  const isAlwaysActive = alwaysActivePredicate(config);
   const always = listings.filter((listing) => isAlwaysActive(listing.name)).map((l) => l.name);
   const host = listings.filter((listing) => !isAlwaysActive(listing.name));
   if (config.loadout !== undefined) {

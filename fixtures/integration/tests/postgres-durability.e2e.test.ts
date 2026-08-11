@@ -37,7 +37,21 @@ const POSTGRES_URL = process.env.POSTGRES_URL;
 const CREATE = "host_invoices_create";
 const EVENT = "j9.invoice.ready";
 
-const CREATE_DIALECT = `<App name="Ada's Durable Card"><Text text="Durable Ada"/><Disclaimer reason="Fixture app."/></App>`;
+/** The screen as the one engine now writes it: an `app.tsx` React component the
+ *  gauntlet compiles, type-checks and renders. This suite only runs where
+ *  POSTGRES_URL is set — which CI provides — so a wire document here fails the
+ *  required `integration` check while passing (skipped) on a laptop. */
+const CREATE_SCREEN = `import { Disclaimer, Stack, Text } from "@vendo/screen";
+
+export default function AdaDurableCard() {
+  return (
+    <Stack gap={12}>
+      <Text text="Durable Ada" variant="heading" />
+      <Disclaimer reason="Fixture app." />
+    </Stack>
+  );
+}
+`;
 
 function invoiceAutomation(): AppDocument {
   return {
@@ -88,7 +102,7 @@ describe.skipIf(!POSTGRES_URL)("J9: core journeys on Postgres survive a serving-
         toolCallTurn("vendo_make", { request: "Build a durable card" }, "call_app"),
         // The screen agent answers this ask itself (it is THE engine for a
         // `vendo_make` now), so the conductor spends no generation turns.
-        ...screenAgentCreateTurns(CREATE_DIALECT),
+        ...screenAgentCreateTurns(CREATE_SCREEN),
         textTurn("Created your durable app.", "t1"),
       ],
     });

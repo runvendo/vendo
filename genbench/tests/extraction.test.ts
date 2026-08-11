@@ -5,9 +5,9 @@
  * that string puts its boundaries decides what a number IS. Two sibling inline
  * elements — "Housing $2850.00" beside "67%" — sit on one line with no
  * separator between their boxes, and the page's own `innerText` hands back
- * `$2850.0067%`: a token no screen ever printed, which the floor then reports
- * as a fabricated number and tier 2 is asked to derive. The honest percentage
- * never reaches the auditor at all, because it was never a token.
+ * `$2850.0067%`: a token no screen ever printed, which the auditor is then asked
+ * to derive. The honest percentage never reaches the auditor at all, because it
+ * was never a token.
  *
  * Sibling values escaped only by rounding luck — "$612.45" beside "14" fuses to
  * 612.4514, which rounds back onto 612.45 and passes.
@@ -19,7 +19,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildIndex, honestData, NUMBER } from "../src/floor.js";
+import { honestData, NUMBER } from "../src/floor.js";
 import { authoredPage, openBrowser, type Shooter, type Shot } from "../src/render.js";
 import { loadWorld, type World } from "../src/world.js";
 
@@ -54,13 +54,11 @@ describe("visible-text extraction", () => {
     expect(shot.visibleText).not.toContain("$2850.0067");
     expect(tokens(shot.visibleText)).toEqual(["$2850.00", "67"]);
 
-    // …and so the floor never invents an offender out of the seam between them.
-    const result = honestData(shot.visibleText, buildIndex(world));
-    const flagged = result.offenders.map((offender) => offender.text);
-    expect(flagged).not.toContain("$2850.0067");
-    // The amount is housing's own, in dollars — tier 1 clears it, as it always
-    // should have. What is left for tier 2 is the percentage, on its own.
-    expect(flagged).toEqual(["67"]);
+    // …and so the auditor is never asked to derive the seam between them: the two
+    // values it has to answer for are the two the screen actually printed.
+    const asked = honestData(shot.visibleText).offenders.map((offender) => offender.text);
+    expect(asked).not.toContain("$2850.0067");
+    expect(asked).toEqual(["$2850.00", "67"]);
   }, 120_000);
 
   it("leaves a number written in one text node whole", async () => {
@@ -70,6 +68,9 @@ describe("visible-text extraction", () => {
 
     expect(shot.visibleText).toContain("$4,243.11");
     expect(tokens(shot.visibleText)).toEqual(["$4,243.11"]);
-    expect(honestData(shot.visibleText, buildIndex(world)).pass).toBe(true);
+    // One value to answer for, whole — not "1", "243" and "11".
+    const extracted = honestData(shot.visibleText);
+    expect(extracted.examined).toBe(1);
+    expect(extracted.offenders.map((offender) => offender.text)).toEqual(["$4,243.11"]);
   }, 120_000);
 });

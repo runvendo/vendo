@@ -1,4 +1,4 @@
-import { riskLabelSchema, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
+import { riskLabelSchema, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type DynamicToolUIPart, type ToolUIPart, type UIMessage } from "ai";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../../context.js";
@@ -23,12 +23,13 @@ import { buildApprovalRequest } from "./approval-wire.js";
 import {
   AGENT_CONTEXT_MARK,
   appTitle,
-  BUILD_FAILURE_COPY,
+  buildFailureNotice,
   isAgentContext,
   narratedByAppCard,
   partData,
   toolCallIsContent,
   toolName,
+  TURN_FAILURE_NOTICE,
   turnErrorSentence,
   type ApprovalWireMeta,
 } from "./message-data.js";
@@ -121,15 +122,16 @@ function ThreadConnect({ ask, live, sendMessage }: {
 }
 
 /** The shape both of a turn's terminal failures wear (spec §15 — the ✕ stays in
-    the record): the failed tool call's own beat vocabulary, plus one line saying
-    what the failure MEANS for the reader. `detail` is optional because an
-    unprefixed turn error yields no safe sentence of ours to show. */
+    the record): the failed tool call's own beat vocabulary — chrome, not the
+    agent's prose — plus the line saying what happened. The line is the real
+    message when there is one and the chrome's own third-person notice otherwise,
+    so there is always something to read. */
 function ThreadErrorBlock({ marker, headline, detail }: {
   /** The data attribute the E2E and a host's own styling select on, so it stays
       per-failure rather than collapsing into one shared name. */
   marker: "data-vendo-build-failed" | "data-vendo-turn-error";
   headline: ReactNode;
-  detail: ReactNode | undefined;
+  detail: ReactNode;
 }) {
   return (
     <div className="fl-buildfail" {...{ [marker]: "" }}>
@@ -141,7 +143,7 @@ function ThreadErrorBlock({ marker, headline, detail }: {
         </span>
         <span className="fl-beat-label">{headline}</span>
       </div>
-      {detail === undefined ? null : <div className="fl-approval-more" role="alert">{detail}</div>}
+      <div className="fl-approval-more" role="alert">{detail}</div>
     </div>
   );
 }
@@ -271,19 +273,18 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     // showed no trace of why nothing appeared. Same beat vocabulary as a
     // failed tool call, plus what the failure MEANS for the reader.
     //
-    // §16 law 3 — the wire's `reason` is written for whoever can fix the build
-    // and it used to render verbatim: the wave E2E photographed an end user
-    // reading `amount / sum(spending.data.amount)`. The part's presence is what
-    // this branch reads; BUILD_FAILURE_COPY carries the person's half, and the
-    // developer's sentence keeps its home in the server's own log line
-    // (apps/runtime.ts) with every blocking finding beside it.
+    // The reason is the runtime's own CLASSIFIED line ("timed out", "quota
+    // exhausted", a missing `@ai-sdk/*` package) — written to be read, and the
+    // half of the failure worth knowing, so it renders (buildFailureNotice).
+    // The findings that quote the app's own code stay where they always
+    // were: the server's `[vendo] app build failed (app_…)` log line.
     const data = partData(part) as Partial<VendoBuildFailedPart>;
     if (typeof data.reason !== "string" || data.reason.length === 0) return null;
     return (
       <ThreadErrorBlock
         marker="data-vendo-build-failed"
         headline={<>Couldn&apos;t build the app</>}
-        detail={BUILD_FAILURE_COPY}
+        detail={buildFailureNotice(data.reason)}
       />
     );
   }
@@ -295,17 +296,31 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     // our OWN safe text — the reader gets the sentence, not the plumbing).
     const data = partData(part) as Partial<VendoTurnErrorPart>;
     if (typeof data.message !== "string" || data.message.length === 0) return null;
-    // One shared reader with the banner (message-data): the prefix and the
-    // trailing code token come off, and an UNPREFIXED string — a raw
-    // provider/transport sentence — yields no detail line at all. The headline
-    // is the record either way.
+    // One shared reader with the banner (message-data): the marker comes off and
+    // the operator's sentence renders as it was written. An UNPREFIXED string is
+    // a raw provider/transport sentence and never reaches the reader, so the
+    // chrome says what it knows in its own third-person voice instead.
     const message = turnErrorSentence(data.message);
     return (
       <ThreadErrorBlock
         marker="data-vendo-turn-error"
         headline={<>The response didn&rsquo;t finish</>}
-        detail={message}
+        detail={message ?? TURN_FAILURE_NOTICE}
       />
+    );
+  }
+  if (part.type === "data-vendo-step-limit") {
+    // 2026-08-10 ruling — the step-cap notice is SYSTEM chrome, persisted. The
+    // harness used to splice this sentence into the assistant's own text,
+    // which put words in the model's mouth and fake memories in its
+    // transcript. A quiet beat, not an error: nothing failed — the turn hit
+    // its budget.
+    const data = partData(part) as Partial<VendoStepLimitPart>;
+    if (typeof data.message !== "string" || data.message.length === 0) return null;
+    return (
+      <div className="fl-beat" data-vendo-step-limit="">
+        <span className="fl-beat-label">{data.message}</span>
+      </div>
     );
   }
   if (part.type === "data-vendo-grant-set") {

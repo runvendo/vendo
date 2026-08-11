@@ -60,7 +60,7 @@ describe("screenTscFindings", () => {
     expect(check(`<App name="Overdue invoices">
   <Query id="invoices" tool="maple_invoices_list"/>
   <Stack gap={12}>
-    <Stat label="Total" value={sum(invoices.data, "amount_cents")} format="money"/>
+    <Stat label="Total" value={invoices.data.reduce((total, row) => total + row.amount_cents, 0) / 100} format="money"/>
     <MapleNetWorthCard valueCents={invoices.total_cents} series={[1, 2, 3]}/>
     <DataTable rows={invoices.data} columns={[{ key: "amount_cents", format: "money" }]}/>
   </Stack>
@@ -108,18 +108,17 @@ describe("screenTscFindings", () => {
     expect(findings[0]?.message).toContain("the real fields are: data, total_cents");
   });
 
-  it("names a wrong aggregate field, with the fields the rows really carry", () => {
-    const findings = check('<App name="x"><Stat label="a" value={sum(invoices.data, "amount_centz")}/></App>;');
+  /** A computed value is a real JavaScript expression, so a wrong field on the
+   *  ROW — inside the lambda, where no dotted path reaches — is the compiler's
+   *  own property error against the query's declared item type. */
+  it("names a wrong field inside a computed value, with the fields the rows really carry", () => {
+    const findings = check('<App name="x"><Stat label="a" value={invoices.data.reduce((total, row) => total + row.amount_centz, 0)}/></App>;');
     expect(findings).toHaveLength(1);
-    expect(findings[0]?.message).toContain('sum() does not accept "amount_centz" as its 2nd argument');
-    expect(findings[0]?.message).toContain("amount_cents");
-  });
-
-  it("names a wrong group_by bucket and a wrong grouped-aggregate field", () => {
-    const bucket = check('<App name="x"><Stat label="a" value={count(group_by(invoices.data, "issued_at", "week", sum.of("amount_cents")))}/></App>;');
-    expect(bucket.map((finding) => finding.message).join(" ")).toContain('"day" | "month" | "year"');
-    const field = check('<App name="x"><Stat label="a" value={count(group_by(invoices.data, "issued_at", "month", sum.of("nope")))}/></App>;');
-    expect(field.map((finding) => finding.message).join(" ")).toContain("amount_cents");
+    expect(findings[0]?.where).toBe('<Stat> prop "value"');
+    expect(findings[0]?.message).toBe(
+      'reads field "amount_centz", which the tool\'s response shape does not carry'
+      + " — the real fields are: id, amount_cents, issued_at",
+    );
   });
 
   it("stays quiet on a schema-less catalog entry — 01-core §14 is permissive", () => {
@@ -168,7 +167,7 @@ describe("screenTscFindings", () => {
   });
 
   it("anchors a finding on the line when there is no enclosing element", () => {
-    const findings = check("{ sum(nothingDeclared, \"x\") };");
+    const findings = check("{ nothingDeclared };");
     expect(findings).toHaveLength(1);
     expect(findings[0]?.where).toBe("line 1");
   });

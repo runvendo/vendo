@@ -29,48 +29,38 @@ describe("resolveModels (models block + deprecated aliases)", () => {
     ]);
   });
 
-  it("models.agent as a string resolves through the ladder; as an object it wins as-is", () => {
+  it("models.default as a string resolves through the ladder; as an object it wins as-is", () => {
     const { made, make } = scriptedMake();
-    const viaString = resolveModels({ models: { agent: "claude-opus-4-8" } }, make);
+    const viaString = resolveModels({ models: { default: "claude-opus-4-8" } }, make);
     expect(viaString.agent.venue).toBe("ladder");
     expect(made[0]).toEqual({ name: "claude-opus-4-8", slot: "agent" });
     // A string-configured agent still rides the ladder, so paint stays the family fast pick.
     expect(viaString.paint).toEqual({ model: expect.objectContaining({ slot: "paint" }) });
 
     const object = explicitModel("byo");
-    const viaObject = resolveModels({ models: { agent: object } }, scriptedMake().make);
+    const viaObject = resolveModels({ models: { default: object } }, scriptedMake().make);
     expect(viaObject.agent).toEqual({ model: object, venue: "custom" });
     // Explicit model object → paint falls back to that model as today (engine
     // fallback), so NO ladder paint model is composed.
     expect(viaObject.paint).toBeUndefined();
   });
 
-  it("models.agent supersedes the deprecated top-level model, which stays functional", () => {
-    const { make } = scriptedMake();
-    const legacy = explicitModel("legacy");
-    const preferred = explicitModel("preferred");
-    expect(resolveModels({ model: legacy }, make).agent).toEqual({ model: legacy, venue: "custom" });
-    expect(resolveModels({ model: legacy, models: { agent: preferred } }, make).agent)
-      .toEqual({ model: preferred, venue: "custom" });
-  });
-
-  it("models.paint supersedes the deprecated paint.model; both forms still compose", () => {
+  it("models.fill names the paint lane's model; the deprecated paint.model still composes", () => {
     const { made, make } = scriptedMake();
-    const legacyPaint = explicitModel("legacy-paint");
     const agent = explicitModel("agent");
 
     // Deprecated knob alone keeps working.
-    expect(resolveModels({ model: agent, paint: { model: legacyPaint } }, make).paint)
-      .toEqual({ model: legacyPaint });
+    expect(resolveModels({ model: agent, paint: { model: explicitModel("legacy-paint") } }, make).paint)
+      .toEqual({ model: explicitModel("legacy-paint") });
 
-    // models.paint string resolves through the ladder with the paint slot.
-    const viaString = resolveModels({ model: agent, models: { paint: "claude-haiku-4-5" } }, make);
+    // models.fill as a string resolves through the ladder with the paint slot.
+    const viaString = resolveModels({ model: agent, models: { fill: "claude-haiku-4-5" } }, make);
     expect(viaString.paint).toEqual({ model: expect.objectContaining({ name: "claude-haiku-4-5", slot: "paint" }) });
     expect(made).toContainEqual({ name: "claude-haiku-4-5", slot: "paint" });
 
-    // models.paint object wins over the deprecated knob.
+    // models.fill as an object wins as-is.
     const preferred = explicitModel("preferred-paint");
-    expect(resolveModels({ model: agent, paint: { model: legacyPaint }, models: { paint: preferred } }, make).paint)
+    expect(resolveModels({ model: agent, models: { fill: preferred } }, make).paint)
       .toEqual({ model: preferred });
   });
 
@@ -84,8 +74,18 @@ describe("resolveModels (models block + deprecated aliases)", () => {
 
   it("rejects non-string non-object slot values and blank strings with a validation error", () => {
     const { make } = scriptedMake();
-    expect(() => resolveModels({ models: { agent: 5 as unknown as string } }, make)).toThrow(VendoError);
-    expect(() => resolveModels({ models: { paint: "   " } }, make)).toThrow(VendoError);
+    expect(() => resolveModels({ models: { default: 5 as unknown as string } }, make)).toThrow(VendoError);
+    expect(() => resolveModels({ models: { fill: "   " } }, make)).toThrow(VendoError);
     expect(() => resolveModels({ models: { judge: null as unknown as string } }, make)).toThrow(VendoError);
+  });
+
+  it("refuses a models key that is not a seat instead of ignoring it", () => {
+    const { make } = scriptedMake();
+    // A JavaScript host — or a config still on the removed `agent`/`paint`
+    // slots — would otherwise get a silently dropped model.
+    expect(() => resolveModels({ models: { agent: "opus" } as never }, make))
+      .toThrow(/models\.agent is not a model seat/);
+    expect(() => resolveModels({ models: { paint: "haiku" } as never }, make))
+      .toThrow(/models\.paint is not a model seat/);
   });
 });

@@ -648,7 +648,7 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     maxSteps,
     // DATA out: what this turn compacted, for whoever owns the state slot.
     ...(compacted === undefined ? {} : { compacted }),
-    async stepLimitPart() {
+    async stepLimitPart(): Promise<VendoStepLimitPart | undefined> {
       try {
         const [finishReason, steps] = await Promise.all([result.finishReason, result.steps]);
         if (finishReason !== "tool-calls" || steps.length < maxSteps) return undefined;

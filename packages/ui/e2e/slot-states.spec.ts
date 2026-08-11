@@ -13,8 +13,11 @@ import { openScenario, screenshotPath } from "./helpers.js";
  * mounted trees would ship broken for every rung-4 app.
  */
 
-const BUILD_FAILURE_COPY = "I couldn't finish building that view — nothing was changed."
-  + " Ask again and I'll try a different approach.";
+/** The reason the harness wire puts on `app_slot_failed` (e2e/harness/vite.config.ts).
+ *  The slot prints it as written — it names the thing that has to change. */
+const BUILD_FAILURE_REASON = "This app wasn't created, because it didn't pass the checks that keep an app honest:"
+  + " the `value` expression is a declarative string that the DataTable does not evaluate,"
+  + " not JavaScript: amount / sum(spending.data.amount)";
 
 test("a placed build narrates itself: skeleton, then the live app in place", async ({ page }) => {
   // Seeded by the test: placing a landing app rewinds its build window, so a CI
@@ -46,32 +49,17 @@ test("a ready slot mounts BOTH surface kinds — a tree payload and a served mac
   await page.screenshot({ path: screenshotPath("slot-states"), fullPage: true, animations: "disabled" });
 });
 
-test("a failed build says the consumer sentence — nothing code-shaped reaches the host page", async ({ page }) => {
+test("a failed build says the reason it was given, whole, on the host page", async ({ page }) => {
   await openScenario(page, "slot-states");
   const slot = page.locator('[data-vendo-slot="slot-failed"]');
   await expect(slot.getByRole("alert")).toBeVisible();
-  await expect(slot.getByText(BUILD_FAILURE_COPY)).toBeVisible();
+  await expect(slot.getByText(BUILD_FAILURE_REASON)).toBeVisible();
   await expect(slot.getByRole("button", { name: "Try again" })).toBeVisible();
   await expect(slot.getByRole("button", { name: "Clear this slot" })).toBeVisible();
   await slot.screenshot({ path: screenshotPath("slot-failed"), animations: "disabled" });
 
   const rendered = (await slot.innerText()).replace(/\s+/g, " ");
-  const codeShaped: readonly [string, RegExp][] = [
-    ["a backtick quote", /`/],
-    ["call syntax", /\w+\(/],
-    ["a dotted path", /\w\.\w+\.\w/],
-    ["a snake_case identifier", /[A-Za-z]_[A-Za-z]/],
-    ["a package specifier", /@[\w-]+\//],
-    ["an npm command", /\bnpm\b/],
-    ["a shouted env var", /\b[A-Z][A-Z0-9_]{4,}\b/],
-  ];
-  for (const [what, pattern] of codeShaped) {
-    expect(pattern.test(rendered), `${what} reached the slot: ${rendered}`).toBe(false);
-  }
-  const wholePage = await page.locator("body").innerText();
-  for (const word of ["declarative", "JavaScript", "sum(spending.data.amount)", "DataTable", "expression"]) {
-    expect(wholePage, `"${word}" leaked to the page`).not.toContain(word);
-  }
+  expect(rendered).toContain(BUILD_FAILURE_REASON.replace(/\s+/g, " "));
 });
 
 test("clearing a failed slot gives the host its own markup back", async ({ page }) => {

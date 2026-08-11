@@ -150,7 +150,7 @@ export default function SpendBars(props) {
         <div key={r.name} style={{ width: (r.total_cents / max) * 240, padding: BAR * 2, gap: BAR }}>
           <Text text={r.name} />
           <Percent value={(r.total_cents / max) * 100} />
-          <Money cents={r.total_cents} />
+          <Money amount={r.total_cents / 100} />
         </div>
       ))}
     </Stack>

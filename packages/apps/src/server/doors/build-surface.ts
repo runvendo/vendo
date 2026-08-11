@@ -7,11 +7,13 @@
 import {
   UNKNOWN_OUTPUT_SHAPE_NOTE,
   VENDO_APP_BUILD_FAILED_PREFIX,
+  VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
   VendoError,
   describeShapeWithSemantics,
   safeErrorMessage,
   type AppId,
+  type Json,
   type RecordStore,
   type RunContext,
   type UIPayload,
@@ -38,6 +40,13 @@ import {
   fallbackAppName,
   findingLine,
 } from "./build-messages.js";
+// The screen engine, by its own path: the contract door does not carry it yet.
+import { SCREEN_FILE } from "../../contract/genui/component/index.js";
+import {
+  checkComponentScreen,
+  reviewComponentScreenInput,
+  screenCatalog,
+} from "../checking/component-screen.js";
 import { queryEvidence } from "../checking/evidence.js";
 import { createAppFloor, floorChecks } from "../checking/floor.js";
 import { createCheckingLayer, judgmentRules } from "../checking/layer.js";
@@ -61,7 +70,7 @@ type CreateInput = Parameters<AppsRuntime["create"]>[0];
  *  the harness runtime's hot-path render seam, which must produce the IDENTICAL
  *  payload shape this emitter does. */
 export const assembleTree = (source: {
-  tree: UIPayload | Tree;
+  tree: UIPayload | Tree | Pick<Tree, "root" | "nodes">;
   components?: Record<string, string>;
   /** W4b — the stamped per-island tool manifests ride beside the sources. */
   componentTools?: Record<string, string[]>;
@@ -71,6 +80,11 @@ export const assembleTree = (source: {
    *  Absent stays absent — the client reads that as inline. */
   display?: PlanDisplay;
 }): Tree => ({
+  // The format tag FIRST, so a caller that has only a tree's two structural
+  // members — the component screen's flattened paint (`ComponentPaintResult`) is
+  // exactly that — gets the version the channel gates on, while anything carrying
+  // its own tag (a legacy island payload's included) keeps it.
+  formatVersion: VENDO_TREE_FORMAT,
   ...structuredClone(source.tree),
   ...(source.components === undefined ? {} : { components: structuredClone(source.components) }),
   ...(source.componentTools === undefined ? {} : { componentTools: structuredClone(source.componentTools) }),
@@ -349,17 +363,66 @@ const createCreateDoor = (
   };
 };
 
+/**
+ * A component screen's queries, run for real — what makes stage 4 of the gauntlet
+ * (`checkComponentScreen`) the same call the finished screen makes.
+ *
+ * Through the SAME guard-bound caller `open()` and `authored` resolve a tree's
+ * queries with: one guard decision per query, this person's authority, the app
+ * venue. The document handed over is the app's IDENTITY and nothing more, which is
+ * all `callQuery` reads off it (persistence/call.ts) — the gauntlet runs before
+ * there is a row to read a real one from, and inventing the rest of a document here
+ * would be inventing facts about an app.
+ *
+ * A refusal THROWS, because that is the shape the gauntlet reports it in: it turns
+ * the message into a `run` issue naming the query, which is the sentence the screen's
+ * author has to act on.
+ */
+const screenQueryRunner = (
+  caller: AppsRuntimeContext["caller"],
+  ctx: RunContext,
+) => async (appId: AppId, tool: string, input?: unknown): Promise<unknown> => {
+  const outcome = await caller.callQuery(
+    { format: VENDO_APP_FORMAT, id: appId, name: "", ui: "tree" },
+    tool,
+    (input ?? {}) as Json,
+    ctx,
+  );
+  if (outcome.status === "ok") return outcome.output;
+  if (outcome.status === "error") throw new Error(outcome.error.message);
+  if (outcome.status === "blocked") throw new Error(outcome.reason);
+  if (outcome.status === "connect-required") {
+    throw new Error(`${outcome.connect.toolkit} is not connected, so this cannot be read`);
+  }
+  throw new Error("this read needs the person's approval, which a check cannot ask for");
+};
+
+/** The screen a stored app IS, when it is a component screen — its `app.tsx`, as
+ *  `commitSource` landed it. A spilled screen (past the inline cap) is not one of
+ *  these: the text is the whole artifact, and a blob fetch inside a check would be
+ *  a second way to read an app. */
+const componentScreenOf = (document: AppDocument): string | undefined => {
+  const text = document.source?.[SCREEN_FILE]?.text;
+  return typeof text === "string" && text.trim() !== "" ? text : undefined;
+};
+
 const createValidateDoor = (
-  deps: Pick<AppsRuntimeContext, "config" | "requireOwned" | "generationToolContext">,
+  deps: Pick<AppsRuntimeContext, "config" | "caller" | "requireOwned" | "generationToolContext">,
 ): AppsRuntime["validate"] => {
-  const { config, requireOwned, generationToolContext } = deps;
+  const { config, caller, requireOwned, generationToolContext } = deps;
   return async (input, ctx) => {
     if (config.model === undefined) {
       // The floor's fact checks read the generation dependencies, which are
       // built around a model. Nothing to hide behind: say so.
       throw new VendoError("not-implemented", "validate requires a model");
     }
-    const deps = generationDependencies(config, config.model, await generationToolContext(ctx));
+    // The reviewer's seat rides along on the floor's deps: this door is the one
+    // place the reviewer runs (below), so it is the one place the seat has to
+    // arrive. Unset, everything here is what it was.
+    const generated = generationDependencies(config, config.model, await generationToolContext(ctx));
+    const deps = config.reviewModel === undefined
+      ? generated
+      : { ...generated, reviewModel: config.reviewModel };
 
     if (typeof input.document === "string") {
       // Wire text, not a stored app: compile it in the PRODUCTION dialect (the
@@ -416,6 +479,43 @@ const createValidateDoor = (
     // that read it treat that as "no carve-out", which is the conservative
     // direction.
     const plugged = config.checks ?? [];
+    // A COMPONENT screen has no wire markup to print and no tree to fact-check: the
+    // app IS its `app.tsx`, so the gauntlet is its mechanical half and the reviewer
+    // reads the file itself. Both run over the STORED screen, which is the whole
+    // point of the row-scoped door — it judges what the person is about to keep.
+    const screen = componentScreenOf(document);
+    if (screen !== undefined) {
+      const runQuery = screenQueryRunner(caller, ctx);
+      const checked = await checkComponentScreen({
+        source: screen,
+        hostTools: deps.tools ?? [],
+        catalog: screenCatalog(deps.catalog),
+        runQuery: (tool, queryInput) => runQuery(document.id, tool, queryInput),
+      });
+      if (!checked.ok) {
+        // The gauntlet's own repair instructions, verbatim and with no locus: each
+        // one already names the screen's line and what to write instead.
+        return { ok: false, findings: checked.issues.map(({ message }) => ({ severity: "block" as const, message })) };
+      }
+      // …and then the ONE judging call, on the same rubric every other author's
+      // screen faces, reading the TSX and the rows its queries really returned
+      // rather than printed wire (`reviewComponentScreenInput`).
+      const judged = await createCheckingLayer({
+        deps,
+        checks: [
+          // No `samples`: the screen's rendering already carries what its queries
+          // returned, under the same truncation the wire reviewer uses.
+          reviewerCheck(
+            deps,
+            undefined,
+            judgmentRules(plugged),
+            reviewComponentScreenInput({ source: screen, queryResults: checked.queries ?? {} }),
+          ),
+          ...plugged,
+        ],
+      }).run({ document, request: "" });
+      return { ok: !judged.some(({ severity }) => severity === "block"), findings: judged };
+    }
     const samples = await queryEvidence(document, config.tools, ctx);
     const findings = await createCheckingLayer({
       deps,
@@ -431,7 +531,7 @@ const createValidateDoor = (
 export const createBuildSurface = (
   deps: Pick<AppsRuntimeContext,
     "config" | "apps" | "caller" | "lifecycle" | "claimSlot" | "generationToolContext"
-    | "reportLifecycle" | "runServerWork" | "requireOwned">,
+    | "reportLifecycle" | "runServerWork" | "requireOwned" | "runtime">,
 ): Pick<AppsRuntime, "create" | "toolShapeBrief" | "floor" | "agentToolRisk" | "validate"> => {
   const { config, generationToolContext } = deps;
   return {
@@ -459,7 +559,16 @@ export const createBuildSurface = (
       return `${header}\n${cards.join("\n")}`;
     },
 
-    floor(ctx) {
+    floor(ctx, options) {
+      // The ROW HALF, off for a floor whose paint is a READ (`saves: false`).
+      // Every other stage is identical, which is the whole point of one floor: a
+      // reopened screen faces exactly the checks its save faced.
+      const rowHalf = options?.saves === false ? {} : {
+        delivered: (input: { appId: AppId; name: string }, source: string) =>
+          deps.runtime().authoredScreen({ ...input, source }, ctx),
+        refused: (input: { appId: AppId; blocking: readonly string[] }) =>
+          deps.runtime().refusedScreen(input),
+      };
       return createAppFloor({
         // Exactly the four fields the floor reads, built directly rather than
         // through `generationDependencies`: none of the pipeline's other knobs
@@ -473,6 +582,12 @@ export const createBuildSurface = (
           ...await generationToolContext(ctx),
         }),
         ...(config.checks === undefined ? {} : { checks: config.checks }),
+        // The component gauntlet's outside reaches, which a checking module cannot
+        // hold itself: the screen's queries, the row-and-source a passing screen
+        // earns, and the reason a refused one earned none. All three are this
+        // runtime's own doors, bound to this caller's ctx.
+        runQuery: screenQueryRunner(deps.caller, ctx),
+        ...rowHalf,
       });
     },
 

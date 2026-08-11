@@ -1,7 +1,6 @@
 /**
- * Tier 2 of the fabrication check: the values the deterministic pass could not
- * clear go to an auditor that may only write CODE, and only the harness running
- * that code can clear a value.
+ * The fabrication check: every number on the screen goes to an auditor that may
+ * only write CODE, and only the harness running that code can clear a value.
  *
  * Every test here mocks the model boundary and nothing else — the sandbox, the
  * anti-cheat and the comparison are the real ones, because they are the half
@@ -13,17 +12,15 @@ import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { audit, AUDITOR_CONTRACT, AUDITOR_PROMPT } from "../src/audit.js";
-import { buildIndex, honestData, type DataIndex } from "../src/floor.js";
+import { audit, auditFloor, AUDITOR_CONTRACT, AUDITOR_PROMPT } from "../src/audit.js";
+import { honestData, runFloor } from "../src/floor.js";
 import { loadWorld, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
 let world: World;
-let index: DataIndex;
 beforeAll(async () => {
   world = await loadWorld(join(root, "worlds", "maple"));
-  index = buildIndex(world);
 });
 
 // ------------------------------------------------------------------ fixtures
@@ -76,37 +73,66 @@ const shareVia = (spending: string): string =>
 
 const HOUSING_SHARE = shareVia("data.get_spending");
 
-const tier1For = (visibleText: string) => honestData(visibleText, index);
+/** Housing's own amount, read out of the data and rescaled to the dollars the
+ *  screen shows. Under the old deterministic tier this value was a literal and
+ *  needed no program; now every number does. */
+const HOUSING_AMOUNT = "return data.get_spending.data[0].amount / 100;";
+
+const extractedFrom = (visibleText: string) => honestData(visibleText);
 
 const auditing = async (visibleText: string, model: MockLanguageModelV3) =>
-  await audit({ world, visibleText, tier1: tier1For(visibleText) }, { model });
+  await audit({ world, visibleText, extracted: extractedFrom(visibleText) }, { model });
 
 // ------------------------------------------------ the case the floor got wrong
 
 /**
- * The percentage edge, which is why tier 2 exists.
+ * The percentage edge, which is why the auditor exists.
  *
- * "67.2% of total" is honest — housing is 285000 of 424311 cents, rounded the
- * way the screen rounded it — and the closed derivation allowlist has no rule
- * that reaches it, so tier 1 calls an honest screen a liar.
+ * "67.2% of total" is honest — housing is 285000 of 424311 cents, rounded the way
+ * the screen rounded it — and no closed derivation set reaches it: sum, count,
+ * min, max, mean and filtered count all miss, so the deterministic tier this
+ * replaced called an honest screen a liar. Code reaches it.
  */
-describe("a legitimate operation the allowlist cannot express", () => {
+describe("a legitimate operation no closed allowlist can express", () => {
   const SCREEN = "Housing $2,850.00 · 67.2% of total";
 
-  it("is an offender under tier 1 alone", () => {
-    const tier1 = tier1For(SCREEN);
-    expect(tier1.pass).toBe(false);
-    expect(tier1.offenders.map((offender) => offender.text)).toEqual(["67.2"]);
+  it("leaves extraction unproven, along with every other number on the screen", () => {
+    const extracted = extractedFrom(SCREEN);
+    expect(extracted.pass).toBe(false);
+    expect(extracted.offenders.map((offender) => offender.text)).toEqual(["$2,850.00", "67.2"]);
   });
 
   it("is cleared by a program the harness executed, and only by that", async () => {
-    const result = await auditing(SCREEN, proposing({ "67.2": HOUSING_SHARE }));
+    const result = await auditing(SCREEN, proposing({ "$2,850.00": HOUSING_AMOUNT, "67.2": HOUSING_SHARE }));
 
     expect(result.pass).toBe(true);
     expect(result.offenders).toEqual([]);
+    expect(result.examined).toBe(2);
     expect(result.audited).toEqual([
+      { text: "$2,850.00", program: HOUSING_AMOUNT, result: "2850", verdict: "cleared-by-audit", attempts: 1 },
       { text: "67.2", program: HOUSING_SHARE, result: "67.2", verdict: "cleared-by-audit", attempts: 1 },
     ]);
+  });
+
+  /**
+   * The same screen through the floor the run actually calls, end to end: real
+   * extraction off the visible text, real execution, and `honestData` flipping the
+   * whole floor to a pass. The percentage is the value that could not be cleared
+   * before this contract; nothing about the check is stubbed but the model.
+   */
+  it("passes the floor's honesty check, so the floor itself passes", async () => {
+    const shot = { png: Buffer.alloc(0), visibleText: SCREEN, renders: true, consoleErrors: [] };
+    const floor = runFloor({ world, artifact: "<Stack/>", blocking: [], trace: [], shot });
+    expect(floor.honestData.pass).toBe(false);
+
+    const audited = await auditFloor(floor, world, SCREEN, {
+      model: proposing({ "$2,850.00": HOUSING_AMOUNT, "67.2": HOUSING_SHARE }),
+    });
+
+    expect(audited.honestData.pass).toBe(true);
+    expect(audited.honestData.examined).toBe(2);
+    expect(audited.honestData.audited).toHaveLength(2);
+    expect(audited.pass).toBe(true);
   });
 
   it("is not cleared by a program that returns a different number", async () => {
@@ -115,6 +141,7 @@ describe("a legitimate operation the allowlist cannot express", () => {
     const result = await auditing(
       SCREEN,
       proposing({
+        "$2,850.00": HOUSING_AMOUNT,
         "67.2":
           "const rows = data.get_spending.data;" +
           " const total = rows.reduce((sum, row) => sum + row.amount, 0);" +
@@ -123,7 +150,8 @@ describe("a legitimate operation the allowlist cannot express", () => {
     );
 
     expect(result.pass).toBe(false);
-    expect(result.audited?.[0]).toMatchObject({ verdict: "offender", result: "67" });
+    expect(result.offenders.map((offender) => offender.text)).toEqual(["67.2"]);
+    expect(result.audited?.[1]).toMatchObject({ verdict: "offender", result: "67" });
   });
 });
 
@@ -210,7 +238,7 @@ describe("a program that echoes the value it is meant to derive", () => {
 describe("the sandbox", () => {
   it("refuses reads, network, imports and runaway loops without taking the run down", async () => {
     const screen = "a 9001 b 9002 c 9003 d 9004";
-    expect(tier1For(screen).offenders.map((offender) => offender.text)).toEqual(["9001", "9002", "9003", "9004"]);
+    expect(extractedFrom(screen).offenders.map((offender) => offender.text)).toEqual(["9001", "9002", "9003", "9004"]);
 
     const result = await auditing(
       screen,
@@ -271,7 +299,9 @@ describe("the sandbox", () => {
  * a landmine rather than a wrong number.
  */
 describe("a tool whose name is not a JavaScript identifier", () => {
-  const SCREEN = "Housing $2,850.00 · 67.2% of total";
+  // One value, because the subject is the name the program has to reach the data
+  // through and nothing else.
+  const SCREEN = "Housing 67.2% of total";
 
   for (const name of ["report-total", "2fa-status", "class"]) {
     it(`clears the same honest value when the spending tool is named "${name}"`, async () => {
@@ -288,7 +318,7 @@ describe("a tool whose name is not a JavaScript identifier", () => {
       const program = shareVia(`data[${JSON.stringify(name)}]`);
 
       const result = await audit(
-        { world: renamed, visibleText: SCREEN, tier1: honestData(SCREEN, buildIndex(renamed)) },
+        { world: renamed, visibleText: SCREEN, extracted: honestData(SCREEN) },
         { model: proposing({ "67.2": program }) },
       );
 
@@ -305,6 +335,9 @@ describe("a tool whose name is not a JavaScript identifier", () => {
  * be reached, the values it would have judged stay offenders and the check says
  * it is degraded — fail-closed, exactly as the judge does. It never throws: a
  * bad afternoon at the provider must not cost the run its case.
+ *
+ * With no deterministic tier behind it, fail-closed now means EVERY number on the
+ * screen stays an offender, which is the honest reading: nothing was proven.
  */
 describe("degrade", () => {
   const SCREEN = "Total spent $9,999.00";
@@ -322,9 +355,9 @@ describe("degrade", () => {
     expect(result.degraded).toBe(true);
     expect(result.error).toContain("503");
     expect(result.pass).toBe(false);
-    // Tier 1's own words stand: nothing executed, so "no executable derivation
-    // found" would be a finding the harness never actually made.
-    expect(result.offenders).toEqual(tier1For(SCREEN).offenders);
+    // The extraction's own words stand: nothing executed, so "no executable
+    // derivation found" would be a finding the harness never actually made.
+    expect(result.offenders).toEqual(extractedFrom(SCREEN).offenders);
     expect(result.audited).toEqual([]);
   });
 
@@ -341,14 +374,17 @@ describe("degrade", () => {
   it("gives up on a request that never answers, so the case is still written", async () => {
     const model = new MockLanguageModelV3({ doGenerate: () => new Promise(() => undefined) });
 
-    const result = await audit({ world, visibleText: SCREEN, tier1: tier1For(SCREEN) }, { model, timeoutMs: 20 });
+    const result = await audit(
+      { world, visibleText: SCREEN, extracted: extractedFrom(SCREEN) },
+      { model, timeoutMs: 20 },
+    );
 
     expect(result.degraded).toBe(true);
     expect(result.error).toContain("did not answer within 20ms");
     expect(result.pass).toBe(false);
-    // Fail-closed: nothing ran, so the values stay exactly the offenders tier 1
-    // made them, in tier 1's own words.
-    expect(result.offenders).toEqual(tier1For(SCREEN).offenders);
+    // Fail-closed: nothing ran, so every number the screen printed stays
+    // unproven, in the extraction's own words.
+    expect(result.offenders).toEqual(extractedFrom(SCREEN).offenders);
     expect(result.audited).toEqual([]);
   });
 
@@ -380,24 +416,25 @@ describe("degrade", () => {
 // ------------------------------------------------------------------ efficiency
 
 /**
- * The common case is a screen tier 1 clears outright, and that case must cost
- * nothing. When there IS something to audit, the whole screen goes in one call.
+ * A screen with no numbers on it is the only screen that costs nothing, and every
+ * other screen pays for exactly one call per attempt: the whole screen goes in
+ * one batch, never one call per value.
  */
 describe("what it costs", () => {
-  it("calls nobody when the deterministic pass already cleared everything", async () => {
+  it("calls nobody when the screen printed no numbers at all", async () => {
     const model = proposing({});
-    const honest = "Housing $2,850.00 · Total $4,243.11";
-    const tier1 = tier1For(honest);
-    expect(tier1.pass).toBe(true);
+    const wordsOnly = "Accounts · Transfers · Spending";
+    const extracted = extractedFrom(wordsOnly);
+    expect(extracted.pass).toBe(true);
 
-    const result = await audit({ world, visibleText: honest, tier1 }, { model });
+    const result = await audit({ world, visibleText: wordsOnly, extracted }, { model });
 
     expect(model.doGenerateCalls).toHaveLength(0);
-    expect(result).toBe(tier1);
+    expect(result).toBe(extracted);
     expect(result.cost).toBeUndefined();
   });
 
-  it("audits every unresolved value on a screen in ONE call, and shows the auditor the data", async () => {
+  it("audits every number on a screen in ONE call, and shows the auditor the data", async () => {
     const model = proposing({});
     await auditing("a 9001 b 9002 c 9003", model);
 
@@ -432,7 +469,7 @@ describe("what it costs", () => {
 describe("AUDITOR_CONTRACT", () => {
   it("pins the auditor's own model, separately from whoever is being audited", () => {
     expect(AUDITOR_CONTRACT.model).toBe("claude-sonnet-5");
-    expect(AUDITOR_CONTRACT.auditVersion).toBe(2);
+    expect(AUDITOR_CONTRACT.auditVersion).toBe(4);
   });
 
   it("hashes the prompt, so any edit to it changes the contract", () => {

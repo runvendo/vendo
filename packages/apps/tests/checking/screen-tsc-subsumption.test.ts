@@ -252,12 +252,12 @@ describe("tsc subsumes bindings-fit (bindingKindIssues)", () => {
 });
 
 describe("tsc subsumes bindings-fit (kitSlotIssues)", () => {
-  it("a string field bound into Money.cents is a JSX assignability error", async () => {
-    const wire = screen('<Money cents={invoices.label}/>');
+  it("a string field bound into Money.amount is a JSX assignability error", async () => {
+    const wire = screen('<Money amount={invoices.label}/>');
     const { bespoke, tsc: findings } = await bothReport(wire, (tree) =>
       kitSlotIssues(tree, deps()).map((issue) => issue.message));
     expect(bespoke[0]).toContain("binds /invoices/label, a string field");
-    expect(findings[0]?.message).toContain('prop "cents" on <Money> takes number');
+    expect(findings[0]?.message).toContain('prop "amount" on <Money> takes number');
   });
 
   it("rows bound into Percent.value is a JSX assignability error", async () => {
@@ -307,7 +307,7 @@ describe("the honest gap list — what tsc CANNOT see", () => {
 
   /** CLOSED by V4 (one component family). This used to be a gap: the legacy
    *  prewired primitives carried no schema, only an allowed prop-NAME set, so
-   *  `<Stat value={rows}/>` type-checked where a Kit `<Money cents={...}/>`
+   *  `<Stat value={rows}/>` type-checked where a Kit `<Money amount={...}/>`
    *  would not. Retiring them left one Stat with a real zod-derived type, so
    *  the wrongly-typed binding is now caught like any other. */
   it("no longer a gap: every built-in carries its Kit prop TYPES, not just names", () => {
@@ -316,9 +316,4 @@ describe("the honest gap list — what tsc CANNOT see", () => {
     expect(findings.map((finding) => finding.message).join(" ")).toContain('prop "value" on <Stat>');
   });
 
-  it("GAP: asPoints into a host prop with its own item fields is a valid call", () => {
-    // `hostReshapeIssues` stays — it is a policy about which op may feed which
-    // prop, and the reshape ops are declared permissively.
-    expect(tsc(screen('<MapleNetWorthCard valueCents={invoices.total_cents} series={asPoints(invoices.data, "id", "amount_cents")}/>'))).toEqual([]);
-  });
 });

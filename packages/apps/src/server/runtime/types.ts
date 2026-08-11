@@ -152,6 +152,17 @@ export interface AppsConfig {
    */
   files?: FilesAdapter;
   model?: LanguageModel;
+  /**
+   * The AI reviewer's own seat — the FAST pick, when composition resolved one.
+   *
+   * The reviewer is the one check that spends a model call, and what it does is
+   * read a finished screen against its own rows. That is not the job the
+   * flagship is for, so the umbrella fills this with the family fast model
+   * (`resolveModels`' `fill` seat) and the reviewer stops riding the writer's
+   * seat. Unset — a host composing this block itself — and it rides
+   * {@link AppsConfig.model}, exactly as it always did.
+   */
+  reviewModel?: LanguageModel;
   /** The island smoke-render gate (on unless explicitly `false`): every
    *  generated island renders once headless before it can reach a screen. */
   pipeline?: GenerationDependencies["pipeline"];
@@ -443,6 +454,46 @@ export interface AppsRuntime {
     ctx: RunContext,
   ): Promise<AuthoredAppResult>;
   /**
+   * The same job for a COMPONENT screen (`app.tsx`): the row that makes a written
+   * file an app, and the screen itself as that app's stored source.
+   *
+   * The two halves {@link AppsRuntime.authored} does are two different halves here.
+   * A wire document is stored and its queries are resolved by the same call; a
+   * screen's queries were run by the gauntlet that rendered it, and the paint
+   * carries their answers (`ComponentPaintResult.interactive`), so there is nothing
+   * left to resolve and no data to hand back — but the screen is the app's own
+   * FILE, so storing it is this call's job rather than
+   * {@link AppsRuntime.commitSource}'s. The generic workspace diff cannot tell a
+   * passing screen from a refused one, and a screen the floor would not render must
+   * never become the app's stored screen.
+   *
+   * The CALLER differs too. A wire save's app half is the render seam's
+   * `authoredApp`; the seam has no such call for `app.tsx`, so the checks floor
+   * calls this from the one place that knows the screen really painted — the
+   * gauntlet's own `ok`, which is the seam's paint gate. That keeps "a paint is
+   * what creates the row" true for both artifacts, which is exactly what `create`
+   * reads the row's existence AS (`NOTHING_RENDERABLE`).
+   *
+   * Every save that paints, not only the first: a re-save lands through the same
+   * versioned write `app.vendo` does, so a component app's edits sit on its history
+   * under the person's own words like any other artifact's.
+   */
+  authoredScreen(input: { appId: AppId; name: string; source: string }, ctx: RunContext): Promise<void>;
+  /**
+   * Why a painted screen's save left no row — {@link AppsRuntime.authoredScreen}'s
+   * opposite half, called from the gauntlet's every `ok: false`.
+   *
+   * A refusal at the paint seam reaches no user-facing channel by design: the seam
+   * emits nothing and the last good view stays on screen. When the refused save was
+   * an EDIT's, this is that edit's answer — the row still holds the pre-edit
+   * document, so the assembler reading it back would report an unchanged app as the
+   * change.
+   *
+   * No ctx: a refusal writes no row. It records why this app's in-flight edit
+   * failed, which is app-keyed and in memory (`editRefusals`).
+   */
+  refusedScreen(input: { appId: AppId; blocking: readonly string[] }): Promise<void>;
+  /**
    * Contract §3.2/§2.2 — the app's own SOURCE, landed in its row.
    *
    * The sibling of {@link AppsRuntime.authored}, on the same interception point and
@@ -479,8 +530,16 @@ export interface AppsRuntime {
    *
    * Its `deps` are resolved lazily and once per returned floor: building them
    * lists the host's tools, and a floor is built per turn but called per commit.
+   *
+   * `saves: false` asks for the same five-stage gauntlet with the ROW HALF off —
+   * no `authoredScreen`, no `refusedScreen`. `open()` needs it: a component
+   * screen's tree is what rendering it produces, so opening one paints it, and a
+   * paint that is a READ must never write. It is not a hypothetical — a
+   * review-kind app serving an older APPROVED snapshot (`serveDocFor`) paints
+   * that snapshot, so a writing floor stored it straight back over the row and
+   * the pending version the reviewer was looking at ceased to exist.
    */
-  floor(ctx: RunContext): AppFloor;
+  floor(ctx: RunContext, options?: { saves?: boolean }): AppFloor;
   /**
    * What every tool a binding may name really RETURNS, annotated with this
    * host's own field semantics — the `:money.cents`, `:date.iso`, `:enum(a|b)`

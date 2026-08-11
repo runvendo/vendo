@@ -5,6 +5,7 @@ import {
   type AppDocument,
   type Principal,
   type RunContext,
+  type VendoViewPart,
   VENDO_APP_FORMAT,
   VENDO_POLICY_FORMAT,
   VENDO_TREE_FORMAT,
@@ -1028,18 +1029,19 @@ describe("09 §3 public wire", () => {
     expect(await modelVenue({})).toBe("ladder");
 
     // Models block (models spec 2026-07-22): an explicit LanguageModel object
-    // wins as-is; a string resolves through the ladder; models.agent
-    // supersedes the deprecated top-level `model` (so a string there flips
-    // the venue back to "ladder" even with an object on the alias).
-    expect(await modelVenue({ models: { agent: {} as LanguageModel } })).toBe("custom");
-    expect(await modelVenue({ models: { agent: "claude-opus-4-8" } })).toBe("ladder");
-    expect(await modelVenue({ model: {} as LanguageModel, models: { agent: "claude-opus-4-8" } })).toBe("ladder");
+    // wins as-is; a string resolves through the ladder. Naming the seat both
+    // ways — the deprecated top-level `model` AND `models.default` — is a
+    // boot collision, not a precedence (no silent last-write-wins).
+    expect(await modelVenue({ models: { default: {} as LanguageModel } })).toBe("custom");
+    expect(await modelVenue({ models: { default: "claude-opus-4-8" } })).toBe("ladder");
+    await expect(modelVenue({ model: {} as LanguageModel, models: { default: "claude-opus-4-8" } }))
+      .rejects.toThrow("Two knobs set the same model seat");
 
     // Slot values must be model-name strings or LanguageModel objects.
     expect(() => createVendo({
       principal: vi.fn(async () => principal),
       store,
-      models: { agent: "   " },
+      models: { default: "   " },
     })).toThrow(VendoError);
   });
 
@@ -1726,16 +1728,16 @@ describe("XCUT-3 — umbrella runtime store surface", () => {
 describe("app design rules (spec 2026-07-20)", () => {
   /** `save_app`'s own reply — its presence says THIS assembly run already saved,
    *  which is how one model answers several runs without counting calls. */
-  const SAVED_MARKER = "Run validate on it now.";
+  const SAVED_MARKER = "That save landed.";
 
   /** Minimal scripted model (mirrors @vendoai/apps' internal test helper, which
    *  is not exported): captures every prompt as flat text and plays the ONE
-   *  builder — one `save_app` of fixed wire markup per run, then a closing word
-   *  — so `runtime.create` completes. */
+   *  builder — one `save_app` of a fixed `app.tsx` screen per run, then a closing
+   *  word — so `runtime.create` completes. */
   const appGenModel = (prompts: string[]): LanguageModel => {
     const turnFor = (prompt: unknown): ScreenTurn => promptTextOf(prompt).includes(SAVED_MARKER)
       ? { say: "done" }
-      : { tool: "save_app", input: { content: APP_WIRE } };
+      : { tool: "save_app", input: { content: APP_SCREEN } };
     return {
       specificationVersion: "v2" as const,
       provider: "vendo-test",
@@ -1778,7 +1780,20 @@ describe("app design rules (spec 2026-07-20)", () => {
     } as unknown as LanguageModel;
   };
 
-  const APP_WIRE = '<App name="Design check"><Text text="ok"/><Disclaimer reason="Fixture app."/></App>';
+  /** The screen artifact: one `app.tsx` the component gauntlet passes. Its default
+   *  export's name is the app's name (`screenName`), so "Design check" is the
+   *  export rather than an `<App name>` attribute. */
+  const APP_SCREEN = `import { Disclaimer, Stack, Text } from "@vendo/screen";
+
+export default function DesignCheck() {
+  return (
+    <Stack gap={12}>
+      <Text text="ok" variant="heading" />
+      <Disclaimer reason="Fixture app." />
+    </Stack>
+  );
+}
+`;
   const flatPrompt = (prompt: Array<{ content: string | Array<{ text?: string }> }>): string =>
     prompt.map((message) => typeof message.content === "string"
       ? message.content
@@ -1925,17 +1940,34 @@ describe("app design rules (spec 2026-07-20)", () => {
           { headers: { etag: '"rel_1"' } },
         );
       }
+      // The host's own route behind `host_ledger`. It ANSWERS now, because the
+      // screen below reads it for real: the component gauntlet executes a screen's
+      // queries and boots it on the answers, so a route that threw would refuse the
+      // screen before the shape card could matter to anything.
+      if (url.includes("/ledger")) return Response.json({ amount: 12_345, dueAt: "2026-08-01" });
       throw new Error(`unexpected fetch ${url}`);
     }));
 
     const store = await tempStore("vendo-cloud-overrides-store-");
     await store.ensureSchema();
     const prompts: string[] = [];
-    // The semantics annotations reach whoever BINDS against the query, so the
-    // fake model walks the ONE builder: a document with a query on host_ledger
-    // and a node reading it, saved as a whole.
-    const LEDGER_APP = '<App name="Ledger"><Query id="ledger" tool="host_ledger"/>'
-      + "<Text text={ledger.amount}/></App>";
+    // The semantics annotations reach whoever READS the query, so the fake model
+    // walks the ONE builder: a screen that reads `host_ledger` and shows a field
+    // the DECLARED schema names. The type check is derived from that same schema,
+    // so a screen reading a field the host never declared would not compile — which
+    // is what makes the shape card the writer's only honest source.
+    const LEDGER_APP = `import { Money, Stack, Text, useQuery } from "@vendo/screen";
+
+export default function Ledger() {
+  const ledger = useQuery("host_ledger");
+  return (
+    <Stack gap={12}>
+      <Text text="Ledger" variant="heading" />
+      <Money amount={ledger.amount / 100} />
+    </Stack>
+  );
+}
+`;
     const planModel = ((): LanguageModel => {
       const turnFor = (prompt: unknown): ScreenTurn => promptTextOf(prompt).includes(SAVED_MARKER)
         ? { say: "done" }
@@ -2301,9 +2333,16 @@ describe("09 §3 conversational turn against the real composed store", () => {
         { type: "finish" as const, usage, finishReason: { unified: "tool-calls" as const, raw: undefined } },
       ] }),
     });
-    const section = (count: number) => `<App name="SSE app">\n  <Stack>\n${
-      Array.from({ length: count }, (_, index) => `    <Text text="Section ${index + 1} ready" />`).join("\n")
-    }\n  </Stack>\n</App>`;
+    const section = (count: number) => `import { Stack, Text } from "@vendo/screen";
+
+export default function SseApp() {
+  return (
+    <Stack gap={12}>
+${Array.from({ length: count }, (_, index) => `      <Text text="Section ${index + 1} ready" />`).join("\n")}
+    </Stack>
+  );
+}
+`;
     const screenTurns = [
       saveApp(section(1), "c1"),
       saveApp(section(2), "c2"),
@@ -2611,10 +2650,48 @@ describe("surfaces.agent through createVendo", () => {
 });
 
 describe("09 §2 apps composition", () => {
+  /**
+   * The screen the person actually got, read off the PAINT.
+   *
+   * A component screen's tree is a RENDER, not a stored field: `authoredScreen`
+   * stores the app's id and name, and the tree only exists as the view the seam
+   * emitted (`render-seam.ts` — the `app.tsx` branch has no `authoredApp` and no
+   * compiled document to keep). So the paint is where "which components did this
+   * deployment let the screen name" is readable, and `onView` is the shipped
+   * channel for it. There is no `source: "host"` marker any more either: that was
+   * the wire compiler tagging a node it recognised, and a rendered tree carries
+   * only what the component was called with.
+   */
+  const paintedNodes = (views: VendoViewPart[]): Array<Record<string, unknown>> => {
+    const settled = views.filter((part) => part.payload["streaming"] !== true).at(-1);
+    return (settled?.payload["nodes"] ?? []) as Array<Record<string, unknown>>;
+  };
+
+  /** One painted node by component name, so an assertion on its props does not
+   *  also depend on the flat tree's key order — `flattenTree` keys by structural
+   *  position, and the order those keys enumerate in is not the paint order. */
+  const paintedNode = (views: VendoViewPart[], component: string): Record<string, unknown> | undefined =>
+    paintedNodes(views).find((node) => node["component"] === component);
+
+  /** A screen that names one host component, so it compiles only where that
+   *  component was registered — `MetricCard` is not in the Kit. */
+  const metricScreen = (name: string) => `import { MetricCard, Stack } from "@vendo/screen";
+
+export default function ${name}() {
+  return (
+    <Stack gap={12}>
+      <MetricCard label="Revenue" />
+    </Stack>
+  );
+}
+`;
+
   it("passes host-component catalog registrations to createApps", { timeout: 120_000 }, async () => {
     const store = await tempStore("vendo-catalog-");
-    const generated = '<App name="Catalog app"><MetricCard label="Revenue"/></App>';
-    const model = await screenModel([{ tool: "save_app", input: { content: generated } }, { say: "done" }]);
+    const model = await screenModel([
+      { tool: "save_app", input: { content: metricScreen("CatalogApp") } },
+      { say: "done" },
+    ]);
     const catalog: ComponentCatalog = [{
       name: "MetricCard",
       description: "Use for a single headline metric.",
@@ -2628,15 +2705,28 @@ describe("09 §2 apps composition", () => {
     });
     await store.ensureSchema();
 
-    await expect(vendo.apps.create({ prompt: "Show revenue" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "Stack" }, { component: "MetricCard", source: "host" }] },
-    });
+    // The catalog is what makes `MetricCard` importable from `@vendo/screen` at
+    // all: the gauntlet's type check is generated from it, so an unregistered
+    // name is "no exported member" and the screen never paints. A create that
+    // resolves with the screen's own name IS that plumbing, end to end.
+    const views: VendoViewPart[] = [];
+    await expect(vendo.apps.create({ prompt: "Show revenue", onView: (part) => views.push(part) }, ctx))
+      .resolves.toMatchObject({ name: "Catalog app" });
+    expect(paintedNodes(views).map((node) => node["component"])).toEqual(
+      expect.arrayContaining(["Stack", "MetricCard"]),
+    );
+    expect(paintedNodes(views)).toHaveLength(2);
+    // The props are the ones the screen wrote, verbatim — the rendered tree is
+    // what the component was called with, so a dropped or renamed prop shows here.
+    expect(paintedNode(views, "MetricCard")).toMatchObject({ props: { label: "Revenue" } });
   });
 
   it("accepts the name-keyed registry catalog form and ignores component references", { timeout: 120_000 }, async () => {
     const store = await tempStore("vendo-registry-catalog-");
-    const generated = '<App name="Registry app"><MetricCard label="Revenue"/></App>';
-    const model = await screenModel([{ tool: "save_app", input: { content: generated } }, { say: "done" }]);
+    const model = await screenModel([
+      { tool: "save_app", input: { content: metricScreen("RegistryApp") } },
+      { say: "done" },
+    ]);
     // 01 §14: the server MUST IGNORE the component reference — a trap proves
     // it is never touched or executed.
     const registry: ComponentRegistry = {
@@ -2655,13 +2745,12 @@ describe("09 §2 apps composition", () => {
     });
     await store.ensureSchema();
 
-    await expect(vendo.apps.create({ prompt: "Show revenue" }, ctx)).resolves.toMatchObject({
-      tree: {
-        nodes: expect.arrayContaining([
-          expect.objectContaining({ component: "MetricCard", source: "host" }),
-        ]),
-      },
-    });
+    const views: VendoViewPart[] = [];
+    await expect(vendo.apps.create({ prompt: "Show revenue", onView: (part) => views.push(part) }, ctx))
+      .resolves.toMatchObject({ name: "Registry app" });
+    expect(paintedNodes(views)).toMatchObject(
+      expect.arrayContaining([expect.objectContaining({ component: "MetricCard" })]),
+    );
   });
 
   it("loads catalog@1 from .vendo and plumbs it through to createApps", { timeout: 120_000 }, async () => {
@@ -2682,7 +2771,16 @@ describe("09 §2 apps composition", () => {
     }));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
-    const generated = '<App name="Disk catalog app"><DiskMetric level={42}/></App>';
+    const generated = `import { DiskMetric, Stack } from "@vendo/screen";
+
+export default function DiskCatalogApp() {
+  return (
+    <Stack gap={12}>
+      <DiskMetric level={42} />
+    </Stack>
+  );
+}
+`;
     const model = await screenModel([{ tool: "save_app", input: { content: generated } }, { say: "done" }]);
     const previousCwd = process.cwd();
     const vendo = (() => {
@@ -2695,88 +2793,16 @@ describe("09 §2 apps composition", () => {
     })();
     await store.ensureSchema();
 
-    await expect(vendo.apps.create({ prompt: "Show the disk metric" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "Stack" }, { component: "DiskMetric", source: "host", props: { level: 42 } }] },
-    });
-  });
-
-  it("exempts runtime bindings from a disk entry's ajv-backed schema while still rejecting real violations", { timeout: 120_000 }, async () => {
-    // 04 §1 gap closure end-to-end: ajvIssuePath → standardIssuePath →
-    // pathTargetsRuntimeBinding. The disk schema says value must be a number;
-    // a {$path} binding at that prop must be exempted, a plain wrong type not.
-    const root = await mkdtemp(join(tmpdir(), "vendo-disk-catalog-binding-"));
-    const dataDir = join(root, "data");
-    await mkdir(join(root, ".vendo"), { recursive: true });
-    await writeFile(join(root, ".vendo", "catalog.json"), JSON.stringify({
-      format: "vendo/catalog@1",
-      entries: [{
-        name: "DiskMetric",
-        exportPath: "./src/disk-metric.tsx#DiskMetric",
-        // "value" stays: this test binds it (law 1 exempts bindings); the
-        // literal-violation arm below is doubly illegal (ajv + law 1).
-        propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
-        description: "Use for a metric loaded from the generated catalog.",
-        source: "scanned",
-      }],
-    }));
-    const store = createStore({ dataDir });
-    cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
-    // JSX wire: `value={metrics.value}` compiles to the runtime binding
-    // { $path: "/metrics/value" } (a ghost binding renders as absent data —
-    // genui/wire/compile.ts); the bad case is a plain string attribute.
-    // The query names a REAL registry tool: query tools are now validated
-    // against the live descriptor list at create (verify-v2 fixes).
-    const bound = '<App name="Disk binding app"><Query id="metrics" tool="vendo_apps_data_list"/><DiskMetric value={metrics.value}/></App>';
-    const bad = '<App name="Disk binding app"><DiskMetric value="not a number"/></App>';
-    /** Every brief the builder was handed — the `validate` run below reports the
-     *  ajv violation back into one of them, which is where a real author reads
-     *  it. */
-    const prompts: string[] = [];
-    const model = await screenModel([
-      // The FIRST create: the bound document, saved and left alone.
-      { tool: "save_app", input: { content: bound } },
-      { say: "done" },
-      // The SECOND: the literal violation. It saves, the floor refuses to paint
-      // it, and `validate` is how the author hears why.
-      { tool: "save_app", input: { content: bad } },
-      { tool: "validate", input: { document: bad } },
-      { say: "I could not make that one work." },
-    ], prompts);
-    const previousCwd = process.cwd();
-    const vendo = (() => {
-      try {
-        process.chdir(root);
-        return createVendo({ model, principal: async () => principal, store });
-      } finally {
-        process.chdir(previousCwd);
-      }
-    })();
-    await store.ensureSchema();
-
-    // A binding where the schema wants a number is exempt: create succeeds.
-    await expect(vendo.apps.create({ prompt: "Show the bound metric" }, ctx)).resolves.toMatchObject({
-      tree: {
-        nodes: expect.arrayContaining([
-          expect.objectContaining({
-            component: "DiskMetric",
-            source: "host",
-            props: { value: { $path: "/metrics/value" } },
-          }),
-        ]),
-      },
-    });
-    // A genuine type violation against the same disk schema still fails: the
-    // floor refuses to paint it, no row lands, and `create` re-throws with the
-    // classified reason in the message and the issue list on detail.
-    await expect(vendo.apps.create({ prompt: "Show the broken metric" }, ctx)).rejects.toMatchObject({
-      code: "validation",
-      detail: { issues: expect.any(Array) },
-    });
-    // …and the refusal is the DISK SCHEMA's, named as such. `validate` is the
-    // review floor for the one builder, so the ajv violation reaches the author
-    // in its own words — a create that merely failed would not tell them which
-    // prop was wrong.
-    expect(prompts.join("\n")).toContain('props invalid for host component "DiskMetric"');
+    const views: VendoViewPart[] = [];
+    await expect(vendo.apps.create({ prompt: "Show the disk metric", onView: (part) => views.push(part) }, ctx))
+      .resolves.toMatchObject({ name: "Disk catalog app" });
+    expect(paintedNodes(views).map((node) => node["component"])).toEqual(
+      expect.arrayContaining(["Stack", "DiskMetric"]),
+    );
+    // The disk entry's own prop, with the literal the screen passed — which is the
+    // whole of "plumbs it through": a name this deployment only knows from
+    // `.vendo/catalog.json` reached the screen's imports and its paint.
+    expect(paintedNode(views, "DiskMetric")).toMatchObject({ props: { level: 42 } });
   });
 
   it("warns loudly when createVendo finds a malformed .vendo/catalog.json", async () => {

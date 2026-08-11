@@ -1,4 +1,4 @@
-import { createApps } from "@vendoai/apps";
+import { createApps, SCREEN_FILE } from "@vendoai/apps";
 import { renderBriefingPack, type BriefingPack } from "@vendoai/apps/contract";
 import type { AppId, Principal, RunContext, ToolRegistry, UIPayload } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
@@ -77,27 +77,21 @@ export function vendoDriver(): Contender {
   return { run };
 }
 
-/** The product's own verdict on the bytes that landed — the render seam's three
- *  paint gates (`render-seam.ts`), in its order: it compiles, it has something
- *  to draw, and it passes the checks floor. Anything here is a reason the seam
- *  would have painted nothing. */
+/** The product's own verdict on the bytes that landed — the seam's paint gate for a
+ *  screen, which is the whole component gauntlet: it compiles, its imports and
+ *  queries are legal, it type-checks, its queries answer, it renders, and the tree it
+ *  rendered is valid. Anything here is a reason the seam would have painted nothing. */
 async function blockingFindings(
   apps: ReturnType<typeof createApps>,
   appId: AppId,
   artifact: string,
   ctx: RunContext,
 ): Promise<string[]> {
-  const floor = apps.floor(ctx);
-  const compiled = await floor.compile(artifact);
-  if (compiled.issues.some((issue) => issue.code === "compile-failed" || issue.code === "missing-app")) {
-    return compiled.issues.map((issue) => `${issue.code}: ${issue.message}`);
+  const painted = await apps.floor(ctx).component?.({ appId, source: artifact });
+  if (painted === undefined) {
+    return ["this build carries no screen engine, so nothing about the screen was checked"];
   }
-  // The compiler is total, so clean issues are not a screen: a childless root is
-  // its degraded floor, and those bytes land without drawing anything.
-  const root = compiled.tree.nodes.find((node) => node.id === compiled.tree.root);
-  if ((root?.children?.length ?? 0) === 0) return ["nothing to render: the document compiled to an empty root"];
-  const findings = await floor.check({ appId, compiled });
-  return findings.filter((finding) => finding.severity === "block").map((finding) => finding.message);
+  return painted.ok ? [] : [...painted.blocking];
 }
 
 async function run(request: RunRequest): Promise<RunOutcome> {
@@ -209,7 +203,7 @@ async function run(request: RunRequest): Promise<RunOutcome> {
     // A fresh handle: the assembler's own workspace has already committed, and
     // reading through a new one is the honest read of what actually landed.
     const fresh = await workspaces.open(PRINCIPAL);
-    const artifact = await fresh.readFile(`/user/apps/${appId}/app.vendo`).catch(() => undefined);
+    const artifact = await fresh.readFile(`/user/apps/${appId}/${SCREEN_FILE}`).catch(() => undefined);
     // The document on disk is not always the document that painted: the agent
     // can save again after its last good view, and the seam silently keeps the
     // older screen. Re-checking the saved bytes through the product's OWN floor

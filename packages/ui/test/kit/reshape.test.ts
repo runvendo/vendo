@@ -29,10 +29,7 @@ describe("the eight reshape wrappers", () => {
       { label: "2026-01", value: 100 },
       { label: "2026-02", value: 250 },
     ]);
-    expect(reshape.format(rows, "revenue", "currency")).toEqual([
-      { month: "2026-01", revenue: "$100.00", cost: 40 },
-      { month: "2026-02", revenue: "$250.00", cost: 60 },
-    ]);
+    expect(reshape.format(1234.56, "money")).toBe("$1,234.56");
     expect(reshape.format(0.42, "percent")).toBe("42%");
     expect(reshape.sum(rows, "revenue")).toBe(350);
     expect(reshape.min(rows, "revenue")).toBe(100);
@@ -45,7 +42,8 @@ describe("the eight reshape wrappers", () => {
       [reshape.pick(rows, "month"), { op: "pick", args: ["month"] }],
       [reshape.rename(rows, "revenue", "value"), { op: "rename", args: ["revenue", "value"] }],
       [reshape.asPoints(rows, "month", "cost"), { op: "asPoints", args: ["month", "cost"] }],
-      [reshape.format(rows, "cost", "currency"), { op: "format", args: ["cost", "currency"] }],
+      // `format` is absent: it takes a single value, so it has no answer to
+      // give over rows — the case below pins that refusal in both venues.
       [reshape.sum(rows, "cost"), { op: "sum", args: ["cost"] }],
       [reshape.min(rows, "cost"), { op: "min", args: ["cost"] }],
       [reshape.max(rows, "cost"), { op: "max", args: ["cost"] }],
@@ -69,7 +67,15 @@ describe("the eight reshape wrappers", () => {
     expect(reshape.count(42)).toBeUndefined();
     expect(reshape.asPoints("not rows", "a", "b")).toBeUndefined();
     // an arg the closed vocabulary rejects is a mismatch, not an exception
-    expect(reshape.format(rows, "revenue", "klingon")).toBeUndefined();
+    expect(reshape.format(1234.56, "klingon")).toBeUndefined();
+  });
+
+  it("has no row form — a table column formats through its own token", () => {
+    // The wrapper's one posture turns core's refusal into undefined; the REASON
+    // is there for an app that asks, and it names the replacement.
+    expect(reshape.format(rows, "money")).toBeUndefined();
+    const direct = applyReshape(rows, [{ op: "format", args: ["money"] }]);
+    expect(direct.ok ? "" : direct.reason).toContain('columns={[{key:"amount", format:"money"}]}');
   });
 
   it("reads the reason through applyReshape when the app wants one", () => {

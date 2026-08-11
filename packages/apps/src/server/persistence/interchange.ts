@@ -1,5 +1,6 @@
 import {
   VendoError,
+  WORKSPACE_INLINE_MAX_BYTES,
   type AppId,
   type Guard,
   type Json,
@@ -52,6 +53,11 @@ const APP_DOCUMENT_FIELDS = [
   "tree",
   "components",
   "storage",
+  // A component screen IS its `app.tsx` (open.ts reads `source[SCREEN_FILE]`
+  // before `tree`), so an archive without `source` carries the document's
+  // metadata and nothing that can ever open. Inline only — see
+  // {@link assertPortableSource}.
+  "source",
   "machine",
   "triggers",
   "egress",
@@ -65,6 +71,35 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const validationError = (message: string, detail?: Json): VendoError =>
   new VendoError("validation", message, detail);
+
+/**
+ * A .vendoapp carries source INLINE or not at all — refused on BOTH sides.
+ *
+ * `text` and `blobRef` are exclusive (contract §3.2), and a `blobRef` is a key in
+ * the exporting deployment's own blob namespace (`apps/<appId>/<hash>`, see
+ * app-source.ts), which the archive has no way to carry: on another deployment
+ * that key resolves to nothing, and on the same one it still points at the ORIGIN
+ * app's bytes. So it fails closed, for {@link assertSeedExportable}'s reason — an
+ * export must never quietly hand over an app with a source file missing, and for
+ * a component screen that file is the whole app — and on import because a copy
+ * must never mint a row aliasing bytes it did not write.
+ */
+const assertPortableSource = (document: unknown): void => {
+  const source = isRecord(document) ? document["source"] : undefined;
+  if (!isRecord(source)) return;
+  for (const [path, file] of Object.entries(source)) {
+    // A blob reference and nothing else: an entry carrying neither is the
+    // document validator's to refuse, in its own words.
+    if (isRecord(file) && file["blobRef"] !== undefined) {
+      throw validationError(
+        `source file "${path}" is spilled to a blob, and a .vendoapp carries only inline source:`
+        + " one deployment's blob namespace is not portable — keep the file under the"
+        + ` ${WORKSPACE_INLINE_MAX_BYTES}-byte inline cap to make this app copyable`,
+        { path },
+      );
+    }
+  }
+};
 
 const validateImportedDocument = (input: unknown): AppDocument => {
   const result = validateAppDocument(input);
@@ -188,6 +223,7 @@ export const createAppInterchange = (
     async exportApp(appId, ctx) {
       const app = await dependencies.requireOwned(appId, ctx);
       assertSeedExportable(app, dependencies.seedBaselines ?? []);
+      assertPortableSource(app);
       const archive: Zippable = {
         "app.json": encoder.encode(JSON.stringify(withoutExportIdentity(app))),
       };
@@ -202,6 +238,7 @@ export const createAppInterchange = (
       const parsed = source instanceof Uint8Array
         ? parseArchive(source)
         : { document: source, hasAppDirectory: false };
+      assertPortableSource(parsed.document);
       const imported = validateImportedDocument(withFreshIdentity(parsed.document, appId));
       await dependencies.store.records("vendo_apps").put(
         appRecordInput(imported, ctx.principal.subject, false, "import"),

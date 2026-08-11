@@ -37,11 +37,17 @@ const ADA: Principal = { kind: "user", subject: "user_ada" };
  *  fixture wire could never produce, because it was written from the client. */
 const UNROUTED = "unknown Vendo route";
 
-const SPENDING = `<App name="Spending">
-  <Stack>
-    <Text text="This month" />
-  </Stack>
-</App>`;
+/** The smallest `app.tsx` the gauntlet renders and the seam paints. */
+const SPENDING = `import { Stack, Text } from "@vendo/screen";
+
+export default function Spending() {
+  return (
+    <Stack>
+      <Text text="This month" />
+    </Stack>
+  );
+}
+`;
 
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
@@ -209,6 +215,11 @@ describe("the shipped client against the shipped door", () => {
     const copy = await client.apps.importApp(bytes);
     expect(copy.id).not.toBe(built.id);
     expect((await client.apps.get(copy.id)).name).toBe("Spending");
+    // SURVIVED means the copy is an app, not a row with a title on it: read it
+    // back through the same door `built` was read back through. A screen IS its
+    // `app.tsx` now, so an archive that carries only the document's metadata
+    // imports something that can never open.
+    expect((await client.apps.open(copy.id)).kind).toBe("tree");
 
     // Placement, the same chain ui asserted against its fixture: place → read
     // back → evict → unplace → gone. Every hop is the real route now.

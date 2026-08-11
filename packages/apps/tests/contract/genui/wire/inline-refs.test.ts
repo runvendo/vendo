@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import { expandInlineRefs } from "../../../../src/contract/genui/wire/inline-refs.js";
 import { compileWire } from "../../../../src/contract/genui/wire/compile.js";
 
+/** The registry decides what is a tool, dotted or not: a `{...}` gap is
+ *  JavaScript, where a dotted chain before `(` is overwhelmingly a method on
+ *  data, so nothing expands unless the WHOLE chain names a tool the host has. */
+const TOOLS = { tools: ["invoices.list"] } as const;
+
 describe("expandInlineRefs", () => {
   it("mints one query for two refs sharing tool + args (dedupe)", () => {
     const wire = `<App name="Overdue"><Stat label="Total" value={invoices.list({status:"overdue"}).totalCents}/><Table rows={invoices.list({status:"overdue"}).data} columns={["client"]}/></App>`;
-    const { wire: out, minted } = expandInlineRefs(wire);
+    const { wire: out, minted } = expandInlineRefs(wire, TOOLS);
     expect(minted).toBe(1);
     expect(out).toContain(`<Query id="invoicesList" tool="invoices.list" input={{status:"overdue"}}/>`);
     expect(out).toContain("value={invoicesList.totalCents}");
@@ -16,7 +21,7 @@ describe("expandInlineRefs", () => {
 
   it("mints distinct queries for the same tool with different args", () => {
     const wire = `<App name="X"><Table rows={invoices.list({status:"overdue"}).data} columns={["c"]}/><Table rows={invoices.list({status:"paid"}).data} columns={["c"]}/></App>`;
-    const { minted } = expandInlineRefs(wire);
+    const { minted } = expandInlineRefs(wire, TOOLS);
     expect(minted).toBe(2);
   });
 
@@ -27,15 +32,20 @@ describe("expandInlineRefs", () => {
     expect(out).toContain("tools.clients.search({q:\"a\"})");
   });
 
-  it("does not touch reshape calls like format(...)", () => {
-    const wire = `<App name="X"><Table rows={format(invoicesList.data, "amountCents", "currencyCents")} columns={["c"]}/></App>`;
-    const { minted } = expandInlineRefs(wire);
+  it("never mints a query out of a call on a declared query's OWN data", () => {
+    // A `{...}` gap is JavaScript, so a chain rooted at a <Query> id is
+    // arithmetic over that query's rows. Listed as a known tool on purpose: the
+    // root gate is the only thing that may stop it, and without that gate this
+    // total minted `<Query tool="spending.data.reduce"/>` — a phantom query.
+    const wire = `<App name="X"><Query id="spending" tool="host_spending"/><Stat label="Total" value={spending.data.reduce((t, r) => t + r.cents, 0)}/></App>`;
+    const { wire: out, minted } = expandInlineRefs(wire, { tools: ["spending.data.reduce"] });
     expect(minted).toBe(0);
+    expect(out).toBe(wire);
   });
 
   it("never mints a name that collides with an existing <Query id> (Greptile P1)", () => {
     const wire = `<App name="X"><Query id="invoicesList" tool="invoices.list" input={{status:"paid"}}/><Table rows={invoicesList.data} columns={["c"]}/><Stat label="Overdue" value={invoices.list({status:"overdue"}).totalCents}/></App>`;
-    const { wire: out, minted } = expandInlineRefs(wire);
+    const { wire: out, minted } = expandInlineRefs(wire, TOOLS);
     expect(minted).toBe(1);
     // The minted query must NOT reuse the existing "invoicesList" id.
     expect(out).toContain(`<Query id="invoicesList2" tool="invoices.list" input={{status:"overdue"}}/>`);
@@ -54,10 +64,13 @@ describe("expandInlineRefs", () => {
     expect(out).toContain("value={hostListTransactions.count}");
   });
 
-  it("leaves single-segment calls alone without a tools list, and unknown single-segment names alone with one", () => {
-    const wire = `<App name="Tx"><Table rows={host_listTransactions({}).data} columns={["m"]}/></App>`;
-    expect(expandInlineRefs(wire).minted).toBe(0);
-    expect(expandInlineRefs(wire, { tools: ["host_other"] }).minted).toBe(0);
+  it("expands only when the WHOLE chain names a known tool — dotted heads included", () => {
+    const single = `<App name="Tx"><Table rows={host_listTransactions({}).data} columns={["m"]}/></App>`;
+    expect(expandInlineRefs(single).minted).toBe(0);
+    expect(expandInlineRefs(single, { tools: ["host_other"] }).minted).toBe(0);
+    const dotted = `<App name="X"><Table rows={invoices.list({status:"paid"}).data} columns={["c"]}/></App>`;
+    expect(expandInlineRefs(dotted).minted).toBe(0);
+    expect(expandInlineRefs(dotted, { tools: ["invoices.other"] }).minted).toBe(0);
   });
 
   it("leaves prose alone: a dotted call is only a call inside an attribute expression", () => {
@@ -71,7 +84,7 @@ describe("expandInlineRefs", () => {
 
   it("expands an attribute expression in the same document that carries such prose", () => {
     const wire = `<App name="Ops"><Text text="Contact ops.team (Mon-Fri)"/><Table rows={invoices.list({status:"overdue"}).data} columns={["client"]}/></App>`;
-    const { wire: out, minted } = expandInlineRefs(wire);
+    const { wire: out, minted } = expandInlineRefs(wire, TOOLS);
     expect(minted).toBe(1);
     expect(out).toContain(`text="Contact ops.team (Mon-Fri)"`);
     expect(out).toContain("rows={invoicesList.data}");
@@ -88,7 +101,7 @@ describe("expandInlineRefs", () => {
   it("compiles to the same canonical tree as the explicit <Query> arm", () => {
     const inline = `<App name="Overdue"><Table rows={invoices.list({status:"overdue"}).data} columns={[{key:"client"}]}/></App>`;
     const explicit = `<App name="Overdue"><Query id="invoicesList" tool="invoices.list" input={{status:"overdue"}}/><Table rows={invoicesList.data} columns={[{key:"client"}]}/></App>`;
-    const a = compileWire(inline, { inlineRefs: true });
+    const a = compileWire(inline, { inlineRefs: true, inlineTools: [...TOOLS.tools] });
     const b = compileWire(explicit);
     expect(a.complete).toBe(true);
     expect(a.tree.queries).toEqual(b.tree.queries);

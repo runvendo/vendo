@@ -56,11 +56,15 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@jitl/quickjs-singlefile-browser-release-sync": "^0.32.0",
     "@vendoai/core": "workspace:*",
+    "acorn": "^8.15.0",
     "croner": "^9.0.0",
     "esbuild": "^0.25.12",
     "fflate": "^0.8.2",
     "jsdom": "^25.0.0",
+    "preact": "10.24.3",
+    "quickjs-emscripten-core": "^0.32.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zod": "^3.25.0"

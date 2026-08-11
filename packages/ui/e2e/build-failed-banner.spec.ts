@@ -6,19 +6,22 @@ import { openScenario, screenshotPath } from "./helpers.js";
 // visible error beat with what the failure MEANS for the reader (the cert saw
 // the turn spin for 10+ minutes and end with no trace).
 //
-// This spec was red on redesign/final-cleanup and in no CI job, which is why
-// nobody saw it: it still demanded the WIRE's reason on screen ("app build
-// failed: generation failed"). §16 law 3 moved that sentence to the server's own
-// log and put BUILD_FAILURE_COPY in front of the person, so the assertion is now
-// the other way round — the developer's sentence must NOT be here.
+// The reason itself is what the reader gets. One canned sentence used to stand in
+// front of it, which spoke as the agent and threw the actionable half away; the
+// runtime's classified line ("timed out", "quota exhausted", a missing
+// `@ai-sdk/*` package) is written to be read, so `buildFailureNotice`
+// (chrome/thread/message-data.ts) passes it through verbatim. Only the wire
+// marker comes off, because that is plumbing. The findings that quote the app's
+// own code still stay in the server's `[vendo] app build failed (app_…)` line.
 test("the failed-build banner tells the reader what happened, in their words", async ({ page }) => {
   await openScenario(page, "build-failed");
   const banner = page.locator("[data-vendo-build-failed]");
   await expect(banner).toBeVisible();
   await expect(banner).toContainText("Couldn't build the app");
-  await expect(banner).toContainText("nothing was changed");
+  // The fixture's reason is "app build failed: generation failed" — the marker is
+  // stripped, the classified half survives.
+  await expect(banner).toContainText("generation failed");
   await expect(banner).not.toContainText("app build failed");
-  await expect(banner).not.toContainText("generation failed");
   // The surrounding turn stays intact: the user ask and the pre-build text
   // both survive beside the banner.
   await expect(page.getByText("build me a small app that tracks invoice statuses")).toBeVisible();

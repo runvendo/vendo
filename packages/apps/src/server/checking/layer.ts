@@ -90,21 +90,39 @@ const findingsOf = (check: Check, reported: unknown): Finding[] => {
     : [...findings, warnAbout(check, `the check "${check.name}" reported ${dropped} findings in a shape this floor cannot read, so whatever they said is missing from this report`)];
 };
 
+/**
+ * Run a list of checks over one app, with the discipline no caller should
+ * re-implement: judgment rules are not code and are skipped, the fact checks run
+ * in parallel, and one that throws or answers in a shape this floor cannot read
+ * degrades to a `warn` naming it.
+ *
+ * Exported for the one caller whose artifact the BUILT-IN checks cannot read: a
+ * component screen's mechanical floor is its own gauntlet
+ * (`checking/component-screen.ts`) and the built-ins measure a wire tree, so the
+ * paint gate runs the host's plugged checks through this and nothing else
+ * (`floor.ts` `component`). Every other caller wants {@link createCheckingLayer},
+ * which always carries the built-in floor — that list is never optional.
+ */
+export const runChecks = async (
+  checks: readonly Check[],
+  input: CheckInput,
+): Promise<Finding[]> => {
+  const facts = checks.filter((check): check is FactCheck => !isJudgment(check));
+  const results = await Promise.all(facts.map(async (check) => {
+    try {
+      return findingsOf(check, await check.run(input));
+    } catch (error) {
+      return [crashFinding(check, error)];
+    }
+  }));
+  return results.flat();
+};
+
 export const createCheckingLayer = ({ deps, checks = [] }: CheckingLayerOptions): CheckingLayer => {
   const all: Check[] = [...factChecks(deps), ...checks];
-  const facts = all.filter((check): check is FactCheck => !isJudgment(check));
   return {
     checks: all,
     rubric: judgmentRules(all),
-    run: async (input: CheckInput): Promise<Finding[]> => {
-      const results = await Promise.all(facts.map(async (check) => {
-        try {
-          return findingsOf(check, await check.run(input));
-        } catch (error) {
-          return [crashFinding(check, error)];
-        }
-      }));
-      return results.flat();
-    },
+    run: (input: CheckInput): Promise<Finding[]> => runChecks(all, input),
   };
 };

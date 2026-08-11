@@ -69,7 +69,9 @@ const typings = screenTypings({
   toolOutputSchemas: { host_getCashflowInsights: cashflowOutput },
 });
 
-/** Every wire component, every aggregate form, a real host component. */
+/** Every wire component, the computed forms a screen really writes (a `{...}`
+ *  gap is a JavaScript expression over the declared queries — reduce/map/length,
+ *  no call vocabulary), a real host component. */
 const BROAD_SCREEN = `<App name="Cash flow">
   <Query id="cashflow" tool="host_getCashflowInsights"/>
   <Stack gap={16}>
@@ -78,20 +80,20 @@ const BROAD_SCREEN = `<App name="Cash flow">
         spec IS the allowed prop set (there is no second, narrower legacy
         surface shadowing it any more). */}
     <Row gap={12} justify="between">
-      <Stat label="Money in" value={sum(cashflow.data, "in")} format="money"/>
-      <Stat label="Money out" value={average(cashflow.data, "out")} format="money"/>
-      <Stat label="Periods" value={count(cashflow.data)}/>
-      <Stat label="Spread" value={difference(max(cashflow.data, "in"), min(cashflow.data, "out"))}/>
+      <Stat label="Money in" value={cashflow.data.reduce((total, row) => total + row.in, 0) / 100} format="money"/>
+      <Stat label="Money out" value={cashflow.data.reduce((total, row) => total + row.out, 0) / cashflow.data.length / 100} format="money"/>
+      <Stat label="Periods" value={cashflow.data.length}/>
+      <Stat label="Spread" value={cashflow.data.reduce((top, row) => (row.in > top ? row.in : top), 0) - cashflow.data.reduce((low, row) => (row.out < low ? row.out : low), 0)}/>
     </Row>
     <Grid columns={2}>
-      <MapleNetWorthCard valueCents={sum(cashflow.data, "in")} series={[1, 2, 3]} initialRange="1M"/>
+      <MapleNetWorthCard valueCents={cashflow.data.reduce((total, row) => total + row.in, 0)} series={[1, 2, 3]} initialRange="1M"/>
       <Card title="Detail" description="This period" tone="accent"><Divider/><Badge label="Live" tone="accent"/></Card>
     </Grid>
     <DataTable rows={cashflow.data} sortBy="label asc" limit={20} searchable={true} paginate={10}
       columns={[{ key: "label", label: "Period" }, { key: "in", format: "money", align: "end" }]}
       filterableBy={["label"]} emptyState="No periods" caption="Cash flow"/>
     <CardList items={cashflow.data} titleField="label" fields={[{ key: "in", label: "In", format: "money" }]} columns={2}/>
-    <Money cents={sum(cashflow.data, "in")} currency="USD"/>
+    <Money amount={cashflow.data.reduce((total, row) => total + row.in, 0) / 100} currency="USD"/>
     <Percent value={0.42} fractionDigits={1}/>
     <Num value={12} notation="compact"/>
     <DateTime value="2026-01-01" mode="date"/>
@@ -111,7 +113,7 @@ const BROAD_SCREEN = `<App name="Cash flow">
     <Tabs tabs={["In", "Out"]} value="In"><Text text="Money in"/><Text text="Money out"/></Tabs>
     <Disclaimer reason="No tool exposes forecasts." title="Not shown"/>
     <Text text="Grouped" pending={true}/>
-    <Sparkline data={group_by(cashflow.data, "label", "month", sum.of("in"))} valueKey="value"/>
+    <Sparkline data={cashflow.data.map((row) => ({ label: row.label, value: row.in }))} valueKey="value"/>
   </Stack>
 </App>;
 `;

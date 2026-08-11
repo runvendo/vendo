@@ -21,26 +21,13 @@ describe("seat vocabulary on the models block (build contract §4)", () => {
     expect(() => resolveModels({ models: { judge: "haiku" } }, makeModel)).not.toThrow();
   });
 
-  it("still honours the legacy `agent` and `paint` keys for one minor", () => {
-    const resolved = resolveModels({ models: { agent: "opus", paint: "haiku" } }, makeModel);
-    expect(resolved.agent.model).toEqual(named("opus"));
-    expect(resolved.paint?.model).toEqual(named("haiku"));
-  });
-
   it("still honours the deprecated top-level `model` and `paint.model` shims", () => {
     const resolved = resolveModels({ model: named("legacy"), paint: { model: named("legacy-paint") } }, makeModel);
     expect(resolved.agent.model).toEqual(named("legacy"));
     expect(resolved.paint?.model).toEqual(named("legacy-paint"));
   });
 
-  it("prefers the seat name when both vocabularies name the same seat", () => {
-    // A host mid-migration should get the NEW key they just wrote, not the old
-    // one they forgot to delete.
-    const resolved = resolveModels({ models: { default: "new", agent: "old" } }, makeModel);
-    expect(resolved.agent.model).toEqual(named("new"));
-  });
-
-  it("validates a seat-named slot as strictly as a legacy one", () => {
+  it("validates every seat-named slot", () => {
     expect(() => resolveModels({ models: { default: "  " } }, makeModel)).toThrow(VendoError);
     expect(() => resolveModels({ models: { fill: "  " } }, makeModel)).toThrow(VendoError);
   });

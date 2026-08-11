@@ -2,7 +2,7 @@
  * The `building-apps` skill. Prose is not testable, but the things the contract
  * makes load-bearing are: that it is a real SKILL.md, that the delegation advice
  * is a sentence in the BODY rather than machinery, that it teaches write-early /
- * write-per-group, and that it carries the consumer-voice register.
+ * write-per-section, and that it carries the consumer-voice register.
  */
 import { createTurnSkills, hostSkillFiles, renderSkillMd, type SkillsFs } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
@@ -42,18 +42,13 @@ describe("delegation is advice in the body, never machinery", () => {
     expect(body).toContain("`Task`");
   });
 
-  it("staffs one worker per group through that same door", () => {
-    expect(body).toMatch(/one `Task` per group/);
-  });
-
   it("names `Task` CONDITIONALLY, because one reader of this body has no such tool", () => {
     // The same text is read by `claudeCode()` (which has `Task`) and by
     // `vendo()`'s hired specialist, which is handed no hiring tool at all —
     // depth is bounded at one. An unconditional order is a lie to that reader,
-    // so both mentions carry the condition and the body says what to do without.
-    expect(body).toMatch(/`Task`, where you have one|`Task` per group[^.]*where you have that tool/);
-    expect(body).toMatch(/no\s+way to delegate, do the job yourself/i);
-    expect(body).toMatch(/Without one, fill the groups yourself/i);
+    // so the mention carries the condition and the body says what to do without.
+    expect(body).toMatch(/`Task` tool, where you have one/);
+    expect(body).toMatch(/no\s+way to delegate, do the job\s+yourself/i);
   });
 
   it("carries the user's ask into the brief verbatim", () => {
@@ -70,63 +65,72 @@ describe("delegation is advice in the body, never machinery", () => {
   });
 });
 
-describe("it teaches write-early, write-per-group", () => {
-  it("names both hot-path files and says the plan lands first", () => {
-    expect(body).toContain("plan.vendo");
-    expect(body).toContain("app.vendo");
-    expect(body).toMatch(/plan\.vendo\*\* first|Save `plan\.vendo` \*\*first\*\*/);
+describe("it teaches write-early, write-per-section", () => {
+  it("names the writer's own hands as the mechanism, and no retired artifact", () => {
+    // The basename is the companion reference's business (`app.tsx`, held there
+    // to the seam's watched list); the BODY's job is that the hand doing the
+    // writing is the reader's own. The `.vendo` dialect is retired as the
+    // artifact, so a body that still taught it would send a model saving a file
+    // nothing compiles.
+    expect(body).toMatch(/You write the screen file yourself/);
+    expect(body).not.toContain(".vendo");
   });
 
-  it("says the app file is saved again per group, and that one big write is worse", () => {
-    expect(body).toContain("after every group");
+  it("says the screen file is saved again per section, and that one big write is worse", () => {
+    expect(body).toContain("after every section you finish");
     expect(body.toLowerCase()).toContain("at the end");
   });
 
-  it("validates after EVERY save, not once at the end", () => {
-    // The spec's law: `validate` runs on every save of a hot-path file. Step 5 is
-    // the final gate, not the only run — a plan that names a tool which does not
-    // exist would otherwise be found after the whole app was built on it.
+  it("says the checks ride every save and the findings come back on it", () => {
+    // The floor is automatic now: nothing reaches the screen unchecked, and what
+    // the checks find is handed back rather than asked for. So the teaching is
+    // READ IT, at the save that made the mistake — one section old instead of a
+    // whole app old.
     const writeEarly = body.split("## Write early")[1]?.split("## 1.")[0] ?? "";
-    // The plan save, and every per-group app save.
-    expect(writeEarly).toMatch(/Run `validate` on it right there/);
-    expect(writeEarly).toMatch(/Run `validate` on every one of those\s+saves/);
-    // Step 5 stays the final gate.
-    expect(body).toMatch(/Run `validate` on the app document one last time/);
+    expect(writeEarly).toMatch(/Every save is checked on its way to the screen/);
+    expect(writeEarly).toMatch(/what the checks find\s+comes back to you/);
+    expect(writeEarly).toMatch(/they name exactly what\s+to fix/);
+  });
+
+  it("never names a `validate` tool, because one reader does not have one", () => {
+    // The screen agent's loadout has no `validate` verb — every save is checked
+    // for it and a mandatory check closes the build. A body that named the verb
+    // would spend that reader's steps hunting a tool that is not there, and a
+    // skill body is copied to a harness verbatim rather than translated.
+    expect(body).not.toContain("validate");
   });
 });
 
 describe("it carries the v2 pattern", () => {
-  it("teaches the blinkered fill workers", () => {
-    expect(body).toContain("only");
-    expect(body).toMatch(/blinkers/i);
-  });
-
-  it("teaches validate then fix by editing, not rewriting", () => {
-    expect(body).toContain("validate");
+  it("teaches reading the findings, then fixing by editing rather than rewriting", () => {
+    expect(body).toMatch(/The checks read like a compiler/);
     expect(body).toMatch(/editing the text in place, never by rewriting the file/i);
     expect(body).toMatch(/exactly one place/);
   });
 
-  it("makes a clean validate the condition for reporting done (D4/D7's review floor)", () => {
-    // With the engine off this surface, this sentence IS the check between a
-    // guess and a shipped app.
-    expect(body).toMatch(/not done until `validate` comes back clean/i);
+  it("makes standing errors the bar for reporting done (D4/D7's review floor)", () => {
+    // The checks run whether or not anybody asks; what is left to the writer is
+    // not calling them but refusing to report done over what they said.
+    expect(body).toMatch(/not done while a save's errors stand/i);
+    expect(body).toMatch(/Not "mostly clean"/);
   });
 
-  it("teaches never inventing data and never doing the arithmetic itself", () => {
-    expect(body).toMatch(/Never do the arithmetic yourself/i);
-    expect(body).toContain('sum(transactions, "amount_cents")');
-    expect(body).toMatch(/made-up figure/i);
+  it("teaches the honest hole rather than data it made up", () => {
+    // The arithmetic prohibition and its `sum(rows, "field")` example retired with
+    // the closed expression-call vocabulary: a screen is TSX now, so the model
+    // writes `rows.reduce(...)` itself and the checks type it. What survives here
+    // is the half no compiler can catch — a part standing in for data the product
+    // does not have.
+    expect(body).toMatch(/A hole is a `<Disclaimer>`/);
+    expect(body).toMatch(/never a chart of zeros/i);
+    expect(body).toMatch(/Bind the rows as they come/);
   });
 
-  it("forbids baking in a value it computed or fetched", () => {
-    expect(body).toMatch(/never paste in a value you fetched/i);
-    expect(body).toMatch(/right on the screen you built it on/i);
-  });
-
-  it("forbids specifying fonts, colours, or branding", () => {
-    expect(body).toMatch(/Never specify a font, a colour/i);
-    expect(body).toMatch(/components already carry/i);
+  it("keeps every choice about which parts to name, never about styling", () => {
+    // The font/colour prohibition moved to the companion reference, where the
+    // no-`className`, no-CSS law sits beside the components that carry the theme.
+    // What the BODY owes is the frame that prohibition rests on.
+    expect(body).toMatch(/never about CSS/);
   });
 
   it("grounds the data in the declared output schema before any call", () => {
@@ -170,7 +174,7 @@ describe("it points at the references instead of inlining them", () => {
     // 2026-08-03 the model called a host tool bare TWICE, got "No such tool
     // available", and only then found the prefix — so the sentence names the
     // shape and says what to do when a bare name fails.
-    expect(body).toContain("mcp__vendo__validate");
+    expect(body).toContain("mcp__vendo__search_components");
     expect(body).toContain("mcp__vendo__host_listTransactions");
     expect(body).toMatch(/if a bare name comes back as no such\s+tool, look for the prefixed one/);
   });
@@ -186,8 +190,8 @@ describe("it points at the references instead of inlining them", () => {
   });
 
   it("names the app directory shape the render seam actually watches", () => {
-    // `/user|orgs/…/apps/app_<id>/{plan,app}.vendo` — an id that does not start
-    // with `app_` paints nothing, which is the failure this line prevents.
+    // `/user|orgs/…/apps/app_<id>/app.tsx` — an id that does not start with
+    // `app_` paints nothing, which is the failure this line prevents.
     expect(body).toContain("user/apps/app_");
     expect(body).toMatch(/must start with `app_`/);
   });
@@ -200,6 +204,6 @@ describe("it carries the consumer voice register", () => {
   });
 
   it("forbids saying file and tool names to the person", () => {
-    expect(body).toMatch(/Never "wrote app\.vendo"/);
+    expect(body).toMatch(/Never "wrote the screen file" or "called maple_invoices_list"/);
   });
 });

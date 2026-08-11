@@ -27,12 +27,17 @@ const ctx: RunContext = {
   sessionId: "session_placements_seam",
 };
 
-/** The smallest document the compiler renders and the seam paints. */
-const SPENDING = `<App name="Spending">
-  <Stack>
-    <Text text="This month" />
-  </Stack>
-</App>`;
+/** The smallest `app.tsx` the gauntlet renders and the seam paints. */
+const SPENDING = `import { Stack, Text } from "@vendo/screen";
+
+export default function Spending() {
+  return (
+    <Stack>
+      <Text text="This month" />
+    </Stack>
+  );
+}
+`;
 
 const ZERO_USAGE = {
   inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },

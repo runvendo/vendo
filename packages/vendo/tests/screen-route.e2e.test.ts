@@ -17,10 +17,12 @@
  *    with a failed receipt, and "nothing else ran" is not something a
  *    harness-level test can claim: it needs the real front door.
  *
- * DIALECT NOTE: the `.vendo` literal below is a name, a Stack and a Text with no
- * expressions and no aggregates, so the in-flight dialect change (pipes → nested
- * calls, explicit aggregate field args, `avg` retires) should not touch it. It is
- * still the text to re-check when that lands.
+ * THE ARTIFACT is `app.tsx` (`SCREEN_FILE`) — one React component the model wrote,
+ * which the floor's own component gauntlet compiles, scans, type-checks, runs in
+ * the sealed VM and tree-checks before anything paints. Nothing below stubs that
+ * gauntlet: these screens go through the real five stages of a real composed
+ * deployment, which is why a screen naming a tool this host has not got paints
+ * nothing.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -33,6 +35,7 @@ import {
 import {
   makeReceiptSchema,
 } from "@vendoai/apps/contract";
+import { SCREEN_FILE } from "@vendoai/apps";
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
@@ -47,32 +50,44 @@ afterEach(async () => {
 
 const principal: Principal = { kind: "user", subject: "user_screen" };
 
-/** A document the compiler renders and the seam paints — the smallest honest one.
+/** A screen the gauntlet passes and the seam paints — the smallest honest one.
  *
- *  `text`, not `value`: with the checks floor on this route (it was missing, which
- *  is the bug the case below pins) `components-exist` refuses a prop the renderer
- *  would silently drop, so a fixture that spoke the wrong prop name only ever
- *  painted because nothing was checking it. */
-const SPENDING = `<App name="Spending">
-  <Stack>
-    <Text text="This month" />
-  </Stack>
-</App>`;
+ *  `text`, not `value`: the type check is derived from the Kit's own zod specs, so
+ *  a prop the renderer would silently drop is a compile error here. The component's
+ *  NAME is the app's title (`screenName`), which is the only title a `.tsx` file
+ *  has. */
+const SPENDING = `import { Stack, Text } from "@vendo/screen";
+
+export default function Spending() {
+  return (
+    <Stack gap={12}>
+      <Text text="This month" variant="heading" />
+    </Stack>
+  );
+}
+`;
 
 /**
- * The same document with a `<Query>` naming a tool this deployment has not got.
+ * The same screen reading a tool this deployment has not got.
  *
- * It COMPILES and it RENDERS — the tree has children, so the seam's own gate waves
- * it through — and only the checks floor's `tools-exist` fact refuses it. That is
- * what makes it the right probe for §7.1 at a route: if it paints, the floor is
- * not on that route.
+ * It COMPILES as TSX and its component is a perfectly good component — the only
+ * thing wrong with it is a fact about this HOST, which is exactly what the floor
+ * is for. The gauntlet's scan stage refuses it by name (`query-tool`), so the seam
+ * has nothing to paint. That is what makes it the right probe for §7.1 at a route:
+ * if it paints, the floor is not on that route.
  */
-const LYING = `<App name="Spending">
-  <Query id="spend" tool="nope_notATool" />
-  <Stack>
-    <Text text="Last month" />
-  </Stack>
-</App>`;
+const LYING = `import { Stack, Text, useQuery } from "@vendo/screen";
+
+export default function Spending() {
+  const spend = useQuery("nope_notATool");
+  return (
+    <Stack gap={12}>
+      <Text text="Last month" variant="heading" />
+      <Text text={String(spend)} />
+    </Stack>
+  );
+}
+`;
 
 const ZERO_USAGE = {
   inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
@@ -93,18 +108,23 @@ const speak = (text: string): Chunk[] => [
   { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
 ];
 
-/** A model that replays scripted turns, and records how many times it was asked. */
-function scripted(turns: Chunk[][]): LanguageModel & { calls: number } {
+/** A model that replays scripted turns, and records how many times it was asked
+ *  — and with which tools, which is the only place a composed loadout is
+ *  readable from outside the loop. */
+function scripted(turns: Chunk[][]): LanguageModel & { calls: number; toolNamesPerCall: string[][] } {
   const remaining = turns.map((turn) => [...turn]);
+  const toolNamesPerCall: string[][] = [];
   const model = new MockLanguageModelV3({
-    doStream: async () => {
+    doStream: async (request) => {
       (model as { calls: number }).calls += 1;
+      toolNamesPerCall.push((request.tools ?? []).map((tool) => tool.name));
       const chunks = remaining.shift();
       if (chunks === undefined) throw new Error("scripted model exhausted");
       return { stream: simulateReadableStream({ chunks: chunks as never }) };
     },
-  }) as unknown as LanguageModel & { calls: number };
+  }) as unknown as LanguageModel & { calls: number; toolNamesPerCall: string[][] };
   model.calls = 0;
+  model.toolNamesPerCall = toolNamesPerCall;
   return model;
 }
 
@@ -124,7 +144,7 @@ interface Walked {
   /** Everything that crossed the wire to the surface. */
   chunks: Array<Record<string, unknown>>;
   vendo: ReturnType<typeof createVendo>;
-  model: LanguageModel & { calls: number };
+  model: LanguageModel & { calls: number; toolNamesPerCall: string[][] };
 }
 
 /**
@@ -137,6 +157,9 @@ async function walk(options: {
   /** Skip `vendo_make` entirely and write the documents with the harness's own
    *  hands — the OTHER route into the same seam. */
   writes?: string[];
+  /** What this deployment registered as its components. Absent — the default
+   *  below — is a deployment with an EMPTY catalog. */
+  catalog?: Array<{ name: string; description: string }>;
 }): Promise<Walked> {
   const store = await tempStore();
   const model = scripted(options.turns);
@@ -146,7 +169,7 @@ async function walk(options: {
     async *run(turn) {
       if (options.writes !== undefined) {
         for (const [index, content] of options.writes.entries()) {
-          await turn.workspace.writeFile(`/user/apps/app_written/app.vendo`, content);
+          await turn.workspace.writeFile(`/user/apps/app_written/${SCREEN_FILE}`, content);
           await turn.workspace.commit({ message: `save ${index}` });
         }
         yield { type: "text", delta: "ok" };
@@ -163,6 +186,7 @@ async function walk(options: {
     principal: async () => principal,
     store,
     harness: harness as never,
+    ...(options.catalog === undefined ? {} : { catalog: options.catalog }),
   } as Parameters<typeof createVendo>[0]);
   const response = await vendo.handler(new Request("https://host.test/api/vendo/threads", {
     method: "POST",
@@ -187,11 +211,10 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
       turns: [
         // The agent writes the document with its own hands…
         call("save_app", { content: SPENDING }, "c1"),
-        // …runs the review floor on what it saved (the `validate` verb, projected
-        // on the SAME registry as every host tool — no privileged side door)…
-        call("validate", { document: SPENDING }, "c2"),
-        // …and stops.
-        speak("done"),
+        // …and stops. It never asks to be checked: the save's own gate and the
+        // mandatory pass call the `validate` verb themselves, on the SAME registry
+        // as every host tool — no privileged side door, and no step spent asking.
+        speak("Your spending for this month is on your screen."),
       ],
     });
 
@@ -200,11 +223,19 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     const receipt = makeReceiptSchema.parse((walked.result as { output: unknown }).output);
     expect(receipt.status).toBe("ready");
     // The title is the app's own name, read off the ROW rather than off the model.
+    // A `.tsx` screen has no `<App name>`, so the row's name is the component's own
+    // (`screenName`) — which is why the title is the export's name, spaced.
     expect(receipt.title).toBe("Spending");
-    expect(receipt.say).toBe("Spending is on your screen.");
-    // §3.1: no tree, no payload, no URL, no component names.
+    // THE RUN'S OWN CLOSING WORDS, verbatim (`ScreenOutcome.say` →
+    // `make-tool.ts`'s `routed.say`). Only the thing that built the screen knows
+    // what is on it, so nothing between the loop and the receipt rewrites the
+    // sentence — the front door's `"<name> is on your screen."` is the fallback for
+    // a run that said nothing at all.
+    expect(receipt.say).toBe("Your spending for this month is on your screen.");
+    // §3.1: no tree, no payload, no URL, no component names — and, now that the
+    // artifact is a file the model wrote, none of that source either.
     const spoken = JSON.stringify(receipt);
-    expect(spoken).not.toContain("<App");
+    expect(spoken).not.toContain("export default");
     expect(spoken).not.toContain("Stack");
 
     // ── the slot: the compiled description reached the surface ────────────────
@@ -224,9 +255,9 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     expect(listed.map((app) => app.id)).toContain(receipt.id);
 
     // ── and nothing ran behind it ─────────────────────────────────────────────
-    // Exactly three model calls: the save step, the validate step, and the closing
-    // one. A second engine picking the ask up would show here as a fourth.
-    expect(walked.model.calls).toBe(3);
+    // Exactly two model calls: the save step and the closing one. A second engine
+    // picking the ask up would show here as a third.
+    expect(walked.model.calls).toBe(2);
   }, 60_000);
 
   it("refuses to paint a document the checks floor blocks, and the last good view stays", async () => {
@@ -251,8 +282,8 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     expect(painted).toContain("This month");
     // …and the blocked one never reached it: no view carries the lie, so the last
     // good view is what the person still sees. The bytes DID land — the floor
-    // refuses the paint, never the commit — and `validate` is how the model hears
-    // about it.
+    // refuses the paint, never the commit — and the save's own gate is how the
+    // model hears about it.
     expect(painted).not.toContain("Last month");
     expect(painted).not.toContain("nope_notATool");
   }, 60_000);
@@ -285,6 +316,23 @@ describe("vendo_make routed through the screen agent (blueprint §1 point 2)", (
     const receipt = makeReceiptSchema.parse((walked.result as { output: unknown }).output);
     expect(receipt.status).toBe("ready");
     expect(receipt.title).toBe("Spending");
+  }, 60_000);
+
+  it("equips search_components only when this deployment HAS components", async () => {
+    // Composition holds the catalog, so composition is what answers the question —
+    // and a deployment with nothing to find must not spend a step finding that out.
+    const empty = await walk({ turns: [call("save_app", { content: SPENDING }, "c1"), speak("done")] });
+    expect(empty.model.toolNamesPerCall[0] ?? []).not.toContain("search_components");
+
+    const stocked = await walk({
+      turns: [call("save_app", { content: SPENDING }, "c1"), speak("done")],
+      catalog: [{ name: "SpendChart", description: "A chart of spending over time." }],
+    });
+    expect(stocked.model.toolNamesPerCall[0] ?? []).toContain("search_components");
+    // The rest of the loadout is the same either way: one name drops out, not a
+    // different filter.
+    expect(empty.model.toolNamesPerCall[0] ?? []).toContain("vendo_apps_open");
+    expect(empty.model.toolNamesPerCall[0] ?? []).toContain("save_app");
   }, 60_000);
 
   it("fails honestly when assembly produces nothing that renders — no second engine behind it", async () => {

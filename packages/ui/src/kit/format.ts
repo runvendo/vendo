@@ -1,7 +1,7 @@
 /**
  * Kit semantics core — Intl-based formatters (W2 §The Kit).
  *
- * The whole point of the value tier: cents/dates/enums arrive CORRECT without the
+ * The whole point of the value tier: amounts/dates/enums arrive CORRECT without the
  * model ever authoring a format string. Every formatter is total — bad data
  * (NaN, Infinity, non-numbers, unparseable dates) returns `null`, never the
  * strings `$NaN` / `Invalid Date`. Components turn `null` into a designed
@@ -75,14 +75,15 @@ export interface MoneyOptions {
 }
 
 /**
- * ISO 4217 minor units, for the currencies that are not the 2-digit default.
+ * ISO 4217 minor units, for the currencies that are not the 2-digit default —
+ * how many decimals an amount SHOWS.
  *
- * The divisor CANNOT come from `resolvedOptions().maximumFractionDigits`: that
- * is a locale DISPLAY preference out of CLDR, and for some currencies it
- * genuinely disagrees with the ISO minor unit. PKR is the case that bit us —
- * Node's ICU reports 2 digits, Chrome's reports 0 — so the identical paisa
- * amount formatted as "PKR 107.68" on the server and "PKR 10,768" in the
- * browser. A static table is the only engine-independent answer.
+ * The count CANNOT come from `resolvedOptions().maximumFractionDigits`: that is
+ * a locale DISPLAY preference out of CLDR, and for some currencies it genuinely
+ * disagrees with the ISO minor unit. PKR is the case that bit us — Node's ICU
+ * reports 2 digits, Chrome's reports 0 — so the identical amount rendered
+ * "PKR 107.68" on the server and "PKR 108" in the browser. A static table is
+ * the only engine-independent answer.
  */
 const MINOR_UNITS: Record<string, number> = {
   BIF: 0, CLP: 0, DJF: 0, GNF: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0, PYG: 0,
@@ -97,20 +98,22 @@ export function currencyMinorUnits(currency: string): number {
 }
 
 /**
- * Format an **integer number of minor units** as currency.
- * `123456` → `"$1,234.56"`. Zero-decimal (JPY) and three-decimal (KWD)
- * currencies scale by their own ISO minor unit.
+ * Pretty-print an amount that is ALREADY in major units: `1234.56` → `"$1,234.56"`.
+ *
+ * Formatters never convert units. Callers pass major units, so a host field in
+ * minor units (cents) is divided by 100 where it is READ, never here. The ISO
+ * minor unit still decides how many decimals SHOW — none for JPY, three for KWD.
  * Returns `null` for any non-finite input so `$NaN` can never ship.
  */
-export function formatMoney(cents: number, options: MoneyOptions = {}): string | null {
-  if (!isRenderableNumber(cents)) return null;
+export function formatMoney(amount: number, options: MoneyOptions = {}): string | null {
+  if (!isRenderableNumber(amount)) return null;
   const currency = options.currency ?? ambientIntl.currency;
   const digits = currencyMinorUnits(currency);
   let formatter: Intl.NumberFormat;
   try {
-    // Pin the displayed digits to the ISO minor unit too: left to CLDR, a
-    // browser would round PKR 107.68 to "PKR 108" and silently drop the paisa
-    // the host actually stored.
+    // Pin the displayed digits to the ISO minor unit: left to CLDR, a browser
+    // would round PKR 107.68 to "PKR 108" and silently drop the paisa the host
+    // actually stored.
     formatter = new Intl.NumberFormat(options.locale ?? ambientIntl.locale, {
       style: "currency",
       currency,
@@ -123,7 +126,7 @@ export function formatMoney(cents: number, options: MoneyOptions = {}): string |
     // thrown RangeError that takes the whole view down.
     return null;
   }
-  return formatter.format(cents / 10 ** digits);
+  return formatter.format(amount);
 }
 
 export interface PercentOptions {

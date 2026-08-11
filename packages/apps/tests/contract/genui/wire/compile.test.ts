@@ -861,14 +861,12 @@ describe("compileWire full-spec-example gate (spec §2)", () => {
     expect(result.issues).toEqual([]);
   });
 
-  it("compiles the spec example WITH a reshape call to a $reshape binding, zero issues (v3 spec §5)", () => {
-    const result = compile(specWire('asPoints(revenue, "month", "revenue")'));
+  it("compiles the spec example WITH a computed points expression, zero issues", () => {
+    const points = "revenue.rows.map((row) => ({ label: row.month, value: row.revenue }))";
+    const result = compile(specWire(points));
     expect(result.issues).toEqual([]);
     const chart = result.tree.nodes.find((node) => node.id === "linechart-1");
-    expect(chart?.props?.points).toEqual({
-      $path: "/revenue",
-      $reshape: [{ op: "asPoints", args: ["month", "revenue"] }],
-    });
+    expect(chart?.props?.points).toEqual({ $expr: points });
     expect(result.complete).toBe(true);
   });
 });
@@ -1060,8 +1058,20 @@ describe("compileWire shape check (v2 spec §3)", () => {
   <LineChart points={${points}}/>
 </App>`;
 
+  /**
+   * A STORED binding's `$reshape` chain, in the one spelling the wire still has
+   * for it: the object literal. The dialect cannot write a reshape CALL any more
+   * — a `{...}` gap is JavaScript, which does its own projecting — but a stored
+   * document may carry a chain, and `printWire` prints exactly this form for
+   * one, so this is the seam the printer hands back to the compiler.
+   */
+  const storedChain = (path: string, steps: string): string => `{ "$path": "${path}", "$reshape": [${steps}] }`;
+
   it("a valid binding with a valid reshape produces no errors", () => {
-    const result = compile(chartWire('asPoints(revenue.rows, "month", "revenue")'), shapes);
+    const result = compile(
+      chartWire(storedChain("/revenue/rows", '{ op: "asPoints", args: ["month", "revenue"] }')),
+      shapes,
+    );
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);
   });
@@ -1084,7 +1094,10 @@ describe("compileWire shape check (v2 spec §3)", () => {
   });
 
   it("a reshape referencing absent fields fails with missing/available for repair", () => {
-    const result = compile(chartWire('asPoints(revenue.rows, "period", "revenue")'), shapes);
+    const result = compile(
+      chartWire(storedChain("/revenue/rows", '{ op: "asPoints", args: ["period", "revenue"] }')),
+      shapes,
+    );
     expect(codes(result)).toEqual(["shape-mismatch"]);
     const error = result.bindingErrors[0];
     expect(error?.missing).toEqual(["period"]);
@@ -1092,10 +1105,19 @@ describe("compileWire shape check (v2 spec §3)", () => {
     expect(error?.path).toBe("/revenue/rows");
   });
 
-  it("a reshape op incompatible with the known shape fails (currency format over a string field)", () => {
-    const result = compile(chartWire('format(revenue.rows, "month", "currency")'), shapes);
+  it("a reshape op incompatible with the known shape fails (money format over a string field)", () => {
+    const result = compile(
+      chartWire(storedChain("/revenue/rows/0/month", '{ op: "format", args: ["money"] }')),
+      shapes,
+    );
     expect(codes(result)).toEqual(["shape-mismatch"]);
-    expect(result.bindingErrors[0]?.message).toContain("month");
+    expect(result.bindingErrors[0]?.message).toContain("string");
+  });
+
+  it("format over ROWS fails at compile, naming the column token that replaces it", () => {
+    const result = compile(chartWire(storedChain("/revenue/rows", '{ op: "format", args: ["money"] }')), shapes);
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    expect(result.bindingErrors[0]?.message).toContain('columns={[{key:"amount", format:"money"}]}');
   });
 
   it("bindings nested inside arrays and objects are checked too", () => {
@@ -1186,7 +1208,12 @@ describe("compileWire prewired option projection (v2 spec §3)", () => {
   });
 
   it("the deprecated asOptions projection STILL compiles (stored apps; staged retirement)", () => {
-    const result = compile(selectWire('asOptions(accts.data, "id", "name")'), shapes);
+    // Stored form only: the dialect cannot write a reshape call any more, so
+    // this is the shape a checked-out app carries and the printer re-emits.
+    const result = compile(
+      selectWire('{ "$path": "/accts/data", "$reshape": [{ op: "asOptions", args: ["id", "name"] }] }'),
+      shapes,
+    );
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);
   });
@@ -1310,8 +1337,12 @@ describe("compileWire display-slot object check (raw-braces class)", () => {
   });
 
   it("the deprecated template projection STILL clears the error (stored apps; staged retirement)", () => {
+    // Stored form only (the dialect cannot write a reshape call any more), and
+    // both steps of the chain flow through the shape check in order.
     const result = compile(tableWire(
-      'rows={template(template(dl.data, "progress", "{progress.received} of {progress.total}"), "assignedTo", "{assignedTo.name}")}',
+      'rows={{ "$path": "/dl/data", "$reshape": ['
+      + '{ op: "template", args: ["progress", "{progress.received} of {progress.total}"] },'
+      + ' { op: "template", args: ["assignedTo", "{assignedTo.name}"] }] }}',
     ), shapes);
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);
@@ -1330,16 +1361,20 @@ describe("compileWire display-slot object check (raw-braces class)", () => {
     }
   });
 
-  it("scalar display bindings and projected scalars stay clean", () => {
+  it("scalar display bindings, stored projections and computed values stay clean", () => {
     const result = compile(`
 <App name="D">
   <Query id="dl" tool="host_listDeadlines"/>
   <Stat label="Next" value={dl.nearest.name}/>
-  <Text text={template(dl.nearest, "{name} — {dueDate}")}/>
-  <Badge label={count(dl.data)}/>
+  <Text text={{ "$path": "/dl/nearest", "$reshape": [{ op: "template", args: ["{name} — {dueDate}"] }] }}/>
+  <Badge label={dl.data.length}/>
 </App>`, shapes);
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);
+    // The count is a computed value, not a binding — so it is what the renderer
+    // evaluates, and the shape check has no pointer to walk.
+    expect(result.tree.nodes.find((node) => node.component === "Badge")?.props)
+      .toStrictEqual({ label: { $expr: "dl.data.length" } });
   });
 
   it("json regions and unknown tools stay defensive for display slots", () => {

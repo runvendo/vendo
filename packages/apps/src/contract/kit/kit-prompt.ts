@@ -18,15 +18,63 @@ const PREAMBLE = [
   "",
   "Build the app from these components — you only fill props; they sort, filter,",
   "paginate, and format themselves. Two laws:",
-  "1. Every `data` prop must trace to a tool call. Hand-typed business data is",
-  "   illegal — if no tool backs the ask, the `<Disclaimer>` is the legal move.",
-  "2. Interactivity is action-gated: an `on*` prop NAMES a host tool; that is the",
-  "   only way the UI mutates.",
+  "1. Every `data` prop must trace to a tool call — a `useQuery` result. Hand-typed",
+  "   business data is illegal; if no tool backs the ask, `<Disclaimer>` is the",
+  "   legal move.",
+  "2. An `on*` prop takes a FUNCTION, and calling a tool inside one is the only way",
+  "   the UI changes anything: `onClick={() => tools.cancel_transfer({ id })}`.",
+  "   Inputs are controlled: `value={x}` with `onChange={(e) => setX(e.target.value)}`.",
   "",
   "Prop classes: **config** tunes behavior · **copy** is text you may write ·",
-  "**data** must come from a tool. Money takes integer CENTS; dates take ISO or",
-  "epoch; percent takes a ratio (0.42 → 42%). Invalid numbers/dates never render.",
+  "**data** must come from a tool. Dates take ISO or epoch; percent takes a ratio",
+  "(0.42 → 42%). Invalid numbers/dates never render.",
+  "",
+  "Money: formatters never convert units. `<Money>`, `format=\"money\"` and a",
+  "`format:\"money\"` column all take an amount ALREADY in dollars, so divide a",
+  "minor-unit field by 100 where you read it: `value={invoice.amount_cents / 100}`.",
 ].join("\n");
+
+/**
+ * The prompt's own examples, for the components whose canonical spec example is
+ * written in the RETIRED attribute style — a quoted tool name for a handler, an
+ * inline tool call for data — plus the few that spent characters restating a shape
+ * the props above them already give.
+ *
+ * A screen is a React component now, so those examples taught a shape nothing
+ * compiles. The props are still rendered from `KIT_SPECS`, which is the half that
+ * must never drift; an example is teaching prose, and a component absent from this
+ * map renders its spec example unchanged — so a component added to the specs
+ * arrives with its own example the day it is created.
+ *
+ * These belong in `specs.ts` beside the props they document, and go back the
+ * moment its other consumers can take the new idiom; until then this map is the
+ * one place to read what the model is actually shown.
+ */
+const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
+  // Data off a `useQuery` result, never an inline call.
+  Money: ["<Money amount={invoice.amount_cents / 100}/>"],
+  Stat: ['<Stat label="Total overdue" value={overdue.total_cents / 100} format="money"/>'],
+  DataTable: [
+    '<DataTable rows={invoices.data} sortBy="dueDate asc" columns={[{key:"client.name",label:"Client"},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
+  ],
+  CardList: ['<CardList items={clients.data} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance",format:"money"}]}/>'],
+  LineChart: ['<LineChart data={revenue.data} xKey="month" series={["amount"]} format="money"/>'],
+  DonutChart: ['<DonutChart data={spend.data} categoryKey="category" valueKey="amount" format="money"/>'],
+  // Handlers are functions; every field is controlled.
+  Button: ["<Button label=\"Cancel transfer\" variant=\"danger\" onClick={() => tools.cancel_transfer({ id: transfer.id })}/>"],
+  Input: ['<Input label="Recipient" value={name} onChange={(e) => setName(e.target.value)}/>'],
+  Textarea: ['<Textarea label="Note" rows={4} value={note} onChange={(e) => setNote(e.target.value)}/>'],
+  Checkbox: ['<Checkbox label="Include paid" checked={paid} onChange={(e) => setPaid(e.target.checked)}/>'],
+  DatePicker: ['<DatePicker label="Due date" value={due} onChange={(e) => setDue(e.target.value)}/>'],
+  // No `value` prop on Select — the spec has none, and a prop that does not exist
+  // fails the checks — so this one shows the handler only.
+  Select: ['<Select label="Client" options={clients.data} labelField="name" valueField="id" onChange={(e) => setClientId(e.target.value)}/>'],
+  Form: ['<Form onSubmit={() => tools.create_client({ name })} submitLabel="Add client"><Input .../></Form>'],
+  // Containers: the child shape is the teaching, not the child's own props.
+  Card: ['<Card title="Overdue" description="Worst first"><DataTable .../></Card>'],
+  Grid: ["<Grid columns={3}><Stat .../><Stat .../></Grid>"],
+  Tabs: ['<Tabs tabs={["Overview","Detail"]}><Stat .../><DataTable .../></Tabs>'],
+};
 
 function classTag(cls: PropClass): string {
   return cls;
@@ -43,8 +91,9 @@ function renderSpec(spec: KitComponentSpec): string {
     }
     lines.push("");
   }
-  lines.push(spec.examples.length > 1 ? "Examples:" : "Example:");
-  for (const ex of spec.examples) lines.push("  " + ex);
+  const examples = PROMPT_EXAMPLES[spec.name] ?? spec.examples;
+  lines.push(examples.length > 1 ? "Examples:" : "Example:");
+  for (const ex of examples) lines.push("  " + ex);
   return lines.join("\n");
 }
 

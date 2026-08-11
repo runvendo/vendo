@@ -80,8 +80,6 @@ interface ProviderSpec {
   model: string;
   /** Family fast pick (paint/judge slots) when no name is given. */
   fast: string;
-  /** DEPRECATED agent-slot pin, kept working as a fallback under VENDO_MODEL. */
-  modelEnv: string;
   install: string;
 }
 
@@ -91,7 +89,6 @@ const DEFAULT_MODELS: Record<string, ProviderSpec> = {
     factory: "createAnthropic",
     model: "claude-sonnet-4-6",
     fast: "claude-haiku-4-5",
-    modelEnv: "VENDO_DEV_ANTHROPIC_MODEL",
     install: "npm install ai@^6 @ai-sdk/anthropic@^3",
   },
   openai: {
@@ -99,7 +96,6 @@ const DEFAULT_MODELS: Record<string, ProviderSpec> = {
     factory: "createOpenAI",
     model: "gpt-5",
     fast: "gpt-5-mini",
-    modelEnv: "VENDO_DEV_OPENAI_MODEL",
     install: "npm install ai@^6 @ai-sdk/openai@^3",
   },
   google: {
@@ -107,7 +103,6 @@ const DEFAULT_MODELS: Record<string, ProviderSpec> = {
     factory: "createGoogleGenerativeAI",
     model: "gemini-2.5-flash",
     fast: "gemini-2.5-flash-lite",
-    modelEnv: "VENDO_DEV_GOOGLE_MODEL",
     install: "npm install ai@^6 @ai-sdk/google@^3",
   },
 };
@@ -116,16 +111,13 @@ const DEFAULT_MODELS: Record<string, ProviderSpec> = {
  *  `vendo` (the agent), `vendo-paint`, `vendo-judge`, `vendo-extract`. The
  *  console maps each name to a concrete model SERVER-SIDE — clients never see
  *  or perform the mapping, so Cloud-keyed apps can be retuned without a
- *  client release. VENDO_CLOUD_MODEL is the deprecated agent-slot pin (the
- *  gateway grace-remaps unknown ids with an `x-vendo-model-remapped` warning
- *  header during the alias transition). Same module/factory/install as
- *  anthropic — the gateway speaks the Anthropic Messages wire. */
+ *  client release. Same module/factory/install as anthropic — the gateway
+ *  speaks the Anthropic Messages wire. */
 const CLOUD_MODEL: ProviderSpec = {
   module: "@ai-sdk/anthropic",
   factory: "createAnthropic",
   model: "vendo",
   fast: "vendo",
-  modelEnv: "VENDO_CLOUD_MODEL",
   install: "npm install ai@^6 @ai-sdk/anthropic@^3",
 };
 
@@ -305,15 +297,11 @@ export class DevModelController {
   }
 
   /** The string-tier model id for the resolved rung. Precedence (spec §DX
-   *  surfaces): env pin → deprecated agent-slot pin → configured slot string
-   *  (models.judge) → the verbatim name → the per-rung slot default. */
+   *  surfaces): env pin → configured slot string (models.judge) → the verbatim
+   *  name → the per-rung slot default. */
   private modelId(spec: ProviderSpec): string {
     const pin = nonBlank(this.env[SLOT_PIN_ENV[this.slot]]);
     if (pin !== undefined) return pin;
-    if (this.slot === "agent") {
-      const legacy = nonBlank(this.env[spec.modelEnv]);
-      if (legacy !== undefined) return legacy;
-    }
     const configured = this.configured;
     if (typeof configured === "string" && nonBlank(configured) !== undefined) return configured.trim();
     if (this.name !== undefined) return this.name;

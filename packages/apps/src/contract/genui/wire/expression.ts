@@ -7,29 +7,31 @@
  * the issue contract (`WIRE_ISSUE_CODES`, `WireIssueCode`, `WireIssue`) is
  * exported from the package root; the parser itself stays internal.
  *
- * The grammar is JSON5-lite: JSON literals, single- OR double-quoted strings,
- * arrays/objects with trailing commas and bare object keys, plus — at EVERY
- * value position, literals included — the computed sub-language of
- * genui/expr.ts: dotted paths that compile to bindings, value-first reshape
- * calls that compile onto them as `$reshape` (v3 §5 D1), and arithmetic or
- * aggregate calls that compile to `{ $expr }`. This module owns literals and
- * lowering; expr.ts owns the one computed grammar and where it ends. The parser
- * is total — malformed input yields `dropped: true` with issues, never a throw.
+ * The grammar is a JavaScript EXPRESSION. There is no second grammar and no
+ * hand-rolled tokenizer: expr.ts parses the whole attribute once (acorn) and
+ * this module LOWERS the resulting expression — literals become JSON, a dotted
+ * reference rooted at a declared `<Query>` or `state` becomes a binding, and
+ * everything that actually computes becomes `{ $expr }` carrying its source
+ * VERBATIM so the printer re-emits exactly what the model wrote. Because the
+ * grammar is real JavaScript, JSON5-lite comes for free — single quotes,
+ * trailing commas and bare object keys are all already legal — and a binding
+ * nested at any depth inside an array or object literal lowers in place.
+ *
+ * The parser is total: malformed input yields `dropped: true` with issues,
+ * never a throw. Evaluation never happens here — it happens at bind resolution
+ * in the renderer.
  */
 
 import {
   defineOwn,
-  findInvalidReshapeSteps,
-  isPathBinding,
-  isStateBinding,
   isWellFormedUtf16,
   type Json,
   type PathBinding,
-  type ReshapeStep,
   safeErrorMessage,
   type StateBinding,
 } from "@vendoai/core";
-import { exprPathHeads, parseExprPrefix, type ExprBinding, type ExprNode } from "../expr.js";
+import type { Expression, Node } from "acorn";
+import { exprFreeIdentifiers, parseExpr, SEALED_GLOBALS, type ExprBinding } from "../expr.js";
 
 /**
  * v2 spec §2 — the closed registry of stable issue codes across all six
@@ -44,10 +46,6 @@ export const WIRE_ISSUE_CODES = [
   "unknown-reference",
   /** `state.<a>.<b>` — state bindings take exactly one key; attribute dropped. */
   "state-depth-unsupported",
-  /** A reshape call violates the bounded vocabulary (unknown op, arity, arg
-   *  kind, chain cap, or a value that is not a query/state binding); attribute
-   *  dropped. */
-  "invalid-reshape",
   // — attribute layer (attributes.ts)
   /** Attribute syntax error (bad char, single-quoted string, missing value, ill-formed UTF-16); attribute dropped or char skipped. */
   "malformed-attribute",
@@ -177,297 +175,225 @@ export type ExpressionResult =
   | { value: Json; dropped: false; issues: WireIssue[] }
   | { value?: undefined; dropped: true; issues: WireIssue[] };
 
-/** Internal parse-failure sentinel — flows up the recursion instead of a
+/** Internal lowering-failure sentinel — flows up the recursion instead of a
  *  throw so every frame unwinds cleanly with issues already recorded. */
-const FAILED: unique symbol = Symbol("expression-parse-failed");
+const FAILED: unique symbol = Symbol("expression-lowering-failed");
 type Failed = typeof FAILED;
 
-interface ParserState {
+interface LowerState {
   readonly source: string;
-  index: number;
   readonly issues: WireIssue[];
   readonly queryNames: ReadonlySet<string>;
 }
 
-const WHITESPACE = /\s/;
-const IDENTIFIER_START = /[A-Za-z_]/;
-const IDENTIFIER_CHAR = /[A-Za-z0-9_]/;
-
-const skipWhitespace = (state: ParserState): void => {
-  while (state.index < state.source.length && WHITESPACE.test(state.source[state.index] as string)) {
-    state.index += 1;
-  }
-};
-
-const fail = (state: ParserState, code: WireIssueCode, message: string): Failed => {
+const fail = (state: LowerState, code: WireIssueCode, message: string): Failed => {
   state.issues.push({ code, message });
   return FAILED;
 };
 
-const malformed = (state: ParserState, message: string): Failed =>
+const malformed = (state: LowerState, message: string): Failed =>
   fail(state, "malformed-expression", message);
 
-const HEX_ESCAPE = /^[0-9a-fA-F]{4}$/;
+const unknownReference = (state: LowerState, name: string, tail: string): Failed => fail(
+  state,
+  "unknown-reference",
+  `"${name}" does not name a declared <Query> or state; the queries are: ${[...state.queryNames].join(", ") || "(none declared)"}${tail}`,
+);
 
-/** Quote char and backslash escape themselves; `\n`/`\t`/`\r` become
- *  newline/tab/carriage return; `\uXXXX` decodes a UTF-16 code unit
- *  (surrogate pairs combine); any other escaped character passes through
- *  verbatim (lenient, total). Ill-formed UTF-16 — a lone surrogate, literal
- *  or escape-produced — is rejected: canonicalJson (jcs.ts) throws on lone
- *  surrogates downstream, so letting one through would un-drop the totality
- *  guarantee one layer up. */
-const parseString = (state: ParserState): string | Failed => {
-  const quote = state.source[state.index] as string;
-  state.index += 1;
-  let text = "";
-  while (state.index < state.source.length) {
-    const char = state.source[state.index] as string;
-    if (char === quote) {
-      state.index += 1;
-      if (!isWellFormedUtf16(text)) {
-        return malformed(state, "string contains a lone surrogate (ill-formed UTF-16)");
-      }
-      return text;
-    }
-    if (char === "\\") {
-      const escaped = state.source[state.index + 1];
-      if (escaped === undefined) break;
-      if (escaped === "u") {
-        const hex = state.source.slice(state.index + 2, state.index + 6);
-        if (!HEX_ESCAPE.test(hex)) {
-          return malformed(state, `invalid \\u escape at index ${state.index} (expected 4 hex digits)`);
-        }
-        text += String.fromCharCode(Number.parseInt(hex, 16));
-        state.index += 6;
-        continue;
-      }
-      text += escaped === "n" ? "\n" : escaped === "t" ? "\t" : escaped === "r" ? "\r" : escaped;
-      state.index += 2;
-      continue;
-    }
-    text += char;
-    state.index += 1;
-  }
-  return malformed(state, `unterminated string (opened with ${quote})`);
-};
+/** The narrow node shapes this module reads. Acorn's own types model every
+ *  edition at once, so the fields are read through these instead of a cast at
+ *  each site. */
+type Named = Node & { name: string };
+type Valued = Node & { value: unknown; regex?: unknown; bigint?: unknown };
+type Member = Node & { object: Node; property: Node; computed: boolean; optional: boolean };
+type Unary = Node & { operator: string; argument: Node };
 
-const DIGIT = /[0-9]/;
-
-const parseIdentifier = (state: ParserState): string | Failed => {
-  const start = state.index;
-  if (start >= state.source.length || !IDENTIFIER_START.test(state.source[start] as string)) {
-    return malformed(state, `expected identifier at index ${state.index}`);
+/**
+ * A dotted reference's segments, or null when the node is not a pure reference:
+ * identifier hops (`invoices.data`) and numeric-index hops
+ * (`accounts.data.0.field`, written either way), nothing optional, nothing
+ * computed by a value. Anything else COMPUTES, and computing is `$expr`'s job.
+ */
+const referenceSegments = (node: Node): string[] | null => {
+  if (node.type === "Identifier") return [(node as Named).name];
+  if (node.type !== "MemberExpression") return null;
+  const member = node as Member;
+  if (member.optional) return null;
+  const head = referenceSegments(member.object);
+  if (head === null) return null;
+  if (!member.computed) {
+    if (member.property.type !== "Identifier") return null;
+    const name = (member.property as Named).name;
+    // `length` is JavaScript's, not the data's: a JSON Pointer walk cannot
+    // reach an array's length, so lowering `rows.length` to a `$path` would
+    // bind an empty value instead of a count. It COMPUTES.
+    return name === "length" ? null : [...head, name];
   }
-  state.index += 1;
-  while (state.index < state.source.length && IDENTIFIER_CHAR.test(state.source[state.index] as string)) {
-    state.index += 1;
+  // `rows[0]` and `rows.0` address the same place; a computed STRING key
+  // (`row["a b"]`) is a field name a JSON Pointer can carry too.
+  const key = member.property.type === "Literal" ? (member.property as Valued).value : undefined;
+  if (typeof key === "number" && Number.isInteger(key) && key >= 0) return [...head, String(key)];
+  if (typeof key === "string" && key.length > 0 && !key.includes("/") && !key.includes("~")) {
+    return [...head, key];
   }
-  return state.source.slice(start, state.index);
+  return null;
 };
 
 /**
- * A dotted path lowers to a binding: `true`/`false`/`null` keywords (which
- * always win over a same-named query), `state.<key>` → StateBinding,
+ * A dotted reference lowers to a binding: `state.<key>` → StateBinding,
  * `<queryName>[.<seg>...]` → PathBinding with a JSON Pointer, anything else →
  * `unknown-reference` (the containing attribute value is dropped — the
- * simplest total rule). Array elements address by dot-numeric segment
- * (`{accounts.data.0.field}` → `/accounts/data/0/field`).
+ * simplest total rule). `true`/`false`/`null` never arrive here: they are
+ * JavaScript literals, so they can no longer be shadowed by a query of the
+ * same name.
  */
-const lowerPath = (state: ParserState, node: ExprNode & { kind: "path" }): Json | Failed => {
-  const { segments } = node;
+const lowerReference = (state: LowerState, segments: readonly string[], text: string): Json | Failed => {
   const first = segments[0] as string;
-  if (segments.length === 1) {
-    if (first === "true") return true;
-    if (first === "false") return false;
-    if (first === "null") return null;
-  }
   if (first === "state") {
     if (segments.length !== 2) {
       return fail(
         state,
         "state-depth-unsupported",
-        `state bindings take exactly one key (state.<key>); got "${node.text}"`,
+        `state bindings take exactly one key (state.<key>); got "${text}"`,
       );
     }
     const binding: StateBinding = { $state: segments[1] as string };
-    return binding;
+    return binding as unknown as Json;
   }
   if (state.queryNames.has(first)) {
     const binding: PathBinding = { $path: `/${segments.join("/")}` };
-    return binding;
+    return binding as unknown as Json;
   }
-  return fail(
-    state,
-    "unknown-reference",
-    `"${node.text}" does not name a declared <Query> or state; the queries are: ${[...state.queryNames].join(", ") || "(none declared)"} — there is no loop variable, so a fixed row reads by position off one of them (cities.0.temp)`,
-  );
+  return unknownReference(state, text, " — there is no loop variable, so a fixed row reads by position off one of them (cities[0].temp)");
 };
 
 /**
- * v3 spec §5 (D1) — a reshape call lowers ONTO the binding it wraps: the
- * innermost value is the base reference and each enclosing call appends one
- * `$reshape` step, so `rename(pick(q.rows, "a"), "a", "b")` compiles to the
- * canonical `[pick, rename]` chain. The chain is validated against the closed
- * vocabulary (findInvalidReshapeSteps — unknown op, arity, format kinds, the
- * 8-step cap) exactly as the pipe form was.
+ * A node that COMPUTES becomes `{ $expr }` carrying its own source slice
+ * verbatim, so the printer re-emits exactly what the model wrote. Every name
+ * the expression reads from outside itself must be a declared query — a
+ * function's own parameters and locals are bound, so
+ * `rows.reduce((t, r) => t + r.n, 0)` is checked against `rows` alone.
+ * Evaluation happens at bind resolution in the renderer, never here.
  */
-const lowerReshape = (state: ParserState, node: ExprNode & { kind: "reshape" }): Json | Failed => {
-  const inner = node.args[0] as ExprNode;
-  const notABinding = (): Failed => fail(
-    state,
-    "invalid-reshape",
-    `${node.op}() reshapes a query or state binding — write the binding first, e.g. ${node.op}(query.rows, "field")`,
-  );
-  if (inner.kind !== "path" && inner.kind !== "reshape") return notABinding();
-  const base = inner.kind === "path" ? lowerPath(state, inner) : lowerReshape(state, inner);
-  if (base === FAILED) return FAILED;
-  if (!isPathBinding(base) && !isStateBinding(base)) return notABinding();
-  const args = node.args.slice(1).map((arg) => (arg as ExprNode & { kind: "string" }).value);
-  const steps: ReshapeStep[] = [...(base.$reshape ?? []), { op: node.op, args }];
-  const violation = findInvalidReshapeSteps(steps);
-  if (violation !== null) return fail(state, "invalid-reshape", violation);
-  (base as PathBinding | StateBinding).$reshape = steps;
-  return base;
-};
-
-/**
- * THE classifier (v3 spec §5). Every identifier-, digit-, `-`- or `(`-led value
- * position — at any depth, inside array and object literals included — is
- * parsed ONCE by the expression grammar (genui/expr.ts), and what the value IS
- * follows from the AST it returns: a number literal, a binding, a binding
- * carrying a reshape chain, or a computed `{ $expr }` whose source is kept
- * VERBATIM so the printer re-emits exactly what the model wrote. Evaluation
- * happens at bind resolution in the renderer, never here.
- *
- * This replaces the pair of character-level pre-scans the pipe grammar needed
- * (`looksComputed` / `pipedExpressionHead`): with one grammar there is one
- * classifier, so the two can no longer disagree about which grammar a value is
- * written in.
- */
-const parseComputed = (state: ParserState): Json | Failed => {
-  const start = state.index;
-  const parsed = parseExprPrefix(state.source, start);
-  if (!parsed.ok) return malformed(state, parsed.issue);
-  state.index = parsed.end;
-  const { node } = parsed;
-  if (node.kind === "number") return node.value;
-  // A negated literal is still a literal (`-0` and `-2.5` stay numbers).
-  if (node.kind === "negate" && node.operand.kind === "number") return -node.operand.value;
-  if (node.kind === "string") return node.value;
-  if (node.kind === "path") return lowerPath(state, node);
-  if (node.kind === "reshape") return lowerReshape(state, node);
-  if (node.kind === "aggregate") {
-    return malformed(state, `${node.name}.of() only appears as group_by()'s fourth argument`);
-  }
-  const unknown = exprPathHeads(node).filter((head) => !state.queryNames.has(head));
+const lowerComputed = (state: LowerState, node: Node): Json | Failed => {
+  // The sealed VM's own intrinsics are not query data, but they are really there:
+  // this gate must admit exactly what expr.ts's fact check passes and its
+  // evaluator computes, or the compiler drops an attribute over a name that works.
+  const unknown = exprFreeIdentifiers(node)
+    .filter((name) => !state.queryNames.has(name) && !SEALED_GLOBALS.has(name));
   if (unknown.length > 0) {
-    for (const head of unknown) {
-      fail(state, "unknown-reference", `"${head}" does not name a declared <Query>; the queries are: ${[...state.queryNames].join(", ") || "(none declared)"}`);
-    }
+    for (const name of unknown) unknownReference(state, name, "");
     return FAILED;
   }
-  const binding: ExprBinding = { $expr: state.source.slice(start, parsed.end).trimEnd() };
+  const binding: ExprBinding = { $expr: state.source.slice(node.start, node.end) };
   return binding as unknown as Json;
 };
 
-const parseArray = (state: ParserState): Json[] | Failed => {
-  state.index += 1; // consume "["
+/** A string literal's value, refused when it is ill-formed UTF-16: canonicalJson
+ *  (jcs.ts) throws on lone surrogates downstream, so letting one through would
+ *  un-drop the totality guarantee one layer up. */
+const lowerString = (state: LowerState, text: string): Json | Failed =>
+  isWellFormedUtf16(text) ? text : malformed(state, "string contains a lone surrogate (ill-formed UTF-16)");
+
+/** A numeric literal's value, refused when the literal overflowed to ±Infinity
+ *  (`1e999`) — the same reason a lone surrogate is refused: canonicalJson
+ *  (jcs.ts) throws on a non-finite number downstream, so letting one through
+ *  would un-drop the totality guarantee one layer up. */
+const lowerNumber = (state: LowerState, value: number, text: string): Json | Failed =>
+  Number.isFinite(value)
+    ? value
+    : malformed(state, `${text} overflows to ${String(value)}, which is not a value an attribute can carry`);
+
+const lowerArray = (state: LowerState, node: Node): Json | Failed => {
+  const { elements } = node as Node & { elements: (Node | null)[] };
+  // A hole (`[1, , 2]`) or a spread cannot be lowered element-wise, so the
+  // whole literal computes instead.
+  if (elements.some((element) => element === null || element.type === "SpreadElement")) {
+    return lowerComputed(state, node);
+  }
   const items: Json[] = [];
-  for (;;) {
-    skipWhitespace(state);
-    if (state.index >= state.source.length) {
-      return malformed(state, "unterminated array (expected ']')");
-    }
-    if (state.source[state.index] === "]") {
-      state.index += 1;
-      return items;
-    }
-    const item = parseValue(state);
+  for (const element of elements) {
+    const item = lower(state, element as Node);
     if (item === FAILED) return FAILED;
     items.push(item);
-    skipWhitespace(state);
-    const next = state.source[state.index];
-    if (next === ",") {
-      state.index += 1;
-      continue;
-    }
-    if (next === "]") {
-      state.index += 1;
-      return items;
-    }
-    return malformed(state, `expected ',' or ']' in array at index ${state.index}`);
   }
+  return items;
 };
 
-const parseObject = (state: ParserState): Record<string, Json> | Failed => {
-  state.index += 1; // consume "{"
+const lowerObject = (state: LowerState, node: Node): Json | Failed => {
+  const { properties } = node as Node & { properties: Node[] };
+  const keyed: Array<[string, Node]> = [];
+  for (const property of properties) {
+    const entry = property as Node & { key: Node; value: Node; computed: boolean; kind?: string };
+    if (property.type !== "Property" || entry.computed || (entry.kind !== undefined && entry.kind !== "init")) {
+      return lowerComputed(state, node);
+    }
+    const key = entry.key.type === "Identifier"
+      ? (entry.key as Named).name
+      : entry.key.type === "Literal" ? String((entry.key as Valued).value) : null;
+    if (key === null) return lowerComputed(state, node);
+    keyed.push([key, entry.value]);
+  }
   const record: Record<string, Json> = {};
-  for (;;) {
-    skipWhitespace(state);
-    if (state.index >= state.source.length) {
-      return malformed(state, "unterminated object (expected '}')");
-    }
-    if (state.source[state.index] === "}") {
-      state.index += 1;
-      return record;
-    }
-    const keyChar = state.source[state.index] as string;
-    const key = keyChar === '"' || keyChar === "'" ? parseString(state) : parseIdentifier(state);
-    if (key === FAILED) return FAILED;
-    skipWhitespace(state);
-    if (state.source[state.index] !== ":") {
-      return malformed(state, `expected ':' after object key "${key}" at index ${state.index}`);
-    }
-    state.index += 1;
-    const value = parseValue(state);
-    if (value === FAILED) return FAILED;
+  for (const [key, value] of keyed) {
+    const lowered = lower(state, value);
+    if (lowered === FAILED) return FAILED;
     // defineOwn: a wire key named __proto__ must become data, never the
     // result's prototype.
-    defineOwn(record, key, value);
-    skipWhitespace(state);
-    const next = state.source[state.index];
-    if (next === ",") {
-      state.index += 1;
-      continue;
-    }
-    if (next === "}") {
-      state.index += 1;
-      return record;
-    }
-    return malformed(state, `expected ',' or '}' in object at index ${state.index}`);
+    defineOwn(record, key, lowered);
   }
+  return record;
 };
 
-const parseValue = (state: ParserState): Json | Failed => {
-  skipWhitespace(state);
-  if (state.index >= state.source.length) {
-    return malformed(state, "empty expression (expected a value)");
+function lower(state: LowerState, node: Node): Json | Failed {
+  if (node.type === "Literal") {
+    const literal = node as Valued;
+    if (literal.regex !== undefined || literal.bigint !== undefined) {
+      return malformed(state, `${state.source.slice(node.start, node.end)} is not a value an attribute can carry`);
+    }
+    const { value } = literal;
+    if (typeof value === "string") return lowerString(state, value);
+    if (typeof value === "number") return lowerNumber(state, value, state.source.slice(node.start, node.end));
+    if (typeof value === "boolean" || value === null) return value;
+    return malformed(state, `${state.source.slice(node.start, node.end)} is not a value an attribute can carry`);
   }
-  const char = state.source[state.index] as string;
-  if (char === '"' || char === "'") return parseString(state);
-  if (char === "[") return parseArray(state);
-  if (char === "{") return parseObject(state);
-  if (!IDENTIFIER_START.test(char) && !DIGIT.test(char) && char !== "-" && char !== "(") {
-    return malformed(state, `unexpected character "${char}" at index ${state.index}`);
+  // A signed literal is still a literal (`-0` and `-2.5` stay numbers).
+  if (node.type === "UnaryExpression") {
+    const unary = node as Unary;
+    const inner = unary.argument as Valued;
+    if ((unary.operator === "-" || unary.operator === "+") && inner.type === "Literal" && typeof inner.value === "number") {
+      const signed = unary.operator === "-" ? -inner.value : inner.value;
+      return lowerNumber(state, signed, state.source.slice(node.start, node.end));
+    }
+    return lowerComputed(state, node);
   }
-  return parseComputed(state);
-};
+  if (node.type === "ArrayExpression") return lowerArray(state, node);
+  if (node.type === "ObjectExpression") return lowerObject(state, node);
+  const segments = referenceSegments(node);
+  // A sealed global reads as itself, never as a path into query data: `/Math/PI`
+  // would bind an empty value, so `Math.PI` COMPUTES in the VM like any other
+  // expression naming an intrinsic.
+  if (segments !== null && !SEALED_GLOBALS.has(segments[0] as string)) {
+    return lowerReference(state, segments, state.source.slice(node.start, node.end));
+  }
+  return lowerComputed(state, node);
+}
 
 const parseExpressionUnsafe = (source: string, context: ExpressionContext): ExpressionResult => {
-  const state: ParserState = { source, index: 0, issues: [], queryNames: context.queryNames };
-  const value = parseValue(state);
-  if (value === FAILED) {
+  const state: LowerState = { source, issues: [], queryNames: context.queryNames };
+  const parsed = parseExpr(source);
+  if (!parsed.ok) {
+    malformed(state, parsed.issue);
     return { dropped: true, issues: state.issues };
   }
-  skipWhitespace(state);
-  if (state.index < source.length) {
-    // A leftover `|` is the retired pipe grammar (v3 §5 D1). Say so, or the
-    // model reads "trailing content" and has no idea what to write instead.
-    malformed(state, state.source.startsWith("|", state.index)
-      ? `reshape pipes are gone: write the value first, as a call — pick(query.rows, "field") instead of query.rows | pick(field) (at index ${state.index})`
-      : `unexpected trailing content at index ${state.index}`);
+  const node: Expression = parsed.node;
+  const trailing = source.slice(node.end).trim();
+  if (trailing !== "") {
+    malformed(state, `unexpected trailing content at index ${node.end} ("${trailing.slice(0, 24)}")`);
     return { dropped: true, issues: state.issues };
   }
+  const value = lower(state, node);
+  if (value === FAILED) return { dropped: true, issues: state.issues };
   return { value, dropped: false, issues: state.issues };
 };
 

@@ -160,13 +160,16 @@ export function argValue(field: string, value: unknown, properties: ArgPropertie
   if (typeof value !== "number" || !Number.isFinite(value)) return raw;
   const unit = declaredMoneyUnit(field, properties?.[field]);
   if (unit === undefined) return raw;
+  // The ONE conversion, in code, at the boundary: `formatMoney` pretty-prints
+  // major units and never converts, so minor units become major HERE — by the
+  // currency's own ISO minor unit (100 for dollars, 1 for yen, 1000 for
+  // dinars), keyed off the host's declaration, never the value's magnitude.
   // Fractional "cents" is not cents at all (the contradiction `amountUnitIssue`
   // refuses at the call seam) — undeclared, rather than round someone's money.
-  if (unit === "cents" && Number.isInteger(value)) return formatMoney(value) ?? raw;
-  if (unit === "dollars") {
-    const minor = Math.round(value * 10 ** currencyMinorUnits(getKitIntl().currency));
-    return formatMoney(minor) ?? raw;
+  if (unit === "cents" && Number.isInteger(value)) {
+    return formatMoney(value / 10 ** currencyMinorUnits(getKitIntl().currency)) ?? raw;
   }
+  if (unit === "dollars") return formatMoney(value) ?? raw;
   return `${raw} (unit not specified)`;
 }
 

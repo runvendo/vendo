@@ -6,18 +6,22 @@
  * Lifted out of `createApps` unchanged.
  */
 import {
+  VENDO_APP_FORMAT,
   VendoError,
   safeErrorMessage,
+  seedComponentName,
   type AppId,
   type RunContext,
 } from "@vendoai/core";
 import {
+  SCREEN_FILE,
+  bundleOf,
   isSeedComponentName,
   type AppDocument,
   type WireCompileResult,
 } from "../../contract/index.js";
 import { rememberedMemory } from "../persistence/app-memory.js";
-import { commitApp } from "../persistence/app-source.js";
+import { commitApp, inlineSourceFile } from "../persistence/app-source.js";
 import { NO_MACHINE } from "./build-messages.js";
 import { rungFor } from "../persistence/edit-journal.js";
 import { asPayload } from "../generation/engine.js";
@@ -272,6 +276,124 @@ const createAuthoredDoor = (
   };
 };
 
+/**
+ * The remix SEAT, carrying the person's own screen.
+ *
+ * A seeded app's seat is what SHIPS into the host page in place of the captured
+ * component, and the ship-diff a human approver reads is that seat against the
+ * baseline (`computeShipDiff`). A screen save that left the seat alone showed the
+ * approver an empty diff while the person's real change shipped unreviewed.
+ *
+ * Only the SOURCE is the person's. `origin`, `sourceImports`, `subSources`,
+ * `sampleProps` and `styleSheets` are the captured host module's own plumbing and
+ * are what make the fork render in the host page at all
+ * (`attachSeedFurnishings`), so the stored bundle rides through and only its
+ * source is replaced. Only the SEED seat, only on an app that carries a seed, and
+ * only a seat that already exists: a generated island is the engine's, and a seat
+ * is never invented here.
+ */
+const withScreenInSeat = (document: AppDocument, source: string): AppDocument => {
+  const seat = document.seed === undefined ? undefined : seedComponentName(document.seed.component);
+  const entry = seat === undefined ? undefined : document.components?.[seat];
+  if (seat === undefined || entry === undefined) return document;
+  return {
+    ...document,
+    components: { ...document.components, [seat]: { ...bundleOf(entry), source } },
+  };
+};
+
+/**
+ * The document a painted COMPONENT screen leaves behind — `authored`'s job for the
+ * artifact that has no wire document.
+ *
+ * The screen IS the app, so it is stored as the app's own source file, inline: the
+ * one place that reads it back reads inline text only (`open()`, which re-runs it),
+ * because a blob fetch would be a second way to read an app.
+ *
+ * No tree is written, because a screen's tree is what RENDERING it produces —
+ * storing the snapshot the gauntlet happened to take would put yesterday's numbers
+ * in the person's list and call them today's. Everything else the app already
+ * carried rides through untouched, exactly as `authoredDocument` does it: a save is
+ * not a generation.
+ */
+const screenDocument = (
+  input: { appId: AppId; name: string; source: string },
+  previous: AppDocument | undefined,
+): AppDocument => withScreenInSeat({
+  ...(previous === undefined ? { format: VENDO_APP_FORMAT } : structuredClone(previous)),
+  id: input.appId,
+  name: input.name,
+  ui: "tree",
+  source: { ...previous?.source, [SCREEN_FILE]: inlineSourceFile(input.source) },
+}, input.source);
+
+/**
+ * The row a painted COMPONENT screen gets, on EVERY save that paints.
+ *
+ * The gauntlet's own `ok` is the seam's paint gate, so this is the one place that
+ * knows a screen may become the app — which makes it the one place that may store
+ * it. `commitSource`'s generic workspace diff deliberately does not
+ * (`SEAM_OWNED` in app-source.ts): it cannot tell a passing screen from a refused
+ * one, and it landed the bytes of screens the floor would not render.
+ *
+ * A re-save is a real save, through the SAME versioned saver `app.vendo` uses: the
+ * CAS bracket, the version filed under the person's own words, the §9.9
+ * announcement. One artifact must not get a weaker contract than the other — this
+ * used to refuse to rewrite a row it had not created, so a component app's whole
+ * edit history was empty.
+ *
+ * Its refusals are `authored`'s, for `authored`'s reason: `/user/**` is its
+ * subject's at every level, so a harness can write another person's app id into its
+ * own mount.
+ */
+const createAuthoredScreenDoor = (
+  deps: Pick<AppsRuntimeContext, "apps" | "holds"> & {
+    saveAuthoredDocument: ReturnType<typeof createAuthoredSaver>;
+  },
+): AppsRuntime["authoredScreen"] => {
+  const { apps, holds, saveAuthoredDocument } = deps;
+  return async (input, ctx) => {
+    const record = await apps.get(input.appId);
+    const row = record === null ? null : rowFromRecord(record);
+    if (row !== null && !await holds(input.appId, ctx, "editor", record)) return;
+    // `open()` re-runs the stored screen through this same gauntlet, so this fires
+    // on every READ of a screen app too. A save whose screen is already the stored
+    // screen changes nothing about the app: writing anyway would spend one of the
+    // 50 version slots on the state the app is already in, and would put the
+    // person's screen back in a seat a `reseed` deliberately made pristine again.
+    if (row?.doc.source?.[SCREEN_FILE]?.text === input.source) return;
+    await saveAuthoredDocument({
+      appId: input.appId,
+      document: screenDocument(input, row?.doc),
+      previous: row?.doc,
+      row,
+    }, ctx);
+  };
+};
+
+/**
+ * Why a painted screen's save left NO row — `authoredScreen`'s opposite half.
+ *
+ * Only ever an EDIT's answer. The floor refuses on every path that paints,
+ * including the paint `open()` runs over a stored screen, where nothing was being
+ * saved at all; the intent is what says a save was in flight (`editIntents`).
+ * Without this the assembler re-reads the row, finds the PRE-edit document and
+ * reports it as the change — a clean receipt for an edit the floor rejected.
+ */
+const createRefusedScreenDoor = (
+  deps: Pick<AppsRuntimeContext, "editIntents" | "editRefusals" | "editVersions" | "discardVersion">,
+): AppsRuntime["refusedScreen"] => {
+  const recordRefusedSave = createRefusedSaveRecorder(deps);
+  return async (input) => {
+    if (deps.editIntents.get(input.appId) === undefined) return;
+    await recordRefusedSave(
+      input.appId,
+      new VendoError("validation", input.blocking.join("; "), { appId: input.appId }),
+      undefined,
+    );
+  };
+};
+
 /** A SERVED app has no tree, so its edits go to the in-box agent whole. */
 const createServedAppEditor = (
   deps: Pick<AppsRuntimeContext,
@@ -428,29 +550,38 @@ export const createWriteSurface = (
     | "generationToolContext" | "runServerWork" | "editServerViaBox" | "pruneHistory"
     | "reportLifecycle" | "reportDocumentEdit" | "discardVersion"
     | "editIntents" | "editVersions" | "editRefusals">,
-): Pick<AppsRuntime, "authored" | "commitSource" | "edit" | "remember" | "schedule"> => {
+): Pick<AppsRuntime,
+  "authored" | "authoredScreen" | "refusedScreen" | "commitSource" | "edit" | "remember" | "schedule"> => {
   const { config, apps, requireOwned, updateAppDocument } = deps;
   const saveAuthoredDocument = createAuthoredSaver(deps);
   const editServedApp = createServedAppEditor(deps);
   return {
     authored: createAuthoredDoor({ ...deps, saveAuthoredDocument }),
+    authoredScreen: createAuthoredScreenDoor({ ...deps, saveAuthoredDocument }),
+    refusedScreen: createRefusedScreenDoor(deps),
     edit: createEditDoor({ ...deps, editServedApp }),
     async commitSource(input, ctx) {
+      // §9.7 — the app's ADDRESS comes from its OWNER, and the row's subject is
+      // the authoritative answer (§9.5: a promoted app's row subject IS the org
+      // id, verbatim). Read here, never remembered: permission cannot choose an
+      // address, because an org app's editor can usually write their own `/user`
+      // mount too.
+      const subject = (await apps.get(input.appId))?.refs?.subject;
+      // NO ROW YET IS NOT A FAILURE. A paint is what creates the row (`authored`),
+      // so a save the seam declined to paint has none — and the source is already
+      // in the workspace files, so the next save that paints persists it. This
+      // used to throw `<appId> has no row to hold its source`, which the render
+      // seam printed as a loud "source did not reach the store" over a document
+      // the writer was already being told about in the floor's own sentences
+      // (live 2026-08-06): a misleading error nobody could act on.
+      if (subject === undefined) {
+        console.info(`[vendo] ${input.appId} has no row yet, so its source waits for the save that paints`);
+        return;
+      }
       await commitApp(input.appId, input.changed, input.workspace, ctx, {
         requireOwned,
         update: (appId, mutate) => updateAppDocument(appId, mutate),
-        // §9.7 — the app's ADDRESS comes from its OWNER, and the row's subject is
-        // the authoritative answer (§9.5: a promoted app's row subject IS the org
-        // id, verbatim). Read here, never remembered: permission cannot choose an
-        // address, because an org app's editor can usually write their own `/user`
-        // mount too.
-        ownerOf: async (appId) => {
-          const subject = (await apps.get(appId))?.refs?.subject;
-          if (subject === undefined) {
-            throw new VendoError("not-found", `${appId} has no row to hold its source`);
-          }
-          return subject;
-        },
+        ownerOf: async () => subject,
         ...(config.files === undefined ? {} : { blobs: config.files }),
       });
     },

@@ -172,6 +172,28 @@ describe("host and pack judgment rules reach the reviewer (F2)", () => {
   });
 });
 
+describe("the seat the reviewer's one model call rides", () => {
+  it("spends the REVIEW model when the floor carries one, and `model` when it does not", async () => {
+    // Judging a finished screen against its own rows is a reading job, so the
+    // deployment hands the floor the family's fast pick. Two recorders is what
+    // makes this a real assertion: which one was asked is the whole fact.
+    const writerCalls: ScriptedModelCall[] = [];
+    const reviewCalls: ScriptedModelCall[] = [];
+    const writer = scriptedLanguageModel((call) => { writerCalls.push(call); return reported([]); });
+    const reviewModel = scriptedLanguageModel((call) => { reviewCalls.push(call); return reported([]); });
+
+    await factReviewerCheck({ ...deps(writer), reviewModel }, samples).run(inputFor(invoicesApp));
+    expect(reviewCalls).toHaveLength(1);
+    expect(writerCalls).toHaveLength(0);
+
+    // No review seat — a host composing this block itself — and it rides `model`,
+    // exactly as it always did.
+    await factReviewerCheck(deps(writer), samples).run(inputFor(invoicesApp));
+    expect(writerCalls).toHaveLength(1);
+    expect(reviewCalls).toHaveLength(1);
+  });
+});
+
 describe("the AI reviewer", () => {
   it("parses the reported findings and returns them as Finding[]", async () => {
     const model = scriptedLanguageModel(() => reported([

@@ -5,7 +5,7 @@ import { font, t } from "../tokens.js";
 export interface StatProps {
   /** Metric name. */
   label: string;
-  /** Raw value; formatted by `format` (money takes cents). */
+  /** Raw value; formatted by `format` (money takes major units, never cents). */
   value: number | string;
   /** Value-tier format. */
   format?: ValueFormat;

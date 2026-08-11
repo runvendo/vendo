@@ -5,7 +5,7 @@
  * share, and `vendo_delegate`'s motor.
  */
 import { awayRunner } from "@vendoai/agents";
-import type { AgentRunner, Harness } from "@vendoai/core";
+import { CONNECTOR_DISCOVERY_TOOLS, VENDO_MAKE_TOOL, type AgentRunner, type Harness } from "@vendoai/core";
 import { assertHarnessComposable, vendo } from "@vendoai/harnesses";
 import type { VendoComposition } from "./compose-context.js";
 import { storeServesHarnessTurns } from "./compose-store.js";
@@ -14,6 +14,15 @@ import { createHarnessTurns, type HarnessTurns } from "./harness-turn.js";
 import { assembleSystemPrompt } from "./prompt.js";
 import { withAgentMenu } from "./surface-menu.js";
 import { registerTurnSteer } from "./turn-liveness.js";
+
+/** The tools the OPERATING PROMPT teaches by name — product knowledge, declared
+ *  here so the general harness carries none of it (tool-search.ts exempts only
+ *  its own capability-miss hand). */
+const PROMPT_TAUGHT_TOOLS: readonly string[] = [VENDO_MAKE_TOOL, ...CONNECTOR_DISCOVERY_TOOLS];
+
+const withPromptTaughtTools = (
+  toolSearch: VendoComposition["toolSearch"],
+): VendoComposition["toolSearch"] => ({ ...toolSearch, alwaysActive: PROMPT_TAUGHT_TOOLS });
 
 /** The thinker, the door it may dial, and the boot gate between them. */
 const resolveHarnessDoor = (composition: VendoComposition): Pick<VendoComposition,
@@ -43,7 +52,8 @@ const resolveHarnessDoor = (composition: VendoComposition): Pick<VendoCompositio
   // registry search and loadout knobs the old runtime rail read, now the
   // brain's own hand (a host-constructed `vendo()` receives them through the
   // composed adapter slot instead — harness-turn.ts).
-  const harness = (composed?.harness ?? config.harness ?? vendo({ toolSearch })) as Harness;
+  const harness = (composed?.harness ?? config.harness
+    ?? vendo({ toolSearch: withPromptTaughtTools(toolSearch) })) as Harness;
   assertHarnessComposable(harness, sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter });
   // The harness runtime, wired to everything a turn needs: the store handle (its
   // transcript and its workspace), the ONE guard-bound registry, the merged pack
@@ -205,8 +215,9 @@ const harnessTurnConfig = (
       opts?.discovery ?? "find-tools",
     ),
     // vendo()'s tool-search strategy (for the composed adapter slot) and the
-    // honest-refusal rail, defined once (compose-prompt.ts).
-    toolSearch,
+    // honest-refusal rail, defined once (compose-prompt.ts). Same product
+    // exemptions as the boot-time construction above — one declaration.
+    toolSearch: withPromptTaughtTools(toolSearch),
     capabilityMiss,
     // The SAME condition the catalog pair is gated on above. The section teaches
     // `find_service_tools` and `use_service_tool` by name, so it rides only where

@@ -9,9 +9,9 @@
  * authoring an automation is its own small entry point: no machine, no
  * sandbox, seconds rather than minutes.
  *
- * Nothing here was rewritten in the move. The planner (`plan.ts`), the id
- * rules, the results-collection rewire and the arming are the same code that
- * ran inside `generation/lanes.ts`; only their home changed.
+ * Nothing here was rewritten in the move. The planner (`plan.ts`), the id rules
+ * and the arming are the same code that ran inside `generation/lanes.ts`; only
+ * their home changed.
  */
 import {
   DEFAULT_TRIGGER_ID,
@@ -121,8 +121,8 @@ const freeTriggerId = (base: string, taken: ReadonlySet<string>): string => {
  * from the existing entry can land on an automation the person already has.
  *
  * Called ONCE per authoring, before anything is stamped — which is what makes
- * the occupancy search safe and keeps the two stamps of one plan (before the
- * board rewire, and over the rewired document) on the same entry.
+ * the occupancy search safe, and what keeps the entry the plan lands on, the
+ * arming, and the trigger the caller's card renders all one automation.
  */
 export const plannedTriggerId = (
   triggers: readonly Pick<Trigger, "id">[] | undefined,
@@ -141,9 +141,13 @@ export const plannedTriggerId = (
 
 /** Put a planned automation onto a document: the trigger the automations engine
  *  fires, plus the results collection its last step publishes into. The entry is
- *  replaced IN PLACE when the app already holds that id (the rewire re-stamp, and
- *  an edit of that same automation), and appended when it does not — so every
- *  other automation the app has keeps its own place in the list. */
+ *  replaced IN PLACE when the app already holds that id (an edit of that same
+ *  automation), and appended when it does not — so every other automation the app
+ *  has keeps its own place in the list.
+ *
+ *  The collection declaration is not bookkeeping: a screen may only query a
+ *  collection the stored document declares (`app-data.ts` declaredStorage), so
+ *  this is what lets the board rewire read the automation's rows at all. */
 export const applyAutomationPlan = <Doc extends Pick<AppDocument, "triggers" | "storage">>(
   document: Doc,
   plan: AutomationPlan,
@@ -167,19 +171,22 @@ export const applyAutomationPlan = <Doc extends Pick<AppDocument, "triggers" | "
   return automated;
 };
 
-/** The rewire that makes an away run VISIBLE: the app's board reads the store
+/** The rewire that makes an away run VISIBLE: the app's screen reads the store
  *  rows the automation publishes, so without this the automation fires into
- *  nothing the person can see. */
+ *  nothing the person can see.
+ *
+ *  Read by the ONE screen builder, so it speaks the component dialect and only
+ *  its own delta from it — the builder's brief already teaches the file. */
 export const automationResultsInstruction = (input: {
   appId: string;
   mode: AutomationMode;
   /** The automation's own name, when it has one. */
   name?: string;
   resultsCollection: string;
-}): string => `The app now has a ${input.mode} automation${input.name === undefined ? "" : ` ("${input.name}")`} that runs while the user is away and writes its latest displayable result into the app data collection "${input.resultsCollection}" (record id "latest"). Rewire the tree to show those results:
-- Add (or repoint) a query over the results rows: <Query id="results" tool="vendo_apps_data_list" input={{appId:"${input.appId}", collection:"${input.resultsCollection}"}}/> — the input is LITERAL JSON exactly as written. The tool's result shape is {records: [{id, data: <what the automation stored>}]}, so bind node props against /results/records/... paths (e.g. {results.records.0.data.summary}).
-- Keep the layout; change only what is needed to surface the automation's results (add a small section if none fits).
-- Emit no id attributes on nodes (ids are compiler-owned); a <Query> id is its name.`;
+}): string => `The app now has a ${input.mode} automation${input.name === undefined ? "" : ` ("${input.name}")`} that runs while the user is away and writes its latest displayable result into the app data collection "${input.resultsCollection}" — one record, id "latest", replaced on every run. Rewire the screen to show it:
+- Read it with useQuery("vendo_apps_data_list", { appId: "${input.appId}", collection: "${input.resultsCollection}" }) — that input is LITERAL JSON, exactly as written. It answers { records: [{ id, data }] }, and a row's data is whatever the automation stored, so the latest result is records[0].data.
+- The collection is EMPTY until the automation first fires, and this screen is rendered against the rows the query really returns before it can be saved — so handle records[0] being undefined and show one short "nothing yet" line instead of reading through it.
+- Keep the layout; change only what is needed to surface the result (add one small section if none fits).`;
 
 /**
  * Arm a freshly authored trigger through the host's seam. A seam that throws
@@ -246,16 +253,18 @@ export interface AutomationLaneDeps extends GenerationDependencies {
    * that appears is written by the same thing that writes every other screen.
    * Absent → the automation still arms and the missing board is a `warn`,
    * exactly as a failed rewire is.
+   *
+   * It takes the instruction and nothing else: the assembler opens the app's own
+   * STORED row, so the document to rewire is never handed to it — which is why
+   * this runs after `land`.
    */
-  rebind?: (
-    instruction: string,
-    document: GeneratedAppDocument,
-  ) => Promise<{ document?: GeneratedAppDocument; issues: string[] }>;
+  rebind?: (instruction: string) => Promise<{ document?: GeneratedAppDocument; issues: string[] }>;
   /**
-   * The ONE place the automation reaches the stored row. `armTrigger` is the
-   * persist's own arming — true exactly when the host wired no arming seam.
-   * Absent → the lane authors the automation and hands it back unlanded, and
-   * arms nothing (arming a row whose trigger is not stored yet would enable an
+   * The ONE place the TRIGGER reaches the stored row, and the first write of the
+   * two — the rewire's own save comes after it. `armTrigger` is the persist's own
+   * arming — true exactly when the host wired no arming seam. Absent → the lane
+   * authors the automation and hands it back unlanded, arms nothing, and rewires
+   * nothing (arming a row whose trigger is not stored yet would enable an
    * automation that does not exist).
    */
   land?: (document: GeneratedAppDocument, options: { armTrigger: boolean }) => Promise<void>;
@@ -263,6 +272,8 @@ export interface AutomationLaneDeps extends GenerationDependencies {
 }
 
 export interface AutomationLaneResult {
+  /** What the store holds when the lane is done: the landed document, or — once
+   *  the rewire has saved over it — the row that save left behind. */
   document: GeneratedAppDocument;
   findings: Finding[];
   /** The automation that was authored and armed. */
@@ -285,10 +296,8 @@ export interface AutomationLaneResult {
 }
 
 /**
- * Author one automation onto the document, land it, and arm it.
- *
- * Lifted out of `generation/lanes.ts` unchanged: same planner call, same id
- * rules, same results rewire, same arming, same findings.
+ * Author one automation onto the document, land it, arm it, and only THEN rewire
+ * the app around it.
  */
 export const runAutomationLane = async (
   input: { appName: string; instruction: string; mode: AutomationMode },
@@ -322,35 +331,18 @@ export const runAutomationLane = async (
   }
   const { plan: automation } = planned;
   const findings: Finding[] = [];
-  // Decided ONCE, off the app as it stands: everything below — the re-stamp over
-  // the rewired document, the arming, the trigger the caller's card renders —
-  // has to mean the same entry.
+  // Decided ONCE, off the app as it stands: everything below — the entry the plan
+  // lands on, the arming, the trigger the caller's card renders — has to mean the
+  // same automation.
   const triggerId = plannedTriggerId(document.triggers, automation, deps.request);
   let landed = applyAutomationPlan(document, automation, triggerId);
-  // Bind the board to the results rows BEFORE landing, so one write carries the
-  // whole change. A failed rewire never blocks the automation: the trigger
-  // still lands and the miss is reported for a retry.
-  if (automation.resultsCollection !== undefined && deps.rebind !== undefined) {
-    const rebound = await deps.rebind(automationResultsInstruction({
-      appId: deps.appId,
-      mode,
-      ...(automation.name === undefined ? {} : { name: automation.name }),
-      resultsCollection: automation.resultsCollection,
-    }), landed);
-    if (rebound.document === undefined) {
-      findings.push(warn(where, "the automation is armed, but the app was not rewired to show its results — ask for the board again and it will bind to the results collection."));
-      findings.push(...rebound.issues.map((issue) => warn(where, issue)));
-    } else {
-      // Re-stamp: the rewire must never drop the just-authored automation.
-      landed = applyAutomationPlan(rebound.document, automation, triggerId);
-    }
-  }
   let pendingGrants: ApprovalRequest[] | undefined;
-  // Arming only ever happens on the land path — either inside land() itself
-  // (armTrigger) or through the host's seam right after it. With no `land`,
-  // the automation was authored and handed back UNSTORED, so nothing armed it
-  // and it is not enabled: claiming otherwise would put a live-looking card in
-  // the thread for a trigger that does not exist in any row.
+  // Arming — and the board rewire under it — only ever happens on the land path:
+  // either inside land() itself (armTrigger) or through the host's seam right
+  // after it. With no `land`, the automation was authored and handed back
+  // UNSTORED, so nothing armed it and it is not enabled: claiming otherwise would
+  // put a live-looking card in the thread for a trigger that does not exist in
+  // any row.
   let enabled = false;
   let armingIssues: string[] = [];
   if (deps.land !== undefined) {
@@ -360,6 +352,28 @@ export const runAutomationLane = async (
     enabled = armed.enabled;
     armingIssues = armed.issues;
     findings.push(...armed.issues.map((issue) => warn(where, issue)));
+    // The rewire comes AFTER the land, and has to: the assembler reads the STORED
+    // row, and a screen may only query a collection that row DECLARES
+    // (`app-data.ts` declaredStorage) — the checks run the rewired screen's query
+    // for real, so a rewire asked any earlier is refused with "records collection
+    // not found". Its own save carries this row's trigger and storage forward, so
+    // the row it leaves behind IS the answer and there is nothing to re-stamp. A
+    // failed rewire never blocks the automation: it is landed and armed either
+    // way, and the miss is reported for a retry.
+    if (automation.resultsCollection !== undefined && deps.rebind !== undefined) {
+      const rebound = await deps.rebind(automationResultsInstruction({
+        appId: deps.appId,
+        mode,
+        ...(automation.name === undefined ? {} : { name: automation.name }),
+        resultsCollection: automation.resultsCollection,
+      }));
+      if (rebound.document === undefined) {
+        findings.push(warn(where, "the automation is armed, but the app was not rewired to show its results — ask for the board again and it will bind to the results collection."));
+        findings.push(...rebound.issues.map((issue) => warn(where, issue)));
+      } else {
+        landed = rebound.document;
+      }
+    }
   }
   return {
     document: landed,
@@ -428,8 +442,10 @@ export const createAutomationLane = (
         },
         // The board that shows an automation's results is a SCREEN, so the thing
         // that writes every other screen writes this one: one assembler turn over
-        // the app as it stands. The row it saves is what the lane re-stamps the
-        // trigger onto, so the automation can never be lost to its own rewire.
+        // the app as it stands — which, by the time this runs, is the row the
+        // automation already landed in. The assembler's own save carries that
+        // row's trigger and storage forward, so the automation can never be lost
+        // to its own rewire, and the row it leaves behind is what comes back here.
         rebind: async (instruction) => {
           const rebound = await assembleEdit(appId, instruction, ctx);
           if (rebound.kind === "assembled") return { document: withoutId(rebound.app), issues: [] };

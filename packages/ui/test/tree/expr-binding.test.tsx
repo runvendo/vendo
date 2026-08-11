@@ -1,23 +1,32 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import { warmExprRuntime } from "@vendoai/apps/contract";
 import { VENDO_TREE_FORMAT, type Json, type ToolOutcome } from "@vendoai/core";
 import { TreeView, type WalkTree } from "../../src/tree/index.js";
 
 afterEach(cleanup);
+
+// The renderer warms the interpreter in an effect, but evaluation is synchronous
+// — a render that lands before the boot reads every computed value as empty. A
+// test asserting on the FIRST render has to await the boot itself.
+beforeAll(async () => {
+  await warmExprRuntime();
+});
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
 const tree = (nodes: WalkTree["nodes"]): WalkTree =>
   ({ formatVersion: VENDO_TREE_FORMAT, root: "root", nodes } as WalkTree);
 
-/** One computed headline: average invoice value in cents. */
+/** One computed headline: average invoice value in cents. The gap is real
+ *  JavaScript, reduced over the query's own rows. */
 const nodes: WalkTree["nodes"] = [
   { id: "root", component: "Stack", children: ["headline"] },
   {
     id: "headline",
     component: "Text",
-    props: { text: { $expr: 'sum(invoices, "amount_cents") / count(invoices)' } },
+    props: { text: { $expr: "invoices.reduce((total, r) => total + r.amount_cents, 0) / invoices.length" } },
   },
 ];
 
@@ -53,9 +62,12 @@ describe("$expr bindings in the renderer", () => {
   });
 
   it("shows the contained data-shape notice when the expression cannot compute", () => {
+    // The column is text where the expression reads a number, so the gap THROWS
+    // inside the VM. The notice carries the interpreter's own reason, named by
+    // the prop it was bound to.
     const mismatched: WalkTree["nodes"] = [
       { id: "root", component: "Stack", children: ["headline"] },
-      { id: "headline", component: "Text", props: { text: { $expr: 'sum(invoices, "client_name")' } } },
+      { id: "headline", component: "Text", props: { text: { $expr: "invoices[0].client_name.toFixed(2)" } } },
     ];
 
     render(
@@ -68,7 +80,7 @@ describe("$expr bindings in the renderer", () => {
     );
 
     const notice = screen.getByRole("note", { name: /data shape/i });
-    expect(notice.textContent).toContain("numeric");
-    expect(notice.textContent).toContain("Acme");
+    expect(notice.textContent).toContain('prop "text"');
+    expect(notice.textContent).toContain("this expression threw TypeError");
   });
 });

@@ -37,6 +37,8 @@ import {
 import type {
   AppDocument,
 } from "../../contract/index.js";
+// The screen engine, by its own path: the contract door does not carry it yet.
+import { SCREEN_FILE } from "../../contract/genui/component/index.js";
 import { wirePropNames } from "../escalation/prewired-schema.js";
 import type { FloorDependencies, HostToolInfo } from "./deps.js";
 import { screenTypings } from "./screen-typings.js";
@@ -180,7 +182,7 @@ export const queryInputIssues = (tree: Tree): FactIssue[] => {
     if (query.input !== undefined && findBinding(query.input)) {
       issues.push({
         where: `query "${query.name}"`,
-        message: `(tool "${query.tool}") embeds a binding in its input — query inputs must be LITERAL JSON the tool can execute directly; another query's result can never feed a query input. Use a literal value (or drop the optional input), or build the dependent lookup inside an <Island> with ambient tools.`,
+        message: `(tool "${query.tool}") embeds a binding in its input — query inputs must be LITERAL JSON the tool can execute directly; another query's result can never feed a query input. Use a literal value (or drop the optional input), and derive what you needed where it is DISPLAYED instead: a component's prop is a JavaScript expression over the queries you already declared (rows={${query.name}.data.filter(r => r.status === "open")}).`,
       });
     }
   }
@@ -240,19 +242,22 @@ export const kitSlotIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] 
 
 /** A computed value (`{ $expr }`) is evaluated live in the renderer, so a bad
  *  expression is a blank stat rather than a crash — exactly the silent-breakage
- *  class facts exist to catch. Three kinds are decidable by looking things up:
- *  the expression parses, its field paths reach fields the tool shapes really
- *  expose, and every slot's type can compute (sum over a string cannot).
- *  Whether the number MEANS anything is the reviewer's judgement, not a fact. */
-export const exprIssues = (tree: Tree, deps: FloorDependencies): FactIssue[] => {
-  const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
-  const context = {
-    queryNames: [...queryTool.keys()],
-    shapeOf: (queryName: string) => {
-      const tool = queryTool.get(queryName);
-      return tool === undefined || deps.toolShapes === undefined ? undefined : deps.toolShapes[tool];
-    },
-  };
+ *  class facts exist to catch. Two kinds are decidable by looking things up: the
+ *  expression is a JavaScript expression within the size cap, and every name it
+ *  reads is a query the screen declared.
+ *
+ *  Its FIELDS and TYPES are the `screen-types` check's, not this one's: the gap
+ *  is real JavaScript now, so the printed screen type-checks against the
+ *  queries' declared result types under the real compiler. A second bespoke
+ *  shape walker here could only disagree with it. Whether the number MEANS
+ *  anything stays the reviewer's judgement.
+ *
+ *  `_deps` is vestigial: the shape lookup it carried is what moved to the
+ *  compiler. It stays in the signature only because the create/edit validator
+ *  (generation/validation/validate.ts) passes it, and that file is off-limits
+ *  to this change — drop the argument there and the parameter here together. */
+export const exprIssues = (tree: Tree, _deps?: FloorDependencies): FactIssue[] => {
+  const context = { queryNames: (tree.queries ?? []).map((query) => query.name) };
   const issues: FactIssue[] = [];
   const walk = (nodeId: string, prop: string, value: unknown): void => {
     if (isExprBinding(value)) {
@@ -464,7 +469,13 @@ const documentIssues = (app: AppDocument): FactIssue[] => {
   const validation = validateAppDocument(app);
   if (!validation.ok) issues.push({ where: "document", message: validation.error.message });
   if (app.tree === undefined) {
-    issues.push({ where: "document", message: "carries no tree — the engine emits tree documents only" });
+    // …unless the app IS a component screen, whose tree is what rendering it
+    // produces rather than anything stored (`SCREEN_FILE` in `source`). Its
+    // mechanical half is its own gauntlet (`checkComponentScreen`), so a stored
+    // tree would be a snapshot nobody may trust and its absence is not a defect.
+    if (app.source?.[SCREEN_FILE] === undefined) {
+      issues.push({ where: "document", message: "carries no tree — the engine emits tree documents only" });
+    }
     return issues;
   }
   if (app.tree.formatVersion !== VENDO_TREE_FORMAT) {
@@ -557,7 +568,7 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
     ...kitSlotIssues(tree, deps),
     ...hostReshapeIssues(tree, deps),
   ]),
-  treeCheck("expressions-compute", (tree) => exprIssues(tree, deps)),
+  treeCheck("expressions-compute", (tree) => exprIssues(tree)),
   treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
   treeCheck("no-string-interpolation", (tree) => interpolationIssues(tree)),
 ];

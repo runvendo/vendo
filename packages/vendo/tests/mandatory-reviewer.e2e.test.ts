@@ -16,13 +16,13 @@
  * scripted, because what is measured is the doors, not a provider's mood.
  *
  * The ones that must be able to fail:
- * - drop `review: true` from the gate call in `assembleScreen`
+ * - drop the `judgeScreen` call from `assembleScreen`
  *   (`packages/vendo/src/screen-agent.ts`) and case 1 goes red — the reviewer
  *   is never called and the double count ships, which is the incident.
- * - stop passing `samples` to `reviewerCheck` (`packages/apps/src/runtime.ts`) and
- *   case 1 goes red at the evidence assertion — the reviewer double cannot see the
- *   overlap it is asked to judge, so it reports nothing, exactly as the live
- *   reviewer would have.
+ * - stop passing `queryResults` to `reviewComponentScreenInput` (the validate door
+ *   in `packages/apps/src/server/doors/build-surface.ts`) and case 1 goes red at
+ *   the evidence assertion — the reviewer double cannot see the overlap it is
+ *   asked to judge, so it reports nothing, exactly as the live reviewer would have.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -86,24 +86,48 @@ const hostTools: ToolDefinition[] = [
   },
 ];
 
+const TABLE = `<DataTable
+        rows={bills.data}
+        columns={[{ key: "name", label: "Bill" }, { key: "amount_cents", format: "money", align: "end" }]}
+        emptyState="Nothing due"
+      />`;
+
 /**
  * The incident in miniature: one headline that adds both query results, so every
- * subscription is counted twice. Both bindings are well typed and both tools are
- * real, so the whole mechanical floor passes it.
+ * subscription is counted twice. Every stage of the component gauntlet passes it —
+ * it compiles, its imports are the two allowed ones, both tools are real reads,
+ * it type-checks, it renders in the VM against the rows those tools really
+ * returned, and its tree is valid. A double count is not a shape error.
  */
-const DOUBLE_COUNT = `<App name="Upcoming bills">
-  <Query id="bills" tool="host_upcomingBills"/>
-  <Query id="subs" tool="host_subscriptions"/>
-  <Stat label="Due this month" value={sum(bills.data, "amount_cents") + sum(subs.data, "amount_cents")} format="money"/>
-  <DataTable rows={bills.data} columns={[{key:"name",label:"Bill"},{key:"amount_cents",format:"money",align:"end"}]} emptyState="Nothing due"/>
-</App>`;
+const DOUBLE_COUNT = `import { DataTable, Stack, Stat, useQuery } from "@vendo/screen";
+
+export default function UpcomingBills() {
+  const bills = useQuery("host_upcomingBills");
+  const subs = useQuery("host_subscriptions");
+  const total = [...bills.data, ...subs.data].reduce((sum, row) => sum + row.amount_cents, 0);
+  return (
+    <Stack gap={12}>
+      <Stat label="Due this month" value={total / 100} format="money" />
+      ${TABLE}
+    </Stack>
+  );
+}
+`;
 
 /** The same screen, honest: the headline sums the bills alone. */
-const HONEST = `<App name="Upcoming bills">
-  <Query id="bills" tool="host_upcomingBills"/>
-  <Stat label="Due this month" value={sum(bills.data, "amount_cents")} format="money"/>
-  <DataTable rows={bills.data} columns={[{key:"name",label:"Bill"},{key:"amount_cents",format:"money",align:"end"}]} emptyState="Nothing due"/>
-</App>`;
+const HONEST = `import { DataTable, Stack, Stat, useQuery } from "@vendo/screen";
+
+export default function UpcomingBills() {
+  const bills = useQuery("host_upcomingBills");
+  const total = bills.data.reduce((sum, row) => sum + row.amount_cents, 0);
+  return (
+    <Stack gap={12}>
+      <Stat label="Due this month" value={total / 100} format="money" />
+      ${TABLE}
+    </Stack>
+  );
+}
+`;
 
 const ZERO_USAGE = {
   inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
@@ -132,6 +156,10 @@ const REVIEWER_MARKER = "You are the last reader of a generated app";
 
 interface Scripted {
   model: LanguageModel;
+  /** The same script on a SECOND model object, for the deployment that composed a
+   *  fast seat (`models.fill`). Which object the reviewer's call lands on is the
+   *  fact — a seat cannot be asserted from a prompt. */
+  fastModel: LanguageModel;
   /** Every prompt the assembly loop was handed, in order. Each one carries the
    *  results of every tool call before it — which is where "what the loop was
    *  told" is readable. */
@@ -139,6 +167,8 @@ interface Scripted {
   /** Every prompt the REVIEWER was handed. One per finished screen is the whole
    *  approved cost, so the length is the cost assertion. */
   reviewerPrompts: string[];
+  /** The seat each of those calls rode, in the same order. */
+  reviewerSeats: string[];
 }
 
 /**
@@ -153,6 +183,7 @@ function scripted(
 ): Scripted {
   const writerPrompts: string[] = [];
   const reviewerPrompts: string[] = [];
+  const reviewerSeats: string[] = [];
   const remaining = [...steps];
   const answer = (prompt: string): Chunk[] => {
     if (!prompt.includes(SCREEN_BRIEF_MARKER)) return speak("nothing to do here");
@@ -160,10 +191,10 @@ function scripted(
     return step === undefined ? speak("nothing more to do") : step(prompt);
   };
   const textOf = (request: { prompt?: unknown }): string => JSON.stringify(request.prompt ?? "");
-  const model = {
+  const seatModel = (seat: string) => ({
     specificationVersion: "v2",
     provider: "vendo-mandatory-reviewer",
-    modelId: "vendo-mandatory-reviewer-v1",
+    modelId: `vendo-mandatory-reviewer-${seat}`,
     supportedUrls: {},
     async doGenerate(request: { prompt?: unknown }) {
       const prompt = textOf(request);
@@ -175,6 +206,7 @@ function scripted(
         };
       }
       reviewerPrompts.push(prompt);
+      reviewerSeats.push(seat);
       const verdict = review(prompt);
       // A transport failure, as the live reviewer meets it: the request simply
       // throws, and `strictToolCall` swallows it into no findings.
@@ -203,8 +235,14 @@ function scripted(
         }),
       };
     },
+  });
+  return {
+    model: seatModel("default") as unknown as LanguageModel,
+    fastModel: seatModel("fill") as unknown as LanguageModel,
+    writerPrompts,
+    reviewerPrompts,
+    reviewerSeats,
   };
-  return { model: model as unknown as LanguageModel, writerPrompts, reviewerPrompts };
 }
 
 async function tempStore(): Promise<VendoStore> {
@@ -221,15 +259,20 @@ async function tempStore(): Promise<VendoStore> {
 async function walk(
   steps: Array<(prompt: string) => Chunk[]>,
   review: (prompt: string) => { findings: unknown } | Error,
+  /** Compose a distinct FAST seat (`models.fill`) beside the writer's, which is
+   *  what a real ladder deployment resolves. Unset: one model for everything, and
+   *  the fast seat falls back to it. */
+  options: { fastSeat?: boolean } = {},
 ): Promise<{
   result: ToolResult | undefined;
   writerPrompts: string[];
   reviewerPrompts: string[];
+  reviewerSeats: string[];
   chunks: Array<Record<string, unknown>>;
   vendo: ReturnType<typeof createVendo>;
 }> {
   const store = await tempStore();
-  const { model, writerPrompts, reviewerPrompts } = scripted(steps, review);
+  const { model, fastModel, writerPrompts, reviewerPrompts, reviewerSeats } = scripted(steps, review);
   let result: ToolResult | undefined;
   const harness = defineHarness({
     name: "mandatory-reviewer-probe",
@@ -241,7 +284,7 @@ async function walk(
     },
   });
   const vendo = createVendo({
-    model,
+    ...(options.fastSeat === true ? { models: { default: model, fill: fastModel } } : { model }),
     principal: async () => principal,
     store,
     tools: hostTools,
@@ -261,7 +304,7 @@ async function walk(
     .split("\n\n")
     .filter((block) => block.startsWith("data: ") && !block.includes("[DONE]"))
     .map((block) => JSON.parse(block.slice("data: ".length)) as Record<string, unknown>);
-  return { result, writerPrompts, reviewerPrompts, chunks, vendo };
+  return { result, writerPrompts, reviewerPrompts, reviewerSeats, chunks, vendo };
 }
 
 const saveApp = (content: string, id: string) => () => call("save_app", { content }, id);
@@ -281,7 +324,10 @@ const OVERLAP_MESSAGE =
  */
 const readerCheckingTheRows = (prompt: string): { findings: unknown } => {
   const shared = ["bill_netflix", "bill_adobe", "bill_aws"];
-  const sawBoth = prompt.includes("bills: ") && prompt.includes("subs: ");
+  // Keyed by TOOL, which is how a component screen's answers arrive: the engine
+  // resolves one result per tool (`ComponentScreenCheck.queries`), so there is no
+  // query id to key them by any more.
+  const sawBoth = prompt.includes("host_upcomingBills: ") && prompt.includes("host_subscriptions: ");
   const counted = shared.filter((id) => prompt.split(id).length - 1 >= 2);
   return sawBoth && counted.length === shared.length
     ? { findings: [{ severity: "block", where: '<Stat> labeled "Due this month"', message: OVERLAP_MESSAGE }] }
@@ -310,10 +356,13 @@ describe("the mandatory reviewer pass on a finished screen", () => {
     expect(reviewed).toContain("RESOLVED_DATA");
     expect(reviewed).toContain("bill_rent");
     expect(reviewed).toContain("bill_netflix");
-    // Both query results, keyed by the query's own name — which is the only way
+    // Both query results, keyed by the tool that answered — which is the only way
     // the overlap is visible at all.
-    expect(reviewed).toMatch(/bills: /);
-    expect(reviewed).toMatch(/subs: /);
+    expect(reviewed).toContain("host_upcomingBills: ");
+    expect(reviewed).toContain("host_subscriptions: ");
+    // …beside the screen itself, which is what a `.tsx` app IS: there is no wire
+    // markup to print, so the file the model wrote is the thing being judged.
+    expect(reviewed).toContain("SCREEN (the .tsx file this app renders)");
     // And it is asked to check aggregates, not only literals.
     expect(reviewed).toContain("AN AGGREGATE THAT DISAGREES WITH ITS OWN ROWS");
 
@@ -338,6 +387,9 @@ describe("the mandatory reviewer pass on a finished screen", () => {
     expect(receipt.title).toBe("Upcoming bills");
     // The reviewer was spent — the pass is mandatory, not conditional on suspicion.
     expect(walked.reviewerPrompts).toHaveLength(1);
+    // One model for everything: the fast seat falls back to it, so the reviewer
+    // rides the writer's model exactly as it always did.
+    expect(walked.reviewerSeats).toEqual(["default"]);
     // …and had nothing to say, so the loop was never asked for a repair round.
     expect(walked.writerPrompts).toHaveLength(2);
     expect(walked.writerPrompts.join("\n")).not.toContain("does not pass");
@@ -364,6 +416,22 @@ describe("the mandatory reviewer pass on a finished screen", () => {
     expect(walked.chunks.filter((chunk) => chunk["type"] === "data-vendo-view").length).toBeGreaterThan(0);
     const stored = await walked.vendo.apps.get(receipt.id, { principal, venue: "chat", presence: "present", sessionId: "ses_reviewer" });
     expect(stored?.name).toBe("Upcoming bills");
+  }, 120_000);
+
+  it("judges on the FAST seat when the deployment composed one", async () => {
+    // Reading a finished screen against its own rows is not the job the flagship
+    // is for, and the reviewer is the only check that spends a model call. So the
+    // umbrella hands the apps block the `fill` seat and the one judging call rides
+    // it — through the composed deployment, not a hand-built dependency bag.
+    const walked = await walk([
+      saveApp(HONEST, "c1"),
+      () => speak("Your upcoming bills are on your screen."),
+    ], NOTHING_WRONG, { fastSeat: true });
+
+    expect(walked.reviewerPrompts).toHaveLength(1);
+    expect(walked.reviewerSeats).toEqual(["fill"]);
+    // …and the screen the person keeps is unaffected by which seat judged it.
+    expect(makeReceiptSchema.parse((walked.result as { output: unknown }).output).status).toBe("ready");
   }, 120_000);
 
   it("never judges a screen that did not pass the mechanical floor", async () => {

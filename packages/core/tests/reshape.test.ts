@@ -2,12 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyReshape,
   findInvalidReshape,
-  isWireReshapeOp,
   reduceNumeric,
   RESHAPE_MAX_STEPS,
   RESHAPE_OPS,
   reshapeShape,
-  WIRE_RESHAPE_OPS,
   type ReshapeStep,
 } from "../src/reshape.js";
 import type { ShapeType } from "../src/shape.js";
@@ -124,28 +122,30 @@ describe("applyReshape", () => {
     expect(applyReshape([], [step("min", "x")])).toEqual({ ok: true, value: null });
   });
 
-  it("format renders deterministic en-US strings (scalar and per-row forms)", () => {
+  it("format renders deterministic en-US strings from ONE value", () => {
     expect(applyReshape(0.42, [step("format", "percent")])).toEqual({ ok: true, value: "42%" });
-    expect(applyReshape(1234.5, [step("format", "currency")])).toEqual({ ok: true, value: "$1,234.50" });
+    expect(applyReshape(1234.5, [step("format", "money")])).toEqual({ ok: true, value: "$1,234.50" });
     expect(applyReshape(1234.5, [step("format", "number")])).toEqual({ ok: true, value: "1,234.5" });
-    const formatted = applyReshape(rows, [step("format", "revenue", "currency")]);
-    expect(formatted).toEqual({
-      ok: true,
-      value: [
-        { month: "Jan", revenue: "$1,200.00", note: "promo" },
-        { month: "Feb", revenue: "$900.00" },
-      ],
-    });
   });
 
-  it("format currencyCents divides integer minor units by 100 (the raw-cents fix)", () => {
-    expect(applyReshape(471711, [step("format", "currencyCents")]))
-      .toEqual({ ok: true, value: "$4,717.11" });
-    const perRow = applyReshape(
-      [{ label: "housing", amount: 285000 }],
-      [step("format", "amount", "currencyCents")],
-    );
-    expect(perRow).toEqual({ ok: true, value: [{ label: "housing", amount: "$2,850.00" }] });
+  it("money formats the value AS IT STANDS — formatters never convert units", () => {
+    // A minor-unit field is `/100` in the expression that reads it; `money`
+    // only pretty-prints, so raw cents stay 100x and that is the caller's bug.
+    expect(applyReshape(4717.11, [step("format", "money")])).toEqual({ ok: true, value: "$4,717.11" });
+    expect(applyReshape(471711, [step("format", "money")])).toEqual({ ok: true, value: "$471,711.00" });
+  });
+
+  it("format over ROWS is refused, and the reason teaches the column token", () => {
+    // The row form stringified a column, which left DataTable sorting strings.
+    const arrayValue = applyReshape(rows, [step("format", "money")]);
+    expect(arrayValue.ok).toBe(false);
+    if (!arrayValue.ok) {
+      expect(arrayValue.reason).toContain('format:"money"');
+      expect(arrayValue.reason).toContain("sortBy");
+    }
+    const fieldForm = applyReshape(rows, [step("format", "revenue", "money")]);
+    expect(fieldForm.ok).toBe(false);
+    if (!fieldForm.ok) expect(fieldForm.reason).toContain("formats a single value");
   });
 
   it("format date accepts ISO strings and epoch numbers, UTC-stable", () => {
@@ -161,7 +161,7 @@ describe("applyReshape", () => {
     if (!fieldAbsent.ok) expect(fieldAbsent.reason).toContain("period");
     const badAggregate = applyReshape([{ v: "x" }], [step("sum", "v")]);
     expect(badAggregate.ok).toBe(false);
-    const badFormat = applyReshape("hello", [step("format", "currency")]);
+    const badFormat = applyReshape("hello", [step("format", "money")]);
     expect(badFormat.ok).toBe(false);
   });
 
@@ -224,23 +224,12 @@ describe("reshapeShape (compile-time flow)", () => {
     });
   });
 
-  it("format makes the formatted region a string", () => {
-    const scalar = reshapeShape({ kind: "number" }, step("format", "currency"));
+  it("format makes the formatted value a string, and refuses rows at compile time", () => {
+    const scalar = reshapeShape({ kind: "number" }, step("format", "money"));
     expect(scalar).toEqual({ ok: true, shape: { kind: "string" } });
-    const perRow = reshapeShape(rowsShape, step("format", "revenue", "currency"));
-    if (!perRow.ok) throw new Error(perRow.error.message);
-    expect(perRow.shape).toEqual({
-      kind: "array",
-      items: {
-        kind: "object",
-        fields: {
-          month: { kind: "string" },
-          revenue: { kind: "string" },
-          note: { kind: "string" },
-        },
-        optional: ["note"],
-      },
-    });
+    const overRows = reshapeShape(rowsShape, step("format", "money"));
+    expect(overRows.ok).toBe(false);
+    if (!overRows.ok) expect(overRows.error.message).toContain('format:"money"');
   });
 
   it("json stays defensive: any step flows, aggregates still type as number", () => {
@@ -258,7 +247,7 @@ describe("reshapeShape (compile-time flow)", () => {
     }
     expect(reshapeShape({ kind: "number" }, step("pick", "a")).ok).toBe(false);
     expect(reshapeShape(rowsShape, step("sum", "month")).ok).toBe(false);
-    expect(reshapeShape({ kind: "string" }, step("format", "currency")).ok).toBe(false);
+    expect(reshapeShape({ kind: "string" }, step("format", "money")).ok).toBe(false);
   });
 });
 
@@ -284,9 +273,15 @@ describe("findInvalidReshape (the validateTree gate)", () => {
       p: { $path: "/a", $reshape: [{ op: "pick", args: [1] }] },
     })).not.toBeNull();
     expect(findInvalidReshape({
-      p: { $path: "/a", $reshape: [{ op: "format", args: ["x", "loud"] }] },
-    })).not.toBeNull();
+      p: { $path: "/a", $reshape: [{ op: "format", args: ["loud"] }] },
+    })).toContain("kind must be one of");
     expect(findInvalidReshape({ p: { $path: "/a", $reshape: "pick" } })).not.toBeNull();
+  });
+
+  it("rejects the row form of format at the gate, naming the column token instead", () => {
+    expect(findInvalidReshape({
+      p: { $path: "/a", $reshape: [{ op: "format", args: ["amount", "money"] }] },
+    })).toContain('columns={[{key:"amount", format:"money"}]}');
   });
 
   it("caps the chain length (bounded, non-Turing)", () => {
@@ -303,7 +298,9 @@ describe("reshapeShape defensive regions", () => {
     const arrayJson: ShapeType = { kind: "array", items: { kind: "json" } };
     expect(reshapeShape(arrayJson, step("pick", "a"))).toEqual({ ok: true, shape: arrayJson });
     expect(reshapeShape(arrayJson, step("rename", "a", "b"))).toEqual({ ok: true, shape: arrayJson });
-    expect(reshapeShape(arrayJson, step("format", "a", "currency"))).toEqual({ ok: true, shape: arrayJson });
+    // `format` is the exception: it takes ONE value, so an array is refused
+    // even when its items are unknown.
+    expect(reshapeShape(arrayJson, step("format", "money")).ok).toBe(false);
     expect(reshapeShape(arrayJson, step("asPoints", "a", "b"))).toEqual({
       ok: true,
       shape: { kind: "array", items: { kind: "object", fields: { label: { kind: "json" }, value: { kind: "json" } } } },
@@ -311,19 +308,15 @@ describe("reshapeShape defensive regions", () => {
     expect(reshapeShape(arrayJson, step("sum", "a"))).toEqual({ ok: true, shape: { kind: "number" } });
   });
 
-  it("bare-object pick/rename/format flow without an array wrapper", () => {
+  it("bare-object pick/rename flow without an array wrapper", () => {
     const object: ShapeType = { kind: "object", fields: { a: { kind: "number" }, b: { kind: "string" } } };
     expect(reshapeShape(object, step("rename", "a", "x"))).toEqual({
       ok: true,
       shape: { kind: "object", fields: { x: { kind: "number" }, b: { kind: "string" } } },
     });
-    expect(reshapeShape(object, step("format", "a", "currency"))).toEqual({
+    expect(reshapeShape(object, step("pick", "a"))).toEqual({
       ok: true,
-      shape: { kind: "object", fields: { a: { kind: "string" }, b: { kind: "string" } } },
-    });
-    expect(reshapeShape(object, step("format", "b", "date"))).toEqual({
-      ok: true,
-      shape: { kind: "object", fields: { a: { kind: "number" }, b: { kind: "string" } } },
+      shape: { kind: "object", fields: { a: { kind: "number" } } },
     });
   });
 
@@ -482,10 +475,17 @@ describe("deprecated reshape dialect", () => {
   it("deprecated ops STAY COMPILING for stored apps (staged retirement, not deletion)", () => {
     expect(findInvalidReshape({ $reshape: [{ op: "asOptions", args: ["id", "name"] }] })).toBeNull();
     expect(findInvalidReshape({ $reshape: [{ op: "template", args: ["{name}"] }] })).toBeNull();
-    expect(findInvalidReshape({ $reshape: [{ op: "format", args: ["currencyCents"] }] })).toBeNull();
     expect(applyReshape([{ id: "a", name: "Checking" }], [step("asOptions", "id", "name")]))
       .toEqual({ ok: true, value: [{ value: "a", label: "Checking" }] });
-    expect(applyReshape(285000, [step("format", "currencyCents")])).toEqual({ ok: true, value: "$2,850.00" });
+  });
+
+  it("the retired money kinds are gone from the vocabulary — one token, `money`", () => {
+    // `currency` and `currencyCents` are DELETED, not deprecated: two money
+    // tokens (one of which converted) is what made cents render as dollars.
+    for (const kind of ["currency", "currencyCents"]) {
+      expect(findInvalidReshape({ $reshape: [{ op: "format", args: [kind] }] }))
+        .toContain("kind must be one of number, money, percent, date");
+    }
   });
 });
 
@@ -509,16 +509,6 @@ describe("frozen reshape op registry", () => {
       "max",
       "count",
     ]);
-  });
-
-  it("the WIRE subset excludes every aggregate — one sum, and it is the $expr one", () => {
-    // v3 spec §5 (D1/D2): the aggregates retired from the dialect with the
-    // pipe. They stay in RESHAPE_OPS for STORED documents; nothing the wire can
-    // write reaches them, so `sum` has exactly one meaning to a model.
-    expect(WIRE_RESHAPE_OPS).toEqual(["pick", "rename", "asPoints", "asOptions", "format", "template"]);
-    for (const op of ["sum", "min", "max", "count"]) expect(isWireReshapeOp(op)).toBe(false);
-    // `avg` is gone outright: `average` is the surviving name.
-    expect(RESHAPE_OPS as readonly string[]).not.toContain("avg");
   });
 
   it("has ONE numeric reduce, shared with the $expr aggregates", () => {

@@ -1,10 +1,10 @@
 import type { LanguageModel } from "ai";
-import { migrateModelSeats, seatConflict, VendoError, type ResolvedModels } from "@vendoai/core";
+import { SEATS, seatConflict, VendoError, type ResolvedModels, type Seat } from "@vendoai/core";
 import { vendoModel, type VendoModelOptions } from "#dev-creds/model";
 
 /**
  * The `models` block on createVendo (models spec 2026-07-22, DX surface 3):
- * one key per slot, valued by a model-name string (resolved through
+ * one key per SEAT, valued by a model-name string (resolved through
  * vendoModel's credential ladder — VERBATIM passthrough, per-rung defaults)
  * or an explicit ai-SDK LanguageModel object (wins as-is). Supersedes the
  * deprecated top-level `model` and `paint.model` knobs; `paint.disabled`
@@ -14,26 +14,19 @@ import { vendoModel, type VendoModelOptions } from "#dev-creds/model";
  * string, i.e. vendoAutoJudge({ model: vendoModel("vendo-judge") }).
  */
 export interface ModelsConfig {
-  /** Build contract §4's seat vocabulary. A seat is a JOB, not a model. These
-   *  are additive: the legacy slot names below keep working for one minor, and
-   *  `migrateModelSeats` (core) maps them on, so a half-migrated config still
-   *  composes. Where both name one seat, the SEAT wins — a host mid-migration
-   *  should get the new key they just wrote, not the old one they forgot to
-   *  delete. */
+  /** Build contract §4's seat vocabulary — the ONE spelling per seat. A seat is
+   *  a JOB, not a model: the same model may fill several, and swapping one never
+   *  renames the others. */
   default?: string | LanguageModel;
   reviewer?: string | LanguageModel;
   fill?: string | LanguageModel;
-  /** @deprecated superseded by `default` (still functional for one minor). */
-  agent?: string | LanguageModel;
-  /** @deprecated superseded by `fill` (still functional for one minor). */
-  paint?: string | LanguageModel;
   judge?: string | LanguageModel;
 }
 
 export interface ResolveModelsInput {
-  /** @deprecated superseded by models.agent (still functional). */
+  /** @deprecated superseded by models.default (still functional). */
   model?: LanguageModel;
-  /** @deprecated model half superseded by models.paint; `disabled` stays. */
+  /** @deprecated model half superseded by models.fill; `disabled` stays. */
   paint?: { model?: LanguageModel; disabled?: boolean };
   models?: ModelsConfig;
   /** A model named by a harness's own options. Build contract §4 makes it a BOOT
@@ -69,37 +62,33 @@ function validateSlot(slot: string, value: string | LanguageModel | undefined): 
   throw new VendoError("validation", `models.${slot} must be a model-name string or an ai-SDK LanguageModel object`);
 }
 
-/** Resolve the models block + deprecated aliases into the composed slots.
- *  Precedence per slot: explicit model object → (env pins, inside the
+/** Resolve the models block + the deprecated top-level knobs into the composed
+ *  slots. Precedence per slot: explicit model object → (env pins, inside the
  *  ladder) → models string → per-rung default. Paint invisibility: when the
  *  agent slot rides the ladder and no paint model was configured, the paint
  *  lane composes the family fast pick (vendo-paint on Cloud, the provider's
  *  fast model on BYO rungs); when the host passed an explicit agent model,
  *  paint falls back to that model exactly as before. */
 export function resolveModels(config: ResolveModelsInput, makeModel: MakeModel = vendoModel): ComposedModelSlots {
-  validateSlot("default", config.models?.default);
-  validateSlot("reviewer", config.models?.reviewer);
-  validateSlot("fill", config.models?.fill);
-  validateSlot("agent", config.models?.agent);
-  validateSlot("paint", config.models?.paint);
-  validateSlot("judge", config.models?.judge);
+  const seats = config.models ?? {};
+  // One spelling per seat, so a key that is not a seat is refused rather than
+  // silently dropped — the same refusal `REMOVED_CONFIG_KEYS` gives a removed
+  // top-level key. TypeScript already rejects it; this is for the JavaScript
+  // host, and for a config still spelling the removed `agent`/`paint` slots.
+  for (const [key, value] of Object.entries(seats)) {
+    if (value === undefined) continue;
+    if (!SEATS.includes(key as Seat)) {
+      throw new VendoError("validation", `models.${key} is not a model seat — the seats are ${SEATS.join(", ")}`);
+    }
+    validateSlot(key, value);
+  }
 
-  // Collapse both vocabularies onto seats once, here, so the precedence below
-  // never has to know which spelling a host used.
-  const seats = migrateModelSeats<LanguageModel>(config.models ?? {});
   // Build contract §4's boot error, pointed at the collision a real host can
   // ACTUALLY create. It used to guard `harnessOptionModel`, which no production
   // path sets, while the deprecated top-level `model` colliding with
   // `models.default` resolved last-write-wins — silently ignoring one of two
-  // explicit instructions. Two knobs naming one seat is ambiguous whichever
-  // spellings they use, so refuse instead of guessing.
-  // Checked against the RAW keys, not the collapsed seats, because the two
-  // vocabularies carry different promises. `models.agent` SUPERSEDING the
-  // deprecated top-level `model` is shipped, documented, tested behaviour — the
-  // whole point of the shim is that a host mid-migration can leave the old key in
-  // place. The NEW seat names have no such promise, so `model` + `models.default`
-  // is two instructions for one seat with nothing to disambiguate them, and
-  // guessing is what made a host's explicit choice disappear.
+  // explicit instructions. Two knobs naming one seat is ambiguous, so refuse
+  // instead of guessing.
   const collisions: Array<[string, string]> = [
     ...(config.model !== undefined && config.models?.default !== undefined
       ? [["model", "models.default"] as [string, string]] : []),

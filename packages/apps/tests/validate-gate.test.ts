@@ -87,6 +87,15 @@ describe("validateWrittenApps", () => {
     expect(failures.map(({ appId }) => appId)).toEqual(["app_2"]);
   });
 
+  it("gates a component screen too — app.tsx is an app document", async () => {
+    const SCREEN = "/user/apps/app_1/app.tsx";
+    const { tools, workspace } = answering({ [SCREEN]: { ok: false, findings: [LYING] } });
+
+    const failures = await validateWrittenApps({ tools, workspace, paths: [SCREEN] });
+
+    expect(failures).toEqual([{ path: SCREEN, appId: "app_1", findings: [LYING] }]);
+  });
+
   it("ignores paths that are not an app document", async () => {
     const { calls, tools, workspace } = answering({ [APP]: { ok: true, findings: [] } });
 

@@ -15,12 +15,9 @@
  */
 
 import {
-  findInvalidReshapeSteps,
   isPathBinding,
   isPlainObject,
   isStateBinding,
-  isWireReshapeOp,
-  type ReshapeStep,
   TOOL_NAME_PATTERN,
   type TreeNode,
 } from "@vendoai/core";
@@ -48,20 +45,17 @@ const escapeString = (text: string): string => text.replace(/\\/g, "\\\\").repla
 
 const printNumber = (value: number): string => (Object.is(value, -0) ? "-0" : JSON.stringify(value));
 
-/** A binding prints as a bare dotted reference (wrapped in its reshape calls)
- *  only when the compiler could have produced it: identifier segments, a
- *  declared query name up front, no pointer escapes, nothing beyond
- *  `$path`/`$state` + a valid `$reshape` on the object, and every step's op
- *  writable as a wire call. A STORED document's aggregate step
- *  (`sum`/`min`/`max`/`count` — retired from the wire with the pipe, v3 §5 D1)
- *  is not, so it falls to the quoted object literal: totality over fidelity,
- *  and the round-trip law only ever covers compiler output. */
+/** A binding prints as a bare dotted reference only when the compiler could
+ *  have produced it: identifier segments, a declared query name up front, no
+ *  pointer escapes, and nothing on the object beyond `$path`/`$state`.
+ *
+ *  A STORED document's `$reshape` chain is no longer one of those. The wire
+ *  dialect cannot write a reshape at all — a `{...}` gap is JavaScript, which
+ *  does its own projecting — so a binding carrying one falls to the quoted
+ *  object literal: totality over fidelity, and the round-trip law only ever
+ *  covers compiler output, which never carries a chain. */
 const referenceForBinding = (value: Record<string, unknown>, queryNames: ReadonlySet<string>): string | null => {
-  const keys = Object.keys(value).filter((key) => key !== "$reshape");
-  if (keys.length !== 1) return null;
-  const steps = value.$reshape as ReshapeStep[] | undefined;
-  if (steps !== undefined && findInvalidReshapeSteps(steps) !== null) return null;
-  if (steps !== undefined && !steps.every((step) => isWireReshapeOp(step.op))) return null;
+  if (Object.keys(value).length !== 1) return null;
   let base: string | null = null;
   if (isStateBinding(value)) {
     base = IDENTIFIER_PATTERN.test(value.$state) ? `state.${value.$state}` : null;
@@ -73,17 +67,7 @@ const referenceForBinding = (value: Record<string, unknown>, queryNames: Readonl
     if (!queryNames.has(segments[0] as string) || segments[0] === "state") return null;
     base = segments.join(".");
   }
-  if (base === null) return null;
-  // D1 — the chain prints INSIDE-OUT: the reference is the innermost value and
-  // each step wraps the text so far, so step order reads left-to-right as
-  // nesting depth. Field arguments are always quoted (the wire's reshape
-  // arguments are strings, never bare identifiers, in the TSX subset).
-  let text = base;
-  for (const step of steps ?? []) {
-    const args = step.args.map((arg) => `"${escapeString(arg)}"`);
-    text = `${step.op}(${[text, ...args].join(", ")})`;
-  }
-  return text;
+  return base;
 };
 
 const printExpression = (value: unknown, queryNames: ReadonlySet<string>): string => {

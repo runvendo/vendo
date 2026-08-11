@@ -6,8 +6,8 @@ import { CardList } from "../../src/kit/data/card-list.js";
 import { Stat } from "../../src/kit/data/stat.js";
 
 describe("Stat", () => {
-  it("formats a money value from cents and shows a trend", () => {
-    render(<Stat label="Total overdue" value={250000} format="money" trend="+12% MoM" />);
+  it("formats a dollar value as money and shows a trend", () => {
+    render(<Stat label="Total overdue" value={2500} format="money" trend="+12% MoM" />);
     expect(screen.getByText("$2,500.00")).toBeTruthy();
     expect(screen.getByText("Total overdue")).toBeTruthy();
     expect(screen.getByText("+12% MoM")).toBeTruthy();
@@ -51,8 +51,8 @@ describe("Badge", () => {
 
 describe("CardList", () => {
   const items = [
-    { id: 1, name: "Hartwell", balanceCents: 250000, status: "overdue" },
-    { id: 2, name: "Acme", balanceCents: 90000, status: "paid" },
+    { id: 1, name: "Hartwell", balance: 2500, status: "overdue" },
+    { id: 2, name: "Acme", balance: 900, status: "paid" },
   ];
 
   it("renders one card per item with formatted fields", () => {
@@ -60,7 +60,7 @@ describe("CardList", () => {
       <CardList
         items={items}
         titleField="name"
-        fields={[{ key: "balanceCents", label: "Balance", format: "money" }]}
+        fields={[{ key: "balance", label: "Balance", format: "money" }]}
       />,
     );
     expect(screen.getByText("Hartwell")).toBeTruthy();

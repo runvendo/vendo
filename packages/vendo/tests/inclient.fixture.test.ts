@@ -7,14 +7,10 @@ import {
   seedComponentName,
   type Principal,
 } from "@vendoai/core";
-import {
-  componentSources,
-  printWire,
-} from "@vendoai/apps/contract";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { createVendo, type Vendo } from "../src/server.js";
+import { createVendo } from "../src/server.js";
 
 interface ModelCall {
   prompt: Array<{
@@ -36,16 +32,16 @@ const SCREEN_BRIEF_MARKER = "# In this loop";
 /** `save_app`'s own reply. Its presence in the prompt means THIS run already
  *  saved, which is how one model answers a multi-step loop without counting
  *  calls across runs. */
-const SAVED_MARKER = "Run validate on it now.";
+const SAVED_MARKER = "That save landed.";
 
 /**
  * A model that plays the screen agent: one `save_app` carrying the whole
- * rewritten document, then a closing word.
+ * rewritten screen, then a closing word.
  *
- * `rewrite` gets the prompt and answers with the complete new `.vendo` document
- * — which is the only edit dialect there is now.
+ * `rewrite` gets the prompt and answers with the complete new `app.tsx` — a
+ * screen is one file, saved whole, and there is nothing else an edit can write.
  */
-const screenModel = (rewrite: (prompt: string) => Promise<string>): LanguageModel => {
+const screenModel = (rewrite: (prompt: string) => string): LanguageModel => {
   const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
   const saving = (prompt: string): boolean =>
     prompt.includes(SCREEN_BRIEF_MARKER) && !prompt.includes(SAVED_MARKER);
@@ -64,7 +60,7 @@ const screenModel = (rewrite: (prompt: string) => Promise<string>): LanguageMode
           type: "tool-call" as const,
           toolCallId: "call_save_app",
           toolName: "save_app",
-          input: JSON.stringify({ content: await rewrite(prompt) }),
+          input: JSON.stringify({ content: rewrite(prompt) }),
         }],
         finishReason: "tool-calls" as const,
         usage,
@@ -72,7 +68,7 @@ const screenModel = (rewrite: (prompt: string) => Promise<string>): LanguageMode
     },
     async doStream(call: ModelCall) {
       const prompt = promptText(call);
-      const content = saving(prompt) ? await rewrite(prompt) : undefined;
+      const content = saving(prompt) ? rewrite(prompt) : undefined;
       return {
         stream: new ReadableStream({
           start(controller) {
@@ -138,33 +134,29 @@ export default function Page() {
 
     const componentName = seedComponentName("MapleNetWorthCard");
     const ctx = { principal, venue: "app" as const, presence: "present" as const, sessionId: "session_journey" };
-    let composed: Vendo | undefined;
-    /** The app under edit. Set once the seed mints it — the ✦ gesture is a
-     *  create, so the app does not exist before it. */
-    let appUnderEdit: string | undefined;
-    /** The app's own document, printed exactly as a checkout prints it — the
-     *  text the assembler opens before it rewrites anything. */
-    const asItStands = async (): Promise<string> => {
-      const app = await composed!.apps.get(appUnderEdit!, ctx);
-      if (app === null) throw new Error("no app row to rewrite");
-      return printWire(
-        { tree: app.tree as never, components: componentSources(app.components), name: app.name },
-        { includeIds: true },
-      );
-    };
+    /** The person's remix, as the one builder writes it: the whole `app.tsx`,
+     *  saved in one call. A seeded app has no screen file until an edit writes
+     *  one, so there is no document to open first. */
+    const screen = (heading: string): string => `import { Stack, Text } from "@vendo/screen";
+
+export default function NetWorth() {
+  return (
+    <Stack>
+      <Text text="${heading}" />
+    </Stack>
+  );
+}
+`;
     // The screen agent, scripted. There is one builder now, so an edit is the
-    // assembly loop rewriting this app's WHOLE document and saving it back.
-    const model = screenModel(async (prompt) => {
-      const document = await asItStands();
-      // Any content change after approval — must invalidate the approval. The
-      // app's name is printed on its opening <App> line, so a rename is one edit.
-      if (prompt.includes("Rename the app")) {
-        return document.replace(/^<App name="[^"]*"/, '<App name="Net worth (renamed)"');
-      }
-      // Change the seeded seat — the reviewable delta the ship-diff must show,
-      // written into the seeded island's own source.
-      return document.replace("$1.2M", "$1.2M — remixed");
-    });
+    // assembly loop writing this app's whole screen and saving it back.
+    const model = screenModel((prompt) =>
+      // Any content change after approval — must invalidate the approval.
+      prompt.includes("Rename the app")
+        ? screen("Net worth (renamed)")
+        // The person's remix. The ship-diff below reads the SEEDED SEAT, so this
+        // is the edit whose delta an approver has to be shown before the app
+        // ships into the host page.
+        : screen("Net worth $1.2M — remixed"));
 
     const store = createStore({ dataDir: join(root, ".data") });
     cleanups.push(async () => store.close());
@@ -176,14 +168,12 @@ export default function Page() {
       store,
       development: true,
     });
-    composed = vendo;
 
     // The seed is the user's Remix GESTURE, executed deterministically by the
     // engine (the captured source is copied, the seed recorded, no model call).
     const seeded = await vendo.apps.seed.from({ component: "MapleNetWorthCard" }, ctx);
     expect(seeded.components?.[componentName]).toBeDefined();
     const appId = seeded.id;
-    appUnderEdit = appId;
     const remixed = await vendo.apps.edit(appId, "Call out that it is remixed", ctx);
     expect(remixed.failure).toBeUndefined();
 
@@ -201,7 +191,7 @@ export default function Page() {
       }],
     });
     expect(shipDiff.pins[0].diff).toContain("-  return <article><span>Net worth</span><strong>$1.2M</strong></article>;");
-    expect(shipDiff.pins[0].diff).toContain("+  return <article><span>Net worth</span><strong>$1.2M — remixed</strong></article>;");
+    expect(shipDiff.pins[0].diff).toContain('+      <Text text="Net worth $1.2M — remixed" />');
 
     // 2. Before approval: open() carries no venue verdict — jailed by default.
     const unapproved = await (await vendo.handler(request("GET", `/apps/${appId}/open`))).json();

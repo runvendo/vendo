@@ -43,7 +43,12 @@ export function Progress({ value, max, label, showValue = false, tone = "accent"
         aria-valuenow={Math.round(clamped * 100)}
         aria-valuemin={0}
         aria-valuemax={100}
-        style={{ width: "100%", height: 8, borderRadius: 999, background: `color-mix(in srgb, ${t.muted} 18%, ${t.surface})`, overflow: "hidden" }}
+        // The ratio is `ChartFrame`'s intrinsic-width trick (charts/sanitize.tsx)
+        // at a meter's proportion: an unlabelled bar has no content, so a parent
+        // that sizes to what is inside it (the Kit's `Row`) resolved this
+        // `width: 100%` to zero and the bar vanished. A parent with a real width
+        // still wins.
+        style={{ width: "100%", aspectRatio: "16 / 1", height: 8, borderRadius: 999, background: `color-mix(in srgb, ${t.muted} 18%, ${t.surface})`, overflow: "hidden" }}
       >
         <div
           style={{

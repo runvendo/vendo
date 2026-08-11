@@ -33,7 +33,7 @@ import {
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
 import { fieldRows } from "./field-rows.js";
-import { BUILD_FAILURE_COPY } from "./thread/message-data.js";
+import { buildFailureNotice } from "./thread/message-data.js";
 
 /**
  * The three embeds a BYO chat surface renders from
@@ -397,15 +397,15 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
           ) : failed !== undefined ? (
             <>
               <BeatLine state="error">{title} — couldn't finish</BeatLine>
-              {/* NOT `failed.reason`: every sentence that reaches here is
-                  written for whoever can FIX the build (the watchdog line says
-                  to check the host server log, the honesty gate's names
-                  components and expressions, the no-key lines name env vars and
-                  npm packages) — and this is a host's own page. Same law and
-                  same constant as the thread's banner; the developer sentence
-                  keeps the home it already has, the server's own
-                  `[vendo] app build failed (app_…)` log line. */}
-              <div className="fl-card-byline">{BUILD_FAILURE_COPY}</div>
+              {/* The reason the build actually gave, in the chrome's own voice —
+                  the runtime classifies it before it ever reaches the wire
+                  ("timed out", "quota exhausted", the missing `@ai-sdk/*`
+                  package a host has to install), and it is the only half of the
+                  failure worth a reader's time. Same reader as the thread's
+                  block; the operator's fuller record keeps the home it already
+                  has, the server's `[vendo] app build failed (app_…)` log
+                  line. */}
+              <div className="fl-card-byline">{buildFailureNotice(failed.reason)}</div>
               {failed.retryable === true && (
                 <CardActions>
                   <button className="fl-btn fl-btn-primary" type="button" onClick={() => void retry()}>

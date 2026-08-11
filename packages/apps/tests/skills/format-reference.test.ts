@@ -1,162 +1,155 @@
 /**
- * The reference is documentation a MODEL copies from, so its examples are tested
- * the way code is: every fenced `<Plan>` and `<App>` block in it goes through the
- * real compiler, and every element and function it claims exists must exist.
+ * The reference is documentation a MODEL copies from, so its worked screen is
+ * tested the way code is: it goes through the REAL save-time gauntlet
+ * (`checkComponentScreen` — esbuild, the import/query scan, the type check
+ * against the generated declarations, and one actual render in the QuickJS VM),
+ * with nothing stubbed but the host's own tools.
  *
- * A reference that teaches syntax the parser rejects is worse than no reference —
- * the model follows it, the app fails validation, and the model has no way to
- * learn which of the two was wrong.
+ * A reference that teaches a screen the checks reject is worse than no reference
+ * — the model follows it, the save fails, and the model has no way to learn
+ * which of the two was wrong.
+ *
+ * The wire-dialect halves of this file went with the dialect: a screen is
+ * `app.tsx` now (`contract/genui/component/types.ts` SCREEN_FILE), so there is
+ * no `<Plan>`/`<App>` markup, no closed expression-call vocabulary and no
+ * reshape pipe left in the reference to check.
  */
-import { readFile } from "node:fs/promises";
-import {
-  RESHAPE_OPS,
-} from "@vendoai/core";
-import {
-  compilePlan,
-  compileWire,
-  EXPR_CALLS,
-  WIRE_COMPONENT_NAMES,
-} from "../../src/contract/index.js";
+import type { HostToolInfo } from "../../src/server/checking/deps.js";
+import { KIT_COMPONENT_NAMES } from "../../src/contract/index.js";
+import { checkComponentScreen, screenCatalog } from "../../src/server/checking/component-screen.js";
+import { SCREEN_MODULE } from "../../src/server/checking/screen-typings.js";
 import { describe, expect, it } from "vitest";
 import { VENDO_FORMAT_REFERENCE } from "../../src/server/skills/format-reference.js";
 
-const FENCED = /```\n([\s\S]*?)```/g;
-
-const REPO_ROOT = new URL("../../../../", import.meta.url);
-const PLAN_COMPILER = "packages/apps/src/contract/genui/plan/compile.ts";
-
-/** The reference's own `<Plan>` section, up to the next heading. */
-const planSection = (): string => {
-  const start = VENDO_FORMAT_REFERENCE.indexOf("### `<Plan");
-  const end = VENDO_FORMAT_REFERENCE.indexOf("\n### ", start + 1);
-  return VENDO_FORMAT_REFERENCE.slice(start, end);
-};
-
-/** Every attribute the plan compiler reads off the `<Plan>` ROOT, scanned from
- *  the compiler itself — `head` is the root tag there, and every other element
- *  reads its own `attrs.props`. */
-const planRootAttributes = async (): Promise<string[]> => {
-  const source = await readFile(new URL(PLAN_COMPILER, REPO_ROOT), "utf8");
-  return [...new Set([
-    ...source.matchAll(/stringAttr\(head\.props, "(\w+)"\)/g),
-    ...source.matchAll(/head\.props\??\.(\w+)/g),
-  ].map(([, name]) => name as string))];
-};
-
-/** Every fenced block whose first non-space character opens the named element. */
-const blocks = (tag: string): string[] =>
-  [...VENDO_FORMAT_REFERENCE.matchAll(FENCED)]
+/** Every fenced TSX block in the reference that is a WHOLE screen. The chapter
+ *  opens with a deliberately elided skeleton (`export default function
+ *  Overview() { … }`), which is a shape, not a file — the ellipsis is how it
+ *  says so, and the gauntlet has nothing to compile in one. */
+const screenExamples = (): string[] =>
+  [...VENDO_FORMAT_REFERENCE.matchAll(/```tsx\n([\s\S]*?)```/g)]
     .map(([, body]) => (body ?? "").trim())
-    .filter((body) => body.startsWith(`<${tag}`));
+    .filter((body) => body.includes("export default function") && !body.includes("…"));
 
-describe("every plan example in the reference compiles", () => {
-  const examples = blocks("Plan");
+/** The two tools the worked screen names, with the declared schemas a real
+ *  deployment supplies — the reference's example is under test, so its tool
+ *  names and its fields are the ones IT names. */
+const HOST_TOOLS: readonly HostToolInfo[] = [
+  {
+    name: "list_pending_transfers",
+    description: "Transfers that have not gone out yet.",
+    risk: "read",
+    outputSchema: {
+      type: "object",
+      required: ["data"],
+      properties: {
+        data: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["id", "recipient", "amount_cents", "scheduled_for"],
+            properties: {
+              id: { type: "string" },
+              recipient: { type: "string" },
+              amount_cents: { type: "number" },
+              scheduled_for: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    name: "cancel_transfer",
+    description: "Cancel a transfer before it goes out.",
+    risk: "write",
+    inputSchema: {
+      type: "object",
+      required: ["id"],
+      properties: { id: { type: "string" } },
+      additionalProperties: false,
+    },
+  },
+];
 
-  it("has plan examples to check at all", () => {
-    expect(examples.length).toBeGreaterThanOrEqual(2);
+const ROWS = [
+  { id: "tr_1", recipient: "Acme Utilities", amount_cents: 140_000, scheduled_for: "2026-08-14" },
+  { id: "tr_2", recipient: "Blue Ridge Rent", amount_cents: 220_000, scheduled_for: "2026-08-15" },
+];
+
+describe("every screen the reference teaches passes the real save-time gauntlet", () => {
+  const examples = screenExamples();
+
+  it("has a whole screen to check at all", () => {
+    expect(examples.length).toBeGreaterThanOrEqual(1);
   });
 
-  for (const [index, example] of examples.entries()) {
-    it(`plan example ${index + 1} compiles with no issues`, () => {
-      // The facts a real deployment supplies. The example's tool and component
-      // names are the ones it names — what is under test is the SYNTAX.
-      const tools = [...example.matchAll(/tool="([^"]+)"/g)].map(([, name]) => name as string);
-      const components = [...example.matchAll(/component="([^"]+)"/g)].map(([, name]) => name as string);
+  for (const [index, source] of examples.entries()) {
+    it(`screen example ${index + 1} lands with no findings, and paints`, async () => {
+      const result = await checkComponentScreen({
+        source,
+        hostTools: HOST_TOOLS,
+        // The Kit alone: an example must never depend on a host catalog a reader
+        // does not have.
+        catalog: screenCatalog([]),
+        runQuery: async (tool) => (tool === "list_pending_transfers" ? { data: ROWS } : null),
+      });
 
-      const result = compilePlan(example, { tools, components });
       expect(result.issues).toEqual([]);
-      expect(result.plan?.groups.length ?? 0).toBeGreaterThan(0);
+      expect(result.ok).toBe(true);
+      // It RENDERED — the check boots the screen on the answers its queries
+      // really returned, so a reference example that type-checks and then throws
+      // on real rows is caught here rather than on the person's screen.
+      const tree = result.initialTree;
+      expect(tree === undefined ? undefined : tree.nodes[tree.root]?.component).toBe("Stack");
+      // Read once, through the tool the example names.
+      expect(result.queryPlan).toEqual([{ tool: "list_pending_transfers" }]);
     });
   }
 });
 
-describe("every app example in the reference compiles", () => {
-  const examples = blocks("App");
-
-  it("has app examples to check at all", () => {
-    expect(examples.length).toBeGreaterThanOrEqual(2);
+describe("the reference only teaches what a screen really has", () => {
+  it("names the two modules a screen may import, and says they are the whole surface", () => {
+    // The scan admits exactly `react` and SCREEN_MODULE
+    // (checking/component-screen.ts ALLOWED_IMPORTS), so the module name comes
+    // from the checker rather than from a reader.
+    expect(VENDO_FORMAT_REFERENCE).toContain(`from "${SCREEN_MODULE}"`);
+    expect(VENDO_FORMAT_REFERENCE).toContain('import { useState } from "react";');
+    expect(VENDO_FORMAT_REFERENCE).toContain("Those two imports are everything there is.");
   });
 
-  for (const [index, example] of examples.entries()) {
-    it(`app example ${index + 1} compiles with no issues`, () => {
-      const result = compileWire(example);
-      expect(result.issues).toEqual([]);
-      expect(result.complete).toBe(true);
-      // Every component it names ships with the format — the examples must never
-      // depend on a host catalog a reader does not have.
-      const named = result.tree.nodes.map((node) => node.component);
-      expect(named.filter((name) => !WIRE_COMPONENT_NAMES.includes(name))).toEqual([]);
-    });
-  }
-});
-
-describe("the reference only names things that exist", () => {
-  it("documents exactly the expression functions the evaluator implements", () => {
-    for (const call of EXPR_CALLS) {
-      expect(VENDO_FORMAT_REFERENCE).toContain(`\`${call}(`);
-    }
-  });
-
-  it("names no reshape op outside the closed registry, and skips the deprecated ones", () => {
-    const documented = [...VENDO_FORMAT_REFERENCE.matchAll(/\|\s*\\?`([a-zA-Z]+)`(?:\s*\\?`[a-zA-Z]+`)*\s*\|/g)]
-      .flatMap(([row]) => [...row.matchAll(/`([a-zA-Z]+)`/g)].map(([, op]) => op as string))
-      .filter((op) => (RESHAPE_OPS as readonly string[]).includes(op));
-
-    expect(documented).toContain("pick");
-    expect(documented).toContain("format");
-    // Deprecated by the dialect retirement — parsed for stored apps, never taught.
-    expect(VENDO_FORMAT_REFERENCE).not.toContain("asOptions");
-    expect(VENDO_FORMAT_REFERENCE).not.toContain("currencyCents");
-    // v3 §5 (D1/D2): the aggregates retired from the reshape vocabulary with
-    // the pipe. The reference teaches ONE of each, in the call grammar.
-    expect(documented).not.toContain("avg");
-    expect(VENDO_FORMAT_REFERENCE).not.toContain("| avg");
-    expect(VENDO_FORMAT_REFERENCE).toContain('sum(rows, "field")');
-  });
-
-  /** The reference's header promises it is taken from the parsers, and a model
-   *  that believes it strips whatever it does not find here — `display="stage"`
-   *  went undocumented while the compiler read it, so a full-width app arrived
-   *  as an inline card. This is the half that stops it drifting again: the
-   *  attribute list comes from the compiler, not from a reader. */
-  it("documents every attribute the plan compiler reads off `<Plan>`", async () => {
-    const attributes = await planRootAttributes();
-    // The scan itself is load-bearing: if the compiler stopped calling its root
-    // tag `head`, this would empty out and the loop below would hold nothing.
-    expect(attributes, `${PLAN_COMPILER} no longer reads <Plan> through \`head.props\``)
-      .toEqual(expect.arrayContaining(["name", "display"]));
-    const section = planSection();
-    for (const attribute of attributes) {
-      expect(section, `compilePlan reads <Plan ${attribute}> and the reference never says so`)
-        .toContain(`\`${attribute}\``);
-    }
-    // And it must not deny the ones it does not list.
-    expect(section).not.toMatch(/No other attribute on `<Plan>` is read/);
-  });
-
-  it("teaches the plan's real element set and no invented one", () => {
-    for (const element of ["<Plan", "<Query", "<Group", "<Leaf", "<Server", "<Cannot"]) {
-      expect(VENDO_FORMAT_REFERENCE).toContain(element);
-    }
-    // There is no <Tab> element in either dialect, and saying so is the point.
-    expect(VENDO_FORMAT_REFERENCE).toContain("There is no `<Tab>`");
+  it("forbids the HTML and CSS a screen genuinely does not have", () => {
+    // No DOM lib is loaded into the check's program, so `<div>` and `className`
+    // are type errors; the theme lives in the components. A reference that let a
+    // model style a screen itself teaches an app that fails the checks AND
+    // arrives unbranded.
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/No `<div>`, no\s+`className`, no `style`, no CSS/);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/no `fetch`, `localStorage` or `setTimeout`/);
+    expect(VENDO_FORMAT_REFERENCE).toMatch(/there is no clock in here, so no\s+`new Date\(\)`/);
   });
 
   /** V4 retired the legacy prewired family — the Kit is the ONE component source,
    *  the tabular component is `DataTable`, and `Skeleton` became private chrome. A
-   *  reference that still writes `Table` teaches a name nothing resolves: the
-   *  compiler leaves it unknown and the node never paints. The examples are
-   *  already covered (they compile against WIRE_COMPONENT_NAMES above); this is
-   *  the PROSE, which nothing else reads. Arrived from the deleted
-   *  `generation/contracts/sections.test.ts`, which asserted the same of a prompt
-   *  section that no longer exists. */
+   *  reference that still writes `Table` teaches a name nothing resolves: the type
+   *  check has no such export and the screen never compiles. The examples are
+   *  already covered (they go through the real gauntlet above); this is the PROSE,
+   *  which nothing else reads. */
   it("teaches no retired component name", () => {
     for (const retired of ["Table", "Skeleton"]) {
-      expect(WIRE_COMPONENT_NAMES).not.toContain(retired);
+      expect(KIT_COMPONENT_NAMES).not.toContain(retired);
       const named = VENDO_FORMAT_REFERENCE.replaceAll("DataTable", "")
         .match(new RegExp(`\\b${retired}\\b`, "g")) ?? [];
       expect(named, `the reference names the retired "${retired}" ${named.length}x`).toEqual([]);
     }
+  });
+
+  /** The checks are automatic on both legs — every save is checked on its way to
+   *  the screen — and the screen agent's loadout carries no `validate` verb at
+   *  all. So the chapter says the errors come back and never tells a reader to
+   *  call anything: the reference is copied to a harness verbatim, so a call it
+   *  teaches is a tool one reader cannot find. */
+  it("says the save's own errors teach the repair, without naming a verb to call", () => {
+    expect(VENDO_FORMAT_REFERENCE).toContain("Save errors tell you exactly what to fix. Fix and save again.");
+    expect(VENDO_FORMAT_REFERENCE).not.toContain("`validate`");
   });
 
   it("carries the component prop schemas, generated from the specs", () => {

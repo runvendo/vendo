@@ -14,9 +14,9 @@ const SPEC_WIRE = `<App name="Cash Overview">
   <Stack gap={16}>
     <PageHeader title="Cash Overview" subtitle="Says \\"hi\\" \\\\ done"/>
     <Grid cols={3}>
-      <LineChart title="Revenue" points={asPoints(revenue.rows, "month", "revenue")}/>
+      <LineChart title="Revenue" points={revenue.rows.map((row) => ({ label: row.month, value: row.revenue }))}/>
       <DataTable rows={payments} columns={[{ key: "amount", label: "Amount" }]} dense/>
-      <HostCard total={revenue.total} note={format(state.note, "currency")}/>
+      <HostCard total={revenue.total} note={state.note}/>
     </Grid>
     Plain text child survives
     <Button label="Remind" onClick="fn:send_reminder"/>
@@ -161,14 +161,14 @@ describe("printWire totality fallbacks", () => {
 
 describe("printWire computed values", () => {
   it("round-trips a { $expr } prop as its own source", () => {
-    const wire = '<App><Query id="invoices" tool="invoices.list"/>'
-      + '<Stat value={sum(invoices.data, "amount_cents") / count(invoices.data)}/></App>';
+    const expr = "invoices.data.reduce((total, row) => total + row.amount_cents, 0) / invoices.data.length";
+    const wire = `<App><Query id="invoices" tool="invoices.list"/><Stat value={${expr}}/></App>`;
     const compiled = compileWire(wire);
     expect(compiled.issues).toEqual([]);
     expect(compiled.tree.nodes.find((node) => node.component === "Stat")?.props)
-      .toStrictEqual({ value: { $expr: 'sum(invoices.data, "amount_cents") / count(invoices.data)' } });
+      .toStrictEqual({ value: { $expr: expr } });
     const printed = printWire(compiled, { includeIds: false });
-    expect(printed).toContain('value={sum(invoices.data, "amount_cents") / count(invoices.data)}');
+    expect(printed).toContain(`value={${expr}}`);
     expect(compileWire(printed).tree).toStrictEqual(compiled.tree);
   });
 
@@ -176,7 +176,7 @@ describe("printWire computed values", () => {
     const base = compileWire('<App><Query id="q" tool="t"/><Card v={q.rows}/></App>');
     const tree = structuredClone(base.tree);
     const card = tree.nodes.find((node) => node.id === "card-1");
-    (card as { props?: Record<string, unknown> }).props = { v: { $expr: "sum(" } };
+    (card as { props?: Record<string, unknown> }).props = { v: { $expr: "rows.reduce(" } };
     const printed = printWire({ ...base, tree }, { includeIds: false });
     expect(printed).toContain('"$expr"');
     expect(compileWire(printed).tree).toStrictEqual(tree);
@@ -184,86 +184,58 @@ describe("printWire computed values", () => {
 });
 
 /**
- * D1/D2/D3 (v3 spec §5) — the dialect is a strict TSX subset: a reshape is a
- * NESTED CALL with the value first, an aggregate names its field explicitly,
- * and `group_by` takes a rows argument plus an aggregate descriptor. The
- * printer is the inverse, under the same byte-identical round-trip law.
+ * The dialect is a strict TSX subset and a `{...}` gap is a JavaScript
+ * EXPRESSION: a dotted reference lowers to a binding, everything that computes
+ * becomes `{ $expr }` carrying its source verbatim, and the printer is the
+ * inverse under the same byte-identical round-trip law.
  */
-describe("printWire nested-call dialect", () => {
-  it("compiles a reshape as a value-first call and prints it back identically", () => {
-    expect(roundTripProps('points={asPoints(revenue.rows, "month", "revenue")}')).toStrictEqual({
-      points: { $path: "/revenue/rows", $reshape: [{ op: "asPoints", args: ["month", "revenue"] }] },
+describe("printWire expression gaps", () => {
+  it("lowers a dotted reference to a binding, on a query and on state", () => {
+    expect(roundTripProps("rows={revenue.rows} note={state.note}")).toStrictEqual({
+      rows: { $path: "/revenue/rows" },
+      note: { $state: "note" },
     });
-    expect(printedCard('points={asPoints(revenue.rows, "month", "revenue")}'))
-      .toContain('points={asPoints(revenue.rows, "month", "revenue")}');
+    expect(printedCard("rows={revenue.rows} note={state.note}"))
+      .toContain("rows={revenue.rows} note={state.note}");
   });
 
-  it("nests a chain innermost-first and prints the nesting back in step order", () => {
-    const attrs = 'rows={rename(pick(revenue.rows, "month", "revenue"), "month", "label")}';
-    expect(roundTripProps(attrs)).toStrictEqual({
-      rows: {
-        $path: "/revenue/rows",
-        $reshape: [
-          { op: "pick", args: ["month", "revenue"] },
-          { op: "rename", args: ["month", "label"] },
-        ],
-      },
-    });
-    expect(printedCard(attrs)).toContain(attrs);
+  it("round-trips the projections JavaScript already has", () => {
+    const points = "revenue.rows.map((row) => ({ label: row.month, value: row.revenue }))";
+    expect(roundTripProps(`points={${points}}`)).toStrictEqual({ points: { $expr: points } });
+    expect(printedCard(`points={${points}}`)).toContain(`points={${points}}`);
+    roundTripProps('rows={invoices.data.filter((row) => row.status === "open")}');
+    roundTripProps("n={-invoices.data.length}");
+    roundTripProps("big={((revenue.total - q.total) / q.rows.length) * 100}");
   });
 
-  it("chains over a state binding", () => {
-    expect(roundTripProps('note={format(state.note, "currency")}')).toStrictEqual({
-      note: { $state: "note", $reshape: [{ op: "format", args: ["currency"] }] },
-    });
+  it("round-trips computed values nested inside array and object literals", () => {
+    expect(roundTripProps("v={[q.rows.length, 5]} w={{ total: q.rows.reduce((t, r) => t + r.amount, 0) }}"))
+      .toStrictEqual({
+        v: [{ $expr: "q.rows.length" }, 5],
+        w: { total: { $expr: "q.rows.reduce((t, r) => t + r.amount, 0)" } },
+      });
   });
 
-  it("round-trips a max-length (8-step) nested chain", () => {
-    const chain = 'rename(rename(rename(rename(rename(rename(rename(pick(q.rows, "a", "b"),'
-      + ' "a", "c"), "c", "d"), "d", "e"), "e", "f"), "f", "g"), "g", "h"), "h", "i")';
-    const props = roundTripProps(`v={${chain}}`);
-    expect((props.v as { $reshape: unknown[] }).$reshape).toHaveLength(8);
-    expect(printedCard(`v={${chain}}`)).toContain(chain);
+  it("keeps the source VERBATIM, interior spacing included", () => {
+    const spaced = 'invoices.data.reduce( (total , row) => total + row.amount_cents , 0 )';
+    expect(printedCard(`v={${spaced}}`)).toContain(`v={${spaced}}`);
+    expect(roundTripProps(`v={${spaced}}`)).toStrictEqual({ v: { $expr: spaced } });
   });
 
-  it("always quotes reshape arguments, including ones that need it", () => {
-    expect(roundTripProps('v={pick(q.rows, "weird field")}')).toStrictEqual({
-      v: { $path: "/q/rows", $reshape: [{ op: "pick", args: ["weird field"] }] },
-    });
-    expect(printedCard('v={pick(q.rows, "weird field")}')).toContain('pick(q.rows, "weird field")');
-  });
-
-  it("takes an explicit field on every aggregate (D2)", () => {
-    expect(roundTripProps('value={sum(invoices.data, "amount_cents")}')).toStrictEqual({
-      value: { $expr: 'sum(invoices.data, "amount_cents")' },
-    });
-    roundTripProps("count={count(invoices.data)}");
-    roundTripProps('avg={average(invoices.data, "amount_cents")}');
-    roundTripProps('lo={min(invoices.data, "amount_cents")} hi={max(invoices.data, "amount_cents")}');
-  });
-
-  it("round-trips arithmetic, difference, negation and days_until over aggregates", () => {
-    roundTripProps('value={sum(invoices.data, "amount_cents") / count(invoices.data)}');
-    roundTripProps('d={difference(sum(q.rows, "x"), sum(revenue.rows, "x"))}');
-    roundTripProps('n={-sum(q.rows, "x")}');
-    roundTripProps("u={days_until(invoices.due_date) * 2}");
-    roundTripProps('big={((sum(q.rows, "x") - sum(revenue.rows, "x")) / count(q.rows)) * 100}');
-  });
-
-  it("round-trips group_by's descriptor form (D3)", () => {
-    expect(roundTripProps('points={group_by(invoices.data, "issued_at", "month", sum.of("total_cents"))}'))
-      .toStrictEqual({ points: { $expr: 'group_by(invoices.data, "issued_at", "month", sum.of("total_cents"))' } });
-    roundTripProps('points={group_by(invoices.data, "issued_at", "day", count.of())}');
-  });
-
-  it("round-trips calls nested inside array and object literals", () => {
-    roundTripProps('v={[count(q.rows), 5]} w={{ total: sum(q.rows, "amount") }}');
-    roundTripProps('v={[pick(q.rows, "a"), 5]}');
-  });
-
-  it("round-trips an aggregate whose interior spacing is not canonical", () => {
-    expect(printedCard('v={sum( invoices.data , "amount_cents" )}'))
-      .toContain('v={sum( invoices.data , "amount_cents" )}');
-    roundTripProps('v={sum( invoices.data , "amount_cents" )}');
+  it("prints a STORED $reshape chain as the quoted object literal", () => {
+    // The wire dialect cannot write a reshape any more (JavaScript does its own
+    // projecting), so a stored binding that carries a chain has no reference
+    // form left: totality over fidelity, and the round-trip law only ever
+    // covered compiler output, which never carries one.
+    const base = compileWire('<App><Query id="revenue" tool="metrics.revenue"/><Card v={revenue.rows}/></App>');
+    const tree = structuredClone(base.tree);
+    const card = tree.nodes.find((node) => node.id === "card-1");
+    (card as { props?: Record<string, unknown> }).props = {
+      v: { $path: "/revenue/rows", $reshape: [{ op: "asPoints", args: ["month", "revenue"] }] },
+    };
+    const printed = printWire({ ...base, tree }, { includeIds: false });
+    expect(printed).toContain('"$reshape"');
+    expect(printed).not.toContain("asPoints(");
+    expect(compileWire(printed).tree).toStrictEqual(tree);
   });
 });

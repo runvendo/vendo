@@ -1,0 +1,830 @@
+/**
+ * The save-time gauntlet for a COMPONENT screen — the new artifact: one plain
+ * `.tsx` file, one default-exported React component, data through
+ * `useQuery("tool_name", {literal input}?)`, actions through
+ * `tools.tool_name(args)` inside handlers, and nothing imported but `react` and
+ * `@vendo/screen`.
+ *
+ * Five stages, and the order is not a preference: a file that does not compile
+ * has no AST to scan; a scan that cannot name the queries has no plan to
+ * type-check against; and a screen that does not type-check must never be
+ * EXECUTED. So each stage is the next one's precondition and the first one that
+ * finds something is the last one that runs.
+ *
+ *   1. COMPILE   esbuild, once per form (the CJS the engine evaluates, the
+ *                module form the scan reads).
+ *   2. SCAN      the two rules a compiler cannot state: the import surface is
+ *                exactly two modules, and every query names a read tool with a
+ *                literal name and a literal input. Plus the `tools` discipline —
+ *                literal member access, called from a handler, never mid-render.
+ *   3. TYPECHECK the real compiler, against declarations derived from the Kit's
+ *                zod specs and the host tools' own schemas, with NO DOM lib —
+ *                so `document`, `fetch` and `<div>` are errors because they
+ *                genuinely do not exist here.
+ *   4. RUN ONCE  execute the query plan for real, boot the screen on the answers,
+ *                take its tree.
+ *   5. TREE      the tree validators the wire artifact already ships.
+ *
+ * Every issue is written as a repair instruction. These messages are read by a
+ * model, and a refusal that does not say what to write instead only costs a
+ * round.
+ *
+ * The `.vendo` document checks (facts.ts) are untouched — this is the parallel
+ * gauntlet for the new artifact, and it REUSES their machinery rather than
+ * restating it: the same esbuild pattern, the same schema→TS printers
+ * (screen-typings.ts), the same compiler harness (screen-tsc.ts), the same
+ * `tools` literal-access scan (contract/island-ambient.ts), the same tree
+ * validators (contract/genui/tree.ts + facts.ts), the same reviewer data
+ * discipline (reviewer.ts).
+ */
+import { parse } from "acorn";
+import type { Node, Program } from "acorn";
+import { VENDO_TREE_FORMAT, type JsonSchema, type TreeNode } from "@vendoai/core";
+import {
+  KIT_COMPONENT_NAMES,
+  resolveIslandToolName,
+  scanIslandTools,
+  validateTree,
+  type NormalizedCatalog,
+  type Tree,
+} from "../../contract/index.js";
+// The screen engine, by its own path: the contract door does not carry it yet.
+import {
+  bootScreen,
+  flattenTree,
+  SCREEN_TEXT_NODE,
+  ScreenError,
+  warmScreenEngine,
+  type FlatTree,
+  type ScreenInstance,
+} from "../../contract/genui/component/index.js";
+import { isMutatingTool, type HostToolInfo } from "./deps.js";
+import { catalogIssues, factIssueLine } from "./facts.js";
+import { sampleLines } from "./reviewer.js";
+import {
+  componentScreenTypings,
+  screenCatalogNames,
+  SCREEN_MODULE,
+  type ScreenCatalogEntry,
+} from "./screen-typings.js";
+import { diagnosticLine, screenProgram, translateDiagnostic } from "./screen-tsc.js";
+import type TS from "typescript";
+
+// ---- the contract ---------------------------------------------------------
+
+/**
+ * What a screen may import from `@vendo/screen`: the WHOLE Kit plus this host's
+ * own catalog.
+ *
+ * The whole Kit, not the wire-safe subset — a screen writes JSX, so the
+ * element-valued slots the wire dialect could never express (`Accordion`) are
+ * ordinary here.
+ *
+ * Composed once, and to match the RENDERER exactly (`packages/ui` renderer.tsx
+ * boots the VM with `[...KIT_COMPONENT_NAMES, ...host components]`): a name this
+ * check admits and the renderer does not is a screen that passes every gate and
+ * paints nothing, and a name the renderer has and the check does not is a type
+ * error over working code.
+ *
+ * A host entry brings its derived props schema along, because the type check has
+ * no other way to learn a host component's props and a name alone degrades every
+ * one of them to `any` — which makes a guessed prop on a host component compile,
+ * the one thing the skill promises it will not. The Kit half stays bare NAMES:
+ * those are typed from their own zod specs, the stricter source.
+ */
+export const screenCatalog = (
+  catalog: readonly { name: string; propsJsonSchema?: JsonSchema }[],
+): ScreenCatalogEntry[] => [
+  ...KIT_COMPONENT_NAMES,
+  ...catalog.map(({ name, propsJsonSchema }) =>
+    (propsJsonSchema === undefined ? name : { name, propsJsonSchema })),
+];
+
+/** One thing wrong with the screen. `code` is the class, for a caller that
+ *  routes; `message` is the repair instruction, for the model that reads it. */
+export interface ComponentScreenIssue {
+  code: string;
+  message: string;
+}
+
+/** One `useQuery` call, as the check will execute it. */
+export interface QueryPlanEntry {
+  tool: string;
+  input?: unknown;
+}
+
+export type ComponentScreenCheck = {
+  ok: boolean;
+  issues: ComponentScreenIssue[];
+  /** post-esbuild JS — what the engine evaluates. */
+  compiled?: string;
+  queryPlan?: QueryPlanEntry[];
+  initialTree?: FlatTree;
+  /** What each query REALLY returned, keyed by tool — the answers stage 4 booted
+   *  the screen on. Handed back because the two things that need them cannot get
+   *  them anywhere else: the paint carries them so the renderer boots the same
+   *  screen this check rendered, and the AI reviewer judges the numbers on screen
+   *  against them. Present on a passing check; a refusal earlier than stage 4 ran
+   *  no queries at all. */
+  queries?: Record<string, unknown>;
+};
+
+export interface ComponentScreenOptions {
+  /** The TSX, verbatim. */
+  source: string;
+  /** The host tools a query or a handler may name. */
+  hostTools: readonly HostToolInfo[];
+  /** The components the screen may import from `@vendo/screen` — {@link screenCatalog}.
+   *  A bare name is a component whose props nobody declared. */
+  catalog: readonly ScreenCatalogEntry[];
+  /** The trusted executor, injected by the caller: this check runs the screen's
+   *  queries for real, and it is the caller who holds the guard-bound registry. */
+  runQuery: (tool: string, input?: unknown) => Promise<unknown>;
+}
+
+const issue = (code: string, message: string): ComponentScreenIssue => ({ code, message });
+
+const refuse = (
+  issues: ComponentScreenIssue[],
+  rest: Omit<ComponentScreenCheck, "ok" | "issues"> = {},
+): ComponentScreenCheck => ({ ok: false, issues, ...rest });
+
+// ---- stage 1: compile -----------------------------------------------------
+
+/** esbuild, lazily and bundler-safely: routed through a mutable binding so NO
+ *  bundler statically resolves the compiler (Wrangler ignores the webpack-dialect
+ *  comments and would inline esbuild's Node-only main into a Worker bundle — the
+ *  portability gate's field failure). Same pattern as smoke-render.ts.
+ *
+ *  Unlike the smoke gate, an unavailable compiler here is a FAILED check, not a
+ *  skipped one: nothing downstream can run without the compiled screen, and a
+ *  gate that read nothing must not answer "fine". */
+let ESBUILD_SPECIFIER = "esbuild";
+
+/**
+ * The two forms of one screen file, and why they differ.
+ *
+ * - `engine` is what {@link bootScreen} evaluates: CommonJS, because the VM
+ *   hosts a `require` and no module loader, and the AUTOMATIC jsx transform,
+ *   because the VM publishes `react/jsx-runtime` and has no bare `React` global
+ *   (contract/genui/component/vm-program.ts). Classic mode compiles to
+ *   `React.createElement`, which is a ReferenceError in there.
+ * - `scan` is what the scan reads: the module form, so the author's imports and
+ *   default export are still visible (CJS renames every import into a namespace
+ *   access), with the CLASSIC transform, so the compiler's own
+ *   `react/jsx-runtime` import does not read as an import the author wrote.
+ */
+type ScreenForm = "engine" | "scan";
+
+type Transform = (source: string, form: ScreenForm) => string;
+
+const esbuildTransform: Promise<Transform | undefined> = (async () => {
+  try {
+    const esbuild = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ ESBUILD_SPECIFIER) as typeof import("esbuild");
+    return (source, form) => esbuild.transformSync(source, form === "engine"
+      ? { loader: "tsx", format: "cjs", target: "es2020", jsx: "automatic" }
+      : { loader: "tsx", format: "esm", target: "es2020" }).code;
+  } catch {
+    return undefined;
+  }
+})();
+
+/** esbuild reports a location; a screen author's repair starts from the line. */
+const compileMessage = (error: unknown): string => {
+  const first = (error as { errors?: Array<{ text?: string; location?: { line?: number } | null }> }).errors?.[0];
+  const detail = first?.text ?? (error instanceof Error ? error.message : String(error));
+  const line = first?.location?.line;
+  return `does not compile as TSX${line === undefined ? "" : ` (line ${line})`}: ${detail}`
+    + " — a screen is one plain .tsx module: its imports, then one default-exported React component.";
+};
+
+// ---- the AST walk ---------------------------------------------------------
+
+const isNode = (value: unknown): value is Node =>
+  typeof value === "object" && value !== null && typeof (value as { type?: unknown }).type === "string";
+
+/** The child nodes of an ESTree node, whatever its type. Generic on purpose — a
+ *  hand-written case per node type is a list that silently rots as the grammar
+ *  edition moves (the same reason genui/expr.ts walks this way). */
+const childNodes = (node: Node): Node[] => {
+  const children: Node[] = [];
+  for (const value of Object.values(node as unknown as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      for (const item of value) if (isNode(item)) children.push(item);
+    } else if (isNode(value)) children.push(value);
+  }
+  return children;
+};
+
+const FUNCTION_TYPES = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
+
+interface CallNode extends Node {
+  callee: Node;
+  arguments: Node[];
+}
+
+const asCall = (node: Node): CallNode | undefined =>
+  node.type === "CallExpression" ? (node as unknown as CallNode) : undefined;
+
+const identifierName = (node: Node | undefined): string | undefined =>
+  node?.type === "Identifier" ? (node as unknown as { name: string }).name : undefined;
+
+/** `tools.tool_name` as a called member chain — the only form that reaches a
+ *  tool. The chain's names, or undefined when the callee is not one. */
+const toolChain = (callee: Node): string[] | undefined => {
+  const names: string[] = [];
+  let current = callee;
+  while (current.type === "MemberExpression") {
+    const member = current as unknown as { object: Node; property: Node; computed: boolean };
+    if (member.computed) return undefined;
+    const name = identifierName(member.property);
+    if (name === undefined) return undefined;
+    names.unshift(name);
+    current = member.object;
+  }
+  return identifierName(current) === "tools" && names.length > 0 ? names : undefined;
+};
+
+/** The value of a literal-JSON expression: `{ ok: true, value }`, or `ok: false`
+ *  for anything computed. A query input executes as literal JSON — the same law
+ *  the wire artifact enforces (facts.ts `queryInputIssues`) — so this is the
+ *  whole vocabulary an input may be written in. */
+const literalValue = (node: Node): { ok: true; value: unknown } | { ok: false } => {
+  if (node.type === "Literal") {
+    const { value } = node as unknown as { value: unknown };
+    return typeof value === "object" && value !== null ? { ok: false } : { ok: true, value };
+  }
+  if (node.type === "UnaryExpression") {
+    const unary = node as unknown as { operator: string; argument: Node };
+    const inner = unary.operator === "-" ? literalValue(unary.argument) : { ok: false as const };
+    return inner.ok && typeof inner.value === "number" ? { ok: true, value: -inner.value } : { ok: false };
+  }
+  if (node.type === "ArrayExpression") {
+    const items: unknown[] = [];
+    for (const element of (node as unknown as { elements: Array<Node | null> }).elements) {
+      if (element === null) return { ok: false };
+      const item = literalValue(element);
+      if (!item.ok) return { ok: false };
+      items.push(item.value);
+    }
+    return { ok: true, value: items };
+  }
+  if (node.type === "ObjectExpression") {
+    const value: Record<string, unknown> = {};
+    for (const property of (node as unknown as { properties: Node[] }).properties) {
+      if (property.type !== "Property") return { ok: false };
+      const entry = property as unknown as { key: Node; value: Node; computed: boolean; kind: string };
+      if (entry.computed || entry.kind !== "init") return { ok: false };
+      const key = identifierName(entry.key)
+        ?? (entry.key.type === "Literal" ? String((entry.key as unknown as { value: unknown }).value) : undefined);
+      if (key === undefined) return { ok: false };
+      const item = literalValue(entry.value);
+      if (!item.ok) return { ok: false };
+      value[key] = item.value;
+    }
+    return { ok: true, value };
+  }
+  return { ok: false };
+};
+
+// ---- stage 2: scan --------------------------------------------------------
+
+const ALLOWED_IMPORTS: readonly string[] = ["react", SCREEN_MODULE];
+
+const QUERY_HOOK = "useQuery";
+
+/** The import block is not `tools` USAGE: `import { tools } from "@vendo/screen"`
+ *  puts the name in expression position (a `{` to its left), which the shipped
+ *  literal-access scan reads as aliasing. Blanked with offsets preserved, so that
+ *  scan's own positions still line up. */
+const blankImports = (source: string, program: Program): string => {
+  const characters = source.split("");
+  for (const statement of program.body) {
+    if (statement.type !== "ImportDeclaration") continue;
+    for (let index = statement.start; index < statement.end; index += 1) characters[index] = " ";
+  }
+  return characters.join("");
+};
+
+/** The default-exported component, when the module's default export is a
+ *  function — directly, or through the name of a function declared in the file.
+ *  `node: undefined` with `declared: true` is "there is a default, and it is not
+ *  a component", which the export check reports separately. */
+const defaultComponent = (program: Program): { node?: Node; declared: boolean } => {
+  let declaration: Node | undefined;
+  let name: string | undefined;
+  for (const statement of program.body) {
+    if (statement.type === "ExportDefaultDeclaration") {
+      declaration = (statement as unknown as { declaration: Node }).declaration;
+      continue;
+    }
+    if (statement.type !== "ExportNamedDeclaration") continue;
+    // esbuild's module output rewrites `export default function Screen` into a
+    // declaration plus `export { Screen as default }`, so the default arrives
+    // here by name rather than inline.
+    for (const specifier of (statement as unknown as { specifiers?: Node[] }).specifiers ?? []) {
+      const entry = specifier as unknown as { local: Node; exported: Node };
+      const exported = identifierName(entry.exported)
+        ?? (entry.exported.type === "Literal" ? String((entry.exported as unknown as { value: unknown }).value) : undefined);
+      if (exported === "default") name = identifierName(entry.local);
+    }
+  }
+  if (declaration !== undefined) {
+    if (FUNCTION_TYPES.has(declaration.type)) return { node: declaration, declared: true };
+    name = identifierName(declaration);
+    if (name === undefined) return { declared: true };
+  } else if (name === undefined) {
+    return { declared: false };
+  }
+  /** Every top-level binding that could BE the component: a function
+   *  declaration, or a variable's initializer. */
+  const bound = new Map<string, Node>();
+  for (const statement of program.body) {
+    if (statement.type === "FunctionDeclaration") {
+      const id = identifierName((statement as unknown as { id?: Node }).id);
+      if (id !== undefined) bound.set(id, statement);
+    }
+    if (statement.type !== "VariableDeclaration") continue;
+    for (const declarator of (statement as unknown as { declarations: Node[] }).declarations) {
+      const entry = declarator as unknown as { id: Node; init?: Node | null };
+      const id = identifierName(entry.id);
+      if (id !== undefined && entry.init != null) bound.set(id, entry.init);
+    }
+  }
+  // One name reaches the component through another, and esbuild writes that hop
+  // itself: `const Screen = () => …; export default Screen;` compiles to
+  // `var stdin_default = Screen; export { stdin_default as default }`, so a walk
+  // that stops at the first binding refuses the form the manual's own examples
+  // are written in. `seen` is what makes `let a = b, b = a` terminate.
+  const seen = new Set<string>();
+  let at: string | undefined = name;
+  while (at !== undefined && !seen.has(at)) {
+    seen.add(at);
+    const target = bound.get(at);
+    if (target !== undefined && FUNCTION_TYPES.has(target.type)) return { node: target, declared: true };
+    at = identifierName(target);
+  }
+  return { declared: true };
+};
+
+interface ScanResult {
+  issues: ComponentScreenIssue[];
+  queryPlan: QueryPlanEntry[];
+}
+
+const list = (names: readonly string[]): string => (names.length === 0 ? "(none)" : names.join(", "));
+
+const scan = (moduleSource: string, tools: readonly HostToolInfo[]): ScanResult => {
+  const issues: ComponentScreenIssue[] = [];
+  const queryPlan: QueryPlanEntry[] = [];
+  let program: Program;
+  try {
+    // The input is esbuild's own ES2020 output, so the edition is pinned rather
+    // than "latest": the grammar a screen is admitted under must not move when
+    // the parser is upgraded (genui/expr.ts pins it for the same reason).
+    program = parse(moduleSource, { ecmaVersion: 2022, sourceType: "module" });
+  } catch (error) {
+    return { issues: [issue("compile", `does not parse as a module: ${error instanceof Error ? error.message : String(error)}`)], queryPlan };
+  }
+
+  const known = tools.map((tool) => tool.name);
+  const readable = tools.filter((tool) => !isMutatingTool(tool)).map((tool) => tool.name);
+  const byName = new Map(tools.map((tool) => [tool.name, tool]));
+
+  // (a) the import surface. An UNUSED disallowed import is elided by the
+  // transform before it reaches here — and it cannot affect the screen either,
+  // since nothing requires it; the type check still sees it in the source.
+  for (const statement of program.body) {
+    const source = (statement as unknown as { source?: { value?: unknown } }).source;
+    if (typeof source?.value !== "string") continue;
+    if (ALLOWED_IMPORTS.includes(source.value)) continue;
+    issues.push(issue("import", `imports ${JSON.stringify(source.value)} — a screen may import only "react" (its hooks) and ${JSON.stringify(SCREEN_MODULE)} (the components, ${QUERY_HOOK} and tools). There is no bundler and no node_modules here: read data with ${QUERY_HOOK}("tool_name") and act with tools.tool_name(args) instead of reaching for a package.`));
+  }
+
+  const component = defaultComponent(program);
+
+  const visit = (node: Node, nearestFunction: Node | undefined): void => {
+    if (node.type === "ImportExpression") {
+      issues.push(issue("import", `loads a module at runtime with import(…) — a screen's imports are static and limited to "react" and ${JSON.stringify(SCREEN_MODULE)}; there is nothing to load here at runtime.`));
+    }
+    const call = asCall(node);
+    if (call !== undefined) {
+      if (identifierName(call.callee) === "require") {
+        issues.push(issue("import", `calls require(…) — a screen imports statically, and only from "react" and ${JSON.stringify(SCREEN_MODULE)}.`));
+      }
+      if (identifierName(call.callee) === QUERY_HOOK) {
+        scanQuery(call, { issues, queryPlan, readable, known, byName });
+      }
+      const chain = toolChain(call.callee);
+      if (chain !== undefined) {
+        const name = resolveIslandToolName(chain, new Set(known));
+        if (name === null) {
+          issues.push(issue("tool-name", `tools.${chain.join(".")}(…) names unknown tool "${chain.join("_")}"; the host tools are: ${list(known)}`));
+        } else if (nearestFunction === undefined || nearestFunction === component.node) {
+          // The defect this catches is not style: a tool called from the render
+          // body runs on EVERY render, so a write fires with nobody clicking.
+          issues.push(issue("tool-at-render", `calls tools.${chain.join(".")}(…) while the component is rendering — a tool call in the component body runs on every render, so a write fires with nobody clicking. Put it in a handler (onClick={() => tools.${name}({ … })}), and read the data the render needs with ${QUERY_HOOK}("tool_name").`));
+        }
+      }
+    }
+    const inner = FUNCTION_TYPES.has(node.type) ? node : nearestFunction;
+    for (const child of childNodes(node)) visit(child, inner);
+  };
+  visit(program, undefined);
+
+  // The shipped literal-access scan, verbatim: computed access and aliasing are
+  // violations, and its sentences already teach the repair.
+  for (const violation of scanIslandTools(blankImports(moduleSource, program)).violations) {
+    issues.push(issue("tool-access", violation));
+  }
+
+  if (!component.declared) {
+    issues.push(issue("default-export", `exports no default — a screen is one file that default-exports its component: export default function Screen() { … }.`));
+  } else if (component.node === undefined) {
+    issues.push(issue("default-export", `default-exports something that is not a component — a screen default-exports one React function component: export default function Screen() { … }.`));
+  }
+
+  return { issues, queryPlan };
+};
+
+const scanQuery = (
+  call: CallNode,
+  context: {
+    issues: ComponentScreenIssue[];
+    queryPlan: QueryPlanEntry[];
+    readable: readonly string[];
+    known: readonly string[];
+    byName: ReadonlyMap<string, HostToolInfo>;
+  },
+): void => {
+  const [name, input, ...extra] = call.arguments;
+  const literal = name?.type === "Literal" ? (name as unknown as { value: unknown }).value : undefined;
+  if (typeof literal !== "string") {
+    context.issues.push(issue("query-name", `calls ${QUERY_HOOK}(…) with a computed tool name — the first argument must be a written-out string literal, because a screen's queries are read out of the file and executed BEFORE the component ever renders. Write ${QUERY_HOOK}("tool_name"). The tools you can read are: ${list(context.readable)}.`));
+    return;
+  }
+  const tool = context.byName.get(literal);
+  if (tool === undefined) {
+    context.issues.push(issue("query-tool", `${QUERY_HOOK}("${literal}") names unknown tool "${literal}"; the host tools are: ${list(context.known)}`));
+    return;
+  }
+  if (isMutatingTool(tool)) {
+    context.issues.push(issue("query-tool", `${QUERY_HOOK}("${literal}") reads with a tool that CHANGES things (risk "${tool.risk}") — a query runs on every render, so this would write every time the screen paints. Call it from a handler as tools.${literal}({ … }), and read with one of: ${list(context.readable)}.`));
+    return;
+  }
+  if (extra.length > 0) {
+    context.issues.push(issue("query-input", `calls ${QUERY_HOOK}("${literal}", …) with ${call.arguments.length} arguments — it takes the tool name and, at most, one literal input object.`));
+    return;
+  }
+  let value: unknown;
+  if (input !== undefined) {
+    const parsed = literalValue(input);
+    if (!parsed.ok) {
+      context.issues.push(issue("query-input", `passes a computed input to ${QUERY_HOOK}("${literal}", …) — a query input must be LITERAL JSON the tool can execute directly: the queries run before the component renders, so no prop, state, hook value or other query's result can reach one. Write the literal (${QUERY_HOOK}("${literal}", { status: "pending" })), and derive what you needed from the result where you DISPLAY it.`));
+      return;
+    }
+    value = parsed.value;
+  }
+  const entry: QueryPlanEntry = input === undefined ? { tool: literal } : { tool: literal, input: value };
+  const already = context.queryPlan.find((planned) => planned.tool === entry.tool);
+  if (already === undefined) {
+    context.queryPlan.push(entry);
+    return;
+  }
+  // The engine resolves a screen's data as one result PER TOOL, so two reads of
+  // the same tool with different inputs cannot both be served — the second would
+  // silently paint the first one's rows.
+  if (JSON.stringify(already.input) !== JSON.stringify(entry.input)) {
+    context.issues.push(issue("query-input", `reads "${literal}" twice with DIFFERENT inputs — a screen resolves one result per tool, so both calls would receive the same rows. Read it once with the wider input and narrow it where you display it (rows.filter(…)), or read a tool that takes the narrower ask.`));
+  }
+};
+
+// ---- stage 3: typecheck ---------------------------------------------------
+
+/** `Promise`, and no DOM: a handler awaits a tool call, and `document`/`fetch`
+ *  must stay undeclared so reaching for them is an error. */
+const COMPONENT_SCREEN_LIB = ["lib.es2020.d.ts"];
+
+/** Already-announced holes. A construct the printers cannot model degrades to
+ *  `any`, which is the right call — a prop typed by guess would reject working
+ *  code — but it means the gate stopped checking that prop, and a silent hole is
+ *  how a check rots. Announced ONCE per distinct construct per process: a line on
+ *  every screen is a line nobody reads. */
+const announced = new Set<string>();
+
+const announceUntyped = (notes: readonly string[]): void => {
+  const fresh = [...new Set(notes)].filter((note) => !announced.has(note));
+  if (fresh.length === 0) return;
+  for (const note of fresh) announced.add(note);
+  console.warn(`[vendo] component screen type check: ${fresh.length} schema construct(s) could not be typed, so they are UNCHECKED — ${fresh.join("; ")}`);
+};
+
+/** "Cannot find name X", in all its forms. 2304 is the plain one and 2552 the
+ *  one with a spelling suggestion; the 258x family is the SAME error with a
+ *  "change your target library" or "install @types/…" hint attached — advice a
+ *  screen author cannot act on, since there is no tsconfig here and the missing
+ *  lib (`dom`) is missing on purpose. */
+const UNKNOWN_NAME = new Set([2304, 2552, 2580, 2581, 2582, 2583, 2584, 2591, 2592, 2593]);
+const MISSING_PROPERTY = new Set([2339, 2551]);
+const NO_SUCH_EXPORT = new Set([2305, 2724]);
+const MISSING_MODULE = new Set([2307, 2792]);
+// 2353 is the excess-property error on its own, which is how a misspelled tool
+// payload key arrives.
+const BAD_CALL = new Set([2345, 2769, 2353]);
+
+const INTRINSIC_ELEMENT = /Property '([^']+)' does not exist on type 'JSX\.IntrinsicElements'/u;
+
+/** The deepest node covering a diagnostic — the same descent screen-tsc.ts uses
+ *  to anchor its own findings. */
+const nodeAt = (ts: typeof TS, file: TS.SourceFile, diagnostic: TS.Diagnostic): TS.Node => {
+  const start = diagnostic.start ?? 0;
+  const end = start + (diagnostic.length ?? 0);
+  let best: TS.Node = file;
+  const descend = (node: TS.Node): void => {
+    if (node.getStart(file) > start || end > node.getEnd()) return;
+    best = node;
+    ts.forEachChild(node, descend);
+  };
+  ts.forEachChild(file, descend);
+  return best;
+};
+
+/** The nearest enclosing call whose ARGUMENT holds the diagnostic, with the
+ *  keys that argument's type really accepts. */
+const badPayloadMessage = (
+  ts: typeof TS,
+  file: TS.SourceFile,
+  checker: TS.TypeChecker,
+  diagnostic: TS.Diagnostic,
+  sentence: string,
+): string | undefined => {
+  const start = diagnostic.start ?? 0;
+  const end = start + (diagnostic.length ?? 0);
+  const covers = (node: TS.Node): boolean => node.getStart(file) <= start && end <= node.getEnd();
+  for (let current: TS.Node | undefined = nodeAt(ts, file, diagnostic); current !== undefined; current = current.parent) {
+    if (!ts.isCallExpression(current)) continue;
+    const index = current.arguments.findIndex(covers);
+    if (index < 0) continue;
+    const callee = current.expression.getText(file);
+    if (!callee.startsWith("tools.") && callee !== QUERY_HOOK) return undefined;
+    const parameter = checker.getResolvedSignature(current)?.getParameters()[index];
+    const type = parameter === undefined ? undefined : checker.getTypeOfSymbolAtLocation(parameter, current);
+    const properties = type === undefined ? [] : checker.getPropertiesOfType(type);
+    const required = properties
+      .filter((symbol) => (symbol.flags & ts.SymbolFlags.Optional) === 0)
+      .map((symbol) => symbol.getName());
+    return `calls ${callee}(…) with an input its schema does not accept: ${sentence}`
+      + (properties.length === 0
+        ? ""
+        : ` Its input keys are: ${list(properties.map((symbol) => symbol.getName()))}${required.length === 0 ? "" : ` (required: ${required.join(", ")})`}.`);
+  }
+  return undefined;
+};
+
+/** One diagnostic as a repair instruction.
+ *
+ * Only the classes whose prose is specific to THIS dialect are written here —
+ * the surface is two modules, there is no DOM, and a tool payload is a schema.
+ * Everything else is handed to the wire screen's own translator, which already
+ * says the right thing about props, arguments and missing fields. */
+const typeIssue = (
+  ts: typeof TS,
+  file: TS.SourceFile,
+  checker: TS.TypeChecker,
+  diagnostic: TS.Diagnostic,
+  surface: { components: readonly string[] },
+): ComponentScreenIssue | undefined => {
+  const line = diagnosticLine(file, diagnostic);
+  const sentence = ts.flattenDiagnosticMessageText(diagnostic.messageText, " ");
+  const at = (message: string): ComponentScreenIssue => issue("types", `line ${line}: ${message}`);
+  const node = nodeAt(ts, file, diagnostic);
+  // A bad tag is reported twice, on `<div>` and again on `</div>`. The closing
+  // one is the same break, and a repair list that says everything twice reads
+  // as two problems.
+  if (ts.isJsxClosingElement(node) || (node.parent !== undefined && ts.isJsxClosingElement(node.parent))) {
+    return undefined;
+  }
+
+  const intrinsic = INTRINSIC_ELEMENT.exec(sentence);
+  if (intrinsic !== null) {
+    return at(`writes the HTML element <${intrinsic[1]}> — a screen has no HTML elements. It renders only the components it imports from ${JSON.stringify(SCREEN_MODULE)}: ${list(surface.components)}. Lay out with <Stack>/<Row>/<Grid> and write text with <Text>.`);
+  }
+
+  if (UNKNOWN_NAME.has(diagnostic.code)) {
+    // The compiler anchors a tag error on the whole tag as often as on the name
+    // inside it, so the element is read from either.
+    const element = ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)
+      ? node
+      : (node.parent !== undefined && (ts.isJsxOpeningElement(node.parent) || ts.isJsxSelfClosingElement(node.parent))
+        ? node.parent
+        : undefined);
+    return at(element === undefined
+      ? `reads the name "${node.getText(file)}", which does not exist inside a screen — there is no DOM, no window/document, no fetch, no timers and no process here. Read data with ${QUERY_HOOK}("tool_name"), act with tools.tool_name(args), and import anything else from "react" or ${JSON.stringify(SCREEN_MODULE)}.`
+      : `renders <${element.tagName.getText(file)}>, which this screen never imported — import the component from ${JSON.stringify(SCREEN_MODULE)}. The components available are: ${list(surface.components)}.`);
+  }
+
+  if (NO_SUCH_EXPORT.has(diagnostic.code)) {
+    return at(`${sentence} The screen surface is ${QUERY_HOOK}, tools, and these components: ${list(surface.components)}.`);
+  }
+
+  if (MISSING_MODULE.has(diagnostic.code)) {
+    return at(`${sentence} A screen may import only "react" and ${JSON.stringify(SCREEN_MODULE)}.`);
+  }
+
+  if (BAD_CALL.has(diagnostic.code)) {
+    const payload = badPayloadMessage(ts, file, checker, diagnostic, sentence);
+    if (payload !== undefined) return at(payload);
+  }
+
+  if (MISSING_PROPERTY.has(diagnostic.code) || BAD_CALL.has(diagnostic.code) || diagnostic.code === 2322) {
+    const [reused] = translateDiagnostic(ts, file, checker, diagnostic);
+    // The wire translator's `where` is a locus its sentence sometimes states
+    // itself, and prefixing it anyway said `prop "variant" prop "variant" on
+    // <Text> takes …`. A sentence that names its own locus stands alone; the
+    // line number is already the prefix here either way.
+    if (reused !== undefined) {
+      return at(reused.message.startsWith("prop \"") ? reused.message : `${reused.where} ${reused.message}`);
+    }
+  }
+
+  return at(sentence);
+};
+
+// ---- stage 4: run once ----------------------------------------------------
+
+/** What went wrong inside the VM, said as a repair. A `render` or `budget`
+ *  failure is RELAYED: the engine writes those messages to be read by whatever
+ *  repairs the screen, and a second sentence of advice on top of them only says
+ *  the same thing twice. A throw is the class that needs the advice. */
+const renderMessage = (error: unknown): string => {
+  const message = (error instanceof Error ? error.message : String(error)).split("\n")[0] ?? "";
+  if (error instanceof ScreenError && (error.kind === "render" || error.kind === "budget")) {
+    return `the screen would not paint: ${message}`;
+  }
+  return `the screen threw while rendering against the data its queries really returned: ${message}`
+    + " — the component must render for every answer a tool can give: guard an undefined or empty result before .map/.reduce and render an empty state instead.";
+};
+
+// ---- the gauntlet ---------------------------------------------------------
+
+/**
+ * Run every stage over one screen. Fail-fast: the returned `issues` are the
+ * first stage's that found any, so a repair round is never handed a list of
+ * consequences of a break it has not fixed yet.
+ */
+export async function checkComponentScreen(opts: ComponentScreenOptions): Promise<ComponentScreenCheck> {
+  const transform = await esbuildTransform;
+  if (transform === undefined) {
+    return refuse([issue("compile", "the screen could not be compiled: no esbuild is reachable from @vendoai/apps, so nothing about this screen was checked. This check refuses to pass a screen it never read.")]);
+  }
+
+  let compiled: string;
+  let moduleForm: string;
+  try {
+    compiled = transform(opts.source, "engine");
+    moduleForm = transform(opts.source, "scan");
+  } catch (error) {
+    return refuse([issue("compile", compileMessage(error))]);
+  }
+
+  const scanned = scan(moduleForm, opts.hostTools);
+  if (scanned.issues.length > 0) return refuse(scanned.issues, { compiled });
+  const queryPlan = scanned.queryPlan;
+
+  /** The declared surface as NAMES — what the engine boots with and what the tree
+   *  check measures against. The props a catalog entry carries are the type
+   *  check's business alone; every other stage takes the same list it always did. */
+  const names = screenCatalogNames(opts.catalog);
+
+  const notes: string[] = [];
+  const typings = componentScreenTypings({
+    catalog: opts.catalog,
+    tools: opts.hostTools,
+    note: (reason) => notes.push(reason),
+  });
+  announceUntyped(notes);
+
+  const program = screenProgram({ screen: opts.source, typings, lib: COMPONENT_SCREEN_LIB });
+  if (!program.ok) {
+    return refuse([issue("typecheck-unavailable", `the screen could not be type-checked: ${program.why}. This check refuses to pass a screen it never read — make the TypeScript compiler reachable where the build runs.`)], { compiled, queryPlan });
+  }
+  const surface = { components: [...new Set(names)] };
+  const typeIssues = [
+    ...program.syntactic.map((diagnostic) => issue("types", `line ${diagnosticLine(program.file, diagnostic)}: does not parse as a screen: ${program.ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`)),
+    ...program.semantic.flatMap((diagnostic) => {
+      const found = typeIssue(program.ts, program.file, program.checker, diagnostic, surface);
+      return found === undefined ? [] : [found];
+    }),
+  ];
+  if (typeIssues.length > 0) return refuse(typeIssues, { compiled, queryPlan });
+
+  // The engine keys its results by TOOL, one entry each — which is why the scan
+  // refuses a screen that reads one tool with two different inputs.
+  const queries: Record<string, unknown> = {};
+  for (const entry of queryPlan) {
+    try {
+      queries[entry.tool] = await opts.runQuery(entry.tool, entry.input);
+    } catch (error) {
+      return refuse([issue("run", `the query ${QUERY_HOOK}("${entry.tool}"${entry.input === undefined ? "" : `, ${JSON.stringify(entry.input)}`}) failed when this check ran it: ${error instanceof Error ? error.message : String(error)} — a screen may only read a tool that answers; check the input against the tool's own schema.`)], { compiled, queryPlan });
+    }
+  }
+
+  try {
+    await warmScreenEngine();
+  } catch (error) {
+    return refuse([issue("run", `the screen was never executed: the screen engine would not start (${error instanceof Error ? error.message : String(error)}). This check refuses to pass a screen it could not render.`)], { compiled, queryPlan });
+  }
+
+  const rendered = ((): { ok: true; tree: FlatTree } | { ok: false; message: string } => {
+    let instance: ScreenInstance | undefined;
+    try {
+      // A clock IS given: the surface renders with one, and a gate that is
+      // stricter than production blocks screens that work.
+      instance = bootScreen({ compiledSource: compiled, queries, catalog: names, now: Date.now() });
+      return { ok: true, tree: flattenTree(instance.tree()) };
+    } catch (error) {
+      return { ok: false, message: renderMessage(error) };
+    } finally {
+      // A dispose that throws is not the screen's verdict.
+      try { instance?.dispose(); } catch { /* ignore */ }
+    }
+  })();
+  if (!rendered.ok) return refuse([issue("run", rendered.message)], { compiled, queryPlan });
+
+  const initialTree = rendered.tree;
+  const treeIssues = await treeCheckIssues(initialTree, names);
+  if (treeIssues.length > 0) return refuse(treeIssues, { compiled, queryPlan, initialTree });
+
+  return { ok: true, issues: [], compiled, queryPlan, initialTree, queries };
+}
+
+/**
+ * The name a screen gives itself: its default-exported component's, split on camel
+ * case (`PendingTransfers` → "Pending transfers").
+ *
+ * A component file has no `<App name="…">` to read — the function's name is the
+ * only title in it — and this name is what the person's app list shows, so an
+ * anonymous default export gets "Screen" rather than a blank row. Presentation
+ * only: nothing decides anything on it.
+ *
+ * Read with a regex rather than off the scan's AST because both callers ask BEFORE
+ * a parse is guaranteed (the receipt's title on any save that landed, the app row's
+ * name on the save that painted), and a title is never a reason to fail.
+ */
+export function screenName(source: string): string {
+  const declared = /export\s+default\s+(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/u.exec(source)
+    // `const Screen = () => …; export default Screen;` — the other form the
+    // manual's own examples would compile to.
+    ?? /export\s+default\s+([A-Za-z_$][\w$]*)\s*;/u.exec(source);
+  const name = declared?.[1];
+  if (name === undefined) return "Screen";
+  const [first, ...rest] = name.replace(/([a-z0-9])([A-Z])/gu, "$1 $2").split(/\s+/u);
+  return [first, ...rest.map((word) => word.toLowerCase())].join(" ");
+}
+
+// ---- stage 5: the tree ----------------------------------------------------
+
+/** The wire artifact's own validators over the rendered tree. Not a second
+ *  implementation: `validateTree` is the format gate and `catalogIssues` is the
+ *  `components-exist` fact check, both used as they ship. The catalog arrives
+ *  here as names only, so a host component contributes its NAME to the
+ *  vocabulary and nothing else — its props were the type check's business.
+ *
+ *  A text run is the engine's own node kind, not a component anybody registered,
+ *  so it is not measured against the catalog. */
+const treeCheckIssues = async (
+  flat: FlatTree,
+  catalog: readonly string[],
+): Promise<ComponentScreenIssue[]> => {
+  const nodes = Object.values(flat.nodes) as TreeNode[];
+  const tree: Tree = { formatVersion: VENDO_TREE_FORMAT, root: flat.root, nodes };
+  const validation = validateTree(tree);
+  if (!validation.ok) {
+    return [issue("tree", `the rendered screen is not a valid tree: ${validation.error.message}`)];
+  }
+  const normalized: NormalizedCatalog = [...new Set(catalog)].map((name) => ({ name, description: "" }));
+  const found = await catalogIssues(
+    { ...validation.tree, nodes: nodes.filter((node) => node.component !== SCREEN_TEXT_NODE) },
+    undefined,
+    normalized,
+  );
+  return found.map((entry) => issue("tree", factIssueLine(entry)));
+};
+
+// ---- the reviewer's input -------------------------------------------------
+
+/**
+ * What the AI reviewer reads: the TSX itself, plus what each query really
+ * returned, truncated by the same rule the wire reviewer uses (reviewer.ts) so
+ * one long table cannot crowd the screen out of the prompt.
+ *
+ * The TSX comes FIRST and whole: it is the thing being judged, and unlike the
+ * wire artifact there is nothing to print — the file the model wrote is the file
+ * the reviewer reads.
+ */
+export function reviewComponentScreenInput(input: {
+  source: string;
+  queryResults: Readonly<Record<string, unknown>>;
+}): string {
+  return `SCREEN (the .tsx file this app renders):\n${input.source}${sampleLines(input.queryResults)}`;
+}

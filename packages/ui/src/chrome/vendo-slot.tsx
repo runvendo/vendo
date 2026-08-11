@@ -12,7 +12,7 @@ import { defaultSlotSuggestions } from "./discoverability.js";
 import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
 import { openVendoPalette } from "./palette-hotkey.js";
-import { BUILD_FAILURE_COPY } from "./thread/message-data.js";
+import { buildFailureNotice } from "./thread/message-data.js";
 
 /** A slot id is a code identifier ("net-worth-card"); the person choosing a
  *  destination in the picker reads words. */
@@ -93,10 +93,11 @@ function SlotLoadFailed({ reason, onRetry }: { reason: Error; onRetry(): void })
  * build wearing this one's name — and clear the slot, which is the unplace the
  * host's own markup comes back from.
  *
- * The wire's `reason` never reaches this page (§16 law 3, same law as the
- * embed's): every one of those sentences names a component, an expression or an
- * env var, and this is a host's own page. The developer sentence keeps the home
- * it has — the server's `[vendo] app build failed (app_…)` log line.
+ * The record's `reason` is what the notice says (buildFailureNotice): the
+ * runtime classifies it before persisting, so what reaches this page is the
+ * readable half — "timed out", "quota exhausted", the `@ai-sdk/*` package a host
+ * has to install. The operator's fuller record keeps the home it has, the
+ * server's `[vendo] app build failed (app_…)` log line.
  */
 function SlotBuildFailed({ appId, slotId, onChanged }: {
   appId: string;
@@ -104,7 +105,7 @@ function SlotBuildFailed({ appId, slotId, onChanged }: {
   onChanged(): void;
 }) {
   const { client } = useVendoProvider();
-  const [failure, setFailure] = useState<{ retryable?: boolean; prompt?: string }>();
+  const [failure, setFailure] = useState<{ reason?: string; retryable?: boolean; prompt?: string }>();
   const [busy, setBusy] = useState(false);
 
   // ONE read, not a poll: the record is terminal. The status already came from
@@ -150,7 +151,7 @@ function SlotBuildFailed({ appId, slotId, onChanged }: {
       <GhostSkeleton />
       <span className="fl-slot-cta" role="alert">
         <span className="fl-slot-cta-label">This view didn’t build</span>
-        <small>{BUILD_FAILURE_COPY}</small>
+        <small>{buildFailureNotice(failure?.reason)}</small>
         {failure?.retryable === true && failure.prompt !== undefined ? (
           <button type="button" className="fl-invite-btn" disabled={busy} onClick={() => void retry()}>
             Try again

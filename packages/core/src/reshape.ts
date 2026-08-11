@@ -5,21 +5,25 @@ import { defineOwn, isPlainObject } from "./genui/tree-node.js";
 /**
  * v2 spec §3 (docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md) —
  * the bounded reshape vocabulary: a small, pure, non-Turing projection
- * language that lets the model adapt `{ month, revenue }` to
- * `{ label, value }` WITHOUT a code island. Exactly the spec's families:
- * pick, field-rename, map (asPoints/asOptions), format, template (bounded
- * object→string interpolation for display slots), and aggregates — the last
- * of which the WIRE no longer writes (v3 §5 D2: an aggregate is an expression
- * call; see {@link WIRE_RESHAPE_OPS}).
+ * language over a STORED binding's `$reshape` chain. Exactly the spec's
+ * families: pick, field-rename, map (asPoints/asOptions), format, template
+ * (bounded object→string interpolation for display slots), and aggregates.
  *
- * Three consumers share this module:
+ * NOT MODEL-FACING ANY MORE. The wire dialect cannot write a reshape: a
+ * `{...}` gap in a screen document is a JavaScript expression, and JavaScript
+ * already picks, renames, maps and reduces — a second projection language the
+ * model has to learn buys nothing. What survives is the CANONICAL TREE
+ * feature: a stored document may carry a chain, and three consumers still read
+ * one —
  * - `validateTree` gates the canonical form via {@link findInvalidReshape}
  *   (the vocabulary is enforceable at the format gate, not just at compile);
  * - the wire compiler flows tool shapes through {@link reshapeShape}
- *   (genui/wire/shape-check.ts) to type-check bindings against shape cards;
+ *   (genui/wire/shape-check.ts) to type-check such bindings;
  * - the renderer evaluates {@link applyReshape} on resolved data — total and
  *   defensive, so a runtime mismatch becomes a contained data-shape notice,
- *   never a broken render.
+ *   never a broken render;
+ * plus the Kit's code-land `reshape.*` bundle (`@vendoai/ui`), which is a
+ * published function surface an island calls, not a dialect.
  */
 
 /** v2 spec §3 — one reshape step in a binding's `$reshape` chain. */
@@ -38,60 +42,30 @@ export const RESHAPE_OPS = [
   "asOptions", // @deprecated (W5a) — Kit Select/MultiSelect read raw rows via labelField/valueField
   "format",
   "template", // @deprecated (W5a) — Kit DataTable/CardList dot-path column keys reach nested scalars
-  "sum", // stored documents only — see WIRE_RESHAPE_OPS
-  "min", // stored documents only
-  "max", // stored documents only
-  "count", // stored documents only
+  "sum",
+  "min",
+  "max",
+  "count",
 ] as const;
 
 /** v2 spec §3 */
 export type ReshapeOp = (typeof RESHAPE_OPS)[number];
 
-/**
- * The aggregating ops. STORED documents still carry them; the wire dialect
- * cannot write them, because an aggregate is an expression call now
- * (genui/expr.ts's `sum(rows, "field")`) and exactly ONE `sum` must be
- * reachable from the dialect.
- */
-export const AGGREGATE_RESHAPE_OPS = ["sum", "min", "max", "count"] as const satisfies readonly ReshapeOp[];
-
-/** v2 spec §3 — an op that reduces rows to one number. */
-export type AggregateReshapeOp = (typeof AGGREGATE_RESHAPE_OPS)[number];
-
-const AGGREGATE_RESHAPE_OP_SET: ReadonlySet<string> = new Set(AGGREGATE_RESHAPE_OPS);
-
-/**
- * v3 spec §5 (D1/D2) — the ops the WIRE dialect can write, as a value-first
- * nested call (`pick(revenue.rows, "month")`).
- *
- * DERIVED, never re-listed: the registry above is the one list, and the wire
- * set is it minus the aggregates. Three copies of this vocabulary drifted
- * apart before (this list, the registry, and the Kit's function bundle in
- * `@vendoai/ui`), which is why an op added to `RESHAPE_OPS` must now land here
- * automatically. The printer refuses to print an aggregate as a chain call, so
- * the round-trip law never sees one.
- */
-export const WIRE_RESHAPE_OPS: readonly WireReshapeOp[] = RESHAPE_OPS.filter(
-  (op): op is WireReshapeOp => !AGGREGATE_RESHAPE_OP_SET.has(op),
-);
-
-/** v3 spec §5 — a reshape op the wire dialect can write. */
-export type WireReshapeOp = Exclude<ReshapeOp, AggregateReshapeOp>;
-
-const WIRE_OP_SET: ReadonlySet<string> = new Set(WIRE_RESHAPE_OPS);
-
-/** v3 spec §5 — is this op writable as a wire chain call? */
-export const isWireReshapeOp = (op: string): op is WireReshapeOp => WIRE_OP_SET.has(op);
-
 /** v2 spec §3 — chain-length cap: bounded and non-Turing by construction. */
 export const RESHAPE_MAX_STEPS = 8;
 
-/** format's closed kind vocabulary (deterministic en-US / USD / UTC).
- *  `currencyCents` is @deprecated (W5a §Dialect retirement): cents money
- *  rides the Kit (`<Money cents/>`, a `format:"money"` column) — the kind
- *  keeps rendering for stored apps only. */
-const FORMAT_KINDS = ["number", "currency", "currencyCents", "percent", "date"] as const;
+/** format's closed kind vocabulary (deterministic en-US / USD / UTC), the same
+ *  tokens as the Kit's `ValueFormat`. `money` pretty-prints the value AS IT
+ *  STANDS: formatters never convert units, so a minor-unit (cents) field is
+ *  divided by 100 in the expression that reads it. */
+const FORMAT_KINDS = ["number", "money", "percent", "date"] as const;
 type FormatKind = (typeof FORMAT_KINDS)[number];
+
+/** `format` has no row form: stringifying a column left DataTable sorting
+ *  strings, so a table's money goes through the column's own token and the data
+ *  stays numeric. One message, both venues (validation and runtime). */
+const FORMAT_SCALAR_ONLY =
+  'reshape op "format" formats a single value; to format a table column, use the column\'s format token: columns={[{key:"amount", format:"money"}]} — data stays numeric so sortBy works';
 
 const OP_SET: ReadonlySet<string> = new Set(RESHAPE_OPS);
 const FORMAT_KIND_SET: ReadonlySet<string> = new Set(FORMAT_KINDS);
@@ -106,7 +80,7 @@ const OP_ARITY: Record<ReshapeOp, readonly [number, number]> = {
   rename: [2, Number.POSITIVE_INFINITY],
   asPoints: [2, 2],
   asOptions: [2, 2],
-  format: [1, 2],
+  format: [1, 1],
   template: [1, 2],
   sum: [1, 1],
   min: [1, 1],
@@ -169,6 +143,7 @@ const invalidStep = (value: unknown): string | null => {
   if (!Array.isArray(args) || !args.every((arg) => typeof arg === "string")) {
     return `reshape op "${op}" args must be an array of strings`;
   }
+  if (op === "format" && args.length !== 1) return FORMAT_SCALAR_ONLY;
   const [min, max] = OP_ARITY[op as ReshapeOp];
   if (args.length < min || args.length > max) {
     return `reshape op "${op}" takes ${min === max ? min : `${min}..${max === Number.POSITIVE_INFINITY ? "n" : max}`} args; got ${args.length}`;
@@ -176,7 +151,7 @@ const invalidStep = (value: unknown): string | null => {
   if (op === "rename" && args.length % 2 !== 0) {
     return `reshape op "rename" takes old/new pairs; got ${args.length} args`;
   }
-  if (op === "format" && !FORMAT_KIND_SET.has(args[args.length - 1] as string)) {
+  if (op === "format" && !FORMAT_KIND_SET.has(args[0] as string)) {
     return `reshape op "format" kind must be one of ${FORMAT_KINDS.join(", ")}`;
   }
   if (op === "template" && templatePaths(args[args.length - 1] as string) === null) {
@@ -259,7 +234,7 @@ const renameFields = (row: Record<string, unknown>, pairs: readonly string[]): R
   return renamed;
 };
 
-const CURRENCY_FORMAT = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const MONEY_FORMAT = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const NUMBER_FORMAT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
 const PERCENT_FORMAT = new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 2 });
 const DATE_FORMAT = new Intl.DateTimeFormat("en-US", {
@@ -277,9 +252,7 @@ const formatScalar = (value: unknown, kind: FormatKind): string | null => {
     return DATE_FORMAT.format(new Date(time));
   }
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  if (kind === "currency") return CURRENCY_FORMAT.format(value);
-  // Host money fields are integer minor units (cents); scale to major units.
-  if (kind === "currencyCents") return CURRENCY_FORMAT.format(value / 100);
+  if (kind === "money") return MONEY_FORMAT.format(value);
   if (kind === "percent") return PERCENT_FORMAT.format(value);
   return NUMBER_FORMAT.format(value);
 };
@@ -409,28 +382,12 @@ const applyTemplate = (value: Json, args: readonly string[]): ReshapeResult => {
 };
 
 const applyFormat = (value: Json, args: readonly string[]): ReshapeResult => {
-  if (args.length === 1) {
-    const formatted = formatScalar(value, args[0] as FormatKind);
-    return formatted === null
-      ? mismatch(`format "${args[0]}" cannot format this value`)
-      : { ok: true, value: formatted };
-  }
-  const [field, kind] = args as [string, FormatKind];
-  if (!isRowArray(value)) return mismatch("per-field format needs an array of rows");
-  if (!fieldPresent(value, field)) return mismatch(`field "${field}" is absent from the rows`);
-  const rows: Json[] = [];
-  for (const row of value) {
-    if (!Object.prototype.hasOwnProperty.call(row, field)) {
-      rows.push(row);
-      continue;
-    }
-    const formatted = formatScalar(row[field], kind);
-    if (formatted === null) return mismatch(`format "${kind}" cannot format "${field}" values`);
-    const next = { ...row };
-    defineOwn(next, field, formatted);
-    rows.push(next);
-  }
-  return { ok: true, value: rows };
+  if (Array.isArray(value)) return mismatch(FORMAT_SCALAR_ONLY);
+  const kind = args[0] as FormatKind;
+  const formatted = formatScalar(value, kind);
+  return formatted === null
+    ? mismatch(`format "${kind}" cannot format this value`)
+    : { ok: true, value: formatted };
 };
 
 // pick / rename — per-row on arrays, direct on objects.
@@ -673,28 +630,6 @@ const asOptionsShape = (view: RowsView, args: readonly string[]): ReshapeShapeRe
   };
 };
 
-const formatFieldShape = (view: RowsView, args: readonly string[]): ReshapeShapeResult => {
-  const [field, kind] = args as [string, FormatKind];
-  const violation = checkedFields(view, [field], "format");
-  if (violation !== null) return violation;
-  if (view.fields === null) return { ok: true, shape: view.rebuild(JSON_SHAPE) };
-  const fieldShape = view.fields[field] as ShapeType;
-  const formattable = fieldShape.kind === "json"
-    || (kind === "date" ? fieldShape.kind === "string" || fieldShape.kind === "number" : fieldShape.kind === "number");
-  if (!formattable) {
-    return shapeError(
-      `format "${kind}" cannot format "${field}" (${fieldShape.kind}) values`,
-      undefined,
-      Object.keys(view.fields),
-    );
-  }
-  const fields: Record<string, ShapeType> = {};
-  for (const [key, value] of Object.entries(view.fields)) {
-    defineOwn(fields, key, key === field ? STRING_SHAPE : value);
-  }
-  return { ok: true, shape: view.rebuild(objectShape(fields, [...view.optional])) };
-};
-
 const pickRenameShape = (
   view: RowsView,
   shape: ShapeType,
@@ -743,8 +678,9 @@ export function reshapeShape(shape: ShapeType, step: ReshapeStep): ReshapeShapeR
     return { ok: true, shape: NUMBER_SHAPE };
   }
 
-  if (op === "format" && args.length === 1) {
+  if (op === "format") {
     const kind = args[0] as FormatKind;
+    if (shape.kind === "array") return shapeError(FORMAT_SCALAR_ONLY);
     const formattable = shape.kind === "json"
       || (kind === "date" ? shape.kind === "string" || shape.kind === "number" : shape.kind === "number");
     if (!formattable) return shapeError(`format "${kind}" cannot format a ${shape.kind} value`);
@@ -761,7 +697,6 @@ export function reshapeShape(shape: ShapeType, step: ReshapeStep): ReshapeShapeR
   if (AGGREGATE_OPS.has(op)) return aggregateShape(view, op, args);
   if (op === "asPoints") return asPointsShape(view, args);
   if (op === "asOptions") return asOptionsShape(view, args);
-  if (op === "format") return formatFieldShape(view, args);
   // pick / rename
   return pickRenameShape(view, shape, op, args);
 }

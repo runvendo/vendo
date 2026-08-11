@@ -9,11 +9,13 @@
  *    what exists;
  *  - `find_tools` loads a match and it is callable on the very next step;
  *  - the loaded set persists across turns through `turn.state`;
- *  - always-active names (`vendo_*`, the connector-discovery four) are never
- *    gated, whatever the cap (uiaudit 2026-08-06 — a host past the cap lost
- *    `request_connection` while the prompt kept teaching it).
+ *  - always-active names are CONFIG-DECLARED by the composition (uiaudit
+ *    2026-08-06 — a host past the cap lost `request_connection` while the
+ *    prompt kept teaching it); the harness itself exempts only its own
+ *    capability-miss hand, and knows no product names.
  */
 import { CONNECTOR_DISCOVERY_TOOLS, type ThreadId, type ToolListing } from "@vendoai/core";
+import { CAPABILITY_MISS_TOOL_NAME } from "../../src/capability-miss.js";
 import { describe, expect, it } from "vitest";
 import { vendo } from "../../src/vendo/vendo.js";
 import {
@@ -41,9 +43,11 @@ import {
 
 const THREAD = "thr_tool_search" as ThreadId;
 
-/** Three host tools under a cap of two, plus the always-active pair the cap
- *  must never spend itself on. Risk-then-name order picks aaa and bbb, so
- *  `zz_target_ccc` is exactly the long tail `find_tools` exists to reach. */
+/** Three host tools under a cap of two, plus a config-declared always-active
+ *  pair the cap must never spend itself on (the composition declares such
+ *  names; the harness no longer exempts any by prefix). Risk-then-name order
+ *  picks aaa and bbb, so `zz_target_ccc` is exactly the long tail
+ *  `find_tools` exists to reach. */
 const CATALOG = {
   host_aaa: { descriptor: readTool("host_aaa"), execute: () => ({ ok: 1 }) },
   host_bbb: { descriptor: readTool("host_bbb"), execute: () => ({ ok: 1 }) },
@@ -64,7 +68,10 @@ function rig(model: ScriptedModel) {
   });
   const run = async (messages: Parameters<typeof runtime.run>[0]["messages"]) =>
     readSse(await runtime.run({
-      harness: vendo({ toolSearch: { maxInitialTools: 2 } }),
+      harness: vendo({ toolSearch: {
+        maxInitialTools: 2,
+        alwaysActive: ["request_connection", "vendo_probe"],
+      } }),
       threadId: THREAD,
       messages,
       ctx: ctx(),
@@ -133,17 +140,35 @@ describe("the always-active exemption, in the loadout helper itself", () => {
   const BIG_HOST = Array.from({ length: 200 }, (_, index) =>
     listing(`host_tool_${String(index).padStart(3, "0")}`));
 
-  it("keeps the connector-discovery four past the cap, and does not spend the cap on them", () => {
-    const initial = computeInitialLoadout([...BIG_HOST, ...CONNECTOR_LISTINGS], { maxInitialTools: 128 });
+  it("keeps the config-declared names past the cap, and does not spend the cap on them", () => {
+    const initial = computeInitialLoadout(
+      [...BIG_HOST, ...CONNECTOR_LISTINGS],
+      { maxInitialTools: 128, alwaysActive: CONNECTOR_DISCOVERY_TOOLS },
+    );
     for (const name of CONNECTOR_DISCOVERY_TOOLS) expect([...initial], name).toContain(name);
     // Exempt means exempt: the host's budget is untouched by the four.
     expect([...initial].filter((name) => name.startsWith("host_tool_"))).toHaveLength(128);
   });
 
   it("keeps them under an explicit loadout that never names them", () => {
-    const initial = computeInitialLoadout([...BIG_HOST, ...CONNECTOR_LISTINGS], { loadout: ["host_tool_000"] });
+    const initial = computeInitialLoadout(
+      [...BIG_HOST, ...CONNECTOR_LISTINGS],
+      { loadout: ["host_tool_000"], alwaysActive: CONNECTOR_DISCOVERY_TOOLS },
+    );
     for (const name of CONNECTOR_DISCOVERY_TOOLS) expect([...initial], name).toContain(name);
     expect([...initial].filter((name) => name.startsWith("host_tool_"))).toEqual(["host_tool_000"]);
+  });
+
+  it("exempts nothing by product name on its own — vendo_* competes for the cap; the capability-miss hand never does", () => {
+    const initial = computeInitialLoadout(
+      [listing(CAPABILITY_MISS_TOOL_NAME), listing("vendo_apps_pin"), ...BIG_HOST],
+      { maxInitialTools: 128 },
+    );
+    // The prefix hack is gone: an undeclared vendo_ tool is an ordinary tool
+    // (h… sorts before v…, so the cap fills with host tools first).
+    expect(initial.has("vendo_apps_pin")).toBe(false);
+    // The harness's one native exemption is its own hand.
+    expect(initial.has(CAPABILITY_MISS_TOOL_NAME)).toBe(true);
   });
 });
 

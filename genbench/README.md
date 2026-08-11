@@ -61,7 +61,7 @@ column's slug — `<harness>-<model>`, e.g. `vendo-sonnet`, `diy-opus`,
 
 | file | what it is |
 | --- | --- |
-| `artifact.vendo` | the document the contender actually saved (vendo only — a contender whose outcome says `format: "html"` has already delivered a document, and it lands once, as `page.html`) |
+| `artifact.tsx` | the screen the contender actually saved — TSX bytes, hence the extension (vendo only — a contender whose outcome says `format: "html"` has already delivered a document, and it lands once, as `page.html`) |
 | `page.html` | the real screen: for vendo a root, the payload and the product's own renderer bundled in; for `diy` and `claude-code` the document each wrote. This is the only way pixels are made |
 | `screenshot.png` | that page, shot once it has settled |
 | `result.json` | the five floor verdicts and any check programs tier 2 executed, the judge's verdict for every rubric line and the contract it graded under, the click trace, console errors, timings, tokens and dollars |

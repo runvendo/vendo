@@ -16,14 +16,9 @@ import { createTurnSkills } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ADA,
-  appIdInPrompt,
   createStack,
-  generationTurn,
   resetFixture,
-  reviewerTurn,
   screenAgentCreateTurns,
-  textTurn,
-  toolCallTurn,
   type Stack,
   type StackOptions,
 } from "../src/harness.js";
@@ -44,18 +39,33 @@ const installed: StackOptions = {
   catalog: complianceComponents,
 };
 
-/** A tiny-ask create: the screen agent saves the whole document with its own
- *  hands. Clean, so it lands. */
-const CLEAN_APP = '<App name="Retention"><Text text="Report 2026 is clean"/><Disclaimer reason="Fixture app."/></App>';
-/** The edit answer — the whole document again, this time carrying an unmasked
+/** A tiny-ask create: the screen agent saves the whole `app.tsx` with its own
+ *  hands. Clean, so it lands. The default export's name is the app's title. */
+const screen = (body: string, imports = "Disclaimer, Stack, Text"): string =>
+  `import { ${imports} } from "@vendo/screen";
+
+export default function Retention() {
+  return (
+    <Stack gap={12}>
+${body}
+      <Disclaimer reason="Fixture app." />
+    </Stack>
+  );
+}
+`;
+
+const CLEAN_APP = screen('      <Text text="Report 2026 is clean" variant="heading" />');
+/** The edit answer — the whole screen again, this time carrying an unmasked
  *  account number. The contributed fact check is what must object to it. */
-const LEAK_APP = '<App name="Retention"><Text text="Account 4012888888881881 is clean"/><Disclaimer reason="Fixture app."/></App>';
+const LEAK_APP = screen('      <Text text="Account 4012888888881881 is clean" variant="heading" />');
 /** A no-op-ish reword: the app stays clean, so `issues` being empty is a real
  *  assertion about the checks rather than about a missing response field. */
-const REWORDED_APP = '<App name="Retention"><Text text="Report 2026 looks clean"/><Disclaimer reason="Fixture app."/></App>';
+const REWORDED_APP = screen('      <Text text="Report 2026 looks clean" variant="heading" />');
 /** The same app with the contributed component saved in beside the text. */
-const BADGE_APP = '<App name="Retention"><Text text="Report 2026 is clean"/><RetentionBadge years={7}/><Disclaimer reason="Fixture app."/></App>';
-const REVIEW_SILENT = "Nothing to report.";
+const BADGE_APP = screen(
+  '      <Text text="Report 2026 is clean" variant="heading" />\n      <RetentionBadge years={7} />',
+  "Disclaimer, RetentionBadge, Stack, Text",
+);
 
 /** The digits the fact check objects to, spelled once. */
 const ACCOUNT_NUMBER = "4012888888881881";
@@ -196,10 +206,11 @@ describe("E5: external capability installs through the keys a host already knows
     expect(await stored(created.id as string)).toContain("Report 2026 looks clean");
   });
 
-  /** Create, then save the contributed component in. The floor's
-   *  `components-exist` fact refuses a component nothing in this deployment
-   *  knows — so whether the badge reaches the row reports whether the catalog
-   *  really carries it. */
+  /** Create, then save the contributed component in. `@vendo/screen` exports
+   *  exactly the Kit plus this deployment's catalog, so a component nothing here
+   *  registered does not type-check and the gauntlet refuses the screen — which
+   *  makes "did the badge reach the row" a report on whether the catalog really
+   *  carries it. */
   const editInTheBadge = async (options: StackOptions): Promise<{ edited: EditedApp; reported: string; after: string }> => {
     await resetFixture();
     stack = await createStack({
@@ -223,21 +234,25 @@ describe("E5: external capability installs through the keys a host already knows
 
     expect(edited.issues ?? []).toEqual([]);
     // The badge reached the ROW, so the catalog the floor measures against
-    // really carries it — the floor never saw an unknown component.
+    // really carries it — the floor never refused this screen at all.
     expect(after).toContain("RetentionBadge");
-    expect(reported).not.toContain("references unknown component");
+    expect(reported).not.toContain("did not pass the checks floor");
   });
 
   it("and the SAME edit is rejected when the component was not registered", async () => {
     // The contrast is what makes the assertion above mean something: without the
-    // registration, the identical markup names a component nothing knows, and
+    // registration, the identical screen names a component nothing knows, and
     // the floor blocks it.
     const { reported, after } = await editInTheBadge({});
 
-    expect(reported).toContain("references unknown component");
-    expect(reported).toContain("RetentionBadge");
-    // Refused, not half-applied: nothing painted, no row landed, and the app is
-    // left as it was.
+    // A screen may only name what `@vendo/screen` exports, and that surface IS
+    // the catalog — so an unregistered component is a type error, and the
+    // gauntlet's type stage is where the refusal comes from.
+    expect(reported).toContain("did not pass the checks floor");
+    expect(reported).toContain("has no exported member 'RetentionBadge'");
+    // Refused, not half-applied: nothing painted, so the app the person can
+    // still open is the one they had — a screen the floor would not render must
+    // never become the app's stored screen.
     expect(after).not.toContain("RetentionBadge");
     expect(after).toContain("Report 2026 is clean");
   });
@@ -245,27 +260,16 @@ describe("E5: external capability installs through the keys a host already knows
 
 describe("E5: the contributed judgment rule reaches the live reviewer", () => {
   /**
-   * The screen agent's own review floor, scripted: save the app, then `validate`
-   * it — the verb the shipped skill teaches ("call it on what you saved") and the
-   * loadout the assembly loop is built around.
+   * The screen agent's own review floor, scripted: save the screen, stop, and
+   * face the MANDATORY reviewer pass — the one judging call every painted screen
+   * gets whether or not the loop asked for it (`screen-agent.ts`). The loop
+   * carries no `validate` verb of its own any more, so this pass is the only
+   * route a host's judgment rule has into a live reviewer, which is exactly what
+   * makes the prompt below the proof.
    *
-   * `{ appId }`, not `{ document }`: the reviewer only runs over a STORED app, so
-   * the appId the front door minted for this ask is read back off the brief the
-   * loop was just handed. The reviewer's own model call sits between the validate
-   * step and the closing one, which is why REVIEW_SILENT is scripted there.
-   *
-   * And the mandatory pass asks it AGAIN after the loop stops — a painted screen
-   * faces the reviewer whether or not the loop volunteered — so the script ends
-   * with that verdict too.
+   * The last turn is that reviewer's own verdict (`report_findings`, empty).
    */
-  const saveThenValidateTurns = [
-    toolCallTurn("save_app", { content: CLEAN_APP }, "screen_save"),
-    (prompt: Parameters<typeof appIdInPrompt>[0]) =>
-      toolCallTurn("validate", { appId: appIdInPrompt(prompt) }, "screen_validate"),
-    generationTurn(REVIEW_SILENT, "review_1"),
-    textTurn("saved", "screen_done"),
-    reviewerTurn(),
-  ];
+  const saveThenReviewTurns = screenAgentCreateTurns(CLEAN_APP);
 
   it("puts the rule on the reviewer's rubric in the composed server, not just in a list", async () => {
     await resetFixture();
@@ -274,7 +278,7 @@ describe("E5: the contributed judgment rule reaches the live reviewer", () => {
     // composed umbrella really sent proves it travelled from the config key,
     // through `AppsRuntime.validate`'s floor, into the live reviewer — on the
     // path the screen agent itself takes.
-    stack = await createStack({ ...installed, turns: saveThenValidateTurns });
+    stack = await createStack({ ...installed, turns: saveThenReviewTurns });
 
     await create("Show me the retention report");
 
@@ -286,7 +290,7 @@ describe("E5: the contributed judgment rule reaches the live reviewer", () => {
 
   it("does not put the rule in a prompt when the check was not configured", async () => {
     await resetFixture();
-    stack = await createStack({ turns: saveThenValidateTurns });
+    stack = await createStack({ turns: saveThenReviewTurns });
 
     await create("Show me the retention report");
 

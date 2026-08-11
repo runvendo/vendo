@@ -38,8 +38,4 @@ describe("the collision a real host can actually create is a boot error", () => 
   it("leaves paint.disabled alone — it is not a model knob", () => {
     expect(() => resolveModels({ paint: { disabled: true }, models: { fill: "haiku" } }, makeModel)).not.toThrow();
   });
-
-  it("keeps the legacy `agent` key working beside a different seat", () => {
-    expect(() => resolveModels({ models: { agent: "opus", judge: "haiku" } }, makeModel)).not.toThrow();
-  });
 });

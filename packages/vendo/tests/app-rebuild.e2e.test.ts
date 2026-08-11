@@ -373,9 +373,12 @@ describe.sequential("an app rebuilds from its row onto a fresh box, with its sna
 
   /**
    * The persistence is a courtesy on top of a landed commit and can never fail
-   * one — but a silently dropped source file is a lost app, so a failure is loud.
-   * A commit under an app directory with no row is the honest case for that: the
-   * files landed in the workspace, and there is no app to persist them onto.
+   * one. A commit under an app directory with NO ROW is not a failure at all: a
+   * paint is what creates the row, so a save the seam declined to paint has none,
+   * and the bytes are already in the workspace for the next save that paints to
+   * persist. So it is a quiet skip (one operator line), not the loud "source did
+   * not reach the store" it used to be over a document whose writer was already
+   * being told the real problem in the floor's own sentences.
    */
   it("never fails the commit that carried it, even with no app row to write to", async () => {
     const { open } = await harness();

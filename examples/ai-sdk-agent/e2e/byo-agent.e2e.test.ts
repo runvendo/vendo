@@ -63,7 +63,20 @@ function hostAgentModel(toolName: string, input: unknown): LanguageModel {
   }) as unknown as LanguageModel;
 }
 
-const WEATHER_APP = '<App name="Weather dashboard"><Stack><Text text="Paris, London, and Tokyo at a glance"/><Disclaimer reason="Fixture app."/></Stack></App>';
+/** The screen as the one engine now writes it: an `app.tsx` React component the
+ *  gauntlet compiles, type-checks and renders. The component's own name is the
+ *  app's title (`WeatherDashboard` → "Weather dashboard"). */
+const WEATHER_APP = `import { Disclaimer, Stack, Text } from "@vendo/screen";
+
+export default function WeatherDashboard() {
+  return (
+    <Stack>
+      <Text text="Paris, London, and Tokyo at a glance" />
+      <Disclaimer reason="Fixture app." />
+    </Stack>
+  );
+}
+`;
 
 /** Vendo's own model seam: answers the screen agent's turns so the build
  *  streams for real. `# In this loop` is the assembly loop's own brief — the

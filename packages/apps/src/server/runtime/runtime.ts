@@ -28,14 +28,6 @@ export type {
   PlacementEntry,
   VersionEntry,
 } from "./types.js";
-// …and the values, for the same reason: the build sentences and the failure
-// classifier moved to build-messages.ts, the payload assembler to build-surface.ts.
-export {
-  NO_ASSEMBLER,
-  NOTHING_RENDERABLE,
-  NO_MACHINE,
-  buildFailureReason,
-} from "../doors/build-messages.js";
 export { assembleTree } from "../doors/build-surface.js";
 
 /**

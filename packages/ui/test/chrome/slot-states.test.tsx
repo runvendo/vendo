@@ -8,7 +8,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoSlot } from "../../src/chrome/index.js";
-import { BUILD_FAILURE_COPY } from "../../src/chrome/thread/message-data.js";
 import { createWireServer } from "../wire-server.js";
 
 describe("VendoSlot build states", () => {
@@ -63,44 +62,28 @@ describe("VendoSlot build states", () => {
   });
 
   describe("failed", () => {
-    // The real sentences the wire carries — every one is written for whoever can
-    // FIX the build, and a slot is a host's own page, the most public surface we
-    // have. Same audit as the embed's (test/embeds.test.tsx).
-    const developerReason = "This app wasn't created, because it didn't pass the checks that keep an app honest:"
+    // A real sentence the wire carries. It names the thing that has to change,
+    // so it is what the slot prints — a canned line would leave a host's most
+    // public surface saying nothing anyone can act on.
+    const buildReason = "This app wasn't created, because it didn't pass the checks that keep an app honest:"
       + " the `value` expression is a declarative string that the DataTable does not evaluate,"
       + " not JavaScript: amount / sum(spending.data.amount)";
 
-    const codeShaped: readonly [string, RegExp][] = [
-      ["a backtick quote", /`/],
-      ["call syntax", /\w+\(/],
-      ["a dotted path", /\w\.\w+\.\w/],
-      ["a snake_case identifier", /[A-Za-z]_[A-Za-z]/],
-      ["a package specifier", /@[\w-]+\//],
-      ["an npm command", /\bnpm\b/],
-      ["a shouted env var", /\b[A-Z][A-Z0-9_]{4,}\b/],
-    ];
-
     function doomed(retryable: boolean, prompt?: string) {
       wire.state.failedApps.set("app_doomed", {
-        reason: developerReason,
+        reason: buildReason,
         retryable,
         ...(prompt === undefined ? {} : { prompt }),
       });
       wire.state.placements.push({ slot: "hero", appId: "app_doomed" });
     }
 
-    it("says the CONSUMER sentence — not one fragment of the wire's reaches the page", async () => {
+    it("says the reason the wire carried, whole", async () => {
       doomed(true, "a spending board");
       slot("hero");
-      await screen.findByText(BUILD_FAILURE_COPY);
+      await screen.findByText(buildReason);
       const rendered = document.querySelector<HTMLElement>("[data-vendo-slot]")?.textContent ?? "";
-      expect(rendered).not.toContain(developerReason);
-      for (const word of developerReason.split(/\s+/).filter(token => token.length > 12)) {
-        expect(rendered).not.toContain(word);
-      }
-      for (const [what, pattern] of codeShaped) {
-        expect(pattern.test(rendered), `${what} reached the slot: ${rendered}`).toBe(false);
-      }
+      expect(rendered).toContain(buildReason);
     });
 
     it("offers a retry that re-issues the ORIGINAL request and takes the slot", async () => {
@@ -118,7 +101,7 @@ describe("VendoSlot build states", () => {
     it("offers no retry when the failure is not retryable — never a button that lies", async () => {
       doomed(false, "a spending board");
       slot("hero");
-      await screen.findByText(BUILD_FAILURE_COPY);
+      await screen.findByText(buildReason);
       expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
       expect(screen.getByRole("button", { name: "Clear this slot" })).toBeTruthy();
     });
@@ -126,7 +109,7 @@ describe("VendoSlot build states", () => {
     it("offers no retry when the record kept no request — there is nothing honest to re-issue", async () => {
       doomed(true);
       slot("hero");
-      await screen.findByText(BUILD_FAILURE_COPY);
+      await screen.findByText(buildReason);
       expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     });
 

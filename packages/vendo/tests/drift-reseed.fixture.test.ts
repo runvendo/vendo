@@ -9,10 +9,6 @@ import {
   type AppDocument,
   type Principal,
 } from "@vendoai/core";
-import {
-  componentSources,
-  printWire,
-} from "@vendoai/apps/contract";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
@@ -29,21 +25,31 @@ const promptText = (call: ModelCall): string => JSON.stringify(call.prompt ?? ""
 /** The screen agent's own brief (`environmentNote`), verbatim — the one marker
  *  that says a prompt belongs to the assembly loop. */
 const SCREEN_BRIEF_MARKER = "# In this loop";
-const SAVED_MARKER = "Run validate on it now.";
+const SAVED_MARKER = "That save landed.";
 
 /**
  * The screen agent, scripted, for the ONE model-driven step in this journey —
- * the user's edit. It reads the app's document as it stands, adds the remix note
- * to the seeded island's source, and saves the whole thing back.
+ * the user's edit. It writes the app's whole `app.tsx` with the remix note on it
+ * and saves it; a seeded app has no screen file until an edit writes one, so
+ * there is no document to open first.
  *
  * The re-seed below never comes through here: it is deterministic (d6 — a plain
  * swap for the pristine new component, with no replay).
  */
-const screenModel = (document: () => Promise<string>): LanguageModel => {
+const screenModel = (): LanguageModel => {
   const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
   const saving = (prompt: string): boolean =>
     prompt.includes(SCREEN_BRIEF_MARKER) && !prompt.includes(SAVED_MARKER);
-  const rewrite = async (): Promise<string> => (await document()).replace("$1.2M", "$1.2M — remixed");
+  const rewrite = (): string => `import { Stack, Text } from "@vendo/screen";
+
+export default function MapleNetWorth() {
+  return (
+    <Stack>
+      <Text text="Net worth $1.2M — remixed" />
+    </Stack>
+  );
+}
+`;
   return {
     specificationVersion: "v2",
     provider: "vendo-drift-fixture",
@@ -58,14 +64,14 @@ const screenModel = (document: () => Promise<string>): LanguageModel => {
           type: "tool-call" as const,
           toolCallId: "call_save_app",
           toolName: "save_app",
-          input: JSON.stringify({ content: await rewrite() }),
+          input: JSON.stringify({ content: rewrite() }),
         }],
         finishReason: "tool-calls" as const,
         usage,
       };
     },
     async doStream(call: ModelCall) {
-      const content = saving(promptText(call)) ? await rewrite() : undefined;
+      const content = saving(promptText(call)) ? rewrite() : undefined;
       return {
         stream: new ReadableStream({
           start(controller) {
@@ -140,35 +146,19 @@ export default function Page() {
     process.chdir(root);
     const ctx = { principal, venue: "app" as const, presence: "present" as const, sessionId: "session_drift" };
 
-    /** The composition currently serving, and the app under edit — both are set
-     *  as the journey reaches them, because the assembler opens the app's own
-     *  document and the host redeploys halfway through. */
-    let active: ReturnType<typeof createVendo> | undefined;
-    let appUnderEdit: string | undefined;
-    const asItStands = async (): Promise<string> => {
-      const app = await active!.apps.get(appUnderEdit!, ctx);
-      if (app === null) throw new Error("no app row to rewrite");
-      return printWire(
-        { tree: app.tree as never, components: componentSources(app.components), name: app.name },
-        { includeIds: true },
-      );
-    };
-
     // ONE host process lifetime: seed the app (gesture, no model) and edit it.
     const vendo = createVendo({
-      model: screenModel(asItStands),
+      model: screenModel(),
       principal: async () => principal,
       store,
       development: true,
     });
-    active = vendo;
     // Gesture-owned seeding: the seed rides its own wire route, executed
     // deterministically by the engine — the model never sees it.
     const seedResponse = await vendo.handler(request("POST", "/apps/seed", { component: slot }));
     expect(seedResponse.status).toBe(200);
     const seeded = await seedResponse.json() as AppDocument;
     const appId = seeded.id;
-    appUnderEdit = appId;
     expect(seeded.seed).toEqual({ component: slot, baseline: oldHash });
     expect(bundleOf(seeded.components![componentName]!).source).toContain("$1.2M");
     const remixed = await vendo.apps.edit(appId, "Call out that it is remixed", ctx);
@@ -198,12 +188,11 @@ export default function Page() {
     // The host redeploys: a fresh composition loads the NEW baselines over the
     // SAME store. Drift must now be loud on every surface the app rides.
     const redeployed = createVendo({
-      model: screenModel(asItStands),
+      model: screenModel(),
       principal: async () => principal,
       store,
       development: true,
     });
-    active = redeployed;
 
     // 1. open() rides the drift report on the payload (the renderer's notice)
     //    while the untouched version keeps its hash-pinned approval. ONE seed,

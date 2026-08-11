@@ -149,8 +149,24 @@ export interface ComposedHost {
  * is not on that package's exports map; same shape as the other fixture doubles
  * in this package (`inclient.fixture.test.ts`, `pins.fixture.test.ts`).
  */
+/**
+ * The title is the COMPONENT's own name, split on camel case — `screenName`
+ * (`apps/src/server/checking/component-screen.ts`) is what both the receipt and the
+ * app row read, so `SpendingThisMonth` is where this string comes from and there is
+ * no `name=` attribute to declare it any more.
+ */
 export const SCREEN_TITLE = "Spending this month";
-const SCREEN = `<App name="${SCREEN_TITLE}"><Text text="Ready"/><Disclaimer reason="Fixture app."/></App>`;
+/** The smallest `app.tsx` the gauntlet compiles, type-checks and renders. */
+const SCREEN = `import { Stack, Text } from "@vendo/screen";
+
+export default function SpendingThisMonth() {
+  return (
+    <Stack>
+      <Text text="Ready" />
+    </Stack>
+  );
+}
+`;
 const SCREEN_BRIEF_MARKER = "# In this loop";
 
 export const screenModel = (): LanguageModel => {

@@ -18,7 +18,7 @@ describe("kitPrompt() — the generated model-facing Kit section", () => {
 
   it("renders a prop as `name` [class] (required) — doc, and omits the marker when optional", () => {
     const prompt = kitPrompt({ only: ["Money"] });
-    expect(prompt).toContain("- `cents` [data] (required) — amount in integer cents (minor units)");
+    expect(prompt).toContain("- `amount` [data] (required) — the amount in dollars (major units)");
     expect(prompt).toContain("- `currency` [config] — ISO 4217 code, default USD");
   });
 

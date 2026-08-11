@@ -8,14 +8,17 @@
  * receives a `Turn` and yields a closed event vocabulary; it never persists,
  * never touches the wire, and never decides whether a call is allowed.
  *
- * §1.5's `HarnessEvent` list is CLOSED for v1 — adding a member is a breaking
- * change for every host renderer.
+ * §1.5's `HarnessEvent` list is CLOSED — the one post-v1 addition is `notice`
+ * (2026-08-10 ruling: code never speaks in the assistant's voice), routed to
+ * the transcript as a persisted system part; hosts that don't recognize the
+ * part ignore it (§15 forward-compat).
  */
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { LanguageModel, UIMessage } from "ai";
 import type { AppId, Json, TurnId } from "./ids.js";
 import type { JsonSchema } from "./ids.js";
 import type { SeatModels } from "./model-seats.js";
+import type { VendoStepLimitPart } from "./stream-parts.js";
 import type { RiskLabel } from "./tools.js";
 import type { WorkspaceFs } from "./workspace.js";
 
@@ -177,8 +180,9 @@ export interface TurnState {
  * Build contract §1.5 — the CLOSED yield vocabulary. Routing is frozen:
  * `text` → screen + transcript · `status` → screen only ·
  * `error` → screen + audit (not the transcript) · `usage` → audit/metering
- * only. Tool calls are mirrored by the runtime, never yielded; harnesses never
- * yield view events.
+ * only · `notice` → screen + transcript as persisted SYSTEM chrome. Tool calls
+ * are mirrored by the runtime, never yielded; harnesses never yield view
+ * events.
  */
 export type HarnessEvent =
   | { type: "text"; delta: string }
@@ -192,6 +196,11 @@ export type HarnessEvent =
   | { type: "status"; label: string; phase?: BeatPhase; appId?: AppId }
   /** Consumer-voice; no internals. */
   | { type: "error"; message: string; code?: string }
+  /** A SYSTEM fact for the transcript — persisted and rendered as chrome,
+   *  never the assistant's voice (2026-08-10 ruling). Narrow on purpose: the
+   *  step-limit part is the only system fact today; widening the member is
+   *  additive, adding a member is not. */
+  | { type: "notice"; notice: VendoStepLimitPart }
   | {
       type: "usage";
       inputTokens: number;

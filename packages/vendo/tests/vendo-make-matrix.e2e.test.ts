@@ -54,12 +54,19 @@ afterEach(async () => {
 
 const principal: Principal = { kind: "user", subject: "user_matrix" };
 
-/** The smallest document the compiler renders and the seam paints. */
-const SPENDING = `<App name="Spending">
-  <Stack>
-    <Text text="This month" />
-  </Stack>
-</App>`;
+/** The smallest `app.tsx` the gauntlet renders and the seam paints. Its title is
+ *  the default export's own name (`screenName`), so the component is what the
+ *  receipt and the app row are both named after. */
+const SPENDING = `import { Stack, Text } from "@vendo/screen";
+
+export default function Spending() {
+  return (
+    <Stack>
+      <Text text="This month" />
+    </Stack>
+  );
+}
+`;
 
 /** The plan an escalating screen agent writes: the outline the person watches. */
 const ESCALATED_PLAN = `<Plan name="Invoice matcher">
@@ -68,13 +75,18 @@ const ESCALATED_PLAN = `<Plan name="Invoice matcher">
   </Group>
 </Plan>`;
 
-/** The same app, after the edit ask — a screen edit is the whole document saved
+/** The same app, after the edit ask — a screen edit is the whole file saved
  *  again, which is the only write path there is. */
-const SPENDING_EDITED = `<App name="Spending">
-  <Stack>
-    <Text text="Last month" />
-  </Stack>
-</App>`;
+const SPENDING_EDITED = `import { Stack, Text } from "@vendo/screen";
+
+export default function Spending() {
+  return (
+    <Stack>
+      <Text text="Last month" />
+    </Stack>
+  );
+}
+`;
 
 // ── the fake box ─────────────────────────────────────────────────────────────
 // Modelled on a real v2 box, not on what the host wishes one did: the control
@@ -406,7 +418,6 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
       asks: [{ request: "show me what I spent this month" }],
       screenTurns: [
         call("save_app", { content: SPENDING }, "c1"),
-        call("validate", { document: SPENDING }, "c2"),
         speak("done"),
       ],
     });
@@ -573,7 +584,6 @@ describe("the six-type matrix — every `vendo_make` ask type, one deployment", 
     const { model } = scripted({
       screenTurns: [
         call("save_app", { content: SPENDING }, "c1"),
-        call("validate", { document: SPENDING }, "c2"),
         speak("done"),
       ],
     });

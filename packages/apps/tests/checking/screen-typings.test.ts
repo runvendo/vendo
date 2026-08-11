@@ -7,14 +7,12 @@ import {
   type JsonSchema,
 } from "@vendoai/core";
 import {
-  EXPR_BUCKETS,
-  EXPR_CALLS,
   KIT_WIRE_COMPONENT_NAMES,
   WIRE_COMPONENT_NAMES,
   type NormalizedCatalog,
 } from "../../src/contract/index.js";
 import { describe, expect, it } from "vitest";
-import { AGGREGATE_FIELD_ARITY, screenTypings } from "../../src/server/checking/screen-typings.js";
+import { screenTypings } from "../../src/server/checking/screen-typings.js";
 
 const netWorthSchema: JsonSchema = {
   type: "object",
@@ -61,9 +59,10 @@ describe("screenTypings", () => {
 
   it("carries the Kit's zod prop types, not just its prop names", () => {
     const dts = screenTypings({ catalog: [], queries: [] });
-    // Money.cents is a REQUIRED number (data class); currency an optional string.
-    // Every prop also admits VendoBinding — see the unresolvable-binding test below.
-    expect(dts).toContain("declare const Money: (props: { cents: number | VendoBinding; currency?: string | VendoBinding;");
+    // Money.amount is a REQUIRED number of DOLLARS (data class); currency an
+    // optional string. Every prop also admits VendoBinding — see the
+    // unresolvable-binding test below.
+    expect(dts).toContain("declare const Money: (props: { amount: number | VendoBinding; currency?: string | VendoBinding;");
     // Stat.format is an enum — the literal union is what makes format=\"huge\" a type error.
     expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "percent" | "number" | "text"');
   });
@@ -216,21 +215,25 @@ describe("screenTypings", () => {
     expect(dts).toContain("declare const mystery: any;");
   });
 
-  it("declares the whole aggregate vocabulary with explicit field args", () => {
+  /**
+   * The old dialect's closed call vocabulary (`sum`/`count`/`group_by`/… plus
+   * the reshape calls) was declared here so tsc had a shape for it. A `{...}`
+   * gap is a real JavaScript expression now — `invoices.data.reduce((t, r) => t
+   * + r.amount_cents, 0)` type-checks against the query's own declared result
+   * type with nothing ambient in the way — so declaring those names again would
+   * type-check calls the renderer cannot evaluate.
+   */
+  it("declares no call vocabulary — a computed gap is real JavaScript", () => {
     const dts = screenTypings({ catalog: [], queries: [] });
-    for (const call of EXPR_CALLS) {
-      expect(dts, `${call} must be declared`).toMatch(new RegExp(`declare const ${call}:`, "u"));
+    const retired = ["sum", "count", "average", "min", "max", "difference", "days_until", "group_by", "asPoints", "asOptions"];
+    for (const call of retired) {
+      expect(dts, `${call} must NOT be declared`).not.toMatch(new RegExp(`declare const ${call}\\b`, "u"));
     }
-    expect(dts).toContain(EXPR_BUCKETS.map((bucket) => `"${bucket}"`).join(" | "));
   });
 
   it("is deterministic — same input, byte-identical output", () => {
     const input = { catalog, queries: [{ name: "invoices", tool: "maple_invoices_list" }], toolOutputSchemas: { maple_invoices_list: invoicesSchema } };
     expect(screenTypings(input)).toBe(screenTypings(input));
-  });
-
-  it("covers the closed call vocabulary exactly (drift gate)", () => {
-    expect(Object.keys(AGGREGATE_FIELD_ARITY).sort()).toEqual([...EXPR_CALLS].sort());
   });
 
   it("teaches only the Kit names the wire adopts", () => {

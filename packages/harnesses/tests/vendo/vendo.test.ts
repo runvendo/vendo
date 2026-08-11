@@ -248,8 +248,22 @@ describe("vendo() — bounded by construction", () => {
       models: seats(model),
     });
     expect(model.calls).toBe(2);
-    // The user is told the turn ended on the cap, not on the model finishing.
-    expect(texts(events).toLowerCase()).toContain("step");
+    // The user is told the turn ended on the cap, not on the model finishing — as
+    // a typed SYSTEM part, never spliced into the assistant's voice (2026-08-10
+    // ruling, core/harness.ts:200). So the notice is what carries it, and the
+    // assistant's own text stays empty: a turn that only made tool calls said
+    // nothing, and the cap must not put words in its mouth.
+    const notices = events
+      .filter((event): event is Extract<HarnessEvent, { type: "notice" }> => event.type === "notice")
+      .map((event) => event.notice);
+    // One notice, exactly this — as an array, so the COUNT is pinned too: a
+    // second copy of the sentence is as wrong as none.
+    expect(notices).toEqual([{
+      type: "data-vendo-step-limit",
+      limit: 2,
+      message: "Stopped after reaching the 2-step limit for one turn. Reply to continue.",
+    }]);
+    expect(texts(events)).toBe("");
   });
 
   it("a model failure becomes an honest error event, with no internals", async () => {

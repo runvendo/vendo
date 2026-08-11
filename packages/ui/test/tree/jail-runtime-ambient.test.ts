@@ -61,7 +61,7 @@ describe("island ambient scope", () => {
         const [label] = useState("Total overdue");
         return (
           <Stack gap={8}>
-            <Stat label={label} value={fmt.money(123456)}/>
+            <Stat label={label} value={fmt.money(1234.56)}/>
             <Badge label="ambient"/>
           </Stack>
         );

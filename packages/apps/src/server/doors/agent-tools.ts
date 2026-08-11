@@ -232,17 +232,22 @@ export interface AgentToolsDataDependencies {
  * Build contract §9.4 + the consumer voice law (design §3) — `forbidden` is
  * thrown for exactly one situation, and it is an ANSWERABLE one: the caller
  * provably sees the app and may not change it. The runtime's sentence names the
- * level and the app id ("editor access is required for app_7c2f…") because a
- * host developer reads it in a log; the MODEL relays what it is handed to a
- * person, so what it is handed here is the fork offer the level vocabulary
- * exists to make possible. The code is untouched: machines match on the code,
- * people read the message.
+ * level and the app id ("editor access is required for app_7c2f…") because a host
+ * developer reads it in a log; the MODEL relays what it is handed to a person, so
+ * what it is handed here is the same situation in facts. The code is untouched:
+ * machines match on the code, people read the message.
+ *
+ * FACTS, not a script. This used to be a first-person sentence with stage
+ * directions ("I can't change the team's copy… say so plainly, and offer them…"),
+ * which put our words in the model's mouth and told it how to talk instead of what
+ * had happened. The three facts are: the change did not happen, why it cannot, and
+ * that a copy of their own is the way through — including who can make one, so a
+ * model reading this cannot promise a fork it has no tool for (this registry is
+ * make · reseed · open · pin · data_*).
  */
-// Deliberately DIRECTS rather than promises: there is no fork tool in this
-// registry (make · reseed · open · data_*), so a message saying "I
-// will make you one" would have the model claim a capability it does not have.
-const FORK_OFFER = "I can’t change the team’s copy of this app. Say so plainly, and offer them"
-  + " their own copy instead — forking the app from its card gives them one I can change freely.";
+const FORBIDDEN_FACTS = "The change was not made: this is the team's copy of the app and this user has "
+  + "read-only access to it. A copy of their own would be theirs to change — they fork it from the app's "
+  + "card themselves, and there is no fork tool here.";
 
 const errorOutcome = (error: unknown): ToolOutcome => {
   if (error instanceof VendoError) {
@@ -250,7 +255,7 @@ const errorOutcome = (error: unknown): ToolOutcome => {
       status: "error",
       error: {
         code: error.code,
-        message: error.code === "forbidden" ? FORK_OFFER : error.message,
+        message: error.code === "forbidden" ? FORBIDDEN_FACTS : error.message,
       },
     };
   }

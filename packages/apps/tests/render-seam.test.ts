@@ -1,6 +1,6 @@
 /**
  * Build contract §1.6, the hot-path render seam: every store write to a hot-path
- * file (`app.vendo`, `plan.vendo`) that PARSES makes the runtime emit today's
+ * file (`app.vendo`, `plan.vendo`, `app.tsx`) that PARSES makes the runtime emit today's
  * `data-vendo-view` part — same payload, same stable per-app stream id. An
  * unparseable write emits NOTHING and the last good view stays on screen.
  * Harnesses never yield view events; only this seam emits them.
@@ -46,8 +46,8 @@ function seam(files: Record<string, string> = {}) {
 }
 
 describe("hot paths", () => {
-  it("are exactly app.vendo and plan.vendo (§1.6)", () => {
-    expect([...HOT_PATH_FILES]).toEqual(["app.vendo", "plan.vendo"]);
+  it("are exactly app.vendo, plan.vendo and app.tsx (§1.6)", () => {
+    expect([...HOT_PATH_FILES]).toEqual(["app.vendo", "plan.vendo", "app.tsx"]);
   });
 
   it("reads the appId out of the frozen §3.1 layout, verbatim", () => {
@@ -67,8 +67,10 @@ describe("hot paths", () => {
     expect([...HOT_PATH_WATCH]).toEqual([
       "/user/apps/*/app.vendo",
       "/user/apps/*/plan.vendo",
+      "/user/apps/*/app.tsx",
       "/orgs/*/apps/*/app.vendo",
       "/orgs/*/apps/*/plan.vendo",
+      "/orgs/*/apps/*/app.tsx",
     ]);
     // Every watch shape must resolve to a path the seam itself calls hot, or the
     // mid-turn collect asks for files the sync would then drop.

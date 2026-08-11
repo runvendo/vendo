@@ -11,7 +11,6 @@ import {
   createVendoClient,
   type VendoClient,
 } from "../src/index.js";
-import { BUILD_FAILURE_COPY } from "../src/chrome/thread/message-data.js";
 import { createWireServer } from "./wire-server.js";
 
 // Existing-agents Lane B — the three embeds a BYO chat surface renders from
@@ -213,9 +212,8 @@ describe("existing-agents embeds", () => {
       wire.state.failedApps.set("app_doomed", { reason: "quota exhausted", retryable: false });
       mount(<VendoAppEmbed refValue={doomed} />);
       await waitFor(() => expect(screen.getByText(/— couldn't finish/)).toBeDefined());
-      // The wire's `reason` is the DEVELOPER's sentence; the person is told
-      // §15's copy instead (see the consumer-voice test below).
-      expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined();
+      // The wire's classified `reason` IS the byline — the reader learns why.
+      expect(screen.getByText("quota exhausted")).toBeDefined();
       // A non-retryable failure carries no retry affordance.
       expect(screen.queryByText(/Retryable/)).toBeNull();
       expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
@@ -223,13 +221,12 @@ describe("existing-agents embeds", () => {
       expect(screen.queryByRole("status")).toBeNull();
     });
 
-    // Spec §16 law 3 on the BYO embed surface. Every `reason` the wire carries
-    // is written for whoever can FIX the build, and this embed rendered it
-    // verbatim — the same leak just closed in the thread (91281801d). These are
-    // the real sentences, from the wave E2E capture and from the runtime's own
-    // constants (apps/runtime.ts CREATE_BLOCKED / BUILD_WATCHDOG_REASON, and
-    // vendo/dev-creds' install line).
-    const developerReasons = [
+    // The BYO embed surface prints the reason the build gave. These are the real
+    // sentences, from the wave E2E capture and from the runtime's own constants
+    // (apps/runtime.ts CREATE_BLOCKED / BUILD_WATCHDOG_REASON, and
+    // vendo/dev-creds' install line) — each one names the thing to change, which
+    // is the half a canned first-person line used to replace.
+    const buildReasons = [
       "This app wasn't created, because it didn't pass the checks that keep an app honest:"
       + " the `value` expression is a declarative string that the DataTable does not evaluate,"
       + " not JavaScript: amount / sum(spending.data.amount)",
@@ -241,39 +238,19 @@ describe("existing-agents embeds", () => {
       + " failure. Retry the request; if this repeats, check the host server log.",
     ];
 
-    // A machine audit, not an eyeball: whatever the wire says, nothing
-    // code-shaped may reach what a person reads on a host's own page.
-    const codeShaped: readonly [string, RegExp][] = [
-      ["a backtick quote", /`/],
-      ["call syntax", /\w+\(/],
-      ["a dotted path", /\w\.\w+\.\w/],
-      ["a snake_case identifier", /[A-Za-z]_[A-Za-z]/],
-      ["a package specifier", /@[\w-]+\//],
-      ["an npm command", /\bnpm\b/],
-      ["a shouted env var", /\b[A-Z][A-Z0-9_]{4,}\b/],
-    ];
-
-    it.each(developerReasons)(
-      "says the CONSUMER sentence, never the developer's, for: %s",
+    it.each(buildReasons)(
+      "prints the reason the build gave, whole, for: %s",
       async (reason) => {
-        const appId = `app_voice_${developerReasons.indexOf(reason)}`;
+        const appId = `app_voice_${buildReasons.indexOf(reason)}`;
         const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId, title: "Spending board", status: "building" };
         wire.state.failedApps.set(appId, { reason, retryable: true, prompt: "A spending board" });
         mount(<VendoAppEmbed refValue={doomed} />);
-        await waitFor(() => expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(reason)).toBeDefined());
 
         const rendered = document.querySelector<HTMLElement>('[data-vendo-embed="app"]')?.textContent ?? "";
-        expect(rendered).toContain(BUILD_FAILURE_COPY);
-        // Not one fragment of the wire sentence survives.
-        expect(rendered).not.toContain(reason);
-        for (const word of reason.split(/\s+/).filter((token) => token.length > 12)) {
-          expect(rendered).not.toContain(word);
-        }
-        for (const [what, pattern] of codeShaped) {
-          expect(pattern.test(rendered), `${what} reached the embed: ${rendered}`).toBe(false);
-        }
-        // The embed keeps its own affordance — this is a copy fix, not a
-        // capability removal.
+        expect(rendered).toContain(reason);
+        // The failed vocabulary and the retry affordance stay around it.
+        expect(rendered).toContain("— couldn't finish");
         expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
       },
     );
@@ -289,9 +266,10 @@ describe("existing-agents embeds", () => {
       });
       mount(<VendoAppEmbed refValue={doomed} />);
       await waitFor(() => expect(screen.getByText(/— couldn't finish/)).toBeDefined());
-      // The watchdog sentence says to check the host server log — a developer's
-      // next step, not this reader's.
-      expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined();
+      // The watchdog's own sentence, beside the affordance it argues for.
+      expect(screen.getByText(
+        "the build never finished — the server-side build task stalled or died without reporting a failure.",
+      )).toBeDefined();
       expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
     });
 
@@ -359,8 +337,8 @@ describe("existing-agents embeds", () => {
       });
       mount(<VendoAppEmbed refValue={doomed} />);
       fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
-      // The retried create's own wire error is a developer sentence too.
-      await waitFor(() => expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined());
+      // The retried create's own wire error becomes the byline.
+      await waitFor(() => expect(screen.getByText("the model could not produce a valid app")).toBeDefined());
       expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
     });
 
@@ -406,7 +384,8 @@ describe("existing-agents embeds", () => {
           await vi.advanceTimersByTimeAsync(5 * 60_000 + 2_000);
         });
         expect(screen.getByText(/— couldn't finish/)).toBeDefined();
-        expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined();
+        // The deadline's own reason (embeds.tsx), since the wire gave none.
+        expect(screen.getByText("the build never finished")).toBeDefined();
       } finally {
         vi.useRealTimers();
       }
@@ -438,7 +417,7 @@ describe("existing-agents embeds", () => {
           await vi.advanceTimersByTimeAsync(5 * 60_000 + 2_000);
         });
         expect(screen.getByText(/— couldn't finish/)).toBeDefined();
-        expect(screen.getByText(BUILD_FAILURE_COPY)).toBeDefined();
+        expect(screen.getByText("the build never finished")).toBeDefined();
         // Terminal — the skeleton is gone.
         expect(screen.queryByRole("status")).toBeNull();
       } finally {
