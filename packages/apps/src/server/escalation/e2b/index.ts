@@ -75,30 +75,93 @@ const decodePayload = (payload: string): Record<string, unknown> => {
   return value as Record<string, unknown>;
 };
 
-const decodeSnapshotRef = (snapshotRef: string): Omit<E2BSnapshotState, "version"> => {
-  try {
-    if (snapshotRef.startsWith(SNAPSHOT_REF_PREFIX) && snapshotRef.length > SNAPSHOT_REF_PREFIX.length) {
-      const state = decodePayload(snapshotRef.slice(SNAPSHOT_REF_PREFIX.length));
-      if (state.version !== 2 || typeof state.snapshotId !== "string" || state.snapshotId.length === 0) {
-        throw new Error("invalid snapshot id");
-      }
-      if (!validPort(state.port)) throw new Error("invalid port");
-      if (!validDomains(state.allowedDomains)) throw new Error("invalid allowedDomains policy");
-      if (state.sourceSandboxId !== undefined
-        && (typeof state.sourceSandboxId !== "string" || state.sourceSandboxId.length === 0)) {
-        throw new Error("invalid source sandbox id");
-      }
-      return {
-        snapshotId: state.snapshotId,
-        ...(state.sourceSandboxId === undefined ? {} : { sourceSandboxId: state.sourceSandboxId }),
-        ...(state.allowedDomains === undefined ? {} : { allowedDomains: [...state.allowedDomains] }),
-        port: state.port,
-      };
-    }
-    throw new Error("unknown prefix");
-  } catch {
-    throw new VendoError("validation", "E2B snapshot references must start with e2b:v2: and carry a valid payload");
+/** The scheme a ref announces itself with — what a provider mismatch is read
+    from. */
+const REF_SCHEME_PATTERN = /^([a-z0-9][a-z0-9+.-]*):/;
+
+/** The other providers' schemes, with the adapter that resumes one, so a
+    cross-provider ref can name the fix instead of the failure. */
+const FOREIGN_PROVIDERS: Record<string, { name: string; adapter: string }> = {
+  vendo: { name: "Vendo Cloud", adapter: "cloudSandbox()" },
+};
+
+/** The offending value's SHAPE, never its content — a ref's payload is the
+    caller's data, and a message is a log line. */
+const shapeOf = (value: unknown): string => {
+  if (value === undefined) return "nothing";
+  if (value === null) return "null";
+  if (typeof value === "string") {
+    return value.length === 0 ? '""' : `a string of ${value.length} characters`;
   }
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return `an array of ${value.length} entries`;
+  return "an object";
+};
+
+const invalidField = (field: string, expected: string, value: unknown): VendoError =>
+  new VendoError(
+    "validation",
+    `E2B snapshot reference has an invalid "${field}": expected ${expected}, got ${shapeOf(value)}. Rebuild the app to mint a current reference.`,
+  );
+
+/** A ref this adapter did not mint: say WHICH of the three ways it is wrong —
+    another provider's ref, a raw provider snapshot id, or not a reference at
+    all. One relabelling catch made all three read as the same sentence, which
+    sent every one of them down the same wrong fix. */
+const notMintedHere = (snapshotRef: string): VendoError => {
+  const scheme = REF_SCHEME_PATTERN.exec(snapshotRef)?.[1];
+  if (scheme === undefined) {
+    return new VendoError(
+      "validation",
+      `This is not a sandbox snapshot reference: E2B snapshot references start with "${SNAPSHOT_REF_PREFIX}". Rebuild the app to mint a current reference.`,
+    );
+  }
+  if (scheme === "e2b") {
+    return new VendoError(
+      "validation",
+      `This is a raw E2B snapshot id, not a sandbox snapshot reference. Snapshot references start with "${SNAPSHOT_REF_PREFIX}" and carry the source sandbox id alongside the snapshot. Rebuild the app to mint a current reference.`,
+    );
+  }
+  const provider = FOREIGN_PROVIDERS[scheme];
+  return new VendoError(
+    "validation",
+    `This snapshot was minted by ${provider?.name ?? `"${scheme}"`}, but the resuming sandbox is E2B. A snapshot cannot move between providers — resume it with the same sandbox that made it${provider === undefined ? "" : ` (pass sandbox: ${provider.adapter})`}, or rebuild the app on E2B.`,
+  );
+};
+
+const decodeSnapshotRef = (snapshotRef: string): Omit<E2BSnapshotState, "version"> => {
+  if (!snapshotRef.startsWith(SNAPSHOT_REF_PREFIX)) throw notMintedHere(snapshotRef);
+  const payload = snapshotRef.slice(SNAPSHOT_REF_PREFIX.length);
+  let state: Record<string, unknown>;
+  try {
+    state = decodePayload(payload);
+  } catch {
+    // The payload NEVER goes in the message — its length is what says "cut off".
+    throw new VendoError(
+      "validation",
+      `E2B snapshot reference is truncated or corrupt: ${payload.length} characters after the "${SNAPSHOT_REF_PREFIX}" prefix, expected 100-400. The stored reference was cut off — rebuild the app.`,
+    );
+  }
+  if (state.version !== 2) throw invalidField("version", "2", state.version);
+  if (typeof state.snapshotId !== "string" || state.snapshotId.length === 0) {
+    throw invalidField("snapshotId", "a non-empty string", state.snapshotId);
+  }
+  if (!validPort(state.port)) {
+    throw invalidField("port", "an integer between 1 and 65535", state.port);
+  }
+  if (!validDomains(state.allowedDomains)) {
+    throw invalidField("allowedDomains", "an array of hostname strings", state.allowedDomains);
+  }
+  if (state.sourceSandboxId !== undefined
+    && (typeof state.sourceSandboxId !== "string" || state.sourceSandboxId.length === 0)) {
+    throw invalidField("sourceSandboxId", "a non-empty string", state.sourceSandboxId);
+  }
+  return {
+    snapshotId: state.snapshotId,
+    ...(state.sourceSandboxId === undefined ? {} : { sourceSandboxId: state.sourceSandboxId as string }),
+    ...(state.allowedDomains === undefined ? {} : { allowedDomains: [...state.allowedDomains] }),
+    port: state.port,
+  };
 };
 
 const environment = (name: string): string | undefined => {
