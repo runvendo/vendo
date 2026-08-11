@@ -26,6 +26,7 @@ import {
 } from "./split-view.js";
 import { appTitle } from "./thread/message-data.js";
 import { VendoThread, type VendoThreadProps } from "./thread/index.js";
+import { useVendoSurface } from "./vendo-surface.js";
 
 const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
 
@@ -387,6 +388,8 @@ export function VendoOverlay({
   const theme = useVendoTheme();
   const takeover = useMobileTakeover();
   const pin = usePinAction();
+  const { client, components, onPin } = useVendoContext();
+  const surface = useVendoSurface();
 
   // 2026-07 demo feedback — the expandable split-view workspace (split-view.tsx
   // owns the pure state machine). Expanded, the featured microapp renders
@@ -796,6 +799,7 @@ export function VendoOverlay({
                   key={`${conversationKey ?? 0}:${conversationEpoch}`}
                   discoverability={dial}
                   firstRunGreeting={greeting}
+                  surface={surface}
                   onThreadId={setPanelThreadId}
                 />
               </PrefillScopeContext.Provider>

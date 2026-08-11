@@ -8,6 +8,7 @@ export {
 } from "./client.js";
 export { VendoProvider, hostComponentMap, useVendoProvider, useVendoDiscoverability, useVendoGreeting, useVendoTheme, useVendoTools, type ConnectorOption, type HostComponentsInput } from "./context.js";
 export { defaultVendoGreeting, type VendoDiscoverability, type VendoGreeting } from "./chrome/discoverability.js";
+export { VendoSurface, useVendoSurface, type VendoSurfaceValue } from "./chrome/vendo-surface.js";
 export type { ToolMeta, ToolMetaMap } from "./chrome/humanize.js";
 export type { VendoAppEmbedProps, VendoApprovalEmbedProps, VendoApprovalEmbedState, VendoToolResultProps } from "./embeds.js";
 // The components behind the frozen prop contracts, exported from the root so
