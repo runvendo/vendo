@@ -836,6 +836,10 @@ async function planMcpScaffold(input: {
     cloudKey,
     posture,
     serviceKey,
+    // The composition moves into ./vendo on this path, so the models line the
+    // route scaffold planned moves with it — resolved the same way, written in
+    // exactly one of the two files.
+    models: await scaffoldModel(root, options),
     // Not optional: a null base URL is an ANSWER the plan reads, and it is
     // what makes steps[] lead with the recoverable version of E-MCP-009's
     // failure instead of assuming an origin.
@@ -1899,13 +1903,13 @@ export async function runInit(options: InitOptions): Promise<number> {
     // explicit config is already there to edit, and no first boot fails on the
     // removed ambient behaviour.
     //
-    // It only speaks for a file that actually holds the line. The MCP arm
-    // REPLACES the route this planned for with the thin handler over ./vendo
-    // (a route module may export only handlers), so the planned line went with
-    // it and `planMcp` composes its module without one — naming route.ts here
-    // would send the reader to a file that does not have it.
-    if (mcp === null && modelWritten !== null) {
-      output.log(`models: ${modelWritten.provider} — written into ${modelWritten.path}`);
+    // It only ever names the file that actually holds the line. The MCP arm
+    // REPLACES the route this planned for with the thin handler over ./vendo (a
+    // route module may export only handlers), so the line lives in that plan's
+    // composition module and `planMcp` reports which file that is.
+    const modelLanded = mcp === null ? modelWritten : mcp.modelWritten;
+    if (modelLanded !== null) {
+      output.log(`models: ${modelLanded.provider} — written into ${modelLanded.path}`);
     }
     // The one short Cloud reminder in the end-of-run summary — ONLY while no
     // key exists (the full emphasized block already ran up top; no repeat).

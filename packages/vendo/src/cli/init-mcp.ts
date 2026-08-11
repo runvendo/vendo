@@ -19,7 +19,7 @@ import { randomBytes } from "node:crypto";
 import { join, relative, sep } from "node:path";
 import { MCP_MOUNT } from "../door-paths.js";
 import type { AuthMatch } from "./init-auth.js";
-import { compositionModuleSource, routeSource } from "./init-scaffolds.js";
+import { compositionModuleSource, routeSource, type ScaffoldModel } from "./init-scaffolds.js";
 
 /** Which authorization server fronts the door. DECLARED by the operator and
     nothing else (10-mcp §3.1) — init prints environment lines, it never
@@ -55,6 +55,10 @@ export interface McpPlanInput {
   /** The public origin captured earlier this run, or null when the user skipped
       the question. */
   baseUrl: string | null;
+  /** The provider key init found in the environment. This path's composition
+      module is the ONLY place it may land: the thin route composes nothing, so
+      writing it there too would be a second, dead selection. */
+  models?: ScaffoldModel | null;
 }
 
 /** A file the MCP path creates. Always new — `before` is null for every one of
@@ -91,6 +95,12 @@ export interface McpPlan {
   steps: string[];
   /** Environment lines the operator sets where they deploy (broker posture). */
   envLines: string[];
+  /** The provider and file of the `models` line this plan wrote — the
+      composition module, never the route it replaced. The caller's closing
+      summary names this file, so it can never point a reader at a route that
+      holds nothing. Null when no provider key resolved or the plan is
+      `blocked`. */
+  modelWritten: { provider: ScaffoldModel["provider"]; path: string } | null;
   /** Why nothing was written. Set means the other fields are empty. */
   blocked?: string;
 }
@@ -159,7 +169,8 @@ const KEYLESS_SIGN_IN =
 
 export function planMcp(input: McpPlanInput): McpPlan {
   const { root, appDir, framework, authWired, serverActions, cloudKey, posture, serviceKey, baseUrl } = input;
-  const refuse = (why: string): McpPlan => ({ changes: [], routeSource: null, steps: [], envLines: [], blocked: why });
+  const models = input.models ?? null;
+  const refuse = (why: string): McpPlan => ({ changes: [], routeSource: null, steps: [], envLines: [], modelWritten: null, blocked: why });
 
   if (framework !== "next") {
     return refuse(
@@ -188,8 +199,11 @@ export function planMcp(input: McpPlanInput): McpPlan {
 
   // `serviceAuth` is wired only under local posture: see McpPlan.serviceKeyValue.
   const serviceAuth = posture === "local" && serviceKey;
+  // The one file on this path that composes, so the one that may carry the
+  // models line — named here because the closing summary points at it.
+  const compositionChange = change(composition, compositionModuleSource({ serverActions, auth: authWired, serviceAuth, models }));
   const changes: McpChange[] = [
-    change(composition, compositionModuleSource({ serverActions, auth: authWired, serviceAuth })),
+    compositionChange,
     change(
       join(wellKnownDir, "route.ts"),
       wellKnownRouteSource(specifierBetween(wellKnownDir, join(wiringDir, "vendo"))),
@@ -218,8 +232,10 @@ export function planMcp(input: McpPlanInput): McpPlan {
 
   return {
     changes,
+    // No `models` on this arm, and never one: the thin route composes nothing.
     routeSource: routeSource({ serverActions, auth: authWired, mcp: { serviceAuth } }),
     ...(serviceAuth ? { serviceKeyValue: generateServiceKey() } : {}),
+    modelWritten: models === null ? null : { provider: models.provider, path: compositionChange.path },
     steps,
     envLines: posture === "broker"
       ? [

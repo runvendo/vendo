@@ -905,10 +905,10 @@ describe("vendo init (zero-question)", () => {
   });
 
   /** The MCP arm replaces the route this planned for with the thin handler over
-      ./vendo, so the planned models line went with it. The summary may not name
-      a file that does not hold the line — sending the reader to route.ts to
-      find a `models:` that is not there is worse than saying nothing. */
-  it("names no file on the MCP path, where the thin route replaced the one it planned", async () => {
+      ./vendo, so the line moves into that path's composition module — and the
+      summary must name THAT file. Naming route.ts here would send the reader
+      to a file with no `models:` in it (the bug this pins). */
+  it("moves the models line into the MCP composition module, and names that file", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-init-mcp-models-"));
     cleanup.push(root);
     await mkdir(join(root, "app"), { recursive: true });
@@ -934,11 +934,18 @@ describe("vendo init (zero-question)", () => {
     expect(route).toContain(`import { vendo } from "./vendo";`);
     expect(route).not.toContain("@ai-sdk/");
     expect(route).not.toContain("models:");
-    // Whatever the composition module holds, the pair never carries two.
+
     const composition = await readFile(join(wiringDir, "vendo.ts"), "utf8");
-    expect(`${route}${composition}`.match(/models:/g)?.length ?? 0).toBeLessThanOrEqual(1);
-    expect(`${route}${composition}`.match(/@ai-sdk\/anthropic/g)?.length ?? 0).toBeLessThanOrEqual(1);
-    expect(sink.logs.join("\n")).not.toContain("written into");
+    expect(composition).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
+    expect(composition).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
+    // One selection per host, across BOTH files init wrote on this path.
+    expect(`${route}${composition}`.match(/models:/g)).toHaveLength(1);
+    expect(`${route}${composition}`.match(/@ai-sdk\/anthropic/g)).toHaveLength(1);
+
+    // The summary names the composition module, not the route it replaced.
+    expect(sink.logs.join("\n")).toContain(
+      `models: anthropic — written into ${join("app", "api", "vendo", "[...vendo]", "vendo.ts")}`,
+    );
   });
 
   /** A Cloud key is not a provider key: its models resolve through the
