@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   type RunContext,
   type ToolRegistry,
@@ -151,7 +152,7 @@ describe("app data persistence", () => {
         files: { about: "Files attached to the app", kind: "files" },
       },
     };
-    await seedAppRow(store, withStorage, ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), withStorage, ctx.principal.subject);
     await store.records(`app:${created.id}:notes`).put({ id: "note_1", data: { body: "hello" } });
     await store.records("vendo_state").put({
       id: `${created.id}:${ctx.principal.subject}`,
@@ -178,13 +179,13 @@ describe("app data persistence", () => {
       ...created,
       storage: { old_notes: { about: "Old notes" } },
     };
-    await seedAppRow(store, oldVersion, ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), oldVersion, ctx.principal.subject);
     await runtime.edit(created.id, "Record the old storage version", ctx);
     const current: AppDocument = {
       ...(await runtime.get(created.id, ctx))!,
       storage: { new_notes: { about: "New notes" } },
     };
-    await seedAppRow(store, current, ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), current, ctx.principal.subject);
     await store.records(`app:${created.id}:old_notes`).put({ id: "old_1", data: { body: "old" } });
     await store.records(`app:${created.id}:new_notes`).put({ id: "new_1", data: { body: "new" } });
 
@@ -230,7 +231,7 @@ describe("app data persistence", () => {
     };
 
     expect(validateAppDocument(app)).toEqual({ ok: true, app });
-    await seedAppRow(store, app, ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, ctx.principal.subject);
     expect(await runtime.get(app.id, ctx)).toEqual(app);
   });
 });

@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 /**
  * The honest-refusal law on the QUERY path (06-apps §1–2).
  *
@@ -107,7 +108,7 @@ describe("open() on an app whose query did not resolve", () => {
     const { runtime, store } = stand({
       outcome: { status: "error", error: { code: "upstream", message: "the bank is down" } },
     });
-    await seedAppRow(store, treeApp(), "u1");
+    await seedAppRow(engineOverAdapter(store), treeApp(), "u1");
 
     // Without this the payload is a perfectly healthy-looking tree with `data: {}`
     // and every value bound to `spend` rendering "—": the app full of dashes.
@@ -122,7 +123,7 @@ describe("open() on an app whose query did not resolve", () => {
     // all count, and the affordance is renderer work on top, not instead.
     for (const rules of [{ maple_spend_summary: "block" as const }, { maple_spend_summary: "ask" as const }]) {
       const { runtime, store } = stand({ rules });
-      await seedAppRow(store, treeApp(), "u1");
+      await seedAppRow(engineOverAdapter(store), treeApp(), "u1");
       expect(await markerOf(runtime)).toBe(true);
     }
   });
@@ -134,7 +135,7 @@ describe("open() on an app whose query did not resolve", () => {
         connect: { connector: "maple", toolkit: "maple", message: "connect your account" },
       },
     });
-    await seedAppRow(store, treeApp(), "u1");
+    await seedAppRow(engineOverAdapter(store), treeApp(), "u1");
 
     expect(await markerOf(runtime)).toBe(true);
   });
@@ -142,7 +143,7 @@ describe("open() on an app whose query did not resolve", () => {
   it("says NOTHING when the queries answered — an empty answer is empty data", async () => {
     for (const output of [{ total: 4210 }, {}]) {
       const { runtime, store } = stand({ outcome: { status: "ok", output } });
-      await seedAppRow(store, treeApp(), "u1");
+      await seedAppRow(engineOverAdapter(store), treeApp(), "u1");
       expect(await markerOf(runtime)).toBeUndefined();
     }
   });
@@ -151,7 +152,7 @@ describe("open() on an app whose query did not resolve", () => {
     const { runtime, store } = stand();
     const app = treeApp();
     delete (app.tree as unknown as { queries?: unknown }).queries;
-    await seedAppRow(store, app, "u1");
+    await seedAppRow(engineOverAdapter(store), app, "u1");
 
     expect(await markerOf(runtime)).toBeUndefined();
   });
@@ -160,7 +161,7 @@ describe("open() on an app whose query did not resolve", () => {
     const { runtime, store } = stand();
     const app = treeApp();
     (app.tree as unknown as { dataUnavailable: boolean }).dataUnavailable = true;
-    await seedAppRow(store, app, "u1");
+    await seedAppRow(engineOverAdapter(store), app, "u1");
 
     // The queries resolved, so the tree's forged claim is stripped like a forged
     // `inClient` or `pinDrift` (stripServerAuthoritativeFields).
@@ -175,7 +176,7 @@ describe("open() on an app whose query did not resolve", () => {
     const { runtime, store } = stand({
       venueState: () => ({ dataUnavailable: true, adoption: { automation: "nightly digest" } }),
     });
-    await seedAppRow(store, treeApp(), "u1");
+    await seedAppRow(engineOverAdapter(store), treeApp(), "u1");
 
     const surface = await runtime.open(APP_ID, ctx());
     if (surface.kind !== "tree") throw new Error("expected a tree surface");
@@ -191,7 +192,7 @@ describe("open() on an app whose query did not resolve", () => {
 describe("where a resolved query's result lands", () => {
   it("writes it at the query's name (v2 spec §2 — always one top-level key)", async () => {
     const { runtime, store } = stand();
-    await seedAppRow(store, treeApp(), "u1");
+    await seedAppRow(engineOverAdapter(store), treeApp(), "u1");
 
     const surface = await runtime.open(APP_ID, ctx());
     if (surface.kind !== "tree") throw new Error("expected a tree surface");
@@ -208,7 +209,7 @@ describe("where a resolved query's result lands", () => {
     const app = treeApp();
     (app.tree as unknown as { queries: { name: string; tool: string }[] })
       .queries = [{ name: "__proto__", tool: "maple_spend_summary" }];
-    await seedAppRow(store, app, "u1");
+    await seedAppRow(engineOverAdapter(store), app, "u1");
 
     const surface = await runtime.open(APP_ID, ctx());
     if (surface.kind !== "tree") throw new Error("expected a tree surface");

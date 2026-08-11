@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   type RunContext,
   type ToolCall,
@@ -63,7 +64,7 @@ describe("app calls through createApps", () => {
       },
     };
     const { store, runtime } = setup(tools);
-    await seedAppRow(store, app("app_host"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_host"), "user_ada");
 
     const outcome = await runtime.call("app_host", "host_invoices_list", { page: 1 }, context("user_ada"));
 
@@ -78,7 +79,7 @@ describe("app calls through createApps", () => {
     // fn: refs on a MACHINE-BEARING app ride the box door (fn.ts suites);
     // this pins the base caller's fallthrough for an app that never graduated.
     const { store, runtime } = setup();
-    await seedAppRow(store, app("app_fn"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_fn"), "user_ada");
 
     const outcome = await runtime.call("app_fn", "fn:send_invoice", {}, context("user_ada"));
 
@@ -90,7 +91,7 @@ describe("app calls through createApps", () => {
 
   it("rejects a malformed fn name as a validation outcome", async () => {
     const { store, runtime } = setup();
-    await seedAppRow(store, app("app_bad_fn"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_bad_fn"), "user_ada");
 
     const outcome = await runtime.call("app_bad_fn", "fn:bad name!", {}, context("user_ada"));
 
@@ -99,7 +100,7 @@ describe("app calls through createApps", () => {
 
   it("scopes calls to the owner: a foreign principal sees not-found", async () => {
     const { store, runtime } = setup();
-    await seedAppRow(store, app("app_owned"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_owned"), "user_ada");
 
     await expect(
       runtime.call("app_owned", "host_anything", {}, context("user_bob")),
@@ -166,7 +167,7 @@ describe("island/action amount unit guard", () => {
 
   it("rejects a fractional value into a cents-described field with a teaching error", async () => {
     const { store, runtime } = setup(transferTools);
-    await seedAppRow(store, app("app_units"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_units"), "user_ada");
 
     const outcome = await runtime.call(
       "app_units",
@@ -184,7 +185,7 @@ describe("island/action amount unit guard", () => {
 
   it("rejects a fractional value into a *Cents-named field", async () => {
     const { store, runtime } = setup(transferTools);
-    await seedAppRow(store, app("app_units2"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_units2"), "user_ada");
 
     const outcome = await runtime.call("app_units2", "host_setBudget", { amountCents: 99.99 }, context("user_ada"));
 
@@ -193,7 +194,7 @@ describe("island/action amount unit guard", () => {
 
   it("passes integer cents through untouched (the guard/approval pipe still gates)", async () => {
     const { store, runtime } = setup(transferTools);
-    await seedAppRow(store, app("app_units3"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_units3"), "user_ada");
 
     const outcome = await runtime.call(
       "app_units3",
@@ -207,7 +208,7 @@ describe("island/action amount unit guard", () => {
 
   it("leaves dollars-described fields and read tools alone", async () => {
     const { store, runtime } = setup(transferTools);
-    await seedAppRow(store, app("app_units4"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), app("app_units4"), "user_ada");
 
     await expect(
       runtime.call("app_units4", "host_payDollars", { amount: 25.5 }, context("user_ada")),

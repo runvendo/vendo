@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 /**
  * Remix as a seeded app (06-apps §8).
  *
@@ -218,7 +219,7 @@ describe("seed.reseed — a plain swap for the pristine new component", () => {
       ui: "tree",
       tree: { formatVersion: "vendo-genui/v2", root: "root", nodes: [{ id: "root", component: "Stack", source: "prewired" }] },
     };
-    await seedAppRow(store, plain, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), plain, owner.principal.subject);
     await expect(runtime.seed.reseed({ appId: plain.id }, owner))
       .rejects.toThrow(/was not created from a host component/);
   });

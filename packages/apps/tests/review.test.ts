@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   VENDO_APP_FORMAT,
   type RunContext,
@@ -110,7 +111,7 @@ describe("review-kind gating in open()", () => {
   it("an unapproved review-kind remix answers pending-review and ships NO executable source", async () => {
     const { store, runtime } = setup();
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
 
     const surface = await runtime.open(app.id, owner);
     if (surface.kind !== "tree") throw new Error("expected tree surface");
@@ -136,7 +137,7 @@ describe("review-kind gating in open()", () => {
   it("an instant-kind remix is completely unaffected (regression)", async () => {
     const { store, runtime } = setup();
     const app = doc("hero-card");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
 
     const surface = await runtime.open(app.id, owner);
     if (surface.kind !== "tree") throw new Error("expected tree surface");
@@ -150,7 +151,7 @@ describe("approval swaps the served version", () => {
   it("approve grants native for that hash; an edit leaves the approved version rendering; approving the new version swaps", async () => {
     const { store, runtime } = setup();
     const v1 = doc("transfer-panel");
-    await seedAppRow(store, v1, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), v1, owner.principal.subject);
     const v1Hash = appVersionHash(v1);
 
     await runtime.inClient.approve({ appId: v1.id, approvedBy: "host-console" }, reviewer);
@@ -206,7 +207,7 @@ describe("approval swaps the served version", () => {
       },
       components: undefined,
     });
-    await seedAppRow(store, v1, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), v1, owner.principal.subject);
     await runtime.inClient.approve({ appId: v1.id, approvedBy: "host-console" }, owner);
     const v1Hash = appVersionHash(await runtime.get(v1.id, owner) as AppDocument);
 
@@ -214,12 +215,12 @@ describe("approval swaps the served version", () => {
     // app now (a seed is provenance of a whole app, not a row added to one), so
     // this writes the next version the way any other author would: v1 goes into
     // the history the approval resolves against, and the row becomes v2.
-    await createAppHistory(store).append(v1.id, v1, {
+    await createAppHistory(engineOverAdapter(store)).append(v1.id, v1, {
       at: "2026-08-03T00:00:00.000Z",
       intent: "the approved version",
       rung: 1,
     });
-    await seedAppRow(store, { ...doc("transfer-panel"), id: v1.id }, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), { ...doc("transfer-panel"), id: v1.id }, owner.principal.subject);
     const v2Hash = appVersionHash(await runtime.get(v1.id, owner) as AppDocument);
     expect(v2Hash).not.toBe(v1Hash);
 
@@ -234,15 +235,15 @@ describe("approval swaps the served version", () => {
 
   it("an approval whose version left the capped history fails closed to pending-review, never the jail", async () => {
     const store = memoryStore();
-    const approvals = createInClientApprovals(store);
+    const approvals = createInClientApprovals(engineOverAdapter(store));
     const lifecycle = createReviewLifecycle({
-      store,
+      engine: engineOverAdapter(store),
       baselines: [reviewedBaseline],
       approvals,
       history: { documents: async () => [] },
     });
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
     // An approval exists, but for a version no history snapshot can vouch for.
     await approvals.record({
       appId: app.id,
@@ -262,7 +263,7 @@ describe("rejection", () => {
   it("requires a note", async () => {
     const { store, runtime } = setup();
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
     await expect(runtime.review.reject({ appId: app.id, note: "   " }, reviewer))
       .rejects.toMatchObject({ code: "validation" });
   });
@@ -270,12 +271,12 @@ describe("rejection", () => {
   it("refuses on a non-review-kind app, an approved version, and an unknown app", async () => {
     const { store, runtime } = setup();
     const instant = doc("hero-card");
-    await seedAppRow(store, instant, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), instant, owner.principal.subject);
     await expect(runtime.review.reject({ appId: instant.id, note: "no" }, reviewer))
       .rejects.toMatchObject({ code: "conflict" });
 
     const reviewed = doc("transfer-panel");
-    await seedAppRow(store, reviewed, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), reviewed, owner.principal.subject);
     await runtime.inClient.approve({ appId: reviewed.id, approvedBy: "host-console" }, reviewer);
     await expect(runtime.review.reject({ appId: reviewed.id, note: "too late" }, reviewer))
       .rejects.toMatchObject({ code: "conflict" });
@@ -287,7 +288,7 @@ describe("rejection", () => {
   it("refuses a second rejection of the same version — the count stays honest", async () => {
     const { store, runtime } = setup();
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
     await runtime.review.reject({ appId: app.id, note: "First note." }, reviewer);
     await expect(runtime.review.reject({ appId: app.id, note: "Second note." }, reviewer))
       .rejects.toMatchObject({ code: "conflict" });
@@ -296,7 +297,7 @@ describe("rejection", () => {
   it("two concurrent rejections of the same version converge on ONE note", async () => {
     const { store, runtime } = setup();
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
     // Both racers can pass the duplicate check before either writes; the
     // version-keyed idempotent id makes them land on the SAME row.
     const results = await Promise.allSettled([
@@ -312,7 +313,7 @@ describe("rejection", () => {
   it("records the note, surfaces it to the user, drops the version from the queue, and audits under the owner", async () => {
     const { store, guard, runtime } = setup();
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
 
     expect(await runtime.review.queue(reviewer)).toHaveLength(1);
 
@@ -357,7 +358,7 @@ describe("rejection", () => {
   it("a new version supersedes the rejection and increments the resubmission count", async () => {
     const { store, runtime } = setup();
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
     await runtime.review.reject({ appId: app.id, note: "Not like this." }, reviewer);
     expect(await runtime.review.queue(reviewer)).toEqual([]);
 
@@ -380,7 +381,7 @@ describe("rejection", () => {
   it("delete clears the app's rejection records", async () => {
     const { store, runtime } = setup();
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
     await runtime.review.reject({ appId: app.id, note: "Nope." }, reviewer);
     await runtime.delete(app.id, owner);
     expect((await store.records("vendo_remix_rejections").list({ refs: { app_id: app.id } })).records).toEqual([]);
@@ -391,7 +392,7 @@ describe("review queue", () => {
   it("lists pending review-kind versions with requester, slot, hash, submission time, resubmissions and the ship-diff", async () => {
     const { store, runtime } = setup();
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
 
     const queue = await runtime.review.queue(reviewer);
     expect(queue).toHaveLength(1);
@@ -414,11 +415,11 @@ describe("review queue", () => {
   it("never lists instant-kind apps or approved review-kind versions", async () => {
     const { store, runtime } = setup();
     const instant = doc("hero-card");
-    await seedAppRow(store, instant, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), instant, owner.principal.subject);
     expect(await runtime.review.queue(reviewer)).toEqual([]);
 
     const reviewed = doc("transfer-panel");
-    await seedAppRow(store, reviewed, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), reviewed, owner.principal.subject);
     expect(await runtime.review.queue(reviewer)).toHaveLength(1);
     await runtime.inClient.approve({ appId: reviewed.id, approvedBy: "host-console" }, reviewer);
     expect(await runtime.review.queue(reviewer)).toEqual([]);
@@ -429,7 +430,7 @@ describe("the reviewer assertion (round-2 hardening)", () => {
   it("scopes the queue: the asserted reviewer reads everything, anyone else only their own submissions", async () => {
     const { store, runtime } = setup();
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
     expect(await runtime.review.queue(reviewer)).toHaveLength(1);
     expect(await runtime.review.queue(owner)).toHaveLength(1);
     expect(await runtime.review.queue(context("user_bob"))).toEqual([]);
@@ -438,7 +439,7 @@ describe("the reviewer assertion (round-2 hardening)", () => {
   it("without the hook the queue serves only the caller's own items and reject refuses, naming the hook", async () => {
     const { store, runtime } = setup({});
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
     expect(await runtime.review.queue(owner)).toHaveLength(1);
     expect(await runtime.review.queue(reviewer)).toEqual([]);
     await expect(runtime.review.reject({ appId: app.id, note: "no" }, reviewer))
@@ -448,7 +449,7 @@ describe("the reviewer assertion (round-2 hardening)", () => {
   it("masks a non-reviewer's reject as not-found even with the hook set", async () => {
     const { store, runtime } = setup();
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
     await expect(runtime.review.reject({ appId: app.id, note: "no" }, owner))
       .rejects.toMatchObject({ code: "not-found" });
   });
@@ -456,7 +457,7 @@ describe("the reviewer assertion (round-2 hardening)", () => {
   it("a review-kind remix is never approved by its own user; an asserted reviewer approves across the owner boundary", async () => {
     const { store, runtime } = setup();
     const app = doc("transfer-panel");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
     await expect(runtime.inClient.approve({ appId: app.id, approvedBy: "self" }, owner))
       .rejects.toMatchObject({ code: "blocked", message: expect.stringContaining("apps.review.reviewer") });
     // A non-reviewer, non-owner caller learns nothing.
@@ -469,7 +470,7 @@ describe("the reviewer assertion (round-2 hardening)", () => {
   it("keeps owner self-approval for instant-kind apps, owner-scoped as before (regression)", async () => {
     const { store, runtime } = setup({});
     const app = doc("hero-card");
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
     const approval = await runtime.inClient.approve({ appId: app.id, approvedBy: "local-dev" }, owner);
     expect(approval.versionHash).toBe(appVersionHash(app));
     await expect(runtime.inClient.approve({ appId: app.id, approvedBy: "bob" }, context("user_bob")))

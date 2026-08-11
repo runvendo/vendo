@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import type {
   AppDocument,
 } from "../src/contract/index.js";
@@ -91,7 +92,7 @@ describe("egress approval store", () => {
   });
 
   it("parks, lists by approval, and clears on decision", async () => {
-    const approvals = createEgressApprovals(memoryStore());
+    const approvals = createEgressApprovals(engineOverAdapter(memoryStore()));
     await approvals.putPending(request("api.example.com"));
     await approvals.putPending(request("hooks.stripe.com"));
 
@@ -108,7 +109,7 @@ describe("egress approval store", () => {
   });
 
   it("re-parking the same domain overwrites instead of duplicating", async () => {
-    const approvals = createEgressApprovals(memoryStore());
+    const approvals = createEgressApprovals(engineOverAdapter(memoryStore()));
     await approvals.putPending(request("api.example.com", "apr_1"));
     await approvals.putPending(request("api.example.com", "apr_2"));
     // The overwrite carries the domain onto the NEW approval, so the old one no
@@ -118,7 +119,7 @@ describe("egress approval store", () => {
   });
 
   it("clearForApp removes every parked request for the app", async () => {
-    const approvals = createEgressApprovals(memoryStore());
+    const approvals = createEgressApprovals(engineOverAdapter(memoryStore()));
     await approvals.putPending(request("api.example.com"));
     await approvals.putPending(request("hooks.stripe.com"));
     await approvals.clearForApp("app_egress_test");

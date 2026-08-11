@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
@@ -128,7 +129,7 @@ const setup = (id = "app_fn_runtime") => {
 describe("fn: runtime resolution (execution-v2 Lane D gate)", () => {
   it("open() resolves an fn: query through the box door and binds it beside host-tool queries", async () => {
     const { runtime, store, seen, id } = setup();
-    await seedAppRow(store, fnTreeApp(id), "user_ada");
+    await seedAppRow(engineOverAdapter(store), fnTreeApp(id), "user_ada");
 
     const surface = await runtime.open(id, ctx());
     if (surface.kind !== "tree") throw new Error(`expected tree surface, got ${surface.kind}`);
@@ -145,7 +146,7 @@ describe("fn: runtime resolution (execution-v2 Lane D gate)", () => {
 
   it("an fn: action round-trips on call() and a re-open re-binds the new data", async () => {
     const { runtime, store, seen, id } = setup();
-    await seedAppRow(store, fnTreeApp(id), "user_ada");
+    await seedAppRow(engineOverAdapter(store), fnTreeApp(id), "user_ada");
 
     const outcome = await runtime.call(id, "fn:add", { amount: 2 }, ctx());
     expect(outcome).toEqual({ status: "ok", output: { total: 42 } });
@@ -169,7 +170,7 @@ describe("fn: runtime resolution (execution-v2 Lane D gate)", () => {
       { name: "report", tool: "fn:broken" },
       { name: "host", tool: "host_reader" },
     ];
-    await seedAppRow(store, app, "user_ada");
+    await seedAppRow(engineOverAdapter(store), app, "user_ada");
 
     const surface = await runtime.open(id, ctx());
     if (surface.kind !== "tree") throw new Error(`expected tree surface, got ${surface.kind}`);
@@ -188,7 +189,7 @@ describe("fn: runtime resolution (execution-v2 Lane D gate)", () => {
   it("a machine-bearing app with no adapter contains sandbox-unavailable per query", async () => {
     const store = memoryStore();
     const runtime = createApps({ store, guard: guardFixture(), tools: registryTools, catalog: [], model });
-    await seedAppRow(store, fnTreeApp("app_no_adapter"), "user_ada");
+    await seedAppRow(engineOverAdapter(store), fnTreeApp("app_no_adapter"), "user_ada");
 
     const surface = await runtime.open("app_no_adapter", ctx());
     if (surface.kind !== "tree") throw new Error(`expected tree surface, got ${surface.kind}`);

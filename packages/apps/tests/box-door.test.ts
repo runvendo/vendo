@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   VENDO_APP_FORMAT,
   type RunContext,
@@ -94,7 +95,7 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
       },
     };
     const runtime = createApps(config);
-    await seedAppRow(store, doc, "user_ada");
+    await seedAppRow(engineOverAdapter(store), doc, "user_ada");
     await provisionMachine(config);
 
     const response = await runtime.box.request(doc.id, {
@@ -119,7 +120,7 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
       machine: { sandbox: handlerSandbox(() => ({ status: 200 })) },
     };
     const runtime = createApps(config);
-    await seedAppRow(store, doc, "user_ada");
+    await seedAppRow(engineOverAdapter(store), doc, "user_ada");
     await provisionMachine(config);
     await expect(runtime.box.request(doc.id, { method: "POST", path: "/fn/x" }, ctx("user_bob")))
       .rejects.toMatchObject({ code: "not-found" });
@@ -135,7 +136,7 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
       model,
       machine: { sandbox: handlerSandbox(() => ({ status: 200 })) },
     });
-    await seedAppRow(store, doc, "user_ada");
+    await seedAppRow(engineOverAdapter(store), doc, "user_ada");
     await expect(runtime.box.request(doc.id, { method: "POST", path: "/fn/x" }, ctx()))
       .rejects.toMatchObject({ code: "validation" });
   });
@@ -145,7 +146,7 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
     const runtime = createApps({ store, guard: guardFixture(), tools: emptyTools, catalog: [], model });
     // A graduated app opened on a deployment that configures no sandbox: the
     // ref is on the row and there is nothing to resume it with.
-    await seedAppRow(store, {
+    await seedAppRow(engineOverAdapter(store), {
       ...doc,
       machine: { snapshotRef: "fake:box-door", provisionedAt: "2026-07-19T00:00:00.000Z" },
     }, "user_ada");

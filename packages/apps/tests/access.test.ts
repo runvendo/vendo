@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   VENDO_APP_FORMAT,
   type AppAccess,
@@ -76,7 +77,7 @@ describe("core's app-access conformance kit, over the runtime's stand-in", () =>
   const store = memoryStore();
   const suite = appAccessConformance({
     access: storeAccess(store),
-    seedApp: (appId, subject) => seedAppRow(store, doc(appId), subject).then(() => undefined),
+    seedApp: (appId, subject) => seedAppRow(engineOverAdapter(store), doc(appId), subject).then(() => undefined),
     seedGrant: async (appId, principal, level) => {
       await store.records("vendo_app_grants").put({
         id: `ag_${appId}_${principal}`,
@@ -91,7 +92,7 @@ describe("core's app-access conformance kit, over the runtime's stand-in", () =>
 describe("§9.3 — reads need viewer, edits editor, delete owner", () => {
   it("serves a granted viewer the app and masks it from everyone else", async () => {
     const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_shared"), "acme");
+    await seedAppRow(engineOverAdapter(store), doc("app_shared"), "acme");
     await seedGrants(store, "app_shared", { "user:kim": "viewer" });
 
     expect((await runtime.get("app_shared", ctx("kim")))?.id).toBe("app_shared");
@@ -101,7 +102,7 @@ describe("§9.3 — reads need viewer, edits editor, delete owner", () => {
 
   it("gives a viewer `forbidden` on an edit and a stranger `not-found`", async () => {
     const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_edit"), "acme");
+    await seedAppRow(engineOverAdapter(store), doc("app_edit"), "acme");
     await seedGrants(store, "app_edit", { "user:kim": "viewer" });
 
     await expect(runtime.edit("app_edit", "make it blue", ctx("kim")))
@@ -112,7 +113,7 @@ describe("§9.3 — reads need viewer, edits editor, delete owner", () => {
 
   it("reserves delete for an owner", async () => {
     const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_del"), "acme");
+    await seedAppRow(engineOverAdapter(store), doc("app_del"), "acme");
     await seedGrants(store, "app_del", { "user:kim": "editor", "user:dana": "owner" });
 
     await expect(runtime.delete("app_del", ctx("kim")))
@@ -123,7 +124,7 @@ describe("§9.3 — reads need viewer, edits editor, delete owner", () => {
 
   it("keeps ownership working with no appAccess wired at all (OSS default)", async () => {
     const { runtime, store } = setup({ appAccess: undefined });
-    await seedAppRow(store, doc("app_solo"), "dana");
+    await seedAppRow(engineOverAdapter(store), doc("app_solo"), "dana");
     expect((await runtime.get("app_solo", ctx("dana")))?.id).toBe("app_solo");
     expect(await runtime.get("app_solo", ctx("kim"))).toBeNull();
     // `levelFor` answers from the same absence rather than failing the read:
@@ -134,7 +135,7 @@ describe("§9.3 — reads need viewer, edits editor, delete owner", () => {
 
   it("lets an org admin edit an org app with no grant row at all", async () => {
     const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_admin"), "acme");
+    await seedAppRow(engineOverAdapter(store), doc("app_admin"), "acme");
     const admin: RunContext = { ...ctx("dana"), memberships: [{ org: "acme", admin: true }] };
     const member: RunContext = { ...ctx("kim"), memberships: [{ org: "acme" }] };
     expect((await runtime.get("app_admin", admin))?.id).toBe("app_admin");
@@ -146,7 +147,7 @@ describe("§9.3 — reads need viewer, edits editor, delete owner", () => {
 describe("§9.3 — history is level-aware in the RUNTIME, not only at the wire", () => {
   it("keeps list at viewer and masks a stranger", async () => {
     const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_hist"), "acme");
+    await seedAppRow(engineOverAdapter(store), doc("app_hist"), "acme");
     await seedGrants(store, "app_hist", { "user:kim": "viewer", "user:dana": "editor" });
 
     // A viewer may read the version list...
@@ -160,10 +161,10 @@ describe("§9.3 — history is level-aware in the RUNTIME, not only at the wire"
 describe("§9.3 — list unions owned and granted", () => {
   it("lists the caller's own apps plus every app they hold a grant on", async () => {
     const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_org", "Team dash"), "acme");
-    await seedAppRow(store, doc("app_team", "Finance dash"), "acme");
-    await seedAppRow(store, doc("app_mine", "My dash"), "kim");
-    await seedAppRow(store, doc("app_hidden", "Not yours"), "mal");
+    await seedAppRow(engineOverAdapter(store), doc("app_org", "Team dash"), "acme");
+    await seedAppRow(engineOverAdapter(store), doc("app_team", "Finance dash"), "acme");
+    await seedAppRow(engineOverAdapter(store), doc("app_mine", "My dash"), "kim");
+    await seedAppRow(engineOverAdapter(store), doc("app_hidden", "Not yours"), "mal");
     await seedGrants(store, "app_org", { "user:kim": "viewer" });
     await seedGrants(store, "app_team", { "team:acme/finance": "editor" });
 
@@ -180,7 +181,7 @@ describe("§9.3 — list unions owned and granted", () => {
 describe("§9.5 — fork needs viewer, and grants never travel", () => {
   it("lets a viewer fork into their own workspace with no grants attached", async () => {
     const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_src"), "acme");
+    await seedAppRow(engineOverAdapter(store), doc("app_src"), "acme");
     await seedGrants(store, "app_src", { "user:kim": "viewer" });
 
     const fork = await runtime.fork("app_src", ctx("kim"));
@@ -197,7 +198,7 @@ describe("§9.5 — fork needs viewer, and grants never travel", () => {
 
   it("refuses a fork to someone who cannot see the app", async () => {
     const { runtime, store } = setup();
-    await seedAppRow(store, doc("app_src2"), "acme");
+    await seedAppRow(engineOverAdapter(store), doc("app_src2"), "acme");
     await expect(runtime.fork("app_src2", ctx("mal")))
       .rejects.toMatchObject({ code: "not-found" });
   });
@@ -208,7 +209,7 @@ describe("§9.3 — levelFor answers from LIVE grant rows", () => {
     const { runtime, store, access } = setup();
     // Held by the ORG: sharing implies the org workspace, so a live person
     // grant only exists on an app that has already moved there.
-    await seedAppRow(store, doc("app_keyed"), "acme");
+    await seedAppRow(engineOverAdapter(store), doc("app_keyed"), "acme");
     const admin: RunContext = { ...ctx("dana"), memberships: [{ org: "acme", admin: true }] };
 
     await access.grant(admin, "app_keyed", "user:kim", "editor");
@@ -279,7 +280,7 @@ describe("§9.9 — the additive, ctx-aware venue-state slot", () => {
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },
     };
-    await seedAppRow(store, app, "acme");
+    await seedAppRow(engineOverAdapter(store), app, "acme");
     await seedGrants(store, "app_venue", { "user:kim": "viewer", "user:dana": "editor" });
 
     const editorView = await runtime.open("app_venue", ctx("dana"));
@@ -309,7 +310,7 @@ describe("§9.3 — the MCP door inherits can() rather than re-deriving it", () 
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },
     };
-    await seedAppRow(store, app, "acme");
+    await seedAppRow(engineOverAdapter(store), app, "acme");
     await seedGrants(store, "app_door", { "user:kim": "viewer" });
 
     const port = {
@@ -373,7 +374,7 @@ describe("§9.3 — the permission check costs what it claims to cost", () => {
     // the whole question for its owner — ownership IS the top level — so the
     // grants query and the second read must not happen.
     const { runtime, store, reset, rowReads } = instrumented();
-    await seedAppRow(store, doc("app_one_read"), "dana");
+    await seedAppRow(engineOverAdapter(store), doc("app_one_read"), "dana");
     reset();
     expect((await runtime.get("app_one_read", ctx("dana")))?.id).toBe("app_one_read");
     expect(rowReads()).toBe(1);
@@ -381,7 +382,7 @@ describe("§9.3 — the permission check costs what it claims to cost", () => {
 
   it("still consults can() for a caller who is NOT the row's subject", async () => {
     const { runtime, store, reset, canCalls } = instrumented();
-    await seedAppRow(store, doc("app_not_mine"), "acme");
+    await seedAppRow(engineOverAdapter(store), doc("app_not_mine"), "acme");
     await seedGrants(store, "app_not_mine", { "user:kim": "viewer" });
     reset();
     expect((await runtime.get("app_not_mine", ctx("kim")))?.id).toBe("app_not_mine");
@@ -390,7 +391,7 @@ describe("§9.3 — the permission check costs what it claims to cost", () => {
 
   it("checks access ONCE per serve, not twice", async () => {
     const { runtime, store, reset, canCalls } = instrumented();
-    await seedAppRow(store, doc("app_serve_once"), "acme");
+    await seedAppRow(engineOverAdapter(store), doc("app_serve_once"), "acme");
     await seedGrants(store, "app_serve_once", { "user:kim": "viewer" });
     reset();
     // The machine is absent, so the forward fails — the access check has

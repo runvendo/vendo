@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 /**
  * ONE floor at every door.
  *
@@ -118,7 +119,7 @@ describe("a crashing island is refused at every door", () => {
   it("validate({ appId })", async () => {
     const store = memoryStore();
     const apps = createApps({ store, guard: guardFixture(), tools, catalog, model: model() });
-    await seedAppRow(store, documentWith(CRASHING_ISLAND, "app_stored_broken"), ctx.principal.subject);
+    await seedAppRow(engineOverAdapter(store), documentWith(CRASHING_ISLAND, "app_stored_broken"), ctx.principal.subject);
 
     const result = await apps.validate({ appId: "app_stored_broken" }, ctx);
 

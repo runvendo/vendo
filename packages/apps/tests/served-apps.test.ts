@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   VENDO_APP_FORMAT,
   VendoError,
@@ -138,7 +139,7 @@ describe("a served app needs a machine, and a door to serve it through", () => {
       with no machine has no surface anywhere. */
   it("refuses open() on a served app that has no machine, saying its surface is gone", async () => {
     const { store, runtime } = setup();
-    await seedAppRow(store, treeApp({ ui: "http", tree: undefined }), "user_ada");
+    await seedAppRow(engineOverAdapter(store), treeApp({ ui: "http", tree: undefined }), "user_ada");
 
     const error = await runtime.open("app_served", ctx()).then(() => undefined, (thrown: unknown) => thrown);
     expect(error).toBeInstanceOf(VendoError);
@@ -156,7 +157,7 @@ describe("a served app needs a machine, and a door to serve it through", () => {
     const box = await sandbox.create({ env: {}, template: "node" });
     const snapshotRef = await box.snapshot();
     const machinesBefore = sandbox.machines.length;
-    await seedAppRow(store, treeApp({
+    await seedAppRow(engineOverAdapter(store), treeApp({
       ui: "http",
       tree: undefined,
       machine: { snapshotRef, provisionedAt: "2026-08-01T00:00:00.000Z" },
@@ -178,7 +179,7 @@ describe("a served app needs a machine, and a door to serve it through", () => {
     // stands in front of it: a box must never replace a tree the person did not
     // ask to lose.
     const { store, runtime } = setup({ agent: kanbanAgent });
-    await seedAppRow(store, treeApp(), "user_ada");
+    await seedAppRow(engineOverAdapter(store), treeApp(), "user_ada");
     // Wave 9 — a box-rung instruction (custom logic): schedule-y phrasing now
     // rides the automations ladder and would never reach the box.
     const result = await runtime.edit("app_served", "Reconcile my invoices with custom matching logic and store the results", ctx());
@@ -194,7 +195,7 @@ describe("a served app needs a machine, and a door to serve it through", () => {
 describe("graduation 2→3", () => {
   it("flips the surface only after the box serves a verified web app (tree gone, rung 3)", async () => {
     const { store, runtime } = setup();
-    await seedAppRow(store, treeApp(), "user_ada");
+    await seedAppRow(engineOverAdapter(store), treeApp(), "user_ada");
 
     const result = await runtime.edit("app_served", LAYER3_INSTRUCTION, ctx());
 
@@ -213,7 +214,7 @@ describe("graduation 2→3", () => {
     const { store, runtime } = setup({
       agent: () => ({ ok: false, summary: "could not build the app", filesChanged: [], testsRun: 0 }),
     });
-    await seedAppRow(store, treeApp(), "user_ada");
+    await seedAppRow(engineOverAdapter(store), treeApp(), "user_ada");
 
     const result = await runtime.edit("app_served", LAYER3_INSTRUCTION, ctx());
 
@@ -233,7 +234,7 @@ describe("graduation 2→3", () => {
         return { ok: true, summary: "claims a web app", filesChanged: [], testsRun: 0, fns: ["listInvoices"], servesUi: true };
       },
     });
-    await seedAppRow(store, treeApp(), "user_ada");
+    await seedAppRow(engineOverAdapter(store), treeApp(), "user_ada");
 
     const result = await runtime.edit("app_served", LAYER3_INSTRUCTION, ctx());
 
@@ -246,7 +247,7 @@ describe("graduation 2→3", () => {
 describe("serving through the door + the keepalive ride", () => {
   const flipped = async (options: Parameters<typeof setup>[0] = {}) => {
     const world = setup(options);
-    await seedAppRow(world.store, treeApp(), "user_ada");
+    await seedAppRow(engineOverAdapter(world.store), treeApp(), "user_ada");
     const result = await world.runtime.edit("app_served", LAYER3_INSTRUCTION, ctx());
     expect(result.app.ui).toBe("http");
     return world;
@@ -337,7 +338,7 @@ describe("serving through the door + the keepalive ride", () => {
 
   it("ping refuses an app that has no machine", async () => {
     const world = setup();
-    await seedAppRow(world.store, treeApp(), "user_ada");
+    await seedAppRow(engineOverAdapter(world.store), treeApp(), "user_ada");
     const error = await world.runtime.machine.ping("app_served", ctx()).then(() => undefined, (thrown: unknown) => thrown);
     expect(error).toBeInstanceOf(VendoError);
     expect((error as VendoError).code).toBe("validation");
@@ -374,7 +375,7 @@ describe("serving through the door + the keepalive ride", () => {
     // third site the cap is applied at. Nothing pinned it: dropping its
     // `pruneHistory` call left the log growing past 50 with the suite green.
     const { store, runtime } = await flipped();
-    const history = createAppHistory(store);
+    const history = createAppHistory(engineOverAdapter(store));
     const current = (await runtime.get("app_served", ctx()))!;
     // Filled to EXACTLY the cap, counting the version the 2→3 flip itself left —
     // the oldest one in the log, so it is the one the box edit's prune must drop.

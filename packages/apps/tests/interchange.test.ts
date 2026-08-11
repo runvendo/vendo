@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   type RunContext,
   type ToolRegistry,
@@ -102,7 +103,7 @@ describe(".vendoapp interchange through createApps", () => {
       forkedFrom: "app_template",
       machine: { snapshotRef: "fake:snap_legacy", provisionedAt: "2026-07-19T00:00:00.000Z" },
     });
-    await seedAppRow(store, legacy, "user_ada");
+    await seedAppRow(engineOverAdapter(store), legacy, "user_ada");
 
     const archive = unzipSync(await runtime.exportApp("app_legacy", ctx));
     expect(Object.keys(archive)).toEqual(["app.json"]);
@@ -128,7 +129,7 @@ describe(".vendoapp interchange through createApps", () => {
     expect(imported).not.toHaveProperty("data");
 
     await seedAppRow(
-      store,
+      engineOverAdapter(store),
       { ...imported, permissions: ["admin"], caches: { secret: true } } as AppDocument,
       ctx.principal.subject,
     );

@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   TOOL_NAME_PATTERN,
   VENDO_APP_FORMAT,
@@ -116,7 +117,7 @@ describe("apps agent tools", () => {
       screen: authoringAssembler(() => runtime, generated),
     });
     const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
-    await seedAppRow(store, { ...created, id: "app_foreign" }, "user_other");
+    await seedAppRow(engineOverAdapter(store), { ...created, id: "app_foreign" }, "user_other");
 
     for (const [id, args] of [
       ["call_null_edit", null],
@@ -447,7 +448,7 @@ describe("apps agent tools", () => {
       screen: authoringAssembler(() => runtime, generated),
     });
     const created = await runtime.create({ prompt: "Data tools" }, ctx);
-    await seedAppRow(store, {
+    await seedAppRow(engineOverAdapter(store), {
       ...created,
       storage: { notes: { about: "Invoice notes", refs: { invoice_id: "host.invoice" } } },
     }, ctx.principal.subject);
@@ -512,7 +513,7 @@ describe("§9.4 — a refused EDIT hands the model the fork offer, not the raw c
     });
     // Held by the org, with this caller a VIEWER — the one shape `forbidden`
     // is ever thrown for.
-    await seedAppRow(store, { format: VENDO_APP_FORMAT, id: "app_teamdash", name: "Team dashboard" }, "acme");
+    await seedAppRow(engineOverAdapter(store), { format: VENDO_APP_FORMAT, id: "app_teamdash", name: "Team dashboard" }, "acme");
     await seedGrantRows(store, "app_teamdash", { [`user:${ctx.principal.subject}`]: "viewer" });
     return { tools: runtime.agentTools(), appId: "app_teamdash" };
   };

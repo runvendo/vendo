@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 /**
  * The served-app machine's egress policy must FAIL CLOSED.
  *
@@ -57,7 +58,7 @@ describe("the served-app machine's egress policy fails CLOSED", () => {
   it("provisions with a defined allowlist even when the deployment names no implicit domains", async () => {
     const store = memoryStore();
     const sandbox = watched();
-    await seedAppRow(store, doc(), ada.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc(), ada.principal.subject);
     // `createMachineLane` is what `createApps` composes its lifecycle with
     // (runtime-context.ts), so the policy under test is the DEPLOYMENT's own,
     // not a mirror of it.
@@ -80,10 +81,10 @@ describe("the served-app machine's egress policy fails CLOSED", () => {
   it("cannot be constructed without a policy — an omitted allowlist is not a way to say 'unrestricted'", async () => {
     const store = memoryStore();
     const sandbox = watched();
-    await seedAppRow(store, doc(), ada.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc(), ada.principal.subject);
     // @ts-expect-error the seam REQUIRES a policy: omitting it used to mean
     // unrestricted egress, which is the fail-open this whole file exists for.
-    const lifecycle = createMachineLifecycle({ store, sandbox });
+    const lifecycle = createMachineLifecycle({ engine: engineOverAdapter(store), sandbox });
 
     await lifecycle.provision(doc());
 
@@ -93,9 +94,9 @@ describe("the served-app machine's egress policy fails CLOSED", () => {
   it("a policy that resolves to nothing sends an EMPTY list — it never degrades to unrestricted", async () => {
     const store = memoryStore();
     const sandbox = watched();
-    await seedAppRow(store, doc(), ada.principal.subject);
+    await seedAppRow(engineOverAdapter(store), doc(), ada.principal.subject);
     const lifecycle = createMachineLifecycle({
-      store,
+      engine: engineOverAdapter(store),
       sandbox,
       // A host whose policy function answers with nothing at all.
       allowedDomains: () => undefined as unknown as string[],

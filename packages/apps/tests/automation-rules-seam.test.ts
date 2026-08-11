@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 /**
  * `Trigger.rules` — the automation's terms in its author's own words — from the
  * plan that wrote them all the way to the part the card reads, with nothing
@@ -138,7 +139,7 @@ const authorThroughTheDoor = async () => {
     escalatedPlan: async () => ESCALATED_PLAN,
     armAutomation: async () => ({ enabled: true, missing: [] }),
   });
-  await seedAppRow(store, seedDoc, ctx.principal.subject);
+  await seedAppRow(engineOverAdapter(store), seedDoc, ctx.principal.subject);
   const streamed: VendoViewStreamUpdate[] = [];
   const call: VendoViewStreamingToolCall = {
     id: "call_make_rules",

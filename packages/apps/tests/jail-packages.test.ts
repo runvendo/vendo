@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 import {
   VENDO_APP_FORMAT,
   type RunContext,
@@ -90,7 +91,7 @@ describe("CDN package loading never reaches the production venue", () => {
       model: scriptedLanguageModel(() => "<Edit></Edit>"),
     });
     const app = doc();
-    await seedAppRow(store, app, owner.principal.subject);
+    await seedAppRow(engineOverAdapter(store), app, owner.principal.subject);
 
     const surface = await runtime.open(app.id, owner);
     if (surface.kind !== "tree") throw new Error("expected tree surface");

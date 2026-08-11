@@ -1,3 +1,4 @@
+import { engineOverAdapter } from "@vendoai/core";
 /**
  * A SECOND automation on an app that already has one.
  *
@@ -151,7 +152,7 @@ const authorBoth = async () => {
       return { enabled: true, missing: [] };
     },
   });
-  await seedAppRow(store, seedDoc, ctx.principal.subject);
+  await seedAppRow(engineOverAdapter(store), seedDoc, ctx.principal.subject);
   const first = await runtime.edit(APP_ID, NUDGE_ASK, ctx);
   const second = await runtime.edit(APP_ID, SUMMARY_ASK, ctx);
   return { runtime, armed, first, second };

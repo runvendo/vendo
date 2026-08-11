@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../src/backends.test-util.js";
 import { backfillAppRefKey } from "../src/backfill-app-data.js";
 import { eraseStore } from "../src/erase.js";
+import { createStoreOps } from "../src/index.js";
 import { storeFiles } from "../src/files-store.js";
 import { appFixture } from "../src/fixtures.test-util.js";
 
@@ -34,6 +35,10 @@ for (const backend of backends()) {
       return doc;
     };
 
+    /** Vendo's own drawers are reached by name through the engine family, so
+        the apps-block writers take that surface rather than the raw store. */
+    const engineFor = (made: MadeBackend) => createStoreOps(made.store).engine;
+
     const erase = (made: MadeBackend, appId: string) =>
       eraseStore(made.store, { files: storeFiles(made.store) }).byApp(appId);
 
@@ -41,7 +46,7 @@ for (const backend of backends()) {
       const made = await make();
       try {
         const doc = await seedApp(made, "app_erase_inclient");
-        const approvals = createInClientApprovals(made.store);
+        const approvals = createInClientApprovals(engineFor(made));
         await approvals.record({
           appId: doc.id,
           versionHash: "sha256:seam",
@@ -66,7 +71,7 @@ for (const backend of backends()) {
       const made = await make();
       try {
         const doc = await seedApp(made, "app_erase_history");
-        const history = createAppHistory(made.store);
+        const history = createAppHistory(engineFor(made));
         await history.append(doc.id, doc, {
           at: "2026-01-02T03:04:05.000Z",
           intent: "first draft",
@@ -93,8 +98,8 @@ for (const backend of backends()) {
       try {
         const target = await seedApp(made, "app_erase_target");
         const bystander = await seedApp(made, "app_erase_bystander");
-        const approvals = createInClientApprovals(made.store);
-        const history = createAppHistory(made.store);
+        const approvals = createInClientApprovals(engineFor(made));
+        const history = createAppHistory(engineFor(made));
         for (const doc of [target, bystander]) {
           await approvals.record({
             appId: doc.id,
@@ -135,7 +140,7 @@ for (const backend of backends()) {
           },
           refs: { appId: doc.id },
         });
-        const approvals = createInClientApprovals(made.store);
+        const approvals = createInClientApprovals(engineFor(made));
         // Invisible to the fixed reader until the key moves — the same shape of
         // failure the erase cascade had.
         expect(await approvals.list(doc.id)).toEqual([]);
