@@ -54,7 +54,13 @@ export async function checkStorePersistence(run: DoctorRun): Promise<void> {
   // doctor check can see a programmatic override (doctor-report.ts's DoctorRun;
   // same limit checkSurfaceOwnership states) — and that host still gets the
   // store's own boot warning, which fires on the real dataDir at runtime.
-  if ((run.env.VENDO_API_KEY ?? "").trim() !== "") return;
+  // Deliberately NOT trimmed — this has to be the SAME predicate composition
+  // uses or doctor and runtime disagree. Runtime reads the key through
+  // `environment()` (wire/shared.ts), which accepts any non-empty string, so a
+  // whitespace-only key still composes hostedStore (cloudKeyOptions →
+  // selectStore) and .vendo/data is never written. Trimming here named a
+  // directory nothing writes, blaming the disk for a bad key.
+  if ((run.env.VENDO_API_KEY ?? "") !== "") return;
   const dataDir = join(run.root, ".vendo", "data");
   const platform = EPHEMERAL_PLATFORM_ENVS.find(([name]) => (run.env[name] ?? "").trim() !== "")?.[1];
   const wiper = platform

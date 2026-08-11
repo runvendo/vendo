@@ -92,8 +92,23 @@ describe("store/persistence (E-STORE-001)", () => {
     expect(doctor.warnings).toBe(0);
   });
 
-  it("still warns when VENDO_API_KEY is present but blank", async () => {
+  // `environment()` (wire/shared.ts) accepts ANY non-empty string, so a
+  // whitespace-only key still composes hostedStore and .vendo/data is never
+  // written. Doctor must read the key the same way it is read at runtime.
+  it("stays silent when VENDO_API_KEY is whitespace, because the hosted store still composes", async () => {
     const doctor = run("/srv/maple", { RAILWAY_ENVIRONMENT: "production", VENDO_API_KEY: "  " });
+
+    await checkStorePersistence(doctor);
+
+    expect(doctor.checks).toEqual([]);
+    expect(doctor.warnings).toBe(0);
+  });
+
+  // The other side of that boundary: an empty key is what `environment()`
+  // itself rejects, so the local PGlite store is what composes and the warning
+  // is the truth.
+  it("still warns when VENDO_API_KEY is set but empty", async () => {
+    const doctor = run("/srv/maple", { RAILWAY_ENVIRONMENT: "production", VENDO_API_KEY: "" });
 
     await checkStorePersistence(doctor);
 
