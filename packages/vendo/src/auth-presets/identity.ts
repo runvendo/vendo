@@ -167,6 +167,10 @@ export function loginRedirect(
 }
 
 export interface ComposeHostAuthPresetOptions {
+  /** See HostAuthPreset.name. REQUIRED here, optional there: a shipped preset
+      may not forget to say which one it is, and a host-composed preset has
+      nothing to say. */
+  name: string;
   /** Decode + verify the request's host session; null = no/invalid session. */
   sessionClaims(request: Request): Promise<JwtClaims | null>;
   /** One identity lookup for all three seams ({} claims where none exist). */
@@ -231,6 +235,7 @@ export function composeHostAuthPreset(opts: ComposeHostAuthPresetOptions): HostA
   };
 
   return {
+    name: opts.name,
     principal,
     facts,
     actAs: opts.actAs,

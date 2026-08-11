@@ -78,6 +78,7 @@ export function clerk(options: HostAuthPresetOptions = {}): HostAuthPreset {
   };
 
   return composeHostAuthPreset({
+    name: "clerk",
     sessionClaims,
     // Build contract §9.1 (+ its companion) — handed straight through: the org
     // chart and the directory are the HOST's, and no preset interprets either.

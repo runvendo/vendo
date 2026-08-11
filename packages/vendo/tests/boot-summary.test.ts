@@ -11,6 +11,12 @@ import type { Principal } from "@vendoai/core";
 import { setLogger, vendoStyle, type VendoLogEvent, type VendoStyle } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { authJs } from "../src/auth-presets/auth-js.js";
+import { auth0 } from "../src/auth-presets/auth0.js";
+import { clerk } from "../src/auth-presets/clerk.js";
+import { jwt } from "../src/auth-presets/jwt.js";
+import type { HostAuthPreset } from "../src/auth-presets/shared.js";
+import { supabase } from "../src/auth-presets/supabase.js";
 import {
   announceBootSummary,
   bootSummaryFor,
@@ -32,7 +38,7 @@ const EXAMPLE: BootSummary = {
     { label: "sandbox", venue: "cloud", detail: "VENDO_API_KEY" },
     { label: "store", venue: "local", detail: ".vendo/data" },
     { label: "models", venue: "cloud", detail: "VENDO_API_KEY (gateway)" },
-    { label: "auth", venue: "preset", detail: "createVendo({ auth })" },
+    { label: "auth", venue: "clerk", detail: "auth: clerk()" },
   ],
   warnings: [],
 };
@@ -65,7 +71,7 @@ describe("the pretty block", () => {
       "│  ✓ sandbox   cloud    VENDO_API_KEY",
       "│  ✓ store     local    .vendo/data",
       "│  ✓ models    cloud    VENDO_API_KEY (gateway)",
-      "│  ✓ auth      preset   createVendo({ auth })",
+      "│  ✓ auth      clerk    auth: clerk()",
     ].join("\n"));
   });
 
@@ -153,7 +159,7 @@ describe("degradation", () => {
   for (const [name, stream, env] of degraded) {
     it(`collapses to one plain line under ${name}`, () => {
       expect(renderBootSummary(EXAMPLE, vendoStyle(stream, env))).toBe(
-        "[vendo] ready — sandbox: cloud · store: local · models: cloud · auth: preset",
+        "[vendo] ready — sandbox: cloud · store: local · models: cloud · auth: clerk",
       );
     });
   }
@@ -165,7 +171,7 @@ describe("degradation", () => {
 
   it("adds one plain line per warning, its lines joined", () => {
     expect(renderBootSummary(EPHEMERAL, vendoStyle({}, {})).split("\n")).toEqual([
-      "[vendo] ready — sandbox: cloud · store: local · models: cloud · auth: preset",
+      "[vendo] ready — sandbox: cloud · store: local · models: cloud · auth: clerk",
       '[vendo] warning: store — .vendo/data is under /tmp — data will not survive a redeploy.'
       + ' Mount a volume, or pass url: "postgres://…" to createVendo.',
     ]);
@@ -288,7 +294,29 @@ describe("the composed facts", () => {
     });
   });
 
-  it("names the auth preset slot when the host wired one", () => {
+  // The row's whole value is knowing WHICH auth is live, so it is read off the
+  // real preset factories — not off a `name` a test wrote itself, which would
+  // only prove the test agrees with the test.
+  it("names the vendor for every shipped preset", () => {
+    const shipped: Array<[string, HostAuthPreset]> = [
+      ["clerk", clerk()],
+      ["authJs", authJs({ secret: "test-secret" })],
+      ["auth0", auth0({ secret: "test-secret" })],
+      ["supabase", supabase({ secret: "test-secret" })],
+      ["jwt", jwt({ secret: "test-secret" })],
+    ];
+    for (const [name, auth] of shipped) {
+      expect(summaryFor({ auth }).rows).toContainEqual({
+        label: "auth",
+        venue: name,
+        detail: `auth: ${name}()`,
+      });
+    }
+  });
+
+  it("claims no vendor for a preset the HOST composed itself", () => {
+    // demo-bank's `mapleAuth` is exactly this: a real three-seam preset with no
+    // vendor behind it. Borrowing a name here would be a lie.
     const { rows } = summaryFor({
       auth: { principal: async (): Promise<Principal> => ({ kind: "user", subject: "user_boot" }) },
     });

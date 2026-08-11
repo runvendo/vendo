@@ -7,6 +7,14 @@ import type { HostOAuthAdapter } from "@vendoai/mcp";
     HostOAuthAdapter from one config key. Passed as `createVendo({ auth })`;
     mutually exclusive with the per-seam `principal`/`actAs`/`oauth` trio. */
 export interface HostAuthPreset {
+  /** Which preset this is, spelled the way a host writes it in config — `clerk`,
+      `auth0`, `supabase`, `authJs`, `jwt`. The boot summary shows it, so one
+      line tells an operator which identity story is actually live.
+
+      Optional, and absent on purpose for a preset a HOST composed itself (the
+      demo's `mapleAuth` is one): there is no vendor to name, and inventing one
+      would be a lie. Nothing but the summary reads it — never branch on it. */
+  readonly name?: string;
   principal: (req: Request) => Promise<Principal | null>;
   /** Absent → away/MCP execution cleanly unavailable, as ever (01-core §13). */
   actAs?: ActAs;

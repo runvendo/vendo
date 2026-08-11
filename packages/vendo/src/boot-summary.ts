@@ -5,7 +5,7 @@
  *     │  ✓ sandbox   cloud    VENDO_API_KEY
  *     │  ✓ store     local    .vendo/data
  *     │  ✓ models    cloud    VENDO_API_KEY (gateway)
- *     │  ✓ auth      preset   createVendo({ auth })
+ *     │  ✓ auth      clerk    auth: clerk()
  *     │  ⚠ store     .vendo/data is under /tmp — data will not survive a redeploy.
  *     │              Mount a volume, or pass url: "postgres://…" to createVendo.
  *
@@ -240,9 +240,14 @@ export function bootSummaryFor(composition: VendoComposition): BootSummary {
     rows.push({ label: "connections", venue: "cloud", detail: "VENDO_API_KEY" });
   }
 
-  rows.push(config.auth === undefined
-    ? { label: "auth", venue: "custom", detail: "createVendo({ principal })" }
-    : { label: "auth", venue: "preset", detail: "createVendo({ auth })" });
+  // The VENDOR, when a shipped preset composed this deployment's identity — one
+  // line telling the operator which auth is live is most of this row's value.
+  // A host-composed preset has no vendor to name and a raw `principal` has no
+  // preset at all; both say so rather than borrowing a name.
+  const preset = config.auth?.name;
+  if (preset !== undefined) rows.push({ label: "auth", venue: preset, detail: `auth: ${preset}()` });
+  else if (config.auth !== undefined) rows.push({ label: "auth", venue: "preset", detail: "createVendo({ auth })" });
+  else rows.push({ label: "auth", venue: "custom", detail: "createVendo({ principal })" });
 
   const posture = guard.status().posture;
   if (posture !== "unconfigured") {
