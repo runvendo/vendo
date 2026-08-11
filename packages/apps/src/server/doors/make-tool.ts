@@ -7,6 +7,7 @@
  */
 import {
   isUnattended,
+  log,
   VENDO_VIEW_STREAM,
   VendoError,
   vendoViewStreamId,
@@ -144,7 +145,11 @@ const makeNewApp = async (
       }),
     }, ctx).catch((error: unknown) => {
       threw = error instanceof Error ? error.message : String(error);
-      console.warn(`[vendo] the screen agent could not serve ${appId} — ${threw}`);
+      log({
+        code: "apps.screen-agent-serve-failed",
+        level: "warn",
+        message: `[vendo] the screen agent could not serve ${appId} — ${threw}`,
+      });
       return undefined;
     });
   if (routed?.kind === "assembled") {
@@ -313,9 +318,13 @@ export const runMakeTool = async (
    */
   const remember = async (appId: string): Promise<void> => {
     await runtime.remember({ appId, ask: request }, ctx).catch((error: unknown) => {
-      console.warn(`[vendo] the ask was not recorded on ${appId}: ${
-        error instanceof Error ? error.message : String(error)
-      }`);
+      log({
+        code: "apps.ask-not-recorded",
+        level: "warn",
+        message: `[vendo] the ask was not recorded on ${appId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
     });
   };
   const make: MakeCall = { runtime, dependencies, ctx, ask, stream, remember };

@@ -10,6 +10,7 @@ import {
   VENDO_TREE_FORMAT,
   VendoError,
   describeShapeWithSemantics,
+  log,
   safeErrorMessage,
   type AppId,
   type RecordStore,
@@ -103,7 +104,11 @@ const startBuildWatchdog = (
         name: fallbackAppName(prompt),
         buildFailed: { reason: BUILD_WATCHDOG_REASON, retryable: true, at: new Date().toISOString(), prompt },
       }, subject, false, "screen-agent"));
-      console.error(`[vendo] app build watchdog (${appId}): no app record and no failure landed within ${buildWatchdogMs()}ms — persisted a terminal failed record so the embed resolves instead of polling forever.`);
+      log({
+        code: "apps.build-watchdog-fired",
+        level: "error",
+        message: `[vendo] app build watchdog (${appId}): no app record and no failure landed within ${buildWatchdogMs()}ms — persisted a terminal failed record so the embed resolves instead of polling forever.`,
+      });
     })().catch(() => undefined);
   }, buildWatchdogMs());
   (watchdog as { unref?: () => void }).unref?.();
@@ -133,7 +138,11 @@ const createBuildFailer = (bound: {
       buildFailed: { reason, retryable, at: new Date().toISOString(), prompt },
     }, subject, false, "screen-agent")).catch(() => undefined);
     clearTimeout(watchdog);
-    console.error(`[vendo] app build failed (${appId}): ${reason}${detail.map((line) => `\n  - ${line}`).join("")}`);
+    log({
+      code: "apps.build-failed",
+      level: "error",
+      message: `[vendo] app build failed (${appId}): ${reason}${detail.map((line) => `\n  - ${line}`).join("")}`,
+    });
     throw new VendoError(
       code,
       `${VENDO_APP_BUILD_FAILED_PREFIX}: ${reason}`,
@@ -193,7 +202,11 @@ const routeThroughAssembler = async (
     const stored = await apps.get(appId).catch(() => null);
     if (stored === null) return failBuild(NOTHING_RENDERABLE, true, [NOTHING_RENDERABLE]);
     clearTimeout(watchdog);
-    console.info(`[vendo] assembled app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`);
+    log({
+      code: "apps.assembled",
+      level: "info",
+      message: `[vendo] assembled app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`,
+    });
     return { kind: "assembled", document: withoutSession(documentFromRecord(stored)) };
   }
   if (routed.kind === "unavailable") {
@@ -319,7 +332,11 @@ const createCreateDoor = (
       // is not in the user's list and cannot be reopened. Far better than
       // discarding a working view, but never silent.
       unsavedReason = safeErrorMessage(error);
-      console.error(`[vendo] app not saved (${appId}): the view rendered but the store rejected it — ${unsavedReason}`);
+      log({
+        code: "apps.create-not-saved",
+        level: "error",
+        message: `[vendo] app not saved (${appId}): the view rendered but the store rejected it — ${unsavedReason}`,
+      });
     }
     clearTimeout(watchdog);
     if (unsavedReason !== undefined) {
@@ -341,10 +358,18 @@ const createCreateDoor = (
         console.info(findingLine(finding));
       }
     } catch (error) {
-      console.warn(`[vendo] server work skipped for ${appId} (the app stands without it): ${safeErrorMessage(error)}`);
+      log({
+        code: "apps.server-work-skipped",
+        level: "warn",
+        message: `[vendo] server work skipped for ${appId} (the app stands without it): ${safeErrorMessage(error)}`,
+      });
     }
     await paintSettledTree(caller, app, ctx, input.onView, appId);
-    console.info(`[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`);
+    log({
+      code: "apps.gen-create-complete",
+      level: "info",
+      message: `[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`,
+    });
     return structuredClone(app);
   };
 };

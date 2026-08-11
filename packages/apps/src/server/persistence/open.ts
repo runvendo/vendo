@@ -1,4 +1,5 @@
 import {
+  log,
   VENDO_TREE_FORMAT,
   VendoError,
   safeErrorMessage,
@@ -95,7 +96,11 @@ export const createProgressiveQueryResolver = (
       : state.result === undefined
         ? "the call did not settle"
         : `the call answered "${state.result.status}"`;
-    console.warn(`[vendo] query "${state.query.name}" (tool "${state.query.tool}") resolved no data for app ${app.id} — ${why}; anything bound to it renders empty`);
+    log({
+      code: "apps.query-resolved-no-data",
+      level: "warn",
+      message: `[vendo] query "${state.query.name}" (tool "${state.query.tool}") resolved no data for app ${app.id} — ${why}; anything bound to it renders empty`,
+    });
   };
 
   const recompute = (notify = true): void => {
@@ -211,7 +216,11 @@ const additionalVenueState = async (
   try {
     return await venueState?.(app, ctx) ?? {};
   } catch (error) {
-    console.warn(`[vendo] venue state for app ${app.id} could not be resolved: ${safeErrorMessage(error)}; the app opens without it`);
+    log({
+      code: "apps.venue-state-unresolved",
+      level: "warn",
+      message: `[vendo] venue state for app ${app.id} could not be resolved: ${safeErrorMessage(error)}; the app opens without it`,
+    });
     return {};
   }
 };

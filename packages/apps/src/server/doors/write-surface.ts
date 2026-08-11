@@ -6,6 +6,7 @@
  * Lifted out of `createApps` unchanged.
  */
 import {
+  log,
   VendoError,
   safeErrorMessage,
   type AppId,
@@ -112,7 +113,11 @@ const createRefusedSaveRecorder = (
     // screen, it just is not in the list. Never silent — and never a reason
     // to withhold the data the person can already see.
     const reason = safeErrorMessage(error);
-    console.error(`[vendo] app not saved (${appId}): the harness wrote it as a file but it did not land — ${reason}`);
+    log({
+      code: "apps.edit-not-saved",
+      level: "error",
+      message: `[vendo] app not saved (${appId}): the harness wrote it as a file but it did not land — ${reason}`,
+    });
     // …and when the save was an EDIT's, the refusal is that edit's answer:
     // the row still holds the pre-edit document, so `assembleEdit` reading
     // it back would report an unchanged app as the change (`editRefusals`).
@@ -397,7 +402,11 @@ const createEditDoor = (
         }
       } catch (error) {
         const reason = safeErrorMessage(error);
-        console.warn(`[vendo] the build this edit asked for did not run for ${appId}: ${reason}`);
+        log({
+          code: "apps.edit-build-skipped",
+          level: "warn",
+          message: `[vendo] the build this edit asked for did not run for ${appId}: ${reason}`,
+        });
         return failedEdit(previous, instruction, [reason]);
       }
     }

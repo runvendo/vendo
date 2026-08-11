@@ -6,6 +6,7 @@
  * Lifted out of `createApps` unchanged.
  */
 import {
+  log,
   VendoError,
   safeErrorMessage,
   type AppId,
@@ -91,7 +92,11 @@ const createEditNotices = (deps: Pick<AppsRuntimeContext, "config" | "history">)
     try {
       await config.onDocumentEdit(previous, next, subject);
     } catch (error) {
-      console.warn(`[vendo] onDocumentEdit hook failed for ${next.id}: ${safeErrorMessage(error)}`);
+      log({
+        code: "apps.on-document-edit-hook-failed",
+        level: "warn",
+        message: `[vendo] onDocumentEdit hook failed for ${next.id}: ${safeErrorMessage(error)}`,
+      });
     }
   };
 
@@ -106,7 +111,11 @@ const createEditNotices = (deps: Pick<AppsRuntimeContext, "config" | "history">)
     try {
       await history.discard(appId, versionId);
     } catch (error) {
-      console.error(`[vendo] a refused write left a stale version behind (${appId}): ${safeErrorMessage(error)}`);
+      log({
+        code: "apps.stale-version-after-refusal",
+        level: "error",
+        message: `[vendo] a refused write left a stale version behind (${appId}): ${safeErrorMessage(error)}`,
+      });
     }
   };
 
@@ -118,7 +127,11 @@ const createEditNotices = (deps: Pick<AppsRuntimeContext, "config" | "history">)
     try {
       await history.prune(appId);
     } catch (error) {
-      console.error(`[vendo] history for ${appId} could not be trimmed to its cap: ${safeErrorMessage(error)}`);
+      log({
+        code: "apps.history-prune-failed",
+        level: "error",
+        message: `[vendo] history for ${appId} could not be trimmed to its cap: ${safeErrorMessage(error)}`,
+      });
     }
   };
 

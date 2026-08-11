@@ -30,6 +30,7 @@
  * of failing creates.
  */
 import {
+  log,
   type ShapeType,
 } from "@vendoai/core";
 import {
@@ -261,7 +262,11 @@ const workerModules = (async (): Promise<WorkerModules | undefined> => {
       () => createRequire(`${process.cwd()}/package.json`),
     ]);
     if (paths === undefined) {
-      console.warn("[vendo] smoke-render gate skipped: react/jsdom did not resolve to filesystem paths in this environment (bundled server); islands ship without the crash gate");
+      log({
+        code: "apps.smoke-render-gate-skipped",
+        level: "warn",
+        message: "[vendo] smoke-render gate skipped: react/jsdom did not resolve to filesystem paths in this environment (bundled server); islands ship without the crash gate",
+      });
       return undefined;
     }
     return { Worker, paths };

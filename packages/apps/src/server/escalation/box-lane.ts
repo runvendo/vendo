@@ -6,6 +6,7 @@
  * Lifted out of `createApps` unchanged.
  */
 import {
+  log,
   VendoError,
   safeErrorMessage,
   type AppId,
@@ -179,7 +180,11 @@ const createBoxEditor = (
     // not roll back an edit that already succeeded inside the box — but never
     // SILENT: the reason is the only thing that says why nothing is scheduled.
     await manifestTriggers.sync(app, ctx).catch((error: unknown) => {
-      console.warn(`[vendo] vendo.json schedules for ${app.id} were not folded into triggers: ${safeErrorMessage(error)}`);
+      log({
+        code: "apps.schedules-not-folded",
+        level: "warn",
+        message: `[vendo] vendo.json schedules for ${app.id} were not folded into triggers: ${safeErrorMessage(error)}`,
+      });
     });
     // Sync the egress DECLARATION (mirrors vendo.json) onto the doc; the
     // owner-approval grant is a separate, guard-gated step (Lane E).
