@@ -142,14 +142,14 @@ export function withSdkErrorReporting(logger: VendoLogger): VendoLogger {
  */
 const VENDO_IDENTIFIER_KEYS: ReadonlySet<string> = new Set([
   // A CLASSIFICATION of a snapshot ref, never the ref (sandbox.ts): a matched
-  // constant from Vendo's closed set of schemes, a length, and a one-way
-  // digest. A raw `snapshotRef` is deliberately NOT here — the only path that
-  // reports one is the path where it FAILED to decode, and a ref that failed
-  // to decode is by definition not Vendo-minted but whatever a caller handed a
-  // public method.
+  // constant from Vendo's closed set of schemes, and a length. A raw
+  // `snapshotRef` is deliberately NOT here — the only path that reports one is
+  // the path where it FAILED to decode, and a ref that failed to decode is by
+  // definition not Vendo-minted but whatever a caller handed a public method.
+  // Nor is a DIGEST of one: an unkeyed hash of caller content confirms guesses
+  // offline, which is a quieter version of the same leak.
   "snapshotRefScheme",
   "snapshotRefLength",
-  "snapshotRefDigest",
   // Vendo's `app_*` id namespace (core's `appIdSchema`) — the only thing that
   // says WHICH app failed.
   "appId",

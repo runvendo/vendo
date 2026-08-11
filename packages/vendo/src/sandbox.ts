@@ -213,14 +213,6 @@ const KNOWN_REF_SCHEMES = [
 
 const UNKNOWN_REF_SCHEME = "(no known scheme)";
 
-/** Twelve hex characters of SHA-256 — enough to tie two reports of the same
- * bad ref together, one-way so it carries none of it. */
-const refDigest = async (snapshotRef: string): Promise<string> => {
-  const hash = await crypto.subtle.digest("SHA-256", encoder.encode(snapshotRef));
-  return [...new Uint8Array(hash).subarray(0, 6)]
-    .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-};
-
 /** Decode a ref, and report which ref failed when it will not decode.
  *
  * The decoder's message says which WAY a ref is wrong; it cannot say which
@@ -234,10 +226,15 @@ const refDigest = async (snapshotRef: string): Promise<string> => {
  * DEFINITION not one Vendo minted — it is arbitrary caller content, up to and
  * including a secret passed to the wrong function. A prefix of that content is
  * still that content, so the scheme is matched against the closed set above
- * and reported as the constant that matched; the rest travels only as a length
- * and a one-way digest. The error the caller sees is unchanged — this only
- * observes it on the way past. */
-const decodeOrReport = async (snapshotRef: string): Promise<CloudSnapshotState> => {
+ * and reported as the constant that matched; the rest travels only as a length.
+ *
+ * NOTHING here reads the whole value. There is deliberately no digest: an
+ * unkeyed hash of caller content is a confirmation oracle (hash your candidate
+ * secrets offline, compare), and hashing an unbounded argument on a public
+ * failure path is a free CPU sink. Cross-report correlation of the same bad ref
+ * is the accepted cost — do not re-add one. The error the caller sees is
+ * unchanged; this only observes it on the way past. */
+const decodeOrReport = (snapshotRef: string): CloudSnapshotState => {
   try {
     return decodeSnapshotRef(snapshotRef);
   } catch (error) {
@@ -249,7 +246,6 @@ const decodeOrReport = async (snapshotRef: string): Promise<CloudSnapshotState> 
         snapshotRefScheme: KNOWN_REF_SCHEMES.find((scheme) => snapshotRef.startsWith(scheme))
           ?? UNKNOWN_REF_SCHEME,
         snapshotRefLength: snapshotRef.length,
-        snapshotRefDigest: await refDigest(snapshotRef),
       },
     });
     throw error;
@@ -526,7 +522,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       });
     },
     async resume(snapshotRef, policy?: SandboxResumePolicy) {
-      const state = await decodeOrReport(snapshotRef);
+      const state = decodeOrReport(snapshotRef);
       // The new machine inherits NO network config from the artifact
       // (sandbox-wire.ts), so every resume states the applicable allowlist:
       // Lane E's replace semantics when the caller re-polices the wake, the
@@ -542,7 +538,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       });
     },
     async destroy(snapshotRef) {
-      const state = await decodeOrReport(snapshotRef);
+      const state = decodeOrReport(snapshotRef);
       // Best-effort reap of the recorded source machine (it is usually
       // already gone — the sleep flow destroyed it), then the artifact GC.
       // A 404 from either is the seam's idempotent no-op.

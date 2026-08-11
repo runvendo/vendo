@@ -83,17 +83,41 @@ describe("a snapshot ref the Cloud adapter cannot decode", () => {
       const errors = seen.filter((usage) => usage.name === "sdk_error");
       expect(errors).toHaveLength(1);
       expect(JSON.stringify(errors[0])).not.toContain(marker);
-      // Still says WHICH WAY it is wrong, and correlates repeats of the same
-      // bad ref — from Vendo's own vocabulary, never a slice of the input.
-      expect(errors[0]).toMatchObject({
-        data: {
-          snapshotRefScheme: "(no known scheme)",
-          snapshotRefLength: `oops ${marker}`.length,
-          snapshotRefDigest: expect.stringMatching(/^[0-9a-f]{12}$/) as unknown,
-        },
+      // Still says WHICH WAY it is wrong — from Vendo's own vocabulary, never
+      // a slice of the input. Scheme and length are the WHOLE projection.
+      expect((errors[0] as { data: Record<string, unknown> }).data).toEqual({
+        snapshotRefScheme: "(no known scheme)",
+        snapshotRefLength: `oops ${marker}`.length,
       });
     },
   );
+
+  /** No digest, ever. An unkeyed hash of caller content is a confirmation
+   *  oracle — hash your candidate secrets offline and compare — and hashing an
+   *  unbounded argument on a public failure path is a free CPU sink. Losing
+   *  cross-report correlation is the accepted trade; this pins it so a re-add
+   *  fails a test rather than a review. */
+  it("emits no digest of the ref under any key", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const seen = reported();
+    setLogger(withSdkErrorReporting(consoleLogger));
+    const adapter = cloudSandbox({ apiKey: "vnd_test", fetch: (() => {
+      throw new Error("unreachable");
+    }) as unknown as typeof fetch });
+
+    const secret = "vendo:v2:correct-horse-battery-staple";
+    await expect(adapter.resume(secret)).rejects.toMatchObject({ code: "validation" });
+
+    const { data } = seen.filter((usage) => usage.name === "sdk_error")[0] as {
+      data: Record<string, unknown>;
+    };
+    // The exact key set: a re-added digest fails here whatever it is called...
+    expect(Object.keys(data)).toEqual(["snapshotRefScheme", "snapshotRefLength"]);
+    // ...and nothing emitted may look like a hash, whatever key carries it.
+    for (const value of Object.values(data)) {
+      expect(String(value)).not.toMatch(/^[0-9a-f]{8,}$/);
+    }
+  });
 
   it("names the scheme a foreign ref announces, from Vendo's closed set", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
