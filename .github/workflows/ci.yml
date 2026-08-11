@@ -101,8 +101,6 @@ jobs:
       VITEST_MAX_THREADS: "2"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0 # turbo --affected diffs against the base branch
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -111,44 +109,35 @@ jobs:
       - name: Turbo remote cache (GitHub-cache backed)
         uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
       - run: pnpm install --frozen-lockfile
-      # TURBO_SCM_BASE is explicit: turbo's default base is the local branch
-      # `main`, which does not exist on a PR checkout (and is stale in a
-      # worktree), so without it --affected silently reports EVERYTHING
-      # affected — verified locally: 74 tasks vs the correct 0.
-      - name: Skip if package unaffected (PRs only)
-        id: affected
-        if: github.event_name == 'pull_request'
-        env:
-          TURBO_SCM_BASE: origin/${{ github.base_ref }}
-        run: |
-          if pnpm turbo run test:coverage --filter=${{ matrix.pkg }} --affected --dry=json > /tmp/dry.json \
-             && jq -e '.tasks | length == 0' /tmp/dry.json > /dev/null; then
-            echo "${{ matrix.pkg }} is unaffected by this PR; skipping shard ${{ matrix.shard }}"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          fi
+      # No --affected skip step here, same as test-rest: this job feeds the
+      # REQUIRED `ci` check, and a required check must never report green for a
+      # shard it did not run. It did: #1139 (docs-only) skipped every vendo
+      # shard and merged green, and the vendo-3 shard went red on main the
+      # moment it actually ran — the docs-rot tests readFile docs-site/*.mdx,
+      # an input turbo's graph does not know about. The remote cache is the
+      # honest fast path: an unaffected shard's build replays from cache and
+      # the tests run for real.
       - name: Build deps
-        if: steps.affected.outputs.skip != 'true'
         run: pnpm turbo run build --filter=${{ matrix.pkg }}
       # The package's own pretest hook does not run here (we invoke vitest
       # directly, to pass --shard), and a turbo cache HIT on `build` skips the
       # prebuild hook that would otherwise produce these. So do it explicitly.
       - name: Pre-step
-        if: steps.affected.outputs.skip != 'true' && matrix.pre
+        if: matrix.pre
         run: pnpm --filter ${{ matrix.pkg }} run ${{ matrix.pre }}
       - name: tsc (store keeps its tsc-before-test contract)
-        if: steps.affected.outputs.skip != 'true' && matrix.tsc == 'true'
+        if: matrix.tsc == 'true'
         run: pnpm --filter ${{ matrix.pkg }} exec tsc -p tsconfig.json
       # --reporter=default alongside blob: with blob as the SOLE reporter a
       # failing shard prints nothing about WHICH test failed, so a red shard
       # is undebuggable from the log alone.
       - name: Test shard
-        if: steps.affected.outputs.skip != 'true'
         run: pnpm --filter ${{ matrix.pkg }} exec vitest run --coverage --coverage.thresholds.lines=0 --reporter=default --reporter=blob --shard=${{ matrix.shard }}
       # always(): a failed shard must still upload its blob, or coverage-merge
       # merges a hole and reports a phantom coverage drop on top of the real
       # failure.
       - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
-        if: always() && steps.affected.outputs.skip != 'true'
+        if: always()
         with:
           name: blob-${{ matrix.name }}
           path: ${{ matrix.dir }}/.vitest-reports/
@@ -227,9 +216,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # continue-on-error: a package whose shards all skipped (unaffected) has
-      # no artifacts, and download-artifact treats a pattern that matches
-      # nothing as an error. The merge step below skips that package instead.
+      # continue-on-error: a shard that died before vitest ran (a red `Build
+      # deps`) uploads no blob, and download-artifact treats a pattern that
+      # matches nothing as an error — which would mask the real failure with a
+      # download error. The merge step below skips that package instead.
       - name: Download vendo shard blobs
         continue-on-error: true
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -259,7 +249,7 @@ jobs:
               pnpm --filter "@vendoai/$pkg" exec vitest run --merge-reports --coverage
               echo "::endgroup::"
             else
-              echo "no shard blobs for @vendoai/$pkg (unaffected by this PR); nothing to merge"
+              echo "::warning::no shard blobs for @vendoai/$pkg — its shards failed before vitest ran, so those jobs are red and the ci check is too"
             fi
           done
 
@@ -357,13 +347,16 @@ jobs:
       # own (it reads the example trees as text), so it is not in the `^...`
       # filter above; ~3s.
       - run: pnpm --filter @vendoai-fixtures/existing-agents-e2e test
-      # Same skip contract as test-shards: `--affected` marks a package when it
-      # or ANY of its workspace deps changed (verified: a one-line core edit
-      # marks every fixture and demo below), so a skip here can never hide a
-      # change these suites could catch. TURBO_SCM_BASE is explicit for the
-      # same reason as in test-shards — turbo's default base is the local
-      # `main`, absent on a PR checkout. If the probe itself fails, we fall
-      # open into running everything.
+      # `--affected` marks a package when it or ANY of its workspace deps
+      # changed (verified: a one-line core edit marks every fixture and demo
+      # below), so a skip here hides nothing these suites could catch VIA THE
+      # DEPENDENCY GRAPH — it is blind to inputs outside it, which is exactly
+      # how test-shards greened a broken docs-rot suite (see that job) and why
+      # this probe is on borrowed time. TURBO_SCM_BASE is explicit because
+      # turbo's default base is the local branch `main`, which does not exist
+      # on a PR checkout — without it, --affected silently reports EVERYTHING
+      # affected. If the probe itself fails, we fall open into running
+      # everything.
       - name: Skip if e2e scope unaffected (PRs only)
         id: affected
         if: github.event_name == 'pull_request'
