@@ -137,8 +137,8 @@ proxy URL, never at the sandbox provider's public ingress. The proxy re-checks
 `can(viewer)` against live rows on every request, so a revoke bites the next one,
 and it wakes the machine only after that check passes.
 
-Layer 3 works on both venues: BYO e2b (`E2B_API_KEY` or an explicit
-`e2bSandbox`) and the Vendo Cloud hosted sandbox. Cloud ingress is a
+Layer 3 works on both venues: BYO e2b (`sandbox: e2bSandbox()`, which reads
+`E2B_API_KEY` as its credential) and the Vendo Cloud hosted sandbox. Cloud ingress is a
 single-label hostname on the existing `*.vendo.run` certificate:
 `https://<id-suffix>-m.vendo.run`, where `<id-suffix>` is the machine id
 minus its two-character prefix. The console mints that canonical-port URL;

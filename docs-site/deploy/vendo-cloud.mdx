@@ -223,9 +223,11 @@ machine instead of Cloud's.
 (layers 2 and 3 of [the machine model](/concepts/generated-ui#the-three-layers)).
 Reach for it when you want app machines without an E2B account. You normally
 never construct it: with `VENDO_API_KEY` set, `createVendo` fills the unset
-sandbox slot with it automatically. An explicitly passed `sandbox:` adapter,
-or `E2B_API_KEY` with the `e2b` package installed, always wins over that
-default. Sandbox time bills at $0.01 per minute of wall-clock run time.
+sandbox slot with it automatically. An explicitly passed `sandbox:` adapter always
+wins over that default — including `sandbox: e2bSandbox()`, which reads
+`E2B_API_KEY` as its credential. An `E2B_API_KEY` on its own does **not** win the
+slot, and does not win it back: keys are credentials, `sandbox:` selects.
+Sandbox time bills at $0.01 per minute of wall-clock run time.
 
 To construct it explicitly (the adapter itself never reads the environment):
 

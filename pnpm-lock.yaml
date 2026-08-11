@@ -362,6 +362,9 @@ importers:
 
   examples/mastra-agent:
     dependencies:
+      '@ai-sdk/openai':
+        specifier: 3.0.9
+        version: 3.0.9(zod@3.25.76)
       '@ai-sdk/react':
         specifier: 3.0.230
         version: 3.0.230(react@19.2.4)(zod@3.25.76)

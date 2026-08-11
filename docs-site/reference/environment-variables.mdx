@@ -8,11 +8,18 @@ These are the variables a host developer sets. Vendo also reads internal test
 seams and harness markers that are deliberately left out — they are not
 contract and can change without notice.
 
+**Env keys are credentials; config selects.** A third-party provider key in the
+environment never picks an adapter or a behavior for you — `VENDO_API_KEY` is the
+one variable that fills a slot you left unset, and everything else you choose in
+`createVendo`. So `E2B_API_KEY` is what an explicit `sandbox: e2bSandbox()`
+authenticates with, and `ANTHROPIC_API_KEY` is what the provider *you* pass in
+`models` authenticates with; neither one selects anything by being present.
+
 ## Host process
 
 | Variable | Effect |
 | --- | --- |
-| `VENDO_API_KEY` | authenticates Vendo Cloud calls (sharing, publishing, pinning) and fills any adapter slot (sandbox, store) the host left unset with the Cloud default; see [Vendo Cloud](/deploy/vendo-cloud) for adapter precedence and the data-location warning. A well-formed key also switches build and development telemetry into the cloud lane documented in the repository's [`TELEMETRY.md`](https://github.com/runvendo/vendo/blob/main/TELEMETRY.md); see [Telemetry](/deploy/telemetry#build-and-development-telemetry) |
+| `VENDO_API_KEY` | authenticates Vendo Cloud calls (sharing, publishing, pinning) and fills any adapter slot (sandbox, store) the host left unset with the Cloud default — it is the ONLY environment variable that fills a slot; every other key on this page is a credential that selects nothing. See [Vendo Cloud](/deploy/vendo-cloud) for adapter precedence and the data-location warning. A well-formed key also switches build and development telemetry into the cloud lane documented in the repository's [`TELEMETRY.md`](https://github.com/runvendo/vendo/blob/main/TELEMETRY.md); see [Telemetry](/deploy/telemetry#build-and-development-telemetry) |
 | `VENDO_CLOUD_URL` | overrides the Vendo Cloud base URL for the runtime and CLI; defaults to `https://console.vendo.run` |
 | `VENDO_TELEMETRY_DISABLED=1` | disables build and development telemetry |
 | `VENDO_TICK_SECRET` | bearer secret required by `POST /tick` |
@@ -27,21 +34,21 @@ contract and can change without notice.
 | `DO_NOT_TRACK=1` | disables telemetry and is also honored by Scarf |
 | `CI` | disables telemetry |
 | `NODE_ENV` | gates the **runtime** (dev-server) telemetry collector only: it collects when `NODE_ENV` is `development` or `test`, and refuses otherwise — an unset or unrecognized value fails closed, so a production deploy that forgot to set it is never collected from. Build-side and CLI telemetry are unaffected by this variable; use `VENDO_TELEMETRY_DISABLED=1`, `DO_NOT_TRACK=1`, or `CI` to turn those off |
-| `E2B_API_KEY` | default key read by the E2B SDK when `e2bSandbox` receives no explicit `apiKey`; also auto-selects the E2B execution venue in `createVendo` when no `sandbox:` is passed and the optional `e2b` package is installed (takes precedence over the `VENDO_API_KEY` hosted sandbox default) |
+| `E2B_API_KEY` | **credential only**: the default key read by the E2B SDK when an explicit `sandbox: e2bSandbox()` receives no inline `apiKey`. It selects nothing — a project with this key set and no `sandbox:` passed composes the `VENDO_API_KEY` Cloud sandbox, or no sandbox at all |
 | `VENDO_BOX_TEMPLATE` | provider base template a provisioned machine boots from (the box image with Node and the in-box agent harness); used by the BYO e2b path, ignored by the Cloud pool which ships its own image |
 | `VENDO_BOX_EDIT_TIMEOUT_MS` | long-poll budget for one in-box agent edit; default 8 minutes |
 | `VENDO_BOX_EDIT_POLL_MS` | poll interval while an in-box agent edit runs |
 | `VENDO_E2B_TIMEOUT_MS` | E2B machine lifetime; when unset, a raised `VENDO_BOX_EDIT_TIMEOUT_MS` implies a matching lifetime (budget plus 5 minutes) so the provider TTL cannot kill a long build |
-| `VENDO_INFERENCE_URL` · `VENDO_INFERENCE_KEY` | the in-box agent's model endpoint and key, injected into every machine; when unset, `ANTHROPIC_API_KEY` rides `https://api.anthropic.com`, then `VENDO_API_KEY` rides the Vendo Cloud model gateway, and with none of them the box gets no inference |
+| `VENDO_INFERENCE_URL` · `VENDO_INFERENCE_KEY` | the in-box agent's model endpoint and key, injected into every machine. Both halves or neither: the explicit pair wins, otherwise `VENDO_API_KEY` rides the Vendo Cloud model gateway, and with neither the box gets no inference. A stray `ANTHROPIC_API_KEY` is not a rung — naming your own endpoint means setting both halves of this pair |
 | `VENDO_INFERENCE_MODEL` | optional model choice passed through to the box harness |
 | `VERCEL`, `CF_PAGES`, `AWS_LAMBDA_FUNCTION_NAME` | prevent the default PGlite store from opening on an ephemeral serverless filesystem; pass a Postgres URL instead |
 | `VENDO_STORE_ENCRYPTION_KEY` | 32-byte base64 key the default local store uses to encrypt secret values in `vendo_secrets`. Read only when the local store is what composes — that is, when no `store` is passed to `createVendo` **and** no `VENDO_API_KEY` is set. An explicit store ignores it, and so does the Cloud hosted store, which wins the slot whenever a key is present |
-| `VENDO_DEV_CREDENTIAL` | pins a [dev-mode credential ladder](/connect/dev-mode) rung: `env-key:anthropic` (or `:openai` / `:google`), `vendo-cloud`, or `none` |
-| `VENDO_MODEL` · `VENDO_MODEL_PAINT` · `VENDO_MODEL_JUDGE` · `VENDO_MODEL_EXTRACT` | per-slot model pins, no code change: the string passes verbatim to whatever the resolved credential talks to (the Vendo Cloud gateway with `VENDO_API_KEY`, your provider otherwise). Precedence per slot: explicit model object → env pin → `models` string → per-rung default. `VENDO_MODEL_EXTRACT` also pins the `vendo init` / `vendo sync` extraction engine; `VENDO_EXTRACTION_MODEL` is its older spelling and still works |
+| `VENDO_DEV_CREDENTIAL` | **internal only** — Vendo's own E2E rung matrix and escape hatch, not a host knob, and it can change without notice. It pins a [dev-mode credential ladder](/connect/dev-mode) rung (`env-key:anthropic` / `:openai` / `:google`, `vendo-cloud`, or `none`), and is the only way to reach an `env-key` rung at all. Your app's model belongs in `models` |
+| `VENDO_MODEL` · `VENDO_MODEL_PAINT` · `VENDO_MODEL_JUDGE` · `VENDO_MODEL_EXTRACT` | per-slot model pins, no code change: the string passes verbatim to whatever the resolved credential talks to — the Vendo Cloud gateway with `VENDO_API_KEY`. These pin a model *name*; they never select a provider, so on a deployment with no `models` config and no `VENDO_API_KEY` there is nothing for them to pin. Precedence per slot: explicit model object → env pin → `models` string → per-rung default. `VENDO_MODEL_EXTRACT` also pins the `vendo init` / `vendo sync` extraction engine; `VENDO_EXTRACTION_MODEL` is its older spelling and still works |
 | `VENDO_AWAY_TOKEN_SECRET` | default source for the away-token preset's shared secret — the one the producer mints with and the host's verifier checks. Pass `secret` explicitly to override it; see [actAs presets](/connect/act-as-presets) |
 | `VENDO_APP_BUILD_WATCHDOG_MS` | how long one app build may run before it is failed with a terminal, retryable record (default 4 minutes). The client's polling cutoff derives from it, so raising this keeps the two in step |
 | `VENDO_CLOUD_MODEL` | **deprecated** (use `VENDO_MODEL`) — agent-slot pin for the Vendo Cloud gateway; the gateway remaps unknown ids during the alias grace window |
-| `ANTHROPIC_API_KEY` · `OPENAI_API_KEY` · `GOOGLE_GENERATIVE_AI_API_KEY` | first-preferred rung of the credential ladder read by `vendoModel()`; when set, `@vendoai/vendo/server` uses the matching `@ai-sdk/*@^3` provider installed in your app for the full native tool loop |
+| `ANTHROPIC_API_KEY` · `OPENAI_API_KEY` · `GOOGLE_GENERATIVE_AI_API_KEY` | **credentials only, selecting nothing.** Vendo does not read them. They are read by the `@ai-sdk/*@^3` provider *you* construct and pass — `models: { default: anthropic("claude-sonnet-4-6") }` — which is what selects a model. A key sitting in the environment with no `models` config leaves the deployment with no model, and the first turn says so |
 
 `VENDO_TICK_SECRET`, `VENDO_BASE_URL`, `VENDO_POSTHOG_KEY`, and the
 `VENDO_BOX_*` knobs are implementation-level environment configuration. The

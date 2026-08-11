@@ -120,7 +120,7 @@ Types only; each key's behavior is documented once, on
 | `instructions` | `string` | the prose this deployment puts in front of the agent every turn; the override for `.vendo/brief.md`. `brief` and `agent.instructions` were this same knob under two names and are gone |
 | `store` | `VendoStore` | default `createStore()` (PGlite, `.vendo/data`); with `VENDO_API_KEY` and no `store` passed, the Cloud hosted store fills the slot |
 | `files` | `FilesAdapter` | where workspace file content lives past 5 MiB; default: the store's own blobs |
-| `sandbox` | `SandboxAdapter` | e.g. `cloudSandbox({ apiKey })`, `e2bSandbox({ apiKey })`; absent → auto-selected from `E2B_API_KEY` / `VENDO_API_KEY`, else tree-only apps |
+| `sandbox` | `SandboxAdapter` | e.g. `e2bSandbox()` (which reads `E2B_API_KEY` as its credential) or `cloudSandbox({ apiKey })`; absent → `VENDO_API_KEY` fills the slot with the Cloud sandbox, else tree-only apps. A bare `E2B_API_KEY` selects nothing |
 | `harness` | `Harness` | WHO THINKS. Default `vendo()`; also `claudeCode()`, or your own via `defineHarness`. Carries the per-turn knobs — see [above](#values-built-by-another-function) |
 | `knowledge` | `KnowledgeAdapter` | composes the `vendo_knowledge_search` tool; unset, that tool does not exist |
 | `connectors` | `readonly (string \| Connector)[]` | one mixed list: a string names a Vendo Cloud toolkit (needs `VENDO_API_KEY`), a `Connector` object is an explicit provider used verbatim |

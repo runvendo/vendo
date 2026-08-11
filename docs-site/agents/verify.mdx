@@ -395,10 +395,11 @@ the stock status route answers.
 server (anything beyond tree-only rendering) return sandbox-unavailable.
 Tree-only apps still work.
 
-**Fix:** One of: install the `e2b` package and set `E2B_API_KEY`; set
-`VENDO_API_KEY` for the managed Cloud sandbox; or pass `sandbox:` to
-`createVendo`. Ask your human which venue they want; this needs an account or
-key.
+**Fix:** Two ways out — pass `sandbox:` to `createVendo` (e.g.
+`sandbox: e2bSandbox()`, which reads `E2B_API_KEY` as its credential), or set
+`VENDO_API_KEY` for the managed Cloud sandbox; without one, server apps (rungs
+2-4) return sandbox-unavailable. A bare `E2B_API_KEY` in the environment selects
+nothing. Ask your human which venue they want; this needs an account or key.
 
 ### E-LIVE-005 {#E-LIVE-005}
 
@@ -427,18 +428,22 @@ importing the registry there (see [E-WIRE-004](#E-WIRE-004)); re-run
 
 ### E-LIVE-007 {#E-LIVE-007}
 
-**Symptom:** `/status` reports the e2b execution venue, but `E2B_API_KEY` is
-not set for this project or the `e2b` package does not resolve from it.
+**Retired.** Doctor no longer emits this code. The check existed to catch a wire
+that had selected the e2b venue off a stray `E2B_API_KEY` without the `e2b`
+package installed — and env keys no longer select anything, so no host can be
+handed a venue it did not ask for. The code stays listed here because doctor
+codes are never reused; if you are reading it off an older run, the fix below is
+still the fix.
 
-**Cause:** The running wire selected e2b as the sandbox venue that it cannot
-actually use — typically an `E2B_API_KEY` inherited from the shell without the
-`e2b` package installed. Server-app builds die in the unusable venue instead
-of riding the managed Cloud sandbox.
+**What happened:** `E2B_API_KEY` is a credential now, read only by an explicit
+`sandbox: e2bSandbox()`. That constructor refuses at boot when the `e2b` package
+does not resolve from the project — earlier and louder than a doctor probe — and
+reports the `custom` venue like any other host adapter.
 
-**Fix:** To use e2b, install the `e2b` package and set `E2B_API_KEY` in the
-project env. To use the managed Cloud sandbox instead, remove `E2B_API_KEY`
-from the server env and keep `VENDO_API_KEY` set. Restart the dev server and
-re-run `vendo doctor`.
+**Fix (older runs):** To use e2b, install the `e2b` package and pass
+`sandbox: e2bSandbox()` to `createVendo`, with `E2B_API_KEY` set in the project
+env. To use the managed Cloud sandbox instead, leave the `sandbox` slot unset and
+keep `VENDO_API_KEY` set. Restart the dev server and re-run `vendo doctor`.
 
 ### E-LIVE-008 {#E-LIVE-008}
 
@@ -667,13 +672,14 @@ credential used and the error.
 **Cause:** Doctor POSTed one real turn to `<base>/threads` and no reply text
 arrived: no usable model credential, a provider error, or a timeout (90s).
 
-**Fix:** Check the credential the message names. With no key set, add
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY` to
-`.env.local` (with the matching `@ai-sdk/*` provider installed), or use a
-free Vendo Cloud dev key: run `vendo login` (your human approves a code in
-the browser; non-TTY runs print the URL + code) — the minted key lands in
-`.env.local` (ask your human first). Then restart the dev server and check
-its logs for the turn error.
+**Fix:** Check the credential the message names. With no model configured, either
+pass one in `createVendo` — `models: { default: anthropic("claude-sonnet-4-6") }`,
+with the matching `@ai-sdk/*` provider installed and its own key in `.env.local`
+— or use a free Vendo Cloud dev key: run `vendo login` (your human approves a
+code in the browser; non-TTY runs print the URL + code) — the minted
+`VENDO_API_KEY` lands in `.env.local` (ask your human first). A provider key on
+its own selects nothing; Vendo never picks a provider for you. Then restart the
+dev server and check its logs for the turn error.
 
 ### E-TURN-002 {#E-TURN-002}
 

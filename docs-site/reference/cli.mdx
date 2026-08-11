@@ -472,9 +472,11 @@ package script** (`predev`, `prebuild`, any `npm run …` — detected via
 that last rule an older install's bare `predev: vendo sync` would stop
 `npm run dev` on a prompt whose reflexive Enter starts spending. A run you did
 not invoke never gets a question. Engines resolve
-like init's ladder: a BYO model key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`),
-then `VENDO_API_KEY` managed inference, then none — keyless syncs stay
-structural-only, and the pass never fails a run.
+like init's ladder, on the extraction engine's OWN credentials: a coding-agent
+key or login (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`), then `VENDO_API_KEY`
+managed inference, then none — keyless syncs stay structural-only, and the pass
+never fails a run. These are build-time credentials for a tool you invoked, not
+runtime selection: a provider key here never selects your app's model.
 
 Options:
 
@@ -508,13 +510,14 @@ Options:
   incremental run `--ai` skips the engine sweep** — `vendo sync` runs in
   `predev` on every dev-server start, so it must not probe harnesses each time
   — and the pass resolves its own engine behind a narrower credential gate that
-  reads only `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-  `GOOGLE_GENERATIVE_AI_API_KEY` and `VENDO_API_KEY`. A machine carrying **only**
-  `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` or a standalone
-  `ANTHROPIC_BASE_URL` therefore gets `judgment: structural-only` on
-  `vendo sync --ai`, even though `vendo init` and an interactive `vendo sync`
-  accept all three. Add `--full`, or drop `--ai` on an interactive run, to walk
-  the whole ladder.
+  reads only `VENDO_API_KEY` and Claude Code's own-credential variables
+  (`ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, or a standalone
+  `ANTHROPIC_BASE_URL`). A machine carrying **only** `ANTHROPIC_API_KEY`,
+  `OPENAI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` therefore gets
+  `judgment: structural-only` on `vendo sync --ai`, even though `vendo init` and
+  an interactive `vendo sync` sweep the whole engine ladder and accept those keys
+  as engine credentials. Add `--full`, or drop `--ai` on an interactive run, to
+  walk the whole ladder.
 - `--no-ai`: force the judgment pass off (what the installed `predev`/
   `prebuild` hooks pass, so committed files never churn and a build never
   spends). `--no-watermark` remains accepted as an alias.

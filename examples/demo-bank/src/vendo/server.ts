@@ -1,3 +1,4 @@
+import { anthropic } from "@ai-sdk/anthropic";
 import { composioConnector } from "@vendoai/actions";
 import type { Principal } from "@vendoai/core";
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
@@ -68,13 +69,27 @@ export const mapleAuth: HostAuthPreset = {
 };
 
 export const vendo = createVendo({
-  // Model + store slots stay UNSET (demo-refresh Part 2): the env ladder
-  // resolves them — locally ANTHROPIC_API_KEY, deployed VENDO_API_KEY — and
-  // the unset store composes the local default. With the agent slot on the
-  // ladder, paint invisibility applies (resolveModels): the paint lane
-  // composes the family fast pick — vendo-paint on Cloud, the provider's
-  // fast model on BYO — so the demo runs the fast two-lane path with no
-  // hardcoded model names (speed-core lane; BYO rule).
+  // Model posture, written down rather than sniffed: env keys are credentials,
+  // config selects. The DEPLOYED demo leaves the seats unset so VENDO_API_KEY
+  // fills them with the Cloud gateway, and paint invisibility gives that lane
+  // the family fast pick (vendo / vendo-paint) with no hardcoded ids. Locally,
+  // Maple brings its own Anthropic account, so it NAMES both lanes here — an
+  // ANTHROPIC_API_KEY lying in the shell no longer wins the seat by itself, and
+  // an explicit model means paint no longer gets a fast pick for free, so the
+  // fast lane is spelled out to keep the two-lane speed the demo relies on.
+  // `@ai-sdk/anthropic` reads the key itself; Vendo never sees it. `judge` is
+  // here for the same reason: the guard judge below is wired from the STRING
+  // `vendoModel("vendo-judge")`, and a string rides the ladder — which on this
+  // laptop resolves nothing now, so the seat has to name the model.
+  ...(process.env.ANTHROPIC_API_KEY
+    ? {
+        models: {
+          default: anthropic("claude-sonnet-4-6"),
+          fill: anthropic("claude-haiku-4-5"),
+          judge: anthropic("claude-haiku-4-5"),
+        },
+      }
+    : {}),
   auth: mapleAuth,
   // Unset — the shipped demo — leaves the harness slot empty, so the composed
   // `vendo()` serves the chat route. `MAPLE_HARNESS` names a specialist
