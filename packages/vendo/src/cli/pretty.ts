@@ -1,7 +1,8 @@
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
-import { BANNER_COMPACT, BANNER_CONCEPT, BANNER_TAGLINE, bannerColorMode, bannerFrames, playBanner, type BannerColorMode } from "./banner.js";
+import { vendoStyle } from "@vendoai/core";
+import { BANNER_COMPACT, BANNER_CONCEPT, BANNER_TAGLINE, bannerColorMode, bannerFrames, playBanner } from "./banner.js";
 import type { Output } from "./shared.js";
 
 /**
@@ -24,35 +25,26 @@ import type { Output } from "./shared.js";
  */
 
 const ESC = "\u001b";
-const style = (open: string, close: string) => (text: string): string =>
-  `${ESC}[${open}m${text}${ESC}[${close}m`;
-
-const bold = style("1", "22");
-const dim = style("2", "22");
-const red = style("31", "39");
-const green = style("32", "39");
-const yellow = style("33", "39");
-/** The accent — brand lilac, the colour the banner's ramp ends on. A truecolor
-    terminal gets the real `#a78bfa`, so the rail matches the mark above it
-    instead of sitting a shade off in ANSI magenta (#1166); everything else
-    keeps bright magenta, which is what the fallback was always for. */
-const accentStyle = (mode: BannerColorMode): ((text: string) => string) =>
-  style(mode === "truecolor" ? "38;2;167;139;250" : "95", "39");
+/** The palette is core's — ONE set of colours for the CLI rail and the boot
+    summary `createVendo` prints (@vendoai/core's style.ts). These five are
+    env-independent, so they are read once here; the accent is not (which purple
+    it is depends on the terminal), so it rides the env its renderer was built
+    with — the same probe `bannerColorMode` makes for the ramp above it. */
+const { bold, dim, ok: green, warn: yellow, bad: red } = vendoStyle();
+const accentFor = (env: Record<string, string | undefined>): ((text: string) => string) =>
+  vendoStyle(undefined, env).accent;
 /** Re-arm sequences for the two colors that can wrap a whole line. */
 const REOPEN_YELLOW = `${ESC}[33m`;
 const REOPEN_RED = `${ESC}[31m`;
 
 /** TTY + no opt-outs → the pretty renderer; anything else keeps plain output.
-    NO_COLOR and CI follow the "present and non-empty" convention. */
+    NO_COLOR and CI follow the "present and non-empty" convention. ONE copy of
+    that law, in core, because the boot summary degrades by the same rule. */
 export function usePrettyOutput(
   stream: { isTTY?: boolean } = stdout,
   env: Record<string, string | undefined> = process.env,
 ): boolean {
-  if (stream.isTTY !== true) return false;
-  if ((env.NO_COLOR ?? "") !== "") return false;
-  if ((env.CI ?? "") !== "") return false;
-  if (env.TERM === "dumb") return false;
-  return true;
+  return vendoStyle(stream, env).pretty;
 }
 
 export interface SelectOption {
@@ -736,7 +728,7 @@ export function createPrettyOutput(options: PrettyOptions = {}): PrettyOutput {
   const state: RenderState = { absorb: 0, catalog: [], impact: [], judgment: null, paste: null };
   /** Same capability probe the banner uses, so the rail and the mark above it
       are the same purple on the same terminal. */
-  const lilac = accentStyle(bannerColorMode(env));
+  const lilac = accentFor(env);
 
   /** True when this renderer draws on the real terminal. Only then does it
       follow stdout's width and answer the interrupt signal; an injected

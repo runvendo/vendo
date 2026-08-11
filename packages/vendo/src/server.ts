@@ -9,6 +9,7 @@
  */
 import { provideCloudAdapters } from "@vendoai/agents";
 import { log, VendoError } from "@vendoai/core";
+import { announceBootSummary, bootSummaryFor } from "./boot-summary.js";
 import { createComposition } from "./compose-context.js";
 import { vendoInstance, wireDepsFor } from "./compose-wire.js";
 import { setDelegateRunner } from "./delegate.js";
@@ -407,6 +408,9 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
  */
 export function createVendo(input: CreateVendoConfig): Vendo {
   const composition = createComposition(input);
+  // What this deployment actually composed, said once, to the operator
+  // (boot-summary.ts). Composed facts only — no filesystem, nothing awaited.
+  announceBootSummary(bootSummaryFor(composition));
   const instance = vendoInstance(composition, createWireHandler(wireDepsFor(composition)));
   // D5 — the tool pack's `vendo_delegate` motor, carried internally rather than
   // on the host surface (see delegate.ts).
