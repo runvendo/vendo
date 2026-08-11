@@ -133,7 +133,7 @@ function CitationChip({ citation }: { citation: VendoKnowledgeCitation }) {
         <span className="fl-cite-porigin">
           {typeof citation.source === "string" && citation.source.length > 0 ? (
             <>
-              {citation.source}
+              <span className="fl-cite-psource">{citation.source}</span>
               <span className="fl-cite-sep" aria-hidden="true">·</span>
             </>
           ) : null}

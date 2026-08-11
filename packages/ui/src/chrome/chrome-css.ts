@@ -1630,13 +1630,21 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-cite-ptitle svg { color: var(--vendo-fg-muted); }
 .fl-cite-psnippet { display: block; font-size: 12px; color: var(--vendo-fg-muted); line-height: 1.6;
   margin: 7px 0 9px; border-left: 2px solid var(--vendo-border); padding-left: 9px; }
-/* nowrap + wrap, together: a nowrap container makes each segment (source, kind,
-   visibility — anonymous flex items, so unstylable on their own) unbreakable,
-   and wrapping then happens only BETWEEN them. Without the pair the row is one
-   nowrap line whose items shrink to min-content, which is what split the kind
-   label "Product docs" down the middle next to a long help.maple.bank source. */
+/* nowrap + wrap, together: a nowrap container makes each segment unbreakable —
+   kind and visibility are anonymous flex items, so this is the only place they
+   can be reached — and wrapping then happens only BETWEEN them. Without the
+   pair the row is one nowrap line whose items shrink to min-content, which is
+   what split the kind label "Product docs" down the middle next to a long
+   help.maple.bank source.
+   The source is the one segment that can outgrow the card by itself, and nowrap
+   leaves it no break at all: a 64-char help.maple.bank path painted 77px past
+   the border and handed .fl-msglist horizontal scroll. So it is a real element
+   rather than a third anonymous item — min-width:0 lifts the min-content floor
+   every flex item carries, and the ellipsis spends the cut on the tail, which
+   restates the card's own title, keeping the origin host readable. */
 .fl-cite-porigin { font-size: 11px; color: var(--vendo-fg-muted);
   display: flex; align-items: center; gap: 5px; flex-wrap: wrap; white-space: nowrap; }
+.fl-cite-psource { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .fl-cite-sep { color: var(--vendo-border-strong); }
 .fl-know-searched { display: flex; align-items: center; gap: 7px; margin-top: 10px;
   font-size: 11.5px; color: var(--vendo-fg-muted); }
