@@ -900,6 +900,82 @@ describe("vendo init (zero-question)", () => {
     expect(route).toContain(`models: { default: anthropic("claude-sonnet-4-6") }`);
   });
 
+  /** `vendo init --byo` asks for a provider key and lands it in .env.local — but
+      the ceremony runs AFTER the composition was planned, so the key used to be
+      saved into a run that had already authored a keyless composition: a key that
+      selected nothing, in a file the same run reported as wired. Real cloud step,
+      real paste, real file on disk — only the TTY and the secret prompt are
+      seams. */
+  it("--byo: a key pasted mid-run still lands in the composition it authored", async () => {
+    const root = await fixture();
+    const installs: Array<{ args: string[] }> = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      byo: true,
+      cloud: { ...NO_CLOUD, isTty: true, askSecret: async () => "sk-ant-api03-pasted" },
+      installProvider: async (_command, args) => {
+        installs.push({ args });
+        return 0;
+      },
+    })).toBe(0);
+
+    // The re-render's provider is also the one that gets INSTALLED — a written
+    // import the host cannot resolve is the same dead end one file over.
+    expect(installs).toEqual([{ args: ["install", "ai@^6", "@ai-sdk/anthropic@^3"] }]);
+
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain("ANTHROPIC_API_KEY=sk-ant-api03-pasted");
+    const routePath = join("app", "api", "vendo", "[...vendo]", "route.ts");
+    const route = await readFile(join(root, routePath), "utf8");
+    expect(route).toContain(`import { anthropic } from "@ai-sdk/anthropic";`);
+    expect(route).toContain(`  models: { default: anthropic("claude-sonnet-4-6") }, // ANTHROPIC_API_KEY supplies the key`);
+    // Exactly once, and the run says where — never the dead-end advice.
+    expect(route.match(/models:/g)).toHaveLength(1);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain(`models: anthropic — written into ${routePath}`);
+    expect(logs).not.toContain("No model key yet");
+  });
+
+  /** The same contradiction one step later: a provider key in the environment
+      resolves to `rung: "none"` since the selection law, so the closing summary
+      printed "No model key yet" directly under the models line it had just
+      written into the file. */
+  it("never advises a model key on a run that wrote the models line", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      env: { ANTHROPIC_API_KEY: "sk-a" },
+      installProvider: async () => 0,
+    })).toBe(0);
+    expect(sink.logs.join("\n")).not.toContain("No model key yet");
+  });
+
+  /** The import init writes has to RESOLVE when the host builds. `ensureProviderDeps`
+      asked the runtime credential which provider to install, and since the
+      selection law a bare OPENAI_API_KEY is `rung: "none"` — so init wrote
+      `import { openai } from "@ai-sdk/openai"` and installed nothing, leaving a
+      generated app that cannot resolve its own import. Whole path, one run: the
+      real scaffold decides, the real install seam records. */
+  it.each([
+    ["OPENAI_API_KEY", "openai", "@ai-sdk/openai@^3"],
+    ["GOOGLE_GENERATIVE_AI_API_KEY", "google", "@ai-sdk/google@^3"],
+  ])("installs the provider it wrote for a bare %s", async (envVar, provider, spec) => {
+    const root = await fixture();
+    const installs: Array<{ args: string[] }> = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      env: { [envVar]: "sk-test" },
+      installProvider: async (_command, args) => {
+        installs.push({ args });
+        return 0;
+      },
+    })).toBe(0);
+
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain(`import { ${provider} } from "@ai-sdk/${provider}";`);
+    // The import is written AND the dependency that satisfies it is installed.
+    expect(installs).toEqual([{ args: ["install", "ai@^6", spec] }]);
+  });
+
   it("leaves a keyless host's route model-free — no line, no dangling import", async () => {
     const root = await fixture();
     const sink = output();

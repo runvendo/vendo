@@ -509,15 +509,16 @@ Options:
 - `--ai`: run the judgment pass with no prompt, interactive or not. **On an
   incremental run `--ai` skips the engine sweep** — `vendo sync` runs in
   `predev` on every dev-server start, so it must not probe harnesses each time
-  — and the pass resolves its own engine behind a narrower credential gate that
-  reads only `VENDO_API_KEY` and Claude Code's own-credential variables
-  (`ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, or a standalone
-  `ANTHROPIC_BASE_URL`). A machine carrying **only** `ANTHROPIC_API_KEY`,
-  `OPENAI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` therefore gets
-  `judgment: structural-only` on `vendo sync --ai`, even though `vendo init` and
-  an interactive `vendo sync` sweep the whole engine ladder and accept those keys
-  as engine credentials. Add `--full`, or drop `--ai` on an interactive run, to
-  walk the whole ladder.
+  — and the pass resolves its own engine behind a narrower gate that reads the
+  ENVIRONMENT only: the provider keys an engine authenticates with
+  (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), Claude Code's own-credential
+  variables (`ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, or a standalone
+  `ANTHROPIC_BASE_URL`), and `VENDO_API_KEY`. A machine whose **only** credential
+  is a `claude` or `codex` CLI login — or a `GOOGLE_GENERATIVE_AI_API_KEY`, which
+  no engine here runs on — therefore gets `judgment: structural-only` on
+  `vendo sync --ai`, even though `vendo init` and an interactive `vendo sync`
+  sweep the whole engine ladder and accept those logins. Add `--full`, or drop
+  `--ai` on an interactive run, to walk the whole ladder.
 - `--no-ai`: force the judgment pass off (what the installed `predev`/
   `prebuild` hooks pass, so committed files never churn and a build never
   spends). `--no-watermark` remains accepted as an alias.

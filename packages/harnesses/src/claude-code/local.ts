@@ -86,6 +86,32 @@ async function loadAgentSdk(): Promise<unknown> {
 }
 
 /**
+ * A session about to open on a REPLACED environment (see this file's header:
+ * the SDK spawns with `env` instead of merging into `process.env`) needs the one
+ * credential that environment carries. `inferenceEnv()` writes ANTHROPIC_API_KEY
+ * only once it has RESOLVED a rung — the explicit VENDO_INFERENCE pair, or
+ * VENDO_API_KEY through the Cloud gateway — so its absence means the subprocess
+ * has no model at all.
+ *
+ * Since the selection law an ANTHROPIC_API_KEY sitting in the deployment's own
+ * environment is not one of those rungs, and because the environment is replaced
+ * rather than inherited it does not even reach the subprocess. That combination
+ * used to fail deep inside the SDK, with nothing in front of the operator naming
+ * the cause; this is that missing sentence.
+ */
+function requireLocalInference(env: Record<string, string>): void {
+  if ((env["ANTHROPIC_API_KEY"] ?? "").trim() !== "") return;
+  throw new VendoError(
+    "validation",
+    "claudeCode({ machine: \"local\" }) has no model to think with. Name the endpoint — "
+    + "VENDO_INFERENCE_URL + VENDO_INFERENCE_KEY, both halves — or set VENDO_API_KEY to fund it "
+    + "through the Vendo Cloud model gateway (`vendo login` mints a free dev key). A provider key "
+    + "alone no longer selects a model, and this agent's environment is REPLACED rather than "
+    + "inherited, so an ANTHROPIC_API_KEY on this server never reaches the session.",
+  );
+}
+
+/**
  * The one thing an operator who opted into `machine: "local"` has to be told,
  * said once per process — it is a deployment fact, not a per-turn event (the
  * same shape as the missing-door warning).
@@ -324,6 +350,11 @@ export async function localMachine(options: LocalMachineOptions): Promise<Sessio
         const createClaudeSession = options.openSession
           ?? (await import(RUNNER)).createClaudeSession as (input: Record<string, unknown>) => LocalSession["session"];
         const sdk = options.openSession === undefined ? await loadAgentSdk() : undefined;
+        // Real session only — a doubled one needs no credential, and this is the
+        // same seam the SDK load above already turns on. Checked HERE, at the
+        // moment a live session is about to open on this env, rather than at
+        // machine construction: that is where the failure actually lands.
+        if (sdk !== undefined) requireLocalInference(options.env);
         held.session = createClaudeSession({
           systemPrompt: message.systemPrompt,
           model: message.model,

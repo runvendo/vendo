@@ -949,6 +949,12 @@ interface ScaffoldPlan {
       reports. Null when no provider key resolved, or when the composition
       already existed (init never edits a file it did not author). */
   modelWritten: { provider: ScaffoldModel["provider"]; path: string } | null;
+  /** Re-render the composition this run authored with an explicit `models` line,
+      for a provider key that only arrives AFTER planning: the `--byo` paste lands
+      in .env.local during the cloud step, which runs after the plan is built but
+      before a single file is written. Returns the modelWritten to report. Null
+      when this run authored no composition. */
+  rewriteModels: ((model: ScaffoldModel) => ScaffoldPlan["modelWritten"]) | null;
 }
 
 const emptyScaffold = (layout: LayoutWiring): ScaffoldPlan => ({
@@ -959,6 +965,7 @@ const emptyScaffold = (layout: LayoutWiring): ScaffoldPlan => ({
   compositionPath: null,
   layout,
   modelWritten: null,
+  rewriteModels: null,
 });
 
 async function planCustomComposition(
@@ -1082,11 +1089,20 @@ async function planNextComposition(
     const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
     const models = scaffoldModel(root, options);
     const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, models });
-    scaffold.changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
+    const routeChange = { absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) };
+    scaffold.changes.push(routeChange);
     scaffold.authAdvice = auth.advice;
     scaffold.authWired = auth.wired;
     scaffold.compositionPath = path;
     if (models !== null) scaffold.modelWritten = { provider: models.provider, path };
+    // Same renderer, same arguments, one late model — never a second way to
+    // write this line. The change object is still unwritten at this point.
+    scaffold.rewriteModels = (model) => {
+      const rewritten = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, models: model });
+      routeChange.after = rewritten;
+      routeChange.diff = diff(path, routeBefore, rewritten);
+      return { provider: model.provider, path };
+    };
   } else if (registrations.length > 0) {
     // The route already exists but server actions appeared since it was
     // generated: name the wiring the existing createVendo is missing, so
@@ -1121,6 +1137,8 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   layout: LayoutWiring;
   /** The `models` line this run wrote, and where (ScaffoldPlan.modelWritten). */
   modelWritten: ScaffoldPlan["modelWritten"];
+  /** See ScaffoldPlan.rewriteModels — the `--byo` paste arrives after this plan. */
+  rewriteModels: ScaffoldPlan["rewriteModels"];
 }> {
   const root = resolve(options.targetDir);
   // The non-interactive guard still demands an explicit --framework, so
@@ -1131,7 +1149,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     : framework === "express"
       ? await planExpressComposition(root, options, confirmAuth, selectAuth)
       : await planNextComposition(root, options, confirmAuth, selectAuth);
-  const { changes, edits, authAdvice, authWired, compositionPath, layout, modelWritten } = scaffold;
+  const { changes, edits, authAdvice, authWired, compositionPath, layout, modelWritten, rewriteModels } = scaffold;
 
   const packageJson = join(root, "package.json");
   const packageBefore = await readOptional(packageJson);
@@ -1187,6 +1205,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     compositionPath,
     layout,
     modelWritten,
+    rewriteModels,
     plan: {
       framework,
       // Only when the run named one: an unattended plan stays byte-identical
@@ -1616,8 +1635,10 @@ async function ensureHostDeps(input: {
   pretty: PrettyOutput | null;
   interactive: boolean;
   credential: DevCredential;
+  /** The provider whose import this run wrote into the composition, if any. */
+  wrote: ScaffoldModel["provider"] | undefined;
 }): Promise<void> {
-  const { root, output, options, pretty, interactive, credential } = input;
+  const { root, output, options, pretty, interactive, credential, wrote } = input;
   // #1153: the scaffolds this run wrote import `@vendoai/vendo/*`, and a host
   // installed under the `vendoai` alias alone cannot resolve them under pnpm's
   // strict node_modules — the route fails to COMPILE and every request 500s.
@@ -1627,13 +1648,18 @@ async function ensureHostDeps(input: {
     ...(options.installVendo === undefined ? {} : { run: options.installVendo }),
   });
 
-  // The credential's runtime provider must be resolvable from the host or
-  // the FIRST turn 500s (dev-creds/model.ts loads it host-side; nothing
-  // declares @ai-sdk/* — 0.4.1 E2E cert finding). Install exactly what the
-  // resolved credential needs; a failure degrades to the manual command.
+  // The provider must be resolvable from the host or the FIRST turn 500s
+  // (dev-creds/model.ts loads it host-side; nothing declares @ai-sdk/* — 0.4.1
+  // E2E cert finding). Two sources, because since the selection law they differ:
+  // the resolved CREDENTIAL names what a runtime turn loads, and `wrote` names
+  // the import this run just authored — a bare provider key is `rung: "none"`,
+  // so the credential alone said "nothing to install" for a route that had just
+  // been given an `@ai-sdk/*` import, and the host's build could not resolve it.
+  // A failure degrades to the manual command.
   await ensureProviderDeps({
     root,
     credential,
+    ...(wrote === undefined ? {} : { wrote }),
     output,
     ...(options.installProvider === undefined ? {} : { run: options.installProvider }),
   });
@@ -1795,7 +1821,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
   const detectStarted = Date.now();
-  const { plan, changes, edits, manualSteps, mount, authAdvice, authWired, compositionPath, layout, modelWritten } = await buildPlan(options, confirmAuth, selectAuth);
+  const { plan, changes, edits, manualSteps, mount, authAdvice, authWired, compositionPath, layout, modelWritten, rewriteModels } = await buildPlan(options, confirmAuth, selectAuth);
   const detectMs = Date.now() - detectStarted;
   let telemetry = telemetryFor(options, output, root);
   await telemetry.track("init_started", { framework: plan.framework });
@@ -1829,6 +1855,21 @@ export async function runInit(options: InitOptions): Promise<number> {
         root, options, output, pretty, interactive, changes, baseUrl,
         framework: plan.framework, authWired, cloudKey: cloud.keyValid,
       });
+    }
+
+    // A provider key pasted THIS run (`vendo init --byo`) lands in .env.local
+    // during the cloud step — after the plan was built, before anything is
+    // written. Re-render the composition so the key the user just handed over
+    // selects a model instead of sitting dead in a file the run also told them
+    // was wired. Written exactly ONCE: the MCP arm plans after the cloud step,
+    // so its own scaffold already saw the key (hence the mcp === null gate), and
+    // a run whose plan already carries a line never reaches this.
+    let pastedModel: ScaffoldPlan["modelWritten"] = null;
+    if (mcp === null && modelWritten === null && rewriteModels !== null) {
+      const pasted = ENV_KEY_VARS.find((entry) => entry.envVar === cloud.wroteKeyVar);
+      if (pasted !== undefined) {
+        pastedModel = rewriteModels({ provider: pasted.provider, envVar: pasted.envVar });
+      }
     }
 
     pretty?.spin("Wiring your app…");
@@ -1903,26 +1944,37 @@ export async function runInit(options: InitOptions): Promise<number> {
       ...(await cloudProjectProps(root)),
     });
 
-    await ensureHostDeps({ root, output, options, pretty, interactive, credential });
+    // What the run actually WROTE, resolved before the install step because the
+    // install has to cover the import this run authored — not only what the
+    // runtime credential would load.
+    //
+    // It only ever names the file that actually holds the line. The MCP arm
+    // REPLACES the route this planned for with the thin handler over ./vendo (a
+    // route module may export only handlers), so the line lives in that plan's
+    // composition module and `planMcp` reports which file that is.
+    const modelLanded = mcp === null ? (modelWritten ?? pastedModel) : mcp.modelWritten;
+
+    await ensureHostDeps({
+      root, output, options, pretty, interactive, credential,
+      wrote: modelLanded?.provider,
+    });
 
     // The one line that closes the model story. A provider key is a credential
     // now, not a selection: nothing picks a model off the environment any more,
     // so the run says which model it SELECTED for them and in which file — the
     // explicit config is already there to edit, and no first boot fails on the
     // removed ambient behaviour.
-    //
-    // It only ever names the file that actually holds the line. The MCP arm
-    // REPLACES the route this planned for with the thin handler over ./vendo (a
-    // route module may export only handlers), so the line lives in that plan's
-    // composition module and `planMcp` reports which file that is.
-    const modelLanded = mcp === null ? modelWritten : mcp.modelWritten;
     if (modelLanded !== null) {
       output.log(`models: ${modelLanded.provider} — written into ${modelLanded.path}`);
     }
-    // The one short Cloud reminder in the end-of-run summary — ONLY while no
-    // key exists (the full emphasized block already ran up top; no repeat).
-    if (credential.rung === "none") {
-      output.log("No model key yet: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or run `vendo login` for a free dev key.");
+    // The one short Cloud reminder in the end-of-run summary — ONLY while this
+    // host has no model at all (the full emphasized block already ran up top; no
+    // repeat). A provider key resolves to `rung: "none"` since the selection law,
+    // so the models line above is the other half of the test: without it this
+    // line contradicted the line directly above it. And it names what the key
+    // alone no longer does — advising the bare variable was the whole bug.
+    if (credential.rung === "none" && modelLanded === null) {
+      output.log("No model key yet: select one in your composition — models: { default: anthropic(\"claude-sonnet-4-6\") } — with ANTHROPIC_API_KEY in .env.local, or run `vendo login` for a free dev key (VENDO_API_KEY). A provider key alone no longer selects a model.");
     }
 
     // #478 short-term — npm installs the ai@7 peer conflict without failing

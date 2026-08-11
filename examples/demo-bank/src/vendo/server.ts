@@ -81,7 +81,12 @@ export const vendo = createVendo({
   // here for the same reason: the guard judge below is wired from the STRING
   // `vendoModel("vendo-judge")`, and a string rides the ladder — which on this
   // laptop resolves nothing now, so the seat has to name the model.
-  ...(process.env.ANTHROPIC_API_KEY
+  //
+  // NON-BLANK, not merely present: an exported-but-empty `ANTHROPIC_API_KEY` is
+  // an ordinary thing to have around, and naming the seats for one would preempt
+  // the VENDO_API_KEY fallback that was about to fill them correctly. Same rule
+  // the SDK's own detection uses, so "set" means one thing everywhere.
+  ...((process.env.ANTHROPIC_API_KEY ?? "").trim() !== ""
     ? {
         models: {
           default: anthropic("claude-sonnet-4-6"),

@@ -209,6 +209,64 @@ describe("ensureProviderDeps", () => {
     expect(calls).toEqual([]);
   });
 
+  /** The P1 #1213 left behind: since the selection law a bare provider key is
+      `rung: "none"`, so asking the credential alone answered "no provider" for
+      the very host whose route init had just given an `@ai-sdk/*` import — the
+      generated app could not resolve its own import when it built. */
+  it.each([
+    ["openai", "@ai-sdk/openai@^3"],
+    ["google", "@ai-sdk/google@^3"],
+    ["anthropic", "@ai-sdk/anthropic@^3"],
+  ] as const)("installs the provider it WROTE (%s) even with no runtime credential", async (wrote, spec) => {
+    const root = await tempRoot();
+    const calls: Array<{ args: string[] }> = [];
+    await ensureProviderDeps({
+      root,
+      credential: { rung: "none" },
+      wrote,
+      output: output().sink,
+      run: async (_command, args) => {
+        calls.push({ args });
+        return 0;
+      },
+    });
+    expect(calls).toEqual([{ args: ["install", "ai@^6", spec] }]);
+  });
+
+  /** Two different answers, both needed: the gateway loads @ai-sdk/anthropic at
+      runtime while the composition's own line imports @ai-sdk/openai. */
+  it("installs BOTH when the credential and the written line disagree", async () => {
+    const root = await tempRoot();
+    const calls: Array<{ args: string[] }> = [];
+    await ensureProviderDeps({
+      root,
+      credential: { rung: "vendo-cloud" },
+      wrote: "openai",
+      output: output().sink,
+      run: async (_command, args) => {
+        calls.push({ args });
+        return 0;
+      },
+    });
+    expect(calls).toEqual([{ args: ["install", "ai@^6", "@ai-sdk/anthropic@^3", "@ai-sdk/openai@^3"] }]);
+  });
+
+  it("names one provider once when both answers agree", async () => {
+    const root = await tempRoot();
+    const calls: Array<{ args: string[] }> = [];
+    await ensureProviderDeps({
+      root,
+      credential: { rung: "env-key", provider: "openai", envVar: "OPENAI_API_KEY" },
+      wrote: "openai",
+      output: output().sink,
+      run: async (_command, args) => {
+        calls.push({ args });
+        return 0;
+      },
+    });
+    expect(calls).toEqual([{ args: ["install", "ai@^6", "@ai-sdk/openai@^3"] }]);
+  });
+
   it("degrades to the exact manual command when the install fails, never throws", async () => {
     const root = await tempRoot();
     const messages = output();

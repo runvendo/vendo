@@ -22,9 +22,9 @@ password), exists to demonstrate per-user isolation.
 ```bash
 cd examples/demo-bank
 cp .env.example .env.local
-# Fill in VENDO_API_KEY (+ VENDO_DEV_CREDENTIAL=vendo-cloud, MAPLE_STORE=local
-# — the standing local posture; see "Store posture") or ANTHROPIC_API_KEY for
-# a BYO model key.
+# Fill in VENDO_API_KEY (+ MAPLE_STORE=local — the standing local posture;
+# see "Store posture"), or ANTHROPIC_API_KEY as the BYO credential funding
+# the model the composition selects.
 pnpm dev
 ```
 

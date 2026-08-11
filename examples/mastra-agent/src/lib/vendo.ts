@@ -12,6 +12,16 @@ import { getWeather, sendTripReport } from "./vendo-actions";
  *  its own session (or passes an auth preset — see docs/quickstart.md). */
 export const DEMO_PRINCIPAL: Principal = { kind: "user", subject: "demo-user" };
 
+/** Whether this environment carries a usable OpenAI credential — NON-BLANK, not
+ *  merely present. `export OPENAI_API_KEY=` is an ordinary thing to have in a
+ *  shell or a .env file, and an empty key that still named the model seat would
+ *  preempt the `VENDO_API_KEY` fallback that was about to fill it correctly, then
+ *  fail the turn against OpenAI with no credential at all. This is the same rule
+ *  the SDK's own detection uses, so "set" means one thing on both sides. */
+export function hasOpenAiCredential(env: Record<string, string | undefined> = process.env): boolean {
+  return (env["OPENAI_API_KEY"] ?? "").trim() !== "";
+}
+
 export function composeVendo(overrides?: Parameters<typeof createVendo>[0]): Vendo {
   return createVendo({
     principal: async () => DEMO_PRINCIPAL,
@@ -28,8 +38,9 @@ export function composeVendo(overrides?: Parameters<typeof createVendo>[0]): Ven
     // same OpenAI model the weather agent thinks on, so the one OPENAI_API_KEY
     // this example asks for covers both; `@ai-sdk/openai` reads that key itself.
     // With no OpenAI key the seat stays unset, and VENDO_API_KEY fills it with
-    // the Vendo Cloud gateway. With neither, the first generation says so.
-    ...(process.env.OPENAI_API_KEY ? { models: { default: openai("gpt-4.1-mini") } } : {}),
+    // the Vendo Cloud gateway. With neither, the first generation says so — and
+    // "no key" means blank as well as absent (see hasOpenAiCredential).
+    ...(hasOpenAiCredential() ? { models: { default: openai("gpt-4.1-mini") } } : {}),
     ...overrides,
   });
 }

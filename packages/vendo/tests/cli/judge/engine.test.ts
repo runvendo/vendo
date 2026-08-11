@@ -76,6 +76,39 @@ describe("resolveJudgmentEngine", () => {
     },
   );
 
+  /** #1209 fallout: the gate ran on resolveDevCredential, which since the
+      selection law answers "what may serve a RUNTIME turn" and no longer sweeps
+      provider keys — so `vendo sync --ai` told a developer whose only credential
+      is ANTHROPIC_API_KEY to set ANTHROPIC_API_KEY, while the harnesses that run
+      on exactly that key were never probed. The REAL resolver runs here: an
+      injected one is what let this ship green. */
+  it.each([
+    ["ANTHROPIC_API_KEY", "claude-cli"],
+    ["OPENAI_API_KEY", "codex-cli"],
+  ])("%s is a credential its own rung runs on, so the gate must not swallow it", async (envVar, id) => {
+    const resolved = await resolveJudgmentEngine({
+      root: "/tmp",
+      env: { [envVar]: "sk-test" },
+      harnesses: [harness(id, `your ${envVar}`)],
+    });
+    expect(resolved.engine?.credential).toBe(`your ${envVar}`);
+  });
+
+  /** The property, stated directly: whatever the gate says, it never advises
+      setting a variable this env already carries. */
+  it.each(["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "VENDO_API_KEY"])(
+    "never advises setting %s when it is already set",
+    async (envVar) => {
+      const resolved = await resolveJudgmentEngine({
+        root: "/tmp",
+        env: { [envVar]: "set" },
+        harnesses: [harness("claude-cli", null), harness("codex-cli", null)],
+      });
+      expect(resolved.reason ?? "").not.toContain(`set ${envVar}`);
+      expect(resolved.reason ?? "").not.toContain("no model credential");
+    },
+  );
+
   it("picks the first available rung when no pin is given", async () => {
     const resolved = await resolveJudgmentEngine({
       root: "/tmp",
