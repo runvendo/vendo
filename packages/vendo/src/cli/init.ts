@@ -1898,7 +1898,13 @@ export async function runInit(options: InitOptions): Promise<number> {
     // so the run says which model it SELECTED for them and in which file — the
     // explicit config is already there to edit, and no first boot fails on the
     // removed ambient behaviour.
-    if (modelWritten !== null) {
+    //
+    // It only speaks for a file that actually holds the line. The MCP arm
+    // REPLACES the route this planned for with the thin handler over ./vendo
+    // (a route module may export only handlers), so the planned line went with
+    // it and `planMcp` composes its module without one — naming route.ts here
+    // would send the reader to a file that does not have it.
+    if (mcp === null && modelWritten !== null) {
       output.log(`models: ${modelWritten.provider} — written into ${modelWritten.path}`);
     }
     // The one short Cloud reminder in the end-of-run summary — ONLY while no

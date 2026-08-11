@@ -904,6 +904,43 @@ describe("vendo init (zero-question)", () => {
     expect(logs).toContain("No model key yet");
   });
 
+  /** The MCP arm replaces the route this planned for with the thin handler over
+      ./vendo, so the planned models line went with it. The summary may not name
+      a file that does not hold the line — sending the reader to route.ts to
+      find a `models:` that is not there is worse than saying nothing. */
+  it("names no file on the MCP path, where the thin route replaced the one it planned", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-mcp-models-"));
+    cleanup.push(root);
+    await mkdir(join(root, "app"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "mcp-host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "7.0.0" },
+    }));
+    await writeFile(join(root, "app", "layout.tsx"),
+      "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
+    const sink = output();
+    expect(await run(root, sink, {
+      useCase: "mcp",
+      yes: true,
+      auth: "clerk",
+      baseUrl: "https://app.acme.com",
+      env: { ANTHROPIC_API_KEY: "sk-a" },
+      installProvider: async () => 0,
+    })).toBe(0);
+
+    const wiringDir = join(root, "app", "api", "vendo", "[...vendo]");
+    const route = await readFile(join(wiringDir, "route.ts"), "utf8");
+    // The thin route carries neither half — it composes nothing at all.
+    expect(route).toContain(`import { vendo } from "./vendo";`);
+    expect(route).not.toContain("@ai-sdk/");
+    expect(route).not.toContain("models:");
+    // Whatever the composition module holds, the pair never carries two.
+    const composition = await readFile(join(wiringDir, "vendo.ts"), "utf8");
+    expect(`${route}${composition}`.match(/models:/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    expect(`${route}${composition}`.match(/@ai-sdk\/anthropic/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    expect(sink.logs.join("\n")).not.toContain("written into");
+  });
+
   /** A Cloud key is not a provider key: its models resolve through the
       gateway's own family names, so nothing is written for it. */
   it("writes nothing for a Vendo Cloud key", async () => {
