@@ -89,8 +89,11 @@ const encodeSnapshotRef = (state: CloudSnapshotState): string =>
   `${CLOUD_SNAPSHOT_REF_PREFIX}${toBase64Url(JSON.stringify(state))}`;
 
 /** The scheme a ref announces itself with — what a provider mismatch is read
- * from. */
-const REF_SCHEME_PATTERN = /^([a-z0-9][a-z0-9+.-]*):/;
+ * from. BOUNDED on purpose: the scheme is the only part of a caller's ref that
+ * reaches a message, so an unbounded capture turns a stored ref into an error
+ * as long as the ref itself. Nothing this long is a URI scheme, and a ref that
+ * leads with one is not a reference at all. */
+const REF_SCHEME_PATTERN = /^([a-z0-9][a-z0-9+.-]{0,31}):/;
 
 /** The other providers' schemes, with the adapter that resumes one, so a
  * cross-provider ref can name the fix instead of the failure. */

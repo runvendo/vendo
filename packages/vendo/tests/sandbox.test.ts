@@ -510,6 +510,14 @@ describe("cloudSandbox", () => {
       await expect(adapter.resume(ref)).rejects.toMatchObject({ code: "validation", message });
       await expect(adapter.destroy(ref)).rejects.toMatchObject({ code: "validation", message });
     }
+
+    // The scheme is the ONE piece of a caller's ref that reaches a message, so
+    // it is bounded: an unbounded capture made a 200k-character lead a
+    // 200k-character error and a 200k-character log line. It is not a scheme.
+    await expect(adapter.resume(`${"a".repeat(200_000)}:x`)).rejects.toMatchObject({
+      code: "validation",
+      message: 'This is not a sandbox snapshot reference: Vendo Cloud snapshot references start with "vendo:v2:". Rebuild the app to mint a current reference.',
+    });
     expect(console_.requests).toEqual([]);
   });
 

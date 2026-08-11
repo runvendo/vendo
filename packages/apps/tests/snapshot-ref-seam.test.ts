@@ -159,6 +159,14 @@ describe("the snapshot-ref seam: mint → row → wake", () => {
       // The LENGTH is the evidence; the payload itself never reaches the message.
       message: `E2B snapshot reference is truncated or corrupt: ${cut.length} characters after the "e2b:v2:" prefix, expected 100-400. The stored reference was cut off — rebuild the app.`,
     });
+
+    // The scheme is the ONE piece of a caller's ref that reaches a message, so
+    // it is bounded: an unbounded capture made a 200k-character lead a
+    // 200k-character error and a 200k-character log line. It is not a scheme.
+    await expect(adapter.resume(`${"a".repeat(200_000)}:x`)).rejects.toMatchObject({
+      code: "validation",
+      message: 'This is not a sandbox snapshot reference: E2B snapshot references start with "e2b:v2:". Rebuild the app to mint a current reference.',
+    });
     expect(sdk.create).not.toHaveBeenCalled();
   });
 });
