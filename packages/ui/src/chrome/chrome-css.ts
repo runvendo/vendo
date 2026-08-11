@@ -1047,8 +1047,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   .fl-act-pulse, .fl-connect-spin { animation: none; }
   .fl-picker-item.is-just-connected, .fl-picker-item.is-just-connected .fl-picker-on { animation: none; }
   .fl-msglist-wrap, .fl-jump, .fl-md--streaming > * { animation: none; opacity: 1; }
-  /* The launcher blob rests as a plain circle; the panel resize snaps. */
-  .fl-launcher-blob { animation: none; border-radius: 50%; }
+  /* The panel resize snaps. */
   .fl-overlay-panel { transition: none; }
 }
 
@@ -1124,17 +1123,12 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
 .fl-launcher[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
 .fl-launcher[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
 
-/* The launcher mark: an accent-colored blob that
-   continuously morphs shape — the recognition cue, in place of any glyph or
-   product name. Quickens on hover; a static circle under reduced motion. */
+/* The launcher mark: a plain accent circle — the recognition cue, in place of
+   any glyph or product name. Static by design (2026-08-11: the morphing blob
+   read as a loading animation and is gone); anything that actually loads says
+   so with the progress ring below. */
 .fl-launcher-blob { width: 20px; height: 20px; flex: none; background: var(--vendo-accent);
-  animation: fl-blob-morph 7s ease-in-out infinite; }
-.fl-launcher:hover .fl-launcher-blob { animation-duration: 2.4s; }
-@keyframes fl-blob-morph {
-  0%, 100% { border-radius: 58% 42% 55% 45% / 48% 55% 45% 52%; transform: rotate(0deg) scale(1); }
-  25% { border-radius: 45% 55% 48% 52% / 58% 42% 58% 42%; transform: rotate(12deg) scale(1.05); }
-  50% { border-radius: 52% 48% 42% 58% / 45% 52% 48% 55%; transform: rotate(-8deg) scale(.96); }
-  75% { border-radius: 42% 58% 55% 45% / 52% 48% 55% 45%; transform: rotate(6deg) scale(1.03); } }
+  border-radius: 50%; }
 /* Blob-only orb: the host cleared the label (launcher.label: null). */
 .fl-launcher[data-vendo-launcher-bare] { padding: 11px; gap: 0; border-radius: 50%; }
 
@@ -1804,7 +1798,7 @@ ul.fl-approval-sub { padding: 0; list-style: none; }
 .fl-morph-logo img, .fl-morph-logo svg { display: block; width: 18px; height: 18px; object-fit: contain; }
 
 /* ---------- background attention (spec §2 G1, §3 H1, §4 N1) ---------- */
-/* The pill while a run keeps going without the user: the morph blob gives way
+/* The pill while a run keeps going without the user: the mark gives way
    to a progress ring and the label to the live beat. Nothing here opens or
    folds a surface — the pill only tells the truth about what is happening. */
 .fl-launcher-ring { width: 18px; height: 18px; flex: none; border-radius: 50%;
