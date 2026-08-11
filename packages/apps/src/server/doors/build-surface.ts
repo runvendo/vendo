@@ -353,15 +353,6 @@ const createCreateDoor = (
     // app still RESOLVES, because it is real and on screen; what it no longer
     // does is claim the server work landed.
     let serverWorkFailed: string[] | undefined;
-    const failServerWork = (reasons: string[]): void => {
-      serverWorkFailed = reasons;
-      input.onServerWork?.({ ok: false, reasons });
-      log({
-        code: "apps.server-work-failed",
-        level: "error",
-        message: `[vendo] server work failed for ${appId} (the screen stands, its server side does not): ${reasons.join("; ")}`,
-      });
-    };
     try {
       const served = await runServerWork({
         plan: planned,
@@ -370,12 +361,32 @@ const createCreateDoor = (
         request: input.prompt,
       }, ctx, generationDeps);
       app = served.document;
-      if (served.failed !== undefined) failServerWork(served.failed);
+      if (served.failed !== undefined) serverWorkFailed = served.failed;
+      // A plan that asked to be SERVED and did not get its surface is the same
+      // half-built app: the box ran, but the flip was refused (`issues`), so the
+      // person is looking at a skeleton with nothing behind it. `edit` hands
+      // these back to its caller as `issues`; a create returns a document, so
+      // this callback is its only channel for them. `served` is compiler-gated
+      // to kind="box" (plan/compile.ts), so no automation issue arrives here.
+      else if (planned.server?.served === true && served.issues !== undefined) {
+        serverWorkFailed = served.issues;
+      }
       for (const finding of served.findings) {
         console.info(findingLine(finding));
       }
     } catch (error) {
-      failServerWork([safeErrorMessage(error)]);
+      serverWorkFailed = [safeErrorMessage(error)];
+    }
+    // Reported OUTSIDE the try on purpose: reporting from inside it let a
+    // throwing consumer re-enter this very catch as a second "server work
+    // failed", call the callback twice, and take `paintSettledTree` with it.
+    if (serverWorkFailed !== undefined) {
+      input.onServerWork?.({ ok: false, reasons: serverWorkFailed });
+      log({
+        code: "apps.server-work-failed",
+        level: "error",
+        message: `[vendo] server work failed for ${appId} (the screen stands, its server side does not): ${serverWorkFailed.join("; ")}`,
+      });
     }
     await paintSettledTree(caller, app, ctx, input.onView, appId);
     log({

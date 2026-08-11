@@ -64,6 +64,13 @@ const setup = (agent: FakeBoxAgent) => createApps({
 
 const brokenBox: FakeBoxAgent = () => ({ ok: false, summary: BOX_GAVE_UP, filesChanged: [], testsRun: 0 });
 
+/** The box builds fine and CLAIMS it serves the app's whole surface, but never
+ *  installs a root page — so the host's own `GET /` check fails, the 2→3 flip is
+ *  refused, and the person is left on the skeleton. `runServerWork` reports that
+ *  as `issues`, not `failed`, because the box's work itself did land. */
+const unservedBox: FakeBoxAgent = () =>
+  ({ ok: true, summary: "wrote the drag-and-drop server", filesChanged: ["/app/server.js"], testsRun: 1, servesUi: true });
+
 const workingBox: FakeBoxAgent = ({ box }) => {
   box.pages.set("/", "<!doctype html><title>Invoice kanban</title><h1>Kanban</h1>");
   box.manifest = {};
@@ -146,6 +153,63 @@ describe("a create whose server work could not be built", () => {
       );
       // Contract §3.1 — four fields of words, and no document among them.
       expect(Object.keys(output).sort()).toEqual(["id", "say", "status", "title"]);
+    } finally {
+      errorSpy.mockRestore();
+      infoSpy.mockRestore();
+    }
+  });
+
+  it("reports a served plan whose surface flip was refused — the other half of the same silence", async () => {
+    // `failed` is not the only way a served plan comes back half-built: the box
+    // can succeed and still fail the host's own `GET /` verification, which
+    // `runServerWork` returns as `issues`. `edit` hands those to its caller; a
+    // create returns a document, so without this they went nowhere and the app
+    // reported complete on a skeleton — the same bug, one branch over.
+    const runtime = setup(unservedBox);
+    const failures: Array<{ ok: false; reasons: string[] }> = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const infos: string[] = [];
+    const infoSpy = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
+      infos.push(String(line));
+    });
+    try {
+      const app = await runtime.create({
+        prompt: "Make me a full kanban board for my invoices with drag-and-drop between columns",
+        onServerWork: (result) => failures.push(result),
+      }, ctx);
+
+      // The tree was never replaced, because the flip was refused.
+      expect(app.ui).toBe("tree");
+      expect(failures).toHaveLength(1);
+      expect(failures[0]?.reasons.join(" ")).toContain("did not produce a verified served web app");
+      const completion = infos.filter((line) => line.includes("gen create complete"));
+      expect(completion[0]).toContain("gen create complete (server work failed)");
+    } finally {
+      errorSpy.mockRestore();
+      infoSpy.mockRestore();
+    }
+  });
+
+  it("reports the failure exactly once, even when the consumer's own callback throws", async () => {
+    // The report used to run INSIDE the try that wraps the server lane, so a
+    // throwing consumer re-entered that catch as a second "server work failed":
+    // the callback fired twice and the second throw escaped. The host's
+    // exception is still the host's — it propagates, once — but it is never
+    // relabelled as another server-work failure.
+    const runtime = setup(brokenBox);
+    const seen: Array<{ ok: false; reasons: string[] }> = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      await expect(runtime.create({
+        prompt: "Make me a full kanban board for my invoices with drag-and-drop between columns",
+        onServerWork: (result) => {
+          seen.push(result);
+          throw new Error("the host's own listener blew up");
+        },
+      }, ctx)).rejects.toThrow("the host's own listener blew up");
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.reasons.join(" ")).toContain(BOX_GAVE_UP);
     } finally {
       errorSpy.mockRestore();
       infoSpy.mockRestore();
