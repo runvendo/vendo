@@ -1,5 +1,5 @@
 import type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "@vendoai/apps";
-import { defaultFetch, VendoError } from "@vendoai/core";
+import { defaultFetch, log, safeErrorMessage, VendoError } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
 import { raiseCloudError } from "./cloud-console.js";
 import {
@@ -131,6 +131,28 @@ const decodeSnapshotRef = (snapshotRef: string): CloudSnapshotState => {
  * idempotent transitions (destroy twice, stop of a dead machine) absorb. */
 const isGone = (error: unknown): boolean =>
   error instanceof VendoError && error.code === "not-found";
+
+/** Decode a ref, and report WHICH ref when it will not decode.
+ *
+ * The decoder's message says which WAY a ref is wrong; it cannot say which
+ * ref, because it is one authored sentence and a ref does not belong inside
+ * one. That left an operator reading "a ref was malformed" with no way to find
+ * it. The ref reaches the `sdk_error` stream from here instead, under the
+ * allowlisted `snapshotRef` key (sdk-events.ts). The error the caller sees is
+ * unchanged — this only observes it on the way past. */
+const decodeOrReport = (snapshotRef: string): CloudSnapshotState => {
+  try {
+    return decodeSnapshotRef(snapshotRef);
+  } catch (error) {
+    log({
+      code: "vendo.snapshot-ref-undecodable",
+      level: "error",
+      message: `[vendo] ${safeErrorMessage(error)} Reference:`,
+      data: { snapshotRef },
+    });
+    throw error;
+  }
+};
 
 /** The Cloud sandbox adapter — the OSS side of the managed-sandbox seam: the
  * execution-v2 SandboxAdapter speaking HTTP to the console's /api/v1/sandboxes
@@ -402,7 +424,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       });
     },
     async resume(snapshotRef, policy?: SandboxResumePolicy) {
-      const state = decodeSnapshotRef(snapshotRef);
+      const state = decodeOrReport(snapshotRef);
       // The new machine inherits NO network config from the artifact
       // (sandbox-wire.ts), so every resume states the applicable allowlist:
       // Lane E's replace semantics when the caller re-polices the wake, the
@@ -418,7 +440,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       });
     },
     async destroy(snapshotRef) {
-      const state = decodeSnapshotRef(snapshotRef);
+      const state = decodeOrReport(snapshotRef);
       // Best-effort reap of the recorded source machine (it is usually
       // already gone — the sleep flow destroyed it), then the artifact GC.
       // A 404 from either is the seam's idempotent no-op.

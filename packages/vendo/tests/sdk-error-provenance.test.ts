@@ -1,6 +1,7 @@
 import type { VendoUsageEvent } from "@vendoai/core";
 import { consoleLogger, setLogger, setUsageSink } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { cloudSandbox } from "../src/sandbox.js";
 import { withSdkErrorReporting } from "../src/sdk-events.js";
 
 /**
@@ -52,5 +53,30 @@ describe("sdk_error.data splits by provenance", () => {
     const atCap = `vendo:v2:${"a".repeat(512 - "vendo:v2:".length)}`;
     expect(dataOf({ snapshotRef: atCap })).toEqual({ snapshotRef: atCap });
     expect(dataOf({ snapshotRef: `${atCap}a` })).toEqual({ snapshotRef: "string" });
+  });
+});
+
+describe("a snapshot ref the Cloud adapter cannot decode", () => {
+  it("reports WHICH ref failed on the sdk_error stream", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const seen = reported();
+    setLogger(withSdkErrorReporting(consoleLogger));
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("an undecodable ref must never reach the console");
+    });
+    const adapter = cloudSandbox({
+      apiKey: "vnd_test",
+      fetch: fetchImpl as unknown as typeof fetch,
+    });
+
+    // An e2b-minted ref handed to the Cloud adapter — the shape of the live
+    // incident that started this.
+    const ref = "e2b:v2:eyJzbmFwc2hvdElkIjoic25hcF9lMmIifQ";
+    await expect(adapter.resume(ref)).rejects.toMatchObject({ code: "validation" });
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    const errors = seen.filter((usage) => usage.name === "sdk_error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ level: "error", data: { snapshotRef: ref } });
   });
 });
