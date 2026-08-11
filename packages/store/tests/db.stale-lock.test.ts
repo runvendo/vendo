@@ -89,7 +89,9 @@ describe("PGlite stale-lock self-heal (ENG-350)", () => {
     await expect(db.query("select 1")).rejects.toThrow("Aborted()");
 
     expect(pgliteCreate).toHaveBeenCalledTimes(1);
-    expect(warn).not.toHaveBeenCalled();
+    // Scoped to THIS test's subject: the fixture dir lives under /tmp, so boot
+    // also (correctly) warns about ephemeral disk — see db.ephemeral-warning.test.ts.
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("stale postmaster.pid"));
     await db.close();
   });
 });

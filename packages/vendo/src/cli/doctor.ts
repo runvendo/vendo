@@ -6,7 +6,7 @@ import {
   type CloudDoctorResult,
   type LiveTurnResult,
 } from "./doctor-live.js";
-import { checkConfigFiles, checkEjectDrift, checkModelResolution, checkMountAgreement, checkSurfaceOwnership, checkToolCatalog } from "./doctor-config-checks.js";
+import { checkConfigFiles, checkEjectDrift, checkModelResolution, checkMountAgreement, checkStorePersistence, checkSurfaceOwnership, checkToolCatalog } from "./doctor-config-checks.js";
 import { checkInstalledDeps } from "./doctor-deps-checks.js";
 import { checkMcpDiscovery } from "./doctor-mcp-checks.js";
 import { checkAuthProbes, checkLiveStatus, checkRootRender, reportMachines, startDevServerIfOffered } from "./doctor-probe-checks.js";
@@ -119,6 +119,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   await checkWiring(run);
   await checkInstalledDeps(run, output, options.npmLatest);
   await checkConfigFiles(run);
+  await checkStorePersistence(run);
   await checkMountAgreement(run);
   await checkSurfaceOwnership(run);
   await checkModelResolution(run);

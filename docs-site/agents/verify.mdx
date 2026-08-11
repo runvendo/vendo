@@ -251,6 +251,41 @@ path prefix disagree — every page renders and every host tool call 404s.
 server mount (`https://site.com/maple`), or drop the relative server from the
 spec if the app is not mounted under a prefix.
 
+## Store persistence
+
+### E-STORE-001 {#E-STORE-001}
+
+**Symptom (warning):** The store's data directory is on ephemeral disk — the
+platform wipes it on every redeploy, and every app your users built plus all of
+their data goes with it.
+
+**Cause:** The store's default engine is PGlite, which writes to a directory on
+the local filesystem (`.vendo/data` unless you passed `dataDir`). That is the
+right default on a laptop and on a machine with a real disk. It is a data-loss
+bug on a platform whose container filesystem is recreated on each deploy —
+Railway, Render, Fly.io, and Heroku all are — and under `/tmp` anywhere.
+Doctor reports this when it finds one of those platform markers
+(`RAILWAY_ENVIRONMENT`, `RENDER`, `FLY_APP_NAME`, `DYNO`), or when the data
+directory sits under `/tmp` with a database already in it. The store prints the
+same warning at boot.
+
+**Fix:** Give the store storage that survives a deploy. Either mount a
+persistent volume and point `dataDir` at it:
+
+```ts
+createVendo({ store: createStore({ dataDir: "/data/vendo" }) });
+```
+
+or move to Postgres, which is the recommended production answer:
+
+```ts
+createVendo({ store: createStore({ url: process.env.DATABASE_URL }) });
+```
+
+Fully serverless platforms (Vercel, Cloudflare Pages, AWS Lambda) are a hard
+refusal rather than a warning: PGlite cannot run there at all, so the store
+throws at boot and Postgres is the only option.
+
 ## Host dependencies
 
 ### E-DEP-001 {#E-DEP-001}

@@ -4,7 +4,7 @@ import { CLI_VERSION } from "./shared.js";
  * Agent-install DX (design 2026-07-19 §CLI-3) — the doctor error-code
  * registry. Every failure mode doctor can report (static and live) has one
  * stable, grep-able code here: E-<AREA>-<NNN>, where the area groups related
- * checks (WIRE wiring, CFG config files, DEP host dependency versions, UI
+ * checks (WIRE wiring, CFG config files, STORE store persistence, DEP host dependency versions, UI
  * eject drift, DEV probe server, LIVE composition/status, AUTH credentials,
  * MCP door, TURN model turn, CLOUD key). Codes are append-only: never renumber or reuse one — the
  * verify page anchors (`fix_ref`) and agents' remediation notes depend on
@@ -29,6 +29,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-CFG-001": "a required .vendo/ config file is missing",
   "E-CFG-002": ".vendo/data/.gitignore is missing",
   "E-CFG-003": "the OpenAPI spec's relative server mount and VENDO_BASE_URL's path prefix disagree",
+  "E-STORE-001": "the store's data directory is on ephemeral disk (it will be wiped on redeploy)",
   "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
   "E-DEP-002": "the running wire serves a different @vendoai/vendo version than this CLI (split-brain install)",
   "E-DEP-003": "the installed zod predates the zod/v3 + zod/v4 subpaths the AI SDK imports (zod < 3.25)",

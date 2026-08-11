@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { tmpdir } from "node:os";
+import { join, relative, sep } from "node:path";
 import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ExtractedTool, type ToolJudgment, type ToolsFile } from "@vendoai/actions";
 import { firstOpenApiSpec, openApiMountPath } from "@vendoai/actions/sync";
 import { publicBase, type RiskLabel } from "@vendoai/core";
@@ -20,6 +21,42 @@ export async function checkConfigFiles(run: DoctorRun): Promise<void> {
     else run.fail(`config/${file}`, "E-CFG-001", `missing .vendo/${file}`);
   }
   if (!await exists(join(root, ".vendo", "data", ".gitignore"))) run.warn("config/data-gitignore", "E-CFG-002", ".vendo/data/.gitignore is missing");
+}
+
+/** Platforms whose container filesystem is wiped on every redeploy — the same
+ *  list the store's own boot warning carries (@vendoai/store src/db.ts); the
+ *  two copies are deliberate, the CLI must not pull the store's engine module
+ *  into its bundle graph just to read four strings. */
+const EPHEMERAL_PLATFORM_ENVS = [
+  ["RAILWAY_ENVIRONMENT", "Railway"],
+  ["RENDER", "Render"],
+  ["FLY_APP_NAME", "Fly.io"],
+  ["DYNO", "Heroku"],
+] as const;
+
+const isUnder = (path: string, dir: string): boolean =>
+  path === dir || path.startsWith(dir.endsWith(sep) ? dir : dir + sep);
+
+/** The static twin of the store's boot warning: the PGlite default writes
+ *  under the project root, so a root on ephemeral disk means every user's app
+ *  and data is deleted by the next redeploy. A platform marker is evidence on
+ *  its own — the wipe is coming, and warning BEFORE the first user writes is
+ *  the whole point. A tmp path additionally needs a real database to be sitting
+ *  there (PG_VERSION, the file initdb writes), because a scratch checkout under
+ *  /tmp is what doctor sees on a laptop and a false warning on every local run
+ *  is worse than no warning. */
+export async function checkStorePersistence(run: DoctorRun): Promise<void> {
+  const dataDir = join(run.root, ".vendo", "data");
+  const platform = EPHEMERAL_PLATFORM_ENVS.find(([name]) => (run.env[name] ?? "").trim() !== "")?.[1];
+  const wiper = platform
+    ?? ((isUnder(dataDir, tmpdir()) || isUnder(dataDir, "/tmp")) && await exists(join(dataDir, "PG_VERSION"))
+      ? "this platform"
+      : undefined);
+  if (wiper === undefined) return;
+  run.warn("store/persistence", "E-STORE-001",
+    `the store's data directory ${JSON.stringify(dataDir)} is on ephemeral disk — ${wiper} wipes it on every redeploy `
+    + "and your users' apps and data go with it; mount a persistent volume and point the store's dataDir at it, "
+    + "or pass url: \"postgres://…\" to createVendo");
 }
 
 /** Spec 2026-08-06 §B1 — the deployment's path prefix has exactly one home:

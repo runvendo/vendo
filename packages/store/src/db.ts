@@ -4,13 +4,42 @@
  *  PGlite wasm — in its bundle graph. */
 import { PGlite } from "@electric-sql/pglite";
 import fs from "node:fs";
-import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve, sep } from "node:path";
 
 import { createPostgresDb, type Db, type Query, type StoreConfig } from "./db-postgres.js";
 
 export type { Db, Query, StoreConfig } from "./db-postgres.js";
 
 const SERVERLESS_ENVS = ["VERCEL", "CF_PAGES", "AWS_LAMBDA_FUNCTION_NAME"] as const;
+
+/** Platforms that DO run a long-lived process — so PGlite works, and refusing
+ *  outright (SERVERLESS_ENVS) would be wrong — but wipe the container
+ *  filesystem on every redeploy. The store keeps working; it just silently
+ *  loses every user's app at the next deploy, so this is a warning. */
+const EPHEMERAL_PLATFORM_ENVS = [
+  ["RAILWAY_ENVIRONMENT", "Railway"],
+  ["RENDER", "Render"],
+  ["FLY_APP_NAME", "Fly.io"],
+  ["DYNO", "Heroku"],
+] as const;
+
+const isUnder = (path: string, dir: string): boolean =>
+  path === dir || path.startsWith(dir.endsWith(sep) ? dir : dir + sep);
+
+function warnIfEphemeralDataDir(dataDir: string): void {
+  if (dataDir.startsWith("memory://")) return; // not a path on disk
+  const path = resolve(dataDir);
+  const platform = EPHEMERAL_PLATFORM_ENVS.find(([name]) => (process.env[name] ?? "").trim() !== "")?.[1];
+  if (platform === undefined && !(isUnder(path, tmpdir()) || isUnder(path, "/tmp"))) return;
+  const wipes = platform === undefined
+    ? "which this platform wipes on every redeploy"
+    : `and ${platform} wipes the container filesystem on every redeploy`;
+  console.warn(
+    `[vendo] warning: the store is writing to ${JSON.stringify(path)}, ${wipes} — your users' apps and data will be gone.`
+    + ` Mount a persistent volume and point dataDir at it, or pass url: "postgres://…" to createVendo.`,
+  );
+}
 
 function preparePgliteDir(dataDir: string): void {
   if (dataDir.startsWith("memory://")) return;
@@ -252,7 +281,9 @@ async function createPgliteHealingStaleLock(dataDir: string): Promise<PGlite> {
 /** 02-store §4 — url picks the pg engine; otherwise the PGlite dev default. */
 export function createDb(config: StoreConfig = {}): Db {
   if (config.url) return createPostgresDb(config.url);
-  return createPgliteDb(config.dataDir ?? ".vendo/data");
+  const dataDir = config.dataDir ?? ".vendo/data";
+  warnIfEphemeralDataDir(dataDir);
+  return createPgliteDb(dataDir);
 }
 
 function createPgliteDb(dataDir: string): Db {

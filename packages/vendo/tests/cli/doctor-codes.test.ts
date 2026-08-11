@@ -54,6 +54,7 @@ describe("doctor error-code registry", () => {
         "E-MCP-008": "the live MCP registry auth challenge is malformed",
         "E-MCP-009": "the MCP door is wired but VENDO_BASE_URL is not set (discovery advertises the wrong origin)",
         "E-SCHED-001": "apps declare vendo.json schedules but no schedule caller is configured",
+        "E-STORE-001": "the store's data directory is on ephemeral disk (it will be wiped on redeploy)",
         "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
         "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
         "E-TOOLS-003": "part of the tool catalog is ungraded (nobody has graded it, so it asks on every call)",
