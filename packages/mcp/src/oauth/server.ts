@@ -1,10 +1,11 @@
-import type {
-  AuditEvent,
-  Guard,
-  Principal,
-  StoreAdapter,
-  StoreOps,
-  VendoRecord,
+import {
+  type AuditEvent,
+  type Guard,
+  log,
+  type Principal,
+  type StoreAdapter,
+  type StoreOps,
+  type VendoRecord,
 } from "@vendoai/core";
 import { engineOverAdapter, VendoError } from "@vendoai/core";
 import type {
@@ -900,11 +901,18 @@ export class OAuthServer {
     try {
       await this.#guard.report(audit);
     } catch (error) {
-      console.error("[vendo] mcp oauth: audit report failed", {
-        principal,
-        clientId,
-        event,
-        error: error instanceof Error ? error.message : String(error),
+      log({
+        code: "mcp.oauth-audit-report-failed",
+        level: "error",
+        message: "[vendo] mcp oauth: audit report failed",
+        data: {
+          detail: {
+            principal,
+            clientId,
+            event,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        },
       });
     }
   }
