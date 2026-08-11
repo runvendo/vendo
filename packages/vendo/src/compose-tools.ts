@@ -4,7 +4,7 @@
  * agent reports an unfulfillable ask through.
  */
 import type { Connector } from "@vendoai/actions";
-import type { Json } from "@vendoai/core";
+import { consoleLogger, emitUsage, setLogger, setUsageSink, type Json } from "@vendoai/core";
 import { createKnowledgeTools, knowledgeIndexResolver } from "@vendoai/knowledge";
 import {
   capabilitySurfaceSnapshot,
@@ -19,6 +19,8 @@ import {
 } from "./compose-selection.js";
 import { connectorDiscoveryRegistry } from "./connector-discovery.js";
 import { dotVendoFile } from "./dot-vendo.js";
+import { createSdkEvents, sdkRuntime, withSdkErrorReporting } from "./sdk-events.js";
+import { environment } from "./wire/shared.js";
 
 /** The discovery tools' ports. Each body only runs on a real tool call, long
  *  after createVendo has returned, so the seams it reads may be composed later. */
@@ -69,6 +71,40 @@ const connectorDiscoveryPorts = (
       return entry === undefined ? undefined : { connector: entry.connector, toolkit: entry.toolkit };
     },
 });
+
+/** `deployment_boot`'s three lists, from the names composition can already see
+ *  at this phase: which adapter SLOTS the deployment filled, which optional
+ *  BLOCKS mounted, and the host framework when its runtime announces itself.
+ *  NAMES only — never a URL, a key, or a host identifier. */
+const bootShape = (
+  composition: VendoComposition,
+  knowledge: boolean,
+): { adapters: string[]; blocks: string[]; framework: string | null } => {
+  const { config, resolvedConnectors, appsMounted, automationsMounted } = composition;
+  const filled = (name: string, slot: unknown): string[] => (slot === undefined ? [] : [name]);
+  return {
+    adapters: [
+      ...filled("store", config.store),
+      ...filled("files", config.files),
+      ...filled("sandbox", config.sandbox),
+      ...filled("secrets", config.secrets),
+      ...filled("harness", config.harness),
+      ...filled("connections", config.connections),
+      ...(knowledge ? ["knowledge"] : []),
+      ...(resolvedConnectors.length === 0 ? [] : ["connectors"]),
+    ],
+    blocks: [
+      ...(appsMounted ? ["apps"] : []),
+      ...(automationsMounted ? ["automations"] : []),
+      ...(knowledge ? ["knowledge"] : []),
+      ...(config.mcp === undefined || config.mcp === false ? [] : ["mcp"]),
+    ],
+    // Next sets NEXT_RUNTIME in every server runtime it serves from. No other
+    // supported framework announces itself to a RUNNING deployment, so anything
+    // else is honestly unknown rather than guessed.
+    framework: environment("NEXT_RUNTIME") === undefined ? null : "next",
+  };
+};
 
 /** The discovery pair, the knowledge tool, and the capability-miss surface. */
 export const composeTools = (composition: VendoComposition): Pick<VendoComposition,
@@ -150,5 +186,15 @@ export const composeTools = (composition: VendoComposition): Pick<VendoCompositi
     surface: missSurface,
     ...(missCloud === undefined ? {} : { cloud: missCloud }),
   });
+  // Everything Vendo says out loud, and everything it reports about itself,
+  // gets its sink here — the same seam and the same Cloud slot the miss stream
+  // above rides. A host-passed logger always wins; unset keeps today's console
+  // lines byte for byte, with a warn/error ALSO reported as an `sdk_error`.
+  setLogger(withSdkErrorReporting(config.logger ?? consoleLogger));
+  setUsageSink(createSdkEvents({
+    ...(missCloud === undefined ? {} : { cloud: missCloud }),
+    runtime: sdkRuntime(),
+  })?.record);
+  emitUsage({ name: "deployment_boot", ...bootShape(composition, knowledge !== undefined) });
   return { toolOutputCap, catalogConnectors, serviceCatalog, knowledgeIndex, missSurface, missCapture };
 };

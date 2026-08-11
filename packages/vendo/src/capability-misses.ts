@@ -6,14 +6,9 @@ import {
   type ToolDescriptor,
 } from "@vendoai/core";
 import { envOptOut, loadConfig, type TelemetryConfig } from "@vendoai/telemetry";
-import { cloudKeyFetch } from "./cloud-key-fetch.js";
+import { createBatchedUploader, type BatchedUploader } from "./batched-uploader.js";
 
 const DEFAULT_DATA_DIR = ".vendo/data";
-const DEFAULT_BATCH_SIZE = 100;
-const DEFAULT_QUEUE_LIMIT = 1_000;
-const DEFAULT_BATCH_DELAY_MS = 250;
-const DEFAULT_REQUEST_TIMEOUT_MS = 1_500;
-const DEFAULT_RETRY_DELAYS_MS = [250, 1_000] as const;
 /** The hostId stamped on misses that stay on this machine. `CapabilityMissEvent`
  *  requires the field, but a local-only log correlates nothing across hosts, so
  *  there is no identity to mint. */
@@ -56,11 +51,6 @@ interface CaptureOptions {
   batchDelayMs?: number;
   requestTimeoutMs?: number;
   retryDelaysMs?: readonly number[];
-}
-
-interface MissUploader {
-  enqueue(event: CapabilityMissEvent): void;
-  flush(): Promise<void>;
 }
 
 export interface CapabilityMissCapture {
@@ -106,109 +96,10 @@ export function capabilitySurfaceSnapshot(descriptors: ToolDescriptor[]): Capabi
   return { hash: `sha256:${sha256Hex(canonical)}`, tools };
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    unrefTimer(timer);
-  });
-}
-
-function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
-  if (typeof timer === "object" && timer !== null && "unref" in timer) {
-    (timer as { unref?: () => void }).unref?.();
-  }
-}
-
 function validUploadResponse(value: unknown): boolean {
   if (typeof value !== "object" || value === null) return false;
   const response = value as { accepted?: unknown; duplicates?: unknown };
   return Number.isInteger(response.accepted) && Number.isInteger(response.duplicates);
-}
-
-function createMissUploader(options: {
-  cloud: { apiKey: string; baseUrl?: string };
-  surface: () => Promise<CapabilitySurfaceSnapshot>;
-  fetchImpl?: typeof fetch;
-  batchSize: number;
-  queueLimit: number;
-  batchDelayMs: number;
-  requestTimeoutMs: number;
-  retryDelaysMs: readonly number[];
-}): MissUploader {
-  const queue: CapabilityMissEvent[] = [];
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let active: Promise<void> | undefined;
-
-  const send = async (events: CapabilityMissEvent[]): Promise<void> => {
-    for (let attempt = 0; attempt <= options.retryDelaysMs.length; attempt += 1) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), options.requestTimeoutMs);
-      unrefTimer(timeout);
-      try {
-        const surface = await options.surface();
-        const response = await cloudKeyFetch<{ accepted: number; duplicates: number }>("/api/v1/misses", {
-          apiKey: options.cloud.apiKey,
-          // The seam already resolved VENDO_CLOUD_URL into baseUrl; an empty
-          // env pins resolution to it (or the console default) so no hidden
-          // process-env read survives here (adapter rule).
-          ...(options.cloud.baseUrl === undefined ? {} : { apiUrl: options.cloud.baseUrl }),
-          env: {},
-          fetchImpl: options.fetchImpl,
-          signal: controller.signal,
-          body: { surface, events },
-        });
-        if (!validUploadResponse(response)) throw new Error("Invalid capability-miss upload response");
-        return;
-      } catch {
-        const retryDelay = options.retryDelaysMs[attempt];
-        if (retryDelay === undefined) return;
-        await delay(retryDelay);
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-  };
-
-  const drain = async (): Promise<void> => {
-    while (queue.length > 0) {
-      const batch = queue.splice(0, options.batchSize);
-      await send(batch);
-    }
-  };
-
-  const flush = async (): Promise<void> => {
-    if (timer !== undefined) {
-      clearTimeout(timer);
-      timer = undefined;
-    }
-    if (active) {
-      await active;
-      if (queue.length === 0) return;
-    }
-    active = drain().finally(() => {
-      active = undefined;
-    });
-    await active;
-  };
-
-  const schedule = (): void => {
-    if (timer !== undefined || active !== undefined) return;
-    timer = setTimeout(() => {
-      timer = undefined;
-      void flush().catch(() => undefined);
-    }, options.batchDelayMs);
-    unrefTimer(timer);
-  };
-
-  return {
-    enqueue(event) {
-      if (queue.length >= options.queueLimit) return;
-      queue.push(event);
-      if (queue.length >= options.batchSize) void flush().catch(() => undefined);
-      else schedule();
-    },
-    flush,
-  };
 }
 
 export function createCapabilityMissCapture(options: CaptureOptions): CapabilityMissCapture {
@@ -223,22 +114,26 @@ export function createCapabilityMissCapture(options: CaptureOptions): Capability
   const uploads = options.cloud !== undefined && !envOptOut(env);
   const telemetryConfig = options.telemetryConfig
     ?? (uploads ? loadConfig(options.telemetryHome, env) : LOCAL_ONLY_IDENTITY);
-  let uploader: MissUploader | undefined;
+  let uploader: BatchedUploader<CapabilityMissEvent> | undefined;
   if (options.cloud !== undefined) {
     // Contract (01-core §17): upload is gated by the key plus envOptOut only.
     // The persisted telemetry opt-out and the NODE_ENV fail-close are
     // product-telemetry-only; a filled Cloud slot (the seam saw a non-empty
     // VENDO_API_KEY) is the host's opt-in.
     if (!envOptOut(env)) {
-      uploader = createMissUploader({
+      uploader = createBatchedUploader<CapabilityMissEvent>({
+        path: "/api/v1/misses",
         cloud: options.cloud,
-        surface: options.surface,
+        // #557 — resolved per attempt, inside the loop, so the lazy surface
+        // factory is awaited only when a miss is actually uploaded.
+        body: async (events) => ({ surface: await options.surface(), events }),
+        accept: validUploadResponse,
         fetchImpl: options.fetchImpl,
-        batchSize: options.batchSize ?? DEFAULT_BATCH_SIZE,
-        queueLimit: options.queueLimit ?? DEFAULT_QUEUE_LIMIT,
-        batchDelayMs: options.batchDelayMs ?? DEFAULT_BATCH_DELAY_MS,
-        requestTimeoutMs: options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
-        retryDelaysMs: options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS,
+        batchSize: options.batchSize,
+        queueLimit: options.queueLimit,
+        batchDelayMs: options.batchDelayMs,
+        requestTimeoutMs: options.requestTimeoutMs,
+        retryDelaysMs: options.retryDelaysMs,
       });
     }
   }

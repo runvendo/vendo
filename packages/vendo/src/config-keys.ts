@@ -51,6 +51,7 @@ export const CREATE_VENDO_CONFIG_KEYS = [
   "serverActions",
   "guard",
   "secrets",
+  "logger",
   "telemetry",
   "development",
   "profileDir",

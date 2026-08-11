@@ -10,12 +10,14 @@ import {
   canonicalJson,
   DEFAULT_TRIGGER_ID,
   descriptorHash,
+  emitUsage,
   type GrantId,
   type GrantScope,
   type GuardDecision,
   type IsoDateTime,
   isUnattended,
   type Json,
+  log,
   type PermissionGrant,
   presenceOnlyCall,
   type Principal,
@@ -567,6 +569,18 @@ class GuardImplementation implements VendoGuard {
       id: event.id || makeId("aud_"),
       at: event.at || now(),
     };
+    // Beside the audit row, never instead of it, and it decides nothing: the
+    // SHAPE of the decision (which kind, how it came out, on which tool) for
+    // whoever is counting. Reported here rather than at each of the ten mint
+    // sites because this is the one door every row already passes through, and
+    // before the write because the decision stands whether or not the row lands.
+    // Never a principal, never an input preview.
+    emitUsage({
+      name: "guard_decision",
+      kind: normalized.kind,
+      decision: normalized.outcome ?? normalized.decidedBy ?? "none",
+      tool: normalized.tool ?? null,
+    });
     const refs: Record<string, string> = {
       subject: normalized.principal.subject,
       kind: normalized.kind,
@@ -905,10 +919,12 @@ class GuardImplementation implements VendoGuard {
         },
       });
     } catch (reportError) {
-      console.error(
-        `[vendo] guard: the freeze control row is unreadable and the malformed-control audit note `
-        + `could not be written (${errorMessage(reportError)}). The guard is failing closed.`,
-      );
+      log({
+        code: "guard.control-unreadable",
+        level: "error",
+        message: `[vendo] guard: the freeze control row is unreadable and the malformed-control audit note `
+          + `could not be written (${errorMessage(reportError)}). The guard is failing closed.`,
+      });
     }
   }
 
@@ -928,10 +944,12 @@ class GuardImplementation implements VendoGuard {
         }),
       );
     } catch (error) {
-      console.error(
-        `[vendo] guard: ${call.tool} was blocked by the freeze, but the audit row could not be `
-        + `written (${errorMessage(error)}). The block still stands.`,
-      );
+      log({
+        code: "guard.frozen-block-unaudited",
+        level: "error",
+        message: `[vendo] guard: ${call.tool} was blocked by the freeze, but the audit row could not be `
+          + `written (${errorMessage(error)}). The block still stands.`,
+      });
     }
   }
 
@@ -1195,10 +1213,12 @@ class GuardImplementation implements VendoGuard {
     try {
       rules = await resolve(ctx);
     } catch (error) {
-      console.warn(
-        `[vendo] guard: org policy could not be resolved (${errorMessage(error)}) — no org rules were `
-        + `applied to ${call.tool}. Host policy and user approvals still decided it.`,
-      );
+      log({
+        code: "guard.org-policy-unavailable",
+        level: "warn",
+        message: `[vendo] guard: org policy could not be resolved (${errorMessage(error)}) — no org rules were `
+          + `applied to ${call.tool}. Host policy and user approvals still decided it.`,
+      });
       await this.report(
         eventFromContext(ctx, {
           kind: "policy-decision",
@@ -1529,10 +1549,12 @@ class GuardImplementation implements VendoGuard {
       try {
         await this.#recordEffect(key, outcome, ctx.principal.subject);
       } catch (error) {
-        console.error(
-          `[vendo] guard: ${call.tool} completed but its effect receipt could not be written `
-          + `(${errorMessage(error)}). A re-run of this run may repeat the call.`,
-        );
+        log({
+          code: "guard.effect-receipt-unwritten",
+          level: "error",
+          message: `[vendo] guard: ${call.tool} completed but its effect receipt could not be written `
+            + `(${errorMessage(error)}). A re-run of this run may repeat the call.`,
+        });
       }
     }
     return outcome;

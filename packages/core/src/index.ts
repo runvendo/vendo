@@ -31,6 +31,7 @@ export * from "./reshape.js";
 export * from "./product-slug.js";
 export * from "./prompt-blocks.js";
 export * from "./run-context.js";
+export * from "./sdk-events.js";
 export * from "./semantics.js";
 export * from "./shape.js";
 export * from "./sha256.js";
