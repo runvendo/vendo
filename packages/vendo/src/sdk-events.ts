@@ -120,27 +120,38 @@ export function withSdkErrorReporting(logger: VendoLogger): VendoLogger {
 }
 
 /**
- * The `data` keys that hold one of VENDO'S OWN identifiers.
+ * The `data` keys that travel VERBATIM.
  *
  * A CLOSED set of KEY NAMES, the same discipline as the CLI lane's
  * `CLOUD_PROP_KEYS`: a key nobody listed here — including every key a log site
  * added tomorrow — is shapes-only, so the default leaks nothing and opting a
  * key in is a deliberate edit to this list.
  *
- * The split is by PROVENANCE, not by usefulness. Reporting an incident is
- * pointless without the failing identifier ("a ref was malformed" does not say
- * WHICH ref), so a value Vendo itself minted travels verbatim — but anything
- * originating in the host's data, its end user's input, or the model's content
- * travels as its shape and nothing else.
+ * CLASSIFICATION ONLY. The test for membership is ONE question — CAN A CALLER
+ * INFLUENCE THIS VALUE? — and it is not the question the key's NAME answers. A
+ * name in Vendo's own namespace proves nothing: what matters is whether every
+ * value that can reach the key was produced here, on every path, including the
+ * failure paths. If a caller can put arbitrary content there by any route, no
+ * caller-influenced value leaves the customer's servers: the verbatim value
+ * stays in their local logs and their hosted-DB lookup, and only a
+ * classification of it travels.
  *
- * MINTED BY VENDO, not merely NAMED by Vendo. A key earns a place here only if
- * every value that can reach it was produced by this SDK. The question to ask
- * of a candidate is which code path logs it: a key logged on a FAILURE path
- * often holds the input that failed, and an input is the caller's, not ours.
- * Classify such a value against a closed set and report the classification;
- * never echo it, and never a prefix of it either.
+ * So the set needs no per-key argument, and that is the property to preserve:
+ * every entry is a CLASSIFICATION against a Vendo-authored closed set, a
+ * NON-CONTENT SCALAR, or a CLOSED UNION. A candidate that is none of those
+ * three does not belong here, whatever it is called.
+ *
+ * REMOVED, and not to be re-added by reasoning that the namespaces are Vendo's
+ * — both are caller-suppliable on a live path:
+ *   - `appId`: `apps/src/server/doors/build-surface.ts:286` is
+ *     `input.appId ?? mint`, and `appIdSchema` pins only the `app_` prefix, so
+ *     a caller's app id is `app_` followed by anything at all.
+ *   - `turnId`: `screen-agent.ts:855` is `surface.turnId ?? mintTurnId()`.
+ *     `turnIdSchema` does pin the whole `trn_<32 hex>` shape, but nothing
+ *     parses that path through it — a `TurnId` is a bare `string`, and the
+ *     type's stated contract is that it is opaque and nobody parses it.
  */
-const VENDO_IDENTIFIER_KEYS: ReadonlySet<string> = new Set([
+const VERBATIM_DATA_KEYS: ReadonlySet<string> = new Set([
   // A CLASSIFICATION of a snapshot ref, never the ref (sandbox.ts): a matched
   // constant from Vendo's closed set of schemes, and a length. A raw
   // `snapshotRef` is deliberately NOT here — the only path that reports one is
@@ -150,30 +161,27 @@ const VENDO_IDENTIFIER_KEYS: ReadonlySet<string> = new Set([
   // offline, which is a quieter version of the same leak.
   "snapshotRefScheme",
   "snapshotRefLength",
-  // Vendo's `app_*` id namespace (core's `appIdSchema`) — the only thing that
-  // says WHICH app failed.
-  "appId",
-  // `trn_<32 hex>`: core's `turnIdSchema` pins the WHOLE shape and
-  // `mintTurnId` is the one mint, so it can hold nothing but random hex.
-  "turnId",
   // A `VendoErrorCode` — a closed eight-member union in core, already
-  // travelling verbatim on the `tool_call` event.
+  // travelling verbatim on the `tool_call` event. FORWARD-LOOKING on purpose:
+  // no log site puts one in `data` today (it rides `agent_run` instead), so
+  // this entry is deliberate rather than an oversight, and it is here so the
+  // first log site that does report one is not silently reduced to "string".
   "errorCode",
 ]);
 
-/** No identifier Vendo mints comes near this. The cap is a VOLUME gate — an
+/** No classification Vendo emits comes near this. The cap is a VOLUME gate — an
  *  allowlisted key that unexpectedly holds something unbounded reports its
  *  shape instead, so no key on the list can become a content channel. */
 const MAX_IDENTIFIER_CHARS = 512;
 
-/** A log event's `data` carries a call site's ACTUAL arguments. Vendo's own
- *  identifiers ({@link VENDO_IDENTIFIER_KEYS}) travel as themselves — strings
- *  within the cap, and finite numbers, which are bounded by their own type.
- *  Every other key travels as its own name and the SHAPE of its value. */
+/** A log event's `data` carries a call site's ACTUAL arguments. The allowlisted
+ *  keys ({@link VERBATIM_DATA_KEYS}) travel as themselves — strings within the
+ *  cap, and finite numbers, which are bounded by their own type. Every other
+ *  key travels as its own name and the SHAPE of its value. */
 function dataByProvenance(data: Record<string, unknown> | undefined): Record<string, unknown> {
   const reported: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data ?? {})) {
-    const verbatim = VENDO_IDENTIFIER_KEYS.has(key)
+    const verbatim = VERBATIM_DATA_KEYS.has(key)
       && (typeof value === "number"
         ? Number.isFinite(value)
         : typeof value === "string" && value.length <= MAX_IDENTIFIER_CHARS);
