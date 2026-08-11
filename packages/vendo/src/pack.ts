@@ -83,6 +83,12 @@ function appRefTitleFromPrompt(prompt: unknown): string {
  * shape of "this exists and is fine". Returning null here lets the caller fall
  * back to the receipt itself, `status` and `say` intact.
  *
+ * `"partial"` is refused for the same reason and it is not the same case: the app
+ * EXISTS, and the half of it the plan asked a server for does not. A ref says
+ * "accepted, still streaming, NOT built yet" and carries neither field, so
+ * laundering a partial receipt through it leaves a caller waiting on a completion
+ * that already came, and drops the one sentence that says what is missing.
+ *
  * Local to the PACK on purpose. `vendo/app-ref@1` means "accepted, still
  * streaming, NOT built yet"; only this fast-return path can honestly say that.
  * The MCP door runs `vendo_make` to completion, so it answers the receipt — see
@@ -91,7 +97,9 @@ function appRefTitleFromPrompt(prompt: unknown): string {
  */
 function appRefFromReceipt(output: unknown, fallbackTitle: string): VendoAppRef | null {
   const receipt = makeReceiptSchema.safeParse(output);
-  if (!receipt.success || receipt.data.status === "failed") return null;
+  if (!receipt.success || receipt.data.status === "failed" || receipt.data.status === "partial") {
+    return null;
+  }
   return {
     kind: VENDO_APP_REF_KIND,
     appId: receipt.data.id,

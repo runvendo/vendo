@@ -510,4 +510,43 @@ describe("vendo_delegate", () => {
     // fine", and a failed edit is neither.
     expect(output.refs).toEqual([]);
   });
+
+  // The same rule, for the status the create door added when its server lane
+  // fails (2026-08-11). A `"partial"` app is REAL — painted, on the person's
+  // page, reopenable — and half-built, so a ref is exactly as wrong here as on a
+  // failed edit for the opposite reason: it says "accepted, still streaming, NOT
+  // built yet" and carries neither `status` nor `say`, so the delegate's caller
+  // waits on a completion that already came and never hears what is missing.
+  it("never turns a PARTIAL build's receipt into a success-shaped ref", async () => {
+    const implementations = {
+      ...hostTools(),
+      [VENDO_MAKE_TOOL]: {
+        descriptor: makeTool({ appId: "app_half", name: "Invoice board" }).descriptor,
+        execute: () => ({
+          id: "app_half",
+          title: "Invoice board",
+          status: "partial",
+          say: "I built the screen, but the server-side part didn't get built.",
+        } as unknown as Json),
+      },
+    };
+    const runner: AgentRunner = async (task, runCtx) => {
+      const outcome = await task.tools.execute(
+        { id: "call_half", tool: VENDO_MAKE_TOOL, args: { request: "a kanban board for my invoices" } },
+        runCtx,
+      );
+      expect(outcome.status).toBe("ok");
+      // The receipt reaches the delegated run intact — this rule takes the ref
+      // away, never the words.
+      expect((outcome as { output: { status: unknown; say: unknown } }).output.status).toBe("partial");
+      return { status: "ok", summary: "The board is up; its server side is not.", toolCalls: [] };
+    };
+    const { byName } = await pack({ implementations, runner });
+    const output = await byName.get(VENDO_DELEGATE_TOOL)!.execute(
+      { task: "build me a kanban board for my invoices" },
+      { ctx: ctx() },
+    ) as { status: string; refs: unknown[] };
+    expect(output.status).toBe("ok");
+    expect(output.refs).toEqual([]);
+  });
 });
