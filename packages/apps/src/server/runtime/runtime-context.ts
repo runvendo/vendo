@@ -253,7 +253,7 @@ const createStores = (
 ): Pick<AppsRuntimeContext,
   "engine" | "placementRows" | "slots" | "data" | "history" | "egressApprovals"
   | "parkedActions" | "inClientApprovals"> => {
-  const engine = engineOf(config.ops);
+  const engine = engineOf(config.ops, config.store);
   const placementRows = placementStore(engine);
   const slots = createSlotRegistry(engine);
   const data = createAppData({ ops: config.ops, store: config.store });

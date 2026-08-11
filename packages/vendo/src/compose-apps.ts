@@ -13,6 +13,7 @@ import {
 import { unattendedIrreversibilityCheck } from "@vendoai/automations";
 import { escalatedPlanPath, screenAssembler } from "./screen-agent.js";
 import {
+  engineOverAdapter,
   joinUrl,
   VendoError,
   type AppDocument,
@@ -359,11 +360,13 @@ const appsTailSeams = (composition: VendoComposition, seams: AppsSeams): Partial
  *  tool registry the moment it exists. */
 export const composeApps = (composition: VendoComposition): Pick<VendoComposition,
   "appTokens" | "access" | "apps" | "appsRuntime" | "resolveAppToolRisk"> => {
-  const { store, actions, catalog, capability } = composition;
+  const { store, ops, actions, catalog, capability } = composition;
   // execution-v2 Lane C — the per-app box bearer store (hash rows are the
   // authority) shared by the machine-env assembler below (mint at provision)
-  // and the wire's /box verification.
-  const appTokens = createAppTokens(store);
+  // and the wire's /box verification. The hash rows are one of Vendo's own
+  // drawers, so they are reached by name through the engine family — the
+  // deployment's own ops surface, or core's gate over a BYO adapter.
+  const appTokens = createAppTokens(ops?.engine ?? engineOverAdapter(store));
   const machineEnv = machineEnvFor(composition, appTokens);
   const boxTemplate = environment("VENDO_BOX_TEMPLATE");
   const boxEditTimeoutMs = positiveIntegerEnv("VENDO_BOX_EDIT_TIMEOUT_MS");

@@ -92,7 +92,7 @@ export const createMachineLane = (config: AppsConfig) => {
     .map(normalizeEgressDomain)
     .filter((domain) => domain !== "");
   const lifecycle = createMachineLifecycle({
-    engine: engineOf(config.ops),
+    engine: engineOf(config.ops, config.store),
     ...machineConfig,
     // Secrets enter the box as opaque aliases and are substituted at the egress
     // proxy (06-apps §4.3), so the host's buildEnv assembles the boundary env
