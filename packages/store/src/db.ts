@@ -7,16 +7,23 @@ import fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
-import { createPostgresDb, type Db, type Query, type StoreConfig } from "./db-postgres.js";
+import {
+  createPostgresDb,
+  type Db,
+  type EphemeralDataDir,
+  type Query,
+  type StoreConfig,
+} from "./db-postgres.js";
 
-export type { Db, Query, StoreConfig } from "./db-postgres.js";
+export type { Db, EphemeralDataDir, Query, StoreConfig } from "./db-postgres.js";
 
 const SERVERLESS_ENVS = ["VERCEL", "CF_PAGES", "AWS_LAMBDA_FUNCTION_NAME"] as const;
 
 /** Platforms that DO run a long-lived process — so PGlite works, and refusing
  *  outright (SERVERLESS_ENVS) would be wrong — but wipe the container
  *  filesystem on every redeploy. The store keeps working; it just silently
- *  loses every user's app at the next deploy, so this is a warning. */
+ *  loses every user's app at the next deploy, so the handle carries the fact
+ *  and the deployment says it once, at boot. */
 const EPHEMERAL_PLATFORM_ENVS = [
   ["RAILWAY_ENVIRONMENT", "Railway"],
   ["RENDER", "Render"],
@@ -27,18 +34,17 @@ const EPHEMERAL_PLATFORM_ENVS = [
 const isUnder = (path: string, dir: string): boolean =>
   path === dir || path.startsWith(dir.endsWith(sep) ? dir : dir + sep);
 
-function warnIfEphemeralDataDir(dataDir: string): void {
-  if (dataDir.startsWith("memory://")) return; // not a path on disk
-  const path = resolve(dataDir);
+/** The judgment, as DATA on the handle rather than a line on the console: the
+ *  deployment that composed this store is what tells its operator (the boot
+ *  block's ⚠ store row, boot-summary.ts), and it can only do that if the answer
+ *  is readable off the composition. Pure — a path resolve and env reads, no I/O
+ *  — so it is safe at compose time, where `createVendo` may not touch disk. */
+function ephemeralDataDirOf(dataDir: string): EphemeralDataDir | undefined {
+  if (dataDir.startsWith("memory://")) return undefined; // not a path on disk
   const platform = EPHEMERAL_PLATFORM_ENVS.find(([name]) => (process.env[name] ?? "").trim() !== "")?.[1];
-  if (platform === undefined && !(isUnder(path, tmpdir()) || isUnder(path, "/tmp"))) return;
-  const wipes = platform === undefined
-    ? "which this platform wipes on every redeploy"
-    : `and ${platform} wipes the container filesystem on every redeploy`;
-  console.warn(
-    `[vendo] warning: the store is writing to ${JSON.stringify(path)}, ${wipes} — your users' apps and data will be gone.`
-    + ` Mount a persistent volume and point dataDir at it, or pass url: "postgres://…" to createVendo.`,
-  );
+  if (platform !== undefined) return { dataDir, platform };
+  const path = resolve(dataDir);
+  return isUnder(path, tmpdir()) || isUnder(path, "/tmp") ? { dataDir } : undefined;
 }
 
 function preparePgliteDir(dataDir: string): void {
@@ -281,9 +287,7 @@ async function createPgliteHealingStaleLock(dataDir: string): Promise<PGlite> {
 /** 02-store §4 — url picks the pg engine; otherwise the PGlite dev default. */
 export function createDb(config: StoreConfig = {}): Db {
   if (config.url) return createPostgresDb(config.url);
-  const dataDir = config.dataDir ?? ".vendo/data";
-  warnIfEphemeralDataDir(dataDir);
-  return createPgliteDb(dataDir);
+  return createPgliteDb(config.dataDir ?? ".vendo/data");
 }
 
 function createPgliteDb(dataDir: string): Db {
@@ -330,8 +334,10 @@ function createPgliteDb(dataDir: string): Db {
     return opening;
   };
 
+  const ephemeral = ephemeralDataDirOf(dataDir);
   const db: Db = {
     kind: "pglite",
+    ...(ephemeral === undefined ? {} : { ephemeral }),
     async query(text, params = []) {
       const active = await open();
       const result = await active.query<Record<string, unknown>>(text, params);

@@ -19,16 +19,18 @@
  *   1. COMPOSED FACTS ONLY. `createVendo` must stay I/O-free at module init for
  *      Workers portability (compose-store.ts's `selectFiles` note), so nothing
  *      here may stat a path, open a handle, or await anything. Every row is a
- *      property read off the finished composition or an env variable — and the
- *      one judgment that genuinely needs the filesystem (is the data dir
- *      ephemeral?) is made by its owner and arrives here as a WARNING, which is
- *      data in `BootSummary`, not a special case in the renderer.
+ *      property read off the finished composition or an env variable — including
+ *      the ephemeral-disk judgment, which its OWNER makes (the store, at
+ *      `createStore`) and hangs on the engine handle, so this block reads it
+ *      like any other composed fact and renders it as a WARNING, which is data
+ *      in `BootSummary`, not a special case in the renderer.
  *
  *   2. ONE BLOCK PER PROCESS. A dev server recomposes on nearly every request;
  *      this is a boot fact, not a per-request one (the same latch
  *      `reportHostedStoreOnce` uses).
  */
 import { log, vendoStyle, type VendoStyle } from "@vendoai/core";
+import { maybeDbFor, type VendoStore } from "@vendoai/store";
 import type { VendoComposition } from "./compose-context.js";
 import { ENV_KEY_VARS } from "./dev-creds/resolve.js";
 import { environment } from "./wire/shared.js";
@@ -62,9 +64,12 @@ export interface BootSummary {
 }
 
 /** "Did the operator set this?" — TRIMMED, because a whitespace-only value is
-    not a key, and the sandbox ladder and `vendo doctor` already agree on that.
-    Disagreeing with either about whether a key is present means one of the three
-    is lying to the operator. */
+    not a key, and `present` in dev-creds/resolve.ts — the ladder that actually
+    resolves the model credentials this asks about — makes the same call. It is
+    STRICTER than `environment()` (wire/shared.ts), which any non-empty string
+    satisfies, and `vendo doctor` matches that looser predicate deliberately
+    (doctor-config-checks.ts's checkStorePersistence), so the three do NOT all
+    agree for a whitespace-only value. */
 const keySet = (name: string): boolean => (environment(name)?.trim() ?? "") !== "";
 
 const MARKER = "◆";
@@ -166,6 +171,29 @@ const STRAY_E2B: BootWarning = {
   ],
 };
 
+/** The store's own ephemeral-disk judgment, said in the block instead of on its
+    own console line: made at `createStore` and carried on the engine handle
+    (`EphemeralDataDir`), so reading it here is a property read, not a stat. The
+    dir is named the way the store ROW above names it — `.vendo/data`, as
+    configured — and the second line is the operator's two ways out.
+
+    Silent for every store this cannot be true of: a Postgres url, `memory://`,
+    a real disk, the Cloud hosted store, and a host's own adapter. */
+function ephemeralStoreWarning(store: VendoStore): BootWarning | undefined {
+  const ephemeral = maybeDbFor(store)?.ephemeral;
+  if (ephemeral === undefined) return undefined;
+  const where = ephemeral.platform === undefined
+    ? "is under /tmp"
+    : `is on ${ephemeral.platform}'s container filesystem`;
+  return {
+    label: "store",
+    lines: [
+      `${ephemeral.dataDir} ${where} — data will not survive a redeploy.`,
+      'Mount a volume, or pass url: "postgres://…" to createVendo.',
+    ],
+  };
+}
+
 /** Which ladder rung the composed model slot rode — named from the environment,
     because the ladder itself resolves LAZILY and asking it would force a
     resolution at boot (the same reason /status reports only "ladder"). The rung
@@ -194,7 +222,8 @@ function modelRow(): BootRow | undefined {
  * block stays four lines for the deployment that filled four seams.
  */
 export function bootSummaryFor(composition: VendoComposition): BootSummary {
-  const { config, composed, sandbox, inference, connections, guard, hostedStoreComposed } = composition;
+  const { config, composed, sandbox, inference, connections, guard, hostedStoreComposed, store }
+    = composition;
   const rows: BootRow[] = [];
   const warnings: BootWarning[] = [];
 
@@ -226,6 +255,10 @@ export function bootSummaryFor(composition: VendoComposition): BootSummary {
   } else {
     rows.push({ label: "store", venue: "local", detail: ".vendo/data" });
   }
+  // Whatever store composed, on disk or not: only the store knows, and only the
+  // deployment can tell the operator.
+  const ephemeral = ephemeralStoreWarning(store);
+  if (ephemeral !== undefined) warnings.push(ephemeral);
 
   if (inference.agent.venue === "custom") {
     rows.push({ label: "models", venue: "custom", detail: "createVendo({ models })" });

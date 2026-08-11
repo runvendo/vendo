@@ -3,6 +3,10 @@
  *  keep the PGlite wasm engine out of the bundle graph. */
 export { createStore } from "./create-store.js";
 export { maybeDbFor, type VendoStore } from "./store.js";
+// Composed state, read off the engine handle `maybeDbFor` returns: the data dir
+// this store writes to when a redeploy wipes it. The deployment that composed
+// the store is what tells its operator (createVendo's boot block).
+export type { EphemeralDataDir } from "./db-postgres.js";
 // The StoreOps local backend (02-store): the 35-op named-operation contract
 // served off this store's own Postgres, transactions at verb boundaries.
 export { createStoreOps } from "./ops.js";

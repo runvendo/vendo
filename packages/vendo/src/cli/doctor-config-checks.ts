@@ -53,7 +53,8 @@ export async function checkStorePersistence(run: DoctorRun): Promise<void> {
   // and STILL passes `store: createStore()` is not visible from here — no
   // doctor check can see a programmatic override (doctor-report.ts's DoctorRun;
   // same limit checkSurfaceOwnership states) — and that host still gets the
-  // store's own boot warning, which fires on the real dataDir at runtime.
+  // boot block's ⚠ store row (boot-summary.ts), which names the real dataDir the
+  // store composed at runtime.
   // Deliberately NOT trimmed — this has to be the SAME predicate composition
   // uses or doctor and runtime disagree. Runtime reads the key through
   // `environment()` (wire/shared.ts), which accepts any non-empty string, so a

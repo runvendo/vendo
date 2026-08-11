@@ -20,9 +20,24 @@ export interface StoreConfig {
 
 export type Query = Db["query"];
 
+/** A data directory the next redeploy deletes, and why: a container platform
+    that wipes its filesystem (named), or a path under the OS temp dir (no
+    platform). Composed state, not a message — whoever holds the store decides
+    how to say it; `createVendo` renders it as the boot block's ⚠ store row. */
+export interface EphemeralDataDir {
+  /** The directory as configured — what the operator wrote, or the default. */
+  readonly dataDir: string;
+  /** The platform whose filesystem is wiped, when a marker named one. */
+  readonly platform?: string;
+}
+
 /** 02-store §4 */
 export interface Db {
   kind: "pg" | "pglite";
+  /** Set only when this engine writes to storage a redeploy wipes — the PGlite
+      default on a container platform or under the OS temp dir. Absent for a
+      Postgres url, for `memory://`, and for a real disk. */
+  readonly ephemeral?: EphemeralDataDir;
   query(text: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
   close(): Promise<void>;
   raw(): unknown;

@@ -7,8 +7,11 @@
  * itself about which fields exist.
  */
 import fs from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Principal } from "@vendoai/core";
 import { setLogger, vendoStyle, type VendoLogEvent, type VendoStyle } from "@vendoai/core";
+import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { authJs } from "../src/auth-presets/auth-js.js";
@@ -354,6 +357,57 @@ describe("the composed facts", () => {
     const { rows, warnings } = summaryFor();
     expect(rows.map((row) => row.label)).not.toContain("sandbox");
     expect(warnings).toEqual([]);
+  });
+
+  // The store makes this judgment at `createStore` and hangs it on its engine
+  // handle; the block is the only thing that says it out loud. Composed for
+  // real, so a store that stopped carrying the fact — or a block that stopped
+  // reading it — is a red test, which is exactly how it shipped mute once.
+  describe("the store's ephemeral-disk warning", () => {
+    // A platform marker, not a path: it fires wherever the suite is checked out.
+    const ONTO_EPHEMERAL_DISK = { RAILWAY_ENVIRONMENT: "production" };
+
+    it("folds into the block as a ⚠ store row", () => {
+      const summary = summaryFor(base, ONTO_EPHEMERAL_DISK);
+      expect(summary.warnings).toEqual([{
+        label: "store",
+        lines: [
+          ".vendo/data is on Railway's container filesystem — data will not survive a redeploy.",
+          'Mount a volume, or pass url: "postgres://…" to createVendo.',
+        ],
+      }]);
+      expect(plainText(renderBootSummary(summary, pretty())).split("\n").slice(-2)).toEqual([
+        "│  ⚠ store     .vendo/data is on Railway's container filesystem"
+        + " — data will not survive a redeploy.",
+        '│              Mount a volume, or pass url: "postgres://…" to createVendo.',
+      ]);
+    });
+
+    it("becomes one plain warn line in a non-TTY run", () => {
+      expect(renderBootSummary(summaryFor(base, ONTO_EPHEMERAL_DISK), vendoStyle({}, {})).split("\n"))
+        .toEqual([
+          "[vendo] ready — store: local · auth: custom",
+          "[vendo] warning: store — .vendo/data is on Railway's container filesystem"
+          + ' — data will not survive a redeploy. Mount a volume, or pass url: "postgres://…" to createVendo.',
+        ]);
+    });
+
+    it("names the OS temp dir case the way the founder's example does", () => {
+      const summary = summaryFor({ ...base, store: createStore({ dataDir: join(tmpdir(), "maple/data") }) });
+      expect(summary.warnings[0]?.lines[0])
+        .toBe(`${join(tmpdir(), "maple/data")} is under /tmp — data will not survive a redeploy.`);
+    });
+
+    it("says nothing at all for a store on a real disk", () => {
+      const healthy = summaryFor({ ...base, store: createStore({ dataDir: "/home/dev/maple/.vendo/data" }) });
+      expect(healthy.warnings).toEqual([]);
+      expect(renderBootSummary(healthy, pretty())).not.toContain("⚠");
+      expect(renderBootSummary(healthy, vendoStyle({}, {}))).not.toContain("warning");
+    });
+
+    it("says nothing for the Cloud hosted store, which has no dir to lose", () => {
+      expect(summaryFor(base, { ...ONTO_EPHEMERAL_DISK, VENDO_API_KEY: "vk_test" }).warnings).toEqual([]);
+    });
   });
 
   it("never touches the filesystem", () => {
