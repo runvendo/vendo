@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 /** Portability gate — the enforcement half of the edge-portability contract
- *  (docs/superpowers/plans/2026-07-21-edge-portability.md; field origin:
- *  vendo-on-Cloudflare-Workers, Mohamed/digger.dev, 2026-07-21).
+ *  (2026-07-21 edge-portability plan, archived in the private repo; field
+ *  origin: vendo-on-Cloudflare-Workers, Mohamed/digger.dev, 2026-07-21).
  *
  *  Leg A (bundle): the server entry must bundle for a Worker target with no
  *    unresolved imports and none of the known Node-only legs in the graph
  *    (CLI, dev-creds ladder, actions sync, telemetry disk config, store
  *    engines). Bare node builtins stay external — that mirrors Wrangler's
  *    nodejs_compat, the Workers baseline.
+ *  Leg A2 (store split): the @vendoai/store/postgres entry must bundle under
+ *    DEFAULT/node resolution (what OpenNext-style Worker builds and Lambda
+ *    bundlers use — the resolution mode under which a console Worker silently
+ *    crossed Cloudflare's size ceiling carrying PGlite wasm it can't run)
+ *    with neither PGlite nor the store's PGlite engine module in the graph.
  *  Leg B (boot): the fixture worker constructs createVendo at MODULE SCOPE
  *    under real workerd and must serve GET /status 200 — catching
  *    global-scope I/O and timers, unbound fetch, and anything a bundle
@@ -51,8 +56,8 @@ const FORBIDDEN_INPUTS = [
   { fragment: "packages/store/dist/crypto.js", seam: "#store/crypto conditions" },
   { fragment: "node_modules/.pnpm/pg@", seam: "#store/db conditions" },
   { fragment: "node_modules/.pnpm/typescript@", seam: "@vendoai/actions/sync subpath split" },
-  { fragment: "node_modules/.pnpm/e2b@", seam: "bundler-blind e2b specifier (apps/src/e2b)" },
-  { fragment: "node_modules/.pnpm/esbuild@", seam: "bundler-blind esbuild specifier (apps/src/engine island validator)" },
+  { fragment: "node_modules/.pnpm/e2b@", seam: "bundler-blind e2b specifier (apps/src/server/escalation/e2b)" },
+  { fragment: "node_modules/.pnpm/esbuild@", seam: "bundler-blind esbuild specifier (apps/src/server/checking/islands)" },
 ];
 
 /** Raw source patterns whose fix classes this gate owns. */
@@ -63,7 +68,7 @@ const SOURCE_GUARDS = [
   },
   {
     pattern: /await import\((?:\/\*[^*]*\*\/\s*)*["']e2b["']\)/,
-    message: "literal import(\"e2b\") — esbuild hard-resolves it; route through the bundler-blind specifier in packages/apps/src/e2b",
+    message: "literal import(\"e2b\") — esbuild hard-resolves it; route through the bundler-blind specifier in packages/apps/src/server/escalation/e2b",
   },
   {
     pattern: /await import\((?:\/\*[^*]*\*\/\s*)*["']esbuild["']\)/,
@@ -121,6 +126,64 @@ if (serverMeta !== undefined) {
   }
 }
 
+// ---- Leg A2: @vendoai/store/postgres stays PGlite-free under node resolution ----
+const STORE_POSTGRES_ENTRY = join(root, "packages/store/dist/postgres.js");
+if (!existsSync(STORE_POSTGRES_ENTRY)) {
+  fail("packages/store/dist/postgres.js missing — run `pnpm build` first");
+} else {
+  try {
+    const result = await esbuild.build({
+      entryPoints: [STORE_POSTGRES_ENTRY],
+      bundle: true,
+      format: "esm",
+      platform: "node",
+      external: ["pg-native"],
+      metafile: true,
+      write: false,
+      logLevel: "silent",
+    });
+    const inputs = Object.keys(result.metafile.inputs);
+    const leaks = inputs.filter(
+      (input) => input.includes("@electric-sql") || input.includes("pglite") || input.includes("packages/store/dist/db.js"),
+    );
+    if (leaks.length > 0) {
+      fail(`@vendoai/store/postgres reached the PGlite engine under node resolution: ${leaks[0]}\n    containment seam: packages/store src/db-postgres.ts split (engine picker stays in src/db.ts)`);
+    } else {
+      ok(`store postgres entry stays PGlite-free under node resolution (${inputs.length} modules checked)`);
+    }
+  } catch (error) {
+    const messages = (error.errors ?? []).slice(0, 8).map((e) => `\n    ${e.text} (${e.location?.file ?? "?"})`).join("");
+    fail(`store postgres entry does not bundle under node resolution:${messages || `\n    ${error.message}`}`);
+  }
+}
+
+// ---- Leg A3: @vendoai/harnesses bundles for a Worker target ----
+// Its own leg because the harness runtime is NOT yet imported by the server
+// entry (composition wires it at integration), so Leg A would pass vacuously
+// while the package rotted. The runtime does use `node:async_hooks`
+// (AsyncLocalStorage, to attribute a subagent hire to the right concurrent
+// turn), which nodejs_compat provides and NODE_BUILTIN_EXTERNALS allows —
+// this leg is what keeps that true.
+const HARNESSES_ENTRY = join(root, "packages/harnesses/dist/index.js");
+if (!existsSync(HARNESSES_ENTRY)) {
+  fail("packages/harnesses/dist/index.js missing — run `pnpm build` first");
+} else {
+  try {
+    const result = await bundle(HARNESSES_ENTRY);
+    const inputs = Object.keys(result.metafile.inputs);
+    const hit = inputs.find((input) => FORBIDDEN_INPUTS.some(({ fragment }) => input.includes(fragment)));
+    if (hit !== undefined) {
+      const { seam } = FORBIDDEN_INPUTS.find(({ fragment }) => hit.includes(fragment));
+      fail(`Node-only leg reached the harness runtime graph: ${hit}\n    containment seam: ${seam}`);
+    } else {
+      ok(`@vendoai/harnesses bundles for a Worker target (${inputs.length} modules checked)`);
+    }
+  } catch (error) {
+    const messages = (error.errors ?? []).slice(0, 8).map((e) => `\n    ${e.text} (${e.location?.file ?? "?"})`).join("");
+    fail(`@vendoai/harnesses does not bundle for a Worker target:${messages || `\n    ${error.message}`}`);
+  }
+}
+
 // ---- Leg C: raw hazard patterns in source ----
 async function* sourceFiles(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -167,6 +230,32 @@ try {
   }
 } catch (error) {
   fail(`fixture worker did not boot under workerd: ${error instanceof Error ? error.message : String(error)}`);
+}
+
+// ---- Leg D: the app-generation CONTRACT door bundles for a BROWSER ----
+// `@vendoai/apps/contract` is the browser-safe half of the app engine, and
+// `scripts/dependency-guard.mjs`'s ONLY_SUBPATHS rule makes it the one door
+// @vendoai/ui may reach. That rule enforces which SPECIFIER ui writes; nothing
+// enforced what the specifier RESOLVES to. A single `import "node:fs"` inside
+// src/contract/ passed lint, typecheck and the whole suite, and surfaced only
+// in a customer's `next build` — so the headline layering claim was a
+// convention, not a mechanism. This is the mechanism.
+try {
+  await esbuild.build({
+    entryPoints: [join(root, "packages/apps/dist/contract/index.js")],
+    bundle: true,
+    format: "esm",
+    platform: "browser",
+    write: false,
+  });
+  ok("@vendoai/apps/contract bundles for a browser target (no node built-ins)");
+} catch (error) {
+  fail(
+    "@vendoai/apps/contract does NOT bundle for a browser target — something under "
+    + "packages/apps/src/contract/ reached a node built-in or a node-only package. "
+    + "That door is imported by @vendoai/ui and by browser consumers; it must stay "
+    + `platform-clean. ${error instanceof Error ? error.message : String(error)}`,
+  );
 }
 
 if (failures > 0) {

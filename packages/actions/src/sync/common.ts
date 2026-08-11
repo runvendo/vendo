@@ -3,7 +3,13 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { sha256Hex } from "@vendoai/core";
 import type TS from "typescript";
+import { noteRejectedCompiler, unsupportedCompiler } from "./compiler-gate.js";
 import type { ExtractedTool, HttpMethod, PrimitiveToolBinding } from "../formats.js";
+
+// Tool identity lives in the pure ../binding-identity.js module (the judgment
+// layer needs it off the node-only side); re-exported here so sync's own
+// importers keep their one import site.
+export { bindingIdentity, dedupKey } from "../binding-identity.js";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
 // Hidden directories are never route sources; alternate Next dist dirs
@@ -148,6 +154,10 @@ async function resolvedCandidate(base: string, realRoot: string): Promise<Resolv
     } catch {
       continue;
     }
+    // The pre-realpath check above is not enough: an in-project symlink
+    // pointing into node_modules resolves to a path inside the root and would
+    // otherwise be captured as if it were the host's own source.
+    if (realCandidate.split(path.sep).includes("node_modules")) continue;
     if (!isInside(realRoot, realCandidate)) continue;
     try {
       return { file: realCandidate, source: await fs.readFile(realCandidate, "utf8") };
@@ -160,14 +170,18 @@ async function resolvedCandidate(base: string, realRoot: string): Promise<Resolv
 
 /** The TypeScript compiler, resolved lazily through this package's own
  * dependency graph (the same posture as catalog-scan). Module analysis is
- * fail-closed: when the compiler cannot be loaded, imports and exports
+ * fail-closed: when the compiler cannot be loaded — or loads but predates the
+ * API surface extraction calls (compiler-gate.ts) — imports and exports
  * resolve to nothing rather than being guessed at with string scans. */
 let compilerModule: typeof TS | null | undefined;
 
 function loadCompiler(): typeof TS | null {
   if (compilerModule === undefined) {
     try {
-      compilerModule = createRequire(import.meta.url)("typescript") as typeof TS;
+      const candidate = createRequire(import.meta.url)("typescript") as typeof TS;
+      const tooOld = unsupportedCompiler(candidate);
+      if (tooOld !== null) noteRejectedCompiler(tooOld);
+      compilerModule = tooOld === null ? candidate : null;
     } catch {
       compilerModule = null;
     }
@@ -288,6 +302,14 @@ async function importBases(importer: string, specifier: string, root: string): P
     if (specifier.startsWith("@/")) bases.push(path.join(root, specifier.slice(2)));
   }
   return bases;
+}
+
+/** True when a specifier names a PACKAGE rather than the host's own source:
+ *  nothing relative to resolve and no tsconfig path alias that maps it. Source
+ *  capture stops at that boundary — a node_modules module is never the host's
+ *  code — and stays silent about it, so only genuinely broken host imports warn. */
+export async function isPackageSpecifier(importer: string, specifier: string, root: string): Promise<boolean> {
+  return (await importBases(importer, specifier, root)).length === 0;
 }
 
 async function resolveImportedSource(
@@ -426,30 +448,13 @@ export function allocateToolName(preferred: string, fallbackSuffix: string, used
   }
 }
 
-export function dedupKey(method: HttpMethod, urlPath: string): string {
-  return `${method} ${urlPath.replace(/\{[^}]+\}/g, "{}").replace(/\/+$/g, "") || "/"}`;
-}
-
-/** The binding-kind-aware identity a tool is deduplicated and diffed by:
- * method+path for HTTP-shaped bindings, mount+procedure for tRPC (a host can
- * expose the same procedure name under two mounts — both tools must survive),
- * endpoint+operation for GraphQL, module+export for server actions. */
-export function bindingIdentity(binding: PrimitiveToolBinding): string {
-  if (binding.kind === "trpc") return `TRPC ${binding.mount.replace(/\/+$/g, "")} ${binding.procedure}`;
-  // The operation kind joins the key: GraphQL allows a query and a mutation
-  // to share one field name across the two root types.
-  if (binding.kind === "graphql") return `GRAPHQL ${binding.endpoint.replace(/\/+$/g, "")} ${binding.type} ${binding.operation}`;
-  if (binding.kind === "server-action") return `SERVER-ACTION ${binding.module}#${binding.exportName}`;
-  return dedupKey(binding.method, binding.path);
-}
-
 function uniqueNameFallback(binding: PrimitiveToolBinding): string {
-  if (binding.kind === "trpc" || binding.kind === "graphql") return binding.type;
+  if (binding.kind === "trpc") return binding.type;
   if (binding.kind === "server-action") return "action";
   return binding.method;
 }
 
-export function withUniqueNames(tools: ExtractedTool[]): ExtractedTool[] {
+export function withUniqueNames<T extends ExtractedTool>(tools: T[]): T[] {
   const used = new Set<string>();
   return tools.map((tool) => ({
     ...tool,
@@ -457,11 +462,11 @@ export function withUniqueNames(tools: ExtractedTool[]): ExtractedTool[] {
   }));
 }
 
-const DESTRUCTIVE_WORDS = new Set([
-  "delete", "remove", "destroy", "cancel", "close", "reset", "revoke", "purge", "wipe", "archive",
-  "unpause", "transfer", "send", "invite",
-]);
-const READ_WORDS = new Set(["get", "list", "fetch", "search", "find", "read", "show", "query", "describe", "count"]);
+/** A build-time extraction entry plus the root-relative posix path of the
+ *  source file it was extracted from, when the extractor has it in hand.
+ *  Internal to sync: the path never reaches `.vendo/tools.json` — it becomes
+ *  the tool's `srcHash` (content hash) in the v3 write. */
+export type SourcedExtractedTool = ExtractedTool & { srcPath?: string };
 
 function words(value: string): string[] {
   return value
@@ -472,48 +477,32 @@ function words(value: string): string[] {
     .filter(Boolean);
 }
 
-function containsWord(value: string, vocabulary: ReadonlySet<string>): boolean {
-  return words(value).some((word) => vocabulary.has(word));
+/**
+ * Extraction grades from PROTOCOL FACTS ONLY (risk-grading redesign D2). A
+ * tool's NAME never decides anything: English is infinite, so a word list is
+ * guaranteed to miss (*pay, charge, refund, approve, merge, publish*) and its
+ * existence is what stops a host from auditing the labels.
+ *
+ * `DELETE` is destructive by definition of the method. Nothing else about an
+ * HTTP route is: `GET` alone does not earn `read` (GETs that mutate exist) and
+ * `POST` does not earn `write` (search endpoints post). Anything not proven is
+ * `ungraded`, which the guard asks about until a human or the judge grades it.
+ */
+export function extractedRisk(method: HttpMethod): ExtractedTool["risk"] {
+  return method === "DELETE" ? "destructive" : "ungraded";
 }
 
-export function extractedRisk(method: HttpMethod, name: string, source: "openapi" | "route"): ExtractedTool["risk"] {
-  if (method === "DELETE" || containsWord(name, DESTRUCTIVE_WORDS)) return "destructive";
-  if (source === "openapi" && method === "GET" && containsWord(name, READ_WORDS)) return "read";
-  return "write";
-}
-
-/** tRPC risk labeling (04 §1, fail-closed): the destructive word list applies
- * unchanged; a query earns `read` only with a read-shaped name; everything
- * else — mutations and ambiguously-named queries — defaults to `write`. */
-export function trpcRisk(type: "query" | "mutation", procedure: string): ExtractedTool["risk"] {
-  if (containsWord(procedure, DESTRUCTIVE_WORDS)) return "destructive";
-  if (type === "query" && containsWord(procedure, READ_WORDS)) return "read";
-  return "write";
+/** tRPC risk labeling (04 §1, fail-closed): a `mutation` is a DECLARED
+ * mutation, so it is at least `write` and can never be `read`. A `query` is
+ * not a declared read — tRPC does not stop one from writing — so it stays
+ * `ungraded` until something authorized grades it. */
+export function trpcRisk(type: "query" | "mutation"): ExtractedTool["risk"] {
+  return type === "mutation" ? "write" : "ungraded";
 }
 
 export function trpcToolFullName(procedure: string): string {
   const parts = words(procedure);
   return `host_${parts.length > 0 ? parts.join("_") : "procedure"}`;
-}
-
-/** GraphQL risk labeling (04 §1, fail-closed): identical semantics to tRPC —
- * the destructive word list applies unchanged; a query earns `read` only with
- * a read-shaped name; mutations and ambiguously-named queries default `write`. */
-export function graphqlRisk(type: "query" | "mutation", operation: string): ExtractedTool["risk"] {
-  return trpcRisk(type, operation);
-}
-
-export function graphqlToolFullName(operation: string): string {
-  const parts = words(operation);
-  return `host_${parts.length > 0 ? parts.join("_") : "operation"}`;
-}
-
-/** Server-action risk labeling (04 §1, fail-closed): the destructive word list
- * applies unchanged; everything else defaults to `write`. A read-shaped name
- * never earns `read` — a server action is a POST-shaped mutation surface and
- * static parsing cannot prove it reads only. */
-export function serverActionRisk(name: string): ExtractedTool["risk"] {
-  return containsWord(name, DESTRUCTIVE_WORDS) ? "destructive" : "write";
 }
 
 export function serverActionToolFullName(name: string): string {

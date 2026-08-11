@@ -5,19 +5,19 @@
  * The interface is the coordination artifact between lanes; the
  * implementation lives in client-impl.ts (lane A).
  */
-import type {
-  AppDocument,
-  AppId,
-  ApprovalDecision,
-  ApprovalId,
-  ApprovalRequest,
-  AuditEvent,
-  GrantId,
-  Json,
-  PermissionGrant,
-  RunId,
-  ThreadId,
-  ToolOutcome,
+import {
+  type AppDocument,
+  type AppId,
+  type ApprovalDecision,
+  type ApprovalId,
+  type ApprovalRequest,
+  type AuditEvent,
+  type GrantId,
+  type Json,
+  type PermissionGrant,
+  type RunId,
+  type ThreadId,
+  type ToolOutcome,
 } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import type {
@@ -30,13 +30,12 @@ import type {
   InitiatedConnection,
   OpenSurface,
   PendingSurface,
-  PinDrift,
-  PinForkResult,
-  PinRebaseResult,
+  PlacementEntry,
   RunPlan,
   RunRecord,
   RunStatus,
   ShipDiff,
+  SlotEntry,
   Thread,
   ThreadSummary,
   VendoStatus,
@@ -63,8 +62,11 @@ export interface VendoClient {
 
   approvals: {
     pending(): Promise<ApprovalRequest[]>;
-    /** Batch-capable: POST /approvals/decide { ids, decision }. */
-    decide(ids: ApprovalId | ApprovalId[], decision: ApprovalDecision): Promise<void>;
+    /** Batch-capable: POST /approvals/decide { ids, decision }. `options.grantSetId`
+        (additive) names the grant SET the ids settle so the decided announcement
+        can resume a thread parked on the set from ANY surface — it never rides
+        the wire. */
+    decide(ids: ApprovalId | ApprovalId[], decision: ApprovalDecision, options?: { grantSetId?: string }): Promise<void>;
     /** Existing-agents — GET /approvals/:id, the per-approval state
         `<VendoApprovalEmbed>` polls (pending/executed/declined/expired). */
     get(id: ApprovalId): Promise<ApprovalResolution>;
@@ -102,45 +104,64 @@ export interface VendoClient {
     call(id: AppId, ref: string, args: Json): Promise<ToolOutcome>;
     edit(id: AppId, instruction: string): Promise<EditResult>;
     history(id: AppId): Promise<VersionEntry[]>;
-    undo(id: AppId): Promise<AppDocument>;
     exportApp(id: AppId): Promise<Uint8Array>;
     importApp(bytes: Uint8Array): Promise<AppDocument>;
     fork(id: AppId): Promise<AppDocument>;
     /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
     shipDiff(id: AppId): Promise<ShipDiff>;
-    /** GET /apps/:id/pin-drift — the pins whose captured host baseline changed under the fork (06 §8). */
-    pinDrift(id: AppId): Promise<PinDrift[]>;
-    /** POST /apps/:id/rebase-pin — re-fork one drifted pin from the new baseline and replay its recorded intents (06 §8). */
-    rebasePin(id: AppId, slot: string): Promise<PinRebaseResult>;
+    /** POST /apps/:id/reseed — swap the seeded component for the host's current
+     *  version (06 §8). It REPLACES that component, so whatever the person
+     *  changed about it is gone; the surface that offers it says so. */
+    reseed(id: AppId): Promise<AppDocument>;
     /**
-     * POST /apps/fork-pin (no appId) or /apps/:id/fork-pin — the gesture-owned
-     * DETERMINISTIC fork of a remixable host slot (06 §8): the engine copies
-     * the captured baseline and records the pin with no model call. Without an
-     * appId a minimal app is minted around the fork (the empty-slot Remix
-     * gesture). An optional instruction rides the ordinary edit path
-     * afterwards, already scoped to the forked component.
+     * POST /apps/seed — the ✦ gesture's DETERMINISTIC path (06 §8): the engine
+     * copies the captured baseline into a new app's seeded seat with no model
+     * call, and the model never decides to seed. An `instruction` then runs as
+     * an ordinary edit on the new app.
      */
-    forkPin(input: { appId?: AppId; slot: string; instruction?: string }): Promise<PinForkResult>;
+    seedFrom(input: { component: string; slot?: string; instruction?: string }): Promise<AppDocument>;
     /**
-     * POST /apps/:id/machine/ping — the embed surface's keepalive (Wave 7 H2):
+     * POST /apps/:id/machine/ping — the embed surface's keepalive:
      * user activity on an embedded served app rides one host-proxied HEAD
      * through the machine, keeping it from idling out under the user. "woke"
      * means the machine had slept — the embed's URL is stale; re-open.
      */
     pingMachine(id: AppId): Promise<{ state: "awake" | "woke" }>;
+    /**
+     * Placement (2026-08-05) — "show this app in that slot". `POST
+     * /apps/:id/place`; one app per slot, so the answer names whatever the
+     * write displaced (`evicted`).
+     */
+    place(id: AppId, slot: string): Promise<{ evicted?: string }>;
+    /** `POST /apps/:id/unplace` — clear the slot, if this app still holds it. */
+    unplace(id: AppId, slot: string): Promise<void>;
+    /** `GET /apps/placements` — what is in the caller's slots. Pass the slots
+     *  actually mounted so one request answers the whole page. */
+    placements(slots?: readonly string[]): Promise<PlacementEntry[]>;
   };
 
   automations: {
     list(): Promise<AutomationEntry[]>;
-    enable(id: AppId): Promise<EnableResult>;
-    disable(id: AppId): Promise<void>;
-    dryRun(id: AppId): Promise<RunPlan>;
+    /** Arm/disarm/preview ONE trigger of an app — an automation is an app with
+     *  a LIST of triggers, and each is decided on its own. */
+    enable(id: AppId, triggerId: string): Promise<EnableResult>;
+    disable(id: AppId, triggerId: string): Promise<void>;
+    dryRun(id: AppId, triggerId: string): Promise<RunPlan>;
   };
 
   runs: {
-    list(filter?: { appId?: AppId; status?: RunStatus; cursor?: string }): Promise<{ runs: RunRecord[]; cursor?: string }>;
+    list(filter?: {
+      appId?: AppId;
+      triggerId?: string;
+      status?: RunStatus;
+      cursor?: string;
+    }): Promise<{ runs: RunRecord[]; cursor?: string }>;
     get(id: RunId): Promise<RunRecord>;
     stop(id: RunId): Promise<void>;
+    /** POST /runs/:id/rerun — run it again: a FRESH run of the same automation
+     *  on the same triggering event. The remedy a failed run leaves behind (07
+     *  §1 `runs.rerun`); answers with the new run's id. */
+    rerun(id: RunId): Promise<RunId>;
   };
 
   activity: {
@@ -148,7 +169,21 @@ export interface VendoClient {
     list(params?: { cursor?: string; limit?: number }): Promise<AuditEvent[]>;
   };
 
+  /** The slot registry — where the "Add to…" picker's destinations come from.
+   *  A slot id lives in the host's markup and nowhere else, so a mounted
+   *  `VendoSlot` is the only thing that can say one exists. */
+  slots: {
+    /** GET /slots — every reported destination, newest first. */
+    list(): Promise<SlotEntry[]>;
+    /** POST /slots — mounted slots saying they exist; batched, idempotent. */
+    report(slots: readonly { id: string; label: string }[]): Promise<void>;
+  };
+
   status(): Promise<VendoStatus>;
 }
 
-export { createVendoClient } from "./client-impl.js";
+export {
+  APPROVALS_DECIDED_EVENT,
+  createVendoClient,
+  type ApprovalsDecidedDetail,
+} from "./client-impl.js";

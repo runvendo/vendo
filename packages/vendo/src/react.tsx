@@ -1,8 +1,5 @@
 "use client";
 
-import { createVendoClient, VendoProvider } from "@vendoai/ui";
-import { useMemo, type ComponentProps } from "react";
-
 // Named re-exports, not `export *`: this file is a "use client" boundary, and
 // Next's flight loader builds the client-reference manifest by statically
 // enumerating a client module's named exports — it cannot do that through
@@ -11,13 +8,15 @@ import { useMemo, type ComponentProps } from "react";
 // if a future ui export is missing here.
 export {
   // client.ts
+  APPROVALS_DECIDED_EVENT,
   createVendoClient,
+  type ApprovalsDecidedDetail,
   type VendoClient,
   type VendoClientConfig,
   // context.ts
   VendoProvider,
   hostComponentMap,
-  useVendoContext,
+  useVendoProvider,
   useVendoDiscoverability,
   useVendoGreeting,
   useVendoTheme,
@@ -40,37 +39,57 @@ export {
   useApp,
   useApps,
   useApprovals,
+  // spec §4 (N1) — the one attention source (askCount + unseen results), and
+  // the shapes it hands back.
+  useAttention,
+  type RunActivity,
+  type RunResult,
   useAutomations,
   useConnections,
   useConnectorCatalog,
   useGrants,
+  useApprovalSheetPresentation,
   useMobileTakeover,
   type MobileTakeover,
   type PollOptions,
   useSlotApp,
+  // The destinations a mounted VendoSlot has reported — the "Add to…" picker's
+  // only source of places to put a generated view.
+  useSlots,
+  type SlotEntry,
   useThreads,
   useVendoOverlay,
   type VendoOverlayController,
   useVendoStatus,
+  useVendoContext,
   useVendoThread,
   type VendoThreadApproval,
   ScriptedTransport,
   type DirectorCue,
   type DirectorScript,
+  // chrome/dev-mode.ts + chrome/workbench-store.ts — the dev-only workbench
+  // rails: the check that decides whether such a surface renders at all, and
+  // the `data-vendo-debug` feed a host's pane reads.
+  developmentMode,
+  publishWorkbenchPart,
+  useWorkbenchFeed,
+  type WorkbenchEvent,
+  type WorkbenchPart,
+  type WorkbenchTurn,
+  // pin-events.ts — the bus a slot re-reads on, for a host that pins from its
+  // own control instead of a Vendo surface.
+  announcePin,
+  onPinAnnounced,
   // theme.ts
   defaultVendoTheme,
   resolveTheme,
   themeCssVariables,
-  // voice/use-voice.ts
-  useVoice,
-  type UseVoiceResult,
   // wire-types.ts
   type OpenSurface,
   type InClientVenue,
-  type PinDrift,
+  type SeedDrift,
   type ShipDiff,
   type EditResult,
-  type PinRebaseResult,
   type VersionEntry,
   type ConnectionAccount,
   type InitiatedConnection,
@@ -91,16 +110,3 @@ export {
 // does not resolve for them (same TS2307 story as the registry's
 // ComponentRegistry import).
 export { VendoOverlay, type VendoOverlayProps } from "@vendoai/ui/chrome";
-export { remixable, type RemixableRegistration, type RemixableReportOptions } from "./remixable.js";
-
-type ProviderProps = ComponentProps<typeof VendoProvider>;
-
-/** 09-vendo §1 — the UI provider prewired to the default wire base. */
-export function VendoRoot(props: Omit<ProviderProps, "client"> & {
-  client?: ProviderProps["client"];
-  baseUrl?: string;
-}): ReturnType<typeof VendoProvider> {
-  const { client: configuredClient, baseUrl = "/api/vendo", ...providerProps } = props;
-  const defaultClient = useMemo(() => createVendoClient({ baseUrl }), [baseUrl]);
-  return <VendoProvider {...providerProps} client={configuredClient ?? defaultClient} />;
-}

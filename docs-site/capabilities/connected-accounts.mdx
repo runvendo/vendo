@@ -108,16 +108,11 @@ Automations and MCP door calls do not have a browser surface, so they surface
 `connect-required` as an actionable in-band error that names the connector and
 toolkit the user needs to connect.
 
-## The settings panel
+## Managing connected accounts
 
-`ConnectedAccountsPanel` (exported from `@vendoai/ui/chrome`) lists a user's
-connected accounts and disconnects them. Disconnect severs the account on the
-broker.
-
-`VendoPage` chrome mounts the panel automatically under a new **Accounts**
-tab. If you render your own chrome, drop the panel in wherever you already
-handle user settings, or read the same state through the `useConnections`
-hook from `@vendoai/ui`.
+Read a user's connected accounts — and disconnect them — through the
+`useConnections` hook from `@vendoai/ui`, and render them wherever you
+already handle user settings. Disconnect severs the account on the broker.
 
 ## Risk labels for Composio tools
 
@@ -174,7 +169,8 @@ read.
 | `/api/vendo/connections/:id?connector=` | GET | status; poll while connecting |
 | `/api/vendo/connections/:id?connector=` | DELETE | disconnect |
 
-Anonymous (ephemeral) visitors cannot initiate a connection: an external
-account would outlive the session it was minted for. Synthetic subjects
-(webhook principals, reserved `webhook:` and `vendo:` prefixes) are refused
-for the same reason.
+A principal marked `ephemeral: true` cannot initiate a connection: an
+external account would outlive it. Only a host resolver that sets the flag
+itself produces one now — Vendo no longer mints ephemeral principals on its
+own. Synthetic subjects (webhook principals, reserved `webhook:` and
+`vendo:` prefixes) are refused for the same reason.

@@ -1,4 +1,4 @@
-import type { ZodType } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 import {
   VendoError,
   appDocumentSchema,
@@ -9,6 +9,8 @@ import {
   permissionGrantSchema,
   runIdSchema,
   threadIdSchema,
+  TRIGGER_KIND_REF_KEYS,
+  triggerKindRefs,
   type Json,
   type RecordStore,
   type StoreAdapter,
@@ -40,11 +42,11 @@ type MemoryRecordInput = Pick<VendoRecord, "id" | "data" | "refs">;
 
 const RESERVED_REF_KEYS: Readonly<Record<string, readonly string[]>> = {
   vendo_grants: ["subject", "tool", "app_id"],
-  vendo_approvals: ["subject", "status"],
+  vendo_approvals: ["subject", "status", "call"],
   vendo_audit: ["subject", "kind", "app_id", "tool"],
   vendo_threads: ["subject"],
   vendo_runs: ["app_id", "status"],
-  vendo_apps: ["subject", "trigger_kind"],
+  vendo_apps: ["subject", ...TRIGGER_KIND_REF_KEYS],
   vendo_state: ["app_id", "subject"],
 };
 
@@ -59,7 +61,11 @@ const reservedObject = (value: unknown, label: string): Record<string, unknown> 
   return value as Record<string, unknown>;
 };
 
-const parseReserved = <T>(schema: ZodType<T>, value: unknown, label: string): T => {
+// The Input parameter is deliberately `unknown`: this helper only ever calls
+// safeParse on a value it already has as `unknown`, and pinning Input to the
+// output type would exclude the schemas that normalize on read (appDocumentSchema
+// preprocesses the pre-list `trigger` shape, so its input is wider than its output).
+const parseReserved = <T>(schema: ZodType<T, ZodTypeDef, unknown>, value: unknown, label: string): T => {
   const parsed = schema.safeParse(value);
   if (parsed.success) return parsed.data;
   return invalidReserved(`${label}: ${parsed.error.issues[0]?.message ?? "invalid value"}`);
@@ -161,6 +167,11 @@ const projectMemoryRecord = (
       const decidedAt = optionalReservedDate(value["decidedAt"], "approval decidedAt");
       const sessionId = optionalReservedString(value["sessionId"], "approval sessionId");
       const consumedAt = optionalReservedDate(value["consumedAt"], "approval consumedAt");
+      const voidedAt = optionalReservedDate(value["voidedAt"], "approval voidedAt");
+      const deniedByValue = value["deniedBy"];
+      const deniedBy = deniedByValue === undefined || deniedByValue === "human" || deniedByValue === "system"
+        ? deniedByValue
+        : invalidReserved("approval deniedBy must be human or system");
       return {
         data: {
           request,
@@ -168,10 +179,14 @@ const projectMemoryRecord = (
           ...(decidedAt === undefined ? {} : { decidedAt }),
           ...(sessionId === undefined ? {} : { sessionId }),
           ...(consumedAt === undefined ? {} : { consumedAt }),
+          ...(deniedBy === undefined ? {} : { deniedBy }),
+          ...(voidedAt === undefined ? {} : { voidedAt }),
         },
-        refs: { subject: request.ctx.principal.subject, status },
+        // `call` is derived like every other reserved ref, so the guard can look
+        // a decision up by the call it answers instead of scanning a subject.
+        refs: { subject: request.ctx.principal.subject, status, call: request.call.id },
         createdAt: request.createdAt,
-        updatedAt: consumedAt ?? decidedAt ?? request.createdAt,
+        updatedAt: voidedAt ?? consumedAt ?? decidedAt ?? request.createdAt,
       };
     }
     case "vendo_audit": {
@@ -269,7 +284,7 @@ const projectMemoryRecord = (
       }
       return {
         data: { subject, enabled, doc },
-        refs: derivedRefs({ subject, trigger_kind: doc.trigger?.on.kind }),
+        refs: { ...derivedRefs({ subject }), ...triggerKindRefs(doc.triggers) },
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
       };
@@ -347,38 +362,67 @@ export function memoryStoreAdapter(
     async ensureSchema(): Promise<void> {},
     records(collection: string): RecordStore {
       const records = recordMap(collection);
+      const write = (input: MemoryRecordInput): VendoRecord => {
+        const previous = records.get(input.id);
+        const projected = projectMemoryRecord(collection, input, previous, timestamp());
+        sequence += 1;
+        const record: VendoRecord & { seq: number } = {
+          id: input.id,
+          data: jsonCopy(projected.data),
+          refs: projected.refs === undefined ? undefined : { ...projected.refs },
+          createdAt: projected.createdAt,
+          updatedAt: projected.updatedAt,
+          revision: String(BigInt(previous?.revision ?? "0") + 1n),
+          seq: previous?.seq ?? sequence,
+        };
+        records.set(record.id, record);
+        return copyRecord(record);
+      };
+      const erase = (id: string): void => {
+        // Mirrors the store routing's append-only refusal (02-store §2):
+        // audit rows are erased only via the store erase API (02-store §5).
+        if (collection === "vendo_audit") {
+          throw new VendoError(
+            "blocked",
+            "vendo_audit is append-only; rows are erased only via the store erase API (02-store §5)",
+          );
+        }
+        if (collection === "vendo_state") splitMemoryStateId(id);
+        records.delete(id);
+      };
       return {
         async get(id) {
           const record = records.get(id);
           return record === undefined ? null : copyRecord(record);
         },
         async put(input) {
-          const previous = records.get(input.id);
-          const projected = projectMemoryRecord(collection, input, previous, timestamp());
-          sequence += 1;
-          const record: VendoRecord & { seq: number } = {
-            id: input.id,
-            data: jsonCopy(projected.data),
-            refs: projected.refs === undefined ? undefined : { ...projected.refs },
-            createdAt: projected.createdAt,
-            updatedAt: projected.updatedAt,
-            revision: String(BigInt(previous?.revision ?? "0") + 1n),
-            seq: previous?.seq ?? sequence,
-          };
-          records.set(record.id, record);
-          return copyRecord(record);
+          return write(input);
+        },
+        // 01-core §12 compare-and-claim: replace or delete a row only while it
+        // still equals `expected`. Both shipped adapters carry it (the local
+        // store's `records.ts`, the hosted client's wire mirror), and code that
+        // must not clobber a racer's write feature-detects on it — a reference
+        // adapter without it would send every unit test down the degraded
+        // read-then-write path the real ones never take. Nothing here yields
+        // between the compare and the write, so the pair is atomic.
+        async claim(expected, replacement) {
+          const current = records.get(expected.id);
+          if (current === undefined) return false;
+          if (JSON.stringify(current.data) !== JSON.stringify(expected.data)) return false;
+          if (JSON.stringify(current.refs ?? {}) !== JSON.stringify(expected.refs ?? {})) return false;
+          if (replacement === undefined) {
+            erase(expected.id);
+            return true;
+          }
+          write({
+            id: expected.id,
+            data: replacement.data,
+            ...(replacement.refs === undefined ? {} : { refs: replacement.refs }),
+          });
+          return true;
         },
         async delete(id) {
-          // Mirrors the store routing's append-only refusal (02-store §2):
-          // audit rows are erased only via the store erase API (02-store §5).
-          if (collection === "vendo_audit") {
-            throw new VendoError(
-              "blocked",
-              "vendo_audit is append-only; rows are erased only via the store erase API (02-store §5)",
-            );
-          }
-          if (collection === "vendo_state") splitMemoryStateId(id);
-          records.delete(id);
+          erase(id);
         },
         async list(query = {}) {
           const reservedRefKeys = RESERVED_REF_KEYS[collection];

@@ -8,24 +8,30 @@ import { CLI_VERSION } from "./shared.js";
  * eject drift, DEV probe server, LIVE composition/status, AUTH credentials,
  * MCP door, TURN model turn, CLOUD key). Codes are append-only: never renumber or reuse one — the
  * verify page anchors (`fix_ref`) and agents' remediation notes depend on
- * them staying put.
+ * them staying put. A check that goes away leaves its entry behind, marked
+ * RETIRED, for the same reason.
  *
  * This is the ONE module a CI check enumerates to assert every code has a
  * matching verify-page anchor (no registry rot).
  */
 export const DOCTOR_ERROR_CODES = {
   "E-WIRE-001": "Express server is not wired with createVendo from @vendoai/vendo/server",
-  "E-WIRE-002": "Express client is not wrapped in <VendoRoot>",
+  "E-WIRE-002": "Express client is not wrapped in <VendoProvider>",
   "E-WIRE-003": "the Next.js catch-all handler app/api/vendo/[...vendo]/route.ts is missing",
-  "E-WIRE-004": "the Next.js root layout is not wrapped in <VendoRoot>",
+  "E-WIRE-004": "the Next.js root layout is not wrapped in <VendoProvider>",
   "E-WIRE-005": "the @vendoai/vendo (or vendoai alias) dependency is not declared",
-  "E-WIRE-006": "no visible agent surface is mounted (<VendoRoot> alone renders nothing)",
+  "E-WIRE-006": "no visible agent surface is mounted (<VendoProvider> alone renders nothing)",
   "E-WIRE-007": "no createVendo server wiring found in an unknown-framework host",
-  "E-WIRE-008": "no <VendoRoot> found in an unknown-framework host's source",
+  "E-WIRE-008": "no <VendoProvider> found in an unknown-framework host's source",
+  "E-WIRE-009": "detected \"use server\" actions are not registered or not wired into createVendo",
+  "E-WIRE-010": "the host still names the removed <VendoRoot> (swap it for <VendoProvider>)",
+  "E-WIRE-011": "@vendoai/vendo is not resolvable from the app (a vendoai-alias-only install under pnpm)",
   "E-CFG-001": "a required .vendo/ config file is missing",
   "E-CFG-002": ".vendo/data/.gitignore is missing",
+  "E-CFG-003": "the OpenAPI spec's relative server mount and VENDO_BASE_URL's path prefix disagree",
   "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
   "E-DEP-002": "the running wire serves a different @vendoai/vendo version than this CLI (split-brain install)",
+  "E-DEP-003": "the installed zod predates the zod/v3 + zod/v4 subpaths the AI SDK imports (zod < 3.25)",
   "E-UI-001": "an ejected surface predates the installed @vendoai/ui",
   "E-DEV-001": "the dev server could not be started for the probe",
   "E-LIVE-001": "/status returned an invalid composition response",
@@ -34,7 +40,13 @@ export const DOCTOR_ERROR_CODES = {
   "E-LIVE-004": "no execution venue is configured",
   "E-LIVE-005": "the host /status does not report an execution venue (version skew)",
   "E-LIVE-006": "the app's root page returns a server error while the wire answers",
-  "E-LIVE-007": "the selected e2b execution venue is unusable (E2B_API_KEY or the e2b package is missing)",
+  // RETIRED 2026-08-11 (the selection law): E2B_API_KEY no longer selects a
+  // venue, so no host can be handed an e2b venue it did not ask for. An explicit
+  // `sandbox: e2bSandbox()` refuses at boot when the SDK does not resolve, which
+  // is earlier and louder than a probe. The ENTRY stays — the registry is
+  // append-only and the verify page anchors on it.
+  "E-LIVE-007": "RETIRED — doctor no longer emits this; E2B_API_KEY does not select an execution venue",
+  "E-LIVE-008": "the host still calls store ops the wire has deprecated and will remove",
   "E-AUTH-001": "present credentials did not reach the host API",
   "E-AUTH-002": "the present credential probe is unreachable",
   "E-AUTH-003": "the present credential probe cannot run while the dev server is down",
@@ -50,12 +62,15 @@ export const DOCTOR_ERROR_CODES = {
   "E-MCP-006": "server.json is invalid JSON",
   "E-MCP-007": "the local MCP registry auth challenge is malformed",
   "E-MCP-008": "the live MCP registry auth challenge is malformed",
+  "E-MCP-009": "the MCP door is wired but VENDO_BASE_URL is not set (discovery advertises the wrong origin)",
   "E-SCHED-001": "apps declare vendo.json schedules but no schedule caller is configured",
   "E-TURN-001": "the live model turn did not answer",
   "E-TURN-002": "the live model turn cannot run while the dev server is down",
   "E-CLOUD-001": "VENDO_API_KEY is set but not usable",
   "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
   "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
+  "E-TOOLS-003": "part of the tool catalog is ungraded (nobody has graded it, so it asks on every call)",
+  "E-TOOLS-004": "part of the tool catalog declares no request/response shape (the agent must pass whole outputs through / cannot know the arguments)",
 } as const;
 
 export type DoctorErrorCode = keyof typeof DOCTOR_ERROR_CODES;

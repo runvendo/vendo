@@ -31,7 +31,7 @@ export default {
 app.all("/api/vendo/*", (c) => handleVendoRequest(c.req.raw));
 ```
 
-The client side is unchanged: mount `<VendoRoot components={registry}
+The client side is unchanged: mount `<VendoProvider baseUrl="/api/vendo"
 theme={theme}>` with `<VendoOverlay />` in your SPA entry.
 
 ## The three rules
@@ -46,7 +46,8 @@ theme={theme}>` with `<VendoOverlay />` in your SPA entry.
    with the Cloud adapters — the model is the stock `@ai-sdk/anthropic`
    provider pointed at the console gateway. Without a key, pass your own
    `model`, `store`, `connections`, and `sandbox`.
-3. **Set `VENDO_BASE_URL`** to the deployed origin. Present-credential
+3. **Set `VENDO_BASE_URL`** to the deployed app's full public URL, path
+   prefix included. Present-credential
    forwarding fails closed without it, and `vendo doctor` checks it
    (`E-AUTH-001`).
 

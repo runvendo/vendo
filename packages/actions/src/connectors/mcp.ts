@@ -215,7 +215,15 @@ export function mcpConnector(config: {
         const message = rpcErrorMessage(response);
         if (message) throw new Error(message);
         await send(auth, session, { jsonrpc: "2.0", method: "notifications/initialized" });
-      })();
+      })().catch((error: unknown) => {
+        // A failed handshake is never cached: without this, one transient blip
+        // leaves a rejected promise on the session and every later call rethrows
+        // the original error for the process lifetime. The registry's
+        // evict-on-rejection retry re-enters here, so it depends on this reset.
+        session.initialized = undefined;
+        session.sessionId = undefined;
+        throw error;
+      });
     }
     await session.initialized;
   }

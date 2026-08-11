@@ -3,7 +3,7 @@ import type { UIPayload } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { VendoOverlay, VendoPalette, VendoSlot } from "../../src/chrome/index.js";
+import { VendoOverlay, VendoSlot } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
 /** A minimal pinned generated view — a vendo-genui/v2 tree of a single Text

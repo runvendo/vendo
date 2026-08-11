@@ -1,5 +1,4 @@
-import { spawn } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { resolveAppRoot } from "./app-root.js";
@@ -7,6 +6,8 @@ import { normalizeBootstrapInstallCommand } from "./install-command.js";
 import { pnpmDeclaresBuiltDependencies } from "./pnpm-build-policy.js";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
+import { ENGINE_STRICT_OFF_ENV, runCommand } from "./process.js";
+import { pathExists } from "./util.js";
 
 export type BootstrapRepo = Pick<ManifestEntry, "name" | "appDir" | "localPath" | "bootstrap">;
 
@@ -27,13 +28,6 @@ export interface BootstrapResult {
   repoDir: string;
   envPath: string;
   logs: BootstrapLogPaths;
-}
-
-interface CommandResult {
-  code: number | null;
-  signal: NodeJS.Signals | null;
-  stdout: string;
-  stderr: string;
 }
 
 const placeholderPattern = /\$\{(CORPUS_[A-Z0-9_]+)\}/g;
@@ -76,19 +70,14 @@ function logPaths(logsDir: string): BootstrapLogPaths {
   };
 }
 
-async function pathExists(file: string): Promise<boolean> {
-  return access(file).then(() => true, () => false);
-}
-
 const DEFAULT_RETRY_DELAY_MS = 5_000;
 
-// Small, deliberately narrow transient-failure class (nextcrm flake:
-// ERR_PNPM_NO_MATCHING_VERSION on a re-resolved React-19 type-alias override,
-// identical retry succeeded). Real dependency/config errors are NOT in this
-// list on purpose — only failures that look like registry/resolver hiccups
-// get the one bounded retry.
+// Small, deliberately narrow transient-failure class. Real dependency/config
+// errors are NOT in this list on purpose — only failures that look like
+// registry/resolver hiccups get the one bounded retry. Resolution errors
+// (ERR_PNPM_NO_MATCHING_VERSION) are deliberately excluded: they are
+// deterministic, and retrying them only hides the regression that caused them.
 const TRANSIENT_BOOTSTRAP_FAILURE_PATTERNS: readonly RegExp[] = [
-  /ERR_PNPM_NO_MATCHING_VERSION/,
   /ECONNRESET/,
   /ETIMEDOUT/,
   /\bE5\d{2}\b/, // npm/pnpm registry 5xx error codes (E500, E502, E503, ...)
@@ -99,23 +88,24 @@ function isTransientBootstrapFailure(output: string): boolean {
   return TRANSIENT_BOOTSTRAP_FAILURE_PATTERNS.some((pattern) => pattern.test(output));
 }
 
-function runInstallCommand(command: string, cwd: string, env: NodeJS.ProcessEnv): Promise<CommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, {
-      cwd,
-      env,
-      shell: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
-  });
+/** The env vars above cover every pnpm that reads its config from the
+ * environment, but not the one invocation that matters most: a repo script like
+ * rallly's `db:generate` shells out to `pnpm --filter … exec`, and on that path
+ * pnpm 10 re-runs the engines check reading only the project's own .npmrc — no
+ * env var and no CLI flag reaches it, because the command lives inside the
+ * repo's package.json, not in anything the harness passes. A pinned checkout's
+ * `engines.node` is about the day it was pinned, so neutralize the guard at its
+ * source. Rewrites in place rather than appending: npm's ini parser keeps the
+ * FIRST occurrence of a key, so a trailing `engine-strict=false` does nothing
+ * (measured on rallly under pnpm 10.28 / Node 26). */
+async function relaxEngineStrict(repoDir: string): Promise<boolean> {
+  const npmrc = path.join(repoDir, ".npmrc");
+  const source = await readFile(npmrc, "utf8").catch(() => null);
+  if (source === null) return false;
+  const relaxed = source.replace(/^[ \t]*engine-strict[ \t]*=.*$/gim, "engine-strict=false");
+  if (relaxed === source) return false;
+  await writeFile(npmrc, relaxed);
+  return true;
 }
 
 export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptions = {}): Promise<BootstrapResult> {
@@ -154,28 +144,34 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
     dropIgnoreWorkspace: hasPnpmWorkspace,
     pnpmConfig: repoCuratesBuilds ? ["--config.minimumReleaseAge=0"] : undefined,
   });
-  let result = await runInstallCommand(installCommand.command, repoDir, env);
+  // Once, before the install, so every later host command — typecheck, build,
+  // and the nested pnpm calls inside the repo's own scripts — runs against a
+  // relaxed checkout too.
+  const engineNote = await relaxEngineStrict(repoDir)
+    ? `Corpus harness set engine-strict=false in ${repo.name}'s .npmrc so the pinned checkout's engines.node cannot fail this host's Node.\n`
+    : "";
+  // Only the engine guard is relaxed here: the build-script and lockfile
+  // guards ride the normalized CLI flags above, which respect a repo that
+  // curates its own build allowlist.
+  const installEnv = { ...env, ...ENGINE_STRICT_OFF_ENV };
+  let result = await runCommand(installCommand.command, { cwd: repoDir, env: installEnv });
   const normalizationNote = installCommand.changed
     ? `Corpus harness normalized bootstrap install command from "${repo.bootstrap.installCommand}" to "${installCommand.command}" so lockfile updates are allowed.\n`
     : "";
 
-  // ONE bounded retry for transient-looking registry/resolver failures (the
-  // nextcrm flake: ERR_PNPM_NO_MATCHING_VERSION on its React-19 type-alias
-  // overrides, identical retry succeeded). Anything else fails immediately —
-  // this is not a general flaky-install workaround.
   let retryNote = "";
   if (result.code !== 0 && isTransientBootstrapFailure(`${result.stdout}\n${result.stderr}`)) {
     const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     retryNote = `Bootstrap install for ${repo.name} failed with a transient-looking registry/resolver error on attempt 1; retrying once after ${retryDelayMs}ms...\n`;
     if (retryDelayMs > 0) await delay(retryDelayMs);
-    const retryResult = await runInstallCommand(installCommand.command, repoDir, env);
+    const retryResult = await runCommand(installCommand.command, { cwd: repoDir, env: installEnv });
     retryNote += retryResult.code === 0
       ? `Bootstrap retry succeeded for ${repo.name} — transient registry/resolver failure recovered on attempt 2.\n`
       : `Bootstrap retry did not recover for ${repo.name} — attempt 2 failed too.\n`;
     result = retryResult;
   }
 
-  await writeFile(logs.stdout, `${normalizationNote}${retryNote}${result.stdout}`);
+  await writeFile(logs.stdout, `${engineNote}${normalizationNote}${retryNote}${result.stdout}`);
   await writeFile(logs.stderr, result.stderr);
 
   if (result.code !== 0) {

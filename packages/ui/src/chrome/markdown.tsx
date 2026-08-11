@@ -8,7 +8,7 @@ import { LONG_TEXT_CAP, truncateHead } from "./truncate.js";
 // react-markdown re-initializes its pipeline when the plugins prop identity changes.
 const REMARK_PLUGINS = [remarkGfm];
 
-/** Lane pick 8A — fenced code with a slim header bar: language chip (parsed
+/** Fenced code with a slim header bar: language chip (parsed
     from the fence's `language-*` class), a wrap toggle, and an ALWAYS-visible
     Copy. The old hover-revealed copy never existed on touch. The copied text
     is the block's rendered content, read off the DOM so it matches exactly
@@ -49,7 +49,7 @@ function CodeBlock(props: ComponentProps<"pre">) {
   );
 }
 
-/** Lane pick 8B — data-grade cells: numeric/date-like content right-aligns
+/** Data-grade cells: numeric/date-like content right-aligns
     with tabular figures so money and dates line up like a ledger. An explicit
     GFM alignment (react-markdown emits a style) always wins. */
 const cellText = (node: ReactNode): string => {
@@ -73,7 +73,7 @@ function DataCell(tag: "td" | "th") {
   };
 }
 
-/** Lane pick 8E — while the turn still streams, every table carries one
+/** While the turn still streams, every table carries one
     forming row (skeleton shimmer in the table's own rhythm) so a growing
     table reads as "more arriving" instead of jumping raggedly. */
 function StreamingTbody(props: ComponentProps<"tbody">) {
@@ -94,7 +94,7 @@ const TH = DataCell("th");
 const MD_COMPONENTS = { pre: CodeBlock, td: TD, th: TH };
 const MD_COMPONENTS_STREAMING = { ...MD_COMPONENTS, tbody: StreamingTbody };
 
-/** Lane pick 8D — a restored long reply with real structure renders as a
+/** A restored long reply with real structure renders as a
     scannable outline: each h2/h3 section folds, first section open. Never
     while streaming, and only for restored bodies (same gate as collapse —
     a reply the reader just watched arrive stays flat). */
@@ -207,7 +207,7 @@ function MarkdownImpl({ text, streaming, restored }: { text: string; streaming?:
   if (!collapsible) {
     return <div className={`fl-md${streaming ? " fl-md--streaming" : ""}`}>{body}</div>;
   }
-  // Lane pick 3D — the collapsed head sits under a gradient fade with a
+  // The collapsed head sits under a gradient fade with a
   // centered pill instead of a hard cut + inline link.
   return (
     <div className="fl-md">

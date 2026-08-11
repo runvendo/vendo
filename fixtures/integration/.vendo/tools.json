@@ -1,5 +1,5 @@
 {
-  "format": "vendo/tools@1",
+  "format": "vendo/tools@3",
   "tools": [
     {
       "name": "host_invoices_list",
@@ -40,7 +40,7 @@
       "name": "host_invoices_send",
       "description": "Send an invoice",
       "inputSchema": { "type": "object" },
-      "risk": "write",
+      "risk": "destructive",
       "binding": { "kind": "route", "method": "POST", "path": "/api/invoices/{id}/send", "argsIn": "body" }
     },
     {

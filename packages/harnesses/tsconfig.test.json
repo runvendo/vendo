@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "noEmit": true,
+    // The claude-code tests import this package's own `box/turn-routes.mjs` —
+    // the zero-dependency session-door runtime the machine image carries, which
+    // has no `.d.ts` — same reason `vendo` and `apps` set this. There is no
+    // `.js` under `src` or `tests`, so it widens nothing else.
+    "allowJs": true
+  },
+  "include": ["src", "box", "tests"]
+}

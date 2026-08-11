@@ -77,6 +77,11 @@ describe("Vendo Auto judge", () => {
     expect(events.some((event) => String(details(event).rationale).includes("provider offline"))).toBe(true);
   });
 
+  it("exposes the constructed model on Judge.model so composition can bind slot config to it", () => {
+    const model = asLanguageModel(scriptedJudgeModel({ action: "run", rationale: "ok" }));
+    expect(vendoAutoJudge({ model }).model).toBe(model);
+  });
+
   it("fails closed after the 15 second timeout without waiting in wall-clock time", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));

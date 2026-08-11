@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type TS from "typescript";
-import type { ExtractedTool, HttpMethod } from "../formats.js";
+import type { HttpMethod, SchemaSource } from "../formats.js";
 import {
   allocateToolName,
   extractedRisk,
@@ -13,6 +13,7 @@ import {
   visitNodes,
   walk,
   type ParsedModule,
+  type SourcedExtractedTool,
 } from "./common.js";
 import { createRouteScanState, inferRouteInput, type RouteInputResult } from "./route-schema.js";
 
@@ -34,7 +35,7 @@ interface ReExportTarget {
 }
 
 export interface RouteScanResult {
-  tools: ExtractedTool[];
+  tools: SourcedExtractedTool[];
   warnings: string[];
 }
 
@@ -92,6 +93,35 @@ function routePath(relativePath: string): { kind: RouteSource["kind"]; urlPath: 
 function isVendoRoute(urlPath: string): boolean {
   return urlPath === "/api/vendo" || urlPath.startsWith("/api/vendo/");
 }
+
+/**
+ * A GraphQL server answers one POST whose body is a `{ query, variables }`
+ * envelope. Route dispatch (runtime/registry.ts) sends the model's arguments
+ * as the whole JSON body, so a GraphQL endpoint scanned as a generic route
+ * produces an enabled tool the server rejects on every call — a stack we
+ * half-support, which is exactly what cutting the GraphQL extractor was meant
+ * to end. No override can fix it (nothing can build the envelope), so the
+ * route yields no tool at all and says so in a warning.
+ *
+ * Matched against every module `verbsFromSource` reads for the route — the
+ * route file plus each local re-export it follows — because that walk is what
+ * decides the emitted verbs. Checking only the route file let the common
+ * `export { GET, POST } from "./graphql-server"` layout keep its enabled tool:
+ * the verbs came from the resolved module, the marker never saw it. One walk
+ * feeds both, so the two cannot drift apart again.
+ *
+ * A route that merely CALLS an upstream GraphQL API (`graphql-request`,
+ * `@apollo/client`) is an ordinary REST route and is deliberately not matched.
+ *
+ * Limit: a route that IMPORTS a GraphQL server and wraps it in its own
+ * exported handler (`import { yoga } from "./yoga"; export const POST = (r) =>
+ * yoga(r)`) is not a re-export, so this walk never reaches the server module
+ * and the route still scans generically. Plain imports are not resolved
+ * anywhere in this scanner, and adding a second traversal to reach them is the
+ * drift this design just removed.
+ */
+const GRAPHQL_SERVER_MARKER =
+  /graphql-yoga|@apollo\/server|apollo-server(?:-micro|-express)?|graphql-http|express-graphql|@as-integrations\/next|createYoga\s*\(|new\s+ApolloServer\s*\(/;
 
 function addMethod(methods: Set<HttpMethod>, value: string | undefined): void {
   const method = value?.toUpperCase();
@@ -224,7 +254,16 @@ function exportedVerbs(module: ParsedModule, kind: RouteSource["kind"]): Set<Htt
         && isStringLike(ts, node.right)) {
         addMethod(methods, node.right.text);
       }
-      if (ts.isCaseClause(node) && isStringLike(ts, node.expression)) addMethod(methods, node.expression.text);
+      // Only an UPPERCASE verb literal counts. The switch's own discriminant
+      // is not checked (that reads too many working shapes as unclassified),
+      // so the casing is the whole signal: without it a handler dispatching
+      // on `req.body.action` with `case "delete"` mints an enabled,
+      // destructive DELETE at the route's real URL — and, being the route's
+      // only evidence, it replaces the verb the handler actually serves.
+      if (ts.isCaseClause(node) && isStringLike(ts, node.expression)
+        && HTTP_METHOD_SET.has(node.expression.text)) {
+        addMethod(methods, node.expression.text);
+      }
       if (ts.isCallExpression(node)) {
         allowHeaderVerbs(ts, methods, node);
         if (calleeSimpleName(ts, node) === "NextAuth") {
@@ -422,9 +461,9 @@ function inferredPageVerbs(module: ParsedModule, route: RouteSource, assumed = f
   // (checked earlier), is method-blind by construction: it answers every
   // verb identically. GET is the minimal truthful capability to claim for
   // it — the handler demonstrably serves GET, so leaving it unclassified
-  // would be less honest, not more careful. Risk still falls out of
-  // extractedRisk's route-source fail-closed rule (GET from a route never
-  // earns "read"; it earns "write" here). The unclassified fallback remains
+  // would be less honest, not more careful. Risk is unaffected either way:
+  // GET is not a protocol fact about reading, so it stays "ungraded". The
+  // unclassified fallback remains
   // for routes where the default export is opaque — an unresolved re-export,
   // or a call to a wrapper whose body this scan never inspects (see
   // hasInlineDefaultFunctionBody) — because the real evidence may be hiding
@@ -442,10 +481,13 @@ async function verbsFromSource(
   visited: Set<string>,
   depth: number,
   assumeDefaultExport: boolean,
+  /** Every module source this walk reads, for the GraphQL marker check. */
+  walked: string[],
 ): Promise<Set<HttpMethod>> {
   const key = `${file}\t${assumeDefaultExport ? "default" : "named"}`;
   if (visited.has(key)) return new Set();
   visited.add(key);
+  walked.push(source);
   const module = parseModuleSource(source, file);
   if (!module) return new Set();
   // A route file can mix evidence kinds (e.g. an inline GET plus a re-exported
@@ -467,6 +509,7 @@ async function verbsFromSource(
         visited,
         depth + 1,
         target.assumeDefaultExport,
+        walked,
       );
       for (const method of nested) methods.add(method);
     }
@@ -541,14 +584,17 @@ function mergeRouteInput(
   urlPath: string,
   argsIn: "query" | "body",
   inferred: RouteInputResult | null,
-): { inputSchema: Record<string, unknown>; note?: string } {
+): { inputSchema: Record<string, unknown>; inputSchemaSource: SchemaSource; note?: string } {
   const base = routeInputSchema(urlPath);
-  if (!inferred) return { inputSchema: base };
+  if (!inferred) return { inputSchema: base, inputSchemaSource: "unknown" };
 
   const properties: Record<string, unknown> = { ...(base.properties as Record<string, unknown>) };
   const required = new Set<string>((base.required as string[] | undefined) ?? []);
   let additionalProperties = base.additionalProperties;
   let note: string | undefined;
+  // Path params alone, a scraped query string, or a dropped non-object body
+  // are all fail-closed defaults: nothing DECLARED this tool's arguments.
+  let inputSchemaSource: SchemaSource = "unknown";
 
   const body = argsIn === "body" ? inferred.bodySchema : undefined;
   if (body) {
@@ -561,6 +607,7 @@ function mergeRouteInput(
       for (const key of (body.required as string[] | undefined) ?? []) required.add(key);
       if (typeof body.additionalProperties === "boolean") additionalProperties = body.additionalProperties;
       note = inferred.note;
+      inputSchemaSource = inferred.source ?? "unknown";
     }
   }
 
@@ -575,6 +622,7 @@ function mergeRouteInput(
       ...(required.size > 0 ? { required: [...required] } : {}),
       additionalProperties,
     },
+    inputSchemaSource,
     note,
   };
 }
@@ -612,11 +660,18 @@ function preferredRoutes(routes: RouteSource[]): RouteSource[] {
 export async function scanRoutes(root: string): Promise<RouteScanResult> {
   const routes = preferredRoutes(await routeSources(root));
   const warnings: string[] = [];
-  const tools: ExtractedTool[] = [];
+  const tools: SourcedExtractedTool[] = [];
   const usedNames = new Set<string>();
   const scanState = createRouteScanState(root, routes.map((route) => route.file));
   for (const route of routes) {
-    const methods = await verbsFromSource(route.file, route.source, route, root, new Set(), 0, false);
+    // The route module is the tool's known source file (v3 srcHash input).
+    const srcPath = path.relative(root, route.file).split(path.sep).join("/");
+    const walked: string[] = [];
+    const methods = await verbsFromSource(route.file, route.source, route, root, new Set(), 0, false, walked);
+    if (walked.some((walkedSource) => GRAPHQL_SERVER_MARKER.test(walkedSource))) {
+      warnings.push(`route ${route.urlPath} is a GraphQL endpoint; GraphQL is not an extracted stack, so no tool was emitted`);
+      continue;
+    }
     if (methods.size === 0) {
       const reason = route.kind === "pages"
         ? "pages handler has no supported HTTP method evidence"
@@ -626,10 +681,16 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
         name,
         description: `Route ${route.urlPath} could not be classified`,
         inputSchema: { type: "object", properties: {} },
-        risk: "destructive",
+        inputSchemaSource: "unknown" satisfies SchemaSource,
+        outputSchemaSource: "unknown" satisfies SchemaSource,
+        // D2 — nothing spoke, so nothing is graded. `disabled` keeps it out of the
+        // agent's hands; `ungraded` keeps it counted in doctor's tally and asking
+        // rather than running if a human ever re-enables it.
+        risk: "ungraded",
         disabled: true,
         note: `${reason}; enable only after review; overrides.json can flip disabled/risk`,
         binding: { kind: "route", method: "POST", path: route.urlPath, argsIn: "body" },
+        srcPath,
       });
       warnings.push(`route ${route.urlPath} could not be classified: ${reason}`);
       continue;
@@ -640,12 +701,17 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
       const name = allocateToolName(preferred, method, usedNames);
       const argsIn = method === "GET" || method === "DELETE" ? "query" : "body";
       const inferred = await inferRouteInput(route, method, scanState);
-      const { inputSchema, note } = mergeRouteInput(route.urlPath, argsIn, inferred);
+      const { inputSchema, inputSchemaSource, note } = mergeRouteInput(route.urlPath, argsIn, inferred);
       tools.push({
         name,
         description: `${method} ${route.urlPath}`,
         inputSchema,
-        risk: extractedRisk(method, name, "route"),
+        inputSchemaSource,
+        // Next route handlers are deliberately NOT deterministically derived
+        // in v1 (the response is built inside the handler body); the AI judge
+        // rung covers them.
+        outputSchemaSource: "unknown" satisfies SchemaSource,
+        risk: extractedRisk(method),
         ...(note ? { note } : {}),
         binding: {
           kind: "route",
@@ -653,6 +719,7 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
           path: route.urlPath,
           argsIn,
         },
+        srcPath,
       });
     }
   }

@@ -1,4 +1,7 @@
-import type { VendoTheme } from "@vendoai/core";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
+import { escapeHtml, htmlPage, themeAttribute } from "../page-chrome.js";
 
 export function consentPage(
   clientName: string,
@@ -7,7 +10,7 @@ export function consentPage(
   theme?: VendoTheme,
 ): Response {
   const safeClientName = escapeHtml(clientName);
-  const themeStyle = theme === undefined ? "" : ` style="${escapeHtml(vendoThemeStyle(theme))}"`;
+  const themeStyle = themeAttribute(theme);
   const scopeList = scopes.length === 0
     ? ""
     : `<div class="scope"><span>Requested access</span><strong>${escapeHtml(scopes.join(" · "))}</strong></div>`;
@@ -31,14 +34,14 @@ export function consentPage(
       margin: 0;
       display: grid;
       place-items: center;
-      padding: var(--vendo-space-large, 28px);
+      padding: 28px;
       background:
         radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--vendo-color-accent, #3157d5) 12%, transparent), transparent 38rem),
         var(--vendo-color-background, #f3ede2);
     }
     main {
       width: min(100%, 31rem);
-      padding: var(--vendo-space-large, 30px);
+      padding: 30px;
       border: 1px solid var(--vendo-color-border, rgba(23, 24, 29, .12));
       border-radius: var(--vendo-radius-medium, 16px);
       background: var(--vendo-color-surface, #fffdf9);
@@ -56,7 +59,7 @@ export function consentPage(
       letter-spacing: -.04em;
     }
     h1 {
-      margin: var(--vendo-space-large, 24px) 0 var(--vendo-space-small, 10px);
+      margin: 24px 0 var(--vendo-density-content-gap, 10px);
       font-family: var(--vendo-heading-family, var(--vendo-font-family, inherit));
       font-size: clamp(1.45rem, 4vw, 1.8rem);
       line-height: 1.18;
@@ -66,9 +69,9 @@ export function consentPage(
     .scope {
       display: flex;
       justify-content: space-between;
-      gap: var(--vendo-space-medium, 14px);
-      margin-top: var(--vendo-space-large, 24px);
-      padding: var(--vendo-space-medium, 14px);
+      gap: 14px;
+      margin-top: 24px;
+      padding: 14px;
       border: 1px solid var(--vendo-color-border, rgba(23, 24, 29, .12));
       border-radius: var(--vendo-radius-small, 10px);
       background: color-mix(in srgb, var(--vendo-color-surface, #fffdf9) 78%, var(--vendo-color-background, #f3ede2));
@@ -76,7 +79,7 @@ export function consentPage(
     }
     .scope span { color: var(--vendo-color-muted, #686a73); }
     .scope strong { overflow-wrap: anywhere; text-align: right; }
-    form { display: flex; gap: var(--vendo-space-small, 10px); margin-top: var(--vendo-space-large, 26px); }
+    form { display: flex; gap: var(--vendo-density-content-gap, 10px); margin-top: 26px; }
     button {
       min-height: 2.7rem;
       flex: 1;
@@ -95,9 +98,9 @@ export function consentPage(
       color: var(--vendo-color-accent-text, #fff);
       background: var(--vendo-color-accent, #3157d5);
     }
-    .fine { margin-top: var(--vendo-space-medium, 14px); font-size: .78rem; text-align: center; }
+    .fine { margin-top: 14px; font-size: .78rem; text-align: center; }
     @media (max-width: 30rem) {
-      main { padding: var(--vendo-space-large, 24px) var(--vendo-space-medium, 18px); }
+      main { padding: 24px 18px; }
       form { flex-direction: column-reverse; }
     }
   </style>
@@ -118,52 +121,5 @@ export function consentPage(
   </main>
 </body>
 </html>`;
-  return new Response(html, {
-    status: 200,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-      pragma: "no-cache",
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-      "referrer-policy": "no-referrer",
-      "x-content-type-options": "nosniff",
-    },
-  });
-}
-
-/** Intentionally mirrors `@vendoai/ui`'s theme-token mapping (`packages/ui/src/theme.ts`)
- * rather than importing it: `scripts/dependency-guard.mjs` restricts `@vendoai/mcp` to
- * `@vendoai/core` only, so ui is not an importable dependency here. There is no shared
- * home for this mapping today — core does not carry it, and ui does not re-export it from
- * core — so any change to ui's theme→CSS-variable mapping must be mirrored here by eye. */
-function vendoThemeStyle(theme: VendoTheme): string {
-  const variables: Record<string, string> = {};
-  for (const [key, value] of Object.entries(theme.colors)) {
-    variables[`--vendo-color-${kebab(key)}`] = value;
-  }
-  variables["--vendo-font-family"] = theme.typography.fontFamily;
-  if (theme.typography.headingFamily !== undefined) {
-    variables["--vendo-heading-family"] = theme.typography.headingFamily;
-  }
-  variables["--vendo-font-size"] = theme.typography.baseSize;
-  for (const [key, value] of Object.entries(theme.radius)) {
-    variables[`--vendo-radius-${kebab(key)}`] = value;
-  }
-  variables["--vendo-density"] = theme.density;
-  variables["--vendo-motion"] = theme.motion;
-  return Object.entries(variables).map(([name, value]) => `${name}:${value}`).join(";");
-}
-
-function kebab(name: string): string {
-  return name.replace(/[A-Z]/g, (character) => `-${character.toLowerCase()}`);
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[character]!);
+  return htmlPage(html, { formAction: "self" });
 }

@@ -1,22 +1,18 @@
 ---
 title: "Quickstart"
 sidebarTitle: "Quickstart"
-description: "Run vendo init — it scaffolds the server side and mounts the visible overlay in your layout — then send your first agent turn."
+description: "Run vendo init — it scaffolds the server side and prints the one paste that mounts `<VendoProvider>` — then send your first agent turn."
 ---
 
 import { AgentPrompt } from "/snippets/agent-prompt.jsx"
 
-Vendo setup is one command. `npx vendo init` scans your app, scaffolds the
-entire server side, and mounts the visible agent surface — `<VendoRoot>` plus
-`<VendoOverlay />` — in your layout. Start the dev server and send a turn.
+Most in-product AI describes your product. Vendo's agent operates it — the
+same API, the same identity, the same audit trail as your own UI — and it
+draws real screens instead of paragraphs about them. Vendo runs the loop, the
+chat surface, and the approvals; there is no agent for you to write.
 
-<Note>
-  Vendo's built-in agent is in beta. Most teams should bring their own agent:
-  keep the loop you already run and spread Vendo's tool pack into it. Jump
-  straight to the [AI SDK](/existing-agents/ai-sdk) or
-  [Mastra](/existing-agents/mastra) quickstart. This page wires Vendo as the
-  whole agent, loop and UI included.
-</Note>
+Beta — if you already ship your own agent loop,
+[bring your own agent](/existing-agents) instead.
 
 ## Install and init
 
@@ -25,12 +21,27 @@ npm install @vendoai/vendo
 npx vendo init
 ```
 
+Init asks five questions, and the last one is a single Enter to decline: how
+people will use your agent (embedded, your own agent loop, or MCP), whether
+the agent acts as your signed-in user, how models run, whether an AI pass may
+read your source, and where this will deploy. Every one has a flag answer, so
+an unattended run never needs a prompt — `--use-case`, `--auth`, `--cloud-key`
+/ `--byo`, `--ai` / `--no-ai`, and `--base-url`.
+
 <Note>
-  Right after a Vendo release, package managers with a release cooldown
-  (pnpm 11 holds new versions for one day by default via
-  `minimumReleaseAge`; npm's `min-release-age` is opt-in) may resolve to
-  nothing and fail with "no versions available". Either wait out your
-  cooldown or exclude Vendo in `pnpm-workspace.yaml`:
+  Right after a Vendo release, package managers with a release cooldown hold
+  the new version back. pnpm 11 (`minimumReleaseAge`, one day by default)
+  fails loud with "no versions available"; npm's opt-in `min-release-age`
+  instead resolves silently to the newest version old enough to pass, and
+  `vendo init` pins that stale version in `package.json`. Check what you
+  actually got:
+
+  ```bash
+  npm ls @vendoai/vendo
+  ```
+
+  To take the current release anyway, pass `--min-release-age=0` on npm, or
+  exclude Vendo in `pnpm-workspace.yaml`:
 
   ```yaml
   minimumReleaseAgeExclude:
@@ -44,101 +55,140 @@ npx vendo init
   prompt={"Install Vendo in this repo. Read https://vendo.run/agents.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs-quickstart to support the project."}
 />
 
-Init asks nothing on the happy path. It detects your framework and auth from
-`package.json`, then writes everything Vendo needs:
+Init runs no interview: there are no keys to paste and no per-diff approvals.
+An interactive run stops for seven decisions, all Enter-to-accept — the
+detected auth preset, the Vendo Cloud starter-key offer, consent for the AI
+judgment pass, one aggregated review if that pass proposes loosening a risk
+grade, a `zod` bump when your pin is below 3.25, any theme slot the extractor
+is unsure of, and a closing "star the repo?" — and `--yes` answers every one
+of them. It detects your framework and auth from `package.json`, then writes
+everything Vendo needs:
 
 - the catch-all route `app/api/vendo/[...vendo]/route.ts` holding the whole
   `createVendo` composition
-- an empty component registry, `vendo/registry.tsx`, for the branded
-  components the agent may render
-- the client mount `vendo/vendo-root.tsx` — a `"use client"` wrapper that
-  applies your registry and theme and mounts `<VendoOverlay />`, the visible
-  launcher pill + panel
-- one bounded edit to `app/layout.tsx` wrapping `{children}` in that wrapper,
-  so the agent is actually on screen after init (skipped if you already mount
-  a Vendo surface; degraded to printed paste lines if your layout can't be
-  edited unambiguously)
+- one paste for you, printed in a framed block at the end of the run: the
+  `<VendoProvider>` import plus wrapping `{children}` in it in
+  `app/layout.tsx`. Init never writes a client file, and `vendo doctor` fails
+  until this lands — it is what connects your pages to the wire
 - your API extracted into `.vendo/tools.json`, and any `"use server"` actions
-  registered as agent tools through a generated `vendo-actions.ts` map
+  registered as agent tools through a generated `vendo-actions.ts` map (plain
+  route scanning reads Next.js conventions today; on Express, Fastify, or
+  Hono, API tools come from an OpenAPI spec or a tRPC router)
 - your brand extracted into `.vendo/theme.json`
 - a model key: if no provider key is set, init offers a metered Vendo Cloud
   starter key inline
 
-The layout mount is the one edit init makes to code you wrote, and it shows
-up as a reviewable diff like everything else. The full inventory and how
-detection decides: [vendo init](/connect/vendo-init).
+The full inventory and how detection decides:
+[vendo init](/connect/vendo-init).
 
 The generated route is yours to read and change, but there is nothing left to
 write. The scaffold looks like this:
 
 ```ts
-// app/api/vendo/[...vendo]/route.ts (generated by `vendo init`)
+// app/api/vendo/[...vendo]/route.ts — equivalent to what `vendo init` writes
 import { authJs } from "@vendoai/vendo/auth/auth-js";
-import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
+import { createVendo, guard, nextVendoHandler } from "@vendoai/vendo/server";
 import { serverActions } from "./vendo-actions";
-import { registry } from "@/vendo/registry";
 
 const vendo = createVendo({
   auth: authJs(),    // detected from package.json
-  catalog: registry, // the components the agent may render
   serverActions,     // generated when "use server" actions are detected
-  policy: {},        // .vendo/policy.json: destructive asks, reads run
+  guard: guard({ policy: {} }), // .vendo/policy.json: destructive asks, reads run
 });
 
 export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ```
 
-Every key is optional, and there is no `model` line on purpose: a bare
-`createVendo()` resolves a model from the environment and defaults to
-anonymous ephemeral sessions and PGlite persistence. Every key lives in
-[Handler options](/reference/handler-options).
+Every key is optional except `principal` (or an `auth` preset, which supplies
+one) — Vendo no longer mints an identity of its own, so a bare
+`createVendo()` throws, naming the missing line:
+
+```ts
+principal: async () => ({ kind: "user", subject: "dev" })
+```
+
+There is no `model` line on purpose: a bare `createVendo()` still resolves a
+model from the environment and defaults to PGlite persistence. The eight
+slots the surface is built from — `auth`, `tools`, `skills`, `harness`,
+`models`, `store`, `files`, `sandbox` — all default or degrade honestly
+otherwise, and every key lives in [Handler options](/reference/handler-options).
 
 The handler takes a standard `Request` and returns a standard `Response`, so
 it runs in Next.js, Express, Fastify, Hono, Bun, or any Node-compatible
 runtime (Node 20 or later); non-Next wiring is
 [below](#wire-the-express-adapter).
 
+<CardGroup cols={2}>
+  <Card title="Bring your own everything" icon="server" href="/deploy/deploying">
+    Your own Postgres, sandbox account, and model key. Every Cloud capability
+    keeps a no-key path, and an adapter you pass always wins.
+  </Card>
+  <Card title="Start on Vendo Cloud" icon="cloud" href="/deploy/vendo-cloud">
+    One key fills every adapter slot you left unset — hosted store, sandboxes,
+    sharing and publishing, metered inference — so there is nothing to run
+    yourself on day one.
+  </Card>
+</CardGroup>
+
 ## The client mount
 
-Init wires the visible surface for you: `vendo/vendo-root.tsx` is a
-`"use client"` boundary that owns the registry and theme imports and mounts
-`<VendoOverlay />`, and the layout edit wraps your app in it. The generated
-wrapper looks like this — it is yours to change:
+Init never writes a client file: it prints one paste, naming your layout file
+and the exact lines. The wrapped child differs by router — this page carries
+both, which is why the terminal block links here.
 
 ```tsx
-// vendo/vendo-root.tsx (generated by `vendo init`)
-import { VendoOverlay, VendoRoot as VendoClientRoot } from "@vendoai/vendo/react";
+// app/layout.tsx — App Router
+import { VendoProvider } from "@vendoai/vendo/react";
+
+// then wrap the app:
+<VendoProvider baseUrl="/api/vendo">{children}</VendoProvider>
+```
+
+```tsx
+// pages/_app.tsx — Pages Router
+import { VendoProvider } from "@vendoai/vendo/react";
+
+// then wrap the app:
+<VendoProvider baseUrl="/api/vendo"><Component {...pageProps} /></VendoProvider>
+```
+
+`baseUrl` is where the wire is mounted, path prefix included — a deployment
+served under `/maple` passes `baseUrl="/maple/api/vendo"`.
+
+`<VendoProvider>` renders nothing by itself. Add `<VendoOverlay />` inside it
+for the launcher pill and panel, or render your own surface.
+
+Have host components? Write one `"use client"` file that holds the registry
+and the provider, and mount that in your layout instead — it is yours, not
+generated:
+
+```tsx
+// vendo/vendo-root.tsx — yours
+"use client";
+
+import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
 import type { ReactNode } from "react";
-import { registry } from "./registry";
+import { SpendingDonut } from "@/components/SpendingDonut";
 import theme from "../.vendo/theme.json";
 import type { VendoTheme } from "@vendoai/vendo";
 
+const registry = { SpendingDonut: { component: SpendingDonut, description: "Spending by category." } };
+
 export function VendoRoot({ children }: { children: ReactNode }) {
   return (
-    <VendoClientRoot components={registry} theme={theme as VendoTheme}>
+    <VendoProvider baseUrl="/api/vendo" components={registry} theme={theme as VendoTheme}>
       {children}
       <VendoOverlay />
-    </VendoClientRoot>
+    </VendoProvider>
   );
 }
 ```
 
-If init could not edit your layout (no single unambiguous `{children}` to
-wrap), it prints the one paste that remains:
-
-```tsx
-// app/layout.tsx
-import { VendoRoot } from "../vendo/vendo-root";
-
-// then wrap the app:
-<VendoRoot>{children}</VendoRoot>
-```
-
 <Warning>
-  Keep the registry import inside the `"use client"` wrapper. Importing the
-  registry in the Server Component layout and passing it to the provider
-  crashes React Server Components serialization once the registry holds real
-  components — every page 500s.
+  Keep the registry inside a `"use client"` file. Declaring it in a Server
+  Component layout and passing it to the provider crashes React Server
+  Components serialization once the registry holds real components — every
+  page 500s.
 </Warning>
 
 The `theme` prop applies the brand init captured; the cast narrows
@@ -152,7 +202,11 @@ over your product. Move the launcher with `launcher="bottom-left"`, or set
 `launcher="none"` and drive it yourself with the `useVendoOverlay` hook; see
 [Overlay control](/reference/hooks#overlay-control-usevendooverlay). Prefer a
 different surface entirely? Swap `<VendoOverlay />` inside the generated
-wrapper for `<VendoThread />` or your own composition.
+wrapper for your own composition, or for `<VendoThread />` — that one lives in
+`@vendoai/ui/chrome` and needs `@vendoai/ui` as a direct dependency.
+`<VendoOverlay />` is the only standalone chrome surface `@vendoai/vendo/react`
+re-exports; the BYO embeds (`<VendoToolResult>`, `<VendoAppEmbed>`,
+`<VendoApprovalEmbed>`) and every hook come from there too.
 
 ## Send the first turn
 
@@ -176,10 +230,10 @@ into `.env.example`; see
 
 ## Wire the Express adapter
 
-On Express, `vendo init` proposes a diff-gated `vendo/server.ts` holding the
-same `createVendo` composition plus a Node HTTP-to-fetch adapter, and two
-pastes remain instead of one. Mount the adapter under one base path, and wrap
-the client root:
+On Express, `vendo init` writes `vendo/server.ts` holding the same
+`createVendo` composition plus a Node HTTP-to-fetch adapter, and two pastes
+remain instead of one. Mount the adapter under one base path, and wrap the
+client root:
 
 ```ts
 import express from "express";
@@ -191,15 +245,14 @@ app.listen(3000);
 ```
 
 ```tsx
-import { VendoOverlay, VendoRoot } from "@vendoai/vendo/react";
-import { registry } from "./vendo/registry";
+import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
 import theme from "./.vendo/theme.json";
 
 root.render(
-  <VendoRoot components={registry} theme={theme}>
+  <VendoProvider baseUrl="/api/vendo" theme={theme}>
     <App />
     <VendoOverlay />
-  </VendoRoot>,
+  </VendoProvider>,
 );
 ```
 
@@ -207,9 +260,11 @@ root.render(
 
 ### Other runtimes
 
-On Fastify, Hono, or Bun, decline init's proposed diffs and mount
-`vendo.handler` under one base path yourself; the Node adapter init generates
-for Express is the pattern to copy. An adapter must:
+On Fastify, Hono, Bun, Deno, Cloudflare Workers, or Lambda, run `vendo init
+--framework custom`: it writes a runtime-neutral `vendo/server.ts` exporting
+`handleVendoRequest(request, env)`, which every adapter mounts in one line —
+see [Edge runtimes](/deploy/edge-runtimes). If you mount `vendo.handler`
+under a base path yourself instead, your adapter must:
 
 - Pass every method (GET, POST, PUT, PATCH, DELETE) through unchanged.
 - Preserve streaming for `POST /threads`, never buffering the response body.
@@ -223,8 +278,8 @@ for Express is the pattern to copy. An adapter must:
 
 <CardGroup cols={2}>
   <Card title="Register components" href="/connect/host-components">
-    Fill `vendo/registry.tsx` so generated apps render your own branded UI
-    instead of generic primitives.
+    Pass your own components to `<VendoProvider>` so generated apps render
+    your branded UI instead of generic primitives.
   </Card>
   <Card title="Bring your own agent" href="/existing-agents">
     Keep your AI SDK or Mastra loop and spread Vendo's guarded tool pack into

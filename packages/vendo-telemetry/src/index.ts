@@ -1,15 +1,33 @@
 import { homedir } from "node:os";
-import { loadConfig, saveConfig } from "./config.js";
-import { maybeShowNotice } from "./notice.js";
+import { loadConfig, saveConfig, type TelemetryConfig } from "./config.js";
 import { createTelemetry, DEFAULT_POSTHOG_KEY, type Telemetry } from "./client.js";
 
-export { envOptOut, resolveConsent } from "./consent.js";
-export { loadConfig, saveConfig, configPath, type TelemetryConfig } from "./config.js";
-export { CLOUD_PROP_KEYS, EVENT_ALLOWLIST, type EventName } from "./events.js";
-export { createTelemetry, DEFAULT_POSTHOG_KEY, type Telemetry } from "./client.js";
-export { maybeShowNotice } from "./notice.js";
+export { envOptOut } from "./consent.js";
+export { loadConfig, type TelemetryConfig } from "./config.js";
+export { EVENT_ALLOWLIST, type EventName } from "./events.js";
+export { type Telemetry } from "./client.js";
 export { PROJECT_ID_SALT, repoHost, type RepoHost } from "./base-props.js";
 export { scrubErrorDetail } from "./scrub.js";
+
+const NOTICE = [
+  "Vendo collects anonymous, opt-out usage telemetry to guide development.",
+  "No code, prompts, file contents, or keys are ever collected.",
+  "Details and opt-out: TELEMETRY.md; disable now: VENDO_TELEMETRY_DISABLED=1",
+  "(also honored: DO_NOT_TRACK=1, CI)",
+].join("\n");
+
+interface NoticeIO {
+  log: (msg: string) => void;
+  save: (config: TelemetryConfig) => void;
+}
+
+function maybeShowNotice(config: TelemetryConfig, io: NoticeIO): TelemetryConfig {
+  if (config.optedOut || config.noticeShown) return config;
+  io.log(NOTICE);
+  const updated = { ...config, noticeShown: true };
+  io.save(updated);
+  return updated;
+}
 
 export interface InitTelemetryOptions {
   version: string;

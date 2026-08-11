@@ -1,19 +1,20 @@
 import type { RiskLabel } from "@vendoai/core";
-import type { UIMessage } from "ai";
 import type { ComponentProps } from "react";
+import { WorkingBeat } from "../build-beat.js";
 import { FluidThinking } from "../fluid-thinking.js";
 import { ThreadMessage } from "./message.js";
-import { ThreadApprovals, ThreadConnectRequests } from "./parts.js";
+import { ThreadApprovals } from "./parts.js";
 import type { useMessageWindow, useStickToBottom } from "./scrolling.js";
 
-/** The transcript pane: the windowed message list (ENG-218), parked approval
-    and connect cards, the ENG-217 streaming indicators, and the jump-to-latest
-    affordance (ENG-213). Pure presentation over the thread-level state. */
+/** The transcript pane: the windowed message list, parked approval and connect
+    cards, and the streaming indicators. The jump-to-latest affordance lives
+    with the composer, docked onto the bar.
+    Pure presentation over the thread-level state. */
 export function MessageList({
   scroll, messageWindow, busy, risks, isRestored,
   activeAssistantId, lastUserId, lastAssistantId, onEditLast, onRegenerateLast,
   approvals, guardApprovals, cardRefs, respond, onMorph,
-  messages, sendMessage, awaitingFirstChunk, working,
+  sendMessage, working, quietLabel,
 }: {
   scroll: ReturnType<typeof useStickToBottom>;
   messageWindow: ReturnType<typeof useMessageWindow>;
@@ -30,10 +31,11 @@ export function MessageList({
   cardRefs: ComponentProps<typeof ThreadApprovals>["cardRefs"];
   respond: ComponentProps<typeof ThreadApprovals>["respond"];
   onMorph: ComponentProps<typeof ThreadApprovals>["onMorph"];
-  messages: UIMessage[];
-  sendMessage: ComponentProps<typeof ThreadConnectRequests>["sendMessage"];
-  awaitingFirstChunk: boolean;
+  /** The thread's send — connect cards use it for the post-connect continuation. */
+  sendMessage: (message: { text: string }) => unknown;
   working: boolean;
+  /** Set = the between-steps gap is live; renders a WorkingBeat at the tail. */
+  quietLabel?: string | undefined;
 }) {
   return (
     <div className="fl-msglist-wrap">
@@ -69,6 +71,8 @@ export function MessageList({
             lastAssistantId={lastAssistantId}
             onEditLast={onEditLast}
             onRegenerateLast={onRegenerateLast}
+            sendMessage={sendMessage}
+            respond={respond}
           />
         ))}
         <ThreadApprovals
@@ -79,40 +83,12 @@ export function MessageList({
           respond={respond}
           onMorph={onMorph}
         />
-        <ThreadConnectRequests messages={messages} sendMessage={sendMessage} />
-        {awaitingFirstChunk ? (
-          <>
-            <div className="fl-generating">
-              <span className="fl-pulse" aria-hidden="true" />
-              Generating&hellip;
-            </div>
-            <div className="fl-skeleton" aria-hidden="true">
-              <div className="fl-skeleton-bar" />
-              <div className="fl-skeleton-bar" />
-              <div className="fl-skeleton-bar" />
-            </div>
-          </>
-        ) : null}
         {working ? <FluidThinking label="Working" /> : null}
+        {quietLabel !== undefined ? <WorkingBeat label={quietLabel} /> : null}
       </div>
-      {/* Lane picks 3A + 6B — the jump affordance is a docked bar with a
-          count and snippet ("2 new replies · …"); at mobile widths the same
-          element re-clothes as a bottom-center pill (pure CSS, see the lane
-          block in chrome-css). Activating it is the same re-stick as before. */}
-      {scroll.showJump ? (
-        <button
-          type="button"
-          className="fl-newbar"
-          aria-label={`Jump to latest — ${scroll.unseenCount === 1 ? "1 new reply" : `${scroll.unseenCount} new replies`}`}
-          onClick={scroll.jumpToLatest}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M12 5v14" /><path d="m19 12-7 7-7-7" />
-          </svg>
-          {scroll.unseenCount === 1 ? "1 new reply" : `${scroll.unseenCount} new replies`}
-          {scroll.snippet ? <small>{scroll.snippet}</small> : null}
-        </button>
-      ) : null}
+      {/* The jump affordance ("N new replies · …") renders inside the
+          composer's .fl-dock-anchor (see VendoThread), so it docks flush onto
+          the bar and the two read as one piece. */}
     </div>
   );
 }

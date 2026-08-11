@@ -47,6 +47,16 @@ export interface LiveTurnOptions {
 const DOCTOR_PROBE_PROMPT =
   "This is a Vendo doctor health check. Reply in one short sentence confirming you can respond.";
 
+/** Terminal hardening for server-supplied error detail: strip C0 controls
+ *  (except \n and \t) and DEL so escape sequences can never drive the
+ *  operator's terminal, and cap the length so a runaway string can't flood
+ *  the verdict. */
+const ERROR_DETAIL_MAX = 300;
+// eslint-disable-next-line no-control-regex -- stripping control chars is the point
+const CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
+const sanitizeErrorDetail = (text: string): string =>
+  text.replace(CONTROL_CHARS, "").slice(0, ERROR_DETAIL_MAX);
+
 /** POST one seeded turn to the live wire and stream the reply — mirrors the
  *  init finale's route (`POST {base}/threads`, UI-message SSE frames). Exit 0
  *  means a user would have gotten an answer: a non-empty text reply arrived. */
@@ -118,12 +128,21 @@ async function readTurnStream(
       buffer = buffer.slice(frameEnd + 2);
       if (!frame.startsWith("data: ") || frame === "data: [DONE]") continue;
       try {
-        const part = JSON.parse(frame.slice("data: ".length)) as { type?: string; delta?: string };
+        const part = JSON.parse(frame.slice("data: ".length)) as { type?: string; delta?: string; errorText?: unknown };
         if (part.type === "text-delta" && typeof part.delta === "string") {
           text += part.delta;
           onDelta?.(part.delta);
         } else if (part.type === "error") {
-          error = "the turn returned an error frame";
+          // A "Vendo: "-prefixed errorText is the agent's OWN safe error
+          // (wireErrorMessage) — e.g. the pricing-v3 meter-exhausted refusal
+          // sentence — so doctor prints it, same as the thread banner, but
+          // terminal-hardened first: C0 controls stripped (a raw ESC must
+          // never drive the operator's terminal) and length-capped. Anything
+          // else keeps the generic line (ENG-214 posture); no new probes,
+          // this is the existing live-turn check.
+          error = typeof part.errorText === "string" && part.errorText.startsWith("Vendo: ")
+            ? sanitizeErrorDetail(part.errorText.slice("Vendo: ".length))
+            : "the turn returned an error frame";
         }
       } catch {
         // skip malformed frame
@@ -138,12 +157,16 @@ async function readTurnStream(
  * ------------------------------------------------------------------------ */
 
 /** Human-facing list of what a Cloud key unlocks over OSS single-player. Shown
- *  whether or not a key is present, so a keyless dev sees the offer. */
+ *  whether or not a key is present, so a keyless dev sees the offer.
+ *
+ *  Two bullets, not four. SSO/roles, registry publishing and the adapter-slot
+ *  list are all true and all irrelevant to a person forty seconds into their
+ *  first install; they belong in the console, not the ceremony. Neither line
+ *  may contain "; " — that is the separator every caller joins and the
+ *  renderer splits on. */
 export const CLOUD_UNLOCKS: readonly string[] = [
-  "a free dev-mode starter model allowance (keyless first turns)",
-  "team sharing and org governance (roles, SSO)",
-  "hosted deploys of your enabled automations",
-  "registry publishing and hosted infrastructure defaults like the managed MCP broker",
+  "a free starter model allowance — no card, no model key of your own",
+  "hosted automations, team sharing, and the console",
 ];
 
 export interface CloudDoctorResult {
@@ -196,16 +219,28 @@ function defaultSpawnDev(packageManager: string, root: string): ChildProcess {
   return spawn(packageManager, ["run", "dev"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
 }
 
-async function waitForStatus(statusUrl: string, fetchImpl: typeof fetch, timeoutMs: number): Promise<boolean> {
+/** `abandon` settles when the caller no longer wants an answer (the spawn
+    failed). Without it the loop outlives the race it lost and its ref'd poll
+    timer keeps node alive for the whole timeout — the CLI prints its verdict
+    and then sits there, because bin/vendo.mjs only sets `process.exitCode`. */
+async function waitForStatus(
+  statusUrl: string,
+  fetchImpl: typeof fetch,
+  timeoutMs: number,
+  abandon: Promise<unknown>,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+  let abandoned = false;
+  void abandon.then(() => { abandoned = true; });
+  while (!abandoned && Date.now() < deadline) {
     try {
       const response = await fetchImpl(`${statusUrl}/status`);
       if (response.ok) return true;
     } catch {
       // not up yet
     }
-    await new Promise((resolve) => setTimeout(resolve, 750));
+    if (abandoned) break;
+    await Promise.race([new Promise((resolve) => setTimeout(resolve, 750)), abandon]);
   }
   return false;
 }
@@ -244,7 +279,7 @@ export async function startDevServerForProbe(options: StartDevServerOptions): Pr
     child.unref?.(); // injected test doubles may not implement it
   };
   const up = await Promise.race([
-    waitForStatus(options.statusUrl, fetchImpl, options.timeoutMs ?? 120_000),
+    waitForStatus(options.statusUrl, fetchImpl, options.timeoutMs ?? 120_000, spawnFailed),
     spawnFailed,
   ]);
   if (!up) stop();

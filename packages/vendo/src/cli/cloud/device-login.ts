@@ -5,9 +5,9 @@ import { option } from "./args.js";
 import { isVendoKey, resolveCloudBaseUrl } from "./client.js";
 import { errorMessage, printJson } from "./output.js";
 import { deletePendingClaim, readPendingClaim, writePendingClaim } from "./pending-claim.js";
-import { upsertEnvLocal } from "../cloud-init.js";
-import { browserOpenCommand } from "../playground.js";
-import { CLI_VERSION, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
+import { writeCloudSession, type CloudSession } from "./session.js";
+import { ensureEnvLocalIgnored, upsertEnvLocal } from "../cloud-init.js";
+import { browserOpenCommand, CLI_VERSION, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
 
 /**
  * `vendo login` (alias: `vendo cloud device-login`) — the auth.md
@@ -23,6 +23,9 @@ import { CLI_VERSION, consoleOutput, withCommandRun, type Output, type Telemetry
  * command talks to both endpoints with a raw (injectable) fetch instead.
  */
 
+/** How long the ceremony may run before it explains itself (see noteStall). */
+const STALL_MS = 20_000;
+
 const CLAIM_PATH = "/api/v1/agent/claim";
 const TOKEN_PATH = "/api/v1/oauth/token";
 const CLAIM_GRANT_TYPE = "urn:workos:agent-auth:grant-type:claim";
@@ -36,13 +39,28 @@ export interface DeviceLoginOptions {
   /** Injectable pacing seam — tests run the ceremony in microseconds. */
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
-  /** TTY seam — a watching human gets the browser opened for them; a non-TTY
-      (agent) caller keeps the URL + code contract untouched. */
+  /** TTY seam — a watching human gets the browser opened for them. What the
+      ceremony PRINTS is `pretty`'s call, not this one: the numbered URL + code
+      contract holds on every non-pretty path, TTY or not. */
   isTty?: boolean;
   openBrowser?: (url: string) => void;
   /** init runs the ceremony inline and picks the key up in the same run —
       it suppresses the standalone "re-run `vendo init`" tail. */
   rerunHint?: boolean;
+  /**
+   * The pretty renderer is driving this ceremony, so a human is reading a rail
+   * and the machine-readable receipt below is noise sitting under the three
+   * lines of state. Suppressed there and NOWHERE else: `--agent`, `--json`,
+   * piped, non-TTY, CI and standalone `vendo login` all keep it byte for byte,
+   * because something parses each of those.
+   *
+   * Passed explicitly rather than inferred. `usePrettyOutput()` answers "is
+   * this terminal colour-capable", which is a different question — standalone
+   * `vendo login` in the same terminal has no renderer and must keep its
+   * receipt — and inferring it from `rerunHint` would give that flag a second
+   * meaning for the next reader to break silently.
+   */
+  pretty?: boolean;
   /** Where ~/.vendo lives (default: the home directory) — the pending-claim
       file that lets a fresh run resume a still-open ceremony (#479). */
   home?: string;
@@ -97,6 +115,25 @@ function ceremonyFrom(value: unknown): Ceremony {
     throw new Error("Vendo Cloud returned an invalid claim ceremony");
   }
   return body as Ceremony;
+}
+
+/**
+ * Unified auth: the device-claim (`oauth/token`) response may carry the
+ * account-level Supabase session ALONGSIDE the minted project key. The key is
+ * the top-level `access_token` (a `vnd_` string), so the session — whose own
+ * `access_token` is a Supabase JWT — arrives nested under `session` to avoid
+ * the name collision. Returns it only when well-formed (a string
+ * `access_token`); anything else (older console, absent, malformed) → null, so
+ * the caller stays key-only with no session file and no crash.
+ */
+function accountSessionFrom(body: unknown): CloudSession | null {
+  const session = (body as { session?: unknown } | null)?.session;
+  if (typeof session !== "object" || session === null) return null;
+  const candidate = session as Partial<CloudSession>;
+  if (typeof candidate.access_token !== "string") return null;
+  if (candidate.refresh_token !== undefined && typeof candidate.refresh_token !== "string") return null;
+  if (candidate.expires_at !== undefined && typeof candidate.expires_at !== "number") return null;
+  return candidate as CloudSession;
 }
 
 async function postJson(
@@ -206,7 +243,9 @@ export async function runDeviceLogin(
     let verificationUriComplete: string;
     if (resume !== null) {
       output.log(`Resuming pending approval — code ${resume.user_code}, approve at ${resume.verification_uri_complete}`);
-      output.log(`Waiting for approval (the code expires in ${Math.max(1, Math.round((resume.expires_at - now()) / 60_000))} minutes)…`);
+      if (options.pretty !== true) {
+        output.log(`Waiting for approval (the code expires in ${Math.max(1, Math.round((resume.expires_at - now()) / 60_000))} minutes)…`);
+      }
       claimToken = resume.claim_token;
       deadline = resume.expires_at;
       intervalMs = Math.max(resume.interval, 1) * 1000;
@@ -236,15 +275,30 @@ export async function runDeviceLogin(
       const ceremony = ceremonyFrom(claim.body);
 
       const approvalUrl = ceremony.verification_uri_complete ?? ceremony.verification_uri;
-      output.log("Vendo Cloud device login — ask your human to approve this request:");
-      output.log(`  1. Open ${approvalUrl}`);
-      output.log(`  2. Confirm the code: ${ceremony.user_code}`);
       const tty = options.isTty ?? (process.stdout.isTTY === true);
-      if (tty) {
-        output.log("Opening your browser… (approve there, then come back here)");
-        (options.openBrowser ?? defaultOpenBrowser)(approvalUrl);
+      if (options.pretty === true) {
+        if (tty) {
+          // One line. The browser is already opening, so the code IS the whole
+          // instruction; the URL is not lost — the stall notice below carries
+          // it as the recovery path if the browser never came up.
+          output.log(`Opening your browser — approve the code ${ceremony.user_code} there…`);
+          (options.openBrowser ?? defaultOpenBrowser)(approvalUrl);
+        } else {
+          output.log(`Vendo Cloud device login — approve the code ${ceremony.user_code} at ${approvalUrl}`);
+        }
+      } else {
+        // Everything else — piped, --agent, CI, standalone `vendo login` —
+        // keeps the numbered ceremony byte for byte. Something parses each of
+        // those, so the collapse above is the rail's alone.
+        output.log("Vendo Cloud device login — ask your human to approve this request:");
+        output.log(`  1. Open ${approvalUrl}`);
+        output.log(`  2. Confirm the code: ${ceremony.user_code}`);
+        if (tty) {
+          output.log("Opening your browser… (approve there, then come back here)");
+          (options.openBrowser ?? defaultOpenBrowser)(approvalUrl);
+        }
+        output.log(`Waiting for approval (the code expires in ${Math.round(ceremony.expires_in / 60)} minutes)…`);
       }
-      output.log(`Waiting for approval (the code expires in ${Math.round(ceremony.expires_in / 60)} minutes)…`);
 
       claimToken = ceremony.claim_token;
       deadline = now() + ceremony.expires_in * 1000;
@@ -265,6 +319,22 @@ export async function runDeviceLogin(
         cwd: root,
       }, pendingHome);
     }
+
+    // Pretty only, and the other half of the collapse above: the rail states
+    // the expiry when it becomes relevant — once, after the ceremony has
+    // visibly stalled — instead of leading with it, carrying the URL as the
+    // recovery path the collapsed line no longer prints up top. Every other
+    // path already printed the expiry up front, exactly as it always did.
+    const ceremonyStarted = now();
+    let stallNoted = false;
+    const noteStall = (): void => {
+      if (options.pretty !== true || stallNoted || now() - ceremonyStarted < STALL_MS) return;
+      stallNoted = true;
+      output.log(
+        `Still waiting — the code expires in ${Math.max(1, Math.round((deadline - now()) / 60_000))} minutes. `
+        + `Approve at ${verificationUriComplete}`,
+      );
+    };
 
     const pollBody = new URLSearchParams({
       grant_type: CLAIM_GRANT_TYPE,
@@ -308,14 +378,35 @@ export async function runDeviceLogin(
           );
         }
         await deletePendingClaim(claimCwd, pendingHome);
+        // Unified auth: one login establishes the account-level session too.
+        // When the claim response carries a Supabase session alongside the key,
+        // persist it so account-level `cloud` subcommands work immediately with
+        // no second ceremony (older consoles omit it — key-only). Best-effort:
+        // the key is the primary credential and is already saved, so a
+        // session-write failure must never turn a successful login into a fault.
+        const session = accountSessionFrom(poll.body);
+        if (session !== null) {
+          try {
+            await writeCloudSession(session, pendingHome);
+          } catch {
+            // A session-write failure must not strand a successful key login.
+          }
+        }
         // Never print the key itself — .env.local is the hand-off, last4 the
         // receipt. A resumed run names the full path: it may differ from cwd.
-        output.log(`Approved — wrote VENDO_API_KEY (…${key.slice(-4)}) to ${
-          resume !== null ? join(root, ".env.local") : ".env.local"}.`);
+        // Same split as the ceremony above: the rail's phrasing is the rail's,
+        // and every non-pretty path keeps the pinned piped wording byte for byte.
+        const envLocalPath = resume !== null ? join(root, ".env.local") : ".env.local";
+        output.log(options.pretty === true
+          ? `Approved — VENDO_API_KEY saved to ${envLocalPath} (…${key.slice(-4)})`
+          : `Approved — wrote VENDO_API_KEY (…${key.slice(-4)}) to ${envLocalPath}.`);
+        await ensureEnvLocalIgnored(root, output);
         if (options.rerunHint !== false) {
           output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");
         }
-        printJson(output, { deviceLogin: true, wroteEnvLocal: true, keyLast4: key.slice(-4) });
+        if (options.pretty !== true) {
+          printJson(output, { deviceLogin: true, wroteEnvLocal: true, keyLast4: key.slice(-4) });
+        }
         return "approved";
       }
 
@@ -348,12 +439,14 @@ export async function runDeviceLogin(
     // is not a failure. A re-run resumes this same claim (#479).
     const pendingExit = (): number => {
       output.log(`Still waiting on approval — code ${userCode}. Re-run \`vendo login\` to resume (it continues this same request).`);
-      printJson(output, {
-        deviceLogin: true,
-        pending: true,
-        userCode,
-        verificationUriComplete,
-      });
+      if (options.pretty !== true) {
+        printJson(output, {
+          deviceLogin: true,
+          pending: true,
+          userCode,
+          verificationUriComplete,
+        });
+      }
       return 0;
     };
 
@@ -364,6 +457,7 @@ export async function runDeviceLogin(
         const result = await pollOnce();
         if (result === "approved") return 0;
         if (result === "slow_down") intervalMs += 5000;
+        noteStall();
       }
       await deletePendingClaim(claimCwd, pendingHome);
       throw new Error("The code expired before it was approved; run `vendo login` again.");
@@ -376,6 +470,7 @@ export async function runDeviceLogin(
       const result = await pollOnce();
       if (result === "approved") return 0;
       if (result === "slow_down") intervalMs += 5000;
+      noteStall();
       if (now() >= deadline) {
         await deletePendingClaim(claimCwd, pendingHome);
         throw new Error("The code expired before it was approved; run `vendo login` again.");
@@ -388,6 +483,18 @@ export async function runDeviceLogin(
     }
   } catch (error) {
     output.error(errorMessage(error));
+    // A transient failure (network, DNS, a killed fetch) deliberately leaves
+    // the claim file in place, so say so — otherwise the reader assumes the
+    // ceremony is lost and starts over, abandoning an approval that would
+    // still land. Terminal outcomes above already deleted the claim, so this
+    // line only appears when a resume can actually succeed.
+    const survived = await readPendingClaim(claimCwd, pendingHome);
+    if (survived !== null && survived.expires_at > now()) {
+      output.error(
+        `Your pending approval survives — code ${survived.user_code}. ` +
+        "Re-run `vendo login` to resume this same request.",
+      );
+    }
     return 1;
   }
 }

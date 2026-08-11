@@ -1,9 +1,8 @@
-import type { ZodType } from "zod";
+import { assert, assertBytesEqual, assertDeepEqual, assertParses } from "./assertions.js";
 import {
   TOOL_NAME_PATTERN,
   agentRunReportSchema,
   authMaterialSchema,
-  canonicalJson,
   descriptorHash,
   guardDecisionSchema,
   isoDateTimeSchema,
@@ -27,6 +26,10 @@ import {
 export { memoryStoreAdapter, type MemoryStoreAdapterOptions } from "./memory-store.js";
 export { memoryKnowledgeAdapter, type MemoryKnowledgeAdapterOptions } from "./memory-knowledge.js";
 export { knowledgeAdapterConformance, type KnowledgeConformanceOptions } from "./knowledge.js";
+export { appAccessConformance, type AppAccessConformanceOptions } from "./app-access.js";
+export { storeOpsConformance, type StoreOpsConformanceOptions } from "./store-ops.js";
+export { memoryStoreOps } from "./memory-store-ops.js";
+export { memoryAppAccess, type MemoryAppAccess } from "./memory-app-access.js";
 
 /**
  * One executable seam assertion. Cases throw on failure and can be mounted in any
@@ -50,32 +53,6 @@ export interface ConformanceReport {
   failures: Array<{ name: string; error: string }>;
   ok: boolean;
 }
-
-const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
-  if (!condition) throw new Error(message);
-};
-
-const assertParses = <T>(schema: ZodType<T>, value: unknown, message: string): T => {
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) {
-    throw new Error(`${message}: ${JSON.stringify(parsed.error.issues)}`);
-  }
-  return parsed.data;
-};
-
-const assertDeepEqual = (actual: unknown, expected: unknown, message: string): void => {
-  // undefined is not JSON — map it to a sentinel so a null/undefined mismatch
-  // fails with THIS assertion message, not canonicalJson's.
-  const canon = (value: unknown): string => (value === undefined ? "undefined" : canonicalJson(value));
-  assert(canon(actual) === canon(expected), message);
-};
-
-const assertBytesEqual = (actual: Uint8Array, expected: Uint8Array, message: string): void => {
-  assert(actual.length === expected.length, `${message}: byte lengths differ`);
-  for (let index = 0; index < actual.length; index += 1) {
-    assert(actual[index] === expected[index], `${message}: byte ${index} differs`);
-  }
-};
 
 /** Executes all cases without stopping at the first failure. */
 export async function runConformance(suite: ConformanceSuite): Promise<ConformanceReport> {
@@ -242,6 +219,55 @@ export function storeAdapterConformance(opts: {
         assertDeepEqual((await second.get("shared"))?.data, { collection: "b" }, "second collection collided");
       }),
 
+      /** 01-core §12: an adapter that offers `claim` must make it a
+          compare-and-set over the whole value — true for the one caller whose
+          expectation still holds, false for everyone else. Both halves of the
+          capability are OPTIONAL (an adapter with no database-level
+          compare-and-claim omits them), so an adapter that does not offer one
+          passes by not offering it; what it may not do is offer one that lies.
+          These three moved off the retired generic records WIRE family, whose
+          seven verbs the hosted store no longer serves: the behavior they pin
+          is the BYO seam's, and this is where a BYO adapter meets it. */
+      readyAdapterCase(opts, "01-core §12 — records.claim returns true on match, false on mismatch", async (adapter) => {
+        const records = adapter.records("conformance_claim");
+        if (records.claim === undefined) return;
+        await records.put({ id: "cl1", data: { v: 1 }, refs: { o: "a" } });
+        assert(await records.claim({ id: "cl1", data: { v: 999 } }) === false, "claim should return false on mismatch");
+        assert(
+          await records.claim({ id: "cl1", data: { v: 1 }, refs: { o: "a" } }, { data: { v: 2 }, refs: { o: "b" } }) === true,
+          "claim should return true on match",
+        );
+        assertDeepEqual((await records.get("cl1"))?.data, { v: 2 }, "claim did not apply replacement");
+      }),
+
+      /** 01-core §12: insertIfAbsent is insert-once — the second caller is told
+          it lost, and the first caller's row is left exactly as written. */
+      readyAdapterCase(opts, "01-core §12 — records.insertIfAbsent returns record on first call, null on second", async (adapter) => {
+        const records = adapter.records("conformance_insert_if_absent");
+        if (records.atomic === undefined) return;
+        const first = await records.atomic.insertIfAbsent({ id: "iia1", data: { n: 1 } });
+        assert(first !== null, "insertIfAbsent first call should return a record");
+        assert(first.id === "iia1", "insertIfAbsent did not echo id");
+        assert(await records.atomic.insertIfAbsent({ id: "iia1", data: { n: 2 } }) === null, "insertIfAbsent second call should return null");
+        assertDeepEqual((await records.get("iia1"))?.data, { n: 1 }, "insertIfAbsent overwrote existing record");
+      }),
+
+      /** 01-core §12: compareAndSwap lands only on the revision the caller
+          read; a stale revision is null at the seam, never an error. */
+      readyAdapterCase(opts, "01-core §12 — records.compareAndSwap succeeds on matching revision, null on stale", async (adapter) => {
+        const records = adapter.records("conformance_compare_and_swap");
+        if (records.atomic === undefined) return;
+        const created = await records.put({ id: "cas1", data: { v: 1 } });
+        assert(created.revision !== undefined, "put must return a revision for CAS");
+        const swapped = await records.atomic.compareAndSwap({ id: "cas1", data: { v: 2 } }, created.revision);
+        assert(swapped !== null, "compareAndSwap should succeed on matching revision");
+        assertDeepEqual(swapped.data, { v: 2 }, "compareAndSwap did not update data");
+        assert(
+          await records.atomic.compareAndSwap({ id: "cas1", data: { v: 3 } }, created.revision) === null,
+          "compareAndSwap should return null on stale revision",
+        );
+      }),
+
       /** 01-core §12: blobs round-trip bytes and content type. */
       readyAdapterCase(opts, "01-core §12 — blobs.put and get round-trip bytes and contentType", async (adapter) => {
         const blobs = adapter.blobs("conformance_blob_round_trip");
@@ -326,8 +352,8 @@ export function toolRegistryConformance(opts: {
 export function guardConformance(opts: {
   makeGuard(): Promise<Guard>;
   ctx: RunContext;
-  criticalDescriptor: ToolDescriptor;
-  criticalCall: ToolCall;
+  confirmEachDescriptor: ToolDescriptor;
+  confirmEachCall: ToolCall;
   readDescriptor: ToolDescriptor;
   readCall: ToolCall;
   sampleAuditEvent: AuditEvent;
@@ -336,28 +362,28 @@ export function guardConformance(opts: {
     seam: "Guard",
     cases: [
       {
-        /** 01-core §6: check returns a GuardDecision for critical and read calls. */
+        /** 01-core §6: check returns a GuardDecision for confirmEach and read calls. */
         name: "01-core §6 — check returns schema-valid decisions",
         async run(): Promise<void> {
           const guard = await opts.makeGuard();
-          assertParses(guardDecisionSchema, await guard.check(opts.criticalCall, opts.criticalDescriptor, opts.ctx), "critical decision is invalid");
+          assertParses(guardDecisionSchema, await guard.check(opts.confirmEachCall, opts.confirmEachDescriptor, opts.ctx), "confirmEach decision is invalid");
           assertParses(guardDecisionSchema, await guard.check(opts.readCall, opts.readDescriptor, opts.ctx), "read decision is invalid");
         },
       },
       {
-        /** 01-core §4 and 05-guard §2 step 1: critical is an unsuppressible ask. */
-        name: "01-core §4; 05-guard §2 step 1 — critical always asks with frozen descriptor and input preview",
+        /** 01-core §4 and 05-guard §2 step 1: confirmEach is an unsuppressible ask. */
+        name: "01-core §4; 05-guard §2 step 1 — confirmEach always asks with frozen descriptor and input preview",
         async run(): Promise<void> {
           const guard = await opts.makeGuard();
           const decision = assertParses(
             guardDecisionSchema,
-            await guard.check(opts.criticalCall, opts.criticalDescriptor, opts.ctx),
-            "critical decision is invalid",
+            await guard.check(opts.confirmEachCall, opts.confirmEachDescriptor, opts.ctx),
+            "confirmEach decision is invalid",
           );
-          assert(decision.action === "ask", "critical descriptor did not yield ask");
-          assert(decision.decidedBy === "critical", "critical ask was not decidedBy critical");
-          assert(decision.approval.inputPreview.trim().length > 0, "critical approval inputPreview is empty");
-          assertDeepEqual(decision.approval.descriptor, opts.criticalDescriptor, "approval descriptor was not frozen from the asked descriptor");
+          assert(decision.action === "ask", "confirmEach descriptor did not yield ask");
+          assert(decision.decidedBy === "confirmEach", "confirmEach ask was not decidedBy confirmEach");
+          assert(decision.approval.inputPreview.trim().length > 0, "confirmEach approval inputPreview is empty");
+          assertDeepEqual(decision.approval.descriptor, opts.confirmEachDescriptor, "approval descriptor was not frozen from the asked descriptor");
         },
       },
       {

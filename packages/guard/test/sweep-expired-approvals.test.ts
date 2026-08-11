@@ -1,5 +1,7 @@
+import type { RecordQuery, StoreAdapter } from "@vendoai/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createGuard } from "../src/index.js";
+import { createMemoryStore } from "./fixtures/memory-store.js";
 import { createPGliteStore, type PGliteStore } from "./fixtures/pglite-store.js";
 import { alice, bob, call, context, FixtureTools } from "./fixtures/tools.js";
 
@@ -60,5 +62,41 @@ describe("sweepExpiredApprovals", () => {
     await parkWrite(guard, alice, "call_off");
     expect(await guard.sweepExpiredApprovals!(0, Date.now() + 10_000_000)).toBe(0);
     expect(await guard.approvals.pending(alice)).toHaveLength(1);
+  });
+
+  // The sweep runs every 60s per process, forever. It must ask the store for
+  // the pending set rather than paging every approval ever decided and
+  // discarding the rest in JS — that read grows without bound on a live
+  // deployment.
+  it("asks the store for pending approvals only, never the whole collection", async () => {
+    const base = createMemoryStore();
+    const queries: (RecordQuery | undefined)[] = [];
+    const spy: StoreAdapter = {
+      ...base,
+      records(collection) {
+        const inner = base.records(collection);
+        if (collection !== "vendo_approvals") return inner;
+        return {
+          ...inner,
+          list: (query) => {
+            queries.push(query);
+            return inner.list(query);
+          },
+        };
+      },
+    };
+    const guard = createGuard({
+      store: spy,
+      policy: { rules: [{ match: { risk: "write" }, action: "ask" }] },
+    });
+    const bound = guard.bind(new FixtureTools());
+    const parked = await bound.execute(call("host_write", { value: 1 }, "call_spy"), context());
+    if (parked.status !== "pending-approval") throw new Error("expected a parked write");
+    await guard.approvals.decide(parked.approvalId, { approve: false }, alice);
+
+    queries.length = 0;
+    expect(await guard.sweepExpiredApprovals!(60_000, Date.now() + 61_000)).toBe(0);
+    expect(queries).not.toHaveLength(0);
+    for (const query of queries) expect(query?.refs).toMatchObject({ status: "pending" });
   });
 });

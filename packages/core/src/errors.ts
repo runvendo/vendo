@@ -9,7 +9,11 @@ export type VendoErrorCode =
   | "sandbox-unavailable"
   | "cloud-required"
   | "not-found"
-  | "conflict";
+  | "conflict"
+  /** Build contract §9.4 — the caller provably SEES the thing and is denied the
+      action anyway (a viewer asked to edit). Thrown only to a proven viewer;
+      anything they cannot see stays `not-found`. Wire-mapped to HTTP 403. */
+  | "forbidden";
 
 /** 01-core §15 */
 export const vendoErrorCodeSchema = z.enum([
@@ -20,6 +24,7 @@ export const vendoErrorCodeSchema = z.enum([
   "cloud-required",
   "not-found",
   "conflict",
+  "forbidden",
 ]) satisfies z.ZodType<VendoErrorCode>;
 
 /** 01-core §15 */

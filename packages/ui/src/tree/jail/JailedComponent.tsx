@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { islandToolFallbackManifest, islandVendoActionNames, type Json, type ToolOutcome } from "@vendoai/core";
+import {
+  log,
+  type Json,
+  type ToolOutcome,
+} from "@vendoai/core";
+import {
+  islandToolFallbackManifest,
+  islandVendoActionNames,
+  JAIL_PACKAGE_CDN_ORIGIN,
+} from "@vendoai/apps/contract";
+import { useVendoIntl } from "../../context.js";
 import { ContainedNotice } from "../notice.js";
+import { FormingSkeleton } from "../forming-skeleton.js";
+import { applyFrameResize, FRAME_MAX_HEIGHT_CSS, isFromFrame } from "../frame-resize.js";
 import { JAIL_RUNTIME_SOURCE } from "./runtime-bundle.gen.js";
-
-const MAX_JAIL_HEIGHT = 8_192;
 
 /**
  * The jail is TWO nested frames, and the nesting is the security boundary.
@@ -24,17 +34,40 @@ const MAX_JAIL_HEIGHT = 8_192;
  * runs no untrusted code; it is a message relay, so the host's postMessage
  * identity check (source === iframe.contentWindow) still holds end to end.
  *
- * `'unsafe-eval'` is deliberate: evaluation is the jail's job (generated code
- * loads through the runtime's controlled `require`, which exposes only React,
- * so no import form can reach the module loader). NETWORK is what the jail
- * forbids, and `blob:` is banned from script-src because blob-ESM made the
- * loader reachable.
+ * `'unsafe-eval'` is deliberate: evaluation is the jail's job. What the jail
+ * forbids is NETWORK — and `script-src` is the only directive that governs the
+ * one channel `connect-src` misses, a SCRIPT the realm loads and runs. Its
+ * source list is empty by default, so that channel is shut.
+ *
+ * `loadsPackages` is the PREVIEW VENUE, and it is the only thing that ever puts
+ * a network source in this policy: with it, `script-src` gains the one pinned
+ * CDN origin plus `data:` (the import map's React shims — inline code, no
+ * network, and no more than `'unsafe-eval'` already grants). Without it the
+ * policy below names no source at all, which is what a remix fork rendering in
+ * a customer's own page gets.
+ *
+ * `'unsafe-inline'` rather than a nonce, and that is the security property, not
+ * a relaxation. A nonce is worthless against code running INSIDE the document
+ * that carries it, which is exactly what this document is: CSP blanks a nonce's
+ * content attribute but not its IDL property, so
+ * `document.querySelector("script").nonce` hands generated code the jail's own
+ * nonce, and a `<script src>` it stamps with that nonce is allowed from any
+ * origin. Browser-verified against the old `script-src 'nonce-N' 'unsafe-eval'`:
+ * the request COMPLETED, foreign code ran here, and the data in its URL left
+ * the browser. (A nonce also propagates to modules `import()`ed by the script
+ * that carries it, and it makes `'unsafe-inline'` be ignored — so the nonce was
+ * costing the source list its authority and buying nothing: the srcdoc is
+ * entirely ours, generated source arrives over postMessage rather than in the
+ * HTML, so there is no injection here for a nonce to stop, and the realm may
+ * already evaluate anything it composes.) With no nonce, the SOURCE LIST
+ * governs, and outside the preview venue it is empty. `blob:` stays out of it
+ * either way: it is a module transport that reached the loader.
  */
-function buildJailSrcdoc(): string {
-  const nonce = jailNonce();
+function buildJailSrcdoc(loadsPackages: boolean): string {
+  const scriptSources = loadsPackages ? ` ${JAIL_PACKAGE_CDN_ORIGIN} data:` : "";
   const csp = [
     "default-src 'none'",
-    `script-src 'nonce-${nonce}' 'unsafe-eval'`,
+    `script-src 'unsafe-inline' 'unsafe-eval'${scriptSources}`,
     "style-src 'unsafe-inline'",
     "img-src data:",
     "font-src data:",
@@ -42,6 +75,12 @@ function buildJailSrcdoc(): string {
   ].join("; ");
   const head = [
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
+    // An opaque origin is NOT a private one: browser-verified, a subresource
+    // request out of this srcdoc otherwise carries the EMBEDDER's URL as its
+    // `Referer` under the default policy — which for a console preview is the
+    // page naming the project. The CDN is told a package name and a version,
+    // and nothing else.
+    "<meta name=\"referrer\" content=\"no-referrer\">",
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
     "<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:0;background:transparent;height:100%}iframe{display:block;width:100%;height:100%;border:0;background:transparent}</style>",
   ].join("");
@@ -52,7 +91,7 @@ function buildJailSrcdoc(): string {
     "<!doctype html><html lang=\"en\"><head>",
     head,
     "<title>Generated Vendo component</title></head><body>",
-    `<script nonce="${nonce}">${safeRuntime}<\/script>`,
+    `<script>${safeRuntime}<\/script>`,
     "</body></html>",
   ].join("");
 
@@ -73,17 +112,9 @@ window.addEventListener("message", function (event) {
     "<!doctype html><html lang=\"en\"><head>",
     head,
     "<title>Vendo jail</title></head><body>",
-    `<script nonce="${nonce}">${relay}<\/script>`,
+    `<script>${relay}<\/script>`,
     "</body></html>",
   ].join("");
-}
-
-/** A per-mount nonce. Not a secret: the srcdoc is fully ours (generated source
- *  never enters the HTML — it arrives over postMessage), so a non-crypto
- *  fallback keeps the jail working in non-secure contexts. */
-function jailNonce(): string {
-  const random = globalThis.crypto?.randomUUID?.();
-  return (random ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`).replaceAll("-", "");
 }
 
 export interface JailedComponentProps {
@@ -105,6 +136,10 @@ export interface JailedComponentProps {
    * either way, nothing the iframe claims is ever trusted.
    */
   toolManifest?: readonly string[];
+  /** True while the payload is a mid-stream partial: an island crash is a
+   *  transient (its source may still be rewritten before ship), so the loud
+   *  error note yields to the forming skeleton until the final payload. */
+  streaming?: boolean;
   onAction(action: string, payload?: Json): Promise<ToolOutcome>;
   onStateSet(key: string, value: Json): void;
 }
@@ -125,6 +160,19 @@ export interface JailFurnishing {
   subSources?: Record<string, JailSubSource>;
   sampleProps?: Record<string, unknown>;
   styles?: JailStyle[];
+  /**
+   * PREVIEW VENUE ONLY, and the whole venue gate: import specifier ->
+   * `<name>@<exact version>[/subpath]` the jail may load from
+   * `JAIL_PACKAGE_CDN_ORIGIN`, so a captured component importing `recharts`
+   * draws instead of being skipped.
+   *
+   * A preview surface is the only producer. `attachPinFurnishings` (the
+   * production path for a remix fork) copies a fixed field list that does not
+   * include this one, and `stripServerAuthoritativeFields` deletes it off any
+   * stored or imported tree that claims it — so a customer's end users never
+   * depend on a CDN's availability and that CDN never sees their traffic.
+   */
+  packages?: Record<string, string>;
 }
 
 const IDENTIFIER_PATTERN = /^[A-Za-z_$][\w$]*$/;
@@ -157,12 +205,22 @@ export function JailedComponent({
   furnishing,
   themeVars,
   toolManifest,
+  streaming,
   onAction,
   onStateSet,
 }: JailedComponentProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string>();
-  const srcDoc = useMemo(buildJailSrcdoc, []);
+  /** Pinned packages the jail could not fetch. A terminal, factual condition —
+   *  never swallowed by `streaming`, which is what turned the last runtime skew
+   *  into an eternal skeleton. */
+  const [unavailable, setUnavailable] = useState<string[]>();
+  const packages = furnishing?.packages;
+  const loadsPackages = packages !== undefined && Object.keys(packages).length > 0;
+  const srcDoc = useMemo(() => buildJailSrcdoc(loadsPackages), [loadsPackages]);
+  // Read from context rather than a prop: every caller already renders inside
+  // the provider, and the currency is not a per-island decision.
+  const intl = useVendoIntl();
   // The island's tool surface, resolved on the HOST side only. A stamped
   // manifest wins; an unstamped document falls back to scanning the source the
   // host itself holds. The legacy action channel additionally admits the
@@ -190,6 +248,7 @@ export function JailedComponent({
 
   useEffect(() => {
     setError(undefined);
+    setUnavailable(undefined);
   }, [furnishing, name, source]);
 
   useEffect(() => {
@@ -204,11 +263,13 @@ export function JailedComponent({
         ...(furnishing?.sourceImports === undefined ? {} : { sourceImports: furnishing.sourceImports }),
         ...(furnishing?.subSources === undefined ? {} : { subSources: furnishing.subSources }),
         ...(furnishing?.styles === undefined ? {} : { styles: furnishing.styles }),
+        ...(packages === undefined ? {} : { packages }),
         ...(themeVars === undefined ? {} : { themeVars }),
+        intl,
       }, "*");
     };
     const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframe.contentWindow) return;
+      if (!isFromFrame(iframe, event)) return;
       const message = event.data as Record<string, unknown> | undefined;
       if (!message) return;
 
@@ -293,12 +354,15 @@ export function JailedComponent({
               error: toolError instanceof Error ? toolError.message : String(toolError),
             }, "*");
           });
+      } else if (message.kind === "packages-unavailable" && Array.isArray(message.packages)) {
+        setUnavailable(message.packages.filter((value): value is string => typeof value === "string"));
       } else if (message.kind === "error") {
         setError(typeof message.message === "string" ? message.message : "generated component failed");
       } else if (message.kind === "empty") {
         setError("generated component rendered no content");
-      } else if (message.kind === "resize" && typeof message.height === "number" && Number.isFinite(message.height)) {
-        iframe.style.height = `${Math.min(MAX_JAIL_HEIGHT, Math.max(1, message.height))}px`;
+      } else {
+        // The frame resize protocol, shared with the served app's http frame.
+        applyFrameResize(iframe, event);
       }
     };
 
@@ -309,15 +373,46 @@ export function JailedComponent({
       window.removeEventListener("message", handleMessage);
       iframe.removeEventListener("load", sendRender);
     };
-  }, [allowedActions, effectiveProps, furnishing, manifest, onAction, onStateSet, source, themeVars]);
+  }, [allowedActions, effectiveProps, furnishing, intl, manifest, onAction, onStateSet, packages, source, themeVars]);
+
+  // A package that will not load is not a transient: the CDN is down, the
+  // version is gone, or the package was never public. Say so at every stage of
+  // the stream — a preview renders `streaming` forever, so deferring this note
+  // would leave the same never-resolving shimmer it exists to replace.
+  if (unavailable !== undefined && unavailable.length > 0) {
+    return (
+      <ContainedNotice label="Preview unavailable">
+        {`${name}: could not load ${unavailable.join(", ")}`}
+      </ContainedNotice>
+    );
+  }
 
   if (error) {
+    // Mid-stream, a crash is not a verdict: the island's source may still be
+    // rewritten (or restructured to use the host registry properly) before the
+    // final payload ships. Hold the silhouette; the note is for final payloads.
+    if (streaming === true) {
+      // But NEVER swallow it entirely. A surface that renders previews with
+      // `streaming` permanently (no stream to finish) turns every crash into a
+      // shimmer skeleton that is indistinguishable from "still loading" — a
+      // real captured component failed this way on a stale jail runtime and
+      // took a browser investigation to find, because nothing anywhere said so.
+      log({
+        code: "ui.jailed-component-mid-stream-error",
+        level: "warn",
+        message: `[vendo] "${name}" failed inside the jail and is showing a loading silhouette because the payload is mid-stream: ${error}`,
+      });
+      return <FormingSkeleton name={name} />;
+    }
     return <ContainedNotice label="Generated component error">{`${name}: ${error}`}</ContainedNotice>;
   }
 
   const style: CSSProperties = {
     width: "100%",
     minHeight: "var(--vendo-jail-min-height, 16px)",
+    // The host's ceiling. Taller generated content scrolls inside this frame
+    // instead of pushing the host's layout (06-apps §9 — the host's bounds win).
+    maxHeight: FRAME_MAX_HEIGHT_CSS,
     border: 0,
     background: "transparent",
   };

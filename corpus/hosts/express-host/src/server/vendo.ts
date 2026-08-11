@@ -1,5 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { createVendo, type Vendo } from "@vendoai/vendo/server";
+import { createVendo, guard, type Vendo } from "@vendoai/vendo/server";
 import type { Principal, VendoStore } from "@vendoai/vendo";
 import type { LanguageModel } from "ai";
 
@@ -25,7 +25,7 @@ export function createRelayVendo(options: RelayVendoOptions = {}): Vendo {
     // Loopback-only single-user fixture: one fixed demo principal is intentional.
     principal: async () => RELAY_PRINCIPAL,
     ...(options.store === undefined ? {} : { store: options.store }),
-    policy: { file: ".vendo/policy.json" },
+    guard: guard({ policy: { file: ".vendo/policy.json" } }),
     telemetry: false,
   });
 }

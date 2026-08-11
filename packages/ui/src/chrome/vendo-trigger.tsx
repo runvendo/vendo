@@ -1,3 +1,4 @@
+import { log } from "@vendoai/core";
 import type { ReactNode } from "react";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
@@ -27,10 +28,7 @@ export interface VendoTriggerProps {
  */
 export function VendoTrigger({ prompt, context, children }: VendoTriggerProps) {
   return (
-    // automaticPolicyNotice={false}: a bare button must never grow the
-    // "running without a policy" banner beside itself — the surfaces the
-    // trigger opens carry that warning.
-    <ChromeRoot automaticPolicyNotice={false}>
+    <ChromeRoot>
       <button
         type="button"
         className="fl-btn"
@@ -40,7 +38,11 @@ export function VendoTrigger({ prompt, context, children }: VendoTriggerProps) {
           // prompts; the user presses Send themselves.
           const opened = openVendoConversation({ prompt: context ? `${prompt}\n\n${context}` : prompt });
           if (!opened && developmentMode()) {
-            console.warn("[vendo] VendoTrigger: no <VendoOverlay /> is mounted to open — this button is a no-op.");
+            log({
+              code: "ui.vendo-trigger-no-overlay",
+              level: "warn",
+              message: "[vendo] VendoTrigger: no <VendoOverlay /> is mounted to open — this button is a no-op.",
+            });
           }
         }}
       >

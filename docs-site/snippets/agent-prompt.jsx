@@ -5,7 +5,7 @@
     Mintlify snippet rules honored: no npm imports (React hooks are
     pre-injected), named exports only, browser built-ins only. */}
 
-export const AgentPrompt = ({ prompt, lead }) => {
+export const AgentPrompt = ({ prompt, lead, title = "Or install with your coding agent" }) => {
   const AGENT_LOGOS = [
   {
     name: "Claude Code",
@@ -73,9 +73,7 @@ export const AgentPrompt = ({ prompt, lead }) => {
     <div className="vendo-agent-prompt not-prose">
       <div className="vendo-agent-prompt-head">
         <div className="vendo-agent-prompt-text">
-          <span className="vendo-agent-prompt-title">
-            Or install with your coding agent
-          </span>
+          <span className="vendo-agent-prompt-title">{title}</span>
           <span className="vendo-agent-prompt-lead">{lead}</span>
         </div>
         <div className="vendo-agent-prompt-logos">

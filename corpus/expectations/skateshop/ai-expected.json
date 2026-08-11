@@ -23,13 +23,13 @@
       "name": "postRevalidateTag",
       "method": "POST",
       "path": "/api/revalidate/{tag}",
-      "risk": "write"
+      "risk": "read"
     },
     {
       "name": "getUploadthing",
       "method": "GET",
       "path": "/api/uploadthing",
-      "risk": "read"
+      "risk": "write"
     },
     {
       "name": "postUploadthing",

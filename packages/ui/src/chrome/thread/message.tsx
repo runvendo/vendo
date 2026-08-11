@@ -1,43 +1,21 @@
 import type { RiskLabel } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
-import { Fragment } from "react";
-import { useVendoContext } from "../../context.js";
+import { Fragment, useRef, useState } from "react";
+import { BeatSummary } from "../build-beat.js";
 import { useCopyFeedback } from "../clipboard.js";
-import { toolTitle } from "../humanize.js";
 import { SentAttachment, type FilePart } from "./attachments.js";
-import { assistantText, collapseToolRuns, toolName, userText } from "./message-data.js";
+import { assistantText, collapseToolRuns, isAgentContext, toolCallIsContent, toolCallParked, toolCallPending, userText } from "./message-data.js";
 import { ThreadPart } from "./parts.js";
+import { TurnCitations } from "./turn-citations.js";
 
-/** Lane pick 8C — the settled turn's quiet sources row: every completed tool
-    call the turn drew on, as informational chips ("what did it read?"). The
-    full mechanical record stays in the Activity panel; these are the in-place
-    scent. Only read-risk calls qualify — writes are actions, not sources. */
-function TurnSources({ message, risks }: { message: UIMessage; risks: Map<string, RiskLabel> }) {
-  const { tools } = useVendoContext();
-  // Identical repeated calls collapse to one chip with a ×N count — the same
-  // ENG-216 run-collapse identity (name + args) the old beat stack used.
-  const sources = collapseToolRuns(message.parts).filter(({ part }) =>
-    isToolUIPart(part) && part.state === "output-available"
-    && (risks.get(part.toolCallId) ?? "read") === "read");
-  if (sources.length === 0) return null;
-  return (
-    <div className="fl-sources" aria-label="Sources">
-      {sources.map(({ part, count }) => {
-        const toolPart = part as Extract<UIMessage["parts"][number], { toolCallId: string }>;
-        const name = toolName(toolPart);
-        return (
-          <span className="fl-source" key={toolPart.toolCallId} title="Recorded in Activity">
-            <i aria-hidden="true" />
-            {toolTitle(name, tools[name])}
-            {count > 1 ? <span className="fl-source-count" aria-label={`repeated ${count} times`}>×{count}</span> : null}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
+// 2026-07 demo feedback — the settled turn's "sources" chip row is GONE: the
+// little read-call pills under assistant messages read as clutter and
+// duplicated the audit trail, which remains the mechanical record. The turn's
+// work comes back as BEATS — a checklist
+// line per call while the turn runs, folded into one reopenable summary row
+// ("Did 4 things · 7.1s") the moment it settles.
 
-/** ENG-225 — the copy turn action (.fl-turn-actions design). */
+/** The copy turn action (.fl-turn-actions design). */
 function CopyTurnButton({ text }: { text: string }) {
   const [copied, copy] = useCopyFeedback();
   return (
@@ -56,11 +34,10 @@ function CopyTurnButton({ text }: { text: string }) {
   );
 }
 
-/** One turn in the transcript: the user attachments beside the bubble
-    (ENG-225), the article with its stream parts, and the settled-turn
-    actions (Copy always; Edit on the last user turn, Regenerate on the
-    last assistant turn — ENG-215). */
-export function ThreadMessage({ message, restored, risks, busy, activeAssistantId, lastUserId, lastAssistantId, onEditLast, onRegenerateLast }: {
+/** One turn in the transcript: the user attachments beside the bubble, the
+    article with its stream parts, and the settled-turn actions (Copy always;
+    Edit on the last user turn, Regenerate on the last assistant turn). */
+export function ThreadMessage({ message, restored, risks, busy, activeAssistantId, lastUserId, lastAssistantId, onEditLast, onRegenerateLast, sendMessage, respond }: {
   message: UIMessage;
   restored: boolean;
   risks: Map<string, RiskLabel>;
@@ -70,8 +47,12 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
   lastAssistantId?: string | undefined;
   onEditLast: () => void;
   onRegenerateLast: () => void;
+  /** The thread's send — connect cards use it for the post-connect continuation. */
+  sendMessage?: (message: { text: string }) => unknown;
+  /** The thread's native approval response — grant-set cards resume with it. */
+  respond?: (response: { id: string; approved: boolean }) => void;
 }) {
-  // ENG-225 — a user turn's attachments render BESIDE the bubble
+  // A user turn's attachments render BESIDE the bubble
   // (the designed .fl-turn-user-att block), not inside it; a
   // files-only send has no bubble at all.
   const sentFiles = message.role === "user"
@@ -79,15 +60,58 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
     : [];
   const bubbleText = message.role === "user" ? userText(message) : assistantText(message);
   const skipBubble = message.role === "user" && bubbleText.length === 0
-    && message.parts.every(part => part.type === "file");
-  // ENG-225 — every settled turn carries a Copy action (hover-
+    && message.parts.every(part => part.type === "file" || isAgentContext(part));
+  // Every settled turn carries a Copy action (hover-
   // revealed, see chrome-css); Edit stays on the last user turn and
-  // Regenerate on the last assistant turn (ENG-215). The actively
-  // streaming turn gets no actions — its text is still arriving.
+  // Regenerate on the last assistant turn.
   const streamingTurn = busy && message.role === "assistant" && message.id === activeAssistantId;
   const showEdit = !busy && message.role === "user" && message.id === lastUserId;
   const showRegenerate = !busy && message.role === "assistant" && message.id === lastAssistantId;
-  const showActions = !streamingTurn && (bubbleText.length > 0 || showEdit || showRegenerate);
+  // The turn's beats fold into ONE summary row once the whole turn
+  // has settled: while any call is still working (or parked on an approval)
+  // every beat stays open, and the fold waits. Restored history arrives folded,
+  // which is also what keeps a long thread from a beat entrance stampede.
+  const items = collapseToolRuns(message.parts);
+  const calls = items.filter(item => isToolUIPart(item.part));
+  const pending = streamingTurn || calls.some(item => toolCallPending(item.part));
+  // A turn whose text is still arriving gets no actions, and neither does one
+  // PARKED on a consent card: the row reserved 33px between the "waiting for
+  // your approval" beat and the card under it, breaking them into two separate
+  // moments. On the last turn that row is not even invisible — chrome-css's
+  // `.fl-turn-assistant:last-child .fl-turn-actions` reveals it without a
+  // hover — so this is a real gap, not just reserved space.
+  //
+  // The gate is the PARKED ask, never the broad `pending`: a turn stopped
+  // mid-call keeps a tool part in `input-available` forever (thread.stop()
+  // does not reconcile the aborted call), so `pending` stays true and
+  // Copy/Regenerate would never come back on the last turn.
+  const parked = calls.some(item => toolCallParked(item.part));
+  const showActions = !streamingTurn && !parked && (bubbleText.length > 0 || showEdit || showRegenerate);
+  // A failed or declined call is not one of the "things I did", and its ✕ beat
+  // never folds — so the count is the work that actually landed, and
+  // the failure keeps its own line right where it happened.
+  const steps = calls.filter(item => !toolCallIsContent(item.part));
+  const [beatsOpen, setBeatsOpen] = useState(false);
+  const summarized = steps.length > 0 && !pending;
+  const folded = summarized && !beatsOpen;
+  const summaryAt = steps[0]?.index;
+  // Wall time: the wire carries no per-part timestamps, so the clock is
+  // measured — started when the turn was first seen working, frozen at settle.
+  // A turn nobody watched work shows the count alone rather than an invented
+  // duration.
+  //
+  // M26 — that last rule leaned on `pending` being false for history, which is
+  // false in the one case it matters: a turn that was ALREADY RUNNING when this
+  // surface first saw it (a reopened conversation, a reload mid-turn) is both
+  // restored AND pending, so the clock started at the moment we arrived and the
+  // row reported "· 1.2s" for a turn that had been working for thirty. `restored`
+  // is exactly "we did not watch this start", so it gates the clock: unknown
+  // start ⇒ the count alone, which the comment above already required.
+  const clock = useRef<{ start?: number; seconds?: number }>({});
+  if (pending && !restored) clock.current.start ??= Date.now();
+  else if (clock.current.start !== undefined) {
+    clock.current.seconds ??= (Date.now() - clock.current.start) / 1000;
+  }
   return (
     <Fragment>
       {sentFiles.length > 0 ? (
@@ -102,20 +126,43 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
           data-role={message.role}
           aria-label={`${message.role} message`}
         >
-          {collapseToolRuns(message.parts).map(({ part, index, count }) => (
-            <ThreadPart
-              key={`${message.id}-${index}`}
-              part={part}
-              partKey={`${message.id}-${index}`}
-              role={message.role}
-              restored={restored}
-              count={count}
-              risks={risks}
-            />
+          {items.map(({ part, index, count }) => (
+            <Fragment key={`${message.id}-${index}`}>
+              {/* The settled turn's one row, standing where its first beat is —
+                  the same place folded or reopened, so a double-click doesn't
+                  move the control out from under the pointer. */}
+              {summarized && index === summaryAt ? (
+                <BeatSummary
+                  steps={steps.length}
+                  seconds={clock.current.seconds}
+                  open={beatsOpen}
+                  onToggle={() => setBeatsOpen(open => !open)}
+                />
+              ) : null}
+              <ThreadPart
+                part={part}
+                partKey={`${message.id}-${index}`}
+                role={message.role}
+                restored={restored}
+                count={count}
+                risks={risks}
+                // A connect ask is actionable only in the LATEST assistant turn;
+                // older cards settle into the Connected record (or nothing).
+                connectLive={message.role === "assistant" && message.id === lastAssistantId}
+                hideBeats={folded}
+                turnPending={pending}
+                sendMessage={sendMessage}
+                siblingParts={message.parts}
+                respond={respond}
+              />
+            </Fragment>
           ))}
-          {!streamingTurn && message.role === "assistant" ? (
-            <TurnSources message={message} risks={risks} />
-          ) : null}
+          {/* Knowledge K1 — the turn's knowledge trust surface (citation
+              chips / refusal line / unavailable flag) renders at the BOTTOM
+              of the turn, under the answer it grounds (signed mockups,
+              Surface 2) — not at the citations part's transcript position,
+              which precedes the streamed answer text. */}
+          {message.role === "assistant" && !streamingTurn ? <TurnCitations message={message} /> : null}
           {showActions ? (
             <div className="fl-turn-actions">
               {bubbleText.length > 0 ? <CopyTurnButton text={bubbleText} /> : null}

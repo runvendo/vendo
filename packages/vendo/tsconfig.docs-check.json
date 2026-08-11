@@ -1,0 +1,11 @@
+{
+  // The docs-parity fixtures. They assert that what `docs/` publishes IS the
+  // shipped type surface, so they must be typechecked — but they are test
+  // scaffolding, so they must not be emitted into `dist` (and from there into
+  // every published tarball). Their own program, never built.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*.docs-check.ts"]
+}

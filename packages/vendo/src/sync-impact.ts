@@ -1,5 +1,12 @@
-import { VENDO_TREE_FORMAT_V2, type AppDocument, type PermissionGrant, type VendoRecord } from "@vendoai/core";
-import type { VendoStore } from "@vendoai/store";
+import {
+  VENDO_TREE_FORMAT,
+  VendoError,
+  type AppDocument,
+  type PermissionGrant,
+  type StoreOps,
+  type VendoRecord,
+} from "@vendoai/core";
+import { appRowSchema } from "@vendoai/apps/contract";
 
 export interface ToolImpact {
   tool: string;
@@ -8,16 +15,23 @@ export interface ToolImpact {
   grants: number;
 }
 
-interface StoredApp {
-  enabled: boolean;
-  doc: AppDocument;
-}
+/** The app row as this reader takes it OFF the store.
+ *
+ *  `doc` goes through `appDocumentSchema`, not a cast, because that schema is
+ *  where a pre-list document's single `trigger` becomes the one-item `triggers`
+ *  list every reader below expects. Casting the raw row left `doc.triggers`
+ *  undefined on every automation armed before the list shipped, so `vendo sync`
+ *  told those deployments that changing a tool would affect NO automations —
+ *  which reads as "nothing to worry about" and is the one wrong answer that
+ *  costs something. `appRowSchema` is the contract's one definition of the
+ *  stored row; this reader needs two of its three fields. */
+const storedAppSchema = appRowSchema.pick({ enabled: true, doc: true });
 
-async function allRecords(store: VendoStore, collection: string): Promise<VendoRecord[]> {
+async function allRecords(ops: StoreOps, collection: string): Promise<VendoRecord[]> {
   const records: VendoRecord[] = [];
   let cursor: string | undefined;
   do {
-    const page = await store.records(collection).list({ limit: 1_000, cursor });
+    const page = await ops.engine.list(collection, { limit: 1_000, cursor });
     records.push(...page.records);
     cursor = page.cursor;
   } while (cursor !== undefined);
@@ -40,7 +54,7 @@ function collectActions(value: unknown, tools: Set<string>): void {
 
 function referencedTools(doc: AppDocument): Set<string> {
   const tools = new Set<string>();
-  if (doc.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
+  if (doc.tree?.formatVersion === VENDO_TREE_FORMAT) {
     const tree = doc.tree as {
       queries?: Array<{ tool?: unknown }>;
       nodes?: Array<{ props?: unknown }>;
@@ -50,8 +64,18 @@ function referencedTools(doc: AppDocument): Set<string> {
     }
     for (const node of tree.nodes ?? []) collectActions(node.props, tools);
   }
-  if (doc.trigger?.run.kind === "steps") {
-    for (const step of doc.trigger.run.steps) {
+  // The compiler-stamped manifest of what each island's SOURCE calls through
+  // the ambient `tools` API. Those calls are in generated code, so they never
+  // appear in tree.queries or node props — without this, an app full of islands
+  // reports zero references for every tool it actually runs.
+  for (const names of Object.values(doc.componentTools ?? {})) {
+    for (const name of names) {
+      if (!name.startsWith("fn:")) tools.add(name);
+    }
+  }
+  for (const trigger of doc.triggers ?? []) {
+    if (trigger.run.kind !== "steps") continue;
+    for (const step of trigger.run.steps) {
       if (!step.tool.startsWith("fn:")) tools.add(step.tool);
     }
   }
@@ -62,12 +86,29 @@ function activeGrant(grant: PermissionGrant, now: string): boolean {
   return grant.revokedAt === undefined && (grant.expiresAt === undefined || grant.expiresAt > now);
 }
 
-export async function computeImpact(store: VendoStore, tools: string[]): Promise<ToolImpact[]> {
+export async function computeImpact(
+  ops: StoreOps | undefined,
+  tools: string[],
+): Promise<ToolImpact[]> {
+  if (ops === undefined) {
+    throw new VendoError(
+      "not-implemented",
+      "The impact report reads Vendo's own app and grant drawers, so it needs the store's "
+      + "named-operation surface: a SQL-backed store (`store: postgres(url)`, or the local default) "
+      + "or a StoreOps-capable store (the Cloud hosted store). The configured store is neither.",
+    );
+  }
   const [appRecords, grantRecords] = await Promise.all([
-    allRecords(store, "vendo_apps"),
-    allRecords(store, "vendo_grants"),
+    allRecords(ops, "vendo_apps"),
+    allRecords(ops, "vendo_grants"),
   ]);
-  const apps = appRecords.map((record) => record.data as unknown as StoredApp).filter((app) => app.enabled);
+  // A row that will not parse is skipped rather than thrown on: `sync` is
+  // advisory and read-only, and one unreadable row must not take the whole
+  // impact report — including every other row's warning — down with it.
+  const apps = appRecords.flatMap((record) => {
+    const parsed = storedAppSchema.safeParse(record.data);
+    return parsed.success ? [parsed.data] : [];
+  }).filter((app) => app.enabled);
   const now = new Date().toISOString();
   const grants = grantRecords
     .map((record) => record.data as unknown as PermissionGrant)
@@ -78,7 +119,7 @@ export async function computeImpact(store: VendoStore, tools: string[]): Promise
     for (const app of apps) {
       if (!referencedTools(app.doc).has(tool)) continue;
       const reference = { id: app.doc.id, title: app.doc.name };
-      if (app.doc.trigger === undefined) impact.apps.push(reference);
+      if ((app.doc.triggers ?? []).length === 0) impact.apps.push(reference);
       else impact.automations.push(reference);
     }
     impact.grants = grants.filter((grant) => grant.tool === tool).length;

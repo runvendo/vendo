@@ -1,15 +1,25 @@
-import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
+import { log, type Json, type ToolOutcome, type UIPayload } from "@vendoai/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
+import { announcePin } from "../pin-events.js";
 import { useApp } from "../hooks/use-app.js";
+import { useReportSlot } from "../hooks/use-placements.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { developmentMode } from "./dev-mode.js";
 import { defaultSlotSuggestions } from "./discoverability.js";
+import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
 import { openVendoPalette } from "./palette-hotkey.js";
+import { BUILD_FAILURE_COPY } from "./thread/message-data.js";
+
+/** A slot id is a code identifier ("net-worth-card"); the person choosing a
+ *  destination in the picker reads words. */
+function slotLabel(id: string): string {
+  const words = id.replace(/[-_]+/g, " ").replace(/([a-z\d])([A-Z])/g, "$1 $2").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 /** The faint skeleton behind the ghost/empty states — decorative only. */
 function GhostSkeleton() {
@@ -41,17 +51,132 @@ function SlotGhost({ label, detail, loading = false }: { label: string; detail?:
   );
 }
 
-function MountedApp({ appId }: { appId: string }) {
-  const { client, components } = useVendoContext();
-  const { surface, refresh } = useApp(appId);
-  // Wave 7 H2 — the served-surface keepalive: user activity pings the machine
-  // (host-proxied) so an embedded served app doesn't idle out under the user;
-  // a "woke" ping re-opens for the fresh machine URL.
-  const keepalive = useMemo(
-    () => ({ ping: () => client.apps.pingMachine(appId), reopen: refresh }),
-    [appId, client, refresh],
+/**
+ * The consumer's half of a failed load (spec §16 law 3, the consumer-voice
+ * law). Every sentence the wire throws is written for the HOST DEVELOPER — one
+ * names an environment variable, another carries an app id — so rendering
+ * `reason.message` put all of them on a HOST PAGE, the most public surface we
+ * have. The developer sentence keeps its home (the server's own error, the
+ * browser console); the person looking at this slot is told what it means for
+ * THEM. Same treatment as the grant-set card (`refusalCopy`) and the
+ * apps page (`refusalSentence`).
+ */
+function loadFailureCopy(reason: unknown): string {
+  const code = (reason as { code?: unknown } | null)?.code;
+  if (code === "forbidden") return "You don’t have access to this view.";
+  if (code === "not-found") return "This view isn’t available any more.";
+  if (code === "cloud-required") return "This view isn’t turned on for this workspace yet.";
+  return "Something on our side didn’t answer — nothing changed.";
+}
+
+/** The terminal load failure. useApp already spent its retries, so this is a
+ *  dead end until the user asks again — and without a way to ask, the slot sat
+ *  on its skeleton until a page reload (Keystone graduates A5). */
+function SlotLoadFailed({ reason, onRetry }: { reason: Error; onRetry(): void }) {
+  return (
+    <div className="fl-slot-ghost">
+      <GhostSkeleton />
+      <span className="fl-slot-cta" role="alert">
+        <span className="fl-slot-cta-label">This view didn’t load</span>
+        <small>{loadFailureCopy(reason)}</small>
+        <button type="button" className="fl-invite-btn" onClick={onRetry}>Try again</button>
+      </span>
+    </div>
   );
-  if (!surface) return <SlotGhost label="Loading app…" loading />;
+}
+
+/**
+ * The terminal BUILD failure of the app placed here.
+ *
+ * Two remedies, both honest: ask again — offered ONLY when the failed record
+ * kept the original request, because re-issuing anything else is a different
+ * build wearing this one's name — and clear the slot, which is the unplace the
+ * host's own markup comes back from.
+ *
+ * The wire's `reason` never reaches this page (§16 law 3, same law as the
+ * embed's): every one of those sentences names a component, an expression or an
+ * env var, and this is a host's own page. The developer sentence keeps the home
+ * it has — the server's `[vendo] app build failed (app_…)` log line.
+ */
+function SlotBuildFailed({ appId, slotId, onChanged }: {
+  appId: string;
+  slotId: string;
+  onChanged(): void;
+}) {
+  const { client } = useVendoProvider();
+  const [failure, setFailure] = useState<{ retryable?: boolean; prompt?: string }>();
+  const [busy, setBusy] = useState(false);
+
+  // ONE read, not a poll: the record is terminal. The status already came from
+  // the placements read; this is only the retry affordance's evidence.
+  useEffect(() => {
+    let cancelled = false;
+    setFailure(undefined);
+    void client.apps.open(appId, { pending: true }).then(
+      surface => { if (!cancelled && surface.kind === "failed") setFailure(surface); },
+      () => { /* the record is failed either way; without detail there is no retry */ },
+    );
+    return () => { cancelled = true; };
+  }, [appId, client]);
+
+  const retry = async () => {
+    const prompt = failure?.prompt;
+    if (prompt === undefined) return;
+    setBusy(true);
+    try {
+      const created = await client.apps.create({ prompt });
+      // The affordance AWAITS the placement itself, so the slot showing the new
+      // build is a fact rather than a hope.
+      await client.apps.place(created.id, slotId);
+      announcePin(created.id);
+    } finally {
+      setBusy(false);
+      onChanged();
+    }
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    try {
+      await client.apps.unplace(appId, slotId);
+    } finally {
+      setBusy(false);
+      onChanged();
+    }
+  };
+
+  return (
+    <div className="fl-slot-ghost">
+      <GhostSkeleton />
+      <span className="fl-slot-cta" role="alert">
+        <span className="fl-slot-cta-label">This view didn’t build</span>
+        <small>{BUILD_FAILURE_COPY}</small>
+        {failure?.retryable === true && failure.prompt !== undefined ? (
+          <button type="button" className="fl-invite-btn" disabled={busy} onClick={() => void retry()}>
+            Try again
+          </button>
+        ) : null}
+        <button type="button" className="fl-invite-own" disabled={busy} onClick={() => void clear()}>
+          Clear this slot
+        </button>
+      </span>
+    </div>
+  );
+}
+
+function MountedApp({ appId }: { appId: string }) {
+  const { client, components } = useVendoProvider();
+  const { surface, error, isLoading, refresh } = useApp(appId);
+  // The served-surface keepalive: an on-screen embed pings the
+  // machine (host-proxied) so a served app doesn't idle out under the user.
+  const keepalive = useMemo(
+    () => ({ ping: () => client.apps.pingMachine(appId) }),
+    [appId, client],
+  );
+  if (!surface) {
+    if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
+    return <SlotGhost label="Loading app…" loading />;
+  }
   return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
@@ -71,7 +196,8 @@ export interface VendoSlotPin {
 
 /** 08-ui §4; 06-apps §8 — inline mount that never sacrifices host fallback content.
  *
- *  Three states:
+ *  A slot's one job is mounting brand-new generated apps (2026-08-02 final
+ *  shape — remix lives entirely on `<Remixable>` now). Three states:
  *  - empty: no `appId`, no `pin`, no `children` → the ghost with a REAL CTA button
  *    that opens the authoring surface (`onAuthor`, else the mounted ⌘K palette);
  *  - app: `appId` → the whole app document mounts (via the single-app transport);
@@ -82,8 +208,11 @@ export interface VendoSlotPin {
  *  the original `children` as the visible recovery path (06-apps §8). Without any
  *  of the three, the children render UNTOUCHED (no wrapper — hosts may inline
  *  slots anywhere). */
-export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, remixPrompt, discover = true, emptyState, children }: {
+export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, discover = true, emptyState, children }: {
   id: string;
+  /** What a person choosing this slot in the "Add to…" picker reads. Defaults
+   *  to the id read as words ("net-worth-card" → "Net worth card"). */
+  label?: string;
   appId?: string;
   pin?: VendoSlotPin;
   /** Invoked when the empty-state CTA is activated — the seam to open a thread
@@ -93,21 +222,7 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
    *  prop — for hosts that resolve the pin themselves (e.g. via useSlotApp
    *  for a layout decision) and must not start a second poll. */
   discover?: boolean;
-  /** Remix folds into Slot as a flag (ui-usage-dx §2): show the hover Remix
-   *  affordance on the slot's content. Gesture-owned forking (2026-07-21):
-   *  activating it on an EMPTY slot forks the captured component
-   *  DETERMINISTICALLY (the engine copies the trusted source and records the
-   *  pin — no model call, no model fork decision) and the fork mounts in
-   *  place; on a slot already holding an app it opens the overlay composer
-   *  prefilled so the instruction rides an ordinary edit. The slot id should
-   *  match a registered (remixable) host component so sync has captured its
-   *  source — init/doctor verify the flag against catalog registrations. */
-  remix?: boolean;
-  /** Override for the composer prefill when remixing a slot that already
-   *  holds an app; defaults to a prompt naming the slot's component. (The
-   *  empty-slot gesture itself never sends text to the model.) */
-  remixPrompt?: string;
-  /** Empty-state invitation config (ui-lane-entry pick S-A×S-D). Every string
+  /** Empty-state invitation config. Every string
    *  is host-customizable with white-label defaults; suggestions are 3
    *  host-aware prompts (generic fallbacks otherwise) whose tap PREFILLS the
    *  conversation composer — never sends. */
@@ -118,41 +233,33 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
     subtitle?: string;
     /** Up to 3 prompt chips. Default: generic view-authoring prompts. */
     suggestions?: string[];
-    /** Primary button label (layout "button"). Default "Design a view". */
+    /** Primary button label. Default "Design a view". */
     ctaLabel?: string;
-    /** "button" (chips + primary CTA, default) or "chips-first" (chips are
-     *  the actions; a quiet "or describe your own…" link opens the composer). */
-    layout?: "button" | "chips-first";
-    /** Optional mark above the title. Default "none" (Yousef's pick). */
-    mark?: "none" | "sparkle" | "tile";
   };
   children?: ReactNode;
 }) {
-  const { client, components } = useVendoContext();
+  const { components } = useVendoProvider();
   // Self-discovery (ui-usage-dx §2): with no explicit `appId`/`pin`, the slot
   // resolves its own pinned app — hosts never write the polling dance.
   const discovery = useSlotApp(id, { enabled: discover && appIdProp === undefined && pin === undefined });
-  const appId = appIdProp ?? (pin === undefined ? discovery.appId : undefined);
-  const [remixBusy, setRemixBusy] = useState(false);
-  // Latch: a fork that RESOLVED but has not surfaced as `appId` yet. With
-  // discover={false} the parent manages appId on its own poll cadence, so the
-  // slot still looks empty after the fast wire fork returns — and the wire
-  // fork is not idempotent, so a second tap would mint a duplicate app.
-  const [forkPending, setForkPending] = useState(false);
-  useEffect(() => {
-    if (appId !== undefined) setForkPending(false);
-  }, [appId]);
-  const remixLatched = remixBusy || (forkPending && appId === undefined);
+  // Only a READY app mounts: a placement can name a build that is still
+  // forming (or that failed), and opening an app with no document yet is a
+  // guaranteed "this view didn't load". The host's own children stay up until
+  // there is something real to swap in.
+  const appId = appIdProp ?? (pin === undefined && discovery.status === "ready" ? discovery.appId : undefined);
+  // An explicit `appId`/`pin` prop is the host asserting the slot's contents:
+  // it carries no build status of its own, and a placement written into it
+  // would never be read.
+  const resolvesItself = appIdProp === undefined && pin === undefined;
+  // The placed app's own build status — discovery's, and only discovery's.
+  const status = resolvesItself ? discovery.status : undefined;
 
-  // Dev rail: the remix gesture forks the component captured under this slot's
-  // registered name — an unregistered name means there is nothing to fork.
-  // (The client can't see catalog `remixable` flags; init verifies those.)
-  useEffect(() => {
-    if (!remix || !developmentMode() || components[id] !== undefined) return;
-    console.warn(
-      `[vendo] VendoSlot "${id}" sets remix, but no host component is registered under that name — register it (marked remixable) so sync captures the source the Remix gesture forks.`,
-    );
-  }, [remix, id, components]);
+  // A slot id lives in the host's markup and nowhere else, so a surface that is
+  // not on this page (the embed's "Add to…" picker) can only learn this slot
+  // exists from here. Every state of a self-resolving slot reports it, including
+  // the untouched-children one; a host-asserted one stays out of the picker
+  // rather than promising a landing the person would never see.
+  useReportSlot(id, label ?? slotLabel(id), resolvesItself);
 
   const author = () => {
     if (onAuthor) {
@@ -172,76 +279,51 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
   const suggest = (prompt: string) => {
     const opened = openVendoConversation({ prompt, send: false });
     if (!opened && developmentMode()) {
-      console.warn(`[vendo] VendoSlot "${id}": suggestions open the conversation surface — mount a VendoOverlay for them to land in.`);
+      log({
+        code: "ui.vendo-slot-no-overlay",
+        level: "warn",
+        message: `[vendo] VendoSlot "${id}": suggestions open the conversation surface — mount a VendoOverlay for them to land in.`,
+      });
     }
   };
 
-  // Gesture-owned forking (2026-07-21): the Remix gesture on an EMPTY slot
-  // executes the fork DETERMINISTICALLY through the wire (the engine copies
-  // the captured source and records the pin — no model call, and the model
-  // never decides to fork); the fork then mounts via slot discovery. On a
-  // slot already holding an app the fork exists, so the gesture opens the
-  // composer prefilled — the instruction rides an ordinary edit.
-  const startRemix = () => {
-    // A slot is FILLED when it holds an app OR a host-supplied pin (the pin
-    // branch mounts through AppFrame the same way) — either way the fork
-    // already exists, so the gesture opens the composer, never the wire fork.
-    if (appId !== undefined || pin !== undefined) {
-      const prompt = remixPrompt ?? `Update my ${id} remix: `;
-      const opened = openVendoConversation({ prompt, send: false });
-      if (!opened && developmentMode()) {
-        console.warn(`[vendo] VendoSlot "${id}": remix opens the conversation surface — mount a VendoOverlay for it to land in.`);
-      }
-      return;
-    }
-    if (remixLatched) return;
-    setRemixBusy(true);
-    client.apps.forkPin({ slot: id })
-      .then(() => {
-        setForkPending(true);
-        return discovery.refresh();
-      })
-      .catch((error: unknown) => {
-        if (developmentMode()) {
-          console.warn(`[vendo] VendoSlot "${id}": the remix fork failed — ${error instanceof Error ? error.message : String(error)}`);
-        }
-      })
-      .finally(() => setRemixBusy(false));
-  };
-
-  const remixButton = remix ? (
-    <button type="button" className="fl-slot-remix" aria-label={`Remix ${id} with Vendo`} aria-busy={remixLatched || undefined} disabled={remixLatched} onClick={startRemix}>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3Z" />
-      </svg>
-      {remixLatched ? "Remixing…" : "Remix"}
-    </button>
-  ) : null;
+  // A build that will never land. `discovery.appId`, not `appId`: only a READY
+  // placement resolves into a mountable app id, and this one never will.
+  if (status === "failed" && discovery.appId !== undefined) {
+    return (
+      <ChromeRoot>
+        <div className="fl-slot" data-vendo-slot={id}>
+          <SlotBuildFailed appId={discovery.appId} slotId={id} onChanged={() => void discovery.refresh()} />
+        </div>
+      </ChromeRoot>
+    );
+  }
 
   if (!appId && !pin) {
-    if (children !== undefined) {
-      if (remixButton === null) return <>{children}</>;
-      // The affordance needs a positioned boundary over the host's own markup;
-      // the inline wrapper stays layout-neutral (the ChromeRoot child is an
-      // empty block carrying only the absolutely-positioned button).
+    if (children !== undefined) return <>{children}</>;
+    // A placement row is written the moment the app id is minted, so a slot
+    // with no markup of its own says what is coming instead of inviting a
+    // second ask — the skeleton the empty state already uses, minus the
+    // invitation. BEHIND the children arm above, deliberately: a working host
+    // component must never blank into a skeleton for the length of a build.
+    // The conversation surface carries that beat for the person who asked.
+    if (status === "building") {
       return (
-        <div data-vendo-slot={id} style={{ position: "relative", height: "100%" }}>
-          <ChromeRoot automaticPolicyNotice={false}>{remixButton}</ChromeRoot>
-          {children}
-        </div>
+        <ChromeRoot>
+          <div className="fl-slot" data-vendo-slot={id}>
+            <SlotGhost label="Building your view…" loading />
+          </div>
+        </ChromeRoot>
       );
     }
-    // The invitation (pick S-A×S-D): accent-washed surface, real copy, up to
-    // three concrete suggestion chips, and (layout "button") a primary CTA.
-    // The skeleton stays behind at low opacity so it still reads as "a view
-    // goes here". No icon by default.
+    // The invitation: accent-washed surface, real copy, up to three concrete
+    // suggestion chips, and a primary CTA. The skeleton stays behind at low
+    // opacity so it still reads as "a view goes here".
     const invite = {
       title: emptyState?.title ?? "This space builds itself",
       subtitle: emptyState?.subtitle ?? "describe a view — it renders here, live on your data",
       suggestions: (emptyState?.suggestions ?? defaultSlotSuggestions).slice(0, 3),
       ctaLabel: emptyState?.ctaLabel ?? "Design a view",
-      layout: emptyState?.layout ?? "button",
-      mark: emptyState?.mark ?? "none",
     };
     return (
       <ChromeRoot>
@@ -249,14 +331,6 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
           <div className="fl-slot-ghost fl-slot-invite">
             <GhostSkeleton />
             <div className="fl-slot-cta" role="group" aria-label={invite.title}>
-              {invite.mark !== "none" ? (
-                <span className={`fl-invite-mark${invite.mark === "tile" ? " fl-invite-mark-tile" : ""}`} aria-hidden="true">
-                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3Z" />
-                    <path d="m18 14 .8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14Z" />
-                  </svg>
-                </span>
-              ) : null}
               <span className="fl-invite-title">{invite.title}</span>
               <small className="fl-invite-sub">{invite.subtitle}</small>
               {invite.suggestions.length > 0 ? (
@@ -271,11 +345,7 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
                   </div>
                 </>
               ) : null}
-              {invite.layout === "button" ? (
-                <button type="button" className="fl-invite-btn" onClick={author}>{invite.ctaLabel}</button>
-              ) : (
-                <button type="button" className="fl-invite-own" onClick={author}>or describe your own…</button>
-              )}
+              <button type="button" className="fl-invite-btn" onClick={author}>{invite.ctaLabel}</button>
             </div>
           </div>
         </div>
@@ -290,7 +360,6 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
   return (
     <ChromeRoot>
       <div className="fl-slot" data-vendo-slot={id}>
-        {remixButton}
         <div className="fl-slot-filled">
           <FluidReveal stateKey={appId ? `app:${appId}` : `pin:${id}`} initialExit={children}>
             <PinMount slot={id} fallback={Fallback}>{mounted}</PinMount>

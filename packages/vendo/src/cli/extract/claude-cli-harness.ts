@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
+import { rootScopedToolRules } from "./confine-to-root.js";
 import { composeGatewayFuel, hasOwnAnthropicEnvOverride, type GatewayFuelOverlay } from "./gateway-fuel.js";
-import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
+import { extractionModelPin, type ExtractionHarness, type ExtractionRunInput } from "./harness.js";
 
 /**
  * Fallback extraction harness: the `claude` CLI already on the dev's PATH,
@@ -14,7 +15,11 @@ import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
  *
  * Isolation: `--setting-sources ""` (never inherit the dev's personal Claude
  * Code settings/hooks — same intent as claude-harness.ts's
- * `settingSources: []`), read-only tool allowlist, no shell/web/write surface.
+ * `settingSources: []`), no shell/web/write surface, and an `--allowedTools`
+ * allowlist whose entries are ROOT-SCOPED permission rules rather than bare
+ * tool names (confine-to-root.ts) — a bare `Read` auto-allows Read on any
+ * path, which is the CLI's equivalent of the blanket allowlist claude-
+ * harness.ts avoids by passing `tools` plus a `canUseTool` callback.
  *
  * Gateway fuel: when the dev has none of ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
  * CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_BASE_URL (the corporate-gateway/custom-
@@ -22,9 +27,14 @@ import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
  * runs on Vendo Cloud's model gateway instead of degrading to unavailable
  * (see gateway-fuel.ts). Own credential always wins — this never overrides a
  * working ANTHROPIC_API_KEY, login, or any of those env vars.
+ *
+ * "Own" is provenance, not spelling: the ANTHROPIC_BASE_URL this rung honors
+ * (and labels, and refuses to overlay) is the developer's own — from their
+ * shell, or explicitly passed by a programmatic caller. A project's `.env`
+ * cannot supply one; sync-flow.ts's readEnvFiles drops it before any env
+ * reaches here, so a cloned repo can never pick where its source is sent.
  */
 
-const ALLOWED_TOOLS = ["Read", "Glob", "Grep"];
 const DISALLOWED_TOOLS = [
   "Bash", "Write", "Edit", "WebFetch", "WebSearch", "Task",
   "TodoWrite", "NotebookEdit", "KillShell", "BashOutput",
@@ -129,10 +139,10 @@ export function claudeCliHarness(options: ClaudeCliHarnessOptions = {}): Extract
       return null;
     },
     async run(input: ExtractionRunInput): Promise<string> {
-      const model = input.env["VENDO_EXTRACTION_MODEL"];
+      const model = extractionModelPin(input.env);
       const args = [
         "-p", input.instructions,
-        "--allowedTools", ...ALLOWED_TOOLS,
+        "--allowedTools", ...rootScopedToolRules(input.root),
         "--disallowedTools", ...DISALLOWED_TOOLS,
         "--setting-sources", "",
         ...(model === undefined ? [] : ["--model", model]),

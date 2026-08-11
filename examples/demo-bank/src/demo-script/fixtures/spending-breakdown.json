@@ -1,0 +1,129 @@
+{
+  "format": "vendo/app@1",
+  "name": "Spending This Month",
+  "ui": "tree",
+  "tree": {
+    "formatVersion": "vendo-genui/v2",
+    "root": "root",
+    "nodes": [
+      {
+        "id": "root",
+        "source": "prewired",
+        "children": [
+          "stack-1"
+        ],
+        "component": "Stack"
+      },
+      {
+        "id": "stack-1",
+        "props": {
+          "gap": 6
+        },
+        "source": "prewired",
+        "children": [
+          "stack-2",
+          "surface-1"
+        ],
+        "component": "Stack"
+      },
+      {
+        "id": "stack-2",
+        "props": {
+          "gap": 1
+        },
+        "source": "prewired",
+        "children": [
+          "text-1",
+          "text-2"
+        ],
+        "component": "Stack"
+      },
+      {
+        "id": "text-1",
+        "props": {
+          "text": "Spending This Month",
+          "variant": "heading"
+        },
+        "source": "prewired",
+        "component": "Text"
+      },
+      {
+        "id": "text-2",
+        "props": {
+          "text": "Current period · all categories",
+          "variant": "caption"
+        },
+        "source": "prewired",
+        "component": "Text"
+      },
+      {
+        "id": "surface-1",
+        "source": "prewired",
+        "children": [
+          "stack-3"
+        ],
+        "component": "Surface"
+      },
+      {
+        "id": "stack-3",
+        "props": {
+          "gap": 6
+        },
+        "source": "prewired",
+        "children": [
+          "row-1",
+          "divider-1",
+          "spendingbreakdown-1"
+        ],
+        "component": "Stack"
+      },
+      {
+        "id": "row-1",
+        "props": {
+          "gap": 4
+        },
+        "source": "prewired",
+        "children": [
+          "maplespendingdonut-1"
+        ],
+        "component": "Row"
+      },
+      {
+        "id": "maplespendingdonut-1",
+        "props": {
+          "size": 220,
+          "slices": {
+            "$path": "/hostGetSpendingInsights/data"
+          }
+        },
+        "source": "host",
+        "component": "MapleSpendingDonut"
+      },
+      {
+        "id": "divider-1",
+        "source": "prewired",
+        "component": "Divider"
+      },
+      {
+        "id": "spendingbreakdown-1",
+        "props": {
+          "data": {
+            "$path": "/hostGetSpendingInsights/data"
+          }
+        },
+        "source": "generated",
+        "component": "SpendingBreakdown"
+      }
+    ],
+    "queries": [
+      {
+        "name": "hostGetSpendingInsights",
+        "tool": "host_getSpendingInsights",
+        "input": {}
+      }
+    ]
+  },
+  "components": {
+    "SpendingBreakdown": "export default function SpendingBreakdown({ data }: { data: { category: string; amount: number }[] }) {\n      if (!data || data.length === 0) return null;\n\n      const total = data.reduce((sum, d) => sum + d.amount, 0);\n      const sorted = [...data].sort((a, b) => b.amount - a.amount);\n\n      const fmt = (cents: number) => {\n        const dollars = cents / 100;\n        return dollars.toLocaleString(\"en-US\", { style: \"currency\", currency: \"USD\", minimumFractionDigits: 2 });\n      };\n\n      const pct = (cents: number) => {\n        if (total === 0) return \"0%\";\n        return ((cents / total) * 100).toFixed(1) + \"%\";\n      };\n\n      const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);\n\n      const rowStyle: React.CSSProperties = {\n        display: \"flex\",\n        justifyContent: \"space-between\",\n        alignItems: \"center\",\n        padding: \"10px 0\",\n        borderBottom: \"1px solid var(--vendo-color-border)\",\n      };\n\n      const labelStyle: React.CSSProperties = {\n        fontFamily: \"var(--vendo-font-family)\",\n        fontSize: \"var(--vendo-font-size)\",\n        color: \"var(--vendo-color-text)\",\n      };\n\n      const rightStyle: React.CSSProperties = {\n        display: \"flex\",\n        gap: \"12px\",\n        alignItems: \"center\",\n        fontFamily: \"var(--vendo-font-family)\",\n        fontSize: \"var(--vendo-font-size)\",\n      };\n\n      const amountStyle: React.CSSProperties = {\n        color: \"var(--vendo-color-text)\",\n        fontVariantNumeric: \"tabular-nums\",\n        minWidth: \"80px\",\n        textAlign: \"right\",\n      };\n\n      const pctStyle: React.CSSProperties = {\n        color: \"var(--vendo-color-muted)\",\n        fontVariantNumeric: \"tabular-nums\",\n        minWidth: \"44px\",\n        textAlign: \"right\",\n        fontSize: \"13px\",\n      };\n\n      const totalRowStyle: React.CSSProperties = {\n        display: \"flex\",\n        justifyContent: \"space-between\",\n        alignItems: \"center\",\n        padding: \"12px 0 0 0\",\n      };\n\n      const totalLabelStyle: React.CSSProperties = {\n        fontFamily: \"var(--vendo-font-family)\",\n        fontSize: \"var(--vendo-font-size)\",\n        color: \"var(--vendo-color-text)\",\n        fontWeight: 600,\n      };\n\n      const totalAmountStyle: React.CSSProperties = {\n        fontFamily: \"var(--vendo-font-family)\",\n        fontSize: \"var(--vendo-font-size)\",\n        color: \"var(--vendo-color-text)\",\n        fontVariantNumeric: \"tabular-nums\",\n        fontWeight: 600,\n      };\n\n      return (\n        <div style={{ width: \"100%\" }}>\n          {sorted.map((item) => (\n            <div key={item.category} style={rowStyle}>\n              <span style={labelStyle}>{capitalize(item.category)}</span>\n              <div style={rightStyle}>\n                <span style={amountStyle}>{fmt(item.amount)}</span>\n                <span style={pctStyle}>{pct(item.amount)}</span>\n              </div>\n            </div>\n          ))}\n          <div style={totalRowStyle}>\n            <span style={totalLabelStyle}>Total</span>\n            <span style={totalAmountStyle}>{fmt(total)}</span>\n          </div>\n        </div>\n      );\n    }"
+  }
+}

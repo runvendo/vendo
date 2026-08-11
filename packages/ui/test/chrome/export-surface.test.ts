@@ -13,14 +13,17 @@ import * as chrome from "../../src/chrome/index.js";
 // from the source chrome entry (a dropped type re-export emits TS2305).
 
 const VALUE_EXPORTS = [
-  "ActivityPanel",
+  // The window label the automation card shares with the automations wire.
+  "sponsorLabel",
   "ApprovalCard",
-  "AutomationsPanel",
+  "AutomationCard",
   "ConnectCard",
-  "ConnectedAccountsPanel",
+  "GrantSetCard",
+  // Build contract §9.4 — the viewer fork offer.
+  "ForkOffer",
+  "encodeGrantPrincipal",
   "NoPolicyNotice",
   "VendoOverlay",
-  "VendoPage",
   "VendoPalette",
   "VendoSlot",
   // Existing-agents Lane B — the three BYO-chat embeds.
@@ -31,34 +34,53 @@ const VALUE_EXPORTS = [
   "VendoToasts",
   "vendoToast",
   "dismissAllVendoToasts",
-  "WaitingQueue",
-  "VendoStage",
   // Shelf Task 4 — the conversation-opening registry seam (slot remix,
   // triggers, palette defaults all route through it).
   "openVendoConversation",
-  // Shelf Lane B — the two placeable pieces (ui-usage-dx §2).
-  "VendoActivities",
+  // Keystone graduates B8 — the pin ceremony. `usePinAction` is what every pin
+  // affordance calls; `playPinCeremony` is the same sequence for a host running
+  // a pin from its own control.
+  "playPinCeremony",
+  "usePinAction",
+  // ⚠️ TEST EDIT — `usePinNudge` joins them DELIBERATELY. The thread is an eject
+  // surface, so every import in `thread/parts.tsx` is public API by
+  // construction, and the pin button there needs its invite state. The action
+  // and the invitation are two halves of one affordance: a host that ejects the
+  // template and keeps the pin needs both or its pin goes quiet.
+  "usePinNudge",
+  // ⚠️ TEST EDIT — the "Add to…" picker is public for the SAME reason
+  // `usePinNudge` is: the thread card renders it in place of the fixed pin once
+  // the registry knows more than one slot, and every import in
+  // `thread/parts.tsx` is public API by construction. (Its destinations come
+  // from `useSlots`, which the root surface exports.)
+  "AddToPicker",
   "VendoTrigger",
+  // Keystone graduates B7 — the remixable-surface affordance.
+  "Remixable",
   // The eject surface (§4 customization ladder): internals the ejected
   // thread compiles against, exported deliberately so ejected chrome keeps
   // data/wire logic as a package dependency and only forks pixels.
-  "describeActivity",
-  "formatAuditTime",
-  "outcomeLabel",
-  // ui-lane-panels pick B — the shared icon-ledger rows (ActivityPanel +
-  // VendoActivities render through them; ejected activities fork them).
-  "ActivityLedger",
-  "formatRelativeAuditTime",
-  "kindGlyph",
   "BuildBeat",
-  "StatusRibbon",
+  // Spec §1 (2026-08-03) — the settled turn's summary row. Public because the
+  // ejected thread template renders it (the eject standalone guard requires
+  // every template import to be part of the chrome surface).
+  "BeatSummary",
+  // 2026-07 loading-state audit — the between-steps busy voice, now a beat at
+  // the transcript tail rather than a pill above the composer; the ejected
+  // thread template renders it, so it must be public (eject standalone rule).
+  "WorkingBeat",
   "toolPresentation",
+  // 2026-07 split-view workspace — the overlay's expand/collapse machine;
+  // the ejected thread's app cards read the context via useSplitView.
+  "SplitViewContext",
+  "useSplitView",
   "ChromeRoot",
   "useCopyFeedback",
   "ConnectDockButton",
   "ConnectTray",
   "FluidThinking",
   "previewArgs",
+  "toolkitDisplayName",
   "toolTitle",
   "Markdown",
   "MorphToast",
@@ -83,7 +105,11 @@ const VALUE_EXPORTS = [
 
 const TYPE_EXPORTS = [
   "ApprovalCardProps",
+  "AutomationCardProps",
   "ConnectCardProps",
+  "GrantSetCardProps",
+  "GrantSetPermission",
+  "ForkOfferProps",
   "VendoOverlayProps",
   "VendoCommand",
   "HotkeyChord",
@@ -91,15 +117,14 @@ const TYPE_EXPORTS = [
   "VendoToastsProps",
   "VendoToastInput",
   "VendoToastAction",
-  "WaitingQueueProps",
   "OpenConversationOptions",
-  "VendoActivitiesProps",
   "VendoTriggerProps",
+  // 2026-08-02 final shape: RemixContext died with the context-chip behavior
+  // (remix always means fork now) — deliberately absent.
+  "RemixableProps",
   // Eject surface types.
   "VendoThreadProps",
   "MorphToastProps",
-  "OutcomeTone",
-  "ActivityGlyph",
   // Discoverability (ui-usage-dx §6) — the dial + greeting config shapes.
   "VendoDiscoverability",
   "VendoGreeting",

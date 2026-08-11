@@ -1,7 +1,7 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { vi } from "vitest";
+import { onTestFinished, vi } from "vitest";
 import type { TelemetryOptions } from "./shared.js";
 
 export interface CapturedEvent {
@@ -24,6 +24,7 @@ export async function telemetryCapture(env: Record<string, string | undefined> =
   event: (name: string) => CapturedEvent;
 }> {
   const home = await mkdtemp(join(tmpdir(), "vendo-tele-home-"));
+  onTestFinished(() => rm(home, { recursive: true, force: true }));
   const fetchMock = vi.fn().mockResolvedValue({ ok: true });
   const events = (): CapturedEvent[] =>
     fetchMock.mock.calls.map((call) => JSON.parse((call[1] as { body: string }).body) as CapturedEvent);

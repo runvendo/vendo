@@ -2,8 +2,8 @@
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { VENDO_TREE_FORMAT_V2, type Json, type ToolOutcome } from "@vendoai/core";
-import { PayloadView, TreeView, registerTreeRenderer, type WalkTree } from "../../src/tree/index.js";
+import { VENDO_TREE_FORMAT, type Json, type ToolOutcome } from "@vendoai/core";
+import { PayloadView, TreeView, type WalkTree } from "../../src/tree/index.js";
 
 afterEach(() => {
   cleanup();
@@ -13,31 +13,74 @@ afterEach(() => {
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
 function tree(nodes: WalkTree["nodes"], root = nodes[0]?.id ?? "root", components?: Record<string, string>): WalkTree {
-  return { formatVersion: VENDO_TREE_FORMAT_V2, root, nodes, components };
+  return { formatVersion: VENDO_TREE_FORMAT, root, nodes, components };
 }
 
 describe("TreeView public surface", () => {
-  it("renders the reserved primitives", () => {
+  it("renders the built-in Kit layout components", () => {
     render(
       <TreeView
         tree={tree([
-          { id: "root", component: "Stack", children: ["heading", "row", "grid", "surface", "divider", "skeleton"] },
+          { id: "root", component: "Stack", children: ["heading", "row", "grid", "surface", "card", "divider"] },
           { id: "heading", component: "Text", props: { text: "Tree heading", variant: "heading" } },
           { id: "row", component: "Row" },
           { id: "grid", component: "Grid", props: { columns: 3 } },
           { id: "surface", component: "Surface" },
+          { id: "card", component: "Card", props: { title: "Spend" } },
           { id: "divider", component: "Divider" },
-          { id: "skeleton", component: "Skeleton" },
         ])}
         components={{}}
         onAction={ok}
       />,
     );
 
-    expect(screen.getByText("Tree heading").getAttribute("data-primitive")).toBe("Text");
-    for (const name of ["Stack", "Row", "Grid", "Surface", "Divider", "Skeleton"]) {
-      expect(document.querySelector(`[data-primitive="${name}"]`)).not.toBeNull();
+    expect(screen.getByText("Tree heading").getAttribute("data-kit")).toBe("Text");
+    for (const name of ["Stack", "Row", "Grid", "Surface", "Card", "Divider"]) {
+      expect(document.querySelector(`[data-kit="${name}"]`)).not.toBeNull();
     }
+  });
+
+  /** R4 containment, for the two names V4 retired: a stored app naming
+   *  `Table`/`Skeleton` must show the contained notice on THAT node while every
+   *  sibling still renders — never a blank surface. */
+  it("contains a retired Table node while its siblings still render", () => {
+    render(
+      <TreeView
+        tree={tree([
+          { id: "root", component: "Stack", children: ["before", "gone", "after"] },
+          { id: "before", component: "Text", props: { text: "Above the table" } },
+          { id: "gone", component: "Table", props: { rows: [], columns: ["a"] } },
+          { id: "after", component: "Stat", props: { label: "Total", value: 42 } },
+        ])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    expect(screen.getByRole("note", { name: /unknown component/i }).textContent).toContain("Table");
+    // The siblings are the point: containment, not a dead surface.
+    expect(screen.getByText("Above the table")).toBeTruthy();
+    expect(document.querySelector('[data-kit="Stat"]')).not.toBeNull();
+    expect(screen.getByText("42")).toBeTruthy();
+  });
+
+  /** V4 — `Skeleton` left the vocabulary with the legacy family; a tree naming
+   *  it is now an unknown component, contained like any other. */
+  it("contains a tree node naming the retired Skeleton primitive", () => {
+    render(
+      <TreeView
+        tree={tree([
+          { id: "root", component: "Stack", children: ["gone", "kept"] },
+          { id: "gone", component: "Skeleton" },
+          { id: "kept", component: "Text", props: { text: "Sibling survived" } },
+        ])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    expect(screen.getByRole("note", { name: /unknown component/i }).textContent).toContain("Skeleton");
+    expect(screen.getByText("Sibling survived")).toBeTruthy();
   });
 
   it("looks up host components and contains unknown names", () => {
@@ -67,7 +110,7 @@ describe("TreeView public surface", () => {
       />,
     );
 
-    expect(document.querySelector('[data-dangling-node="not-yet-streamed"] [data-primitive="Skeleton"]')).not.toBeNull();
+    expect(document.querySelector('[data-dangling-node="not-yet-streamed"] [data-skeleton]')).not.toBeNull();
   });
 
   it("skeletons a generated node until its streamed source arrives", () => {
@@ -78,7 +121,7 @@ describe("TreeView public surface", () => {
 
     render(<TreeView tree={partial} components={{}} onAction={ok} />);
 
-    expect(document.querySelector('[data-streaming-component="RevenueCard"] [data-primitive="Skeleton"]')).not.toBeNull();
+    expect(document.querySelector('[data-streaming-component="RevenueCard"] [data-skeleton]')).not.toBeNull();
     expect(screen.queryByRole("note", { name: /invalid ui tree/i })).toBeNull();
   });
 
@@ -92,6 +135,20 @@ describe("TreeView public surface", () => {
     );
 
     expect(screen.getByRole("note", { name: /empty ui tree/i }).textContent).toMatch(/no renderable content/i);
+  });
+
+  it("skeletons an empty STREAMING tree instead of flashing the empty-tree notice", () => {
+    // A partial stream legitimately passes through content-less shapes on its
+    // way to the full tree; the loud notice is for FINAL payloads only.
+    const partial = {
+      ...tree([{ id: "root", component: "Stack", source: "prewired" }]),
+      streaming: true,
+    } as WalkTree;
+
+    render(<TreeView tree={partial} components={{}} onAction={ok} />);
+
+    expect(screen.queryByRole("note", { name: /empty ui tree/i })).toBeNull();
+    expect(document.querySelector('[data-skeleton]')).not.toBeNull();
   });
 
   it("contains an erroring host node while preserving its sibling", () => {
@@ -114,7 +171,129 @@ describe("TreeView public surface", () => {
     );
 
     expect(screen.getByText("Sibling survived")).toBeTruthy();
-    expect(screen.getByRole("note", { name: /node render error/i }).textContent).toContain("bad");
+    // ⚠️ TEST EDIT (M36): this asserted the NODE ID ("bad") in the notice's text.
+    // The id is our plumbing and the exception's message is generated-component
+    // code talking; both are now the dev-mode `detail`. The notice a person
+    // reads says what happened.
+    const note = screen.getByRole("note", { name: /node render error/i });
+    expect(note.textContent).toContain("didn’t load");
+    expect(note.textContent).not.toContain("bad");
+  });
+
+  it("skeletons an erroring host node while STREAMING, then verdicts on the final payload", () => {
+    // Demo-latency lane — mid-stream, a host component crash (partial props,
+    // half-arrived data) is a transient: the region holds the silhouette and
+    // the latch retries on the next prefix. The loud "Node render error"
+    // notice is a verdict reserved for FINAL payloads.
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const Boom = () => {
+      throw new Error("host render exploded");
+    };
+    const nodes: WalkTree["nodes"] = [
+      { id: "root", component: "Row", children: ["bad"] },
+      { id: "bad", component: "Boom", source: "host" },
+    ];
+    const partial = { ...tree(nodes), streaming: true } as WalkTree;
+
+    const view = render(<TreeView tree={partial} components={{ Boom }} onAction={ok} />);
+    expect(screen.queryByRole("note", { name: /node render error/i })).toBeNull();
+    expect(document.querySelector('[data-skeleton]')).not.toBeNull();
+
+    // The FINAL payload (streaming flag gone) re-evaluates fresh: the crash
+    // is now a verdict and the notice renders.
+    view.rerender(<TreeView tree={tree(nodes)} components={{ Boom }} onAction={ok} />);
+    // ⚠️ TEST EDIT (M36): as above — the verdict is the honest line, not the id.
+    expect(screen.getByRole("note", { name: /node render error/i }).textContent)
+      .toContain("didn’t load");
+  });
+
+  it("settles on the skeleton when a node starts crashing MID-stream, instead of retrying itself", () => {
+    // The mid-stream retry exists so ARRIVING DATA can heal a crash. It must
+    // never be driven by the boundary's own re-render: a node that keeps
+    // throwing has to settle on the silhouette after one attempt, not spin the
+    // latch until React's nested-update guard kills the surface.
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let renders = 0;
+    let exploding = false;
+    const Sometimes = () => {
+      renders += 1;
+      if (exploding) throw new Error("host render exploded");
+      return <p>Half a view</p>;
+    };
+    const nodes: WalkTree["nodes"] = [
+      { id: "root", component: "Row", children: ["node"] },
+      { id: "node", component: "Sometimes", source: "host" },
+    ];
+    const streaming = () => ({ ...tree(nodes), streaming: true }) as WalkTree;
+
+    const view = render(<TreeView tree={streaming()} components={{ Sometimes }} onAction={ok} />);
+    expect(screen.getByText("Half a view")).toBeTruthy();
+
+    const before = renders;
+    exploding = true;
+    view.rerender(<TreeView tree={streaming()} components={{ Sometimes }} onAction={ok} />);
+
+    // React re-renders a handful of times recovering from the throw itself.
+    // The self-retry is what unbounds it: it ran the crashing node 109 times
+    // in this one update and stopped only at React's nested-update guard.
+    expect(renders - before).toBeLessThan(10);
+    expect(document.querySelector("[data-skeleton]")).not.toBeNull();
+    expect(screen.queryByRole("note", { name: /node render error/i })).toBeNull();
+  });
+
+  it("skeletons an unknown component name while STREAMING instead of the unknown-component notice", () => {
+    const partial = {
+      ...tree([
+        { id: "root", component: "Row", children: ["mystery"] },
+        { id: "mystery", component: "NotYetDefined", source: "host" },
+      ]),
+      streaming: true,
+    } as WalkTree;
+
+    render(<TreeView tree={partial} components={{}} onAction={ok} />);
+
+    expect(screen.queryByRole("note", { name: /unknown component/i })).toBeNull();
+    expect(document.querySelector('[data-streaming-component="NotYetDefined"]')).not.toBeNull();
+  });
+
+  it("skeletons a data-shape mismatch while STREAMING instead of the data-shape notice", () => {
+    // A reshape mismatch over half-arrived data is a transient mid-stream;
+    // the notice is for final payloads.
+    const nodes: WalkTree["nodes"] = [
+      { id: "root", component: "Row", children: ["stat"] },
+      {
+        id: "stat",
+        component: "Text",
+        props: { text: { $path: "/metric/rows", $reshape: [{ op: "sum", field: "amount" }] } },
+      },
+    ];
+    const data = { metric: { rows: [{ amount: "not-a-number" }] } };
+
+    // Control: the same mismatch on a FINAL payload verdicts loudly — proves
+    // these inputs really trip the mismatch path.
+    const view = render(<TreeView tree={tree(nodes)} components={{}} data={data} onAction={ok} />);
+    expect(screen.getByRole("note", { name: /data shape/i })).toBeTruthy();
+
+    const partial = { ...tree(nodes), streaming: true } as WalkTree;
+    view.rerender(<TreeView tree={partial} components={{}} data={data} onAction={ok} />);
+    expect(screen.queryByRole("note", { name: /data shape/i })).toBeNull();
+  });
+
+  it("skeletons an invalid STREAMING payload instead of the invalid-tree notice", () => {
+    const payload = {
+      formatVersion: VENDO_TREE_FORMAT,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack" },
+        { id: "root", component: "Stack" }, // duplicate id → validateTree fails
+      ],
+      streaming: true,
+    } as unknown as Parameters<typeof PayloadView>[0]["payload"];
+
+    render(<PayloadView payload={payload} components={{}} onAction={ok} />);
+
+    expect(screen.queryByRole("note", { name: /invalid ui tree/i })).toBeNull();
+    expect(document.querySelector('[data-skeleton]')).not.toBeNull();
   });
 
   it("contains unknown format versions", () => {
@@ -129,23 +308,9 @@ describe("TreeView public surface", () => {
     expect(screen.getByRole("note", { name: /unsupported ui format/i }).textContent).toContain("vendo-genui/v99");
   });
 
-  it("dispatches additively registered future formats by tag", () => {
-    registerTreeRenderer("vendo-genui/test-profile", ({ payload }) => (
-      <p>Custom renderer: {String(payload.title)}</p>
-    ));
-    render(
-      <PayloadView
-        payload={{ formatVersion: "vendo-genui/test-profile", title: "compact" }}
-        components={{}}
-        onAction={ok}
-      />,
-    );
-    expect(screen.getByText("Custom renderer: compact")).toBeTruthy();
-  });
-
   it("contains core validation failures before rendering", () => {
     const invalid = {
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [{ id: "root", component: "Stack" }],
       components: { Stack: "export default function Stack() { return null }" },
@@ -155,7 +320,7 @@ describe("TreeView public surface", () => {
 
     const notice = screen.getByRole("note", { name: /invalid ui tree/i });
     expect(notice.getAttribute("data-error-code")).toBe("provision");
-    expect(notice.textContent).toMatch(/reserved/i);
+    expect(notice.textContent).toMatch(/shadows a Kit component/i);
   });
 });
 
@@ -261,6 +426,38 @@ describe("TreeView bindings and outcomes", () => {
     await waitFor(() => expect(screen.getByText("belongs to app A")).toBeTruthy());
 
     view.rerender(<TreeView tree={second} components={{ StateProbe }} onAction={ok} />);
+    expect(screen.queryByText("belongs to app A")).toBeNull();
+    expect(screen.getByText("undefined")).toBeTruthy();
+  });
+
+  it("does not carry one app's $state into the next app rendered in its place", async () => {
+    // Every compiled app is rooted at the SAME synthetic node id (the compiler
+    // emits `root: "root"` for all of them — core/genui/wire/compile.ts), so the
+    // root is not an app identity: `appId` is. Two real apps, same position.
+    const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
+    const appTree = (island: string) => tree(
+      [
+        { id: "root", component: "Row", children: ["generated", "probe"] },
+        { id: "generated", component: island, source: "generated" },
+        { id: "probe", component: "StateProbe", source: "host", props: { value: { $state: "draft" } } },
+      ],
+      "root",
+      { [island]: `export default function ${island}() { return <div>editor</div> }` },
+    );
+
+    const view = render(
+      <TreeView appId="app_a" tree={appTree("EditorA")} components={{ StateProbe }} onAction={ok} />,
+    );
+    const iframe = screen.getByTitle("Generated component: EditorA") as HTMLIFrameElement;
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "state-set", key: "draft", value: "belongs to app A" },
+    }));
+    await waitFor(() => expect(screen.getByText("belongs to app A")).toBeTruthy());
+
+    view.rerender(
+      <TreeView appId="app_b" tree={appTree("EditorB")} components={{ StateProbe }} onAction={ok} />,
+    );
     expect(screen.queryByText("belongs to app A")).toBeNull();
     expect(screen.getByText("undefined")).toBeTruthy();
   });

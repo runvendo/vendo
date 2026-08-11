@@ -4,13 +4,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import {
-  ActivityPanel,
   ApprovalCard,
-  AutomationsPanel,
+  ChromeRoot,
   NoPolicyNotice,
-  VendoPage,
+  VendoOverlay,
   VendoPalette,
-  VendoStage,
+  VendoSlot,
+  VendoThread,
 } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
@@ -38,17 +38,34 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     await wire.close();
   });
 
-  it("shows the real inputs as fields and emits basic approve and deny decisions", async () => {
+  it("shows the real inputs on the ask's one quiet line and emits basic approve and deny decisions", async () => {
     const onDecide = vi.fn();
-    render(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={onDecide} /></VendoProvider>);
-    // Flat args render as aligned key→value rows — the same real values, structured.
-    const fields = screen.getByLabelText("Real tool inputs");
-    const rows = [...fields.querySelectorAll(".fl-approval-field")].map(row => [
-      row.querySelector("dt")?.textContent,
-      row.querySelector("dd")?.textContent,
+    const { container } = render(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={onDecide} /></VendoProvider>);
+    // ⚠️ TEST EDIT (M1 · Sentence): this pinned the field TABLE's dt/dd rows and
+    // the risk PILL, both of which the card no longer has. The honesty contract
+    // is unchanged and asserted below — every real input is displayed, visible
+    // by default: the question names the key ones, the quiet line under it
+    // carries the rest, what approving does, and who asked.
+    expect(container.querySelector(".fl-approval-ask")!.textContent).toBe("Delete invoice?");
+    // A boolean is an answer, not a literal (this line used to pin "true").
+    //
+    // ⚠️ TEST EDIT (review of #1149): the notes are a LIST — one item per fact,
+    // so a screen reader can step through them the way it could step through
+    // the field table this replaced. The " · " between them is CSS punctuation
+    // and is deliberately not in the accessible text.
+    const notes = container.querySelector("ul.fl-approval-sub")!;
+    expect(notes.getAttribute("aria-label")).toBe("Request details");
+    expect(Array.from(notes.querySelectorAll("li")).map(item => item.textContent)).toEqual([
+      "Invoice id: inv_42",
+      "Permanent: Yes",
+      "This makes a change you can’t undo, as you.",
+      "asked in an app",
     ]);
-    expect(rows).toEqual([["invoiceId", "inv_42"], ["permanent", "true"]]);
-    expect(screen.getByText("destructive").getAttribute("data-risk")).toBe("destructive");
+    // No amber and no pill: the grade is a machine affordance on the shell, and
+    // its plain words are in the line above.
+    expect(screen.queryByText("Irreversible")).toBeNull();
+    expect(container.querySelector(".fl-cardshell--ceremony")).toBeNull();
+    expect(container.querySelector(".fl-cardshell")!.getAttribute("data-risk")).toBe("destructive");
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() => expect((screen.getByRole("button", { name: "Deny" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Deny" }));
@@ -131,36 +148,48 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     await waitFor(() => expect(screen.queryByRole("region", { name: "Vendo is running without a policy" })).toBeNull());
   });
 
-  it("automatically renders the notice on every standalone chrome surface", async () => {
+  it("renders the developer banner on NO end-user surface, even under unconfigured posture", async () => {
+    // C1 — the banner names a file to configure, so it may never ride a surface
+    // a PERSON reaches. It used to arrive automatically inside every chrome
+    // boundary (ChromeRoot's default was `true`): the thread, the overlay, a
+    // pinned slot, an embed, the share dialog. Now it is opt-in.
     wire.state.posture = "unconfigured";
-    // VendoPalette is headless now (one-surface ⌘K, ui-lane-entry): it renders
-    // no chrome of its own, so it is no longer a notice-bearing surface.
-    const surfaces = [<ActivityPanel />, <AutomationsPanel />, <VendoStage />];
-
+    const surfaces: React.ReactNode[] = [
+      <VendoThread threadId="thr_1" />,
+      <VendoOverlay open />,
+      <VendoSlot id="hero" appId="app_1" />,
+      <ApprovalCard approval={approval} onDecide={() => undefined} />,
+    ];
     for (const surface of surfaces) {
-      render(<VendoProvider client={client}>{surface}</VendoProvider>);
-      expect(await screen.findByRole("region", { name: "Vendo is running without a policy" })).toBeTruthy();
+      // The host's OWN explicit banner rides alongside: it renders only on a
+      // known-unconfigured posture, so its presence proves the probe answered —
+      // and the count proves the surface beside it contributed none of its own.
+      render(<VendoProvider client={client}><NoPolicyNotice />{surface}</VendoProvider>);
+      await screen.findByRole("region", { name: "Vendo is running without a policy" });
+      expect(screen.getAllByRole("region", { name: "Vendo is running without a policy" })).toHaveLength(1);
       cleanup();
     }
   });
 
-  it("renders exactly one automatic notice across nested chrome roots", async () => {
+  it("still renders the banner for a surface that explicitly opts in", async () => {
     wire.state.posture = "unconfigured";
-    render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
-    await waitFor(() => expect(screen.getAllByRole("region", { name: "Vendo is running without a policy" })).toHaveLength(1));
-  });
-
-  it("renders no automatic notice on any chrome surface under rules posture", async () => {
     render(
       <VendoProvider client={client}>
-        <ActivityPanel />
-        <AutomationsPanel />
-        <VendoPalette />
-        <VendoStage />
-        <VendoPage />
+        <ChromeRoot automaticPolicyNotice>developer console</ChromeRoot>
       </VendoProvider>,
     );
-    await waitFor(() => expect(wire.requests.filter(request => request.path === "/status").length).toBeGreaterThanOrEqual(4));
+    expect(await screen.findByRole("region", { name: "Vendo is running without a policy" })).toBeTruthy();
+  });
+
+  it("renders no notice on any chrome surface under rules posture", async () => {
+    render(
+      <VendoProvider client={client}>
+        <NoPolicyNotice />
+        <VendoThread threadId="thr_1" />
+        <VendoPalette />
+      </VendoProvider>,
+    );
+    await waitFor(() => expect(wire.requests.some(request => request.path === "/status")).toBe(true));
     expect(screen.queryByRole("region", { name: "Vendo is running without a policy" })).toBeNull();
   });
 });

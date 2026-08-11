@@ -52,8 +52,7 @@ const loadGetToken = lazyModule<AuthJsGetToken>(
     deployment is secure exactly when the operator-set VENDO_BASE_URL parses as
     an https URL — TLS terminates at a trusted proxy and Auth.js is using its
     `__Secure-` cookie names. Same trusted-origin channel the umbrella already
-    uses for anon-cookie hardening and door metadata; never derived from
-    forwarded headers. */
+    uses for door metadata; never derived from forwarded headers. */
 function isSecureDeployment(): boolean {
   const base = environment("VENDO_BASE_URL");
   if (base === undefined) return false;
@@ -77,7 +76,7 @@ function isSecureDeployment(): boolean {
  * minting story (04 §2.1), configured from these same options.
  */
 export function authJs(options: HostAuthPresetOptions = {}): HostAuthPreset {
-  const { secret, user } = options;
+  const { secret, user, memberships } = options;
 
   const sessionClaims = async (request: Request): Promise<JwtClaims | null> => {
     const getToken = await loadGetToken();
@@ -113,6 +112,9 @@ export function authJs(options: HostAuthPresetOptions = {}): HostAuthPreset {
 
   return composeHostAuthPreset({
     sessionClaims,
+    // Build contract §9.1 (+ its companion) — handed straight through: the org
+    // chart and the directory are the HOST's, and no preset interprets either.
+    memberships,
     resolveUser: makeUserResolver(user, userFromNameEmailClaims),
     actAs,
     login: (request, returnTo) => loginRedirect(request, returnTo),

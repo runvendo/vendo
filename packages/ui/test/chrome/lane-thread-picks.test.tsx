@@ -61,10 +61,49 @@ describe("lane pick 4B — landing starter cards", () => {
     const chip = await screen.findByRole("button", { name: "Chase overdue invoices" });
     expect(chip.className).toContain("fl-chip");
     expect(document.querySelector(".fl-card")).toBeNull();
+    // Every mode renders the same unlabelled chips row — there is no second
+    // tier and no micro-label anywhere.
+    expect(document.querySelector(".fl-try-label")).toBeNull();
+  });
+
+  // demo-hygiene criterion 24: mixed suggestions put the string chips in ONE
+  // plain row directly under the cards — no wrapper, no micro-label; N strings
+  // ⇒ N chips, no strings ⇒ no chip row at all.
+  it("mixed suggestions render N chips in one unlabelled row under the cards", async () => {
+    render(
+      <VendoProvider client={client}>
+        <VendoThread
+          discoverability="quiet"
+          suggestions={[
+            { title: "Build a view", prompt: "Build me a renewals view" },
+            "Build me a subscriptions tracker",
+            "Where did my dining budget go?",
+          ]}
+        />
+      </VendoProvider>,
+    );
+    await screen.findByRole("button", { name: /Build a view/ });
+    const chips = screen.getAllByRole("button", { name: /./ }).filter(b => b.className.includes("fl-chip"));
+    expect(chips).toHaveLength(2);
+    expect(document.querySelector(".fl-try-label")).toBeNull();
+    // One plain chips row, with no tiering wrapper around it.
+    expect(document.querySelectorAll(".fl-chips")).toHaveLength(1);
+    expect(document.querySelector(".fl-try-row")).toBeNull();
+  });
+
+  it("cards without strings render no chip row and no micro-label", async () => {
+    render(
+      <VendoProvider client={client}>
+        <VendoThread discoverability="quiet" suggestions={[{ title: "Build a view", prompt: "p" }]} />
+      </VendoProvider>,
+    );
+    await screen.findByRole("button", { name: /Build a view/ });
+    expect(document.querySelector(".fl-chips")).toBeNull();
+    expect(document.querySelector(".fl-try-label")).toBeNull();
   });
 });
 
-describe("lane pick 2C — composer focus-bloom hint row", () => {
+describe("composer chrome stays hint-free (2C hint row removed 2026-07-23)", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
 
@@ -78,14 +117,9 @@ describe("lane pick 2C — composer focus-bloom hint row", () => {
     await wire.close();
   });
 
-  it("mounts the hint row inside the composer (visibility is CSS :focus-within)", async () => {
+  it("renders no keyboard-hint row inside the composer (removed 2026-07-23)", async () => {
     render(<VendoProvider client={client}><VendoThread discoverability="quiet" /></VendoProvider>);
     await screen.findByRole("form", { name: "Message composer" });
-    const hintrow = document.querySelector(".fl-hintrow");
-    expect(hintrow).toBeTruthy();
-    expect(hintrow?.textContent).toContain("new line");
-    expect(hintrow?.textContent).toContain("drop files anywhere");
-    // Presentation-only: hidden from the tree (reveal is a pure CSS bloom).
-    expect(hintrow?.getAttribute("aria-hidden")).toBe("true");
+    expect(document.querySelector(".fl-hintrow")).toBeNull();
   });
 });

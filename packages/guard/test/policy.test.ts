@@ -197,12 +197,16 @@ describe("policy files, rules, directions, and code", () => {
       ["app_tree", { ui: "tree" as const }],
       ["app_http", { ui: "http" as const }],
     ]);
+    // ONE tool now, so the shape of the CALL is what says whether this is a
+    // change to an existing app: `app` present is the edit path, absent is the
+    // create path, and only the first has an app whose ui decides the class.
     const resolveRisk = vi.fn(async (toolCall: ReturnType<typeof call>) => {
-      if (toolCall.tool !== "vendo_apps_edit") return undefined;
-      const args = toolCall.args as { appId?: string; instruction?: string };
-      const app = args.appId === undefined ? undefined : apps.get(args.appId);
-      if (app?.ui !== "tree" || typeof args.instruction !== "string") return "write" as const;
-      return args.instruction === "Make the heading blue" ? "read" as const : "write" as const;
+      if (toolCall.tool !== "vendo_make") return undefined;
+      const args = toolCall.args as { app?: string; request?: string };
+      if (args.app === undefined) return undefined;
+      const app = apps.get(args.app);
+      if (app?.ui !== "tree" || typeof args.request !== "string") return "write" as const;
+      return args.request === "Make the heading blue" ? "read" as const : "write" as const;
     });
     const guard = createGuard({
       store: createMemoryStore(),
@@ -214,42 +218,41 @@ describe("policy files, rules, directions, and code", () => {
         ],
       },
     });
-    const create = descriptor("read", { name: "vendo_apps_create" });
-    const edit = descriptor("write", { name: "vendo_apps_edit" });
+    const make = descriptor("read", { name: "vendo_make" });
     const hostWrite = descriptor("write", { name: "host_accounts_update" });
     const egress = descriptor("write", { name: "external_http_post" });
 
-    await expect(guard.check(call(create.name, { prompt: "Build a dashboard" }), create, context()))
+    await expect(guard.check(call(make.name, { request: "Build a dashboard" }), make, context()))
       .resolves.toMatchObject({ action: "run", decidedBy: "rule" });
-    await expect(guard.check(call(edit.name, {
-      appId: "app_tree",
-      instruction: "Make the heading blue",
-    }), edit, context())).resolves.toMatchObject({ action: "run", decidedBy: "rule" });
-    await expect(guard.check(call(edit.name, {
-      appId: "app_tree",
-      instruction: "Persist this to the database",
-    }), edit, context())).resolves.toMatchObject({
+    await expect(guard.check(call(make.name, {
+      app: "app_tree",
+      request: "Make the heading blue",
+    }), make, context())).resolves.toMatchObject({ action: "run", decidedBy: "rule" });
+    await expect(guard.check(call(make.name, {
+      app: "app_tree",
+      request: "Persist this to the database",
+    }), make, context())).resolves.toMatchObject({
       action: "ask",
       approval: { descriptor: { risk: "write" } },
     });
-    await expect(guard.check(call(edit.name, {
-      appId: "app_http",
-      instruction: "Change the heading",
-    }), edit, context())).resolves.toMatchObject({ action: "ask" });
+    await expect(guard.check(call(make.name, {
+      app: "app_http",
+      request: "Change the heading",
+    }), make, context())).resolves.toMatchObject({ action: "ask" });
     await expect(guard.check(call(hostWrite.name), hostWrite, context())).resolves.toMatchObject({ action: "ask" });
     await expect(guard.check(call(egress.name), egress, context())).resolves.toMatchObject({ action: "ask" });
     expect(resolveRisk).toHaveBeenCalledWith(
-      expect.objectContaining({ tool: "vendo_apps_edit" }),
-      expect.objectContaining({ risk: "write" }),
+      expect.objectContaining({ tool: "vendo_make" }),
+      expect.objectContaining({ risk: "read" }),
       expect.objectContaining({ principal: expect.any(Object) }),
     );
   });
 
   it("uses contextual risk for write-breaker accounting", async () => {
-    const edit = descriptor("write", { name: "vendo_apps_edit" });
+    const make = descriptor("read", { name: "vendo_make" });
     const resolveRisk = vi.fn(async (toolCall: ReturnType<typeof call>) => {
-      const args = toolCall.args as { instruction?: string };
-      return args.instruction === "Make the heading blue" ? "read" as const : "write" as const;
+      const args = toolCall.args as { request?: string };
+      return args.request === "Make the heading blue" ? "read" as const : "write" as const;
     });
     const guard = createGuard({
       store: createMemoryStore(),
@@ -259,24 +262,24 @@ describe("policy files, rules, directions, and code", () => {
     });
     const run = context({ trigger: { runId: "run_contextual_risk", kind: "schedule" } });
 
-    await expect(guard.check(call(edit.name, {
-      appId: "app_tree",
-      instruction: "Make the heading blue",
-    }, "tree_1"), edit, run)).resolves.toMatchObject({ action: "run" });
-    await expect(guard.check(call(edit.name, {
-      appId: "app_tree",
-      instruction: "Persist this to the database",
-    }, "server_1"), edit, run)).resolves.toMatchObject({ action: "run" });
+    await expect(guard.check(call(make.name, {
+      app: "app_tree",
+      request: "Make the heading blue",
+    }, "tree_1"), make, run)).resolves.toMatchObject({ action: "run" });
+    await expect(guard.check(call(make.name, {
+      app: "app_tree",
+      request: "Persist this to the database",
+    }, "server_1"), make, run)).resolves.toMatchObject({ action: "run" });
     // A second read-class tree edit must not consume the one-write budget.
-    await expect(guard.check(call(edit.name, {
-      appId: "app_tree",
-      instruction: "Make the heading blue",
-    }, "tree_2"), edit, run)).resolves.toMatchObject({ action: "run" });
+    await expect(guard.check(call(make.name, {
+      app: "app_tree",
+      request: "Make the heading blue",
+    }, "tree_2"), make, run)).resolves.toMatchObject({ action: "run" });
     // The second server edit is still write-class and must trip the breaker.
-    await expect(guard.check(call(edit.name, {
-      appId: "app_tree",
-      instruction: "Persist this to the database",
-    }, "server_2"), edit, run)).resolves.toMatchObject({
+    await expect(guard.check(call(make.name, {
+      app: "app_tree",
+      request: "Persist this to the database",
+    }, "server_2"), make, run)).resolves.toMatchObject({
       action: "ask",
       decidedBy: "breaker",
       approval: { descriptor: { risk: "write" } },
@@ -383,7 +386,10 @@ describe("policy files, rules, directions, and code", () => {
   });
 
   it("keeps the descriptor's conservative risk when contextual resolution fails", async () => {
-    const edit = descriptor("write", { name: "vendo_apps_edit" });
+    // A write-class app tool, because the fallback is only visible on one: a
+    // resolver that throws must leave the static risk standing, which for a
+    // write means the call still asks.
+    const edit = descriptor("write", { name: "vendo_apps_data_put" });
     const policy = { rules: [
       { match: { risk: "write" as const }, action: "ask" as const },
       { match: { risk: "read" as const }, action: "run" as const },
@@ -401,5 +407,74 @@ describe("policy files, rules, directions, and code", () => {
 
     await expect(threw.check(call(edit.name), edit, context())).resolves.toMatchObject({ action: "ask" });
     await expect(invalid.check(call(edit.name), edit, context())).resolves.toMatchObject({ action: "ask" });
+  });
+});
+
+describe("cloud policy fallback", () => {
+  const cloudBody = JSON.stringify({
+    format: VENDO_POLICY_FORMAT,
+    directions: ["Cloud: escalate wires."],
+    rules: [{ match: { risk: "destructive" }, action: "block", note: "cloud says no" }],
+  });
+
+  it("(c) opted in with no local file falls through to the cloud-published policy body", async () => {
+    const clean = await temporaryDirectory();
+    process.chdir(clean); // no .vendo/policy.json here → default file is absent
+    const guard = createGuard({ store: createMemoryStore(), policy: {}, policyCloudFallback: () => cloudBody });
+    await expect(guard.directions(context())).resolves.toEqual(["Cloud: escalate wires."]);
+    const destructive = descriptor("destructive");
+    await expect(guard.check(call(destructive.name), destructive, context())).resolves.toEqual({
+      action: "block",
+      reason: "cloud says no",
+      decidedBy: "rule",
+    });
+  });
+
+  it("(d) a cold cloud snapshot recovers without a restart: the fallback is re-consulted live, not pinned to its first undefined", async () => {
+    const clean = await temporaryDirectory();
+    process.chdir(clean); // no local file → cloud path
+    let reads = 0;
+    // Cold on the first read (snapshot still warming), real policy thereafter.
+    const fallback = vi.fn(() => (reads++ === 0 ? undefined : cloudBody));
+    const guard = createGuard({ store: createMemoryStore(), policy: {}, policyCloudFallback: fallback });
+    // Cold: nothing yet — but this must NOT pin empty for the process lifetime.
+    await expect(guard.directions(context())).resolves.toEqual([]);
+    // Warm: the published policy now applies (the fallback was re-consulted).
+    await expect(guard.directions(context())).resolves.toEqual(["Cloud: escalate wires."]);
+    const destructive = descriptor("destructive");
+    await expect(guard.check(call(destructive.name), destructive, context())).resolves.toEqual({
+      action: "block",
+      reason: "cloud says no",
+      decidedBy: "rule",
+    });
+    expect(fallback.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("(b) a local file wins over the cloud fallback (fallback fires strictly AFTER the file)", async () => {
+    const file = await policyFile({ format: VENDO_POLICY_FORMAT, directions: ["File wins."] });
+    const fallback = vi.fn(() => cloudBody);
+    const guard = createGuard({ store: createMemoryStore(), policy: { file }, policyCloudFallback: fallback });
+    await expect(guard.directions(context())).resolves.toEqual(["File wins."]);
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("(a) no policy config = no change: the cloud fallback is never consulted", async () => {
+    const clean = await temporaryDirectory();
+    process.chdir(clean);
+    const fallback = vi.fn(() => cloudBody);
+    const guard = createGuard({ store: createMemoryStore(), policyCloudFallback: fallback });
+    await expect(guard.directions(context())).resolves.toEqual([]);
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("a malformed cloud policy body fails loud, exactly like a malformed file", async () => {
+    const clean = await temporaryDirectory();
+    process.chdir(clean);
+    const guard = createGuard({
+      store: createMemoryStore(),
+      policy: {},
+      policyCloudFallback: () => '{"format":"vendo/policy@999","rules":"nope"}',
+    });
+    await expect(guard.directions(context())).rejects.toMatchObject({ code: "validation" });
   });
 });

@@ -1,48 +1,73 @@
-/** @vendoai/core — the shapes everything speaks (docs/archive/contracts/01-core.md). */
+/** @vendoai/core — the shapes everything speaks. */
+export * from "./agent-context.js";
+export * from "./app-access.js";
+// The app document's SHAPES (§9). The VALIDATOR half lives on the app-generation
+// contract door — it reaches validateTree — but the shape stays here because
+// core's own store conformance kit parses a stored app row with it.
 export * from "./app-document.js";
+export * from "./app-surfaces.js";
 export * from "./audit.js";
-export * from "./catalog.js";
 export * from "./capability-miss.js";
 export * from "./descriptor-hash.js";
 export * from "./errors.js";
 export * from "./formats.js";
+export * from "./box-ports.js";
 export * from "./grants.js";
+export * from "./grant-sets.js";
 export * from "./guard.js";
 export * from "./fetch.js";
 export * from "./heartbeat.js";
 export * from "./host-seams.js";
 export * from "./ids.js";
-export * from "./island-ambient.js";
-export * from "./island-derived-values.js";
-export * from "./jail-modules.js";
 export * from "./jcs.js";
 export * from "./knowledge.js";
 export * from "./knowledge-wire.js";
-export * from "./kit/index.js";
+export * from "./log.js";
+export * from "./meter-exhausted.js";
+export * from "./model-seats.js";
+export * from "./capability.js";
 export * from "./principal.js";
 export * from "./reshape.js";
+export * from "./product-slug.js";
+export * from "./prompt-blocks.js";
 export * from "./run-context.js";
+export * from "./sdk-events.js";
 export * from "./semantics.js";
 export * from "./shape.js";
 export * from "./sha256.js";
+export * from "./skills.js";
+export * from "./slot-limits.js";
+export * from "./sse-keepalive.js";
 export * from "./store.js";
+export * from "./store-wire.js";
+export * from "./engine-collections.js";
+export * from "./engine-over-adapter.js";
 export * from "./stream-parts.js";
 export * from "./tool-envelopes.js";
 export * from "./tools.js";
-export * from "./tree.js";
-export * from "./tree-v2.js";
+export * from "./url.js";
+export * from "./genui/tree-node.js";
+export * from "./filesystem.js";
 export * from "./triggers.js";
-// wire-v2 — only the compiler entry point, the renderer/repair issue
-// contract, and the per-binding repair shape (v2 spec §3) are public; the
-// sibling modules (expressions, attributes, scan, limits, state) stay
-// internal. The shape checker itself is public for one consumer: the
-// graduation fn-result post-pass (Wave 7 H2), which re-checks an already
-// compiled tree once the fn: shapes are sampled.
-export { compileWireV2, type WireCompileOptions, type WireCompileResult } from "./wire-v2/compile.js";
-export { expandInlineRefs, type InlineRefsResult } from "./wire-v2/inline-refs.js";
-export { WIRE_ISSUE_CODES, type WireIssue, type WireIssueCode } from "./wire-v2/expression.js";
-// v2 spec §5 — the one-dialect edit surface: print the app as id-anchored
-// wire (the model's edit context), apply the model's <Edit> patch.
-export { compileWirePatchV2, type PatchExtensionOp, type WirePatchBase, type WirePatchOptions, type WirePatchResult } from "./wire-v2/patch.js";
-export { printWireV2, type WirePrintInput, type WirePrintOptions } from "./wire-v2/print.js";
-export { checkBindingShapes, type BindingShapeError } from "./wire-v2/shape-check.js";
+export * from "./workspace.js";
+
+// The harness contract plus the two seams it is typed against: the workspace
+// filesystem and the model seats. Type-only by design — `defineHarness` and the
+// runtime live in @vendoai/harnesses, so core stays the shapes every block may
+// speak.
+export type {
+  BeatPhase,
+  DeniedNeeds,
+  Harness,
+  HarnessEvent,
+  SkillListing,
+  ToolListing,
+  ToolResult,
+  Turn,
+  TurnSkills,
+  TurnState,
+  TurnTools,
+} from "./harness.js";
+export type { CommitResult, WorkspaceFs } from "./workspace.js";
+export { WORKSPACE_INLINE_MAX_BYTES, appRootPath } from "./workspace.js";
+export type { AppMount } from "./workspace.js";

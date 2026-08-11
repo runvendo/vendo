@@ -12,7 +12,9 @@ import {
   useAutomations,
   useConnections,
   useGrants,
+  useSlots,
   useThreads,
+  useVendoContext,
   useVendoStatus,
   useVendoThread,
   type VendoClient,
@@ -85,7 +87,7 @@ describe("headless hooks", () => {
     expect(result.current.apps).toHaveLength(3);
   });
 
-  it("loads an app and surface, proxies calls/history, and refreshes after edit and undo", async () => {
+  it("loads an app and surface, proxies calls/history, and refreshes after edit", async () => {
     const { result } = renderHook(() => useApp("app_1"), { wrapper });
     expect(result.current.app).toBeUndefined();
     expect(result.current.surface).toBeUndefined();
@@ -96,8 +98,6 @@ describe("headless hooks", () => {
     await expect(result.current.history.list()).resolves.toHaveLength(1);
     await act(() => result.current.edit("Add totals"));
     expect(result.current.app?.name).toBe("Edited");
-    await act(() => result.current.history.undo());
-    expect(result.current.app?.name).toBe("Undone");
     await act(() => result.current.refresh());
     expect(result.current.surface?.kind).toBe("tree");
   });
@@ -212,15 +212,15 @@ describe("headless hooks", () => {
 
     let enabled: Awaited<ReturnType<typeof result.current.enable>> | undefined;
     await act(async () => {
-      enabled = await result.current.enable("app_auto");
+      enabled = await result.current.enable("app_auto", "main");
     });
     expect(enabled).toMatchObject({ enabled: true });
-    expect(result.current.automations[0]?.enabled).toBe(true);
+    expect(result.current.automations[0]?.triggers[0]?.enabled).toBe(true);
     await act(async () => {
-      await result.current.disable("app_auto");
+      await result.current.disable("app_auto", "main");
     });
-    expect(result.current.automations[0]?.enabled).toBe(false);
-    await expect(result.current.dryRun("app_auto")).resolves.toMatchObject({ grantsMissing: [] });
+    expect(result.current.automations[0]?.triggers[0]?.enabled).toBe(false);
+    await expect(result.current.dryRun("app_auto", "main")).resolves.toMatchObject({ grantsMissing: [] });
     await expect(result.current.runs({ appId: "app_auto", status: "running" })).resolves.toMatchObject({
       runs: [expect.objectContaining({ id: "run_1" })],
     });
@@ -235,7 +235,10 @@ describe("headless hooks", () => {
     expect(result.current.events).toEqual([]);
     await waitFor(() => expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2"]));
     await act(() => result.current.loadMore());
-    expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2", "aud_3"]);
+    // ⚠️ FIXTURE WIDENED (CR-2): the wire now serves a fourth audit row — the
+    // real `vendo_make` change shape, whose args carry an app id. The page
+    // arithmetic is unchanged; there is simply one more row behind the cursor.
+    expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2", "aud_3", "aud_edit"]);
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/activity?cursor=eyJjIjoiMjAyNi0wNy0xMVQxMjowMDowMC4wMDBaIiwiaSI6ImF1ZF8yIn0" }));
   });
 
@@ -246,14 +249,39 @@ describe("headless hooks", () => {
     expect(result.current.hasMore).toBe(true);
 
     await act(() => result.current.loadMore());
-    await waitFor(() => expect(result.current.events).toHaveLength(3));
+    await waitFor(() => expect(result.current.events).toHaveLength(4));
     expect(result.current.hasMore).toBe(true);
 
     // The next page repeats already-seen rows (nothing older remains), so the
     // hook resolves to the end of the list and the panel can retire "Load more".
     await act(() => result.current.loadMore());
     await waitFor(() => expect(result.current.hasMore).toBe(false));
-    expect(result.current.events).toHaveLength(3);
+    expect(result.current.events).toHaveLength(4);
+  });
+
+  it("loads the slot registry and re-reads it on refresh", async () => {
+    const { result } = renderHook(() => useSlots(), { wrapper });
+    expect(result.current.slots).toEqual([]);
+    expect(result.current.isLoading).toBe(true);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.slots).toEqual([]);
+    expect(result.current.error).toBeUndefined();
+
+    // A slot reported itself from some other page — the picker's destinations
+    // only change under it, so refresh is the whole affordance.
+    await client.slots.report([{ id: "home-hero", label: "Home hero" }]);
+    await act(() => result.current.refresh());
+    expect(result.current.slots).toEqual([
+      { id: "home-hero", label: "Home hero", lastSeen: expect.any(String) },
+    ]);
+  });
+
+  it("surfaces a failed registry read instead of an empty menu", async () => {
+    wire.state.failures.push({ method: "GET", path: "/slots", code: "validation", message: "no", status: 400 });
+    const { result } = renderHook(() => useSlots(), { wrapper });
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
+    expect(result.current.slots).toEqual([]);
+    expect(result.current.isLoading).toBe(false);
   });
 
   it("loads posture and transitions to disconnected after the server is killed", async () => {
@@ -266,14 +294,16 @@ describe("headless hooks", () => {
       return null;
     }
 
+    const offline = { posture: "unconfigured", connected: false, memberships: [] };
     const view = render(<Probe value={client} />);
-    expect(latest).toEqual({ posture: "unconfigured", connected: false });
-    await waitFor(() => expect(latest).toEqual({ posture: "rules", connected: true }));
+    expect(latest).toEqual(offline);
+    await waitFor(() => expect(latest)
+      .toEqual({ posture: "rules", connected: true, memberships: [] }));
 
     await wire.close();
     const disconnectedClient = createVendoClient({ baseUrl: wire.url });
     view.rerender(<Probe value={disconnectedClient} />);
-    await waitFor(() => expect(latest).toEqual({ posture: "unconfigured", connected: false }));
+    await waitFor(() => expect(latest).toEqual(offline));
   });
 
   it("resumes a thread and consumes a full ai-SDK turn with native and Vendo approvals", async () => {
@@ -286,6 +316,9 @@ describe("headless hooks", () => {
       .toEqual([
         expect.objectContaining({ path: "/threads" }),
         expect.objectContaining({ path: "/threads/thr_1" }),
+        // No resume probe: thr_1 ends on a COMPLETED assistant reply, so there
+        // is nothing in flight to rejoin. Resume fires only for a transcript
+        // that ends on the user's turn (see the resume-probe test below).
       ]);
 
     await act(() => result.current.sendMessage({ text: "Send the email" }));
@@ -300,7 +333,8 @@ describe("headless hooks", () => {
     );
 
     const turn = wire.requests.find(request => request.method === "POST" && request.path === "/threads");
-    expect(Object.keys(turn?.body as object).sort()).toEqual(["message", "threadId"]);
+    // Spec 2026-08-05 §2: every send now also carries the situation channel.
+    expect(Object.keys(turn?.body as object).sort()).toEqual(["context", "message", "threadId"]);
     expect(turn?.body).toMatchObject({
       threadId: "thr_1",
       message: { role: "user", parts: [{ type: "text", text: "Send the email" }] },
@@ -402,6 +436,67 @@ describe("headless hooks", () => {
       approval: { id: "apr_stream", approved: true },
     }));
   });
+
+  it("sends the screen snapshot as body.context on every turn (spec 2026-08-05 §2)", async () => {
+    document.title = "Maple — Home";
+    const host = document.createElement("main");
+    host.innerHTML = "<h1>Accounts overview</h1>";
+    document.body.append(host);
+    try {
+      const { result } = renderHook(() => useVendoThread(), { wrapper });
+      await act(() => result.current.sendMessage({ text: "What am I looking at?" }));
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+      const turn = wire.requests.find(request => request.method === "POST" && request.path === "/threads");
+      const context = (turn?.body as { context?: Record<string, unknown> }).context;
+      const screen = context?.screen;
+      expect(typeof screen).toBe("string");
+      expect((screen as string).startsWith("http://localhost:3000/\nMaple — Home\n")).toBe(true);
+      expect(screen).toContain("Accounts overview");
+    } finally {
+      host.remove();
+      document.title = "";
+    }
+  });
+
+  it("omits the snapshot when the provider disables capture (the one off-switch)", async () => {
+    function quietWrapper({ children }: PropsWithChildren) {
+      return <VendoProvider client={client} captureScreen={false}>{children}</VendoProvider>;
+    }
+    const { result } = renderHook(() => useVendoThread(), { wrapper: quietWrapper });
+    await act(() => result.current.sendMessage({ text: "hello" }));
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    const turn = wire.requests.find(request => request.method === "POST" && request.path === "/threads");
+    expect(turn?.body).not.toHaveProperty("context");
+  });
+
+  it("useVendoContext merges host data into body.context and retires on unmount (spec 2026-08-05 §3)", async () => {
+    function HostContext({ data }: { data: Record<string, unknown> }) {
+      useVendoContext(data);
+      return null;
+    }
+    function situationWrapper({ children }: PropsWithChildren) {
+      return (
+        <VendoProvider client={client} captureScreen={false}>
+          <HostContext data={{ step: "payment", cart: 3 }} />
+          {children}
+        </VendoProvider>
+      );
+    }
+    const first = renderHook(() => useVendoThread(), { wrapper: situationWrapper });
+    await act(() => first.result.current.sendMessage({ text: "help me pay" }));
+    await waitFor(() => expect(first.result.current.status).toBe("ready"));
+    expect(wire.requests.find(r => r.method === "POST" && r.path === "/threads")?.body)
+      .toMatchObject({ context: { step: "payment", cart: 3 } });
+    first.unmount(); // removes the published data with the tree
+
+    const second = renderHook(() => useVendoThread(), { wrapper });
+    await act(() => second.result.current.sendMessage({ text: "hello again" }));
+    await waitFor(() => expect(second.result.current.status).toBe("ready"));
+    const later = wire.requests.filter(r => r.method === "POST" && r.path === "/threads").at(-1);
+    const context = (later?.body as { context?: Record<string, unknown> }).context ?? {};
+    expect(context).not.toHaveProperty("step");
+    expect(context).not.toHaveProperty("cart");
+  });
 });
 
 describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling + headless parity", () => {
@@ -421,23 +516,24 @@ describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling +
     return <VendoProvider client={client}>{children}</VendoProvider>;
   }
 
-  it("exposes data, error, isLoading, and refresh on every data hook", () => {
-    const hooks = [
-      () => useApps(),
-      () => useApprovals(),
-      () => useGrants(),
-      () => useActivity(),
-      () => useConnections(),
-      () => useAutomations(),
-      () => useApp("app_1"),
-      () => useThreads(),
+  it("exposes the named collection, error, isLoading, and refresh on every data hook", () => {
+    const hooks: Array<[() => unknown, string]> = [
+      [() => useApps(), "apps"],
+      [() => useApprovals(), "pending"],
+      [() => useGrants(), "grants"],
+      [() => useActivity(), "events"],
+      [() => useConnections(), "connections"],
+      [() => useAutomations(), "automations"],
+      [() => useApp("app_1"), "app"],
+      [() => useThreads(), "threads"],
     ];
-    for (const hook of hooks) {
+    for (const [hook, named] of hooks) {
       const { result, unmount } = renderHook(hook, { wrapper });
-      expect(result.current).toHaveProperty("data");
-      expect(result.current).toHaveProperty("error");
-      expect(result.current.isLoading).toBe(true);
-      expect(typeof result.current.refresh).toBe("function");
+      const current = result.current as { isLoading: boolean; refresh: unknown };
+      expect(current).toHaveProperty(named);
+      expect(current).toHaveProperty("error");
+      expect(current.isLoading).toBe(true);
+      expect(typeof current.refresh).toBe("function");
       unmount();
     }
   });
@@ -457,47 +553,45 @@ describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling +
     wire.state.failures.push({ method: "GET", path: "/grants", code: "boom", message: "kaboom", status: 500 });
     const { result } = renderHook(() => useGrants(), { wrapper });
     await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
-    expect(result.current.data).toEqual([]);
     expect(result.current.grants).toEqual([]);
     expect(result.current.isLoading).toBe(false);
   });
 
   it("clears a prior error and finishes loading on a successful first fetch", async () => {
     const { result } = renderHook(() => useApps(), { wrapper });
-    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await waitFor(() => expect(result.current.apps).toHaveLength(2));
     expect(result.current.error).toBeUndefined();
     expect(result.current.isLoading).toBe(false);
-    expect(result.current.apps).toEqual(result.current.data);
   });
 
   it("refresh re-fetches the collection", async () => {
     const { result } = renderHook(() => useApps(), { wrapper });
-    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await waitFor(() => expect(result.current.apps).toHaveLength(2));
     wire.state.apps.push(extraApp);
     await act(() => result.current.refresh());
-    expect(result.current.data).toHaveLength(3);
+    expect(result.current.apps).toHaveLength(3);
   });
 
   it("re-fetches on the opt-in polling interval without a remount", async () => {
     const { result } = renderHook(() => useApprovals({ pollMs: 25 }), { wrapper });
-    await waitFor(() => expect(result.current.data).toHaveLength(1));
+    await waitFor(() => expect(result.current.pending).toHaveLength(1));
     // A new pending approval appears server-side after the initial fetch.
     wire.state.approvals.push({ ...wire.state.approvals[0]!, id: "apr_2" });
-    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await waitFor(() => expect(result.current.pending).toHaveLength(2));
   });
 
   it("lists, gets, and deletes threads headlessly", async () => {
     const { result } = renderHook(() => useThreads(), { wrapper });
-    await waitFor(() => expect(result.current.data.map(thread => thread.id)).toEqual(["thr_1"]));
+    await waitFor(() => expect(result.current.threads.map(thread => thread.id)).toEqual(["thr_1"]));
     await expect(result.current.get("thr_1")).resolves.toMatchObject({ id: "thr_1" });
     await act(() => result.current.remove("thr_1"));
-    expect(result.current.data).toEqual([]);
+    expect(result.current.threads).toEqual([]);
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "DELETE", path: "/threads/thr_1" }));
   });
 
   it("exposes app export and import via the hook", async () => {
     const { result } = renderHook(() => useApps(), { wrapper });
-    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await waitFor(() => expect(result.current.apps).toHaveLength(2));
 
     const bytes = await result.current.exportApp("app_1");
     expect(Array.from(bytes)).toEqual([0, 1, 255]);
@@ -507,6 +601,6 @@ describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling +
       imported = await result.current.importApp(new Uint8Array([9, 9]));
     });
     expect(imported).toMatchObject({ id: "app_imported" });
-    expect(result.current.data).toHaveLength(3);
+    expect(result.current.apps).toHaveLength(3);
   });
 });

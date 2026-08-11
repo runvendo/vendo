@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { VENDO_TREE_FORMAT_V2, type ToolOutcome, type UIPayload } from "@vendoai/core";
+import { VENDO_TREE_FORMAT, type ToolOutcome, type UIPayload } from "@vendoai/core";
 import { TreeView, evaluateApprovedComponent } from "../../src/tree/index.js";
 import type { InClientVenue } from "../../src/tree/renderer.js";
 
@@ -27,7 +27,7 @@ const GRANTED: InClientVenue = {
 
 function venueTree(inClient?: InClientVenue, source = WIDGET_SOURCE): UIPayload {
   const tree: UIPayload & { inClient?: InClientVenue } = {
-    formatVersion: VENDO_TREE_FORMAT_V2,
+    formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["gen"] },

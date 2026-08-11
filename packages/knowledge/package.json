@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/knowledge",
-  "version": "0.4.8",
+  "version": "0.14.0",
   "description": "The product knowledge base: KnowledgeAdapter engines (local, cloud client, BYO HTTP) and ingestion, behind core's frozen contract.",
   "keywords": [
     "ai",
@@ -41,15 +41,21 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@vendoai/core": "workspace:*"
+    "@vendoai/core": "workspace:*",
+    "zod": "^3.25.0"
+  },
+  "peerDependencies": {
+    "ai": ">=6.0.0 <7",
+    "zod": ">=3.25.0 <5"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "ai": "6.0.28",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.6"
   }
 }

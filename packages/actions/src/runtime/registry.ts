@@ -1,29 +1,31 @@
 import { readOptionalVendoJson } from "#actions/host-files";
 import {
-  VendoError,
-  descriptorHash,
-  toolDescriptorSchema,
   type ActAs,
+  defaultFetch,
+  descriptorHash,
+  joinUrl,
   type PermissionGrant,
   type Principal,
   type RunContext,
   type ToolCall,
   type ToolDescriptor,
+  toolDescriptorSchema,
   type ToolOutcome,
   type ToolRegistry,
+  VendoError,
 } from "@vendoai/core";
 import type { Connector } from "../connectors/connector.js";
 import {
-  capabilitiesFileSchema,
+  VENDO_OVERRIDES_FORMAT,
   extractedToolSchema,
+  judgmentsFileSchema,
   overridesFileSchema,
   toolsFileSchema,
-  type CapabilitiesFile,
   type CapabilityBrief,
   type CompoundTool,
   type ExtractedTool,
-  type GraphqlBinding,
   type HttpMethod,
+  type JudgmentsFile,
   type OpenApiBinding,
   type OverridesFile,
   type RouteBinding,
@@ -32,14 +34,14 @@ import {
   type ToolOverride,
   type TrpcBinding,
 } from "../formats.js";
+import { applyJudgment } from "../judgments.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
-import { searchToolDescriptors, tokenize, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
-import { defaultFetch } from "@vendoai/core";
+import { searchToolDescriptors, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
-  /** Capability briefs carried by `.vendo/capabilities.json` (04 §1). Validated and exposed; consumed by later milestones. */
+  /** Capability briefs carried by `.vendo/overrides.json` (04 §1). Validated and exposed; consumed by later milestones. */
   briefs(): Promise<CapabilityBrief[]>;
   /**
    * Runtime tool search (ENG-252): rank the merged, enabled tool surface against
@@ -47,13 +49,32 @@ export interface ActionsRegistry extends ToolRegistry {
    * descriptor set), so a hit is always a loadable, guard-bound tool.
    */
   search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]>;
-  /** Fetch + register the named lazy toolkits' tools (idempotent, global —
-   * descriptors are the same for every principal; per-USER scoping lives in
-   * the agent's loadout, spec 2026-07-20). */
-  expandToolkits(toolkits: string[]): Promise<void>;
-  /** The per-turn initial loadout: host/eager tools first, then the given
-   * (connected) toolkits' tools — never an alphabetical slice of the catalog. */
-  loadoutSeed(connectedToolkits: string[]): Promise<string[]>;
+  /** The per-turn initial loadout: every loaded tool, never an alphabetical
+   * slice of the catalog. */
+  loadoutSeed(): Promise<string[]>;
+  /**
+   * The tool menu one SURFACE offers, resolved from `.vendo/overrides.json`'s
+   * `surfaces` block. `undefined` means unrestricted — the surface offers
+   * everything it would have offered before menus existed.
+   *
+   * An explicit `surfaces.<surface>.tools` wins, in the host's authored order.
+   * Absent, `agent` is unrestricted and `mcp` falls back to the default door
+   * menu: every merged, enabled tool whose post-override `audience` is
+   * `"end-user"` or ungraded — the tools a product's own customer could
+   * legitimately call, which is exactly who is on the far end of an MCP client.
+   *
+   * CURATION, NOT SECURITY. A menu changes what a surface OFFERS; the guard,
+   * `disabled`, and audience exclusions decide what may RUN, and none of them
+   * consult this. A menu entry naming an unknown or disabled tool is therefore
+   * a typo, not a breach: it warns once per boot and is ignored, and the rest
+   * of the menu still applies (a bad label must never take a host down).
+   */
+  surfaceMenu(surface: "agent" | "mcp"): Promise<string[] | undefined>;
+  /** The brokered-connector toolkit a loaded tool belongs to (undefined for
+   * host tools, compounds, and connectors without per-user connections) —
+   * the lookup behind the pre-guard connect check (discovery discipline,
+   * spec 2026-07-25). */
+  connectorToolkit(tool: string): Promise<{ connector: string; toolkit: string } | undefined>;
 }
 
 /** CORE-2 (wave 5): `grant` and `mcpConsent` are first-class optional fields
@@ -113,8 +134,20 @@ interface RegistryConfig {
    */
   untrustedOriginPolicy?: "warn" | "fail";
   fetch?: typeof fetch;
-  /** Inject `.vendo/capabilities.json` directly (tests, non-file hosts); takes precedence over `dir` (04 §1/§6). */
-  capabilities?: CapabilitiesFile;
+  /** Inject the authored overrides doc directly instead of reading
+   *  `.vendo/overrides.json` from `dir`. Two callers share this seam: the
+   *  unified try surface (Task 15a) passes an in-memory doc for non-file
+   *  hosts, and the hosted-config seam (cse lane 3) lets the umbrella pass
+   *  cloud-published overrides when there is no local file. Takes precedence
+   *  over the file read whole-file (mirrors `tools`/`capabilities`), and the
+   *  corrections apply to host and connector tools the same way the dir
+   *  read's do (mergeOverride at load). The provider form is resolved ONCE
+   *  through the memoized loadHost (boot-once, no hot-swap) and MAY be async
+   *  so the umbrella can await a first-request cloud fetch; resolving to
+   *  undefined falls back to the `dir` file read. `tools.json` always comes
+   *  from `dir`. The resolved doc is validated at load with the authored-file
+   *  posture: a malformed doc throws `validation` loudly. */
+  overrides?: OverridesFile | (() => OverridesFile | undefined | Promise<OverridesFile | undefined>);
   /**
    * 04 §6: the guard-bound execution seam every compound step routes through.
    * The umbrella assigns it AFTER `guard.bind(actions)` — read at execution
@@ -133,6 +166,10 @@ type Dispatch =
 interface LoadedRegistry {
   descriptors: ToolDescriptor[];
   dispatch: Map<string, Dispatch>;
+  /** Post-override audience per registered tool name — provenance the
+   *  descriptor surface deliberately drops, kept here because the door's
+   *  default menu is defined in terms of it. Absent name = ungraded. */
+  audience: Map<string, ExtractedTool["audience"]>;
 }
 
 const STRIPPED_HEADERS = new Set([
@@ -144,24 +181,38 @@ const STRIPPED_HEADERS = new Set([
   "upgrade",
 ]);
 
-function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
+/**
+ * The descriptor surface, as a field WHITELIST: provenance the registry knows
+ * (audience, semantics, the binding itself) deliberately does not travel to
+ * whoever reads `descriptors()`.
+ */
+function descriptorOf(tool: ToolDescriptor & { binding?: ToolBinding }): ToolDescriptor {
   return {
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,
     risk: tool.risk,
-    ...(tool.critical !== undefined ? { critical: tool.critical } : {}),
+    ...(tool.outputSchema !== undefined ? { outputSchema: tool.outputSchema } : {}),
+    ...(tool.confirmEach !== undefined ? { confirmEach: tool.confirmEach } : {}),
+    ...(tool.title !== undefined ? { title: tool.title } : {}),
   };
 }
 
-function mergeOverride<T extends ToolDescriptor>(descriptor: T, override?: ToolOverride): T & { disabled?: boolean } {
+function mergeOverride<T extends ToolDescriptor & Pick<ExtractedTool, "audience" | "semantics">>(
+  descriptor: T,
+  override?: ToolOverride,
+): T & { disabled?: boolean } & Pick<ExtractedTool, "audience" | "semantics"> {
   if (!override) return descriptor;
   return {
     ...descriptor,
     ...(override.risk !== undefined ? { risk: override.risk } : {}),
-    ...(override.critical !== undefined ? { critical: override.critical } : {}),
+    ...(override.confirmEach !== undefined ? { confirmEach: override.confirmEach } : {}),
     ...(override.description !== undefined ? { description: override.description } : {}),
+    ...(override.title !== undefined ? { title: override.title } : {}),
     ...(override.disabled !== undefined ? { disabled: override.disabled } : {}),
+    ...(override.audience !== undefined ? { audience: override.audience } : {}),
+    // v3: overrides correct semantics field-by-field, never wholesale.
+    ...(override.semantics !== undefined ? { semantics: { ...descriptor.semantics, ...override.semantics } } : {}),
   };
 }
 
@@ -192,8 +243,20 @@ function withPathArgs(path: string, args: Record<string, unknown>): { path: stri
   };
 }
 
-function joinedUrl(baseUrl: string, path: string): URL {
-  return new URL(`${baseUrl.replace(/\/$/, "")}${path}`);
+/**
+ * How a failed host call names what it called: origin **and** path. A wire
+ * origin pointing at the wrong host 404s every tool while every path is
+ * correct, and a message carrying only the path reads exactly like a malformed
+ * path — so the origin is never omitted.
+ *
+ * Assembled from the URL's safe parts rather than scrubbed after the fact:
+ * `host` cannot contain userinfo, and dropping `search` drops query-string
+ * tokens. A baseUrl may carry either (`https://svc:pw@host`,
+ * `https://ghp_x@host`, `?access_token=…`) and this string reaches host logs
+ * and the model.
+ */
+function requestTarget(url: URL): string {
+  return `${url.protocol}//${url.host}${url.pathname}`;
 }
 
 function resolveUrl(binding: RouteBinding | OpenApiBinding, configuredBaseUrl?: string): URL {
@@ -214,7 +277,7 @@ function resolveUrl(binding: RouteBinding | OpenApiBinding, configuredBaseUrl?: 
     );
   }
   try {
-    return joinedUrl(baseUrl, binding.path);
+    return joinUrl(baseUrl, binding.path);
   } catch {
     throw new VendoError("validation", `Invalid baseUrl for ${binding.path}; set createActions({ baseUrl }) to a valid origin`);
   }
@@ -368,7 +431,7 @@ function trpcRequest(binding: TrpcBinding, args: Record<string, unknown>, config
   }
   let url: URL;
   try {
-    url = joinedUrl(configuredBaseUrl, `${binding.mount.replace(/\/$/, "")}/${binding.procedure}`);
+    url = joinUrl(configuredBaseUrl, `${binding.mount.replace(/\/$/, "")}/${binding.procedure}`);
   } catch {
     throw new VendoError("validation", `Invalid baseUrl for trpc procedure ${binding.procedure}; set createActions({ baseUrl }) to a valid origin`);
   }
@@ -397,64 +460,6 @@ function trpcOutput(binding: TrpcBinding, parsed: unknown): unknown {
     return (data as { json: unknown }).json;
   }
   return data;
-}
-
-/** The GraphQL HTTP transport (04 §1): every operation — query or mutation —
- * is a POST of `{ query: document, variables: args }` to the host endpoint.
- * The binding's document declares each tool argument as a same-named variable,
- * so the agent's args ride through unmodified. Auth semantics (present-forward,
- * away/actAs, venue=mcp) are identical to route bindings. */
-function graphqlRequest(binding: GraphqlBinding, args: Record<string, unknown>, configuredBaseUrl?: string): {
-  url: URL;
-  method: HttpMethod;
-  body: string;
-} {
-  if (!binding.document) {
-    throw new VendoError(
-      "validation",
-      `Cannot execute graphql binding ${binding.operation}; extraction emitted no executable document for it (fail-closed); review the tool's note before enabling`,
-    );
-  }
-  if (!configuredBaseUrl) {
-    throw new VendoError(
-      "validation",
-      `Cannot execute graphql binding ${binding.operation}; set createActions({ baseUrl }) for server-side graphql execution`,
-    );
-  }
-  let url: URL;
-  try {
-    url = joinedUrl(configuredBaseUrl, binding.endpoint.length > 1 ? binding.endpoint.replace(/\/+$/, "") : binding.endpoint);
-  } catch {
-    throw new VendoError("validation", `Invalid baseUrl for graphql operation ${binding.operation}; set createActions({ baseUrl }) to a valid origin`);
-  }
-  return { url, method: "POST", body: JSON.stringify({ query: binding.document, variables: args }) };
-}
-
-/** Unwrap the GraphQL response envelope. GraphQL reports failures as a 200
- * with an `errors` array — that is still a failed call and surfaces as an
- * http-error outcome so the agent sees the server's message. On success the
- * single root field's value (the document has exactly one) is the output. */
-function graphqlOutput(binding: GraphqlBinding, parsed: unknown): ToolOutcome {
-  const envelope = parsed !== null && typeof parsed === "object"
-    ? parsed as { data?: unknown; errors?: unknown }
-    : undefined;
-  const errors = envelope?.errors;
-  if (Array.isArray(errors) && errors.length > 0) {
-    const message = errors
-      .map((item) => item !== null && typeof item === "object" && typeof (item as { message?: unknown }).message === "string"
-        ? (item as { message: string }).message
-        : "GraphQL error")
-      .join("; ");
-    return error("http-error", `graphql ${binding.operation} → errors: ${message.slice(0, 200)}`);
-  }
-  const data = envelope && "data" in envelope ? envelope.data : parsed;
-  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
-    const record = data as Record<string, unknown>;
-    if (Object.keys(record).length === 1 && binding.operation in record) {
-      return { status: "ok", output: record[binding.operation] };
-    }
-  }
-  return { status: "ok", output: data };
 }
 
 /** The JSON projection of an in-process return value: Dates become ISO
@@ -506,30 +511,36 @@ async function executeServerAction(
   return projected.ok ? projected.output : error("server-action-error", `Server action ${key} returned a non-JSON value: ${projected.message}`);
 }
 
-async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
-  if (!isArgsObject(call.args)) return error("validation", `Arguments for ${call.tool} must be an object`);
-  if (tool.binding.kind === "server-action") return executeServerAction(config, tool.binding, call, ctx);
+/** The HTTP request one host tool call becomes. */
+interface HostRequest {
+  url: URL;
+  method: HttpMethod;
+  body: string | undefined;
+}
 
+/** Bind the call's arguments onto the tool's declared shape: the tRPC envelope,
+ *  or path substitution and then query/body per the binding's `argsIn`. */
+function hostRequest(
+  config: RegistryConfig,
+  binding: RouteBinding | OpenApiBinding | TrpcBinding,
+  call: ToolCall,
+  args: Record<string, unknown>,
+): { request: HostRequest } | { error: ToolOutcome } {
   let url: URL;
   let method: HttpMethod;
   let body: string | undefined;
   try {
-    if (tool.binding.kind === "trpc") {
-      const request = trpcRequest(tool.binding, call.args, config.baseUrl);
-      url = request.url;
-      method = request.method;
-      body = request.body;
-    } else if (tool.binding.kind === "graphql") {
-      const request = graphqlRequest(tool.binding, call.args, config.baseUrl);
+    if (binding.kind === "trpc") {
+      const request = trpcRequest(binding, args, config.baseUrl);
       url = request.url;
       method = request.method;
       body = request.body;
     } else {
-      method = tool.binding.method;
-      const substituted = withPathArgs(tool.binding.path, call.args);
-      url = resolveUrl({ ...tool.binding, path: substituted.path }, config.baseUrl);
-      if (tool.binding.kind === "route") {
-        if (tool.binding.argsIn === "query") {
+      method = binding.method;
+      const substituted = withPathArgs(binding.path, args);
+      url = resolveUrl({ ...binding, path: substituted.path }, config.baseUrl);
+      if (binding.kind === "route") {
+        if (binding.argsIn === "query") {
           for (const [key, value] of Object.entries(substituted.remaining)) appendQuery(url, key, value);
         } else {
           body = JSON.stringify(substituted.remaining);
@@ -544,23 +555,74 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
       }
     }
   } catch (cause) {
-    return error("validation", cause instanceof Error ? cause.message : `Invalid arguments for ${call.tool}`);
+    return { error: error("validation", cause instanceof Error ? cause.message : `Invalid arguments for ${call.tool}`) };
   }
+  return { request: { url, method, body } };
+}
 
-  let headers: Record<string, string>;
-  let actAsMinted = false;
+/** The present user's own credentials, forwarded only where the binding and the
+ *  configured origin allow it — and never silently when they do not. */
+async function presentHeaders(
+  config: RegistryConfig,
+  tool: ExtractedTool,
+  call: ToolCall,
+  ctx: RunContext,
+  url: URL,
+): Promise<{ headers: Record<string, string> } | { error: ToolOutcome }> {
+  const forwardsPresentHeaders = mayForwardPresentHeaders(
+    tool.binding,
+    url,
+    config.baseUrl,
+    config.baseUrlTrusted ?? true,
+  );
+  if (!forwardsPresentHeaders && hasInboundAuthHeaders(ctx)) {
+    const reason = config.baseUrlTrusted === false
+      ? "untrusted-host-origin" as const
+      : "cross-origin-binding" as const;
+    if (config.onPresentCredentialsNotForwarded !== undefined) {
+      try {
+        await config.onPresentCredentialsNotForwarded({ ctx, tool: descriptorOf(tool), reason });
+      } catch {
+        // A warning sink must never turn a host API call into a product failure.
+      }
+    }
+    // "untrusted-host-origin" only (09-vendo §2 install-dx wave 1.1):
+    // "cross-origin-binding" always stays warn-only, in every policy.
+    if (reason === "untrusted-host-origin" && config.untrustedOriginPolicy === "fail") {
+      return {
+        error: error(
+          "blocked",
+          `Present credentials for ${call.tool} cannot be forwarded because VENDO_BASE_URL is not set. `
+            + "Set VENDO_BASE_URL to this deployment's full public URL (path prefix included) — "
+            + "or VENDO_HOST_API_URL when the host API answers on another origin — and restart the server.",
+        ),
+      };
+    }
+  }
+  return { headers: forwardsPresentHeaders ? forwardedHeaders(ctx) : {} };
+}
+
+/** How this call authenticates to the host: the ActAs seam for away and MCP,
+ *  the present user's forwarded credentials otherwise. */
+async function hostHeaders(
+  config: RegistryConfig,
+  tool: ExtractedTool,
+  call: ToolCall,
+  ctx: RunContext,
+  url: URL,
+): Promise<{ headers: Record<string, string>; actAsMinted: boolean } | { error: ToolOutcome }> {
   if (ctx.presence === "away") {
-    if (!config.actAs) return error("not-implemented", "away execution isn't set up for this product");
+    if (!config.actAs) return { error: error("not-implemented", "away execution isn't set up for this product") };
     const grant = (ctx as ActionsRunContext).grant;
-    if (!grant) return error("validation", "away execution requires a captured grant");
+    if (!grant) return { error: error("validation", "away execution requires a captured grant") };
     const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
       declined: "the host declined away execution for this action",
       failed: "away authentication failed",
     });
-    if ("error" in authed) return authed.error;
-    headers = authed.headers;
-    actAsMinted = true;
-  } else if (ctx.venue === "mcp" || (ctx as ActionsRunContext).mcpConsent !== undefined) {
+    if ("error" in authed) return { error: authed.error };
+    return { headers: authed.headers, actAsMinted: true };
+  }
+  if (ctx.venue === "mcp" || (ctx as ActionsRunContext).mcpConsent !== undefined) {
     // 04 §4 / 10-mcp §2.1 / §3: an MCP-OAuth user has no host browser session,
     // so the present path has nothing to forward — and we forward NOTHING even
     // if a forged/mis-plumbed ctx carries requestHeaders (fail-closed). Host
@@ -575,97 +637,111 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     // (unauthenticated for MCP users) present-forward branch. A venue="app" ctx
     // WITHOUT mcpConsent (ordinary in-product app use) never enters here.
     if (!config.actAs) {
-      return error(
-        "not-implemented",
-        "MCP host execution isn't set up for this product — the host must provide actAs (createVendo({ actAs }))",
-      );
+      return {
+        error: error(
+          "not-implemented",
+          "MCP host execution isn't set up for this product — the host must provide actAs (createVendo({ actAs }))",
+        ),
+      };
     }
     const actionsCtx = ctx as ActionsRunContext;
     // A ctx with neither a real grant nor the door's consent record did not come
     // from the door — fail closed rather than authenticate an unattested call.
     const grant = actionsCtx.grant ?? mcpConsentGrant(actionsCtx, call, tool);
-    if (!grant) return error("validation", "MCP host execution requires the door's consent context");
+    if (!grant) return { error: error("validation", "MCP host execution requires the door's consent context") };
     const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
       declined: "the host declined MCP execution for this action",
       failed: "MCP authentication failed",
     });
-    if ("error" in authed) return authed.error;
-    headers = authed.headers;
-    actAsMinted = true;
-  } else {
-    const forwardsPresentHeaders = mayForwardPresentHeaders(
-      tool.binding,
-      url,
-      config.baseUrl,
-      config.baseUrlTrusted ?? true,
-    );
-    if (!forwardsPresentHeaders && hasInboundAuthHeaders(ctx)) {
-      const reason = config.baseUrlTrusted === false
-        ? "untrusted-host-origin" as const
-        : "cross-origin-binding" as const;
-      if (config.onPresentCredentialsNotForwarded !== undefined) {
-        try {
-          await config.onPresentCredentialsNotForwarded({ ctx, tool: descriptorOf(tool), reason });
-        } catch {
-          // A warning sink must never turn a host API call into a product failure.
-        }
-      }
-      // "untrusted-host-origin" only (09-vendo §2 install-dx wave 1.1):
-      // "cross-origin-binding" always stays warn-only, in every policy.
-      if (reason === "untrusted-host-origin" && config.untrustedOriginPolicy === "fail") {
-        return error(
-          "blocked",
-          `Present credentials for ${call.tool} cannot be forwarded because VENDO_BASE_URL is not set. `
-            + "Set VENDO_BASE_URL to this deployment's public origin and restart the server.",
-        );
+    if ("error" in authed) return { error: authed.error };
+    return { headers: authed.headers, actAsMinted: true };
+  }
+  const present = await presentHeaders(config, tool, call, ctx, url);
+  return "error" in present ? present : { headers: present.headers, actAsMinted: false };
+}
+
+/** The host request itself. Every failure — transport, status, body — comes back
+ *  as an outcome, so the caller's audit enrichment always runs. */
+async function fetchHostTool(
+  config: RegistryConfig,
+  tool: ExtractedTool,
+  call: ToolCall,
+  { url, method, body }: HostRequest,
+  headers: Record<string, string>,
+): Promise<ToolOutcome> {
+  try {
+    const request = config.fetch ?? defaultFetch;
+    const response = await request(url, {
+      method,
+      headers,
+      ...(body !== undefined ? { body } : {}),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      return error(
+        "http-error",
+        `${method} ${requestTarget(url)} → ${response.status}: ${text.slice(0, 200)}`,
+      );
+    }
+    if (text) {
+      try {
+        const parsed: unknown = JSON.parse(text);
+        return {
+          status: "ok",
+          output: tool.binding.kind === "trpc" ? trpcOutput(tool.binding, parsed) : parsed,
+        };
+      } catch {
+        // Successful non-JSON responses retain their HTTP status and text.
       }
     }
-    headers = forwardsPresentHeaders ? forwardedHeaders(ctx) : {};
+    return { status: "ok", output: { status: response.status, text } };
+  } catch (cause) {
+    return error("network-error", cause instanceof Error ? cause.message : `Network request failed for ${call.tool}`);
   }
+}
+
+async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
+  if (!isArgsObject(call.args)) return error("validation", `Arguments for ${call.tool} must be an object`);
+  if (tool.binding.kind === "server-action") return executeServerAction(config, tool.binding, call, ctx);
+
+  const built = hostRequest(config, tool.binding, call, call.args);
+  if ("error" in built) return built.error;
+  const { url, body } = built.request;
+
+  const authed = await hostHeaders(config, tool, call, ctx, url);
+  if ("error" in authed) return authed.error;
+  const { headers, actAsMinted } = authed;
   setHeader(headers, "accept", "application/json");
   if (body !== undefined) setHeader(headers, "content-type", "application/json");
 
-  const outcome = await (async (): Promise<ToolOutcome> => {
-    try {
-      const request = config.fetch ?? defaultFetch;
-      const response = await request(url, {
-        method,
-        headers,
-        ...(body !== undefined ? { body } : {}),
-      });
-      const text = await response.text();
-      if (!response.ok) {
-        return error(
-          "http-error",
-          `${method} ${url.pathname} → ${response.status}: ${text.slice(0, 200)}`,
-        );
-      }
-      if (text) {
-        try {
-          const parsed: unknown = JSON.parse(text);
-          if (tool.binding.kind === "graphql") return graphqlOutput(tool.binding, parsed);
-          return {
-            status: "ok",
-            output: tool.binding.kind === "trpc" ? trpcOutput(tool.binding, parsed) : parsed,
-          };
-        } catch {
-          // Successful non-JSON responses retain their HTTP status and text.
-        }
-      }
-      return { status: "ok", output: { status: response.status, text } };
-    } catch (cause) {
-      return error("network-error", cause instanceof Error ? cause.message : `Network request failed for ${call.tool}`);
-    }
-  })();
+  const outcome = await fetchHostTool(config, tool, call, built.request, headers);
   // Audit enrichment: every actAs-authenticated host call reports the seam's
   // disposition, even when the host request itself then fails.
   return actAsMinted ? withActAs(outcome, "minted") : outcome;
 }
 
+/** The loaded host view of `.vendo/`: the machine layer, the AI one, and the
+ *  authored one. */
 interface LoadedHost {
   tools: ExtractedTool[];
+  judgments: JudgmentsFile | undefined;
   overrides: OverridesFile;
-  capabilities?: CapabilitiesFile;
+  compounds: CompoundTool[];
+  briefs: CapabilityBrief[];
+}
+
+/** One host tool's EFFECTIVE state: the extracted skeleton hardened by its
+ *  standing judgment, then corrected by the human's override. Judgments are a
+ *  HOST-tool layer only — connector, registry, and compound tools never carry
+ *  one, so they keep going through `mergeOverride` alone.
+ *
+ *  Every reader of host enablement goes through here. Deriving `disabled` by
+ *  hand anywhere else reads a pre-judgment surface and lies. */
+function effectiveHostTool(host: LoadedHost, extracted: ExtractedTool): ExtractedTool {
+  return mergeOverride(
+    applyJudgment({ ...extracted }, host.judgments?.tools[extracted.name]),
+    host.overrides.tools[extracted.name],
+  );
 }
 
 export function createActions(config: RegistryConfig): ActionsRegistry {
@@ -675,9 +751,9 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
   const descriptorPromises = new Map<Connector | ToolRegistry, Promise<ToolDescriptor[]>>();
   let loadedPromise: Promise<LoadedRegistry> | undefined;
 
-  function parseCapabilities(value: unknown, source: string): CapabilitiesFile {
+  function parseOverrides(value: unknown, source: string): OverridesFile {
     try {
-      return capabilitiesFileSchema.parse(value);
+      return overridesFileSchema.parse(value);
     } catch (cause) {
       throw new VendoError("validation", `Invalid Vendo actions file ${source}`, {
         cause: cause instanceof Error ? cause.message : String(cause),
@@ -688,16 +764,19 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
   // The product's core promise, warned at the seam that knows: an agent with
   // zero live host tools serves users it cannot help (field case: an
   // extraction stripped to tools: [] shipped a silently useless agent).
+  /** One warning per surface per boot, however often the menu is resolved. */
+  const surfaceMenuWarned = new Set<string>();
   let zeroLiveWarned = false;
   const warnZeroLiveTools = (host: LoadedHost): LoadedHost => {
     if (zeroLiveWarned) return host;
-    const live = host.tools.filter((tool) => !(host.overrides.tools[tool.name]?.disabled ?? tool.disabled ?? false));
+    const live = host.tools.filter((tool) => effectiveHostTool(host, tool).disabled !== true);
     if (live.length === 0) {
       zeroLiveWarned = true;
       console.warn(
         "[vendo] zero live host tools — every extracted tool is absent, disabled, or excluded, so the agent cannot "
-        + "act on this product's API. Review .vendo/tools.json and the audience exclusions in .vendo/overrides.json, "
-        + "or re-run `vendo init` extraction. (Connector-only deployments can ignore this.)",
+        + "act on this product's API. Review .vendo/tools.json, the judgments in .vendo/judgments.json, and the "
+        + "audience exclusions in .vendo/overrides.json, or re-run `vendo init` extraction. (Connector-only "
+        + "deployments can ignore this.)",
       );
     }
     return host;
@@ -705,49 +784,106 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
 
   function loadHost(): Promise<LoadedHost> {
     if (!hostPromise) hostPromise = (async () => {
-      const emptyOverrides: OverridesFile = { format: "vendo/overrides@1", tools: {} };
+      const emptyOverrides: OverridesFile = { format: VENDO_OVERRIDES_FORMAT, tools: {} };
       const configuredTools = config.tools?.map((tool, index) => parseExtractedTool(tool, `config.tools[${index}]`));
-      const configuredCapabilities = config.capabilities === undefined
+      // cse lane 3 — an injected overrides doc (hosted config or the try
+      // surface's in-memory profile) resolved ONCE through this memoized
+      // loadHost. The provider form may be async so the umbrella can await a
+      // first-request cloud fetch (reliable for the security-relevant
+      // enablement path); it resolves to undefined when the surface is not
+      // cloud-owned, letting the dir read below handle the file. The resolved
+      // doc parses loudly (Task 15a posture: a malformed injected doc must
+      // never be silently ignored).
+      const resolvedOverrides = typeof config.overrides === "function"
+        ? await (config.overrides as () => OverridesFile | undefined | Promise<OverridesFile | undefined>)()
+        : config.overrides;
+      const injectedOverrides = resolvedOverrides === undefined
         ? undefined
-        : parseCapabilities(config.capabilities, "config.capabilities");
+        : parseOverrides(resolvedOverrides, "config.overrides");
       if (!config.dir) {
         return {
           tools: configuredTools ?? [],
-          overrides: emptyOverrides,
-          ...(configuredCapabilities === undefined ? {} : { capabilities: configuredCapabilities }),
+          // No dir, no judgments: judgments.json has no injection channel
+          // (nothing writes the file yet — the judge channel is its own lane),
+          // so a dir-less host simply has no AI layer.
+          judgments: undefined,
+          // An injected overrides doc still applies without a .vendo dir
+          // (non-file / cloud-only hosts).
+          overrides: injectedOverrides ?? emptyOverrides,
+          compounds: injectedOverrides?.compounds ?? [],
+          briefs: injectedOverrides?.briefs ?? [],
         };
       }
-      const [toolsFile, overrides, capabilitiesFile] = await Promise.all([
-        readOptionalVendoJson(config.dir, "tools.json", (value) => toolsFileSchema.parse(value)),
-        readOptionalVendoJson(config.dir, "overrides.json", (value) => overridesFileSchema.parse(value)),
-        readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value)),
+      // An injected overrides doc (cse lane 3 hosted config, or the unified
+      // try surface's in-memory profile.overrides) wins over the
+      // overrides.json read — AND config.tools (profile.tools) skips the
+      // tools.json read the same way. This isn't just precedence: on a
+      // filesystem-less venue (a Worker on workerd) the disk leg must never
+      // run at all when the in-memory piece already fully substitutes for it
+      // — see readOptionalVendoJson's non-ENOENT handling for the residual
+      // reads that DO still run.
+      const [toolsFile, judgmentsFileRead, overridesFileRead] = await Promise.all([
+        configuredTools !== undefined
+          ? Promise.resolve(undefined)
+          : readOptionalVendoJson(config.dir, "tools.json", (value) => toolsFileSchema.parse(value)),
+        // Absent → undefined, exactly like the pair. MALFORMED → throws, the
+        // same fail-closed posture as overrides.json and for the same reason:
+        // this file can carry disables and audience exclusions, so silently
+        // ignoring a broken one would silently LOOSEN the surface.
+        readOptionalVendoJson(config.dir, "judgments.json", (value) => judgmentsFileSchema.parse(value)),
+        injectedOverrides !== undefined
+          ? Promise.resolve(undefined)
+          : readOptionalVendoJson(config.dir, "overrides.json", (value) => overridesFileSchema.parse(value)),
       ]);
-      const capabilities = configuredCapabilities ?? capabilitiesFile;
+      const overrides = injectedOverrides ?? overridesFileRead ?? emptyOverrides;
       return {
         tools: configuredTools ?? toolsFile?.tools ?? [],
-        overrides: overrides ?? emptyOverrides,
-        ...(capabilities === undefined ? {} : { capabilities }),
+        judgments: judgmentsFileRead,
+        overrides,
+        compounds: overrides.compounds ?? [],
+        briefs: overrides.briefs ?? [],
       };
     })();
     return hostPromise.then(warnZeroLiveTools);
   }
 
+  /** Memoized per source. A REJECTION is never memoized: a transient schema
+   * fetch failure (broker blip, DNS) would otherwise pin the rejected promise
+   * for the process lifetime, so discovery could never recover without a
+   * restart. Evicting on rejection makes the next read retry. */
   function cachedDescriptors(source: Connector | ToolRegistry): Promise<ToolDescriptor[]> {
     let promise = descriptorPromises.get(source);
     if (!promise) {
       promise = source.descriptors();
       descriptorPromises.set(source, promise);
+      promise.catch(() => {
+        if (descriptorPromises.get(source) === promise) descriptorPromises.delete(source);
+      });
     }
     return promise;
   }
 
   function load(): Promise<LoadedRegistry> {
-    loadedPromise ??= (async () => {
+    if (loadedPromise === undefined) {
+      const building = buildRegistry();
+      loadedPromise = building;
+      // Same rule as cachedDescriptors: a failed build must not be the answer
+      // forever — drop it so the next read rebuilds.
+      building.catch(() => {
+        if (loadedPromise === building) loadedPromise = undefined;
+      });
+    }
+    return loadedPromise;
+  }
+
+  function buildRegistry(): Promise<LoadedRegistry> {
+    return (async () => {
       const host = await loadHost();
       const connectorLists = await Promise.all(connectors.map((connector) => cachedDescriptors(connector)));
       const registryLists = await Promise.all(added.map((registry) => cachedDescriptors(registry)));
       const reserved = new Map<string, Dispatch | undefined>();
       const descriptors: ToolDescriptor[] = [];
+      const audience = new Map<string, ExtractedTool["audience"]>();
       // The primitive table compound steps validate against: post-override host +
       // connector tools ONLY — never compounds, never `add()`-registry tools.
       const primitives = new Map<string, PrimitiveStepTarget>();
@@ -760,8 +896,9 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       }
 
       for (const extracted of host.tools) {
-        const merged = mergeOverride({ ...extracted }, host.overrides.tools[extracted.name]);
+        const merged = effectiveHostTool(host, extracted);
         const descriptor = descriptorOf(merged);
+        if (merged.audience !== undefined) audience.set(merged.name, merged.audience);
         const disabled = merged.disabled === true;
         register(merged.name, "host tools", disabled ? undefined : { kind: "host", descriptor, tool: merged });
         primitives.set(merged.name, { risk: merged.risk, disabled });
@@ -774,7 +911,9 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
             `connector ${connector.name}[${descriptorIndex}]`,
           );
           const merged = mergeOverride(rawDescriptor, host.overrides.tools[rawDescriptor.name]);
-          const { disabled: _disabled, ...descriptor } = merged;
+          // audience/semantics are override provenance, not descriptor surface.
+          const { disabled: _disabled, audience: _audience, semantics: _semantics, ...descriptor } = merged;
+          if (merged.audience !== undefined) audience.set(descriptor.name, merged.audience);
           register(
             descriptor.name,
             `connector ${connector.name}`,
@@ -798,7 +937,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       // Name collisions (any direction) throw `conflict` via register(); a
       // semantic-validation failure QUARANTINES the entry — name reserved,
       // absent from descriptors and dispatch, boot never degrades.
-      const compounds = (host.capabilities?.tools ?? []).map(
+      const compounds = host.compounds.map(
         (tool) => mergeOverride({ ...tool }, host.overrides.tools[tool.name]),
       );
       const issuesByTool = new Map<string, string[]>();
@@ -813,50 +952,44 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
           register(compound.name, "capabilities", undefined);
           if (compound.disabled !== true) {
             console.warn(
-              `[vendo] quarantined compound tool ${compound.name} from .vendo/capabilities.json: ${compoundIssues.join("; ")}`,
+              `[vendo] quarantined compound tool ${compound.name} from .vendo/overrides.json: ${compoundIssues.join("; ")}`,
             );
           }
           continue;
         }
+        if (compound.audience !== undefined) audience.set(compound.name, compound.audience);
         register(compound.name, "capabilities", { kind: "compound", descriptor: descriptorOf(compound), tool: compound });
+      }
+
+      // v3 orphan detection (cse lane 1): an authored reference — override
+      // entry, compound step, brief tools ref — naming a tool no source
+      // registered is almost always a typo or a removed tool. LOUD warn,
+      // never a throw: a stale reference must not take the agent down.
+      const orphans: string[] = [];
+      for (const name of Object.keys(host.overrides.tools)) {
+        if (!reserved.has(name)) orphans.push(`tools["${name}"]`);
+      }
+      for (const compound of compounds) {
+        for (const step of compound.binding.steps) {
+          if (!reserved.has(step.tool)) orphans.push(`compound ${compound.name} step ${step.id} → ${step.tool}`);
+        }
+      }
+      for (const brief of host.briefs) {
+        for (const name of brief.tools ?? []) {
+          if (!reserved.has(name)) orphans.push(`brief "${brief.name}" → ${name}`);
+        }
+      }
+      if (orphans.length > 0) {
+        console.warn(
+          `[vendo] orphaned tool references in .vendo/overrides.json — these name no extracted, connector, or compound tool: ${orphans.join(", ")}. Check for typos or re-run \`vendo sync\`.`,
+        );
       }
 
       // Runtime dispatch keeps only enabled entries once all collision checks ran.
       const dispatch = new Map<string, Dispatch>();
       for (const [name, entry] of reserved) if (entry) dispatch.set(name, entry);
-      return { descriptors, dispatch };
+      return { descriptors, dispatch, audience };
     })();
-    return loadedPromise;
-  }
-
-  /** Search may expand at most this many toolkits per query — bounds fan-out
-   * when a broad intent matches many index blurbs. */
-  const MAX_SEARCH_EXPANSIONS = 3;
-  let indexPromise: Promise<Array<{ toolkit: string; label?: string; description?: string }>> | undefined;
-
-  function discoveryEntries() {
-    indexPromise ??= (async () => {
-      const lists = await Promise.all(connectors.map((connector) => connector.discoveryIndex?.() ?? Promise.resolve([])));
-      return lists.flat();
-    })();
-    return indexPromise;
-  }
-
-  /** Expand named toolkits on every lazy connector; on any growth, bust that
-   * connector's descriptor memo and the load memo (the same invalidation
-   * add() performs) so the next read sees the new tools. */
-  async function expand(toolkits: string[]): Promise<boolean> {
-    if (toolkits.length === 0) return false;
-    let changed = false;
-    for (const connector of connectors) {
-      if (connector.expandToolkits === undefined) continue;
-      if (await connector.expandToolkits(toolkits)) {
-        descriptorPromises.delete(connector);
-        changed = true;
-      }
-    }
-    if (changed) loadedPromise = undefined;
-    return changed;
   }
 
   const compoundExecutor = createCompoundExecutor({
@@ -878,69 +1011,58 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     },
 
     async briefs(): Promise<CapabilityBrief[]> {
-      return (await loadHost()).capabilities?.briefs ?? [];
+      return (await loadHost()).briefs;
     },
 
-    async expandToolkits(toolkits: string[]): Promise<void> {
-      await expand(toolkits);
+    async connectorToolkit(tool: string): Promise<{ connector: string; toolkit: string } | undefined> {
+      const entry = (await load()).dispatch.get(tool);
+      if (!entry || entry.kind !== "connector") return undefined;
+      const toolkit = entry.connector.toolkitOf?.(tool);
+      return toolkit === undefined ? undefined : { connector: entry.connector.name, toolkit };
     },
 
-    async loadoutSeed(connectedToolkits: string[]): Promise<string[]> {
-      await expand(connectedToolkits);
-      const { descriptors: all, dispatch } = await load();
-      const eager: string[] = [];
-      const connected: string[] = [];
-      for (const descriptor of all) {
-        const entry = dispatch.get(descriptor.name);
-        if (!entry) continue;
-        const isLazyConnectorTool = entry.kind === "connector" && entry.connector.expandToolkits !== undefined;
-        if (!isLazyConnectorTool) {
-          eager.push(descriptor.name);
-          continue;
+    async loadoutSeed(): Promise<string[]> {
+      return (await load()).descriptors.map((descriptor) => descriptor.name);
+    },
+
+    async surfaceMenu(surface: "agent" | "mcp"): Promise<string[] | undefined> {
+      const [{ dispatch, audience }, host] = await Promise.all([load(), loadHost()]);
+      const authored = host.overrides.surfaces?.[surface];
+      if (authored !== undefined) {
+        // A menu is a FILTER, not a validated reference list. The authored set
+        // is returned whole and matched against the live surface at use time,
+        // because the surface grows: an `add()`-registered registry's tools do
+        // not exist at boot, and dropping their names here would make them
+        // permanently unreachable the moment they DO arrive. Unmatched names
+        // simply never match anything, which is what a filter should do.
+        const unmatched = authored.tools.filter((name) => !dispatch.has(name));
+        if (unmatched.length > 0 && !surfaceMenuWarned.has(surface)) {
+          surfaceMenuWarned.add(surface);
+          console.warn(
+            unmatched.length === authored.tools.length
+              ? `[vendo] surfaces.${surface}.tools in .vendo/overrides.json matches no registered tool at all `
+                + `(${unmatched.join(", ")}). If these are not tools a later \`add()\` registers, this surface `
+                + "will offer nothing — check for typos or re-run `vendo sync`."
+              : `[vendo] surfaces.${surface}.tools in .vendo/overrides.json names tools that are not registered right `
+                + `now: ${unmatched.join(", ")}. They stay on the menu (a later \`add()\` can still supply them); `
+                + "if that is not what they are, check for a typo, a disabled tool, or re-run `vendo sync`.",
+          );
         }
-        if (connectedToolkits.some((toolkit) => descriptor.name.startsWith(`${toolkit}_`))) connected.push(descriptor.name);
+        return [...authored.tools];
       }
-      return [...eager, ...connected];
+      if (surface === "agent") return undefined;
+      // The default door menu: an MCP client speaks for a person, so offer the
+      // tools that person's own auth admits. Ungraded reads as end-user.
+      return [...dispatch.keys()].filter((name) => {
+        const grade = audience.get(name);
+        return grade === undefined || grade === "end-user";
+      });
     },
 
     async search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]> {
-      // Rank the discovery index FIRST (toolkit-level pseudo-descriptors for
-      // lazily-loaded connectors) and expand the top matches, so an unloaded
-      // toolkit's tools are findable by intent ("send email" → gmail).
-      const index = await discoveryEntries();
-      const expandedNames = new Set<string>();
-      if (index.length > 0) {
-        // Whole-word overlap scoring: the tool scorer's substring matching
-        // lets stopwords ("an" ⊂ "channels") expand unrelated toolkits, so the
-        // index ranks on exact word tokens only, ignoring 1–2 char tokens.
-        const queryTokens = tokenize(query).filter((token) => token.length >= 3);
-        const scored = index
-          .map((entry) => {
-            const words = new Set(tokenize(`${entry.label ?? ""} ${entry.description ?? ""}`));
-            let score = 0;
-            for (const token of queryTokens) {
-              if (token === entry.toolkit.toLowerCase()) score += 8;
-              else if (words.has(token)) score += 2;
-            }
-            return { toolkit: entry.toolkit, score };
-          })
-          .filter((hit) => hit.score > 0)
-          .sort((a, b) => (b.score - a.score) || (a.toolkit < b.toolkit ? -1 : 1))
-          .slice(0, MAX_SEARCH_EXPANSIONS);
-        await expand(scored.map((hit) => hit.toolkit));
-        for (const hit of scored) expandedNames.add(hit.toolkit);
-      }
-      // load().descriptors is the post-override, enabled-only surface — disabled
-      // tools never reach it, so they can never be returned as loadable.
-      const matches = searchToolDescriptors((await load()).descriptors, query, options);
-      if (expandedNames.size === 0) return matches;
-      return matches.map((match) => {
-        const toolkit = [...expandedNames].find((name) => match.name.startsWith(`${name}_`));
-        return toolkit === undefined ? match : {
-          ...match,
-          description: `${match.description} (part of the ${toolkit} toolkit — if the user hasn't connected ${toolkit}, calling this will prompt them to connect)`,
-        };
-      });
+      // Post-override and enabled-only, so a disabled tool can never come back
+      // as loadable.
+      return searchToolDescriptors((await load()).descriptors, query, options);
     },
 
     async execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {

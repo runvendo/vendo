@@ -14,7 +14,7 @@ export const draftToolSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1).max(500),
   risk: z.enum(["read", "write", "destructive"]).optional(),
-  critical: z.boolean().optional(),
+  confirmEach: z.boolean().optional(),
   /** false = wake a statically-unclassifiable tool (needs reasoning). */
   disabled: z.boolean().optional(),
   /** Who the handler's own auth admits; non-end-user grades exclude the tool
@@ -53,6 +53,17 @@ export interface ExtractionHarness {
   /** Run the instructions and return the agent's final text (extraction.ts
    *  parses and validates; the harness never interprets the draft). */
   run(input: ExtractionRunInput): Promise<string>;
+}
+
+/** The extraction model pin every harness honors (models spec 2026-07-22):
+ *  VENDO_MODEL_EXTRACT, with the pre-family VENDO_EXTRACTION_MODEL kept as a
+ *  deprecated fallback. Blank values count as unset. */
+export function extractionModelPin(env: Record<string, string | undefined>): string | undefined {
+  for (const name of ["VENDO_MODEL_EXTRACT", "VENDO_EXTRACTION_MODEL"]) {
+    const value = env[name];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return undefined;
 }
 
 /** Walk balanced `{…}` spans (string-aware) starting at each `{`, returning

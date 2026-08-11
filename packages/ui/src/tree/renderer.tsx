@@ -1,42 +1,51 @@
 import {
-  RESERVED_COMPONENT_NAMES,
   TREE_MAX_COMPONENT_SOURCE_CHARS,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_CHARS,
   applyReshape,
   isPathBinding,
   isStateBinding,
-  VENDO_TREE_FORMAT_V2,
+  VENDO_TREE_FORMAT,
   type Json,
   type PathBinding,
   type ToolOutcome,
   type TreeNode,
   type UIPayload,
 } from "@vendoai/core";
-import { convertV2Payload } from "./renderer-v2.js";
+import {
+  KIT_COMPONENT_NAMES,
+  evaluateExpr,
+  isExprBinding,
+} from "@vendoai/apps/contract";
+import { convertPayload } from "./convert-payload.js";
 import {
   useCallback,
   useMemo,
-  useRef,
   useState,
   type ComponentType,
   type ReactNode,
 } from "react";
 import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
-import type { InClientVenue, PinDrift } from "../wire-types.js";
+import type { InClientVenue, SeedDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
-import { deriveFormShape, FormingSkeleton } from "./forming-skeleton.js";
+import { deriveFormShape, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
 import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
-import { PREWIRED_COMPONENTS } from "./primitives.js";
+import { useKeyedState } from "../kit/state.js";
 
 export interface TreeViewProps {
   tree: WalkTree;
+  /**
+   * Which app this tree belongs to — the `$state` and outcome namespace's
+   * identity. A caller that can render a DIFFERENT app in the same position
+   * passes it; see {@link TreeView} for what it buys.
+   */
+  appId?: string;
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
@@ -49,25 +58,19 @@ export interface TreeViewProps {
 
 export interface PayloadRendererProps {
   payload: UIPayload;
+  /** As {@link TreeViewProps.appId}. */
+  appId?: string;
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
   onStateChange?(state: Record<string, Json>): void;
 }
 
-type PayloadRenderer = ComponentType<PayloadRendererProps>;
-const rendererRegistry = new Map<string, PayloadRenderer>();
-
-/** 01-core §8; 08-ui §5 — additive format registration for stored future payloads. */
-export function registerTreeRenderer(formatVersion: string, component: PayloadRenderer): void {
-  rendererRegistry.set(formatVersion, component);
-}
-
 /**
- * v2 spec §6 — the walk's input: the SHARED render mechanics' tree shape
- * (nodes, path-keyed resolved queries, grafted components, payload extras).
- * The v1 format surface around it is gone; renderer-v2 converts the
- * canonical v2 tree into this shape (named queries → "/" + name pointers).
+ * The walk's input: the shared render mechanics' tree shape (nodes,
+ * path-keyed resolved queries, grafted components, payload extras).
+ * convert-payload converts the canonical tree into this shape (named
+ * queries → "/" + name pointers).
  */
 export interface WalkTree {
   root: string;
@@ -86,10 +89,9 @@ const walkFail = (message: string): WalkValidation => ({ ok: false, error: { cod
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** The structural render-gate the v1 validator used to provide (per-render
- *  hot path): ids unique and rooted, node shapes sane, generated components
- *  present. Format-tag checks live one layer up (PayloadView dispatch +
- *  validateTreeV2 in renderer-v2). */
+/** The structural render-gate (per-render hot path): ids unique and rooted,
+ *  node shapes sane, generated components present. Format-tag checks live one
+ *  layer up (PayloadView dispatch + validateTree in convert-payload). */
 const validateWalkTree = (input: WalkTree): WalkValidation => {
   const ids = new Set<string>();
   if (!Array.isArray(input.nodes)) return walkFail("nodes must be an array");
@@ -109,17 +111,17 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
     ids.add(node.id);
   }
   const components = input.components ?? {};
-  // The jail-compile bounds the v1 walk enforced per render survive here:
-  // reserved names can never be shadowed and the §8 component caps hold even
-  // for payloads that bypassed document validation (direct TreeView input).
+  // The jail-compile bounds hold per render: Kit names can never be shadowed
+  // and the 01-core §8 component caps apply even to payloads that bypassed
+  // document validation (direct TreeView input).
   const names = Object.keys(components);
   if (names.length > TREE_MAX_GENERATED_COMPONENTS) {
     return walkFail(`too many generated components (max ${TREE_MAX_GENERATED_COMPONENTS})`);
   }
   let totalChars = 0;
   for (const name of names) {
-    if ((RESERVED_COMPONENT_NAMES as readonly string[]).includes(name)) {
-      return walkFail(`generated component "${name}" shadows a reserved primitive name`);
+    if (KIT_COMPONENT_NAMES.includes(name)) {
+      return walkFail(`generated component "${name}" shadows a Kit component name`);
     }
     const source = components[name];
     if (typeof source !== "string") return walkFail(`generated component "${name}" source must be a string`);
@@ -142,14 +144,17 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
   return { ok: true, tree: input };
 };
 
-/** v2 spec §1 — a validated v2 payload converts to the v1 tree shape and
- *  walks the SAME TreeView (renderer-v2.tsx documents the mapping). The
- *  registration lives here, in PayloadView's own module: the package is
- *  `sideEffects: false`, so a registration-only import would be tree-shaken
- *  out of host bundles. */
-function VendoTreeV2Renderer({ payload, ...props }: PayloadRendererProps) {
-  const converted = useMemo(() => convertV2Payload(payload), [payload]);
+/** A validated payload converts to the walk tree and renders through the same
+ *  TreeView (convert-payload.ts documents the mapping). */
+function VendoTreeRenderer({ payload, ...props }: PayloadRendererProps) {
+  const converted = useMemo(() => convertPayload(payload), [payload]);
   if (!converted.ok) {
+    // A mid-stream partial legitimately passes through shapes the validator
+    // has not admitted yet — hold the forming skeleton; the notice is a
+    // verdict reserved for FINAL payloads.
+    if ((payload as { streaming?: unknown }).streaming === true) {
+      return <FormingSkeleton name="StreamingTree" />;
+    }
     return (
       <ContainedNotice label="Invalid UI tree" code={converted.error.code}>
         {`${converted.error.code}: ${converted.error.message}`}
@@ -159,19 +164,16 @@ function VendoTreeV2Renderer({ payload, ...props }: PayloadRendererProps) {
   return <TreeView tree={converted.tree} {...props} />;
 }
 
-registerTreeRenderer(VENDO_TREE_FORMAT_V2, VendoTreeV2Renderer);
-
-/** 01-core §8 — renderer dispatch is exclusively by the payload tag. */
+/** Dispatch is exclusively by the payload tag. */
 export function PayloadView(props: PayloadRendererProps) {
-  const Renderer = rendererRegistry.get(props.payload.formatVersion);
-  if (!Renderer) {
+  if (props.payload.formatVersion !== VENDO_TREE_FORMAT) {
     return (
       <ContainedNotice label="Unsupported UI format">
         {`No renderer is registered for "${props.payload.formatVersion}".`}
       </ContainedNotice>
     );
   }
-  return <Renderer {...props} />;
+  return <VendoTreeRenderer {...props} />;
 }
 
 interface ActionBinding {
@@ -188,7 +190,7 @@ export function isActionBinding(value: unknown): value is ActionBinding {
 
 type BoundMode = "host" | "jail";
 
-/** v2 spec §3 — apply a binding's `$reshape` chain to the resolved value.
+/** Apply a binding's `$reshape` chain to the resolved value.
  *  `applyReshape` is total: absent data passes through (loading is not a
  *  mismatch); a real mismatch reports through `onMismatch` and binds
  *  `undefined`, and the node renders the contained data-shape notice. */
@@ -216,6 +218,17 @@ function bindValue(
 ): unknown {
   if (isPathBinding(value)) return resolveReshaped(resolvePointer(data, value.$path), value.$reshape, onMismatch);
   if (isStateBinding(value)) return resolveReshaped(state[value.$state] as Json | undefined, value.$reshape, onMismatch);
+  // A computed value is evaluated HERE, on every bind resolution, against the
+  // data this render holds — so it re-computes the moment the query data
+  // changes. Nothing about it is ever cached across renders.
+  if (isExprBinding(value)) {
+    const computed = evaluateExpr(value.$expr, data);
+    if (!computed.ok) {
+      onMismatch?.(computed.issue);
+      return undefined;
+    }
+    return computed.value;
+  }
   if (isActionBinding(value)) {
     const payload = bindValue(value.payload, mode, data, state, action, onMismatch) as Json;
     if (mode === "jail") {
@@ -234,8 +247,7 @@ function bindValue(
 }
 
 /** Binds a node's props, reporting the first reshape mismatch with its prop
- *  name (v2 spec §3 — the region shows one contained notice, not a broken
- *  component). */
+ *  name: the region shows one contained notice, not a broken component. */
 function bindProps(
   props: Record<string, Json> | undefined,
   mode: BoundMode,
@@ -256,13 +268,18 @@ function bindProps(
   return { bound, mismatch };
 }
 
-/** v2 spec §3 — the contained data-shape notice: the region says the data
- *  didn't match instead of mounting the component with garbage props. */
-const dataShapeNotice = (mismatch: string): ReactNode => (
-  <ContainedNotice label="Data shape">
-    {`The data didn't match this component's binding — ${mismatch}.`}
-  </ContainedNotice>
-);
+/** The contained data-shape notice: the region says the data
+ *  didn't match instead of mounting the component with garbage props. While
+ *  the payload is a mid-stream partial the mismatch is a transient (the
+ *  binding may still be rewritten before ship), so the region holds the
+ *  forming skeleton instead — the notice is a verdict for FINAL payloads. */
+const dataShapeNotice = (mismatch: string, streaming: boolean, name: string): ReactNode => streaming
+  ? <FormingSkeleton name={name} />
+  : (
+    <ContainedNotice label="Data shape">
+      {`The data didn't match this component's binding — ${mismatch}.`}
+    </ContainedNotice>
+  );
 
 function outcomeNotice(outcome: ToolOutcome | undefined): ReactNode {
   if (!outcome || outcome.status === "ok") return null;
@@ -286,33 +303,13 @@ function outcomeNotice(outcome: ToolOutcome | undefined): ReactNode {
   return null;
 }
 
-/**
- * 06-apps §9 — the additive in-client venue verdict a tree payload may carry.
- * SERVER-AUTHORITATIVE: the apps runtime strips any document-carried value and
- * attaches this only from its own hash-pin verification, so `granted: true`
- * here is exactly "a stored approval matches the CURRENT version's content
- * hash". A missing field is the universal default: jailed. One declaration —
- * the wire type — re-exported here so tree consumers see the same shape the
- * client and the parity test cover.
- */
-export type { InClientVenue } from "../wire-types.js";
-
-/**
- * 06-apps §8 — the additive pin-drift report a tree payload may carry
- * (`payload.pinDrift`). SERVER-AUTHORITATIVE: the apps runtime strips any
- * document-carried value and attaches this only from its own baseline
- * comparison. Re-exported from the wire type so tree consumers see the same
- * shape the client and the parity test cover.
- */
-export type { PinDrift } from "../wire-types.js";
-
 interface NodeRendererProps {
   nodeId: string;
   ancestry: ReadonlySet<string>;
   nodes: ReadonlyMap<string, TreeNode>;
   generated: Record<string, string>;
-  /** W4b — the payload's compiler-stamped per-island tool manifests. Absent
-   *  (legacy/streaming) means JailedComponent derives from source host-side. */
+  /** The payload's compiler-stamped per-island tool manifests. Absent
+   *  (unstamped/streaming) means JailedComponent derives from source host-side. */
   componentTools?: Record<string, string[]>;
   /** True ONLY when the payload's server-written verdict granted the venue. */
   inClientGranted: boolean;
@@ -364,12 +361,26 @@ function NodeRenderer(props: NodeRendererProps) {
   if (props.ancestry.has(node.id)) {
     return <ContainedNotice label="Cyclic tree node">{`Node "${node.id}" forms a cycle.`}</ContainedNotice>;
   }
+  // The plan's skeleton (packages/apps generation/skeleton.ts) prewires one
+  // `pending` placeholder per plan leaf and a fill worker later replaces it
+  // with the real component. Until then the node holds the same shape-derived
+  // shimmer a streaming node holds — the app's real geometry arriving in
+  // pieces, never a spinner over the whole surface. This runs BEFORE component
+  // resolution on purpose: a placeholder for a name that resolves later (an
+  // island the plan declared) shimmers instead of reading as unknown.
+  if (node.props?.pending === true) {
+    return (
+      <div data-vendo-node-id={node.id} data-vendo-pending="" aria-busy="true">
+        <PendingLeaf name={node.component} />
+      </div>
+    );
+  }
 
   const ancestry = new Set(props.ancestry);
   ancestry.add(node.id);
   const invoke = (action: string, payload?: Json) => props.runAction(node.id, action, payload);
   const children = node.children?.map((childId) => (
-    <NodeErrorBoundary key={childId} nodeId={childId} retryKey={props.data}>
+    <NodeErrorBoundary key={childId} nodeId={childId} retryKey={props.data} streaming={props.streaming}>
       <NodeRenderer {...props} nodeId={childId} ancestry={ancestry} />
     </NodeErrorBoundary>
   ));
@@ -403,7 +414,7 @@ function NodeRenderer(props: NodeRendererProps) {
       // Reshape mismatches are mode-independent, so both binds report the same one.
       const mismatch = hostBind.mismatch;
       if (mismatch !== null) {
-        content = <>{dataShapeNotice(mismatch)}{children}</>;
+        content = <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>;
       } else {
         const jailFallback = (
           <JailedComponent
@@ -413,6 +424,7 @@ function NodeRenderer(props: NodeRendererProps) {
             furnishing={props.furnishings[node.component]}
             themeVars={props.themeVars}
             toolManifest={toolManifest}
+            streaming={props.streaming}
             onAction={invoke}
             onStateSet={props.setViewState}
           />
@@ -434,7 +446,7 @@ function NodeRenderer(props: NodeRendererProps) {
       }
     } else {
       const { bound, mismatch } = bindProps(node.props, "jail", props.data, props.state, invoke);
-      content = mismatch !== null ? <>{dataShapeNotice(mismatch)}{children}</> : (
+      content = mismatch !== null ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</> : (
         <>
           <JailedComponent
             name={node.component}
@@ -443,6 +455,7 @@ function NodeRenderer(props: NodeRendererProps) {
             furnishing={props.furnishings[node.component]}
             themeVars={props.themeVars}
             toolManifest={toolManifest}
+            streaming={props.streaming}
             onAction={invoke}
             onStateSet={props.setViewState}
           />
@@ -464,18 +477,23 @@ function NodeRenderer(props: NodeRendererProps) {
       </FluidReveal>
     );
   } else {
-    // W3 Kit adoption — legacy prewired names keep their implementations
-    // (retirement is Wave 5); the Kit fills the names the legacy set lacks
-    // (Money, DateTime, DataTable, charts, Form, Disclaimer, …).
-    const primitive = PREWIRED_COMPONENTS[node.component]
-      ?? (KIT_COMPONENTS[node.component] as ComponentType<Record<string, unknown>> | undefined);
+    // V4 — one component family: the Kit is the only built-in set.
+    const kit = KIT_COMPONENTS[node.component] as ComponentType<Record<string, unknown>> | undefined;
     const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;
-    // v2 spec §2 — an explicit `source: "host"` resolution means the host
-    // brand won the name; only an undefined source keeps the historical
-    // primitive-first order.
-    const Implementation = node.source === "host" ? host ?? primitive : primitive ?? host;
+    // An explicit `source: "host"` means the host brand won the name. An
+    // undefined (or "prewired") source keeps the built-in first, so a stored
+    // app whose node collides with a host catalog name still renders the
+    // built-in it was written against.
+    const Implementation = node.source === "host" ? host ?? kit : kit ?? host;
     if (!Implementation) {
-      content = (
+      // Mid-stream, an unresolved name is a transient (the defining island or
+      // a corrected reference may still arrive) — hold the silhouette; the
+      // notice is a verdict for FINAL payloads.
+      content = props.streaming ? (
+        <span data-streaming-component={node.component} style={{ display: "block", width: "100%" }}>
+          <FormingSkeleton name={node.component} />
+        </span>
+      ) : (
         <ContainedNotice label="Unknown component">
           {`Unknown component "${node.component}".`}
         </ContainedNotice>
@@ -486,7 +504,7 @@ function NodeRenderer(props: NodeRendererProps) {
       // a container (Stack/Grid) with one bad prop must not swallow its valid
       // children (same containment scope as the generated paths above).
       content = mismatch !== null
-        ? <>{dataShapeNotice(mismatch)}{children}</>
+        ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>
         : <Implementation {...bound}>{children}</Implementation>;
     }
   }
@@ -501,7 +519,7 @@ function NodeRenderer(props: NodeRendererProps) {
 }
 
 /**
- * 08-ui §5 — render a validated walk tree (the shared render mechanics, v2 spec §6).
+ * 08-ui §5 — render a validated walk tree.
  *
  * `$state` is local to this TreeView. Generated code can write through its
  * in-jail `vendo.setState(key, value)` bridge; `onStateChange`, when supplied,
@@ -518,16 +536,17 @@ function StatefulTreeView({
   const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
   const streaming = (tree as WalkTree & { streaming?: unknown }).streaming === true;
   const furnishings = (tree as WalkTree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
-  // W4b — the stamped per-island tool manifests ride the payload beside the
+  // The stamped per-island tool manifests ride the payload beside the
   // component sources (a payload extra, like furnishings).
   const componentTools = (tree as WalkTree & { componentTools?: Record<string, string[]> }).componentTools;
   const inClient = (tree as WalkTree & { inClient?: InClientVenue }).inClient;
   // Tolerate a malformed field (like every other payload extra): only an
   // array of well-formed entries renders the notice.
-  const pinDriftRaw = (tree as WalkTree & { pinDrift?: unknown }).pinDrift;
-  const pinDrift = (Array.isArray(pinDriftRaw) ? pinDriftRaw : [])
-    .filter((entry): entry is PinDrift =>
-      typeof entry === "object" && entry !== null && typeof (entry as PinDrift).slot === "string");
+  const seedDriftRaw = (tree as WalkTree & { seedDrift?: unknown }).seedDrift;
+  const seedDrift = typeof seedDriftRaw === "object" && seedDriftRaw !== null
+    && typeof (seedDriftRaw as SeedDrift).component === "string"
+    ? seedDriftRaw as SeedDrift
+    : null;
   // The host-page mount unlocks on EXACTLY `granted === true` — the value only
   // the server's hash-pin verification writes. Everything else stays jailed.
   const inClientGranted = inClient?.granted === true;
@@ -543,16 +562,10 @@ function StatefulTreeView({
         .map((node) => [node.component, tree.components?.[node.component] ?? ""]),
     ]),
   } : tree);
-  const [viewState, setViewState] = useState<Record<string, Json>>({});
-  const stateRef = useRef(viewState);
+  // The keyed `$state` store lives in the Kit bundle, shared with code-land's
+  // `useVendoState` (kit/state.ts) — one implementation, two venues.
+  const [viewState, updateState] = useKeyedState(onStateChange);
   const [outcomes, setOutcomes] = useState<Record<string, ToolOutcome | undefined>>({});
-
-  const updateState = useCallback((key: string, value: Json) => {
-    const next = { ...stateRef.current, [key]: value };
-    stateRef.current = next;
-    setViewState(next);
-    onStateChange?.(next);
-  }, [onStateChange]);
 
   const runAction = useCallback(async (nodeId: string, action: string, payload?: Json) => {
     let outcome: ToolOutcome;
@@ -576,6 +589,29 @@ function StatefulTreeView({
     [validation.ok ? validation.tree.nodes : validation.error.message],
   );
 
+  // A review-kind version awaiting the host reviewer renders NOTHING but its
+  // standing, checked BEFORE tree validation:
+  // the server ships no executable fork source with `pending-review` (its
+  // generated nodes have no components to validate against), so instead of an
+  // invalid-tree verdict, a jailed fork, or skeletons of stripped components
+  // the surface says "sent for review" — or carries the reviewer's rejection
+  // note back to the user.
+  if (inClient !== undefined && inClient.granted === false && inClient.reason === "pending-review") {
+    const standing = inClient.review;
+    if (standing?.status === "rejected") {
+      return (
+        <ContainedNotice label="Remix rejected" outcome="blocked">
+          {`The host reviewer rejected this remix — "${standing.note}". Edit the remix to resubmit it for review.`}
+        </ContainedNotice>
+      );
+    }
+    return (
+      <ContainedNotice label="Sent for review">
+        This remix was sent to the host for review. The original component stays in place until a reviewer approves it.
+      </ContainedNotice>
+    );
+  }
+
   if (!validation.ok) {
     return (
       <ContainedNotice label="Invalid UI tree" code={validation.error.code}>
@@ -585,6 +621,12 @@ function StatefulTreeView({
   }
 
   if (!hasRenderableTreeContent(validation.tree)) {
+    // A partial stream legitimately passes through content-less shapes on its
+    // way to the full tree — hold a quiet skeleton; the notice is a verdict
+    // reserved for FINAL payloads.
+    if (streaming) {
+      return <FormingSkeleton name="StreamingTree" />;
+    }
     return (
       <ContainedNotice label="Empty UI tree">
         The app view has no renderable content.
@@ -594,7 +636,13 @@ function StatefulTreeView({
 
   // 06-apps §9 — a version change under an existing approval must be LOUD: the
   // surface drops back to the sandbox and says so, in-surface, above the tree.
+  // Every ungranted reason except review-kind's pending-review (returned
+  // above) keeps this notice, so an unknown future reason still says
+  // SOMETHING rather than silently jailing.
   const dropBackNotice = inClient !== undefined && inClient.granted === false
+    // The payload is a wire value, so a FUTURE ungranted reason this union
+    // does not know yet must still drop back loudly, not silently jail.
+    && (inClient.reason as string) !== "pending-review"
     ? (
       <ContainedNotice label="In-client approval invalidated" outcome="blocked">
         This app changed since it was approved for the host page. It is running in the sandbox again until the new version is re-approved.
@@ -602,19 +650,39 @@ function StatefulTreeView({
     )
     : null;
 
-  // 06-apps §8 — a host update under a remixed pin must be LOUD too: the fork
-  // keeps rendering (nothing is mutated without the user), but the surface
-  // says the host component moved on and a rebase is available.
-  const driftNotice = pinDrift.length > 0
+  // 06-apps §8 — the host moved on under a remix. This has to be LOUD and it has
+  // to be HONEST: updating no longer replays what the person changed on top of
+  // the new version (that machinery is gone), it hands them the fresh copy
+  // instead. So the notice says what the update costs, in those words, and
+  // nothing happens until they ask for it.
+  const driftNotice = seedDrift !== null
     ? (
-      <ContainedNotice label="Remixed component out of date">
-        {`The host updated ${pinDrift.map((pin) => `"${pin.slot}"`).join(", ")} since ${pinDrift.length === 1 ? "it was" : "they were"} remixed here. Ask the agent to rebase the remix onto the updated component.`}
+      <ContainedNotice label="Newer version available">
+        {`"${seedDrift.component}" has changed in the app since you made this. You can switch to the new version, but it comes as a fresh copy — the changes you made here would be replaced. Nothing happens until you ask for it.`}
+      </ContainedNotice>
+    )
+    : null;
+
+  // The view settled without the data it asked for (render-seam.ts writes this when
+  // a query fails). Every unresolved binding renders "—" or an empty state, so a
+  // silent settle reads as "you have no spending". SERVER-AUTHORITATIVE like
+  // `inClient` and `seedDrift`: a document-carried value is stripped, and only
+  // exactly `true` speaks.
+  //
+  // The marker fires when ANY query failed, so the copy has to hold when the rest
+  // succeeded — a view with one live number in it cannot be told "the values below
+  // are blank" while that number is on screen.
+  const dataNotice = (tree as WalkTree & { dataUnavailable?: unknown }).dataUnavailable === true
+    ? (
+      <ContainedNotice label="Data didn't load" outcome="error">
+        {"Some values below couldn't load — that isn't your data being empty. Try opening it again in a moment."}
       </ContainedNotice>
     )
     : null;
 
   return (
-    <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data}>
+    <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
+      {dataNotice}
       {dropBackNotice}
       {driftNotice}
       <NodeRenderer
@@ -638,7 +706,19 @@ function StatefulTreeView({
   );
 }
 
-/** A new tree identity owns a fresh `$state` and outcome namespace. */
+/**
+ * A new app owns a fresh `$state` and outcome namespace.
+ *
+ * The identity is `appId`. It cannot be the tree: the compiler roots EVERY
+ * compiled app at the same synthetic `root` node (core/genui/wire/compile.ts),
+ * so keying on `tree.root` reused one instance across two different apps and
+ * app B rendered app A's `$state`. Nor can it be the tree's contents — a
+ * streaming tree changes on every chunk, and wiping `$state` mid-stream would
+ * throw away what the user just typed.
+ *
+ * Without `appId` the key falls back to `tree.root`, which is exactly the
+ * behavior every existing caller already had.
+ */
 export function TreeView(props: TreeViewProps) {
-  return <StatefulTreeView key={props.tree.root} {...props} />;
+  return <StatefulTreeView key={props.appId ?? props.tree.root} {...props} />;
 }

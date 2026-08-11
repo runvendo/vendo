@@ -1,4 +1,4 @@
-import { authMaterialSchema, principalSchema, type AuthMaterial, type PermissionGrant, type Principal } from "@vendoai/core";
+import { authMaterialSchema, principalSchema, publicBase, type AuthMaterial, type Json, type Membership, type PermissionGrant, type Principal } from "@vendoai/core";
 import type { ConformanceSuite } from "@vendoai/core/conformance";
 import type { HostAuthPreset } from "./shared.js";
 
@@ -37,6 +37,16 @@ export interface HostAuthPresetConformanceOptions {
       system's verify half here; return the verified subject, or null when
       verification rejects the material. */
   verifyActAs?(material: AuthMaterial): Promise<string | null> | string | null;
+  /** Build contract §9.1 — set when the preset under test was configured with a
+      `memberships` callback: the orgs/teams it must assert for `knownSubject`.
+      Unset, the memberships case asserts the seam stays cleanly absent (no
+      orgs asserted ⇒ `can()` degenerates to ownership). */
+  expectedMemberships?: Membership[];
+  /** Spec 2026-08-05 §1 — set when the preset under test was configured with a
+      facts-returning user resolver: what `facts` must resolve for
+      `knownSubject`. Unset, the case asserts the seam exists (every composed
+      preset carries it) and stays cleanly empty. */
+  expectedFacts?: Record<string, Json>;
 }
 
 const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
@@ -46,16 +56,17 @@ const assert: (condition: unknown, message: string) => asserts condition = (cond
 const defaultAnonymousRequest = (): Request =>
   new Request("https://host.conformance.test/api/vendo/threads");
 
-/** The deployment's public origin, computed exactly the way the presets do:
+/** The deployment's public ORIGIN, computed exactly the way the presets do:
     the operator-set VENDO_BASE_URL when configured (empty string = unset, the
-    umbrella's `environment()` semantics), else the request's own origin. Kept
-    env-aware so the redirect case passes on CORRECT preset behavior whether or
-    not the suite's runner has VENDO_BASE_URL in its environment. */
+    umbrella's `environment()` semantics), else the request's own origin. The
+    comparison stays origin-only on purpose — a redirect to the login page under
+    the deployment's path prefix is CORRECT (#866), so comparing full URLs here
+    would fail exactly the behavior this spec fixes. */
 const publicOrigin = (request: Request): string => {
   const base = typeof process === "undefined" ? undefined : process.env["VENDO_BASE_URL"];
   if (base !== undefined && base.length > 0) {
     try {
-      return new URL(base).origin;
+      return publicBase(base).origin;
     } catch {
       // An unparseable base is an env misconfiguration; fall back to the
       // request origin rather than failing the case on the harness's env.
@@ -116,7 +127,7 @@ export function hostAuthPresetConformance(opts: HostAuthPresetConformanceOptions
         },
       },
       {
-        name: "09 §2.1 — principal resolves a sessionless request to null (ephemeral anonymous)",
+        name: "09 §2.1 — principal resolves a sessionless request to null",
         async run(): Promise<void> {
           assert(
             await opts.preset.principal(anonymousRequest()) === null,
@@ -164,6 +175,27 @@ export function hostAuthPresetConformance(opts: HostAuthPresetConformanceOptions
         },
       },
       {
+        name: "build contract §9.1 — memberships answers from the Principal alone (no session)",
+        async run(): Promise<void> {
+          const seam = opts.preset.memberships;
+          if (opts.expectedMemberships === undefined) {
+            assert(
+              seam === undefined,
+              "preset asserts memberships but the suite declares none — pass expectedMemberships",
+            );
+            return;
+          }
+          assert(seam !== undefined, "preset was configured with memberships but does not expose the seam");
+          // Keyed on Principal, NOT Request: an unattended run (a fire-time
+          // sponsor check) has no session to hand it.
+          const asserted = await seam({ kind: "user", subject: opts.knownSubject });
+          assert(
+            JSON.stringify(asserted) === JSON.stringify(opts.expectedMemberships),
+            `memberships asserted ${JSON.stringify(asserted)}, expected ${JSON.stringify(opts.expectedMemberships)}`,
+          );
+        },
+      },
+      {
         name: "10-mcp §3 — oauth.session returns the subject for a live session",
         async run(): Promise<void> {
           const returnTo = "https://host.conformance.test/api/vendo/mcp/authorize?state=xyz";
@@ -207,6 +239,18 @@ export function hostAuthPresetConformance(opts: HostAuthPresetConformanceOptions
             await oauth.principal(opts.unknownSubject) === null,
             "oauth.principal resolved a subject the host never issued",
           );
+        },
+      },
+      {
+        name: "spec 2026-08-05 §1 — the facts seam rides the shared composition",
+        async run(): Promise<void> {
+          assert(typeof opts.preset.facts === "function", "preset has no facts seam (composeHostAuthPreset supplies it)");
+          const known = await opts.preset.facts(await opts.sessionRequest(opts.knownSubject));
+          assert(
+            JSON.stringify(known) === JSON.stringify(opts.expectedFacts),
+            `facts were ${JSON.stringify(known)}, expected ${JSON.stringify(opts.expectedFacts)}`,
+          );
+          assert(await opts.preset.facts(anonymousRequest()) === undefined, "facts resolved for an anonymous request");
         },
       },
     ],

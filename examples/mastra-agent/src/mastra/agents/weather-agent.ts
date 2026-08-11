@@ -22,7 +22,7 @@ Your primary function is to help users get weather details for specific location
 
 Use the weatherTool to fetch current weather data.
 
-You also have vendo_* tools: use vendo_create_app to build live interactive UI
+You also have vendo_* tools: use vendo_make to build live interactive UI
 (dashboards, comparisons) when the user asks to see something — the app renders
 inline in the chat automatically, so never offer to show it. Use
 vendo_send_trip_report to email a report — it may return a pending approval the
@@ -36,7 +36,7 @@ user resolves in the chat.`,
   model: 'openai/gpt-4.1-mini',
   // --- vendo: touch 3 of 4 (continued) — the starter's weatherTool plus the
   // guard-wrapped pack (vendo_get_weather, vendo_send_trip_report,
-  // vendo_create_app, vendo_delegate). Every vendo_* call routes
+  // vendo_make, vendo_delegate). Every vendo_* call routes
   // policy → approval → audit. vendoMastraTools returns a Promise, hence
   // Mastra's tools-as-function form.
   tools: async () => ({ weatherTool, ...(await vendoMastraTools(vendo)) }),

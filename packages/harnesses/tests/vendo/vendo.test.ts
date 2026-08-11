@@ -643,7 +643,6 @@ describe("vendo() passes the WHOLE context to the shipped loop", () => {
     expect(JSON.stringify(nonSystem[0])).toContain("second user message");
     expect(JSON.stringify(prompt)).not.toContain("first assistant message");
   });
-
   it("honours a token budget, and a per-turn option beats the default", async () => {
     const model = scriptedModel([textTurn("ok")]);
     await drive({

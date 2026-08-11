@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/apps",
-  "version": "0.4.8",
+  "version": "0.14.0",
   "description": "The Vendo app artifact, build engine, sandbox seam, and runtime.",
   "keywords": [
     "ai",
@@ -24,36 +24,41 @@
   },
   "type": "module",
   "sideEffects": false,
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/server/index.js",
+  "types": "./dist/server/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/server/index.d.ts",
+      "default": "./dist/server/index.js"
+    },
+    "./contract": {
+      "types": "./dist/contract/index.d.ts",
+      "default": "./dist/contract/index.js"
     },
     "./e2b": {
-      "types": "./dist/e2b/index.d.ts",
-      "default": "./dist/e2b/index.js"
+      "types": "./dist/server/escalation/e2b/index.d.ts",
+      "default": "./dist/server/escalation/e2b/index.js"
     },
-    "./adapter-conformance": {
-      "types": "./dist/adapter-conformance.d.ts",
-      "default": "./dist/adapter-conformance.js"
+    "./testing": {
+      "types": "./dist/server/testing/index.d.ts",
+      "default": "./dist/server/testing/index.js"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "box"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@vendoai/core": "workspace:*",
     "croner": "^9.0.0",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.25.12",
     "fflate": "^0.8.2",
     "jsdom": "^25.0.0",
     "react": "^19.0.0",
@@ -61,11 +66,16 @@
     "zod": "^3.25.0"
   },
   "peerDependencies": {
+    "@anthropic-ai/claude-agent-sdk": ">=0.3.0 <1",
     "ai": ">=6.0.0 <7",
     "e2b": "^2.32.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.0.0 || ^3.0.0",
+    "zod": ">=3.25.0 <5"
   },
   "peerDependenciesMeta": {
+    "@anthropic-ai/claude-agent-sdk": {
+      "optional": true
+    },
     "ai": {
       "optional": true
     },
@@ -81,7 +91,8 @@
     "@types/node": "^22.0.0",
     "ai": "6.0.28",
     "e2b": "^2.32.0",
+    "just-bash": "^3.1.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.6"
   }
 }

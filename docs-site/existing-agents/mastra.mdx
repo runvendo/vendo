@@ -91,7 +91,12 @@ Wrap the chat once in `VendoProvider` and hand finished tool outputs to
 parts, so match both:
 
 ```tsx
-// src/app/page.tsx — inside your existing message-parts loop
+// src/app/page.tsx
+import { VendoToolResult } from "@vendoai/vendo/react";
+
+type ToolLikePart = { type: string; toolName?: string; state?: string; output?: unknown };
+
+// inside your existing message-parts loop
 if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
   const tool = part as ToolLikePart;
   return tool.state === "output-available"

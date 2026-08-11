@@ -20,6 +20,9 @@ export function vendoAutoJudge(config: {
   instructions?: string;
 }): Judge {
   return {
+    // Exposed for composition (Judge.model): createVendo binds its models.judge
+    // config onto a vendoModel-built instance through this reference.
+    model: config.model,
     async decide(input) {
       const system = [
         SAFETY_PREAMBLE,
@@ -36,7 +39,7 @@ export function vendoAutoJudge(config: {
           name: input.descriptor.name,
           description: input.descriptor.description,
           risk: input.descriptor.risk,
-          critical: input.descriptor.critical,
+          confirmEach: input.descriptor.confirmEach,
         },
         call: {
           tool: input.call.tool,

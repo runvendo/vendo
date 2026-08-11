@@ -1,0 +1,46 @@
+"use client"
+import { Remixable } from "@vendoai/ui/chrome"
+import { useProfile, useAccounts } from "@/lib/hooks"
+import { Card, CardContent } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
+import { NetWorthView } from "./net-worth-view"
+
+/**
+ * Data container for the home net-worth card. The visual card itself is the
+ * presentational `NetWorthView`, which `vendo sync` captures from the
+ * <Remixable> wrapper below — this container only fetches and sums.
+ */
+export function NetWorthCard() {
+  const { data: profile, isLoading: pl } = useProfile()
+  const { data: accounts, isLoading: al } = useAccounts()
+  const loading = pl || al
+
+  // Net-worth series: index-sum every account's sparkline (all equal length).
+  const series = (() => {
+    if (!accounts || accounts.length === 0) return []
+    const len = accounts[0].sparkline.length
+    return Array.from({ length: len }, (_, i) =>
+      accounts.reduce((acc, a) => acc + (a.sparkline[i] ?? 0), 0),
+    )
+  })()
+
+  if (loading || !profile) {
+    return (
+      <Card>
+        <CardContent className="pt-5">
+          <Skeleton className="mt-2 h-10 w-56" />
+          <Skeleton className="mt-6 h-[220px] w-full" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // The remixable surface is the PRESENTATIONAL view: the ✦ gesture forks the
+  // captured component and mounts the fork jailed, in place — the live
+  // valueCents/series computed here keep flowing into it on every render.
+  return (
+    <Remixable>
+      <NetWorthView valueCents={profile.netWorth} series={series} />
+    </Remixable>
+  )
+}

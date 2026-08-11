@@ -19,6 +19,15 @@ import { resolveCloudBaseUrl } from "../cloud/client.js";
  * inference through Vendo's gateway and bill their org's meter — this
  * module checks it directly rather than trusting callers to remember.
  *
+ * That invariant is about the DEVELOPER's own endpoint, and for
+ * ANTHROPIC_BASE_URL (see AGENT_ENDPOINT_ENV_VAR) it holds only because a
+ * project file can no longer supply one: `readEnvFiles` in sync-flow.ts
+ * drops the key from `.env`/`.env.local`, at the one point where file-vs-
+ * shell provenance is still known. By the time any env reaches this module
+ * the key can only have come from the developer's shell or a programmatic
+ * caller, so "is it set" and "did the developer choose it" are the same
+ * question again — which is why a flat env map is enough to answer it here.
+ *
  * The gateway must be able to refuse this traffic for free-plan orgs
  * (spec's free-plan policy), so every request gets tagged with the
  * INIT_PURPOSE_HEADER — a plain "name: value" line via Claude Code's
@@ -29,6 +38,31 @@ import { resolveCloudBaseUrl } from "../cloud/client.js";
 export const INIT_PURPOSE_HEADER_NAME = "x-vendo-purpose";
 export const INIT_PURPOSE_HEADER_VALUE = "init";
 
+/**
+ * The gateway model id every Claude-Code-shaped rung must send when running on
+ * the Vendo Cloud gateway (#617). The gateway serves ONLY its curated vendo-*
+ * family ids and 400s anything else — including the `claude-*` id Claude Code
+ * sends by default. Claude Code passes a custom model id through verbatim once
+ * ANTHROPIC_BASE_URL points at a non-Anthropic endpoint (verified against
+ * claude 2.1.220), so pinning ANTHROPIC_MODEL to the gateway's own extraction
+ * id lands every rung on a valid gateway id — no gateway contract change. This
+ * is the extraction role of the gateway's model family (vendo-extract, see
+ * vendo-web console lib/api/model-aliases.ts VENDO_MODEL_FAMILY); a dev's
+ * explicit VENDO_EXTRACTION_MODEL pin still wins via the harness's --model flag.
+ */
+export const EXTRACTION_MODEL_ID = "vendo-extract";
+
+/**
+ * The one env var that REDIRECTS a coding agent's source-bearing prompts to a
+ * different endpoint, rather than merely paying for them. A project file may
+ * never choose it: `.env` ships with the repo, so honoring one would let a
+ * freshly cloned repo pick where its own source code gets sent whenever the
+ * developer has no Anthropic credential of their own. Only the developer's
+ * shell (or a programmatic caller passing an explicit env) may set it —
+ * enforced in sync-flow.ts's `readEnvFiles`, the CLI's one dotenv reader.
+ */
+export const AGENT_ENDPOINT_ENV_VAR = "ANTHROPIC_BASE_URL";
+
 /** Env vars that Claude Code itself accepts as an own credential besides
  *  ANTHROPIC_API_KEY and a CLI login: a corporate-gateway auth token, a
  *  device-flow OAuth token, or a custom base URL with no token at all
@@ -36,11 +70,12 @@ export const INIT_PURPOSE_HEADER_VALUE = "init";
  *  probe, so any caller folding "own credential" into its own predicate
  *  (claude-cli-harness.ts's availability()/run()) must check these three
  *  directly rather than relying solely on the login probe. Exported so
- *  every harness checks the identical set. */
+ *  every harness checks the identical set. The base URL counts only when it
+ *  is the developer's own — see AGENT_ENDPOINT_ENV_VAR. */
 export const OWN_CREDENTIAL_ENV_VARS = [
   "ANTHROPIC_AUTH_TOKEN",
   "CLAUDE_CODE_OAUTH_TOKEN",
-  "ANTHROPIC_BASE_URL",
+  AGENT_ENDPOINT_ENV_VAR,
 ] as const;
 
 function nonBlank(value: string | undefined): value is string {
@@ -57,6 +92,9 @@ export interface GatewayFuelOverlay {
   ANTHROPIC_BASE_URL: string;
   ANTHROPIC_AUTH_TOKEN: string;
   ANTHROPIC_CUSTOM_HEADERS: string;
+  /** Pins the model to a gateway-served id — Claude Code's own default is a
+   *  claude-* id the gateway 400s (#617). See EXTRACTION_MODEL_ID. */
+  ANTHROPIC_MODEL: string;
 }
 
 export interface GatewayFuelOptions {
@@ -95,5 +133,6 @@ export function composeGatewayFuel(options: GatewayFuelOptions): GatewayFuelOver
     ANTHROPIC_BASE_URL: baseURL,
     ANTHROPIC_AUTH_TOKEN: key.trim(),
     ANTHROPIC_CUSTOM_HEADERS: `${INIT_PURPOSE_HEADER_NAME}: ${INIT_PURPOSE_HEADER_VALUE}`,
+    ANTHROPIC_MODEL: EXTRACTION_MODEL_ID,
   };
 }

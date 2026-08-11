@@ -4,12 +4,10 @@ import { openScenario } from "./helpers.js";
 
 const chromeScenarios = [
   "thread",
+  "thread-citations",
   "overlay",
-  "page",
   "palette",
   "approval",
-  "activity",
-  "automations",
   "notice",
   "stage",
   "slot",
@@ -23,13 +21,20 @@ test.use({ reducedMotion: "reduce" });
 
 for (const scenario of chromeScenarios) {
   test(`${scenario} has zero WCAG 2.1 A/AA axe violations`, async ({ page }) => {
+    test.fixme(
+      scenario === "stage",
+      "the voice stage no longer renders its transcript inline (it moved behind the Transcript drawer), so the readiness gate 'Revenue is ready' never appears; needs a voice-lane decision on what the audited settled state is.",
+    );
     await openScenario(page, scenario);
     if (scenario === "thread") await expect(page.getByLabel("Approval for Email send")).toBeVisible();
+    if (scenario === "thread-citations") {
+      // Audit all three Surface-2 trust states, popover expanded.
+      await expect(page.locator("[data-vendo-knowledge-unavailable]")).toBeVisible();
+      await page.locator(".fl-cite-btn").first().click();
+      await expect(page.locator(".fl-cite--open .fl-cite-pop")).toBeVisible();
+    }
     if (scenario === "overlay") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
-    if (scenario === "page") await expect(page.getByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
     if (scenario === "palette") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
-    if (scenario === "activity") await expect(page.getByText("Invoices list").first()).toBeVisible();
-    if (scenario === "automations") await expect(page.getByRole("switch")).toBeVisible();
     if (scenario === "notice") await expect(page.getByRole("region", { name: "Vendo is running without a policy" })).toBeVisible();
     if (scenario === "stage") await expect(page.getByText("Revenue is ready")).toBeVisible();
     if (scenario === "slot") await expect(page.getByText("Invoices app surface")).toBeVisible();

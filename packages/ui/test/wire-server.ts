@@ -4,11 +4,14 @@ import {
   type UIMessage,
   type UIMessageChunk,
 } from "ai";
-import type {
-  AppDocument,
-  ApprovalRequest,
-  AuditEvent,
-  PermissionGrant,
+import {
+  DEFAULT_TRIGGER_ID,
+  seedComponentName,
+  type AppDocument,
+  type ApprovalRequest,
+  type AuditEvent,
+  type PermissionGrant,
+  type RiskLabel,
 } from "@vendoai/core";
 import { createServer, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -23,6 +26,37 @@ export interface RecordedRequest {
 
 const NOW = "2026-07-11T12:00:00.000Z";
 
+/** `[smoke-build]` pacing: long enough that the browser smoke pack can observe
+ *  each phase on a loaded runner, short enough to keep the pack under a minute. */
+const SMOKE_STEP_MS = 250;
+const SMOKE_BUILD_MS = 2_500;
+/** How long the turn streams EMPTY text beside the building card — the window in
+ *  which the lone `.fl-caret` exists. Wide enough that a loaded runner's sampler
+ *  cannot miss it. */
+const SMOKE_CARET_MS = 900;
+
+/** The narration `[smoke-build]` streams WHILE its card builds. The trailing
+ *  half-written table matters: a streaming table grows a forming row
+ *  (`.fl-skeleton-bar`), which is the third loop §8's suppression covers. */
+const SMOKE_LIVE_PROSE = [
+  "Pulling your spending together",
+  " — here is the shape of it so far:\n\n",
+  "| Category | Spend |\n| --- | --- |\n",
+  "| Groceries | $420 |\n",
+];
+
+/** The view `[smoke-build]` builds — a titled tree, so the card's bar has a real
+ *  name to flip to when the build lands. */
+const SMOKE_VIEW = {
+  formatVersion: "vendo-genui/v2",
+  root: "root",
+  nodes: [
+    { id: "root", component: "Stack", props: { gap: 8 }, children: ["title", "line"] },
+    { id: "title", component: "Text", props: { text: "Spending board", variant: "heading" } },
+    { id: "line", component: "Text", props: { text: "$1,240 this month across 4 categories." } },
+  ],
+};
+
 function app(id: string, name: string, automation = false): AppDocument {
   return {
     format: "vendo/app@1",
@@ -35,9 +69,21 @@ function app(id: string, name: string, automation = false): AppDocument {
       nodes: [{ id: "root", component: "Text", props: { text: `${name} app surface` } }],
     },
     ...(automation
-      ? { trigger: { on: { kind: "host-event" as const, event: "invoice.created" }, run: { kind: "steps" as const, steps: [] } } }
+      ? {
+        triggers: [{
+          id: DEFAULT_TRIGGER_ID,
+          on: { kind: "host-event" as const, event: "invoice.created" },
+          run: { kind: "steps" as const, steps: [] },
+        }],
+      }
       : {}),
   };
+}
+
+/** The fixture's app shape, for callers outside this module (the browser
+ *  harness seeds served/landing apps before the first request). */
+export function fixtureApp(id: string, name: string): AppDocument {
+  return app(id, name);
 }
 
 /** Existing-agents polish — a model-realistic generated dashboard island: the
@@ -107,6 +153,48 @@ function approval(): ApprovalRequest {
   };
 }
 
+/** Grant-set fixtures (demo-live-readiness): the two standing asks arming the
+ *  Invoice watcher mints, all under one set id — mirrors the automations
+ *  engine's enable() capture. Idempotent: pending asks are reused (T2 dedupe). */
+const GRANT_SET_ID = "gset_1";
+
+/** ⚠️ FIXTURE EDIT — the grade is now a PARAMETER, and it is truthful.
+ *
+ *  Both asks were hardcoded `risk: "read"`, including `host_email_send`. That
+ *  made the fixture itself carry the lie ruling 15 was written about, and the
+ *  grant-set tests then pinned a NAME-derived word ("Sends: Email send") as the
+ *  fix. Yousef's grading ruling deletes name inference, so the card is an
+ *  honest mirror of the grade and a mis-graded fixture produces a mis-worded
+ *  card — correctly. The fixture stops lying: a send tool is a `write`.
+ *
+ *  The honest-mirror tradeoff itself is pinned in grant-set-thread.test.tsx. */
+function grantAsk(id: string, tool: string, description: string, risk: RiskLabel = "read"): ApprovalRequest {
+  return {
+    id,
+    call: { id: `call_${id}`, tool, args: {} },
+    descriptor: { name: tool, description, inputSchema: { type: "object" }, risk },
+    inputPreview: `Allow "Invoice watcher" to use ${tool} while you're away (standing, this app only)`,
+    ctx: {
+      principal: { kind: "user", subject: "user_1" },
+      venue: "automation",
+      presence: "present",
+      appId: "app_auto",
+    },
+    createdAt: NOW,
+  };
+}
+
+function mintGrantSet(approvals: ApprovalRequest[]): ApprovalRequest[] {
+  const pending = approvals.filter(item => item.ctx.appId === "app_auto");
+  if (pending.length > 0) return pending;
+  const minted = [
+    grantAsk("apr_set_1", "host_email_send", "Send email digests as you.", "write"),
+    grantAsk("apr_set_2", "host_invoices_list", "Read invoices across your account."),
+  ];
+  approvals.push(...minted);
+  return minted;
+}
+
 function grant(): PermissionGrant {
   return {
     id: "grt_1",
@@ -129,7 +217,25 @@ function audit(id: string): AuditEvent {
     venue: "chat",
     presence: "present",
     tool: "host_invoices_list",
+    // Ruling 17a — the fixture was BLIND here: it left `inputPreview` unset, so
+    // no audit sweep could see that the ledger printed it. This is the guard's
+    // real shape (guard.ts `inputPreview`: `<tool slug> <canonical JSON>`),
+    // including a declared-cents amount, which is what a person must never read.
+    inputPreview: 'host_invoices_list {"amount_cents":4750,"limit":10,"status":"open"}',
     outcome: "ok",
+  };
+}
+
+/** RULING 21 — the fixture above still could not express CR-2's class: every
+ *  VALUE in it is a number or a plain word, so a ledger that humanized only the
+ *  LABELS still passed the law sweep. This is the real audit shape of the tool
+ *  a person's rail sees most — `vendo_make` asked to CHANGE an app, whose args
+ *  are an APP ID and the request the person typed. */
+export function appEditAudit(): AuditEvent {
+  return {
+    ...audit("aud_edit"),
+    tool: "vendo_make",
+    inputPreview: 'vendo_make {"app":"app_9a3f2b1c","request":"add a chart"}',
   };
 }
 
@@ -197,6 +303,23 @@ export async function createWireServer(options: WireServerOptions = {}) {
   };
   const state = {
     apps: [baseApp, automationApp, ...(options.islandApp === true ? [islandApp()] : [])],
+    /** Placement rows (2026-08-05): the fixture keeps the SHAPE the wire keeps
+     *  per subject — one row per slot, and the entry's status is derived from
+     *  the app list on read, never stored. */
+    placements: [] as Array<{ slot: string; appId: string }>,
+    /** The slot registry: what mounted `VendoSlot`s have reported. Kept
+     *  newest-first the way the real route answers, and re-reporting a slot
+     *  moves it back to the head rather than adding a second row. */
+    slots: [] as Array<{ id: string; label: string; lastSeen: string }>,
+    /** PR3 — apps whose build "lands" on the `after`-th placements read, so a
+     *  test can watch a slot go building → ready over the real wire instead of
+     *  asserting two static pages. Placing one again rewinds it (see the place
+     *  route): the browser harness shares one wire across a whole spec file, so
+     *  a one-shot window would be spent by the first attempt. */
+    landingApps: new Map<string, { after: number; seen: number; name: string }>(),
+    /** PR3 — apps served as an `{kind:"http"}` surface (app id → url): the
+     *  second surface kind a slot must mount. */
+    httpApps: new Map<string, string>(),
     approvals: [approval()],
     // Existing-agents — decided approvals move here so GET /approvals/:id can
     // answer the embed's poll; tests may also seed terminal states directly.
@@ -209,9 +332,15 @@ export async function createWireServer(options: WireServerOptions = {}) {
       { toolkit: "gmail", connector: "composio" },
       { toolkit: "slack", connector: "composio" },
     ],
-    automations: [{ app: automationApp, enabled: false }] satisfies AutomationEntry[],
+    /** What POST /connections/initiate hands back as the broker's hosted OAuth
+     *  URL. A knob because the URL is the one field of that response the
+     *  BROKER controls, and the surfaces navigate a window to it. */
+    redirectUrl: "https://connect.test/oauth/1",
+    automations: [
+      { app: automationApp, triggers: [{ trigger: automationApp.triggers![0]!, enabled: false }] },
+    ] satisfies AutomationEntry[],
     runs: [run()],
-    events: [audit("aud_1"), audit("aud_2"), audit("aud_3")],
+    events: [audit("aud_1"), audit("aud_2"), audit("aud_3"), appEditAudit()],
     threads: new Map<string, Thread>([
       [
         "thr_1",
@@ -223,10 +352,19 @@ export async function createWireServer(options: WireServerOptions = {}) {
     // Existing-agents polish — how many open polls `app_building_lands`
     // misses before its build "lands" (the browser harness's build window).
     buildingOpensRemaining: 2,
+    /** Backward-compat harness: serve /automations and enable WITHOUT the
+     *  grant-set fields (pendingGrants/grantSetId), the payload an older
+     *  server emits — new clients must parse and render it unchanged. */
+    legacyAutomationsPayload: false,
+    /** H2 harness: the engine's in-decision disarm silently fails (its store
+     *  write threw and the guard swallowed the subscriber error) — the deny
+     *  decisions land but the automation row stays enabled. */
+    denyDisarmFails: false,
     // #492 — apps whose build turn terminally FAILED: a flagged open poll
     // answers {kind:"failed"} with the reason (the record exists as a failure),
     // so the embed resolves promptly instead of spinning to its deadline.
-    failedApps: new Map<string, { reason: string; retryable?: boolean }>(),
+    // (Was declared twice; the fuller shape won — now declared once.)
+    failedApps: new Map<string, { reason: string; retryable?: boolean; prompt?: string }>(),
     statusErrorCode: undefined as string | undefined,
     failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
     // ENG-214 — how many upcoming /threads turns die MID-stream (a partial
@@ -239,6 +377,18 @@ export async function createWireServer(options: WireServerOptions = {}) {
     streamFailureText: undefined as string | undefined,
     posture: "rules" as "unconfigured" | "rules" | "judge" | "rules+judge",
     threadReplyGate: undefined as Promise<void> | undefined,
+    /** ⚠️ TEST EDIT (infrastructure) — threads whose turn TAKES a mid-build
+     *  steer, opted in by a `[steerable]` marker on the turn's own prompt (the
+     *  house pattern for every other fixture behaviour). Opt-in matters: without
+     *  it every suite written against the turn-end flush would change meaning. */
+    steerableThreads: new Set<string>(),
+    /** ⚠️ TEST EDIT (infrastructure) — threads whose in-flight `[stream-long]`
+     *  turn should emit a FRESH `building` beat, because a steer just landed on
+     *  them. This models what a real box does — the steered rework hits a Write
+     *  tool and `beat("building")` fires into the OPEN turn stream — so the
+     *  browser can show the build visibly change course. The fixture cannot
+     *  re-plan; it can only faithfully mirror the causal chain steer → new beat. */
+    steerBeats: new Set<string>(),
     // ENG-217 — optional pacing gates for the canned turn so specs can observe
     // exact streaming moments: before ANY chunk (generating skeleton), after
     // text-start but before the first delta (lone caret on an empty streamed
@@ -314,6 +464,16 @@ export async function createWireServer(options: WireServerOptions = {}) {
         const sentText = input.message.parts
           .map(part => (part.type === "text" ? part.text : ""))
           .join(" ");
+        // ⚠️ TEST EDIT (infrastructure) — §10.2. A turn whose prompt carries
+        // `[steerable]` is one this fixture's "box" can take a mid-build message
+        // into. Opt-in per turn, like every other marker here, so the suites
+        // written against the turn-end flush keep meaning what they meant.
+        //
+        // The LATEST turn on a thread decides, which is why the else-branch is
+        // not optional: steerability belongs to a turn, not to a conversation, so
+        // a plain turn after a steerable one must not inherit it.
+        if (sentText.includes("[steerable]")) state.steerableThreads.add(threadId);
+        else state.steerableThreads.delete(threadId);
         if (state.streamFailures > 0) {
           state.streamFailures -= 1;
           const failingChunks = createUIMessageStream<UIMessage>({
@@ -329,6 +489,47 @@ export async function createWireServer(options: WireServerOptions = {}) {
           const failingResponse = createUIMessageStreamResponse({ stream: failingChunks });
           failingResponse.headers.set("x-vendo-thread-id", threadId);
           await sendFetchResponse(failingResponse, response);
+          return;
+        }
+        if (sentText.includes("[grant-set]")) {
+          // demo-live-readiness — a turn that parks on a grant SET: the
+          // data-vendo-grant-set part beside the parked native call (the
+          // shape the demo scripted engine streams). The guard asks land in
+          // the pending queue so any surface can decide them.
+          const asks = mintGrantSet(state.approvals);
+          const grantSetChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_grant_set",
+            execute: async ({ writer }) => {
+              writer.write({ type: "tool-input-start", toolCallId: "call_gset", toolName: "host_email_send", dynamic: true });
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: "call_gset",
+                toolName: "host_email_send",
+                input: { permissions: asks.map(ask => ask.inputPreview) },
+                dynamic: true,
+              });
+              writer.write({
+                type: "data-vendo-grant-set",
+                data: {
+                  toolCallId: "call_gset",
+                  grantSetId: GRANT_SET_ID,
+                  appId: "app_auto",
+                  name: "Invoice watcher",
+                  permissions: asks.map(ask => ({
+                    approvalId: ask.id,
+                    tool: ask.call.tool,
+                    description: ask.descriptor.description,
+                    risk: ask.descriptor.risk,
+                  })),
+                },
+              } as UIMessageChunk);
+              writer.write({ type: "tool-approval-request", toolCallId: "call_gset", approvalId: asks[0]!.id });
+            },
+          });
+          const grantSetResponse = createUIMessageStreamResponse({ stream: grantSetChunks });
+          grantSetResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(grantSetResponse, response);
           return;
         }
         if (sentText.includes("[stream-kill]")) {
@@ -370,6 +571,266 @@ export async function createWireServer(options: WireServerOptions = {}) {
           await sendFetchResponse(hangResponse, response);
           return;
         }
+        if (sentText.includes("[tool-after-text]")) {
+          // Demo-latency lane — a turn that streams prose FIRST, then starts a
+          // tool call and holds while it "executes": the shape of an agent turn
+          // that narrates a plan and then works through host tools. The live
+          // activity affordance (status ribbon) must narrate the running call
+          // even though visible text already exists in the turn (the observed
+          // dead-air class). Gated on threadReplyGate, then the call completes
+          // and the turn closes with text.
+          const toolAfterTextChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_tool_after_text",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_plan" });
+              writer.write({ type: "text-delta", id: "text_plan", delta: "Here is the plan — pulling your data now." });
+              writer.write({ type: "text-end", id: "text_plan" });
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: "call_after_text",
+                toolName: "host_list_transactions",
+                input: {},
+                dynamic: true,
+              });
+              await state.threadReplyGate;
+              writer.write({
+                type: "tool-output-available",
+                toolCallId: "call_after_text",
+                output: { rows: [] },
+                dynamic: true,
+              } as UIMessageChunk);
+              writer.write({ type: "text-start", id: "text_done" });
+              writer.write({ type: "text-delta", id: "text_done", delta: "All done." });
+              writer.write({ type: "text-end", id: "text_done" });
+            },
+          });
+          const toolAfterTextResponse = createUIMessageStreamResponse({ stream: toolAfterTextChunks });
+          toolAfterTextResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(toolAfterTextResponse, response);
+          return;
+        }
+        if (sentText.includes("[settled-gap]")) {
+          // 2026-07 loading-state audit — the between-steps gap: prose has
+          // streamed AND the tool call has fully settled, but the turn is
+          // still busy (the model deciding its next step). Nothing used to
+          // narrate this moment; the quiet Working ribbon must hold the floor
+          // until the closing text arrives (gated on threadReplyGate).
+          const settledGapChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_settled_gap",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_plan" });
+              writer.write({ type: "text-delta", id: "text_plan", delta: "Here is the plan — pulling your data now." });
+              writer.write({ type: "text-end", id: "text_plan" });
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: "call_settled_gap",
+                toolName: "host_list_transactions",
+                input: {},
+                dynamic: true,
+              });
+              writer.write({
+                type: "tool-output-available",
+                toolCallId: "call_settled_gap",
+                output: { rows: [] },
+                dynamic: true,
+              } as UIMessageChunk);
+              await state.threadReplyGate;
+              writer.write({ type: "text-start", id: "text_done" });
+              writer.write({ type: "text-delta", id: "text_done", delta: "All done." });
+              writer.write({ type: "text-end", id: "text_done" });
+            },
+          });
+          const settledGapResponse = createUIMessageStreamResponse({ stream: settledGapChunks });
+          settledGapResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(settledGapResponse, response);
+          return;
+        }
+        if (sentText.includes("[beats]")) {
+          // §3.4 — the STATUS channel: transient `data-vendo-status` chunks, the
+          // exact shape `writeStatus` (packages/harnesses/src/wire.ts) puts on
+          // the wire. Written here as the literal part name because @vendoai/ui
+          // may depend on core only (scripts/dependency-guard.mjs), so the
+          // producer's constant cannot be imported; the producer side pins the
+          // same literal in packages/harnesses/src/runtime.test.ts.
+          //
+          // The script is the settled-gap shape (prose, then a call that
+          // settles, then the busy gap) with beats riding through it: two
+          // carrying phase/appId, two bare, and malformed chunks interleaved —
+          // a beat channel that has to survive junk without a receiver-side
+          // schema is the whole point of validating on arrival.
+          const beat = (data: unknown) => ({ type: "data-vendo-status", data, transient: true });
+          const beatChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_beats",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_plan" });
+              writer.write({ type: "text-delta", id: "text_plan", delta: "Here is the plan — building your workbench now." });
+              writer.write({ type: "text-end", id: "text_plan" });
+              writer.write(beat({ label: "Reading what you asked for", phase: "understanding", appId: "app_1" }) as UIMessageChunk);
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: "call_beats",
+                toolName: "host_list_transactions",
+                input: {},
+                dynamic: true,
+              });
+              writer.write({
+                type: "tool-output-available",
+                toolCallId: "call_beats",
+                output: { rows: [] },
+                dynamic: true,
+              } as UIMessageChunk);
+              writer.write(beat({ label: "Laying out the matching table", phase: "assembling" }) as UIMessageChunk);
+              // Bare label — the shape a harness that says nothing else emits.
+              writer.write(beat({ label: "Wiring up your transactions" }) as UIMessageChunk);
+              // Malformed: an empty label, a non-string label, no data at all.
+              writer.write(beat({ label: "   " }) as UIMessageChunk);
+              writer.write(beat({ label: 7 }) as UIMessageChunk);
+              writer.write(beat(null) as UIMessageChunk);
+              // A real label carrying junk in the optional fields: the beat
+              // still renders, the two unusable fields simply do not.
+              writer.write(beat({ label: "Adding drag and drop", phase: "polishing", appId: 42 }) as UIMessageChunk);
+              // Last chunk before the gap is junk, so the ribbon's "latest
+              // beat" can never be a malformed one.
+              writer.write(beat({ label: "" }) as UIMessageChunk);
+              // The gate is the unit suite's deterministic release. A browser has
+              // no way to resolve one, so the harness gets a real-timer hold
+              // instead — long enough to read the live frame and photograph it.
+              await (state.threadReplyGate ?? new Promise(resolve => setTimeout(resolve, 6_000)));
+              writer.write({ type: "text-start", id: "text_done" });
+              writer.write({ type: "text-delta", id: "text_done", delta: "All done." });
+              writer.write({ type: "text-end", id: "text_done" });
+            },
+          });
+          const beatsResponse = createUIMessageStreamResponse({ stream: beatChunks });
+          beatsResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(beatsResponse, response);
+          return;
+        }
+        if (sentText.includes("[smoke-build]")) {
+          // The smoke pack's one scripted turn (checklist 11): two tool steps
+          // that settle into beats, then an app BUILD that holds the floor —
+          // §8's card-is-the-step, with the hairline as the only moving thing —
+          // then the closing text that folds the whole turn into its summary.
+          // Paced with real timers, not a gate: the browser harness has no way
+          // to release one.
+          const smokeChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_smoke",
+            execute: async ({ writer }) => {
+              const steps = [
+                { call: "call_smoke_read", tool: "host_list_transactions", output: { transactions: [1, 2, 3] } },
+                { call: "call_smoke_insights", tool: "host_getSpendingInsights", output: { categories: [1, 2] } },
+              ];
+              for (const step of steps) {
+                writer.write({
+                  type: "tool-input-available",
+                  toolCallId: step.call,
+                  toolName: step.tool,
+                  input: {},
+                  dynamic: true,
+                });
+                await new Promise(resolve => setTimeout(resolve, SMOKE_STEP_MS));
+                writer.write({
+                  type: "tool-output-available",
+                  toolCallId: step.call,
+                  output: step.output,
+                  dynamic: true,
+                } as UIMessageChunk);
+              }
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: "call_smoke_build",
+                toolName: "vendo_make",
+                input: { request: "a board showing where my money goes" },
+                dynamic: true,
+              });
+              // Same stream id both times, exactly as the real emitter does
+              // (vendoViewStreamId), so the partial view becomes the live one.
+              writer.write({
+                type: "data-vendo-view",
+                id: "vendo-view:app_smoke",
+                data: { appId: "app_smoke", payload: { ...SMOKE_VIEW, streaming: true } },
+              } as UIMessageChunk);
+              // Ruling 21 — the fixture must be able to EXPRESS the defect §8's
+              // suppression fixes. Prose streams WHILE the card builds (the real
+              // agent narrates as it works), and the prose carries a half-formed
+              // markdown table. Without this the turn has no caret and no
+              // shimmer at all, so "the build animates exactly one thing" is a
+              // claim about an empty set and cannot fail.
+              writer.write({ type: "text-start", id: "text_smoke_live" });
+              // A beat of empty streamed text first: that is the LONE `.fl-caret`
+              // (parts.tsx), a different element from the trailing pseudo-caret
+              // the flowing prose grows. Both are suppressed; both get sampled.
+              await new Promise(resolve => setTimeout(resolve, SMOKE_CARET_MS));
+              for (const delta of SMOKE_LIVE_PROSE) {
+                writer.write({ type: "text-delta", id: "text_smoke_live", delta });
+                await new Promise(resolve => setTimeout(resolve, SMOKE_STEP_MS));
+              }
+              await new Promise(resolve => setTimeout(resolve, SMOKE_BUILD_MS));
+              // The narration settles BEFORE the card does, so the §8 sample
+              // window (card building + prose streaming) is the whole build hold.
+              writer.write({ type: "text-end", id: "text_smoke_live" });
+              writer.write({
+                type: "data-vendo-view",
+                id: "vendo-view:app_smoke",
+                data: { appId: "app_smoke", payload: SMOKE_VIEW },
+              } as UIMessageChunk);
+              // The receipt, never the document: `vendo_make` hands back four
+              // words-only fields and the screen arrives on its own channel
+              // (the `data-vendo-view` parts above).
+              writer.write({
+                type: "tool-output-available",
+                toolCallId: "call_smoke_build",
+                output: { id: "app_smoke", title: "Where my money goes", status: "ready", say: "It's on your screen." },
+                dynamic: true,
+              } as UIMessageChunk);
+              writer.write({ type: "text-start", id: "text_smoke" });
+              writer.write({ type: "text-delta", id: "text_smoke", delta: "Your spending board is ready." });
+              writer.write({ type: "text-end", id: "text_smoke" });
+            },
+          });
+          const smokeResponse = createUIMessageStreamResponse({ stream: smokeChunks });
+          smokeResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(smokeResponse, response);
+          return;
+        }
+        if (sentText.includes("[denied-gap]")) {
+          // M22/M23 — the turn's ask was REFUSED and the turn keeps going. A
+          // denial is terminal: the pill must stop narrating that step and the
+          // between-steps ribbon must come back for the rest of the turn.
+          const deniedGapChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_denied_gap",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_ask" });
+              writer.write({ type: "text-delta", id: "text_ask", delta: "I'll move the money once you approve." });
+              writer.write({ type: "text-end", id: "text_ask" });
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: "call_denied_gap",
+                toolName: "host_transferMoney",
+                input: { amount_cents: 4750, recipient_name: "Acme Utilities" },
+                dynamic: true,
+              });
+              // The denial chunk is a STRICT { type, toolCallId } object.
+              writer.write({
+                type: "tool-output-denied",
+                toolCallId: "call_denied_gap",
+              } as UIMessageChunk);
+              await state.threadReplyGate;
+              writer.write({ type: "text-start", id: "text_done" });
+              writer.write({ type: "text-delta", id: "text_done", delta: "Nothing was sent." });
+              writer.write({ type: "text-end", id: "text_done" });
+            },
+          });
+          const deniedGapResponse = createUIMessageStreamResponse({ stream: deniedGapChunks });
+          deniedGapResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(deniedGapResponse, response);
+          return;
+        }
         if (sentText.includes("[stream-long]")) {
           const longChunks = createUIMessageStream<UIMessage>({
             originalMessages: [input.message],
@@ -384,6 +845,15 @@ export async function createWireServer(options: WireServerOptions = {}) {
                   id: "text_long",
                   delta: `Streamed paragraph ${index + 1}: the long answer keeps arriving so the list keeps growing while the reader watches.\n\n`,
                 });
+                // A steer landed mid-build: emit ONE fresh `building` beat into
+                // this open stream, exactly as a real box's steered rework would.
+                if (state.steerBeats.delete(threadId)) {
+                  writer.write({
+                    type: "data-vendo-status",
+                    data: { label: "Regrouping by client", phase: "building" },
+                    transient: true,
+                  } as UIMessageChunk);
+                }
                 await new Promise(resolve => setTimeout(resolve, 80));
               }
               writer.write({ type: "text-delta", id: "text_long", delta: "Long turn complete." });
@@ -414,6 +884,15 @@ export async function createWireServer(options: WireServerOptions = {}) {
                 toolCallId: `call_stream${suffix}`,
                 risk: "write",
                 approvalId: `apr_stream${suffix}`,
+                // spec §16 law 2 — a real server rides the descriptor with the
+                // ask. The fixture omitted it, which is how L38 stayed
+                // invisible: with no authored title, the card and the
+                // post-approve toast happened to agree on the humanized slug.
+                descriptor: {
+                  title: "Send the report",
+                  description: "Send email",
+                  inputSchema: { type: "object", properties: { to: { type: "string" } } },
+                },
                 invalidatedGrant: {
                   id: "grt_stale",
                   grantedAt: "2026-07-01T12:00:00.000Z",
@@ -445,6 +924,30 @@ export async function createWireServer(options: WireServerOptions = {}) {
         json(response, summaries);
         return;
       }
+      // ⚠️ TEST EDIT (infrastructure) — §10.2 mid-build steering. Mirrors the real
+      // route: it answers whether the words LANDED, and on a landing it appends
+      // them to the thread as a normal user turn under the id the client minted,
+      // so a reload reads the same transcript the live screen showed.
+      const steerMatch = method === "POST" ? url.pathname.match(/^\/threads\/([^/]+)\/steer$/) : null;
+      if (steerMatch) {
+        const id = decodeURIComponent(steerMatch[1] ?? "");
+        const body = parsedBody as { text?: string; messageId?: string };
+        if (!state.steerableThreads.has(id)
+          || typeof body?.text !== "string" || typeof body?.messageId !== "string") {
+          json(response, { landed: false });
+          return;
+        }
+        // Landing is the TURN's answer, so it does not depend on a stored row —
+        // some browser scenarios hold their thread client-side only. Where a row
+        // does exist it gains the message, which is what a reload reads back.
+        state.threads.get(id)?.messages
+          .push({ id: body.messageId, role: "user", parts: [{ type: "text", text: body.text }] });
+        // Tell an in-flight `[stream-long]` turn to narrate its course-change.
+        state.steerBeats.add(id);
+        json(response, { landed: true });
+        return;
+      }
+
       const threadMatch = url.pathname.match(/^\/threads\/([^/]+)$/);
       if (threadMatch) {
         const id = decodeURIComponent(threadMatch[1] ?? "");
@@ -473,6 +976,22 @@ export async function createWireServer(options: WireServerOptions = {}) {
               ? { state: "executed", outcome: { status: "ok", output: { delivered: true } } }
               : { state: "declined" },
           );
+        }
+        // Grant sets: denying an automation's WHOLE outstanding set disarms it
+        // in the SAME decision (the automations engine's decide subscriber);
+        // a partial deny leaves it armed (05 §6 — ungranted steps park at
+        // fire time). Mirror both so panels render the real post-deny state.
+        if (body.decision?.approve !== true && !state.denyDisarmFails) {
+          const deniedApps = new Set(state.approvals
+            .filter(item => ids.includes(item.id) && item.ctx.venue === "automation" && item.ctx.appId !== undefined)
+            .map(item => item.ctx.appId));
+          for (const appId of deniedApps) {
+            const remaining = state.approvals.some(item =>
+              !ids.includes(item.id) && item.ctx.venue === "automation" && item.ctx.appId === appId);
+            if (remaining) continue;
+            const entry = state.automations.find(item => item.app.id === appId);
+            if (entry) for (const row of entry.triggers) row.enabled = false;
+          }
         }
         state.approvals = state.approvals.filter(item => !ids.includes(item.id));
         return empty(response);
@@ -509,7 +1028,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
             createdAt: NOW,
           });
         }
-        return json(response, { id: "ca_new", connector: initiateBody.connector ?? "composio", redirectUrl: "https://connect.test/oauth/1" });
+        return json(response, { id: "ca_new", connector: initiateBody.connector ?? "composio", redirectUrl: state.redirectUrl });
       }
       const connectionMatch = url.pathname.match(/^\/connections\/([^/]+)$/);
       if (connectionMatch) {
@@ -534,31 +1053,125 @@ export async function createWireServer(options: WireServerOptions = {}) {
         return empty(response);
       }
 
-      // Gesture-owned forking (2026-07-21): the deterministic fork the Remix
-      // gesture invokes — no model, the fixture mints a pinned app directly.
-      const forkPinAppMatch = url.pathname.match(/^\/apps\/([^/]+)\/fork-pin$/);
-      if (method === "POST" && (url.pathname === "/apps/fork-pin" || forkPinAppMatch)) {
-        const slot = (parsedBody as { slot: string }).slot;
-        const existingId = forkPinAppMatch ? decodeURIComponent(forkPinAppMatch[1] ?? "") : undefined;
-        const target = existingId === undefined
-          ? (() => {
-            const minted = app(`app_pin_${state.apps.length + 1}`, `${slot} remix`);
-            state.apps.push(minted);
-            return minted;
-          })()
-          : state.apps.find(item => item.id === existingId);
-        if (!target) return wireError(response, "not-found", "App not found", 404);
-        target.pins = [...(target.pins ?? []), { slot, base: "sha256:fixture" }];
-        return json(response, {
-          app: target,
-          version: { at: NOW, intent: `Remix the host component "${slot}"`, rung: 1 },
-          slot,
-          componentName: `Pinned${slot}`,
-        });
+      // The ✦ gesture (06 §8): the deterministic seed — no model, the fixture
+      // mints an ordinary app carrying ONE seed record, mirroring the runtime:
+      // the seeded island lands in the tree, and the call dedupes per component
+      // (W0) so a raced double-tap can never mint two. It answers with the app
+      // document itself; there is no fork result envelope.
+      if (method === "POST" && url.pathname === "/apps/seed") {
+        const { component, slot } = parsedBody as { component: string; slot?: string; instruction?: string };
+        const componentName = seedComponentName(component);
+        const deduped = state.apps.find(item => item.seed?.component === component);
+        if (deduped) return json(response, deduped);
+        const minted = app(`app_seed_${state.apps.length + 1}`, `${component} remix`);
+        // Mirrors the runtime's mint: an explicit destination is a placement
+        // ROW (location) beside the seed on the document (provenance).
+        if (slot !== undefined) {
+          state.placements = [
+            ...state.placements.filter(row => row.slot !== slot),
+            { slot, appId: minted.id },
+          ];
+        }
+        minted.tree = {
+          formatVersion: "vendo-genui/v2",
+          root: "root",
+          nodes: [
+            { id: "root", component: "Stack", source: "prewired", children: [`${componentName.toLowerCase()}-1`] },
+            { id: `${componentName.toLowerCase()}-1`, component: componentName, source: "generated" },
+          ],
+          components: { [componentName]: `export default function Fork() { return <p>${component} fork</p>; }` },
+        } as AppDocument["tree"];
+        minted.seed = { component, baseline: "sha256:fixture" };
+        state.apps.push(minted);
+        return json(response, minted);
       }
-      if (url.pathname === "/apps" && method === "GET") return json(response, state.apps);
+      // The plain re-seed: the seeded seat takes the host's current version, so
+      // the document's baseline moves. It REPLACES — nothing is replayed.
+      const reseedMatch = url.pathname.match(/^\/apps\/([^/]+)\/reseed$/);
+      if (method === "POST" && reseedMatch) {
+        const id = decodeURIComponent(reseedMatch[1] ?? "");
+        const target = state.apps.find(item => item.id === id);
+        if (!target) return wireError(response, "not-found", "App not found", 404);
+        if (target.seed === undefined) {
+          return wireError(response, "validation", "This app was not created from a host component", 400);
+        }
+        target.seed = { ...target.seed, baseline: "sha256:fixture-NEW" };
+        return json(response, target);
+      }
+      // Placement (2026-08-05) — ahead of the /apps/:id arms, exactly like the
+      // real route table (the catch-all would otherwise read "placements" as an
+      // app id).
+      if (url.pathname === "/apps/placements" && method === "GET") {
+        // PR3 — the harness's build window: a landing app joins the app list
+        // after a couple of reads, exactly like a build completing mid-poll.
+        for (const [landingId, landing] of state.landingApps) {
+          landing.seen += 1;
+          if (landing.seen >= landing.after && !state.apps.some(item => item.id === landingId)) {
+            state.apps.push(app(landingId, landing.name));
+          }
+        }
+        const asked = (url.searchParams.get("slots") ?? "")
+          .split(",").map(slot => slot.trim()).filter(slot => slot.length > 0);
+        const rows = state.placements.filter(row => asked.length === 0 || asked.includes(row.slot));
+        return json(response, rows.map(row => {
+          const placed = state.apps.find(item => item.id === row.appId);
+          return {
+            slot: row.slot,
+            app: row.appId,
+            title: placed?.name ?? "",
+            // PR3 — a failure record is a terminal build, whether the fixture
+            // carries it on the app document (the runtime's persisted
+            // `buildFailed`) or in the failedApps shim open() answers from.
+            status: state.failedApps.has(row.appId)
+              ? "failed"
+              : placed === undefined
+                ? "building"
+                : placed.buildFailed === undefined ? "ready" : "failed",
+          };
+        }));
+      }
+      const placeMatch = url.pathname.match(/^\/apps\/([^/]+)\/(place|unplace)$/);
+      if (method === "POST" && placeMatch) {
+        const id = decodeURIComponent(placeMatch[1] ?? "");
+        const { slot } = parsedBody as { slot: string };
+        const held = state.placements.find(row => row.slot === slot);
+        if (placeMatch[2] === "unplace") {
+          if (held?.appId === id) state.placements = state.placements.filter(row => row.slot !== slot);
+          return json(response, {});
+        }
+        // PR3 — placing a landing app rewinds its build window and takes back
+        // its servable record, so a browser spec can seed the building → ready
+        // story per attempt (the harness's wire outlives every test in a file).
+        const landing = state.landingApps.get(id);
+        if (landing !== undefined) {
+          landing.seen = 0;
+          const landed = state.apps.findIndex(item => item.id === id);
+          if (landed >= 0) state.apps.splice(landed, 1);
+        }
+        state.placements = [...state.placements.filter(row => row.slot !== slot), { slot, appId: id }];
+        return json(response, held === undefined || held.appId === id ? {} : { evicted: held.appId });
+      }
+      // ⚠️ FIXTURE EDIT (D5) — NEWEST FIRST, which is what the real wire returns.
+      // `runtime.list()` sorts createdAt DESCENDING (packages/apps/src/runtime.ts,
+      // pinned by its "newest-first list" case in lifecycle.test.ts) and
+      // AppDocument carries no timestamp at all — so list ORDER is the only
+      // newness signal a client has. This fixture served insertion order, the
+      // exact opposite, which is how `.at(-1)` shipped in use-slot-app.ts under a
+      // "latest placement wins" comment while it resolved the OLDEST placed app.
+      if (url.pathname === "/apps" && method === "GET") return json(response, [...state.apps].reverse());
       if (url.pathname === "/apps" && method === "POST") {
-        const created = app(`app_${state.apps.length + 1}`, (parsedBody as { prompt: string }).prompt);
+        const prompt = (parsedBody as { prompt: string }).prompt;
+        const created = app(`app_${state.apps.length + 1}`, prompt);
+        // speed-core F5 — a prompt tagged [with-button] builds an app whose
+        // root is an action-bound Button, so embed tests can click THROUGH
+        // the served app and assert which app id the call targets.
+        if (prompt.includes("[with-button]")) {
+          created.tree = {
+            formatVersion: "vendo-genui/v2",
+            root: "root",
+            nodes: [{ id: "root", component: "Button", props: { label: "Refresh data", onClick: { $action: "host_refresh" } } }],
+          } as AppDocument["tree"];
+        }
         state.apps.push(created);
         return json(response, created);
       }
@@ -601,7 +1214,12 @@ export async function createWireServer(options: WireServerOptions = {}) {
           // record exists), so the embed shows the reason promptly.
           if (action === "open" && method === "GET" && state.failedApps.has(id)) {
             const failure = state.failedApps.get(id)!;
-            return json(response, { kind: "failed", reason: failure.reason, ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }) });
+            return json(response, {
+              kind: "failed",
+              reason: failure.reason,
+              ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
+              ...(failure.prompt === undefined ? {} : { prompt: failure.prompt }),
+            });
           }
           // The real wire's flag-gated build-window answer: a flagged open
           // poll gets a quiet 200 pending envelope instead of the 404.
@@ -611,6 +1229,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
           return wireError(response, "not-found", "App not found", 404);
         }
         if (action === "open" && method === "GET") {
+          // A served (rung-4) app answers with its machine url; everything else
+          // is a tree. Both must mount in a slot.
+          const served = state.httpApps.get(id);
+          if (served !== undefined) return json(response, { kind: "http", url: served });
           return json(response, { kind: "tree", payload: state.apps[index]?.tree });
         }
         if (action === "call" && method === "POST") return json(response, { status: "ok", output: parsedBody });
@@ -622,11 +1244,6 @@ export async function createWireServer(options: WireServerOptions = {}) {
           return json(response, { app: edited, version });
         }
         if (action === "history" && method === "GET") return json(response, state.history);
-        if (action === "history" && method === "POST") {
-          const undone = { ...state.apps[index]!, name: "Undone" };
-          state.apps[index] = undone;
-          return json(response, undone);
-        }
         if (action === "fork" && method === "POST") {
           const forked = { ...state.apps[index]!, id: `app_fork_${state.apps.length}`, forkedFrom: id };
           state.apps.push(forked);
@@ -645,19 +1262,40 @@ export async function createWireServer(options: WireServerOptions = {}) {
         }
       }
 
-      if (method === "GET" && url.pathname === "/automations") return json(response, state.automations);
-      const automationMatch = url.pathname.match(/^\/automations\/([^/]+)\/(enable|disable|dry-run)$/);
+      if (method === "GET" && url.pathname === "/automations") {
+        if (state.legacyAutomationsPayload) return json(response, state.automations);
+        // The engine's pending-captures projection: an entry with undecided
+        // standing asks carries pendingGrants + the set id (reload survival),
+        // landed on the ONE trigger actually waiting (the fixture's automation
+        // apps carry exactly one trigger, so that is always the first).
+        return json(response, state.automations.map(entry => {
+          const pending = state.approvals.filter(item =>
+            item.ctx.venue === "automation" && item.ctx.appId === entry.app.id).length;
+          if (pending === 0) return entry;
+          return {
+            ...entry,
+            triggers: entry.triggers.map((row, index) =>
+              index === 0 ? { ...row, pendingGrants: pending, grantSetId: GRANT_SET_ID } : row),
+          };
+        }));
+      }
+      const automationMatch = url.pathname.match(/^\/automations\/([^/]+)\/(enable|disable|dry-run)\/([^/]+)$/);
       if (method === "POST" && automationMatch) {
         const id = decodeURIComponent(automationMatch[1] ?? "");
+        const triggerId = decodeURIComponent(automationMatch[3] ?? "");
         const entry = state.automations.find(item => item.app.id === id);
         if (!entry) return wireError(response, "not-found", "Automation not found", 404);
+        const row = entry.triggers.find(item => item.trigger.id === triggerId);
+        if (!row) return wireError(response, "not-found", "Trigger not found", 404);
         const action = automationMatch[2];
         if (action === "enable") {
-          entry.enabled = true;
-          return json(response, { enabled: true, missing: [approval()] });
+          row.enabled = true;
+          const missing = mintGrantSet(state.approvals);
+          if (state.legacyAutomationsPayload) return json(response, { enabled: true, missing });
+          return json(response, { enabled: true, missing, grantSetId: GRANT_SET_ID });
         }
         if (action === "disable") {
-          entry.enabled = false;
+          row.enabled = false;
           return empty(response);
         }
         return json(response, { steps: [{ id: "step_1", tool: "host_invoices_list", wouldAsk: false }], grantsMissing: [] });
@@ -687,6 +1325,30 @@ export async function createWireServer(options: WireServerOptions = {}) {
       if (method === "GET" && url.pathname === "/activity") {
         const cursor = url.searchParams.get("cursor");
         return json(response, cursor ? state.events.slice(1) : state.events.slice(0, 2));
+      }
+      if (url.pathname === "/slots") {
+        if (method === "POST") {
+          const reported = (parsedBody as { slots: Array<{ id: string; label: string }> }).slots;
+          // Mirrors the real route's caps (packages/vendo/src/wire/slots.ts):
+          // at most 200 entries, each id and label 1-256 characters, refused as
+          // `validation` before ANY row is written — the whole batch, because
+          // the route maps the array through its descriptor validator. A
+          // fixture without them cannot express what a real host page hits.
+          if (reported.length > 200) {
+            return wireError(response, "validation", "slots must be an array of at most 200 entries", 400);
+          }
+          if (reported.some(slot => slot.id.length > 256 || slot.label.length > 256)) {
+            return wireError(response, "validation", "slot label must be 1-256 characters", 400);
+          }
+          for (const slot of reported) {
+            state.slots = [
+              { id: slot.id, label: slot.label, lastSeen: NOW },
+              ...state.slots.filter(row => row.id !== slot.id),
+            ];
+          }
+          return json(response, {});
+        }
+        if (method === "GET") return json(response, state.slots);
       }
       if (method === "GET" && url.pathname === "/status") {
         if (state.statusErrorCode) return wireError(response, state.statusErrorCode, "Status failed", 501);

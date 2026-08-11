@@ -34,6 +34,17 @@ html.dark img[src$="/images/logos/mastra.svg"] {
     0 14px 34px -18px rgba(60, 40, 120, 0.18);
 }
 
+/* Card bodies inherit font-normal, so the leading **Recommended.** / **Beta.**
+   tags render at 400 in the body's own grey and vanish into the sentence. */
+.card strong {
+  font-weight: 600;
+  color: var(--vendo-ink);
+}
+
+.dark .card strong {
+  color: #f3f2f7;
+}
+
 /* The install-with-your-agent prompt card (snippets/agent-prompt.jsx). */
 .vendo-agent-prompt {
   margin: 1.5rem 0;

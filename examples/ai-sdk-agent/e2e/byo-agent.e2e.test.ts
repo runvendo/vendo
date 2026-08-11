@@ -8,7 +8,7 @@ import {
 } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
-import { createVendo, type Vendo } from "@vendoai/vendo/server";
+import { createVendo, guard, type Vendo } from "@vendoai/vendo/server";
 import {
   convertToModelMessages,
   stepCountIs,
@@ -63,24 +63,29 @@ function hostAgentModel(toolName: string, input: unknown): LanguageModel {
   }) as unknown as LanguageModel;
 }
 
-/** Vendo's own model seam: answers `vendo_create_app` generation requests with
- *  a minimal valid tree so the build streams for real. */
+const WEATHER_APP = '<App name="Weather dashboard"><Stack><Text text="Paris, London, and Tokyo at a glance"/><Disclaimer reason="Fixture app."/></Stack></App>';
+
+/** Vendo's own model seam: answers the screen agent's turns so the build
+ *  streams for real. `# In this loop` is the assembly loop's own brief — the
+ *  one marker that says "this prompt is the screen agent's" without counting
+ *  calls — and `save_app` is how that loop lands an app. */
 function generationModel(): LanguageModel {
+  let assembled = false;
   return new MockLanguageModelV3({
     doStream: async ({ prompt }) => {
       const serialized = JSON.stringify(prompt);
-      if (serialized.includes("TASK: CREATE_APP")) {
+      if (serialized.includes("# In this loop") && !assembled) {
+        assembled = true;
         return {
           stream: simulateReadableStream({
             chunks: [
-              { type: "text-start", id: "g1" } as const,
               {
-                type: "text-delta",
-                id: "g1",
-                delta: '<App name="Weather dashboard"><Stack><Text text="Paris, London, and Tokyo at a glance"/></Stack></App>',
+                type: "tool-call",
+                toolCallId: "call_save_app",
+                toolName: "save_app",
+                input: JSON.stringify({ content: WEATHER_APP }),
               } as const,
-              { type: "text-end", id: "g1" } as const,
-              finish("stop"),
+              finish("tool-calls"),
             ],
           }),
         };
@@ -111,7 +116,7 @@ async function compose(): Promise<Vendo> {
   return createVendo({
     model: generationModel(),
     principal: async () => demoUser,
-    policy: "cautious",
+    guard: guard({ policy: "cautious" }),
     store,
     serverActions: {
       "lib/vendo.ts#getWeather": getWeather,
@@ -160,10 +165,10 @@ describe.sequential("examples/ai-sdk-agent — one real turn per value prop", ()
     expect(output).toHaveProperty("temperature");
   });
 
-  it("generated UI: vendo_create_app returns the app-ref envelope fast and the wire serves the built app", async () => {
+  it("generated UI: vendo_make returns the app-ref envelope fast and the wire serves the built app", async () => {
     const vendo = await compose();
-    const output = await turn(vendo, "vendo_create_app", {
-      prompt: "A dashboard comparing weather in Paris, London and Tokyo",
+    const output = await turn(vendo, "vendo_make", {
+      request: "A dashboard comparing weather in Paris, London and Tokyo",
     });
     const envelope = vendoAppRefSchema.parse(output);
     expect(envelope.kind).toBe("vendo/app-ref@1");

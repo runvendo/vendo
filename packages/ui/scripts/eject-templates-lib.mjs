@@ -12,9 +12,9 @@
  *     rewrites those relative imports to the public subpaths on eject.
  *
  * Each surface records `sourceBase` — the src/ directory its relative imports
- * resolve against — so a single-file surface living in chrome/ itself
- * (activities) classifies "./sibling.js" as a chrome-internal import while
- * the thread directory keeps "./composer.js" intra-surface.
+ * resolve against — so a single-file surface living in chrome/ itself would
+ * classify "./sibling.js" as a chrome-internal import while the thread
+ * directory keeps "./composer.js" intra-surface.
  */
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, posix } from "node:path";
@@ -27,13 +27,6 @@ export const SURFACES = {
     sourceBase: "chrome/thread",
     // Has its own directory — sibling imports stay relative in the ejected copy.
     sourceDir: "chrome/thread",
-  },
-  activities: {
-    description: "The placeable activity piece: approvals queue + recent-runs feed.",
-    component: "VendoActivities",
-    sourceBase: "chrome",
-    // Single file, shipped as the surface's index.tsx.
-    files: { "index.tsx": "src/chrome/vendo-activities.tsx" },
   },
 };
 

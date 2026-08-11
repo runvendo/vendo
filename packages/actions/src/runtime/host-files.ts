@@ -20,7 +20,22 @@ export async function readOptionalVendoJson<T>(
   try {
     source = await readFile(path, "utf8");
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    // ENOENT ("file absent") degrades as before. A CODE-LESS failure degrades
+    // too: on a build whose "workerd" custom condition didn't resolve to
+    // host-files-edge.ts, node:fs/promises falls through to unenv's shim,
+    // which throws a "not implemented" Error with NO .code at all — a real
+    // filesystem never produces that shape, so it's an unambiguous signal
+    // this is workerd, not a present-but-broken file.
+    //
+    // Every OTHER real fs error code still THROWS — this file (overrides.json
+    // in particular) is the one place "absent" is MORE permissive than
+    // "present": a disabled tool or an audience exclusion vanishes with it,
+    // going LIVE. A present-but-unreadable file on a real filesystem (EACCES
+    // from a volume-mount permission mismatch, EISDIR, EMFILE under fd
+    // pressure, ...) must fail CLOSED and surface loudly, exactly like
+    // before this seam existed — silently dropping it would fail OPEN.
+    const code = (cause as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === undefined) return undefined;
     throw new VendoError("validation", `Could not read ${path}`, {
       cause: cause instanceof Error ? cause.message : String(cause),
     });

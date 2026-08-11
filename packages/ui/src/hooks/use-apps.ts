@@ -1,13 +1,14 @@
 /** App collection transport (08-ui §3). */
-import type { AppDocument, AppId } from "@vendoai/core";
+import {
+  type AppDocument,
+  type AppId,
+} from "@vendoai/core";
 import { useCallback } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoProvider } from "../context.js";
 import { type PollOptions, useResource } from "./use-resource.js";
 
 export function useApps(options?: PollOptions): {
-  /** Back-compat alias for `data` (contract §3). */
   apps: AppDocument[];
-  data: AppDocument[];
   error: Error | undefined;
   isLoading: boolean;
   refresh(): Promise<void>;
@@ -17,7 +18,7 @@ export function useApps(options?: PollOptions): {
   exportApp(id: AppId): Promise<Uint8Array>;
   importApp(bytes: Uint8Array): Promise<AppDocument>;
 } {
-  const { client } = useVendoContext();
+  const { client } = useVendoProvider();
   const list = useCallback(() => client.apps.list(), [client]);
   const { data, error, isLoading, refresh } = useResource(list, [] as AppDocument[], options);
 
@@ -54,5 +55,5 @@ export function useApps(options?: PollOptions): {
     [client, refresh],
   );
 
-  return { apps: data, data, error, isLoading, refresh, create, remove, fork, exportApp, importApp };
+  return { apps: data, error, isLoading, refresh, create, remove, fork, exportApp, importApp };
 }

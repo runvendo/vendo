@@ -1,19 +1,38 @@
-import type {
-  AuditEvent,
-  Guard,
-  Principal,
-  RecordStore,
-  StoreAdapter,
-  VendoRecord,
-  VendoTheme,
+import {
+  type AuditEvent,
+  type Guard,
+  log,
+  type Principal,
+  type StoreAdapter,
+  type StoreOps,
+  type VendoRecord,
 } from "@vendoai/core";
+import { engineOverAdapter, VendoError } from "@vendoai/core";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import { z } from "zod";
 import type { HostOAuthAdapter } from "./adapter.js";
 import { consentPage } from "./consent-page.js";
 
+/** Reserved client_id for the service-key exchange. Not a registered client and
+ *  never resolved as one: the key, not the client record, is the credential. */
+const SERVICE_CLIENT_ID = "vendo-service";
+/** The subject_token a host presents is one of ITS user ids, in its own
+ *  spelling — no token type in the RFC's registry describes that. */
+const SERVICE_SUBJECT_TOKEN_TYPE = "urn:vendo:params:oauth:token-type:user-id";
+/** RFC 8693 §2.1. */
+export const TOKEN_EXCHANGE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:token-exchange";
+
 const CLIENTS_COLLECTION = "vendo_mcp_clients";
 const GRANTS_COLLECTION = "vendo_mcp_grants";
+/** The seven verbs both drawers this door owns are reached through. */
+type EngineOps = StoreOps["engine"];
 const ACCESS_TOKEN_SECONDS = 60 * 60;
+/** Short because there is no refresh path to revoke: a backend that holds the
+ *  key mints another on demand. */
+const SERVICE_ACCESS_TOKEN_SECONDS = 10 * 60;
+const SERVICE_SCOPES = ["read", "write"];
 const REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60;
 const CODE_SECONDS = 60;
 const CONSENT_SECONDS = 10 * 60;
@@ -124,8 +143,17 @@ export interface AuthenticatedGrant {
 interface OAuthServerConfig {
   oauth: HostOAuthAdapter;
   store: StoreAdapter;
+  /** The 42-op surface over that SAME store, when the composition could resolve
+   *  one (`selectStoreOps` answers `undefined` for a store with neither its own
+   *  ops nor a SQL handle). Both drawers this door owns — the registered clients
+   *  and the grant family: consents, codes, access and refresh grants — go
+   *  through `ops.engine.*`, so the allowlist gate applies to all of them.
+   *  Unset, `engineOverAdapter` serves the same seven verbs off the adapter's
+   *  own record doors, which is what a host's BYO `StoreAdapter` gets. */
+  ops?: StoreOps;
   guard: Guard;
   theme?: VendoTheme;
+  serviceAuth?: { keys: readonly string[] };
 }
 
 interface ResolvedClient {
@@ -136,18 +164,40 @@ interface ResolvedClient {
 
 export class OAuthServer {
   readonly #oauth: HostOAuthAdapter;
-  readonly #store: StoreAdapter;
+  readonly #engine: EngineOps;
   readonly #guard: Guard;
   readonly #theme: VendoTheme | undefined;
+  readonly #serviceKeys: readonly string[] | undefined;
 
   constructor(config: OAuthServerConfig) {
     if (config.oauth.authorize === undefined && config.oauth.session === undefined) {
       throw new TypeError("HostOAuthAdapter requires `session` for the prebuilt consent flow or `authorize` for a custom flow");
     }
     this.#oauth = config.oauth;
-    this.#store = config.store;
+    this.#engine = config.ops?.engine ?? engineOverAdapter(config.store);
     this.#guard = config.guard;
     this.#theme = config.theme;
+    // A key no presented key can ever equal is not a stricter door: it is one
+    // that ADVERTISES the exchange and answers every attempt `invalid_client`,
+    // which is the most expensive possible way to learn about an unset env var.
+    // The offending value never reaches the message.
+    const serviceKeys = config.serviceAuth?.keys;
+    if (serviceKeys !== undefined) {
+      if (serviceKeys.length === 0) {
+        throw new TypeError(
+          "serviceAuth.keys is empty; list a key (any opaque string — `openssl rand -hex 32`), "
+          + "or drop `serviceAuth` to close the exchange",
+        );
+      }
+      const blank = serviceKeys.findIndex((key) => !key?.trim());
+      if (blank !== -1) {
+        throw new TypeError(
+          `serviceAuth.keys[${blank}] is blank; a service key is any non-empty string, and an unset `
+          + "environment variable is the usual cause. The value is not echoed here.",
+        );
+      }
+    }
+    this.#serviceKeys = serviceKeys;
   }
 
   get hasPrebuiltConsent(): boolean {
@@ -173,7 +223,7 @@ export class OAuthServer {
       token_endpoint_auth_method: "none",
       ...(parsed.data.scope === undefined ? {} : { scope: parsed.data.scope }),
     };
-    await this.#store.records(CLIENTS_COLLECTION).put({ id: clientId, data, refs: {} });
+    await this.#engine.put(CLIENTS_COLLECTION, { id: clientId, data, refs: {} });
     await this.#audit({ kind: "user", subject: clientId, ephemeral: true }, clientId, "register");
     return json({ client_id: clientId, ...data }, 201);
   }
@@ -249,13 +299,13 @@ export class OAuthServer {
       data: interaction,
       refs: { kind: "consent", token_hash: await sha256Hex(transaction) },
     };
-    await this.#store.records(GRANTS_COLLECTION).put(interactionRecord);
+    await this.#engine.put(GRANTS_COLLECTION, interactionRecord);
     const consent = { action: req.url, transaction, csrfToken };
 
     if (this.#oauth.authorize !== undefined) {
       const custom = await this.#oauth.authorize(req, { clientName: client.name, scopes, consent });
       if (custom instanceof Response) return custom;
-      await this.#store.records(GRANTS_COLLECTION).delete(interactionRecord.id);
+      await this.#engine.delete(GRANTS_COLLECTION, interactionRecord.id);
       if (custom.subject !== session.subject) {
         return oauthJsonError("invalid_request", "Consent subject did not match the host session");
       }
@@ -282,11 +332,10 @@ export class OAuthServer {
     }
 
     const transactionHash = await sha256Hex(transaction);
-    const store = this.#store.records(GRANTS_COLLECTION);
-    const record = await findOne(store, { kind: "consent", token_hash: transactionHash });
+    const record = await findOne(this.#engine, GRANTS_COLLECTION, { kind: "consent", token_hash: transactionHash });
     const parsed = consentInteractionSchema.safeParse(record?.data);
     if (!record || !parsed.success || expired(parsed.data.expiresAt)) {
-      if (record) await store.delete(record.id);
+      if (record) await this.#engine.delete(GRANTS_COLLECTION, record.id);
       return oauthJsonError("invalid_request", "Consent interaction is invalid, expired, or already used");
     }
     const interaction = parsed.data;
@@ -305,10 +354,9 @@ export class OAuthServer {
 
     // Consume atomically before redirect/code minting. A double-click, replay,
     // or request routed to another door process can produce at most one result.
-    if (!store.claim) {
-      return oauthJsonError("server_error", "The configured store does not support atomic consent claims");
-    }
-    if (!(await store.claim(record))) {
+    const claimed = await orClaimsUnsupported(() => this.#engine.claim(GRANTS_COLLECTION, record));
+    if (claimed === "unsupported") return claimsUnsupported("consent");
+    if (!claimed) {
       return oauthJsonError("invalid_request", "Consent interaction is invalid, expired, or already used");
     }
     if (decision === "deny") {
@@ -345,9 +393,8 @@ export class OAuthServer {
       clientId: authorization.clientId,
       status: "active",
     };
-    const store = this.#store.records(GRANTS_COLLECTION);
     await Promise.all([
-      store.put({
+      this.#engine.put(GRANTS_COLLECTION, {
         id: familyId,
         data: family,
         refs: {
@@ -357,7 +404,7 @@ export class OAuthServer {
           client_id: authorization.clientId,
         },
       }),
-      store.put({
+      this.#engine.put(GRANTS_COLLECTION, {
         id: `mcpg_${randomHex(12)}`,
         data: grant,
         refs: {
@@ -373,20 +420,25 @@ export class OAuthServer {
   }
 
   async #sweepExpiredConsents(): Promise<void> {
-    const store = this.#store.records(GRANTS_COLLECTION);
-    const records = await listAll(store, { kind: "consent" });
+    const records = await listAll(this.#engine, GRANTS_COLLECTION, { kind: "consent" });
     await Promise.all(records.map(async (record) => {
       const parsed = consentInteractionSchema.safeParse(record.data);
-      if (!parsed.success || expired(parsed.data.expiresAt)) await store.delete(record.id);
+      if (!parsed.success || expired(parsed.data.expiresAt)) {
+        await this.#engine.delete(GRANTS_COLLECTION, record.id);
+      }
     }));
   }
 
-  async token(req: Request): Promise<Response> {
+  async token(req: Request, resource: string): Promise<Response> {
     if (!contentType(req).startsWith("application/x-www-form-urlencoded")) {
       return oauthJsonError("invalid_request", "Expected application/x-www-form-urlencoded");
     }
     const form = new URLSearchParams(await req.text());
     const grantType = form.get("grant_type");
+    // A door with no `serviceAuth` falls through to unsupported_grant_type.
+    if (grantType === TOKEN_EXCHANGE_GRANT_TYPE && this.#serviceKeys !== undefined) {
+      return this.#exchangeServiceKey(form, resource, this.#serviceKeys);
+    }
     if (grantType === "authorization_code") {
       const code = form.get("code");
       if (!code) return oauthJsonError("invalid_request", "code is required");
@@ -404,7 +456,7 @@ export class OAuthServer {
     const header = req.headers.get("authorization");
     const match = header?.match(/^Bearer\s+([^\s]+)$/i);
     if (!match?.[1]) return null;
-    const record = await findOne(this.#store.records(GRANTS_COLLECTION), {
+    const record = await findOne(this.#engine, GRANTS_COLLECTION, {
       kind: "access",
       token_hash: await sha256Hex(match[1]),
     });
@@ -435,17 +487,13 @@ export class OAuthServer {
       return { response: oauthJsonError("invalid_client", errorMessage(error)) };
     }
 
-    const store = this.#store.records(GRANTS_COLLECTION);
-    if (!store.claim) {
-      return { response: oauthJsonError("server_error", "The configured store does not support atomic token claims") };
-    }
     const tokenHash = await sha256Hex(token);
     const hint = form.get("token_type_hint");
     const kinds = hint === "refresh_token"
       ? ["refresh", "access"] as const
       : ["access", "refresh"] as const;
     for (const kind of kinds) {
-      const record = await findOne(store, { kind, token_hash: tokenHash });
+      const record = await findOne(this.#engine, GRANTS_COLLECTION, { kind, token_hash: tokenHash });
       if (!record) continue;
       if (kind === "access") {
         const parsed = accessGrantSchema.safeParse(record.data);
@@ -453,7 +501,8 @@ export class OAuthServer {
         if (parsed.data.clientId !== clientId) {
           return { response: oauthJsonError("invalid_client", "Token was not issued to this client") };
         }
-        const changed = await this.#revokeTokenRecord(record, accessGrantSchema);
+        const changed = await orClaimsUnsupported(() => this.#revokeTokenRecord(record, accessGrantSchema));
+        if (changed === "unsupported") return { response: claimsUnsupported("token") };
         if (changed) await this.#audit({ kind: "user", subject: parsed.data.subject }, clientId, "revoke");
         return {
           response: revocationSuccess(),
@@ -471,9 +520,10 @@ export class OAuthServer {
       if (parsed.data.clientId !== clientId) {
         return { response: oauthJsonError("invalid_client", "Token was not issued to this client") };
       }
-      const changed = parsed.data.familyId === undefined
-        ? await this.#revokeSubjectClientGrants(parsed.data.subject, clientId)
-        : await this.#revokeFamily(parsed.data.familyId);
+      const changed = await orClaimsUnsupported(() => parsed.data.familyId === undefined
+        ? this.#revokeSubjectClientGrants(parsed.data.subject, clientId)
+        : this.#revokeFamily(parsed.data.familyId));
+      if (changed === "unsupported") return { response: claimsUnsupported("token") };
       if (changed) await this.#audit({ kind: "user", subject: parsed.data.subject }, clientId, "revoke");
       return {
         response: revocationSuccess(),
@@ -514,8 +564,7 @@ export class OAuthServer {
       return oauthJsonError("invalid_grant", "PKCE verifier is invalid");
     }
 
-    const store = this.#store.records(GRANTS_COLLECTION);
-    const record = await findOne(store, { kind: "code", token_hash: await sha256Hex(code) });
+    const record = await findOne(this.#engine, GRANTS_COLLECTION, { kind: "code", token_hash: await sha256Hex(code) });
     const parsed = codeGrantSchema.safeParse(record?.data);
     if (!record || !parsed.success || parsed.data.revokedAt !== undefined || expired(parsed.data.expiresAt)) {
       return oauthJsonError("invalid_grant", "Authorization code is invalid or expired");
@@ -523,10 +572,9 @@ export class OAuthServer {
     // The code is single-use the moment it is PRESENTED, not only when it is
     // redeemed: a stolen code must not survive a failed PKCE/binding attempt
     // and stay guessable-against for the rest of its TTL.
-    if (!store.claim) {
-      return oauthJsonError("server_error", "The configured store does not support atomic token claims");
-    }
-    if (!(await store.claim(record))) {
+    const claimed = await orClaimsUnsupported(() => this.#engine.claim(GRANTS_COLLECTION, record));
+    if (claimed === "unsupported") return claimsUnsupported("token");
+    if (!claimed) {
       return oauthJsonError("invalid_grant", "Authorization code is invalid or expired");
     }
 
@@ -558,8 +606,10 @@ export class OAuthServer {
       return oauthJsonError("invalid_request", "refresh_token and client_id are required");
     }
 
-    const store = this.#store.records(GRANTS_COLLECTION);
-    const record = await findOne(store, { kind: "refresh", token_hash: await sha256Hex(refreshToken) });
+    const record = await findOne(this.#engine, GRANTS_COLLECTION, {
+      kind: "refresh",
+      token_hash: await sha256Hex(refreshToken),
+    });
     const parsed = refreshGrantSchema.safeParse(record?.data);
     if (
       !record
@@ -591,19 +641,22 @@ export class OAuthServer {
       return oauthJsonError("invalid_target", "resource does not match the refresh token");
     }
 
-    if (!store.claim) {
-      return oauthJsonError("server_error", "The configured store does not support atomic token claims");
-    }
     // Persist candidate grants BEFORE claiming the parent. If another instance
     // loses the claim, reuse revocation can see and remove every candidate in
     // the successor chain. Candidate secrets are not exposed unless their
     // parent claim succeeds.
     // refreshGrantId is internal bookkeeping — the token response omits it.
     const { refreshGrantId, ...body } = await this.#issueTokens(grant);
-    const claimed = await store.claim(record, {
+    // A store that cannot claim is now discovered HERE rather than before the
+    // candidates were written, because the capability is the verb's to refuse
+    // (engine-over-adapter.ts) and there is nothing to ask ahead of time. It
+    // costs two rows nothing can ever reach — their secrets were never
+    // returned — on a store where no rotation could succeed either way.
+    const claimed = await orClaimsUnsupported(() => this.#engine.claim(GRANTS_COLLECTION, record, {
       data: { ...grant, rotatedTo: refreshGrantId },
       ...(record.refs === undefined ? {} : { refs: record.refs }),
-    });
+    }));
+    if (claimed === "unsupported") return claimsUnsupported("token");
     if (!claimed) {
       await this.#revokeGrant(grant);
       await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "revoke");
@@ -614,6 +667,73 @@ export class OAuthServer {
     }
     await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "refresh");
     return json(body, 200, tokenHeaders());
+  }
+
+  /**
+   * RFC 8693 at the same token endpoint: a service key plus one host user id
+   * for one short-lived access token bound to that user.
+   *
+   * No `principal()` check here. The subject is whatever the host's backend
+   * says one of its users is called; a bogus one dies at `principal()` on the
+   * first MCP request the token is used for, which is the same kill switch
+   * every other grant answers to.
+   */
+  async #exchangeServiceKey(form: URLSearchParams, resource: string, keys: readonly string[]): Promise<Response> {
+    const secret = form.get("client_secret");
+    const subject = form.get("subject_token");
+    if (!secret || !subject) {
+      return oauthJsonError("invalid_request", "client_secret and subject_token are required");
+    }
+    if (form.get("subject_token_type") !== SERVICE_SUBJECT_TOKEN_TYPE) {
+      return oauthJsonError("invalid_request", `subject_token_type must be ${SERVICE_SUBJECT_TOKEN_TYPE}`);
+    }
+    // The subject is a bare wire string that lands in the grant, its refs and an
+    // audit row. Postgres jsonb cannot hold a NUL, so a subject with control
+    // characters fails the WRITE mid-exchange — a 501 with a query in it rather
+    // than the OAuth refusal the caller can read.
+    if (/\p{Cc}/u.test(subject)) {
+      return oauthJsonError("invalid_request", "subject_token must not contain control characters");
+    }
+    // A key is an OPAQUE string: the door hashes what it was given and compares
+    // digests, and never parses or shape-checks either side. ONE answer for a
+    // wrong client_id, an unknown key and a retired one — anything narrower
+    // tells whoever is guessing which half of the credential they have right.
+    const hash = await sha256Hex(secret);
+    const listed = form.get("client_id") === SERVICE_CLIENT_ID
+      && (await Promise.all(keys.map(sha256Hex))).some((candidate) => equalHashes(candidate, hash));
+    if (!listed) return oauthJsonError("invalid_client", "Service key is not valid for this MCP server");
+    // `hash` is the presented secret's digest, which IS the matched key's — so
+    // this names which key acted without a key value going near it.
+    const clientId = `svc:${hash.slice(0, 8)}`;
+    const requestedResource = form.get("resource");
+    if (requestedResource !== null && !sameCanonicalUri(requestedResource, resource)) {
+      return oauthJsonError("invalid_target", "resource does not identify this MCP server");
+    }
+    // One access grant and nothing else: no refresh token, so no rotation, no
+    // family, and nothing outstanding to revoke after ten minutes. The backend
+    // holding the key exchanges again.
+    const accessToken = `vmat_${randomBase64Url(32)}`;
+    const grant: AccessGrant = {
+      kind: "access",
+      subject,
+      clientId,
+      resource,
+      scopes: SERVICE_SCOPES,
+      expiresAt: expiresIn(SERVICE_ACCESS_TOKEN_SECONDS),
+    };
+    await this.#engine.put(GRANTS_COLLECTION, {
+      id: `mcpg_${randomHex(12)}`,
+      data: grant,
+      refs: { kind: "access", token_hash: await sha256Hex(accessToken), subject, client_id: clientId },
+    });
+    await this.#audit({ kind: "user", subject }, clientId, "exchange");
+    return json({
+      access_token: accessToken,
+      issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+      token_type: "Bearer",
+      expires_in: SERVICE_ACCESS_TOKEN_SECONDS,
+      scope: SERVICE_SCOPES.join(" "),
+    }, 200, tokenHeaders());
   }
 
   async #issueTokens(source: Pick<CodeGrant, "subject" | "clientId" | "familyId" | "resource" | "scopes">): Promise<{
@@ -651,12 +771,12 @@ export class OAuthServer {
       ...(source.familyId === undefined ? {} : { family_id: source.familyId }),
     };
     await Promise.all([
-      this.#store.records(GRANTS_COLLECTION).put({
+      this.#engine.put(GRANTS_COLLECTION, {
         id: accessGrantId,
         data: accessGrant,
         refs: { kind: "access", token_hash: await sha256Hex(accessToken), ...refs },
       }),
-      this.#store.records(GRANTS_COLLECTION).put({
+      this.#engine.put(GRANTS_COLLECTION, {
         id: refreshGrantId,
         data: refreshGrant,
         refs: { kind: "refresh", token_hash: await sha256Hex(refreshToken), ...refs },
@@ -674,7 +794,7 @@ export class OAuthServer {
 
   async #resolveClient(clientId: string): Promise<ResolvedClient> {
     if (clientId.startsWith("https://")) return resolveCimdClient(clientId);
-    const record = await this.#store.records(CLIENTS_COLLECTION).get(clientId);
+    const record = await this.#engine.get(CLIENTS_COLLECTION, clientId);
     const parsed = clientDataSchema.safeParse(record?.data);
     if (!parsed.success) throw new Error("Unknown client_id");
     return { id: clientId, name: parsed.data.client_name, redirectUris: parsed.data.redirect_uris };
@@ -682,7 +802,7 @@ export class OAuthServer {
 
   async #isFamilyActive(familyId: string | undefined): Promise<boolean> {
     if (familyId === undefined) return true; // compatibility for pre-family grants
-    const record = await this.#store.records(GRANTS_COLLECTION).get(familyId);
+    const record = await this.#engine.get(GRANTS_COLLECTION, familyId);
     const parsed = grantFamilySchema.safeParse(record?.data);
     return parsed.success && parsed.data.status === "active";
   }
@@ -694,10 +814,8 @@ export class OAuthServer {
   }
 
   async #revokeFamily(familyId: string): Promise<boolean> {
-    const store = this.#store.records(GRANTS_COLLECTION);
-    if (!store.claim) throw new Error("The configured store does not support atomic token claims");
     for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
-      const record = await store.get(familyId);
+      const record = await this.#engine.get(GRANTS_COLLECTION, familyId);
       const parsed = grantFamilySchema.safeParse(record?.data);
       if (!record || !parsed.success || parsed.data.status === "revoked") return false;
       const replacement: GrantFamily = {
@@ -705,7 +823,7 @@ export class OAuthServer {
         status: "revoked",
         revokedAt: new Date().toISOString(),
       };
-      if (await store.claim(record, {
+      if (await this.#engine.claim(GRANTS_COLLECTION, record, {
         data: replacement,
         ...(record.refs === undefined ? {} : { refs: record.refs }),
       })) return true;
@@ -714,19 +832,21 @@ export class OAuthServer {
   }
 
   async #revokeSubjectClientGrants(subject: string, clientId: string): Promise<boolean> {
-    const store = this.#store.records(GRANTS_COLLECTION);
-    if (!store.claim) throw new Error("The configured store does not support atomic token claims");
     let changed = false;
-    const families = await listAll(store, { kind: "family", subject, client_id: clientId });
+    const families = await listAll(this.#engine, GRANTS_COLLECTION, {
+      kind: "family",
+      subject,
+      client_id: clientId,
+    });
     for (const family of families) {
       changed = await this.#revokeFamily(family.id) || changed;
     }
 
-    // Outstanding grants minted before family anchors shipped remain valid
-    // across a rolling deployment. Revoke those with the same guarded UPDATE
-    // pattern instead of list-then-delete.
-    const legacy = await listAll(store, { subject, client_id: clientId });
-    for (const record of legacy) {
+    // The service-key exchange mints ONE access grant with no refresh token and
+    // therefore no family anchor (§3.4), so a family sweep cannot reach it.
+    // Revoke those per grant, with the same guarded UPDATE.
+    const familyless = await listAll(this.#engine, GRANTS_COLLECTION, { subject, client_id: clientId });
+    for (const record of familyless) {
       const access = accessGrantSchema.safeParse(record.data);
       if (access.success && access.data.familyId === undefined) {
         changed = await this.#revokeTokenRecord(record, accessGrantSchema) || changed;
@@ -737,21 +857,6 @@ export class OAuthServer {
         changed = await this.#revokeTokenRecord(record, refreshGrantSchema) || changed;
       }
     }
-    // Pre-family authorization codes did not carry subject/client refs. Their
-    // one-minute window still overlaps rolling deploys, so scan the bounded
-    // code set, filter by parsed binding, and guard-update matches as revoked.
-    const legacyCodes = await listAll(store, { kind: "code" });
-    for (const record of legacyCodes) {
-      const code = codeGrantSchema.safeParse(record.data);
-      if (
-        code.success
-        && code.data.familyId === undefined
-        && code.data.subject === subject
-        && code.data.clientId === clientId
-      ) {
-        changed = await this.#revokeTokenRecord(record, codeGrantSchema) || changed;
-      }
-    }
     return changed;
   }
 
@@ -759,23 +864,25 @@ export class OAuthServer {
     initial: VendoRecord,
     schema: z.ZodType<T>,
   ): Promise<boolean> {
-    const store = this.#store.records(GRANTS_COLLECTION);
-    if (!store.claim) throw new Error("The configured store does not support atomic token claims");
     let record: VendoRecord | null = initial;
     for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
       const parsed = schema.safeParse(record?.data);
       if (!record || !parsed.success || parsed.data.revokedAt !== undefined) return false;
       const replacement = { ...parsed.data, revokedAt: new Date().toISOString() };
-      if (await store.claim(record, {
+      if (await this.#engine.claim(GRANTS_COLLECTION, record, {
         data: replacement,
         ...(record.refs === undefined ? {} : { refs: record.refs }),
       })) return true;
-      record = await store.get(initial.id);
+      record = await this.#engine.get(GRANTS_COLLECTION, initial.id);
     }
     throw new Error("Token grant changed too many times during revocation");
   }
 
-  async #audit(principal: Principal, clientId: string, event: "issue" | "refresh" | "register" | "revoke"): Promise<void> {
+  async #audit(
+    principal: Principal,
+    clientId: string,
+    event: "issue" | "refresh" | "register" | "revoke" | "exchange",
+  ): Promise<void> {
     const audit: AuditEvent = {
       id: `aud_${randomHex(12)}`,
       at: new Date().toISOString(),
@@ -794,11 +901,18 @@ export class OAuthServer {
     try {
       await this.#guard.report(audit);
     } catch (error) {
-      console.error("[vendo] mcp oauth: audit report failed", {
-        principal,
-        clientId,
-        event,
-        error: error instanceof Error ? error.message : String(error),
+      log({
+        code: "mcp.oauth-audit-report-failed",
+        level: "error",
+        message: "[vendo] mcp oauth: audit report failed",
+        data: {
+          detail: {
+            principal,
+            clientId,
+            event,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        },
       });
     }
   }
@@ -995,24 +1109,59 @@ async function sha256Hex(value: string): Promise<string> {
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** Constant time in the CONTENT of two same-length hex digests: a compare that
+ *  returns early leaks how much of a guess was right, one byte at a time. */
+function equalHashes(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
 async function sha256Base64Url(value: string): Promise<string> {
   return base64UrlEncode(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))));
 }
 
-async function findOne(store: RecordStore, refs: Record<string, string>) {
-  const result = await store.list({ refs, limit: 1 });
+async function findOne(engine: EngineOps, collection: string, refs: Record<string, string>) {
+  const result = await engine.list(collection, { refs, limit: 1 });
   return result.records[0];
 }
 
-async function listAll(store: RecordStore, refs: Record<string, string>) {
+async function listAll(engine: EngineOps, collection: string, refs: Record<string, string>) {
   const records = [];
   let cursor: string | undefined;
   do {
-    const page = await store.list({ refs, ...(cursor === undefined ? {} : { cursor }) });
+    const page = await engine.list(collection, { refs, ...(cursor === undefined ? {} : { cursor }) });
     records.push(...page.records);
     cursor = page.cursor;
   } while (cursor !== undefined);
   return records;
+}
+
+/** Answers `"unsupported"` where a claim-bearing step ran into a store that
+ *  cannot claim.
+ *
+ *  `RecordStore.claim` is optional and ABSENT on such a store, so every one of
+ *  these sites used to pre-check the handle. `ops.engine.claim` is always a
+ *  function and refuses with `not-implemented` instead (02-store §4, and
+ *  core/engine-over-adapter.ts for the bare-adapter fallback), so the refusal is
+ *  a thrown error rather than a missing method. The four sites below owe their
+ *  client a readable OAuth refusal and not a throw, which is what this turns it
+ *  back into; every other claim in this door lets it propagate, exactly as the
+ *  three revocation helpers already threw. */
+async function orClaimsUnsupported<T>(step: () => Promise<T>): Promise<T | "unsupported"> {
+  try {
+    return await step();
+  } catch (error) {
+    if (error instanceof VendoError && error.code === "not-implemented") return "unsupported";
+    throw error;
+  }
+}
+
+function claimsUnsupported(what: "consent" | "token"): Response {
+  return oauthJsonError("server_error", `The configured store does not support atomic ${what} claims`);
 }
 
 function oauthRedirect(redirectUri: string, values: Record<string, string | null>): Response {

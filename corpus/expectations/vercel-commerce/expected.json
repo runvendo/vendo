@@ -7,7 +7,7 @@
     "text": "#000000",
     "mutedText": "#737373",
     "radius": 8,
-    "fontFamily": "Geist Sans, ui-sans-serif, system-ui, sans-serif"
+    "fontFamily": "Geist Sans, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji"
   },
   "tools": [
     {
@@ -15,11 +15,71 @@
       "method": "POST",
       "path": "/api/revalidate",
       "readOrWrite": "write"
+    },
+    {
+      "name": "addItem",
+      "kind": "server-action",
+      "module": "components/cart/actions.ts",
+      "export": "addItem",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "removeItem",
+      "kind": "server-action",
+      "module": "components/cart/actions.ts",
+      "export": "removeItem",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateItemQuantity",
+      "kind": "server-action",
+      "module": "components/cart/actions.ts",
+      "export": "updateItemQuantity",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "redirectToCheckout",
+      "kind": "server-action",
+      "module": "components/cart/actions.ts",
+      "export": "redirectToCheckout",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createCartAndSetCookie",
+      "kind": "server-action",
+      "module": "components/cart/actions.ts",
+      "export": "createCartAndSetCookie",
+      "readOrWrite": "write"
     }
   ],
   "annotations": [
     {
       "name": "postRevalidate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "addItem",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "removeItem",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "updateItemQuantity",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "redirectToCheckout",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "createCartAndSetCookie",
       "mutating": true,
       "dangerous": false
     }

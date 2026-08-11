@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /** ui-lane-cards converged picks: 1-A consequence-first, 1-H approval sheet,
-    2-A brand-forward connect, 3-A′ tray marks, 4-C activity dock, 7-A liveness. */
+    2-A brand-forward connect, 3-A′ tray marks, 4-C activity dock. */
 import type { ApprovalRequest } from "@vendoai/core";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { ApprovalCard, ApprovalSheet, AutomationsPanel, ConnectCard } from "../../src/chrome/index.js";
+import { ApprovalCard, ApprovalSheet, ConnectCard } from "../../src/chrome/index.js";
 import { toolPresentation } from "../../src/chrome/build-beat.js";
 import { ACTIVITY_ANCHOR_ATTRIBUTE, ACTIVITY_BUMP_EVENT, MorphToast } from "../../src/chrome/morph-toast.js";
 import { toolkitDisplayName } from "../../src/chrome/humanize.js";
@@ -40,47 +40,67 @@ describe("lane-cards picks", () => {
     await wire?.close();
   });
 
-  it("1-A: synthesizes a structured consequence from the real Slack inputs", () => {
-    const presentation = toolPresentation("slack_SLACK_SEND_MESSAGE", slackApproval.call.args);
-    expect(presentation.consequence).toEqual({
-      pre: "Vendo will post ",
-      artifact: "“Morning digest: 7 renewals in the next 30 days, 2 at risk.”",
-      mid: " to ",
-      target: "#renewals",
-      post: " — now, as you.",
+  // A recurring Slack post used to be described as "It runs as you, and you can
+  // pause it anytime." Pausing needs a management surface, and `@vendoai/ui`
+  // cannot know whether the host mounted one — Maple mounts none, so the library
+  // was promising, in the host's voice, something the host could not honour. The
+  // sentence keeps every claim that is true on EVERY host and drops the one that
+  // depends on a screen (#1014 deleted the only surface that ever backed it).
+  it("describes a recurring Slack post without promising a place to pause it", () => {
+    const recurring = toolPresentation("slack_SLACK_SEND_MESSAGE", {
+      channel: "#renewals",
+      text: "Morning digest",
+      trigger: "every weekday at 8am",
     });
-    // Unknown toolkits synthesize nothing — the card keeps its fields layout.
-    expect(toolPresentation("host_delete_invoice", { invoiceId: "inv_42" }).consequence).toBeUndefined();
-    // Gmail synthesizes nothing either (PR #391 P1): a sentence naming only
-    // `to` would fold the subject/body/copied recipients out of sight, so the
-    // card keeps every input in plain view.
+    expect(recurring.description).toBe(
+      "Vendo will post to #renewals on your behalf, every weekday at 8am. It runs as you.",
+    );
+    // The one-off sibling never carried the promise, and still doesn't.
+    expect(toolPresentation("slack_SLACK_SEND_MESSAGE", { channel: "#renewals", text: "Hi" }).description)
+      .toBe("Vendo will post to #renewals on your behalf, running as you.");
+  });
+
+  /** ⚠️ TEST EDIT (M1 · Sentence): 1-A's structured `consequence` (pre/artifact/
+      mid/target/post) existed so the card could BOLD the artifact and target.
+      The approved design's question line is uniformly semibold, so the structure
+      is gone: `toolPresentation` now yields the question itself plus the agency
+      phrase under it. Same inputs, same authority, same truth conditions. */
+  it("1-A: synthesizes a question from the real Slack inputs", () => {
+    const presentation = toolPresentation("slack_SLACK_SEND_MESSAGE", slackApproval.call.args);
+    expect(presentation.question)
+      .toBe("Post “Morning digest: 7 renewals in the next 30 days, 2 at risk.” to #renewals?");
+    expect(presentation.agency).toBe("Posts now, as you");
+    // Unknown toolkits synthesize nothing — the card asks with the tool's label.
+    expect(toolPresentation("host_delete_invoice", { invoiceId: "inv_42" }).question).toBeUndefined();
+    // Gmail used to synthesize nothing (PR #391 P1) because a sentence naming
+    // only `to` would have FOLDED the subject/body/copied recipients out of
+    // sight. M1 retired the fold, so it names the recipient and the rest stays
+    // visible on the quiet line.
     expect(toolPresentation("gmail_GMAIL_SEND_EMAIL", {
       to: "alice@example.com",
       subject: "Q3 renewals digest",
       body: "Northwind and Contoso renew this month.",
-    }).consequence).toBeUndefined();
+    }).question).toBe("Send an email to alice@example.com?");
   });
 
-  it("1-A: leads with the consequence and folds the real inputs behind Details", () => {
-    render(<VendoProvider client={client}><ApprovalCard approval={slackApproval} onDecide={() => undefined} /></VendoProvider>);
-    const sentence = document.querySelector(".fl-approval-consequence-line");
-    expect(sentence?.textContent).toContain("Vendo will post");
-    expect(sentence?.textContent).toContain("#renewals");
-    // The fields never leave the DOM — folded, same a11y name.
-    const details = document.querySelector("details.fl-approval-details");
-    expect(details).not.toBeNull();
-    expect(screen.getByLabelText("Real tool inputs").closest("details")).toBe(details);
+  it("1-A: leads with the question and keeps every remaining input in plain sight", () => {
+    const { container } = render(<VendoProvider client={client}><ApprovalCard approval={slackApproval} onDecide={() => undefined} /></VendoProvider>);
+    expect(container.querySelector(".fl-approval-ask")!.textContent).toContain("#renewals");
+    expect(container.querySelector(".fl-approval-ask")!.textContent).toContain("Morning digest");
+    // Nothing folds: the fields disclosure is gone from the card entirely.
+    expect(container.querySelector("details.fl-approval-details")).toBeNull();
+    expect(container.querySelector(".fl-approval-sub")!.textContent).toContain("Posts now, as you");
   });
 
-  it("1-A: a destructive ask keeps every input in plain sight (no fold)", () => {
+  it("1-A: a destructive ask reads the same, plus the grade's plain warning", () => {
     const critical: ApprovalRequest = {
       ...slackApproval,
       descriptor: { ...slackApproval.descriptor, risk: "destructive" },
     };
-    render(<VendoProvider client={client}><ApprovalCard approval={critical} onDecide={() => undefined} /></VendoProvider>);
-    expect(document.querySelector(".fl-approval-consequence-line")).toBeNull();
-    expect(document.querySelector("details.fl-approval-details")).toBeNull();
-    expect(screen.getByLabelText("Real tool inputs")).toBeTruthy();
+    const { container } = render(<VendoProvider client={client}><ApprovalCard approval={critical} onDecide={() => undefined} /></VendoProvider>);
+    expect(container.querySelector(".fl-approval-ask")!.textContent).toContain("#renewals");
+    expect(container.querySelector(".fl-approval-sub")!.textContent).toContain("Can’t be undone");
+    expect(container.querySelector("details.fl-approval-details")).toBeNull();
   });
 
   it("1-H: the sheet is a decide-only dialog — Esc does not dismiss", () => {
@@ -114,44 +134,6 @@ describe("lane-cards picks", () => {
       </VendoProvider>,
     );
     expect(screen.getByRole("button", { name: "Connect Google Mail" })).toBeTruthy();
-  });
-
-  it("7-A: a running run swaps the state line to step N/M and puts the runner on the arrow", async () => {
-    wire.state.automations[0]!.app.trigger = {
-      on: { kind: "host-event", event: "invoice.created" },
-      run: { kind: "steps", steps: [{ id: "load", tool: "host_invoices_list" }, { id: "send", tool: "host_email_send" }] },
-    };
-    wire.state.runs = [{
-      id: "run_live",
-      appId: "app_auto",
-      trigger: { kind: "host-event", event: "invoice.created" },
-      status: "running",
-      startedAt: new Date(Date.now() - 5_000).toISOString(),
-      steps: [{ id: "load", tool: "host_invoices_list", outcome: "ok", at: new Date().toISOString() }],
-    }];
-    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    await waitFor(() => expect(screen.getByText(/running now · step 2\/2/)).toBeTruthy());
-    expect(document.querySelector(".fl-auto-runner")).not.toBeNull();
-  });
-
-  it("7-A: an enabled schedule carries the next-run countdown in the state line", async () => {
-    wire.state.automations[0]!.enabled = true;
-    wire.state.automations[0]!.app.trigger = {
-      on: { kind: "schedule", every: "6h" },
-      run: { kind: "steps", steps: [{ id: "load", tool: "host_invoices_list" }] },
-    };
-    wire.state.runs = [{
-      id: "run_done",
-      appId: "app_auto",
-      trigger: { kind: "schedule" },
-      status: "ok",
-      startedAt: new Date(Date.now() - 30.5 * 60_000).toISOString(),
-      finishedAt: new Date(Date.now() - 30 * 60_000).toISOString(),
-      steps: [],
-    }];
-    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    await waitFor(() => expect(screen.getByText(/next run in 5 h (29|30) m/)).toBeTruthy());
-    expect(document.querySelector(".fl-auto-runner")).toBeNull();
   });
 
   it("4-C: the morph docks into the activity anchor and fires the bump event", () => {
@@ -217,6 +199,50 @@ describe("lane-cards picks", () => {
       expect(onDone).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener(ACTIVITY_BUMP_EVENT, onBump);
+    }
+  });
+
+  it("4-C: a host on theme.motion reduced gets the opacity-only exit, anchor or not", () => {
+    // The morph told the DOM one thing and itself another: it wrote
+    // data-vendo-motion="reduced" from the theme (which the chrome stylesheet
+    // turns into `transition: none`) while its own timings and the dock path
+    // still read the OS media query alone. So a reduced-motion host got the
+    // travel budget and the dock with every transition stripped — the pill
+    // teleported, then vanished into an anchor it never travelled to.
+    vi.useFakeTimers();
+    const anchor = document.createElement("button");
+    anchor.setAttribute(ACTIVITY_ANCHOR_ATTRIBUTE, "");
+    anchor.getBoundingClientRect = () => ({
+      top: 10, left: 500, width: 60, height: 30, right: 560, bottom: 40, x: 500, y: 10, toJSON: () => ({}),
+    }) as DOMRect;
+    document.body.appendChild(anchor);
+    const onBump = vi.fn();
+    window.addEventListener(ACTIVITY_BUMP_EVENT, onBump);
+    const onDone = vi.fn();
+    try {
+      const view = render(
+        <MorphToast
+          startRect={{ top: 100, left: 20, width: 400, height: 200 }}
+          title="Post to #renewals in Slack — approved"
+          theme={{
+            colors: { background: "#fff", surface: "#f7f7f8", text: "#111", muted: "#666", accent: "#111", accentText: "#fff", danger: "#c00", border: "#eee" },
+            typography: { fontFamily: "system-ui", baseSize: "15px" },
+            radius: { small: "6px", medium: "10px", large: "16px" },
+            density: "comfortable",
+            motion: "reduced",
+          }}
+          onDone={onDone}
+        />,
+      );
+      expect(document.querySelector<HTMLElement>(".fl-morph-card")?.style.transition).toBe("opacity .3s");
+      // No travel to wait out, and the dock is not taken: fade hold, then gone.
+      vi.advanceTimersByTime(3200 + 460 + 10);
+      expect(onBump).not.toHaveBeenCalled();
+      expect(onDone).toHaveBeenCalledTimes(1);
+      view.unmount();
+    } finally {
+      window.removeEventListener(ACTIVITY_BUMP_EVENT, onBump);
+      anchor.remove();
     }
   });
 });

@@ -1,0 +1,21 @@
+{
+  "name": "@vendoai-fixtures/context-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Whole-chain context proof: Playwright Chromium drives the REAL demo-bank (Maple) app against a real model, with a tiny contextWindowTokens override so compaction, recall, hires, overflow recovery and cache growth all happen inside one browser session.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "//pretest:browser": "Maple's dev server resolves @vendoai/ui to its SOURCE (next.config.ts turbopack alias), and that source imports the gitignored jail runtime bundle. `build` generates it in a prebuild hook, but it lives under src/ and is not a declared turbo output, so a cached build leaves it missing — same reason the nightly voice leg builds it explicitly.",
+    "pretest:browser": "pnpm --filter @vendoai/ui run build:jail",
+    "test:browser": "playwright test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

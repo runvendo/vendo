@@ -51,7 +51,7 @@ export function loadConfig(
     saveConfig(home, fresh);
   } catch {
     // Read-only home / ENOSPC etc.: degrade to an in-memory config rather than
-    // crashing callers like `vendo telemetry`. The id just won't persist.
+    // crashing the caller. The id just won't persist.
   }
   return fresh;
 }

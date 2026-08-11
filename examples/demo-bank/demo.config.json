@@ -1,0 +1,35 @@
+{
+  "id": "maple",
+  "prospect": "Maple",
+  "ctaUrl": "https://cal.com/yousefhelal",
+  "beats": [
+    {
+      "key": "spending-breakdown",
+      "prompt": "Where did my money go this month? Build me a spending breakdown I can keep.",
+      "chip": "Where did my money go?",
+      "expectsView": true
+    },
+    {
+      "key": "move-to-savings",
+      "prompt": "Move $200 from my checking account to savings.",
+      "chip": "Move money to savings",
+      "expectsApproval": true
+    },
+    {
+      "key": "weekly-summary",
+      "prompt": "Every Friday, email me a summary of that week's spending.",
+      "chip": "Email me a weekly summary"
+    },
+    {
+      "key": "money-hq",
+      "prompt": "Build me a money HQ: goals progress, spending by category, upcoming bills, and account balances — something I can pin to my home screen.",
+      "chip": "Build my money HQ",
+      "expectsView": true
+    }
+  ],
+  "caps": {
+    "maxTurns": 20,
+    "maxSpendUsd": 5
+  },
+  "permanent": true
+}

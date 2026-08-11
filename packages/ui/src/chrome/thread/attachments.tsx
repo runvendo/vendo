@@ -1,7 +1,7 @@
 import type { UIMessage } from "ai";
 
 /** A picked File → an ai-SDK FileUIPart (data URL) so it can ride the turn.
-    Lane pick 2F — the optional `onProgress` (0..1) feeds the chip's read ring:
+    The optional `onProgress` (0..1) feeds the chip's read ring:
     attachments are now read eagerly at attach time (progress visible, failures
     surfaced per-chip with retry) instead of silently at send time. */
 export function fileToPart(
@@ -44,7 +44,7 @@ export function formatBytes(size: number): string {
 
 export type FilePart = Extract<UIMessage["parts"][number], { type: "file" }>;
 
-/** ENG-225 — a sent attachment in the transcript: images render as the designed
+/** A sent attachment in the transcript: images render as the designed
     `.fl-msg-img` thumbnail, anything else as a `.fl-msg-file` download pill. */
 export function SentAttachment({ part }: { part: FilePart }) {
   const name = part.filename ?? "attachment";

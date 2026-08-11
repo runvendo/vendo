@@ -6,7 +6,7 @@
 //      loop receives the vendo/approval-ref@1 envelope without blocking.
 //      Approving over the wire executes the parked call; GET /approvals/:id
 //      serves the "executed" state the embed renders.
-//   2. Generated UI: vendo_create_app returns the vendo/app-ref@1 envelope.
+//   2. Generated UI: vendo_make returns the vendo/app-ref@1 envelope.
 //   3. Delegation: vendo_delegate runs Vendo's own loop and reports back.
 //
 // It exercises the example's REAL wiring: composeVendo (policy, serverActions),
@@ -21,6 +21,11 @@ import { noopObserve } from "@mastra/core/tools";
 import { parseVendoToolEnvelope, vendoAppRefSchema, vendoApprovalRefSchema } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import { VENDO_PRINCIPAL_KEY, VENDO_SESSION_KEY, vendoMastraTools } from "@vendoai/vendo/mastra";
+import {
+  textTurn,
+  ZERO_USAGE,
+  type LanguageModelV3StreamPart as StreamPart,
+} from "@vendoai-fixtures/test-kit/stream-turns";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { afterAll, describe, expect, it } from "vitest";
@@ -28,22 +33,10 @@ import { DEMO_PRINCIPAL, composeVendo } from "../src/lib/vendo";
 import { sentTripReports } from "../src/lib/vendo-actions";
 import { weatherTool } from "../src/mastra/tools/weather-tool";
 
-const ZERO_USAGE = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 0, text: 0, reasoning: 0 },
-};
-
-type StreamPart = Record<string, unknown>;
-
-const textTurn = (text: string): StreamPart[] => [
-  { type: "text-start", id: "t1" },
-  { type: "text-delta", id: "t1", delta: text },
-  { type: "text-end", id: "t1" },
-  { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
-];
-
 // Mastra's loop accumulates tool calls from the input-streaming bracket, so a
-// scripted tool call must stream tool-input-start/delta/end before tool-call.
+// scripted tool call must stream tool-input-start/delta/end before tool-call —
+// which is why this one is NOT the shared `toolCallTurn` from
+// `@vendoai-fixtures/test-kit/stream-turns`. The plain text turn is.
 const toolCallTurn = (toolName: string, input: unknown): StreamPart[] => [
   { type: "tool-input-start", id: "call_1", toolName },
   { type: "tool-input-delta", id: "call_1", delta: JSON.stringify(input) },
@@ -111,20 +104,24 @@ afterAll(async () => {
 });
 
 const DELEGATE_MARKER = "Compile a weather brief for the ops team";
-const APP_MARKUP = '<App name="Weather comparison"><Text text="Paris vs Tokyo vs NYC"/></App>';
+const APP_MARKUP = '<App name="Weather comparison"><Text text="Paris vs Tokyo vs NYC"/><Disclaimer reason="Fixture app."/></App>';
 
 async function setup() {
   const dataDir = await mkdtemp(join(tmpdir(), "mastra-example-store-"));
   // Vendo's own model (app generation, the delegate loop) — distinct from the
   // Mastra agent's model, exactly like the example (two models, deliberately).
-  const vendoModel = scripted((prompt) =>
-    prompt.includes(DELEGATE_MARKER) ? textTurn("Weather brief compiled.") : [
-      { type: "text-start", id: "g1" },
-      { type: "text-delta", id: "g1", delta: APP_MARKUP },
-      { type: "text-end", id: "g1" },
-      { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
-    ],
-  );
+  // `# In this loop` is the screen agent's own brief — the marker that says a
+  // prompt belongs to the assembly loop — and `save_app` is how that loop lands
+  // an app. One save is the whole generation for an ask this small.
+  let assembled = false;
+  const vendoModel = scripted((prompt) => {
+    if (prompt.includes(DELEGATE_MARKER)) return textTurn("Weather brief compiled.");
+    if (prompt.includes("# In this loop") && !assembled) {
+      assembled = true;
+      return toolCallTurn("save_app", { content: APP_MARKUP });
+    }
+    return textTurn("ok");
+  });
   const store = createStore({ dataDir });
   cleanups.push(async () => {
     await store.close();
@@ -188,11 +185,11 @@ describe.sequential("mastra-agent example — the Vendo seam end to end", () => 
     expect(((await after.json()) as { state: string }).state).toBe("executed");
   });
 
-  it("vendo_create_app returns the vendo/app-ref@1 envelope from a real generation", async () => {
+  it("vendo_make returns the vendo/app-ref@1 envelope from a real generation", async () => {
     const { vendo } = await setup();
     const tools = await vendoMastraTools(vendo);
-    const output = await tools["vendo_create_app"]!.execute!(
-      { prompt: "Compare weather in Paris, Tokyo and NYC" },
+    const output = await tools["vendo_make"]!.execute!(
+      { request: "Compare weather in Paris, Tokyo and NYC" },
       executionContext(),
     );
     const ref = vendoAppRefSchema.parse(output);

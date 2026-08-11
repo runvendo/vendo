@@ -4,66 +4,20 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStore, type VendoStore } from "@vendoai/store";
-import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import {
+  scriptedModel,
+  textTurn,
+  toolCallTurn,
+  ZERO_USAGE,
+  type LanguageModelV3StreamPart as StreamPart,
+} from "@vendoai-fixtures/test-kit/stream-turns";
 import type { LanguageModel, UIMessage } from "ai";
 import { createRelayServer } from "../src/server/index.js";
 
-type ModelPrompt = Parameters<MockLanguageModelV3["doStream"]>[0]["prompt"];
-export type StreamPart = Awaited<ReturnType<MockLanguageModelV3["doStream"]>>["stream"] extends ReadableStream<infer Part> ? Part : never;
-type GenerateResult = Awaited<ReturnType<MockLanguageModelV3["doGenerate"]>>;
-type GenerateContent = GenerateResult["content"][number];
-
-export const ZERO_USAGE = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 0, text: 0, reasoning: 0 },
-} as const;
-
-export function textTurn(text: string, id = "text_1"): StreamPart[] {
-  return [
-    { type: "text-start", id },
-    { type: "text-delta", id, delta: text },
-    { type: "text-end", id },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
-  ];
-}
-
-export function toolCallTurn(toolName: string, input: unknown, toolCallId = "call_1"): StreamPart[] {
-  return [
-    { type: "tool-call", toolCallId, toolName, input: JSON.stringify(input) },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
-  ];
-}
-
-export function scriptedModel(turns: StreamPart[][]): LanguageModel {
-  const remaining = turns.map((turn) => [...turn]);
-  const shift = (_prompt: ModelPrompt): StreamPart[] => {
-    const chunks = remaining.shift();
-    if (chunks === undefined) throw new Error("scripted model exhausted");
-    return chunks;
-  };
-  return new MockLanguageModelV3({
-    doStream: async (request) => ({ stream: simulateReadableStream({ chunks: shift(request.prompt) }) }),
-    doGenerate: async (request): Promise<GenerateResult> => {
-      const chunks = shift(request.prompt);
-      const finish = chunks.find((part) => part.type === "finish");
-      const content: GenerateContent[] = [];
-      const generatedText = chunks
-        .filter((part): part is Extract<StreamPart, { type: "text-delta" }> => part.type === "text-delta")
-        .map((part) => part.delta)
-        .join("");
-      if (generatedText.length > 0) content.push({ type: "text", text: generatedText });
-      for (const part of chunks) {
-        if (part.type === "tool-call") content.push(structuredClone(part));
-      }
-      return {
-        content,
-        finishReason: finish?.finishReason ?? { unified: "stop", raw: undefined },
-        usage: finish?.usage ?? ZERO_USAGE,
-        warnings: [],
-      };
-    },
-  });
-}
+// The scripted model and its stream parts come from the shared kit
+// (`@vendoai-fixtures/test-kit/stream-turns`); re-exported here so this harness
+// stays the single import every e2e in this host reaches for.
+export { scriptedModel, textTurn, toolCallTurn, ZERO_USAGE, type StreamPart };
 
 export interface TestHost {
   baseUrl: string;
@@ -87,19 +41,28 @@ async function reserveLoopbackPort(): Promise<number> {
 
 export async function startTestHost(
   model: LanguageModel,
-  options: { trustedOrigin?: boolean } = {},
+  options: { trustedOrigin?: boolean; development?: boolean } = {},
 ): Promise<TestHost> {
   const dataDir = await mkdtemp(join(tmpdir(), "relay-express-e2e-"));
   const store = createStore({ dataDir });
   const port = options.trustedOrigin === true ? await reserveLoopbackPort() : 0;
   const previousBaseUrl = process.env.VENDO_BASE_URL;
   if (options.trustedOrigin === true) process.env.VENDO_BASE_URL = `http://127.0.0.1:${port}`;
+  // The composition reads NODE_ENV once, at createVendo time, to decide whether
+  // the development-only routes get mounted at all (#989). Under vitest it is
+  // "test", so a `development: true` opt-in has to be spelled here for any e2e
+  // that reaches a dev-only route — this host's `dev` script sets
+  // NODE_ENV=development, which is what those e2es stand in for.
+  const previousNodeEnv = process.env.NODE_ENV;
+  if (options.development === true) process.env.NODE_ENV = "development";
   let relay: ReturnType<typeof createRelayServer>;
   try {
     relay = createRelayServer({ model, store });
   } finally {
     if (previousBaseUrl === undefined) delete process.env.VENDO_BASE_URL;
     else process.env.VENDO_BASE_URL = previousBaseUrl;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
   }
   let server: Server;
   try {
@@ -162,22 +125,68 @@ export function userMessage(id: string, text: string): UIMessage {
   return { id, role: "user", parts: [{ type: "text", text }] };
 }
 
-export function respondToApproval(message: UIMessage, toolCallId: string, approved: boolean): UIMessage {
-  let updated = false;
-  const parts = message.parts.map((part) => {
-    const candidate = part as unknown as Record<string, unknown>;
-    if (candidate.type !== "dynamic-tool" || candidate.toolCallId !== toolCallId) return part;
-    const approval = candidate.approval as { id?: unknown } | undefined;
-    if (typeof approval?.id !== "string") throw new Error("tool part carried no native approval id");
-    updated = true;
-    return {
-      ...candidate,
-      state: "approval-responded",
-      approval: { id: approval.id, approved },
-    } as unknown as UIMessage["parts"][number];
+// ---------------------------------------------------------------------------
+// Mid-stream approval sync (build contract §1.4): an interactive harness turn
+// BLOCKS INSIDE the guarded call awaiting the tap, holding the SAME request
+// open rather than parking the turn for a client-driven resume (the pre-flip
+// shape this file's `respondToApproval` used to replay: re-post the thread
+// with the parked tool part flipped to `approval-responded`). A test that
+// needs to decide, or merely observe, an approval while its turn is still in
+// flight reads the open response progressively instead of draining it first.
+// ---------------------------------------------------------------------------
+
+/** The `data-vendo-approval` wire part's payload (01-core §16). */
+export interface VendoApprovalWireData {
+  toolCallId: string;
+  risk: string;
+  approvalId?: string;
+  invalidatedGrant?: { id: string; grantedAt: string };
+}
+
+export interface MidStreamRead {
+  /** Resolves with the approval card's data the MOMENT it lands on the wire —
+   *  before the turn itself completes. The synchronization point a test acts
+   *  on: decide the approval while the guarded call is still blocked awaiting
+   *  it. */
+  approval: Promise<VendoApprovalWireData>;
+  /** Resolves with the fully drained stream once the turn ends: decided,
+   *  denied, or timed out at the frozen `APPROVAL_WAIT_MS` bound. */
+  done: Promise<SseRead>;
+}
+
+/** Read a still-open `/threads` SSE response, exposing the approval card as
+ *  soon as it arrives rather than only once the whole turn finishes. */
+export function readSseMidStream(response: Response): MidStreamRead {
+  let resolveApproval!: (data: VendoApprovalWireData) => void;
+  const approval = new Promise<VendoApprovalWireData>((resolve) => {
+    resolveApproval = resolve;
   });
-  if (!updated) throw new Error(`assistant message carried no dynamic tool part for ${toolCallId}`);
-  return { ...message, parts };
+  const done = (async (): Promise<SseRead> => {
+    if (!response.ok) throw new Error(`SSE request failed: ${response.status} ${await response.text()}`);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const parts: Array<Record<string, unknown>> = [];
+    let notified = false;
+    for (;;) {
+      const { done: finished, value } = await reader.read();
+      if (finished) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() ?? "";
+      for (const block of blocks) {
+        if (!block.startsWith("data: ") || block === "data: [DONE]") continue;
+        const part = JSON.parse(block.slice("data: ".length)) as Record<string, unknown>;
+        parts.push(part);
+        if (!notified && part.type === "data-vendo-approval") {
+          notified = true;
+          resolveApproval(part.data as VendoApprovalWireData);
+        }
+      }
+    }
+    return { parts };
+  })();
+  return { approval, done };
 }
 
 export function jsonPost(body: unknown): RequestInit {

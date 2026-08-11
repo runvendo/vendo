@@ -1,3 +1,4 @@
+import type { BoxRequest, BoxResponse } from "@vendoai/apps";
 import { VendoError, type Json, type RecordQuery, type RunContext } from "@vendoai/core";
 import { json, prefixRoute, route, string, type RouteEntry, type WireContext } from "./shared.js";
 
@@ -46,6 +47,62 @@ async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T | typeof 
   }
 }
 
+/** The payload, and ONLY the payload: method, path, content-type, body. Nothing
+    else may ride into the box — no cookie, no authorization, no host header —
+    and both doors below assemble their request from here so the skin has one
+    shape rather than two that drift. */
+async function payloadOf(request: Request, method: string, path: string): Promise<BoxRequest> {
+  const body = new Uint8Array(await request.arrayBuffer());
+  const contentType = request.headers.get("content-type");
+  return {
+    method,
+    path,
+    ...(contentType === null ? {} : { headers: { "content-type": contentType } }),
+    ...(body.byteLength === 0 ? {} : { body }),
+  };
+}
+
+/** The box's answer, relayed. Of its headers only content-type crosses back: no
+    set-cookie or friends may be smuggled onto the host origin by a box process.
+    The other half of the one shape — same reason, same single place. */
+function relayAnswer(answer: BoxResponse): Response {
+  const relayType = Object.entries(answer.headers)
+    .find(([header]) => header.toLowerCase() === "content-type")?.[1];
+  return new Response(answer.body.byteLength === 0 ? null : (answer.body as BodyInit), {
+    status: answer.status,
+    ...(relayType === undefined ? {} : { headers: { "content-type": relayType } }),
+  });
+}
+
+/** Build contract §9.8 — a served ORG app's registered URL is THIS route, so
+    the browser's every request re-checks `can(viewer)` against live rows. A
+    served process gets no cookies and no host credentials: only the payload
+    crosses, exactly as the fn proxy above. Modelled on it deliberately —
+    the skin has one shape, not two. */
+export const servedProxyRoutes: RouteEntry[] = [
+  route("*", "/apps/:appId/serve/*", async (wire) => {
+    const { request, params, deps } = wire;
+    const appId = string(params["appId"], "app id");
+    const ctx = await wire.context("app");
+    // Everything after `/apps/<id>/serve` is the path INSIDE the box, QUERY
+    // STRING included: a parameterized request must arrive parameterized, or
+    // every served app that reads one (?tab=, ?vendoTheme=, pagination) breaks
+    // the moment the app is shared. Still payload only — the search string is
+    // part of what the caller asked for, not host authority.
+    //
+    // Split `wire.path` (raw), NOT `wire.segments` (percent-DECODED): this path
+    // is concatenated into the box's fetch URL, so a decoded `%2F` would become
+    // a real separator and a decoded `%3F` would start a query nobody sent.
+    const raw = wire.path.split("/").filter(Boolean);
+    const inner = `/${raw.slice(3).join("/")}${wire.url.search}`;
+    // `serve` re-checks can(viewer) against live rows BEFORE any machine work,
+    // so a revoked viewer's next request is refused even though what their
+    // session already rendered stands.
+    const payload = await payloadOf(request, request.method, inner);
+    return relayAnswer(await deps.apps.serve(appId, payload, ctx));
+  }),
+];
+
 export const fnProxyRoutes: RouteEntry[] = [
   route("POST", "/apps/:appId/fn/:name", async ({ request, params, deps, context }) => {
     const appId = string(params["appId"], "app id");
@@ -54,21 +111,15 @@ export const fnProxyRoutes: RouteEntry[] = [
       throw new VendoError("validation", "fn name must match [A-Za-z_][A-Za-z0-9_-]{0,63}");
     }
     const ctx = await context("app");
-    // Principal scoping BEFORE any machine work: the same owner-scoped get
-    // every /apps route rides; a non-owner sees the app's absence, not a box.
+    // Existence-masking BEFORE any machine work: `get` is viewer-scoped, so a
+    // caller who cannot even see the app is told it isn't there rather than
+    // being refused a box. The box door itself then requires editor.
     if (await deps.apps.get(appId, ctx) === null) {
       throw new VendoError("not-found", `app not found: ${appId}`);
     }
-    const body = new Uint8Array(await request.arrayBuffer());
-    const contentType = request.headers.get("content-type");
-    // Forward ONLY the payload: no cookies, no authorization, no host headers
-    // cross the skin. The box's authority is its own app token, nothing more.
-    const work = deps.apps.box.request(appId, {
-      method: "POST",
-      path: `/fn/${name}`,
-      ...(contentType === null ? {} : { headers: { "content-type": contentType } }),
-      ...(body.byteLength === 0 ? {} : { body }),
-    }, ctx);
+    // The box's authority is its own app token, nothing more.
+    const payload = await payloadOf(request, "POST", `/fn/${name}`);
+    const work = deps.apps.box.request(appId, payload, ctx);
     const answer = await withTimeout(work, FN_TIMEOUT_MS);
     if (answer === TIMED_OUT) {
       // The box keeps working; only this wire request gives up. Swallow the
@@ -76,14 +127,7 @@ export const fnProxyRoutes: RouteEntry[] = [
       work.catch(() => undefined);
       return json({ error: { code: "timeout", message: `fn ${name} did not answer within ${FN_TIMEOUT_MS}ms` } }, 504);
     }
-    // Relay status/body; of the box's headers only content-type crosses back
-    // (no set-cookie or friends smuggled onto the host origin).
-    const relayType = Object.entries(answer.headers)
-      .find(([header]) => header.toLowerCase() === "content-type")?.[1];
-    return new Response(answer.body.byteLength === 0 ? null : (answer.body as BodyInit), {
-      status: answer.status,
-      ...(relayType === undefined ? {} : { headers: { "content-type": relayType } }),
-    });
+    return relayAnswer(answer);
   }),
 ];
 
@@ -151,15 +195,26 @@ function rowsQuery(url: URL): RecordQuery {
   };
 }
 
-async function handleRows(wire: WireContext, appId: string): Promise<Response | undefined> {
+async function handleRows(wire: WireContext, appId: string, owner: string): Promise<Response | undefined> {
   const { request, url, segments, deps } = wire;
   const collection = segments[2];
   if (collection === undefined || !COLLECTION_PATTERN.test(collection)) {
     throw new VendoError("validation", "rows collection must match [A-Za-z0-9_-]{1,64}");
   }
-  // The app-scoped store namespace: the box: infix keeps box rows apart from
-  // the host-declared v1 storage collections sharing the app:<id> prefix.
-  const records = deps.store.records(`app:${appId}:box:${collection}`);
+  if (deps.ops === undefined) {
+    throw new VendoError(
+      "not-implemented",
+      "A box row is owner-stamped app data, so this door needs the store's named-operation surface: "
+      + "it needs a SQL-backed store (`store: postgres(url)`, or the local default) or a "
+      + "StoreOps-capable store (the Cloud hosted store). The configured store is neither.",
+    );
+  }
+  // The app-scoped, owner-scoped drawer: the box: infix keeps box rows apart
+  // from the host-declared v1 storage collections sharing the app:<id> prefix,
+  // and the owner is the app token's subject — stamped here, on the box's
+  // behalf, because the box is never told who the user is.
+  const target = { appId, collection: `box:${collection}`, owner };
+  const rows = deps.ops.appData;
 
   // Lane E redaction guard — nothing a box writes or reads through this door
   // may carry a known secret value into a store row or a response body.
@@ -168,7 +223,7 @@ async function handleRows(wire: WireContext, appId: string): Promise<Response | 
 
   if (segments.length === 3) {
     if (request.method !== "GET") return undefined;
-    return json(await scrub(await records.list(rowsQuery(url))));
+    return json(await scrub(await rows.list(target, rowsQuery(url))));
   }
   if (segments.length !== 4) return undefined;
   const id = segments[3]!;
@@ -176,12 +231,12 @@ async function handleRows(wire: WireContext, appId: string): Promise<Response | 
     throw new VendoError("validation", "row id must be 1-256 characters");
   }
   if (request.method === "GET") {
-    const record = await records.get(id);
+    const record = await rows.get(target, id);
     if (record === null) throw new VendoError("not-found", `row not found: ${id}`);
     return json(await scrub(record));
   }
   if (request.method === "DELETE") {
-    await records.delete(id);
+    await rows.delete(target, id);
     return json({ status: "ok" });
   }
   if (request.method === "PUT") {
@@ -203,7 +258,7 @@ async function handleRows(wire: WireContext, appId: string): Promise<Response | 
     }
     // Scrub BEFORE persisting: a secret value must never land in a store row,
     // even when the box itself sent it.
-    return json(await records.put(await scrub({
+    return json(await rows.put(target, await scrub({
       id,
       data: body["data"] as Json,
       ...(body["refs"] === undefined ? {} : { refs: body["refs"] as Record<string, string> }),
@@ -264,7 +319,7 @@ export const boxRoutes: RouteEntry[] = [
     }
     const area = segments[1];
     if (area === "rows") {
-      const handled = await handleRows(wire, identity.appId);
+      const handled = await handleRows(wire, identity.appId, identity.subject);
       if (handled !== undefined) return handled;
     }
     if (area === "tools") {

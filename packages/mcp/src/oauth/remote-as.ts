@@ -15,6 +15,14 @@ export interface RemoteAccessGrant {
   expiresAt: string;
 }
 
+/** The asymmetric signature algorithms a real authorization server issues
+ * access tokens with. RS256 is the default at Auth0, Okta, Entra ID and
+ * Cognito; ES256 is what Vendo's own broker signs with. Symmetric algorithms
+ * (HS*) and `none` stay off the list deliberately: a JWKS publishes PUBLIC
+ * keys, so an HS256 token signed with the modulus anyone can read would
+ * otherwise verify. */
+const REMOTE_AS_ALGORITHMS = ["RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512"];
+
 /** Validates bearer JWTs issued by an external authorization server. The
  * RemoteJWKSet keeps verified keys in memory and re-fetches the JWKS when an
  * unfamiliar `kid` appears, which covers ordinary zero-downtime key rotation. */
@@ -24,6 +32,12 @@ export class RemoteAsVerifier {
   #keys: ReturnType<typeof createRemoteJWKSet> | undefined;
 
   constructor(config: RemoteAsConfig) {
+    // jose checks the `iss`/`aud` VALUES only when the expected value is
+    // truthy — a blank one leaves the claim required but unchecked, which
+    // silently turns off the binding that makes this door's tokens this door's.
+    if (config.issuer === "" || config.audience === "") {
+      throw new Error("remoteAs requires a non-empty issuer and audience");
+    }
     this.#config = config;
   }
 
@@ -33,7 +47,7 @@ export class RemoteAsVerifier {
     if (!match?.[1]) return null;
     try {
       const { payload } = await jwtVerify(match[1], await this.#keySet(), {
-        algorithms: ["ES256"],
+        algorithms: REMOTE_AS_ALGORITHMS,
         issuer: this.#config.issuer,
         audience: this.#config.audience,
         requiredClaims: ["sub", "iat", "exp"],

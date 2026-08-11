@@ -120,7 +120,7 @@ export async function pickScaffoldAuth(
     return {
       wired: null,
       advice: `Auth: your own JWT — add one line in ${compositionPath}: auth: jwt({ secret: <your signing secret> }). ` +
-        "Options and the claim mapping: docs/act-as-presets.md.",
+        "Options and the claim mapping: https://docs.vendo.run/connect/act-as-presets.",
     };
   }
   const detectedMatch = detected.find((match) => match.preset === picked);
@@ -168,8 +168,12 @@ export async function resolveScaffoldAuth(
     return { wired: detection.wired, advice: authAdvisory(detection, compositionPath) };
   }
   if (detection.wired !== null) {
+    // The mechanism (`wire auth: clerk()`) is what happens; what is being
+    // DECIDED is whether the agent acts as the person at the keyboard or as a
+    // stand-in. Same default, same picker fall-through — the question just
+    // says what it means. The scaffold comment carries the mechanism.
     const accepted = await confirmAuth(
-      `Detected ${detection.wired.dependency} — wire auth: ${detection.wired.preset}()?`,
+      `Should the agent act as your signed-in ${AUTH_FAMILY_INFO[detection.wired.preset].name} user?`,
       true,
     );
     if (accepted) return { wired: detection.wired, advice: null };

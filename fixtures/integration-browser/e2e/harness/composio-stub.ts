@@ -43,7 +43,7 @@ export async function startComposioStub(): Promise<ComposioStub> {
     }
 
     res.setHeader("content-type", "application/json");
-    if (req.method === "GET" && url.pathname === "/api/v3/tools") {
+    if (req.method === "GET" && url.pathname === "/api/v3.1/tools") {
       res.end(JSON.stringify({
         items: [{
           slug: "GMAIL_SEND_EMAIL",
@@ -94,7 +94,7 @@ export async function startComposioStub(): Promise<ComposioStub> {
       res.end(JSON.stringify({ success: true }));
       return;
     }
-    if (req.method === "POST" && url.pathname.startsWith("/api/v3/tools/execute/")) {
+    if (req.method === "POST" && url.pathname.startsWith("/api/v3.1/tools/execute/")) {
       const subject = (body as { user_id?: string } | undefined)?.user_id ?? "unknown";
       const active = accounts.some((account) => account.user_id === subject && account.status === "ACTIVE");
       if (active) {

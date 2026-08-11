@@ -3,9 +3,10 @@
 // copy, drag-drop attach + image previews, sent attachments in the transcript,
 // the waiting-on-you queue, toasts, and the connect dock/tray.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { VendoThread, VendoToasts, WaitingQueue, dismissAllVendoToasts, vendoToast } from "../../src/chrome/index.js";
+import { VendoThread, VendoToasts, dismissAllVendoToasts, vendoToast } from "../../src/chrome/index.js";
 import { Markdown } from "../../src/chrome/markdown.js";
 import { createWireServer } from "../wire-server.js";
 
@@ -121,25 +122,6 @@ describe("drag-drop attach + previews (ENG-225)", () => {
   });
 });
 
-describe("waiting-on-you queue (ENG-225)", () => {
-  it("lists pending approvals and empties after a decision", async () => {
-    const wire = await createWireServer();
-    const client = createVendoClient({ baseUrl: wire.url });
-    const view = render(<VendoProvider client={client}><WaitingQueue pollMs={0} /></VendoProvider>);
-
-    const region = await screen.findByRole("region", { name: "Waiting on you" });
-    within(region).getByText(/Waiting on you ·/);
-    // No host metadata in this render → the ENG-216 prettified-id fallback.
-    within(region).getByText("Email send");
-    within(region).getByText("to a@example.com");
-    within(region).getByText(/^Asked /);
-
-    fireEvent.click(within(region).getByRole("button", { name: "Approve" }));
-    await waitFor(() => expect(view.container.querySelector(".fl-waiting")).toBeNull());
-    await wire.close();
-  });
-});
-
 describe("toasts (ENG-225)", () => {
   it("renders an imperative toast and dismisses it", async () => {
     const wire = await createWireServer();
@@ -157,6 +139,56 @@ describe("toasts (ENG-225)", () => {
 
     fireEvent.click(within(region).getByRole("button", { name: "Dismiss notification" }));
     await waitFor(() => expect(screen.queryByText("Invoice watcher finished")).toBeNull());
+    await wire.close();
+  });
+
+  /** M35 — WCAG 2.2.1. A timed toast carrying an ACTION is a time limit on an
+   *  interactive control, and there was no way to stop it: a reader still
+   *  parsing the sentence, or a switch user still travelling to the button,
+   *  lost both. */
+  it("pauses its countdown while a pointer is over it, and resumes on the way out", async () => {
+    const wire = await createWireServer();
+    const client = createVendoClient({ baseUrl: wire.url });
+    render(<VendoProvider client={client}><VendoToasts /></VendoProvider>);
+    // ⚠️ THE BUDGET IS THE TEST'S OWN, not the runner's. These two cases used
+    // `durationMs: 80`, which made the SETUP a race: everything between minting
+    // the toast and pausing it (an async `findByRole`) had to finish inside
+    // 80ms of wall clock, or the countdown had already elapsed and the toast
+    // was gone before the pause could hold anything. Under coverage
+    // instrumentation on a loaded CI runner it does not, and the keyboard case
+    // failed exactly that way (`expected null not to be null`). 800ms of
+    // headroom to arrange, then a wait that still OUTLASTS the countdown — so
+    // the assertion continues to prove the pause, not merely the delay.
+    act(() => {
+      vendoToast({ text: "Invoice watcher finished", actions: [{ label: "View", onAction: () => undefined }], durationMs: 800 });
+    });
+    const region = await screen.findByRole("region", { name: "Notifications" });
+
+    fireEvent.mouseEnter(region);
+    // Well past the countdown: it is held, and so is the action.
+    await new Promise(resolve => setTimeout(resolve, 1_200));
+    expect(screen.queryByText("Invoice watcher finished")).not.toBeNull();
+    expect(within(region).getByRole("button", { name: "View" })).toBeTruthy();
+
+    fireEvent.mouseLeave(region);
+    await waitFor(() => expect(screen.queryByText("Invoice watcher finished")).toBeNull(), { timeout: 3_000 });
+    dismissAllVendoToasts();
+    await wire.close();
+  });
+
+  it("pauses for the keyboard too — focus inside the stack holds the countdown", async () => {
+    const wire = await createWireServer();
+    const client = createVendoClient({ baseUrl: wire.url });
+    render(<VendoProvider client={client}><VendoToasts /></VendoProvider>);
+    act(() => {
+      vendoToast({ text: "Payroll run finished", actions: [{ label: "View", onAction: () => undefined }], durationMs: 800 });
+    });
+    const region = await screen.findByRole("region", { name: "Notifications" });
+    fireEvent.focus(within(region).getByRole("button", { name: "View" }));
+    // Outlasts the countdown, so this proves the HOLD (see the note above).
+    await new Promise(resolve => setTimeout(resolve, 1_200));
+    expect(screen.queryByText("Payroll run finished")).not.toBeNull();
+    dismissAllVendoToasts();
     await wire.close();
   });
 
@@ -254,15 +286,56 @@ describe("connect dock + tray (ENG-225)", () => {
     await within(tray).findByRole("button", { name: /connect slack/i });
   });
 
-  it("renders no dock when the auto catalog resolves empty", async () => {
+  it("keeps the dock when the auto catalog resolves empty and the tray says so honestly", async () => {
+    // 2026-07 demo feedback — the dock used to vanish whenever the auto
+    // catalog came back empty, which also swallowed fetch failures. Only an
+    // explicit connectors={[]} hides the entry point now.
+    // Both fixtures must be empty, not just the catalog. The tray reads two
+    // independent sources (`/connections/catalog` and `/connections`), and the
+    // fixture ships an active gmail account: once `/connections` lands, that
+    // account renders as connected — correctly, since "no tools available" is
+    // NOT the honest state for someone who has one — and the empty copy is
+    // gone. Emptying only the catalog left the copy on screen for the single
+    // event-loop turn between the two responses, so this assertion passed or
+    // failed on machine load (measured ~2/8 failures at HEAD and 3/8 at the
+    // pre-wave baseline, i.e. a flake that predates this wave).
     wire.state.catalog = [];
-    const view = render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    wire.state.connections = [];
+    render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     await screen.findByText("Existing thread");
-    // Poll until the catalog fetch has settled (the attach button renders
-    // regardless of the dock, so the composer being interactive is the
-    // "resolved" signal), then assert the dock stayed absent.
-    await screen.findByRole("button", { name: "Attach files" });
-    await waitFor(() => expect(view.container.querySelector(".fl-dock")).toBeNull());
+    const dock = await screen.findByRole("button", { name: "Connect tools" });
+    fireEvent.click(dock);
+    const tray = await screen.findByRole("dialog", { name: "Connect tools" });
+    await within(tray).findByText("No tools are available to connect yet.");
+  });
+
+  it("keeps the dock when the auto catalog fetch FAILS and the tray offers a retry", async () => {
+    // A failed fetch evicts itself from the per-client cache so every new
+    // consumer mount refetches; a deterministic always-failing catalog (until
+    // the test flips it) keeps the error state stable however many surfaces
+    // remount along the way.
+    let catalogHealthy = false;
+    const flaky: VendoClient = {
+      ...client,
+      connections: {
+        ...client.connections,
+        catalog: async () => {
+          if (!catalogHealthy) throw new Error("kaboom");
+          return [{ toolkit: "slack", connector: "conn_slack" }];
+        },
+      },
+    };
+    render(<VendoProvider client={flaky}><VendoThread threadId="thr_1" /></VendoProvider>);
+    await screen.findByText("Existing thread");
+    // The dock button no longer vanishes on a failed catalog fetch.
+    const dock = await screen.findByRole("button", { name: "Connect tools" });
+    fireEvent.click(dock);
+    const tray = await screen.findByRole("dialog", { name: "Connect tools" });
+    await within(tray).findByText(/Couldn.t load the available tools/);
+    // The retry refetches and the catalog lands.
+    catalogHealthy = true;
+    fireEvent.click(within(tray).getByRole("button", { name: "Try again" }));
+    await within(tray).findByRole("button", { name: /connect slack/i });
   });
 
   it("shows the dock with an active-count badge and opens the tray", async () => {
@@ -294,8 +367,13 @@ describe("connect dock + tray (ENG-225)", () => {
   });
 
   it("connects an available toolkit through the broker flow", async () => {
-    const opened: string[] = [];
-    vi.stubGlobal("open", (url: string) => { opened.push(url); return null; });
+    // The sign-in window is opened in two phases: blank inside the click (a
+    // popup is judged by call-stack provenance, so it cannot wait for the
+    // broker), then navigated to the real OAuth URL once initiate resolves. The
+    // stand-in is what a browser that ALLOWS the popup hands back.
+    const popup = { location: { replace: vi.fn() }, close: vi.fn() };
+    const open = vi.fn(() => popup);
+    vi.stubGlobal("open", open);
     render(
       <VendoProvider client={client} connectors={CONNECTORS}><VendoThread threadId="thr_1" /></VendoProvider>,
     );
@@ -304,10 +382,179 @@ describe("connect dock + tray (ENG-225)", () => {
     const tray = await screen.findByRole("dialog", { name: "Connect tools" });
 
     fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
-    // The hosted OAuth window opened, and the account polls to active.
-    await waitFor(() => expect(opened).toEqual(["https://connect.test/oauth/1"]));
+    // Phase one is blank and synchronous; phase two reaches the hosted OAuth
+    // URL, and the account then polls to active.
+    expect(open.mock.calls[0]?.[0]).toBe("about:blank");
+    await waitFor(() => expect(popup.location.replace).toHaveBeenCalledWith("https://connect.test/oauth/1"));
     await within(tray).findByRole("img", { name: "Slack connected" });
+    // Closed from the opener once the account is live — never left hanging.
+    expect(popup.close).toHaveBeenCalled();
     // The freshly connected row celebrates (one-shot bloom class).
     expect(tray.querySelector(".is-just-connected")).toBeTruthy();
+  });
+
+  it("still connects after a StrictMode remount (the tray's cancel latch resets)", async () => {
+    // React's dev StrictMode mounts, tears down and re-mounts every effect. The
+    // tray's cancel ref was only ever SET, by that cleanup, so it stayed latched
+    // through the second mount: the poll in completeConnection exited on its
+    // FIRST check, which means no status read, no error, and no end — the row
+    // sat on "Connecting Slack" forever while the person finished signing in.
+    // Same latch, same fix as ConnectCard's (connect.test.tsx).
+    const popup = { location: { replace: vi.fn() }, close: vi.fn() };
+    vi.stubGlobal("open", vi.fn(() => popup));
+    render(
+      <StrictMode>
+        <VendoProvider client={client} connectors={CONNECTORS}><VendoThread threadId="thr_1" /></VendoProvider>
+      </StrictMode>,
+    );
+    await screen.findByText("Existing thread");
+    fireEvent.click(await screen.findByRole("button", { name: "Connect tools" }));
+    const tray = await screen.findByRole("dialog", { name: "Connect tools" });
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+
+    await within(tray).findByRole("img", { name: "Slack connected" });
+    expect(popup.close).toHaveBeenCalled();
+    // No spinner left behind: the flow ENDED rather than being abandoned.
+    expect(within(tray).queryByRole("status", { name: "Connecting Slack" })).toBeNull();
+  });
+
+  // The tray opened its window in the click correctly, but passed no
+  // `onRedirect` — so a browser that refused the window anyway left the row
+  // showing the "Connecting…" dots for the full two-minute poll with no way to
+  // reach the sign-in page. The same fallback the ConnectCard offers.
+  it("offers the sign-in URL as a link when the browser blocks the window", async () => {
+    vi.stubGlobal("open", vi.fn(() => null));
+    // Hold the poll open: the fixture's initiate mints `ca_new` already active.
+    for (let index = 0; index < 8; index += 1) {
+      wire.state.failures.push({
+        method: "GET", path: "/connections/ca_new", code: "unavailable", message: "broker busy", status: 503,
+      });
+    }
+    render(
+      <VendoProvider client={client} connectors={CONNECTORS}><VendoThread threadId="thr_1" /></VendoProvider>,
+    );
+    await screen.findByText("Existing thread");
+    fireEvent.click(await screen.findByRole("button", { name: "Connect tools" }));
+    const tray = await screen.findByRole("dialog", { name: "Connect tools" });
+
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+    const link = await within(tray).findByRole("link", { name: "Open sign-in in a new tab" });
+    expect(link.getAttribute("href")).toBe("https://connect.test/oauth/1");
+  });
+
+  /* --- per-ROW connect state (the #1051 treatment, second caller) --------- */
+
+  // The fixture already has gmail connected (`ca_1`), so a tray that must offer
+  // TWO connectable rows needs a third toolkit listed.
+  const TWO_AVAILABLE = [...CONNECTORS, { toolkit: "notion", label: "Notion" }];
+
+  /** Hold every `ca_new` status read open so a started connect stays in flight
+   *  for the whole test — the fixture's initiate otherwise mints an account
+   *  that is already `active` and the poll ends on its first read. */
+  const holdThePoll = () => {
+    for (let index = 0; index < 16; index += 1) {
+      wire.state.failures.push({
+        method: "GET", path: "/connections/ca_new", code: "unavailable", message: "broker busy", status: 503,
+      });
+    }
+  };
+
+  const openTray = async (): Promise<HTMLElement> => {
+    render(
+      <VendoProvider client={client} connectors={TWO_AVAILABLE}><VendoThread threadId="thr_1" /></VendoProvider>,
+    );
+    await screen.findByText("Existing thread");
+    fireEvent.click(await screen.findByRole("button", { name: "Connect tools" }));
+    return screen.findByRole("dialog", { name: "Connect tools" });
+  };
+
+  // The tray tracked `connecting` as ONE toolkit for the whole panel and
+  // disabled every add button off it, so the first connect made every OTHER
+  // connector inert for the full 120s poll — with no cancel, and no disabled
+  // styling to say why. Measured in a real browser as
+  // `{spinners: 1, disabledAdds: 55, totalAdds: 55}`. The row that is actually
+  // connecting shows its dots INSTEAD of a button, so no add button needs to
+  // disable at all.
+  it("leaves every other connector clickable while one connect is in flight", async () => {
+    const popup = { location: { replace: vi.fn() }, close: vi.fn() };
+    vi.stubGlobal("open", vi.fn(() => popup));
+    holdThePoll();
+    const tray = await openTray();
+
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+    await within(tray).findByRole("status", { name: "Connecting Slack" });
+
+    const adds = within(tray).getAllByRole("button", { name: /^Connect / });
+    expect(adds.map(button => (button as HTMLButtonElement).disabled)).toEqual(adds.map(() => false));
+    expect(within(tray).getByRole("button", { name: "Connect Notion" })).toBeTruthy();
+  });
+
+  it("keeps a spinner per connect when two run at once", async () => {
+    const popup = { location: { replace: vi.fn() }, close: vi.fn() };
+    vi.stubGlobal("open", vi.fn(() => popup));
+    holdThePoll();
+    const tray = await openTray();
+
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Notion" }));
+
+    // One `connecting` string could only ever name the last row clicked, so the
+    // first row's dots vanished the moment the second connect started.
+    await waitFor(() => expect(within(tray).getAllByRole("status", { name: /^Connecting / })).toHaveLength(2));
+  });
+
+  // The blocked half, exactly as #1051 keyed it on the panel: two refused
+  // windows shared one notice, so the second connect overwrote a link the first
+  // still needed to get through.
+  it("offers a sign-in link per blocked connect, not one shared notice", async () => {
+    vi.stubGlobal("open", vi.fn(() => null));
+    holdThePoll();
+    const tray = await openTray();
+
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+    await within(tray).findByRole("link", { name: "Open sign-in in a new tab" });
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Notion" }));
+
+    await waitFor(() => expect(within(tray).getAllByRole("link", { name: "Open sign-in in a new tab" })).toHaveLength(2));
+  });
+
+  // Keying the tray's state let two connects run at once, which exposed that
+  // `openConnectPopup` named every window the same thing — and a NAME is what
+  // makes `window.open` hand back an EXISTING window. So the second connect
+  // took over the first's sign-in page, and the first settle closed it under
+  // the other. Pre-existing in the panel post-#1051; the tray's old
+  // surface-wide `disabled` was hiding it here.
+  it("gives each concurrent connect its own sign-in window", async () => {
+    const open = vi.fn(() => ({ location: { replace: vi.fn() }, close: vi.fn() }));
+    vi.stubGlobal("open", open);
+    holdThePoll();
+    const tray = await openTray();
+
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Notion" }));
+
+    expect(open.mock.calls.map(call => call[1])).toEqual([
+      "vendo-connect-slack",
+      "vendo-connect-notion",
+    ]);
+  });
+
+  it("keeps each failed connect's reason, rather than the last one only", async () => {
+    vi.stubGlobal("open", vi.fn(() => ({ location: { replace: vi.fn() }, close: vi.fn() })));
+    for (let index = 0; index < 2; index += 1) {
+      wire.state.failures.push({
+        method: "POST", path: "/connections/initiate", code: "unavailable", message: "broker down", status: 503,
+      });
+    }
+    const tray = await openTray();
+
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Slack" }));
+    await within(tray).findByText(/Slack/, { selector: ".fl-att-error" });
+    fireEvent.click(await within(tray).findByRole("button", { name: "Connect Notion" }));
+
+    // A shared `error` string is also cleared by the NEXT connect's start, so
+    // Slack's reason disappeared off a click that said nothing about Slack.
+    await within(tray).findByText(/Notion/, { selector: ".fl-att-error" });
+    expect(within(tray).getByText(/Slack/, { selector: ".fl-att-error" })).toBeTruthy();
   });
 });

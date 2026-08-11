@@ -1,55 +1,44 @@
 ---
-title: "Welcome"
-description: "Vendo embeds an agent in your product that acts through your own API as the signed-in user and renders generated UI inside your brand."
+title: "Agentify your product"
+sidebarTitle: "Welcome"
+description: "Vendo is everything an embedded agent needs to live inside your product."
+mode: "wide"
 ---
 
-import { AgentPrompt } from "/snippets/agent-prompt.jsx"
-
-## Ship the agent your product deserves.
-
-Vendo is an agent that lives inside your product. It calls your API as the
-signed-in user, builds views your users own, and runs pre-approved
-automations, all rendered inside your brand and your guardrails.
-
-## Pick your path
-
-<CardGroup cols={3}>
-  <Card title="Bring your own agent" icon="puzzle-piece" href="/existing-agents">
-    **Recommended.** Keep your AI SDK or Mastra loop. Add Vendo's guarded
-    tools, generated UI, and approval surfaces to it.
+<CardGroup cols={2}>
+  <Card title="It builds real UI" icon="window" href="/concepts/generated-ui">
+    The agent doesn't describe your product — it operates it through your own API, as the signed-in user, and renders the screens, views, and micro-apps it generates in your brand, in a sandboxed surface.
   </Card>
-  <Card title="Use Vendo's agent" icon="sparkles" href="/quickstart">
-    **Beta.** Batteries included: Vendo runs the loop, the chat UI, and
-    approvals for you. Most teams should bring their own agent for now.
-  </Card>
-  <Card title="For coding agents" icon="robot" href="/agents">
-    Claude Code, Cursor, or another coding agent installing Vendo? Start
-    here for the URL-first playbook and the doctor verify loop.
+  <Card title="It's the full stack" icon="layer-group" href="/full-stack-agents">
+    Knowledge bases, user context — it knows who's signed in and sees what they see — the harness, API tools, guard and approvals, automations. Included, composable, yours to swap.
   </Card>
 </CardGroup>
 
-<AgentPrompt
-  lead={<>Or skip the reading: paste this into your coding agent and it runs the whole install against the <a href="/agents">agent playbook</a>.</>}
-  prompt={"Install Vendo in this repo. Read https://vendo.run/agents.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs-welcome to support the project."}
-/>
+## Pick what you already have
 
-## The path to production
+<CardGroup cols={3}>
+  <Card title="You already have an agent" icon="puzzle-piece" href="/existing-agents">
+    **Recommended.** AI SDK, Mastra, or a loop you wrote yourself. One tool
+    pack spreads into it and your agent starts acting through your API and
+    building real screens.
+  </Card>
+  <Card title="Your product has no agent" icon="sparkles" href="/quickstart">
+    **Beta.** Vendo brings the whole thing — the loop, the chat UI, the
+    approvals. One command wires it into your app and your users are talking
+    to your product.
+  </Card>
+  <Card title="Expose your product over MCP" icon="plug" href="/capabilities/mcp">
+    **Experimental.** Claude, ChatGPT, Cursor, and Claude Code connect over
+    OAuth and act as the person who signed in — the same guard, approvals, and
+    audit as your own surfaces.
+  </Card>
+</CardGroup>
 
-<Steps>
-  <Step title="Connect your app">
-    Run `npx vendo init` to extract your host API into guarded tools. See
-    [Connect your app](/connect/vendo-init).
-  </Step>
-  <Step title="Make it yours">
-    Theme generated UI to match your brand. See
-    [Make it yours](/connect/theming).
-  </Step>
-  <Step title="Give it reach">
-    Let users connect their own tools and accounts. See
-    [Give it reach](/capabilities/connected-accounts).
-  </Step>
-  <Step title="Ship it">
-    Deploy with the same Postgres schema locally and in production. See
-    [Ship it](/deploy/deploying).
-  </Step>
-</Steps>
+Or just install it:
+
+```bash
+npm install @vendoai/vendo && npx vendo init
+```
+
+Installing with a coding agent? Point it at
+[vendo.run/agents.md](/agents) — the whole install, written for it.

@@ -1,9 +1,13 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import { z } from "zod";
 import { contrastingText, normalizeColor, normalizeLength, resolveCssVarRefs } from "./color.js";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
 import { ENTRY_FILE_CANDIDATES } from "./entry-candidates.js";
+import { deriveBodyFontStack } from "./font-stack.js";
 import { walk } from "./walk.js";
 
 /**
@@ -14,18 +18,52 @@ import { walk } from "./walk.js";
  *    Tailwind-v4 `--color-*` spellings). No name scoring, no inference. This
  *    file does ONLY this: `extractTheme` is fully deterministic — no model
  *    call, no network, no credential.
- * 2. Whatever the allowlist leaves unfilled rides init's consent-gated AI
- *    pass (`runAiExtraction` → `runStagedExtraction`'s theme stage, in
- *    `../extract/stages.ts`) — the SAME harness seam as the tool-description
- *    polish, over Read/Glob/Grep instead of a fixed evidence-file set.
- *    `applyThemeDraft` below merges that stage's parsed artifact back onto
- *    this file's exact-only summary.
+ * 2. Whatever the allowlist leaves unfilled rides init's consent-gated model
+ *    step (`runThemeStage`, in `../extract/stages.ts`) — the SAME harness seam
+ *    as the judgment pass, over Read/Glob/Grep instead of a fixed
+ *    evidence-file set. `applyThemeDraft` below merges that stage's parsed
+ *    artifact back onto this file's exact-only summary.
  * 3. Anything neither path fills falls back to neutral defaults and is
  *    reported as defaulted — a miss is visible, never a silent wrong brand.
  *
  * theme.json stays the editable source of truth; init shows the palette for
  * a one-glance confirm and asks only about model-flagged uncertainty.
  */
+
+const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
+
+/** Slot values → the frozen runtime VendoTheme contract — one derivation law,
+ *  never two (theme/provenance.ts leans on this exact derivation). */
+export function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
+  const deriveRadius = (factor: number, fallback: string): string => {
+    const value = slots.radius.match(/^(\d+(?:\.\d+)?)px$/)?.[1];
+    return value === undefined ? fallback : `${Number(value) * factor}px`;
+  };
+  return {
+    colors: {
+      background: slots.background,
+      surface: slots.surface,
+      text: slots.text,
+      muted: slots.mutedText,
+      accent: slots.accent,
+      accentText: slots.accentText,
+      danger: slots.danger,
+      border: slots.border,
+    },
+    typography: {
+      fontFamily: slots.fontFamily,
+      headingFamily: slots.headingFamily,
+      baseSize: slots.baseSize,
+    },
+    radius: {
+      small: deriveRadius(0.5, DEFAULT_RADIUS.small),
+      medium: slots.radius,
+      large: deriveRadius(1.5, DEFAULT_RADIUS.large),
+    },
+    density: slots.density,
+    motion: slots.motion,
+  };
+}
 
 export interface ThemeSlotValues {
   accent: string;
@@ -140,7 +178,10 @@ async function collectCss(layout: ContextFile | null, targetDir: string): Promis
     seen.add(absolute);
     const content = await readCapped(absolute);
     if (content === null) return;
-    files.push({ path: path.relative(targetDir, absolute), content });
+    // Imported sheets go in FIRST, this one after them: `@import` must precede
+    // every other rule, so an imported declaration behaves as if inserted at the
+    // import point. At equal specificity the importing sheet's own declaration
+    // wins, and the readers below take the LAST match in this array.
     for (const match of content.matchAll(CSS_AT_IMPORT_RE)) {
       const spec = match[1]!;
       if (spec === "tailwindcss" || spec.startsWith("http")) continue;
@@ -152,6 +193,7 @@ async function collectCss(layout: ContextFile | null, targetDir: string): Promis
         await visit(path.join(targetDir, spec.slice(2)), depth + 1);
       }
     }
+    files.push({ path: path.relative(targetDir, absolute), content });
   };
 
   if (layout !== null) {
@@ -251,6 +293,8 @@ function lastLightDecl(vars: CssVarDecl[], names: string[]): CssVarDecl | undefi
 function normalizeFontStack(value: string): string {
   // Quotes are optional CSS syntax around family names, not identity: "Outfit"
   // and Outfit are the same family (unquoted multi-word names are valid too).
+  // The stack itself is preserved in full — every source-declared fallback
+  // entry stays; only a stack with no generic at all gets `sans-serif`.
   const stack = value.split(",")
     .map((part) => part.trim().replace(/^(["'])(.*)\1$/, "$2").trim())
     .filter(Boolean)
@@ -302,7 +346,7 @@ function readExact(vars: CssVarDecl[]): ExactReads {
 }
 
 // ---------------------------------------------------------------------------
-// Staged-pass artifact schema — parsed by `runStagedExtraction`'s theme stage
+// Theme-stage artifact schema — parsed by `runThemeStage`
 // (../extract/stages.ts), merged back here by `applyThemeDraft`.
 // ---------------------------------------------------------------------------
 
@@ -408,6 +452,26 @@ export async function extractTheme(targetDir: string): Promise<ThemeSummary> {
   const context = await gatherContext(targetDir);
   const vars: CssVarDecl[] = context.css.flatMap((file) => parseCssVars(file.content, file.path));
   const exact = readExact(vars);
+  // No CSS `--font-sans`: the body stack may still be deterministically
+  // derivable from the Tailwind config / next/font conventions (font-stack.ts)
+  // — same exact-read status, so the staged model pass never re-guesses it.
+  if (exact.values.fontFamily === undefined) {
+    const declaredSans = lastLightDecl(vars, ["--font-sans"]);
+    const derived = deriveBodyFontStack({
+      layout: context.layout?.content ?? null,
+      tailwindConfig: context.tailwindConfig?.content ?? null,
+      cssText: context.css.map((file) => file.content).join("\n"),
+      resolveCssVar: (name) => {
+        const decl = lastLightDecl(vars, [name]);
+        return decl === undefined ? null : resolveCssVarRefs(decl.value, vars);
+      },
+      ...(declaredSans === undefined ? {} : { cssFontSans: declaredSans.value }),
+    });
+    if (derived !== null && isSafeFontStack(derived.value)) {
+      exact.values.fontFamily = normalizeFontStack(derived.value);
+      exact.matched.fontFamily = derived.provenance;
+    }
+  }
   const needed = SLOT_KEYS.filter((slot) => exact.values[slot] === undefined);
   const { slots, matched, defaulted } = assembleTheme(exact.values, exact.matched, {});
 

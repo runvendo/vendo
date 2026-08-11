@@ -1,17 +1,17 @@
 import { isToolUIPart } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { APPROVALS_DECIDED_EVENT, type ApprovalsDecidedDetail } from "../../client-impl.js";
 import { useVendoDiscoverability, useVendoGreeting } from "../../context.js";
 import { useVendoThread } from "../../hooks/use-vendo-thread.js";
-import { StatusRibbon } from "../build-beat.js";
 import { ChromeRoot } from "../chrome-root.js";
 import { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "../discoverability.js";
 import { MorphToast, type MorphToastProps } from "../morph-toast.js";
 import { Composer, dragHasFiles, useComposer } from "./composer.js";
 import { MessageList } from "./message-list.js";
 import { useMessageWindow, useStickToBottom } from "./scrolling.js";
-import { approvalByCall, riskByCall, userText } from "./message-data.js";
+import { approvalByCall, grantSetByCall, riskByCall, toolCallPending, turnErrorSentence, userText } from "./message-data.js";
 
-/** Lane pick 4B — a rich landing suggestion: two-line starter card. */
+/** A rich landing suggestion: two-line starter card. */
 export interface VendoSuggestionCard {
   /** Card headline (verb-first reads best: "Build a view"). */
   title: string;
@@ -27,17 +27,20 @@ export interface VendoThreadProps {
   threadId?: string;
   /** Landing headline shown above the composer while the thread is empty. */
   greeting?: string;
-  /** Starter prompts on the empty landing; clicking sends one. Lane pick 4B —
+  /** One quiet capability line under the landing headline (muted, centered).
+   * Purely additive: absent means today's headline-only landing. */
+  intro?: string;
+  /** Starter prompts on the empty landing; clicking sends one.
    * a plain string keeps today's pill chip; the object form renders a two-line
    * starter card (title + concrete outcome, optional icon) with more scent. */
   suggestions?: (string | VendoSuggestionCard)[];
   /** Show a mic affordance in the composer that launches the host's voice surface. */
   onVoice?: () => void;
-  /** ENG-222 — fires with the effective thread id once it is known, including
+  /** Fires with the effective thread id once it is known, including
    * the fresh `thr_` the server mints for a new conversation. Lets a host
-   * surface (e.g. VendoPage's sidebar) pull the new conversation into its list. */
+   * surface (e.g. a host's own conversation list) pull the new one in. */
   onThreadId?: (threadId: string) => void;
-  /** The discoverability dial (ui-usage-dx §6), overriding the provider's:
+  /** The discoverability dial, overriding the provider's:
    * `"quiet"` disables the fire-once greeting-as-tutorial below. */
   discoverability?: VendoDiscoverability;
   /** Greeting-as-tutorial content (intro + prompt chips) overriding the
@@ -50,10 +53,11 @@ export interface VendoThreadProps {
   composerAccessory?: import("react").ReactNode;
 }
 
-/** 08-ui §4 — conversation chrome over the headless thread transport. */
+/** Conversation chrome over the headless thread transport. */
 export function VendoThread({
   threadId,
   greeting = "What can I help you build?",
+  intro,
   suggestions = [],
   onVoice,
   onThreadId,
@@ -62,7 +66,7 @@ export function VendoThread({
   composerAccessory,
 }: VendoThreadProps) {
   const thread = useVendoThread(threadId);
-  // ui-usage-dx §6 — greeting-as-tutorial: the user's FIRST-ever conversation
+  // Greeting-as-tutorial: the user's FIRST-ever conversation
   // open (fresh thread only — an adopted thread with history is not a first
   // open and does not burn the flag) renders the agent-voiced intro + starter
   // chips locally. Presentation-only: nothing here touches the transport or
@@ -73,7 +77,7 @@ export function VendoThread({
   const tutorial = firstRunGreeting ?? contextGreeting ?? defaultVendoGreeting;
   const [tutorialActive, setTutorialActive] = useState(false);
   // Arming is REACTIVE, not mount-only: surfaces that don't remount their
-  // thread (VendoPage flips threadId props on one instance) become eligible
+  // thread (a host flipping threadId props on one instance) become eligible
   // later — e.g. when the page's dial gate opens on an explicit "New
   // conversation". Burned on first showing (not on interaction) — a reload
   // mid-look never replays it, per the once-per-user-ever rule.
@@ -90,7 +94,7 @@ export function VendoThread({
   useEffect(() => {
     if (tutorialActive && (messageCount > 0 || threadId !== undefined)) setTutorialActive(false);
   }, [tutorialActive, messageCount, threadId]);
-  // ENG-222 — surface the effective (possibly server-minted) thread id upward.
+  // Surface the effective (possibly server-minted) thread id upward.
   const reportedThreadId = thread.threadId;
   useEffect(() => {
     if (reportedThreadId !== undefined) onThreadId?.(reportedThreadId);
@@ -107,6 +111,14 @@ export function VendoThread({
   // bring it into view (and re-stick), so consent is never something you have
   // to go hunting for.
   const seenApprovalsRef = useRef<Set<string>>(new Set());
+  // The target OUTLIVES the delay. This effect re-runs on every render (the
+  // scroll hook returns a fresh object each time), and marking the approval
+  // "seen" is what tells the next run there is nothing to do — so arming the
+  // timer against the freshness check alone meant one re-render inside 80ms
+  // killed the scroll for good rather than deferring it. A settling stream
+  // re-renders several times in that window, which is exactly when an approval
+  // arrives.
+  const pendingScrollRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     const pending = thread.messages
       .flatMap(message => message.parts)
@@ -115,25 +127,35 @@ export function VendoThread({
       .filter((id): id is string => typeof id === "string");
     const fresh = pending.find(id => !seenApprovalsRef.current.has(id));
     seenApprovalsRef.current = new Set(pending);
-    if (fresh === undefined) return;
+    if (fresh !== undefined) pendingScrollRef.current = fresh;
+    const target = pendingScrollRef.current;
+    // An ask decided before the delay elapsed is no longer an ask to reach.
+    if (target === undefined || !pending.includes(target)) {
+      pendingScrollRef.current = undefined;
+      return;
+    }
     const timer = setTimeout(() => {
-      const card = approvalCardRefs.current.get(fresh)?.querySelector<HTMLElement>(".fl-approval");
+      pendingScrollRef.current = undefined;
+      const card = approvalCardRefs.current.get(target)?.querySelector<HTMLElement>(".fl-approval");
       // block: "end", not "center": a sibling surface sharing this pane's
-      // flex column (VendoStage docked below the thread, Maple's /vendo tab)
-      // can leave the list shorter than the card itself at a short viewport
+      // flex column can leave the list shorter than the card itself at a
+      // short viewport
       // height — centering then crops evenly off BOTH edges, hiding the
       // card's own Approve/Decline row behind whatever renders next in flow
       // with no way to reach it. Bottom-aligning always leaves the action
       // row — the part the reader actually needs — as the last thing in
       // view, consistent with the list's own stick-to-bottom behavior.
-      if (card) card.scrollIntoView({ behavior: "smooth", block: "end" });
-      else scroll.jumpToLatest();
+      // (jsdom leaves scrollIntoView undefined; browsers always have it. Same
+      // guard the two other scrollIntoView call sites in the chrome keep.)
+      if (card && typeof card.scrollIntoView === "function") {
+        card.scrollIntoView({ behavior: "smooth", block: "end" });
+      } else scroll.jumpToLatest();
     }, 80);
     return () => clearTimeout(timer);
   }, [thread.messages, scroll]);
 
   const messageWindow = useMessageWindow(thread.messages, scroll.listRef, threadId);
-  // ENG-218 — entrance-animation gating on restore. The .fl-item-in rise runs
+  // Entrance-animation gating on restore. The .fl-item-in rise runs
   // when an article first mounts; a reopened long thread mounts them all at once
   // → a stampede on first paint. We record every message id present when the
   // thread is first shown (and after each switch) as "restored" and suppress
@@ -148,21 +170,77 @@ export function VendoThread({
     restoredIdsRef.current.ids = new Set(thread.messages.map(message => message.id));
   }
   const isRestored = (id: string) => restoredIdsRef.current.ids.has(id);
-  const composerApi = useComposer({ busy, sendMessage: message => thread.sendMessage(message) });
+  const composerApi = useComposer({
+    busy,
+    sendMessage: message => thread.sendMessage(message),
+    // A message typed mid-turn is offered to that turn before it queues.
+    ...(thread.steer === undefined ? {} : { steer: thread.steer }),
+  });
   const { setDraft, setQueued, textareaRef, send } = composerApi;
   const risks = useMemo(() => riskByCall(thread.messages), [thread.messages]);
   const guardApprovals = useMemo(() => approvalByCall(thread.messages), [thread.messages]);
+  // Grant SETS (demo-live-readiness): a parked call claimed by a
+  // data-vendo-grant-set part renders the set card inline (ThreadPart) —
+  // ThreadApprovals must skip it — and its resume matches on set membership.
+  const grantSets = useMemo(() => grantSetByCall(thread.messages), [thread.messages]);
+  // Approve-anywhere resume: a consent decided on ANY surface sharing the page
+  // (a host's own queue, the workspace, the voice stage — they all decide
+  // through client.approvals.decide, which announces the decided ids)
+  // must resume a thread parked on that approval, exactly like the in-thread
+  // card's own Approve/Deny. When an announced id matches a still-parked
+  // in-thread card, the same native approval response goes out — the server
+  // resume already keys off the approval decision, not the clicking surface.
+  // respondOnce dedupes the two paths racing (card click → decide → event →
+  // this listener → the card's own respond) into a single response.
+  const respondedRef = useRef(new Set<string>());
+  const respondOnce = (response: { id: string; approved: boolean }) => {
+    if (respondedRef.current.has(response.id)) return;
+    respondedRef.current.add(response.id);
+    thread.addToolApprovalResponse(response);
+  };
+  const decidedElsewhereRef = useRef<(detail: ApprovalsDecidedDetail) => void>(() => undefined);
+  decidedElsewhereRef.current = detail => {
+    const decided = new Set(detail.ids);
+    for (const message of thread.messages) {
+      for (const part of message.parts) {
+        if (!isToolUIPart(part) || part.state !== "approval-requested") continue;
+        const nativeId = (part as { approval?: { id?: string } }).approval?.id;
+        if (nativeId === undefined) continue;
+        // A call parked on a grant SET resumes when the announcement names its
+        // set (grantSetId) or decides ANY member ask — the set is decided
+        // atomically, so sibling-surface decisions never leave it parked.
+        const set = grantSets.get(part.toolCallId);
+        if (set !== undefined) {
+          const matchesSet = (detail.grantSetId !== undefined && detail.grantSetId === set.grantSetId)
+            || set.approvalIds.some(approvalId => decided.has(approvalId));
+          if (matchesSet) respondOnce({ id: nativeId, approved: detail.approved });
+          continue;
+        }
+        const guardId = guardApprovals.get(part.toolCallId)?.approvalId;
+        if (guardId === undefined || !decided.has(guardId)) continue;
+        respondOnce({ id: nativeId, approved: detail.approved });
+      }
+    }
+  };
+  useEffect(() => {
+    const onDecided = (event: Event) => {
+      const detail = (event as CustomEvent<ApprovalsDecidedDetail>).detail;
+      if (detail !== undefined && Array.isArray(detail.ids)) decidedElsewhereRef.current(detail);
+    };
+    window.addEventListener(APPROVALS_DECIDED_EVENT, onDecided);
+    return () => window.removeEventListener(APPROVALS_DECIDED_EVENT, onDecided);
+  }, []);
   const landing = thread.messages.length === 0;
   const activeAssistant = thread.messages.at(-1)?.role === "assistant" ? thread.messages.at(-1) : undefined;
   const assistantHasVisibleText = activeAssistant?.parts.some(
     part => part.type === "text" && part.text.trim().length > 0,
   ) ?? false;
-  // ENG-217 — the three streaming moments each get exactly ONE affordance:
-  // before the first chunk the generating skeleton holds the floor; a streamed
+  // The streaming moments each get exactly ONE affordance: a streamed
   // turn whose text is still empty shows the lone caret (renderPart); once
-  // text flows the trailing caret rides .fl-md--streaming. FluidThinking
-  // covers the remaining gap (tool phases with no text yet).
-  const awaitingFirstChunk = busy && (activeAssistant === undefined || activeAssistant.parts.length === 0);
+  // text flows the trailing caret rides .fl-md--streaming. FluidThinking covers
+  // every remaining gap, INCLUDING the wait before the first chunk — that
+  // window used to get a document-shaped skeleton card, which promised a view
+  // on turns that never build one (live demo, 2026-07-28).
   const lastPart = activeAssistant?.parts.at(-1);
   const caretShowing = busy && lastPart?.type === "text" && lastPart.state === "streaming"
     && lastPart.text.trim().length === 0;
@@ -170,9 +248,9 @@ export function VendoThread({
   // progress voice — the thinking indicator between beats reads as two
   // indicators fighting.
   const hasBeats = activeAssistant?.parts.some(part => isToolUIPart(part)) ?? false;
-  const working = busy && !assistantHasVisibleText && !awaitingFirstChunk && !caretShowing && !hasBeats;
+  const working = busy && !assistantHasVisibleText && !caretShowing && !hasBeats;
 
-  // ENG-215 — edit the last user turn: drop it (and anything after) from the
+  // Edit the last user turn: drop it (and anything after) from the
   // transcript and refill the composer, so re-sending amends rather than
   // duplicates. Only meaningful when idle.
   const lastUserIndex = (() => {
@@ -182,7 +260,7 @@ export function VendoThread({
     return -1;
   })();
   // Turn actions attach by id, not list index: the map below renders a windowed
-  // slice (ENG-218), so positional indices no longer line up with thread.messages.
+  // slice, so positional indices no longer line up with thread.messages.
   const lastUserId = lastUserIndex >= 0 ? thread.messages[lastUserIndex]?.id : undefined;
   const editLast = () => {
     if (busy || lastUserIndex < 0) return;
@@ -194,7 +272,7 @@ export function VendoThread({
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
-  // ENG-215 — regenerate the last assistant turn (re-issues from the preserved
+  // Regenerate the last assistant turn (re-issues from the preserved
   // user message; no duplication). Only when idle and an assistant turn exists.
   const lastAssistantIndex = (() => {
     for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
@@ -208,41 +286,51 @@ export function VendoThread({
     void thread.regenerate();
   };
 
-  // ENG-214 — a broken turn (failed send, mid-stream drop, any thread.error)
+  // A broken turn (failed send, mid-stream drop, any thread.error)
   // surfaces VISIBLY in the thread, not only through the hidden status span.
   // The copy stays friendly — raw transport errors are announced to assistive
-  // tech below but never printed to end users. Retry regenerates the failed
-  // turn from the preserved user message (no duplication).
+  // tech below but never printed to end users.
   // A "Vendo: " prefixed message is the agent's OWN safe error (VendoError
-  // code + operator-crafted text, wireErrorMessage in @vendoai/agent) — the
+  // code + operator-crafted text, wireErrorMessage in @vendoai/harnesses) — the
   // ONE error shape end users may see in detail. Raw transport/provider
-  // strings never match the prefix and stay hidden (ENG-214 policy).
-  const errorDetail = thread.error?.message?.startsWith("Vendo: ") === true
-    ? thread.error.message.slice("Vendo: ".length)
-    : null;
+  // Strings never match the prefix and stay hidden.
+  // self-serve P — a live turn error now ALSO lands in the turn itself (the
+  // data-vendo-turn-error part, which survives reload); when that part is
+  // already saying it, the banner keeps only its headline + Retry so the same
+  // sentence isn't printed twice.
+  const turnErrorInThread = activeAssistant?.parts.some(part => part.type === "data-vendo-turn-error") ?? false;
+  const errorDetail = turnErrorInThread ? undefined : turnErrorSentence(thread.error?.message);
+  // The copy law governs the surfaces where the AGENT CAN SPEAK, and this is
+  // one: the banner used to carry its own Retry button, a bespoke failure
+  // control beside a conversation that already has one recovery path (the turn's
+  // Regenerate action, and the composer). The banner states what happened and
+  // stops there.
   const errorBanner = thread.error ? (
     <div className="fl-error">
       <span>
         Something went wrong and the response didn&rsquo;t finish.
-        {errorDetail !== null && <span className="fl-error-detail">{errorDetail}</span>}
+        {errorDetail === undefined ? null : <span className="fl-error-detail">{errorDetail}</span>}
       </span>
-      <button
-        type="button"
-        className="fl-error-retry"
-        onClick={() => {
-          // Nothing to re-issue (sends append the user turn before any request
-          // fires, so this is a defensive rail): degrade to dismissing the
-          // error instead of letting regenerate() throw on an empty thread.
-          if (thread.messages.length === 0) {
-            thread.clearError();
-            return;
-          }
-          void thread.regenerate();
-        }}
-      >
-        Retry
-      </button>
     </div>
+  ) : null;
+
+  // The jump affordance is a bar with a COUNT and a snippet ("2 new replies ·
+  // …") docked flush onto the composer's top edge (rendered inside its
+  // .fl-dock-anchor, tray-style, so the two read as one piece); at mobile
+  // widths the same element re-clothes as a bottom-center pill, in CSS alone.
+  const jumpBar = scroll.showJump ? (
+    <button
+      type="button"
+      className="fl-newbar"
+      aria-label={`Jump to latest — ${scroll.unseenCount === 1 ? "1 new reply" : `${scroll.unseenCount} new replies`}`}
+      onClick={scroll.jumpToLatest}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 5v14" /><path d="m19 12-7 7-7-7" />
+      </svg>
+      {scroll.unseenCount === 1 ? "1 new reply" : `${scroll.unseenCount} new replies`}
+      {scroll.snippet ? <small>{scroll.snippet}</small> : null}
+    </button>
   ) : null;
 
   const composer = (
@@ -253,36 +341,63 @@ export function VendoThread({
       errorMessage={thread.status === "error" && thread.error ? thread.error.message : undefined}
       onStop={() => void thread.stop()}
       onVoice={onVoice}
+      jumpBar={jumpBar}
     />
   );
 
-  const approvals = thread.messages.flatMap(message => message.parts).filter(isToolUIPart).filter(part => part.state === "approval-requested");
+  // Grant-set parked calls render their own inline card (ThreadPart), so the
+  // generic parked-approval list excludes them — one consent surface per ask.
+  const approvals = thread.messages.flatMap(message => message.parts).filter(isToolUIPart)
+    .filter((part): part is Extract<typeof part, { state: "approval-requested" }> =>
+      part.state === "approval-requested" && !grantSets.has(part.toolCallId));
 
-  // Lane pick C1 — the live status ribbon: while the turn works through tool
-  // calls (and no text has started flowing), the ACTIVE call narrates above
-  // the composer — label · elapsed · step N of M. The transcript stays
-  // beat-free (parts.tsx renders only errored calls). Once text streams the
-  // ribbon yields the floor to the caret choreography.
+  // The ribbon no longer narrates tool calls: the TRANSCRIPT owns the
+  // work now (one beat per call, at its position in the conversation), so a
+  // second live narration above the composer would say the same thing twice.
+  // All that survives above the composer is the between-steps gap below.
   const activeToolParts = (activeAssistant?.parts ?? []).filter(isToolUIPart);
-  const liveToolPart = [...activeToolParts].reverse()
-    .find(part => part.state !== "output-available" && part.state !== "output-error");
-  // A turn parked on an approval is not "busy" (the stream yielded), but the
-  // pause still narrates: the ribbon holds "— waiting for your approval" while
-  // the card sits in the transcript.
-  const awaitingApprovalPart = activeToolParts.find(part => part.state === "approval-requested");
-  const activeToolPart = busy && !assistantHasVisibleText
-    ? liveToolPart ?? (activeToolParts.length > 0 && !caretShowing ? activeToolParts.at(-1) : undefined)
-    : awaitingApprovalPart;
-  const ribbon = activeToolPart ? (
-    <StatusRibbon
-      part={activeToolPart}
-      stepIndex={activeToolParts.indexOf(activeToolPart) + 1}
-      stepTotal={activeToolParts.length}
-      risk={risks.get(activeToolPart.toolCallId) ?? "read"}
-    />
-  ) : null;
+  // A call parked on an approval NEVER narrates here: its card is right there
+  // in the transcript, with the ask in its eyebrow, its title and its buttons.
+  // The ribbon used to add "Send money — waiting for your approval" directly
+  // above a card reading "NEEDS YOUR APPROVAL / Send money" — the same words
+  // twice (the D1 ruling: the card IS the step). A parked turn is not in
+  // progress either, so the pulsing orb was a lie.
+  const narratable = activeToolParts.filter(part => part.state !== "approval-requested");
+  // M22 — "live" is the SAME terminal set the transcript uses (`toolCallPending`):
+  // this list left out `output-denied`, so a refused ask counted as a live step
+  // forever and the between-steps ribbon never came back for the rest of the turn.
+  const liveToolPart = [...narratable].reverse().find(part => toolCallPending(part));
+  // 2026-07 loading-state audit — the between-steps gap: a busy turn whose
+  // prose has already streamed and whose tool parts have all settled had NO
+  // indicator anywhere (no live beat, the caret needs streaming text,
+  // FluidThinking stands down once text exists). Only while text deltas are
+  // actively flowing does the caret own the floor; every other busy moment
+  // narrates through the quiet WorkingBeat — a RUNNING call excepted, since
+  // its beat is already ticking in the transcript.
+  const textActivelyStreaming = lastPart?.type === "text" && lastPart.state === "streaming"
+    && lastPart.text.trim().length > 0;
+  // 2026-08-06 polish — the quiet beat is pinned to real work: a beat must
+  // exist (a text-only turn is never "between steps") and the gap must outlast
+  // the end-of-stream teardown, which used to flash "Working… 0.5s" under an
+  // already-finished answer while `busy` drained.
+  const quietBusyEligible = busy && hasBeats && liveToolPart === undefined
+    && !textActivelyStreaming && !caretShowing && !working;
+  const [quietBusy, setQuietBusy] = useState(false);
+  useEffect(() => {
+    if (!quietBusyEligible) {
+      setQuietBusy(false);
+      return;
+    }
+    const timer = setTimeout(() => setQuietBusy(true), 800);
+    return () => clearTimeout(timer);
+  }, [quietBusyEligible]);
+  // The gap narrates the latest harness beat when there is one;
+  // "Working" is the floor for a harness that says nothing. It renders as a
+  // WorkingBeat at the transcript tail (2026-08-06 polish: one beat
+  // vocabulary, no separate ribbon pill).
+  const quietLabel = quietBusy ? thread.beats.at(-1)?.label ?? "Working" : undefined;
 
-  // Lane pick 2E — the WHOLE thread surface is the drop target (the composer
+  // The WHOLE thread surface is the drop target (the composer
   // bar no longer owns drag): a huge, overshoot-proof zone with a centered
   // card naming what will happen. Depth counter as before (child crossings).
   const { dragDepth, setDragDepth, setFiles } = composerApi;
@@ -318,6 +433,10 @@ export function VendoThread({
   ) : null;
 
   if (landing) {
+    // Landing layout (2026-07 fix): the COMPOSER is pinned to the panel bottom
+    // — the exact slot it occupies in an active conversation — so sending the
+    // first message never relocates it. The greeting + starter cards flow in
+    // the scrollable .fl-landing area above it.
     return (
       <ChromeRoot>
         <div className="fl-thread" role="region" aria-label="Vendo conversation" {...dropProps}>
@@ -346,18 +465,18 @@ export function VendoThread({
                 </div>
               </div>
             ) : (
-              <h1 className="fl-greet">{greeting}</h1>
+              <>
+                <h1 className="fl-greet">{greeting}</h1>
+                {intro ? <p className="fl-intro">{intro}</p> : null}
+              </>
             )}
-            {errorBanner}
-            {composerAccessory}
-            <div className="fl-landing-composer">{composer}</div>
             {!tutorialActive && suggestions.length > 0 ? (
-              // Lane pick 4B — object suggestions render as two-line starter
+              // Object suggestions render as two-line starter
               // cards (title + concrete outcome, optional host icon); plain
               // strings keep the pill chip. A MIXED array renders both
-              // containers (cards grid, then a chips row) so string entries
-              // never stretch as grid cells (AI-review catch). Both send on
-              // tap, unchanged.
+              // containers (cards grid, then one plain chips row) so string
+              // entries never stretch as grid cells (AI-review catch). Both
+              // send on tap, unchanged.
               <>
                 {suggestions.some(s => typeof s !== "string") ? (
                   <div className="fl-cards">
@@ -386,6 +505,9 @@ export function VendoThread({
               </>
             ) : null}
           </div>
+          {errorBanner}
+          {composerAccessory}
+          {composer}
         </div>
       </ChromeRoot>
     );
@@ -409,16 +531,14 @@ export function VendoThread({
           approvals={approvals}
           guardApprovals={guardApprovals}
           cardRefs={approvalCardRefs}
-          respond={response => thread.addToolApprovalResponse(response)}
+          respond={respondOnce}
           onMorph={setMorph}
-          messages={thread.messages}
           sendMessage={message => thread.sendMessage(message)}
-          awaitingFirstChunk={awaitingFirstChunk}
           working={working}
+          quietLabel={quietLabel}
         />
         {errorBanner}
         {composerAccessory}
-        {ribbon}
         {composer}
       </div>
       {morph ? <MorphToast {...morph} onDone={() => setMorph(null)} /> : null}

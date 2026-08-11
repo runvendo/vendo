@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
-// One-surface ⌘K (ui-lane-entry pick P-C): VendoPalette is headless — the
-// keybinding opens the conversation overlay, and the palette's commands render
-// as the overlay's chip strip above the composer. The self-sufficient default
-// (no host onCommand router) still opens conversations through the overlay
-// registry, and unroutable commands still hint in dev.
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+// One-surface ⌘K (ui-lane-entry pick P-C, chip strip removed 2026-07-23):
+// VendoPalette is headless — the keybinding opens the conversation overlay.
+// The palette still PUBLISHES its command set through the overlay registry
+// (hosts with an onCommand router consume it there), but the overlay no
+// longer renders a built-in chip strip above the composer.
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoOverlay, VendoPalette } from "../../src/chrome/index.js";
+import { getConversationCommands } from "../../src/chrome/overlay-registry.js";
 import { markSeen } from "../../src/chrome/discoverability.js";
 import { createWireServer } from "../wire-server.js";
 
@@ -33,7 +34,7 @@ describe("VendoPalette self-sufficient defaults (one-surface)", () => {
 
   const pressHotkey = () => fireEvent.keyDown(window, { key: "k", metaKey: true });
 
-  it("⌘K opens the conversation overlay — not a palette dialog", async () => {
+  it("⌘K opens the conversation overlay — no palette dialog, no chip strip", async () => {
     render(
       <VendoProvider client={client}>
         <VendoPalette />
@@ -46,14 +47,25 @@ describe("VendoPalette self-sufficient defaults (one-surface)", () => {
     // There is no separate command palette surface anymore.
     expect(screen.queryByRole("dialog", { name: "Vendo command palette" })).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
-    // The empty landing greets, with the palette's commands as a chip strip.
+    // The empty landing greets — and stays chip-strip-free (2026-07-23).
     expect(screen.getByText("What can I help you build?")).toBeTruthy();
-    const strip = await screen.findByRole("toolbar", { name: "Commands" });
-    expect(within(strip).getByRole("button", { name: "New conversation" })).toBeTruthy();
-    expect(within(strip).getByRole("button", { name: "Show activity" })).toBeTruthy();
+    expect(screen.queryByRole("toolbar", { name: "Commands" })).toBeNull();
   });
 
-  it("'New conversation' chip starts a fresh thread through the overlay registry", async () => {
+  it("still publishes the command set through the overlay registry", async () => {
+    render(
+      <VendoProvider client={client}>
+        <VendoPalette />
+        <VendoOverlay launcher="none" />
+      </VendoProvider>,
+    );
+    await waitFor(() => expect(getConversationCommands()).not.toBeNull());
+    const kinds = getConversationCommands()!.commands.map((command) => command.kind);
+    expect(kinds).toContain("new-conversation");
+    expect(kinds).toContain("show-activity");
+  });
+
+  it("registry select on 'new-conversation' starts a fresh thread through the overlay", async () => {
     render(
       <VendoProvider client={client}>
         <VendoPalette />
@@ -62,8 +74,8 @@ describe("VendoPalette self-sufficient defaults (one-surface)", () => {
     );
     pressHotkey();
     await screen.findByRole("dialog", { name: "Vendo assistant" });
-    const strip = await screen.findByRole("toolbar", { name: "Commands" });
-    fireEvent.click(within(strip).getByRole("button", { name: "New conversation" }));
+    const set = getConversationCommands()!;
+    set.select(set.commands.find((command) => command.kind === "new-conversation")!);
     // Still the one surface, resting on a fresh empty landing.
     expect(screen.getByRole("dialog", { name: "Vendo assistant" })).toBeTruthy();
     expect(await screen.findByText("What can I help you build?")).toBeTruthy();
@@ -87,13 +99,13 @@ describe("VendoPalette self-sufficient defaults (one-surface)", () => {
         <VendoOverlay launcher="none" />
       </VendoProvider>,
     );
-    pressHotkey();
-    await screen.findByRole("dialog", { name: "Vendo assistant" });
-    fireEvent.click(await screen.findByRole("button", { name: "Show activity" }));
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("onCommand"));
+    await waitFor(() => expect(getConversationCommands()).not.toBeNull());
+    const set = getConversationCommands()!;
+    set.select(set.commands.find((command) => command.kind === "show-activity")!);
+    await waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("onCommand")));
   });
 
-  it("defers entirely to a supplied onCommand handler", async () => {
+  it("defers entirely to a supplied onCommand handler and closes the surface first", async () => {
     const onCommand = vi.fn();
     render(
       <VendoProvider client={client}>
@@ -103,8 +115,8 @@ describe("VendoPalette self-sufficient defaults (one-surface)", () => {
     );
     pressHotkey();
     await screen.findByRole("dialog", { name: "Vendo assistant" });
-    const strip = await screen.findByRole("toolbar", { name: "Commands" });
-    fireEvent.click(within(strip).getByRole("button", { name: "New conversation" }));
+    const set = getConversationCommands()!;
+    set.select(set.commands.find((command) => command.kind === "new-conversation")!);
     await waitFor(() => expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ kind: "new-conversation" })));
     // Host-routed commands close the surface first (the old palette's
     // close-on-select) so host navigation never lands behind the modal.

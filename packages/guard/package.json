@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/guard",
-  "version": "0.4.8",
+  "version": "0.14.0",
   "description": "Vendo's policy core at one choke point: guard.bind, approvals, grants, audit, Vendo Auto judge, breakers.",
   "keywords": [
     "ai",
@@ -48,7 +48,8 @@
     "zod": "^3.25.0"
   },
   "peerDependencies": {
-    "ai": ">=6.0.0 <7"
+    "ai": ">=6.0.0 <7",
+    "zod": ">=3.25.0 <5"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "3.0.12",
@@ -56,6 +57,6 @@
     "@types/node": "^22.0.0",
     "ai": "6.0.28",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.6"
   }
 }

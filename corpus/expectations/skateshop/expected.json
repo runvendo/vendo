@@ -7,7 +7,7 @@
     "text": "#09090b",
     "mutedText": "#71717a",
     "radius": 8,
-    "fontFamily": "Geist Sans, ui-sans-serif, system-ui, sans-serif"
+    "fontFamily": "Geist Sans, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji"
   },
   "tools": [
     {
@@ -51,6 +51,223 @@
       "method": "POST",
       "path": "/api/webhooks/stripe",
       "readOrWrite": "write"
+    },
+    {
+      "name": "getCart",
+      "kind": "server-action",
+      "module": "src/lib/actions/cart.ts",
+      "export": "getCart",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUniqueStoreIds",
+      "kind": "server-action",
+      "module": "src/lib/actions/cart.ts",
+      "export": "getUniqueStoreIds",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCartItems",
+      "kind": "server-action",
+      "module": "src/lib/actions/cart.ts",
+      "export": "getCartItems",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "addToCart",
+      "kind": "server-action",
+      "module": "src/lib/actions/cart.ts",
+      "export": "addToCart",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateCartItem",
+      "kind": "server-action",
+      "module": "src/lib/actions/cart.ts",
+      "export": "updateCartItem",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteCart",
+      "kind": "server-action",
+      "module": "src/lib/actions/cart.ts",
+      "export": "deleteCart",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteCartItem",
+      "kind": "server-action",
+      "module": "src/lib/actions/cart.ts",
+      "export": "deleteCartItem",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteCartItems",
+      "kind": "server-action",
+      "module": "src/lib/actions/cart.ts",
+      "export": "deleteCartItems",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateNotification",
+      "kind": "server-action",
+      "module": "src/lib/actions/notification.ts",
+      "export": "updateNotification",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getOrderLineItems",
+      "kind": "server-action",
+      "module": "src/lib/actions/order.ts",
+      "export": "getOrderLineItems",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getStoreOrders",
+      "kind": "server-action",
+      "module": "src/lib/actions/order.ts",
+      "export": "getStoreOrders",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getOrderCount",
+      "kind": "server-action",
+      "module": "src/lib/actions/order.ts",
+      "export": "getOrderCount",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getSaleCount",
+      "kind": "server-action",
+      "module": "src/lib/actions/order.ts",
+      "export": "getSaleCount",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getSales",
+      "kind": "server-action",
+      "module": "src/lib/actions/order.ts",
+      "export": "getSales",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCustomers",
+      "kind": "server-action",
+      "module": "src/lib/actions/order.ts",
+      "export": "getCustomers",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "filterProducts",
+      "kind": "server-action",
+      "module": "src/lib/actions/product.ts",
+      "export": "filterProducts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "addProduct",
+      "kind": "server-action",
+      "module": "src/lib/actions/product.ts",
+      "export": "addProduct",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateProduct",
+      "kind": "server-action",
+      "module": "src/lib/actions/product.ts",
+      "export": "updateProduct",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateProductRating",
+      "kind": "server-action",
+      "module": "src/lib/actions/product.ts",
+      "export": "updateProductRating",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteProduct",
+      "kind": "server-action",
+      "module": "src/lib/actions/product.ts",
+      "export": "deleteProduct",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createStore",
+      "kind": "server-action",
+      "module": "src/lib/actions/store.ts",
+      "export": "createStore",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateStore",
+      "kind": "server-action",
+      "module": "src/lib/actions/store.ts",
+      "export": "updateStore",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteStore",
+      "kind": "server-action",
+      "module": "src/lib/actions/store.ts",
+      "export": "deleteStore",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPlans",
+      "kind": "server-action",
+      "module": "src/lib/actions/stripe.ts",
+      "export": "getPlans",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPlan",
+      "kind": "server-action",
+      "module": "src/lib/actions/stripe.ts",
+      "export": "getPlan",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getStripeAccount",
+      "kind": "server-action",
+      "module": "src/lib/actions/stripe.ts",
+      "export": "getStripeAccount",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPaymentIntents",
+      "kind": "server-action",
+      "module": "src/lib/actions/stripe.ts",
+      "export": "getPaymentIntents",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPaymentIntent",
+      "kind": "server-action",
+      "module": "src/lib/actions/stripe.ts",
+      "export": "getPaymentIntent",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "managePlan",
+      "kind": "server-action",
+      "module": "src/lib/actions/stripe.ts",
+      "export": "managePlan",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createAccountLink",
+      "kind": "server-action",
+      "module": "src/lib/actions/stripe.ts",
+      "export": "createAccountLink",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createPaymentIntent",
+      "kind": "server-action",
+      "module": "src/lib/actions/stripe.ts",
+      "export": "createPaymentIntent",
+      "readOrWrite": "write"
     }
   ],
   "annotations": [
@@ -86,6 +303,161 @@
     },
     {
       "name": "postWebhooksStripe",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCart",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getUniqueStoreIds",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCartItems",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "addToCart",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "updateCartItem",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteCart",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "deleteCartItem",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "deleteCartItems",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "updateNotification",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getOrderLineItems",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getStoreOrders",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getOrderCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getSaleCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getSales",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCustomers",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "filterProducts",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "addProduct",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "updateProduct",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "updateProductRating",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteProduct",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "createStore",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "updateStore",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteStore",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getPlans",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPlan",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getStripeAccount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPaymentIntents",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPaymentIntent",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "managePlan",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "createAccountLink",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "createPaymentIntent",
       "mutating": true,
       "dangerous": false
     }

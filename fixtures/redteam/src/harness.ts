@@ -13,19 +13,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inject } from "vitest";
 import { unzipSync, zipSync, type Unzipped, type Zippable } from "fflate";
-import type {
-  ActAs,
-  AgentRunner,
-  AppDocument,
-  AppId,
-  Principal,
-  RunContext,
-  ToolRegistry,
-  Trigger,
+import {
+  type ActAs,
+  type AgentRunner,
+  type AppDocument,
+  type AppId,
+  type Principal,
+  type RiskResolver,
+  type RunContext,
+  serviceToolSlug,
+  type ToolRegistry,
+  type Trigger,
+  USE_SERVICE_TOOL,
 } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createActions } from "@vendoai/actions";
+import { connectorDiscoveryRegistry } from "@vendoai/vendo";
 import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
 import { createAutomations, type AutomationsEngine } from "@vendoai/automations";
 
@@ -104,10 +108,61 @@ export const hostTools = [
     description: "Send invoice with critical confirmation",
     inputSchema: { type: "object" },
     risk: "write",
-    critical: true,
+    confirmEach: true,
     binding: { kind: "route", method: "POST", path: "/api/invoices/{id}/send", argsIn: "body" },
   },
 ] as const;
+
+/** A fixture SERVICE CATALOG — the broker half of connector discovery, with no
+ * broker. Three slugs, one per grade the broker's own tags produce, so a suite
+ * can drive `use_service_tool` end to end: the dispatcher, the guard's per-call
+ * risk resolver, and the audit row's toolkit all read from this one table.
+ * Slugs are shaped like the real ones (`TOOLKIT_ACTION`) because the consent
+ * copy is derived from that shape. */
+export const serviceToolRisks: Record<string, "read" | "write" | "destructive"> = {
+  GMAIL_FETCH_EMAILS: "read",
+  // Same grade as GMAIL_FETCH_EMAILS on purpose: a suite proving that one
+  // service action's grant does not reach another needs a pair the DESCRIPTOR
+  // cannot tell apart, or the descriptor hash refuses the call and the slug
+  // never has to.
+  GMAIL_LIST_LABELS: "read",
+  SLACK_SET_STATUS: "write",
+  GMAIL_SEND_EMAIL: "destructive",
+};
+
+/** Every slug this fixture actually ran, in order — the "nothing happened"
+ * assertion for a refusal, and the "it really ran" one for a grant. */
+export const serviceToolCalls: Array<{ slug: string; subject: string; args: unknown }> = [];
+
+/** The composition's `resolveRisk`, reproduced exactly: only the dispatcher
+ * reaches it, an unknown slug grades `read` (the dispatcher answers "no such
+ * tool" without parking a card), and nothing is ever inferred from a name. */
+export const serviceToolRiskResolver: RiskResolver = (call) => {
+  const slug = serviceToolSlug(call);
+  if (call.tool !== USE_SERVICE_TOOL) return undefined;
+  return slug === undefined ? undefined : serviceToolRisks[slug] ?? "read";
+};
+
+const serviceToolPorts = () => ({
+  find: async (need: string) => Object.keys(serviceToolRisks)
+    .filter((slug) => slug.toLowerCase().includes(need.toLowerCase()))
+    .map((slug) => ({
+      slug,
+      toolkit: slug.split("_")[0]!.toLowerCase(),
+      description: `fixture ${slug}`,
+      connected: true,
+    })),
+  use: async (slug: string, args: unknown, ctx: RunContext) => {
+    if (serviceToolRisks[slug] === undefined) return undefined;
+    serviceToolCalls.push({ slug, subject: ctx.principal.subject, args });
+    return {
+      status: "ok" as const,
+      output: { ran: slug },
+      connectorAccount: { connector: "fixture", toolkit: slug.split("_")[0]!.toLowerCase() },
+    };
+  },
+  list: async () => [{ toolkit: "gmail", connected: true }, { toolkit: "slack", connected: true }],
+});
 
 export async function loginCookie(subject: string): Promise<string> {
   const response = await fixtureFetch(`${fixtureBaseUrl()}/api/login`, {
@@ -154,6 +209,10 @@ export interface StackOptions {
   runnerFrom?: (parts: { guard: VendoGuard; bound: ToolRegistry; store: VendoStore }) => AgentRunner;
   now?: () => Date;
   policy?: PolicyConfig;
+  /** Compose the three connector-discovery tools over the fixture service
+   *  catalog above, with the guard and the automations engine sharing one risk
+   *  resolver — the way the umbrella composes them. */
+  serviceTools?: boolean;
   sandbox?: SandboxAdapter;
   /** Guard LLM judge — passed straight to createGuard so judge-posture suites
    *  can exercise the composed system's ask/block decisions (ENG-251). */
@@ -172,6 +231,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     ...(options.policy === undefined ? {} : { policy: options.policy }),
     ...(options.judge === undefined ? {} : { judge: options.judge }),
     ...(options.breakers === undefined ? {} : { breakers: options.breakers }),
+    ...(options.serviceTools === true ? { resolveRisk: serviceToolRiskResolver } : {}),
   });
   const actions = createActions({
     tools: hostTools as unknown as Parameters<typeof createActions>[0]["tools"],
@@ -179,6 +239,10 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     actAs: fixtureActAs,
     fetch: fixtureFetch,
   });
+  if (options.serviceTools === true) {
+    serviceToolCalls.length = 0;
+    actions.add(connectorDiscoveryRegistry(serviceToolPorts()));
+  }
   const bound = guard.bind(actions);
   const apps = createApps({
     store,
@@ -197,6 +261,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     store,
     ...(runner === undefined ? {} : { runner }),
     ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.serviceTools === true ? { resolveRisk: serviceToolRiskResolver } : {}),
   });
 
   return {
@@ -227,13 +292,16 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
 export function automationDoc(input: {
   id: AppId;
   name?: string;
-  trigger: Trigger;
+  trigger?: Omit<Trigger, "id">;
+  triggers?: Trigger[];
 }): AppDocument {
+  const triggers = input.triggers
+    ?? (input.trigger === undefined ? [] : [{ id: "main", ...input.trigger }]);
   return {
     format: "vendo/app@1",
     id: input.id,
     name: input.name ?? input.id,
-    trigger: input.trigger,
+    triggers,
   };
 }
 

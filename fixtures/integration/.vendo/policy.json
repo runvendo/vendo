@@ -3,6 +3,7 @@
   "rules": [
     { "match": { "risk": "destructive" }, "action": "ask" },
     { "match": { "risk": "read" }, "action": "run" },
-    { "match": { "risk": "write" }, "action": "run" }
+    { "match": { "risk": "write" }, "action": "run" },
+    { "match": { "risk": "ungraded" }, "action": "run", "note": "Fixture host: this catalog is never judged, and these suites exercise composition, not grading" }
   ]
 }

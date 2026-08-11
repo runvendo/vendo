@@ -1,5 +1,13 @@
-import type { Json, ToolOutcome, TreeQueryV2, UIPayload } from "@vendoai/core";
-import { isPlainObject as isRecord, VENDO_TREE_FORMAT_V2 } from "@vendoai/core";
+import {
+  isPlainObject as isRecord,
+  type Json,
+  type ToolOutcome,
+  type UIPayload,
+  VENDO_TREE_FORMAT,
+} from "@vendoai/core";
+import type {
+  TreeQuery,
+} from "@vendoai/apps/contract";
 
 export interface BridgeContentBlock {
   type: string;
@@ -128,11 +136,11 @@ export async function callApp(
 
 export function setQueryData(
   data: Record<string, Json>,
-  query: TreeQueryV2,
+  query: TreeQuery,
   output: Json,
-): { data: Record<string, Json>; error?: string } {
+): Record<string, Json> {
   // v2 spec §2 — a query's result lives at "/" + name: always a single
-  // top-level key (names are identifier-checked by validateTreeV2). Own-
+  // top-level key (names are identifier-checked by validateTree). Own-
   // property define so a hostile name like __proto__ becomes data, never the
   // prototype.
   const next = structuredClone(data) as Record<string, Json>;
@@ -142,7 +150,7 @@ export function setQueryData(
     writable: true,
     configurable: true,
   });
-  return { data: next };
+  return next;
 }
 
 interface ResolveQueriesOptions {
@@ -157,8 +165,8 @@ export async function resolveQueries(
   version: number,
   options: ResolveQueriesOptions,
 ): Promise<void> {
-  if (payload.formatVersion !== VENDO_TREE_FORMAT_V2) return;
-  const tree = payload as unknown as { data?: Record<string, Json>; queries?: TreeQueryV2[] };
+  if (payload.formatVersion !== VENDO_TREE_FORMAT) return;
+  const tree = payload as unknown as { data?: Record<string, Json>; queries?: TreeQuery[] };
   const queries = tree.queries ?? [];
   if (queries.length === 0) return;
 
@@ -180,9 +188,7 @@ export async function resolveQueries(
       errors.push(`Query "${query.tool}" failed: ${detail}`);
       continue;
     }
-    const updated = setQueryData(data, query, outcome.output);
-    data = updated.data;
-    if (updated.error) errors.push(updated.error);
+    data = setQueryData(data, query, outcome.output);
   }
   options.renderPayload(id, payload, data, errors);
 }

@@ -1,12 +1,16 @@
 /** VendoProvider + the internal context every hook and surface reads (08 §2). */
-import type { ComponentRegistry, ComponentRegistryEntry, VendoTheme } from "@vendoai/core";
+import type {
+  ComponentRegistry,
+  ComponentRegistryEntry,
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import type { ChatTransport, UIMessage } from "ai";
 import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
 import { createVendoClient, type VendoClient } from "./client.js";
 import type { VendoDiscoverability, VendoGreeting } from "./chrome/discoverability.js";
 import type { ToolMetaMap } from "./chrome/humanize.js";
+import { getKitIntl, setKitIntl, type KitIntl } from "./kit/format.js";
 import { defaultVendoTheme, resolveTheme } from "./theme.js";
-import type { VoiceDriver } from "./voice/driver.js";
 
 export interface VendoContextValue {
   client: VendoClient;
@@ -14,8 +18,6 @@ export interface VendoContextValue {
   components: Record<string, ComponentType>;
   /** Resolved brand tokens (defaults ⊕ provider overrides). */
   theme: VendoTheme;
-  /** Optional host-provided voice transport (08 §3). */
-  voice?: { driver: VoiceDriver };
   /**
    * Optional chat-transport override (director/replay tooling). When absent,
    * threads use the live wire transport — this is never a default.
@@ -27,6 +29,11 @@ export interface VendoContextValue {
    * saved to the host surface until the user invokes it.
    */
   onPin?(app: { appId: string; payload: unknown }): void;
+  /** Which VendoSlot a pin lands in. Set it and a pin becomes REAL: the pin
+   *  action places the app in this slot through the wire (`apps.place`) and
+   *  the slot picks it up on its own — a host needs no pin route of its own.
+   *  Unset, a pin is presentation plus whatever `onPin` chooses to do. */
+  pinSlot?: string;
   /** Optional host-supplied friendly tool metadata, keyed by tool name/id
       (ENG-216 humanization seam — additive, UI-side, no wire/contract change). */
   tools: ToolMetaMap;
@@ -43,6 +50,13 @@ export interface VendoContextValue {
   /** Host greeting-as-tutorial content (§6): intro + starter prompts, the
       `.vendo/greeting.json` shape. Absent = the built-in generic greeting. */
   greeting?: VendoGreeting;
+  /** The host's display currency + locale for every Kit formatter — what a
+      generated `format:"money"` column or `<Money cents/>` renders in. */
+  intl: KitIntl;
+  /** Spec 2026-08-05 §2 — whether sends snapshot the visible host page into
+      the [Situation] channel. Default true; false disables capture entirely
+      (useVendoContext data still rides). */
+  captureScreen: boolean;
 }
 
 /** One connectable toolkit in the connect dock (ENG-225). */
@@ -72,7 +86,7 @@ function isRegistryEntry(value: ComponentType | ComponentRegistryEntry): value i
 }
 
 /** Extract the name→component map from either components-input form. Registry
- * data fields (description, props schema, examples, remixable) are server-side
+ * data fields (description, props schema, examples) are server-side
  * concerns the client ignores (01 §14). */
 export function hostComponentMap(components: HostComponentsInput | undefined): Record<string, ComponentType> {
   if (components === undefined) return {};
@@ -85,37 +99,62 @@ export function hostComponentMap(components: HostComponentsInput | undefined): R
 
 export function VendoProvider(props: {
   client?: VendoClient;
+  /** The wire mount, path prefix included ("/maple/api/vendo"). Default
+      "/api/vendo". Ignored when `client` is passed — an explicit client already
+      carries its own base. */
+  baseUrl?: string;
   components?: HostComponentsInput;
   theme?: Partial<VendoTheme>;
-  voice?: { driver: VoiceDriver };
   transport?: ChatTransport<UIMessage>;
   onPin?(app: { appId: string; payload: unknown }): void;
+  /** The slot pins land in — see VendoContextValue.pinSlot. */
+  pinSlot?: string;
   tools?: ToolMetaMap;
   connectors?: ConnectorOption[];
   discoverability?: VendoDiscoverability;
   greeting?: VendoGreeting;
+  /** Display currency + locale, e.g. `{ currency: "PKR" }` for a Pakistani
+      host. Omitted fields fall back to USD / en-US. */
+  intl?: Partial<KitIntl>;
+  /** Disable the automatic screen snapshot on send (spec 2026-08-05 §2). */
+  captureScreen?: boolean;
   children: ReactNode;
 }): ReactNode {
-  const { client, components, theme, voice, transport, onPin, tools, connectors, discoverability, greeting, children } = props;
+  const { client, baseUrl, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, captureScreen, children } = props;
+  const currency = intl?.currency;
+  const locale = intl?.locale;
+  // Installed during RENDER, not in an effect: the formatters are called while
+  // children render (and on the server, where effects never run), so an effect
+  // would paint one pass of "$" before correcting itself.
+  const resolvedIntl = useMemo(() => {
+    setKitIntl({ ...(currency === undefined ? {} : { currency }), ...(locale === undefined ? {} : { locale }) });
+    return getKitIntl();
+  }, [currency, locale]);
   const value = useMemo<VendoContextValue>(
     () => ({
-      client: client ?? createVendoClient({}),
+      client: client ?? createVendoClient(baseUrl === undefined ? {} : { baseUrl }),
       components: hostComponentMap(components),
       theme: resolveTheme(defaultVendoTheme, theme),
-      voice,
       transport,
       onPin,
+      pinSlot,
       tools: tools ?? {},
       connectors: connectors ?? "auto",
       discoverability: discoverability ?? "default",
       greeting,
+      intl: resolvedIntl,
+      captureScreen: captureScreen ?? true,
     }),
-    [client, components, theme, voice, transport, onPin, tools, connectors, discoverability, greeting],
+    [client, baseUrl, components, theme, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl, captureScreen],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }
 
-export function useVendoContext(): VendoContextValue {
+/** Everything VendoProvider supplies — the seam every hook and surface reads.
+ *  Named `useVendoProvider` (not `useVendoContext`) since 2026-08-05: the
+ *  host-facing `useVendoContext(data)` publishes into the agent's [Situation]
+ *  channel and owns that name. */
+export function useVendoProvider(): VendoContextValue {
   const ctx = useContext(VendoContext);
   if (!ctx) throw new Error("Vendo hooks and surfaces must be rendered inside <VendoProvider>.");
   return ctx;
@@ -123,7 +162,7 @@ export function useVendoContext(): VendoContextValue {
 
 /** Resolved brand tokens (08 §3 — the useVendoTheme hook). */
 export function useVendoTheme(): VendoTheme {
-  return useVendoContext().theme;
+  return useVendoProvider().theme;
 }
 
 /** Host-supplied tool metadata (ENG-216). Provider-optional so surfaces that
@@ -146,4 +185,10 @@ export function useVendoDiscoverability(): VendoDiscoverability {
 /** Host greeting-as-tutorial content, provider-optional (absent = built-in). */
 export function useVendoGreeting(): VendoGreeting | undefined {
   return useContext(VendoContext)?.greeting;
+}
+
+/** Display currency + locale, provider-optional (standalone surfaces get the
+    ambient defaults, which are USD/en-US until a provider sets them). */
+export function useVendoIntl(): KitIntl {
+  return useContext(VendoContext)?.intl ?? getKitIntl();
 }

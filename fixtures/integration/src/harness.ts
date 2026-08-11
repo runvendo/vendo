@@ -25,11 +25,24 @@ import { inject } from "vitest";
 import { zipSync } from "fflate";
 import type { Connector } from "@vendoai/actions";
 import type { SandboxAdapter } from "@vendoai/apps";
-import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core";
-import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
+import {
+  type AppDocument,
+  type Principal,
+  type ToolRegistry,
+} from "@vendoai/core";
+import { createMcpDoor, type McpDoorConfig, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
-import { createVendo, type Vendo } from "@vendoai/vendo/server";
-import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import { createVendo, type CreateVendoConfig, type Vendo } from "@vendoai/vendo/server";
+import {
+  scriptedModel,
+  textTurn,
+  toolCallTurn,
+  ZERO_USAGE,
+  type LanguageModelV3Prompt,
+  type LanguageModelV3StreamPart,
+  type ScriptedModel,
+  type ScriptedTurn,
+} from "@vendoai-fixtures/test-kit/stream-turns";
 import type { LanguageModel } from "ai";
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
@@ -59,45 +72,23 @@ export const BOB: Principal = { kind: "user", subject: "user_bob" };
 export const WIRE_BASE = "/api/vendo";
 
 // ---------------------------------------------------------------------------
-// Scripted LanguageModel — the chat-e2e technique. ONE model instance drives
-// BOTH the agent loop (doStream) AND the apps generation engine (doGenerate via
-// generateText); they share one FIFO queue of turns, so a journey scripts turns
-// in the exact order the composed system will consume them.
+// Scripted LanguageModel — the chat-e2e technique, now shared with every other
+// suite that scripts a model (`@vendoai-fixtures/test-kit/stream-turns`).
+// Re-exported here so
+// this harness stays the single import every journey in this package reaches
+// for.
 // ---------------------------------------------------------------------------
 
-type LanguageModelV3Prompt = Parameters<MockLanguageModelV3["doStream"]>[0]["prompt"];
-type LanguageModelV3StreamPart = Awaited<
-  ReturnType<MockLanguageModelV3["doStream"]>
->["stream"] extends ReadableStream<infer Part> ? Part : never;
-type LanguageModelV3GenerateResult = Awaited<ReturnType<MockLanguageModelV3["doGenerate"]>>;
-type LanguageModelV3Content = LanguageModelV3GenerateResult["content"][number];
-
-export const ZERO_USAGE = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 0, text: 0, reasoning: 0 },
-} as const;
-
-/** A plain assistant text turn (agent doStream). */
-export function textTurn(text: string, id = "text_1"): LanguageModelV3StreamPart[] {
-  return [
-    { type: "text-start", id },
-    { type: "text-delta", id, delta: text },
-    { type: "text-end", id },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
-  ];
-}
-
-/** An agent turn that calls one tool (agent doStream). */
-export function toolCallTurn(
-  toolName: string,
-  input: unknown,
-  toolCallId = "call_1",
-): LanguageModelV3StreamPart[] {
-  return [
-    { type: "tool-call", toolCallId, toolName, input: JSON.stringify(input) },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
-  ];
-}
+export {
+  scriptedModel,
+  textTurn,
+  toolCallTurn,
+  ZERO_USAGE,
+  type LanguageModelV3Prompt,
+  type LanguageModelV3StreamPart,
+  type ScriptedModel,
+  type ScriptedTurn,
+};
 
 /** A generation-engine turn: the apps engine reads this through doGenerate and
  * parses the emitted text as CREATE/EDIT-dialect JSON. Pass the object; it is
@@ -112,39 +103,55 @@ export function generationTurn(dialect: unknown, id = "gen_1"): LanguageModelV3S
   ];
 }
 
-export type ScriptedModel = MockLanguageModelV3 & { prompts: LanguageModelV3Prompt[] };
+/**
+ * The AI reviewer's verdict on one finished screen — a `report_findings` strict
+ * tool call over `doGenerate` (`packages/apps/src/checking/strict-tool-call.ts`),
+ * empty by default because "nothing wrong" is what a fixture app deserves.
+ *
+ * Scripted as the call it really is rather than left to run the script dry:
+ * `strictToolCall` swallows every failure into "no findings", so an unscripted
+ * reviewer passes for the wrong reason AND eats the turn the caller after it was
+ * waiting for.
+ */
+export function reviewerTurn(
+  findings: ReadonlyArray<{ severity: "block" | "warn"; where: string; message: string }> = [],
+  toolCallId = "screen_review",
+): LanguageModelV3StreamPart[] {
+  return toolCallTurn("report_findings", { findings }, toolCallId);
+}
 
-export function scriptedModel(turns: LanguageModelV3StreamPart[][]): ScriptedModel {
-  const remaining = turns.map((turn) => [...turn]);
-  const prompts: LanguageModelV3Prompt[] = [];
-  const shift = (prompt: LanguageModelV3Prompt): LanguageModelV3StreamPart[] => {
-    prompts.push(structuredClone(prompt));
-    const chunks = remaining.shift();
-    if (chunks === undefined) throw new Error("scripted model exhausted");
-    return chunks;
-  };
-  const model = new MockLanguageModelV3({
-    doStream: async (request) => ({ stream: simulateReadableStream({ chunks: shift(request.prompt) }) }),
-    doGenerate: async (request): Promise<LanguageModelV3GenerateResult> => {
-      const chunks = shift(request.prompt);
-      const finish = chunks.find((part) => part.type === "finish");
-      const content: LanguageModelV3Content[] = [];
-      const text = chunks
-        .filter((part): part is Extract<LanguageModelV3StreamPart, { type: "text-delta" }> => part.type === "text-delta")
-        .map((part) => part.delta)
-        .join("");
-      if (text.length > 0) content.push({ type: "text", text });
-      for (const part of chunks) if (part.type === "tool-call") content.push(structuredClone(part));
-      return {
-        content,
-        finishReason: finish?.finishReason ?? { unified: "stop", raw: undefined },
-        usage: finish?.usage ?? ZERO_USAGE,
-        warnings: [],
-      };
-    },
-  }) as ScriptedModel;
-  model.prompts = prompts;
-  return model;
+/**
+ * The screen agent's turns for one `vendo_make` ask: save the whole document
+ * with its own hands, stop, and then face the reviewer. A CREATE and an EDIT are
+ * the same loop — an edit is the assembler opening this app's own document and
+ * saving it back — so one helper scripts either.
+ *
+ * Every `vendo_make` ask starts in the assembly loop now — that used to be
+ * behind `apps.experimentalScreenAgent` and the flag is gone — so a script that
+ * only feeds the conductor's generation turns runs the assembly loop out of
+ * answers and then feeds ITS turns to the conductor, one call out of step.
+ * Written as one helper rather than three lines per fixture because the three
+ * are one thing: "the screen agent answered this ask".
+ *
+ * The reviewer turn is part of that one thing because the pass is MANDATORY: a
+ * screen that PAINTED faces it once at the finish line whether or not the loop
+ * called `validate` itself (`screen-agent.ts`'s mandatory reviewer pass). A save
+ * the floor blocks never paints, so that ask leaves this turn unspent — an
+ * unused turn costs a script nothing, and a missing one costs it the next call.
+ */
+export function screenAgentCreateTurns(dialect: string): LanguageModelV3StreamPart[][] {
+  return [
+    toolCallTurn("save_app", { content: dialect }, "screen_save"),
+    textTurn("saved", "screen_done"),
+    reviewerTurn(),
+  ];
+}
+
+/** The app id the composed server put in the prompt it just sent, if any. */
+export function appIdInPrompt(prompt: LanguageModelV3Prompt): string {
+  const found = /app_[0-9a-f-]{8,}/.exec(JSON.stringify(prompt));
+  if (found === null) throw new Error("no app id in the prompt the model was handed");
+  return found[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +203,7 @@ export async function hostFetch(path: string, subject: string, init: RequestInit
 
 export interface StackOptions {
   /** Ordered scripted turns consumed by doStream (agent) + doGenerate (engine). */
-  turns?: LanguageModelV3StreamPart[][];
+  turns?: readonly ScriptedTurn[];
   model?: LanguageModel;
   /** Mount the MCP door (J6) beside `vendo.handler` on the same loopback origin,
    * composed from the umbrella's OWN parts — the way a host must today until the
@@ -214,6 +221,26 @@ export interface StackOptions {
   /** A sandbox adapter composed into the umbrella (explicit adapter always
    * wins, the adapter rule) — the machine-skin journey passes a fake box. */
   sandbox?: SandboxAdapter;
+  /** `createVendo({ tools })` — the third-party install story: capability
+   * authored outside `packages/` arrives as plain tool definitions on the same
+   * key the host's own declarations use. */
+  tools?: CreateVendoConfig["tools"];
+  /** `createVendo({ skills })` — SKILL.md values mounted at /host/skills. */
+  skills?: CreateVendoConfig["skills"];
+  /** `createVendo({ apps: { checks } })` — checks appended to the floor. */
+  checks?: NonNullable<Exclude<CreateVendoConfig["apps"], false>>["checks"];
+  /** `createVendo({ catalog })` — host components generated apps may render. */
+  catalog?: CreateVendoConfig["catalog"];
+  /** `createVendo({ apps: false })` — app generation unmounted entirely. */
+  apps?: false;
+  /** `createVendo({ profileDir })` — the `.vendo` config root. Either the host
+   * root or the `.vendo` directory itself; the external-pack journey passes both
+   * forms to prove the boot gates resolve it the way the registry does. */
+  profileDir?: string;
+  /** `createVendo({ development })` — the composition-time opt-in that mounts
+   * the development-only seams (`/dev/*`, `POST /sync/impact`). Absent leaves
+   * them unmounted, which is what a default stack asserts. */
+  development?: boolean;
 }
 
 /** The door mounted alongside the wire when `createStack({ mcp: true })`. */
@@ -269,12 +296,20 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     },
     store,
     actAs: fixtureActAs,
-    policy: { file: ".vendo/policy.json" },
+    guard: { policy: { file: ".vendo/policy.json" } },
     ...(options.telemetry === true ? { telemetry: true } : {}),
     ...(options.connectors === undefined ? {} : { connectors: options.connectors }),
-    // Wave 9 — machine provisioning is flag-gated; a stack composed WITH a
-    // sandbox is here to exercise the box machinery, so opt in.
-    ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox, apps: { experimentalMachines: true } }),
+    // A configured sandbox IS the opt-in to machine-backed execution; a stack
+    // composed WITH one is here to exercise the box machinery.
+    ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
+    apps: options.apps === false ? false : {
+      ...(options.checks === undefined ? {} : { checks: options.checks }),
+    },
+    ...(options.tools === undefined ? {} : { tools: options.tools }),
+    ...(options.skills === undefined ? {} : { skills: options.skills }),
+    ...(options.catalog === undefined ? {} : { catalog: options.catalog }),
+    ...(options.profileDir === undefined ? {} : { profileDir: options.profileDir }),
+    ...(options.development === undefined ? {} : { development: options.development }),
   });
 
   // J6 — the MCP door, composed from the umbrella's OWN parts (the hookup note's
@@ -298,11 +333,12 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
         return control.revoked.has(subject) ? null : { kind: "user", subject };
       },
     };
-    // AppsPort adapter over vendo.apps — AppsRuntime.open has extra "resuming"
-    // and "failed" variants AppsPort does not, so map positively like the
-    // production adapter in @vendoai/vendo server.ts (the door is a viewer +
+    // The door's apps ride-along over vendo.apps. The door types these three
+    // verbs off the real `AppsRuntime`, so `open` may answer every surface;
+    // this fixture narrows positively to the two the door viewer can render,
+    // like the production adapter in @vendoai/vendo (the door is a viewer +
     // runner, 10-mcp §4).
-    const appsPort: AppsPort = {
+    const appsPort: NonNullable<McpDoorConfig["apps"]> = {
       list: (ctx) => vendo.apps.list(ctx),
       async open(appId, ctx) {
         const opened = await vendo.apps.open(appId, ctx);
@@ -364,9 +400,15 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
       return (await raw.query(query, params)).rows as never;
     },
     async close() {
-      await new Promise<void>((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve())));
-      await store.close();
-      await rm(dataDir, { recursive: true, force: true });
+      // The data dir goes in a finally: a server that refuses to close, or a
+      // PGlite close that rejects, must not strand the scratch directory —
+      // that is what grew /tmp by one dir per stack for every red run.
+      try {
+        await new Promise<void>((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve())));
+        await store.close();
+      } finally {
+        await rm(dataDir, { recursive: true, force: true });
+      }
     },
   };
 }
@@ -394,7 +436,22 @@ async function forwardToWire(
     const response = await handler(request);
     res.statusCode = response.status;
     response.headers.forEach((value, name) => res.setHeader(name, value));
-    res.end(Buffer.from(await response.arrayBuffer()));
+    // STREAM the body through as it arrives — buffering it whole via
+    // `arrayBuffer()` (the old shape) meant no real HTTP client could ever
+    // observe a still-open SSE turn's early chunks (the approval/connect
+    // cards §1.4 writes BEFORE a blocked call resolves); the whole response
+    // only ever reached the wire once the turn was completely finished.
+    if (response.body === null) {
+      res.end();
+      return;
+    }
+    const reader = response.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(Buffer.from(value));
+    }
+    res.end();
   } catch (error) {
     res.statusCode = 500;
     res.setHeader("content-type", "text/plain");
@@ -436,55 +493,70 @@ export function vendoApprovalId(read: StreamRead): string {
 }
 
 // ---------------------------------------------------------------------------
-// Present-approval resume over the wire. A present chat approval pauses the
-// turn; resuming is client-driven (03 §agent): the client re-posts the thread
-// with the parked tool part flipped to `approval-responded`. This replays that
-// exactly through the public /threads route.
+// Mid-stream approval sync (build contract §1.4): an interactive harness turn
+// BLOCKS INSIDE the guarded call awaiting the tap, holding the SAME request
+// open rather than parking the turn for a client-driven resume (the pre-flip
+// `createAgent` shape, native `tool-approval-request` + a re-posted thread —
+// gone from this wire). A test that needs to decide, or merely observe, an
+// approval while its turn is still in flight reads the open response
+// progressively instead of draining it first.
 // ---------------------------------------------------------------------------
 
-interface WireMessage {
-  id: string;
-  role: string;
-  parts: Array<Record<string, unknown>>;
+/** The `data-vendo-approval` wire part's payload (01-core §16). */
+export interface VendoApprovalWireData {
+  toolCallId: string;
+  risk: string;
+  approvalId?: string;
+  invalidatedGrant?: { id: string; grantedAt: string };
 }
 
-interface WireThread {
-  id: string;
-  messages: WireMessage[];
+export interface MidStreamRead {
+  /** Resolves with the approval card's data the MOMENT it lands on the wire —
+   *  before the turn itself completes. The synchronization point a test acts
+   *  on: decide the approval, or just read pending state, while the guarded
+   *  call is still blocked awaiting it. */
+  approval: Promise<VendoApprovalWireData>;
+  /** Resolves with the fully drained stream once the turn ends: decided,
+   *  denied, or timed out at the frozen `APPROVAL_WAIT_MS` bound. */
+  done: Promise<StreamRead>;
 }
 
-export async function resumeApproval(
-  stack: Stack,
-  threadId: string,
-  toolCallId: string,
-  approved: boolean,
-  user: Principal,
-): Promise<Response> {
-  const thread = (await (await stack.wireFetch(`/threads/${threadId}`, {}, user)).json()) as WireThread;
-  const assistant = [...thread.messages].reverse().find((message) => message.role === "assistant");
-  if (assistant === undefined) throw new Error("thread has no assistant message to resume");
-  let flipped = false;
-  const parts = assistant.parts.map((part) => {
-    if (part.type !== "dynamic-tool" || part.toolCallId !== toolCallId) return part;
-    const approval = part.approval as { id?: unknown } | undefined;
-    if (approval === undefined || typeof approval.id !== "string") {
-      throw new Error("parked tool part carried no native approval id");
-    }
-    flipped = true;
-    return {
-      type: "dynamic-tool",
-      toolName: part.toolName,
-      toolCallId,
-      state: "approval-responded",
-      input: part.input,
-      approval: { id: approval.id, approved },
-    };
+/** Read a still-open `/threads` SSE response, exposing the approval card as
+ *  soon as it arrives rather than only once the whole turn finishes. */
+export function readSseMidStream(response: Response): MidStreamRead {
+  let resolveApproval!: (data: VendoApprovalWireData) => void;
+  const approval = new Promise<VendoApprovalWireData>((resolve) => {
+    resolveApproval = resolve;
   });
-  if (!flipped) throw new Error(`no parked tool part for toolCallId ${toolCallId}`);
-  return stack.wireFetch("/threads", {
-    method: "POST",
-    body: JSON.stringify({ threadId, message: { ...assistant, parts } }),
-  }, user);
+  const done = (async (): Promise<StreamRead> => {
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let raw = "";
+    const parts: Array<Record<string, unknown>> = [];
+    let notified = false;
+    for (;;) {
+      const { done: finished, value } = await reader.read();
+      if (finished) break;
+      const chunk = decoder.decode(value, { stream: true });
+      raw += chunk;
+      buffer += chunk;
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() ?? "";
+      for (const block of blocks) {
+        const trimmed = block.trim();
+        if (!trimmed.startsWith("data: ") || trimmed === "data: [DONE]") continue;
+        const part = JSON.parse(trimmed.slice("data: ".length)) as Record<string, unknown>;
+        parts.push(part);
+        if (!notified && part.type === "data-vendo-approval") {
+          notified = true;
+          resolveApproval(part.data as VendoApprovalWireData);
+        }
+      }
+    }
+    return { parts, raw };
+  })();
+  return { approval, done };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 // ENG-228 — the mobile takeover: the designed-but-dead `.fl-takeover` mode
 // comes alive. useMobileTakeover (matchMedia <768px) stamps the class on the
-// overlay panel, the page, and the palette; visualViewport drives a
+// overlay panel and the palette; visualViewport drives a
 // --fl-kb-inset var so the composer rides above the virtual keyboard; the
 // stylesheet gains the iOS-zoom (>=16px inputs) and 44px touch-target floor
 // plus a min-width floor on thread surfaces.
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { VendoOverlay, VendoPage, VendoPalette } from "../../src/chrome/index.js";
+import { VendoOverlay, VendoPalette, VendoToasts, dismissAllVendoToasts, vendoToast } from "../../src/chrome/index.js";
 import { CHROME_CSS } from "../../src/chrome/chrome-css.js";
+import { inertBehind } from "../../src/chrome/inert-behind.js";
 import { createWireServer } from "../wire-server.js";
 
 const TAKEOVER_QUERY = "(max-width: 767px)";
@@ -119,28 +120,6 @@ describe("mobile takeover (ENG-228)", () => {
     expect(panel().classList.contains("fl-takeover")).toBe(false);
   });
 
-  it("stamps fl-takeover on the page surface and portals it over the host (transformed ancestors)", () => {
-    installMatchMedia(true);
-    const { container } = render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
-    const page = screen.getByRole("main", { name: "Vendo workspace" });
-    expect(page.classList.contains("fl-takeover")).toBe(true);
-    // position:fixed is captured by any transformed/filtered host ancestor
-    // (page-transition animations are everywhere), so full-bleed is only real
-    // when the takeover escapes to document.body — like the overlay portal.
-    expect(container.contains(page)).toBe(false);
-    const wrapper = page.closest(".fl-overlay-portal")!;
-    expect(wrapper.parentElement).toBe(document.body);
-    expect(wrapper.className).toContain("vendo-root");
-  });
-
-  it("keeps the desktop page in-tree in the host layout", () => {
-    installMatchMedia(false);
-    const { container } = render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
-    const page = screen.getByRole("main", { name: "Vendo workspace" });
-    expect(page.classList.contains("fl-takeover")).toBe(false);
-    expect(container.contains(page)).toBe(true);
-  });
-
   // One-surface ⌘K (ui-lane-entry pick P-C): the palette no longer renders a
   // dialog — the keybinding opens the conversation overlay itself.
   it("routes ⌘K to the overlay, takeover-stamped and portaled on mobile", async () => {
@@ -183,9 +162,8 @@ describe("mobile takeover (ENG-228)", () => {
     installMatchMedia(true);
     const { unmount } = render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
     expect(panel()).toBeTruthy();
-    // A body child appearing AFTER the overlay opened — e.g. VendoPage's
-    // TakeoverPortal mounting on a breakpoint flip, or a host toast portal.
-    // The open-time snapshot alone would leave it interactive behind the
+    // A body child appearing AFTER the overlay opened — a host toast portal,
+    // say. The open-time snapshot alone would leave it interactive behind the
     // modal scrim.
     const late = document.createElement("div");
     document.body.appendChild(late);
@@ -230,12 +208,11 @@ describe("mobile takeover (ENG-228)", () => {
       return match![1]!;
     };
 
-    it("keeps the takeover surfaces safe-area padded and keyboard-inset aware", () => {
+    it("keeps the takeover panel safe-area padded and keyboard-inset aware", () => {
       const takeoverRules = CHROME_CSS.slice(CHROME_CSS.indexOf(".fl-overlay-panel.fl-takeover"));
       expect(takeoverRules).toContain("env(safe-area-inset-top, 0px)");
-      // Both takeover surfaces lift their bottom edge above the virtual keyboard.
-      const bottoms = CHROME_CSS.match(/padding-bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ var\(--fl-kb-inset, 0px\)\)/g) ?? [];
-      expect(bottoms.length).toBeGreaterThanOrEqual(2);
+      // The takeover panel lifts its bottom edge above the virtual keyboard.
+      expect(takeoverRules).toContain("padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px))");
     });
 
     it("raises text inputs to >=16px on mobile/coarse pointers (iOS auto-zoom floor)", () => {
@@ -256,10 +233,74 @@ describe("mobile takeover (ENG-228)", () => {
       expect(CHROME_CSS).toMatch(/\.fl-thread \{[^}]*min-width: /);
     });
 
-    it("keeps the takeover palette above takeover page/overlay surfaces", () => {
-      // page + overlay panel take over at z 2147483001; the palette is a modal
-      // over them, so its takeover scrim must sit higher.
+    it("keeps the takeover palette above the takeover overlay surface", () => {
+      // the overlay panel takes over at z 2147483001; the palette is a modal
+      // over it, so its takeover scrim must sit higher.
       expect(CHROME_CSS).toMatch(/\.fl-overlay-scrim\.fl-takeover \{[^}]*z-index: 2147483002/);
     });
+  });
+});
+
+/**
+ * H-2 — `inertBehind` had no ownership, so two overlapping body-level surfaces
+ * corrupted each other's state. The function is the whole mechanism, so it is
+ * driven directly here (no mock): a real body, real elements, real attributes.
+ */
+describe("inertBehind ownership and the surfaces that stay above it (H-2)", () => {
+  const nodes: Element[] = [];
+  const bodyChild = (attrs: Record<string, string> = {}): HTMLDivElement => {
+    const node = document.createElement("div");
+    for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value);
+    document.body.appendChild(node);
+    nodes.push(node);
+    return node;
+  };
+
+  afterEach(() => {
+    for (const node of nodes.splice(0)) node.remove();
+  });
+
+  it("a first surface's release never un-inerts the host under a SECOND one", () => {
+    const host = bodyChild();
+    const overlay = bodyChild();
+    const takeover = bodyChild();
+
+    const releaseOverlay = inertBehind(overlay);
+    expect(host.hasAttribute("inert")).toBe(true);
+    // The takeover opens on top and finds the host already inert.
+    const releaseTakeover = inertBehind(takeover);
+    // The overlay closes. The takeover is still covering the whole viewport.
+    releaseOverlay();
+    expect(host.hasAttribute("inert")).toBe(true);
+    // …and only the last surface out puts the host back.
+    releaseTakeover();
+    expect(host.hasAttribute("inert")).toBe(false);
+  });
+
+  it("never clears an `inert` the HOST set itself", () => {
+    const host = bodyChild({ inert: "" });
+    const surface = bodyChild();
+    inertBehind(surface)();
+    expect(host.hasAttribute("inert")).toBe(true);
+  });
+
+  it("leaves the toast stack reachable — it is above the modal layer, not behind it", async () => {
+    installMatchMedia(false);
+    // No wire traffic: the stack is the imperative feed (`approvals` is off).
+    const offline = createVendoClient({ baseUrl: "http://vendo.test" });
+    render(<VendoProvider client={offline}><VendoToasts /></VendoProvider>);
+    act(() => { vendoToast({ text: "Waiting on you: Send money", actions: [{ label: "Approve", onAction: () => undefined }] }); });
+    const region = await screen.findByRole("region", { name: "Notifications" });
+    const portal = region.closest(".vendo-root")!;
+    expect(portal.parentElement).toBe(document.body);
+
+    const surface = bodyChild();
+    const release = inertBehind(surface);
+    // The ask, and its Approve button, must still be reachable while a modal
+    // Vendo surface is up.
+    expect(region.closest("[inert]")).toBeNull();
+    expect(screen.getByRole("button", { name: "Approve" }).closest("[inert]")).toBeNull();
+    release();
+    dismissAllVendoToasts();
   });
 });

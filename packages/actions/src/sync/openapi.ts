@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import YAML from "yaml";
-import type { ExtractedTool, HttpMethod } from "../formats.js";
+import type { ExtractedTool, HttpMethod, SchemaSource } from "../formats.js";
 import { extractedRisk, routeToolFullName } from "./common.js";
 
 type JsonObject = Record<string, unknown>;
@@ -69,6 +69,25 @@ function inputSchema(document: JsonObject, rawPathItem: JsonObject, rawOperation
   };
 }
 
+/**
+ * The operation's declared JSON response body, from the first 2xx response
+ * that carries an `application/json` schema. Recorded as the tool's
+ * `outputSchema` so the host's own contract — envelope included — is machine
+ * readable instead of guessed (live 2026-07-27: a `{ data: [...] }` envelope
+ * with no recorded output schema had the model binding an array prop to the
+ * wrapper object). Undefined when the spec declares no response schema:
+ * extraction never invents one.
+ */
+function outputSchema(document: JsonObject, operation: JsonObject): JsonObject | undefined {
+  const responses = jsonObject(operation.responses);
+  for (const status of Object.keys(responses).filter((code) => /^2\d\d$/.test(code)).sort()) {
+    const response = jsonObject(resolveRefs(document, responses[status]));
+    const schema = jsonObject(jsonObject(response.content)["application/json"]).schema;
+    if (schema !== undefined) return resolveRefs(document, schema) as JsonObject;
+  }
+  return undefined;
+}
+
 function sanitizedOperationName(operationId: string): string {
   return `host_${operationId.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/_+/g, "_")}`;
 }
@@ -92,10 +111,33 @@ function descriptionFor(operation: JsonObject, method: HttpMethod, route: string
   return parts.length > 0 ? parts.join(". ") : `${method} ${route}`;
 }
 
-export async function extractOpenApi(specPath: string): Promise<ExtractedTool[]> {
+async function readDocument(specPath: string): Promise<JsonObject> {
   const raw = await fs.readFile(specPath, "utf8");
   const parsed = specPath.endsWith(".yaml") || specPath.endsWith(".yml") ? YAML.parse(raw) : JSON.parse(raw);
-  const document = jsonObject(parsed);
+  return jsonObject(parsed);
+}
+
+/**
+ * The mount point a RELATIVE `servers[0].url` declares — `"/cadence"` for a host
+ * served in place at `demos.vendo.run/cadence` — or "" for a host at the origin
+ * root. `"/"`, an absent `servers`, and an absolute url all mean "" (an absolute
+ * url carries its own path on `binding.baseUrl` instead), so every spec that
+ * does not opt in is untouched.
+ *
+ * Read, never applied: stored binding paths are PREFIX-FREE (spec 2026-08-06 §B1)
+ * and core's `joinUrl` attaches the prefix once at call time from VENDO_BASE_URL —
+ * folding it in here is what produced /maple/maple/… (#914). The one consumer is
+ * doctor's mount-agreement check, which compares this against VENDO_BASE_URL.
+ */
+export async function openApiMountPath(specPath: string): Promise<string> {
+  const servers = (await readDocument(specPath)).servers;
+  const url = jsonObject((Array.isArray(servers) ? servers : [])[0]).url;
+  if (typeof url !== "string" || !url.startsWith("/")) return "";
+  return url.replace(/\/+$/u, "");
+}
+
+export async function extractOpenApi(specPath: string): Promise<ExtractedTool[]> {
+  const document = await readDocument(specPath);
   const paths = jsonObject(document.paths);
   const baseUrl = absoluteBaseUrl(document);
   const tools: ExtractedTool[] = [];
@@ -112,11 +154,18 @@ export async function extractOpenApi(specPath: string): Promise<ExtractedTool[]>
         : null;
       const name = rawOperationId ? sanitizedOperationName(rawOperationId) : routeToolFullName(method, route);
       const operationId = rawOperationId ?? name;
+      const output = outputSchema(document, operation);
       tools.push({
         name,
         description: descriptionFor(operation, method, route),
         inputSchema: inputSchema(document, pathItem, operation),
-        risk: extractedRisk(method, name, "openapi"),
+        // A spec that declares no parameters HAS declared the argument list:
+        // an empty one. That is what stops the AI judge touching this slot.
+        inputSchemaSource: "declared" satisfies SchemaSource,
+        ...(output === undefined
+          ? { outputSchemaSource: "unknown" satisfies SchemaSource }
+          : { outputSchema: output, outputSchemaSource: "declared" satisfies SchemaSource }),
+        risk: extractedRisk(method),
         binding: {
           kind: "openapi",
           operationId,

@@ -4,26 +4,48 @@ import { useEffect, useState, useSyncExternalStore, type CSSProperties } from "r
  *  (chrome-css.ts, "full-screen mobile takeover"). */
 const MOBILE_TAKEOVER_QUERY = "(max-width: 767px)";
 
-function subscribe(onChange: () => void): () => void {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
-  const query = window.matchMedia(MOBILE_TAKEOVER_QUERY);
-  // Safari < 14 ships MediaQueryList without addEventListener.
-  if (typeof query.addEventListener === "function") {
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }
-  query.addListener(onChange);
-  return () => query.removeListener(onChange);
+/** The approval bottom sheet needs ROOM: it is bottom-anchored at up to 86vh,
+ *  so at short viewport heights it buries everything beneath it — including
+ *  the voice stage's controls (the 420x500 voice-approval-overlap
+ *  regression). Below this height the consent renders as the in-list card
+ *  instead, keeping both surfaces usable. */
+const APPROVAL_SHEET_QUERY = "(max-width: 767px) and (min-height: 560px)";
+
+function subscribeTo(mediaQuery: string): (onChange: () => void) => () => void {
+  return (onChange) => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
+    const query = window.matchMedia(mediaQuery);
+    // Safari < 14 ships MediaQueryList without addEventListener.
+    if (typeof query.addEventListener === "function") {
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    }
+    query.addListener(onChange);
+    return () => query.removeListener(onChange);
+  };
 }
 
-function getSnapshot(): boolean {
-  return typeof window !== "undefined"
+function snapshotOf(mediaQuery: string): () => boolean {
+  return () =>
+    typeof window !== "undefined"
     && typeof window.matchMedia === "function"
-    && window.matchMedia(MOBILE_TAKEOVER_QUERY).matches;
+    && window.matchMedia(mediaQuery).matches;
 }
+
+const subscribe = subscribeTo(MOBILE_TAKEOVER_QUERY);
+const getSnapshot = snapshotOf(MOBILE_TAKEOVER_QUERY);
+const subscribeSheet = subscribeTo(APPROVAL_SHEET_QUERY);
+const getSheetSnapshot = snapshotOf(APPROVAL_SHEET_QUERY);
 
 function getServerSnapshot(): boolean {
   return false; // SSR renders desktop chrome; the client stamps on hydration.
+}
+
+/** Whether the newest in-thread consent presents as the bottom sheet (1-H):
+ *  mobile width AND enough viewport height for the sheet to slide over the
+ *  page without burying it. False falls back to the in-list ApprovalCard. */
+export function useApprovalSheetPresentation(): boolean {
+  return useSyncExternalStore(subscribeSheet, getSheetSnapshot, getServerSnapshot);
 }
 
 export interface MobileTakeover {

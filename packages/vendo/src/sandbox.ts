@@ -1,6 +1,7 @@
 import type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "@vendoai/apps";
-import { defaultFetch, VendoError, type VendoErrorCode } from "@vendoai/core";
+import { defaultFetch, VendoError } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
+import { raiseCloudError } from "./cloud-console.js";
 import {
   CLOUD_BOX_PORT,
   CLOUD_SANDBOX_PATH,
@@ -8,19 +9,6 @@ import {
   CLOUD_SNAPSHOTS_SUBPATH,
   CONSOLE_SNAPSHOT_REF_PREFIX,
 } from "./sandbox-wire.js";
-
-/** Console error codes forwarded as-is when they are wire-legal VendoError
- * codes (same posture as the apps block's cloud share/publish client). The
- * console's "unavailable"/"quota-exhausted" have no VendoError twin; they fall
- * to sandbox-unavailable and the 402 → cloud-required mapping respectively. */
-const CLOUD_ERROR_CODES: ReadonlySet<string> = new Set([
-  "validation",
-  "blocked",
-  "not-implemented",
-  "cloud-required",
-  "not-found",
-  "conflict",
-] satisfies VendoErrorCode[]);
 
 /** Same default as the e2b adapter and the retired ENG-295 broker client:
  * generous enough for a slow machine boot, small enough that a hung console
@@ -65,32 +53,15 @@ function decodeBase64(value: string): Uint8Array {
   }
 }
 
-async function raiseCloudError(response: Response): Promise<never> {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(await response.text());
-  } catch {
-    payload = undefined;
-  }
-  const error = typeof payload === "object" && payload !== null && "error" in payload
-    ? (payload as { error?: { code?: unknown; message?: unknown } }).error
-    : undefined;
-  const message = typeof error?.message === "string"
-    ? error.message
-    : `Vendo Cloud sandbox request failed with ${response.status}`;
-  // The console's meter gate (quota-exhausted) rides HTTP 402 — the one
-  // "pay/upgrade to proceed" signal, same mapping as cloudConnections. 401
-  // (bad/revoked key) is the same "fix your Cloud standing" story for the
-  // host operator, so it keeps the ENG-295 client's cloud-required mapping —
-  // with the server's own message preserved.
-  if (response.status === 402 || response.status === 401) {
-    throw new VendoError("cloud-required", message);
-  }
-  const code = typeof error?.code === "string" && CLOUD_ERROR_CODES.has(error.code)
-    ? (error.code as VendoErrorCode)
-    : "sandbox-unavailable";
-  throw new VendoError(code, message);
-}
+/** The shared console error table (cloud-console.ts): 401/402 → cloud-required
+ * (a meter-exhausted refusal body rides it as the crafted spec-§5 sentence),
+ * wire-legal envelope codes forward as VendoErrors, and anything else —
+ * unknown codes ("unavailable"), 5xx, non-JSON bodies — falls to
+ * sandbox-unavailable with the server's message preserved. */
+const raiseSandboxError = (response: Response): Promise<never> =>
+  raiseCloudError(response, "sandbox", (_code, message) => {
+    throw new VendoError("sandbox-unavailable", message);
+  });
 
 /** The adapter-minted composite snapshot ref payload (sandbox-wire.ts): the
  * console ref alone cannot serve the seam — destroy-by-ref needs the machine
@@ -186,9 +157,11 @@ const isGone = (error: unknown): boolean =>
  * - `spec.template` is dropped from the wire: the create route takes none —
  *   the pooled base image (Node + the in-box agent) is Cloud's own.
  *
- * The machine object also carries adapter-private exec/files/url used for
- * live-lane bootstrap and diagnostics — NOT part of the public seam (the
- * in-box agent owns the inside of the box). */
+ * `files` is part of the public seam (apps/sandbox.ts), and the console's
+ * list route may answer any depth — the adapter folds it to the seam's one
+ * level. The machine object also carries adapter-private exec used for
+ * live-lane bootstrap and diagnostics — NOT part of the seam (the in-box agent
+ * owns the inside of the box). */
 export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -207,7 +180,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       },
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!response.ok) await raiseCloudError(response);
+    if (!response.ok) await raiseSandboxError(response);
     return response;
   };
 
@@ -335,22 +308,6 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
           .then(remove);
         await destroying;
       },
-      // ——— adapter-private below this line (live-lane bootstrap + diagnostics) ———
-      async exec(cmd: string, execOptions?: { cwd?: string; timeoutMs?: number }) {
-        const payload = await sendJson(`${prefix}/exec`, "POST", {
-          cmd,
-          ...(execOptions?.cwd === undefined ? {} : { cwd: execOptions.cwd }),
-          ...(execOptions?.timeoutMs === undefined ? {} : { timeout_ms: execOptions.timeoutMs }),
-        }) as { code?: unknown; stdout?: unknown; stderr?: unknown };
-        if (typeof payload.code !== "number") {
-          throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned an invalid exec response");
-        }
-        return {
-          code: payload.code,
-          stdout: typeof payload.stdout === "string" ? payload.stdout : "",
-          stderr: typeof payload.stderr === "string" ? payload.stderr : "",
-        };
-      },
       files: {
         async read(path: string) {
           const response = await send(`${prefix}/files?path=${encodeURIComponent(path)}`);
@@ -365,9 +322,29 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
         },
         async list(dir: string) {
           const payload = await sendJson(`${prefix}/files/list?dir=${encodeURIComponent(dir)}`, "GET") as { entries?: unknown };
-          return Array.isArray(payload.entries)
+          const entries = Array.isArray(payload.entries)
             ? payload.entries.filter((entry): entry is string => typeof entry === "string")
             : [];
+          // The seam's list is ONE level and names only; the console answers
+          // whatever depth it answers, so fold the depth away here — strip the
+          // listed directory back off an absolute answer, keep the first
+          // segment, and a deep answer collapses onto its top-level names.
+          const inside = dir.endsWith("/") ? dir : `${dir}/`;
+          const names = [...new Set(entries.map((entry) => {
+            const relative = entry.startsWith(inside) ? entry.slice(inside.length) : entry;
+            return relative.split("/")[0] ?? "";
+          }).filter((name) => name !== ""))];
+          // The seam rejects for a directory the box does not hold. The console
+          // route answers an empty list for BOTH an absent directory and an
+          // empty one, so this reports the absent case — loud in the safe
+          // direction, where answering `[]` would let a mistyped source
+          // directory read as an app with no files. Narrows to the real
+          // not-found when the console's list route grows one. The ROOT is the
+          // exception: it exists on every box, with files or without.
+          if (names.length === 0 && dir !== "" && dir !== "/") {
+            throw new VendoError("not-found", `Vendo Cloud sandbox holds no directory ${dir}`);
+          }
+          return names;
         },
       },
       async url(port?: number) {
@@ -387,6 +364,22 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
           ? `${target}-${ingress.host}`
           : `${suffixed[1]}-${target}-m${suffixed[2]}`;
         return ingress.origin;
+      },
+      // ——— adapter-private below this line (live-lane bootstrap + diagnostics) ———
+      async exec(cmd: string, execOptions?: { cwd?: string; timeoutMs?: number }) {
+        const payload = await sendJson(`${prefix}/exec`, "POST", {
+          cmd,
+          ...(execOptions?.cwd === undefined ? {} : { cwd: execOptions.cwd }),
+          ...(execOptions?.timeoutMs === undefined ? {} : { timeout_ms: execOptions.timeoutMs }),
+        }) as { code?: unknown; stdout?: unknown; stderr?: unknown };
+        if (typeof payload.code !== "number") {
+          throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned an invalid exec response");
+        }
+        return {
+          code: payload.code,
+          stdout: typeof payload.stdout === "string" ? payload.stdout : "",
+          stderr: typeof payload.stderr === "string" ? payload.stderr : "",
+        };
       },
     } satisfies SandboxMachine & Record<string, unknown> as SandboxMachine;
   };

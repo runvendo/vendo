@@ -5,6 +5,16 @@
  *  these, which put ~4MB of dev tooling (and hard Node deps) into every
  *  Worker bundle. CLI and tests import from here. */
 export { mergeOverrides, vendoSync, type SyncReportWithWarnings } from "./index.js";
+// The spec's relative server mount, and the document the extractors read it
+// from. Stored paths no longer carry the mount (spec 2026-08-06 §B1); doctor
+// reads the same two to catch a spec that disagrees with VENDO_BASE_URL's path
+// prefix (E-CFG-003), through THIS pair so it can never look at a different
+// document than sync did.
+export { openApiMountPath } from "./openapi.js";
+export { firstOpenApiSpec } from "./extractors.js";
+// The judgment layer's deterministic half (direction rule, apply, prune) is
+// NOT here: it lives at the package root (src/judgments.ts) because the runtime
+// registry applies judgments, and this entry is the node-only build-time half.
 export {
   extractServerActions,
   serverActionRegistrations,
@@ -22,3 +32,11 @@ export {
   type StaticExtraction,
   type ZodSchemaResult,
 } from "./static-ts.js";
+// The judge rung's one targeted writer: it fills a BLIND schema slot in
+// tools.json and refuses an occupied one, in code.
+export {
+  patchToolSchemas,
+  type ToolSchemaPatch,
+  type ToolSchemaPatchResult,
+  type ToolSchemaSlot,
+} from "./schema-patch.js";

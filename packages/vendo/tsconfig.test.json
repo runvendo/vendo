@@ -1,0 +1,17 @@
+{
+  // The test estate. `tsconfig.json` excludes it so `dist` stays free of test
+  // scaffolding, which also meant nothing ever typechecked it. Its own program,
+  // never built — same shape as `apps`, `guard`, `knowledge`, `automations` and
+  // `vendo-telemetry`.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Two tests import `@vendoai/harnesses/box-door`, whose export map points at the
+    // zero-dependency `box/turn-routes.mjs` control-port runtime and carries no
+    // `types`. Reading the JS gives them the real inferred signature instead of
+    // an ambient re-declaration that could drift from it. There is no `.js`
+    // under `src`, so this widens nothing else.
+    "allowJs": true
+  },
+  "include": ["src", "tests", "vitest.setup.ts"]
+}

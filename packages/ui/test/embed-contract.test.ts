@@ -13,7 +13,7 @@ import type {
 
 describe("embed prop contracts", () => {
   it("VendoAppEmbed takes the app-ref envelope verbatim", () => {
-    const refValue: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_x", title: "Dashboard" };
+    const refValue: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_x", title: "Dashboard", status: "building" };
     const props: VendoAppEmbedProps = { refValue };
     expect(props.refValue.appId).toBe("app_x");
   });
@@ -34,7 +34,7 @@ describe("embed prop contracts", () => {
     const props: VendoToolResultProps = { output: { delivered: true } };
     expect(parseVendoToolEnvelope(props.output)).toBeNull();
     const appProps: VendoToolResultProps = {
-      output: { kind: "vendo/app-ref@1", appId: "app_x", title: "Dashboard" },
+      output: { kind: "vendo/app-ref@1", appId: "app_x", title: "Dashboard", status: "building" },
     };
     expect(parseVendoToolEnvelope(appProps.output)?.kind).toBe("vendo/app-ref@1");
   });

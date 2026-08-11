@@ -5,63 +5,46 @@
  * engine (doGenerate) off a single FIFO queue — but the queue is MUTABLE so the
  * test (running in a separate process from the model) can enqueue turns over the
  * wire server's `/__test/script` control endpoint before it drives the page.
+ * That mutability is why the model itself is built here rather than taken from
+ * `@vendoai-fixtures/test-kit/stream-turns`, whose queue is fixed at construction.
  *
  * The control endpoint speaks a small high-level TurnSpec dialect (kind:"text" |
  * "tool" | "generate") rather than raw stream parts, so tests stay legible and
  * the JSON on the wire stays tiny; this module expands each spec into the exact
- * LanguageModelV3 stream parts the composed system consumes.
+ * LanguageModelV3 stream parts the composed system consumes, using the shared
+ * turn builders.
  */
+import {
+  textTurn,
+  toolCallTurn,
+  ZERO_USAGE,
+  type LanguageModelV3Content,
+  type LanguageModelV3GenerateResult,
+  type LanguageModelV3StreamPart,
+} from "@vendoai-fixtures/test-kit/stream-turns";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 
-type LanguageModelV3StreamPart = Awaited<
-  ReturnType<MockLanguageModelV3["doStream"]>
->["stream"] extends ReadableStream<infer Part> ? Part : never;
-type LanguageModelV3GenerateResult = Awaited<ReturnType<MockLanguageModelV3["doGenerate"]>>;
-type LanguageModelV3Content = LanguageModelV3GenerateResult["content"][number];
-
-const ZERO_USAGE = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 0, text: 0, reasoning: 0 },
-} as const;
-
-/** A plain assistant text turn (agent doStream). */
-function textTurn(text: string, id = "text_1"): LanguageModelV3StreamPart[] {
-  return [
-    { type: "text-start", id },
-    { type: "text-delta", id, delta: text },
-    { type: "text-end", id },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
-  ];
-}
-
-/** An agent turn that calls one tool (agent doStream). */
-function toolCallTurn(
-  toolName: string,
-  input: unknown,
-  toolCallId = "call_1",
-): LanguageModelV3StreamPart[] {
-  return [
-    { type: "tool-call", toolCallId, toolName, input: JSON.stringify(input) },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
-  ];
-}
-
-/** A generation-engine turn: the apps engine reads this through doGenerate and
- *  parses the emitted text as CREATE/EDIT-dialect JSON (must be VALID). */
-function generationTurn(dialect: unknown, id = "gen_1"): LanguageModelV3StreamPart[] {
-  return [
-    { type: "text-start", id },
-    { type: "text-delta", id, delta: typeof dialect === "string" ? dialect : JSON.stringify(dialect) },
-    { type: "text-end", id },
-    { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
-  ];
-}
-
-/** The high-level control dialect the `/__test/script` endpoint accepts. */
+/**
+ * The high-level control dialect the `/__test/script` endpoint accepts.
+ *
+ * There was a third kind, `generate`: one turn whose whole text was a CREATE/EDIT
+ * dialect document, which the generation pipeline read through `doGenerate`. That
+ * pipeline is gone. A create is the screen agent now, and the screen agent WRITES
+ * — it calls `save_app` with the document and then speaks. So a create is scripted
+ * with the two kinds already here:
+ *
+ *   { kind: "tool", name: "save_app", input: { content: "<App …>…</App>" } },
+ *   { kind: "text", text: "saved" },
+ *
+ * The kind is deleted rather than left unused on purpose. A scripted model that
+ * answers a create with bare dialect text does not fail loudly — the assembly loop
+ * consumes the turn, saves nothing, and the ask ends in "assembly produced nothing
+ * that renders" one screen later. Five fixtures were written that way before this
+ * one; taking the affordance away is what stops a sixth.
+ */
 export type TurnSpec =
   | { kind: "text"; text: string; id?: string }
-  | { kind: "tool"; name: string; input: unknown; toolCallId?: string }
-  | { kind: "generate"; dialect: unknown; id?: string };
+  | { kind: "tool"; name: string; input: unknown; toolCallId?: string };
 
 export function expandTurn(spec: TurnSpec): LanguageModelV3StreamPart[] {
   switch (spec.kind) {
@@ -69,8 +52,6 @@ export function expandTurn(spec: TurnSpec): LanguageModelV3StreamPart[] {
       return textTurn(spec.text, spec.id);
     case "tool":
       return toolCallTurn(spec.name, spec.input, spec.toolCallId);
-    case "generate":
-      return generationTurn(spec.dialect, spec.id);
   }
 }
 

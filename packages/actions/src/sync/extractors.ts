@@ -1,14 +1,13 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { ExtractedTool } from "../formats.js";
-import { detectGraphql, extractGraphql, graphqlEndpoints } from "./graphql.js";
+import type { SourcedExtractedTool } from "./common.js";
 import { extractOpenApi } from "./openapi.js";
 import { scanRoutes } from "./route-scan.js";
 import { detectServerActions, extractServerActions } from "./server-actions.js";
 import { detectTrpc, extractTrpc, trpcMounts } from "./trpc.js";
 
 export interface ExtractorResult {
-  tools: ExtractedTool[];
+  tools: SourcedExtractedTool[];
   warnings: string[];
 }
 
@@ -18,7 +17,8 @@ export interface Extractor {
   extract(root: string): Promise<ExtractorResult>;
 }
 
-async function firstOpenApiSpec(root: string): Promise<string | null> {
+/** The first OpenAPI document the extractors find, in their order. */
+export async function firstOpenApiSpec(root: string): Promise<string | null> {
   const candidates = [
     "openapi.json",
     "openapi.yaml",
@@ -46,7 +46,10 @@ const openApiExtractor: Extractor = {
   },
   async extract(root) {
     const specPath = await firstOpenApiSpec(root);
-    return { tools: specPath ? await extractOpenApi(specPath) : [], warnings: [] };
+    if (!specPath) return { tools: [], warnings: [] };
+    // The spec is every OpenAPI tool's known source file (v3 srcHash input).
+    const srcPath = path.relative(root, specPath).split(path.sep).join("/");
+    return { tools: (await extractOpenApi(specPath)).map((tool) => ({ ...tool, srcPath })), warnings: [] };
   },
 };
 
@@ -54,12 +57,6 @@ const trpcExtractor: Extractor = {
   name: "trpc",
   detect: detectTrpc,
   extract: extractTrpc,
-};
-
-const graphqlExtractor: Extractor = {
-  name: "graphql",
-  detect: detectGraphql,
-  extract: extractGraphql,
 };
 
 const serverActionsExtractor: Extractor = {
@@ -79,17 +76,16 @@ const routeScanExtractor: Extractor = {
 export const extractorRegistrations: readonly Extractor[] = [
   openApiExtractor,
   trpcExtractor,
-  graphqlExtractor,
   serverActionsExtractor,
   routeScanExtractor,
 ];
 
-/** Route-scan sees a tRPC mount or a GraphQL endpoint as an opaque catch-all
- * HTTP route; when the trpc/graphql extractors produced real operation tools
- * for that mount, the shadowing route tools are dropped. No trpc/graphql
- * tools → no filtering (unchanged behavior for every other host). */
-function withoutShadowedRoutes(tools: ExtractedTool[]): ExtractedTool[] {
-  const mounts = [...trpcMounts(tools), ...graphqlEndpoints(tools)];
+/** Route-scan sees a tRPC mount as an opaque catch-all HTTP route; when the
+ * trpc extractor produced real procedure tools for that mount, the shadowing
+ * route tools are dropped. No trpc tools → no filtering (unchanged behavior
+ * for every other host). */
+function withoutShadowedRoutes(tools: SourcedExtractedTool[]): SourcedExtractedTool[] {
+  const mounts = trpcMounts(tools);
   if (mounts.length === 0) return tools;
   return tools.filter((tool) => {
     if (tool.binding.kind !== "route") return true;
@@ -102,7 +98,7 @@ export async function runExtractors(
   root: string,
   registrations: readonly Extractor[] = extractorRegistrations,
 ): Promise<ExtractorResult> {
-  const tools: ExtractedTool[] = [];
+  const tools: SourcedExtractedTool[] = [];
   const warnings: string[] = [];
   for (const extractor of registrations) {
     if (!await extractor.detect(root)) continue;
@@ -110,5 +106,8 @@ export async function runExtractors(
     tools.push(...result.tools);
     warnings.push(...result.warnings);
   }
+  // Stored paths are PREFIX-FREE (spec 2026-08-06 §B1). The deployment's path
+  // prefix lives in VENDO_BASE_URL and is attached exactly once, at call time,
+  // by core's joinUrl — baking it in here is what produced /maple/maple/… (#914).
   return { tools: withoutShadowedRoutes(tools), warnings };
 }

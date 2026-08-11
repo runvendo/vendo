@@ -48,15 +48,17 @@
         "group": "Start here",
         "pages": [
           "index",
+          "full-stack-agents",
           "concepts/architecture",
           "concepts/tools-and-safety"
         ]
       },
       {
-        "group": "Bring your own agent",
+        "group": "You already have an agent",
         "tag": "Recommended",
         "pages": [
           "existing-agents/index",
+          "existing-agents/your-agent",
           "existing-agents/ai-sdk",
           "existing-agents/mastra",
           "existing-agents/embeds",
@@ -64,11 +66,20 @@
         ]
       },
       {
-        "group": "Use Vendo's agent",
+        "group": "Your product has no agent",
         "tag": "Beta",
         "pages": [
           "quickstart",
           "ui/components"
+        ]
+      },
+      {
+        "group": "Expose your product over MCP",
+        "tag": "Experimental",
+        "pages": [
+          "capabilities/mcp",
+          "existing-agents/mcp",
+          "capabilities/mcp-registry"
         ]
       },
       {
@@ -81,26 +92,26 @@
         ]
       },
       {
-        "group": "Make it yours",
+        "group": "Your brand and your rules",
         "pages": [
           "connect/theming",
           "connect/host-components",
-          "connect/instructions"
+          "connect/instructions",
+          "connect/context",
+          "connect/knowledge"
         ]
       },
       {
-        "group": "Give it reach",
+        "group": "What the agent can do",
         "pages": [
           "capabilities/connected-accounts",
-          "capabilities/mcp",
-          "capabilities/mcp-registry",
           "capabilities/compound-tools",
           "concepts/generated-ui",
           "concepts/in-client-venue"
         ]
       },
       {
-        "group": "Ship it",
+        "group": "Go to production",
         "pages": [
           "deploy/deploying",
           "deploy/persistence",
@@ -113,7 +124,7 @@
         ]
       },
       {
-        "group": "For coding agents",
+        "group": "Installing with a coding agent",
         "pages": [
           "agents/index",
           "agents/host-auth",
@@ -144,6 +155,11 @@
   "redirects": [
     {
       "source": "/quickstart-node",
+      "destination": "/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/try",
       "destination": "/quickstart",
       "permanent": true
     },

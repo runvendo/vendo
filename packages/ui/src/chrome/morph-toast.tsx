@@ -1,7 +1,10 @@
-import type { VendoTheme } from "@vendoai/core";
+import type {
+  VendoTheme,
+} from "@vendoai/apps/contract";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { themeCssVariables } from "../theme.js";
+import { ToolkitLogo } from "./card-shell.js";
 
 /**
  * The approval→notification morph: the decided panel lifts out of the thread
@@ -10,10 +13,10 @@ import { themeCssVariables } from "../theme.js";
  * surface is the same solid glass as the overlay (not a translucent liquid
  * blob), and it's inset from the corner so it's never clipped.
  *
- * Lane pick 4-C — the morph teaches the record: when an Activity anchor is
- * mounted (an element carrying `data-vendo-activity-anchor`, e.g. the
- * VendoPage Activity tab), the settled pill holds briefly and then shrinks
- * and docks INTO the anchor instead of fading in place, dispatching a
+ * The morph teaches the record: when an activity anchor is mounted (any
+ * element the host stamps with `data-vendo-activity-anchor`), the settled pill
+ * holds briefly and then shrinks and docks INTO it instead of fading in place,
+ * dispatching a
  * `vendo:activity-bump` event as it lands so the anchor can pulse. Without
  * an anchor (overlay/threads outside the page) the original hold-and-fade
  * behavior is unchanged. Reduced motion keeps the opacity-only exit.
@@ -24,10 +27,6 @@ export interface MorphToastProps {
   sub?: string;
   logoUrl?: string;
   theme: VendoTheme;
-  holdMs?: number;
-  /** Override the dock target lookup (default: the `data-vendo-activity-anchor`
-      element). Return undefined to fade in place. */
-  dockTo?(): { top: number; left: number; width: number; height: number } | undefined;
   onDone(): void;
 }
 
@@ -51,15 +50,20 @@ function activityAnchorRect(): { top: number; left: number; width: number; heigh
   return rect.width > 0 ? { top: rect.top, left: rect.left, width: rect.width, height: rect.height } : undefined;
 }
 
-export function MorphToast({ startRect, title, sub, logoUrl, theme, holdMs, dockTo, onDone }: MorphToastProps) {
+export function MorphToast({ startRect, title, sub, logoUrl, theme, onDone }: MorphToastProps) {
   const [settled, setSettled] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [dock, setDock] = useState<{ x: number; y: number } | null>(null);
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
-  const dockToRef = useRef(dockTo);
-  dockToRef.current = dockTo;
-  const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // The host's `theme.motion` counts as much as the OS setting — it is a promise
+  // made on the person's behalf. Reading only the media query made this
+  // component contradict itself: it wrote `data-vendo-motion="reduced"` from the
+  // theme (which the chrome stylesheet turns into `transition: none`) while
+  // keeping the full travel budget and taking the dock path, so the pill
+  // teleported and then vanished into an anchor it never crossed.
+  const reduced = theme.motion === "reduced"
+    || (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => requestAnimationFrame(() => setSettled(true)));
@@ -70,11 +74,11 @@ export function MorphToast({ startRect, title, sub, logoUrl, theme, holdMs, dock
     // anchor that appears mid-hold docks after the longer fade-length hold.
     const willDock = !reduced
       && typeof document !== "undefined"
-      && (dockToRef.current ? dockToRef.current() !== undefined : activityAnchorRect() !== undefined);
-    const hold = holdMs ?? (willDock ? DOCK_HOLD_MS : FADE_HOLD_MS);
+      && activityAnchorRect() !== undefined;
+    const hold = willDock ? DOCK_HOLD_MS : FADE_HOLD_MS;
     const timers: ReturnType<typeof setTimeout>[] = [];
     timers.push(setTimeout(() => {
-      const rect = reduced ? undefined : (dockToRef.current ? dockToRef.current() : activityAnchorRect());
+      const rect = reduced ? undefined : activityAnchorRect();
       if (rect) {
         setDock({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
         timers.push(setTimeout(() => {
@@ -90,7 +94,7 @@ export function MorphToast({ startRect, title, sub, logoUrl, theme, holdMs, dock
       cancelAnimationFrame(raf);
       for (const timer of timers) clearTimeout(timer);
     };
-  }, [holdMs, reduced]);
+  }, [reduced]);
 
   if (typeof window === "undefined" || typeof document === "undefined") return null;
 
@@ -107,6 +111,7 @@ export function MorphToast({ startRect, title, sub, logoUrl, theme, holdMs, dock
   return createPortal(
     <div
       className="vendo-root fl-morph-layer"
+      data-vendo-ignore=""
       data-vendo-motion={reduced ? "reduced" : theme.motion}
       style={{ ...themeCssVariables(theme) } as React.CSSProperties}
     >
@@ -132,12 +137,7 @@ export function MorphToast({ startRect, title, sub, logoUrl, theme, holdMs, dock
           <div className="fl-morph-title">{title}</div>
           {sub ? <div className="fl-morph-sub">{sub}</div> : null}
         </div>
-        {logoUrl ? (
-          <span className="fl-morph-logo">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={logoUrl} alt="" width={18} height={18} />
-          </span>
-        ) : null}
+        {logoUrl ? <ToolkitLogo src={logoUrl} className="fl-morph-logo" /> : null}
       </div>
     </div>,
     document.body,

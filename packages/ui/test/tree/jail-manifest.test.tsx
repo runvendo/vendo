@@ -5,7 +5,7 @@
 // on the host side before it can reach the guarded pipe.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { VENDO_TREE_FORMAT_V2, type Json, type ToolOutcome, type UIPayload } from "@vendoai/core";
+import { VENDO_TREE_FORMAT, type Json, type ToolOutcome, type UIPayload } from "@vendoai/core";
 import { TreeView } from "../../src/tree/index.js";
 
 afterEach(() => {
@@ -19,7 +19,7 @@ const LOOKUP_SOURCE = `
   }`;
 
 const treeWith = (extras: Record<string, unknown>): UIPayload => ({
-  formatVersion: VENDO_TREE_FORMAT_V2,
+  formatVersion: VENDO_TREE_FORMAT,
   root: "root",
   nodes: [{ id: "root", component: "Lookup", source: "generated" }],
   components: { Lookup: LOOKUP_SOURCE },
@@ -154,7 +154,7 @@ describe("island tool manifest enforcement (host side)", () => {
   it("gates the legacy action channel to prop-embedded actions and the manifest", async () => {
     const onAction = vi.fn(async (): Promise<ToolOutcome> => ({ status: "ok", output: null }));
     const tree = {
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [{
         id: "root",

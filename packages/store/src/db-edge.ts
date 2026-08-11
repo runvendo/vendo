@@ -17,7 +17,3 @@ const EDGE_MESSAGE =
 export function createDb(_config: StoreConfig = {}): Db {
   throw new VendoError("validation", EDGE_MESSAGE);
 }
-
-export function withSchemaLock<T>(_db: Db, _work: (query: unknown) => Promise<T>): Promise<T> {
-  return Promise.reject(new VendoError("validation", EDGE_MESSAGE));
-}

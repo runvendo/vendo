@@ -88,11 +88,22 @@ Read the app's source tokens, global CSS, Tailwind config, and font setup at
 the pinned SHA. Record fully resolved primitive values, not CSS variables.
 Normalize HSL, OKLCH, Tailwind palette classes, and rem radii to the schema's
 primitive form (hex colors and pixel radii). For example `0.5rem` is `8`.
+`fontFamily` labels record the FULL source-declared fallback stack, fully
+resolved: family names unquoted, comma-space separated, no entry dropped. A
+next/font or geist variable resolves to its family name (the import's export
+name, underscores as spaces); a spread of Tailwind's default sans resolves
+to Tailwind's documented default list in full. Example:
+`["var(--font-geist-sans)", ...fontFamily.sans]` labels as
+`Geist Sans, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji,
+Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji`.
 If a value is genuinely absent, label the default Vendo should choose and note
 the uncertainty in the repo's labeling notes when Task 11 adds real labels.
 
 Layer 2 scores each dimension as one point. Hex colors compare
 case-insensitively. Radius `8` and `"8px"` are treated as equivalent.
+
+A repo may carry a `notes.md` next to its `expected.json` documenting
+label provenance and known expected-misses.
 
 ## Tools
 
@@ -175,8 +186,8 @@ does not edit or commit it.
 
 Ground-truth labels for the AI extraction matrix (`pnpm corpus ai`). Entries
 reuse the same binding identities as `expected.json` (method + path, tRPC
-procedure, GraphQL operation, server-action module + export) and carry the
-judgment the AI pass is scored on:
+procedure, server-action module + export) and carry the judgment the AI pass
+is scored on:
 
 ```json
 {
@@ -196,6 +207,32 @@ judgment the AI pass is scored on:
   the curated `dangerous` flags upgrade to `destructive`; non-HTTP bindings
   keep their hand labels. Replace individual entries with hand-verified
   grades as curation improves — hand labels always beat the derivation.
+  **Curated risk rows are hand-verified against the pinned handler source and
+  are FROZEN.** They are recorded with a `file:line` citation in the repo's
+  `notes.md`; a later model disagreeing with a curated row is a bug report
+  about the model, not a reason to relabel. Change one only by citing a
+  handler line that contradicts the recorded citation.
+
+  Three rules the mutation test does not derive on its own decide the rows it
+  used to leave undecidable. They are the same rules the judge prompt states
+  (`packages/vendo/src/cli/judge/prompts.ts`), so labels and model are graded
+  against one policy rather than two:
+  - **A catch-all route is graded at its WORST reachable operation**, and carries
+    that grade on every method it exports. When one URL fronts many operations
+    (`[...nextauth]`, `[trpc]`, an upload or OAuth SDK handler), which method
+    reaches which operation is decided inside the dependency; splitting the grade
+    by verb invents a benign method that may not exist. Where the host's source
+    cannot settle what the catch-all exposes, read the pinned dependency and cite
+    it (see rallly's better-auth row and skateshop's uploadthing row), and if even
+    that cannot settle it, grade at the worst plausible operation and say so.
+  - **`destructive` needs BULK or IRREVERSIBLE loss** — a delete spanning many
+    records, or the loss of something that cannot be re-created. A hard delete of
+    ONE easily re-created row or object (remove a member, cancel an invite,
+    remove an image) is `write`. If every delete were `destructive` the top grade
+    would stop carrying information.
+  - **An unrecallable outbound effect is a `write` with no row written** — mail or
+    SMS sent, a webhook delivered, a payment captured, an external checkout or
+    billing-portal session created. Receiving a webhook is not one of these.
 - `critical` marks tools that must carry a critical (irreversible) mark. It is
   a curator addition, never derived; the critical check only runs for repos
   that label at least one.

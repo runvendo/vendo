@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { VendoError } from "@vendoai/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVendoClient } from "../src/index.js";
 import { createWireServer } from "./wire-server.js";
 
@@ -56,28 +56,48 @@ describe("createVendoClient", () => {
     });
     expect((await client.apps.edit("app_1", "Add totals")).app.name).toBe("Edited");
     expect(await client.apps.history("app_1")).toHaveLength(2);
-    expect((await client.apps.undo("app_1")).name).toBe("Undone");
     expect(await client.apps.exportApp("app_1")).toEqual(new Uint8Array([0, 1, 255]));
     const imported = await client.apps.importApp(new Uint8Array([4, 5, 6]));
     expect(imported.id).toBe("app_imported");
     expect((await client.apps.fork("app_1")).forkedFrom).toBe("app_1");
-    // Gesture-owned forking: appId routes to /apps/:id/fork-pin, none to /apps/fork-pin.
-    expect((await client.apps.forkPin({ appId: "app_1", slot: "hero", instruction: "make it blue" })).slot).toBe("hero");
-    expect((await client.apps.forkPin({ slot: "hero" })).componentName).toBe("Pinnedhero");
+    // The ✦ gesture: one seed per app, answered with the app document itself.
+    // The seeded seat ships under the runtime's REAL seedComponentName —
+    // hash-suffixed — and a `slot` also places the mint there.
+    const seeded = await client.apps.seedFrom({ component: "hero", instruction: "make it blue" });
+    expect(seeded.seed).toEqual({ component: "hero", baseline: "sha256:fixture" });
+    expect(Object.keys(seeded.tree?.components ?? {})).toEqual([expect.stringMatching(/^PinnedHero[0-9a-f]{8}$/)]);
+    expect((await client.apps.seedFrom({ component: "hero2", slot: "hero2" })).seed?.component).toBe("hero2");
+    // Re-seeding moves the app onto the host's current version of that component.
+    expect((await client.apps.reseed(seeded.id)).seed?.baseline).toBe("sha256:fixture-NEW");
     expect(await client.apps.pingMachine("app_1")).toEqual({ state: "awake" });
+    // Placement (2026-08-05): place → read back → evict → unplace → gone.
+    // A slot of its own: the seed call above already placed its mint in "hero2".
+    expect(await client.apps.place("app_1", "shelf")).toEqual({});
+    // "Edited", not "Invoices": the edit above renamed app_1, and the title
+    // is derived from the CURRENT document on every read, never stored.
+    expect(await client.apps.placements(["shelf"])).toEqual([
+      { slot: "shelf", app: "app_1", title: "Edited", status: "ready" },
+    ]);
+    expect(await client.apps.place("app_auto", "shelf")).toEqual({ evicted: "app_1" });
+    await client.apps.unplace("app_auto", "shelf");
+    expect(await client.apps.placements(["shelf"])).toEqual([]);
     await client.apps.delete(created.id);
 
     expect(await client.automations.list()).toHaveLength(1);
-    expect(await client.automations.enable("app_auto")).toMatchObject({ enabled: true });
-    await client.automations.disable("app_auto");
-    expect((await client.automations.dryRun("app_auto")).steps).toHaveLength(1);
+    expect(await client.automations.enable("app_auto", "main")).toMatchObject({ enabled: true });
+    await client.automations.disable("app_auto", "main");
+    expect((await client.automations.dryRun("app_auto", "main")).steps).toHaveLength(1);
 
     expect(await client.runs.list({ appId: "app_auto", status: "running", cursor: "cursor_1" })).toEqual({
       runs: [expect.objectContaining({ id: "run_1" })],
     });
     expect((await client.runs.get("run_1")).status).toBe("running");
     await client.runs.stop("run_1");
-    expect(await client.activity.list({ cursor: "aud_2", limit: 10 })).toHaveLength(2);
+    // ⚠️ FIXTURE WIDENED (CR-2): one more audit row behind the cursor.
+    expect(await client.activity.list({ cursor: "aud_2", limit: 10 })).toHaveLength(3);
+    // The slot registry: a mounted slot reports, a picker elsewhere reads back.
+    await client.slots.report([{ id: "hero", label: "Hero" }]);
+    expect(await client.slots.list()).toEqual([{ id: "hero", label: "Hero", lastSeen: expect.any(String) }]);
     expect((await client.status()).posture).toBe("rules");
     await client.threads.delete("thr_1");
 
@@ -104,21 +124,23 @@ describe("createVendoClient", () => {
     exact("POST", "/apps/app_1/call", { ref: "fn:refresh", args: { month: "July" } });
     exact("POST", "/apps/app_1/edit", { instruction: "Add totals" });
     exact("GET", "/apps/app_1/history", undefined);
-    exact("POST", "/apps/app_1/history", { op: "undo" });
     exact("GET", "/apps/app_1/export", undefined);
     exact("POST", "/apps/import", [4, 5, 6]);
     exact("POST", "/apps/app_1/fork", {});
-    exact("POST", "/apps/app_1/fork-pin", { slot: "hero", instruction: "make it blue" });
-    exact("POST", "/apps/fork-pin", { slot: "hero" });
+    exact("POST", "/apps/seed", { component: "hero", instruction: "make it blue" });
+    exact("POST", "/apps/seed", { component: "hero2", slot: "hero2" });
+    exact("POST", `/apps/${seeded.id}/reseed`, {});
     exact("POST", "/apps/app_1/machine/ping", {});
     exact("GET", "/automations", undefined);
-    exact("POST", "/automations/app_auto/enable", {});
-    exact("POST", "/automations/app_auto/disable", {});
-    exact("POST", "/automations/app_auto/dry-run", {});
+    exact("POST", "/automations/app_auto/enable/main", {});
+    exact("POST", "/automations/app_auto/disable/main", {});
+    exact("POST", "/automations/app_auto/dry-run/main", {});
     exact("GET", "/runs?appId=app_auto&status=running&cursor=cursor_1", undefined);
     exact("GET", "/runs/run_1", undefined);
     exact("POST", "/runs/run_1/stop", {});
     exact("GET", "/activity?cursor=aud_2&limit=10", undefined);
+    exact("POST", "/slots", { slots: [{ id: "hero", label: "Hero" }] });
+    exact("GET", "/slots", undefined);
     exact("GET", "/status", undefined);
 
     expect(wire.state.importBytes).toEqual(new Uint8Array([4, 5, 6]));
@@ -140,5 +162,49 @@ describe("createVendoClient", () => {
 
     wire.state.statusErrorCode = "future-code";
     await expect(client.status()).rejects.toMatchObject({ name: "Error", code: "future-code", message: "Status failed" });
+  });
+
+  it("joins the base URL's path prefix onto every route exactly once", async () => {
+    const seen: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      seen.push(typeof input === "string" ? input : input.toString());
+      return new Response(JSON.stringify([]), { headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    try {
+      await createVendoClient({ baseUrl: "/maple/api/vendo" }).threads.list();
+      expect(seen[0]).toBe("/maple/api/vendo/threads");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  /** An unprefixed baseUrl on a prefixed page is the #914 shape from the
+   *  browser: one loud error naming both sides and the fix, not a bare 404. */
+  it("throws ONE named mount-mismatch error on first contact, reported once per PAGE", async () => {
+    const originalFetch = globalThis.fetch;
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    window.history.replaceState({}, "", "/maple/dashboard");
+    globalThis.fetch = (async () => new Response("<!doctype html>not found", {
+      status: 404,
+      headers: { "content-type": "text/html" },
+    })) as typeof fetch;
+    try {
+      const client = createVendoClient({ baseUrl: "/api/vendo" });
+      await expect(client.threads.list()).rejects.toThrow(/wire mount mismatch/);
+      await expect(client.status()).rejects.toThrow(/\/maple/);
+      // A page holds several clients — the overlay's and each embed's — and
+      // they all hit the same wall. The guard is keyed by the pair the message
+      // is about, so the second client throws without reprinting it.
+      const second = createVendoClient({ baseUrl: "/api/vendo" });
+      await expect(second.threads.list()).rejects.toThrow(/wire mount mismatch/);
+      // Callers that degrade on a failed fetch (the connector catalog) swallow
+      // the throw, so the console.error is what the developer actually sees —
+      // once per page, never folded into a retry warning.
+      expect(errors.mock.calls).toEqual([[expect.stringMatching(/wire mount mismatch[\s\S]*\/maple/)]]);
+    } finally {
+      globalThis.fetch = originalFetch;
+      errors.mockRestore();
+    }
   });
 });

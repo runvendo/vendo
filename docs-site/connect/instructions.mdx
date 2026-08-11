@@ -11,9 +11,9 @@ each to that place and to its position in the assembled prompt.
 
 | File or config | Purpose |
 | --- | --- |
-| `.vendo/brief.md` | product brief placed near the start of the agent prompt |
+| `.vendo/brief.md` | the deployment's prose, placed near the start of the agent prompt |
+| `createVendo({ instructions })` | the same prose in config; a non-blank value wins over the file |
 | `.vendo/policy.json` `directions` | company steering returned by guard |
-| `createAgent({ system: { instructions } })` | final host additions to the agent prompt |
 | `.vendo/design-rules.md` | optional rules for app generation, re-read per generation (edits apply without a restart) |
 | `createVendo({ apps: { designRules } })` | the same rules in config; a non-blank value wins over the file |
 
@@ -22,14 +22,23 @@ Directions are policy data. Put them in the policy file or inline
 
 ## Prompt assembly order
 
-The agent assembles its system prompt fresh for each turn:
+The agent assembles its system prompt fresh for each turn. Conditional
+sections drop out entirely; the rest keep this order:
 
 1. Vendo's operating prompt.
-2. Capability-miss reporting guidance, when enabled.
-3. The host product brief from `.vendo/brief.md`.
-4. Company directions returned by `guard.directions(ctx)`.
-5. Catalog and theme summary when the venue can render trees.
-6. Host instructions.
+2. Presentation guidance, when the venue can render trees (chat and app).
+3. Capability-miss reporting guidance, when enabled.
+4. Discovery-budget guidance, when tool search is on.
+5. The deployment's prose — `createVendo({ instructions })`, else
+   `.vendo/brief.md`.
+6. Company directions returned by `guard.directions(ctx)`.
+7. Catalog and theme summary, when the venue can render trees.
+8. The knowledge index, when knowledge is configured and the venue can
+   render trees.
+There is no separate trailing host-instructions section: `brief` and
+`agent.instructions` were the same prose under two names, and they merged into
+the one `instructions` key at position 5. Policy belongs in guard directions,
+not here.
 
 The apps generation engine has its own specialized prompts for tree emission
 and code edits. It receives the component catalog, theme, optional design
