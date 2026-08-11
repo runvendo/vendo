@@ -839,7 +839,7 @@ async function planMcpScaffold(input: {
     // The composition moves into ./vendo on this path, so the models line the
     // route scaffold planned moves with it — resolved the same way, written in
     // exactly one of the two files.
-    models: await scaffoldModel(root, options),
+    models: scaffoldModel(root, options),
     // Not optional: a null base URL is an ANSWER the plan reads, and it is
     // what makes steps[] lead with the recoverable version of E-MCP-009's
     // failure instead of assuming an origin.
@@ -1080,7 +1080,7 @@ async function planNextComposition(
     const path = relative(root, route);
     // Detect + confirm happens only on fresh composition creation.
     const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
-    const models = await scaffoldModel(root, options);
+    const models = scaffoldModel(root, options);
     const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, models });
     scaffold.changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
     scaffold.authAdvice = auth.advice;
@@ -1409,19 +1409,27 @@ function credentialEnv(root: string, env: Record<string, string | undefined>): R
 }
 
 /** The provider key a scaffold written THIS run should name in `models`, or
- *  null when no provider key resolved. Only the env-key rungs qualify: they
- *  are the rung whose meaning changed (a key in the environment no longer
- *  picks a model on its own), and the Cloud rung resolves its model through
- *  the gateway's own family names instead. Resolved here, at scaffold time,
- *  because the file is authored before the interactive credential step runs —
- *  detection is pure and read-only, so asking twice costs nothing. */
-async function scaffoldModel(root: string, options: InitOptions): Promise<ScaffoldModel | null> {
-  const credential = await (options.resolveCredential ?? resolveDevCredential)({
-    env: credentialEnv(root, options.env ?? process.env),
-  });
-  return credential.rung === "env-key"
-    ? { provider: credential.provider, envVar: credential.envVar }
-    : null;
+ *  null when the host has no provider key at all. A Cloud key is not one: its
+ *  models resolve through the gateway's own family names, so nothing is written.
+ *
+ *  This sweeps ENV_KEY_VARS directly instead of asking `resolveDevCredential`.
+ *  "Which provider key is lying around for me to write an explicit selection
+ *  for?" is a DIFFERENT question from "what selects the model at runtime?", and
+ *  since the selection law a bare provider key answers the second one with
+ *  nothing — so routing this through the runtime ladder silently returned null
+ *  for every real host and wrote no line at all. That is backwards: the ambient
+ *  key is exactly the signal that this host needs the explicit selection, since
+ *  it is the host whose boot the law just broke. The ladder's own env-key rung
+ *  is reachable only through the internal VENDO_DEV_CREDENTIAL pin, which no
+ *  host running `vendo init` sets.
+ *
+ *  Resolved here, at scaffold time, because the file is authored before the
+ *  interactive credential step runs — detection is pure and read-only, so
+ *  asking twice costs nothing. */
+function scaffoldModel(root: string, options: InitOptions): ScaffoldModel | null {
+  const env = credentialEnv(root, options.env ?? process.env);
+  const found = ENV_KEY_VARS.find((entry) => (env[entry.envVar] ?? "").trim() !== "");
+  return found === undefined ? null : { provider: found.provider, envVar: found.envVar };
 }
 
 /** Key first (product order fix): the model-credential story — env keys,
