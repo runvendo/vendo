@@ -88,7 +88,7 @@ describe("the wire body", () => {
     await pipeline?.flush();
 
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.url).toBe("https://console.vendo.run/api/v1/events");
+    expect(requests[0]?.url).toBe("https://console.vendo.run/api/v1/telemetry");
     expect(requests[0]?.init).toMatchObject({
       method: "POST",
       headers: { authorization: "Bearer vnd_test_key", "content-type": "application/json" },
@@ -210,7 +210,7 @@ describe("the batched uploader the miss stream and this one share", () => {
     fetchImpl: typeof fetch,
     knobs: Partial<Parameters<typeof createBatchedUploader>[0]> = {},
   ) => createBatchedUploader<VendoUsageEvent>({
-    path: "/api/v1/events",
+    path: "/api/v1/telemetry",
     cloud: { apiKey: "vnd_test" },
     body: (events) => ({ events }),
     accept: () => true,

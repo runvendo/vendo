@@ -21,8 +21,10 @@ import { createBatchedUploader } from "./batched-uploader.js";
 import { VERSION } from "./wire/shared.js";
 
 /** The console door this stream POSTs to. ONE constant: the route is the
- *  console's to name, and renaming it is a one-line change here. */
-const EVENTS_PATH = "/api/v1/events";
+ *  console's to name, and renaming it is a one-line change here. Deliberately
+ *  NOT `/api/v1/events` — that door is the console's end-user activity ingest,
+ *  with a different vocabulary and a different size cap. */
+const TELEMETRY_PATH = "/api/v1/telemetry";
 
 export interface SdkEventsPipeline {
   record(event: VendoUsageEvent): void;
@@ -74,7 +76,7 @@ export function createSdkEvents(options: SdkEventsOptions): SdkEventsPipeline | 
   const cloud = options.cloud;
   if (cloud === undefined || envOptOut(options.env ?? runtimeEnv())) return undefined;
   const uploader = createBatchedUploader<VendoUsageEvent>({
-    path: EVENTS_PATH,
+    path: TELEMETRY_PATH,
     cloud,
     body: (events) => ({ version: VERSION, runtime: options.runtime, events }),
     // The route's answer shape is the console's to fix; any JSON object counts
