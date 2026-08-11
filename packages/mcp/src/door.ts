@@ -8,6 +8,7 @@ import {
   type RiskLabel,
   type RunContext,
   type StoreAdapter,
+  type StoreOps,
   stripPathPrefix,
   type ToolDescriptor,
   type ToolOutcome,
@@ -111,6 +112,13 @@ export interface McpDoorConfig {
   oauth?: HostOAuthAdapter;
   /** Door-owned protocol state (clients, codes, refresh grants) — wired like every other block. */
   store: StoreAdapter;
+  /** The 42-op surface over that SAME store, when the composition could resolve
+   *  one. The OAuth space reaches its two drawers through `ops.engine.*` so the
+   *  engine allowlist gates every one of them; unset, it serves the same verbs
+   *  off the adapter itself (`engineOverAdapter`), which is what a host's BYO
+   *  `StoreAdapter` gets. An `internal` door has no OAuth space and reads no
+   *  drawer, so it needs none. */
+  ops?: StoreOps;
   /** §4 — saved apps ride along as MCP Apps; absent → tools-only door. The
    *  three verbs come off the real runtime (10-mcp §4); the umbrella passes
    *  `vendo.apps` essentially verbatim, narrowing only what `open` may
