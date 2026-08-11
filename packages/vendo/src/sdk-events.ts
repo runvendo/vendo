@@ -110,7 +110,7 @@ export function withSdkErrorReporting(logger: VendoLogger): VendoLogger {
       code: event.code,
       level: event.level,
       message: event.message,
-      data: dataShapes(event.data),
+      data: dataByProvenance(event.data),
       // The frames of the Vendo call site that logged this, which is the
       // question an operator actually has ("where in Vendo?").
       stack: vendoFrames(new Error().stack),
@@ -119,12 +119,53 @@ export function withSdkErrorReporting(logger: VendoLogger): VendoLogger {
   };
 }
 
-/** A log event's `data` carries a call site's ACTUAL arguments — an error, a
- *  path, an app id — so only each key and the SHAPE of its value travels. */
-function dataShapes(data: Record<string, unknown> | undefined): Record<string, unknown> {
-  const shapes: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(data ?? {})) shapes[key] = shapeOf(value);
-  return shapes;
+/**
+ * The `data` keys that hold one of VENDO'S OWN identifiers.
+ *
+ * A CLOSED set of KEY NAMES, the same discipline as the CLI lane's
+ * `CLOUD_PROP_KEYS`: a key nobody listed here — including every key a log site
+ * added tomorrow — is shapes-only, so the default leaks nothing and opting a
+ * key in is a deliberate edit to this list.
+ *
+ * The split is by PROVENANCE, not by usefulness. Reporting an incident is
+ * pointless without the failing identifier ("a ref was malformed" does not say
+ * WHICH ref), so a value Vendo itself minted travels verbatim — but anything
+ * originating in the host's data, its end user's input, or the model's content
+ * travels as its shape and nothing else.
+ */
+const VENDO_IDENTIFIER_KEYS: ReadonlySet<string> = new Set([
+  // A sandbox snapshot reference: every one is minted by a Vendo sandbox
+  // adapter and carries Vendo's own scheme prefix (sandbox.ts).
+  "snapshotRef",
+  // Vendo's `app_*` id namespace (core's `appIdSchema`) — the only thing that
+  // says WHICH app failed.
+  "appId",
+  // `trn_<32 hex>`: core's `turnIdSchema` pins the WHOLE shape and
+  // `mintTurnId` is the one mint, so it can hold nothing but random hex.
+  "turnId",
+  // A `VendoErrorCode` — a closed eight-member union in core, already
+  // travelling verbatim on the `tool_call` event.
+  "errorCode",
+]);
+
+/** No identifier Vendo mints comes near this: the longest, a composite
+ *  snapshot ref, tops out around 410 characters. The cap is a VOLUME gate — an
+ *  allowlisted key that unexpectedly holds something unbounded reports its
+ *  shape instead, so no key on the list can become a content channel. */
+const MAX_IDENTIFIER_CHARS = 512;
+
+/** A log event's `data` carries a call site's ACTUAL arguments. Vendo's own
+ *  identifiers ({@link VENDO_IDENTIFIER_KEYS}) travel as themselves; every
+ *  other key travels as its own name and the SHAPE of its value. */
+function dataByProvenance(data: Record<string, unknown> | undefined): Record<string, unknown> {
+  const reported: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data ?? {})) {
+    const verbatim = VENDO_IDENTIFIER_KEYS.has(key)
+      && typeof value === "string"
+      && value.length <= MAX_IDENTIFIER_CHARS;
+    reported[key] = verbatim ? value : shapeOf(value);
+  }
+  return reported;
 }
 
 function shapeOf(value: unknown): string {

@@ -36,8 +36,9 @@ export type VendoUsageEvent =
   /** One guard decision, beside its audit row — never in place of it. */
   | { name: "guard_decision"; kind: string; decision: string; tool: string | null }
   /** Something Vendo itself warned or failed about. `message` is Vendo's own
-   *  authored sentence, `data` carries each logged key's SHAPE (never its
-   *  value), and `stack` carries `@vendoai` frames only. */
+   *  authored sentence, `data` carries Vendo's own identifiers verbatim and
+   *  every other key's SHAPE alone (the closed allowlist in the SDK's
+   *  `sdk-events.ts`), and `stack` carries `@vendoai` frames only. */
   | {
       name: "sdk_error";
       code: string;
