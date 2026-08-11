@@ -1,5 +1,79 @@
 # @vendoai/apps
 
+## 0.15.0
+
+### Minor Changes
+
+- b324b79: **Breaking.** Third-party provider keys no longer select adapters. Pass the
+  adapter explicitly (`vendo init` now writes it for you) or set `VENDO_API_KEY`.
+
+  Env keys are credentials; config selects. A key lying around in the environment
+  used to choose which sandbox a deployment ran on, which provider it billed, and
+  which account every app machine's inference went to — decided by nothing anyone
+  wrote down. `VENDO_API_KEY` is now the only environment variable that fills an
+  adapter slot you left unset. Every ladder reads the same way: explicit config,
+  then `VENDO_API_KEY`, then an honest failure that names both ways out.
+
+  - **Sandbox.** `E2B_API_KEY` no longer selects the e2b venue. It is the
+    credential an explicit `sandbox: e2bSandbox()` reads when you pass no inline
+    `apiKey`, and `e2bSandbox()` now refuses at boot — rather than at the first
+    box build — when the optional `e2b` package does not resolve from the project.
+    An unset `sandbox` slot composes the Cloud sandbox with `VENDO_API_KEY`, or
+    nothing. `selectSandbox` drops its e2b rung and its `e2bSpecifier` parameter;
+    the `"e2b"` venue string stays in the `/status` union for older wires, but an
+    explicit adapter reports `"custom"` like any other.
+  - **Agent model.** `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
+    `GOOGLE_GENERATIVE_AI_API_KEY` select nothing. They are read by the
+    `@ai-sdk/*` provider you construct and pass in `models`. With no `models` and
+    no `VENDO_API_KEY`, the first turn says exactly that instead of quietly riding
+    a key you set for something else.
+  - **Box inference.** The `VENDO_INFERENCE_URL` + `VENDO_INFERENCE_KEY` pair wins
+    as a pair — both halves or neither — then `VENDO_API_KEY` rides the Cloud
+    gateway, then the box gets no inference door. The `ANTHROPIC_API_KEY` rung is
+    gone from both `boxInference()` and the Claude Code harness's
+    `inferenceEnv()`: a provider key in the deployment's environment used to point
+    every box at `api.anthropic.com` and bill that account.
+  - **Doctor.** `E-LIVE-007` is retired — with no key-selected venue there is no
+    such thing as a venue the operator did not ask for, and the boot refusal is
+    earlier and louder than a probe. The code stays in the append-only registry
+    and keeps its verify-page anchor. `E-LIVE-004` now names the two ways out.
+
+  `VENDO_DEV_CREDENTIAL` still pins a credential rung, and is now the only way to
+  reach an `env-key` rung at all — but it is internal, Vendo's own E2E rung matrix
+  and escape hatch, not a host knob, and it can change without notice. Your app's
+  model belongs in `models`.
+
+### Patch Changes
+
+- 9e0ed9a: Vendo's own drawers are reached by name, not through the generic records door.
+
+  Every internal collection `@vendoai/apps` owns — app rows, app grants,
+  placements and their slot pointers, app tokens, the slot registry, the capped
+  version log, the parked egress and action cards, in-client approvals, remix
+  rejections — now goes through the store's named `engine` family
+  (`ops.engine.get/put/delete/list/claim/insertIfAbsent/compareAndSwap`) instead
+  of `store.records(<collection>)`. Same collection, same verb, same arguments,
+  same order; `assertEngineCollection` gates the name on every one of them, so a
+  drawer this block has no business in cannot be reached from here at all.
+
+  The one dynamic collection name is composed by core's `engineAppHistory(appId)`
+  builder rather than assembled at a call site, so a name that could not pass the
+  gate is never built in the first place.
+
+  Two consequences worth naming. The placement store drops its no-atomic
+  fallbacks: `claim`, `insertIfAbsent` and `compareAndSwap` are contract on every
+  engine verb set, so the read-then-write concession a BYO adapter used to get has
+  nothing left to concede, and the slot arbitration is now always one decision.
+  And a store that offers neither its own ops surface nor a SQL handle refuses at
+  the first app-row operation with `not-implemented` naming what to configure,
+  rather than silently persisting through an ungated façade.
+
+  Generated-app data is unaffected: it belongs to the `appData` family, which
+  stamps an owner, and `vendo_state` stays on the store façade.
+
+- Updated dependencies [b57df06]
+  - @vendoai/core@0.15.0
+
 ## 0.14.0
 
 ### Patch Changes

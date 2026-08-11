@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/agents",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "The standalone agent runtime: spawn a governed, harness-grade agent in any Node backend in a few lines.",
   "keywords": [
     "ai",

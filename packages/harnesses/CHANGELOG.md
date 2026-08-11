@@ -1,5 +1,93 @@
 # @vendoai/harnesses
 
+## 0.15.0
+
+### Minor Changes
+
+- b324b79: **Breaking.** Third-party provider keys no longer select adapters. Pass the
+  adapter explicitly (`vendo init` now writes it for you) or set `VENDO_API_KEY`.
+
+  Env keys are credentials; config selects. A key lying around in the environment
+  used to choose which sandbox a deployment ran on, which provider it billed, and
+  which account every app machine's inference went to — decided by nothing anyone
+  wrote down. `VENDO_API_KEY` is now the only environment variable that fills an
+  adapter slot you left unset. Every ladder reads the same way: explicit config,
+  then `VENDO_API_KEY`, then an honest failure that names both ways out.
+
+  - **Sandbox.** `E2B_API_KEY` no longer selects the e2b venue. It is the
+    credential an explicit `sandbox: e2bSandbox()` reads when you pass no inline
+    `apiKey`, and `e2bSandbox()` now refuses at boot — rather than at the first
+    box build — when the optional `e2b` package does not resolve from the project.
+    An unset `sandbox` slot composes the Cloud sandbox with `VENDO_API_KEY`, or
+    nothing. `selectSandbox` drops its e2b rung and its `e2bSpecifier` parameter;
+    the `"e2b"` venue string stays in the `/status` union for older wires, but an
+    explicit adapter reports `"custom"` like any other.
+  - **Agent model.** `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
+    `GOOGLE_GENERATIVE_AI_API_KEY` select nothing. They are read by the
+    `@ai-sdk/*` provider you construct and pass in `models`. With no `models` and
+    no `VENDO_API_KEY`, the first turn says exactly that instead of quietly riding
+    a key you set for something else.
+  - **Box inference.** The `VENDO_INFERENCE_URL` + `VENDO_INFERENCE_KEY` pair wins
+    as a pair — both halves or neither — then `VENDO_API_KEY` rides the Cloud
+    gateway, then the box gets no inference door. The `ANTHROPIC_API_KEY` rung is
+    gone from both `boxInference()` and the Claude Code harness's
+    `inferenceEnv()`: a provider key in the deployment's environment used to point
+    every box at `api.anthropic.com` and bill that account.
+  - **Doctor.** `E-LIVE-007` is retired — with no key-selected venue there is no
+    such thing as a venue the operator did not ask for, and the boot refusal is
+    earlier and louder than a probe. The code stays in the append-only registry
+    and keeps its verify-page anchor. `E-LIVE-004` now names the two ways out.
+
+  `VENDO_DEV_CREDENTIAL` still pins a credential rung, and is now the only way to
+  reach an `env-key` rung at all — but it is internal, Vendo's own E2E rung matrix
+  and escape hatch, not a host knob, and it can change without notice. Your app's
+  model belongs in `models`.
+
+- 8f00291: The selection law leaves a way out: the migration surface for "env keys are
+  credentials, config selects".
+
+  `vendo init` writes the `models:` line again. It resolved the key through the
+  runtime credential ladder, which by design stopped answering for a bare provider
+  key — so the one thing that turns a host's existing key into explicit config
+  became unreachable, and the detection now reads the environment directly. The
+  `--byo` paste is covered too: that key arrives during the cloud step, after the
+  composition was planned and before anything is written, so the run re-renders
+  the composition it authored instead of saving a key that selects nothing. The
+  closing summary no longer advises setting a model key on a run that just wrote
+  one.
+
+  The provider init writes an import for is the provider it installs. `ensureProviderDeps`
+  asked the runtime credential which `@ai-sdk/*` package the host needs, and a bare
+  provider key is `rung: "none"` — so a fresh host with only `OPENAI_API_KEY` (or a
+  Google key) had an `@ai-sdk/openai` import written into its route and nothing
+  installed to satisfy it, and the app could not build. It now covers both answers:
+  what a runtime turn loads, and what this run actually wrote.
+
+  `vendo sync --ai` stops telling a developer to set the key they already set. Its
+  credential gate ran on the runtime resolver alone, so a machine whose only
+  credential is `ANTHROPIC_API_KEY` was told "set ANTHROPIC_API_KEY" while the
+  harnesses that authenticate with exactly that key were never probed. The gate now
+  also reads the provider keys a rung runs on, which is what makes the message
+  honest: it can only be reached when every credential it names is genuinely
+  absent.
+
+  `claudeCode({ machine: "local" })` fails loudly with no model. That machine
+  REPLACES the subprocess environment, so a deployment whose only credential was a
+  provider key now hands the session nothing — intended, but it used to die deep
+  inside the SDK. It names both ways out, explicit endpoint first: the
+  `VENDO_INFERENCE_URL` + `VENDO_INFERENCE_KEY` pair, or `VENDO_API_KEY` for the
+  Cloud gateway.
+
+  The `mastra-agent` example composes its models explicitly instead of expecting
+  the environment to pick one, and the docs that still described env-resolved
+  selection say what the code does.
+
+### Patch Changes
+
+- Updated dependencies [b57df06]
+  - @vendoai/core@0.15.0
+  - @vendoai/guard@0.15.0
+
 ## 0.14.0
 
 ### Patch Changes

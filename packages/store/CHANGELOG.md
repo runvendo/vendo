@@ -1,5 +1,62 @@
 # @vendoai/store
 
+## 0.15.0
+
+### Minor Changes
+
+- 545416a: The store warns when it is writing to disk the platform wipes, and `vendo doctor`
+  finds the same thing statically as `E-STORE-001`.
+
+  Railway, Render, Fly.io and Heroku all run a long-lived process, so PGlite
+  genuinely works there and refusing outright would be wrong — but they replace the
+  container filesystem on every redeploy. The store kept working and quietly lost
+  every app the host's users had built at the next deploy, with nothing said at any
+  point. It now says so at construction, naming the directory it is about to write
+  to and both ways out: mount a persistent volume and point `dataDir` at it, or
+  pass a Postgres `url`.
+
+  A platform marker is evidence on its own, so the warning does not wait for data
+  to appear — warning before the first user writes is the whole point. A path under
+  `/tmp` warns without a marker. `memory://` and a configured Postgres `url` say
+  nothing, and the existing hard refusal on genuinely serverless environments
+  (Vercel, Cloudflare Pages, Lambda) is untouched and still throws, because there
+  PGlite cannot work at all.
+
+  `vendo doctor` carries the static twin as `E-STORE-001`, so the wipe is findable
+  before a deploy rather than after one. A project under `/tmp` additionally needs
+  a real database sitting there: a scratch checkout under `/tmp` is what doctor
+  sees on a laptop, and a false warning on every local run is worse than no
+  warning. The check also stays quiet when `VENDO_API_KEY` composes the hosted
+  store, since the local data directory is then one that nothing ever writes to.
+
+### Patch Changes
+
+- bb15cda: the app-access door rides the `engine` family
+
+  `appAccess` resolved and wrote app permissions through `store.records(collection)`
+  — the generic door a HOST reaches its own rows through — so nothing in those
+  calls said that `vendo_apps` and `vendo_app_grants` are Vendo's own drawers, and
+  nothing could refuse a call that reached outside them. All four sites now name
+  their collection to `ops.engine.*`: the app row every level resolves from, and
+  the grant list, grant write and revoke behind it.
+
+  Same collections, same verbs, same arguments, same order. `engine` reaches the
+  very same routed doors `records` did, so the `ON CONFLICT (app_id, principal)`
+  floor and the rest of the per-collection policy are untouched; the one statement
+  added in front is the allowlist.
+
+  No new parameter: this helper lives inside `@vendoai/store` and takes the store
+  itself, so it uses the store's OWN `ops` when it carries one — the hosted store
+  does, one hop shorter than its `records` façade, which is built on these very
+  ops — and the family over the adapter's record doors (`engineOverAdapter`) when
+  it does not, which is what a local store and every BYO adapter get.
+
+- Updated dependencies [9e0ed9a]
+- Updated dependencies [b57df06]
+- Updated dependencies [b324b79]
+  - @vendoai/apps@0.15.0
+  - @vendoai/core@0.15.0
+
 ## 0.14.0
 
 ### Minor Changes

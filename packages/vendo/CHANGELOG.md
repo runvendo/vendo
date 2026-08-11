@@ -1,5 +1,193 @@
 # @vendoai/vendo
 
+## 0.15.0
+
+### Minor Changes
+
+- b57df06: `createVendo` prints one block when it finishes composing, and the palette it
+  paints with becomes a core primitive.
+
+  A deployment used to boot in silence. Which store it composed, which sandbox,
+  whose model key it picked up and which auth story was actually live were all
+  knowable only by reading `/status` or the source — which meant the answer arrived
+  after something had already gone wrong. The boot summary says it once, to the
+  operator, at the moment it becomes true: one row per seam that is really serving,
+  naming the venue it chose and the thing that chose it, an environment variable or
+  the config line the host wrote. A seam nobody filled stays quiet, because silence
+  is the honest report for a slot a host declined to use.
+
+  The block is a single event through core's log sink, so a host can route or
+  quieten it like any other line, and it can never be split across streams or
+  arrive interleaved with something else. It is composed facts only — nothing in it
+  stats a path, opens a handle or awaits anything, so `createVendo` stays I/O-free
+  at module init and keeps working on Workers. The one judgment that genuinely
+  needs the filesystem, whether the data directory survives a redeploy, is made by
+  the seam that owns it and arrives here as data.
+
+  `vendoStyle()` and `VendoStyle` move into `@vendoai/core`: one palette and one
+  `pretty` decision, reachable from packages that sit below `vendo`, instead of
+  each caller keeping its own copy of the same four helpers.
+
+  `HostAuthPreset` gains an optional `name`, which is how the auth row can say
+  `clerk` instead of just "a preset". It is display only — nothing branches on it,
+  a preset a host composed itself has no vendor to name and says so rather than
+  borrowing one, and a name that is not an identifier is not rendered at all.
+
+- b324b79: **Breaking.** Third-party provider keys no longer select adapters. Pass the
+  adapter explicitly (`vendo init` now writes it for you) or set `VENDO_API_KEY`.
+
+  Env keys are credentials; config selects. A key lying around in the environment
+  used to choose which sandbox a deployment ran on, which provider it billed, and
+  which account every app machine's inference went to — decided by nothing anyone
+  wrote down. `VENDO_API_KEY` is now the only environment variable that fills an
+  adapter slot you left unset. Every ladder reads the same way: explicit config,
+  then `VENDO_API_KEY`, then an honest failure that names both ways out.
+
+  - **Sandbox.** `E2B_API_KEY` no longer selects the e2b venue. It is the
+    credential an explicit `sandbox: e2bSandbox()` reads when you pass no inline
+    `apiKey`, and `e2bSandbox()` now refuses at boot — rather than at the first
+    box build — when the optional `e2b` package does not resolve from the project.
+    An unset `sandbox` slot composes the Cloud sandbox with `VENDO_API_KEY`, or
+    nothing. `selectSandbox` drops its e2b rung and its `e2bSpecifier` parameter;
+    the `"e2b"` venue string stays in the `/status` union for older wires, but an
+    explicit adapter reports `"custom"` like any other.
+  - **Agent model.** `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
+    `GOOGLE_GENERATIVE_AI_API_KEY` select nothing. They are read by the
+    `@ai-sdk/*` provider you construct and pass in `models`. With no `models` and
+    no `VENDO_API_KEY`, the first turn says exactly that instead of quietly riding
+    a key you set for something else.
+  - **Box inference.** The `VENDO_INFERENCE_URL` + `VENDO_INFERENCE_KEY` pair wins
+    as a pair — both halves or neither — then `VENDO_API_KEY` rides the Cloud
+    gateway, then the box gets no inference door. The `ANTHROPIC_API_KEY` rung is
+    gone from both `boxInference()` and the Claude Code harness's
+    `inferenceEnv()`: a provider key in the deployment's environment used to point
+    every box at `api.anthropic.com` and bill that account.
+  - **Doctor.** `E-LIVE-007` is retired — with no key-selected venue there is no
+    such thing as a venue the operator did not ask for, and the boot refusal is
+    earlier and louder than a probe. The code stays in the append-only registry
+    and keeps its verify-page anchor. `E-LIVE-004` now names the two ways out.
+
+  `VENDO_DEV_CREDENTIAL` still pins a credential rung, and is now the only way to
+  reach an `env-key` rung at all — but it is internal, Vendo's own E2E rung matrix
+  and escape hatch, not a host knob, and it can change without notice. Your app's
+  model belongs in `models`.
+
+- 545416a: The store warns when it is writing to disk the platform wipes, and `vendo doctor`
+  finds the same thing statically as `E-STORE-001`.
+
+  Railway, Render, Fly.io and Heroku all run a long-lived process, so PGlite
+  genuinely works there and refusing outright would be wrong — but they replace the
+  container filesystem on every redeploy. The store kept working and quietly lost
+  every app the host's users had built at the next deploy, with nothing said at any
+  point. It now says so at construction, naming the directory it is about to write
+  to and both ways out: mount a persistent volume and point `dataDir` at it, or
+  pass a Postgres `url`.
+
+  A platform marker is evidence on its own, so the warning does not wait for data
+  to appear — warning before the first user writes is the whole point. A path under
+  `/tmp` warns without a marker. `memory://` and a configured Postgres `url` say
+  nothing, and the existing hard refusal on genuinely serverless environments
+  (Vercel, Cloudflare Pages, Lambda) is untouched and still throws, because there
+  PGlite cannot work at all.
+
+  `vendo doctor` carries the static twin as `E-STORE-001`, so the wipe is findable
+  before a deploy rather than after one. A project under `/tmp` additionally needs
+  a real database sitting there: a scratch checkout under `/tmp` is what doctor
+  sees on a laptop, and a false warning on every local run is worse than no
+  warning. The check also stays quiet when `VENDO_API_KEY` composes the hosted
+  store, since the local data directory is then one that nothing ever writes to.
+
+- 8f00291: The selection law leaves a way out: the migration surface for "env keys are
+  credentials, config selects".
+
+  `vendo init` writes the `models:` line again. It resolved the key through the
+  runtime credential ladder, which by design stopped answering for a bare provider
+  key — so the one thing that turns a host's existing key into explicit config
+  became unreachable, and the detection now reads the environment directly. The
+  `--byo` paste is covered too: that key arrives during the cloud step, after the
+  composition was planned and before anything is written, so the run re-renders
+  the composition it authored instead of saving a key that selects nothing. The
+  closing summary no longer advises setting a model key on a run that just wrote
+  one.
+
+  The provider init writes an import for is the provider it installs. `ensureProviderDeps`
+  asked the runtime credential which `@ai-sdk/*` package the host needs, and a bare
+  provider key is `rung: "none"` — so a fresh host with only `OPENAI_API_KEY` (or a
+  Google key) had an `@ai-sdk/openai` import written into its route and nothing
+  installed to satisfy it, and the app could not build. It now covers both answers:
+  what a runtime turn loads, and what this run actually wrote.
+
+  `vendo sync --ai` stops telling a developer to set the key they already set. Its
+  credential gate ran on the runtime resolver alone, so a machine whose only
+  credential is `ANTHROPIC_API_KEY` was told "set ANTHROPIC_API_KEY" while the
+  harnesses that authenticate with exactly that key were never probed. The gate now
+  also reads the provider keys a rung runs on, which is what makes the message
+  honest: it can only be reached when every credential it names is genuinely
+  absent.
+
+  `claudeCode({ machine: "local" })` fails loudly with no model. That machine
+  REPLACES the subprocess environment, so a deployment whose only credential was a
+  provider key now hands the session nothing — intended, but it used to die deep
+  inside the SDK. It names both ways out, explicit endpoint first: the
+  `VENDO_INFERENCE_URL` + `VENDO_INFERENCE_KEY` pair, or `VENDO_API_KEY` for the
+  Cloud gateway.
+
+  The `mastra-agent` example composes its models explicitly instead of expecting
+  the environment to pick one, and the docs that still described env-resolved
+  selection say what the code does.
+
+### Patch Changes
+
+- 1529978: the door's OAuth drawers ride the `engine` family
+
+  Registered clients, consent interactions, authorization codes, access and
+  refresh grants and their family anchors all reached the store through the
+  generic `records.*` door a host uses for its own rows. All 18 sites now go
+  through `ops.engine.*` — the same two collections, the same verbs, the same
+  arguments, the same order, with `assertEngineCollection` in front of every one
+  of them. `store.records(...)` is gone from `packages/mcp/src` entirely.
+
+  `createMcpDoor` takes an optional `ops: StoreOps` beside `store`, threaded from
+  the composition. Unset — a `StoreAdapter` with neither its own ops nor a SQL
+  handle, which is every BYO adapter — `engineOverAdapter` serves the same seven
+  verbs off the adapter's own record doors, gate included, so an unset slot is a
+  route and not a downgrade.
+
+  Two consequences of the capability check moving off the call sites. `claim` is
+  optional on a record handle and absent on a store that cannot compare-and-claim,
+  so each site used to pre-check the handle; on the engine family the verb is
+  always there and refuses with `not-implemented` instead. Every OAuth refusal a
+  client could already see is unchanged, including all four `server_error`
+  bodies — but on such a store a refresh rotation now discovers it after writing
+  its candidate grants rather than before, leaving two rows nothing can ever reach
+  (their secrets were never returned) on a store where no rotation could have
+  succeeded either way; and a revoke that matches no token answers RFC 7009
+  success instead of that `server_error`.
+
+  `vendo_threads` stays on the record façade deliberately, as the umbrella's
+  threads do: its routed door carries cross-subject refusal, revision CAS and a
+  transcript projection the generic engine path does not reproduce.
+
+- Updated dependencies [9e0ed9a]
+- Updated dependencies [b57df06]
+- Updated dependencies [b324b79]
+- Updated dependencies [545416a]
+- Updated dependencies [ec80477]
+- Updated dependencies [1529978]
+- Updated dependencies [8f00291]
+- Updated dependencies [bb15cda]
+  - @vendoai/apps@0.15.0
+  - @vendoai/core@0.15.0
+  - @vendoai/agents@0.15.0
+  - @vendoai/harnesses@0.15.0
+  - @vendoai/store@0.15.0
+  - @vendoai/knowledge@0.15.0
+  - @vendoai/mcp@0.15.0
+  - @vendoai/actions@0.15.0
+  - @vendoai/automations@0.15.0
+  - @vendoai/ui@0.15.0
+  - @vendoai/guard@0.15.0
+
 ## 0.14.0
 
 ### Minor Changes
