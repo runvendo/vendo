@@ -95,3 +95,12 @@ describe("deployment_boot's adapter list", () => {
     expect(boot?.adapters).toContain("sandbox");
   });
 });
+
+describe("deployment_boot's arity", () => {
+  it("raises exactly one event per composition", async () => {
+    // One composition is one deployment coming up. Two events from one process
+    // therefore mean two compositions, and that is a fact about the host worth
+    // seeing — never something this event may hide by deduplicating itself.
+    expect(bootEventsOf(await uploadedEvents())).toHaveLength(1);
+  });
+});
