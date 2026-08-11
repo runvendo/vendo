@@ -95,6 +95,32 @@ checks that `VENDO_API_KEY` is present and well formed locally; a bad or
 revoked key surfaces on the first real service call with
 `Invalid or revoked API key (401)`.
 
+### API key scopes
+
+Every API key carries one of two scopes, fixed at mint time:
+
+- **Runtime** — reads and writes this project's data. This is the scope apps,
+  agents, and CI publishers need, and it is the default for every new key
+  and for every key minted before scopes shipped.
+- **Admin** — everything Runtime can do, plus the two lifecycle doors that
+  permanently destroy or re-own data: `POST /api/v1/store/erase` (called by
+  [`eraseStore`](/deploy/persistence#erasing-data)) and
+  `POST /api/v1/store/lifecycle/promote`.
+
+A runtime-scoped key that hits either admin-only door is refused with HTTP
+403 and the `blocked` code. The refusal runs inside key resolution, ahead of
+the request body read, so the store handler never sees a runtime key.
+
+Scope is chosen in the console's **Create key** dialog on your project's
+Keys page: Runtime is preselected, Admin is a deliberate second click, and
+the key list column names every key's scope. The CLI's
+`vendo cloud keys create` mints Runtime keys only; use the console when you
+need Admin.
+
+Existing keys stay on Runtime — nothing is back-dated. Any deployment that
+calls `eraseStore` or `lifecycle.promote` against Vendo Cloud with a
+pre-scope key starts getting 403 until it swaps in an admin key.
+
 Every key-authed call carries sanitized deployment-identity headers
 (`X-Vendo-Deployment-Host`, `X-Vendo-Deployment-Name`), so usage appears in
 the console and `vendo cloud usage` from real traffic. To confirm a CI key

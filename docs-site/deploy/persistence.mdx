@@ -126,6 +126,19 @@ const byApp = await eraseStore(vendo.store).byApp(appId);
 Each call returns per-table deleted counts so you can log or verify the
 cascade.
 
+Against the [hosted store](/deploy/vendo-cloud#hosted-store), `eraseStore`
+calls `POST /api/v1/store/erase`, which requires an **admin-scoped**
+`VENDO_API_KEY`. A runtime-scoped key is refused with HTTP 403 and the
+`blocked` code before the request body is read — the same refusal applies to
+the lifecycle promote door. Existing keys default to the runtime scope, so
+minting a new admin key in the console is a hard prerequisite for calling
+`eraseStore` against Vendo Cloud. Mint one from your project's Keys page in
+the console: the **Create key** dialog shows a Runtime / Admin picker, and
+Admin is a deliberate second click. See [API key
+scopes](/deploy/vendo-cloud#api-key-scopes) for the full list of doors each
+scope opens. Against a local PGlite or your own Postgres, `eraseStore` runs
+directly against the store and no scope check applies.
+
 ### Compare-and-set on your own collections
 
 When two ticks, retries, or agent runs might race on the same record, a
