@@ -89,6 +89,11 @@ export const resolveAppRef = async (
   // An id is an id (core's own shape). Nothing is listed for the common path.
   if (appIdSchema.safeParse(ref).success) return ref;
   const apps = await runtime.list(ctx);
+  const lower = ref.toLowerCase();
+  const exactRef = apps.filter(({ name }) => name.toLowerCase() === lower);
+  if ((lower === "active" || lower === "current") && exactRef.length === 0) {
+    if (apps.length > 0) return (apps[0] as AppDocument).id;
+  }
   const exact = apps.filter(({ name }) => name === ref);
   const matches = exact.length > 0
     ? exact
