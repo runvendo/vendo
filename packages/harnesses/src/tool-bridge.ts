@@ -10,6 +10,7 @@ import {
   vendoViewPart,
   vendoViewPartSchema,
   isVendoAppsTool,
+  log,
   type ApprovalId,
   type Guard,
   type RiskLabel,
@@ -32,6 +33,10 @@ import type { UIMessage, UIMessageStreamWriter } from "ai";
 
 type VendoPart = VendoApprovalPart | VendoAutomationPart | VendoBuildFailedPart | VendoCitationsPart | VendoConnectPart | VendoViewPart;
 
+/** An observer of one guarded call: invoked before the gate, returning the
+ *  finisher that receives the model-visible outcome. */
+export type ToolCallHook = (call: ToolCall) => (outcome: ToolOutcome) => void;
+
 /** 03-agent §2 */
 export interface ToolBridgeOptions {
   registry: ToolRegistry;
@@ -40,7 +45,15 @@ export interface ToolBridgeOptions {
   writer?: UIMessageStreamWriter<UIMessage>;
   toolOutputCap?: number;
   gate?: (call: ToolCall) => ToolOutcome | undefined;
-  onCall?: (call: ToolCall) => (outcome: ToolOutcome) => void;
+  /** Observes every guarded call. THREE independent call sites want this one slot
+   * — composition's turn shape (harness-turn.ts), the away run record
+   * (agents/away.ts), and the runtime's capability-miss detector — and a plain
+   * assignment silently drops whoever wrote it first, which is how every composed
+   * turn came to report zero tool calls. Fill it through
+   * {@link mergeToolCallHooks}; never assign over a value that may already be
+   * there. A hook that throws is logged and skipped: watching a call may never
+   * fail, delay or reorder it. */
+  onCall?: ToolCallHook;
   /** Discovery-discipline 2026-07-25: a pre-guard short-circuit (the connect
    * gate). A non-undefined outcome means the call cannot run — needsApproval
    * skips the guard entirely (no approval minted; the ask would be answered
@@ -52,6 +65,47 @@ export interface ToolBridgeOptions {
    * matter how many of its tools the model called. Omit to disable deduping
    * (the away runner has no card surface). */
   connectCards?: Set<string>;
+}
+
+/** Runs one hook, reporting a throw instead of propagating it. */
+function isolate<T>(run: () => T): T | undefined {
+  try {
+    return run();
+  } catch (error) {
+    log({
+      code: "harnesses.tool-call-hook-failed",
+      level: "error",
+      message: "[vendo] tool bridge: an onCall hook threw",
+      data: { detail: { error: error instanceof Error ? error.message : String(error) } },
+    });
+    return undefined;
+  }
+}
+
+/**
+ * The ONE hook that runs all of them, in argument order, on both halves of a
+ * call: every hook is opened before the gate, and every finisher it handed back
+ * runs on the outcome. `undefined` arguments drop out, so a caller passes an
+ * optional hook straight through.
+ *
+ * This exists so a caller that wants to observe calls ADDS itself to the
+ * `onCall` slot instead of assigning over it. Assignment is how the turn's tool
+ * counting disappeared: `{ ...bridge, onCall: mine }` type-checks, reads as
+ * additive, and silently throws away the hook the spread just copied in.
+ *
+ * A hook that throws — on the way in or on the outcome — is logged and skipped:
+ * it neither fails the tool call nor stops any other hook.
+ */
+export function mergeToolCallHooks(...hooks: Array<ToolCallHook | undefined>): ToolCallHook {
+  const present = hooks.filter((hook) => hook !== undefined);
+  return (call) => {
+    const finishers = present
+      .map((hook) => isolate(() => hook(call)))
+      .filter((finish) => finish !== undefined);
+    return (outcome) => {
+      for (const finish of finishers) isolate(() => finish(outcome));
+    };
+  };
 }
 
 function writePart(
@@ -183,7 +237,7 @@ export async function guardedCall(
       },
     });
   }
-  const finishCall = options.onCall?.(call);
+  const finishCall = mergeToolCallHooks(options.onCall)(call);
   let outcome = options.gate?.(call);
   if (outcome === undefined) {
     try {
@@ -271,7 +325,7 @@ export async function guardedCall(
   }
 
   const modelOutcome = capOutcome(outcome, options.toolOutputCap);
-  finishCall?.(modelOutcome);
+  finishCall(modelOutcome);
   return modelOutcome;
 }
 

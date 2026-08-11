@@ -38,7 +38,7 @@ import {
   validateUpsert,
 } from "./transcript-rules.js";
 import { createCapabilityMissDetector, type CapabilityMissConfig } from "./capability-miss.js";
-import type { ToolBridgeOptions } from "./tool-bridge.js";
+import { mergeToolCallHooks, type ToolBridgeOptions } from "./tool-bridge.js";
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
@@ -394,7 +394,12 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             // in one turn reports itself, wherever the failure came from.
             bridge: {
               ...deps.bridge,
-              ...(capabilityMiss === undefined ? {} : { onCall: capabilityMiss.onCall }),
+              // MERGED, not assigned: the detector's hook used to be assigned into
+              // this slot, replacing whatever composition had already put there —
+              // the turn's own tool counting — so every composed deployment
+              // reported zero tool calls and an empty tool list. One
+              // unconditional merge, and a fourth watcher joins the argument list.
+              onCall: mergeToolCallHooks(deps.bridge?.onCall, capabilityMiss?.onCall),
               writer,
               connectCards: new Set<string>(),
             },
