@@ -132,11 +132,24 @@ export function withSdkErrorReporting(logger: VendoLogger): VendoLogger {
  * WHICH ref), so a value Vendo itself minted travels verbatim — but anything
  * originating in the host's data, its end user's input, or the model's content
  * travels as its shape and nothing else.
+ *
+ * MINTED BY VENDO, not merely NAMED by Vendo. A key earns a place here only if
+ * every value that can reach it was produced by this SDK. The question to ask
+ * of a candidate is which code path logs it: a key logged on a FAILURE path
+ * often holds the input that failed, and an input is the caller's, not ours.
+ * Classify such a value against a closed set and report the classification;
+ * never echo it, and never a prefix of it either.
  */
 const VENDO_IDENTIFIER_KEYS: ReadonlySet<string> = new Set([
-  // A sandbox snapshot reference: every one is minted by a Vendo sandbox
-  // adapter and carries Vendo's own scheme prefix (sandbox.ts).
-  "snapshotRef",
+  // A CLASSIFICATION of a snapshot ref, never the ref (sandbox.ts): a matched
+  // constant from Vendo's closed set of schemes, a length, and a one-way
+  // digest. A raw `snapshotRef` is deliberately NOT here — the only path that
+  // reports one is the path where it FAILED to decode, and a ref that failed
+  // to decode is by definition not Vendo-minted but whatever a caller handed a
+  // public method.
+  "snapshotRefScheme",
+  "snapshotRefLength",
+  "snapshotRefDigest",
   // Vendo's `app_*` id namespace (core's `appIdSchema`) — the only thing that
   // says WHICH app failed.
   "appId",
@@ -148,21 +161,22 @@ const VENDO_IDENTIFIER_KEYS: ReadonlySet<string> = new Set([
   "errorCode",
 ]);
 
-/** No identifier Vendo mints comes near this: the longest, a composite
- *  snapshot ref, tops out around 410 characters. The cap is a VOLUME gate — an
+/** No identifier Vendo mints comes near this. The cap is a VOLUME gate — an
  *  allowlisted key that unexpectedly holds something unbounded reports its
  *  shape instead, so no key on the list can become a content channel. */
 const MAX_IDENTIFIER_CHARS = 512;
 
 /** A log event's `data` carries a call site's ACTUAL arguments. Vendo's own
- *  identifiers ({@link VENDO_IDENTIFIER_KEYS}) travel as themselves; every
- *  other key travels as its own name and the SHAPE of its value. */
+ *  identifiers ({@link VENDO_IDENTIFIER_KEYS}) travel as themselves — strings
+ *  within the cap, and finite numbers, which are bounded by their own type.
+ *  Every other key travels as its own name and the SHAPE of its value. */
 function dataByProvenance(data: Record<string, unknown> | undefined): Record<string, unknown> {
   const reported: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data ?? {})) {
     const verbatim = VENDO_IDENTIFIER_KEYS.has(key)
-      && typeof value === "string"
-      && value.length <= MAX_IDENTIFIER_CHARS;
+      && (typeof value === "number"
+        ? Number.isFinite(value)
+        : typeof value === "string" && value.length <= MAX_IDENTIFIER_CHARS);
     reported[key] = verbatim ? value : shapeOf(value);
   }
   return reported;

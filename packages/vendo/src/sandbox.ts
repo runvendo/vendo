@@ -200,23 +200,57 @@ const decodeSnapshotRef = (snapshotRef: string): CloudSnapshotState => {
 const isGone = (error: unknown): boolean =>
   error instanceof VendoError && error.code === "not-found";
 
-/** Decode a ref, and report WHICH ref when it will not decode.
+/** Every snapshot-ref scheme this repo mints, longest match first — "vendo:"
+ * is a strict prefix of "vendo:v2:". Classification reports the MATCHED
+ * CONSTANT from this list, never a slice of the input. */
+const KNOWN_REF_SCHEMES = [
+  CLOUD_SNAPSHOT_REF_PREFIX,
+  "e2b:v2:",
+  "fake-v2:",
+  "fake:",
+  CONSOLE_SNAPSHOT_REF_PREFIX,
+] as const;
+
+const UNKNOWN_REF_SCHEME = "(no known scheme)";
+
+/** Twelve hex characters of SHA-256 — enough to tie two reports of the same
+ * bad ref together, one-way so it carries none of it. */
+const refDigest = async (snapshotRef: string): Promise<string> => {
+  const hash = await crypto.subtle.digest("SHA-256", encoder.encode(snapshotRef));
+  return [...new Uint8Array(hash).subarray(0, 6)]
+    .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+};
+
+/** Decode a ref, and report which ref failed when it will not decode.
  *
  * The decoder's message says which WAY a ref is wrong; it cannot say which
- * ref, because it is one authored sentence and a ref does not belong inside
- * one. That left an operator reading "a ref was malformed" with no way to find
- * it. The ref reaches the `sdk_error` stream from here instead, under the
- * allowlisted `snapshotRef` key (sdk-events.ts). The error the caller sees is
- * unchanged — this only observes it on the way past. */
-const decodeOrReport = (snapshotRef: string): CloudSnapshotState => {
+ * one, because it is one authored sentence and a ref does not belong inside
+ * one. That left an operator reading "a ref was malformed" with no way to tell
+ * them apart. A CLASSIFICATION of the ref reaches the `sdk_error` stream from
+ * here instead (allowlisted in sdk-events.ts).
+ *
+ * Classification, never an echo: `resume` and `destroy` are public methods, so
+ * their argument is the caller's, and a ref that failed to decode is BY
+ * DEFINITION not one Vendo minted — it is arbitrary caller content, up to and
+ * including a secret passed to the wrong function. A prefix of that content is
+ * still that content, so the scheme is matched against the closed set above
+ * and reported as the constant that matched; the rest travels only as a length
+ * and a one-way digest. The error the caller sees is unchanged — this only
+ * observes it on the way past. */
+const decodeOrReport = async (snapshotRef: string): Promise<CloudSnapshotState> => {
   try {
     return decodeSnapshotRef(snapshotRef);
   } catch (error) {
     log({
       code: "vendo.snapshot-ref-undecodable",
       level: "error",
-      message: `[vendo] ${safeErrorMessage(error)} Reference:`,
-      data: { snapshotRef },
+      message: `[vendo] ${safeErrorMessage(error)}`,
+      data: {
+        snapshotRefScheme: KNOWN_REF_SCHEMES.find((scheme) => snapshotRef.startsWith(scheme))
+          ?? UNKNOWN_REF_SCHEME,
+        snapshotRefLength: snapshotRef.length,
+        snapshotRefDigest: await refDigest(snapshotRef),
+      },
     });
     throw error;
   }
@@ -492,7 +526,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       });
     },
     async resume(snapshotRef, policy?: SandboxResumePolicy) {
-      const state = decodeOrReport(snapshotRef);
+      const state = await decodeOrReport(snapshotRef);
       // The new machine inherits NO network config from the artifact
       // (sandbox-wire.ts), so every resume states the applicable allowlist:
       // Lane E's replace semantics when the caller re-polices the wake, the
@@ -508,7 +542,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       });
     },
     async destroy(snapshotRef) {
-      const state = decodeOrReport(snapshotRef);
+      const state = await decodeOrReport(snapshotRef);
       // Best-effort reap of the recorded source machine (it is usually
       // already gone — the sleep flow destroyed it), then the artifact GC.
       // A 404 from either is the seam's idempotent no-op.
