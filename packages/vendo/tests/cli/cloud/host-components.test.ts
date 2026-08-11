@@ -68,20 +68,14 @@ const remoteRow = (id: string, data?: unknown): [string, unknown] => [id, data !
 const VERBS = ["list", "put", "delete"] as const;
 
 /**
- * Which record verb a request is, across BOTH spellings of the door.
- *
- * The façade (`store.records(collection)`) addresses a per-collection path,
- * `/records/<collection>/<verb>`; the named-operation surface (`ops.engine.*`)
- * addresses the verb and carries the collection in the body. The engine routes
- * are read off `STORE_WIRE_PATHS` rather than written out here, so this double
- * cannot drift from the contract the client actually routes by — the literal 42
- * paths stay pinned in `packages/core/tests/store-wire.test.ts`, which is where
- * a path belongs. The per-collection door has no entry in that map (it is not
- * part of the wire contract), so it stays spelled out.
+ * Which engine verb a request is. The named-operation surface (`ops.engine.*`)
+ * addresses the verb and carries the collection in the body; the routes are read
+ * off `STORE_WIRE_PATHS` rather than written out here, so this cannot drift from
+ * the contract the client actually routes by — the literal 35 paths stay pinned
+ * in `packages/core/tests/store-wire.test.ts`, which is where a path belongs.
  */
-function recordVerb(pathname: string, body: { collection?: string }): typeof VERBS[number] | undefined {
+function engineVerb(pathname: string, body: { collection?: string }): typeof VERBS[number] | undefined {
   for (const verb of VERBS) {
-    if (pathname.endsWith(`/records/${HOST_COMPONENTS_COLLECTION}/${verb}`)) return verb;
     if (pathname.endsWith(STORE_WIRE_PATHS[`engine.${verb}`]) && body.collection === HOST_COMPONENTS_COLLECTION) {
       return verb;
     }
@@ -99,18 +93,14 @@ function fakeCloud(seed: { blobs?: string[]; records?: Array<[string, unknown]> 
     const method = init?.method ?? "GET";
     calls.push(`${method} ${url.pathname}${url.search}`);
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
-    if (url.pathname.endsWith("/blobs/vendo_host_components")) return json({ keys: [...blobs] });
-    const blob = /\/blobs\/vendo_host_components\/([0-9a-f]{64})$/u.exec(url.pathname);
-    if (blob !== null) {
-      if (method === "PUT") blobs.add(blob[1]!);
-      if (method === "DELETE") blobs.delete(blob[1]!);
-      return json({});
-    }
-    // Past the blob branches every remaining body is the door's JSON.
     const body = (init?.body === undefined || init.body === null
       ? {}
-      : JSON.parse(String(init.body))) as { collection?: string; record?: { id: string; data: unknown }; id?: string };
-    switch (recordVerb(url.pathname, body)) {
+      : JSON.parse(String(init.body))) as { collection?: string; namespace?: string; key?: string; record?: { id: string; data: unknown }; id?: string };
+    // The blobs family: namespace + key ride the JSON body; list is keys-only.
+    if (url.pathname.endsWith(STORE_WIRE_PATHS["blobs.list"])) return json({ keys: [...blobs] });
+    if (url.pathname.endsWith(STORE_WIRE_PATHS["blobs.put"])) { blobs.add(body.key!); return json({}); }
+    if (url.pathname.endsWith(STORE_WIRE_PATHS["blobs.delete"])) { blobs.delete(body.key!); return json({}); }
+    switch (engineVerb(url.pathname, body)) {
       case "list":
         return json({
           records: [...records].map(([id, data]) => ({
@@ -200,7 +190,7 @@ describe("host component push", () => {
     // The whole round trip: list the blob KEYS, list the (source-free) index.
     // No module body is ever downloaded to decide what changed.
     expect(cloud.calls).toEqual([
-      "GET /api/v1/store/blobs/vendo_host_components",
+      `POST /api/v1/store${STORE_WIRE_PATHS["blobs.list"]}`,
       `POST /api/v1/store${STORE_WIRE_PATHS["engine.list"]}`,
     ]);
   });
