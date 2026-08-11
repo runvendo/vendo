@@ -1,11 +1,12 @@
 ---
 title: "Telemetry and capability misses"
 sidebarTitle: "Telemetry"
-description: "What Vendo's build telemetry and capability-miss events collect, what they never send, and every environment variable and config flag that opts you out."
+description: "What Vendo's build telemetry, runtime SDK telemetry, and capability-miss events collect, what they never send, and every environment variable and config flag that opts you out."
 ---
 
-Vendo collects two separate streams: build and development telemetry, and
-capability-miss events. Each has its own consent model.
+Vendo collects three separate streams: build and development telemetry,
+runtime SDK telemetry, and capability-miss events. Each has its own consent
+model.
 
 ## Build and development telemetry
 
@@ -53,6 +54,127 @@ The full event allowlist and cloud-lane property set are maintained in the
 repository's
 [`TELEMETRY.md`](https://github.com/runvendo/vendo/blob/main/TELEMETRY.md),
 the authoritative document.
+
+## Runtime SDK telemetry
+
+Runtime SDK telemetry is what a deployed Vendo instance reports about
+**itself** — which adapters it booted with, how a turn went, and whether
+Vendo's own code warned or failed inside your process. It fires from a running
+deployment (not just build and development tooling) and is uploaded to
+`https://console.vendo.run/api/v1/telemetry` on the same terms the
+capability-miss stream uses.
+
+The stream never bills. The console's ingest door omits the `meter` option
+that every billable endpoint declares, so events forwarded here can never
+appear on an invoice.
+
+### When it uploads
+
+Uploads happen only when both of these hold:
+
+- `VENDO_API_KEY` is set to a non-empty value
+- the environment does not trip a kill switch (see [Opting out](#opting-out))
+
+A keyless deployment installs no sink at all: `emitUsage` stays a no-op, and
+nothing is queued or sent. This matches the capability-miss consent model, so
+opting one stream out via env opts the other out too.
+
+The console can also stop a talking deployment mid-flight. If your org has
+`telemetry_disabled` set, the door answers `202 {accepted: 0, disabled: true}`
+and the SDK stops uploading for the rest of the process lifetime.
+
+### The five events
+
+The event catalog is closed. A sixth event, or a new property on an existing
+one, is a contract change on both the SDK and the console — never a silent
+addition. Events carry shapes, counts, and names only: never a prompt, a tool
+argument, a file, a row, a message, or a person.
+
+| Event | Fires when | Properties |
+| --- | --- | --- |
+| `deployment_boot` | `createVendo` finishes composition | `adapters` (names of filled slots: `store`, `files`, `sandbox`, `secrets`, `harness`, `connections`, plus `knowledge` / `connectors` when mounted), `blocks` (`apps`, `automations`, `knowledge`, `mcp`), `framework` (`"next"` when `NEXT_RUNTIME` is set, otherwise `null`) |
+| `agent_run` | one agent turn ends (success or error) | `durationMs`, `steps`, `toolCalls`, `tools` (sorted names), `modelFamily` (the model id the thinking seat resolved to, or `null` for a BYO brain like `claudeCode()`), `outcome` (`"ok" \| "error" \| "refused"`), `errorCode` |
+| `guard_decision` | the guard renders a decision, beside its audit row — never in place of it | `kind`, `decision`, `tool` |
+| `sdk_error` | Vendo's own logger emits a `warn` or `error` | `code`, `level`, `message` (Vendo's authored sentence), `data` (each logged key's shape only, never its value), `stack` (`@vendoai` frames only — host frames are stripped), `runtime` |
+| `app_generated` | one app generation finishes | `components` (uses per component name), `durationMs`, `outcome` (`"ok" \| "error"`), `kind` |
+
+### How each event is stamped
+
+Every upload carries:
+
+- `sdk_version` — the running SDK version, from the `@vendoai/vendo` package
+- `runtime` — the JS runtime name: `workerd`, `edge-light`, `bun`, `deno`,
+  `node`, or `unknown`, from the globals each runtime advertises
+- `deployment_version` — resolved by the console from the
+  `x-vendo-deployment-version` identity header (see [Deployment identity
+  headers](#deployment-identity-headers) below)
+
+Deployment identity (`org`, `project`, `deployment`) is stamped by the
+console from the API key's scope and the identity headers — it never rides
+the request body, so a deployment cannot claim to be another one.
+
+### Routing SDK logs
+
+Every `warn` or `error` Vendo writes to the operator log becomes an
+`sdk_error` event as well. The console log line is untouched: host output
+stays byte-identical whether or not the events stream is installed.
+
+To route those log lines somewhere other than the console, pass a
+[`logger`](/reference/handler-options) to `createVendo`:
+
+```ts
+import { createVendo } from "@vendoai/vendo/server";
+import type { VendoLogger } from "@vendoai/core";
+
+const logger: VendoLogger = (event) => {
+  myObservability.record({
+    level: event.level,
+    code: event.code,
+    message: event.message,
+    data: event.data,
+  });
+};
+
+const vendo = createVendo({
+  // model, principal, store, ...
+  logger,
+});
+```
+
+A host-passed `logger` always wins. Unset keeps today's console lines,
+unchanged. Either way, `warn` and `error` events are still reported as
+`sdk_error` when a Cloud key is present and no kill switch is tripped.
+
+### Deployment identity headers
+
+Every key-authed request from a running deployment carries three identity
+headers:
+
+- `x-vendo-deployment-host` — the OS hostname, or `"unknown"` on edge and
+  Worker targets that have no hostname
+- `x-vendo-deployment-name` — the deployment name resolved from the
+  project root
+- `x-vendo-deployment-version` — the running `@vendoai/vendo` version
+
+Operators reading request logs will see the `x-vendo-deployment-version`
+header on every hosted call, including the ones the runtime SDK telemetry
+stream itself makes.
+
+### Opting out
+
+The runtime SDK telemetry stream uses the same three environment kill
+switches as capability-miss uploads:
+
+| Variable | Blocks upload when |
+| --- | --- |
+| `VENDO_TELEMETRY_DISABLED` | equal to `"1"` or `"true"` |
+| `DO_NOT_TRACK` | equal to `"1"` or `"true"` |
+| `CI` | set to any value other than `""`, `"0"`, or `"false"` |
+
+Any of these makes `createSdkEvents` return `undefined`, no sink is installed,
+and `emitUsage` stays a no-op. The console's org-level `telemetry_disabled`
+flag is a fourth control: the ingest door answers `disabled: true` and the SDK
+stops uploading for the rest of the process lifetime.
 
 ## Capability misses
 
