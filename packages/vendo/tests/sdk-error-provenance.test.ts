@@ -64,9 +64,19 @@ describe("a snapshot ref the Cloud adapter cannot decode", () => {
    *  failed to decode is by definition not one Vendo minted — it is whatever
    *  the caller passed to a public method. Echoing it back, even truncated,
    *  puts caller content on the wire. */
-  it.each(["resume", "destroy"] as const)(
-    "classifies the ref instead of echoing caller content, from %s()",
-    async (method) => {
+  const methods = ["resume", "destroy"] as const;
+  /** Two shapes of hostile input. The scheme-shaped one matters because the
+   *  decoder's own message names an unrecognised scheme, and that message is
+   *  what this log line carries — so a caller who spells their secret like a
+   *  URI scheme would ride the sentence into telemetry. */
+  const hostile = [
+    ["no recognised scheme", "SECRET=caller-controlled-telemetry-content", (m: string) => `oops ${m}`],
+    ["a scheme-shaped value", "zzsecretleakzz", (m: string) => `${m}:payload`],
+  ] as const;
+
+  it.each(methods.flatMap((method) => hostile.map((h) => [method, ...h] as const)))(
+    "keeps caller content out of telemetry from %s(), given %s",
+    async (method, _shape, marker, build) => {
       vi.spyOn(console, "error").mockImplementation(() => {});
       const seen = reported();
       setLogger(withSdkErrorReporting(consoleLogger));
@@ -77,17 +87,18 @@ describe("a snapshot ref the Cloud adapter cannot decode", () => {
         }) as unknown as typeof fetch,
       });
 
-      const marker = "SECRET=caller-controlled-telemetry-content";
-      await expect(adapter[method](`oops ${marker}`)).rejects.toMatchObject({ code: "validation" });
+      const ref = build(marker);
+      await expect(adapter[method](ref)).rejects.toMatchObject({ code: "validation" });
 
       const errors = seen.filter((usage) => usage.name === "sdk_error");
       expect(errors).toHaveLength(1);
+      // The WHOLE event — `message` included, not just `data`.
       expect(JSON.stringify(errors[0])).not.toContain(marker);
-      // Still says WHICH WAY it is wrong — from Vendo's own vocabulary, never
-      // a slice of the input. Scheme and length are the WHOLE projection.
+      // Scheme and length are the whole projection, from Vendo's own
+      // vocabulary, never a slice of the input.
       expect((errors[0] as { data: Record<string, unknown> }).data).toEqual({
         snapshotRefScheme: "(no known scheme)",
-        snapshotRefLength: `oops ${marker}`.length,
+        snapshotRefLength: ref.length,
       });
     },
   );

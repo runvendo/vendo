@@ -1,5 +1,5 @@
 import type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "@vendoai/apps";
-import { defaultFetch, log, safeErrorMessage, VendoError } from "@vendoai/core";
+import { defaultFetch, log, VendoError } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
 import { raiseCloudError } from "./cloud-console.js";
 import {
@@ -241,7 +241,12 @@ const decodeOrReport = (snapshotRef: string): CloudSnapshotState => {
     log({
       code: "vendo.snapshot-ref-undecodable",
       level: "error",
-      message: `[vendo] ${safeErrorMessage(error)}`,
+      // Vendo's OWN fixed sentence, not the decoder's. The decoder writes for
+      // the CALLER and names the unrecognised scheme it read out of the ref
+      // (`notMintedHere`), so relaying that sentence here would carry a
+      // caller-controlled slice into telemetry. The caller still gets the full
+      // sentence — it is on the error being rethrown, untouched.
+      message: "[vendo] a Vendo Cloud snapshot reference could not be decoded:",
       data: {
         snapshotRefScheme: KNOWN_REF_SCHEMES.find((scheme) => snapshotRef.startsWith(scheme))
           ?? UNKNOWN_REF_SCHEME,
