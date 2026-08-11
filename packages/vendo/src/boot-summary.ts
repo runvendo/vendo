@@ -73,6 +73,12 @@ const OK = "✓";
 const WARN = "⚠";
 const TITLE = "vendo ready";
 
+/** A preset name is "spelled the way a host writes it in config" — `clerk`,
+    `auth0`, `authJs` (auth-presets/shared.ts) — so an identifier, never free
+    text. The one HOST-supplied string in the whole block is checked against
+    this before it is rendered; see the auth row in `bootSummaryFor`. */
+const PRESET_NAME = /^[\w.-]{1,32}$/;
+
 /** The founder's column widths. `padEnd` never truncates, so a longer label or
     venue widens its column for the whole block instead of breaking alignment. */
 const LABEL_COLUMN = 10;
@@ -244,10 +250,22 @@ export function bootSummaryFor(composition: VendoComposition): BootSummary {
   // line telling the operator which auth is live is most of this row's value.
   // A host-composed preset has no vendor to name and a raw `principal` has no
   // preset at all; both say so rather than borrowing a name.
+  //
+  // This name is the one HOST-supplied string the block renders, and the block
+  // is a SINGLE log event (announceBootSummary) whose whole point is that it
+  // cannot be split or interleaved. A newline or an ANSI escape in the name
+  // would forge a row inside that event and drive the operator's terminal, and
+  // a non-printing character also breaks `columnWidth`, which counts characters
+  // as cells. A name that is not an identifier is not a vendor name, and the
+  // unnamed-preset row below already says exactly that.
   const preset = config.auth?.name;
-  if (preset !== undefined) rows.push({ label: "auth", venue: preset, detail: `auth: ${preset}()` });
-  else if (config.auth !== undefined) rows.push({ label: "auth", venue: "preset", detail: "createVendo({ auth })" });
-  else rows.push({ label: "auth", venue: "custom", detail: "createVendo({ principal })" });
+  if (preset !== undefined && PRESET_NAME.test(preset)) {
+    rows.push({ label: "auth", venue: preset, detail: `auth: ${preset}()` });
+  } else if (config.auth !== undefined) {
+    rows.push({ label: "auth", venue: "preset", detail: "createVendo({ auth })" });
+  } else {
+    rows.push({ label: "auth", venue: "custom", detail: "createVendo({ principal })" });
+  }
 
   const posture = guard.status().posture;
   if (posture !== "unconfigured") {

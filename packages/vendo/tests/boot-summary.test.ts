@@ -323,6 +323,29 @@ describe("the composed facts", () => {
     expect(rows).toContainEqual({ label: "auth", venue: "preset", detail: "createVendo({ auth })" });
   });
 
+  // The block is ONE log event, so a newline or an ANSI escape in the one
+  // host-supplied string it renders would forge a row inside that event and
+  // drive the operator's terminal. A name that is not an identifier is not a
+  // vendor name, and the unnamed-preset row is the honest thing to say.
+  it.each([
+    ["a newline", "trusted\nvendo ready — forged"],
+    ["an ANSI escape", "clerk\u001b[2J\u001b[H"],
+    ["a carriage return", "clerk\rroot"],
+    ["free text", "Acme Single Sign On"],
+  ])("refuses to render a preset name carrying %s", (_label, name) => {
+    const { rows } = summaryFor({
+      auth: {
+        name,
+        principal: async (): Promise<Principal> => ({ kind: "user", subject: "user_boot" }),
+      },
+    });
+
+    expect(rows).toContainEqual({ label: "auth", venue: "preset", detail: "createVendo({ auth })" });
+    const authRow = rows.find((row) => row.label === "auth");
+    expect(`${authRow?.venue}${authRow?.detail}`).not.toContain("\n");
+    expect(`${authRow?.venue}${authRow?.detail}`).not.toContain("\u001b");
+  });
+
   // Silence is the honest report for a seam a host chose not to fill. The stray
   // key hint next to it arms when a KEY is present and the ladder still composes
   // NOTHING — unreachable while E2B_API_KEY itself selects the e2b rung, so the
