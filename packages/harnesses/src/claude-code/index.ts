@@ -16,6 +16,7 @@
  */
 import {
   VENDO_MAKE_TOOL,
+  log,
   type BeatPhase,
   type Harness,
   type HarnessEvent,
@@ -348,13 +349,16 @@ let noOriginWarned = false;
 function warnNoOriginOnce(): void {
   if (noOriginWarned) return;
   noOriginWarned = true;
-  console.error(
-    "[vendo] claudeCode() has no origin to reach the MCP door, so this agent has "
-    + "NONE of your product's actions — only its own workspace. Set VENDO_BASE_URL "
-    + "(or `mcp: { baseUrl }`) to an origin this machine can reach. In development "
-    + "the wire learns its own LOOPBACK origin instead, so seeing this locally means "
-    + "NODE_ENV is not \"development\" or the host is not served over localhost.",
-  );
+  log({
+    code: "harnesses.claude-code-no-origin",
+    level: "error",
+    message:
+      "[vendo] claudeCode() has no origin to reach the MCP door, so this agent has "
+      + "NONE of your product's actions — only its own workspace. Set VENDO_BASE_URL "
+      + "(or `mcp: { baseUrl }`) to an origin this machine can reach. In development "
+      + "the wire learns its own LOOPBACK origin instead, so seeing this locally means "
+      + "NODE_ENV is not \"development\" or the host is not served over localhost.",
+  });
 }
 
 /**
@@ -369,12 +373,15 @@ let noAppsHooksWarned = false;
 function warnNoAppsHooksOnce(): void {
   if (noAppsHooksWarned) return;
   noAppsHooksWarned = true;
-  console.error(
-    "[vendo] claudeCode() is running without the apps hooks (hotPaths / validateApps / "
-    + "repairInstruction), so mid-turn hot-path sync and the finish-line validate gate are "
-    + "OFF. Compose through createVendo/createAgent to get them, or pass them to claudeCode() "
-    + "directly.",
-  );
+  log({
+    code: "harnesses.claude-code-no-apps-hooks",
+    level: "error",
+    message:
+      "[vendo] claudeCode() is running without the apps hooks (hotPaths / validateApps / "
+      + "repairInstruction), so mid-turn hot-path sync and the finish-line validate gate are "
+      + "OFF. Compose through createVendo/createAgent to get them, or pass them to claudeCode() "
+      + "directly.",
+  });
 }
 
 /** A callback-driven producer, consumed by the generator that must `yield`. */
@@ -467,11 +474,14 @@ export function claudeCode(
         // so without that check this branch also swallows every workspace-only
         // deployment that simply never named an origin, which is a supported
         // shape and not an error. Those fall through to the warning below.
-        console.error(
-          "[vendo] claudeCode() cannot reach the MCP door: set VENDO_BASE_URL (or "
-          + "`mcp: { baseUrl }`) to the deployment's public origin. The agent's tools "
-          + "travel over that door, so without it the model has no way to act.",
-        );
+        log({
+          code: "harnesses.claude-code-no-mcp-door",
+          level: "error",
+          message:
+            "[vendo] claudeCode() cannot reach the MCP door: set VENDO_BASE_URL (or "
+            + "`mcp: { baseUrl }`) to the deployment's public origin. The agent's tools "
+            + "travel over that door, so without it the model has no way to act.",
+        });
         yield { type: "error", message: "I can't use this product's actions right now." };
         return;
       }
@@ -501,11 +511,14 @@ export function claudeCode(
           // Still reachable by a host driving the runtime directly without a
           // sandbox — and it has to be loud for the operator and quiet for
           // the user.
-          console.error(
-            "[vendo] claudeCode() has no sandbox adapter. Hand it one directly — "
-            + "`harness: claudeCode({ sandbox: e2bSandbox({ apiKey }) })` — or pass "
-            + "`sandbox` into createHarnessTurns so composition fills the slot.",
-          );
+          log({
+            code: "harnesses.claude-code-no-sandbox",
+            level: "error",
+            message:
+              "[vendo] claudeCode() has no sandbox adapter. Hand it one directly — "
+              + "`harness: claudeCode({ sandbox: e2bSandbox({ apiKey }) })` — or pass "
+              + "`sandbox` into createHarnessTurns so composition fills the slot.",
+          });
           yield { type: "error", message: "I can't run right now — this assistant is missing its workspace machine." };
           return;
         }
@@ -651,7 +664,12 @@ export function claudeCode(
           }).then(() => events.close(), (error: unknown) => {
             // The thinker failed; the user hears one plain sentence and the turn
             // still lands whatever work reached the disk.
-            console.error("[vendo] claude-code turn failed", error);
+            log({
+              code: "harnesses.claude-code-turn-failed",
+              level: "error",
+              message: "[vendo] claude-code turn failed",
+              data: { error },
+            });
             events.push({ type: "error", message: "Something went wrong while I was working on that." });
             events.close();
           });
@@ -715,12 +733,22 @@ export function claudeCode(
         try {
           collected = await machine.collect();
         } catch (error) {
-          console.error("[vendo] claude-code could not read the workspace back", error);
+          log({
+            code: "harnesses.claude-code-workspace-read-failed",
+            level: "error",
+            message: "[vendo] claude-code could not read the workspace back",
+            data: { error },
+          });
         }
         if (collected !== undefined) {
           const files = collected;
           await serialize(() => checkout.syncAll(files)).catch((error: unknown) => {
-            console.error("[vendo] claude-code sync-back failed", error);
+            log({
+              code: "harnesses.claude-code-sync-back-failed",
+              level: "error",
+              message: "[vendo] claude-code sync-back failed",
+              data: { error },
+            });
           });
         }
         try {

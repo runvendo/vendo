@@ -35,7 +35,7 @@
  * resumes on the same session) and worse for cost (a parked write holds a
  * sandbox for up to 90s). Recorded in the lane's close note as a deviation.
  */
-import { VENDO_DEV_PORT, VENDO_DEV_PORT_ENV, VendoError } from "@vendoai/core";
+import { log, VENDO_DEV_PORT, VENDO_DEV_PORT_ENV, VendoError } from "@vendoai/core";
 import type { CheckoutFile, SyncFile, TreeState } from "../materialize.js";
 import { emptyTree } from "../materialize.js";
 import { MESSAGE_BUDGET_MS, type SessionMachine, type SessionMessage } from "./machine.js";
@@ -227,7 +227,11 @@ export async function boxMachine(options: BoxMachineOptions): Promise<SessionMac
     if (await hello(existing.machine, existing.token)) {
       entry = existing;
     } else {
-      console.error("[vendo] claude-code: the box stopped answering; starting fresh");
+      log({
+        code: "harnesses.claude-code-box-stale",
+        level: "error",
+        message: "[vendo] claude-code: the box stopped answering; starting fresh",
+      });
       boxes.delete(options.threadId);
       await existing.machine.destroy().catch(() => undefined);
     }

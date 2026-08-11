@@ -1,4 +1,4 @@
-import { VendoError, formatMeterExhausted, meterExhaustedFromError } from "@vendoai/core";
+import { log, VendoError, formatMeterExhausted, meterExhaustedFromError } from "@vendoai/core";
 
 /** The one gate raw errors pass on their way to the wire. Vendo's OWN errors
  *  (code + operator-crafted message) are safe and actionable, so they travel
@@ -14,7 +14,12 @@ import { VendoError, formatMeterExhausted, meterExhaustedFromError } from "@vend
  *  inventing a second error UX.
  */
 export function wireErrorMessage(error: unknown): string {
-  console.error("[vendo] turn stream error:", error);
+  log({
+    code: "harnesses.turn-stream-error",
+    level: "error",
+    message: "[vendo] turn stream error:",
+    data: { error },
+  });
   return specificWireErrorMessage(error) ?? GENERIC_TURN_ERROR;
 }
 
