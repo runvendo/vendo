@@ -158,14 +158,14 @@ describe("the page's argument tables match the real schemas", () => {
 });
 
 describe("the receipt law the page teaches is the real receipt", () => {
-  it("has exactly id, title, status, say — and status's three values", async () => {
+  it("has exactly id, title, status, say — and status's four values", async () => {
     const source = await read("packages/apps/src/contract/make-receipt.ts");
     expect(source).toContain("id: appIdSchema");
     expect(source).toContain("title: z.string().min(1)");
-    expect(source).toContain('status: z.enum(["ready", "building", "failed"])');
+    expect(source).toContain('status: z.enum(["ready", "partial", "building", "failed"])');
     expect(source).toContain("say: z.string().min(1)");
     const page = await read(PAGE);
-    for (const field of ["`say`", "`status`", '"ready"', '"building"', '"failed"']) {
+    for (const field of ["`say`", "`status`", '"ready"', '"partial"', '"building"', '"failed"']) {
       expect(page, `${PAGE} must teach ${field}`).toContain(field);
     }
   });
