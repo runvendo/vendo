@@ -1,4 +1,4 @@
-import { VENDO_TOOL_TITLES, VendoError, type Json, type RunContext, type ToolDescriptor, type ToolRegistry } from "@vendoai/core";
+import { log, VENDO_TOOL_TITLES, VendoError, type Json, type RunContext, type ToolDescriptor, type ToolRegistry } from "@vendoai/core";
 
 /**
  * Design §4's vendo-verb family, projected as ordinary tools on the one
@@ -159,7 +159,12 @@ export function vendoVerbsRegistry(ports: VendoVerbPorts): ToolRegistry {
         // properties of undefined") teaches it nothing it can act on while
         // leaking our internals into the transcript. Log the detail for us; hand
         // the model a sentence about what to do.
-        console.error(`[vendo] ${call.tool} failed:`, error);
+        log({
+          code: "vendo.tool-call-failed",
+          level: "error",
+          message: `[vendo] ${call.tool} failed:`,
+          data: { error },
+        });
         return fail("error", `${call.tool} could not complete. Try again, or continue without it.`);
       }
     },

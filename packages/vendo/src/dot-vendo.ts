@@ -7,6 +7,7 @@
 import type { ExtractedTool } from "@vendoai/actions";
 import { seedBaselineSchema, type SeedBaseline } from "@vendoai/apps";
 import {
+  log,
   type ToolDefinition,
 } from "@vendoai/core";
 import {
@@ -135,7 +136,11 @@ export function dotVendoSeedBaselines(root?: string): SeedBaseline[] {
     names = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort();
   } catch (error) {
     if ((error as { code?: unknown }).code === "ENOENT") return [];
-    console.warn(`[vendo] could not read ${directory}; pin baselines were skipped`);
+    log({
+      code: "vendo.pin-baseline-dir-unreadable",
+      level: "warn",
+      message: `[vendo] could not read ${directory}; pin baselines were skipped`,
+    });
     return [];
   }
 
@@ -146,13 +151,21 @@ export function dotVendoSeedBaselines(root?: string): SeedBaseline[] {
     try {
       const parsed = seedBaselineSchema.parse(JSON.parse(fs.readFileSync(file, "utf8")));
       if (slots.has(parsed.slot)) {
-        console.warn(`[vendo] duplicate pin baseline slot ${parsed.slot} in ${file}; file was skipped`);
+        log({
+          code: "vendo.pin-baseline-duplicate-slot",
+          level: "warn",
+          message: `[vendo] duplicate pin baseline slot ${parsed.slot} in ${file}; file was skipped`,
+        });
         continue;
       }
       slots.add(parsed.slot);
       baselines.push(parsed);
     } catch {
-      console.warn(`[vendo] invalid pin baseline ${file}; file was skipped`);
+      log({
+        code: "vendo.pin-baseline-invalid",
+        level: "warn",
+        message: `[vendo] invalid pin baseline ${file}; file was skipped`,
+      });
     }
   }
   return baselines;

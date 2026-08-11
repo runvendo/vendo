@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { acceptsSamplingParams, UNKNOWN_MODEL_MAX_OUTPUT_TOKENS } from "@vendoai/apps";
-import { meterExhaustedFromError, VendoError } from "@vendoai/core";
+import { log, meterExhaustedFromError, VendoError } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { resolveCloudBaseUrl } from "../cli/cloud/client.js";
 import {
@@ -291,7 +291,13 @@ export class DevModelController {
    *  terminal is where the honest message must land. */
   resolve(): Promise<Resolution> {
     this.resolution ??= this.resolveOnce().then((resolution) => {
-      if (resolution.mode === "unavailable") console.error(`[vendo] ${resolution.message}`);
+      if (resolution.mode === "unavailable") {
+        log({
+          code: "vendo.model-resolution-unavailable",
+          level: "error",
+          message: `[vendo] ${resolution.message}`,
+        });
+      }
       return resolution;
     });
     return this.resolution;
@@ -301,7 +307,11 @@ export class DevModelController {
     if (this.announced) return;
     this.announced = true;
     const slot = this.slot === "agent" ? "" : ` (${this.slot})`;
-    console.log(`[vendo] model${slot}: ${line}`);
+    log({
+      code: "vendo.model-announce",
+      level: "info",
+      message: `[vendo] model${slot}: ${line}`,
+    });
   }
 
   /** The string-tier model id for the resolved rung. Precedence (spec §DX

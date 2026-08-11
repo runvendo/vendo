@@ -1,4 +1,4 @@
-import { CONNECTOR_DISCOVERY_TOOLS, VENDO_TOOL_TITLES, type Json, type RunContext, type ToolDescriptor, type ToolOutcome, type ToolRegistry } from "@vendoai/core";
+import { CONNECTOR_DISCOVERY_TOOLS, log, VENDO_TOOL_TITLES, type Json, type RunContext, type ToolDescriptor, type ToolOutcome, type ToolRegistry } from "@vendoai/core";
 
 /**
  * The connector-discovery tools, projected as ordinary tools on the one registry
@@ -283,7 +283,12 @@ export function connectorDiscoveryRegistry(
         // A port failure is OURS, not the model's, and raw JS text teaches it
         // nothing it can act on while leaking our internals into the transcript.
         // Log the detail for us; hand the model a sentence about what to do.
-        console.error(`[vendo] ${call.tool} failed:`, error);
+        log({
+          code: "vendo.tool-call-failed",
+          level: "error",
+          message: `[vendo] ${call.tool} failed:`,
+          data: { error },
+        });
         return fail("error", `${call.tool} could not complete. Try again, or continue without it.`);
       }
     },
