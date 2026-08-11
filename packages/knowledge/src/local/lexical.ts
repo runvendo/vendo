@@ -1,5 +1,6 @@
 import {
   VendoError,
+  engineOverAdapter,
   type KnowledgeAdapter,
   type KnowledgeChunk,
   type KnowledgeContext,
@@ -8,8 +9,8 @@ import {
   type KnowledgeKind,
   type KnowledgeQuery,
   type KnowledgeStatus,
-  type RecordStore,
   type StoreAdapter,
+  type StoreOps,
   type VendoRecord,
 } from "@vendoai/core";
 import { KNOWLEDGE_CHUNKS_COLLECTION, KNOWLEDGE_DOCS_COLLECTION } from "../collections.js";
@@ -32,13 +33,16 @@ interface ChunkRow extends KnowledgeChunk {
   source?: string;
 }
 
+/** The seven verbs every drawer in this engine is reached through. */
+type EngineOps = StoreOps["engine"];
+
 /** Every corpus scan pages with the keyset cursor (page cap 1000), including
     the status() counts. */
-async function listAll(store: RecordStore, refs?: Record<string, string>): Promise<VendoRecord[]> {
+async function listAll(engine: EngineOps, collection: string, refs?: Record<string, string>): Promise<VendoRecord[]> {
   const records: VendoRecord[] = [];
   let cursor: string | undefined;
   do {
-    const page = await store.list({ ...(refs === undefined ? {} : { refs }), limit: 1000, ...(cursor === undefined ? {} : { cursor }) });
+    const page = await engine.list(collection, { ...(refs === undefined ? {} : { refs }), limit: 1000, ...(cursor === undefined ? {} : { cursor }) });
     records.push(...page.records);
     if (page.records.length === 0) break;
     cursor = page.cursor;
@@ -71,21 +75,34 @@ function snippetAround(text: string, tokens: string[]): string {
  *
  * Zero-config: `knowledge: vendoKnowledge()` — createVendo injects the
  * composed store. Pass `{ store }` to keep the knowledge tables in a different
- * database (BYO rule); until a store is bound, operations fail loudly rather
- * than pretending to be an empty corpus.
+ * database (BYO rule), and `{ ops }` alongside it for that same store's
+ * named-operation surface when the composition could resolve one; until an
+ * engine is bound, operations fail loudly rather than pretending to be an empty
+ * corpus.
  */
-export function vendoKnowledge(options: { store?: StoreAdapter } = {}): KnowledgeAdapter {
-  const store = (): StoreAdapter => {
+export function vendoKnowledge(options: {
+  store?: StoreAdapter;
+  /** The named-operation surface (`StoreOps`) over that SAME store, when the
+   *  composition could resolve one (`selectStoreOps` answers `undefined` for a
+   *  store with neither its own ops nor a SQL handle). Both drawers this engine owns — the doc rows and
+   *  the chunk rows — are reached through `ops.engine.*`, so the allowlist gate
+   *  applies to both. Unset, the same seven verbs are served straight off the
+   *  adapter's own record doors (`engineOverAdapter`), which is what a host's
+   *  BYO `StoreAdapter` gets. */
+  ops?: StoreOps;
+} = {}): KnowledgeAdapter {
+  /** Resolved per verb, never at construction: an engine with nothing bound
+      must fail on the operation, not on `vendoKnowledge()`. */
+  const engine = (): EngineOps => {
+    if (options.ops !== undefined) return options.ops.engine;
     if (options.store === undefined) {
       throw new VendoError(
         "validation",
         "vendoKnowledge() has no store bound — pass vendoKnowledge({ store }) or wire it through createVendo, which injects the composed store",
       );
     }
-    return options.store;
+    return engineOverAdapter(options.store);
   };
-  const docRows = (): RecordStore => store().records(KNOWLEDGE_DOCS_COLLECTION);
-  const chunkRows = (): RecordStore => store().records(KNOWLEDGE_CHUNKS_COLLECTION);
 
   const visible = (visibility: KnowledgeDoc["visibility"], ctx: KnowledgeContext): boolean =>
     visibility === "public" || ctx.includeInternal === true;
@@ -96,14 +113,15 @@ export function vendoKnowledge(options: { store?: StoreAdapter } = {}): Knowledg
   /** The cited chunk's source, reading through to the doc row for chunks
       written before `source` was denormalized onto the row. */
   const chunkSource = async (chunk: ChunkRow): Promise<string | undefined> =>
-    chunk.source ?? ((await docRows().get(chunk.docId))?.data as KnowledgeDoc | undefined)?.source;
+    chunk.source
+    ?? ((await engine().get(KNOWLEDGE_DOCS_COLLECTION, chunk.docId))?.data as KnowledgeDoc | undefined)?.source;
 
   /** schema intent: exact term/title match over glossary+api docs. */
   async function schemaSearch(query: KnowledgeQuery, ctx: KnowledgeContext, limit: number): Promise<KnowledgeHit[]> {
     const key = termSlug(query.text);
     if (key.length === 0) return [];
     const hits: KnowledgeHit[] = [];
-    for (const row of await listAll(docRows())) {
+    for (const row of await listAll(engine(), KNOWLEDGE_DOCS_COLLECTION)) {
       const doc = row.data as KnowledgeDoc;
       if (doc.kind !== "glossary" && doc.kind !== "api") continue;
       if (!kindMatches(doc.kind, query.kinds) || !visible(doc.visibility, ctx)) continue;
@@ -135,7 +153,7 @@ export function vendoKnowledge(options: { store?: StoreAdapter } = {}): Knowledg
       const scored: { chunk: ChunkRow; score: number }[] = [];
       // Visibility and kind filter BEFORE ranking: invisible rows never enter
       // the candidate set, so they cannot influence scores or limits.
-      for (const row of await listAll(chunkRows())) {
+      for (const row of await listAll(engine(), KNOWLEDGE_CHUNKS_COLLECTION)) {
         const chunk = row.data as ChunkRow;
         if (!visible(chunk.visibility, ctx) || !kindMatches(chunk.kind, query.kinds)) continue;
         const body = tokenize(chunk.text);
@@ -169,17 +187,18 @@ export function vendoKnowledge(options: { store?: StoreAdapter } = {}): Knowledg
     },
 
     async fetch(ref, ctx) {
-      const row = await docRows().get(ref.docId);
+      const rows = engine();
+      const row = await rows.get(KNOWLEDGE_DOCS_COLLECTION, ref.docId);
       if (row === null) return null;
       const doc = row.data as KnowledgeDoc;
       // A ref is not a capability: internal docs read as unknown.
       if (!visible(doc.visibility, ctx)) return null;
       if (ref.chunkId !== undefined) {
-        const chunkRow = await chunkRows().get(ref.chunkId);
+        const chunkRow = await rows.get(KNOWLEDGE_CHUNKS_COLLECTION, ref.chunkId);
         const chunk = chunkRow?.data as ChunkRow | undefined;
         if (chunk !== undefined && chunk.docId === ref.docId) {
           // Read-more: the cited chunk joined with its structural neighbors.
-          const siblings = (await listAll(chunkRows(), { doc_id: ref.docId }))
+          const siblings = (await listAll(rows, KNOWLEDGE_CHUNKS_COLLECTION, { doc_id: ref.docId }))
             .map((sibling) => sibling.data as ChunkRow)
             .sort((a, b) => a.index - b.index);
           const window = siblings.filter((sibling) => Math.abs(sibling.index - chunk.index) <= 1);
@@ -194,14 +213,15 @@ export function vendoKnowledge(options: { store?: StoreAdapter } = {}): Knowledg
     },
 
     async upsert(docs) {
+      const rows = engine();
       for (const doc of docs) {
         const chunks = structuralChunker.chunk(doc);
         const keep = new Set(chunks.map((chunk) => chunk.chunkId));
         // Replace chunk rows: stale rows go first so a re-chunked doc never
         // leaves orphans, then the new rows land, then the doc row — by the
         // time upsert resolves the doc is searchable.
-        for (const stale of await listAll(chunkRows(), { doc_id: doc.id })) {
-          if (!keep.has(stale.id)) await chunkRows().delete(stale.id);
+        for (const stale of await listAll(rows, KNOWLEDGE_CHUNKS_COLLECTION, { doc_id: doc.id })) {
+          if (!keep.has(stale.id)) await rows.delete(KNOWLEDGE_CHUNKS_COLLECTION, stale.id);
         }
         for (const chunk of chunks) {
           const data: ChunkRow = {
@@ -213,25 +233,26 @@ export function vendoKnowledge(options: { store?: StoreAdapter } = {}): Knowledg
           };
           // Chunks ref their doc; knowledge is host-level, so rows deliberately
           // carry no subject_id (subject-erase skips them).
-          await chunkRows().put({ id: chunk.chunkId, data, refs: { doc_id: doc.id } });
+          await rows.put(KNOWLEDGE_CHUNKS_COLLECTION, { id: chunk.chunkId, data, refs: { doc_id: doc.id } });
         }
-        await docRows().put({ id: doc.id, data: { ...doc }, refs: { source: doc.source } });
+        await rows.put(KNOWLEDGE_DOCS_COLLECTION, { id: doc.id, data: { ...doc }, refs: { source: doc.source } });
       }
     },
 
     async remove(docIds) {
+      const rows = engine();
       for (const docId of docIds) {
-        for (const chunk of await listAll(chunkRows(), { doc_id: docId })) {
-          await chunkRows().delete(chunk.id);
+        for (const chunk of await listAll(rows, KNOWLEDGE_CHUNKS_COLLECTION, { doc_id: docId })) {
+          await rows.delete(KNOWLEDGE_CHUNKS_COLLECTION, chunk.id);
         }
-        await docRows().delete(docId);
+        await rows.delete(KNOWLEDGE_DOCS_COLLECTION, docId);
       }
     },
 
     async status(): Promise<KnowledgeStatus> {
       const byKind: Partial<Record<KnowledgeKind, number>> = {};
       let docs = 0;
-      for (const row of await listAll(docRows())) {
+      for (const row of await listAll(engine(), KNOWLEDGE_DOCS_COLLECTION)) {
         const doc = row.data as KnowledgeDoc;
         docs += 1;
         byKind[doc.kind] = (byKind[doc.kind] ?? 0) + 1;
@@ -240,7 +261,10 @@ export function vendoKnowledge(options: { store?: StoreAdapter } = {}): Knowledg
     },
   };
 
-  if (options.store === undefined) storeless.add(adapter);
+  // Store-less means NOTHING bound: an engine handed only `ops` reaches its
+  // drawers, so rebinding it to the composed store would drop the surface the
+  // host passed.
+  if (options.store === undefined && options.ops === undefined) storeless.add(adapter);
   return adapter;
 }
 
