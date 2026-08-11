@@ -5,19 +5,28 @@ import { cloudSandbox } from "../src/sandbox.js";
 import { withSdkErrorReporting } from "../src/sdk-events.js";
 
 /**
- * The provenance split on `sdk_error.data`. Reporting every value as its type
- * name defeated the point of the stream: an operator learned that "a ref was
- * malformed" and could not tell WHICH ref. Values Vendo itself MINTED now
- * travel verbatim; anything from the host, its end user, or the model travels
- * as its shape — and so does every key nobody has allowlisted, which is the
- * property that keeps a log site added tomorrow from leaking by default.
+ * What `sdk_error.data` is allowed to say. CLASSIFICATION ONLY: no
+ * caller-influenced value leaves the customer's servers, so the one question a
+ * candidate key has to answer is whether a CALLER CAN INFLUENCE ITS VALUE — not
+ * whether its name sits in Vendo's namespace. A classification against a
+ * Vendo-authored closed set travels; every other value travels as its shape,
+ * and so does every key nobody has allowlisted, which is the property that
+ * keeps a log site added tomorrow from leaking by default.
  *
- * A value that failed to decode is the caller's input, not Vendo's mint, so it
- * is classified against a closed set and never echoed — not even a prefix of
- * it. That distinction is what the marker cases below hold in place.
+ * `appId` and `turnId` are the worked examples, and the reason the name is not
+ * the test: both are spelled in Vendo's own id namespace, and both are supplied
+ * by the caller on a live path, so both report their type and nothing else. A
+ * value that failed to decode is the caller's input for the same reason —
+ * classified against a closed set, never echoed, not even a prefix of it. That
+ * distinction is what the marker cases below hold in place.
  */
 
+/** Caller-suppliable on a live path, so neither may travel: `input.appId ??
+ *  mint` in apps' build-surface door, `surface.turnId ?? mintTurnId()` in the
+ *  screen agent. Both are spelled exactly as Vendo would mint them, which is
+ *  the point — a well-formed value proves nothing about where it came from. */
 const APP_ID = "app_2f6b1c0e-4d3a-4f52-9a71-0c8e5b2d7a13";
+const TURN_ID = "trn_0123456789abcdef0123456789abcdef";
 
 const reported = (): VendoUsageEvent[] => {
   const seen: VendoUsageEvent[] = [];
@@ -41,21 +50,40 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("sdk_error.data splits by provenance", () => {
-  it("passes a Vendo identifier verbatim and shapes the host-derived key beside it", () => {
-    expect(dataOf({ appId: APP_ID, path: "/home/someone/app/customers.ts" }))
-      .toEqual({ appId: APP_ID, path: "string" });
+describe("sdk_error.data reports classifications and shapes everything else", () => {
+  it("passes a classification verbatim and shapes the host-derived key beside it", () => {
+    expect(dataOf({ snapshotRefScheme: "e2b:v2:", path: "/home/someone/app/customers.ts" }))
+      .toEqual({ snapshotRefScheme: "e2b:v2:", path: "string" });
   });
 
   it("defaults an unknown key to shapes-only, so a new log site leaks nothing", () => {
-    expect(dataOf({ customerEmail: "ada@example.com", balanceCents: 4200, appId: APP_ID }))
-      .toEqual({ customerEmail: "string", balanceCents: "number", appId: APP_ID });
+    expect(dataOf({ customerEmail: "ada@example.com", balanceCents: 4200, snapshotRefScheme: "fake:" }))
+      .toEqual({ customerEmail: "string", balanceCents: "number", snapshotRefScheme: "fake:" });
   });
 
+  /** The apps create door mints an app id only when the caller passed none
+   *  (`input.appId ?? mint`), and `appIdSchema` pins the `app_` prefix and
+   *  NOTHING after it — so an `app_` value is `app_` plus arbitrary caller
+   *  content, and a well-formed one is indistinguishable from a minted one. */
+  it("reports a caller-suppliable appId as its type, never its value", () => {
+    expect(dataOf({ appId: APP_ID })).toEqual({ appId: "string" });
+  });
+
+  /** `turnIdSchema` pins the whole `trn_<32 hex>` shape, but no door parses the
+   *  screen agent's `surface.turnId` through it: a `TurnId` is a bare `string`
+   *  whose stated contract is that nobody parses it. A schema that is never
+   *  applied constrains nothing. */
+  it("reports a caller-suppliable turnId as its type, never its value", () => {
+    expect(dataOf({ turnId: TURN_ID })).toEqual({ turnId: "string" });
+  });
+
+  /** The cap is a VOLUME gate on the passthrough, independent of what the key
+   *  means: `data` is `Record<string, unknown>`, so an allowlisted key CAN be
+   *  handed something unbounded, and when it is, the shape travels instead. */
   it("falls back to the shape when an allowlisted value exceeds the length cap", () => {
-    const atCap = `app_${"a".repeat(512 - "app_".length)}`;
-    expect(dataOf({ appId: atCap })).toEqual({ appId: atCap });
-    expect(dataOf({ appId: `${atCap}a` })).toEqual({ appId: "string" });
+    const atCap = "a".repeat(512);
+    expect(dataOf({ errorCode: atCap })).toEqual({ errorCode: atCap });
+    expect(dataOf({ errorCode: `${atCap}a` })).toEqual({ errorCode: "string" });
   });
 });
 
