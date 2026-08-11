@@ -1,5 +1,13 @@
 # @vendoai/harnesses
 
+## 0.14.0
+
+### Patch Changes
+
+- Updated dependencies [954ad09]
+  - @vendoai/core@0.14.0
+  - @vendoai/guard@0.14.0
+
 ## 0.13.0
 
 ### Patch Changes
