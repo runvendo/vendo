@@ -1,4 +1,4 @@
-import { isValidElement, memo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { isValidElement, memo, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useCopyFeedback } from "./clipboard.js";
@@ -165,6 +165,46 @@ function FoldSection({ title, level, open: initialOpen, children }: {
 }
 
 /**
+ * Streamed text arrives in network-sized bursts — whole sentences at once now
+ * that a warm prompt cache streams at full rate — and painting a burst in one
+ * frame reads as the UI stuttering. Pace the reveal instead: show more of
+ * `text` each animation frame, draining faster the further the reveal falls
+ * behind (backlog/8 per frame ≈ a ~150ms tail), so bursts read as steady
+ * typing and the reveal can never lag the wire by more than a beat. Pure
+ * pacing, no opacity and no transform: this plays on every single reply, and
+ * at that frequency the animation IS the absence of a jolt — nothing more.
+ *
+ * Three edges the rates encode: a text that stops extending the shown prefix
+ * (a regenerate rewrote it) SNAPS rather than types over the old words; a
+ * settled turn drains its remainder at 4x so the ending never dawdles behind
+ * a finished stream; and a body that mounts already complete (restored
+ * history) starts fully shown — the pacing is for arrival, never replay.
+ */
+function useSmoothText(text: string, streaming: boolean): string {
+  const [shown, setShown] = useState(() => (streaming ? "" : text));
+  const frame = useRef(0);
+  useEffect(() => {
+    if (!text.startsWith(shown)) {
+      setShown(text);
+      return;
+    }
+    if (shown.length >= text.length) return;
+    frame.current = requestAnimationFrame(() => {
+      setShown(current => {
+        const backlog = text.length - current.length;
+        if (backlog <= 0 || !text.startsWith(current)) return text;
+        const rate = streaming
+          ? Math.max(2, Math.ceil(backlog / 8))
+          : Math.max(8, Math.ceil(backlog / 4));
+        return text.slice(0, current.length + rate);
+      });
+    });
+    return () => cancelAnimationFrame(frame.current);
+  }, [text, shown, streaming]);
+  return shown;
+}
+
+/**
  * Assistant text as GitHub-flavored markdown (the `.fl-md` design). react-markdown
  * escapes raw HTML by default (no rehype-raw), so no markup is injected — safe for
  * model-authored text.
@@ -179,15 +219,21 @@ function FoldSection({ title, level, open: initialOpen, children }: {
  *    restored bodies collapse — a message the reader just watched stream in
  *    must not snap shut — and never while streaming.
  */
-function MarkdownImpl({ text, streaming, restored }: { text: string; streaming?: boolean; restored?: boolean }) {
+function MarkdownImpl({ text: liveText, streaming, restored }: { text: string; streaming?: boolean; restored?: boolean }) {
   const [expanded, setExpanded] = useState(false);
-  const collapsible = restored === true && !streaming && text.length > LONG_TEXT_CAP;
+  const text = useSmoothText(liveText, streaming === true);
+  // The caret and the reveal end together: a settled stream may still be
+  // draining its last paced characters, and a caret that vanished while words
+  // were visibly arriving would read as a glitch. The forming-table row keeps
+  // the REAL flag — it narrates the wire, not the reveal.
+  const revealing = streaming === true || text.length < liveText.length;
+  const collapsible = restored === true && !revealing && liveText.length > LONG_TEXT_CAP;
   const components = streaming ? MD_COMPONENTS_STREAMING : MD_COMPONENTS;
   // 8D — structured restored bodies fold by section instead of truncating.
   const sections = collapsible ? splitSections(text) : null;
   if (sections) {
     return (
-      <div className={`fl-md${streaming ? " fl-md--streaming" : ""}`}>
+      <div className={`fl-md${revealing ? " fl-md--streaming" : ""}`}>
         {sections.map((section, index) =>
           section.title.length === 0 ? (
             <ReactMarkdown key={index} remarkPlugins={REMARK_PLUGINS} components={components}>{section.body}</ReactMarkdown>
@@ -205,7 +251,7 @@ function MarkdownImpl({ text, streaming, restored }: { text: string; streaming?:
     <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>{shown}</ReactMarkdown>
   );
   if (!collapsible) {
-    return <div className={`fl-md${streaming ? " fl-md--streaming" : ""}`}>{body}</div>;
+    return <div className={`fl-md${revealing ? " fl-md--streaming" : ""}`}>{body}</div>;
   }
   // The collapsed head sits under a gradient fade with a
   // centered pill instead of a hard cut + inline link.

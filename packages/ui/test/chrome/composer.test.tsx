@@ -97,7 +97,11 @@ describe("composer: type-while-streaming, queued send, edit, regenerate (ENG-215
     expect(threadPosts(wire)).toHaveLength(1);
 
     await act(async () => release());
-    await screen.findByText("Turn complete");
+    // findAll, not find: the queued follow-up auto-sends the moment turn one
+    // settles, and with the paced text reveal (useSmoothText) both turns'
+    // replies can reach the DOM inside one polling window — two matches is
+    // the CORRECT end state here, not an ambiguity.
+    await screen.findAllByText("Turn complete");
 
     // Turn done → the queued message auto-sends as a real second turn, pill gone.
     await waitFor(() => expect(threadPosts(wire)).toHaveLength(2));

@@ -64,19 +64,44 @@ async function loopingThroughBuild(scope: Locator): Promise<{
   let samples = 0;
   const deadline = Date.now() + 25_000;
   while (Date.now() < deadline) {
-    const frame = await scope.evaluate(root => ({
-      building: root.querySelector('.fl-appcard-bar[data-state="building"]') !== null,
-      caret: root.querySelector(".fl-caret") !== null,
-      prose: root.querySelector(".fl-md--streaming") !== null,
-      table: root.querySelector(".fl-skeleton-bar") !== null,
-    }));
+    // ONE evaluate: the building check and the animation sweep must observe the
+    // SAME frame. As two round-trips, the build could finish between them and
+    // the sweep then caught the prose caret legitimately resuming after the
+    // window §8 makes a claim about — a race the paced text reveal
+    // (useSmoothText) turned from theoretical into reliable, since the reveal
+    // now renders continuously across the build's end instead of pausing on
+    // network lulls. Mirrors looping(); Playwright serializes the callback, so
+    // the logic cannot be shared by reference.
+    const frame = await scope.evaluate(root => {
+      const building = root.querySelector('.fl-appcard-bar[data-state="building"]') !== null;
+      const loops: string[] = [];
+      if (building) {
+        for (const node of Array.from(root.querySelectorAll("*"))) {
+          const name = node.className.toString().trim().split(/\s+/).at(-1) || node.tagName.toLowerCase();
+          for (const pseudo of ["", "::before", "::after"] as const) {
+            const style = getComputedStyle(node, pseudo === "" ? undefined : pseudo);
+            if (style.animationName !== "none"
+              && style.animationIterationCount.split(",").some(count => count.trim() === "infinite")) {
+              loops.push(`${name}${pseudo}`);
+            }
+          }
+        }
+      }
+      return {
+        building,
+        loops,
+        caret: root.querySelector(".fl-caret") !== null,
+        prose: root.querySelector(".fl-md--streaming") !== null,
+        table: root.querySelector(".fl-skeleton-bar") !== null,
+      };
+    });
     if (!frame.building && samples > 0) break;
     if (frame.building) {
       samples += 1;
       seen.caret ||= frame.caret;
       seen.prose ||= frame.prose;
       seen.table ||= frame.table;
-      for (const name of await looping(scope)) moved.add(name);
+      for (const name of frame.loops) moved.add(name);
     }
   }
   return {
@@ -171,7 +196,11 @@ test("a build animates exactly one thing, and the bar flips to the app's name", 
 
   await expect(page.getByText("Spending board").first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: /Did 3 things/ })).toBeVisible({ timeout: 20_000 });
-  // The settled turn is calm: nothing loops once the work is done.
+  // The settled turn is calm: nothing loops once the work is done. "Done" now
+  // includes the paced reveal's tail (useSmoothText): the caret deliberately
+  // rides the REVEAL's end, not the stream's, so let the last frames drain —
+  // the streaming class clearing IS the reveal finishing — before asserting.
+  await expect(list.locator(".fl-md--streaming")).toHaveCount(0);
   expect(await looping(list)).toEqual([]);
 });
 

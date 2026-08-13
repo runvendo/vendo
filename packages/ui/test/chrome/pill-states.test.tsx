@@ -311,8 +311,10 @@ describe("closing the panel mid-run (G1: closing is leaving)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "View" }));
     // The thread IS the record: the finished turn sits where it was left.
+    // Awaited, not read synchronously: the reopened message finishes its paced
+    // reveal (useSmoothText) a frame or two after mount.
     expect(dialog()).toBeTruthy();
-    expect(screen.getByText("All done.")).toBeTruthy();
+    await screen.findByText("All done.");
     expect(screen.getByText("[tool-after-text] how did I spend?")).toBeTruthy();
   });
 });
