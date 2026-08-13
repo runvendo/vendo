@@ -117,10 +117,20 @@ const compilerOptions = (ts: typeof TS, input: ScreenTscInput): TS.CompilerOptio
   skipDefaultLibCheck: true,
 });
 
-/** The text of one standard-library file, by the name the compiler asked for.
- *  `ts.sys` is Node's disk; a venue without one carries its libs some other way,
- *  which is the whole reason this is an argument. */
-export type LibTextProvider = (fileName: string) => string | undefined;
+/**
+ * The standard library, as the compiler host asks for it. `ts.sys` is Node's
+ * disk; a venue without one carries its libs some other way, which is the whole
+ * reason this is an argument.
+ *
+ * `exists` is separate from `read` because the compiler PROBES far more files
+ * than it reads, and a lib file is hundreds of kilobytes: answering existence by
+ * reading the body would pay for every probe, and would call a file that exists
+ * but cannot be read absent. An in-memory provider answers both with one lookup.
+ */
+export interface LibTextProvider {
+  read(fileName: string): string | undefined;
+  exists(fileName: string): boolean;
+}
 
 const buildProgram = (
   ts: typeof TS,
@@ -138,7 +148,7 @@ const buildProgram = (
       if (own !== undefined) return create(name, own, version);
       const cached = libCache.get(name);
       if (cached !== undefined) return cached;
-      const text = libs(name);
+      const text = libs.read(name);
       if (text === undefined) return undefined;
       const file = create(name, text, version);
       libCache.set(name, file);
@@ -150,8 +160,8 @@ const buildProgram = (
     getCanonicalFileName: (name) => name,
     useCaseSensitiveFileNames: () => true,
     getNewLine: () => "\n",
-    fileExists: (name) => files.has(name) || libs(name) !== undefined,
-    readFile: (name) => files.get(name) ?? libs(name),
+    fileExists: (name) => files.has(name) || libs.exists(name),
+    readFile: (name) => files.get(name) ?? libs.read(name),
   };
   return ts.createProgram({ rootNames: [SCREEN_FILE, SCREEN_TYPINGS_FILE], options, host });
 };
@@ -468,7 +478,12 @@ export function screenProgram(input: ScreenTscInput): ScreenProgram {
   if (ts === null) {
     return { ok: false, why: "no usable TypeScript compiler is reachable from @vendoai/apps" };
   }
-  return screenProgramWith(ts, input, (name) => ts.sys.readFile(name), (options) => ts.getDefaultLibFilePath(options));
+  return screenProgramWith(
+    ts,
+    input,
+    { read: (name) => ts.sys.readFile(name), exists: (name) => ts.sys.fileExists(name) },
+    (options) => ts.getDefaultLibFilePath(options),
+  );
 }
 
 /** One diagnostic as the floor's sentence. Exported for the component screen's
