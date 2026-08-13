@@ -56,7 +56,7 @@
         "tag": "Recommended",
         "pages": [
           "existing-agents/quickstart",
-          "existing-agents/index",
+          "existing-agents/overview",
           "existing-agents/ai-sdk",
           "existing-agents/mastra",
           "existing-agents/embeds"
@@ -67,7 +67,7 @@
         "tag": "Beta",
         "pages": [
           "vendo-agent/quickstart",
-          "vendo-agent/index"
+          "vendo-agent/overview"
         ]
       },
       {
@@ -75,7 +75,7 @@
         "tag": "Experimental",
         "pages": [
           "mcp/quickstart",
-          "mcp/index"
+          "mcp/overview"
         ]
       },
       {
@@ -211,6 +211,21 @@
     {
       "source": "/agents/tools",
       "destination": "/customize/host-components",
+      "permanent": true
+    },
+    {
+      "source": "/existing-agents/index",
+      "destination": "/existing-agents/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/vendo-agent/index",
+      "destination": "/vendo-agent/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/mcp/index",
+      "destination": "/mcp/quickstart",
       "permanent": true
     },
     {
