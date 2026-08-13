@@ -1,0 +1,161 @@
+{
+  "app": "Emberwatch, an on-call console for engineering teams — services, alerts, incidents, deploys, and who is holding the pager",
+  "theme": {
+    "colors": {
+      "background": "#0B0F16",
+      "surface": "#141A24",
+      "text": "#EAF0F7",
+      "muted": "#7E8CA0",
+      "accent": "#FF7A1A",
+      "accentText": "#0B0F16",
+      "danger": "#F2385A",
+      "border": "#222C3A"
+    },
+    "typography": { "fontFamily": "Poppins, sans-serif", "baseSize": "13px" },
+    "radius": { "small": "3px", "medium": "5px", "large": "8px" },
+    "density": "compact",
+    "motion": "reduced"
+  },
+  "style": [
+    "dark cockpit: near-black #0B0F16 page, #141A24 panels, hairline #222C3A borders — never a light or white background",
+    "uses the theme exactly: ember orange accent, Poppins, tight 3-8px corners — no invented colors or fonts",
+    "severity and health read as a labelled pill or word (critical / warning / healthy), never colour alone",
+    "every figure carries its unit — ms for latency, min for durations, GB for volume — never a bare number",
+    "money shows a currency symbol and 2 decimals, converted from the tools' cents",
+    "times shown as 'Aug 12, 13:29' style, never a raw timestamp"
+  ],
+  "tools": {
+    "list_services": {
+      "does": "Every service Emberwatch monitors. The rows are the `data` array. `owner` is the team that holds the pager for it and matches a `team` in get_oncall_schedule. `tier` is critical, important or standard. `health` is healthy, degraded or down. `tail_latency_ms` is the ninety-fifth-percentile response time in MILLISECONDS.",
+      "data": {
+        "data": [
+          { "id": "svc_checkout", "name": "checkout-api", "owner": "Payments", "tier": "critical", "health": "degraded", "tail_latency_ms": 842 },
+          { "id": "svc_ledger", "name": "ledger-worker", "owner": "Payments", "tier": "critical", "health": "healthy", "tail_latency_ms": 96 },
+          { "id": "svc_auth", "name": "auth-gateway", "owner": "Identity", "tier": "critical", "health": "healthy", "tail_latency_ms": 118 },
+          { "id": "svc_edge", "name": "edge-router", "owner": "Platform", "tier": "critical", "health": "healthy", "tail_latency_ms": 41 },
+          { "id": "svc_search", "name": "search-indexer", "owner": "Discovery", "tier": "important", "health": "degraded", "tail_latency_ms": 1940 },
+          { "id": "svc_notify", "name": "notify-fanout", "owner": "Messaging", "tier": "important", "health": "down", "tail_latency_ms": 5210 },
+          { "id": "svc_billing", "name": "billing-sync", "owner": "Payments", "tier": "standard", "health": "healthy", "tail_latency_ms": 214 },
+          { "id": "svc_media", "name": "media-transcode", "owner": "Platform", "tier": "standard", "health": "healthy", "tail_latency_ms": 3120 }
+        ]
+      }
+    },
+    "list_alerts": {
+      "does": "Alerts on the board right now, newest first. The rows are the `data` array. `service_id` is a list_services id. `severity` is critical, warning or info. `state` is firing or acked. `fires_this_week` is how many times the alert fired in the last seven days and `acks_this_week` how many of those a human acknowledged.",
+      "data": {
+        "data": [
+          { "id": "al_2202", "service_id": "svc_checkout", "title": "Checkout error rate above burn limit", "severity": "critical", "state": "firing", "opened_at": "2026-08-12 13:41", "fires_this_week": 2, "acks_this_week": 2 },
+          { "id": "al_2203", "service_id": "svc_search", "title": "Indexer tail latency regression", "severity": "warning", "state": "firing", "opened_at": "2026-08-12 11:05", "fires_this_week": 9, "acks_this_week": 1 },
+          { "id": "al_2204", "service_id": "svc_search", "title": "Indexer falling behind the primary", "severity": "warning", "state": "firing", "opened_at": "2026-08-12 09:52", "fires_this_week": 14, "acks_this_week": 0 },
+          { "id": "al_2205", "service_id": "svc_media", "title": "Transcode worker restarted", "severity": "info", "state": "firing", "opened_at": "2026-08-12 08:30", "fires_this_week": 22, "acks_this_week": 0 },
+          { "id": "al_2201", "service_id": "svc_notify", "title": "Fanout queue depth above threshold", "severity": "critical", "state": "firing", "opened_at": "2026-08-12 05:12", "fires_this_week": 3, "acks_this_week": 3 },
+          { "id": "al_2206", "service_id": "svc_checkout", "title": "Card authorization latency high", "severity": "warning", "state": "acked", "opened_at": "2026-08-12 04:18", "fires_this_week": 4, "acks_this_week": 4 },
+          { "id": "al_2207", "service_id": "svc_billing", "title": "Nightly sync finished late", "severity": "info", "state": "acked", "opened_at": "2026-08-12 02:07", "fires_this_week": 6, "acks_this_week": 5 }
+        ]
+      }
+    },
+    "list_incidents": {
+      "does": "Incidents from the last week, newest first. The rows are the `data` array. `service_id` is a list_services id and `caused_by_deploy` a list_deploys id, empty when nothing was blamed. `resolved_at` is empty while the incident is still open, and `duration_minutes` is then how long it has been running so far.",
+      "data": {
+        "data": [
+          { "id": "inc_1041", "title": "Checkout failures after payments deploy", "severity": "critical", "status": "mitigating", "service_id": "svc_checkout", "commander": "Priya Raman", "started_at": "2026-08-12 13:35", "resolved_at": "", "duration_minutes": 47, "customers_affected": 1420, "caused_by_deploy": "dep_9042" },
+          { "id": "inc_1040", "title": "Search index falling behind the primary", "severity": "major", "status": "monitoring", "service_id": "svc_search", "commander": "Dylan Okafor", "started_at": "2026-08-12 09:52", "resolved_at": "", "duration_minutes": 270, "customers_affected": 8600, "caused_by_deploy": "" },
+          { "id": "inc_1039", "title": "Notification backlog after broker failover", "severity": "critical", "status": "resolved", "service_id": "svc_notify", "commander": "Priya Raman", "started_at": "2026-08-11 22:10", "resolved_at": "2026-08-12 01:05", "duration_minutes": 175, "customers_affected": 12500, "caused_by_deploy": "dep_9040" },
+          { "id": "inc_1038", "title": "Auth token refresh storm", "severity": "major", "status": "resolved", "service_id": "svc_auth", "commander": "Marta Kaine", "started_at": "2026-08-10 16:40", "resolved_at": "2026-08-10 17:28", "duration_minutes": 48, "customers_affected": 3100, "caused_by_deploy": "dep_9037" },
+          { "id": "inc_1037", "title": "Media transcode queue stalled", "severity": "minor", "status": "resolved", "service_id": "svc_media", "commander": "Sam Iyer", "started_at": "2026-08-09 03:12", "resolved_at": "2026-08-09 05:00", "duration_minutes": 108, "customers_affected": 240, "caused_by_deploy": "" }
+        ]
+      }
+    },
+    "list_deploys": {
+      "does": "Deploys from the last three days, newest first. The rows are the `data` array. `service_id` is a list_services id, `build` is the CI build number that shipped, `status` is deploying, live, rolled_back or failed, and `duration_seconds` is how long the deploy itself took in SECONDS.",
+      "data": {
+        "data": [
+          { "id": "dep_9043", "service_id": "svc_ledger", "build": 2255, "deployed_by": "Owen Brecht", "deployed_at": "2026-08-12 14:15", "status": "deploying", "duration_seconds": 62 },
+          { "id": "dep_9042", "service_id": "svc_checkout", "build": 4192, "deployed_by": "Nadia Feld", "deployed_at": "2026-08-12 13:29", "status": "live", "duration_seconds": 214 },
+          { "id": "dep_9041", "service_id": "svc_search", "build": 2870, "deployed_by": "Dylan Okafor", "deployed_at": "2026-08-12 09:40", "status": "live", "duration_seconds": 452 },
+          { "id": "dep_9040", "service_id": "svc_notify", "build": 1533, "deployed_by": "Owen Brecht", "deployed_at": "2026-08-11 21:55", "status": "rolled_back", "duration_seconds": 168 },
+          { "id": "dep_9039", "service_id": "svc_edge", "build": 7781, "deployed_by": "Marta Kaine", "deployed_at": "2026-08-11 18:02", "status": "live", "duration_seconds": 96 },
+          { "id": "dep_9038", "service_id": "svc_billing", "build": 640, "deployed_by": "Sam Iyer", "deployed_at": "2026-08-11 11:20", "status": "live", "duration_seconds": 305 },
+          { "id": "dep_9037", "service_id": "svc_auth", "build": 3304, "deployed_by": "Nadia Feld", "deployed_at": "2026-08-10 15:58", "status": "rolled_back", "duration_seconds": 141 },
+          { "id": "dep_9036", "service_id": "svc_media", "build": 918, "deployed_by": "Tomas Lindqvist", "deployed_at": "2026-08-10 09:12", "status": "failed", "duration_seconds": 78 }
+        ]
+      }
+    },
+    "get_oncall_schedule": {
+      "does": "Every on-call shift covering this week, per team. The rows are the `data` array. `team` matches a list_services `owner`, `role` is primary or secondary, and `on_call_now` is true for the shifts holding the pager at this moment — one Messaging shift has already handed off and one Payments shift has not started yet.",
+      "data": {
+        "data": [
+          { "id": "sh_1", "team": "Payments", "role": "primary", "engineer": "Priya Raman", "starts_at": "2026-08-11 09:00", "ends_at": "2026-08-13 09:00", "on_call_now": true },
+          { "id": "sh_2", "team": "Payments", "role": "secondary", "engineer": "Nadia Feld", "starts_at": "2026-08-11 09:00", "ends_at": "2026-08-13 09:00", "on_call_now": true },
+          { "id": "sh_3", "team": "Payments", "role": "primary", "engineer": "Owen Brecht", "starts_at": "2026-08-13 09:00", "ends_at": "2026-08-15 09:00", "on_call_now": false },
+          { "id": "sh_4", "team": "Identity", "role": "primary", "engineer": "Marta Kaine", "starts_at": "2026-08-10 09:00", "ends_at": "2026-08-17 09:00", "on_call_now": true },
+          { "id": "sh_5", "team": "Identity", "role": "secondary", "engineer": "Ines Duarte", "starts_at": "2026-08-10 09:00", "ends_at": "2026-08-17 09:00", "on_call_now": true },
+          { "id": "sh_6", "team": "Discovery", "role": "primary", "engineer": "Dylan Okafor", "starts_at": "2026-08-12 09:00", "ends_at": "2026-08-14 09:00", "on_call_now": true },
+          { "id": "sh_7", "team": "Discovery", "role": "secondary", "engineer": "Rhea Solberg", "starts_at": "2026-08-12 09:00", "ends_at": "2026-08-14 09:00", "on_call_now": true },
+          { "id": "sh_8", "team": "Messaging", "role": "primary", "engineer": "Sam Iyer", "starts_at": "2026-08-08 09:00", "ends_at": "2026-08-12 09:00", "on_call_now": false },
+          { "id": "sh_9", "team": "Messaging", "role": "primary", "engineer": "Tomas Lindqvist", "starts_at": "2026-08-12 09:00", "ends_at": "2026-08-19 09:00", "on_call_now": true },
+          { "id": "sh_10", "team": "Platform", "role": "primary", "engineer": "Yuki Alderman", "starts_at": "2026-08-08 09:00", "ends_at": "2026-08-15 09:00", "on_call_now": true }
+        ]
+      }
+    },
+    "get_error_budget": {
+      "does": "Error budget for every service that has a published SLO, worst first. The rows are the `data` array. `service_id` is a list_services id, `slo_target_pct` is the availability the service promises, `budget_minutes_total` is the whole budget for the window and `budget_minutes_burned` how much of it has been spent. Burned above total means the service is over its budget.",
+      "data": {
+        "data": [
+          { "service_id": "svc_notify", "window": "month to date", "slo_target_pct": 99.5, "budget_minutes_total": 216, "budget_minutes_burned": 231 },
+          { "service_id": "svc_checkout", "window": "month to date", "slo_target_pct": 99.9, "budget_minutes_total": 43, "budget_minutes_burned": 39 },
+          { "service_id": "svc_search", "window": "month to date", "slo_target_pct": 99.5, "budget_minutes_total": 216, "budget_minutes_burned": 88 },
+          { "service_id": "svc_auth", "window": "month to date", "slo_target_pct": 99.95, "budget_minutes_total": 21, "budget_minutes_burned": 6 },
+          { "service_id": "svc_edge", "window": "month to date", "slo_target_pct": 99.99, "budget_minutes_total": 4, "budget_minutes_burned": 1 }
+        ]
+      }
+    },
+    "get_ingest_spend": {
+      "does": "What each service cost in log and metric ingest this month, biggest spender first. The rows are the `data` array. `service_id` is a list_services id, `gb_ingested` is billable volume in GIGABYTES, and `cost_cents` and `last_month_cost_cents` are in CENTS: 203100 is $2,031.00.",
+      "data": {
+        "data": [
+          { "service_id": "svc_search", "gb_ingested": 812.4, "cost_cents": 203100, "last_month_cost_cents": 154750 },
+          { "service_id": "svc_checkout", "gb_ingested": 410.8, "cost_cents": 102700, "last_month_cost_cents": 99550 },
+          { "service_id": "svc_notify", "gb_ingested": 288.5, "cost_cents": 72125, "last_month_cost_cents": 30350 },
+          { "service_id": "svc_edge", "gb_ingested": 196.2, "cost_cents": 49050, "last_month_cost_cents": 50400 },
+          { "service_id": "svc_media", "gb_ingested": 88.9, "cost_cents": 22225, "last_month_cost_cents": 23200 },
+          { "service_id": "svc_auth", "gb_ingested": 54.6, "cost_cents": 13650, "last_month_cost_cents": 13000 }
+        ]
+      }
+    },
+    "list_activity": {
+      "does": "Everything that happened across the estate in the last day, oldest first. The rows are the `data` array. `actor` is the person who did it, or Emberwatch when the system did. `kind` is deploy, alert, page, comment, rollback, ack or resolve, and `target` is a list_services or list_incidents id.",
+      "data": {
+        "data": [
+          { "id": "act_1", "at": "2026-08-11 21:55", "actor": "Owen Brecht", "kind": "deploy", "target": "svc_notify", "summary": "Shipped a fanout build to notify-fanout" },
+          { "id": "act_2", "at": "2026-08-11 22:10", "actor": "Emberwatch", "kind": "alert", "target": "svc_notify", "summary": "Fanout queue depth crossed the critical threshold" },
+          { "id": "act_3", "at": "2026-08-11 22:14", "actor": "Emberwatch", "kind": "page", "target": "svc_notify", "summary": "Paged the Messaging secondary after no acknowledgement" },
+          { "id": "act_4", "at": "2026-08-11 22:31", "actor": "Owen Brecht", "kind": "comment", "target": "inc_1039", "summary": "Broker failover looks stuck on the old leader" },
+          { "id": "act_5", "at": "2026-08-11 23:02", "actor": "Owen Brecht", "kind": "rollback", "target": "svc_notify", "summary": "Rolled the fanout build back" },
+          { "id": "act_6", "at": "2026-08-12 01:05", "actor": "Priya Raman", "kind": "resolve", "target": "inc_1039", "summary": "Backlog drained, incident closed" },
+          { "id": "act_7", "at": "2026-08-12 02:07", "actor": "Emberwatch", "kind": "alert", "target": "svc_billing", "summary": "Nightly sync finished outside its window" },
+          { "id": "act_8", "at": "2026-08-12 02:26", "actor": "Sam Iyer", "kind": "ack", "target": "svc_billing", "summary": "Acked the late sync, known slow backfill" },
+          { "id": "act_9", "at": "2026-08-12 09:40", "actor": "Dylan Okafor", "kind": "deploy", "target": "svc_search", "summary": "Shipped an indexer build to search-indexer" },
+          { "id": "act_10", "at": "2026-08-12 13:29", "actor": "Nadia Feld", "kind": "deploy", "target": "svc_checkout", "summary": "Shipped a checkout build to checkout-api" },
+          { "id": "act_11", "at": "2026-08-12 13:41", "actor": "Emberwatch", "kind": "alert", "target": "svc_checkout", "summary": "Checkout error rate crossed the burn limit" }
+        ]
+      }
+    },
+    "acknowledge_alert": {
+      "does": "Acknowledge a firing alert. Escalation stops and the alert is recorded against whoever took it.",
+      "takes": { "alert_id": "string" }
+    },
+    "silence_alert": {
+      "does": "Silence an alert for a number of minutes. It stops paging anyone and returns to the board when the window ends.",
+      "takes": { "alert_id": "string", "minutes": "number" }
+    },
+    "rollback_deploy": {
+      "does": "Roll a service back to the build that ran before this deploy. Traffic shifts immediately, so this is destructive.",
+      "takes": { "deploy_id": "string" }
+    },
+    "page_oncall": {
+      "does": "Page the on-call primary for a service. Their phone rings, wherever they are.",
+      "takes": { "service_id": "string", "message": "string" }
+    }
+  }
+}

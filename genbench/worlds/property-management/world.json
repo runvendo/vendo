@@ -1,0 +1,146 @@
+{
+  "app": "Lintel, a rental property management app for small landlords — units, leases, rent collection and maintenance in one place",
+  "theme": {
+    "colors": {
+      "background": "#F5F2EC",
+      "surface": "#FFFFFF",
+      "text": "#1F1B16",
+      "muted": "#6E6558",
+      "accent": "#A5471C",
+      "accentText": "#FFF8F2",
+      "danger": "#8C1D3F",
+      "border": "#DDD5C8"
+    },
+    "typography": { "fontFamily": "Onest, sans-serif", "baseSize": "13px" },
+    "radius": { "small": "3px", "medium": "5px", "large": "12px" },
+    "density": "compact",
+    "motion": "reduced"
+  },
+  "style": [
+    "uses the theme exactly: brick accent on warm paper, Onest, 3px corners on controls — no invented colors or fonts",
+    "money always shows 2 decimals with a $ symbol, and anything a tenant still owes is in the danger color",
+    "a unit is always named 'Building · Unit' — 'Wexler Row · 3B' — never a raw id like unit_wex_3b",
+    "dates read as 'Aug 14', a rent period reads as 'August 2026', times read as '4:00 PM' — never ISO",
+    "every status is a small pill (Paid, Partial, Unpaid, Open, Scheduled), never plain sentence text",
+    "dense operator layout: tight rows a manager can scan, no hero banners or oversized cards"
+  ],
+  "tools": {
+    "list_units": {
+      "does": "Every unit in the portfolio, grouped by building. The rows are the `data` array. `status` is occupied, vacant, or notice (the tenant has given notice and is leaving). `marketRentCents` is what the unit could rent for today, in CENTS: 195000 is $1,950.00. A unit is shown to a person as its building and unit label — 'Wexler Row · 3B'.",
+      "data": {
+        "data": [
+          { "id": "unit_wex_1a", "property": "Wexler Row", "unit": "1A", "beds": 1, "sqft": 620, "marketRentCents": 195000, "status": "occupied" },
+          { "id": "unit_wex_1b", "property": "Wexler Row", "unit": "1B", "beds": 1, "sqft": 640, "marketRentCents": 195000, "status": "occupied" },
+          { "id": "unit_wex_2a", "property": "Wexler Row", "unit": "2A", "beds": 2, "sqft": 880, "marketRentCents": 245000, "status": "occupied" },
+          { "id": "unit_wex_2b", "property": "Wexler Row", "unit": "2B", "beds": 2, "sqft": 875, "marketRentCents": 245000, "status": "vacant" },
+          { "id": "unit_wex_3a", "property": "Wexler Row", "unit": "3A", "beds": 2, "sqft": 900, "marketRentCents": 250000, "status": "occupied" },
+          { "id": "unit_wex_3b", "property": "Wexler Row", "unit": "3B", "beds": 3, "sqft": 1150, "marketRentCents": 310000, "status": "occupied" },
+          { "id": "unit_ald_1a", "property": "Alder Court", "unit": "1A", "beds": 1, "sqft": 560, "marketRentCents": 175000, "status": "occupied" },
+          { "id": "unit_ald_2a", "property": "Alder Court", "unit": "2A", "beds": 2, "sqft": 840, "marketRentCents": 235000, "status": "notice" },
+          { "id": "unit_ald_2b", "property": "Alder Court", "unit": "2B", "beds": 2, "sqft": 830, "marketRentCents": 232500, "status": "vacant" },
+          { "id": "unit_fox_house", "property": "Foxglove House", "unit": "House", "beds": 4, "sqft": 1980, "marketRentCents": 400000, "status": "occupied" }
+        ]
+      }
+    },
+    "list_leases": {
+      "does": "Every lease on the portfolio, one per unit that is not vacant. The rows are the `data` array. `status` is active or ending (the tenant has given notice and is not renewing). `rentCents` and `depositCents` are in CENTS: 185000 is $1,850.00. Today is Aug 12 2026.",
+      "data": {
+        "data": [
+          { "id": "lease_1", "unitId": "unit_wex_1a", "tenant": "Priya Raman", "startDate": "2025-09-01", "endDate": "2026-08-31", "rentCents": 185000, "depositCents": 185000, "status": "active" },
+          { "id": "lease_2", "unitId": "unit_wex_1b", "tenant": "Marcus Vance", "startDate": "2024-10-01", "endDate": "2026-09-30", "rentCents": 180000, "depositCents": 180000, "status": "active" },
+          { "id": "lease_3", "unitId": "unit_wex_2a", "tenant": "Ana Delgado", "startDate": "2026-03-01", "endDate": "2027-02-28", "rentCents": 232500, "depositCents": 232500, "status": "active" },
+          { "id": "lease_4", "unitId": "unit_wex_3a", "tenant": "Ellis Boone", "startDate": "2025-11-01", "endDate": "2026-10-31", "rentCents": 240000, "depositCents": 240000, "status": "active" },
+          { "id": "lease_5", "unitId": "unit_wex_3b", "tenant": "Sonia Achebe", "startDate": "2026-01-15", "endDate": "2027-01-14", "rentCents": 298000, "depositCents": 298000, "status": "active" },
+          { "id": "lease_6", "unitId": "unit_ald_1a", "tenant": "Theo Mancini", "startDate": "2025-09-15", "endDate": "2026-09-14", "rentCents": 165000, "depositCents": 165000, "status": "active" },
+          { "id": "lease_7", "unitId": "unit_ald_2a", "tenant": "Grace Okonjo", "startDate": "2025-09-01", "endDate": "2026-08-31", "rentCents": 219000, "depositCents": 219000, "status": "ending" },
+          { "id": "lease_8", "unitId": "unit_fox_house", "tenant": "Dominic Hartley", "startDate": "2026-06-01", "endDate": "2027-05-31", "rentCents": 385000, "depositCents": 577500, "status": "active" }
+        ]
+      }
+    },
+    "list_rent_charges": {
+      "does": "Rent charged for the current period, August 2026 — one charge per lease. The rows are the `data` array. Rent was due Aug 1 and today is Aug 12 2026, so anything not paid in full is late. `amountDueCents` and `amountPaidCents` are in CENTS: 185000 is $1,850.00; what a tenant still owes is the difference between them. `status` is paid, partial, or unpaid.",
+      "data": {
+        "data": [
+          { "id": "rc_aug_1", "leaseId": "lease_1", "unitId": "unit_wex_1a", "tenant": "Priya Raman", "period": "2026-08", "dueDate": "2026-08-01", "amountDueCents": 185000, "amountPaidCents": 185000, "status": "paid" },
+          { "id": "rc_aug_2", "leaseId": "lease_2", "unitId": "unit_wex_1b", "tenant": "Marcus Vance", "period": "2026-08", "dueDate": "2026-08-01", "amountDueCents": 180000, "amountPaidCents": 180000, "status": "paid" },
+          { "id": "rc_aug_3", "leaseId": "lease_3", "unitId": "unit_wex_2a", "tenant": "Ana Delgado", "period": "2026-08", "dueDate": "2026-08-01", "amountDueCents": 232500, "amountPaidCents": 232500, "status": "paid" },
+          { "id": "rc_aug_4", "leaseId": "lease_4", "unitId": "unit_wex_3a", "tenant": "Ellis Boone", "period": "2026-08", "dueDate": "2026-08-01", "amountDueCents": 240000, "amountPaidCents": 120000, "status": "partial" },
+          { "id": "rc_aug_5", "leaseId": "lease_5", "unitId": "unit_wex_3b", "tenant": "Sonia Achebe", "period": "2026-08", "dueDate": "2026-08-01", "amountDueCents": 298000, "amountPaidCents": 298000, "status": "paid" },
+          { "id": "rc_aug_6", "leaseId": "lease_6", "unitId": "unit_ald_1a", "tenant": "Theo Mancini", "period": "2026-08", "dueDate": "2026-08-01", "amountDueCents": 165000, "amountPaidCents": 82500, "status": "partial" },
+          { "id": "rc_aug_7", "leaseId": "lease_7", "unitId": "unit_ald_2a", "tenant": "Grace Okonjo", "period": "2026-08", "dueDate": "2026-08-01", "amountDueCents": 219000, "amountPaidCents": 109500, "status": "partial" },
+          { "id": "rc_aug_8", "leaseId": "lease_8", "unitId": "unit_fox_house", "tenant": "Dominic Hartley", "period": "2026-08", "dueDate": "2026-08-01", "amountDueCents": 385000, "amountPaidCents": 0, "status": "unpaid" }
+        ]
+      }
+    },
+    "get_collections_history": {
+      "does": "What was billed and what was collected each month for the last six months, oldest first. The rows are the `data` array. `billedCents` and `collectedCents` are in CENTS: 1904500 is $19,045.00. The last row is the current month, August 2026, and is still in progress.",
+      "data": {
+        "data": [
+          { "month": "2026-03", "billedCents": 2107000, "collectedCents": 2107000 },
+          { "month": "2026-04", "billedCents": 2107000, "collectedCents": 2054500 },
+          { "month": "2026-05", "billedCents": 2107000, "collectedCents": 2107000 },
+          { "month": "2026-06", "billedCents": 2132000, "collectedCents": 2132000 },
+          { "month": "2026-07", "billedCents": 1904500, "collectedCents": 1904500 },
+          { "month": "2026-08", "billedCents": 1904500, "collectedCents": 1207500 }
+        ]
+      }
+    },
+    "list_maintenance_requests": {
+      "does": "Every maintenance request opened in the last three weeks, newest first. The rows are the `data` array. `status` is open, scheduled, in_progress, or done; `priority` is urgent, normal, or low. `vendor` and `scheduledFor` are empty strings until someone assigns the job. `estimateCents` is the quoted or expected cost in CENTS: 18500 is $185.00.",
+      "data": {
+        "data": [
+          { "id": "mr_107", "unitId": "unit_wex_2a", "title": "Ceiling stain spreading under the upstairs bathroom", "category": "plumbing", "priority": "urgent", "status": "open", "openedDate": "2026-08-12", "scheduledFor": "", "vendor": "", "estimateCents": 55000 },
+          { "id": "mr_102", "unitId": "unit_wex_3b", "title": "No hot water in the shower", "category": "plumbing", "priority": "urgent", "status": "scheduled", "openedDate": "2026-08-11", "scheduledFor": "2026-08-13", "vendor": "Halvorsen Plumbing", "estimateCents": 42000 },
+          { "id": "mr_101", "unitId": "unit_ald_2a", "title": "Kitchen faucet drips constantly", "category": "plumbing", "priority": "normal", "status": "open", "openedDate": "2026-08-09", "scheduledFor": "", "vendor": "", "estimateCents": 18500 },
+          { "id": "mr_103", "unitId": "unit_wex_1a", "title": "Bedroom window will not latch", "category": "general", "priority": "normal", "status": "open", "openedDate": "2026-08-07", "scheduledFor": "", "vendor": "", "estimateCents": 12000 },
+          { "id": "mr_104", "unitId": "unit_fox_house", "title": "Garage door opener dead", "category": "electrical", "priority": "normal", "status": "in_progress", "openedDate": "2026-08-04", "scheduledFor": "2026-08-12", "vendor": "Bright Fork Electric", "estimateCents": 31500 },
+          { "id": "mr_105", "unitId": "unit_wex_2b", "title": "Turnover paint and patch before showings", "category": "turnover", "priority": "normal", "status": "scheduled", "openedDate": "2026-08-03", "scheduledFor": "2026-08-14", "vendor": "Sable Coat Painting", "estimateCents": 96000 },
+          { "id": "mr_106", "unitId": "unit_ald_2a", "title": "Bathroom fan rattling", "category": "electrical", "priority": "low", "status": "open", "openedDate": "2026-07-31", "scheduledFor": "", "vendor": "", "estimateCents": 22500 },
+          { "id": "mr_108", "unitId": "unit_ald_1a", "title": "Front door buzzer broken", "category": "general", "priority": "low", "status": "open", "openedDate": "2026-07-28", "scheduledFor": "", "vendor": "", "estimateCents": 14000 },
+          { "id": "mr_109", "unitId": "unit_wex_3a", "title": "Dishwasher leaking onto the floor", "category": "appliance", "priority": "normal", "status": "done", "openedDate": "2026-07-22", "scheduledFor": "2026-07-24", "vendor": "Ridge Appliance Service", "estimateCents": 28500 }
+        ]
+      }
+    },
+    "list_vendors": {
+      "does": "The vendors this portfolio uses. The rows are the `data` array. `hourlyRateCents` is in CENTS: 14500 is $145.00. `rating` is out of 5. `lastJobDate` is the last job this vendor finished here.",
+      "data": {
+        "data": [
+          { "id": "ven_halvorsen", "name": "Halvorsen Plumbing", "trade": "plumbing", "hourlyRateCents": 14500, "rating": 4.8, "lastJobDate": "2026-07-30" },
+          { "id": "ven_brightfork", "name": "Bright Fork Electric", "trade": "electrical", "hourlyRateCents": 16000, "rating": 4.6, "lastJobDate": "2026-08-04" },
+          { "id": "ven_sablecoat", "name": "Sable Coat Painting", "trade": "painting", "hourlyRateCents": 9500, "rating": 4.9, "lastJobDate": "2026-07-19" },
+          { "id": "ven_ridge", "name": "Ridge Appliance Service", "trade": "appliance", "hourlyRateCents": 13500, "rating": 4.2, "lastJobDate": "2026-07-24" },
+          { "id": "ven_kestrel", "name": "Kestrel Handyman Co", "trade": "general", "hourlyRateCents": 8500, "rating": 4.4, "lastJobDate": "2026-06-26" }
+        ]
+      }
+    },
+    "list_showings": {
+      "does": "Showings booked for the current week, Aug 12-16 2026, oldest first. The rows are the `data` array. `startTime` is 24-hour local time. `agent` is whoever is covering it. `status` is confirmed or requested (the prospect asked for the slot and nobody has confirmed it yet).",
+      "data": {
+        "data": [
+          { "id": "shw_1", "unitId": "unit_wex_2b", "prospect": "Naomi Castellan", "date": "2026-08-12", "startTime": "17:00", "agent": "Rosa Lindqvist", "status": "confirmed" },
+          { "id": "shw_2", "unitId": "unit_wex_2b", "prospect": "Dev Patel", "date": "2026-08-13", "startTime": "11:00", "agent": "Rosa Lindqvist", "status": "confirmed" },
+          { "id": "shw_3", "unitId": "unit_ald_2b", "prospect": "Harriet Nolan", "date": "2026-08-13", "startTime": "16:00", "agent": "Devon Pike", "status": "confirmed" },
+          { "id": "shw_4", "unitId": "unit_ald_2a", "prospect": "Owen Brandt", "date": "2026-08-14", "startTime": "13:00", "agent": "Devon Pike", "status": "requested" },
+          { "id": "shw_5", "unitId": "unit_wex_2b", "prospect": "Camille Ordonez", "date": "2026-08-14", "startTime": "18:00", "agent": "Rosa Lindqvist", "status": "confirmed" },
+          { "id": "shw_6", "unitId": "unit_ald_2b", "prospect": "Felix Marchetti", "date": "2026-08-15", "startTime": "10:00", "agent": "Devon Pike", "status": "requested" }
+        ]
+      }
+    },
+    "assign_vendor": {
+      "does": "Put a vendor on a maintenance request, which schedules the job and notifies them. `requestId` is a row from list_maintenance_requests, `vendorId` a row from list_vendors.",
+      "takes": { "requestId": "string", "vendorId": "string" }
+    },
+    "record_payment": {
+      "does": "Record a payment against a rent charge. `chargeId` is a row from list_rent_charges, `amountCents` is in CENTS (120000 is $1,200.00), and `method` is check, ach, card, or cash.",
+      "takes": { "chargeId": "string", "amountCents": "number", "method": "string" }
+    },
+    "send_late_notice": {
+      "does": "Send one tenant a late-rent notice for a charge they still owe. `chargeId` is a row from list_rent_charges; `channel` is email or sms. Chasing several tenants means one call per tenant.",
+      "takes": { "chargeId": "string", "channel": "string" }
+    },
+    "renew_lease": {
+      "does": "Renew a lease at a new end date and rent. `leaseId` is a row from list_leases, `endDate` is YYYY-MM-DD, and `rentCents` is the new rent in CENTS: 195000 is $1,950.00.",
+      "takes": { "leaseId": "string", "endDate": "string", "rentCents": "number" }
+    }
+  }
+}

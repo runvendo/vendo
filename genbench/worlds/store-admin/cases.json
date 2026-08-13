@@ -1,0 +1,123 @@
+[
+  {
+    "id": "recent-orders",
+    "lane": "screen",
+    "prompt": "Show me my ten most recent orders in one table: order number, customer, when it was placed, whether it's paid, whether it's shipped, and the total.",
+    "tags": ["display"],
+    "pass": [
+      "shows all ten orders the tool returned, newest first",
+      "each row shows the order number, customer name, date placed and total",
+      "each order's total matches the tool's number exactly",
+      "each row shows both the payment status and the fulfillment state"
+    ]
+  },
+  {
+    "id": "refund-queue",
+    "lane": "screen",
+    "prompt": "I work refunds every morning. Show me the refund requests that are still open — order, customer, reason and amount — and let me approve or deny each one right there.",
+    "tags": ["action"],
+    "pass": [
+      "lists the three open requests and neither approved nor denied one",
+      "each request shows its order number, customer, reason and amount",
+      "every listed request offers both an approve and a deny control",
+      "the approve control calls approve_refund with the id of the request it sits on"
+    ]
+  },
+  {
+    "id": "order-detail",
+    "lane": "screen",
+    "prompt": "Pull up order PDL-1042: every line item with quantity and price, the subtotal, shipping, tax and total, where it shipped, its timeline, and who the customer is — how many orders they've placed and what they've spent with us all time.",
+    "tags": ["display"],
+    "pass": [
+      "shows all four line items with quantity and unit price",
+      "shows subtotal, shipping, tax and a total of $156.30",
+      "shows the order's timeline in order, ending at delivered",
+      "names Priya Raman and shows her 9 orders and $1,182.40 lifetime spend"
+    ]
+  },
+  {
+    "id": "week-dashboard",
+    "lane": "screen",
+    "prompt": "Give me this week at a glance: orders taken, gross sales, refunds paid out and average order value across the last seven days.",
+    "tags": ["display"],
+    "pass": [
+      "shows 9 orders for the seven days",
+      "shows gross sales of $927.00",
+      "shows refunds of $101.80",
+      "shows an average order value of $103.00"
+    ]
+  },
+  {
+    "id": "sales-chart",
+    "lane": "screen",
+    "prompt": "Chart gross sales day by day for the last seven days, with refunds plotted against them.",
+    "tags": ["display"],
+    "pass": [
+      "draws a chart with a bar or point per day rather than only a table",
+      "all seven days are on the chart",
+      "refunds are their own series alongside gross sales",
+      "the tallest sales day reads as Aug 8"
+    ]
+  },
+  {
+    "id": "discount-builder",
+    "lane": "screen",
+    "prompt": "SUMMERPOT ends at the end of the month and I want to run the same deal into autumn under a new code. Show me my discount codes with how far each is through its usage limit, then give me a form to create AUTUMNPOT — prefilled with SUMMERPOT's kind, value and usage limit — that creates the code when I submit it.",
+    "tags": ["action"],
+    "pass": [
+      "lists every code with its uses against that code's usage limit",
+      "shows each code's status, so the paused, scheduled and expired ones read differently from the active ones",
+      "the form has fields for code, kind, value and usage limit, prefilled AUTUMNPOT, percent, 15 and 200",
+      "submitting calls create_discount with those four values"
+    ]
+  },
+  {
+    "id": "bulk-fulfil",
+    "lane": "screen",
+    "prompt": "Everything waiting to ship goes out this afternoon. Show me the orders that haven't shipped yet and let me mark them all fulfilled in one press, with a confirmation before it fires.",
+    "tags": ["action"],
+    "pass": [
+      "lists the four unfulfilled orders and neither the shipped, delivered nor cancelled ones",
+      "flags PDL-1044 as still awaiting payment",
+      "one control marks the whole batch fulfilled, and asks for confirmation before it does",
+      "confirming calls mark_fulfilled once per order listed"
+    ]
+  },
+  {
+    "id": "packing-slip",
+    "lane": "screen",
+    "prompt": "Print me a packing slip for PDL-1042 that I can drop in the box: the ship-to address, the shipping method, and every line item with its SKU and quantity. No prices anywhere — whoever packs it doesn't need to see what the customer paid.",
+    "tags": ["display"],
+    "pass": [
+      "shows the ship-to address exactly as the tool returned it, plus the shipping method",
+      "lists all four line items with SKU and quantity",
+      "shows no prices, totals or money anywhere on the slip",
+      "lays the slip out as one plain column, with no navigation anywhere on it"
+    ]
+  },
+  {
+    "id": "supplier-restock",
+    "lane": "screen",
+    "prompt": "Friday restock run. Build me the list I send to suppliers: every SKU at or below its reorder point, grouped by supplier, how many units to order to get each back to its target level from the units it has on hand, what that costs at unit cost, and a button on each line that places the order.",
+    "tags": ["action"],
+    "pass": [
+      "lists exactly the five SKUs at or below their reorder point and no well-stocked one",
+      "groups the lines by supplier",
+      "each line's units to order is that SKU's target level minus its units on hand",
+      "each line's cost is that quantity times that SKU's unit cost",
+      "each line's button calls reorder_stock with that SKU and that quantity"
+    ]
+  },
+  {
+    "id": "empty-refund-queue",
+    "lane": "screen",
+    "prompt": "I work refunds every morning. Show me the refund requests that are still open — order, customer, reason and amount — and let me approve or deny each one right there.",
+    "tags": ["display"],
+    "pass": [
+      "says the refund queue is empty rather than showing an empty table",
+      "invents no refund requests",
+      "offers no approve or deny control"
+    ],
+    "data": { "list_refund_requests": { "data": [] } }
+  }
+]

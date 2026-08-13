@@ -1,0 +1,170 @@
+{
+  "app": "Peddler, the back-office admin for Fernbrook Goods — an independent online shop selling small-batch home and garden supplies.",
+  "theme": {
+    "colors": {
+      "background": "#FAF5EE",
+      "surface": "#FFFFFF",
+      "text": "#241C15",
+      "muted": "#6F5F4E",
+      "accent": "#5D2A42",
+      "accentText": "#FFF6F0",
+      "danger": "#C0392B",
+      "border": "#E4D9C9"
+    },
+    "typography": { "fontFamily": "Lora, Georgia, serif", "baseSize": "13px" },
+    "radius": { "small": "3px", "medium": "4px", "large": "6px" },
+    "density": "compact",
+    "motion": "reduced"
+  },
+  "style": [
+    "uses the theme exactly: cream page, mulberry accent, Lora serif, near-square 3-4px corners — no invented colors or fonts",
+    "money always shows 2 decimals with a $ symbol",
+    "more than three records is a dense table with hairline row rules, never a grid of cards",
+    "every status is a small badge, never bare colored text",
+    "anything that moves money or stock — a refund, a bulk fulfilment, a restock — asks for confirmation first",
+    "dates read as 'Aug 5' style, never ISO"
+  ],
+  "tools": {
+    "list_orders": {
+      "does": "The ten most recent orders, newest first. The rows are the `data` array. `id` is the order number a human uses. `status` is the payment state (paid, pending, refunded, partially_refunded, cancelled) and `fulfillment` is the shipping state (unfulfilled, fulfilled, delivered, cancelled). `item_count` is the number of line items on the order. `total` is in CENTS: 15630 is $156.30.",
+      "takes": { "limit": "number" },
+      "data": {
+        "data": [
+          { "id": "PDL-1051", "customer": "Nora Whitfield", "customer_id": "cus_nora", "placed": "2026-08-12", "item_count": 3, "total": 8740, "status": "paid", "fulfillment": "unfulfilled" },
+          { "id": "PDL-1050", "customer": "Desmond Ali", "customer_id": "cus_desmond", "placed": "2026-08-12", "item_count": 1, "total": 3580, "status": "paid", "fulfillment": "unfulfilled" },
+          { "id": "PDL-1049", "customer": "Priya Raman", "customer_id": "cus_priya", "placed": "2026-08-11", "item_count": 5, "total": 17325, "status": "paid", "fulfillment": "unfulfilled" },
+          { "id": "PDL-1048", "customer": "Marta Solberg", "customer_id": "cus_marta", "placed": "2026-08-11", "item_count": 2, "total": 5980, "status": "refunded", "fulfillment": "delivered" },
+          { "id": "PDL-1047", "customer": "Theo Vance", "customer_id": "cus_theo", "placed": "2026-08-10", "item_count": 4, "total": 12140, "status": "partially_refunded", "fulfillment": "fulfilled" },
+          { "id": "PDL-1046", "customer": "Nora Whitfield", "customer_id": "cus_nora", "placed": "2026-08-09", "item_count": 1, "total": 4380, "status": "paid", "fulfillment": "delivered" },
+          { "id": "PDL-1045", "customer": "Hollis Byrne", "customer_id": "cus_hollis", "placed": "2026-08-08", "item_count": 6, "total": 24380, "status": "paid", "fulfillment": "delivered" },
+          { "id": "PDL-1044", "customer": "Desmond Ali", "customer_id": "cus_desmond", "placed": "2026-08-07", "item_count": 2, "total": 6720, "status": "pending", "fulfillment": "unfulfilled" },
+          { "id": "PDL-1043", "customer": "June Okafor", "customer_id": "cus_june", "placed": "2026-08-06", "item_count": 3, "total": 9455, "status": "cancelled", "fulfillment": "cancelled" },
+          { "id": "PDL-1042", "customer": "Priya Raman", "customer_id": "cus_priya", "placed": "2026-08-05", "item_count": 4, "total": 15630, "status": "paid", "fulfillment": "delivered" }
+        ]
+      }
+    },
+    "get_order": {
+      "does": "One order in full — the single row of the `data` array: its line items, what the customer paid, where it shipped, and its timeline. `unit_price`, `line_total`, `subtotal`, `shipping`, `tax` and `total` are all in CENTS: 15630 is $156.30.",
+      "takes": { "id": "string" },
+      "data": {
+        "data": [{
+          "id": "PDL-1042",
+          "customer": "Priya Raman",
+          "customer_id": "cus_priya",
+          "email": "priya.raman@example.com",
+          "placed": "2026-08-05",
+          "status": "paid",
+          "fulfillment": "delivered",
+          "ship_to": "418 Fernbrook Lane, Apt 2, Portland, OR 97214",
+          "shipping_method": "Standard post",
+          "items": [
+            { "sku": "FB-TERRA-08", "name": "Terracotta planter, 8 in", "quantity": 2, "unit_price": 3200, "line_total": 6400 },
+            { "sku": "FB-SOAP-LAV", "name": "Lavender kitchen soap", "quantity": 1, "unit_price": 1450, "line_total": 1450 },
+            { "sku": "FB-TWINE-NAT", "name": "Garden twine, natural", "quantity": 1, "unit_price": 780, "line_total": 780 },
+            { "sku": "FB-SHEARS-01", "name": "Brass garden shears", "quantity": 1, "unit_price": 5400, "line_total": 5400 }
+          ],
+          "subtotal": 14030,
+          "shipping": 900,
+          "tax": 700,
+          "total": 15630,
+          "timeline": [
+            { "at": "2026-08-05", "event": "Order placed" },
+            { "at": "2026-08-05", "event": "Payment captured" },
+            { "at": "2026-08-06", "event": "Packed for shipment" },
+            { "at": "2026-08-06", "event": "Handed to carrier, tracking FB9241770US" },
+            { "at": "2026-08-09", "event": "Delivered" }
+          ]
+        }]
+      }
+    },
+    "list_inventory": {
+      "does": "Every SKU the shop stocks. `on_hand` is units in the back room, `committed` is units already sold on unshipped orders, `reorder_point` is the level at which the SKU should be reordered, and `target_level` is the level a restock should bring it back to. `unit_cost` (what the supplier charges) and `price` (what the shop charges) are in CENTS: 3200 is $32.00.",
+      "data": {
+        "data": [
+          { "sku": "FB-TERRA-08", "name": "Terracotta planter, 8 in", "on_hand": 42, "committed": 6, "reorder_point": 20, "target_level": 60, "unit_cost": 1450, "price": 3200, "supplier": "Kiln & Co" },
+          { "sku": "FB-SOAP-LAV", "name": "Lavender kitchen soap", "on_hand": 8, "committed": 3, "reorder_point": 12, "target_level": 48, "unit_cost": 620, "price": 1450, "supplier": "Wick & Willow" },
+          { "sku": "FB-TWINE-NAT", "name": "Garden twine, natural", "on_hand": 0, "committed": 2, "reorder_point": 15, "target_level": 60, "unit_cost": 310, "price": 780, "supplier": "Wick & Willow" },
+          { "sku": "FB-SHEARS-01", "name": "Brass garden shears", "on_hand": 5, "committed": 1, "reorder_point": 6, "target_level": 24, "unit_cost": 2600, "price": 5400, "supplier": "Hollow Forge" },
+          { "sku": "FB-APRON-CAN", "name": "Canvas work apron", "on_hand": 31, "committed": 4, "reorder_point": 10, "target_level": 40, "unit_cost": 1980, "price": 4200, "supplier": "Ridgeline Mills" },
+          { "sku": "FB-SEED-HERB", "name": "Herb seed set, six tins", "on_hand": 64, "committed": 9, "reorder_point": 25, "target_level": 90, "unit_cost": 740, "price": 1850, "supplier": "Fieldnote Seed" },
+          { "sku": "FB-CANDLE-FIG", "name": "Fig leaf candle", "on_hand": 11, "committed": 11, "reorder_point": 12, "target_level": 48, "unit_cost": 890, "price": 2100, "supplier": "Wick & Willow" },
+          { "sku": "FB-MUG-STONE", "name": "Stoneware mug, glazed", "on_hand": 18, "committed": 2, "reorder_point": 18, "target_level": 48, "unit_cost": 1120, "price": 2400, "supplier": "Kiln & Co" }
+        ]
+      }
+    },
+    "list_customers": {
+      "does": "The seven customers who ordered most recently, most recent order first. `orders` is their lifetime order count and `lifetime_spend` is in CENTS: 118240 is $1,182.40. A customer whose only order was refunded in full spends nothing.",
+      "data": {
+        "data": [
+          { "id": "cus_nora", "name": "Nora Whitfield", "email": "nora.whitfield@example.com", "orders": 4, "lifetime_spend": 41180, "first_order": "2026-02-02", "last_order": "2026-08-12", "tag": "repeat" },
+          { "id": "cus_desmond", "name": "Desmond Ali", "email": "desmond.ali@example.com", "orders": 3, "lifetime_spend": 15890, "first_order": "2026-05-19", "last_order": "2026-08-12", "tag": "repeat" },
+          { "id": "cus_priya", "name": "Priya Raman", "email": "priya.raman@example.com", "orders": 9, "lifetime_spend": 118240, "first_order": "2025-03-14", "last_order": "2026-08-11", "tag": "vip" },
+          { "id": "cus_marta", "name": "Marta Solberg", "email": "marta.solberg@example.com", "orders": 1, "lifetime_spend": 0, "first_order": "2026-08-11", "last_order": "2026-08-11", "tag": "new" },
+          { "id": "cus_theo", "name": "Theo Vance", "email": "theo.vance@example.com", "orders": 5, "lifetime_spend": 63920, "first_order": "2025-09-30", "last_order": "2026-08-10", "tag": "repeat" },
+          { "id": "cus_hollis", "name": "Hollis Byrne", "email": "hollis.byrne@example.com", "orders": 12, "lifetime_spend": 204650, "first_order": "2024-11-08", "last_order": "2026-08-08", "tag": "vip" },
+          { "id": "cus_june", "name": "June Okafor", "email": "june.okafor@example.com", "orders": 2, "lifetime_spend": 7310, "first_order": "2026-01-27", "last_order": "2026-08-06", "tag": "repeat" }
+        ]
+      }
+    },
+    "get_sales_daily": {
+      "does": "The last seven days of trading, oldest first. `orders` is orders placed that day and `gross` is what those orders came to before any cancellation or refund, so both agree with the same days in `list_orders`. `refunds` is money returned to customers that day. `gross` and `refunds` are in CENTS: 41280 is $412.80.",
+      "data": {
+        "data": [
+          { "date": "2026-08-06", "orders": 1, "gross": 9455, "refunds": 0 },
+          { "date": "2026-08-07", "orders": 1, "gross": 6720, "refunds": 0 },
+          { "date": "2026-08-08", "orders": 1, "gross": 24380, "refunds": 0 },
+          { "date": "2026-08-09", "orders": 1, "gross": 4380, "refunds": 0 },
+          { "date": "2026-08-10", "orders": 1, "gross": 12140, "refunds": 0 },
+          { "date": "2026-08-11", "orders": 2, "gross": 23305, "refunds": 4200 },
+          { "date": "2026-08-12", "orders": 2, "gross": 12320, "refunds": 5980 }
+        ]
+      }
+    },
+    "list_refund_requests": {
+      "does": "Refund requests customers have raised, newest first. `state` is open, approved or denied, and `order_id` is the order it was raised against. `amount` is in CENTS: 3200 is $32.00.",
+      "data": {
+        "data": [
+          { "id": "rr_320", "order_id": "PDL-1051", "customer": "Nora Whitfield", "reason": "Ordered the wrong twine, wants a swap", "amount": 780, "requested": "2026-08-12", "state": "open" },
+          { "id": "rr_319", "order_id": "PDL-1045", "customer": "Hollis Byrne", "reason": "Two mugs chipped in transit", "amount": 4800, "requested": "2026-08-12", "state": "open" },
+          { "id": "rr_318", "order_id": "PDL-1049", "customer": "Priya Raman", "reason": "Wants a planter taken off the order before it ships", "amount": 3200, "requested": "2026-08-12", "state": "open" },
+          { "id": "rr_317", "order_id": "PDL-1048", "customer": "Marta Solberg", "reason": "Returned unopened, still inside the window", "amount": 5980, "requested": "2026-08-11", "state": "approved" },
+          { "id": "rr_316", "order_id": "PDL-1047", "customer": "Theo Vance", "reason": "Wrong apron size, keeping the rest", "amount": 4200, "requested": "2026-08-11", "state": "approved" },
+          { "id": "rr_315", "order_id": "PDL-1044", "customer": "Desmond Ali", "reason": "Asked to cancel before the payment cleared", "amount": 6720, "requested": "2026-08-10", "state": "denied" }
+        ]
+      }
+    },
+    "list_discounts": {
+      "does": "Every discount code, active first. `kind` is percent, amount or free_shipping. `value` is percent points when `kind` is percent, CENTS when `kind` is amount (1000 is $10.00 off), and 0 for free_shipping. `uses` counts redemptions against `usage_limit`, and `sales` is the order value the code has been attached to, in CENTS: 412870 is $4,128.70.",
+      "data": {
+        "data": [
+          { "code": "SUMMERPOT", "kind": "percent", "value": 15, "uses": 128, "usage_limit": 200, "starts": "2026-07-01", "ends": "2026-08-31", "status": "active", "sales": 412870 },
+          { "code": "WELCOME10", "kind": "amount", "value": 1000, "uses": 341, "usage_limit": 500, "starts": "2026-01-15", "ends": "2026-12-31", "status": "active", "sales": 289450 },
+          { "code": "FREESHIP75", "kind": "free_shipping", "value": 0, "uses": 96, "usage_limit": 150, "starts": "2026-08-01", "ends": "2026-08-31", "status": "active", "sales": 118220 },
+          { "code": "MUGSWAP5", "kind": "amount", "value": 500, "uses": 40, "usage_limit": 40, "starts": "2026-06-10", "ends": "2026-08-31", "status": "paused", "sales": 31980 },
+          { "code": "HARVEST20", "kind": "percent", "value": 20, "uses": 0, "usage_limit": 300, "starts": "2026-09-01", "ends": "2026-09-30", "status": "scheduled", "sales": 0 },
+          { "code": "SPRINGDIG", "kind": "percent", "value": 10, "uses": 214, "usage_limit": 250, "starts": "2026-03-01", "ends": "2026-05-31", "status": "expired", "sales": 197640 }
+        ]
+      }
+    },
+    "approve_refund": {
+      "does": "Approve an open refund request. The request's amount goes back to the customer's original payment method.",
+      "takes": { "request_id": "string" }
+    },
+    "deny_refund": {
+      "does": "Deny an open refund request. The customer is emailed and no money moves.",
+      "takes": { "request_id": "string" }
+    },
+    "mark_fulfilled": {
+      "does": "Mark one order fulfilled. Call it once per order to fulfil several at a time.",
+      "takes": { "order_id": "string" }
+    },
+    "reorder_stock": {
+      "does": "Place a restock order with the SKU's supplier for the given number of units.",
+      "takes": { "sku": "string", "quantity": "number" }
+    },
+    "create_discount": {
+      "does": "Create a discount code. `kind` is percent, amount or free_shipping. `value` is percent points for percent and CENTS for amount. `usage_limit` is the number of redemptions allowed.",
+      "takes": { "code": "string", "kind": "string", "value": "number", "usage_limit": "number" }
+    }
+  }
+}

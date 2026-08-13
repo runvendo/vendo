@@ -1,0 +1,157 @@
+{
+  "app": "Alder, the front-desk scheduling app for a multi-provider outpatient clinic",
+  "theme": {
+    "colors": {
+      "background": "#F2F6F8",
+      "surface": "#FFFFFF",
+      "text": "#132A34",
+      "muted": "#5B7484",
+      "accent": "#0F7C8A",
+      "accentText": "#FFFFFF",
+      "danger": "#A93B4B",
+      "border": "#DAE4EA"
+    },
+    "typography": { "fontFamily": "Poppins, sans-serif", "baseSize": "14px" },
+    "radius": { "small": "6px", "medium": "12px", "large": "20px" },
+    "density": "compact",
+    "motion": "reduced"
+  },
+  "style": [
+    "uses the theme exactly: Alder teal accent, Poppins, softly rounded cards on a cool grey page — no invented colors or fonts",
+    "every appointment status is a labelled pill — 'Checked in', 'In room', 'No-show' — never color on its own",
+    "times read as '9:15 AM' and dates as 'Aug 12' — never ISO, never 24-hour",
+    "money always shows 2 decimals with a currency symbol",
+    "an appointment's time never appears without the patient it belongs to — an open slot has no patient and needs none",
+    "anything that cancels a visit or marks a no-show asks for confirmation first"
+  ],
+  "tools": {
+    "list_appointments": {
+      "does": "One clinic day's appointments, earliest first. The rows are the `data` array. `time` is the display time of `start`, `minutes` is the visit length, `copay` is in CENTS: 2500 is $25.00. `status` is one of scheduled, checked-in, in-room, completed, no-show, cancelled. `confirmed` says whether the patient answered a reminder. Today is 2026-08-12 and it is about 11:15 AM.",
+      "takes": { "date": "string" },
+      "data": {
+        "data": [
+          { "id": "apt_1041", "patient_id": "pt_bell", "patient": "Marcus Bell", "provider_id": "prv_okafor", "provider": "Dr. Nia Okafor", "room_id": "room_302", "time": "8:20 AM", "start": "2026-08-12T08:20:00", "minutes": 20, "visit_type": "follow-up", "status": "completed", "copay": 2500, "confirmed": true },
+          { "id": "apt_1042", "patient_id": "pt_halloran", "patient": "Gwen Halloran", "provider_id": "prv_lindqvist", "provider": "Dr. Sven Lindqvist", "room_id": "room_305", "time": "9:15 AM", "start": "2026-08-12T09:15:00", "minutes": 30, "visit_type": "skin check", "status": "completed", "copay": 3500, "confirmed": true },
+          { "id": "apt_1043", "patient_id": "pt_vasquez", "patient": "Theo Vasquez", "provider_id": "prv_okafor", "provider": "Dr. Nia Okafor", "room_id": "room_302", "time": "9:45 AM", "start": "2026-08-12T09:45:00", "minutes": 30, "visit_type": "new patient", "status": "in-room", "copay": 5000, "confirmed": true },
+          { "id": "apt_1044", "patient_id": "pt_nakamura", "patient": "Sofia Nakamura", "provider_id": "prv_raman", "provider": "Dr. Priya Raman", "room_id": "room_307", "time": "9:55 AM", "start": "2026-08-12T09:55:00", "minutes": 20, "visit_type": "well-child", "status": "completed", "copay": 1500, "confirmed": true },
+          { "id": "apt_1045", "patient_id": "pt_fry", "patient": "Desmond Fry", "provider_id": "prv_lindqvist", "provider": "Dr. Sven Lindqvist", "room_id": "room_305", "time": "10:15 AM", "start": "2026-08-12T10:15:00", "minutes": 20, "visit_type": "biopsy follow-up", "status": "no-show", "copay": 3500, "confirmed": false },
+          { "id": "apt_1046", "patient_id": "pt_ozawa", "patient": "Ruth Ozawa", "provider_id": "prv_okafor", "provider": "Dr. Nia Okafor", "room_id": "room_302", "time": "10:35 AM", "start": "2026-08-12T10:35:00", "minutes": 20, "visit_type": "medication review", "status": "checked-in", "copay": 2500, "confirmed": true },
+          { "id": "apt_1047", "patient_id": "pt_brandt", "patient": "Eli Brandt", "provider_id": "prv_raman", "provider": "Dr. Priya Raman", "room_id": "room_307", "time": "10:45 AM", "start": "2026-08-12T10:45:00", "minutes": 25, "visit_type": "sick visit", "status": "checked-in", "copay": 1500, "confirmed": true },
+          { "id": "apt_1048", "patient_id": "pt_vogel", "patient": "Corinne Vogel", "provider_id": "prv_tam", "provider": "Alice Tam, NP", "room_id": "room_309", "time": "11:10 AM", "start": "2026-08-12T11:10:00", "minutes": 20, "visit_type": "walk-in", "status": "in-room", "copay": 5000, "confirmed": true },
+          { "id": "apt_1049", "patient_id": "pt_osei", "patient": "Amara Osei", "provider_id": "prv_okafor", "provider": "Dr. Nia Okafor", "room_id": "room_302", "time": "11:25 AM", "start": "2026-08-12T11:25:00", "minutes": 45, "visit_type": "annual physical", "status": "scheduled", "copay": 4000, "confirmed": false },
+          { "id": "apt_1050", "patient_id": "pt_bragg", "patient": "Owen Bragg", "provider_id": "prv_lindqvist", "provider": "Dr. Sven Lindqvist", "room_id": "room_305", "time": "1:40 PM", "start": "2026-08-12T13:40:00", "minutes": 30, "visit_type": "acne consult", "status": "scheduled", "copay": 3500, "confirmed": false },
+          { "id": "apt_1051", "patient_id": "pt_iyer", "patient": "Sam Iyer", "provider_id": "prv_tam", "provider": "Alice Tam, NP", "room_id": "room_309", "time": "1:50 PM", "start": "2026-08-12T13:50:00", "minutes": 20, "visit_type": "walk-in", "status": "scheduled", "copay": 5000, "confirmed": false },
+          { "id": "apt_1052", "patient_id": "pt_reyes", "patient": "Jonah Reyes", "provider_id": "prv_raman", "provider": "Dr. Priya Raman", "room_id": "room_307", "time": "2:10 PM", "start": "2026-08-12T14:10:00", "minutes": 25, "visit_type": "sports physical", "status": "cancelled", "copay": 1500, "confirmed": false }
+        ]
+      }
+    },
+    "get_open_slots": {
+      "does": "The bookable openings left in one clinic day, earliest first — an opening whose time has already passed cannot be booked and is not listed. The rows are the `data` array. `minutes` is how long the opening is, and `opened_by` names the appointment whose cancellation freed it, or is empty when the opening was never booked.",
+      "takes": { "date": "string" },
+      "data": {
+        "data": [
+          { "id": "slot_301", "provider_id": "prv_tam", "provider": "Alice Tam, NP", "room_id": "room_309", "time": "12:40 PM", "start": "2026-08-12T12:40:00", "minutes": 20, "opened_by": "" },
+          { "id": "slot_302", "provider_id": "prv_okafor", "provider": "Dr. Nia Okafor", "room_id": "room_302", "time": "1:15 PM", "start": "2026-08-12T13:15:00", "minutes": 30, "opened_by": "" },
+          { "id": "slot_303", "provider_id": "prv_okafor", "provider": "Dr. Nia Okafor", "room_id": "room_302", "time": "2:00 PM", "start": "2026-08-12T14:00:00", "minutes": 20, "opened_by": "" },
+          { "id": "slot_304", "provider_id": "prv_raman", "provider": "Dr. Priya Raman", "room_id": "room_307", "time": "2:10 PM", "start": "2026-08-12T14:10:00", "minutes": 25, "opened_by": "apt_1052" },
+          { "id": "slot_305", "provider_id": "prv_lindqvist", "provider": "Dr. Sven Lindqvist", "room_id": "room_305", "time": "2:30 PM", "start": "2026-08-12T14:30:00", "minutes": 30, "opened_by": "" },
+          { "id": "slot_306", "provider_id": "prv_raman", "provider": "Dr. Priya Raman", "room_id": "room_307", "time": "3:05 PM", "start": "2026-08-12T15:05:00", "minutes": 25, "opened_by": "" },
+          { "id": "slot_307", "provider_id": "prv_tam", "provider": "Alice Tam, NP", "room_id": "room_309", "time": "3:35 PM", "start": "2026-08-12T15:35:00", "minutes": 40, "opened_by": "" }
+        ]
+      }
+    },
+    "list_providers": {
+      "does": "The providers seeing patients today, each with the room they work out of. The rows are the `data` array. `booked_minutes` is today's booked visit time, cancellations excluded; `open_minutes` is the time still bookable today; `appointments_today` counts today's appointments, cancellations excluded.",
+      "data": {
+        "data": [
+          { "id": "prv_okafor", "name": "Dr. Nia Okafor", "specialty": "Family Medicine", "room_id": "room_302", "appointments_today": 4, "booked_minutes": 115, "open_minutes": 50, "accepting_new": true },
+          { "id": "prv_lindqvist", "name": "Dr. Sven Lindqvist", "specialty": "Dermatology", "room_id": "room_305", "appointments_today": 3, "booked_minutes": 80, "open_minutes": 30, "accepting_new": false },
+          { "id": "prv_raman", "name": "Dr. Priya Raman", "specialty": "Pediatrics", "room_id": "room_307", "appointments_today": 2, "booked_minutes": 45, "open_minutes": 50, "accepting_new": true },
+          { "id": "prv_tam", "name": "Alice Tam, NP", "specialty": "Walk-in Care", "room_id": "room_309", "appointments_today": 2, "booked_minutes": 40, "open_minutes": 60, "accepting_new": true }
+        ]
+      }
+    },
+    "list_patients": {
+      "does": "The clinic's patient records. The rows are the `data` array. `balance` is what the patient still owes, in CENTS: 4250 is $42.50. `age` is in years, `email` is the one contact address on the record — a guardian's for a child — `last_visit` is the previous visit and is empty for a patient who has never been seen, and `provider_id` is the patient's usual provider.",
+      "data": {
+        "data": [
+          { "id": "pt_bell", "name": "Marcus Bell", "age": 46, "email": "marcus.bell@brightmail.com", "insurer": "Vale Health PPO", "balance": 4250, "last_visit": "2026-05-19", "provider_id": "prv_okafor" },
+          { "id": "pt_halloran", "name": "Gwen Halloran", "age": 38, "email": "gwen.halloran@coastnet.com", "insurer": "Cobalt PPO", "balance": 18400, "last_visit": "2026-02-24", "provider_id": "prv_lindqvist" },
+          { "id": "pt_vasquez", "name": "Theo Vasquez", "age": 29, "email": "theo.vasquez@brightmail.com", "insurer": "Vale Health HMO", "balance": 2500, "last_visit": "", "provider_id": "prv_okafor" },
+          { "id": "pt_nakamura", "name": "Sofia Nakamura", "age": 4, "email": "nakamura.family@northmail.com", "insurer": "Northbay HMO", "balance": 1500, "last_visit": "2026-06-02", "provider_id": "prv_raman" },
+          { "id": "pt_fry", "name": "Desmond Fry", "age": 61, "email": "desmond.fry@northmail.com", "insurer": "Cobalt PPO", "balance": 12750, "last_visit": "2026-07-15", "provider_id": "prv_lindqvist" },
+          { "id": "pt_ozawa", "name": "Ruth Ozawa", "age": 74, "email": "ruth.ozawa@coastnet.com", "insurer": "Statewide Medicare", "balance": 6300, "last_visit": "2026-04-28", "provider_id": "prv_okafor" },
+          { "id": "pt_brandt", "name": "Eli Brandt", "age": 7, "email": "brandt.family@brightmail.com", "insurer": "Northbay HMO", "balance": 3175, "last_visit": "2026-03-11", "provider_id": "prv_raman" },
+          { "id": "pt_vogel", "name": "Corinne Vogel", "age": 33, "email": "corinne.vogel@northmail.com", "insurer": "self-pay", "balance": 5000, "last_visit": "2026-01-20", "provider_id": "prv_tam" },
+          { "id": "pt_osei", "name": "Amara Osei", "age": 52, "email": "amara.osei@brightmail.com", "insurer": "Vale Health PPO", "balance": 22940, "last_visit": "2025-08-14", "provider_id": "prv_okafor" },
+          { "id": "pt_bragg", "name": "Owen Bragg", "age": 19, "email": "owen.bragg@coastnet.com", "insurer": "Cobalt PPO", "balance": 8600, "last_visit": "2026-06-24", "provider_id": "prv_lindqvist" },
+          { "id": "pt_iyer", "name": "Sam Iyer", "age": 41, "email": "sam.iyer@northmail.com", "insurer": "self-pay", "balance": 1450, "last_visit": "2026-07-31", "provider_id": "prv_tam" },
+          { "id": "pt_reyes", "name": "Jonah Reyes", "age": 16, "email": "reyes.family@brightmail.com", "insurer": "Northbay HMO", "balance": 3500, "last_visit": "2026-05-06", "provider_id": "prv_raman" },
+          { "id": "pt_kowalski", "name": "Tomas Kowalski", "age": 58, "email": "tomas.kowalski@coastnet.com", "insurer": "Vale Health PPO", "balance": 27310, "last_visit": "2026-06-17", "provider_id": "prv_okafor" },
+          { "id": "pt_ferraro", "name": "Gio Ferraro", "age": 3, "email": "ferraro.family@northmail.com", "insurer": "Northbay HMO", "balance": 950, "last_visit": "2026-04-07", "provider_id": "prv_raman" },
+          { "id": "pt_ndiaye", "name": "Aisha Ndiaye", "age": 27, "email": "aisha.ndiaye@brightmail.com", "insurer": "Cobalt PPO", "balance": 14225, "last_visit": "2026-07-22", "provider_id": "prv_lindqvist" },
+          { "id": "pt_alvi", "name": "Sana Alvi", "age": 15, "email": "alvi.family@coastnet.com", "insurer": "Northbay HMO", "balance": 2100, "last_visit": "2026-03-30", "provider_id": "prv_raman" },
+          { "id": "pt_okoye", "name": "Ada Okoye", "age": 67, "email": "ada.okoye@northmail.com", "insurer": "Statewide Medicare", "balance": 6875, "last_visit": "2026-05-29", "provider_id": "prv_okafor" }
+        ]
+      }
+    },
+    "list_waitlist": {
+      "does": "Patients waiting for a sooner appointment, longest waiting first. The rows are the `data` array. `window` is when the patient can actually come in, `provider_id` is the provider they asked for, `added` is the day they went on the list and `waiting_days` is how long that has been as of today, 2026-08-12.",
+      "data": {
+        "data": [
+          { "id": "wl_301", "patient_id": "pt_kowalski", "patient": "Tomas Kowalski", "provider_id": "prv_okafor", "provider": "Dr. Nia Okafor", "reason": "knee follow-up", "window": "weekday mornings", "added": "2026-07-29", "waiting_days": 14, "priority": "routine" },
+          { "id": "wl_302", "patient_id": "pt_ferraro", "patient": "Gio Ferraro", "provider_id": "prv_raman", "provider": "Dr. Priya Raman", "reason": "well-child check", "window": "weekday afternoons", "added": "2026-08-04", "waiting_days": 8, "priority": "soon" },
+          { "id": "wl_303", "patient_id": "pt_alvi", "patient": "Sana Alvi", "provider_id": "prv_raman", "provider": "Dr. Priya Raman", "reason": "sports physical", "window": "weekday afternoons", "added": "2026-08-06", "waiting_days": 6, "priority": "soon" },
+          { "id": "wl_304", "patient_id": "pt_ndiaye", "patient": "Aisha Ndiaye", "provider_id": "prv_lindqvist", "provider": "Dr. Sven Lindqvist", "reason": "spreading rash", "window": "any time", "added": "2026-08-10", "waiting_days": 2, "priority": "urgent" },
+          { "id": "wl_305", "patient_id": "pt_okoye", "patient": "Ada Okoye", "provider_id": "prv_okafor", "provider": "Dr. Nia Okafor", "reason": "medication review", "window": "weekday mornings", "added": "2026-08-11", "waiting_days": 1, "priority": "routine" }
+        ]
+      }
+    },
+    "list_rooms": {
+      "does": "The clinic's rooms right now. The rows are the `data` array. `status` is one of open, occupied, cleaning — a room is occupied exactly when an appointment is in it, which the appointment's own `room_id` names. Only the four rooms a provider works out of appear in `list_providers`; Lab 311 is shared.",
+      "data": {
+        "data": [
+          { "id": "room_302", "label": "Exam 302", "kind": "exam", "status": "occupied" },
+          { "id": "room_305", "label": "Procedure 305", "kind": "procedure", "status": "open" },
+          { "id": "room_307", "label": "Exam 307", "kind": "exam", "status": "cleaning" },
+          { "id": "room_309", "label": "Walk-in 309", "kind": "exam", "status": "occupied" },
+          { "id": "room_311", "label": "Lab 311", "kind": "lab", "status": "open" }
+        ]
+      }
+    },
+    "get_no_show_stats": {
+      "does": "How the clinic's finished weeks ended up, oldest week first. The rows are the `data` array. `week_of` is that week's Monday, and every week's `scheduled` is exactly its `completed` plus `no_show` plus `cancelled`.",
+      "takes": { "weeks": "number" },
+      "data": {
+        "data": [
+          { "week_of": "2026-06-29", "scheduled": 53, "completed": 45, "no_show": 5, "cancelled": 3 },
+          { "week_of": "2026-07-06", "scheduled": 50, "completed": 43, "no_show": 4, "cancelled": 3 },
+          { "week_of": "2026-07-13", "scheduled": 56, "completed": 49, "no_show": 4, "cancelled": 3 },
+          { "week_of": "2026-07-20", "scheduled": 58, "completed": 52, "no_show": 3, "cancelled": 3 },
+          { "week_of": "2026-07-27", "scheduled": 55, "completed": 47, "no_show": 6, "cancelled": 2 },
+          { "week_of": "2026-08-03", "scheduled": 59, "completed": 52, "no_show": 4, "cancelled": 3 }
+        ]
+      }
+    },
+    "check_in_patient": {
+      "does": "Check an arrived patient in. The appointment moves to checked-in and the patient joins the waiting-room queue.",
+      "takes": { "appointment_id": "string" }
+    },
+    "mark_no_show": {
+      "does": "Mark an appointment as a no-show. The visit is closed unseen, the slot is released, and it counts against the patient's record.",
+      "takes": { "appointment_id": "string" }
+    },
+    "book_appointment": {
+      "does": "Book a patient into one of the day's open slots with the named provider and reason for the visit.",
+      "takes": { "patient_id": "string", "provider_id": "string", "slot_id": "string", "visit_type": "string" }
+    },
+    "offer_waitlist_slot": {
+      "does": "Offer an open slot to someone on the waitlist. They are texted and have twenty minutes to take it before the slot is offered to the next person.",
+      "takes": { "waitlist_id": "string", "slot_id": "string" }
+    },
+    "send_reminder": {
+      "does": "Send one appointment reminder to the patient, by 'sms', 'email' or 'call'. Replying confirms the appointment.",
+      "takes": { "appointment_id": "string", "channel": "string" }
+    }
+  }
+}

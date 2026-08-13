@@ -1,0 +1,124 @@
+[
+  {
+    "id": "alert-triage-queue",
+    "lane": "screen",
+    "tags": ["action"],
+    "prompt": "Give me a triage queue of everything firing right now, worst severity first, with an acknowledge button on every row.",
+    "pass": [
+      "shows all five firing alerts and neither acknowledged one",
+      "both critical alerts sit above the warnings, and the info alert sits last",
+      "each row names the service the alert belongs to and when it opened",
+      "every row's acknowledge control acknowledges the alert it sits on"
+    ]
+  },
+  {
+    "id": "all-clear",
+    "lane": "screen",
+    "tags": ["display"],
+    "prompt": "Show me what's firing right now, worst first, with a way to acknowledge anything that is.",
+    "pass": [
+      "says nothing is firing rather than showing an empty table",
+      "invents no alert rows",
+      "offers no acknowledge control"
+    ],
+    "data": { "list_alerts": { "data": [] } }
+  },
+  {
+    "id": "service-catalog",
+    "lane": "screen",
+    "tags": ["display"],
+    "prompt": "Table of every service we monitor with its owning team, tier and tail latency. Put the unhealthy ones at the top.",
+    "pass": [
+      "lists all eight services with owning team, tier and tail latency",
+      "the one down service and both degraded services sit above the five healthy ones",
+      "every latency figure matches the tool's number and carries a millisecond unit",
+      "health is stated in words, not by colour alone"
+    ]
+  },
+  {
+    "id": "deploy-blast-radius",
+    "lane": "screen",
+    "tags": ["action"],
+    "prompt": "Checkout started failing this afternoon and I think the last checkout-api deploy did it. Put the open incident and that deploy side by side — when each one started, who shipped it, who's running the incident, how many customers are hit — and give me a rollback button for that build.",
+    "pass": [
+      "names the open checkout incident and the checkout-api deploy that landed before it",
+      "shows both times, with the deploy landing before the incident started",
+      "shows the incident's commander and its customers-affected count from the tool",
+      "shows who shipped the deploy and which build number it was",
+      "the rollback control asks for confirmation and then rolls back that deploy, not another one"
+    ]
+  },
+  {
+    "id": "oncall-week",
+    "lane": "screen",
+    "tags": ["display"],
+    "prompt": "Who's on call this week? Lay out every team's shifts with primary and secondary, and make it obvious who is holding the pager right now.",
+    "pass": [
+      "shows every team's shifts from the tool with each engineer's role",
+      "each shift shows its start and end in a readable date style, never a raw timestamp",
+      "marks the shifts that are on call now, and marks neither the handed-off Messaging shift nor the upcoming Payments one",
+      "invents no engineer or team the tool did not return"
+    ]
+  },
+  {
+    "id": "error-budget-board",
+    "lane": "screen",
+    "tags": ["display"],
+    "prompt": "Build me an SLO board: for every service with a budget, its target, how much error budget it has burned and how much is left, worst first.",
+    "pass": [
+      "shows all five services that have an SLO, each with its target percentage",
+      "shows minutes burned and minutes remaining per service, matching the tool's numbers",
+      "flags notify-fanout as over its budget rather than showing it as merely low",
+      "checkout-api reads as the closest to exhausting a budget it is still inside"
+    ]
+  },
+  {
+    "id": "ingest-spend-chart",
+    "lane": "screen",
+    "tags": ["display"],
+    "prompt": "Chart what each service cost us in ingest this month, biggest spender first, and give me the total bill.",
+    "pass": [
+      "draws a chart of the services' ingest cost rather than only listing them",
+      "every service the tool returned appears on the chart",
+      "search-indexer reads as the biggest spender",
+      "shows a total bill equal to the sum of the services' cost, with a currency symbol and 2 decimals"
+    ]
+  },
+  {
+    "id": "last-day-timeline",
+    "lane": "screen",
+    "tags": ["display"],
+    "prompt": "Walk me through the last 24 hours as a timeline — deploys, alerts, pages, who did what — oldest first.",
+    "pass": [
+      "shows the activity entries from the tool in time order, oldest first",
+      "each entry names who or what did it and when",
+      "includes the fanout rollback and the resolution of the notification incident",
+      "invents no event the tool did not return"
+    ]
+  },
+  {
+    "id": "alert-fatigue-audit",
+    "lane": "screen",
+    "tags": ["action"],
+    "prompt": "My phone will not stop. Rank the alerts by how often they fired this week against how often anyone actually acked them, call out the ones nobody ever acts on, and let me pick several and silence them for the rest of the day in one action.",
+    "pass": [
+      "ranks the alerts by how often they fired, most-fired first, using the tool's counts",
+      "shows the acknowledged count beside the fired count for each alert",
+      "singles out the two alerts that fired repeatedly and were never acknowledged",
+      "lets more than one alert be selected and silenced in a single action",
+      "the bulk silence asks for confirmation, then fires a silence call per selected alert with a number of minutes"
+    ]
+  },
+  {
+    "id": "page-the-oncall",
+    "lane": "screen",
+    "tags": ["action"],
+    "prompt": "Checkout is on fire and I need a human. Give me a form that shows who is on call for checkout-api right now and sends them a page with a message I type.",
+    "pass": [
+      "names the Payments primary and secondary who are on call now, because Payments owns checkout-api",
+      "offers a message field that the page is sent with",
+      "the send control pages the checkout service with the typed message",
+      "does not offer to page an engineer whose shift is not running now"
+    ]
+  }
+]

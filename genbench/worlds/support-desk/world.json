@@ -1,0 +1,659 @@
+{
+  "app": "Perch, a shared-inbox support helpdesk for a small e-commerce team",
+  "theme": {
+    "colors": {
+      "background": "#F4F5F7",
+      "surface": "#FFFFFF",
+      "text": "#14161A",
+      "muted": "#5C6270",
+      "accent": "#4B36D9",
+      "accentText": "#FFFFFF",
+      "danger": "#E02D3C",
+      "border": "#DCDFE6"
+    },
+    "typography": { "fontFamily": "Onest, sans-serif", "baseSize": "13px" },
+    "radius": { "small": "3px", "medium": "5px", "large": "5px" },
+    "density": "compact",
+    "motion": "reduced"
+  },
+  "style": [
+    "uses the theme exactly: the indigo accent, Onest, near-square 3-5px corners on a grey canvas with white cards — no invented colors or fonts",
+    "dense by default: compact rows, small type, no oversized hero headings — an agent stares at this all day",
+    "ticket status and priority read as small labelled chips, never as bare words in a cell",
+    "red is reserved for SLA trouble — overdue and breached only; nothing else on the screen is red",
+    "money always shows 2 decimals with a currency symbol",
+    "timestamps read as 'Aug 10, 8:12 AM' or '2h ago', and SLA clocks as '2h 38m left' or 'overdue 1h 55m' — never ISO, never a raw minute count"
+  ],
+  "tools": {
+    "list_tickets": {
+      "does": "The shared inbox: every ticket that is not closed yet, newest first by `created_at`. The rows are the `data` array. `order_total_cents` is in CENTS: 32400 is $324.00, and 0 means no order is attached to the ticket. `assignee` and `assignee_name` are empty strings when nobody owns the ticket. `first_reply_minutes` is 0 when the customer has not been answered yet. SLA targets run wall-clock from `created_at` — urgent 4h, high 24h, normal 48h, low 5 days — so `sla_due_at` is the resolution deadline; `sla_minutes_remaining` is measured from now, 2026-08-12T15:10:00Z, is negative when the ticket is already overdue, and is 0 once a ticket is `solved`: the clock no longer applies. The clock pauses while a ticket is `pending` (waiting on the customer), which is what `sla_paused` marks: those rows' remaining minutes are frozen at the moment they went pending, and they are never counted as breached.",
+      "takes": { "limit": "number" },
+      "data": {
+        "data": [
+          {
+            "id": "TK-1051",
+            "subject": "Where is my order? Following up again",
+            "customer": "Rosa Delgado",
+            "email": "rosa.delgado@fernpost.com",
+            "channel": "email",
+            "status": "new",
+            "priority": "high",
+            "assignee": "",
+            "assignee_name": "",
+            "order_total_cents": 12800,
+            "created_at": "2026-08-12T14:22:00Z",
+            "updated_at": "2026-08-12T14:22:00Z",
+            "first_reply_minutes": 0,
+            "sla_due_at": "2026-08-13T14:22:00Z",
+            "sla_minutes_remaining": 1392,
+            "sla_paused": false,
+            "sla_breached": false
+          },
+          {
+            "id": "TK-1050",
+            "subject": "Cracked lid on the ceramic kettle",
+            "customer": "Ibrahim Cisse",
+            "email": "ibrahim.cisse@northloop.io",
+            "channel": "email",
+            "status": "new",
+            "priority": "urgent",
+            "assignee": "",
+            "assignee_name": "",
+            "order_total_cents": 24600,
+            "created_at": "2026-08-12T13:48:00Z",
+            "updated_at": "2026-08-12T13:48:00Z",
+            "first_reply_minutes": 0,
+            "sla_due_at": "2026-08-12T17:48:00Z",
+            "sla_minutes_remaining": 158,
+            "sla_paused": false,
+            "sla_breached": false
+          },
+          {
+            "id": "TK-1049",
+            "subject": "Can I change the delivery address?",
+            "customer": "Yuki Tanaka",
+            "email": "yuki.tanaka@brightpost.jp",
+            "channel": "web",
+            "status": "new",
+            "priority": "normal",
+            "assignee": "",
+            "assignee_name": "",
+            "order_total_cents": 5400,
+            "created_at": "2026-08-12T12:05:00Z",
+            "updated_at": "2026-08-12T12:05:00Z",
+            "first_reply_minutes": 0,
+            "sla_due_at": "2026-08-14T12:05:00Z",
+            "sla_minutes_remaining": 2695,
+            "sla_paused": false,
+            "sla_breached": false
+          },
+          {
+            "id": "TK-1048",
+            "subject": "Refund still hasn't landed on my card",
+            "customer": "Marcus Bohm",
+            "email": "marcus.bohm@treeline.de",
+            "channel": "email",
+            "status": "pending",
+            "priority": "normal",
+            "assignee": "ag_theo",
+            "assignee_name": "Theo Lindqvist",
+            "order_total_cents": 18900,
+            "created_at": "2026-08-12T10:31:00Z",
+            "updated_at": "2026-08-12T11:12:00Z",
+            "first_reply_minutes": 41,
+            "sla_due_at": "2026-08-14T10:31:00Z",
+            "sla_minutes_remaining": 2839,
+            "sla_paused": true,
+            "sla_breached": false
+          },
+          {
+            "id": "TK-1047",
+            "subject": "Charged twice for the same subscription",
+            "customer": "Alina Petrova",
+            "email": "alina.petrova@wickfield.co",
+            "channel": "email",
+            "status": "open",
+            "priority": "urgent",
+            "assignee": "ag_nadia",
+            "assignee_name": "Nadia Okafor",
+            "order_total_cents": 7200,
+            "created_at": "2026-08-12T09:15:00Z",
+            "updated_at": "2026-08-12T14:50:00Z",
+            "first_reply_minutes": 18,
+            "sla_due_at": "2026-08-12T13:15:00Z",
+            "sla_minutes_remaining": -115,
+            "sla_paused": false,
+            "sla_breached": true
+          },
+          {
+            "id": "TK-1046",
+            "subject": "Damaged in transit, sending photos",
+            "customer": "Tomas Herrera",
+            "email": "tomas.herrera@calderwood.es",
+            "channel": "email",
+            "status": "open",
+            "priority": "urgent",
+            "assignee": "ag_marco",
+            "assignee_name": "Marco Duarte",
+            "order_total_cents": 41200,
+            "created_at": "2026-08-11T20:31:00Z",
+            "updated_at": "2026-08-11T22:54:00Z",
+            "first_reply_minutes": 143,
+            "sla_due_at": "2026-08-12T00:31:00Z",
+            "sla_minutes_remaining": -879,
+            "sla_paused": false,
+            "sla_breached": true
+          },
+          {
+            "id": "TK-1045",
+            "subject": "Order hasn't shipped yet",
+            "customer": "Rosa Delgado",
+            "email": "rosa.delgado@fernpost.com",
+            "channel": "email",
+            "status": "open",
+            "priority": "normal",
+            "assignee": "ag_nadia",
+            "assignee_name": "Nadia Okafor",
+            "order_total_cents": 12800,
+            "created_at": "2026-08-11T16:40:00Z",
+            "updated_at": "2026-08-12T09:02:00Z",
+            "first_reply_minutes": 74,
+            "sla_due_at": "2026-08-13T16:40:00Z",
+            "sla_minutes_remaining": 1530,
+            "sla_paused": false,
+            "sla_breached": false
+          },
+          {
+            "id": "TK-1044",
+            "subject": "Gift note was missing from the box",
+            "customer": "Hannah Ellery",
+            "email": "hannah.ellery@millbrook.uk",
+            "channel": "email",
+            "status": "open",
+            "priority": "low",
+            "assignee": "ag_june",
+            "assignee_name": "June Hollis",
+            "order_total_cents": 9600,
+            "created_at": "2026-08-11T14:05:00Z",
+            "updated_at": "2026-08-12T08:20:00Z",
+            "first_reply_minutes": 205,
+            "sla_due_at": "2026-08-16T14:05:00Z",
+            "sla_minutes_remaining": 5695,
+            "sla_paused": false,
+            "sla_breached": false
+          },
+          {
+            "id": "TK-1043",
+            "subject": "Discount code wouldn't apply at checkout",
+            "customer": "Sam Okonkwo",
+            "email": "sam.okonkwo@harborlane.com",
+            "channel": "chat",
+            "status": "open",
+            "priority": "normal",
+            "assignee": "ag_nadia",
+            "assignee_name": "Nadia Okafor",
+            "order_total_cents": 4300,
+            "created_at": "2026-08-11T11:20:00Z",
+            "updated_at": "2026-08-11T15:44:00Z",
+            "first_reply_minutes": 63,
+            "sla_due_at": "2026-08-13T11:20:00Z",
+            "sla_minutes_remaining": 1210,
+            "sla_paused": false,
+            "sla_breached": false
+          },
+          {
+            "id": "TK-1042",
+            "subject": "Package marked delivered but never arrived",
+            "customer": "Elise Fontaine",
+            "email": "elise.fontaine@courtland.fr",
+            "channel": "email",
+            "status": "pending",
+            "priority": "high",
+            "assignee": "ag_priya",
+            "assignee_name": "Priya Raman",
+            "order_total_cents": 15900,
+            "created_at": "2026-08-10T18:55:00Z",
+            "updated_at": "2026-08-11T09:30:00Z",
+            "first_reply_minutes": 96,
+            "sla_due_at": "2026-08-11T18:55:00Z",
+            "sla_minutes_remaining": 565,
+            "sla_paused": true,
+            "sla_breached": false
+          },
+          {
+            "id": "TK-1041",
+            "subject": "Still waiting on my refund",
+            "customer": "Marcus Bohm",
+            "email": "marcus.bohm@treeline.de",
+            "channel": "email",
+            "status": "open",
+            "priority": "normal",
+            "assignee": "ag_theo",
+            "assignee_name": "Theo Lindqvist",
+            "order_total_cents": 18900,
+            "created_at": "2026-08-10T09:48:00Z",
+            "updated_at": "2026-08-11T10:15:00Z",
+            "first_reply_minutes": 52,
+            "sla_due_at": "2026-08-12T09:48:00Z",
+            "sla_minutes_remaining": -322,
+            "sla_paused": false,
+            "sla_breached": true
+          },
+          {
+            "id": "TK-1040",
+            "subject": "Wrong item shipped, I ordered walnut and got oak",
+            "customer": "Dominic Reyes",
+            "email": "dominic.reyes@saltmarsh.io",
+            "channel": "email",
+            "status": "open",
+            "priority": "high",
+            "assignee": "ag_nadia",
+            "assignee_name": "Nadia Okafor",
+            "order_total_cents": 32400,
+            "created_at": "2026-08-10T08:12:00Z",
+            "updated_at": "2026-08-12T13:37:00Z",
+            "first_reply_minutes": 168,
+            "sla_due_at": "2026-08-11T08:12:00Z",
+            "sla_minutes_remaining": -1858,
+            "sla_paused": false,
+            "sla_breached": true
+          },
+          {
+            "id": "TK-1039",
+            "subject": "Do you ship to Norway?",
+            "customer": "Kristian Vold",
+            "email": "kristian.vold@nordhav.no",
+            "channel": "chat",
+            "status": "pending",
+            "priority": "low",
+            "assignee": "ag_priya",
+            "assignee_name": "Priya Raman",
+            "order_total_cents": 0,
+            "created_at": "2026-08-09T12:10:00Z",
+            "updated_at": "2026-08-10T16:05:00Z",
+            "first_reply_minutes": 22,
+            "sla_due_at": "2026-08-14T12:10:00Z",
+            "sla_minutes_remaining": 5525,
+            "sla_paused": true,
+            "sla_breached": false
+          },
+          {
+            "id": "TK-1038",
+            "subject": "Return label never arrived",
+            "customer": "Grace Mbeki",
+            "email": "grace.mbeki@lowlands.co.za",
+            "channel": "email",
+            "status": "solved",
+            "priority": "normal",
+            "assignee": "ag_nadia",
+            "assignee_name": "Nadia Okafor",
+            "order_total_cents": 8800,
+            "created_at": "2026-08-07T10:05:00Z",
+            "updated_at": "2026-08-08T15:20:00Z",
+            "first_reply_minutes": 37,
+            "sla_due_at": "2026-08-09T10:05:00Z",
+            "sla_minutes_remaining": 0,
+            "sla_paused": false,
+            "sla_breached": false
+          },
+          {
+            "id": "TK-1037",
+            "subject": "Loved the packaging, just saying thanks",
+            "customer": "Owen Blackwood",
+            "email": "owen.blackwood@ridgeway.ca",
+            "channel": "email",
+            "status": "solved",
+            "priority": "low",
+            "assignee": "ag_theo",
+            "assignee_name": "Theo Lindqvist",
+            "order_total_cents": 6300,
+            "created_at": "2026-08-06T09:40:00Z",
+            "updated_at": "2026-08-06T12:15:00Z",
+            "first_reply_minutes": 28,
+            "sla_due_at": "2026-08-11T09:40:00Z",
+            "sla_minutes_remaining": 0,
+            "sla_paused": false,
+            "sla_breached": false
+          },
+          {
+            "id": "TK-1036",
+            "subject": "Exchange sorted, thanks for the help",
+            "customer": "Femi Adeyemi",
+            "email": "femi.adeyemi@stonebrook.ng",
+            "channel": "email",
+            "status": "solved",
+            "priority": "normal",
+            "assignee": "ag_priya",
+            "assignee_name": "Priya Raman",
+            "order_total_cents": 11400,
+            "created_at": "2026-08-05T13:22:00Z",
+            "updated_at": "2026-08-07T11:05:00Z",
+            "first_reply_minutes": 44,
+            "sla_due_at": "2026-08-07T13:22:00Z",
+            "sla_minutes_remaining": 0,
+            "sla_paused": false,
+            "sla_breached": false
+          }
+        ]
+      }
+    },
+    "get_ticket": {
+      "does": "One ticket with its whole conversation and who the customer is, as the single row of the `data` array. The canned response always answers with TK-1040, whatever `id` is passed. `messages` runs oldest first; `author_kind` is `customer` or `agent`. `order_total_cents` and `customer_lifetime_spend_cents` are in CENTS: 32400 is $324.00.",
+      "takes": { "id": "string" },
+      "data": {
+        "data": [{
+          "id": "TK-1040",
+          "subject": "Wrong item shipped, I ordered walnut and got oak",
+          "customer": "Dominic Reyes",
+          "email": "dominic.reyes@saltmarsh.io",
+          "channel": "email",
+          "status": "open",
+          "priority": "high",
+          "assignee": "ag_nadia",
+          "assignee_name": "Nadia Okafor",
+          "tags": ["wrong-item", "exchange", "repeat-buyer"],
+          "order_total_cents": 32400,
+          "customer_lifetime_orders": 4,
+          "customer_lifetime_spend_cents": 118600,
+          "created_at": "2026-08-10T08:12:00Z",
+          "updated_at": "2026-08-12T13:37:00Z",
+          "first_reply_minutes": 168,
+          "sla_due_at": "2026-08-11T08:12:00Z",
+          "sla_minutes_remaining": -1858,
+          "sla_paused": false,
+          "sla_breached": true,
+          "messages": [
+            {
+              "id": "msg_a",
+              "author_kind": "customer",
+              "author": "Dominic Reyes",
+              "sent_at": "2026-08-10T08:12:00Z",
+              "body": "I ordered the walnut wall shelf and an oak one turned up instead. Same size, wrong wood. Can we swap it?"
+            },
+            {
+              "id": "msg_b",
+              "author_kind": "agent",
+              "author": "Nadia Okafor",
+              "sent_at": "2026-08-10T11:00:00Z",
+              "body": "Sorry about that, Dominic. I have the walnut one held for you. A photo of what arrived would help me file it with the warehouse."
+            },
+            {
+              "id": "msg_c",
+              "author_kind": "customer",
+              "author": "Dominic Reyes",
+              "sent_at": "2026-08-11T07:26:00Z",
+              "body": "Photos attached. Do I have to pay to send the oak one back?"
+            },
+            {
+              "id": "msg_d",
+              "author_kind": "agent",
+              "author": "Nadia Okafor",
+              "sent_at": "2026-08-12T13:37:00Z",
+              "body": "Never. A prepaid return label is in your inbox, and the walnut shelf ships the moment that label scans."
+            }
+          ]
+        }]
+      }
+    },
+    "list_agents": {
+      "does": "The support team. The rows are the `data` array. `is_you` marks the signed-in agent, so \"my tickets\" means Nadia Okafor's. `open_tickets` is how many tickets in the inbox are assigned to that agent and not solved. `csat_pct` and `csat_responses_30d` are the last thirty days of satisfaction ratings, and `avg_first_reply_minutes_30d` is that agent's average first response over the same window.",
+      "data": {
+        "data": [
+          {
+            "id": "ag_nadia",
+            "name": "Nadia Okafor",
+            "role": "lead",
+            "status": "online",
+            "is_you": true,
+            "open_tickets": 4,
+            "csat_pct": 92,
+            "csat_responses_30d": 48,
+            "avg_first_reply_minutes_30d": 44
+          },
+          {
+            "id": "ag_theo",
+            "name": "Theo Lindqvist",
+            "role": "agent",
+            "status": "online",
+            "is_you": false,
+            "open_tickets": 2,
+            "csat_pct": 88,
+            "csat_responses_30d": 41,
+            "avg_first_reply_minutes_30d": 35
+          },
+          {
+            "id": "ag_priya",
+            "name": "Priya Raman",
+            "role": "agent",
+            "status": "away",
+            "is_you": false,
+            "open_tickets": 2,
+            "csat_pct": 79,
+            "csat_responses_30d": 33,
+            "avg_first_reply_minutes_30d": 48
+          },
+          {
+            "id": "ag_marco",
+            "name": "Marco Duarte",
+            "role": "agent",
+            "status": "offline",
+            "is_you": false,
+            "open_tickets": 1,
+            "csat_pct": 71,
+            "csat_responses_30d": 22,
+            "avg_first_reply_minutes_30d": 96
+          },
+          {
+            "id": "ag_june",
+            "name": "June Hollis",
+            "role": "trainee",
+            "status": "online",
+            "is_you": false,
+            "open_tickets": 1,
+            "csat_pct": 85,
+            "csat_responses_30d": 6,
+            "avg_first_reply_minutes_30d": 61
+          }
+        ]
+      }
+    },
+    "list_refund_requests": {
+      "does": "Refunds an agent has asked for, newest first, each one attached to a ticket. The rows are the `data` array. `order_total_cents`, `requested_cents` and `decided_cents` are in CENTS: 41200 is $412.00. `requested_cents` can be less than the order total when the agent is asking for a partial goodwill refund. A row that is still `pending` carries `decided_cents` 0 and empty `decided_at` and `decided_by`.",
+      "data": {
+        "data": [
+          {
+            "id": "RF-307",
+            "ticket_id": "TK-1044",
+            "customer": "Hannah Ellery",
+            "order_total_cents": 9600,
+            "requested_cents": 2000,
+            "reason": "goodwill for the missing gift note",
+            "status": "denied",
+            "requested_by": "ag_june",
+            "requested_at": "2026-08-12T08:25:00Z",
+            "decided_cents": 0,
+            "decided_at": "2026-08-12T09:40:00Z",
+            "decided_by": "ag_nadia"
+          },
+          {
+            "id": "RF-306",
+            "ticket_id": "TK-1046",
+            "customer": "Tomas Herrera",
+            "order_total_cents": 41200,
+            "requested_cents": 41200,
+            "reason": "arrived damaged in transit",
+            "status": "pending",
+            "requested_by": "ag_marco",
+            "requested_at": "2026-08-11T22:58:00Z",
+            "decided_cents": 0,
+            "decided_at": "",
+            "decided_by": ""
+          },
+          {
+            "id": "RF-305",
+            "ticket_id": "TK-1042",
+            "customer": "Elise Fontaine",
+            "order_total_cents": 15900,
+            "requested_cents": 15900,
+            "reason": "parcel lost after the delivery scan",
+            "status": "pending",
+            "requested_by": "ag_priya",
+            "requested_at": "2026-08-11T09:34:00Z",
+            "decided_cents": 0,
+            "decided_at": "",
+            "decided_by": ""
+          },
+          {
+            "id": "RF-304",
+            "ticket_id": "TK-1041",
+            "customer": "Marcus Bohm",
+            "order_total_cents": 18900,
+            "requested_cents": 18900,
+            "reason": "charged twice for one order",
+            "status": "pending",
+            "requested_by": "ag_theo",
+            "requested_at": "2026-08-10T10:12:00Z",
+            "decided_cents": 0,
+            "decided_at": "",
+            "decided_by": ""
+          },
+          {
+            "id": "RF-303",
+            "ticket_id": "TK-1038",
+            "customer": "Grace Mbeki",
+            "order_total_cents": 8800,
+            "requested_cents": 8800,
+            "reason": "returned unopened",
+            "status": "approved",
+            "requested_by": "ag_nadia",
+            "requested_at": "2026-08-08T14:40:00Z",
+            "decided_cents": 8800,
+            "decided_at": "2026-08-08T15:18:00Z",
+            "decided_by": "ag_nadia"
+          }
+        ]
+      }
+    },
+    "get_ticket_volume": {
+      "does": "Daily ticket volume for the last two weeks, oldest first. The rows are the `data` array. `created` and `solved` are counts of tickets, not money. `backlog_end` is how many tickets were still unsolved when that day closed, so it moves by created minus solved, and the newest row matches the unsolved tickets `list_tickets` returns today.",
+      "takes": { "days": "number" },
+      "data": {
+        "data": [
+          { "date": "2026-07-30", "created": 14, "solved": 12, "backlog_end": 10 },
+          { "date": "2026-07-31", "created": 11, "solved": 13, "backlog_end": 8 },
+          { "date": "2026-08-01", "created": 6, "solved": 4, "backlog_end": 10 },
+          { "date": "2026-08-02", "created": 5, "solved": 3, "backlog_end": 12 },
+          { "date": "2026-08-03", "created": 17, "solved": 15, "backlog_end": 14 },
+          { "date": "2026-08-04", "created": 13, "solved": 14, "backlog_end": 13 },
+          { "date": "2026-08-05", "created": 12, "solved": 13, "backlog_end": 12 },
+          { "date": "2026-08-06", "created": 15, "solved": 12, "backlog_end": 15 },
+          { "date": "2026-08-07", "created": 10, "solved": 14, "backlog_end": 11 },
+          { "date": "2026-08-08", "created": 7, "solved": 5, "backlog_end": 13 },
+          { "date": "2026-08-09", "created": 4, "solved": 6, "backlog_end": 11 },
+          { "date": "2026-08-10", "created": 16, "solved": 13, "backlog_end": 14 },
+          { "date": "2026-08-11", "created": 12, "solved": 14, "backlog_end": 12 },
+          { "date": "2026-08-12", "created": 5, "solved": 4, "backlog_end": 13 }
+        ]
+      }
+    },
+    "list_shifts": {
+      "does": "Who is scheduled on the desk over the next three days, Wednesday to Friday, oldest day first. The rows are the `data` array. Times are UTC on a 24-hour clock and `hours` is the length of that shift. An agent with no row for a day is not working that day.",
+      "data": {
+        "data": [
+          { "agent_id": "ag_nadia", "agent": "Nadia Okafor", "date": "2026-08-12", "start": "09:00", "end": "17:00", "queue": "email", "hours": 8 },
+          { "agent_id": "ag_theo", "agent": "Theo Lindqvist", "date": "2026-08-12", "start": "10:00", "end": "18:00", "queue": "email", "hours": 8 },
+          { "agent_id": "ag_priya", "agent": "Priya Raman", "date": "2026-08-12", "start": "12:00", "end": "20:00", "queue": "chat", "hours": 8 },
+          { "agent_id": "ag_june", "agent": "June Hollis", "date": "2026-08-12", "start": "08:00", "end": "12:00", "queue": "email", "hours": 4 },
+          { "agent_id": "ag_theo", "agent": "Theo Lindqvist", "date": "2026-08-13", "start": "09:00", "end": "17:00", "queue": "email", "hours": 8 },
+          { "agent_id": "ag_priya", "agent": "Priya Raman", "date": "2026-08-13", "start": "12:00", "end": "20:00", "queue": "chat", "hours": 8 },
+          { "agent_id": "ag_june", "agent": "June Hollis", "date": "2026-08-13", "start": "09:00", "end": "13:00", "queue": "email", "hours": 4 },
+          { "agent_id": "ag_marco", "agent": "Marco Duarte", "date": "2026-08-13", "start": "14:00", "end": "22:00", "queue": "email", "hours": 8 },
+          { "agent_id": "ag_nadia", "agent": "Nadia Okafor", "date": "2026-08-14", "start": "09:00", "end": "17:00", "queue": "email", "hours": 8 },
+          { "agent_id": "ag_theo", "agent": "Theo Lindqvist", "date": "2026-08-14", "start": "09:00", "end": "17:00", "queue": "email", "hours": 8 },
+          { "agent_id": "ag_marco", "agent": "Marco Duarte", "date": "2026-08-14", "start": "14:00", "end": "22:00", "queue": "email", "hours": 8 }
+        ]
+      }
+    },
+    "list_canned_replies": {
+      "does": "The team's saved replies, most used first. The rows are the `data` array. `uses_30d` is how many times the reply was sent in the last thirty days and `avg_csat_pct` is the average satisfaction of the conversations it was sent in, so a heavily used reply with a low score is worth rewriting.",
+      "data": {
+        "data": [
+          {
+            "id": "cr_shipping_delay",
+            "title": "Shipping delay, apology and tracking",
+            "category": "shipping",
+            "body": "Sorry for the wait. Your parcel has left our warehouse and the carrier is running behind. Here is the tracking link, and I am watching it with you.",
+            "uses_30d": 62,
+            "avg_csat_pct": 74,
+            "updated_at": "2026-07-28"
+          },
+          {
+            "id": "cr_return_label",
+            "title": "Prepaid return label attached",
+            "category": "returns",
+            "body": "No charge to send it back, a prepaid label is attached. Drop it at any post office and your refund starts the moment it scans.",
+            "uses_30d": 41,
+            "avg_csat_pct": 91,
+            "updated_at": "2026-08-04"
+          },
+          {
+            "id": "cr_refund_timing",
+            "title": "Refund timing",
+            "category": "refunds",
+            "body": "Your refund is approved. Card refunds usually settle within about a week, depending on your bank.",
+            "uses_30d": 38,
+            "avg_csat_pct": 68,
+            "updated_at": "2026-06-19"
+          },
+          {
+            "id": "cr_wrong_item",
+            "title": "Wrong item, exchange offer",
+            "category": "exchanges",
+            "body": "That one is on us. The right item is reserved for you and ships today, and returning the wrong one is your choice, not a condition.",
+            "uses_30d": 24,
+            "avg_csat_pct": 94,
+            "updated_at": "2026-08-06"
+          },
+          {
+            "id": "cr_address_change",
+            "title": "Address change confirmed",
+            "category": "shipping",
+            "body": "Updated. Your order is heading to the new address and nothing else about it changed.",
+            "uses_30d": 17,
+            "avg_csat_pct": 89,
+            "updated_at": "2026-07-31"
+          },
+          {
+            "id": "cr_no_shipping",
+            "title": "We do not ship there yet",
+            "category": "presale",
+            "body": "Not yet, sorry. We only ship to a short list of countries today. Leave me your email and I will write the day that changes.",
+            "uses_30d": 9,
+            "avg_csat_pct": 55,
+            "updated_at": "2026-05-22"
+          }
+        ]
+      }
+    },
+    "assign_ticket": {
+      "does": "Hand a ticket to an agent. `ticket_id` is a ticket id like TK-1049 and `agent_id` an agent id like ag_theo. Assigning a ticket that already has an owner moves it.",
+      "takes": { "ticket_id": "string", "agent_id": "string" }
+    },
+    "send_canned_reply": {
+      "does": "Send one of the team's saved replies to the customer on a ticket. `reply_id` is a canned reply id like cr_wrong_item. The reply is sent as written.",
+      "takes": { "ticket_id": "string", "reply_id": "string" }
+    },
+    "approve_refund": {
+      "does": "Approve a refund request. `amount_cents` is what to actually refund, in CENTS — pass the requested amount unless you are approving a smaller partial refund.",
+      "takes": { "refund_id": "string", "amount_cents": "number" }
+    },
+    "close_tickets": {
+      "does": "Close several tickets at once. `ids` is a comma-separated list of ticket ids, e.g. \"TK-1036,TK-1037\" — not an array. A closed ticket leaves the inbox.",
+      "takes": { "ids": "string" }
+    },
+    "merge_tickets": {
+      "does": "Merge one ticket into another when the same customer wrote in twice. `ticket_id` is the duplicate that gets absorbed, `into_ticket_id` the one that survives and keeps the conversation.",
+      "takes": { "ticket_id": "string", "into_ticket_id": "string" }
+    }
+  }
+}

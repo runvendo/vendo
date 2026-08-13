@@ -1,0 +1,122 @@
+[
+  {
+    "id": "rent-roll",
+    "lane": "screen",
+    "prompt": "Show me the August rent roll: every tenant charged this month, what they were charged, what they've paid, and what's still outstanding across the portfolio.",
+    "pass": [
+      "lists all eight August charges, one row per tenant, and no rows the tool did not return",
+      "each row's charged and paid amounts match the tool's numbers exactly",
+      "shows a portfolio total still outstanding of $6,970.00",
+      "marks each row as paid in full, partly paid, or unpaid"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "collections-chart",
+    "lane": "screen",
+    "prompt": "Chart what I've billed against what I actually collected for the last six months, oldest month on the left.",
+    "pass": [
+      "draws a chart of the six months rather than only listing them",
+      "shows both billed and collected for every month",
+      "the months run oldest to newest, March 2026 through August 2026",
+      "August's collected figure of $12,075.00 reads far below its billed figure of $19,045.00"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "maintenance-board",
+    "lane": "screen",
+    "prompt": "Put my maintenance requests on a board grouped by status so I can see what's still untouched, what's booked, and what's being worked on.",
+    "pass": [
+      "groups all nine requests into columns by status: open, scheduled, in progress, done",
+      "the open column holds exactly the five open requests",
+      "each request shows its unit and title, and the two urgent ones are visibly flagged",
+      "no request appears in more than one column"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "no-maintenance-requests",
+    "lane": "screen",
+    "prompt": "Put my maintenance requests on a board grouped by status so I can see what's still untouched, what's booked, and what's being worked on.",
+    "pass": [
+      "says there are no maintenance requests rather than drawing an empty board",
+      "invents no request rows",
+      "still names what the screen is for, so the empty state is not a blank page"
+    ],
+    "tags": ["display"],
+    "data": { "list_maintenance_requests": { "data": [] } }
+  },
+  {
+    "id": "assign-vendor",
+    "lane": "screen",
+    "prompt": "Show me the maintenance requests nobody is on yet and let me put one of my vendors on each of them.",
+    "pass": [
+      "lists exactly the five requests with no vendor on them",
+      "each row shows its unit, title and category so the vendor choice makes sense",
+      "offers a vendor choice on each row drawn from the five vendors the tool returned",
+      "assigning fires assign_vendor with that row's request id and the chosen vendor's id"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "record-payment",
+    "lane": "screen",
+    "prompt": "Ellis Boone just handed me a check for the rest of his August rent. Give me a form to record that payment against his charge.",
+    "pass": [
+      "the form targets Ellis Boone's August charge and shows what it is against",
+      "offers the $1,200.00 he still owes as the amount, rather than the full rent",
+      "asks for a payment method as well as an amount",
+      "submitting fires record_payment with that charge's id, the amount in cents (120000, not 1200), and a method"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "late-notice-blast",
+    "lane": "screen",
+    "prompt": "Let me tick every tenant who still owes something on August rent and send them all a late notice in one go, with a confirmation before anything goes out.",
+    "pass": [
+      "lists exactly the four tenants with an August balance and none of the four who paid in full",
+      "shows each of them the amount they still owe",
+      "several can be ticked at once and sent with one control",
+      "asks for confirmation first, then fires one send_late_notice per ticked tenant"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "showings-week",
+    "lane": "screen",
+    "prompt": "Lay out this week's showings day by day: which unit, who's coming, what time, and who's covering it.",
+    "pass": [
+      "groups the six showings by day across Aug 12 to Aug 15",
+      "each showing shows its unit, the prospect, the time and the agent covering it",
+      "the two requested showings read as not yet confirmed",
+      "no day is filled with appointments the tool did not return"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "moveout-closeout",
+    "lane": "screen",
+    "prompt": "Grace Okonjo is out of Alder Court 2A on Aug 31. Build me the move-out sheet for that unit: her lease dates, the deposit I'm holding, what she still owes on August rent, the open work orders on the unit, and what's left of the deposit after all of it.",
+    "pass": [
+      "shows her lease running Sep 1 2025 to Aug 31 2026 and the $2,190.00 deposit held",
+      "shows the $1,095.00 she still owes on August rent",
+      "lists both open work orders on that unit, at $185.00 and $225.00, and no work order from another unit",
+      "ends on $685.00 left of the deposit — the deposit less the rent owed and both estimates"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "lease-renewals",
+    "lane": "screen",
+    "prompt": "Which leases are up in the next 90 days? Show me each one's current rent next to what the unit could get on the market and the increase that implies, soonest first, and let me renew one straight from its row.",
+    "pass": [
+      "lists the five leases ending on or before Nov 10 2026, soonest end date first, and no lease ending later",
+      "each row pairs that lease's current rent with its unit's market rent and the difference between them",
+      "the tenant who has already given notice is not offered a renewal",
+      "renewing fires renew_lease with that lease's id, a new end date, and the new rent in cents"
+    ],
+    "tags": ["action"]
+  }
+]

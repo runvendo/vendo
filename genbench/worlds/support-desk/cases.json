@@ -1,0 +1,155 @@
+[
+  {
+    "id": "my-queue",
+    "lane": "screen",
+    "prompt": "Show me my open tickets in one table, the ones closest to blowing their SLA first.",
+    "pass": [
+      "lists exactly the four not-solved tickets assigned to Nadia Okafor — TK-1040, TK-1043, TK-1045, TK-1047 — and nobody else's",
+      "each row shows the subject, the customer, the priority and how much SLA time is left",
+      "TK-1040 and TK-1047 read as overdue and sit above the two that still have time",
+      "the four rows name their customers — Dominic Reyes, Alina Petrova, Rosa Delgado and Sam Okonkwo"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "inbox-zero",
+    "lane": "screen",
+    "prompt": "Show me my open tickets in one table, the ones closest to blowing their SLA first.",
+    "pass": [
+      "says the queue is clear rather than drawing an empty table",
+      "invents no ticket rows",
+      "offers no per-ticket controls, since there are no tickets"
+    ],
+    "tags": ["display"],
+    "data": {
+      "list_tickets": { "data": [] },
+      "get_ticket": { "data": [] },
+      "get_ticket_volume": {
+        "data": [
+          { "date": "2026-07-30", "created": 12, "solved": 13, "backlog_end": 20 },
+          { "date": "2026-07-31", "created": 9, "solved": 11, "backlog_end": 18 },
+          { "date": "2026-08-01", "created": 6, "solved": 8, "backlog_end": 16 },
+          { "date": "2026-08-02", "created": 4, "solved": 6, "backlog_end": 14 },
+          { "date": "2026-08-03", "created": 13, "solved": 14, "backlog_end": 13 },
+          { "date": "2026-08-04", "created": 11, "solved": 13, "backlog_end": 11 },
+          { "date": "2026-08-05", "created": 10, "solved": 12, "backlog_end": 9 },
+          { "date": "2026-08-06", "created": 12, "solved": 13, "backlog_end": 8 },
+          { "date": "2026-08-07", "created": 8, "solved": 11, "backlog_end": 5 },
+          { "date": "2026-08-08", "created": 6, "solved": 7, "backlog_end": 4 },
+          { "date": "2026-08-09", "created": 3, "solved": 5, "backlog_end": 2 },
+          { "date": "2026-08-10", "created": 9, "solved": 10, "backlog_end": 1 },
+          { "date": "2026-08-11", "created": 7, "solved": 8, "backlog_end": 0 },
+          { "date": "2026-08-12", "created": 4, "solved": 4, "backlog_end": 0 }
+        ]
+      },
+      "list_agents": {
+        "data": [
+          { "id": "ag_nadia", "name": "Nadia Okafor", "role": "lead", "status": "online", "is_you": true, "open_tickets": 0, "csat_pct": 92, "csat_responses_30d": 48, "avg_first_reply_minutes_30d": 44 },
+          { "id": "ag_theo", "name": "Theo Lindqvist", "role": "agent", "status": "online", "is_you": false, "open_tickets": 0, "csat_pct": 88, "csat_responses_30d": 41, "avg_first_reply_minutes_30d": 35 },
+          { "id": "ag_priya", "name": "Priya Raman", "role": "agent", "status": "away", "is_you": false, "open_tickets": 0, "csat_pct": 79, "csat_responses_30d": 33, "avg_first_reply_minutes_30d": 48 },
+          { "id": "ag_marco", "name": "Marco Duarte", "role": "agent", "status": "offline", "is_you": false, "open_tickets": 0, "csat_pct": 71, "csat_responses_30d": 22, "avg_first_reply_minutes_30d": 96 },
+          { "id": "ag_june", "name": "June Hollis", "role": "trainee", "status": "online", "is_you": false, "open_tickets": 0, "csat_pct": 85, "csat_responses_30d": 6, "avg_first_reply_minutes_30d": 61 }
+        ]
+      }
+    }
+  },
+  {
+    "id": "ticket-detail",
+    "lane": "screen",
+    "prompt": "Open TK-1040. I want the whole conversation, who this customer is, and the canned replies my team actually uses, so I can fire one back.",
+    "pass": [
+      "shows all four messages of the thread in order, with the customer's turns distinguishable from the agent's",
+      "shows the customer's name and email, their lifetime orders and lifetime spend, and the order total as $324.00",
+      "shows that TK-1040 is overdue against its SLA",
+      "lists the canned replies the tool returned, by title",
+      "picking a canned reply fires send_canned_reply with TK-1040 and that reply's id"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "assign-backlog",
+    "lane": "screen",
+    "prompt": "Three tickets came in with nobody on them. Show me the unassigned ones and let me hand each one to an agent who is online right now.",
+    "pass": [
+      "lists exactly the three unassigned tickets — TK-1049, TK-1050, TK-1051",
+      "each row shows the subject, the customer and how urgent it is",
+      "the only agents offered are the three the tool reports online: Nadia Okafor, Theo Lindqvist, June Hollis",
+      "assigning fires assign_ticket with that row's ticket id and the chosen agent's id"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "refund-approvals",
+    "lane": "screen",
+    "prompt": "Show me the refunds waiting on my approval, with each order total next to what the agent asked for, and let me approve one — I want to be able to trim the amount before I do.",
+    "pass": [
+      "lists the three pending refund requests and neither the approved nor the denied one",
+      "each row shows the customer, the order total and the requested amount in dollars with two decimals",
+      "shows the pending total as $760.00",
+      "the amount can be changed before approving",
+      "approving fires approve_refund with that request's id and an amount in cents"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "bulk-close",
+    "lane": "screen",
+    "prompt": "The solved tickets are cluttering my inbox. Let me tick the ones I want gone and close them in one go, with a confirmation before anything happens.",
+    "pass": [
+      "lists exactly the three solved tickets — TK-1036, TK-1037, TK-1038 — each with its own checkbox",
+      "the close control says how many are selected and does nothing while none are",
+      "asks for confirmation before closing anything",
+      "confirming fires close_tickets once, with the selected ticket ids"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "team-pulse",
+    "lane": "screen",
+    "prompt": "Put a wall-board up for the team right now: who is on, how loaded they are, how happy customers are, and what is overdue.",
+    "pass": [
+      "shows all five agents with their status, their open ticket count and their CSAT",
+      "shows the agents' own open counts totalling 10",
+      "shows the straight average of the five CSAT scores as 83%",
+      "shows that 4 tickets are overdue right now",
+      "Nadia Okafor's CSAT reads 92% and Marco Duarte's 71%"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "volume-trend",
+    "lane": "screen",
+    "prompt": "Chart the last two weeks: tickets created against tickets solved each day, with the backlog on top.",
+    "pass": [
+      "draws a chart of the days rather than only listing them",
+      "created and solved read as separate series, and the backlog is on the chart too",
+      "all 14 days the tool returned are plotted, and no invented day",
+      "the newest day's backlog reads 13"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "holiday-handoff",
+    "lane": "screen",
+    "prompt": "I am off Thursday the 13th and back Friday. Show me every ticket of mine whose SLA runs out that day next to whoever is actually on shift Thursday, and let me hand each one over.",
+    "pass": [
+      "shows the two tickets of Nadia's whose SLA runs out on Thursday Aug 13 — TK-1043 and TK-1045",
+      "does not present anyone else's ticket as hers, including the unassigned TK-1051 that is also due Thursday",
+      "shows who is on shift Thursday with their hours — Theo, Priya, June, Marco — and Nadia is not among them",
+      "each ticket has a handover control, and it fires assign_ticket with that ticket's id and an agent who is on shift Thursday"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "duplicate-merge",
+    "lane": "screen",
+    "prompt": "Some customers have written in twice about the same thing. Group the inbox by customer email, flag the pairs that are really one issue, and let me merge each pair — the follow-up into the original.",
+    "pass": [
+      "surfaces both duplicate pairs: Rosa Delgado's TK-1045 and TK-1051, and Marcus Bohm's TK-1041 and TK-1048",
+      "groups them under the customer's email address, showing each ticket's id, subject and status",
+      "no customer who only wrote once is presented as a duplicate",
+      "merging fires merge_tickets with the newer ticket's id and the older ticket it merges into"
+    ],
+    "tags": ["action"]
+  }
+]

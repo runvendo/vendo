@@ -1,0 +1,124 @@
+[
+  {
+    "id": "roster-table",
+    "lane": "screen",
+    "prompt": "Give me a table of everyone on the roster with their title, department, manager, start date and whether they're active, onboarding or out on leave.",
+    "tags": ["display"],
+    "pass": [
+      "lists all twelve employees the roster tool returned and invents nobody",
+      "shows each person's title, department, manager and start date",
+      "marks Yara Haddad as on leave, and Theo Brandt and Luz Arriaga as onboarding",
+      "start dates read like 'Mar 14, 2022' rather than ISO"
+    ]
+  },
+  {
+    "id": "time-off-queue",
+    "lane": "screen",
+    "prompt": "Walk me through the time-off requests waiting on my approval: who's asking, what dates, how many hours, and an approve and a deny on each row. Deny should ask me to confirm before the denial goes out.",
+    "tags": ["action"],
+    "pass": [
+      "shows the four pending requests and none of the approved or denied ones",
+      "shows each pending request's employee, dates and hours",
+      "approve fires approve_time_off with the id of the request it sits on",
+      "deny asks for confirmation first, and confirming fires deny_time_off with that request's id"
+    ]
+  },
+  {
+    "id": "nothing-waiting",
+    "lane": "screen",
+    "prompt": "Walk me through the time-off requests waiting on my approval, with an approve and a deny on each row.",
+    "tags": ["action"],
+    "pass": [
+      "says nothing is waiting rather than drawing an empty table",
+      "invents no requests",
+      "offers no approve or deny control"
+    ],
+    "data": { "list_time_off_requests": { "data": [] } }
+  },
+  {
+    "id": "employee-profile",
+    "lane": "screen",
+    "prompt": "Open Priya Raghunathan's profile: title, department, manager, start date, how much PTO she has left, and where she is in the review cycle.",
+    "tags": ["display"],
+    "pass": [
+      "shows Priya Raghunathan as a Staff Engineer in Engineering reporting to Nadia Kwan, with her start date",
+      "shows her remaining PTO exactly as the roster reports it, in hours",
+      "shows her review stage and its due date, and names Nadia Kwan as her reviewer",
+      "shows no other employee's title, PTO or review row"
+    ]
+  },
+  {
+    "id": "headcount-overview",
+    "lane": "screen",
+    "prompt": "Give me a headcount overview: how many people in each department, what each department costs a year, what they're hiring, and the company totals.",
+    "tags": ["display"],
+    "pass": [
+      "shows all four departments with headcount, annual payroll and open roles",
+      "each department's payroll matches the tool's number exactly",
+      "shows total headcount of twelve and a total annual payroll equal to the sum of the four departments",
+      "money is shown in dollars, not raw cents"
+    ]
+  },
+  {
+    "id": "payroll-chart",
+    "lane": "screen",
+    "prompt": "Chart what we spend on payroll by department, biggest first.",
+    "tags": ["display"],
+    "pass": [
+      "draws a chart of the departments rather than only listing them",
+      "every department the tool returned is on the chart",
+      "each department's payroll matches the tool's number exactly",
+      "Engineering reads as the largest"
+    ]
+  },
+  {
+    "id": "onboarding-checklist",
+    "lane": "screen",
+    "prompt": "Theo Brandt starts Monday. Show me his onboarding checklist grouped by who owns each item, and put a mark-done button on each item still open so I can clear them as they land.",
+    "tags": ["action"],
+    "pass": [
+      "shows only Theo Brandt's seven items and none of Luz Arriaga's",
+      "groups the items by owner and shows each item's due date",
+      "shows which three items are already done and which four are still open",
+      "each open item has its own mark-done button, and pressing one fires complete_onboarding_task with that item's id"
+    ]
+  },
+  {
+    "id": "late-reviews-nudge",
+    "lane": "screen",
+    "prompt": "Who's late on their review step? List them worst first with how many days late and what stage they're stuck at, then give me one button that nudges all of them — make me confirm before it emails anyone.",
+    "tags": ["action"],
+    "pass": [
+      "lists the four people whose review step is late and nobody who is on time",
+      "orders them most days late first, so Marcus Odell and Tomas Bello come before Daniel Okafor and Sena Nakamura",
+      "shows each person's days late and the stage they are stuck at",
+      "the nudge-everyone control asks for confirmation and then fires send_review_reminder for each late person"
+    ]
+  },
+  {
+    "id": "coverage-calendar",
+    "lane": "screen",
+    "prompt": "Before I approve anything, show me the next two weeks as a calendar of who's already out and which pending requests land in that window — and flag any request that breaks our notice rule.",
+    "tags": ["display"],
+    "pass": [
+      "lays the absences out on a two-week calendar or timeline whose every day is labelled with its month and day, like 'Aug 17', rather than a plain list",
+      "shows Yara Haddad out across the whole window on parental leave, and blocks Rosa Delgado across Aug 19 to Aug 21",
+      "includes the three pending requests that fall in the window and leaves out Wren Chen's September request",
+      "marks which absences are approved and which are still pending",
+      "flags Marcus Odell's request as short notice against the policy's notice period"
+    ]
+  },
+  {
+    "id": "pto-forfeit-watch",
+    "lane": "screen",
+    "prompt": "Nobody should quietly lose PTO at year end. Show me anyone carrying more hours than our carryover cap who has used a work day or less of time off this year, with how much each is carrying and how much they've used, so I can push them to book something.",
+    "tags": ["display"],
+    "pass": [
+      "lists exactly Nadia Kwan, Priya Raghunathan and Wren Chen, most hours carried first",
+      "leaves out Yara Haddad, who is over the cap but has used more than a work day",
+      "leaves out everyone carrying no balance at all, including the two people onboarding",
+      "shows each person's carried hours and used hours, matching the roster",
+      "states the carryover cap it filtered on"
+    ]
+  }
+]

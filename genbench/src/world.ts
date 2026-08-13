@@ -55,11 +55,18 @@ export const cannedResponse = (tool: DerivedTool): unknown => tool.data ?? { ok:
 
 export type Lane = "screen" | "build";
 
+/** How a case is filed in a report: a screen that only shows the tools' rows
+ *  (`display`), or one that also has to act through a write tool (`action`). */
+export type CaseTag = "display" | "action";
+
 export interface Case {
   readonly id: string;
   readonly lane: Lane;
   readonly prompt: string;
   readonly pass: readonly string[];
+  /** Absent from `caseHash` on purpose: tagging a case does not change the
+   *  question it asks, so it must not declare every recorded run incomparable. */
+  readonly tags?: readonly CaseTag[];
   /** Per-case tool-data override, e.g. an empty state. Replaces `data` for the
    *  named tools only; every other tool keeps the world's data. */
   readonly data?: Readonly<Record<string, unknown>>;

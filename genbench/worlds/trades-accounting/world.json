@@ -1,0 +1,184 @@
+{
+  "app": "Plumbline, the job-costing books for trades contractors — kept here by Ridgeline Mechanical, an eleven-person plumbing and HVAC shop.",
+  "theme": {
+    "colors": {
+      "background": "#EDEFF2",
+      "surface": "#FFFFFF",
+      "text": "#12171C",
+      "muted": "#5B6774",
+      "accent": "#E8B10B",
+      "accentText": "#171200",
+      "danger": "#B3261E",
+      "border": "#D3D9E0"
+    },
+    "typography": { "fontFamily": "Inter, sans-serif", "baseSize": "15px" },
+    "radius": { "small": "4px", "medium": "6px", "large": "10px" },
+    "density": "comfortable",
+    "motion": "reduced"
+  },
+  "style": [
+    "uses the theme exactly: concrete-gray page, white cards, hi-vis amber buttons with near-black label text, Inter, 4-10px corners — no invented colors or fonts",
+    "money always shows 2 decimals with a $ symbol, a loss shows in the danger red with a minus sign, and an unpaid invoice balance shows in the danger color",
+    "every job is named by its job number and its customer together — 'J-2418 · Harbor Point Dental' — never a bare id",
+    "hours read with one decimal and an h — '9.5 h' — and are never dressed up as money",
+    "anything that bills a customer, approves payroll or writes an expense asks for confirmation first",
+    "dates read as 'Aug 4' style, never ISO"
+  ],
+  "tools": {
+    "list_jobs": {
+      "does": "Every job on the board, newest job number first. The rows are the `data` array. `status` is one of scheduled, in_progress, awaiting_parts, complete_unbilled, closed. `start_date` is the day the crew started, or is due to start on a scheduled job. `quoted_hours` is the labor hours the estimate carried and `actual_hours` is the approved hours posted against the job so far. `quoted`, `cost_to_date`, `invoiced` and `to_invoice` are in CENTS: 3980000 is $39,800.00. `to_invoice` is what is left of the quote to bill.",
+      "data": {
+        "data": [
+          { "id": "J-2444", "customer": "Delaney Auto Body", "contact": "Chris Delaney", "site": "Kessler Avenue Shop", "work": "Compressed air lines and a new water heater", "status": "scheduled", "foreman": "Rudy Okafor", "start_date": "2026-08-17", "quoted": 1320000, "quoted_hours": 96, "actual_hours": 0, "cost_to_date": 0, "invoiced": 0, "to_invoice": 1320000 },
+          { "id": "J-2440", "customer": "Sutter Street Lofts HOA", "contact": "Dana Prokop", "site": "Sutter Street Lofts", "work": "Boiler service contract, summer visits", "status": "in_progress", "foreman": "Marco Deleon", "start_date": "2026-06-15", "quoted": 640000, "quoted_hours": 40, "actual_hours": 44, "cost_to_date": 360650, "invoiced": 640000, "to_invoice": 0 },
+          { "id": "J-2431", "customer": "Ellis & Fern Bakery", "contact": "Owen Ellis", "site": "Halsted Row", "work": "Grease trap and floor drains", "status": "awaiting_parts", "foreman": "Rudy Okafor", "start_date": "2026-07-29", "quoted": 1840000, "quoted_hours": 64, "actual_hours": 41, "cost_to_date": 791100, "invoiced": 0, "to_invoice": 1840000 },
+          { "id": "J-2418", "customer": "Harbor Point Dental", "contact": "Dr. Alina Fassbender", "site": "Harbor Point Plaza", "work": "Rooftop unit replacement and duct tie-in", "status": "in_progress", "foreman": "Marco Deleon", "start_date": "2026-07-24", "quoted": 3980000, "quoted_hours": 180, "actual_hours": 214, "cost_to_date": 3757600, "invoiced": 1990000, "to_invoice": 1990000 },
+          { "id": "J-2402", "customer": "Larkspur Apartments LLC", "contact": "Miriam Cole", "site": "Larkspur Way", "work": "Domestic water repipe, all units", "status": "in_progress", "foreman": "Rudy Okafor", "start_date": "2026-06-08", "quoted": 12600000, "quoted_hours": 520, "actual_hours": 486, "cost_to_date": 8675300, "invoiced": 8400000, "to_invoice": 4200000 },
+          { "id": "J-2395", "customer": "Vance Residence", "contact": "Nora Vance", "site": "Coldbrook Lane", "work": "Radiant floor install", "status": "complete_unbilled", "foreman": "Tasha Byrd", "start_date": "2026-05-26", "quoted": 2975000, "quoted_hours": 120, "actual_hours": 133, "cost_to_date": 2304000, "invoiced": 1487500, "to_invoice": 1487500 },
+          { "id": "J-2377", "customer": "Kirkwood Elementary School District", "contact": "Ruben Ortiz", "site": "Kirkwood Avenue Campus", "work": "Restroom retrofit, phase two", "status": "closed", "foreman": "Rudy Okafor", "start_date": "2026-04-06", "quoted": 8420000, "quoted_hours": 300, "actual_hours": 361, "cost_to_date": 8904600, "invoiced": 8420000, "to_invoice": 0 }
+        ]
+      }
+    },
+    "list_job_costs": {
+      "does": "Every cost line posted against job J-2418, oldest first. The rows are the `data` array. `kind` is labor, material or subcontractor. `hours` is 0 on anything that is not labor. Labor posts weekly at the crew's burdened rate. `amount` is in CENTS: 319600 is $3,196.00, and the lines add up to the job's cost to date.",
+      "takes": { "job_id": "string" },
+      "data": {
+        "data": [
+          { "id": "jc_1101", "job": "J-2418", "date": "2026-07-24", "kind": "material", "description": "Packaged rooftop unit, seven and a half ton", "vendor": "Fairview Plumbing Supply", "hours": 0, "amount": 1284000 },
+          { "id": "jc_1102", "job": "J-2418", "date": "2026-07-25", "kind": "labor", "description": "Crew hours, week ending Jul 25 — rooftop demo", "vendor": "Ridgeline crew", "hours": 47, "amount": 319600 },
+          { "id": "jc_1103", "job": "J-2418", "date": "2026-07-29", "kind": "material", "description": "Curb adapter and isolation rails", "vendor": "Fairview Plumbing Supply", "hours": 0, "amount": 318900 },
+          { "id": "jc_1104", "job": "J-2418", "date": "2026-08-01", "kind": "labor", "description": "Crew hours, week ending Aug 1 — curb set and rigging prep", "vendor": "Ridgeline crew", "hours": 80.5, "amount": 547400 },
+          { "id": "jc_1105", "job": "J-2418", "date": "2026-08-05", "kind": "material", "description": "Spiral duct and fittings", "vendor": "Coastal Sheet Metal", "hours": 0, "amount": 274600 },
+          { "id": "jc_1106", "job": "J-2418", "date": "2026-08-06", "kind": "subcontractor", "description": "Crane and rigging, half day", "vendor": "Talon Crane Service", "hours": 0, "amount": 320000 },
+          { "id": "jc_1107", "job": "J-2418", "date": "2026-08-08", "kind": "labor", "description": "Crew hours, week ending Aug 8 — unit set and ductwork", "vendor": "Ridgeline crew", "hours": 86.5, "amount": 588200 },
+          { "id": "jc_1108", "job": "J-2418", "date": "2026-08-08", "kind": "material", "description": "Controls kit and thermostat", "vendor": "Fairview Plumbing Supply", "hours": 0, "amount": 104900 }
+        ]
+      }
+    },
+    "get_job_pnl": {
+      "does": "Profit and loss for every job with costs posted, worst margin first. The rows are the `data` array. `contract` is the quoted value, `material_cost` covers purchased material, rentals and other direct job cost, and `total_cost` is the three cost columns added up — it equals the job's cost to date. `margin` is contract minus total cost and is negative on a job that lost money; `margin_pct` is that margin as a percent of contract, one decimal. Money is in CENTS: 222400 is $2,224.00. Jobs with nothing posted yet are not in here.",
+      "data": {
+        "data": [
+          { "job": "J-2377", "customer": "Kirkwood Elementary School District", "contract": 8420000, "labor_cost": 2531400, "material_cost": 4128600, "sub_cost": 2244600, "total_cost": 8904600, "margin": -484600, "margin_pct": -5.8 },
+          { "job": "J-2418", "customer": "Harbor Point Dental", "contract": 3980000, "labor_cost": 1455200, "material_cost": 1982400, "sub_cost": 320000, "total_cost": 3757600, "margin": 222400, "margin_pct": 5.6 },
+          { "job": "J-2395", "customer": "Vance Residence", "contract": 2975000, "labor_cost": 927300, "material_cost": 1191700, "sub_cost": 185000, "total_cost": 2304000, "margin": 671000, "margin_pct": 22.6 },
+          { "job": "J-2402", "customer": "Larkspur Apartments LLC", "contract": 12600000, "labor_cost": 3239400, "material_cost": 4185900, "sub_cost": 1250000, "total_cost": 8675300, "margin": 3924700, "margin_pct": 31.1 },
+          { "job": "J-2440", "customer": "Sutter Street Lofts HOA", "contract": 640000, "labor_cost": 285600, "material_cost": 75050, "sub_cost": 0, "total_cost": 360650, "margin": 279350, "margin_pct": 43.6 },
+          { "job": "J-2431", "customer": "Ellis & Fern Bakery", "contract": 1840000, "labor_cost": 271500, "material_cost": 519600, "sub_cost": 0, "total_cost": 791100, "margin": 1048900, "margin_pct": 57 }
+        ]
+      }
+    },
+    "list_invoices": {
+      "does": "Every invoice raised against a job, newest first. The rows are the `data` array. `status` is the payment state — sent, partial or paid. `days_late` is how many days past its due date the unpaid balance is, and is 0 when nothing is outstanding or the due date has not passed. `amount` and `balance` are in CENTS: 1990000 is $19,900.00.",
+      "takes": { "limit": "number" },
+      "data": {
+        "data": [
+          { "id": "INV-1051", "job": "J-2440", "customer": "Sutter Street Lofts HOA", "issued": "2026-08-05", "due": "2026-09-04", "amount": 320000, "balance": 320000, "status": "sent", "days_late": 0 },
+          { "id": "INV-1042", "job": "J-2418", "customer": "Harbor Point Dental", "issued": "2026-07-30", "due": "2026-08-29", "amount": 1990000, "balance": 1990000, "status": "sent", "days_late": 0 },
+          { "id": "INV-1035", "job": "J-2402", "customer": "Larkspur Apartments LLC", "issued": "2026-07-24", "due": "2026-08-23", "amount": 4200000, "balance": 4200000, "status": "sent", "days_late": 0 },
+          { "id": "INV-1018", "job": "J-2402", "customer": "Larkspur Apartments LLC", "issued": "2026-06-26", "due": "2026-07-26", "amount": 4200000, "balance": 0, "status": "paid", "days_late": 0 },
+          { "id": "INV-1016", "job": "J-2440", "customer": "Sutter Street Lofts HOA", "issued": "2026-06-20", "due": "2026-07-20", "amount": 320000, "balance": 320000, "status": "sent", "days_late": 23 },
+          { "id": "INV-1009", "job": "J-2395", "customer": "Vance Residence", "issued": "2026-06-12", "due": "2026-07-12", "amount": 1487500, "balance": 1487500, "status": "sent", "days_late": 31 },
+          { "id": "INV-1002", "job": "J-2377", "customer": "Kirkwood Elementary School District", "issued": "2026-06-01", "due": "2026-07-01", "amount": 3902500, "balance": 1105000, "status": "partial", "days_late": 42 },
+          { "id": "INV-0994", "job": "J-2377", "customer": "Kirkwood Elementary School District", "issued": "2026-05-18", "due": "2026-06-17", "amount": 3902500, "balance": 0, "status": "paid", "days_late": 0 },
+          { "id": "INV-0961", "job": "J-2377", "customer": "Kirkwood Elementary School District", "issued": "2026-04-02", "due": "2026-05-02", "amount": 615000, "balance": 615000, "status": "sent", "days_late": 102 }
+        ]
+      }
+    },
+    "get_receivables_aging": {
+      "does": "What customers owe, aged as of `as_of`. `data` is one row per aging bucket and `by_customer` is one row per customer who owes anything, largest balance first, where `days_late` is how late that customer's oldest unpaid invoice is. `total` is everything outstanding and `past_due` is the part of it that is late. Money is in CENTS: 10037500 is $100,375.00.",
+      "data": {
+        "as_of": "2026-08-12",
+        "data": [
+          { "bucket": "Current", "amount": 6510000, "invoices": 3 },
+          { "bucket": "1-30 days late", "amount": 320000, "invoices": 1 },
+          { "bucket": "31-60 days late", "amount": 2592500, "invoices": 2 },
+          { "bucket": "61-90 days late", "amount": 0, "invoices": 0 },
+          { "bucket": "Over 90 days late", "amount": 615000, "invoices": 1 }
+        ],
+        "by_customer": [
+          { "customer": "Larkspur Apartments LLC", "balance": 4200000, "days_late": 0 },
+          { "customer": "Harbor Point Dental", "balance": 1990000, "days_late": 0 },
+          { "customer": "Kirkwood Elementary School District", "balance": 1720000, "days_late": 102 },
+          { "customer": "Vance Residence", "balance": 1487500, "days_late": 31 },
+          { "customer": "Sutter Street Lofts HOA", "balance": 640000, "days_late": 23 }
+        ],
+        "total": 10037500,
+        "past_due": 3527500
+      }
+    },
+    "list_expenses": {
+      "does": "The expense inbox — every card charge and supplier bill imported from the linked accounts in the last six weeks, oldest first. The rows are the `data` array. `tax_category` is empty on a charge nobody has coded yet, `job` is empty when it is not assigned to a job, and `receipt` is false when no receipt is attached. Coding sets the tax category only: a bill can be posted to job cost already and still be waiting on its code. Supplier accounts billed monthly post straight to job cost and are not in here. `amount` is in CENTS: 128940 is $1,289.40.",
+      "data": {
+        "data": [
+          { "id": "ex_301", "date": "2026-07-02", "vendor": "Fairview Plumbing Supply", "amount": 128940, "job": "J-2402", "tax_category": "Materials & supplies", "receipt": true },
+          { "id": "ex_302", "date": "2026-07-06", "vendor": "Basin Tool Rental", "amount": 41600, "job": "J-2431", "tax_category": "Equipment rental", "receipt": true },
+          { "id": "ex_303", "date": "2026-07-09", "vendor": "Westline Fuel", "amount": 8745, "job": "", "tax_category": "Vehicle fuel & mileage", "receipt": false },
+          { "id": "ex_304", "date": "2026-07-13", "vendor": "Fairview Plumbing Supply", "amount": 216300, "job": "J-2402", "tax_category": "Materials & supplies", "receipt": true },
+          { "id": "ex_305", "date": "2026-07-16", "vendor": "Fleetline Insurance", "amount": 92100, "job": "", "tax_category": "Insurance", "receipt": true },
+          { "id": "ex_306", "date": "2026-07-23", "vendor": "State Contractor Board", "amount": 27500, "job": "", "tax_category": "Licenses & permits", "receipt": true },
+          { "id": "ex_307", "date": "2026-07-27", "vendor": "Halsted Row Deli", "amount": 6320, "job": "J-2431", "tax_category": "Meals", "receipt": false },
+          { "id": "ex_308", "date": "2026-08-03", "vendor": "Westline Fuel", "amount": 9180, "job": "", "tax_category": "", "receipt": false },
+          { "id": "ex_309", "date": "2026-08-05", "vendor": "Coastal Sheet Metal", "amount": 274600, "job": "J-2418", "tax_category": "", "receipt": true },
+          { "id": "ex_310", "date": "2026-08-06", "vendor": "Talon Crane Service", "amount": 320000, "job": "J-2418", "tax_category": "Subcontractors", "receipt": true },
+          { "id": "ex_311", "date": "2026-08-07", "vendor": "Ridgetop Hardware", "amount": 34720, "job": "J-2440", "tax_category": "Small tools", "receipt": true },
+          { "id": "ex_312", "date": "2026-08-08", "vendor": "Fleetline Insurance", "amount": 92100, "job": "", "tax_category": "", "receipt": true },
+          { "id": "ex_313", "date": "2026-08-09", "vendor": "Fairview Plumbing Supply", "amount": 96480, "job": "J-2431", "tax_category": "", "receipt": false },
+          { "id": "ex_314", "date": "2026-08-11", "vendor": "Crestline Uniform", "amount": 12650, "job": "", "tax_category": "", "receipt": true }
+        ]
+      }
+    },
+    "list_time_entries": {
+      "does": "Crew hours a foreman logged that nobody has approved yet, oldest first. The rows are the `data` array. Unapproved time is not posted to job cost, so none of it is in a job's `actual_hours` or `cost_to_date` yet. `rate` is the tech's burdened cost per hour in CENTS and `amount` is `hours` times that rate, also in CENTS: 64600 is $646.00.",
+      "data": {
+        "data": [
+          { "id": "te_501", "tech": "Marco Deleon", "job": "J-2418", "date": "2026-08-10", "hours": 9.5, "rate": 6800, "amount": 64600, "status": "pending" },
+          { "id": "te_502", "tech": "Nico Salas", "job": "J-2418", "date": "2026-08-10", "hours": 8, "rate": 4600, "amount": 36800, "status": "pending" },
+          { "id": "te_503", "tech": "Tasha Byrd", "job": "J-2402", "date": "2026-08-10", "hours": 10, "rate": 6800, "amount": 68000, "status": "pending" },
+          { "id": "te_504", "tech": "Marco Deleon", "job": "J-2418", "date": "2026-08-11", "hours": 9, "rate": 6800, "amount": 61200, "status": "pending" },
+          { "id": "te_505", "tech": "Nico Salas", "job": "J-2431", "date": "2026-08-11", "hours": 7.5, "rate": 4600, "amount": 34500, "status": "pending" },
+          { "id": "te_506", "tech": "Rudy Okafor", "job": "J-2402", "date": "2026-08-11", "hours": 8.5, "rate": 7400, "amount": 62900, "status": "pending" },
+          { "id": "te_507", "tech": "Tasha Byrd", "job": "J-2402", "date": "2026-08-12", "hours": 11.5, "rate": 6800, "amount": 78200, "status": "pending" },
+          { "id": "te_508", "tech": "Marco Deleon", "job": "J-2440", "date": "2026-08-12", "hours": 3, "rate": 6800, "amount": 20400, "status": "pending" },
+          { "id": "te_509", "tech": "Nico Salas", "job": "J-2418", "date": "2026-08-12", "hours": 8, "rate": 4600, "amount": 36800, "status": "pending" }
+        ]
+      }
+    },
+    "list_scheduled_visits": {
+      "does": "Crew visits booked for this week, in date order. The rows are the `data` array. `window` is the arrival window promised to the customer — morning, afternoon or all day. `kind` is install, service or inspection. `hours_planned` is crew-hours: two techs for a full day is sixteen.",
+      "data": {
+        "data": [
+          { "id": "sv_1", "date": "2026-08-10", "window": "all day", "job": "J-2418", "customer": "Harbor Point Dental", "kind": "install", "crew": ["Marco Deleon", "Nico Salas"], "hours_planned": 16, "note": "" },
+          { "id": "sv_2", "date": "2026-08-10", "window": "all day", "job": "J-2402", "customer": "Larkspur Apartments LLC", "kind": "install", "crew": ["Tasha Byrd"], "hours_planned": 8, "note": "" },
+          { "id": "sv_3", "date": "2026-08-11", "window": "all day", "job": "J-2418", "customer": "Harbor Point Dental", "kind": "install", "crew": ["Marco Deleon"], "hours_planned": 8, "note": "" },
+          { "id": "sv_4", "date": "2026-08-11", "window": "all day", "job": "J-2402", "customer": "Larkspur Apartments LLC", "kind": "install", "crew": ["Rudy Okafor"], "hours_planned": 8, "note": "" },
+          { "id": "sv_5", "date": "2026-08-11", "window": "morning", "job": "J-2431", "customer": "Ellis & Fern Bakery", "kind": "inspection", "crew": ["Nico Salas"], "hours_planned": 4, "note": "health-department pre-inspection" },
+          { "id": "sv_6", "date": "2026-08-12", "window": "all day", "job": "J-2418", "customer": "Harbor Point Dental", "kind": "install", "crew": ["Nico Salas"], "hours_planned": 8, "note": "" },
+          { "id": "sv_7", "date": "2026-08-12", "window": "all day", "job": "J-2402", "customer": "Larkspur Apartments LLC", "kind": "install", "crew": ["Tasha Byrd"], "hours_planned": 8, "note": "" },
+          { "id": "sv_8", "date": "2026-08-12", "window": "afternoon", "job": "J-2440", "customer": "Sutter Street Lofts HOA", "kind": "service", "crew": ["Marco Deleon"], "hours_planned": 2, "note": "" },
+          { "id": "sv_9", "date": "2026-08-13", "window": "all day", "job": "J-2402", "customer": "Larkspur Apartments LLC", "kind": "install", "crew": ["Rudy Okafor", "Tasha Byrd"], "hours_planned": 16, "note": "" },
+          { "id": "sv_10", "date": "2026-08-13", "window": "afternoon", "job": "J-2418", "customer": "Harbor Point Dental", "kind": "install", "crew": ["Marco Deleon"], "hours_planned": 4, "note": "" },
+          { "id": "sv_11", "date": "2026-08-14", "window": "all day", "job": "J-2418", "customer": "Harbor Point Dental", "kind": "install", "crew": ["Marco Deleon", "Tasha Byrd"], "hours_planned": 16, "note": "controls startup" },
+          { "id": "sv_12", "date": "2026-08-14", "window": "afternoon", "job": "J-2444", "customer": "Delaney Auto Body", "kind": "inspection", "crew": ["Rudy Okafor"], "hours_planned": 3, "note": "pre-start site walk" },
+          { "id": "sv_13", "date": "2026-08-15", "window": "morning", "job": "J-2395", "customer": "Vance Residence", "kind": "service", "crew": ["Tasha Byrd"], "hours_planned": 4, "note": "punch list walkthrough" }
+        ]
+      }
+    },
+    "send_payment_reminder": {
+      "does": "Email the customer a payment reminder for one invoice, with the balance and how many days late it is.",
+      "takes": { "invoice_id": "string" }
+    },
+    "approve_time_entry": {
+      "does": "Approve one pending time entry. Approving posts its hours and its cost to the job it was logged against.",
+      "takes": { "entry_id": "string" }
+    },
+    "categorize_expense": {
+      "does": "Set the tax category on one expense in the inbox.",
+      "takes": { "expense_id": "string", "tax_category": "string" }
+    },
+    "record_expense": {
+      "does": "Write a new expense against a job. `amount` is in CENTS: pass 12840 for $128.40. `date` is the date on the receipt, ISO.",
+      "takes": { "job_id": "string", "vendor": "string", "amount": "number", "tax_category": "string", "date": "string" }
+    }
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "app": "Cairn, a software project tracker for product teams",
+  "theme": {
+    "colors": {
+      "background": "#0B0E14",
+      "surface": "#141924",
+      "text": "#E8ECF5",
+      "muted": "#8792A8",
+      "accent": "#7C5CFF",
+      "accentText": "#FFFFFF",
+      "danger": "#FF5C7A",
+      "border": "#232A38"
+    },
+    "typography": { "fontFamily": "Poppins, sans-serif", "baseSize": "13px" },
+    "radius": { "small": "4px", "medium": "6px", "large": "10px" },
+    "density": "compact",
+    "motion": "full"
+  },
+  "style": [
+    "uses the theme exactly: near-black surfaces, the violet accent, Poppins — no invented colors or fonts",
+    "every issue carries its key, like CAI-151, beside its title",
+    "status reads as a small pill with a word in it — a colored dot on its own is never the only signal",
+    "estimates read in points, like '5 pts' — never hours, days or money",
+    "dates read as 'Aug 12', never ISO",
+    "an action that cannot be undone asks to confirm before it fires"
+  ],
+  "tools": {
+    "list_issues": {
+      "does": "Every issue in the current window — the active sprint, the next sprint, and the top of the backlog. Shipped work is not here. The rows are the `data` array. `number` is the digits of the issue's key, so CAI-142 is number 142. `points` is a story-point estimate and is null when the issue has not been estimated. `assignee_id`, `sprint_id` and `release_id` are null when unset. `status` is one of backlog, todo, in_progress, in_review, blocked, done.",
+      "data": {
+        "data": [
+          { "id": "CAI-138", "number": 138, "title": "Ship the sprint burndown widget", "status": "done", "priority": "medium", "points": 8, "assignee_id": "usr_dev", "sprint_id": "spr_20", "release_id": "rel_31", "updated": "2026-08-06" },
+          { "id": "CAI-140", "number": 140, "title": "Retire the legacy sprints endpoint", "status": "done", "priority": "low", "points": 5, "assignee_id": "usr_theo", "sprint_id": "spr_20", "release_id": "rel_31", "updated": "2026-08-05" },
+          { "id": "CAI-142", "number": 142, "title": "Fix flaky OAuth callback on Safari", "status": "done", "priority": "high", "points": 3, "assignee_id": "usr_maya", "sprint_id": "spr_20", "release_id": "rel_31", "updated": "2026-08-07" },
+          { "id": "CAI-145", "number": 145, "title": "Rewrite the invite email copy", "status": "done", "priority": "low", "points": 2, "assignee_id": "usr_lena", "sprint_id": "spr_20", "release_id": "rel_31", "updated": "2026-08-10" },
+          { "id": "CAI-146", "number": 146, "title": "SSO login loops for Okta workspaces", "status": "blocked", "priority": "urgent", "points": 5, "assignee_id": "usr_priya", "sprint_id": "spr_20", "release_id": "rel_32", "updated": "2026-08-04" },
+          { "id": "CAI-147", "number": 147, "title": "Slack notifications double-fire on reassign", "status": "in_review", "priority": "high", "points": 3, "assignee_id": "usr_dev", "sprint_id": "spr_20", "release_id": "rel_31", "updated": "2026-08-08" },
+          { "id": "CAI-149", "number": 149, "title": "Bulk edit for backlog rows", "status": "in_review", "priority": "high", "points": 8, "assignee_id": "usr_maya", "sprint_id": "spr_20", "release_id": "rel_31", "updated": "2026-08-11" },
+          { "id": "CAI-151", "number": 151, "title": "Board drag-and-drop drops on the wrong column", "status": "in_progress", "priority": "urgent", "points": 5, "assignee_id": "usr_theo", "sprint_id": "spr_20", "release_id": "rel_31", "updated": "2026-08-12" },
+          { "id": "CAI-153", "number": 153, "title": "Keyboard shortcuts for issue triage", "status": "todo", "priority": "medium", "points": 3, "assignee_id": "usr_lena", "sprint_id": "spr_20", "release_id": "rel_32", "updated": "2026-08-09" },
+          { "id": "CAI-156", "number": 156, "title": "Custom fields on issues", "status": "todo", "priority": "medium", "points": 13, "assignee_id": null, "sprint_id": "spr_21", "release_id": "rel_32", "updated": "2026-08-11" },
+          { "id": "CAI-157", "number": 157, "title": "Roll points up to the release", "status": "todo", "priority": "medium", "points": 5, "assignee_id": "usr_dev", "sprint_id": "spr_21", "release_id": "rel_32", "updated": "2026-08-12" },
+          { "id": "CAI-158", "number": 158, "title": "Import a backlog from CSV", "status": "todo", "priority": "low", "points": 3, "assignee_id": "usr_maya", "sprint_id": "spr_21", "release_id": "rel_32", "updated": "2026-08-06" },
+          { "id": "CAI-159", "number": 159, "title": "Board view for phones", "status": "backlog", "priority": "medium", "points": null, "assignee_id": null, "sprint_id": null, "release_id": null, "updated": "2026-08-12" },
+          { "id": "CAI-160", "number": 160, "title": "Saved filters on the issue table", "status": "backlog", "priority": "low", "points": null, "assignee_id": null, "sprint_id": null, "release_id": null, "updated": "2026-08-11" },
+          { "id": "CAI-161", "number": 161, "title": "Duplicate-issue detector", "status": "backlog", "priority": "low", "points": 8, "assignee_id": null, "sprint_id": null, "release_id": null, "updated": "2026-08-03" }
+        ]
+      }
+    },
+    "list_sprints": {
+      "does": "Every sprint, oldest first. Exactly one is active, and it runs between the `starts` and `ends` dates on its row. `number` is the digits of the sprint's name. `committed_points` is the points the sprint took on; `completed_points` is the points already done.",
+      "data": {
+        "data": [
+          { "id": "spr_18", "number": 18, "name": "Sprint 18", "status": "completed", "starts": "2026-07-06", "ends": "2026-07-17", "committed_points": 34, "completed_points": 31 },
+          { "id": "spr_19", "number": 19, "name": "Sprint 19", "status": "completed", "starts": "2026-07-20", "ends": "2026-07-31", "committed_points": 39, "completed_points": 39 },
+          { "id": "spr_20", "number": 20, "name": "Sprint 20", "status": "active", "starts": "2026-08-03", "ends": "2026-08-14", "committed_points": 42, "completed_points": 18 },
+          { "id": "spr_21", "number": 21, "name": "Sprint 21", "status": "planned", "starts": "2026-08-17", "ends": "2026-08-28", "committed_points": 21, "completed_points": 0 }
+        ]
+      }
+    },
+    "list_members": {
+      "does": "The five people on this project's team. `capacity_points` is what they can take in one sprint; `sprint_points` is everything assigned to them in the ACTIVE sprint, done or not; `open_issues` is how many of their issues are not done. `on_call` means they are carrying the pager this sprint, which is why their capacity is lower.",
+      "data": {
+        "data": [
+          { "id": "usr_maya", "name": "Maya Okafor", "role": "Engineer", "capacity_points": 13, "sprint_points": 11, "open_issues": 2, "on_call": false },
+          { "id": "usr_dev", "name": "Devraj Iyer", "role": "Engineer", "capacity_points": 13, "sprint_points": 11, "open_issues": 2, "on_call": false },
+          { "id": "usr_theo", "name": "Theo Bennett", "role": "Engineer", "capacity_points": 8, "sprint_points": 10, "open_issues": 1, "on_call": true },
+          { "id": "usr_lena", "name": "Lena Marsh", "role": "Designer", "capacity_points": 8, "sprint_points": 5, "open_issues": 1, "on_call": false },
+          { "id": "usr_priya", "name": "Priya Raman", "role": "QA", "capacity_points": 8, "sprint_points": 5, "open_issues": 1, "on_call": false }
+        ]
+      }
+    },
+    "list_releases": {
+      "does": "Every release, oldest first. `issues_total` and `issues_done` count the issues tagged to that release, including work that shipped before the current window. `status` is planned, open or shipped, and `owner_id` is null when nobody owns it yet.",
+      "data": {
+        "data": [
+          { "id": "rel_30", "version": "2026.7", "status": "shipped", "target_date": "2026-07-31", "issues_total": 12, "issues_done": 12, "owner_id": "usr_maya" },
+          { "id": "rel_31", "version": "2026.8", "status": "open", "target_date": "2026-08-21", "issues_total": 7, "issues_done": 4, "owner_id": "usr_maya" },
+          { "id": "rel_32", "version": "2026.9", "status": "planned", "target_date": "2026-09-18", "issues_total": 5, "issues_done": 0, "owner_id": "usr_dev" },
+          { "id": "rel_33", "version": "2026.10", "status": "planned", "target_date": "2026-10-16", "issues_total": 0, "issues_done": 0, "owner_id": null }
+        ]
+      }
+    },
+    "get_burndown": {
+      "does": "Points still remaining at the end of each working day of one sprint, oldest first, beside the ideal line for that same day. Weekends are not rows.",
+      "takes": { "sprint_id": "string" },
+      "data": {
+        "data": [
+          { "sprint_id": "spr_20", "date": "2026-08-03", "remaining_points": 42, "ideal_points": 42 },
+          { "sprint_id": "spr_20", "date": "2026-08-04", "remaining_points": 42, "ideal_points": 38 },
+          { "sprint_id": "spr_20", "date": "2026-08-05", "remaining_points": 37, "ideal_points": 34 },
+          { "sprint_id": "spr_20", "date": "2026-08-06", "remaining_points": 29, "ideal_points": 29 },
+          { "sprint_id": "spr_20", "date": "2026-08-07", "remaining_points": 26, "ideal_points": 25 },
+          { "sprint_id": "spr_20", "date": "2026-08-10", "remaining_points": 24, "ideal_points": 21 },
+          { "sprint_id": "spr_20", "date": "2026-08-11", "remaining_points": 24, "ideal_points": 17 },
+          { "sprint_id": "spr_20", "date": "2026-08-12", "remaining_points": 24, "ideal_points": 13 }
+        ]
+      }
+    },
+    "list_reviews": {
+      "does": "Every open code review, newest first. `waiting_days` is how long the review has been open as of today; `checks` is passing or failing; `state` is waiting, changes_requested or draft — a draft is open but not yet handed to its reviewer.",
+      "data": {
+        "data": [
+          { "id": "rev_3", "issue_id": "CAI-151", "title": "Board drag-and-drop drops on the wrong column", "author_id": "usr_theo", "reviewer_id": "usr_maya", "opened": "2026-08-12", "waiting_days": 0, "checks": "passing", "state": "draft" },
+          { "id": "rev_2", "issue_id": "CAI-149", "title": "Bulk edit for backlog rows", "author_id": "usr_maya", "reviewer_id": "usr_dev", "opened": "2026-08-11", "waiting_days": 1, "checks": "passing", "state": "waiting" },
+          { "id": "rev_1", "issue_id": "CAI-147", "title": "Slack notifications double-fire on reassign", "author_id": "usr_dev", "reviewer_id": "usr_theo", "opened": "2026-08-08", "waiting_days": 4, "checks": "failing", "state": "changes_requested" }
+        ]
+      }
+    },
+    "move_issue": {
+      "does": "Move one issue to a different status. `status` is one of backlog, todo, in_progress, in_review, blocked, done.",
+      "takes": { "issue_id": "string", "status": "string" }
+    },
+    "assign_issue": {
+      "does": "Assign one issue to one teammate, replacing whoever holds it now.",
+      "takes": { "issue_id": "string", "member_id": "string" }
+    },
+    "set_estimate": {
+      "does": "Set one issue's estimate, in story points.",
+      "takes": { "issue_id": "string", "points": "number" }
+    },
+    "cut_release": {
+      "does": "Cut a release: freeze what is tagged to it, tag the build and ship it. This cannot be undone.",
+      "takes": { "release_id": "string" }
+    }
+  }
+}

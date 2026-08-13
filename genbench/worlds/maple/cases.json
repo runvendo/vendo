@@ -4,11 +4,12 @@
     "lane": "screen",
     "prompt": "Show me where my money went this month.",
     "pass": [
-      "shows every spending category the tool returned",
-      "each category's amount matches the tool's number exactly",
-      "housing is presented as the largest category",
-      "shows a total for the month equal to the sum of the categories"
-    ]
+      "lists all six categories — housing, groceries, dining, subscriptions, transport, coffee — and no others",
+      "shows housing as the largest at $2,850.00 and coffee as the smallest at $61.30",
+      "shows groceries $612.45, dining $438.20, subscriptions $184.41 and transport $96.75",
+      "shows a total for the month of $4,243.11"
+    ],
+    "tags": ["display"]
   },
   {
     "id": "spend-chart",
@@ -16,10 +17,11 @@
     "prompt": "Chart my spending by category this month, largest first.",
     "pass": [
       "draws a chart of the categories rather than only listing them",
-      "every category the tool returned is on the chart",
-      "each category's amount matches the tool's number exactly",
-      "housing reads as the largest category"
-    ]
+      "the chart carries a bar or slice for each of the six categories — housing, groceries, dining, subscriptions, transport, coffee",
+      "orders them largest first, housing down to coffee",
+      "shows housing's amount as $2,850.00 and the chart's largest category"
+    ],
+    "tags": ["display"]
   },
   {
     "id": "pending-transfers",
@@ -30,7 +32,8 @@
       "shows each pending transfer's recipient, amount, and date",
       "offers a cancel control on each pending transfer",
       "the cancel control targets the transfer it sits on"
-    ]
+    ],
+    "tags": ["action"]
   },
   {
     "id": "account-balances",
@@ -40,7 +43,8 @@
       "lists all three accounts with name and balance",
       "shows the credit account's balance as negative",
       "shows a total equal to the sum of the three balances"
-    ]
+    ],
+    "tags": ["display"]
   },
   {
     "id": "no-pending-transfers",
@@ -51,6 +55,82 @@
       "invents no transfer rows",
       "offers no cancel control"
     ],
+    "tags": ["display"],
     "data": { "list_transfers": { "data": [] } }
+  },
+  {
+    "id": "transfer-receipt",
+    "lane": "screen",
+    "prompt": "Open the transfer to Alex Rivera on its own page like a receipt, and let me cancel it from there if it hasn't gone out yet.",
+    "pass": [
+      "shows the Alex Rivera transfer on its own rather than a list of all four",
+      "shows its amount as $250.00, its date as Aug 1, and that it is still pending",
+      "offers exactly one cancel control on the screen",
+      "pressing cancel fires cancel_transfer with id tr_1"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "cancel-both-pending",
+    "lane": "screen",
+    "prompt": "Stop everything I have queued. Show me just the transfers that haven't gone out yet and give me one button that cancels all of them, asking me to confirm first and telling me how many it will cancel.",
+    "pass": [
+      "shows both pending transfers, Alex Rivera $250.00 and Jordan Avery $60.00, and no completed transfer",
+      "offers exactly one cancel button for all of them rather than one per row",
+      "asks for confirmation before cancelling and says it will cancel 2 transfers",
+      "confirming fires cancel_transfer twice, once with id tr_1 and once with id tr_2"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "transfer-activity-feed",
+    "lane": "screen",
+    "prompt": "Give me a feed of my transfer activity, newest at the top, grouped under the day it happened.",
+    "pass": [
+      "shows all nine transfers the tool returned, newest first",
+      "groups entries under their day, so the two on Jul 24 and the two on Jul 18 sit together",
+      "each entry shows who it went to and its amount",
+      "marks the two pending entries as pending and the other seven as completed"
+    ],
+    "tags": ["display"],
+    "data": {
+      "list_transfers": {
+        "data": [
+          { "id": "tr_1", "to": "Alex Rivera", "amount": 25000, "date": "2026-08-01", "status": "pending" },
+          { "id": "tr_2", "to": "Jordan Avery", "amount": 6000, "date": "2026-07-30", "status": "pending" },
+          { "id": "tr_3", "to": "Mission St Property", "amount": 285000, "date": "2026-07-28", "status": "completed" },
+          { "id": "tr_4", "to": "Dana Whitfield", "amount": 12550, "date": "2026-07-24", "status": "completed" },
+          { "id": "tr_5", "to": "Sofia Marchetti", "amount": 4500, "date": "2026-07-24", "status": "completed" },
+          { "id": "tr_6", "to": "Alex Rivera", "amount": 25000, "date": "2026-07-18", "status": "completed" },
+          { "id": "tr_7", "to": "Kai Thompson", "amount": 18000, "date": "2026-07-18", "status": "completed" },
+          { "id": "tr_8", "to": "Dana Whitfield", "amount": 12550, "date": "2026-07-06", "status": "completed" },
+          { "id": "tr_9", "to": "Mission St Property", "amount": 285000, "date": "2026-06-28", "status": "completed" }
+        ]
+      }
+    }
+  },
+  {
+    "id": "room-for-dana",
+    "lane": "screen",
+    "prompt": "I want to send Dana Whitfield the same amount I sent her last time. Show me whether checking can cover it after the transfers I already have queued go out.",
+    "pass": [
+      "names the last amount sent to Dana Whitfield as $125.50",
+      "shows the checking balance of $9,412.20 and takes both queued transfers, $250.00 and $60.00, off it",
+      "shows $9,102.20 as what checking holds once they clear",
+      "answers plainly that there is room for the $125.50"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "rent-check",
+    "lane": "screen",
+    "prompt": "Did my rent actually go out? Put the housing line from my spending next to the transfer that paid it so I can see they match.",
+    "pass": [
+      "shows the housing spending amount as $2,850.00",
+      "shows the Mission St Property transfer of $2,850.00 and that it completed",
+      "presents the two as one comparison block and says the amounts match",
+      "stays on that comparison rather than becoming a full spending breakdown or a full transfer list"
+    ],
+    "tags": ["display"]
   }
 ]

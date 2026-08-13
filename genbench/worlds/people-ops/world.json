@@ -1,0 +1,141 @@
+{
+  "app": "Hearthway, the people-ops console an HR lead runs a small company's roster, time off, reviews and onboarding from. Today is Aug 12, 2026.",
+  "theme": {
+    "colors": {
+      "background": "#FBF7F0",
+      "surface": "#FFFFFF",
+      "text": "#241C15",
+      "muted": "#7A6A57",
+      "accent": "#6B2D5B",
+      "accentText": "#FDF8F2",
+      "danger": "#B03A26",
+      "border": "#E4D9C8"
+    },
+    "typography": { "fontFamily": "Lora, serif", "baseSize": "15px" },
+    "radius": { "small": "4px", "medium": "10px", "large": "18px" },
+    "density": "compact",
+    "motion": "full"
+  },
+  "style": [
+    "uses the theme exactly: aubergine accent, Lora serif, warm cream page — no invented colors or fonts",
+    "money shows a currency symbol and two decimals, never raw cents",
+    "dates read 'Aug 17' or 'Aug 17, 2026', never ISO",
+    "every status is a labelled pill — 'Pending', 'On leave' — never a bare colored dot",
+    "time off is written in hours, like '40h' or '40 hours', never converted to days",
+    "anything that denies a request or emails a person asks for confirmation first"
+  ],
+  "tools": {
+    "list_employees": {
+      "does": "Every employee on the company's roster. The rows are the `data` array. `annual_salary_cents` is in CENTS: 19800000 is $198,000.00. `status` is one of active, onboarding, on_leave. `pto_used_hours` is paid vacation hours already TAKEN this calendar year (sick and parental leave are tracked separately); `pto_remaining_hours` is the balance still available. `manager` is \"—\" for the top of the org.",
+      "data": {
+        "data": [
+          { "id": "emp_kwan", "name": "Nadia Kwan", "title": "Director of Engineering", "department": "Engineering", "manager": "Rosa Delgado", "employment_type": "full_time", "location": "Toronto", "start_date": "2021-06-01", "status": "active", "annual_salary_cents": 23400000, "pto_used_hours": 0, "pto_remaining_hours": 152 },
+          { "id": "emp_raghunathan", "name": "Priya Raghunathan", "title": "Staff Engineer", "department": "Engineering", "manager": "Nadia Kwan", "employment_type": "full_time", "location": "Chicago", "start_date": "2022-03-14", "status": "active", "annual_salary_cents": 19800000, "pto_used_hours": 8, "pto_remaining_hours": 128 },
+          { "id": "emp_okafor", "name": "Daniel Okafor", "title": "Senior Engineer", "department": "Engineering", "manager": "Nadia Kwan", "employment_type": "full_time", "location": "Austin", "start_date": "2023-09-05", "status": "active", "annual_salary_cents": 17250000, "pto_used_hours": 56, "pto_remaining_hours": 74 },
+          { "id": "emp_lindqvist", "name": "Elin Lindqvist", "title": "Engineer", "department": "Engineering", "manager": "Nadia Kwan", "employment_type": "full_time", "location": "Berlin", "start_date": "2025-01-13", "status": "active", "annual_salary_cents": 14100000, "pto_used_hours": 24, "pto_remaining_hours": 96 },
+          { "id": "emp_odell", "name": "Marcus Odell", "title": "Support Lead", "department": "Support", "manager": "Rosa Delgado", "employment_type": "full_time", "location": "Chicago", "start_date": "2023-02-20", "status": "active", "annual_salary_cents": 11200000, "pto_used_hours": 40, "pto_remaining_hours": 64 },
+          { "id": "emp_haddad", "name": "Yara Haddad", "title": "Support Specialist", "department": "Support", "manager": "Marcus Odell", "employment_type": "full_time", "location": "Lisbon", "start_date": "2024-07-08", "status": "on_leave", "annual_salary_cents": 8600000, "pto_used_hours": 16, "pto_remaining_hours": 88 },
+          { "id": "emp_bello", "name": "Tomas Bello", "title": "Support Specialist", "department": "Support", "manager": "Marcus Odell", "employment_type": "contract", "location": "Remote", "start_date": "2025-11-03", "status": "active", "annual_salary_cents": 8200000, "pto_used_hours": 0, "pto_remaining_hours": 0 },
+          { "id": "emp_arriaga", "name": "Luz Arriaga", "title": "Support Specialist", "department": "Support", "manager": "Marcus Odell", "employment_type": "full_time", "location": "Austin", "start_date": "2026-08-24", "status": "onboarding", "annual_salary_cents": 8800000, "pto_used_hours": 0, "pto_remaining_hours": 0 },
+          { "id": "emp_chen", "name": "Wren Chen", "title": "Product Designer", "department": "Design", "manager": "Rosa Delgado", "employment_type": "full_time", "location": "Toronto", "start_date": "2024-04-15", "status": "active", "annual_salary_cents": 13600000, "pto_used_hours": 0, "pto_remaining_hours": 112 },
+          { "id": "emp_brandt", "name": "Theo Brandt", "title": "Design Engineer", "department": "Design", "manager": "Wren Chen", "employment_type": "full_time", "location": "Chicago", "start_date": "2026-08-17", "status": "onboarding", "annual_salary_cents": 12800000, "pto_used_hours": 0, "pto_remaining_hours": 0 },
+          { "id": "emp_delgado", "name": "Rosa Delgado", "title": "Head of Operations", "department": "Operations", "manager": "—", "employment_type": "full_time", "location": "Chicago", "start_date": "2021-01-11", "status": "active", "annual_salary_cents": 21000000, "pto_used_hours": 72, "pto_remaining_hours": 56 },
+          { "id": "emp_nakamura", "name": "Sena Nakamura", "title": "People Ops Manager", "department": "Operations", "manager": "Rosa Delgado", "employment_type": "full_time", "location": "Chicago", "start_date": "2022-11-28", "status": "active", "annual_salary_cents": 12500000, "pto_used_hours": 96, "pto_remaining_hours": 24 }
+        ]
+      }
+    },
+    "list_time_off_requests": {
+      "does": "Time-off requests from the last hundred and twenty days, newest submission first. Always returns every status — pending, approved and denied together — so a screen that wants one of them filters the rows itself. The rows are the `data` array. `hours` is the working hours the request covers; `submitted_on` is when the employee asked.",
+      "data": {
+        "data": [
+          { "id": "tor_1", "employee_id": "emp_okafor", "employee_name": "Daniel Okafor", "department": "Engineering", "type": "sick", "start_date": "2026-08-11", "end_date": "2026-08-11", "hours": 8, "status": "approved", "submitted_on": "2026-08-11", "note": "Migraine, out for the day." },
+          { "id": "tor_2", "employee_id": "emp_odell", "employee_name": "Marcus Odell", "department": "Support", "type": "vacation", "start_date": "2026-08-13", "end_date": "2026-08-13", "hours": 8, "status": "pending", "submitted_on": "2026-08-10", "note": "First day of school." },
+          { "id": "tor_3", "employee_id": "emp_chen", "employee_name": "Wren Chen", "department": "Design", "type": "vacation", "start_date": "2026-09-07", "end_date": "2026-09-11", "hours": 40, "status": "pending", "submitted_on": "2026-08-06", "note": "Family wedding in Lisbon." },
+          { "id": "tor_4", "employee_id": "emp_bello", "employee_name": "Tomas Bello", "department": "Support", "type": "unpaid", "start_date": "2026-08-24", "end_date": "2026-08-28", "hours": 40, "status": "pending", "submitted_on": "2026-08-03", "note": "Contract break between projects." },
+          { "id": "tor_5", "employee_id": "emp_delgado", "employee_name": "Rosa Delgado", "department": "Operations", "type": "vacation", "start_date": "2026-08-19", "end_date": "2026-08-21", "hours": 24, "status": "approved", "submitted_on": "2026-07-27", "note": "Long weekend upstate." },
+          { "id": "tor_6", "employee_id": "emp_lindqvist", "employee_name": "Elin Lindqvist", "department": "Engineering", "type": "vacation", "start_date": "2026-08-17", "end_date": "2026-08-21", "hours": 40, "status": "pending", "submitted_on": "2026-07-22", "note": "Hiking in the Dolomites." },
+          { "id": "tor_7", "employee_id": "emp_nakamura", "employee_name": "Sena Nakamura", "department": "Operations", "type": "vacation", "start_date": "2026-07-20", "end_date": "2026-07-24", "hours": 40, "status": "approved", "submitted_on": "2026-06-30", "note": "Summer break with the kids." },
+          { "id": "tor_8", "employee_id": "emp_odell", "employee_name": "Marcus Odell", "department": "Support", "type": "vacation", "start_date": "2026-07-06", "end_date": "2026-07-10", "hours": 40, "status": "denied", "submitted_on": "2026-06-25", "note": "Denied, support coverage during launch week." },
+          { "id": "tor_9", "employee_id": "emp_lindqvist", "employee_name": "Elin Lindqvist", "department": "Engineering", "type": "vacation", "start_date": "2026-07-13", "end_date": "2026-07-17", "hours": 40, "status": "denied", "submitted_on": "2026-06-22", "note": "Denied, overlapped the platform migration." },
+          { "id": "tor_10", "employee_id": "emp_haddad", "employee_name": "Yara Haddad", "department": "Support", "type": "parental", "start_date": "2026-06-29", "end_date": "2026-09-25", "hours": 520, "status": "approved", "submitted_on": "2026-04-14", "note": "Parental leave." }
+        ]
+      }
+    },
+    "list_review_cycle": {
+      "does": "The open review cycle, one row per person in it. `stage` is one of not_started, self_review, manager_review, calibration, complete. `days_late` is the days this row is past its `due_date`, and 0 for every row whose due date has not passed — a row is late only when `days_late` is above zero. People onboarding or on leave are not in this cycle, and the head of operations is reviewed by the board rather than in it, so this is shorter than the roster.",
+      "data": {
+        "data": [
+          { "employee_id": "emp_raghunathan", "employee_name": "Priya Raghunathan", "reviewer": "Nadia Kwan", "cycle": "Midyear check-in", "stage": "manager_review", "due_date": "2026-08-14", "days_late": 0 },
+          { "employee_id": "emp_okafor", "employee_name": "Daniel Okafor", "reviewer": "Nadia Kwan", "cycle": "Midyear check-in", "stage": "self_review", "due_date": "2026-08-07", "days_late": 5 },
+          { "employee_id": "emp_lindqvist", "employee_name": "Elin Lindqvist", "reviewer": "Nadia Kwan", "cycle": "Midyear check-in", "stage": "complete", "due_date": "2026-08-14", "days_late": 0 },
+          { "employee_id": "emp_kwan", "employee_name": "Nadia Kwan", "reviewer": "Rosa Delgado", "cycle": "Midyear check-in", "stage": "manager_review", "due_date": "2026-08-14", "days_late": 0 },
+          { "employee_id": "emp_odell", "employee_name": "Marcus Odell", "reviewer": "Rosa Delgado", "cycle": "Midyear check-in", "stage": "self_review", "due_date": "2026-08-03", "days_late": 9 },
+          { "employee_id": "emp_bello", "employee_name": "Tomas Bello", "reviewer": "Marcus Odell", "cycle": "Midyear check-in", "stage": "not_started", "due_date": "2026-08-03", "days_late": 9 },
+          { "employee_id": "emp_chen", "employee_name": "Wren Chen", "reviewer": "Rosa Delgado", "cycle": "Midyear check-in", "stage": "calibration", "due_date": "2026-08-14", "days_late": 0 },
+          { "employee_id": "emp_nakamura", "employee_name": "Sena Nakamura", "reviewer": "Rosa Delgado", "cycle": "Midyear check-in", "stage": "self_review", "due_date": "2026-08-07", "days_late": 5 }
+        ]
+      }
+    },
+    "list_onboarding_tasks": {
+      "does": "Onboarding checklist items for every hire currently onboarding, both hires in one list. `done` is true once the item is complete. `category` is one of paperwork, equipment, access, people.",
+      "data": {
+        "data": [
+          { "id": "ob_1", "employee_id": "emp_brandt", "employee_name": "Theo Brandt", "task": "Sign offer letter and tax forms", "owner": "Sena Nakamura", "category": "paperwork", "due_date": "2026-08-13", "done": true },
+          { "id": "ob_2", "employee_id": "emp_brandt", "employee_name": "Theo Brandt", "task": "Ship laptop and monitor", "owner": "Sena Nakamura", "category": "equipment", "due_date": "2026-08-14", "done": true },
+          { "id": "ob_3", "employee_id": "emp_brandt", "employee_name": "Theo Brandt", "task": "Create email and design tool seats", "owner": "Wren Chen", "category": "access", "due_date": "2026-08-14", "done": false },
+          { "id": "ob_4", "employee_id": "emp_brandt", "employee_name": "Theo Brandt", "task": "Add to payroll", "owner": "Sena Nakamura", "category": "paperwork", "due_date": "2026-08-14", "done": true },
+          { "id": "ob_5", "employee_id": "emp_brandt", "employee_name": "Theo Brandt", "task": "Book first-week intro chats with the design team", "owner": "Wren Chen", "category": "people", "due_date": "2026-08-17", "done": false },
+          { "id": "ob_6", "employee_id": "emp_brandt", "employee_name": "Theo Brandt", "task": "Assign an onboarding buddy", "owner": "Wren Chen", "category": "people", "due_date": "2026-08-17", "done": false },
+          { "id": "ob_7", "employee_id": "emp_brandt", "employee_name": "Theo Brandt", "task": "Walk through benefits enrollment", "owner": "Sena Nakamura", "category": "paperwork", "due_date": "2026-08-21", "done": false },
+          { "id": "ob_8", "employee_id": "emp_arriaga", "employee_name": "Luz Arriaga", "task": "Sign offer letter and tax forms", "owner": "Sena Nakamura", "category": "paperwork", "due_date": "2026-08-20", "done": false },
+          { "id": "ob_9", "employee_id": "emp_arriaga", "employee_name": "Luz Arriaga", "task": "Ship laptop and headset", "owner": "Sena Nakamura", "category": "equipment", "due_date": "2026-08-21", "done": false },
+          { "id": "ob_10", "employee_id": "emp_arriaga", "employee_name": "Luz Arriaga", "task": "Create helpdesk and email access", "owner": "Marcus Odell", "category": "access", "due_date": "2026-08-21", "done": false },
+          { "id": "ob_11", "employee_id": "emp_arriaga", "employee_name": "Luz Arriaga", "task": "Schedule a support shadowing week", "owner": "Marcus Odell", "category": "people", "due_date": "2026-08-24", "done": false }
+        ]
+      }
+    },
+    "get_headcount_by_department": {
+      "does": "Headcount and payroll per department, most expensive first. Counts every row of `list_employees`, including people onboarding and on leave. `annual_payroll_cents` is in CENTS and is the sum of that department's salaries: 74550000 is $745,500.00. `open_roles` is the count of roles that department is hiring for.",
+      "data": {
+        "data": [
+          { "department": "Engineering", "headcount": 4, "annual_payroll_cents": 74550000, "open_roles": 2 },
+          { "department": "Support", "headcount": 4, "annual_payroll_cents": 36800000, "open_roles": 1 },
+          { "department": "Operations", "headcount": 2, "annual_payroll_cents": 33500000, "open_roles": 0 },
+          { "department": "Design", "headcount": 2, "annual_payroll_cents": 26400000, "open_roles": 0 }
+        ]
+      }
+    },
+    "get_leave_policy": {
+      "does": "The company's time-off policy, as the single row of the `data` array. Balances accrue at `accrual_hours_per_month`; anything above `carryover_cap_hours` is forfeited at year end. `min_notice_days` applies to vacation and unpaid leave only — sick and parental leave are exempt. `blackout_weeks_start` holds the Monday of each week nobody may book off.",
+      "data": {
+        "data": [
+          {
+            "accrual_hours_per_month": 12,
+            "carryover_cap_hours": 80,
+            "hours_per_work_day": 8,
+            "min_notice_days": 7,
+            "sick_days_per_year": 10,
+            "requires_manager_approval": true,
+            "blackout_weeks_start": ["2026-11-23", "2026-12-21"]
+          }
+        ]
+      }
+    },
+    "approve_time_off": {
+      "does": "Approve one pending time-off request. The hours come off the employee's balance and the employee is emailed.",
+      "takes": { "id": "string" }
+    },
+    "deny_time_off": {
+      "does": "Deny one pending time-off request. The reason is emailed to the employee, so it is required.",
+      "takes": { "id": "string", "reason": "string" }
+    },
+    "complete_onboarding_task": {
+      "does": "Mark one onboarding checklist item done.",
+      "takes": { "id": "string" }
+    },
+    "send_review_reminder": {
+      "does": "Email one person a reminder that their review step is late. One call per person.",
+      "takes": { "employee_id": "string" }
+    }
+  }
+}

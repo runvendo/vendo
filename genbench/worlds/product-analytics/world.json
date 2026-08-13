@@ -1,0 +1,160 @@
+{
+  "app": "Waypost, a product-analytics workspace where software teams watch events, funnels, retention cohorts and segments",
+  "theme": {
+    "colors": {
+      "background": "#0B0F14",
+      "surface": "#131A22",
+      "text": "#E6EDF3",
+      "muted": "#8B9AAA",
+      "accent": "#00D3A7",
+      "accentText": "#04231C",
+      "danger": "#FF6B6B",
+      "border": "#232D38"
+    },
+    "typography": { "fontFamily": "Inter, sans-serif", "baseSize": "13px" },
+    "radius": { "small": "3px", "medium": "4px", "large": "6px" },
+    "density": "compact",
+    "motion": "reduced"
+  },
+  "style": [
+    "uses the theme exactly: the near-black #0B0F14 canvas, mint #00D3A7 accent and Inter — no invented colors or fonts",
+    "the number is the loudest thing in any panel: metrics set large in tabular figures, their label small and muted #8B9AAA beside them",
+    "panels are divided by 1px #232D38 hairlines and corners stay nearly square (3-6px) — no drop shadows, no pill-shaped cards",
+    "figures are formatted for scanning: counts with thousands separators (12,480), percentages to one decimal with a % sign, money with a $ and two decimals",
+    "every metric names the window it covers — 'last 7 days', 'last 30 days', 'Aug 11' — right beside the number",
+    "dates read 'Aug 11' or 'Jul 20 – Jul 26', never ISO"
+  ],
+  "tools": {
+    "list_events": {
+      "does": "Every event in the workspace's tracking plan, busiest first. The rows are the `data` array. `volume_7d` and `volume_30d` are how many times the event fired, `unique_users_7d` is the people behind the last 7 days, and `status` is one of live, unverified or deprecated.",
+      "data": {
+        "data": [
+          { "id": "evt_app_opened", "name": "app_opened", "category": "core", "status": "live", "volume_7d": 128940, "volume_30d": 548600, "unique_users_7d": 16842, "last_seen": "2026-08-11" },
+          { "id": "evt_sidebar_collapsed", "name": "sidebar_collapsed", "category": "ui", "status": "unverified", "volume_7d": 9402, "volume_30d": 41880, "unique_users_7d": 6120, "last_seen": "2026-08-11" },
+          { "id": "evt_onboarding_step_viewed", "name": "onboarding_step_viewed", "category": "onboarding", "status": "live", "volume_7d": 5120, "volume_30d": 21480, "unique_users_7d": 1204, "last_seen": "2026-08-11" },
+          { "id": "evt_pricing_page_viewed", "name": "pricing_page_viewed", "category": "marketing", "status": "live", "volume_7d": 3612, "volume_30d": 15240, "unique_users_7d": 2988, "last_seen": "2026-08-11" },
+          { "id": "evt_report_exported", "name": "report_exported", "category": "engagement", "status": "live", "volume_7d": 2145, "volume_30d": 9880, "unique_users_7d": 806, "last_seen": "2026-08-10" },
+          { "id": "evt_signup_completed", "name": "signup_completed", "category": "lifecycle", "status": "live", "volume_7d": 1502, "volume_30d": 5604, "unique_users_7d": 1502, "last_seen": "2026-08-11" },
+          { "id": "evt_checkout_started", "name": "checkout_started", "category": "revenue", "status": "live", "volume_7d": 962, "volume_30d": 4010, "unique_users_7d": 918, "last_seen": "2026-08-11" },
+          { "id": "evt_invite_sent", "name": "invite_sent", "category": "collaboration", "status": "live", "volume_7d": 806, "volume_30d": 3520, "unique_users_7d": 402, "last_seen": "2026-08-11" },
+          { "id": "evt_workspace_created", "name": "workspace_created", "category": "lifecycle", "status": "live", "volume_7d": 468, "volume_30d": 1980, "unique_users_7d": 441, "last_seen": "2026-08-11" },
+          { "id": "evt_checkout_completed", "name": "checkout_completed", "category": "revenue", "status": "live", "volume_7d": 318, "volume_30d": 1344, "unique_users_7d": 311, "last_seen": "2026-08-11" },
+          { "id": "evt_csv_import_finished", "name": "csv_import_finished", "category": "integrations", "status": "live", "volume_7d": 0, "volume_30d": 96, "unique_users_7d": 0, "last_seen": "2026-07-19" },
+          { "id": "evt_old_pricing_toggle", "name": "old_pricing_toggle", "category": "experiment", "status": "unverified", "volume_7d": 0, "volume_30d": 0, "unique_users_7d": 0, "last_seen": "2026-05-30" },
+          { "id": "evt_legacy_signup_v1", "name": "legacy_signup_v1", "category": "lifecycle", "status": "deprecated", "volume_7d": 0, "volume_30d": 0, "unique_users_7d": 0, "last_seen": "2026-04-18" }
+        ]
+      }
+    },
+    "get_event_properties": {
+      "does": "How one event's fires break down by property value over the last 30 days: `count` is fires, `share_pct` is that value's share of the event's 30-day volume. The rows are the `data` array — this response is `checkout_started`, whose 30-day volume is 4010.",
+      "takes": { "event_name": "string" },
+      "data": {
+        "data": [
+          { "event_id": "evt_checkout_started", "property": "plan", "value": "pro", "count": 1848, "share_pct": 46.1 },
+          { "event_id": "evt_checkout_started", "property": "plan", "value": "team", "count": 1284, "share_pct": 32.0 },
+          { "event_id": "evt_checkout_started", "property": "plan", "value": "starter", "count": 878, "share_pct": 21.9 },
+          { "event_id": "evt_checkout_started", "property": "source", "value": "web", "count": 3126, "share_pct": 78.0 },
+          { "event_id": "evt_checkout_started", "property": "source", "value": "mobile", "count": 884, "share_pct": 22.0 },
+          { "event_id": "evt_checkout_started", "property": "country", "value": "US", "count": 2405, "share_pct": 60.0 },
+          { "event_id": "evt_checkout_started", "property": "country", "value": "GB", "count": 522, "share_pct": 13.0 },
+          { "event_id": "evt_checkout_started", "property": "country", "value": "DE", "count": 401, "share_pct": 10.0 },
+          { "event_id": "evt_checkout_started", "property": "country", "value": "other", "count": 682, "share_pct": 17.0 }
+        ]
+      }
+    },
+    "list_funnels": {
+      "does": "Every saved funnel with how many people entered it and its end-to-end conversion over `window`. The rows are the `data` array. `steps` is how many steps the funnel has. Every step of every funnel is built on an event already in the tracking plan: Trial to paid checkout on checkout_started, pricing_page_viewed and checkout_completed, First teammate invited on workspace_created, app_opened and invite_sent.",
+      "data": {
+        "data": [
+          { "id": "fnl_onboarding", "name": "New workspace onboarding", "steps": 5, "users_entered": 5604, "conversion_pct": 7.4, "window": "last 30 days", "owner": "priya.raman@waypost.example", "updated": "2026-08-06" },
+          { "id": "fnl_checkout", "name": "Trial to paid checkout", "steps": 3, "users_entered": 4010, "conversion_pct": 33.5, "window": "last 30 days", "owner": "marcus.hale@waypost.example", "updated": "2026-08-09" },
+          { "id": "fnl_invite", "name": "First teammate invited", "steps": 3, "users_entered": 1980, "conversion_pct": 27.1, "window": "last 30 days", "owner": "dana.okonkwo@waypost.example", "updated": "2026-07-28" }
+        ]
+      }
+    },
+    "get_funnel_steps": {
+      "does": "The steps of one funnel in order: `users` reached the step, `conversion_from_previous_pct` is its share of the step above it, and `median_minutes_to_next` is null on the last step. The rows are the `data` array — this response is the New workspace onboarding funnel, `fnl_onboarding`.",
+      "takes": { "funnel_id": "string" },
+      "data": {
+        "data": [
+          { "id": "stp_ob_signed_up", "funnel_id": "fnl_onboarding", "position": 1, "name": "Signed up", "event_name": "signup_completed", "users": 5604, "conversion_from_previous_pct": 100.0, "median_minutes_to_next": 3.5 },
+          { "id": "stp_ob_viewed_onboarding", "funnel_id": "fnl_onboarding", "position": 2, "name": "Viewed onboarding", "event_name": "onboarding_step_viewed", "users": 4062, "conversion_from_previous_pct": 72.5, "median_minutes_to_next": 6.2 },
+          { "id": "stp_ob_created_workspace", "funnel_id": "fnl_onboarding", "position": 3, "name": "Created a workspace", "event_name": "workspace_created", "users": 1424, "conversion_from_previous_pct": 35.1, "median_minutes_to_next": 41.8 },
+          { "id": "stp_ob_invited_teammate", "funnel_id": "fnl_onboarding", "position": 4, "name": "Invited a teammate", "event_name": "invite_sent", "users": 536, "conversion_from_previous_pct": 37.6, "median_minutes_to_next": 128.4 },
+          { "id": "stp_ob_exported_report", "funnel_id": "fnl_onboarding", "position": 5, "name": "Exported a report", "event_name": "report_exported", "users": 414, "conversion_from_previous_pct": 77.2, "median_minutes_to_next": null }
+        ]
+      }
+    },
+    "get_retention_cohorts": {
+      "does": "Weekly signup cohorts and the share of each cohort still active in the weeks after signup. The rows are the `data` array, oldest cohort first. `week_0_pct` is always 100. A week that has not finished yet is null, never 0.",
+      "data": {
+        "data": [
+          { "cohort": "Jun 22", "cohort_start": "2026-06-22", "users": 1042, "week_0_pct": 100.0, "week_1_pct": 42.8, "week_2_pct": 32.4, "week_3_pct": 27.9, "week_4_pct": 25.1, "week_5_pct": 23.8, "week_6_pct": 22.6 },
+          { "cohort": "Jun 29", "cohort_start": "2026-06-29", "users": 1118, "week_0_pct": 100.0, "week_1_pct": 44.6, "week_2_pct": 33.7, "week_3_pct": 28.8, "week_4_pct": 26.2, "week_5_pct": 24.9, "week_6_pct": null },
+          { "cohort": "Jul 6", "cohort_start": "2026-07-06", "users": 1188, "week_0_pct": 100.0, "week_1_pct": 46.2, "week_2_pct": 35.4, "week_3_pct": 30.1, "week_4_pct": 27.6, "week_5_pct": null, "week_6_pct": null },
+          { "cohort": "Jul 13", "cohort_start": "2026-07-13", "users": 1256, "week_0_pct": 100.0, "week_1_pct": 47.9, "week_2_pct": 36.8, "week_3_pct": 31.5, "week_4_pct": null, "week_5_pct": null, "week_6_pct": null },
+          { "cohort": "Jul 20", "cohort_start": "2026-07-20", "users": 1372, "week_0_pct": 100.0, "week_1_pct": 49.4, "week_2_pct": 38.2, "week_3_pct": null, "week_4_pct": null, "week_5_pct": null, "week_6_pct": null },
+          { "cohort": "Jul 27", "cohort_start": "2026-07-27", "users": 1448, "week_0_pct": 100.0, "week_1_pct": 52.6, "week_2_pct": null, "week_3_pct": null, "week_4_pct": null, "week_5_pct": null, "week_6_pct": null }
+        ]
+      }
+    },
+    "get_daily_activity": {
+      "does": "Activity per day, oldest day first: `active_users` is the people active that day, `new_users` the accounts created, `sessions` the sessions opened. The rows are the `data` array — this response is the 14 days ending 2026-08-11.",
+      "takes": { "days": "number" },
+      "data": {
+        "data": [
+          { "date": "2026-07-29", "active_users": 11842, "new_users": 228, "sessions": 19984 },
+          { "date": "2026-07-30", "active_users": 11964, "new_users": 241, "sessions": 20146 },
+          { "date": "2026-07-31", "active_users": 11208, "new_users": 206, "sessions": 18502 },
+          { "date": "2026-08-01", "active_users": 6904, "new_users": 92, "sessions": 9864 },
+          { "date": "2026-08-02", "active_users": 6412, "new_users": 84, "sessions": 9120 },
+          { "date": "2026-08-03", "active_users": 12486, "new_users": 288, "sessions": 21408 },
+          { "date": "2026-08-04", "active_users": 12610, "new_users": 294, "sessions": 21876 },
+          { "date": "2026-08-05", "active_users": 12318, "new_users": 246, "sessions": 21140 },
+          { "date": "2026-08-06", "active_users": 12502, "new_users": 238, "sessions": 21502 },
+          { "date": "2026-08-07", "active_users": 11740, "new_users": 214, "sessions": 19668 },
+          { "date": "2026-08-08", "active_users": 7186, "new_users": 96, "sessions": 10312 },
+          { "date": "2026-08-09", "active_users": 6802, "new_users": 88, "sessions": 9742 },
+          { "date": "2026-08-10", "active_users": 12904, "new_users": 302, "sessions": 22314 },
+          { "date": "2026-08-11", "active_users": 12480, "new_users": 318, "sessions": 21608 }
+        ]
+      }
+    },
+    "list_segments": {
+      "does": "Every saved segment with the people in it and the monthly recurring revenue they carry. The rows are the `data` array. `mrr_cents` is in CENTS: 6318000 is $63,180.00. `definition` is the rule the segment is built from, written in event names.",
+      "data": {
+        "data": [
+          { "id": "seg_paid_teams", "name": "Paid teams", "definition": "checkout_completed and invite_sent at least once", "users": 842, "mrr_cents": 6318000, "created": "2026-03-11" },
+          { "id": "seg_power_users", "name": "Power users", "definition": "report_exported 5 or more times in the last 30 days", "users": 1284, "mrr_cents": 4820000, "created": "2026-05-14" },
+          { "id": "seg_import_first", "name": "Import-first accounts", "definition": "csv_import_finished within 24 hours of signup_completed", "users": 96, "mrr_cents": 214500, "created": "2026-02-08" },
+          { "id": "seg_trial_stalled", "name": "Stalled trials", "definition": "signup_completed but no workspace_created within 7 days", "users": 3162, "mrr_cents": 0, "created": "2026-06-02" },
+          { "id": "seg_price_curious", "name": "Price curious", "definition": "pricing_page_viewed 3 or more times and no checkout_started", "users": 2470, "mrr_cents": 0, "created": "2026-07-21" }
+        ]
+      }
+    },
+    "list_alerts": {
+      "does": "Every anomaly alert raised in the last 7 days, newest first. The rows are the `data` array. `status` is firing, acknowledged or resolved; `observed` and `expected` are counts over the alert's `window`; `change_pct` is how far off the metric ran; `assignee` is null when nobody has taken it.",
+      "data": {
+        "data": [
+          { "id": "alr_app_open_spike", "event_id": "evt_app_opened", "metric": "app_opened", "severity": "medium", "status": "firing", "change_pct": 62.5, "observed": 7475, "expected": 4600, "window": "6h", "triggered_at": "2026-08-11T06:41:00Z", "assignee": "priya.raman@waypost.example" },
+          { "id": "alr_checkout_done_drop", "event_id": "evt_checkout_completed", "metric": "checkout_completed", "severity": "high", "status": "firing", "change_pct": -33.3, "observed": 30, "expected": 45, "window": "24h", "triggered_at": "2026-08-11T05:02:00Z", "assignee": null },
+          { "id": "alr_checkout_start_drop", "event_id": "evt_checkout_started", "metric": "checkout_started", "severity": "high", "status": "firing", "change_pct": -22.6, "observed": 106, "expected": 137, "window": "24h", "triggered_at": "2026-08-11T04:38:00Z", "assignee": null },
+          { "id": "alr_export_drop", "event_id": "evt_report_exported", "metric": "report_exported", "severity": "low", "status": "acknowledged", "change_pct": -27.9, "observed": 212, "expected": 294, "window": "24h", "triggered_at": "2026-08-09T14:03:00Z", "assignee": "marcus.hale@waypost.example" },
+          { "id": "alr_pricing_drop", "event_id": "evt_pricing_page_viewed", "metric": "pricing_page_viewed", "severity": "medium", "status": "resolved", "change_pct": -18.4, "observed": 421, "expected": 516, "window": "24h", "triggered_at": "2026-08-06T02:18:00Z", "assignee": "dana.okonkwo@waypost.example" }
+        ]
+      }
+    },
+    "acknowledge_alert": {
+      "does": "Acknowledge a firing alert with a note. The alert stops paging and the note is shown to the team.",
+      "takes": { "id": "string", "note": "string" }
+    },
+    "create_segment": {
+      "does": "Create a saved segment. The definition is a rule written in event names, e.g. 'checkout_completed and invite_sent at least once'.",
+      "takes": { "name": "string", "definition": "string" }
+    },
+    "deprecate_event": {
+      "does": "Mark one event deprecated: it disappears from new charts and keeps its history. Call it once per event.",
+      "takes": { "name": "string", "reason": "string" }
+    }
+  }
+}

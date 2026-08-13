@@ -20,9 +20,11 @@ async function worldFolder(): Promise<string> {
 describe("loadWorld", () => {
   it("names the worlds that exist when asked for one that does not", async () => {
     // A typo deserves the list of real names, in the product's own voice — not
-    // a raw ENOENT naming a path the person never typed.
+    // a raw ENOENT naming a path the person never typed. Matched loosely on one
+    // name that is always there: spelling out all of them re-breaks this on the
+    // day a world is added, which is a fact about the corpus, not a regression.
     await expect(loadWorld(join(root, "worlds", "nosuch"))).rejects.toThrow(
-      'genbench: unknown world "nosuch" (available: maple)',
+      /^genbench: unknown world "nosuch" \(available: .*\bmaple\b.*\)$/,
     );
   });
 
@@ -188,6 +190,21 @@ describe("caseHash", () => {
     expect(stampOf(after, "no-pending-transfers")).toBe(stampOf(before, "no-pending-transfers"));
     // The case that DID change must move, or "stays put" is proving nothing.
     expect(stampOf(after, "spend-overview")).not.toBe(stampOf(before, "spend-overview"));
+  });
+
+  it("stays put when a case is tagged, because a tag changes no question", async () => {
+    const before = await loadCases(casesPath);
+    // Tags file a case for reading a report; they do not change the prompt, the
+    // pass lines or the world underneath. A stamp that moved here would declare
+    // every recorded run of every case incomparable the day the worlds are
+    // tagged, for no change to what was asked.
+    const after = await casesEditedBy((cases) => {
+      authored(cases, "pending-transfers")["tags"] = ["action"];
+    });
+
+    expect(stampOf(after, "pending-transfers")).toBe(stampOf(before, "pending-transfers"));
+    // The tag has to have LANDED, or this proves only that nothing happened.
+    expect(after.find((entry) => entry.id === "pending-transfers")?.tags).toEqual(["action"]);
   });
 
   it("is decided by the case, not by how the file was typed", async () => {

@@ -1,0 +1,167 @@
+{
+  "app": "Dockline, a dispatch console for a regional freight and last-mile carrier",
+  "theme": {
+    "colors": {
+      "background": "#0D141C",
+      "surface": "#141E29",
+      "text": "#E7EDF4",
+      "muted": "#8496A8",
+      "accent": "#F2A93B",
+      "accentText": "#14202C",
+      "danger": "#E2543C",
+      "border": "#22303F"
+    },
+    "typography": { "fontFamily": "Inter, sans-serif", "baseSize": "13px" },
+    "radius": { "small": "4px", "medium": "4px", "large": "4px" },
+    "density": "compact",
+    "motion": "reduced"
+  },
+  "style": [
+    "uses the theme exactly: slate console background, amber accent, Inter, square 4px corners — no invented colors or fonts",
+    "compact dispatcher density: dense rows and 13px text, no marketing whitespace or oversized hero headings",
+    "amber is reserved for the primary action and at-risk markers — it never fills a whole row, header or card",
+    "money shows a $ and two decimals, weights read like '1,960 lb', shortfalls like '45 min' and dates like 'Aug 12', never ISO",
+    "statuses are small pills in sentence case ('Out for delivery'), never raw codes ('OUT_FOR_DELIVERY')",
+    "anything that moves freight or money confirms before it fires"
+  ],
+  "tools": {
+    "list_shipments": {
+      "does": "Every shipment on today's board across all three terminals, most urgent promise first. The rows are the `data` array. `driver_id` is null when the shipment has no driver yet. `days_late` is whole days past `promised_date` and is 0 when the shipment is on time. `freight_charge` is in CENTS: 48750 is $487.50.",
+      "data": {
+        "data": [
+          { "id": "shp_40160", "ref": "SO-3318", "customer": "Pacific Glass Co", "origin": "Oakland, CA", "destination": "Reno, NV", "driver_id": "drv_raman", "status": "held", "service": "Standard", "promised_date": "2026-08-10", "window": "PM", "pieces": 11, "weight_lb": 2680, "freight_charge": 145900, "days_late": 2 },
+          { "id": "shp_40188", "ref": "SO-3352", "customer": "Harker Dental Group", "origin": "Oakland, CA", "destination": "San Jose, CA", "driver_id": "drv_cruz", "status": "refused", "service": "Next-Day", "promised_date": "2026-08-11", "window": "AM", "pieces": 1, "weight_lb": 95, "freight_charge": 18900, "days_late": 1 },
+          { "id": "shp_40199", "ref": "PO-88377", "customer": "Delta Marine Supply", "origin": "Oakland, CA", "destination": "Stockton, CA", "driver_id": "drv_cruz", "status": "in_transit", "service": "Standard", "promised_date": "2026-08-11", "window": "PM", "pieces": 9, "weight_lb": 1240, "freight_charge": 57600, "days_late": 1 },
+          { "id": "shp_40205", "ref": "PO-88402", "customer": "Truckee Outfitters", "origin": "Reno, NV", "destination": "Carson City, NV", "driver_id": "drv_hollis", "status": "refused", "service": "Standard", "promised_date": "2026-08-11", "window": "PM", "pieces": 22, "weight_lb": 4310, "freight_charge": 118400, "days_late": 1 },
+          { "id": "shp_40191", "ref": "PO-88356", "customer": "Kestrel Coffee Roasters", "origin": "Fresno, CA", "destination": "Visalia, CA", "driver_id": "drv_boateng", "status": "delivered", "service": "Standard", "promised_date": "2026-08-12", "window": "AM", "pieces": 3, "weight_lb": 405, "freight_charge": 26750, "days_late": 0 },
+          { "id": "shp_40196", "ref": "SO-3348", "customer": "Bloom & Vine Nursery", "origin": "Fresno, CA", "destination": "Hanford, CA", "driver_id": "drv_boateng", "status": "delivered", "service": "Standard", "promised_date": "2026-08-12", "window": "AM", "pieces": 8, "weight_lb": 1120, "freight_charge": 41300, "days_late": 0 },
+          { "id": "shp_40218", "ref": "PO-88431", "customer": "Ridgeline Hardware", "origin": "Oakland, CA", "destination": "Fresno, CA", "driver_id": "drv_boateng", "status": "out_for_delivery", "service": "Standard", "promised_date": "2026-08-12", "window": "PM", "pieces": 6, "weight_lb": 840, "freight_charge": 48750, "days_late": 0 },
+          { "id": "shp_40224", "ref": "PO-88512", "customer": "Calaveras Cold Storage", "origin": "Fresno, CA", "destination": "Selma, CA", "driver_id": "drv_boateng", "status": "out_for_delivery", "service": "Next-Day", "promised_date": "2026-08-12", "window": "PM", "pieces": 2, "weight_lb": 310, "freight_charge": 21400, "days_late": 0 },
+          { "id": "shp_40231", "ref": "SO-3391", "customer": "Sierra Tile Works", "origin": "Fresno, CA", "destination": "Clovis, CA", "driver_id": "drv_boateng", "status": "out_for_delivery", "service": "Standard", "promised_date": "2026-08-12", "window": "PM", "pieces": 14, "weight_lb": 1960, "freight_charge": 92300, "days_late": 0 },
+          { "id": "shp_40236", "ref": "PO-88540", "customer": "Foothill Electric Supply", "origin": "Oakland, CA", "destination": "Sacramento, CA", "driver_id": null, "status": "at_terminal", "service": "Standard", "promised_date": "2026-08-13", "window": "AM", "pieces": 4, "weight_lb": 520, "freight_charge": 31250, "days_late": 0 },
+          { "id": "shp_40241", "ref": "PO-88566", "customer": "Ridgeline Hardware", "origin": "Oakland, CA", "destination": "Modesto, CA", "driver_id": null, "status": "at_terminal", "service": "Next-Day", "promised_date": "2026-08-13", "window": "PM", "pieces": 8, "weight_lb": 1130, "freight_charge": 64500, "days_late": 0 }
+        ]
+      }
+    },
+    "get_shipment": {
+      "does": "One shipment in full, including every charge line on it. The record is the single row of the `data` array. `stop_sequence` is its position on the driver's route today. Every amount is in CENTS: 60500 is $605.00.",
+      "takes": { "id": "string" },
+      "data": {
+        "data": [{
+          "id": "shp_40218",
+          "ref": "PO-88431",
+          "customer": "Ridgeline Hardware",
+          "contact": "Alma Reyes",
+          "contact_email": "alma.reyes@ridgeline.example",
+          "origin": "Dockline Oakland Terminal, 1900 Maritime St, Oakland, CA",
+          "destination": "2701 E Shaw Ave, Fresno, CA 93710",
+          "service": "Standard",
+          "status": "out_for_delivery",
+          "promised_date": "2026-08-12",
+          "window": "PM",
+          "driver_id": "drv_boateng",
+          "driver": "Marcus Boateng",
+          "vehicle": "Van 214",
+          "stop_sequence": 3,
+          "pieces": 6,
+          "weight_lb": 840,
+          "charges": [
+            { "kind": "freight", "amount": 48750 },
+            { "kind": "liftgate", "amount": 7500 },
+            { "kind": "residential", "amount": 4250 }
+          ],
+          "total_charge": 60500,
+          "signed_by": ""
+        }]
+      }
+    },
+    "list_scans": {
+      "does": "The scan history for one shipment, newest first. The rows are the `data` array. `at` is local terminal time as it should be shown; `date` is the day that scan happened.",
+      "takes": { "shipment_id": "string" },
+      "data": {
+        "data": [
+          { "id": "scn_9182", "shipment_id": "shp_40218", "date": "2026-08-12", "at": "7:40 AM", "event": "out_for_delivery", "terminal": "Fresno", "scanned_by": "Marcus Boateng", "detail": "loaded to Van 214" },
+          { "id": "scn_9166", "shipment_id": "shp_40218", "date": "2026-08-12", "at": "5:55 AM", "event": "arrive_terminal", "terminal": "Fresno", "scanned_by": "Night dock", "detail": "arrived from Oakland on the overnight linehaul" },
+          { "id": "scn_9151", "shipment_id": "shp_40218", "date": "2026-08-11", "at": "9:22 PM", "event": "depart_terminal", "terminal": "Oakland", "scanned_by": "Priya Raman", "detail": "tendered to the overnight linehaul" },
+          { "id": "scn_9138", "shipment_id": "shp_40218", "date": "2026-08-11", "at": "3:14 PM", "event": "pickup", "terminal": "Oakland", "scanned_by": "Priya Raman", "detail": "picked up at the shipper, all pieces accounted for" }
+        ]
+      }
+    },
+    "list_drivers": {
+      "does": "Every driver on the board today. The rows are the `data` array. `hours_remaining_min` is the legal driving time left in the driver's shift, in minutes; `route_remaining_min` is the planned minutes left on the route they are running, and is 0 for a driver who is not on one.",
+      "data": {
+        "data": [
+          { "id": "drv_boateng", "name": "Marcus Boateng", "terminal": "Fresno", "status": "on_route", "vehicle": "Van 214", "hours_remaining_min": 95, "route_remaining_min": 140, "stops_done": 2, "stops_total": 5 },
+          { "id": "drv_cruz", "name": "Lenny Cruz", "terminal": "Oakland", "status": "on_route", "vehicle": "Box Truck 12", "hours_remaining_min": 40, "route_remaining_min": 100, "stops_done": 6, "stops_total": 9 },
+          { "id": "drv_raman", "name": "Priya Raman", "terminal": "Oakland", "status": "on_route", "vehicle": "Van 231", "hours_remaining_min": 200, "route_remaining_min": 190, "stops_done": 7, "stops_total": 12 },
+          { "id": "drv_okonkwo", "name": "Dee Okonkwo", "terminal": "Reno", "status": "available", "vehicle": "Tractor 51", "hours_remaining_min": 480, "route_remaining_min": 0, "stops_done": 0, "stops_total": 0 },
+          { "id": "drv_ferreira", "name": "Sam Ferreira", "terminal": "Oakland", "status": "available", "vehicle": "Van 209", "hours_remaining_min": 405, "route_remaining_min": 0, "stops_done": 0, "stops_total": 0 },
+          { "id": "drv_hollis", "name": "Ruth Hollis", "terminal": "Reno", "status": "off_duty", "vehicle": "Tractor 47", "hours_remaining_min": 0, "route_remaining_min": 0, "stops_done": 14, "stops_total": 14 }
+        ]
+      }
+    },
+    "list_exceptions": {
+      "does": "Delivery exceptions raised in the last three days, newest first. The rows are the `data` array. `status` is `open`, `awaiting_customer` or `resolved`. `claim_amount` is the cargo value the customer has claimed, in CENTS — 87400 is $874.00 — and is 0 where nothing is claimed.",
+      "data": {
+        "data": [
+          { "id": "exc_886", "shipment_id": "shp_40236", "customer": "Foothill Electric Supply", "kind": "address_bad", "severity": "low", "opened_date": "2026-08-12", "status": "resolved", "claim_amount": 0, "note": "suite number missing on the BOL, corrected with the consignee" },
+          { "id": "exc_885", "shipment_id": "shp_40224", "customer": "Calaveras Cold Storage", "kind": "temperature", "severity": "high", "opened_date": "2026-08-12", "status": "open", "claim_amount": 46500, "note": "reefer read above tolerance at the mid-route check" },
+          { "id": "exc_884", "shipment_id": "shp_40199", "customer": "Delta Marine Supply", "kind": "weather_delay", "severity": "low", "opened_date": "2026-08-11", "status": "open", "claim_amount": 0, "note": "held on the Altamont for high wind" },
+          { "id": "exc_883", "shipment_id": "shp_40188", "customer": "Harker Dental Group", "kind": "refused", "severity": "medium", "opened_date": "2026-08-11", "status": "open", "claim_amount": 0, "note": "consignee refused, wrong model on the packing slip" },
+          { "id": "exc_881", "shipment_id": "shp_40205", "customer": "Truckee Outfitters", "kind": "refused", "severity": "high", "opened_date": "2026-08-11", "status": "open", "claim_amount": 0, "note": "consignee refused all 22 crates, dock closed for inventory" },
+          { "id": "exc_879", "shipment_id": "shp_40160", "customer": "Pacific Glass Co", "kind": "damage", "severity": "high", "opened_date": "2026-08-10", "status": "awaiting_customer", "claim_amount": 87400, "note": "3 of 11 crates crushed in transit, freight held at Oakland" }
+        ]
+      }
+    },
+    "get_route": {
+      "does": "One driver's route for today: the run itself is the single row of the `data` array, and its stops are in order under `stops`. A stop's `status` is `delivered`, `en_route` or `pending`. `eta` and `delivered_at` are local times as they should be shown, and `delivered_at` and `signed_by` are empty until the stop is done.",
+      "takes": { "driver_id": "string" },
+      "data": {
+        "data": [{
+          "driver_id": "drv_boateng",
+          "driver": "Marcus Boateng",
+          "terminal": "Fresno",
+          "vehicle": "Van 214",
+          "date": "2026-08-12",
+          "stops": [
+            { "sequence": 1, "shipment_id": "shp_40191", "ref": "PO-88356", "customer": "Kestrel Coffee Roasters", "address": "1420 Mooney Blvd, Visalia, CA", "window": "AM", "pieces": 3, "status": "delivered", "eta": "9:05 AM", "delivered_at": "9:12 AM", "signed_by": "R. Ortiz" },
+            { "sequence": 2, "shipment_id": "shp_40196", "ref": "SO-3348", "customer": "Bloom & Vine Nursery", "address": "88 Lacey Blvd, Hanford, CA", "window": "AM", "pieces": 8, "status": "delivered", "eta": "10:20 AM", "delivered_at": "10:41 AM", "signed_by": "M. Delgado" },
+            { "sequence": 3, "shipment_id": "shp_40218", "ref": "PO-88431", "customer": "Ridgeline Hardware", "address": "2701 E Shaw Ave, Fresno, CA", "window": "PM", "pieces": 6, "status": "en_route", "eta": "1:35 PM", "delivered_at": "", "signed_by": "" },
+            { "sequence": 4, "shipment_id": "shp_40224", "ref": "PO-88512", "customer": "Calaveras Cold Storage", "address": "515 Front St, Selma, CA", "window": "PM", "pieces": 2, "status": "pending", "eta": "2:50 PM", "delivered_at": "", "signed_by": "" },
+            { "sequence": 5, "shipment_id": "shp_40231", "ref": "SO-3391", "customer": "Sierra Tile Works", "address": "1190 Herndon Ave, Clovis, CA", "window": "PM", "pieces": 14, "status": "pending", "eta": "4:15 PM", "delivered_at": "", "signed_by": "" }
+          ]
+        }]
+      }
+    },
+    "get_service_report": {
+      "does": "Delivery performance for the last seven days, oldest first. The rows are the `data` array. `late` is the subset of `delivered` that missed its promised window, so on-time is `delivered - late`. `revenue` is in CENTS: 1284500 is $12,845.00.",
+      "data": {
+        "data": [
+          { "date": "2026-08-05", "delivered": 142, "late": 9, "exceptions": 3, "revenue": 1284500 },
+          { "date": "2026-08-06", "delivered": 151, "late": 6, "exceptions": 2, "revenue": 1402750 },
+          { "date": "2026-08-07", "delivered": 138, "late": 14, "exceptions": 5, "revenue": 1198300 },
+          { "date": "2026-08-08", "delivered": 160, "late": 5, "exceptions": 1, "revenue": 1517900 },
+          { "date": "2026-08-09", "delivered": 74, "late": 3, "exceptions": 1, "revenue": 690400 },
+          { "date": "2026-08-10", "delivered": 149, "late": 11, "exceptions": 4, "revenue": 1361200 },
+          { "date": "2026-08-11", "delivered": 156, "late": 8, "exceptions": 6, "revenue": 1449650 }
+        ]
+      }
+    },
+    "assign_driver": {
+      "does": "Assign a shipment sitting at a terminal to a driver. The shipment joins that driver's route as its last stop.",
+      "takes": { "shipment_id": "string", "driver_id": "string" }
+    },
+    "reschedule_delivery": {
+      "does": "Book a new delivery attempt for a shipment. `date` is an ISO day such as 2026-08-13 and `window` is AM or PM.",
+      "takes": { "shipment_id": "string", "date": "string", "window": "string" }
+    },
+    "resolve_exception": {
+      "does": "Close an exception, recording what was done about it. The shipment returns to its normal status.",
+      "takes": { "exception_id": "string", "resolution": "string" }
+    },
+    "notify_customer": {
+      "does": "Send the shipment's customer contact a status message.",
+      "takes": { "shipment_id": "string", "message": "string" }
+    }
+  }
+}

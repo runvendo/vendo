@@ -1,0 +1,179 @@
+{
+  "app": "Cadenza, a subscription billing platform — the operator console a SaaS company's revenue team runs its plans, subscriptions, invoices, dunning and coupons from. Today is Aug 12, 2026",
+  "theme": {
+    "colors": {
+      "background": "#0E1116",
+      "surface": "#161A21",
+      "text": "#E7EAF0",
+      "muted": "#8B95A7",
+      "accent": "#7C6BFF",
+      "accentText": "#FFFFFF",
+      "danger": "#FF6B6B",
+      "border": "#232935"
+    },
+    "typography": { "fontFamily": "Onest, sans-serif", "baseSize": "13px" },
+    "radius": { "small": "6px", "medium": "6px", "large": "6px" },
+    "density": "compact",
+    "motion": "reduced"
+  },
+  "style": [
+    "uses the theme exactly: near-black surfaces, the violet accent, Onest, 6px corners — no invented colors or fonts",
+    "money always shows 2 decimals with a $ symbol, and money columns in a table are right-aligned",
+    "every status — active, trialing, past due, paused, canceled, open, void, refunded — reads as a small pill, never bare text",
+    "dates read as 'Aug 24' style, never ISO",
+    "irreversible billing actions (void, cancel, write-off) ask for confirmation before they run",
+    "dense operator layout: table rows are single-line and no taller than ~32px, column labels are smaller than the values they sit above, and there are no decorative illustrations"
+  ],
+  "tools": {
+    "get_revenue_summary": {
+      "does": "This month's billing headline for the whole account, as the single row of the `data` array. Every `_cents` field is in CENTS: 111310 is $1,113.10. `mrr_cents` is the sum of every subscription's `mrr_cents` in list_subscriptions, `arr_cents` is that times 12. `collected_this_month_cents` is the sum of list_invoices rows paid in August. `outstanding_cents` is the sum of the `open` and `past_due` invoices (void and refunded are excluded). `at_risk_mrr_cents` is the MRR of the past-due subscriptions.",
+      "data": {
+        "data": [{
+          "month": "2026-08",
+          "mrr_cents": 111310,
+          "arr_cents": 1335720,
+          "active_subscriptions": 5,
+          "trialing_subscriptions": 1,
+          "past_due_subscriptions": 2,
+          "paused_subscriptions": 1,
+          "canceled_this_month": 1,
+          "churned_mrr_cents": 14900,
+          "collected_this_month_cents": 59800,
+          "outstanding_cents": 17783,
+          "at_risk_mrr_cents": 12800
+        }]
+      }
+    },
+    "list_plans": {
+      "does": "Every plan the account sells, active and archived. The rows are the `data` array. `price_cents` is what one billing interval costs in CENTS: 29900 is $299.00 a month, 322800 is $3,228.00 a year. `subscribers` counts the subscriptions on that plan in list_subscriptions, whatever their status. `included_api_calls` is the metered allowance one interval includes.",
+      "data": {
+        "data": [
+          { "id": "plan_starter", "name": "Starter", "interval": "month", "price_cents": 2900, "status": "active", "subscribers": 3, "included_api_calls": 25000 },
+          { "id": "plan_growth", "name": "Growth", "interval": "month", "price_cents": 9900, "status": "active", "subscribers": 3, "included_api_calls": 100000 },
+          { "id": "plan_scale", "name": "Scale", "interval": "month", "price_cents": 29900, "status": "active", "subscribers": 2, "included_api_calls": 500000 },
+          { "id": "plan_scale_annual", "name": "Scale (annual)", "interval": "year", "price_cents": 322800, "status": "active", "subscribers": 1, "included_api_calls": 500000 },
+          { "id": "plan_legacy_pro", "name": "Pro (legacy)", "interval": "month", "price_cents": 14900, "status": "archived", "subscribers": 1, "included_api_calls": 250000 }
+        ]
+      }
+    },
+    "list_subscriptions": {
+      "does": "Every subscription on the account, newest customer first. The rows are the `data` array. `mrr_cents` is the monthly recurring revenue this subscription contributes in CENTS, net of any discount, and is 0 while a subscription is trialing, paused or canceled; an annual subscription contributes its yearly price divided by 12. `current_period_end` is when the subscription next renews — for a trialing row it is when the trial ends. `discount_code` is \"\" when no coupon is attached, `canceled_on` is \"\" unless the subscription is canceled.",
+      "data": {
+        "data": [
+          { "id": "sub_1042", "customer": "Northwind Labs", "plan_id": "plan_scale", "plan_name": "Scale", "status": "active", "mrr_cents": 29900, "discount_code": "", "started_on": "2025-11-01", "current_period_end": "2026-09-01", "canceled_on": "" },
+          { "id": "sub_1057", "customer": "Halden Freight", "plan_id": "plan_growth", "plan_name": "Growth", "status": "active", "mrr_cents": 8910, "discount_code": "LOYAL10", "started_on": "2026-03-24", "current_period_end": "2026-08-24", "canceled_on": "" },
+          { "id": "sub_1063", "customer": "Brightpath Clinics", "plan_id": "plan_scale_annual", "plan_name": "Scale (annual)", "status": "active", "mrr_cents": 26900, "discount_code": "", "started_on": "2026-02-01", "current_period_end": "2027-02-01", "canceled_on": "" },
+          { "id": "sub_1071", "customer": "Ovid & Sons", "plan_id": "plan_growth", "plan_name": "Growth", "status": "past_due", "mrr_cents": 9900, "discount_code": "", "started_on": "2025-09-05", "current_period_end": "2026-08-05", "canceled_on": "" },
+          { "id": "sub_1078", "customer": "Quarry Road Coffee", "plan_id": "plan_starter", "plan_name": "Starter", "status": "active", "mrr_cents": 2900, "discount_code": "", "started_on": "2026-04-28", "current_period_end": "2026-08-28", "canceled_on": "" },
+          { "id": "sub_1084", "customer": "Lumen Dental Group", "plan_id": "plan_growth", "plan_name": "Growth", "status": "trialing", "mrr_cents": 0, "discount_code": "", "started_on": "2026-08-05", "current_period_end": "2026-08-19", "canceled_on": "" },
+          { "id": "sub_1090", "customer": "Tessellate Studio", "plan_id": "plan_starter", "plan_name": "Starter", "status": "past_due", "mrr_cents": 2900, "discount_code": "", "started_on": "2025-12-29", "current_period_end": "2026-07-29", "canceled_on": "" },
+          { "id": "sub_1093", "customer": "Fenwick Analytics", "plan_id": "plan_scale", "plan_name": "Scale", "status": "active", "mrr_cents": 29900, "discount_code": "", "started_on": "2026-01-04", "current_period_end": "2026-09-04", "canceled_on": "" },
+          { "id": "sub_1097", "customer": "Marrowfield Co", "plan_id": "plan_legacy_pro", "plan_name": "Pro (legacy)", "status": "canceled", "mrr_cents": 0, "discount_code": "", "started_on": "2024-06-11", "current_period_end": "2026-08-03", "canceled_on": "2026-08-03" },
+          { "id": "sub_1101", "customer": "Steepgrove Bakery", "plan_id": "plan_starter", "plan_name": "Starter", "status": "paused", "mrr_cents": 0, "discount_code": "", "started_on": "2025-07-12", "current_period_end": "2026-09-12", "canceled_on": "" }
+        ]
+      }
+    },
+    "get_subscription": {
+      "does": "One subscription in full, as the single row of the `data` array: the plan, the card on file, what the customer has paid over their lifetime, the invoices still owed, and the account's event history newest first. `mrr_cents` and `lifetime_value_cents` are in CENTS: 108900 is $1,089.00. `payment_method.exp` is the card's expiry month.",
+      "takes": { "subscription_id": "string" },
+      "data": {
+        "data": [{
+          "id": "sub_1071",
+          "customer": "Ovid & Sons",
+          "billing_email": "ap@ovidandsons.example",
+          "plan_id": "plan_growth",
+          "plan_name": "Growth",
+          "status": "past_due",
+          "mrr_cents": 9900,
+          "discount_code": "",
+          "started_on": "2025-09-05",
+          "current_period_end": "2026-08-05",
+          "lifetime_value_cents": 108900,
+          "payment_method": { "brand": "visa", "last4": "4417", "exp": "2027-04" },
+          "open_invoice_ids": ["inv_2050"],
+          "events": [
+            { "on": "2026-08-10", "what": "Retry 2 of 4 failed — insufficient funds" },
+            { "on": "2026-08-07", "what": "Retry 1 of 4 failed — insufficient funds" },
+            { "on": "2026-08-06", "what": "Dunning started for INV-2050" },
+            { "on": "2026-08-05", "what": "Invoice INV-2050 issued" },
+            { "on": "2026-07-06", "what": "Invoice INV-2039 paid" },
+            { "on": "2025-09-05", "what": "Subscription started on Growth" }
+          ]
+        }]
+      }
+    },
+    "list_invoices": {
+      "does": "Every invoice on the account, newest first. The rows are the `data` array. `amount_cents` is in CENTS: 29900 is $299.00. `status` is one of paid, open, past_due, void, refunded. `paid_on` is \"\" for anything unpaid, voided included.",
+      "takes": { "limit": "number" },
+      "data": {
+        "data": [
+          { "id": "inv_2051", "number": "INV-2051", "customer": "Northwind Labs", "subscription_id": "sub_1042", "amount_cents": 4983, "status": "open", "issued_on": "2026-08-09", "due_on": "2026-08-16", "paid_on": "", "description": "Metered API overage true-up, Aug 1-9" },
+          { "id": "inv_2050", "number": "INV-2050", "customer": "Ovid & Sons", "subscription_id": "sub_1071", "amount_cents": 9900, "status": "past_due", "issued_on": "2026-08-05", "due_on": "2026-08-05", "paid_on": "", "description": "Growth — Aug 5 to Sep 5" },
+          { "id": "inv_2049", "number": "INV-2049", "customer": "Fenwick Analytics", "subscription_id": "sub_1093", "amount_cents": 29900, "status": "paid", "issued_on": "2026-08-04", "due_on": "2026-08-04", "paid_on": "2026-08-04", "description": "Scale — Aug 4 to Sep 4" },
+          { "id": "inv_2048", "number": "INV-2048", "customer": "Marrowfield Co", "subscription_id": "sub_1097", "amount_cents": 14900, "status": "void", "issued_on": "2026-08-01", "due_on": "2026-08-01", "paid_on": "", "description": "Pro (legacy) — Aug 1 to Sep 1, voided on cancellation" },
+          { "id": "inv_2047", "number": "INV-2047", "customer": "Northwind Labs", "subscription_id": "sub_1042", "amount_cents": 29900, "status": "paid", "issued_on": "2026-08-01", "due_on": "2026-08-01", "paid_on": "2026-08-01", "description": "Scale — Aug 1 to Sep 1" },
+          { "id": "inv_2044", "number": "INV-2044", "customer": "Tessellate Studio", "subscription_id": "sub_1090", "amount_cents": 2900, "status": "past_due", "issued_on": "2026-07-29", "due_on": "2026-07-29", "paid_on": "", "description": "Starter — Jul 29 to Aug 29" },
+          { "id": "inv_2043", "number": "INV-2043", "customer": "Quarry Road Coffee", "subscription_id": "sub_1078", "amount_cents": 2900, "status": "paid", "issued_on": "2026-07-28", "due_on": "2026-07-28", "paid_on": "2026-07-28", "description": "Starter — Jul 28 to Aug 28" },
+          { "id": "inv_2042", "number": "INV-2042", "customer": "Halden Freight", "subscription_id": "sub_1057", "amount_cents": 8910, "status": "paid", "issued_on": "2026-07-24", "due_on": "2026-07-24", "paid_on": "2026-07-24", "description": "Growth with LOYAL10 — Jul 24 to Aug 24" },
+          { "id": "inv_2039", "number": "INV-2039", "customer": "Ovid & Sons", "subscription_id": "sub_1071", "amount_cents": 9900, "status": "paid", "issued_on": "2026-07-05", "due_on": "2026-07-05", "paid_on": "2026-07-06", "description": "Growth — Jul 5 to Aug 5" },
+          { "id": "inv_2038", "number": "INV-2038", "customer": "Fenwick Analytics", "subscription_id": "sub_1093", "amount_cents": 29900, "status": "refunded", "issued_on": "2026-07-04", "due_on": "2026-07-04", "paid_on": "2026-07-04", "description": "Scale — Jul 4 to Aug 4, refunded in full on Jul 11" },
+          { "id": "inv_2036", "number": "INV-2036", "customer": "Tessellate Studio", "subscription_id": "sub_1090", "amount_cents": 2900, "status": "paid", "issued_on": "2026-06-29", "due_on": "2026-06-29", "paid_on": "2026-06-30", "description": "Starter — Jun 29 to Jul 29" },
+          { "id": "inv_2033", "number": "INV-2033", "customer": "Steepgrove Bakery", "subscription_id": "sub_1101", "amount_cents": 2900, "status": "paid", "issued_on": "2026-06-12", "due_on": "2026-06-12", "paid_on": "2026-06-12", "description": "Starter — Jun 12 to Jul 12" },
+          { "id": "inv_2019", "number": "INV-2019", "customer": "Brightpath Clinics", "subscription_id": "sub_1063", "amount_cents": 322800, "status": "paid", "issued_on": "2026-02-01", "due_on": "2026-02-01", "paid_on": "2026-02-01", "description": "Scale (annual) — Feb 1 2026 to Feb 1 2027" }
+        ]
+      }
+    },
+    "list_dunning_queue": {
+      "does": "Invoices whose payment failed and that are still in the retry schedule, worst first. The rows are the `data` array. `amount_cents` is in CENTS: 9900 is $99.00. `attempt` of `max_attempts` retries have been made; `next_retry_on` is \"\" once every attempt is spent, which means only a manual retry or a decision is left.",
+      "data": {
+        "data": [
+          { "id": "dun_311", "invoice_id": "inv_2050", "invoice_number": "INV-2050", "customer": "Ovid & Sons", "subscription_id": "sub_1071", "amount_cents": 9900, "attempt": 2, "max_attempts": 4, "last_attempt_on": "2026-08-10", "next_retry_on": "2026-08-13", "failure_reason": "insufficient_funds", "days_past_due": 7 },
+          { "id": "dun_312", "invoice_id": "inv_2044", "invoice_number": "INV-2044", "customer": "Tessellate Studio", "subscription_id": "sub_1090", "amount_cents": 2900, "attempt": 4, "max_attempts": 4, "last_attempt_on": "2026-08-11", "next_retry_on": "", "failure_reason": "card_expired", "days_past_due": 14 }
+        ]
+      }
+    },
+    "list_coupons": {
+      "does": "Every coupon the account has, redeemable or not. The rows are the `data` array. A coupon takes off either a percentage (`percent_off`, where 10 means 10%) or a fixed amount in CENTS (`amount_off_cents`, where 2500 is $25.00); the other field is 0. `max_redemptions` 0 means unlimited, `expires_on` \"\" means it never expires, and only a coupon whose `status` is active can be attached to a subscription.",
+      "data": {
+        "data": [
+          { "code": "LOYAL10", "percent_off": 10, "amount_off_cents": 0, "duration": "forever", "redemptions": 1, "max_redemptions": 50, "status": "active", "expires_on": "" },
+          { "code": "SPRING20", "percent_off": 20, "amount_off_cents": 0, "duration": "3 months", "redemptions": 0, "max_redemptions": 100, "status": "active", "expires_on": "2026-09-30" },
+          { "code": "WELCOME25", "percent_off": 0, "amount_off_cents": 2500, "duration": "once", "redemptions": 3, "max_redemptions": 0, "status": "active", "expires_on": "" },
+          { "code": "WINBACK15", "percent_off": 15, "amount_off_cents": 0, "duration": "3 months", "redemptions": 0, "max_redemptions": 20, "status": "active", "expires_on": "2026-12-31" },
+          { "code": "LAUNCH50", "percent_off": 50, "amount_off_cents": 0, "duration": "6 months", "redemptions": 8, "max_redemptions": 25, "status": "expired", "expires_on": "2026-06-30" }
+        ]
+      }
+    },
+    "get_usage_this_period": {
+      "does": "Metered API usage for the current billing period, closest to its allowance first. The rows are the `data` array. `included` is the plan's allowance and `used` the calls made; `overage_units` is what is over it. Overage is priced per thousand calls: `overage_cents` is `overage_units` / 1000 * `price_per_1k_cents`, in CENTS, so 49830 units at 100 is 4983 ($49.83). Overage is invoiced mid-cycle once it crosses $25.00, and `invoiced` says whether that has happened yet. A subscription that is canceled or paused has no row.",
+      "data": {
+        "data": [
+          { "subscription_id": "sub_1042", "customer": "Northwind Labs", "plan_name": "Scale", "metric": "api_calls", "included": 500000, "used": 549830, "overage_units": 49830, "price_per_1k_cents": 100, "overage_cents": 4983, "invoiced": true },
+          { "subscription_id": "sub_1063", "customer": "Brightpath Clinics", "plan_name": "Scale (annual)", "metric": "api_calls", "included": 500000, "used": 512900, "overage_units": 12900, "price_per_1k_cents": 100, "overage_cents": 1290, "invoiced": false },
+          { "subscription_id": "sub_1057", "customer": "Halden Freight", "plan_name": "Growth", "metric": "api_calls", "included": 100000, "used": 98220, "overage_units": 0, "price_per_1k_cents": 100, "overage_cents": 0, "invoiced": false },
+          { "subscription_id": "sub_1093", "customer": "Fenwick Analytics", "plan_name": "Scale", "metric": "api_calls", "included": 500000, "used": 431004, "overage_units": 0, "price_per_1k_cents": 100, "overage_cents": 0, "invoiced": false },
+          { "subscription_id": "sub_1071", "customer": "Ovid & Sons", "plan_name": "Growth", "metric": "api_calls", "included": 100000, "used": 76540, "overage_units": 0, "price_per_1k_cents": 100, "overage_cents": 0, "invoiced": false },
+          { "subscription_id": "sub_1078", "customer": "Quarry Road Coffee", "plan_name": "Starter", "metric": "api_calls", "included": 25000, "used": 4110, "overage_units": 0, "price_per_1k_cents": 100, "overage_cents": 0, "invoiced": false },
+          { "subscription_id": "sub_1084", "customer": "Lumen Dental Group", "plan_name": "Growth", "metric": "api_calls", "included": 100000, "used": 12040, "overage_units": 0, "price_per_1k_cents": 100, "overage_cents": 0, "invoiced": false },
+          { "subscription_id": "sub_1090", "customer": "Tessellate Studio", "plan_name": "Starter", "metric": "api_calls", "included": 25000, "used": 1980, "overage_units": 0, "price_per_1k_cents": 100, "overage_cents": 0, "invoiced": false }
+        ]
+      }
+    },
+    "retry_payment": {
+      "does": "Charge an invoice's card on file again right now, outside the dunning retry schedule. It does not consume one of the scheduled attempts.",
+      "takes": { "invoice_id": "string" }
+    },
+    "void_invoice": {
+      "does": "Void an unpaid invoice: dunning stops and the amount is written off. A voided invoice can never be paid, and `reason` is recorded on it.",
+      "takes": { "invoice_id": "string", "reason": "string" }
+    },
+    "cancel_subscription": {
+      "does": "Cancel a subscription. `when` is \"now\" to end it immediately or \"period_end\" to let the paid period run out first.",
+      "takes": { "subscription_id": "string", "when": "string" }
+    },
+    "apply_coupon": {
+      "does": "Attach an active coupon to a subscription. It discounts every invoice from the next one onwards.",
+      "takes": { "subscription_id": "string", "coupon_code": "string" }
+    }
+  }
+}

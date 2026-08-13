@@ -1,0 +1,123 @@
+[
+  {
+    "id": "dispatch-board",
+    "lane": "screen",
+    "prompt": "Give me today's dispatch board: every shipment on it in one table with its customer, destination, driver, status and promised date, and put the late ones at the top.",
+    "pass": [
+      "shows all eleven shipments the tool returned in one table",
+      "every row shows customer, destination, driver (or that it has none yet) and status",
+      "the four late shipments — PO-88377, SO-3352, PO-88402 and SO-3318 — are marked late and sit above the on-time rows",
+      "PO-88540 and PO-88566 are the only two rows with no driver on them"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "shipment-detail",
+    "lane": "screen",
+    "prompt": "Pull up shipment PO-88431 on one page — the consignee, the freight, every charge on it, and the scan history underneath.",
+    "pass": [
+      "shows the customer, destination, service level, promised date and current status the tool returned",
+      "lists all three charge lines and a total of $605.00",
+      "shows the assigned driver Marcus Boateng and that it is stop 3 on his route",
+      "lists the four scans newest first with the time and terminal of each",
+      "shows the destination as 2701 E Shaw Ave, Fresno, CA and the three charges as $487.50 freight, $75.00 liftgate and $42.50 residential"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "driver-route",
+    "lane": "screen",
+    "prompt": "Walk me through Marcus Boateng's route today, stop by stop in order, so I can see what is done and what is left.",
+    "pass": [
+      "shows all five stops in sequence order with the customer, address and delivery window of each",
+      "the two delivered stops show their delivery time and who signed, stop 3 reads as on its way, stops 4 and 5 as not attempted yet",
+      "says how much of the route is finished — 2 of 5 stops",
+      "shows Kestrel Coffee Roasters delivered at 9:12 AM, Bloom & Vine Nursery at 10:41 AM, and Ridgeline Hardware due at 1:35 PM"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "exception-queue",
+    "lane": "screen",
+    "prompt": "Show me every delivery exception still marked open, worst severity first, and let me close one right from the list with a note about what I did.",
+    "pass": [
+      "lists the four open exceptions and neither the resolved one nor the one awaiting the customer",
+      "the two high-severity rows sit above the medium and low ones",
+      "each row shows its shipment, customer, the kind of exception and the day it opened",
+      "each row's close control calls resolve_exception with that row's exception id, passing whatever note the field holds"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "no-open-exceptions",
+    "lane": "screen",
+    "prompt": "Show me every delivery exception still marked open, worst severity first, and let me close one right from the list with a note about what I did.",
+    "pass": [
+      "says the exception queue is clear rather than drawing an empty table",
+      "invents no exception rows",
+      "offers no close control"
+    ],
+    "tags": ["display"],
+    "data": { "list_exceptions": { "data": [] } }
+  },
+  {
+    "id": "assign-unassigned",
+    "lane": "screen",
+    "prompt": "Two shipments are sitting at a terminal with no driver on them. Give me a form that picks one of those shipments, picks an available driver, and assigns it.",
+    "pass": [
+      "offers only the two shipments with no driver on them — PO-88540 and PO-88566 — and no assigned one",
+      "offers only the two drivers the tool reports as available, Dee Okonkwo and Sam Ferreira",
+      "shows each candidate driver's terminal and hours left so I can tell them apart",
+      "submitting calls assign_driver with the chosen shipment id and driver id"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "on-time-week",
+    "lane": "screen",
+    "prompt": "Chart our on-time delivery for the last seven days so I can see which day hurt us.",
+    "pass": [
+      "draws a chart of all seven days rather than only listing them",
+      "shows Aug 8 as the strongest day, with 5 late of 160 delivered",
+      "Aug 7 reads as the worst day of the week, with 14 late of 138 delivered",
+      "states the week's on-time rate from the tool's own counts — 914 of 970 deliveries, 94.2%"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "late-notify-all",
+    "lane": "screen",
+    "prompt": "Every shipment past its promised date needs a notice sent to the customer. Show me that list, let me select all of them, show me the message text, and send one notice per shipment after I confirm.",
+    "pass": [
+      "lists exactly the four shipments whose days late is above zero and no on-time or delivered one",
+      "lets me select several rows at once and shows the message text before anything is sent",
+      "asks me to confirm before sending",
+      "confirming calls notify_customer with a shipment id and a message once per row that is selected when I confirm"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "hours-vs-route",
+    "lane": "screen",
+    "prompt": "Which of my drivers are going to run out of legal hours before their last stop? I need to know who to re-cover before the afternoon goes bad, and how many minutes short each one is.",
+    "pass": [
+      "flags exactly the two drivers whose remaining route minutes exceed their remaining hours — Marcus Boateng and Lenny Cruz",
+      "shows how short each is: 45 minutes for Marcus Boateng, 60 minutes for Lenny Cruz",
+      "does not put Priya Raman in the at-risk group — her 190-minute route is inside the 200 minutes she has left",
+      "keeps the available and off-duty drivers out of the at-risk group"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "refused-redelivery",
+    "lane": "screen",
+    "prompt": "Two deliveries came back refused. Build me a redelivery worksheet: both shipments with the reason each was refused, a date and window to try again on each, and one button per shipment that books it and tells the customer.",
+    "pass": [
+      "shows both refused shipments — SO-3352 and PO-88402 — with the refusal reason the exception tool returned for each",
+      "each shipment has its own date and delivery window input rather than one setting for both",
+      "a row's button calls reschedule_delivery with that shipment's id, the chosen date and the chosen window",
+      "the same row also calls notify_customer for that shipment, and nothing fires until I confirm"
+    ],
+    "tags": ["action"]
+  }
+]

@@ -1,0 +1,122 @@
+[
+  {
+    "id": "billing-overview",
+    "lane": "screen",
+    "prompt": "Give me a billing overview for this month: MRR, what we've collected, what's still owed, and how my subscriptions break down by status.",
+    "pass": [
+      "shows MRR as $1,113.10 and $598.00 as collected this month",
+      "breaks the subscriptions down by status with a count for active, trialing, past due and paused",
+      "shows the amount still outstanding and the MRR at risk from past-due subscriptions",
+      "presents MRR as the headline figure rather than burying it in a table"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "dunning-queue",
+    "lane": "screen",
+    "prompt": "Show me every failed payment we're still retrying, and give me a button to retry the charge now.",
+    "pass": [
+      "lists both failed payments with the customer, the amount, which attempt it is on and why the card failed",
+      "shows that Tessellate Studio has used all four attempts and has no next retry scheduled",
+      "offers a retry control on each row",
+      "pressing a row's retry control calls retry_payment for that row's invoice"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "plan-mix-chart",
+    "lane": "screen",
+    "prompt": "Chart how my subscribers are spread across plans, biggest plan first.",
+    "pass": [
+      "draws a chart of subscribers per plan rather than only listing them",
+      "every plan the tool returned is on the chart, the archived legacy plan included",
+      "the subscriber counts read 3 Starter, 3 Growth, 2 Scale, 1 Scale (annual) and 1 Pro (legacy)",
+      "the plans read biggest first"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "account-detail-ovid",
+    "lane": "screen",
+    "prompt": "Pull up the Ovid & Sons account: their plan, the card on file, what they owe us, and the history of the payment failing.",
+    "pass": [
+      "shows Ovid & Sons on the Growth plan with a past-due status",
+      "shows the card's brand and last four digits and its expiry",
+      "shows the unpaid invoice INV-2050 with its amount",
+      "shows the account's event history, newest event first"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "renewal-schedule",
+    "lane": "screen",
+    "prompt": "Lay out my upcoming renewals by date so I can see who bills when, and what each one will charge.",
+    "pass": [
+      "orders or groups the renewals by renewal date, earliest first",
+      "shows Halden Freight renewing on Aug 24 and Quarry Road Coffee on Aug 28",
+      "does not present the canceled subscription as an upcoming renewal",
+      "shows an amount beside each renewal, $89.10 beside Halden Freight and $29.00 beside Quarry Road Coffee"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "coupon-apply-form",
+    "lane": "screen",
+    "prompt": "Steepgrove Bakery asked for a discount. Build me a form that puts one of our coupons on their subscription.",
+    "pass": [
+      "the form names Steepgrove Bakery's subscription as what the coupon lands on",
+      "offers a choice between the coupons and shows what each one takes off",
+      "does not offer the expired LAUNCH50 coupon as a usable choice",
+      "submitting calls apply_coupon with Steepgrove Bakery's subscription id and the chosen coupon code"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "write-off-unpayable",
+    "lane": "screen",
+    "prompt": "Show me everything still unpaid and let me tick the ones to void in one go, with a reason and a confirmation step before anything is written off.",
+    "pass": [
+      "lists only the unpaid invoices — the open one and the two past due — and no paid, voided or refunded ones",
+      "lets more than one invoice be ticked at once and shows the total that would be written off",
+      "asks for confirmation and takes a reason before anything is voided",
+      "confirming calls void_invoice with a ticked invoice's id and a reason"
+    ],
+    "tags": ["action"]
+  },
+  {
+    "id": "dunning-queue-empty",
+    "lane": "screen",
+    "prompt": "Show me every failed payment we're still retrying, and give me a button to retry the charge now.",
+    "pass": [
+      "says nothing is in the retry queue right now rather than showing an empty table",
+      "shows no retry attempt count, next-retry date or card-failure reason for any invoice",
+      "offers no retry control"
+    ],
+    "tags": ["display"],
+    "data": { "list_dunning_queue": { "data": [] } }
+  },
+  {
+    "id": "overage-true-up-watch",
+    "lane": "screen",
+    "prompt": "Which customers are running out of their included API calls this period, and what would the overage bill them right now?",
+    "pass": [
+      "shows every customer's calls used against their plan's included allowance, closest to the allowance first",
+      "flags Northwind Labs and Brightpath Clinics as over their allowance and shows the overage amount each owes",
+      "shows Halden Freight as nearly at its allowance with no overage owed",
+      "says which overage has already been invoiced and which has not"
+    ],
+    "tags": ["display"]
+  },
+  {
+    "id": "dunning-last-stand",
+    "lane": "screen",
+    "prompt": "Tessellate Studio's card expired and we've burned all four retries. Give me one screen to decide what happens to them: retry the charge, void the invoice, or cancel them at the end of the period.",
+    "pass": [
+      "shows Tessellate Studio's failed invoice with its amount, the card-expired reason and that all four attempts are spent",
+      "offers exactly the three choices asked for and nothing else",
+      "each choice calls its own tool for Tessellate Studio — retry_payment and void_invoice on the invoice, cancel_subscription on the subscription with period_end",
+      "the void and the cancel ask for confirmation before they run"
+    ],
+    "tags": ["action"]
+  }
+]
