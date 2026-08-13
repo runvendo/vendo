@@ -24,6 +24,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentType,
   type ReactNode,
@@ -38,6 +39,7 @@ import { deriveFormShape, FormingSkeleton, PendingLeaf } from "./forming-skeleto
 import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
+import { playNodeMotion, useMotionLayoutEffect, useRepaintMotion, type NodeMark } from "./repaint-motion.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
 import { markHandlerCallback, screenEvent } from "../kit/handler.js";
 import { useKeyedState } from "../kit/state.js";
@@ -393,6 +395,8 @@ interface NodeRendererProps {
   setViewState(key: string, value: Json): void;
   /** The live screen behind this tree, when there is one. */
   screen?: Pick<ScreenBridge, "fire" | "inFlight">;
+  /** What this repaint moved, per node (repaint-motion.ts). Empty on a first paint. */
+  marks: ReadonlyMap<string, NodeMark>;
 }
 
 const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid"]);
@@ -646,9 +650,36 @@ function NodeRenderer(props: NodeRendererProps) {
 
   const outcome = props.outcomes[node.id];
   return (
-    <div data-vendo-node-id={node.id} data-vendo-outcome={outcome?.status === "ok" ? undefined : outcome?.status}>
+    <NodeShell nodeId={node.id} outcome={outcome} mark={props.marks.get(node.id)}>
       {content}
       {outcomeNotice(outcome)}
+    </NodeShell>
+  );
+}
+
+/**
+ * Every node's box, and the one thing a repaint can animate. A mark arrives on
+ * the render that carries the change and never on a first paint, so the effect
+ * plays exactly one beat per node per repaint (repaint-motion.ts).
+ */
+function NodeShell({ nodeId, outcome, mark, children }: {
+  nodeId: string;
+  outcome: ToolOutcome | undefined;
+  mark: NodeMark | undefined;
+  children: ReactNode;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useMotionLayoutEffect(() => {
+    if (mark !== undefined && box.current !== null) playNodeMotion(box.current, mark);
+  }, [mark]);
+  return (
+    <div
+      ref={box}
+      data-vendo-node-id={nodeId}
+      data-vendo-outcome={outcome?.status === "ok" ? undefined : outcome?.status}
+      {...(mark?.kind === "exit" ? { "aria-hidden": true, "data-vendo-departing": "" } : {})}
+    >
+      {children}
     </div>
   );
 }
@@ -739,6 +770,12 @@ function StatefulTreeView({
     () => new Map(validation.ok ? validation.tree.nodes.map((node) => [node.id, node]) : []),
     [validation.ok ? validation.tree.nodes : validation.error.message],
   );
+
+  // A repaint of a screen that is already on the page — a handler moved it, or a
+  // successful tool made its data stale and the refresh brought new rows back —
+  // is the one paint that animates. A served first paint, every streaming chunk
+  // and every non-interactive payload swap instantly, as they always have.
+  const repaint = useRepaintMotion(nodes, interactive !== undefined && !streaming);
 
   // A review-kind version awaiting the host reviewer renders NOTHING but its
   // standing, checked BEFORE tree validation:
@@ -839,7 +876,8 @@ function StatefulTreeView({
       <NodeRenderer
         nodeId={validation.tree.root}
         ancestry={new Set()}
-        nodes={nodes}
+        nodes={repaint.nodes}
+        marks={repaint.marks}
         generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
         {...(componentTools === undefined ? {} : { componentTools })}
         inClientGranted={inClientGranted}
