@@ -249,6 +249,12 @@ untouched — no wrapper, so inline one anywhere. Filled: build skeleton, then t
 live view, then a failure with a retry. Never a blank hole. One view per slot per
 person; a second one evicts the first.
 
+When a person presses a guarded button inside the view — one that parks on the
+approval guard — `VendoSlot` auto-mounts the [approval modal](/ui/components#approval-modal-for-screen-initiated-presses)
+centered over the page. Nothing to wire. If you render a bespoke slot with
+`AppFrame` or `TreeView`, use [`useApprovalModal`](/reference/hooks#approval-modal-useapprovalmodal)
+to mount it yourself.
+
 **Either path** — your agent aims at a slot by id:
 
 ```json

@@ -85,6 +85,44 @@ the tool runs, and the agent confirms.
 The decision itself (policy, grants, risk) is server-side; see
 [Tools and safety](/concepts/tools-and-safety).
 
+### Approval modal for screen-initiated presses
+
+When a person presses a button inside a generated view and that press parks
+on the guard, the confirmation moment shows up as a centered modal over the
+page — the same ask the thread card raises, at hero size. Approve or Deny
+spends the decision. Esc and the scrim close the modal but do not decide, so
+a dismissed ask stays pending and comes back from the badge or the next
+press.
+
+Presses queue: pressing Send on two rows raises two approvals, and exactly
+one modal is on screen at a time. The next one presents itself once the
+current one leaves. An ask settled on another surface (the thread, another
+tab) never gets a turn just to say it was already handled.
+
+The modal is auto-mounted everywhere Vendo renders a screen the user can
+press into: `VendoSlot`, in-thread app cards and the workspace stage they
+expand onto, the [BYO chat embeds](/existing-agents/embeds), and mounted
+remix forks. Nothing to wire.
+
+Custom surfaces that render a `TreeView`, `AppFrame`, or `VendoSlot`
+themselves pass an `onParked` prop to receive parked presses and can mount
+the modal with the [`useApprovalModal`](/reference/hooks#approval-modal-useapprovalmodal)
+hook.
+
+```tsx
+import { AppFrame, useApprovalModal } from "@vendoai/ui/chrome";
+
+function MyStage({ surface, components }) {
+  const approval = useApprovalModal();
+  return (
+    <>
+      <AppFrame surface={surface} components={components} onParked={approval.onParked} />
+      {approval.modal}
+    </>
+  );
+}
+```
+
 ## Tool labels
 
 Shipped chrome renders a tool chip every time the agent calls a tool, and an
