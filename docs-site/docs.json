@@ -48,7 +48,6 @@
         "group": "Start here",
         "pages": [
           "index",
-          "pick-your-door",
           "agents/index"
         ]
       },
@@ -56,8 +55,8 @@
         "group": "You already have an agent",
         "tag": "Recommended",
         "pages": [
-          "existing-agents/index",
           "existing-agents/quickstart",
+          "existing-agents/index",
           "existing-agents/ai-sdk",
           "existing-agents/mastra",
           "existing-agents/embeds"
@@ -67,16 +66,16 @@
         "group": "Your product has no agent",
         "tag": "Beta",
         "pages": [
-          "vendo-agent/index",
-          "vendo-agent/quickstart"
+          "vendo-agent/quickstart",
+          "vendo-agent/index"
         ]
       },
       {
         "group": "Outside agents over MCP",
         "tag": "Experimental",
         "pages": [
-          "mcp/index",
-          "mcp/quickstart"
+          "mcp/quickstart",
+          "mcp/index"
         ]
       },
       {
@@ -157,6 +156,11 @@
     {
       "source": "/try",
       "destination": "/vendo-agent/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/pick-your-door",
+      "destination": "/",
       "permanent": true
     },
     {
