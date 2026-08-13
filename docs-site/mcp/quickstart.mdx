@@ -17,25 +17,33 @@ screens in it.
 
 ## 1. Run init
 
+Two things have to be in place first: a Next.js app with an
+[auth preset](/deploy/auth) wired, and a model key —
+`ANTHROPIC_API_KEY` in `.env.local`, or `npx vendo login` for a Cloud one.
+Without the preset init says so and writes nothing; without a key `vendo_make`
+has no [model to select](/deploy/model-credentials).
+
 ```bash
 npx vendo init
 ```
 
 Pick the MCP door path in its questions. Init writes the composition, the
-catch-all route, and the origin-root discovery route. It needs a Next.js app
-with an auth preset already wired. Without one it says so and writes nothing.
+catch-all route, the origin-root discovery route, and the `models:` line.
 Details: [vendo init](/reference/vendo-init).
 
-## 2. Set your public origin
+## 2. Set your origin
 
-Where you deploy, not in your repo:
+The door's discovery, issuer, and token audience all derive from this one
+value, so it has to name the origin clients actually reach. Running locally,
+that is your dev server:
 
 ```bash
-VENDO_BASE_URL=https://your-app.example.com
+# .env.local
+VENDO_BASE_URL=http://localhost:3000
 ```
 
-The door's discovery, issuer, and token audience all derive from it. Skip it
-and doctor fails with
+Where you deploy, set the same variable to the public origin instead. Leave it
+unset either way and doctor fails with
 [E-MCP-009](/deploy/troubleshooting#E-MCP-009).
 
 ## 3. Connect a client
@@ -47,8 +55,8 @@ and doctor fails with
 /plugin marketplace add runvendo/vendo
 /plugin install vendo@vendo
 
-# in your shell, to point the plugin at your deployment
-export VENDO_MCP_URL=https://your-app.example.com/api/vendo/mcp
+# in your shell, pointed at the origin you set above
+export VENDO_MCP_URL=http://localhost:3000/api/vendo/mcp
 ```
 
 ```text Claude · ChatGPT · Cursor
@@ -56,6 +64,9 @@ https://your-app.example.com/api/vendo/mcp
 ```
 
 </CodeGroup>
+
+Whatever origin you set in step 2, plus `/api/vendo/mcp`. Hosted clients need a
+public one.
 
 The client runs the sign-in itself. Your users get a themed setup page at
 `/api/vendo/mcp/connect` for free.

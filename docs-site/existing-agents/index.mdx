@@ -16,7 +16,8 @@ into the tools you already pass your model.
 
 If your agent cannot `import` the package, because it runs in another service,
 another language, or an MCP client you don't own, take [the MCP door](/mcp)
-instead.
+instead. If you have no agent yet, [Vendo brings one](/vendo-agent) — harness,
+model, and chat surface included.
 
 Ready to wire it: [Quickstart](/existing-agents/quickstart).
 
@@ -30,10 +31,11 @@ chat.
 ```ts
 // lib/vendo.ts
 import { createVendo, guard } from "@vendoai/vendo/server";
+import { resolvePrincipal } from "@/lib/auth"; // yours: (req) => Promise<Principal | null>
 
 export const vendo = createVendo({
   guard: guard({ policy: "cautious" }),
-  principal, // the caller your auth already resolves
+  principal: resolvePrincipal,
 });
 ```
 

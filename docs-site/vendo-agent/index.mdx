@@ -45,12 +45,20 @@ answers with a live screen instead of text.
 
 ## What it costs
 
-Nothing to start, and no key. A bare composition resolves a model from your
-environment and defaults to embedded PGlite persistence, so your laptop runs
-the whole thing. Take your own Postgres, sandbox account, and model key
-straight into [production](/deploy/deploying): every capability keeps a no-key
-path. [Vendo Cloud](/deploy/vendo-cloud) is one optional key that fills the
-adapter slots you left unset. It is never a prerequisite.
+Nothing to provision. Persistence defaults to an embedded PGlite database under
+`.vendo/data`, so your laptop runs the whole thing with no container and no
+Postgres.
+
+One model credential is the exception. Put `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` and
+`vendo init` writes the matching `models:` line into your composition; a key
+sitting loose in the environment selects nothing on its own. Details:
+[Model credentials](/deploy/model-credentials).
+
+Everything else keeps a no-key path — your own Postgres, your own sandbox
+account, straight into [production](/deploy/deploying).
+[Vendo Cloud](/deploy/vendo-cloud) is one optional key that fills the adapter
+slots you left unset. It is never a prerequisite.
 
 ## What you still own
 

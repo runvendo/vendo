@@ -16,13 +16,28 @@ call that finds none fails closed.
 
 ```ts
 // app/api/chat/route.ts
+import { handleChatStream } from "@mastra/ai-sdk";
 import { RequestContext } from "@mastra/core/request-context";
-import { VENDO_PRINCIPAL_KEY, VENDO_SESSION_KEY } from "@vendoai/vendo/mastra";
+import { VENDO_PRINCIPAL_KEY } from "@vendoai/vendo/mastra";
+import { createUIMessageStreamResponse } from "ai";
+import { resolvePrincipal } from "@/lib/auth";
+import { mastra } from "@/mastra";
 
-const requestContext = new RequestContext();
-requestContext.set(VENDO_PRINCIPAL_KEY, { kind: "user", subject: userId });
-requestContext.set(VENDO_SESSION_KEY, hostSessionId); // optional, for audit
+export async function POST(req: Request) {
+  const params = await req.json();
+  const principal = await resolvePrincipal(req); // yours: { kind: "user", subject: userId }
+  const requestContext = new RequestContext();
+  requestContext.set(VENDO_PRINCIPAL_KEY, principal);
+  // Hand it to the run. A context you build and never pass is a context the
+  // tools never see, and every vendo_* call then fails closed.
+  params.requestContext = requestContext;
+  const stream = await handleChatStream({ version: "v6", mastra, agentId: "your-agent", params });
+  return createUIMessageStreamResponse({ stream });
+}
 ```
+
+Set `VENDO_SESSION_KEY` on the same context to carry your own session id into
+the audit trail. Leave it out and each turn mints one.
 
 That subject has to match what your wire route's `principal` resolves, or the
 person never sees what the agent makes. See [one principal, two

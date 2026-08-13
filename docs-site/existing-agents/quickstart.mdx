@@ -15,24 +15,34 @@ Your loop, your model, your chat UI. Vendo adds a pack of tools to them.
 
 ## 1. Init
 
+Vendo's own screen turns need a model key. Put `ANTHROPIC_API_KEY` in
+`.env.local` first and init writes the matching
+[`models:` line](/deploy/model-credentials), which is what selects the model —
+a key sitting loose in the environment selects nothing. No provider key?
+`npx vendo login` mints a Cloud one.
+
 ```bash
 npm install @vendoai/vendo
 npx vendo init
 ```
 
-Answer the questions. On the first one, pick **Through my own agent loop (AI SDK / Mastra)**.
+Answer the questions. On the first one, pick **Through my own agent loop (AI
+SDK / Mastra)**.
 
 ## 2. Share one instance
 
-Init writes `createVendo` inside the wire route. Move it out so your chat route uses the same instance.
+Init writes `createVendo` inside the wire route. Move it out so your chat route
+uses the same instance. `principal` is a function Vendo calls per request, not
+a user object.
 
 ```ts
 // lib/vendo.ts
 import { createVendo } from "@vendoai/vendo/server";
+import { resolvePrincipal } from "@/lib/auth"; // yours: (req) => Promise<Principal | null>
 
 export const vendo = createVendo({
   // …the options init wrote
-  principal, // the caller your auth already resolves
+  principal: resolvePrincipal,
 });
 ```
 
@@ -46,18 +56,26 @@ export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 
 ## 3. Spread the pack
 
+The pack takes the *resolved* caller — a `{ kind, subject }` object — so build
+it inside the handler, once you know who is asking.
+
 <CodeGroup>
 ```ts AI SDK
 // app/api/chat/route.ts
 import { streamText } from "ai";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
+import { resolvePrincipal } from "@/lib/auth";
 import { vendo } from "@/lib/vendo";
 
-const result = streamText({
-  model,
-  messages,
-  tools: { ...yourTools, ...(await vendoTools(vendo, { principal })) },
-});
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+  const caller = await resolvePrincipal(req);
+  return streamText({
+    model,
+    messages,
+    tools: { ...yourTools, ...(await vendoTools(vendo, { principal: caller })) },
+  }).toUIMessageStreamResponse();
+}
 ```
 
 ```ts Mastra
@@ -72,11 +90,21 @@ export const yourAgent = new Agent({
 });
 
 // app/api/chat/route.ts — the pack reads its caller from here
+import { handleChatStream } from "@mastra/ai-sdk";
 import { RequestContext } from "@mastra/core/request-context";
 import { VENDO_PRINCIPAL_KEY } from "@vendoai/vendo/mastra";
+import { createUIMessageStreamResponse } from "ai";
+import { resolvePrincipal } from "@/lib/auth";
+import { mastra } from "@/mastra";
 
-const requestContext = new RequestContext();
-requestContext.set(VENDO_PRINCIPAL_KEY, principal);
+export async function POST(req: Request) {
+  const params = await req.json();
+  const requestContext = new RequestContext();
+  requestContext.set(VENDO_PRINCIPAL_KEY, await resolvePrincipal(req));
+  params.requestContext = requestContext; // omit this and every vendo_* call fails
+  const stream = await handleChatStream({ version: "v6", mastra, agentId: "your-agent", params });
+  return createUIMessageStreamResponse({ stream });
+}
 ```
 </CodeGroup>
 
@@ -84,24 +112,36 @@ Framework notes: [AI SDK](/existing-agents/ai-sdk) · [Mastra](/existing-agents/
 
 ## 4. Render the results
 
-`vendo_*` calls arrive in your chat as `dynamic-tool` parts. Hand the finished ones to `<VendoToolResult>`.
+`vendo_*` calls arrive in your chat as `dynamic-tool` parts. Hand the finished
+ones to `<VendoToolResult>`, anywhere under one `<VendoProvider>`.
 
 ```tsx
 // app/page.tsx
+"use client";
+import { useChat } from "@ai-sdk/react";
 import { VendoProvider, VendoToolResult } from "@vendoai/vendo/react";
 
-<VendoProvider baseUrl="/api/vendo">
-  {parts.map((part, i) =>
-    part.type === "dynamic-tool" && part.state === "output-available"
-      ? <VendoToolResult key={i} output={part.output} />
-      : null,
-  )}
-</VendoProvider>
+export default function Chat() {
+  const { messages } = useChat();
+  return (
+    <VendoProvider baseUrl="/api/vendo">
+      {messages.map((message) => message.parts.map((part, i) => {
+        const key = `${message.id}-${i}`;
+        if (part.type === "text") return <p key={key}>{part.text}</p>;
+        if (part.type === "dynamic-tool" && part.state === "output-available") {
+          return <VendoToolResult key={key} output={part.output} />;
+        }
+        return null;
+      }))}
+    </VendoProvider>
+  );
+}
 ```
 
 ## 5. Ask for a screen
 
-Say **"Make me a dashboard of this month's spending by category"** in your own chat. A live view builds inline. Then check the wiring:
+Say **"Make me a dashboard of this month's spending by category"** in your own
+chat. A live view builds inline. Then check the wiring:
 
 ```bash
 npx vendo doctor

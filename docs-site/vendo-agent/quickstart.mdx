@@ -21,6 +21,10 @@ npm install @vendoai/vendo
 
 ## 2. Run init
 
+The agent needs a model key. Put `ANTHROPIC_API_KEY` in `.env.local` first, or
+run `npx vendo login` for a Cloud one; init turns whichever it finds into the
+[`models:` line](/deploy/model-credentials) that selects the model.
+
 ```bash
 npx vendo init
 ```
