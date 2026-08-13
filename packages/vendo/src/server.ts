@@ -190,12 +190,12 @@ export { guard, createGuard, type GuardRules, type VendoGuard } from "@vendoai/g
 // CONSTRUCTION, which is before createVendo ever runs. Pure closure
 // assignment, no I/O — safe at module scope under workerd (portability gate).
 //
-// The store rung stays deliberately unfilled: tenant-store access is under
-// redesign (2026-08-04 hold), and the HTTP hosted store cannot serve a harness
-// transcript or a workspace (storeServesHarnessTurns below), so filling it
-// would hand back a store the agent's own sessions cannot use. A
-// VENDO_API_KEY-only `agent()` therefore still fails loudly, naming
-// `store: postgres(url)`, instead of composing something broken.
+// The store rung stays unfilled for one reason: `threadStore` still opens with
+// `dbFor`, which knows only handles @vendoai/store minted, and every session
+// and away-run routes through it — so filling this rung would move the failure
+// from boot to the developer's first turn. (createVendo is clear of it: its
+// own thread lifecycle rides `records`.) A VENDO_API_KEY-only `agent()`
+// therefore fails loudly, naming `store: postgres(url)`. Tracked in #1259.
 provideCloudAdapters({ sandbox: cloudSandbox });
 
 function isJsonRequest(request: Request): boolean {

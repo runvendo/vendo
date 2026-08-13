@@ -81,9 +81,11 @@ wins, and `VENDO_API_KEY` fills only the slots you left unset.**
     ```
 
     Mints a `VENDO_API_KEY` into `.env.local` — never printed. It fills the
-    model seat (through the Cloud gateway) and the sandbox. The store is not
-    one of them: there is no Cloud store rung today, so with a key set you
-    pass one — `store: postgres(url)` — or `agent()` refuses to boot.
+    model seat (through the Cloud gateway) and the sandbox, and for
+    `createVendo` the store too — the Cloud hosted store. Standalone `agent()`
+    is the exception: its store rung is not wired yet
+    ([#1259](https://github.com/runvendo/vendo/issues/1259)), so until it lands
+    a key-only `agent()` passes `store: postgres(url)` or refuses to boot.
   </Card>
   <Card title="No Vendo key — bring your own" icon="server">
     ```ts

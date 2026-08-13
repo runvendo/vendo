@@ -145,10 +145,11 @@ export const agentComposition = (agent: VendoAgent): AgentComposition | undefine
   compositions.get(agent);
 
 /**
- * The Cloud rungs. Their concrete shapes live with the Cloud wiring (the
- * tenant-store access design is under review, 2026-08-04 hold), so this
+ * The Cloud rungs. Their concrete shapes ship with the Cloud wiring, so this
  * package holds only the seam: an interface that returns a store/adapter.
  * `createVendo` (or the host) fills it; unfilled, the rung is a clear error.
+ * The store rung waits on `threadStore`, which still opens with `dbFor` —
+ * every session and away-run routes through it (#1259).
  */
 export interface CloudAdapters {
   store?: (key: { apiKey: string; baseUrl?: string }) => VendoStore;
