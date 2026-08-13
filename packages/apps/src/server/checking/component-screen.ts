@@ -259,6 +259,12 @@ const literalValue = (node: Node): { ok: true; value: unknown } | { ok: false } 
 
 const ALLOWED_IMPORTS: readonly string[] = ["react", SCREEN_MODULE];
 
+/** The two constructs the toolchains do not agree on. Read off the AUTHOR's
+ *  source rather than the module form, because that is the last place either one
+ *  is still visible: the transform is exactly what disagrees about them. */
+const NAMESPACE_BLOCK = /^[ \t]*(?:export[ \t]+)?(?:declare[ \t]+)?namespace[ \t]+([A-Za-z_$][\w$.]*)[ \t]*\{/mu;
+const STATIC_BLOCK = /(?:^|[;{}\s])static[ \t]*\{/mu;
+
 /** The import block is not `tools` USAGE: `import { tools } from "@vendo/screen"`
  *  puts the name in expression position (a `{` to its left), which the shipped
  *  literal-access scan reads as aliasing. Blanked with offsets preserved, so that
@@ -338,7 +344,7 @@ interface ScanResult {
   queryPlan: QueryPlanEntry[];
 }
 
-const scan = (moduleSource: string, tools: readonly HostToolInfo[]): ScanResult => {
+const scan = (moduleSource: string, source: string, tools: readonly HostToolInfo[]): ScanResult => {
   const issues: ComponentScreenIssue[] = [];
   const queryPlan: QueryPlanEntry[] = [];
   let program: Program;
@@ -355,7 +361,16 @@ const scan = (moduleSource: string, tools: readonly HostToolInfo[]): ScanResult 
   const readable = tools.filter((tool) => !isMutatingTool(tool)).map((tool) => tool.name);
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
 
-  // (a) the import surface. An UNUSED disallowed import is elided by the
+  // (a) the two constructs whose compiled form depends on which toolchain ran.
+  const namespaced = NAMESPACE_BLOCK.exec(source);
+  if (namespaced !== null) {
+    issues.push(issue("namespace", `declares a namespace block (namespace ${namespaced[1]} { … }) — a screen is compiled by a types-only transform, which has no output form for one, so this file would compile in one venue and not in another. A screen is ONE file and needs no inner scope: write plain top-level consts, functions and types instead.`));
+  }
+  if (STATIC_BLOCK.test(source)) {
+    issues.push(issue("static-block", `writes a class static initializer block (static { … }) — a screen is compiled by a types-only transform, which emits the class as written, so this block reaches the screen VM unlowered and the same file does not run the same in every venue. Do that work in the component body, or in a plain top-level const.`));
+  }
+
+  // (b) the import surface. An UNUSED disallowed import is elided by the
   // transform before it reaches here — and it cannot affect the screen either,
   // since nothing requires it; the type check still sees it in the source.
   for (const statement of program.body) {
@@ -521,7 +536,7 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
   }
   const compiled = forms.engine;
 
-  const scanned = scan(forms.scan, opts.hostTools);
+  const scanned = scan(forms.scan, opts.source, opts.hostTools);
   if (scanned.issues.length > 0) return refuse(scanned.issues, { compiled });
   const queryPlan = scanned.queryPlan;
 

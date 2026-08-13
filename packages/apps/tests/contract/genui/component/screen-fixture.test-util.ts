@@ -2,10 +2,11 @@
  * One screen, compiled and booted the way the engine is fed in production.
  *
  * The compile flags are the gauntlet's own `engine` form
- * (server/checking/component-screen.ts): CommonJS, because the VM hosts a
- * `require` and no module loader, and the AUTOMATIC jsx transform, because the VM
- * publishes `react/jsx-runtime` and has no bare `React` global. A test that
- * hand-wrote the CJS would be asserting against a source shape nothing produces.
+ * (server/checking/toolchain.ts): CommonJS, because the VM hosts a `require` and
+ * no module loader, the AUTOMATIC jsx transform, because the VM publishes
+ * `react/jsx-runtime` and has no bare `React` global, and the `"use strict";`
+ * banner, because CommonJS output is otherwise sloppy. A test that hand-wrote the
+ * CJS would be asserting against a source shape nothing produces.
  */
 import { transformSync } from "esbuild";
 import {
@@ -15,7 +16,7 @@ import {
 } from "../../../../src/contract/genui/component/index.js";
 
 export const compileScreen = (tsx: string): string =>
-  transformSync(tsx, { loader: "tsx", format: "cjs", target: "es2020", jsx: "automatic" }).code;
+  transformSync(tsx, { loader: "tsx", format: "cjs", target: "es2020", jsx: "automatic", banner: '"use strict";' }).code;
 
 /** The Kit names a host surface holds, as the engine receives them. */
 export const CATALOG: readonly string[] = [

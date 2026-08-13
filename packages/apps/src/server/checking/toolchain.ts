@@ -110,6 +110,13 @@ export class ScreenToolchainUnavailable extends Error {}
  *  portability gate's field failure). Same pattern as smoke-render.ts. */
 let ESBUILD_SPECIFIER = "esbuild";
 
+/** Strict mode is SPECIFIED on the engine form, not inherited: CommonJS output
+ *  is sloppy by default, an ES module is strict already, and the two differ on
+ *  frozen writes, `this` in a plain call and undeclared assignment. Without the
+ *  banner a screen could pass here and throw wherever a types-only transform
+ *  runs it. The scan form is the module form and needs nothing. */
+const STRICT_BANNER = '"use strict";';
+
 type ScreenForm = "engine" | "scan";
 
 type Transform = (source: string, form: ScreenForm) => string;
@@ -120,7 +127,7 @@ const esbuildTransform: Promise<Transform | undefined> = (async () => {
   try {
     const esbuild = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ ESBUILD_SPECIFIER) as typeof import("esbuild");
     return (source, form) => esbuild.transformSync(source, form === "engine"
-      ? { loader: "tsx", format: "cjs", target: "es2020", jsx: "automatic" }
+      ? { loader: "tsx", format: "cjs", target: "es2020", jsx: "automatic", banner: STRICT_BANNER }
       : { loader: "tsx", format: "esm", target: "es2020" }).code;
   } catch {
     return undefined;
