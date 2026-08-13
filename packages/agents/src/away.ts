@@ -57,6 +57,14 @@ import { openThread } from "./session.js";
  *  own (50), so this only bounds a host driving the seam directly. */
 const DEFAULT_MAX_TOOL_CALLS = 20;
 
+/** What a call past the run's budget gets. Two rails answer with it: `preflight`
+ *  rules the call out before the guard can park it, and `gate` — the rail whose
+ *  outcome reaches the model — repeats it for that same call. */
+const BUDGET_EXHAUSTED: ToolOutcome = {
+  status: "error",
+  error: { code: "budget-exhausted", message: "Tool-call budget exhausted" },
+};
+
 export interface AwayRunnerDeps {
   /** The brain, with its knobs already bound. */
   harness: Harness<unknown>;
@@ -348,6 +356,22 @@ async function runTurn(deps: AwayRunnerDeps, input: RunTurnInput): Promise<Agent
   if (!Number.isInteger(cap) || cap < 1) {
     throw new VendoError("validation", "maxToolCalls must be a positive integer");
   }
+  // Read through a call, never inline: `AbortSignal.aborted` is a readonly
+  // boolean, so a narrowing here would have the compiler believe the answer
+  // below cannot change — and the whole point of a signal is that it does.
+  const aborted = (): boolean => input.signal?.aborted === true;
+  // Cancelled before it began: no thread, no workspace, no harness. The signal
+  // is the only way to stop a run, and a run stopped before its first I/O has
+  // nothing to report but the stop.
+  if (aborted()) {
+    return {
+      status: "stopped",
+      summary: fallbackSummary("stopped", []),
+      toolCalls: [],
+      refs: { threadId: input.threadId, approvals: [] },
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+  }
   // Everything the caller put on the ctx rides through untouched — the sponsor,
   // the venue, the appId, the firing trigger's id, the asserted memberships.
   // Only presence is asserted, for a caller that came in without it.
@@ -374,6 +398,10 @@ async function runTurn(deps: AwayRunnerDeps, input: RunTurnInput): Promise<Agent
   };
   let startedCalls = 0;
   let budgetRefused = false;
+  /** Calls the budget already refused, by id: the two rails below are two halves
+   *  of ONE decision, and the second must answer for exactly the call the first
+   *  ruled out — never for the call that spent the last of the budget. */
+  const overBudget = new Set<string>();
   let failed = false;
   let usage: UsageTotals | undefined;
   let output: unknown;
@@ -432,35 +460,38 @@ async function runTurn(deps: AwayRunnerDeps, input: RunTurnInput): Promise<Agent
       emit: opts.emit,
     }),
     bridge: {
-      // Every call the harness ATTEMPTS, before the guard sees it. It is only an
-      // observer (it never rules a call out), and it is here because a call the
-      // preview refuses — `interactive: false` and nobody there to approve — is
-      // denied without ever reaching `execute`, so `onCall` below never sees it.
-      // Leaving it out of the report would hide the very thing the run record is
-      // for: the automation asked, and it is waiting on a person.
+      // Every call the harness ATTEMPTS, before the guard sees it — and the one
+      // rail EVERY away call passes, which is why the budget is spent here. A
+      // call the preview parks (`interactive: false` and nobody there to
+      // approve) is denied without ever reaching `execute`, so `gate` and
+      // `onCall` below never see it: charged there alone, the budget bounded
+      // nothing away and a looping model minted one approval card per attempt.
+      // Recording the attempt here is what keeps the run record honest too —
+      // the automation asked, and it is waiting on a person.
       preflight: async (call) => {
-        attempted(call).outcome = "pending-approval";
+        attempted(call);
+        if (startedCalls >= cap) {
+          budgetRefused = true;
+          overBudget.add(call.id);
+          // Returned BEFORE the guard is consulted: nothing past the bound is
+          // worth a person's card, and `gate` speaks this to the model.
+          return BUDGET_EXHAUSTED;
+        }
+        startedCalls += 1;
         // The result channel takes the same pre-guard short-circuit an
         // unconnected service does. It reaches nothing — it validates its args
         // and hands them to a closure in this function: no network, no store,
-        // no host API, no file — and it still pays the call budget at `gate`
-        // below. It is here ONLY because an away run parks every call it cannot
-        // trace to a grant, READS INCLUDED (packages/guard/src/guard.ts:1051),
-        // which would strand every typed run on a card nobody can answer.
-        // DELETE THIS BRANCH once the pending guard change lands and a
-        // reaches-nothing read no longer parks unattended.
+        // no host API, no file — and it pays the call budget just above. It is
+        // here ONLY because an away run parks every call it cannot trace to a
+        // grant, READS INCLUDED (packages/guard/src/guard.ts:1051), which would
+        // strand every typed run on a card nobody can answer. DELETE THIS
+        // BRANCH once the pending guard change lands and a reaches-nothing read
+        // no longer parks unattended.
         return call.tool === RESULT_TOOL ? { status: "ok", output: {} } : undefined;
       },
-      // The budget, at the one place every guarded call passes. Spent, further
-      // calls are refused BEFORE the registry — nothing runs past the bound.
-      gate: () => {
-        if (startedCalls >= cap) {
-          budgetRefused = true;
-          return { status: "error", error: { code: "budget-exhausted", message: "Tool-call budget exhausted" } };
-        }
-        startedCalls += 1;
-        return undefined;
-      },
+      // The other half of the budget decision: the refusal, at the one place an
+      // outcome reaches the model — nothing runs past the bound.
+      gate: (call) => (overBudget.has(call.id) ? BUDGET_EXHAUSTED : undefined),
       onCall: (call) => {
         const entry = attempted(call);
         return (outcome) => {
@@ -475,6 +506,7 @@ async function runTurn(deps: AwayRunnerDeps, input: RunTurnInput): Promise<Agent
   const directions = await deps.guard.directions(awayCtx);
   const assembled = assemblePrompt({
     ...(deps.instructions === undefined ? {} : { instructions: deps.instructions }),
+    ...(awayCtx.user === undefined ? {} : { user: awayCtx.user }),
     ...(awayCtx.context === undefined ? {} : { situation: awayCtx.context }),
     directions,
   });
@@ -503,8 +535,18 @@ async function runTurn(deps: AwayRunnerDeps, input: RunTurnInput): Promise<Agent
   // its callbacks in a set forever, so a throw between the subscribe and the
   // teardown would leak one — and a foreign `threadId` is a rejection a caller
   // can repeat at will.
-  const unsubscribe = runKey === undefined ? undefined : deps.guard.onApprovalRequested?.((request) => {
-    if ((request.ctx.trigger?.runId ?? request.ctx.sessionId) === runKey) approvals.push(request.id);
+  const unsubscribe = deps.guard.onApprovalRequested?.((request) => {
+    if (runKey !== undefined && (request.ctx.trigger?.runId ?? request.ctx.sessionId) === runKey) {
+      approvals.push(request.id);
+    }
+    // A parked call never reaches `onCall`, so this is the only moment the run
+    // learns one parked — and it is the HONEST one: a guard that threw while
+    // parking mints no request, so its call keeps the opening `error` instead of
+    // telling the host to wait on a card nobody has. Matched on the tool call's
+    // own id (minted per call, uuid-backed), so a sibling run's card cannot mark
+    // this run's call whatever the run key says.
+    const parked = recorded.find((entry) => entry.call.id === request.call.id);
+    if (parked !== undefined) parked.outcome = "pending-approval";
   });
   try {
     const response = await runtime.run({
@@ -543,7 +585,7 @@ async function runTurn(deps: AwayRunnerDeps, input: RunTurnInput): Promise<Agent
   // agreeing with the report rather than silently short of it.
   for (const entry of recorded) if (!reported.has(entry.call.id)) emitResult(entry);
 
-  const stopped = input.signal?.aborted === true || budgetRefused;
+  const stopped = aborted() || budgetRefused;
   const status: AgentRunReport["status"] = stopped
     ? "stopped"
     : failed ? "error" : "ok";

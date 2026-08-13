@@ -39,6 +39,35 @@ const response = await session.stream("Refund invoice #7");
 // conversation on the next request.
 ```
 
+`respond()` is that pair — `session()` then `stream()` — in one call, for a
+route that only wants the Response back:
+
+```ts
+export async function POST(req: Request) {
+  const { message, threadId } = await req.json();
+  return support.respond("u_42", message, { threadId, headers: req.headers });
+}
+```
+
+`run()` answers CODE rather than a screen: one unattended turn, a report at the
+end. Nobody is there to tap, so a call the guard wants a person for parks as a
+card instead of running — `refs.approvals` is who to ask, and there is no
+resume: answer them and run again.
+
+```ts
+const running = support.run("Chase every invoice over 30 days.", {
+  as: "u_42",                               // whose run it is; omit to run as the agent
+  maxToolCalls: 20,                         // default 20; the call past it is refused
+  output: z.object({ chased: z.number() }), // optional typed answer, no second model call
+});
+console.log(running.threadId);              // readable before the run finishes
+for await (const event of running.events) console.log(event);   // text, status, calls
+
+const report = await running;
+// status "ok" | "stopped" | "error", summary, toolCalls, usage, output,
+// refs: { threadId, approvals }.
+```
+
 A session is a REQUEST-lifetime object — the conversation it is on outlives
 it, in your store. Build one per request and pass `threadId` back in, or the
 next request starts a blank conversation. Omitting `threadId` opens a new

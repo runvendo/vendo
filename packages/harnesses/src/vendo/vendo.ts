@@ -20,7 +20,7 @@ import { z } from "zod";
 import { modelToolDescription, type Harness, type Json, type Turn } from "@vendoai/core";
 import { readCompactionState, writeCompactionState, type CompactionState } from "./compaction.js";
 import { startTurn, type TurnCompaction, type TurnContext } from "./loop.js";
-import { contextWindowTokens, rememberResolvedModelId } from "./model-windows.js";
+import { contextWindowTokens, rememberResolvedModelId, resolvedModelId } from "./model-windows.js";
 import { isContextOverflow } from "./overflow.js";
 import {
   computeInitialLoadout,
@@ -291,10 +291,12 @@ interface SubagentReport {
   usage: UsageTotals;
 }
 
-/** The resolved id of the seat that spent the tokens: the union's string form IS
- *  the id, the object form names it. */
+/** The resolved id of the seat that spent the tokens: what the PROVIDER reported
+ *  for it (the same record the window table reads), else the seat's own id. A
+ *  lazy seat answers `vendo-env` for its own id — a family, not a model — and
+ *  usage is what hosts meter on. */
 const modelIdOf = (model: LanguageModel): string =>
-  typeof model === "string" ? model : model.modelId;
+  typeof model === "string" ? model : resolvedModelId(model) ?? model.modelId;
 
 /** One usage figure set from an `ai` totals block, in `UsageTotals` shape. */
 function usageOf(usage: LanguageModelUsage, model: LanguageModel): UsageTotals {

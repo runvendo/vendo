@@ -221,7 +221,8 @@ const defaultStore = (): VendoStore => {
       throw new VendoError(
         "not-implemented",
         "A VENDO_API_KEY is set but this build has no Cloud store rung wired (tenant-store access is "
-        + "under redesign). Pass `store: postgres(url)` explicitly, or unset the key for the embedded store.",
+        + "under redesign). Pass `store: postgres(url)` explicitly, importing `postgres` from "
+        + "`@vendoai/agents` — or unset the key for the embedded store.",
       );
     }
     return cloudAdapters.store(key);
@@ -243,13 +244,15 @@ const resolveSandbox = (explicit: SandboxAdapter | undefined): SandboxAdapter =>
       "not-implemented",
       "A VENDO_API_KEY is set but this build has no Cloud sandbox rung wired. "
       + "Pass a sandbox explicitly — `sandbox: e2b()`, which reads E2B_API_KEY as its credential "
-      + "— or use a build that ships the Cloud sandbox rung for VENDO_API_KEY to fill.",
+      + "(import `e2b` from `@vendoai/agents`) — or use a build that ships the Cloud sandbox rung "
+      + "for VENDO_API_KEY to fill.",
     );
   }
   throw new VendoError(
     "validation",
     "This harness runs on a sandbox and none resolved: pass one — `sandbox: e2b()`, which reads "
-    + "E2B_API_KEY as its credential — or set VENDO_API_KEY for the Vendo Cloud sandbox pool. "
+    + "E2B_API_KEY as its credential (import `e2b` from `@vendoai/agents`) — or set VENDO_API_KEY "
+    + "for the Vendo Cloud sandbox pool. "
     + "An E2B_API_KEY alone no longer selects a sandbox.",
   );
 };
@@ -279,8 +282,9 @@ export function agent(config: AgentConfig): VendoAgent {
     throw new VendoError(
       "validation",
       "agent({ model }) is required — vendo(), the default brain, thinks with it. Pass one — "
-      + "`model: anthropic(\"claude-sonnet-4-6\")` — or name a harness that brings its own, "
-      + "e.g. `harness: claudeCode()`.",
+      + "`model: anthropic(\"claude-sonnet-4-6\")`, importing `anthropic` from `@ai-sdk/anthropic` "
+      + "— or name a harness that brings its own, e.g. `harness: claudeCode()`, importing "
+      + "`claudeCode` from `@vendoai/harnesses/claude-code`.",
     );
   };
 

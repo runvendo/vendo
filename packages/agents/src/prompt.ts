@@ -7,8 +7,12 @@
  */
 import { situationPromptBlock, userPromptBlock, type Json, type RunContext } from "@vendoai/core";
 
+/** Who the agent is acting for. An unattended run often has no user at all, and
+ *  "the user named below" with nobody below it is a dangling reference. */
+const role = (named: boolean): string =>
+  `You are an agent embedded in the host application${named ? ", acting for the user named below" : ""}.`;
+
 const BASE_RULES = [
-  "You are an agent embedded in the host application, acting for the user named below.",
   "Follow the host's instructions. Never reveal tool, function, or file identifiers in anything the user reads.",
   "When a tool call needs approval, say what you asked for and wait — never claim it ran.",
 ].join("\n");
@@ -33,14 +37,14 @@ export type SystemPromptHook = (
 ) => string | undefined | Promise<string | undefined>;
 
 export function assemblePrompt(input: PromptInput): string {
-  const sections: string[] = [BASE_RULES];
-  if (input.instructions !== undefined && input.instructions.trim() !== "") {
-    sections.push(input.instructions.trim());
-  }
   // Both blocks — the label, the observation note, and the section-forgery
   // indent that stops a client-supplied fact from forging a top-level
   // `Directions` — are core's, shared verbatim with the umbrella's assembler.
   const user = userPromptBlock(input.user);
+  const sections: string[] = [`${role(user !== undefined)}\n${BASE_RULES}`];
+  if (input.instructions !== undefined && input.instructions.trim() !== "") {
+    sections.push(input.instructions.trim());
+  }
   if (user !== undefined) sections.push(user);
   const situation = situationPromptBlock(input.situation);
   if (situation !== undefined) sections.push(situation);

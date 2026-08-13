@@ -70,6 +70,13 @@ export function rememberResolvedModelId(model: LanguageModel, reported: string |
   resolvedIds.set(model, reported);
 }
 
+/** What the provider reported for `model`, if a call has reported yet. The
+ *  metering path reads it too: usage is priced on the model that served the
+ *  tokens, and a lazy seat's own id is a family name, not a model. */
+export function resolvedModelId(model: LanguageModel): string | undefined {
+  return typeof model === "string" ? model : resolvedIds.get(model);
+}
+
 /**
  * THE one new public knob of this shipment.
  *
