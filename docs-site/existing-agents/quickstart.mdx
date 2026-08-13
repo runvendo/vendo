@@ -1,0 +1,110 @@
+---
+title: "Quickstart: your agent"
+sidebarTitle: "Quickstart"
+description: "Add Vendo's guarded tool pack to an AI SDK or Mastra loop you already run: vendo init, one spread, one component."
+---
+
+import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+
+Your loop, your model, your chat UI. Vendo adds a pack of tools to them.
+
+<AgentPrompt
+  lead="Or hand it to your coding agent."
+  prompt={"Add Vendo to this repo's existing agent loop. Fetch https://vendo.run/agents.md and follow it for this repo. Ask me before creating any account or key. You're done when `vendo doctor --json` is green and my chat renders a Vendo tool output."}
+/>
+
+## 1. Init
+
+```bash
+npm install @vendoai/vendo
+npx vendo init
+```
+
+Answer the questions. On the first one, pick **Through my own agent loop (AI SDK / Mastra)**.
+
+## 2. Share one instance
+
+Init writes `createVendo` inside the wire route. Move it out so your chat route uses the same instance.
+
+```ts
+// lib/vendo.ts
+import { createVendo } from "@vendoai/vendo/server";
+
+export const vendo = createVendo({
+  // …the options init wrote
+  principal, // the caller your auth already resolves
+});
+```
+
+```ts
+// app/api/vendo/[...vendo]/route.ts
+import { nextVendoHandler } from "@vendoai/vendo/server";
+import { vendo } from "@/lib/vendo";
+
+export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
+```
+
+## 3. Spread the pack
+
+<CodeGroup>
+```ts AI SDK
+// app/api/chat/route.ts
+import { streamText } from "ai";
+import { vendoTools } from "@vendoai/vendo/ai-sdk";
+import { vendo } from "@/lib/vendo";
+
+const result = streamText({
+  model,
+  messages,
+  tools: { ...yourTools, ...(await vendoTools(vendo, { principal })) },
+});
+```
+
+```ts Mastra
+// src/mastra/agents/your-agent.ts
+import { Agent } from "@mastra/core/agent";
+import { vendoMastraTools } from "@vendoai/vendo/mastra";
+import { vendo } from "../../lib/vendo";
+
+export const yourAgent = new Agent({
+  // …your agent as it is
+  tools: async () => ({ ...yourTools, ...(await vendoMastraTools(vendo)) }),
+});
+
+// app/api/chat/route.ts — the pack reads its caller from here
+import { RequestContext } from "@mastra/core/request-context";
+import { VENDO_PRINCIPAL_KEY } from "@vendoai/vendo/mastra";
+
+const requestContext = new RequestContext();
+requestContext.set(VENDO_PRINCIPAL_KEY, principal);
+```
+</CodeGroup>
+
+Framework notes: [AI SDK](/existing-agents/ai-sdk) · [Mastra](/existing-agents/mastra).
+
+## 4. Render the results
+
+`vendo_*` calls arrive in your chat as `dynamic-tool` parts. Hand the finished ones to `<VendoToolResult>`.
+
+```tsx
+// app/page.tsx
+import { VendoProvider, VendoToolResult } from "@vendoai/vendo/react";
+
+<VendoProvider baseUrl="/api/vendo">
+  {parts.map((part, i) =>
+    part.type === "dynamic-tool" && part.state === "output-available"
+      ? <VendoToolResult key={i} output={part.output} />
+      : null,
+  )}
+</VendoProvider>
+```
+
+## 5. Ask for a screen
+
+Say **"Make me a dashboard of this month's spending by category"** in your own chat. A live view builds inline. Then check the wiring:
+
+```bash
+npx vendo doctor
+```
+
+Next: [what's in the pack](/existing-agents) · [embeds and envelopes](/existing-agents/embeds).
