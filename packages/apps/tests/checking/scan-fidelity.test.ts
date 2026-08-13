@@ -280,6 +280,18 @@ export default function Screen() {
 }
 `;
 
+/** A REAL namespace, split by a block comment the guard's `\\s` cannot cross. */
+const NAMESPACE_SPLIT_BY_COMMENT = `import { Text } from "@vendo/screen";
+
+namespace /* still a namespace */ Format {
+  export const dash = "—";
+}
+
+export default function Screen() {
+  return <Text text={Format.dash} />;
+}
+`;
+
 beforeAll(async () => {
   await warmScreenEngine();
 });
@@ -402,6 +414,23 @@ describe("the namespace guard's accepted false positives", () => {
     const result = await check(NAMESPACE_IN_STRING);
 
     expect(result.issues).toEqual([{ code: "namespace", message: NAMESPACE_MESSAGE }]);
+  });
+
+  /**
+   * And the residual that runs the OTHER way — a KNOWN MISS, asserted so it is
+   * visible rather than folklore. `\s` does not match a comment, so this real
+   * declaration passes the whole gauntlet. Reading through comments means lexing
+   * the file, which is exactly the comment-aware matching this guard was written
+   * to avoid, and unlike `static {}` there is no tree to read instead.
+   *
+   * A failure here means the guard grew a lexer or an AST route: welcome news —
+   * replace this assertion with a refusal.
+   */
+  it("admits a real namespace split by a block comment", async () => {
+    const result = await check(NAMESPACE_SPLIT_BY_COMMENT);
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
   });
 });
 
