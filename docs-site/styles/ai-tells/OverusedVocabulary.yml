@@ -1,0 +1,47 @@
+---
+extends: existence
+# Heavily pruned from upstream. The original file is a ~150-word bucket of
+# "AI vocabulary," but most of those words (significant, notable, dynamic,
+# scalable, versatile, comprehensive, crucial, granular, actionable,
+# meaningful, genuine, innovative...) are ordinary, load-bearing technical
+# vocabulary that a devtool docs site uses constantly and legitimately.
+# This keeps only the words that are unambiguous marketing/hype verbs and
+# nouns with near-zero legitimate use in technical reference prose.
+message: "AI vocabulary: '%s'. Replace with a more specific or common word."
+level: warning
+tokens:
+  - delve
+  - delves
+  - delving
+  - delved
+  - empower
+  - empowers
+  - empowering
+  - empowered
+  - empowerment
+  - elevate
+  - elevates
+  - elevating
+  - unleash
+  - unleashes
+  - unleashing
+  - unleashed
+  - democratize
+  - democratizes
+  - democratizing
+  - democratized
+  - supercharge
+  - supercharges
+  - supercharging
+  - turbocharge
+  - turbocharges
+  - turbocharging
+  - synergy
+  - synergies
+  - synergistic
+  - state-of-the-art
+  - best-in-class
+  - world-class
+  - next-generation
+  - next-level
+  - aforementioned
