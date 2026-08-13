@@ -54,6 +54,11 @@ const VALUE_EXPORTS = [
   // `thread/parts.tsx` is public API by construction. (Its destinations come
   // from `useSlots`, which the root surface exports.)
   "AddToPicker",
+  // ⚠️ TEST EDIT — `useApprovalModal` joins them DELIBERATELY, for the same
+  // reason as the two above: `thread/parts.tsx` now mounts the approval modal
+  // per app card (a parked press must be able to ask its question in the chat),
+  // and every import in that eject template is public API by construction.
+  "useApprovalModal",
   "VendoTrigger",
   // Keystone graduates B7 — the remixable-surface affordance.
   "Remixable",
