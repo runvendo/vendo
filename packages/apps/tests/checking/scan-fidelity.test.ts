@@ -280,10 +280,22 @@ export default function Screen() {
 }
 `;
 
-/** A REAL namespace, split by a block comment the guard's `\\s` cannot cross. */
+/** REAL namespaces, split by a block comment the guard's `\\s` cannot cross —
+ *  before the name, and before the brace. */
 const NAMESPACE_SPLIT_BY_COMMENT = `import { Text } from "@vendo/screen";
 
 namespace /* still a namespace */ Format {
+  export const dash = "—";
+}
+
+export default function Screen() {
+  return <Text text={Format.dash} />;
+}
+`;
+
+const NAMESPACE_COMMENT_BEFORE_BRACE = `import { Text } from "@vendo/screen";
+
+namespace Format /* still a namespace */ {
   export const dash = "—";
 }
 
@@ -427,10 +439,13 @@ describe("the namespace guard's accepted false positives", () => {
    * replace this assertion with a refusal.
    */
   it("admits a real namespace split by a block comment", async () => {
-    const result = await check(NAMESPACE_SPLIT_BY_COMMENT);
+    const beforeName = await check(NAMESPACE_SPLIT_BY_COMMENT);
+    const beforeBrace = await check(NAMESPACE_COMMENT_BEFORE_BRACE);
 
-    expect(result.issues).toEqual([]);
-    expect(result.ok).toBe(true);
+    expect(beforeName.issues).toEqual([]);
+    expect(beforeName.ok).toBe(true);
+    expect(beforeBrace.issues).toEqual([]);
+    expect(beforeBrace.ok).toBe(true);
   });
 });
 

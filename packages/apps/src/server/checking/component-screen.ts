@@ -312,7 +312,8 @@ const ALLOWED_IMPORTS: readonly string[] = ["react", SCREEN_MODULE];
  *
  * One residual runs the OTHER way and is accepted on the same terms: `\s` does
  * not match a comment, so a REAL declaration with a block comment between the
- * keyword and the name is admitted — that shape passes the whole gauntlet. The
+ * keyword, the name or the brace is admitted — those shapes pass the whole
+ * gauntlet, which is a miss and not a false refusal. The
  * only fix is lexing the file to read through comments, and this guard exists
  * precisely because there is no parse of the construct to lean on. Pinned in the
  * same place as the false positives, so the accepted set is honest in both
