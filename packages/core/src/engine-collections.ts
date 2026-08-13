@@ -32,7 +32,9 @@ export const ENGINE_COLLECTIONS = [
 
   // Generic-table collections the blocks own.
   "vendo_parked_call", // PARKED_COLLECTION, packages/vendo/src/byo-approvals.ts:47
-  "vendo_parked_call_outcome", // OUTCOME_COLLECTION, packages/vendo/src/byo-approvals.ts:48
+  // PARKED_CALL_OUTCOME_COLLECTION, packages/core/src/parked-outcome.ts — written
+  // by BOTH parked-call lanes (byo-approvals.ts, parked-action.ts), read by one.
+  "vendo_parked_call_outcome",
   // The next two, and guard:controls below, write rows carrying NEITHER a
   // subject ref NOR an app ref, and that is deliberate: they are HOST-LEVEL
   // CONFIG — the host's component registry, the pinned-baseline seed, the
