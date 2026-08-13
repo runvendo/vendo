@@ -1,8 +1,10 @@
 import {
+  PARKED_CALL_OUTCOME_COLLECTION,
   VendoError,
   type ApprovalId,
   type ApprovalRequest,
   type IsoDateTime,
+  type ParkedCallOutcome,
   type Principal,
   type RunContext,
   type StoreOps,
@@ -44,7 +46,6 @@ import type { VendoGuard } from "@vendoai/guard";
  */
 
 const PARKED_COLLECTION = "vendo_parked_call";
-const OUTCOME_COLLECTION = "vendo_parked_call_outcome";
 
 interface ParkedByoCall {
   /** The guard approval that gates this call. */
@@ -63,15 +64,6 @@ interface ParkedByoCall {
   /** Set by the sweep just before it denies, so the decision subscriber
    *  resolves the outcome to "expired" instead of "declined". */
   expiring?: boolean;
-}
-
-interface ParkedByoOutcome {
-  approvalId: ApprovalId;
-  owner: string;
-  state: "executed" | "declined" | "expired";
-  /** Present for "executed": the resumed call's outcome, errors included. */
-  outcome?: ToolOutcome;
-  at: IsoDateTime;
 }
 
 /** The wire's answer to `GET /approvals/:id` — the frozen
@@ -157,8 +149,8 @@ export function createByoApprovals({ guard, tools, ops }: ByoApprovalsConfig): B
     });
   };
 
-  const putOutcome = async (record: ParkedByoOutcome): Promise<void> => {
-    await engine().put(OUTCOME_COLLECTION, {
+  const putOutcome = async (record: ParkedCallOutcome): Promise<void> => {
+    await engine().put(PARKED_CALL_OUTCOME_COLLECTION, {
       id: record.approvalId,
       data: record,
       refs: { subject: record.owner, state: record.state },
@@ -255,9 +247,11 @@ export function createByoApprovals({ guard, tools, ops }: ByoApprovalsConfig): B
     },
 
     async read(approvalId, principal) {
-      const record = await engine().get(OUTCOME_COLLECTION, approvalId);
+      // BOTH lanes' terminal rows land here (parked-outcome.ts): a BYO call the
+      // subscriber below resolved, or an in-app action the apps runtime did.
+      const record = await engine().get(PARKED_CALL_OUTCOME_COLLECTION, approvalId);
       if (record !== null) {
-        const data = record.data as ParkedByoOutcome;
+        const data = record.data as ParkedCallOutcome;
         if (data.owner === principal.subject) {
           if (data.state === "executed" && data.outcome !== undefined) {
             return { state: "executed", outcome: data.outcome };
