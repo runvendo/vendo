@@ -75,16 +75,17 @@ Pick one. They are the same ladder everywhere in Vendo: **what you pass always
 wins, and `VENDO_API_KEY` fills only the slots you left unset.**
 
 <CardGroup cols={2}>
-  <Card title="Zero-key — vendo login" icon="cloud">
+  <Card title="Vendo Cloud — vendo login" icon="cloud">
     ```bash
     npx vendo login
     ```
 
     Mints a `VENDO_API_KEY` into `.env.local` — never printed. It fills the
-    model seat (through the Cloud gateway), the store, and the sandbox, so the
-    seven-line compose above boots with nothing else set.
+    model seat (through the Cloud gateway) and the sandbox. The store is not
+    one of them: there is no Cloud store rung today, so with a key set you
+    pass one — `store: postgres(url)` — or `agent()` refuses to boot.
   </Card>
-  <Card title="Bring your own" icon="server">
+  <Card title="No Vendo key — bring your own" icon="server">
     ```ts
     import { anthropic } from "@ai-sdk/anthropic";
     import { agent, api, postgres } from "@vendoai/agents";
@@ -97,8 +98,10 @@ wins, and `VENDO_API_KEY` fills only the slots you left unset.**
     });
     ```
 
-    `ANTHROPIC_API_KEY` is what the provider *you* construct authenticates
-    with. It selects nothing on its own.
+    Your own model key and your own store — no Vendo key anywhere. Drop
+    `store` and you get the embedded one instead. `ANTHROPIC_API_KEY` is what
+    the provider *you* construct authenticates with. It selects nothing on its
+    own.
   </Card>
 </CardGroup>
 
