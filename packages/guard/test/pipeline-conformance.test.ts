@@ -369,14 +369,88 @@ describe("away authority (05 §6)", () => {
     });
   });
 
-  it("parks an away call even when a rule says run", async () => {
+  it("runs an away call when an explicit host rule says run", async () => {
     const store = createMemoryStore();
     const d = descriptor("read");
     const guard = createGuard({
       store,
       policy: { rules: [{ match: { risk: "read" }, action: "run" }] },
     });
-    await expect(guard.check(call(d.name, {}), d, awayCtx())).resolves.toMatchObject({ action: "ask" });
+    await expect(guard.check(call(d.name, {}), d, awayCtx())).resolves.toMatchObject({
+      action: "run",
+      decidedBy: "rule",
+    });
+  });
+
+  it("executes rule-decided away reads and writes end to end", async () => {
+    const store = createMemoryStore();
+    const read = descriptor("read");
+    const write = descriptor("write");
+    const guard = createGuard({
+      store,
+      policy: { rules: [{ match: { risk: "read" }, action: "run" }, { match: { risk: "write" }, action: "run" }] },
+    });
+    const tools = new FixtureTools([read, write]);
+    const bound = guard.bind(tools);
+
+    await expect(bound.execute(call(read.name, {}, "call_read"), awayCtx())).resolves.toMatchObject({
+      status: "ok",
+    });
+    await expect(bound.execute(call(write.name, {}, "call_write"), awayCtx())).resolves.toMatchObject({
+      status: "ok",
+    });
+    expect(tools.executions).toHaveLength(2);
+  });
+
+  it("still refuses a rule-decided away destructive or ungraded call", async () => {
+    const store = createMemoryStore();
+    const destructive = descriptor("destructive");
+    const ungraded = descriptor("ungraded");
+    const guard = createGuard({ store, policy: { rules: [{ match: { tool: "host_*" }, action: "run" }] } });
+    const tools = new FixtureTools([destructive, ungraded]);
+    const bound = guard.bind(tools);
+
+    // THE LAW sits downstream of the decision: the rule frees the verdict, the
+    // unattended refusal still stops the call.
+    await expect(bound.execute(call(destructive.name, {}, "call_destroy"), awayCtx())).resolves.toMatchObject({
+      status: "blocked",
+    });
+    await expect(bound.execute(call(ungraded.name, {}, "call_ungraded"), awayCtx())).resolves.toMatchObject({
+      status: "blocked",
+    });
+    expect(tools.executions).toHaveLength(0);
+  });
+
+  it("still parks an away run decided by the judge or by the default posture", async () => {
+    const store = createMemoryStore();
+    const d = descriptor("read");
+    const judged = createGuard({
+      store,
+      judge: { decide: async () => ({ action: "run" as const, rationale: "judge allowed" }) },
+    });
+    await expect(judged.check(call(d.name, {}, "call_judge"), d, awayCtx())).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "default",
+    });
+
+    const bare = createGuard({ store: createMemoryStore() });
+    await expect(bare.check(call(d.name, {}, "call_default"), d, awayCtx())).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "default",
+    });
+  });
+
+  it("still parks an away run decided by policy.code, which is never an explicit rule", async () => {
+    const store = createMemoryStore();
+    const d = descriptor("read");
+    const guard = createGuard({
+      store,
+      policy: { code: (): GuardDecision => ({ action: "run", decidedBy: "rule" }) },
+    });
+    await expect(guard.check(call(d.name, {}, "call_code"), d, awayCtx())).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "default",
+    });
   });
 
   it("attaches the authorizing grant as ctx.grant for executors (04 §4 ActAs seam)", async () => {

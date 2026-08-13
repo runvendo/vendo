@@ -174,6 +174,12 @@ interface DecisionMetadata {
   decision: DraftDecision;
   rationale?: string;
   invalidatedGrants?: PermissionGrant[];
+  /** Set ONLY by the host-rules loop in `#pipeline`, and read only by the away
+   *  downgrade (05 §6), which exempts an explicit host rule. It cannot be
+   *  `decidedBy === "rule"`: `normalizeCodeDecision` deliberately labels
+   *  `policy.code` decisions "rule" too, and that deploy-time hatch must STAY
+   *  away-downgraded (P1-A). The flag is what tells the two apart. */
+  hostRule?: true;
 }
 
 interface CompletedDecision {
@@ -1039,16 +1045,32 @@ class GuardImplementation implements VendoGuard {
     const metadata = await this.#pipeline(call, effectiveDescriptor, ctx, commitRun);
     let draft = metadata.decision;
 
-    // 05 §6: away runs hold only grants captured while present and bound to the
-    // running app — a would-be "run" that is not grant-authorized (rule, code,
-    // judge, or the default posture) parks instead of running. This applies to
-    // READS too: away execution has no live session to act as the user through,
-    // so it needs captured authority (a grant) to call the host as them. The
-    // automation ENABLE flow captures grants for every tool it uses, reads
+    // 05 §6: an away "run" needs authority written down BEFORE the run started —
+    // a would-be run decided by the judge or the default posture parks instead.
+    // This applies to READS too: away execution has no live session to act as
+    // the user through, so it needs standing authority to call the host as them.
+    // The automation ENABLE flow captures grants for every tool it uses, reads
     // included, so an enabled automation runs its reads via `decidedBy: grant`;
     // an ungranted away read parks (approve → grant → future runs succeed)
     // rather than erroring at execution with no actAs authority.
-    if (ctx.presence === "away" && draft.action === "run" && draft.decidedBy !== "grant") {
+    //
+    // Exactly two provenances survive the downgrade: a real app-bound grant, and
+    // an EXPLICIT host policy rule (`metadata.hostRule`). A rule is the host
+    // writing down ahead of time that this tool, at this grade, in this venue
+    // runs — standing authority, authored by the host instead of captured from
+    // the user. Downgrading it made `{ presence: "away", action: "run" }` a rule
+    // nobody could write.
+    //
+    // `policy.code` is NOT exempt: `normalizeCodeDecision` labels it "rule" too,
+    // but never sets `hostRule`, so the deploy-time hatch still parks (P1-A).
+    // Nor is this a way past THE LAW — the unattended destructive/ungraded
+    // refusal in `bind().execute()` and the `projectableForRun` projection are
+    // downstream of every decision here, so a rule can free a read or a write
+    // and nothing more.
+    if (
+      ctx.presence === "away" && draft.action === "run" && draft.decidedBy !== "grant"
+      && metadata.hostRule !== true
+    ) {
       draft = { action: "ask", decidedBy: "default" };
     }
 
@@ -1343,7 +1365,7 @@ class GuardImplementation implements VendoGuard {
           decision: { action: "block", reason: rule.note ?? "blocked by policy rule", decidedBy: "rule" },
         });
       }
-      return withInvalidated({ decision: { action: rule.action, decidedBy: "rule" } });
+      return withInvalidated({ decision: { action: rule.action, decidedBy: "rule" }, hostRule: true });
     }
 
     const code = this.#policyConfig?.code;
