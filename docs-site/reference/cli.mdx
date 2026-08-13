@@ -23,7 +23,7 @@ the `predev`/`prebuild` hooks) and then a **full sync** — the same flow
 **1**.
 
 See
-[vendo init](/connect/vendo-init) for the full walkthrough and
+[vendo init](/reference/vendo-init) for the full walkthrough and
 [the agent playbook](/agents) for the agent-driven flow.
 
 **Init never writes to a file you authored.** Every file it creates is new and
@@ -47,7 +47,7 @@ ONE STEP LEFT — paste this yourself (init never edits your files)
 
 The same step rides `--agent` as a `mount` object (`{ file, lines, why }`) and
 as the first entries of `manualSteps`. Until it lands, `vendo doctor` fails
-with [E-WIRE-004](/agents/verify#E-WIRE-004) and prints the same paste.
+with [E-WIRE-004](/deploy/troubleshooting#E-WIRE-004) and prints the same paste.
 
 Init detects the host framework from `package.json`: a `next` dependency
 scaffolds `app/api/vendo/[...vendo]/route.ts` (under `src/app` when that
@@ -55,7 +55,7 @@ directory exists); an `express` dependency scaffolds `vendo/server.ts`
 (`vendo/server.mjs` without a `tsconfig.json`) holding the `createVendo()`
 composition and a Node HTTP-to-fetch adapter. Mount the adapter with
 `app.use("/api/vendo", mountVendo())` and wrap the client entry in
-`<VendoProvider>` to finish. See [vendo init](/connect/vendo-init) for
+`<VendoProvider>` to finish. See [vendo init](/reference/vendo-init) for
 detection precedence and the non-interactive `--framework` fallback.
 
 `dir` is the app to initialize and defaults to the current directory.
@@ -228,7 +228,7 @@ credential-forwarding traps surface before you ship:
 - **actAs mint and verify.** Doctor calls `POST /doctor/act-as` so the
   host-configured `createVendo({ actAs })` mints auth material and the host's
   own principal resolver accepts it. This works with any `actAs`
-  implementation, including the [actAs presets](/connect/act-as-presets).
+  implementation, including the [auth presets](/deploy/auth).
   When `actAs` is unconfigured, doctor warns but does not fail; mint or
   verify errors produce actionable failure text.
 - **Machine and schedule report.** Doctor GETs `/doctor/machines` for which
@@ -244,7 +244,7 @@ reports whether `VENDO_BASE_URL` is set, which reveals no secret and matters
 most in exactly the environment the probes are closed in.
 
 The live turn resolves its model through the same
-[dev-mode credential ladder](/connect/dev-mode) the runtime uses, so doctor
+[model credentials](/deploy/model-credentials) the runtime uses, so doctor
 and runtime agree on what is wired. Exit 0 means a real user would have
 gotten an answer; the turn must produce a non-empty reply. When nothing is
 listening on the dev port, an interactive run offers to start `npm run dev`
@@ -283,7 +283,7 @@ Exit codes:
 - `0`: green (wiring, HTTP checks, and the live model turn all passed)
 - `1`: broken wiring, a failed HTTP probe, or an unanswered live turn
 
-See [Doctor error codes](/agents/verify) for the symptom, cause, and fix
+See [Doctor error codes](/deploy/troubleshooting#doctor-error-codes) for the symptom, cause, and fix
 behind every check.
 
 ## `vendo sync [dir]`
@@ -305,7 +305,7 @@ advisory `drifted:` line. Drift never auto-rebases; each fork's owner
 decides.
 
 Sync also scans host source for
-[`<Remixable>` wrappers](/connect/host-components#remix-fork-a-wrapped-component)
+[`<Remixable>` wrappers](/customize/host-components#remix-fork-a-wrapped-component)
 and captures each wrapped component into `.vendo/remixable/<slot>.json`. A
 wrapper it cannot capture — inline JSX, a child that is not statically
 imported, an anonymous default export — is a hard `error:` line (one per
@@ -320,7 +320,7 @@ not cross the fork boundary.
 
 Sync scans exported JSX components referenced by your `<VendoProvider>`
 `components` map and writes `.vendo/catalog.json` (see
-[Host components](/connect/host-components)). Rescans are deterministic and
+[Host components](/customize/host-components)). Rescans are deterministic and
 byte-stable, so the file is safe to commit. Both `sync` and `init` print one
 status line summarizing what was found:
 
@@ -414,7 +414,7 @@ exit code; the next sync retries.
 
 Sync also captures the source of every component your `<VendoProvider>`
 `components` map registers into `.vendo/components/` (see
-[What sync captures](/connect/host-components#what-sync-captures)) and, with a
+[What sync captures](/customize/host-components#what-sync-captures)) and, with a
 Cloud key, reconciles it with the `vendo_host_components` collection and blob
 namespace — so the console's Apps gallery renders your real component instead
 of a grey labeled placeholder.
@@ -549,7 +549,7 @@ The report names any remixable slots whose captured baseline changed and
 points to rebase; user forks of those pins are now drifted and keep
 rendering their previous content until an explicit rebase replays the
 recorded edit trail onto the new baseline. See
-[Host components](/connect/host-components#drift-and-rebase).
+[Host components](/customize/host-components#drift-and-rebase).
 
 Exit codes:
 
@@ -654,7 +654,7 @@ generation picks it up per generation.
 
 Tooling for publishing your door to the official MCP registry. Both
 subcommands operate on the current directory unless you pass a target `dir`.
-See [Publish to the MCP registry](/capabilities/mcp-registry) for the full
+See [Publish to the MCP registry](/reference/mcp-door#publish-to-the-mcp-registry) for the full
 walkthrough; flags below.
 
 ### `vendo mcp server-json`
@@ -746,6 +746,21 @@ request count and dollars at the published rates, plus the period total.
 
 The rates behind those dollars are in
 [Vendo Cloud › Pricing](/deploy/vendo-cloud#pricing).
+
+## Agent surfaces
+
+Machine-readable entry points, for a coding agent driving the install.
+
+| Surface | What it serves |
+| --- | --- |
+| `https://vendo.run/agents.md` | The agent playbook as raw Markdown (append `.md` to any docs page) |
+| `https://docs.vendo.run/existing-agents.md` | The tool-pack path for hosts that already have an agent |
+| `https://vendo.run/auth.md` | The raw claim-ceremony protocol behind `vendo login` |
+| `https://docs.vendo.run/llms.txt` | Index of every docs page for LLM ingestion (also at `/.well-known/llms.txt`) |
+| `https://docs.vendo.run/llms-full.txt` | The whole docs site as one file |
+| `npx vendo init --agent` | Read-only JSON plan: framework, files init would write, code diffs, the `mount` and `edits` pastes, extracted tools, risk recommendations (writes nothing) |
+| `npx vendo sync --json` | One machine-readable sync report object on stdout |
+| `.claude/skills/vendo-setup/` | Setup skill shipped in the npm tarball; init writes it when `.claude/` exists and it is missing, and never overwrites an edited copy |
 
 ## Telemetry opt-out
 

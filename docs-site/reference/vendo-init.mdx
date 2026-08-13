@@ -1,7 +1,7 @@
 ---
 title: "vendo init: scan, scaffold, and wire your app"
 sidebarTitle: "vendo init"
-description: "How vendo init scans your app, scaffolds the two-file surface and the .vendo contract without an interview, and how --agent prints a read-only plan instead."
+description: "How vendo init scans your app, scaffolds the two-file surface and the .vendo contract without an interview, every flag it accepts, and how --agent prints a read-only plan instead."
 ---
 
 Run init after installing the umbrella:
@@ -9,6 +9,32 @@ Run init after installing the umbrella:
 ```bash
 npx vendo init
 ```
+
+Bare `npx vendo init` is the path every quickstart takes, and its questions do
+the configuring. The flags exist so an unattended or agent-driven run can answer
+those questions without a prompt; [Every flag](#every-flag) lists them.
+
+<Note>
+  Right after a Vendo release, package managers with a release cooldown hold
+  the new version back. pnpm 11 (`minimumReleaseAge`, one day by default)
+  fails loud with "no versions available"; npm's opt-in `min-release-age`
+  instead resolves silently to the newest version old enough to pass, and
+  `vendo init` pins that stale version in `package.json`. Check what you
+  actually got:
+
+  ```bash
+  npm ls @vendoai/vendo
+  ```
+
+  To take the current release anyway, pass `--min-release-age=0` on npm, or
+  exclude Vendo in `pnpm-workspace.yaml`:
+
+  ```yaml
+  minimumReleaseAgeExclude:
+    - vendoai
+    - "@vendoai/*"
+  ```
+</Note>
 
 Init is a one-command scaffold. It scans the app with deterministic analysis,
 then writes everything it can and tells you the little that is left. There is
@@ -43,7 +69,7 @@ printed as an exact paste.
   `<VendoProvider baseUrl="/api/vendo">` — is **your** paste: init prints it in
   a framed "ONE STEP LEFT" block naming the file and the exact lines, carries
   it in the `--agent` plan as `mount`, and `vendo doctor` fails with
-  [E-WIRE-004](/agents/verify#E-WIRE-004) (printing the same paste) until it
+  [E-WIRE-004](/deploy/troubleshooting#E-WIRE-004) (printing the same paste) until it
   lands. Nothing is printed when you already mount a Vendo provider. A host
   with its own components writes one `"use client"` file holding the registry
   and the provider, and mounts that instead — the registry carries component
@@ -69,7 +95,7 @@ have, and it compares the map only by the keys it registers, so an action added
 later comes back as just the entries to paste (plus the `serverActions` line for
 a route that predates your actions), and `vendo doctor` fails E-WIRE-009 until
 you apply them. See
-[Tools from your API](/connect/api-tools#next-js-server-actions) for the
+[Tools from your API](/capabilities/api-tools#next-js-server-actions) for the
 runtime rules.
 
 On Express and custom-runtime hosts the `<VendoProvider>` wrap is yours the
@@ -111,12 +137,12 @@ single detected family gets one `[Y/n]` confirm before anything is written;
 decline it, or have several or none detected, and init leaves `principal`
 unwired and prints the exact one-line `auth:` addition for your composition.
 Pass `--auth <preset>` to answer without the prompt. See
-[Host auth](/agents/host-auth) for the presets and when to pick each.
+[Auth and principals](/deploy/auth) for the presets and when to pick each.
 
 ## The model key
 
 `createVendo`'s `model` is optional; when you omit it, the runtime resolves
-one through the [dev-mode credential ladder](/connect/dev-mode). Init does
+one through the [model credentials](/deploy/model-credentials). Init does
 not scaffold a model file: instead it runs a key step. If a provider key is
 already set it says so; otherwise it offers a metered Vendo Cloud starter key
 inline: `vendo login` approves a code in the browser and the minted
@@ -154,11 +180,63 @@ npx vendo init --yes --auth authJs --byo
 
 `--yes` skips the interactive prompts (auth confirm, theme review, Cloud
 offer) and accepts the detected defaults, ending with an `Agent tail:` block
-naming the files this run left to hand-edit. See the
-[CLI reference](/reference/cli#vendo-init-dir) for every other flag.
+naming the files this run left to hand-edit.
 
 Init rejects options it does not recognize and exits 1 before doing anything, so
 a flag an older CLI does not support can never be silently dropped.
+
+## Every flag
+
+`vendo init [dir]` — `dir` is the app to initialize, defaulting to the current
+directory.
+
+### Answering the wizard
+
+| Flag | Values | Answers |
+| --- | --- | --- |
+| `--use-case <name>` | `embedded`, `agent-loop`, `mcp` | how people will use the agent. An unattended run takes `embedded` |
+| `--auth <preset>` | `authJs`, `clerk`, `supabase`, `auth0`, `jwt`, `none` | which auth preset to wire — see [Auth and principals](/deploy/auth) |
+| `--cloud-key <key>` | a `vnd_` key | writes an existing Vendo Cloud key to `.env.local` |
+| `--byo` | — | declines the Cloud offer: bring your own model key |
+| `--ai` / `--no-ai` | — | force the AI judgment and theme pass on or off. `--ai-polish` is the older spelling of `--ai` |
+| `--base-url <url>` | a full `http(s)` URL | where this deploys |
+| `--theme <slot=value>` | repeatable | answers an uncertain theme slot directly |
+
+`--cloud-key` and `--byo` answer the same question, as do `--ai` and `--no-ai`.
+Passing both halves of either pair exits 1.
+
+### Overriding detection
+
+| Flag | Values | Effect |
+| --- | --- | --- |
+| `--framework <name>` | `next`, `express`, `custom` | overrides framework detection. Required non-interactively when detection fails |
+| `--engine <name>` | `claude`, `codex`, `npx` | pins which engine runs the AI pass instead of first-available. An unavailable pin skips the pass loudly and never falls back |
+
+### MCP door
+
+Both only apply with `--use-case mcp`. Passing either without it exits 1.
+
+| Flag | Values | Effect |
+| --- | --- | --- |
+| `--posture <name>` | `local`, `broker` | how outside agents sign in |
+| `--service-key` | — | generate a machine-to-machine service key |
+
+### Run behavior
+
+| Flag | Effect |
+| --- | --- |
+| `--yes` | skip every prompt and take the detected defaults |
+| `--agent` | print the JSON plan and write nothing |
+| `--force` | regenerate Vendo-owned files under `.vendo/`. Never replaces host source files |
+| `--check` / `--no-check` | run `vendo doctor` at the end, or skip it. Only offered when the run owes you no paste, since doctor grades that paste. Never changes init's exit code |
+
+`--base-url` is written to `.env.example` only, by replacing init's own
+localhost placeholder. It never touches `.env.local`, where a production URL
+would repoint local dev's discovery, callbacks, and credential forwarding at the
+deployed origin.
+
+See the [CLI reference](/reference/cli#vendo-init-dir) for `vendo init`'s place
+among the other commands.
 
 ## Re-running init vs. sync
 
