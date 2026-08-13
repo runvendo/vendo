@@ -31,9 +31,9 @@ export const support = agent({
         properties: { orderId: { type: "string" } },
         required: ["orderId"],
       },
-      execute: async (input) => {
+      execute: async (input, ctx) => {
         const { orderId } = input as { orderId: string };
-        await refundOrder(orderId);
+        await refundOrder(orderId, { owner: ctx.principal.subject });
         return { refunded: orderId };
       },
     }),
@@ -46,6 +46,12 @@ and it is what decides whether a call runs or stops for the person. Leave it
 off and the tool is `ungraded`, which the guard treats like `destructive` and
 asks about every time. Details:
 [Tools and safety](/concepts/tools-and-safety).
+
+**Scope it to the caller.** The `orderId` came from the model; `ctx.principal`
+is who the turn acts as. Bind the two yourself — `api()` forwards the caller's
+credentials for you, but a hand-written `tool()` reaches your data on its own
+terms, and an unscoped lookup will act on someone else's order no matter how
+the approval card was answered.
 
 ## The route
 

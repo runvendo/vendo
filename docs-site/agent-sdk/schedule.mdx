@@ -20,7 +20,8 @@ tools, and comes back with a report.
 import { support } from "@/lib/agent";
 
 export async function POST(req: Request) {
-  if (req.headers.get("authorization") !== `Bearer ${process.env["CRON_SECRET"]}`) {
+  const secret = process.env["CRON_SECRET"];
+  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return new Response("forbidden", { status: 403 });
   }
 
