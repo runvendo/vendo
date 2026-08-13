@@ -45,6 +45,13 @@ export default function Screen() {
 }
 `;
 
+/** The refusal, to the byte — every shape of the block names the same construct,
+ *  so every one of them earns the same sentence. */
+const STATIC_BLOCK_MESSAGE = "writes a class static initializer block (static { … }) — a screen is compiled by a"
+  + " types-only transform, which emits the class as written, so this block reaches the screen"
+  + " VM unlowered and the same file does not run the same in every venue. Do that work in the"
+  + " component body, or in a plain top-level const.";
+
 const STATIC_BLOCK = `import { Text } from "@vendo/screen";
 
 class Labels {
@@ -56,6 +63,91 @@ class Labels {
 
 export default function Screen() {
   return <Text text={Labels.heading} />;
+}
+`;
+
+/** An empty block is still a block, and the brace still counts on the next
+ *  line — the shape a `static[ \\t]*\\{` text match could not see. */
+const STATIC_BLOCK_EMPTY = `import { Text } from "@vendo/screen";
+
+class Labels {
+  static {}
+}
+
+export default function Screen() {
+  return <Text text={Labels.name} />;
+}
+`;
+
+const STATIC_BLOCK_SPACED = `import { Text } from "@vendo/screen";
+
+class Labels {
+  static { }
+}
+
+export default function Screen() {
+  return <Text text={Labels.name} />;
+}
+`;
+
+const STATIC_BLOCK_WRAPPED_BRACE = `import { Text } from "@vendo/screen";
+
+class Labels {
+  static heading: string;
+  static
+  {
+    Labels.heading = "Pending";
+  }
+}
+
+export default function Screen() {
+  return <Text text={Labels.heading} />;
+}
+`;
+
+/** Every shape of `static` MEMBER that is not an initializer block. A text match
+ *  had to guess at these; the AST does not. */
+const STATIC_MEMBERS = `import { Text } from "@vendo/screen";
+
+class Labels {
+  static heading = { title: "Pending" };
+  static caption() {
+    return "nothing is waiting";
+  }
+  static get subtitle() {
+    return "up next";
+  }
+  static async load() {
+    return "loaded";
+  }
+}
+
+export default function Screen() {
+  return <Text text={Labels.heading.title + Labels.caption() + Labels.subtitle} />;
+}
+`;
+
+/**
+ * The construct as PROSE, in the five places a raw-text match mistook for the
+ * real thing. The JSX one is the wrong refusal that mattered most: the screen
+ * says the word "static" to a person, and the old guard answered by telling the
+ * author to move a class initializer block their file does not contain.
+ */
+const STATIC_AS_PROSE = `import { Stack, Text } from "@vendo/screen";
+
+// keep it static { and simple
+/* a block comment mentioning static { too */
+const plain = "a string with static { inside";
+const templated = \`a template with static { inside\`;
+
+export default function Screen() {
+  const v = 12;
+  return (
+    <Stack gap={4}>
+      <Text text={plain + templated} />
+      <Stack>Balance is static {v}</Stack>
+    </Stack>
+  );
 }
 `;
 
@@ -96,22 +188,6 @@ export default function Screen() {
 }
 `;
 
-/** `static` as a property and as a method — neither is an initializer block, and
- *  neither may be refused. */
-const STATIC_MEMBERS = `import { Text } from "@vendo/screen";
-
-class Labels {
-  static heading = { title: "Pending" };
-  static caption() {
-    return "nothing is waiting";
-  }
-}
-
-export default function Screen() {
-  return <Text text={Labels.heading.title + Labels.caption()} />;
-}
-`;
-
 beforeAll(async () => {
   await warmScreenEngine();
 });
@@ -142,17 +218,39 @@ describe("a construct the two toolchains would not agree on", () => {
     const result = await check(STATIC_BLOCK);
 
     expect(result.ok).toBe(false);
-    expect(result.issues).toEqual([{
-      code: "static-block",
-      message: "writes a class static initializer block (static { … }) — a screen is compiled by a"
-        + " types-only transform, which emits the class as written, so this block reaches the screen"
-        + " VM unlowered and the same file does not run the same in every venue. Do that work in the"
-        + " component body, or in a plain top-level const.",
-    }]);
+    expect(result.issues).toEqual([{ code: "static-block", message: STATIC_BLOCK_MESSAGE }]);
   });
 
-  it("admits a static property and a static method — only the BLOCK is the problem", async () => {
+  it("sees an empty static block", async () => {
+    const result = await check(STATIC_BLOCK_EMPTY);
+
+    expect(result.issues).toEqual([{ code: "static-block", message: STATIC_BLOCK_MESSAGE }]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("sees a static block that holds nothing but a space", async () => {
+    const result = await check(STATIC_BLOCK_SPACED);
+
+    expect(result.issues).toEqual([{ code: "static-block", message: STATIC_BLOCK_MESSAGE }]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("sees a static block whose brace is on the next line", async () => {
+    const result = await check(STATIC_BLOCK_WRAPPED_BRACE);
+
+    expect(result.issues).toEqual([{ code: "static-block", message: STATIC_BLOCK_MESSAGE }]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("admits every static MEMBER — property, method, getter, async method", async () => {
     const result = await check(STATIC_MEMBERS);
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("admits `static {` written as PROSE — in a string, both comments, a template, and as JSX text", async () => {
+    const result = await check(STATIC_AS_PROSE);
 
     expect(result.issues).toEqual([]);
     expect(result.ok).toBe(true);

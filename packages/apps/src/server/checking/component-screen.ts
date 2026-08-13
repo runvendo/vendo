@@ -186,6 +186,14 @@ const childNodes = (node: Node): Node[] => {
 
 const FUNCTION_TYPES = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
 
+/** A class `static {}` block anywhere in the module — an AST question, because
+ *  `static {` is also ordinary prose: it turns up in strings, in comments and in
+ *  JSX text, and a screen that merely SAYS it is not a screen that DOES it. The
+ *  scan form is compiled to es2022 precisely so the block survives as a node to
+ *  find; at es2020 esbuild lowers it away and there is nothing left to ask. */
+const hasStaticBlock = (node: Node): boolean =>
+  node.type === "StaticBlock" || childNodes(node).some(hasStaticBlock);
+
 interface CallNode extends Node {
   callee: Node;
   arguments: Node[];
@@ -276,10 +284,6 @@ const ALLOWED_IMPORTS: readonly string[] = ["react", SCREEN_MODULE];
  */
 const NAMESPACE_BLOCK = /(?<![\w$])namespace\s+([A-Za-z_$][\w$.]*)\s*\{/u;
 
-/** A class `static {}` initializer block, off the author's source for the same
- *  reason. */
-const STATIC_BLOCK = /(?:^|[;{}\s])static[ \t]*\{/mu;
-
 /** The import block is not `tools` USAGE: `import { tools } from "@vendo/screen"`
  *  puts the name in expression position (a `{` to its left), which the shipped
  *  literal-access scan reads as aliasing. Blanked with offsets preserved, so that
@@ -364,9 +368,12 @@ const scan = (moduleSource: string, source: string, tools: readonly HostToolInfo
   const queryPlan: QueryPlanEntry[] = [];
   let program: Program;
   try {
-    // The input is esbuild's own ES2020 output, so the edition is pinned rather
-    // than "latest": the grammar a screen is admitted under must not move when
-    // the parser is upgraded (genui/expr.ts pins it for the same reason).
+    // The input is esbuild's own ES2022 output, and the edition is pinned to
+    // match rather than "latest": the grammar a screen is admitted under must
+    // not move when the parser is upgraded (genui/expr.ts pins it for the same
+    // reason). 2022 is also the edition that HAS `StaticBlock` — pinned lower,
+    // the parser would reject the block outright and the guard below could
+    // never name it.
     program = parse(moduleSource, { ecmaVersion: 2022, sourceType: "module" });
   } catch (error) {
     return { issues: [issue("compile", `does not parse as a module: ${error instanceof Error ? error.message : String(error)}`)], queryPlan };
@@ -381,7 +388,7 @@ const scan = (moduleSource: string, source: string, tools: readonly HostToolInfo
   if (namespaced !== null) {
     issues.push(issue("namespace", `declares a namespace block (namespace ${namespaced[1]} { … }) — a screen is compiled by a types-only transform, which has no output form for one, so this file would compile in one venue and not in another. A screen is ONE file and needs no inner scope: write plain top-level consts, functions and types instead.`));
   }
-  if (STATIC_BLOCK.test(source)) {
+  if (hasStaticBlock(program)) {
     issues.push(issue("static-block", `writes a class static initializer block (static { … }) — a screen is compiled by a types-only transform, which emits the class as written, so this block reaches the screen VM unlowered and the same file does not run the same in every venue. Do that work in the component body, or in a plain top-level const.`));
   }
 

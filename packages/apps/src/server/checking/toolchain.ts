@@ -44,6 +44,16 @@ import type { ComponentScreenIssue } from "./component-screen.js";
  *   default export are still visible (CJS renames every import into a namespace
  *   access), with the CLASSIC transform, so the compiler's own
  *   `react/jsx-runtime` import does not read as an import the author wrote.
+ *
+ * Their TARGETS are deliberately different, and the difference is the point.
+ * The engine form stays at es2020 because it is EXECUTED, inside QuickJS, and
+ * lowering is what keeps modern syntax from reaching a VM that may not
+ * implement it. The scan form is only ever READ, so it is raised to es2022 to
+ * lower as LITTLE as possible: a construct that was lowered away is a construct
+ * the scan cannot see, and a types-only transform — the Workers scan form —
+ * lowers nothing at all. The closer this form sits to that one, the closer the
+ * two venues agree about the same screen. The class `static {}` guard is simply
+ * the first check that noticed.
  */
 export interface ScreenTransform {
   readonly engine: string;
@@ -128,7 +138,7 @@ const esbuildTransform: Promise<Transform | undefined> = (async () => {
     const esbuild = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ ESBUILD_SPECIFIER) as typeof import("esbuild");
     return (source, form) => esbuild.transformSync(source, form === "engine"
       ? { loader: "tsx", format: "cjs", target: "es2020", jsx: "automatic", banner: STRICT_BANNER }
-      : { loader: "tsx", format: "esm", target: "es2020" }).code;
+      : { loader: "tsx", format: "esm", target: "es2022" }).code;
   } catch {
     return undefined;
   }
