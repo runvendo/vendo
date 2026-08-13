@@ -50,8 +50,8 @@ import { addUsage, createHarnessRuntime, type HarnessRuntimeDeps, type UsageTota
 import { storeFiles, threadMessageStore, workspaceStore, type VendoStore } from "@vendoai/store";
 import { asSchema, type FlexibleSchema, type LanguageModel, type Schema, type UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
-import { assemblePrompt, type SystemPromptHook } from "./prompt.js";
-import { openThread } from "./session.js";
+import { resolveSystem, type SystemPromptHook } from "./prompt.js";
+import { asUserMessage, openThread } from "./session.js";
 
 /** What a caller with no budget gets. The automations engine always passes its
  *  own (50), so this only bounds a host driving the seam directly. */
@@ -503,29 +503,13 @@ async function runTurn(deps: AwayRunnerDeps, input: RunTurnInput): Promise<Agent
     ...(deps.liveTurn === undefined ? {} : { liveTurn: deps.liveTurn }),
   });
 
-  const directions = await deps.guard.directions(awayCtx);
-  const assembled = assemblePrompt({
-    ...(deps.instructions === undefined ? {} : { instructions: deps.instructions }),
-    ...(awayCtx.user === undefined ? {} : { user: awayCtx.user }),
-    ...(awayCtx.context === undefined ? {} : { situation: awayCtx.context }),
-    directions,
-  });
-  const system = deps.system === undefined
-    ? assembled
-    : (await deps.system(awayCtx, { assembled, directions })) ?? assembled;
-  const message: UIMessage = {
-    id: `msg_${randomUUID()}`,
-    role: "user",
-    parts: [{
-      type: "text",
-      // The result channel is NAMED in the ask, not merely listed among the
-      // tools: a model that never calls it returns prose where the caller asked
-      // for a shape, and there is no second model call here to recover one.
-      text: schema === undefined
-        ? input.prompt
-        : `${input.prompt}\n\nWhen you are done, call ${RESULT_TOOL} with the result.`,
-    }],
-  };
+  const system = await resolveSystem(deps, awayCtx);
+  // The result channel is NAMED in the ask, not merely listed among the tools: a
+  // model that never calls it returns prose where the caller asked for a shape,
+  // and there is no second model call here to recover one.
+  const message = asUserMessage(schema === undefined
+    ? input.prompt
+    : `${input.prompt}\n\nWhen you are done, call ${RESULT_TOOL} with the result.`);
 
   // Reopening means CONTINUING: the thread's own turns come back with it, read
   // through the same path a session's do. A fresh thread has none.

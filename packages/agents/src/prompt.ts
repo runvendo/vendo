@@ -5,7 +5,7 @@
  * and the guard's directions. Assembled per turn because it needs the ctx a
  * `Turn` deliberately does not carry; it rides `Turn.system`.
  */
-import { situationPromptBlock, userPromptBlock, type Json, type RunContext } from "@vendoai/core";
+import { situationPromptBlock, userPromptBlock, type Guard, type Json, type RunContext } from "@vendoai/core";
 
 /** Who the agent is acting for. An unattended run often has no user at all, and
  *  "the user named below" with nobody below it is a dangling reference. */
@@ -53,4 +53,22 @@ export function assemblePrompt(input: PromptInput): string {
     sections.push(["Directions", ...directions.map((d) => `- ${d}`)].join("\n"));
   }
   return sections.join("\n\n");
+}
+
+/** A turn's system prompt, in EITHER venue: this package's assembly, then the
+ *  host's last word on it. ONE resolution, because a chat turn and an away
+ *  firing that thought with different briefs would be two agents wearing one
+ *  name — the drift `AgentConfig.system` exists to prevent. */
+export async function resolveSystem(
+  deps: { guard: Guard; instructions?: string; system?: SystemPromptHook },
+  ctx: RunContext,
+): Promise<string> {
+  const directions = await deps.guard.directions(ctx);
+  const assembled = assemblePrompt({
+    ...(deps.instructions === undefined ? {} : { instructions: deps.instructions }),
+    ...(ctx.user === undefined ? {} : { user: ctx.user }),
+    ...(ctx.context === undefined ? {} : { situation: ctx.context }),
+    directions,
+  });
+  return deps.system === undefined ? assembled : (await deps.system(ctx, { assembled, directions })) ?? assembled;
 }

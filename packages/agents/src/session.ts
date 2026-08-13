@@ -34,7 +34,7 @@ import {
 } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
-import { assemblePrompt, type SystemPromptHook } from "./prompt.js";
+import { resolveSystem, type SystemPromptHook } from "./prompt.js";
 
 export interface SessionOptions {
   /** Server-trust identity facts, model-visible (`[User]`). */
@@ -139,7 +139,7 @@ const toHeaderRecord = (
   return headers;
 };
 
-const asUserMessage = (message: string | UIMessage): UIMessage =>
+export const asUserMessage = (message: string | UIMessage): UIMessage =>
   typeof message === "string"
     ? { id: `msg_${randomUUID()}`, role: "user", parts: [{ type: "text", text: message }] }
     : message;
@@ -235,16 +235,7 @@ export async function createSession(
       const ctx = contextFor(streamOptions.context);
 
       const workspace = await workspaces.open(principal, { host: hostSkillFiles(deps.skills) });
-      const directions = await deps.guard.directions(ctx);
-      const assembled = assemblePrompt({
-        ...(deps.instructions === undefined ? {} : { instructions: deps.instructions }),
-        ...(options.user === undefined ? {} : { user: options.user }),
-        ...(ctx.context === undefined ? {} : { situation: ctx.context }),
-        directions,
-      });
-      const system = deps.system === undefined
-        ? assembled
-        : (await deps.system(ctx, { assembled, directions })) ?? assembled;
+      const system = await resolveSystem(deps, ctx);
 
       const response = await runtime(workspace).run({
         harness: deps.harness,
