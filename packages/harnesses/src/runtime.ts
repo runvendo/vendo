@@ -166,6 +166,9 @@ export interface TurnRunInput<Options = unknown> {
    *  ask (`latestUserIntent(messages)`). */
   capabilityMiss?: { config: CapabilityMissConfig; intent: string; threadId?: ThreadId };
   signal?: AbortSignal;
+  /** Every event the harness yields, as the runtime routes it. Observation
+   *  only: routing, filtering and the wire are unchanged by it. */
+  observe?: (event: HarnessEvent) => void;
 }
 
 export interface HarnessRuntime {
@@ -184,7 +187,7 @@ export interface UsageTotals {
   model?: string;
 }
 
-function addUsage(totals: UsageTotals | undefined, event: Extract<HarnessEvent, { type: "usage" }>): UsageTotals {
+export function addUsage(totals: UsageTotals | undefined, event: Extract<HarnessEvent, { type: "usage" }>): UsageTotals {
   const base = totals ?? { inputTokens: 0, outputTokens: 0 };
   const next: UsageTotals = {
     inputTokens: base.inputTokens + event.inputTokens,
@@ -492,6 +495,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
 
           try {
             for await (const event of input.harness.run(turn)) {
+              input.observe?.(event);
               switch (event.type) {
                 case "text":
                   text.delta(event.delta);
