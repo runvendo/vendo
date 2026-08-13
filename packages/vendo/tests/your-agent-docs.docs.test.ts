@@ -14,8 +14,8 @@ import { describe, expect, it } from "vitest";
  *
  * What it holds, and why each claim is load-bearing:
  *  1. the door-1 quickstart is published and every nav entry still resolves,
- *     with the quickstart directly behind its group's overview (it is the
- *     on-ramp that overview hands off to);
+ *     with the quickstart FIRST in its group and the overview directly behind
+ *     it (the landing page's door card links straight at the quickstart);
  *  2. every tool name the docs put in a reader's system prompt really exists in
  *     the registry the prompt block is describing;
  *  3. `vendo_make`'s four documented arguments are its real schema properties on
@@ -92,14 +92,15 @@ describe("the BYO on-ramp page is published", () => {
     expect(text).toMatch(/^description: "/m);
   });
 
-  it("follows its group's overview, ahead of the framework notes", async () => {
+  it("leads its group, with the overview directly behind it", async () => {
     const docs = await readJson<DocsJson>("docs-site/docs.json");
     const group = docs.navigation.groups.find((entry) => entry.group === "You already have an agent");
     expect(group, "the 'You already have an agent' group must exist").toBeDefined();
-    // The overview is the door the landing page opens; the quickstart is the
-    // on-ramp it hands off to, so it stays directly behind the overview and
-    // ahead of the framework notes.
-    expect(group?.pages.slice(0, 2)).toEqual(["existing-agents/index", NAV_ENTRY]);
+    // The landing page's door card links straight at the quickstart, so the
+    // quickstart is the group's first entry and the overview it hands off to
+    // sits directly behind it, ahead of the framework notes. Flipping these
+    // two back reintroduces the overview hop the landing page removed.
+    expect(group?.pages.slice(0, 2)).toEqual([NAV_ENTRY, "existing-agents/index"]);
   });
 
   it("leaves no nav entry pointing at a file that does not exist", async () => {
