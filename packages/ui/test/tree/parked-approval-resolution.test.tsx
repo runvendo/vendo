@@ -1,0 +1,218 @@
+// @vitest-environment jsdom
+/**
+ * A press the guard parked, from the stall to the repaint.
+ *
+ * The screen, the engine and the Kit controls are the real ones
+ * (screen-bridge.test.tsx documents why nothing here is stubbed on the render
+ * side). Two doubles, both of them the OTHER side of a seam by definition: the
+ * host's `onAction`, and the wire. What the server actually writes into an
+ * `ApprovalResolution` is held by
+ * `packages/vendo/tests/parked-action-resolution.e2e.test.ts`, where the apps
+ * runtime's write path and the umbrella's read path both run for real — so the
+ * shape below cannot quietly drift away from the one that ships.
+ *
+ * The stall this closes: `pending-approval` is the honest answer at press time,
+ * so the node painted "waiting for approval" and the screen sat on it forever —
+ * including long after the server had resumed the call and changed the data.
+ */
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { transform } from "sucrase";
+import { bootScreen, flattenTree, warmScreenEngine } from "@vendoai/apps/contract";
+import { VENDO_TREE_FORMAT, type Json, type ToolOutcome, type UIPayload } from "@vendoai/core";
+import type { VendoClient } from "../../src/client.js";
+import { APPROVALS_DECIDED_EVENT } from "../../src/client-impl.js";
+import { VendoProvider } from "../../src/context.js";
+import { PayloadView, type ParkedPress } from "../../src/tree/index.js";
+import type { ApprovalResolution } from "../../src/wire-types.js";
+
+afterEach(cleanup);
+
+beforeAll(async () => {
+  await warmScreenEngine();
+}, 30_000);
+
+const compile = (tsx: string): string =>
+  transform(tsx, { transforms: ["typescript", "jsx", "imports"], production: true, jsxRuntime: "automatic" }).code;
+
+const CATALOG = ["Stack", "Card", "Text", "Money", "Button"];
+
+const TRANSFERS = `
+import { Button, Card, Money, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+export default function PendingTransfers() {
+  const pending = useQuery("list_pending");
+  return (
+    <Stack gap={12}>
+      <Text text={"Pending: " + pending.data.length} />
+      {pending.data.map((row) => (
+        <Card key={row.id} title={row.recipient}>
+          <Money amount={row.amount_cents / 100} />
+          <Button label={"Cancel " + row.recipient} onClick={async () => {
+            await tools.cancel_transfer({ id: row.id });
+          }} />
+        </Card>
+      ))}
+    </Stack>
+  );
+}
+`;
+
+const ROWS = [
+  { id: "tr_1", recipient: "Ada", amount_cents: 4_200 },
+  { id: "tr_2", recipient: "Bob", amount_cents: 900 },
+];
+
+/** The Button inside Ada's card — the node whose press parks. */
+const ADA_NODE = "root.Card:tr_1.1";
+const APPROVAL = "apr_cancel_ada";
+
+interface Call {
+  nodeId: string;
+  action: string;
+  payload?: Json;
+}
+
+const payloadFor = (compiledSource: string, queries: Record<string, unknown>): UIPayload => {
+  const first = bootScreen({ compiledSource, queries, catalog: CATALOG, now: Date.UTC(2026, 1, 1) });
+  try {
+    const flat = flattenTree(first.tree());
+    return {
+      formatVersion: VENDO_TREE_FORMAT,
+      root: flat.root,
+      nodes: Object.values(flat.nodes),
+      interactive: { compiledSource, queries, queryPlan: [{ tool: "list_pending" }] },
+    } as unknown as UIPayload;
+  } finally {
+    first.dispose();
+  }
+};
+
+/**
+ * The world behind one screen: rows the backend owns, a host pipe that parks
+ * the cancel behind an approval, and the wire's answer for that approval.
+ * `approve()` is the server doing what it really does — resuming the parked
+ * call (the row goes) and recording the outcome for the surface to find.
+ */
+function world() {
+  let rows = [...ROWS];
+  let resolution: ApprovalResolution | undefined;
+  const calls: Call[] = [];
+  const parked: ParkedPress[] = [];
+  return {
+    calls,
+    parked,
+    of: (action: string): Call[] => calls.filter((call) => call.action === action),
+    approve(): void {
+      rows = rows.filter((row) => row.id !== "tr_1");
+      resolution = { state: "executed", outcome: { status: "ok", output: { cancelled: true } } };
+    },
+    refuse(state: "declined" | "expired"): void {
+      resolution = { state };
+    },
+    render() {
+      const client = {
+        approvals: {
+          get: async (id: string): Promise<ApprovalResolution> => {
+            if (id !== APPROVAL || resolution === undefined) throw new Error(`Approval ${id} was not found`);
+            return resolution;
+          },
+        },
+      } as unknown as VendoClient;
+      const onAction = async (call: Call): Promise<ToolOutcome> => {
+        calls.push(call);
+        if (call.action === "list_pending") return { status: "ok", output: { data: rows } as Json };
+        // The guard sends the mutation to approval: nothing has changed yet, and
+        // that is exactly what the surface is told.
+        return { status: "pending-approval", approvalId: APPROVAL };
+      };
+      return render(
+        <VendoProvider client={client}>
+          <PayloadView
+            payload={payloadFor(compile(TRANSFERS), { list_pending: { data: rows } })}
+            components={{}}
+            onAction={onAction}
+            onParked={(press) => parked.push(press)}
+          />
+        </VendoProvider>,
+      );
+    },
+  };
+}
+
+/** Same-tab announcement: `client.approvals.decide` fires this the moment the
+ *  POST returns, which is AFTER the server resumed the call. */
+const announce = async (approved: boolean): Promise<void> => {
+  await act(async () => {
+    window.dispatchEvent(new CustomEvent(APPROVALS_DECIDED_EVENT, { detail: { ids: [APPROVAL], approved } }));
+  });
+};
+
+const parkAda = async (live: ReturnType<typeof world>): Promise<void> => {
+  live.render();
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel Ada" }));
+  await waitFor(() => expect(screen.getByText(/waiting for approval/u)).toBeTruthy());
+};
+
+describe("a parked press learns its answer", () => {
+  it("announces the park, then clears the notice and re-reads once the call ran", async () => {
+    const live = world();
+    await parkAda(live);
+
+    // The contract a surface builds an approval prompt against.
+    expect(live.parked).toEqual([{ nodeId: ADA_NODE, approvalId: APPROVAL }]);
+    // Nothing changed yet, so nothing is re-read — the press is genuinely parked.
+    expect(live.of("list_pending")).toEqual([]);
+    expect(screen.getByText("Pending: 2")).toBeTruthy();
+
+    live.approve();
+    await announce(true);
+
+    // The stale notice is gone and the screen re-read the plan, so it paints
+    // what the backend now holds rather than the list it was built from.
+    await waitFor(() => expect(screen.getByText("Pending: 1")).toBeTruthy());
+    expect(screen.queryByText(/waiting for approval/u)).toBeNull();
+    expect(screen.queryByText("Ada")).toBeNull();
+    expect(screen.getByText("Bob")).toBeTruthy();
+  });
+
+  it("settles a refusal in place: the notice says so, and nothing is re-read", async () => {
+    const live = world();
+    await parkAda(live);
+
+    live.refuse("declined");
+    await announce(false);
+
+    await waitFor(() => expect(screen.getByText(/nothing was sent/u)).toBeTruthy());
+    // The pending sentence is replaced, not stacked on top of.
+    expect(screen.queryByText(/waiting for approval/u)).toBeNull();
+    // A refused call changed nothing, so the screen has nothing to re-read, and
+    // the control is live again for a second try.
+    expect(live.of("list_pending")).toEqual([]);
+    expect(screen.getByText("Pending: 2")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Cancel Ada" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("says an unanswered approval expired, in its own words", async () => {
+    const live = world();
+    await parkAda(live);
+
+    live.refuse("expired");
+    await announce(false);
+
+    await waitFor(() => expect(screen.getByText(/nobody answered in time/u)).toBeTruthy());
+    expect(screen.getByText("Pending: 2")).toBeTruthy();
+  });
+
+  it("finds a decision made where this page could not hear it", async () => {
+    const live = world();
+    await parkAda(live);
+
+    // No announcement at all — the person approved in another tab, or the host's
+    // own queue did. The poll is the only way this screen ever finds out.
+    live.approve();
+
+    await waitFor(() => expect(screen.getByText("Pending: 1")).toBeTruthy(), { timeout: 20_000 });
+    expect(screen.queryByText(/waiting for approval/u)).toBeNull();
+  }, 30_000);
+});

@@ -7,6 +7,7 @@ import { useReportSlot } from "../hooks/use-placements.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
+import type { ParkedPress } from "../tree/renderer.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { defaultSlotSuggestions } from "./discoverability.js";
 import { developmentMode } from "./dev-mode.js";
@@ -165,7 +166,7 @@ function SlotBuildFailed({ appId, slotId, onChanged }: {
   );
 }
 
-function MountedApp({ appId }: { appId: string }) {
+function MountedApp({ appId, onParked }: { appId: string; onParked?: (parked: ParkedPress) => void }) {
   const { client, components } = useVendoProvider();
   const { surface, error, isLoading, refresh } = useApp(appId);
   // The served-surface keepalive: an on-screen embed pings the
@@ -178,7 +179,7 @@ function MountedApp({ appId }: { appId: string }) {
     if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
     return <SlotGhost label="Loading app…" loading />;
   }
-  return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
+  return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onParked={onParked} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
 /** A generated view pinned into a slot (08-ui §4 — "or a pinned component").
@@ -209,7 +210,7 @@ export interface VendoSlotPin {
  *  the original `children` as the visible recovery path (06-apps §8). Without any
  *  of the three, the children render UNTOUCHED (no wrapper — hosts may inline
  *  slots anywhere). */
-export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, discover = true, emptyState, children }: {
+export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, onParked, discover = true, emptyState, children }: {
   id: string;
   /** What a person choosing this slot in the "Add to…" picker reads. Defaults
    *  to the id read as words ("net-worth-card" → "Net worth card"). */
@@ -219,6 +220,10 @@ export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, discover
   /** Invoked when the empty-state CTA is activated — the seam to open a thread
    *  or palette to author the view. Defaults to opening a mounted VendoPalette. */
   onAuthor?(slotId: string): void;
+  /** Invoked when a press inside the mounted view is parked on an approval. The
+   *  view settles itself when the decision lands (tree/parked-approvals.ts);
+   *  this is the seam for surfacing the decision where the person already is. */
+  onParked?: (parked: ParkedPress) => void;
   /** Pass `false` to stand pin self-discovery down even with no `appId`/`pin`
    *  prop — for hosts that resolve the pin themselves (e.g. via useSlotApp
    *  for a layout decision) and must not start a second poll. */
@@ -356,8 +361,8 @@ export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, discover
 
   const Fallback = () => <>{children}</>;
   const mounted = appId
-    ? <MountedApp appId={appId} />
-    : <AppFrame surface={{ kind: "tree", payload: pin!.payload }} components={components} data={pin!.data} onAction={pin!.onAction} />;
+    ? <MountedApp appId={appId} onParked={onParked} />
+    : <AppFrame surface={{ kind: "tree", payload: pin!.payload }} components={components} data={pin!.data} onAction={pin!.onAction} onParked={onParked} />;
   return (
     <ChromeRoot>
       <div className="fl-slot" data-vendo-slot={id}>

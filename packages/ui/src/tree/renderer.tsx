@@ -6,6 +6,7 @@ import {
   isPathBinding,
   isStateBinding,
   VENDO_TREE_FORMAT,
+  type ApprovalId,
   type Json,
   type PathBinding,
   type ToolOutcome,
@@ -41,8 +42,15 @@ import { ContainedNotice } from "./notice.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
 import { markHandlerCallback, screenEvent } from "../kit/handler.js";
 import { useKeyedState } from "../kit/state.js";
+import { useParkedApprovals } from "./parked-approvals.js";
 import type { ScreenInteractive, ScreenQuery } from "./screen-engine.js";
 import { useScreen, type ScreenBridge } from "./use-screen.js";
+
+/** A press the guard sent to approval, announced through `onParked`. */
+export interface ParkedPress {
+  nodeId: string;
+  approvalId: ApprovalId;
+}
 
 export interface TreeViewProps {
   tree: WalkTree;
@@ -55,6 +63,13 @@ export interface TreeViewProps {
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
+  /**
+   * Fires the instant a press is PARKED on an approval. The tree resolves the
+   * approval on its own (parked-approvals.ts) and repaints when it lands; this
+   * is the seam for a surface that wants to put the decision in front of the
+   * person instead of leaving them to go find it.
+   */
+  onParked?: (parked: ParkedPress) => void;
   /**
    * 08-ui §5; 06-apps §6 — additive persistence hook for TreeView-local `$state`.
    * It fires with the complete state map after every jail `state-set` message.
@@ -77,6 +92,8 @@ export interface PayloadRendererProps {
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
+  /** As {@link TreeViewProps.onParked}. */
+  onParked?: (parked: ParkedPress) => void;
   onStateChange?(state: Record<string, Json>): void;
 }
 
@@ -665,6 +682,7 @@ function StatefulTreeView({
   components,
   data,
   onAction,
+  onParked,
   onStateChange,
   interactive,
 }: TreeViewProps) {
@@ -690,8 +708,9 @@ function StatefulTreeView({
       };
     }
     setOutcomes((current) => ({ ...current, [nodeId]: outcome.status === "ok" ? undefined : outcome }));
+    if (outcome.status === "pending-approval") onParked?.({ nodeId, approvalId: outcome.approvalId });
     return outcome;
-  }, [onAction]);
+  }, [onAction, onParked]);
 
   // A screen's own failure (a VM that will not boot, a handler that threw) lands
   // in the same per-node slot a failed action does — one place a region reports
@@ -702,6 +721,27 @@ function StatefulTreeView({
   // What the screen may render: the Kit plus whatever this host registered.
   const catalog = useMemo(() => [...KIT_COMPONENT_NAMES, ...Object.keys(components)], [components]);
   const screen = useScreen({ interactive, base: painted, catalog, runAction, onFailure: failNode });
+  // Every press still waiting on an approval, read straight off the outcome
+  // slots that hold its notice — resolving one clears the slot, which is also
+  // what stops the watch.
+  const parked = useMemo(() => new Map(Object.entries(outcomes).flatMap(([nodeId, outcome]) =>
+    outcome?.status === "pending-approval" ? [[nodeId, outcome.approvalId] as [string, string]] : [])), [outcomes]);
+  // The approval's answer lands in the SAME per-node slot the press itself
+  // fills, so a resumed call that succeeded clears its own stale notice and
+  // re-reads the screen — the only thing that clears the "Sending…" a parked
+  // press left behind, since the screen re-boots on the fresh data. A tree with
+  // no query plan (a plain action tree) has nothing to re-read; its notice
+  // still settles.
+  useParkedApprovals(parked, (nodeId, resolution) => {
+    const settled: ToolOutcome = resolution.state === "executed" ? resolution.outcome : {
+      status: "blocked",
+      reason: resolution.state === "expired"
+        ? "This needed approval and nobody answered in time — nothing was sent."
+        : "This wasn’t approved — nothing was sent.",
+    };
+    setOutcomes((current) => ({ ...current, [nodeId]: settled.status === "ok" ? undefined : settled }));
+    if (settled.status === "ok") void screen.refresh(nodeId);
+  });
   // The served paint until a handler moves the screen, and the screen's own tree
   // after — one walk, so validation, bindings, `$state` and outcomes are the ones
   // already here rather than a second renderer for interactive trees.
