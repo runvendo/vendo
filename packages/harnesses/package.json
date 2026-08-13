@@ -39,6 +39,14 @@
       "types": "./dist/claude-code/index.d.ts",
       "default": "./dist/claude-code/index.js"
     },
+    "./inference": {
+      "types": "./dist/inference/model.d.ts",
+      "default": "./dist/inference/model.js"
+    },
+    "./inference/credential": {
+      "types": "./dist/inference/resolve.d.ts",
+      "default": "./dist/inference/resolve.js"
+    },
     "./claude-turn": {
       "types": "./dist/claude-code/claude-turn.d.ts",
       "default": "./dist/claude-code/claude-turn.js"
@@ -59,6 +67,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@vendoai/apps": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
     "zod": "^3.25.0"
@@ -69,7 +79,6 @@
     "@anthropic-ai/claude-agent-sdk": ">=0.3.0 <1"
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "3.0.12",
     "@ai-sdk/openai": "3.0.9",
     "@ai-sdk/openai-compatible": "2.0.9",
     "@types/node": "^22.0.0",

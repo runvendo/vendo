@@ -88,8 +88,15 @@ const LAYERS = {
   // INJECTED through `provideHarnessAdapters` from composition (the umbrella
   // and @vendoai/agents), never imported. The e2b/box-door seam tests live in
   // packages/vendo/tests, where both blocks are legal.
-  // It is NOT the umbrella: no store, no actions, no apps.
-  "@vendoai/harnesses": ["@vendoai/core", "@vendoai/guard"],
+  // It is NOT the umbrella: no store, no actions.
+  //
+  // apps joined for the MODEL LADDER (agents-dx P1): `vendoModel()` moved here
+  // from @vendoai/vendo so the standalone agent runtime can fill its model slot
+  // without an umbrella edge, and the ladder re-decides sampling params against
+  // the RESOLVED rung — `acceptsSamplingParams` in apps' model-params.ts, the
+  // one place that rule is stated. apps depends on core alone, so there is no
+  // cycle; the cost is that a standalone install carries apps, which is accepted.
+  "@vendoai/harnesses": ["@vendoai/core", "@vendoai/guard", "@vendoai/apps"],
   // the standalone agent runtime (agents-v0 spec, 2026-08-04): the open-source
   // front door Vendo's embed consumes across a real seam. It assembles what the
   // umbrella assembles — harness runtime (harnesses), guard, store, host tools
