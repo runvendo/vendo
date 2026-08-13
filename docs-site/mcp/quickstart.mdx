@@ -2,6 +2,7 @@
 title: "Quickstart"
 sidebarTitle: "Quickstart"
 description: "Open the MCP door with vendo init, set your public origin, and connect Claude Code, any other MCP client by URL, or your own backend."
+mode: "wide"
 ---
 
 import { AgentPrompt, MCP_PROMPT } from "/snippets/agent-prompt.jsx"
@@ -26,8 +27,10 @@ Pick the MCP door path. On the model question take **Vendo Cloud**: a free key
 lands in `.env.local` as `VENDO_API_KEY` and `vendo_make` runs on it. Your own
 `ANTHROPIC_API_KEY` works too, written as the
 [`models:` line](/deploy/model-credentials) that selects it. Say yes to *will
-your own backend call these tools machine-to-machine?* and init also generates
-`VENDO_SERVICE_KEY`, which step 3 uses.
+your own backend call these tools machine-to-machine?* and, on the **Local**
+answer to the sign-in question, init generates the `VENDO_SERVICE_KEY` step 3
+uses — under the Cloud broker you mint that key on the console's keys page
+instead.
 
 The door mints its own principals through an [auth preset](/deploy/auth), so
 you need a Next.js app with one wired. Without it init says so and writes
@@ -83,6 +86,9 @@ https://your-app.example.com/api/vendo/mcp
 ```bash Your own backend
 # No browser to bounce: trade VENDO_SERVICE_KEY plus one of YOUR user ids for a
 # 10-minute token bound to that user, then send it as `authorization: Bearer …`.
+# init wrote the key to .env.local, which your shell has not read:
+export VENDO_SERVICE_KEY=$(grep '^VENDO_SERVICE_KEY=' .env.local | cut -d= -f2-)
+
 curl -s https://your-app.example.com/api/vendo/mcp/token \
   -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
   -d client_id=vendo-service \

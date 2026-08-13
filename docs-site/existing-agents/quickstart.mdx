@@ -2,6 +2,7 @@
 title: "Quickstart: your agent"
 sidebarTitle: "Quickstart"
 description: "Add Vendo's guarded tool pack to an AI SDK or Mastra loop you already run: vendo init, one spread, one component."
+mode: "wide"
 ---
 
 import { AgentPrompt, EXISTING_AGENTS_PROMPT } from "/snippets/agent-prompt.jsx"
@@ -10,14 +11,14 @@ Your loop, your model, your chat UI. Vendo adds [a pack of guarded
 tools](/existing-agents/overview) to them.
 
 <AgentPrompt
-  lead="Or hand it to your coding agent."
+  lead={<>Paste this and your coding agent wires the pack against the <a href="/agents">agent playbook</a>.</>}
   prompt={EXISTING_AGENTS_PROMPT}
 />
 
 ## 1. Init
 
 ```bash
-npm install @vendoai/vendo
+npm install @vendoai/vendo ai @ai-sdk/react
 npx vendo init
 ```
 
@@ -84,9 +85,9 @@ so a visitor your resolver can't place gets a 401.
 <CodeGroup>
 ```ts AI SDK
 // app/api/chat/route.ts
-import { anthropic } from "@ai-sdk/anthropic";
 import { convertToModelMessages, streamText } from "ai";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
+import { vendoModel } from "@vendoai/vendo/server";
 import { resolvePrincipal, vendo } from "@/lib/vendo";
 
 export async function POST(req: Request) {
@@ -94,7 +95,7 @@ export async function POST(req: Request) {
   const caller = await resolvePrincipal(req);
   if (!caller) return new Response("Unauthorized", { status: 401 });
   return streamText({
-    model: anthropic("claude-sonnet-4-6"),
+    model: vendoModel(),
     messages: await convertToModelMessages(messages),
     // your own tools spread in here too
     tools: { ...(await vendoTools(vendo, { principal: caller })) },
@@ -102,7 +103,7 @@ export async function POST(req: Request) {
 }
 ```
 
-```ts Mastra
+```ts Mastra · agent
 // src/mastra/agents/your-agent.ts
 import { Agent } from "@mastra/core/agent";
 import { vendoMastraTools } from "@vendoai/vendo/mastra";
@@ -112,10 +113,20 @@ export const yourAgent = new Agent({
   id: "your-agent",
   name: "your-agent",
   instructions: "…your system prompt as it is",
-  model: "openai/gpt-4.1-mini",
+  model: "openai/gpt-4.1-mini", // your own model and your own key
   tools: async () => ({ ...(await vendoMastraTools(vendo)) }), // yours spread in too
 });
+```
 
+```ts Mastra · register
+// src/mastra/index.ts — agentId below resolves against this instance
+import { Mastra } from "@mastra/core/mastra";
+import { yourAgent } from "./agents/your-agent";
+
+export const mastra = new Mastra({ agents: { yourAgent } });
+```
+
+```ts Mastra · route
 // app/api/chat/route.ts — the pack reads its caller from here
 import { handleChatStream } from "@mastra/ai-sdk";
 import { RequestContext } from "@mastra/core/request-context";
@@ -136,6 +147,11 @@ export async function POST(req: Request) {
 }
 ```
 </CodeGroup>
+
+Your loop keeps its own model credential. `vendoModel()` rides the same ladder
+Vendo's internal turns do, so the Cloud key from step 1 pays for both seats;
+Mastra's `openai/…` pin needs an `OPENAI_API_KEY` of its own. Either way:
+[Two models, two credentials](/deploy/model-credentials#two-models-two-credentials).
 
 Framework notes: [AI SDK](/existing-agents/ai-sdk) · [Mastra](/existing-agents/mastra).
 
