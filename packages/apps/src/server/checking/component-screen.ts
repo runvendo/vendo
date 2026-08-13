@@ -186,6 +186,24 @@ const childNodes = (node: Node): Node[] => {
 
 const FUNCTION_TYPES = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
 
+/**
+ * What owns the code inside it, for the render-time question alone: every
+ * function, plus an INSTANCE field initializer.
+ *
+ * The distinction is when the body runs. An instance field runs on `new`, so
+ * its calls belong to whoever constructs the class — attributing them to the
+ * render that merely encloses the class declaration refuses a screen whose
+ * author did precisely what the refusal asks for. A STATIC field runs when the
+ * class definition itself is evaluated, which IS the render, so it stays
+ * attributed to the render and keeps earning `tool-at-render`.
+ *
+ * Kept apart from FUNCTION_TYPES on purpose: that set answers a different
+ * question — "could this node BE the component" — and must stay functions only.
+ */
+const ownsItsScope = (node: Node): boolean =>
+  FUNCTION_TYPES.has(node.type)
+  || (node.type === "PropertyDefinition" && (node as unknown as { static?: boolean }).static !== true);
+
 /** A class `static {}` block anywhere in the module — an AST question, because
  *  `static {` is also ordinary prose: it turns up in strings, in comments and in
  *  JSX text, and a screen that merely SAYS it is not a screen that DOES it. The
@@ -277,10 +295,19 @@ const ALLOWED_IMPORTS: readonly string[] = ["react", SCREEN_MODULE];
  * fail CLOSED: `\s` on both sides so a brace on the next line still counts, and
  * a non-identifier lookbehind rather than a line anchor so `const x = 1;
  * namespace Foo {` is seen — those were misses, and a guard that misses admits
- * the very screen it exists to catch. The residual is the other direction: the
- * literal text `namespace X {` inside a string or template literal reads as the
- * real thing. That costs a repair round on a screen nobody writes; a miss costs
- * a screen that paints differently in two venues.
+ * the very screen it exists to catch.
+ *
+ * The residual runs the other way, and it is the WHOLE of the author's file:
+ * this reads raw text, so the words `namespace X {` are refused wherever they
+ * appear — in a line comment, in a block comment, in a string, in a template
+ * literal, in JSX text. Nothing here strips any of those, and a screen that
+ * merely SAYS the construct is refused as if it declared one. That is the
+ * accepted price: unlike the `static {}` guard, no AST can answer this, because
+ * every toolchain erases the construct before there is a tree to read. A false
+ * refusal costs one repair round on a screen nobody writes; a miss ships a
+ * screen that paints differently in two venues. `scan-fidelity.test.ts` pins
+ * this behaviour deliberately, so that closing it cannot silently reopen the
+ * `namespace Foo\n{` miss.
  */
 const NAMESPACE_BLOCK = /(?<![\w$])namespace\s+([A-Za-z_$][\w$.]*)\s*\{/u;
 
@@ -428,7 +455,7 @@ const scan = (moduleSource: string, source: string, tools: readonly HostToolInfo
         }
       }
     }
-    const inner = FUNCTION_TYPES.has(node.type) ? node : nearestFunction;
+    const inner = ownsItsScope(node) ? node : nearestFunction;
     for (const child of childNodes(node)) visit(child, inner);
   };
   visit(program, undefined);

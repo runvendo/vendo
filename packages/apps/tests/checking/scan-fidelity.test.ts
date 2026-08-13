@@ -20,9 +20,10 @@ import {
   checkComponentScreen,
   type ComponentScreenCheck,
 } from "../../src/server/checking/component-screen.js";
+import type { HostToolInfo } from "../../src/server/checking/deps.js";
 import { nodeToolchain } from "../../src/server/checking/toolchain.js";
 
-const catalog = ["Stack", "Text"];
+const catalog = ["Stack", "Text", "Button"];
 
 /** The refusal, to the byte — every namespace shape names the same construct, so
  *  every one of them earns the same sentence. */
@@ -31,8 +32,21 @@ const NAMESPACE_MESSAGE = "declares a namespace block (namespace Format { … })
   + " one venue and not in another. A screen is ONE file and needs no inner scope: write"
   + " plain top-level consts, functions and types instead.";
 
-const check = (source: string): Promise<ComponentScreenCheck> =>
-  checkComponentScreen({ source, hostTools: [], catalog, runQuery: async () => ({}) });
+const check = (source: string, hostTools: readonly HostToolInfo[] = []): Promise<ComponentScreenCheck> =>
+  checkComponentScreen({ source, hostTools, catalog, runQuery: async () => ({}) });
+
+/** One WRITE, for the question of when a tool call actually fires. */
+const writeTool: readonly HostToolInfo[] = [{
+  name: "archive_invoice",
+  description: "Archive one invoice",
+  risk: "destructive",
+  inputSchema: {
+    type: "object",
+    properties: { id: { type: "string" } },
+    required: ["id"],
+    additionalProperties: false,
+  },
+}];
 
 const NAMESPACE = `import { Text } from "@vendo/screen";
 
@@ -188,6 +202,84 @@ export default function Screen() {
 }
 `;
 
+/**
+ * WHEN a class field initializer runs, which is the thing raising the scan form
+ * to es2022 made visible. The body runs on `new`, so the tool call belongs to
+ * whoever constructs the class — here, the click handler. This screen does
+ * exactly what the tool-at-render refusal tells authors to do, so refusing it
+ * would be the gate contradicting its own instructions.
+ */
+const FIELD_CONSTRUCTED_IN_HANDLER = `import { Button, Stack, tools } from "@vendo/screen";
+
+class Archive {
+  result = tools.archive_invoice({ id: "inv_1" });
+}
+
+export default function Screen() {
+  return (
+    <Stack gap={4}>
+      <Button label="Archive" onClick={() => { const run = new Archive(); void run.result; }} />
+    </Stack>
+  );
+}
+`;
+
+/** A STATIC field is the other case, and it inverts: its initializer runs when
+ *  the class DEFINITION is evaluated, which is the render — nobody has to
+ *  construct anything. So this one really does fire with nobody clicking. */
+const STATIC_FIELD_CALLS_TOOL = `import { Button, Stack, tools } from "@vendo/screen";
+
+class Archive {
+  static result = tools.archive_invoice({ id: "inv_1" });
+}
+
+export default function Screen() {
+  return (
+    <Stack gap={4}>
+      <Button label="Archive" onClick={() => void Archive.result} />
+    </Stack>
+  );
+}
+`;
+
+/** The same class, constructed while the component renders — so the write DOES
+ *  fire with nobody clicking. The engine is what catches this, and its sentence
+ *  is the one this screen has always earned. */
+const FIELD_CONSTRUCTED_AT_RENDER = `import { Button, Stack, tools } from "@vendo/screen";
+
+class Archive {
+  result = tools.archive_invoice({ id: "inv_1" });
+}
+
+export default function Screen() {
+  const run = new Archive();
+  return (
+    <Stack gap={4}>
+      <Button label="Archive" onClick={() => void run.result} />
+    </Stack>
+  );
+}
+`;
+
+/** The namespace guard reads raw text, so it answers on prose too. Pinned on
+ *  purpose — see the note below the assertions. */
+const NAMESPACE_IN_COMMENT = `import { Text } from "@vendo/screen";
+
+// namespace Format { — how NOT to write a screen
+export default function Screen() {
+  return <Text text="hi" />;
+}
+`;
+
+const NAMESPACE_IN_STRING = `import { Text } from "@vendo/screen";
+
+const advice = "namespace Format { is not allowed here";
+
+export default function Screen() {
+  return <Text text={advice} />;
+}
+`;
+
 beforeAll(async () => {
   await warmScreenEngine();
 });
@@ -254,6 +346,62 @@ describe("a construct the two toolchains would not agree on", () => {
 
     expect(result.issues).toEqual([]);
     expect(result.ok).toBe(true);
+  });
+});
+
+/**
+ * Raising the scan form to es2022 stopped esbuild lowering class fields into the
+ * constructor, which made WHEN a field initializer runs a question this scan can
+ * see for the first time. It must answer it the way the engine always has.
+ */
+describe("a tool call in a class field initializer", () => {
+  it("is admitted when the class is constructed in a handler — the author did what the gate asks", async () => {
+    const result = await check(FIELD_CONSTRUCTED_IN_HANDLER, writeTool);
+
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("still earns tool-at-render when the field is STATIC — that one runs at render", async () => {
+    const result = await check(STATIC_FIELD_CALLS_TOOL, writeTool);
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.map(({ code }) => code)).toEqual(["tool-at-render"]);
+  });
+
+  it("is refused by the ENGINE when the class is constructed while rendering", async () => {
+    const result = await check(FIELD_CONSTRUCTED_AT_RENDER, writeTool);
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.map(({ code }) => code)).toEqual(["run"]);
+    expect(result.issues[0]?.message).toContain("tools.archive_invoice() cannot run while the screen");
+  });
+});
+
+/**
+ * ACCEPTED RESIDUAL, pinned on purpose.
+ *
+ * The namespace guard matches raw text and strips nothing, so it refuses the
+ * words `namespace X {` in a comment or a string as if they declared one. Both
+ * assertions below are WRONG refusals, and they are correct to assert: the
+ * regex was deliberately widened to close a fail-open miss (`namespace Foo\n{`
+ * passed the entire gauntlet), and unlike `static {}` there is no AST route —
+ * every toolchain erases a namespace before there is a tree to read.
+ *
+ * So this is a ratchet. Anyone "fixing" these two tests reopens that miss, and
+ * these assertions are the tripwire that makes them notice.
+ */
+describe("the namespace guard's accepted false positives", () => {
+  it("refuses the construct written in a line comment", async () => {
+    const result = await check(NAMESPACE_IN_COMMENT);
+
+    expect(result.issues).toEqual([{ code: "namespace", message: NAMESPACE_MESSAGE }]);
+  });
+
+  it("refuses the construct written inside a string", async () => {
+    const result = await check(NAMESPACE_IN_STRING);
+
+    expect(result.issues).toEqual([{ code: "namespace", message: NAMESPACE_MESSAGE }]);
   });
 });
 
