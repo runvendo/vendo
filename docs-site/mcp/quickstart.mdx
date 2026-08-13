@@ -1,0 +1,89 @@
+---
+title: "Quickstart"
+sidebarTitle: "Quickstart"
+description: "Open the MCP door with vendo init, set your public origin, and connect Claude Code, Claude, ChatGPT, or Cursor."
+---
+
+import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+
+Five minutes from a product with no MCP server to an outside agent making
+screens in it.
+
+<AgentPrompt
+  title="Or set it up with your coding agent"
+  lead={<>Paste this and your coding agent wires the door against the <a href="/agents">agent playbook</a>.</>}
+  prompt={"Set up Vendo's MCP door in this repo. Read https://vendo.run/agents.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green."}
+/>
+
+## 1. Run init
+
+```bash
+npx vendo init
+```
+
+Pick the MCP door path in its questions. Init writes the composition, the
+catch-all route, and the origin-root discovery route. It needs a Next.js app
+with an auth preset already wired. Without one it says so and writes nothing.
+Details: [vendo init](/reference/vendo-init).
+
+## 2. Set your public origin
+
+Where you deploy, not in your repo:
+
+```bash
+VENDO_BASE_URL=https://your-app.example.com
+```
+
+The door's discovery, issuer, and token audience all derive from it. Skip it
+and doctor fails with
+[E-MCP-009](/deploy/troubleshooting#E-MCP-009).
+
+## 3. Connect a client
+
+<CodeGroup>
+
+```bash Claude Code
+# in Claude Code
+/plugin marketplace add runvendo/vendo
+/plugin install vendo@vendo
+
+# in your shell, to point the plugin at your deployment
+export VENDO_MCP_URL=https://your-app.example.com/api/vendo/mcp
+```
+
+```text Claude · ChatGPT · Cursor
+https://your-app.example.com/api/vendo/mcp
+```
+
+</CodeGroup>
+
+The client runs the sign-in itself. Your users get a themed setup page at
+`/api/vendo/mcp/connect` for free.
+
+## 4. Ask for a screen
+
+In the connected client, ask for something you would rather look at than read.
+The agent calls `vendo_make` and gets a receipt back:
+
+```json
+{
+  "id": "app_790892b0…",
+  "title": "August Spending",
+  "status": "ready",
+  "say": "August Spending is on your screen."
+}
+```
+
+The screen lands in your product, not in the chat.
+
+## 5. Check the wiring
+
+```bash
+npx vendo doctor
+```
+
+Start your dev server first. The MCP checks fetch the door's two discovery
+documents over HTTP, so a stopped server reads as a broken door. Failures name
+an [E-MCP code](/deploy/troubleshooting).
+
+Next: [tool menus, consent theming, service keys](/reference/mcp-door).

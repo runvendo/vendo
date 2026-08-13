@@ -1,0 +1,82 @@
+---
+title: "Quickstart"
+sidebarTitle: "Quickstart"
+description: "Install the package, run vendo init, paste the provider into your layout, and ask the overlay for a screen."
+---
+
+import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+
+Five minutes from an app with no agent to one that answers with a live screen.
+
+<AgentPrompt
+  lead={<>Paste this and your coding agent does the whole install against the <a href="/agents">agent playbook</a>.</>}
+  prompt={"Install Vendo in this repo. Read https://vendo.run/agents.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green."}
+/>
+
+## 1. Install
+
+```bash
+npm install @vendoai/vendo
+```
+
+## 2. Run init
+
+```bash
+npx vendo init
+```
+
+It asks a few questions, then writes the server route, your API as tools, and
+your brand as a theme. Every flag and every file it touches:
+[vendo init](/reference/vendo-init).
+
+Not Next.js? → [Edge runtimes](/deploy/edge-runtimes).
+
+## 3. Mount the provider
+
+Init prints this paste at the end of the run. It never writes a client file, so
+this step is yours.
+
+```tsx
+// app/layout.tsx
+import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
+import type { ReactNode } from "react";
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <VendoProvider baseUrl="/api/vendo">
+          {children}
+          <VendoOverlay />
+        </VendoProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+Other layouts, other surfaces: [Surfaces](/customize/surfaces).
+
+## 4. Ask it something real
+
+```bash
+npm run dev
+```
+
+Open your app, click the launcher pill, and ask for something you would
+otherwise click through to, like "Show my overdue invoices by customer." You
+get a screen back, not a paragraph.
+
+## 5. Check the wiring
+
+```bash
+npx vendo doctor
+```
+
+Doctor reads your composition, makes one live round trip, and probes that
+credentials forward on a real tool call. Red output names an E-code. Look it up
+in [Troubleshooting](/deploy/troubleshooting).
+
+Next: [theme it](/customize/theming), [register your own
+components](/customize/host-components), or
+[deploy it](/deploy/deploying).
