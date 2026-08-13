@@ -15,20 +15,26 @@ handler, not at module scope:
 
 ```ts
 // app/api/chat/route.ts
-import { streamText } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { convertToModelMessages, streamText } from "ai";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
-import { vendo } from "@/lib/vendo";
+import { resolvePrincipal, vendo } from "@/lib/vendo";
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
-  const principal = await resolvePrincipal(req); // your auth
+  const caller = await resolvePrincipal(req);
+  if (!caller) return new Response("Unauthorized", { status: 401 });
   return streamText({
-    model,
-    messages,
-    tools: { ...yourTools, ...(await vendoTools(vendo, { principal })) },
+    model: anthropic("claude-sonnet-4-6"),
+    messages: await convertToModelMessages(messages),
+    // your own tools spread in here too
+    tools: { ...(await vendoTools(vendo, { principal: caller })) },
   }).toUIMessageStreamResponse();
 }
 ```
+
+`principal` is not nullable, and an auth preset's resolver returns
+`Principal | null`. Drop the 401 and the call stops typechecking.
 
 Tool execution needs a principal-scoped context, and that principal has to be
 the one your wire route resolves too. See [one principal, two
@@ -43,11 +49,16 @@ The shim builds every tool with the AI SDK's `dynamicTool`, so `useChat`
 streams them as `dynamic-tool` parts, not `tool-<name>`. Match on that:
 
 ```tsx
-// inside your existing message-parts loop
-case "dynamic-tool":
+// the branch to add to your existing message-parts loop
+import type { UIMessage } from "ai";
+import { VendoToolResult } from "@vendoai/vendo/react";
+
+export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
+  if (part.type !== "dynamic-tool") return null;
   return part.state === "output-available"
     ? <VendoToolResult output={part.output} />
     : <div>Running {part.toolName}…</div>;
+}
 ```
 
 `<VendoToolResult>` handles plain data, app refs, and approval refs, so you
@@ -56,11 +67,14 @@ never branch on the envelope yourself
 
 ## Next.js
 
-One line keeps Vendo's native and wasm dependencies out of the bundler:
+One `serverExternalPackages` line keeps Vendo's native and wasm dependencies out
+of the bundler:
 
 ```ts
 // next.config.ts
 const nextConfig = { serverExternalPackages: ["esbuild", "@electric-sql/pglite"] };
+
+export default nextConfig;
 ```
 
 The wire route needs no `runtime` or `dynamic` export. Node is the default

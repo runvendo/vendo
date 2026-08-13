@@ -25,11 +25,11 @@ import { mastra } from "@/mastra";
 
 export async function POST(req: Request) {
   const params = await req.json();
-  const principal = await resolvePrincipal(req); // { kind: "user", subject: userId }
-  // No principal, no turn: the pack throws rather than run as nobody.
-  if (!principal) return new Response("Unauthorized", { status: 401 });
+  const caller = await resolvePrincipal(req); // { kind: "user", subject: userId }
+  // No caller, no turn: the pack throws rather than run as nobody.
+  if (!caller) return new Response("Unauthorized", { status: 401 });
   const requestContext = new RequestContext();
-  requestContext.set(VENDO_PRINCIPAL_KEY, principal);
+  requestContext.set(VENDO_PRINCIPAL_KEY, caller);
   // Hand it to the run. A context you build and never pass is a context the
   // tools never see, and every vendo_* call then fails closed.
   params.requestContext = requestContext;
@@ -50,15 +50,30 @@ tools-as-function form:
 
 ```ts
 // src/mastra/agents/your-agent.ts
-tools: async () => ({ ...yourTools, ...(await vendoMastraTools(vendo)) }),
+import { Agent } from "@mastra/core/agent";
+import { vendoMastraTools } from "@vendoai/vendo/mastra";
+import { vendo } from "@/lib/vendo";
+
+export const yourAgent = new Agent({
+  id: "your-agent",
+  name: "your-agent",
+  instructions: "…your system prompt as it is",
+  model: "openai/gpt-4.1-mini", // see the pin below
+  tools: async () => ({ ...(await vendoMastraTools(vendo)) }), // yours spread in too
+});
 ```
 
-## Warm the store first
+## Warming the store
 
-A guarded tool can fire before any wire request has touched the store. One line
-in the chat route saves you the cold-start failure:
+Every `vendo_*` call runs the schema check before it executes, so a guarded tool
+that fires before any wire request still works. Call `ensureSchema` once at
+module scope to move that one-time cost off the first turn. You do need it if
+you read `vendo.store` directly, which goes around both the pack and the wire:
 
 ```ts
+// src/mastra/index.ts
+import { vendo } from "@/lib/vendo";
+
 await vendo.store.ensureSchema();
 ```
 
@@ -68,10 +83,15 @@ Mastra streams tool calls as `dynamic-tool` or as `tool-<name>`, depending on
 how the tool was declared, so match both:
 
 ```tsx
-if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
+// the branch to add to your existing message-parts loop
+import { getToolName, isToolUIPart, type UIMessage } from "ai";
+import { VendoToolResult } from "@vendoai/vendo/react";
+
+export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
+  if (!isToolUIPart(part)) return null; // true for both shapes
   return part.state === "output-available"
     ? <VendoToolResult output={part.output} />
-    : <span>Running {part.toolName ?? part.type.slice("tool-".length)}…</span>;
+    : <span>Running {getToolName(part)}…</span>;
 }
 ```
 
@@ -80,9 +100,11 @@ Everything downstream of that is the same as any other framework
 
 ## Known pin
 
-Multi-turn tool use with GPT-5 reasoning models fails on history replay today.
-Pin `openai/gpt-4.1-mini` until
-[mastra-ai/mastra#9005](https://github.com/mastra-ai/mastra/issues/9005) closes.
+Multi-turn tool use with GPT-5 reasoning models breaks on history replay:
+Mastra's memory drops the Responses API's reasoning items, and the second turn
+errors. [mastra-ai/mastra#9005](https://github.com/mastra-ai/mastra/issues/9005)
+is closed, but it still reproduces on `@mastra/core` 1.51.0 (retested
+2026-07-20), so the example pins `openai/gpt-4.1-mini`.
 
 ## Two models
 
