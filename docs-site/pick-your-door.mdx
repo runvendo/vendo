@@ -1,0 +1,49 @@
+---
+title: "Pick your door"
+description: "Three ways in: add the tool pack to the agent you already run, let Vendo run the agent, or serve outside agents over MCP."
+---
+
+Three doors. What separates them is who runs the loop and who the caller is.
+
+<CardGroup cols={3}>
+  <Card title="Bring your own agent" icon="puzzle-piece" href="/existing-agents">
+    **Recommended.** You already run the loop: AI SDK, Mastra, or something you
+    wrote. Vendo hands you a tool pack and you spread it into your agent's
+    tools. Your loop and chat UI stay yours; what they gain is guarded calls
+    into your API, generated micro-apps, and approval cards.
+  </Card>
+  <Card title="Vendo's agent" icon="sparkles" href="/vendo-agent">
+    **Beta.** You have no loop and don't want to write one. `vendo init` wires
+    the turn runtime, a chat surface, and the approvals into your app. You own
+    the route file it writes and the provider wrap. The rest is composed for
+    you.
+  </Card>
+  <Card title="MCP door" icon="plug" href="/mcp">
+    **Experimental.** The caller is Claude, ChatGPT, or Cursor rather than your
+    own user, connecting over OAuth and acting as whoever signed in. Same
+    tools, same guard, same audit trail. The rendering happens in that client,
+    not in your UI.
+  </Card>
+</CardGroup>
+
+## Four questions
+
+| Question | The answer that decides it | Door |
+| --- | --- | --- |
+| Do you already run an agent loop? | Yes, and you want to keep it | [Bring your own agent](/existing-agents) |
+| Can that loop import the package? | No, it runs where your code doesn't | [MCP door](/mcp) |
+| Who's the caller? | An outside client, not your signed-in user | [MCP door](/mcp) |
+| Which surface renders the result? | Your own app, and you have no loop yet | [Vendo's agent](/vendo-agent) |
+
+The first two doors sit on the same `createVendo` composition, with the same
+guard and the same `.vendo/` files. The MCP door is a flag on top of either
+one, so picking wrong costs you a config line rather than a rewrite.
+
+## Or skip all that
+
+```bash
+npm install @vendoai/vendo && npx vendo init
+```
+
+Init's first question is "How will people use your agent?", with those same
+three answers.
