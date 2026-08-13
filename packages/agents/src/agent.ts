@@ -17,25 +17,38 @@ import {
   VendoError,
   type FilesAdapter,
   type Harness,
+  type SeatModels,
   type Skill,
   type ToolRegistry,
 } from "@vendoai/core";
 import { createGuard, isGuardInstance, type GuardRules, type VendoGuard } from "@vendoai/guard";
-import { provideHarnessAdapters } from "@vendoai/harnesses";
+import { provideHarnessAdapters, vendo } from "@vendoai/harnesses";
 import { createStore, storeFiles, type VendoStore } from "@vendoai/store";
+import type { LanguageModel, UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
+import { startRun, type AgentRun, type RunOptions } from "./away.js";
 import { resolveDoor, type DoorConfig } from "./door.js";
 import { withEgress, type EgressConfig } from "./egress.js";
 import type { SystemPromptHook } from "./prompt.js";
-import { createSession, type AgentSession, type SessionDeps, type SessionOptions } from "./session.js";
+import {
+  createSession,
+  type AgentSession,
+  type RespondOptions,
+  type SessionDeps,
+  type SessionOptions,
+} from "./session.js";
 import { mergeSources, type McpServerConfig, type ToolSource } from "./tools.js";
 import { loadSkillFolders } from "./skills.js";
 
 export interface AgentConfig {
   /** Audit and inbox attribution. */
   name: string;
-  /** The brain; its knobs (model, effort, machine, template) bind at construction. */
-  harness: Harness<unknown>;
+  /** The brain; its knobs (effort, machine, template) bind at construction.
+   *  Unset → `vendo()`, the in-process default. */
+  harness?: Harness<unknown>;
+  /** What `vendo()` thinks with (the `default` seat). A harness that brings its
+   *  own brain — `claudeCode()` — ignores it. */
+  model?: LanguageModel;
   tools?: readonly ToolSource[];
   mcp?: readonly McpServerConfig[];
   /** A built guard, or the rules for one — `guard({ policy, judge, approvals })`,
@@ -72,6 +85,19 @@ export interface AgentConfig {
 
 export interface VendoAgent {
   readonly name: string;
+  /**
+   * ONE lane per shape of caller. `respond` answers a person: one turn, an
+   * AI-SDK UI-message-stream `Response` to return from your route, with the
+   * conversation's id on `x-vendo-thread-id`. `run` answers code: no screen, a
+   * report at the end.
+   *
+   * It is exactly `session(subject, options)` followed by `stream(message)` —
+   * reach for `session()` when you want the object (approval events, several
+   * turns on one thread), and this when you want the Response.
+   */
+  respond(subject: string, message: string | UIMessage, options?: RespondOptions): Promise<Response>;
+  /** One unattended run — see {@link startRun}. */
+  run<T = never>(task: string, options?: RunOptions<T>): AgentRun<T>;
   session(subject: string, options?: SessionOptions): Promise<AgentSession>;
   /**
    * This agent's MCP door, present exactly when its harness thinks outside this
@@ -100,6 +126,8 @@ export interface AgentComposition {
   skills: readonly Skill[];
   /** Present only for a harness that thinks on a machine. */
   sandbox?: SandboxAdapter;
+  /** The seats a harness that does NOT bring its own brain reads (`vendo()`). */
+  models?: SeatModels<LanguageModel>;
   instructions?: string;
   /** Carried so `awayRunner(agentComposition(agent))` speaks in the same voice
    *  the agent's own turns do. */
@@ -226,9 +254,27 @@ export function agent(config: AgentConfig): VendoAgent {
   if (config.name === undefined || config.name.trim() === "") {
     throw new VendoError("validation", "agent({ name }) is required — it attributes audit rows and the inbox.");
   }
-  if (config.harness === undefined) {
-    throw new VendoError("validation", "agent({ harness }) is required — e.g. claudeCode({ model }).");
-  }
+  // The same default the umbrella takes (`packages/vendo/src/compose-harness.ts`):
+  // one thinker, named in one place, so `agent({ name, tools })` is a whole agent.
+  const harness = config.harness ?? vendo();
+  const models = config.model === undefined ? undefined : { default: config.model };
+  /**
+   * `vendo()` thinks with the `default` seat and this package resolves no model
+   * credentials of its own, so a defaulted brain with no model is a turn that
+   * cannot happen. Raised at the first turn rather than at boot: a host that
+   * names its own harness owns saying which seats it reads
+   * (`packages/core/src/model-seats.ts`), and composing an agent is not yet
+   * asking it to think.
+   */
+  const requireModel = (): void => {
+    if (config.harness !== undefined || models !== undefined) return;
+    throw new VendoError(
+      "validation",
+      "agent({ model }) is required — vendo(), the default brain, thinks with it. Pass one — "
+      + "`model: anthropic(\"claude-sonnet-4-6\")` — or name a harness that brings its own, "
+      + "e.g. `harness: claudeCode()`.",
+    );
+  };
 
   const store = config.store ?? defaultStore();
   const files = storeBlobs.get(store) ?? storeFiles(store);
@@ -242,7 +288,7 @@ export function agent(config: AgentConfig): VendoAgent {
   const skills: Skill[] = loadSkillFolders(config.skills);
 
   const resolved =
-    config.harness.requires?.sandbox === true ? resolveSandbox(config.sandbox) : config.sandbox;
+    harness.requires?.sandbox === true ? resolveSandbox(config.sandbox) : config.sandbox;
   // One audit row per box boot: which egress skin this box was born with —
   // written before the box exists, attributed to the agent itself. Every
   // consumer takes the AUDITED adapter, so a box booted by the embed carries
@@ -262,14 +308,14 @@ export function agent(config: AgentConfig): VendoAgent {
   // Both legs of `claudeCode()` declare it — a box and a local subprocess reach
   // the host's tools over the same remote MCP — so this runs whether or not a
   // sandbox resolved above.
-  const door = config.harness.requires?.toolDoor === true
+  const door = harness.requires?.toolDoor === true
     ? resolveDoor(
       config.door,
-      { name: config.harness.name, sandboxed: config.harness.requires?.sandbox === true },
+      { name: harness.name, sandboxed: harness.requires?.sandbox === true },
       { tools: bound, guard, store },
     )
     : undefined;
-  provideHarnessAdapters(config.harness, {
+  provideHarnessAdapters(harness, {
     ...(sandbox === undefined ? {} : { sandbox }),
     ...(door === undefined ? {} : { toolDoor: door.port }),
     // The app-document vocabulary a machine-backed driver needs (the hot-path
@@ -287,12 +333,13 @@ export function agent(config: AgentConfig): VendoAgent {
 
   const deps = {
     name: config.name,
-    harness: config.harness,
+    harness,
     store,
     files,
     guard,
     tools: bound,
     skills,
+    ...(models === undefined ? {} : { models }),
     ...(config.instructions === undefined ? {} : { instructions: config.instructions }),
     ...(config.system === undefined ? {} : { system: config.system }),
     // The other half of the door: a credential the harness minted resolves to
@@ -304,7 +351,21 @@ export function agent(config: AgentConfig): VendoAgent {
 
   const built: VendoAgent = {
     name: config.name,
-    session: (subject, options) => createSession(deps, subject, options),
+    async respond(subject, message, options = {}) {
+      requireModel();
+      const session = await createSession(deps, subject, options);
+      // `respond` IS `session` + `stream`, and the id lands on the Response the
+      // way `session.stream` already stamps it — one code path, one header.
+      return session.stream(message, options.signal === undefined ? {} : { signal: options.signal });
+    },
+    run(task, options) {
+      requireModel();
+      return startRun(deps, task, options);
+    },
+    async session(subject, options) {
+      requireModel();
+      return createSession(deps, subject, options);
+    },
     ...(door === undefined ? {} : { door: door.handler }),
   };
   compositions.set(built, { ...deps, ...(sandbox === undefined ? {} : { sandbox }) });

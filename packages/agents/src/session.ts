@@ -18,12 +18,13 @@ import {
   type Skill,
   type Principal,
   type RunContext,
+  type SeatModels,
   type ThreadId,
   type ToolRegistry,
 } from "@vendoai/core";
 import { wrapWorkspaceForRender } from "@vendoai/apps";
 import type { VendoGuard } from "@vendoai/guard";
-import { createHarnessRuntime, type HarnessRuntimeDeps } from "@vendoai/harnesses";
+import { createHarnessRuntime, THREAD_ID_HEADER, type HarnessRuntimeDeps } from "@vendoai/harnesses";
 import {
   harnessStateStore,
   threadMessageStore,
@@ -31,7 +32,7 @@ import {
   workspaceStore,
   type VendoStore,
 } from "@vendoai/store";
-import type { UIMessage } from "ai";
+import type { LanguageModel, UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
 import { assemblePrompt, type SystemPromptHook } from "./prompt.js";
 
@@ -48,6 +49,44 @@ export interface SessionOptions {
    *  on the next request. Not this subject's thread (or not a thread at all) is
    *  `not-found` — never a silent new conversation. */
   threadId?: string;
+}
+
+/** `respond()`'s options: a session's, plus the per-turn cancellation a
+ *  one-shot call has nowhere else to put. */
+export interface RespondOptions extends SessionOptions {
+  signal?: AbortSignal;
+}
+
+/** What a caller is told when the id they handed back is not a conversation
+ *  this subject owns. ONE sentence for both lanes — `session({ threadId })`
+ *  and `run({ threadId })` reopen the same threads. */
+const unknownThreadMessage = (threadId: string): string =>
+  `No conversation ${threadId} for this user. Pass a threadId this subject started `
+  + `— the one the last turn returned on ${THREAD_ID_HEADER} — or omit it to start a new one.`;
+
+/**
+ * Mint a new conversation, or reopen the one this subject already owns.
+ *
+ * `get` is scoped to the principal's own subject, so it IS the ownership check:
+ * a foreign thread reads back as absent and gets the same answer as one that
+ * never existed. There is deliberately NO `put` on the reopen leg — put
+ * replaces the transcript with the `messages` it is handed, so an empty array
+ * would delete every turn the caller came back to read.
+ */
+export async function openThread(
+  store: VendoStore,
+  principal: Principal,
+  threadId: ThreadId,
+  reopen: boolean,
+): Promise<void> {
+  const threads = threadStore(store);
+  if (!reopen) {
+    await threads.put(principal, { id: threadId, messages: [] });
+    return;
+  }
+  if (await threads.get(principal, threadId) === null) {
+    throw new VendoError("not-found", unknownThreadMessage(threadId));
+  }
 }
 
 export interface ApprovalEvent {
@@ -78,6 +117,8 @@ export interface SessionDeps {
   tools: ToolRegistry;
   skills: readonly Skill[];
   instructions?: string;
+  /** The seats a harness that does NOT bring its own brain reads (`vendo()`). */
+  models?: SeatModels<LanguageModel>;
   /** The host's last word on the turn's prompt — see `AgentConfig.system`. */
   system?: SystemPromptHook;
   /** Publish the turn in flight to the agent's own MCP door (`door.ts`). A
@@ -113,22 +154,8 @@ export async function createSession(
 
   await deps.store.ensureSchema();
   await deps.doorReady;
-  const threads = threadStore(deps.store);
-  let threadId: ThreadId;
-  if (options.threadId === undefined) {
-    threadId = `thr_${randomUUID()}` as ThreadId;
-    await threads.put(principal, { id: threadId, messages: [] });
-  } else {
-    threadId = options.threadId as ThreadId;
-    // `get` is scoped to the principal's own subject, so this is the ownership
-    // check: a foreign thread reads back as absent and gets the same answer as
-    // one that never existed. There is deliberately NO `put` on this leg — put
-    // replaces the transcript with the `messages` it is handed, so the empty
-    // array above would delete every turn we are here to read back.
-    if (await threads.get(principal, threadId) === null) {
-      throw new VendoError("not-found", `no conversation ${threadId} for this user`);
-    }
-  }
+  const threadId = (options.threadId ?? `thr_${randomUUID()}`) as ThreadId;
+  await openThread(deps.store, principal, threadId, options.threadId !== undefined);
 
   const transcript = threadMessageStore<UIMessage>(deps.store);
   const workspaces = workspaceStore(deps.store, { files: deps.files });
@@ -219,7 +246,7 @@ export async function createSession(
         ? assembled
         : (await deps.system(ctx, { assembled, directions })) ?? assembled;
 
-      return runtime(workspace).run({
+      const response = await runtime(workspace).run({
         harness: deps.harness,
         threadId,
         messages,
@@ -227,8 +254,15 @@ export async function createSession(
         workspace,
         interactive: true,
         system,
+        ...(deps.models === undefined ? {} : { models: deps.models }),
         ...(streamOptions.signal === undefined ? {} : { signal: streamOptions.signal }),
       });
+      // The conversation's id, on the response the caller is already holding —
+      // the same header the umbrella's wire stamps and `@vendoai/ui` reads, so a
+      // browser talking to an `agent()` backend resumes exactly as it does
+      // against `createVendo`.
+      response.headers.set(THREAD_ID_HEADER, threadId);
+      return response;
     },
   };
 }
