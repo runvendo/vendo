@@ -1,10 +1,10 @@
 ---
 title: "Run on a schedule"
 sidebarTitle: "Schedule"
-description: "Unattended work with run(): your cron is the trigger, risk labels are mandatory, tool calls are bounded by maxToolCalls, and an approval parks instead of waiting."
+description: "Unattended work with run(): your cron is the trigger, tool calls are bounded by maxToolCalls, and every host tool call parks for approval instead of running."
 ---
 
-Nobody is watching. `run()` is one non-interactive run: it thinks, calls
+Nobody is watching. `run()` is one non-interactive run: it thinks, attempts
 tools, and comes back with a report.
 
 <Note>
@@ -52,20 +52,26 @@ default is **20**.
 for [`run.events`](/agent-sdk/product-run) only when something is streaming it
 to a screen.
 
-## Risk labels are mandatory here
+## Nothing reaches your tools unattended yet
 
-An unattended run is exactly where an unlabeled tool costs you. There is no
-person to ask, so:
+There is no person to ask, and an unattended run has no live session to act as
+the user through — so the guard needs authority captured **before** the run
+started. The risk label does not change that:
 
 | Label | Unattended |
 | --- | --- |
-| `read` | runs |
-| `write` | runs, or asks, per your policy |
-| `destructive` | asks — which, with nobody there, means denied |
-| *(unlabeled)* | `ungraded`; treated like `destructive` |
+| `read` | asks — which, with nobody there, means denied |
+| `write` | asks |
+| `destructive` | asks |
+| *(unlabeled)* | `ungraded`; asks |
 
-Label every tool you want an unattended run to reach, and let the rest be
-denied on purpose. A tool you forgot to grade is not a tool this run has.
+A policy rule that says `run`, the `autopilot` preset and `policy.code` are all
+downgraded to `ask` here too. The one decision the guard exempts is a captured
+**grant**, bound to an app and the trigger a person enabled — which the
+automations engine mints and a bare `run()` cannot. So today a `run()` reaches
+your tools only to park them: use it for the work a model does on its own
+([typed output](/agent-sdk/call)), and for putting the parked approvals in front
+of a human.
 
 ## Approvals park, they do not resume
 
