@@ -27,8 +27,9 @@ import { describe, expect, it } from "vitest";
  *  5. every component the docs tell a reader to import is really exported from
  *     the entry point they name;
  *  6. the pasteable prompt block stays in step with the skill it was lifted from;
- *  7. links resolve — strictly on this suite's own pages, and tree-wide to the
- *     weaker but complete bar that nothing 404s.
+ *  7. every internal link, on every page in the tree, points at a page that
+ *     really exists. Redirects do not count: they exist for links the world
+ *     already published, and one of ours that needs one is a stale link.
  */
 
 const REPO_ROOT = new URL("../../../", import.meta.url);
@@ -51,7 +52,6 @@ const PACK = "packages/vendo/src/pack.ts";
 
 interface DocsJson {
   navigation: { groups: { group: string; pages: string[] }[] };
-  redirects: { source: string; destination: string }[];
 }
 
 /** A docs.json page id resolves as `<id>.mdx` or `<id>/index.mdx`. */
@@ -124,13 +124,15 @@ describe("the BYO on-ramp page is published", () => {
     expect(pageLinks(await read(page)).filter((target) => !pageExists(target))).toEqual([]);
   });
 
-  it("no page anywhere links at a slug that neither resolves nor redirects", async () => {
-    const docs = await readJson<DocsJson>("docs-site/docs.json");
-    const redirected = new Set(docs.redirects.map((entry) => entry.source));
+  // Strict on purpose: a redirect rescues an OUTSIDE link, but an internal link
+  // that needs one is rot — the page it names has moved and this page never
+  // caught up. Redirects stay for the world's bookmarks; our own links point at
+  // the real page.
+  it("no page anywhere links at a slug that is not a real page", async () => {
     const dead: string[] = [];
     for (const file of everyPage()) {
       for (const target of pageLinks(await read(`docs-site/${file}`))) {
-        if (!pageExists(target) && !redirected.has(target)) dead.push(`${file}: ${target}`);
+        if (!pageExists(target)) dead.push(`${file}: ${target}`);
       }
     }
     expect(dead).toEqual([]);
