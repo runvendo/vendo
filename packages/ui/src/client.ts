@@ -58,6 +58,10 @@ export interface VendoClient {
     list(): Promise<ThreadSummary[]>;
     get(id: ThreadId): Promise<Thread>;
     delete(id: ThreadId): Promise<void>;
+    /** POST /threads/warm — prime the provider's prompt cache so the first
+     *  real message reads a warm prefix. Best-effort; fire when the chat
+     *  surface opens and ignore failures. */
+    warm(): Promise<void>;
   };
 
   approvals: {

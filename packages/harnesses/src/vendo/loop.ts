@@ -277,6 +277,14 @@ export interface TurnPromptInput {
    *  and never summarized, so a retry CONTINUES the turn instead of re-running
    *  its tool calls — each one a real guarded effect. */
   resume?: readonly ModelMessage[];
+  /** Volatile context for THIS call only — the user's live screen snapshot.
+   *  Appended after the cache breakpoints are placed, so it can never sit
+   *  inside a cached prefix: it changes every message, and volatile bytes
+   *  ahead of stable ones are what kept the prompt cache at 0%. Never
+   *  persisted, never summarized, never shed — and small enough (≤2k tokens,
+   *  the client caps the snapshot) that the compaction estimate not counting
+   *  it stays honest. */
+  trailing?: readonly ModelMessage[];
   /** The turn's own signal. Building a projection is normally pure, but the
    *  summarizer pass is a provider call, and a caller that hung up before the
    *  first token must not keep paying for one (AGENT-3). */
@@ -453,6 +461,7 @@ export async function turnModelMessages(input: TurnPromptInput): Promise<TurnPro
     messages: [
       { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
       ...converted,
+      ...(input.trailing ?? []),
     ],
     ...(compacted === undefined ? {} : { compacted }),
   };
@@ -527,6 +536,8 @@ export interface TurnLoopOptions {
   compaction?: TurnCompaction;
   /** Model messages this turn already produced, for a retry that continues it. */
   resume?: readonly ModelMessage[];
+  /** Volatile per-call context, appended behind the history — see TurnPromptInput. */
+  trailing?: readonly ModelMessage[];
   /** Which of the turn's loops this drive is, for the workbench's diagnostics
    *  only (dev-only; see `../workbench.ts`). Defaults to the resident, because a
    *  caller that has never heard of the workbench is the turn's own thinker. */
@@ -596,6 +607,7 @@ export async function startTurn(options: TurnLoopOptions): Promise<TurnLoop> {
     tokenBudget: options.context?.contextTokenBudget,
     ...(options.compaction === undefined ? {} : { compaction: options.compaction }),
     ...(options.resume === undefined ? {} : { resume: options.resume }),
+    ...(options.trailing === undefined ? {} : { trailing: options.trailing }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     workbench: debug,
   });

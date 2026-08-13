@@ -22,7 +22,7 @@ import type { VendoStore } from "../store.js";
  *  stand-in resolves access through the very same functions; only the ROW
  *  reading is here, because only the store can do it. */
 export type { AccessLevel, AppAccess, AppGrantRecord, CanThing, GrantPrincipal } from "@vendoai/core";
-export { isGrantPrincipal, orgOfPath, parseGrantPrincipal } from "@vendoai/core";
+export { appOfOrgPath, isGrantPrincipal, orgOfPath, parseGrantPrincipal } from "@vendoai/core";
 
 const membershipIn = (ctx: RunContext, org: string): Membership | undefined =>
   (ctx.memberships ?? []).find((entry) => entry.org === org);

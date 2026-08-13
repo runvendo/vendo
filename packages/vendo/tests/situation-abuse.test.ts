@@ -47,8 +47,15 @@ function recordingModel(seen: string[]): LanguageModel {
     modelId: "probe-v1",
     supportedUrls: {},
     async doStream(call: { prompt: Array<{ role: string; content: unknown }> }) {
+      // The WHOLE prompt, every role: the situation rides behind the history
+      // now (sub-1s shipment), and every defence here must hold wherever the
+      // block lands.
       seen.push(
-        call.prompt.filter((m) => m.role === "system").map((m) => String(m.content)).join("\n"),
+        call.prompt
+          .map((m) => typeof m.content === "string"
+            ? m.content
+            : (m.content as Array<{ text?: string }>).map((part) => part.text ?? "").join("\n"))
+          .join("\n"),
       );
       return {
         stream: new ReadableStream({

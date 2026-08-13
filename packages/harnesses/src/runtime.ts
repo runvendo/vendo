@@ -155,6 +155,11 @@ export interface TurnRunInput<Options = unknown> {
    *  the ctx — and the runtime's to deliver, which is what puts a NAMED harness on
    *  the same brief as the default one. */
   system?: string;
+  /** The user's live screen snapshot (`Turn.situation`), ready-formatted.
+   *  Delivered beside `system` but never folded into it: the system prompt is
+   *  the stable prefix and this changes every message, so the harness places it
+   *  behind the history where it cannot cost the prefix its cache. */
+  situation?: string;
   /** The capability-miss rail for THIS turn: the honest-refusal reporter, listed
    *  beside the projected tools, plus the repeated-failure detector on the
    *  bridge. Per turn, not per runtime, because the intent is the user's latest
@@ -467,6 +472,7 @@ export function createHarnessRuntime(deps: HarnessRuntimeDeps): HarnessRuntime {
             signal,
             interactive: input.interactive,
             ...(input.system === undefined ? {} : { system: input.system }),
+            ...(input.situation === undefined ? {} : { situation: input.situation }),
             threadId: input.threadId,
             turnId,
             // §1 amendment 2026-08-05: inbound control, and the only one beside

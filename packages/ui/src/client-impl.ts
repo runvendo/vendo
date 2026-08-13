@@ -180,6 +180,14 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       list: () => readJson("/threads"),
       get: id => readJson(`/threads/${idPath(id)}`),
       delete: id => json(`/threads/${idPath(id)}`, "DELETE"),
+      warm: async () => {
+        // The wire's CSRF floor (09 §3) wants a JSON POST; the body says nothing.
+        await send("/threads/warm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+      },
     },
     approvals: {
       pending: () => readJson("/approvals"),

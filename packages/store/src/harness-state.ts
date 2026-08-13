@@ -35,9 +35,14 @@ import type { VendoStore } from "./store.js";
 export const harnessStateKey = (threadId: string): string => `harness_state:${threadId}`;
 
 export interface HarnessStateStore {
-  get(threadId: string, harnessName: string): Promise<string | undefined>;
-  set(threadId: string, harnessName: string, value: string | undefined): Promise<void>;
-  clear(threadId: string): Promise<void>;
+  /** `owner` is the thread row's own `subject`, passed when the caller has
+   *  ALREADY read the row this verb would otherwise re-fetch to learn it (the
+   *  ops backend's `ownerOf` is one wire round-trip per verb). It is a
+   *  shortcut, never an assertion: a wrong owner reads as a missing slot, so
+   *  callers pass only what a thread read actually returned. */
+  get(threadId: string, harnessName: string, owner?: string): Promise<string | undefined>;
+  set(threadId: string, harnessName: string, value: string | undefined, owner?: string): Promise<void>;
+  clear(threadId: string, owner?: string): Promise<void>;
 }
 
 /** The one row's payload, whichever backend holds it. */
@@ -76,8 +81,8 @@ function overOps(ops: StoreOps): HarnessStateStore {
   };
 
   return {
-    async get(threadId, harnessName) {
-      const subject = await ownerOf(threadId);
+    async get(threadId, harnessName, owner) {
+      const subject = owner ?? await ownerOf(threadId);
       // No thread, no slot — the SQL half's missing row, reached differently.
       if (subject === undefined) return undefined;
       const stored = decode(await ops.harness.get(harnessStateKey(threadId), subject));
@@ -88,8 +93,8 @@ function overOps(ops: StoreOps): HarnessStateStore {
       return undefined;
     },
 
-    async set(threadId, harnessName, value) {
-      const subject = await ownerOf(threadId);
+    async set(threadId, harnessName, value, owner) {
+      const subject = owner ?? await ownerOf(threadId);
       if (value === undefined) {
         if (subject !== undefined) await ops.harness.clear(harnessStateKey(threadId), subject);
         return;
@@ -102,8 +107,8 @@ function overOps(ops: StoreOps): HarnessStateStore {
       await ops.harness.set(harnessStateKey(threadId), subject, { harness: harnessName, value });
     },
 
-    async clear(threadId) {
-      const subject = await ownerOf(threadId);
+    async clear(threadId, owner) {
+      const subject = owner ?? await ownerOf(threadId);
       // A thread that is already gone took its slot with it (deleteThread
       // cascades the `harness_state:<id>` appId), so there is nothing to drop.
       if (subject === undefined) return;
@@ -141,12 +146,12 @@ function overSql(db: Db): HarnessStateStore {
       return undefined;
     },
 
-    async set(threadId, harnessName, value) {
+    async set(threadId, harnessName, value, owner) {
       if (value === undefined) {
         await drop(threadId);
         return;
       }
-      const subject = await ownerOf(threadId);
+      const subject = owner ?? await ownerOf(threadId);
       const now = new Date().toISOString();
       // The slot is one row per THREAD, so a harness swap overwrites rather than
       // adding a second owner's copy beside the first.

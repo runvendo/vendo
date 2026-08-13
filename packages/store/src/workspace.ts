@@ -1,6 +1,6 @@
 import type { FilesAdapter, Membership, Principal, RunContext, WorkspaceFs } from "@vendoai/core";
 import { storeFiles } from "./files-store.js";
-import { appAccess, orgOfPath } from "./helpers/app-access.js";
+import { appAccess, appOfOrgPath, orgOfPath } from "./helpers/app-access.js";
 import { backendOf } from "./helpers/backend.js";
 import type { VendoStore } from "./store.js";
 import { workspaceOpsRows } from "./workspace-ops-rows.js";
@@ -118,13 +118,23 @@ export function workspaceStore(store: VendoStore, options: { files?: FilesAdapte
       app they hold no grant on is simply absent rather than forbidden. */
   const visibleIndex = async (caller: WorkspaceCaller): Promise<Awaited<ReturnType<typeof rows.index>>> => {
     const all = await rows.index(ownersOf(caller));
-    const visible = [];
-    for (const meta of all) {
-      if (meta.owner === caller.principal.subject || await canRead(caller, meta.path)) {
-        visible.push(meta);
+    // Every file under `/orgs/<org>/apps/<appId>/` shares that app's own grant
+    // decision (§9.3), and `can()` pays store reads per app — so resolve each
+    // app once, every check in flight together. Serial per-file checks were
+    // most of a shared workspace's open cost, on every single turn.
+    const byApp = new Map<string, Promise<boolean>>();
+    const readable = await Promise.all(all.map((meta) => {
+      if (meta.owner === caller.principal.subject) return true;
+      const app = appOfOrgPath(meta.path);
+      if (app === undefined) return canRead(caller, meta.path);
+      let decision = byApp.get(app);
+      if (decision === undefined) {
+        decision = canRead(caller, meta.path);
+        byApp.set(app, decision);
       }
-    }
-    return visible;
+      return decision;
+    }));
+    return all.filter((_, index) => readable[index] === true);
   };
 
   return {

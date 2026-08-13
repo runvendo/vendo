@@ -18,6 +18,7 @@ import {
   emitUsage,
   hostSkillFiles,
   isUnattended,
+  situationPromptBlock,
   type FilesAdapter,
   type Harness,
   type Membership,
@@ -146,6 +147,16 @@ export interface HarnessTurns {
     ctx: RunContext;
     signal?: AbortSignal;
   }): Promise<Response>;
+  /** Prompt-cache warming (sub-1s shipment): ONE degenerate turn through the
+   *  normal assembly — same registry projection, same system prompt, same
+   *  initial loadout — so the provider writes its prefix cache before the
+   *  user's first real message would otherwise write it cold. Byte-identical
+   *  by construction: the code that builds the warm call IS the code that
+   *  builds a real turn. Nothing persists — the runtime is handed throwaway
+   *  in-memory doors — and the turn is capped at one step and one output
+   *  token, which can never complete a tool call, so nothing executes and
+   *  the guard never fires. */
+  warm(input: { ctx: RunContext; signal?: AbortSignal }): Promise<void>;
   /** The workspace as one principal sees it this turn. Exposed for the host and
    *  for the history door; `open` builds a fresh path index per call.
    *  The `/orgs` mounts (§9.7) come from the host's memberships seam, resolved
@@ -340,6 +351,10 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // a history-forging attempt by the validator's rules, so it throws — and it
       // throws on every subsequent turn too, for as long as that client keeps
       // sending its stale copy. The thread becomes permanently unusable for them.
+      // Read BEFORE the upsert lands the new message: no messages = resolve
+      // found no row, and persist's first attempt can skip re-reading that
+      // absence (its insert is guarded either way).
+      const fresh = thread.messages.length === 0;
       validateUpsert(thread.messages, input.message);
       upsertMessage(thread.messages, input.message);
 
@@ -350,19 +365,30 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // message on a deployment that can never answer it.
       const { transcript, workspaces, harnessState } = sqlDoors();
 
-      // The thread ROW has to exist before the runtime writes message rows:
-      // `threadMessageStore.upsert` sources its INSERT from `vendo_threads`
-      // joined on the subject, so a missing row is refused rather than created.
-      // This one write also lands the user's message and refreshes the listing
-      // title, exactly as a `createAgent` turn's persist does.
-      await threads.persist(thread, [input.message]);
-
-      // §9.7 — the turn's façade mounts every org the wire asserted for this
-      // request, so an agent turn can read and write the team's files at all.
-      const workspace = await workspaces.open(input.ctx.principal, {
-        host: hostProjection(),
-        ...(input.ctx.memberships === undefined ? {} : { memberships: input.ctx.memberships }),
-      });
+      // The turn's store reads, IN FLIGHT TOGETHER (sub-1s shipment): the state
+      // read needs nothing below, and `resolve()` already read the thread row —
+      // subject included — so it skips its own owner lookup. Read-only, so a
+      // turn the runtime later refuses has spent a read and changed nothing.
+      const stateRead = harnessState.get(thread.id, config.harness.name, thread.subject);
+      // The runtime may never await it (an arbitrary history edit clears the
+      // slot instead); a rejection still reaches whoever does await.
+      void stateRead.catch(() => {});
+      const [, workspace] = await Promise.all([
+        // The thread ROW has to exist before the runtime writes message rows:
+        // `threadMessageStore.upsert` sources its INSERT from `vendo_threads`
+        // joined on the subject, so a missing row is refused rather than created.
+        // This one write also lands the user's message and refreshes the listing
+        // title, exactly as a `createAgent` turn's persist does. The workspace
+        // open beside it reads file rows only — nothing it serves depends on the
+        // thread row landing, and the runtime that writes messages runs after both.
+        threads.persist(thread, [input.message], { fresh }),
+        // §9.7 — the turn's façade mounts every org the wire asserted for this
+        // request, so an agent turn can read and write the team's files at all.
+        workspaces.open(input.ctx.principal, {
+          host: hostProjection(),
+          ...(input.ctx.memberships === undefined ? {} : { memberships: input.ctx.memberships }),
+        }),
+      ]);
       // §1.6 — the render seam, built for THIS turn's ctx and handed to the
       // runtime's generic `wrapWorkspace` slot: the runtime owns WHERE the wrap
       // happens and what `emit` writes to; composition owns WHAT wraps.
@@ -394,8 +420,29 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         // Read off THIS turn's mount, so a skill the host stopped shipping is
         // gone the moment they deploy — no stale copy to invalidate.
         skills: createTurnSkills(workspace),
-        transcript,
-        harnessState,
+        // THIS turn's doors answer from what stream() already read, instead of
+        // re-fetching the same thread row (it used to be read four times before
+        // the model saw a token): the transcript IS `thread.messages` — resolve
+        // read the row and persist just wrote this copy — and the state read has
+        // been in flight since before the workspace opened. Any other thread,
+        // and every other verb, falls through to the live doors unchanged.
+        transcript: {
+          ...transcript,
+          list: async (principal, threadId) =>
+            threadId === thread.id && principal.subject === thread.subject
+              ? structuredClone(thread.messages)
+              : transcript.list(principal, threadId),
+        },
+        harnessState: {
+          get: (threadId, harnessName) =>
+            threadId === thread.id && harnessName === config.harness.name
+              ? stateRead
+              : harnessState.get(threadId, harnessName),
+          set: (threadId, harnessName, value) =>
+            harnessState.set(threadId, harnessName, value, threadId === thread.id ? thread.subject : undefined),
+          clear: (threadId) =>
+            harnessState.clear(threadId, threadId === thread.id ? thread.subject : undefined),
+        },
         ...(render === undefined ? {} : {
           wrapWorkspace: (turnWorkspace, opts) => wrapWorkspaceForRender(turnWorkspace, {
             ...render,
@@ -430,6 +477,12 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         ? "find-tools" as const
         : config.connectorDiscovery === true ? "connectors" as const : false;
       const system = await config.system(input.ctx, { discovery: rail });
+      // Spec 2026-08-05 §2, relocated (sub-1s shipment): the screen snapshot is
+      // delivered BESIDE the stable prompt, not inside it — it changes every
+      // message, and volatile bytes ahead of stable ones are what kept the
+      // provider's prompt cache cold. Same block builder, same this-turn-only
+      // life: the ctx and `Turn.situation`, never the store.
+      const situation = situationPromptBlock(input.ctx.context);
       const response = await runtime.run<never>({
         harness: config.harness,
         threadId: thread.id,
@@ -438,6 +491,7 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         workspace,
         models: config.models,
         ...(system === undefined ? {} : { system }),
+        ...(situation === undefined ? {} : { situation }),
         // The honest-refusal rail, per turn: the intent is the user's latest ask.
         ...(config.capabilityMiss === undefined
           ? {}
@@ -464,6 +518,53 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // turn, like `createAgent` does, so the wire can register turn liveness.
       response.headers.set(THREAD_ID_HEADER, thread.id);
       return response;
+    },
+
+    async warm(input) {
+      const { workspaces } = sqlDoors();
+      const workspace = await workspaces.open(input.ctx.principal, {
+        host: hostProjection(),
+        ...(input.ctx.memberships === undefined ? {} : { memberships: input.ctx.memberships }),
+      });
+      const runtime = createHarnessRuntime({
+        tools: config.tools,
+        guard: config.guard,
+        skills: createTurnSkills(workspace),
+        // Throwaway doors: a warm turn leaves no transcript, no state, no rows.
+        transcript: { upsert: async () => {}, list: async () => [] },
+        harnessState: { get: async () => undefined, set: async () => {}, clear: async () => {} },
+      });
+      const rail = config.harness.toolSurface?.curated !== false
+        ? "find-tools" as const
+        : config.connectorDiscovery === true ? "connectors" as const : false;
+      const system = await config.system(input.ctx, { discovery: rail });
+      const response = await runtime.run<{ maxSteps: number; maxOutputTokens: number }>({
+        harness: config.harness,
+        threadId: `thr_warm${globalThis.crypto.randomUUID().replaceAll("-", "")}` as ThreadId,
+        messages: [{
+          id: "warm",
+          role: "user",
+          parts: [{ type: "text", text: "Reply with one word." }],
+        } as UIMessage],
+        ctx: input.ctx,
+        workspace,
+        models: config.models,
+        ...(system === undefined ? {} : { system }),
+        // The capability-miss hand is part of the projected tools block, so the
+        // warm prefix must mount it exactly as a real turn does; its intent
+        // never reaches the descriptor (capability-miss.ts — it rides only a
+        // reported event), so a fixed one changes no byte on the wire.
+        ...(config.capabilityMiss === undefined
+          ? {}
+          : { capabilityMiss: { config: config.capabilityMiss, intent: "" } }),
+        options: { maxSteps: 1, maxOutputTokens: 1 },
+        interactive: !isUnattended(input.ctx),
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      });
+      // The provider's cache entry becomes readable only once the response has
+      // streamed — drain the one-token body rather than cancelling the write
+      // out from under itself.
+      await response.text();
     },
   };
 }

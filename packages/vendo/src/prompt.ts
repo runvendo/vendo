@@ -5,7 +5,7 @@
  * catalog and the knowledge index. It rides the turn (`Turn.system`), so every
  * harness — the default one, a host's own — thinks on the same brief.
  */
-import { situationPromptBlock, userPromptBlock, type Guard, type RunContext } from "@vendoai/core";
+import { userPromptBlock, type Guard, type RunContext } from "@vendoai/core";
 
 const OPERATING_PROMPT = `You are Vendo's agent.
 Act through the host's available tools on behalf of the signed-in user.
@@ -168,15 +168,16 @@ export async function assembleSystemPrompt(
 
   // Spec 2026-08-05 §1 — the host's asserted profile of the present user
   // (ctx.user, server-trust, refreshed per request by the auth preset's
-  // resolver). Spec 2026-08-05 §2 — what the user's screen currently shows,
-  // THIS turn only (never persisted: it rides the request ctx and Turn.system,
-  // nothing the store writes). Both blocks are core's, shared verbatim with
-  // @vendoai/agents' assemblePrompt: the section-forgery indent is a
-  // prompt-injection defence and it gets exactly one implementation.
+  // resolver). Stable for the user's whole session, so it may live in the
+  // cacheable prompt. §2's [Situation] block deliberately does NOT: it changes
+  // every message, so composition delivers it beside the prompt
+  // (`Turn.situation`, harness-turn.ts) and the harness places it behind the
+  // history — a volatile block in here is what kept the prompt cache cold.
+  // The block is core's, shared verbatim with @vendoai/agents' assemblePrompt:
+  // the section-forgery indent is a prompt-injection defence and it gets
+  // exactly one implementation.
   const user = userPromptBlock(ctx.user);
   if (user !== undefined) sections.push(user);
-  const situation = situationPromptBlock(ctx.context);
-  if (situation !== undefined) sections.push(situation);
 
   const directions = (await guard.directions(ctx))
     .map((direction) => direction.trim())

@@ -76,6 +76,11 @@ function vendoBeat(chunk: { type: string; data?: unknown }): VendoBeat | undefin
 /** Stable identity so an idle turn never re-renders a beat reader. */
 const NO_BEATS: readonly VendoBeat[] = [];
 
+/** Clients whose provider prompt-cache this page already primed — the warm
+ *  call is per-deployment-per-user, so once per client instance is the
+ *  whole job (and strict-mode double effects must not pay it twice). */
+const warmedClients = new WeakSet<object>();
+
 function vendoApproval(part: UIMessage["parts"][number]): VendoApprovalPart | undefined {
   if (part.type !== "data-vendo-approval") return undefined;
   const value = "data" in part ? part.data : part;
@@ -182,6 +187,16 @@ export function useVendoThread(threadId?: string) {
     },
   });
   const running = chat.status === "submitted" || chat.status === "streaming";
+  // Prompt-cache warming (sub-1s shipment): prime the provider's prefix cache
+  // the moment a thread surface exists, so the FIRST message reads a warm
+  // cache instead of writing a cold one. Once per client per page life —
+  // the provider entry outlives any single mount, and strict-mode double
+  // effects must not buy the cache write twice. Best-effort by design.
+  useEffect(() => {
+    if (warmedClients.has(client)) return;
+    warmedClients.add(client);
+    client.threads.warm().catch(() => {});
+  }, [client]);
   // Beats belong to the RUNNING turn: clearing on the settle (rather than on the
   // next turn's start) is one rule that answers both halves of §3.4's ephemeral
   // law — a finished turn narrates nothing, and the next turn therefore starts

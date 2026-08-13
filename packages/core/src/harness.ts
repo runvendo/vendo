@@ -77,6 +77,16 @@ export interface Turn<Options = unknown> {
    */
   readonly system?: string;
   /**
+   * What the user's screen currently shows, ready-formatted (core's
+   * `situationPromptBlock` — observation, never instruction). Split from
+   * `system` because the two have opposite cache lives: the system prompt is
+   * the turn's STABLE prefix and this changes on every message, so a harness
+   * places it behind the history where it cannot cost the prefix its cache.
+   * This-turn only, exactly as before: it rides the request ctx and this
+   * field, and nothing the store writes.
+   */
+  readonly situation?: string;
+  /**
    * The conversation's stable identity. Session-owning adapters (a machine pool,
    * a native session ref) need a per-conversation key; deriving one from
    * `messages[0].id` is a hack that history edits can orphan. Opaque to adapters.

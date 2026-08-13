@@ -575,6 +575,15 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
       }
       emitLoadout();
 
+      // Spec 2026-08-05 §2, relocated: what the user's screen shows rides
+      // BEHIND the history as this call's own context block, not inside the
+      // system prompt — a snapshot that changes every message ahead of the
+      // stable prompt is what kept the cache cold. Hires never see it: a
+      // specialist gets a brief, not the user's screen.
+      const trailing: readonly ModelMessage[] | undefined = turn.situation === undefined
+        ? undefined
+        : [{ role: "user", content: [{ type: "text", text: turn.situation }] }];
+
       // ONE attempt at the turn. The overflow retry re-enters through the same
       // function so the two attempts cannot drift on any input but the two the
       // retry means to change.
@@ -607,6 +616,7 @@ export function vendo(deps: VendoHarnessDeps = {}): Harness<VendoHarnessOptions>
           // exactly the deployment that has never had a context rail at all.
           compaction: attemptCompaction,
           ...(resume === undefined ? {} : { resume }),
+          ...(trailing === undefined ? {} : { trailing }),
           // The WHOLE context, not just `maxSteps`. Passing one knob is what made
           // every other knob unreachable from `vendo()` — the loop declared them,
           // `createAgent` passed them, and this caller silently dropped them, so

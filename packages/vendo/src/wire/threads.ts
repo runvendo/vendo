@@ -119,6 +119,17 @@ export const threadRoutes: RouteEntry[] = [
       unregister,
     );
   }),
+  // Prompt-cache warming (sub-1s shipment): the client fires this once when
+  // the chat surface opens, so the user's FIRST message reads a warm provider
+  // prefix instead of writing a cold one. Best-effort on both sides: the 204
+  // carries nothing, a failure costs nothing but the warmth, and an engine
+  // without a warm door (the createAgent path) simply answers 204 unwarmed.
+  route("POST", "/threads/warm", async ({ deps, context }) => {
+    const ctx = await context("chat");
+    const door = deps.harness as { warm?: (input: { ctx: unknown }) => Promise<void> };
+    if (typeof door.warm === "function") await door.warm({ ctx });
+    return new Response(null, { status: 204 });
+  }),
   // The SERVER half of `ChatTransport.reconnectToStream` (ai@6): the URL, the
   // method and the 204 are the SDK's, not ours. 204 = nothing in flight, so the
   // client goes back to ready on its persisted transcript.

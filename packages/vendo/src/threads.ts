@@ -182,7 +182,16 @@ export class ThreadRepository {
     await this.store.records(THREAD_COLLECTION).delete(id);
   }
 
-  async persist(thread: Thread, messages: UIMessage[]): Promise<void> {
+  async persist(
+    thread: Thread,
+    messages: UIMessage[],
+    /** `fresh: true` = the caller JUST resolved this id to no row (sub-1s
+     *  shipment): the first attempt goes straight to `insertIfAbsent` instead
+     *  of re-reading the absence — one fewer round-trip on every first turn.
+     *  A row that appeared in between makes the insert lose, and the ordinary
+     *  read-merge-write loop below takes over; the guarantee never moved. */
+    opts?: { fresh?: boolean },
+  ): Promise<void> {
     // ai-SDK UIMessages carry explicit `undefined`-valued optional props on
     // tool parts (e.g. an approval-requested part with no output yet). The
     // store seam is typed `Json` and rejects `undefined` values, so serialize
@@ -206,7 +215,7 @@ export class ThreadRepository {
       );
     }
     for (let attempt = 0; attempt < MAX_PERSIST_ATTEMPTS; attempt += 1) {
-      const record = await records.get(thread.id);
+      const record = opts?.fresh === true && attempt === 0 ? null : await records.get(thread.id);
       const current = record === null ? null : threadFromRecord(record);
       if (current !== null && current.subject !== thread.subject) {
         // Mirror the door's guarded upsert (03 §5): never take over a foreign row.
