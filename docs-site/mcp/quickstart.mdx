@@ -4,7 +4,7 @@ sidebarTitle: "Quickstart"
 description: "Open the MCP door with vendo init, set your public origin, and connect Claude Code, Claude, ChatGPT, or Cursor."
 ---
 
-import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+import { AgentPrompt, MCP_PROMPT } from "/snippets/agent-prompt.jsx"
 
 Five minutes from a product with no MCP server to an outside agent making
 screens in it.
@@ -12,7 +12,7 @@ screens in it.
 <AgentPrompt
   title="Or set it up with your coding agent"
   lead={<>Paste this and your coding agent wires the door against the <a href="/agents">agent playbook</a>.</>}
-  prompt={"Set up Vendo's MCP door in this repo. Read https://vendo.run/agents.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green."}
+  prompt={MCP_PROMPT}
 />
 
 ## 1. Run init

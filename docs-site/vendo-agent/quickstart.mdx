@@ -4,13 +4,13 @@ sidebarTitle: "Quickstart"
 description: "Install the package, run vendo init, paste the provider into your layout, and ask the overlay for a screen."
 ---
 
-import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+import { AgentPrompt, VENDO_AGENT_PROMPT } from "/snippets/agent-prompt.jsx"
 
 Five minutes from an app with no agent to one that answers with a live screen.
 
 <AgentPrompt
   lead={<>Paste this and your coding agent does the whole install against the <a href="/agents">agent playbook</a>.</>}
-  prompt={"Install Vendo in this repo. Read https://vendo.run/agents.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green."}
+  prompt={VENDO_AGENT_PROMPT}
 />
 
 ## 1. Install

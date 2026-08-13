@@ -4,13 +4,13 @@ sidebarTitle: "Quickstart"
 description: "Add Vendo's guarded tool pack to an AI SDK or Mastra loop you already run: vendo init, one spread, one component."
 ---
 
-import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+import { AgentPrompt, EXISTING_AGENTS_PROMPT } from "/snippets/agent-prompt.jsx"
 
 Your loop, your model, your chat UI. Vendo adds a pack of tools to them.
 
 <AgentPrompt
   lead="Or hand it to your coding agent."
-  prompt={"Add Vendo to this repo's existing agent loop. Fetch https://vendo.run/agents.md and follow it for this repo. Ask me before creating any account or key. You're done when `vendo doctor --json` is green and my chat renders a Vendo tool output."}
+  prompt={EXISTING_AGENTS_PROMPT}
 />
 
 ## 1. Init
