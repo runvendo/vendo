@@ -7,6 +7,7 @@ import { useReportSlot } from "../hooks/use-placements.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
+import { useApprovalModal, type ParkedApproval } from "./approval-modal.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { defaultSlotSuggestions } from "./discoverability.js";
 import { developmentMode } from "./dev-mode.js";
@@ -165,7 +166,24 @@ function SlotBuildFailed({ appId, slotId, onChanged }: {
   );
 }
 
-function MountedApp({ appId }: { appId: string }) {
+/** A guarded call PARKS instead of running (`pending-approval`) — and until
+ *  now that outcome had no UI anywhere on the page, so the person who pressed
+ *  the button waited forever. This is where the press hands its park to the
+ *  approval modal, around whichever action handler the slot is using. */
+function watchForPark(
+  run: (req: { nodeId: string; action: string; payload?: Json }) => Promise<ToolOutcome>,
+  onParked: (parked: ParkedApproval) => void,
+) {
+  return async (req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome> => {
+    const outcome = await run(req);
+    if (outcome.status === "pending-approval") {
+      onParked({ nodeId: req.nodeId, approvalId: outcome.approvalId });
+    }
+    return outcome;
+  };
+}
+
+function MountedApp({ appId, onParked }: { appId: string; onParked(parked: ParkedApproval): void }) {
   const { client, components } = useVendoProvider();
   const { surface, error, isLoading, refresh } = useApp(appId);
   // The served-surface keepalive: an on-screen embed pings the
@@ -174,11 +192,15 @@ function MountedApp({ appId }: { appId: string }) {
     () => ({ ping: () => client.apps.pingMachine(appId) }),
     [appId, client],
   );
+  const act = useMemo(
+    () => watchForPark(({ action, payload }) => client.apps.call(appId, action, payload ?? {}), onParked),
+    [appId, client, onParked],
+  );
   if (!surface) {
     if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
     return <SlotGhost label="Loading app…" loading />;
   }
-  return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
+  return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={act} />;
 }
 
 /** A generated view pinned into a slot (08-ui §4 — "or a pinned component").
@@ -240,6 +262,18 @@ export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, discover
   children?: ReactNode;
 }) {
   const { components } = useVendoProvider();
+  // Screen-initiated approvals: a press inside the mounted view that parks on
+  // the guard hands itself here, and the modal asks the question centered over
+  // the page. The slot owns the presses inside it, so it owns the question
+  // they raise — no provider, no registry.
+  const approval = useApprovalModal();
+  // Memoized so the wrapper preserves whatever identity stability the host's
+  // own handler had: the tree's runAction is keyed on this prop, and a fresh
+  // function every render would re-run the screen's setup on every render.
+  const pinAction = useMemo(
+    () => pin?.onAction === undefined ? undefined : watchForPark(pin.onAction, approval.onParked),
+    [pin?.onAction, approval.onParked],
+  );
   // Self-discovery (ui-usage-dx §2): with no explicit `appId`/`pin`, the slot
   // resolves its own pinned app — hosts never write the polling dance.
   const discovery = useSlotApp(id, { enabled: discover && appIdProp === undefined && pin === undefined });
@@ -356,8 +390,15 @@ export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, discover
 
   const Fallback = () => <>{children}</>;
   const mounted = appId
-    ? <MountedApp appId={appId} />
-    : <AppFrame surface={{ kind: "tree", payload: pin!.payload }} components={components} data={pin!.data} onAction={pin!.onAction} />;
+    ? <MountedApp appId={appId} onParked={approval.onParked} />
+    : (
+      <AppFrame
+        surface={{ kind: "tree", payload: pin!.payload }}
+        components={components}
+        data={pin!.data}
+        {...(pinAction === undefined ? {} : { onAction: pinAction })}
+      />
+    );
   return (
     <ChromeRoot>
       <div className="fl-slot" data-vendo-slot={id}>
@@ -367,6 +408,9 @@ export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, discover
           </FluidReveal>
         </div>
       </div>
+      {/* Portals to <body> with its own theme boundary, so it is never trapped
+          by the host's stacking context around this slot. */}
+      {approval.modal}
     </ChromeRoot>
   );
 }
