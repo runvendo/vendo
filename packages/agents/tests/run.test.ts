@@ -9,7 +9,7 @@ import { createStore, threadStore } from "@vendoai/store";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { agent } from "../src/agent.js";
-import type { RunEvent } from "../src/away.js";
+import { startRun, type RunEvent } from "../src/away.js";
 import { tool } from "../src/tools.js";
 
 let stores = 0;
@@ -312,5 +312,97 @@ describe("run()", () => {
 
     await expect(support.run("sneak", { as: "u_99", threadId: first.threadId }))
       .rejects.toThrow(/No conversation thr_.* for this user/);
+  });
+
+  it("waits for a door still binding its port before the harness thinks", async () => {
+    // `createSession` awaits `doorReady`; a run that did not would let a
+    // `claudeCode()` box dial a door URL that is not there yet. A door that
+    // fails to bind is the deterministic proof the wait happens at all: reached,
+    // it is the run's own failure; ignored, the harness thinks anyway.
+    let thought = false;
+    const running = startRun({
+      name: "support",
+      store: memoryStore(),
+      guard: permissive(),
+      tools: { descriptors: async () => [], execute: async () => ({ status: "ok", output: {} }) },
+      doorReady: Promise.reject(new Error("the door never bound")),
+      harness: defineHarness({
+        name: "waits",
+        async *run() {
+          thought = true;
+          yield { type: "text" as const, delta: "ok" };
+        },
+      }),
+    }, "go");
+
+    await expect(running).rejects.toThrow("the door never bound");
+    expect(thought).toBe(false);
+  });
+
+  it("a run nobody awaits cannot take the host process down", async () => {
+    const store = memoryStore();
+    const support = agent({
+      name: "support",
+      harness: defineHarness({
+        name: "peek",
+        async *run() {
+          yield { type: "text" as const, delta: "ok" };
+        },
+      }),
+      store,
+    });
+    const owned = support.run("first", { as: "u_42" });
+    await owned;
+
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", record);
+    try {
+      // Exactly what the doc invites: read the id, never await the report.
+      const orphan = support.run("sneak", { as: "u_99", threadId: owned.threadId });
+      expect(orphan.threadId).toBe(owned.threadId);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } finally {
+      process.off("unhandledRejection", record);
+    }
+
+    expect(unhandled).toEqual([]);
+  });
+
+  it("leaves no guard listener behind, on the run that finished or the one that never started", async () => {
+    let live = 0;
+    const guard: VendoGuard = {
+      ...permissive(),
+      onApprovalRequested: () => {
+        live += 1;
+        return () => {
+          live -= 1;
+        };
+      },
+    };
+    const support = agent({
+      name: "support",
+      harness: defineHarness({
+        name: "peek",
+        async *run() {
+          yield { type: "text" as const, delta: "ok" };
+        },
+      }),
+      guard,
+      store: memoryStore(),
+    });
+
+    const owned = support.run("first", { as: "u_42" });
+    await owned;
+    expect(live).toBe(0);
+
+    // A rejection a caller can repeat at will — every one used to leave a
+    // callback in the guard's set forever.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(support.run("sneak", { as: "u_99", threadId: owned.threadId })).rejects.toThrow();
+    }
+    expect(live).toBe(0);
   });
 });

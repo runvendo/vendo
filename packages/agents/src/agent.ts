@@ -23,6 +23,8 @@ import {
 } from "@vendoai/core";
 import { createGuard, isGuardInstance, type GuardRules, type VendoGuard } from "@vendoai/guard";
 import { provideHarnessAdapters, vendo } from "@vendoai/harnesses";
+import { vendoModel } from "@vendoai/harnesses/inference";
+import { resolveDevCredential } from "@vendoai/harnesses/inference/credential";
 import { createStore, storeFiles, type VendoStore } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
@@ -96,7 +98,9 @@ export interface VendoAgent {
    * turns on one thread), and this when you want the Response.
    */
   respond(subject: string, message: string | UIMessage, options?: RespondOptions): Promise<Response>;
-  /** One unattended run — see {@link startRun}. */
+  /** One unattended run: no screen, an {@link AgentRun} whose report says what
+   *  happened. Venue "automation", presence "away", non-interactive — so a tool
+   *  the guard wants a person for parks, and `refs.approvals` is who to ask. */
   run<T = never>(task: string, options?: RunOptions<T>): AgentRun<T>;
   session(subject: string, options?: SessionOptions): Promise<AgentSession>;
   /**
@@ -257,17 +261,21 @@ export function agent(config: AgentConfig): VendoAgent {
   // The same default the umbrella takes (`packages/vendo/src/compose-harness.ts`):
   // one thinker, named in one place, so `agent({ name, tools })` is a whole agent.
   const harness = config.harness ?? vendo();
-  const models = config.model === undefined ? undefined : { default: config.model };
+  // ONE seat, one ladder: an explicit `model` is used verbatim, always; unset,
+  // `vendoModel()` is the zero-key rung (`vendo login` / VENDO_API_KEY). The
+  // ladder is `@vendoai/harnesses`'s — this package holds no rung of its own.
+  const models = { default: config.model ?? vendoModel() };
   /**
-   * `vendo()` thinks with the `default` seat and this package resolves no model
-   * credentials of its own, so a defaulted brain with no model is a turn that
-   * cannot happen. Raised at the first turn rather than at boot: a host that
-   * names its own harness owns saying which seats it reads
-   * (`packages/core/src/model-seats.ts`), and composing an agent is not yet
-   * asking it to think.
+   * `vendo()` thinks with the `default` seat, so a turn with neither an explicit
+   * model nor a rung under `vendoModel()` cannot happen — and the ladder's own
+   * keyless message names `createVendo`, which is not the surface this host is
+   * holding. Asked at the first turn rather than at boot: the detector is async
+   * (`resolveDevCredential`), and a host that names its own harness owns saying
+   * which seats it reads (`packages/core/src/model-seats.ts`).
    */
-  const requireModel = (): void => {
-    if (config.harness !== undefined || models !== undefined) return;
+  const requireModel = async (): Promise<void> => {
+    if (config.harness !== undefined || config.model !== undefined) return;
+    if ((await resolveDevCredential()).rung !== "none") return;
     throw new VendoError(
       "validation",
       "agent({ model }) is required — vendo(), the default brain, thinks with it. Pass one — "
@@ -339,7 +347,8 @@ export function agent(config: AgentConfig): VendoAgent {
     guard,
     tools: bound,
     skills,
-    ...(models === undefined ? {} : { models }),
+    models,
+    assertModel: requireModel,
     ...(config.instructions === undefined ? {} : { instructions: config.instructions }),
     ...(config.system === undefined ? {} : { system: config.system }),
     // The other half of the door: a credential the harness minted resolves to
@@ -352,18 +361,15 @@ export function agent(config: AgentConfig): VendoAgent {
   const built: VendoAgent = {
     name: config.name,
     async respond(subject, message, options = {}) {
-      requireModel();
+      await requireModel();
       const session = await createSession(deps, subject, options);
       // `respond` IS `session` + `stream`, and the id lands on the Response the
       // way `session.stream` already stamps it — one code path, one header.
       return session.stream(message, options.signal === undefined ? {} : { signal: options.signal });
     },
-    run(task, options) {
-      requireModel();
-      return startRun(deps, task, options);
-    },
+    run: (task, options) => startRun(deps, task, options),
     async session(subject, options) {
-      requireModel();
+      await requireModel();
       return createSession(deps, subject, options);
     },
     ...(door === undefined ? {} : { door: door.handler }),

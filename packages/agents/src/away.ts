@@ -383,9 +383,14 @@ async function runTurn(deps: AwayRunnerDeps, input: RunTurnInput): Promise<Agent
    *  to THIS run: the guard is shared, so a sibling run's card is not this
    *  report's to show. */
   const approvals: string[] = [];
-  const unsubscribe = deps.guard.onApprovalRequested?.((request) => {
-    if (request.ctx.sessionId === awayCtx.sessionId) approvals.push(request.id);
-  });
+  /** The guard's OWN per-run key (packages/guard/src/guard.ts:1104), so a card is
+   *  matched the way the guard counts it: an engine firing keys on its runId,
+   *  `run()` on the thread it minted. An undefined key matches NOTHING — two
+   *  ctxs that both name no run are not the same run, and matching them would
+   *  hand one firing's cards to another. Typed wider than `RunContext` declares
+   *  on purpose: `sessionId` is required in the type and the automations engine
+   *  does not set it, so the undefined case is real however the type reads. */
+  const runKey: string | undefined = awayCtx.trigger?.runId ?? awayCtx.sessionId;
 
   await deps.store.ensureSchema();
   const transcript = threadMessageStore<UIMessage>(deps.store);
@@ -436,10 +441,14 @@ async function runTurn(deps: AwayRunnerDeps, input: RunTurnInput): Promise<Agent
       preflight: async (call) => {
         attempted(call).outcome = "pending-approval";
         // The result channel takes the same pre-guard short-circuit an
-        // unconnected service does. It reaches nothing, so there is nothing to
-        // rule on — and an away run parks every call it cannot trace to a grant
-        // (packages/guard/src/guard.ts:1052), which would strand every typed run
-        // on a card nobody can answer.
+        // unconnected service does. It reaches nothing — it validates its args
+        // and hands them to a closure in this function: no network, no store,
+        // no host API, no file — and it still pays the call budget at `gate`
+        // below. It is here ONLY because an away run parks every call it cannot
+        // trace to a grant, READS INCLUDED (packages/guard/src/guard.ts:1051),
+        // which would strand every typed run on a card nobody can answer.
+        // DELETE THIS BRANCH once the pending guard change lands and a
+        // reaches-nothing read no longer parks unattended.
         return call.tool === RESULT_TOOL ? { status: "ok", output: {} } : undefined;
       },
       // The budget, at the one place every guarded call passes. Spent, further
@@ -490,6 +499,13 @@ async function runTurn(deps: AwayRunnerDeps, input: RunTurnInput): Promise<Agent
   // through the same path a session's do. A fresh thread has none.
   const persisted = input.reopen ? await transcript.list(principal, threadId) : [];
 
+  // Subscribed as LATE as possible and torn down in `finally`: the guard holds
+  // its callbacks in a set forever, so a throw between the subscribe and the
+  // teardown would leak one — and a foreign `threadId` is a rejection a caller
+  // can repeat at will.
+  const unsubscribe = runKey === undefined ? undefined : deps.guard.onApprovalRequested?.((request) => {
+    if ((request.ctx.trigger?.runId ?? request.ctx.sessionId) === runKey) approvals.push(request.id);
+  });
   try {
     const response = await runtime.run({
       harness: watchForFailure(deps.harness, (message) => {
@@ -519,8 +535,9 @@ async function runTurn(deps: AwayRunnerDeps, input: RunTurnInput): Promise<Agent
     await response.text();
   } catch {
     failed = true;
+  } finally {
+    unsubscribe?.();
   }
-  unsubscribe?.();
   // A call the guard parked never reaches `onCall`, so its outcome has no live
   // moment to be announced in. Announced here instead, so the event stream ends
   // agreeing with the report rather than silently short of it.
@@ -550,6 +567,15 @@ export interface RunDeps extends AwayRunnerDeps {
   name: string;
   /** The agent's guard-bound registry — an unattended run's whole tool surface. */
   tools: ToolRegistry;
+  /** Awaited before the turn opens anything — `agent()`'s model check, so a run
+   *  with no model rejects for the same reason `respond()` does, and writes no
+   *  thread on the way. */
+  assertModel?: () => Promise<void>;
+  /** A loopback door still binding its port, exactly as `createSession` awaits
+   *  it (session.ts). Without this a `claudeCode()` run can start while the
+   *  door's origin is still undefined, and the box dials a URL that is not
+   *  there yet. */
+  doorReady?: Promise<void>;
 }
 
 /**
@@ -563,7 +589,10 @@ export interface RunDeps extends AwayRunnerDeps {
 export function startRun<T>(deps: RunDeps, task: string, options: RunOptions<T> = {}): AgentRun<T> {
   const threadId = (options.threadId ?? `thr_${randomUUID()}`) as ThreadId;
   const queue = eventQueue<RunEvent>();
-  const settled = runTurn(deps, {
+  // Both gates a turn has to clear before it opens anything, in the one place a
+  // run begins: the model check, and the door still binding its port —
+  // `createSession` awaits the same two.
+  const settled = Promise.all([deps.assertModel?.(), deps.doorReady]).then(() => runTurn(deps, {
     prompt: task,
     tools: deps.tools,
     ctx: {
@@ -582,9 +611,14 @@ export function startRun<T>(deps: RunDeps, task: string, options: RunOptions<T> 
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     ...(options.output === undefined ? {} : { output: options.output as FlexibleSchema<unknown> }),
     emit: queue.push,
-  }).finally(() => {
+  })).finally(() => {
     queue.close();
   });
+  // The doc above invites reading `threadId` and never awaiting, so a failed run
+  // nobody asked about must not take the host process down (node ≥15 exits on an
+  // unhandled rejection). This handler is on a DERIVED promise: `settled` itself
+  // is untouched, so a caller who does await still gets the error.
+  settled.catch(() => {});
   return {
     threadId,
     events: queue.iterable,

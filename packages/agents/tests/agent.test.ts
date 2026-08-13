@@ -77,8 +77,9 @@ afterEach(() => {
 });
 
 describe("agent() boot", () => {
-  it("requires a name", () => {
+  it("requires a name, and nothing else — the harness has a default", () => {
     expect(() => agent({ name: " ", harness: inert(), store: memoryStore() })).toThrow(/name/);
+    expect(() => agent({ name: "support", store: memoryStore() })).not.toThrow();
   });
 
   it("an explicit guard wins and receives the merged registry to bind", () => {

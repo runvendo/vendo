@@ -8,7 +8,7 @@
  */
 import { defineHarness } from "@vendoai/harnesses";
 import { createStore } from "@vendoai/store";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { agent } from "../src/agent.js";
 // Through the BARREL: the header a host reads the thread id from is this
 // package's to hand over, and re-exporting it is what keeps the host and the
@@ -34,9 +34,67 @@ const boxy = () =>
     async *run() {},
   });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+/** The zero-key rung the ladder resolves to, pinned so the suite reads the same
+ *  on a laptop that has run `vendo login` and on one that has not. */
+const withRung = (present: boolean): void => {
+  vi.stubEnv("VENDO_DEV_CREDENTIAL", "");
+  vi.stubEnv("VENDO_API_KEY", present ? "vnd_test" : "");
+};
+
+/** What the turn was actually handed for the seat it thinks with. */
+async function seatOf(support: ReturnType<typeof agent>, peek: () => unknown): Promise<unknown> {
+  await (await support.respond("u_42", "hi")).text();
+  return peek();
+}
+
 describe("agent() composition", () => {
   it("composes with a name and tools alone — the harness is the default one", () => {
     expect(() => agent({ name: "support", tools: [api()], store: memoryStore() })).not.toThrow();
+  });
+
+  it("an explicit model wins over an available rung", async () => {
+    withRung(true);
+    let seen: unknown;
+    const peek = defineHarness({
+      name: "peek",
+      async *run(turn) {
+        seen = turn.models.default;
+        yield { type: "text" as const, delta: "ok" };
+      },
+    });
+    const model = { modelId: "fake", specificationVersion: "v2" } as never;
+
+    const handed = await seatOf(
+      agent({ name: "support", harness: peek, model, store: memoryStore() }),
+      () => seen,
+    );
+
+    expect(handed).toBe(model);
+  });
+
+  it("an unset model resolves through the ladder", async () => {
+    withRung(true);
+    let seen: unknown;
+    const peek = defineHarness({
+      name: "peek",
+      async *run(turn) {
+        seen = turn.models.default;
+        yield { type: "text" as const, delta: "ok" };
+      },
+    });
+
+    const handed = await seatOf(
+      agent({ name: "support", harness: peek, store: memoryStore() }),
+      () => seen,
+    ) as { provider: string; modelId: string };
+
+    // `vendoModel()`'s own lazy identity — the ladder's model, not one of ours.
+    expect(handed.provider).toBe("vendo");
+    expect(handed.modelId).toBe("vendo-env");
   });
 
   it("keeps the seat the host named, and hands it to the turn", async () => {
@@ -63,10 +121,12 @@ describe("the five things a host is told to fix", () => {
       .toThrow(/agent\(\{ name \}\) is required/);
   });
 
-  it("no model, when the brain is the default one", async () => {
+  it("neither an explicit model nor a rung — the default brain has nothing to think with", async () => {
+    withRung(false);
     const support = agent({ name: "support", store: memoryStore() });
+
     await expect(support.respond("u_42", "hi")).rejects.toThrow(/agent\(\{ model \}\) is required/);
-    expect(() => support.run("do a thing")).toThrow(/harness: claudeCode\(\)/);
+    await expect(support.run("do a thing")).rejects.toThrow(/harness: claudeCode\(\)/);
   });
 
   it("no sandbox, for a harness that thinks on one", () => {
