@@ -15,6 +15,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const typescript = require("typescript-6/package.json");
@@ -78,6 +79,6 @@ ${entries.join("\n")}
 };
 `;
 
-const out = resolve(dirname(new URL(import.meta.url).pathname), "../src/server/edge/lib-source.ts");
+const out = resolve(dirname(fileURLToPath(import.meta.url)), "../src/server/edge/lib-source.ts");
 writeFileSync(out, file);
 process.stdout.write(`${names.length} lib files, ${bytes} bytes, from typescript@${typescript.version}\n`);
