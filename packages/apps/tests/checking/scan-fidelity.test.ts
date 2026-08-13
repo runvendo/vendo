@@ -24,6 +24,13 @@ import { nodeToolchain } from "../../src/server/checking/toolchain.js";
 
 const catalog = ["Stack", "Text"];
 
+/** The refusal, to the byte — every namespace shape names the same construct, so
+ *  every one of them earns the same sentence. */
+const NAMESPACE_MESSAGE = "declares a namespace block (namespace Format { … }) — a screen is compiled by a"
+  + " types-only transform, which has no output form for one, so this file would compile in"
+  + " one venue and not in another. A screen is ONE file and needs no inner scope: write"
+  + " plain top-level consts, functions and types instead.";
+
 const check = (source: string): Promise<ComponentScreenCheck> =>
   checkComponentScreen({ source, hostTools: [], catalog, runQuery: async () => ({}) });
 
@@ -65,6 +72,30 @@ export default function Screen() {
 }
 `;
 
+/** The brace on the next line, and the block not at the start of one: the two
+ *  shapes a line-anchored, space-only match let through. A guard that misses
+ *  admits exactly the screen it exists to catch. */
+const NAMESPACE_WRAPPED_BRACE = `import { Text } from "@vendo/screen";
+
+namespace Format
+{
+  export const dash = "—";
+}
+
+export default function Screen() {
+  return <Text text={Format.dash} />;
+}
+`;
+
+const NAMESPACE_MID_LINE = `import { Text } from "@vendo/screen";
+
+const gap = 4; namespace Format { export const dash = "—"; }
+
+export default function Screen() {
+  return <Text text={Format.dash} gap={gap} />;
+}
+`;
+
 /** `static` as a property and as a method — neither is an initializer block, and
  *  neither may be refused. */
 const STATIC_MEMBERS = `import { Text } from "@vendo/screen";
@@ -90,13 +121,21 @@ describe("a construct the two toolchains would not agree on", () => {
     const result = await check(NAMESPACE);
 
     expect(result.ok).toBe(false);
-    expect(result.issues).toEqual([{
-      code: "namespace",
-      message: "declares a namespace block (namespace Format { … }) — a screen is compiled by a"
-        + " types-only transform, which has no output form for one, so this file would compile in"
-        + " one venue and not in another. A screen is ONE file and needs no inner scope: write"
-        + " plain top-level consts, functions and types instead.",
-    }]);
+    expect(result.issues).toEqual([{ code: "namespace", message: NAMESPACE_MESSAGE }]);
+  });
+
+  it("sees a namespace whose brace is on the next line", async () => {
+    const result = await check(NAMESPACE_WRAPPED_BRACE);
+
+    expect(result.issues).toEqual([{ code: "namespace", message: NAMESPACE_MESSAGE }]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("sees a namespace that does not start its line", async () => {
+    const result = await check(NAMESPACE_MID_LINE);
+
+    expect(result.issues).toEqual([{ code: "namespace", message: NAMESPACE_MESSAGE }]);
+    expect(result.ok).toBe(false);
   });
 
   it("refuses a class static initializer block, and says where that work goes", async () => {

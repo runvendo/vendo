@@ -259,10 +259,25 @@ const literalValue = (node: Node): { ok: true; value: unknown } | { ok: false } 
 
 const ALLOWED_IMPORTS: readonly string[] = ["react", SCREEN_MODULE];
 
-/** The two constructs the toolchains do not agree on. Read off the AUTHOR's
- *  source rather than the module form, because that is the last place either one
- *  is still visible: the transform is exactly what disagrees about them. */
-const NAMESPACE_BLOCK = /^[ \t]*(?:export[ \t]+)?(?:declare[ \t]+)?namespace[ \t]+([A-Za-z_$][\w$.]*)[ \t]*\{/mu;
+/**
+ * A `namespace` block, off the AUTHOR's source — the module form cannot answer
+ * this. esbuild lowers a namespace to an IIFE and a types-only transform has no
+ * output form for one at all, so by the time there is a parsed module the
+ * construct is gone either way.
+ *
+ * Text matching is therefore the only reading available, and it is written to
+ * fail CLOSED: `\s` on both sides so a brace on the next line still counts, and
+ * a non-identifier lookbehind rather than a line anchor so `const x = 1;
+ * namespace Foo {` is seen — those were misses, and a guard that misses admits
+ * the very screen it exists to catch. The residual is the other direction: the
+ * literal text `namespace X {` inside a string or template literal reads as the
+ * real thing. That costs a repair round on a screen nobody writes; a miss costs
+ * a screen that paints differently in two venues.
+ */
+const NAMESPACE_BLOCK = /(?<![\w$])namespace\s+([A-Za-z_$][\w$.]*)\s*\{/u;
+
+/** A class `static {}` initializer block, off the author's source for the same
+ *  reason. */
 const STATIC_BLOCK = /(?:^|[;{}\s])static[ \t]*\{/mu;
 
 /** The import block is not `tools` USAGE: `import { tools } from "@vendo/screen"`
