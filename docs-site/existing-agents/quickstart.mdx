@@ -31,20 +31,42 @@ SDK / Mastra)**.
 
 ## 2. Share one instance
 
-Init writes `createVendo` inside the wire route. Move it out so your chat route
-uses the same instance. `principal` is a function Vendo calls per request, not
-a user object.
+Init writes `createVendo` inside the wire route. Move it to `lib/vendo.ts` so
+your chat route uses the same instance, and export the identity init already
+wrote — step 3 needs it to resolve the caller. Keep whichever line init wrote.
+`auth` and `principal` fill the same seam, so `createVendo` refuses a config
+that sets both.
 
-```ts
+<CodeGroup>
+```ts init wired an auth preset
+// lib/vendo.ts
+import { clerk } from "@vendoai/vendo/auth/clerk";
+import { createVendo } from "@vendoai/vendo/server";
+
+const auth = clerk(); // whichever preset init detected
+
+export const resolvePrincipal = auth.principal;
+
+export const vendo = createVendo({
+  // …the options init wrote
+  auth,
+});
+```
+
+```ts init wired no auth preset
 // lib/vendo.ts
 import { createVendo } from "@vendoai/vendo/server";
-import { resolvePrincipal } from "@/lib/auth"; // yours: (req) => Promise<Principal | null>
+
+// the function init wrote — swap in your real session lookup
+export const resolvePrincipal = async (req: Request) =>
+  ({ kind: "user" as const, subject: "demo-user" });
 
 export const vendo = createVendo({
   // …the options init wrote
   principal: resolvePrincipal,
 });
 ```
+</CodeGroup>
 
 ```ts
 // app/api/vendo/[...vendo]/route.ts
@@ -57,23 +79,26 @@ export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ## 3. Spread the pack
 
 The pack takes the *resolved* caller — a `{ kind, subject }` object — so build
-it inside the handler, once you know who is asking.
+it inside the handler, once you know who is asking. Vendo mints no principals,
+so a visitor your resolver can't place gets a 401.
 
 <CodeGroup>
 ```ts AI SDK
 // app/api/chat/route.ts
-import { streamText } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { convertToModelMessages, streamText } from "ai";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
-import { resolvePrincipal } from "@/lib/auth";
-import { vendo } from "@/lib/vendo";
+import { resolvePrincipal, vendo } from "@/lib/vendo";
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
   const caller = await resolvePrincipal(req);
+  if (!caller) return new Response("Unauthorized", { status: 401 });
   return streamText({
-    model,
-    messages,
-    tools: { ...yourTools, ...(await vendoTools(vendo, { principal: caller })) },
+    model: anthropic("claude-sonnet-4-6"),
+    messages: await convertToModelMessages(messages),
+    // your own tools spread in here too
+    tools: { ...(await vendoTools(vendo, { principal: caller })) },
   }).toUIMessageStreamResponse();
 }
 ```
@@ -86,7 +111,7 @@ import { vendo } from "../../lib/vendo";
 
 export const yourAgent = new Agent({
   // …your agent as it is
-  tools: async () => ({ ...yourTools, ...(await vendoMastraTools(vendo)) }),
+  tools: async () => ({ ...(await vendoMastraTools(vendo)) }), // yours spread in too
 });
 
 // app/api/chat/route.ts — the pack reads its caller from here
@@ -94,13 +119,15 @@ import { handleChatStream } from "@mastra/ai-sdk";
 import { RequestContext } from "@mastra/core/request-context";
 import { VENDO_PRINCIPAL_KEY } from "@vendoai/vendo/mastra";
 import { createUIMessageStreamResponse } from "ai";
-import { resolvePrincipal } from "@/lib/auth";
+import { resolvePrincipal } from "@/lib/vendo";
 import { mastra } from "@/mastra";
 
 export async function POST(req: Request) {
   const params = await req.json();
+  const caller = await resolvePrincipal(req);
+  if (!caller) return new Response("Unauthorized", { status: 401 });
   const requestContext = new RequestContext();
-  requestContext.set(VENDO_PRINCIPAL_KEY, await resolvePrincipal(req));
+  requestContext.set(VENDO_PRINCIPAL_KEY, caller);
   params.requestContext = requestContext; // omit this and every vendo_* call fails
   const stream = await handleChatStream({ version: "v6", mastra, agentId: "your-agent", params });
   return createUIMessageStreamResponse({ stream });

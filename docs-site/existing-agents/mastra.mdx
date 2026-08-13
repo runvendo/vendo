@@ -20,12 +20,14 @@ import { handleChatStream } from "@mastra/ai-sdk";
 import { RequestContext } from "@mastra/core/request-context";
 import { VENDO_PRINCIPAL_KEY } from "@vendoai/vendo/mastra";
 import { createUIMessageStreamResponse } from "ai";
-import { resolvePrincipal } from "@/lib/auth";
+import { resolvePrincipal } from "@/lib/vendo";
 import { mastra } from "@/mastra";
 
 export async function POST(req: Request) {
   const params = await req.json();
-  const principal = await resolvePrincipal(req); // yours: { kind: "user", subject: userId }
+  const principal = await resolvePrincipal(req); // { kind: "user", subject: userId }
+  // No principal, no turn: the pack throws rather than run as nobody.
+  if (!principal) return new Response("Unauthorized", { status: 401 });
   const requestContext = new RequestContext();
   requestContext.set(VENDO_PRINCIPAL_KEY, principal);
   // Hand it to the run. A context you build and never pass is a context the

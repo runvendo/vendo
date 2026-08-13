@@ -36,13 +36,12 @@ destructive call stops and waits for someone to approve it. See
 
 ## Which pieces do I need
 
-`createVendo` composes eight slots. Seven of them default. The eighth, `auth`,
-is the one you have to answer, and `vendo init` answers it by reading your
-`package.json`.
+`createVendo` composes eight slots. Seven of them default. The eighth is
+identity, and `vendo init` answers it by reading your `package.json`.
 
 | Slot | What it is | With zero config | When you'd swap it |
 | --- | --- | --- | --- |
-| `auth` | who the agent acts as on every call | No default. Init detects Auth.js, Clerk, Supabase, or Auth0 and writes the preset. `createVendo` refuses to compose without one. | Your login is homegrown, or an away run needs `actAs`. [Host auth](/deploy/auth) |
+| `auth` or `principal` | who the agent acts as on every call | No default. Init detects Auth.js, Clerk, Supabase, or Auth0 and writes the `auth` preset; with no library found it writes a `principal` function instead. `createVendo` refuses to compose with neither, and refuses both at once. | Your login is homegrown, or an away run needs `actAs`. [Host auth](/deploy/auth) |
 | `tools` | your API, as calls the agent can make | Read from `.vendo/tools.json`, which `vendo init` and `vendo sync` extract from your routes, OpenAPI spec, or tRPC router. | The declarations live somewhere a filesystem can't reach, like a Worker. [API tools](/capabilities/api-tools) |
 | `skills` | SKILL.md files the agent lists cheaply and opens only when it needs one | Whatever Vendo's own blocks bring, mounted at `/host/skills`. | You want to teach it a procedure of your own. [Handler options](/reference/handler-options) |
 | `harness` | who thinks: the loop that runs a turn | `vendo()`, the built-in turn runtime. | You'd rather run a driver on a sandbox machine, or your own loop. [How Vendo works](/concepts/architecture) |
