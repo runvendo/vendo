@@ -68,6 +68,13 @@ export type ScreenEngineVariant = Parameters<typeof newQuickJSWASMModuleFromVari
 
 const engines = new Map<ScreenEngineVariant, Promise<QuickJSWASMModule>>();
 let stock: ScreenEngineVariant | null = null;
+
+/** The module every screen boots on — ONE shared slot. Every completed warm
+ *  reassigns it, including a warm that only hit the memo above, and
+ *  {@link bootScreen} reads it with no variant selector. So warming two variants
+ *  is NOT a supported per-screen choice: the warm that resolved LAST is the
+ *  module every subsequent boot gets. The per-variant map dedupes LOADING only —
+ *  it does not decide which module runs a screen. */
 let wasm: QuickJSWASMModule | null = null;
 
 /**
@@ -79,11 +86,11 @@ let wasm: QuickJSWASMModule | null = null;
  * taught to emit a `.wasm`, and it reaches for no Node builtin. The import stays
  * a literal specifier because `@vendoai/ui` depends on a bundler inlining it.
  *
- * A venue that cannot run that build passes its own variant, and each variant
- * gets its own engine: the memo is keyed on the variant itself, so a host that
- * warms two never gets one of them handed the other's WebAssembly. `stock` is
+ * A venue that cannot run that build passes its own variant, and the memo is
+ * keyed on the variant itself, so warming one twice loads it once. `stock` is
  * held for the same reason — the default needs one stable key, not a fresh
- * import promise per call.
+ * import promise per call. Warming TWO variants in one process is another
+ * matter: see the `wasm` slot above for what a host gets then.
  */
 export async function warmScreenEngine(variant?: ScreenEngineVariant): Promise<void> {
   const key = variant ?? (stock ??= import("@jitl/quickjs-singlefile-browser-release-sync"));
