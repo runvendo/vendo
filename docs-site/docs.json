@@ -78,7 +78,6 @@
         "pages": [
           "agent-sdk/index",
           "agent-sdk/converse",
-          "agent-sdk/schedule",
           "agent-sdk/call",
           "agent-sdk/product-run",
           "agent-sdk/reference"
