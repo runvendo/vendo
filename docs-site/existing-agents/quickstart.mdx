@@ -6,7 +6,8 @@ description: "Add Vendo's guarded tool pack to an AI SDK or Mastra loop you alre
 
 import { AgentPrompt, EXISTING_AGENTS_PROMPT } from "/snippets/agent-prompt.jsx"
 
-Your loop, your model, your chat UI. Vendo adds a pack of tools to them.
+Your loop, your model, your chat UI. Vendo adds [a pack of guarded
+tools](/existing-agents) to them.
 
 <AgentPrompt
   lead="Or hand it to your coding agent."
@@ -15,19 +16,17 @@ Your loop, your model, your chat UI. Vendo adds a pack of tools to them.
 
 ## 1. Init
 
-Vendo's own screen turns need a model key. Put `ANTHROPIC_API_KEY` in
-`.env.local` first and init writes the matching
-[`models:` line](/deploy/model-credentials), which is what selects the model —
-a key sitting loose in the environment selects nothing. No provider key?
-`npx vendo login` mints a Cloud one.
-
 ```bash
 npm install @vendoai/vendo
 npx vendo init
 ```
 
 Answer the questions. On the first one, pick **Through my own agent loop (AI
-SDK / Mastra)**.
+SDK / Mastra)**. On the model one take **Vendo Cloud**: a free key lands in
+`.env.local` as `VENDO_API_KEY`, and Vendo's own screen turns run on it with
+nothing else to set. Your own provider key works too. Init writes the
+[`models:` line](/deploy/model-credentials) that selects it, because a key
+sitting loose in the environment selects nothing.
 
 ## 2. Share one instance
 
@@ -177,4 +176,4 @@ chat. A live view builds inline. Then check the wiring:
 npx vendo doctor
 ```
 
-Next: [what's in the pack](/existing-agents) · [embeds and envelopes](/existing-agents/embeds).
+Next: [embeds and envelopes](/existing-agents/embeds).

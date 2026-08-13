@@ -7,6 +7,8 @@ description: "Install the package, run vendo init, paste the provider into your 
 import { AgentPrompt, VENDO_AGENT_PROMPT } from "/snippets/agent-prompt.jsx"
 
 Five minutes from an app with no agent to one that answers with a live screen.
+Vendo brings the agent and its chat surface. You wire [a provider and an
+overlay](/vendo-agent).
 
 <AgentPrompt
   lead={<>Paste this and your coding agent does the whole install against the <a href="/agents">agent playbook</a>.</>}
@@ -21,17 +23,18 @@ npm install @vendoai/vendo
 
 ## 2. Run init
 
-The agent needs a model key. Put `ANTHROPIC_API_KEY` in `.env.local` first, or
-run `npx vendo login` for a Cloud one; init turns whichever it finds into the
-[`models:` line](/deploy/model-credentials) that selects the model.
-
 ```bash
 npx vendo init
 ```
 
-It asks a few questions, then writes the server route, your API as tools, and
-your brand as a theme. Every flag and every file it touches:
-[vendo init](/reference/vendo-init).
+It asks a few questions. On the model one take **Vendo Cloud**: a free key
+lands in `.env.local` as `VENDO_API_KEY` and the agent runs on it. Your own
+`ANTHROPIC_API_KEY` works too. Init turns it into the
+[`models:` line](/deploy/model-credentials) that selects the model, which a
+loose key never does.
+
+Then it writes the server route, your API as tools, and your brand as a theme.
+Every flag and every file it touches: [vendo init](/reference/vendo-init).
 
 Not Next.js? → [Edge runtimes](/deploy/edge-runtimes).
 
