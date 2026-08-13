@@ -23,7 +23,7 @@
  * the honest answer for a gate that could not read the screen.
  */
 import ts from "typescript";
-import { screenProgramWith, type LibTextProvider } from "../checking/screen-tsc.js";
+import { screenProgramWith, type LibTextProvider } from "../checking/screen-program.js";
 import { screenTypecheckIssues } from "../checking/screen-typecheck.js";
 import type { ScreenTypecheckInput, ScreenTypecheckResult } from "../checking/toolchain.js";
 import { EDGE_DEFAULT_LIB, EDGE_LIB_SOURCES } from "./lib-source.js";

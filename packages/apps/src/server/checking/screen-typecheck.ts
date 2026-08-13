@@ -15,7 +15,7 @@
  * Everything else is handed to the wire screen's own translator (screen-tsc.ts),
  * which already says the right thing about props, arguments and missing fields.
  */
-import { diagnosticLine, translateDiagnostic, type ScreenProgram } from "./screen-tsc.js";
+import { diagnosticLine, translateDiagnostic, type ScreenProgram } from "./screen-program.js";
 import { SCREEN_MODULE } from "./screen-typings.js";
 import type { ComponentScreenIssue } from "./component-screen.js";
 import type TS from "typescript";
