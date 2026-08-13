@@ -638,7 +638,13 @@ async function probeImpact(input: {
   env: Record<string, string | undefined>;
 }): Promise<ToolImpact[] | null> {
   const { report, options, output, note, env } = input;
-  const wireUrl = (options.url ?? resolveWireUrl(env) ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
+  // `envWireUrl` stays defined when a configured value was USED, so the
+  // failure note below only suggests setting one when the probe truly fell
+  // through to the hardcoded default — telling someone whose VENDO_BASE_URL
+  // is set but whose dev server is down to "set VENDO_BASE_URL" would be
+  // pointing at a variable they already have.
+  const envWireUrl = resolveWireUrl(env);
+  const wireUrl = (options.url ?? envWireUrl ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
   const tools = [...new Set([
     ...report.breaking.map((breaking) => breaking.tool),
     ...report.tools.changed,
@@ -656,7 +662,7 @@ async function probeImpact(input: {
     return impact;
   } catch {
     note(
-      options.url === undefined
+      options.url === undefined && envWireUrl === undefined
         ? `impact unknown — dev server not reachable at ${wireUrl} (set VENDO_URL or VENDO_BASE_URL in .env, or pass --url)`
         : `impact unknown — dev server not reachable at ${wireUrl}`,
     );

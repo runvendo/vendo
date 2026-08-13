@@ -133,6 +133,22 @@ describe("vendo sync", () => {
     expect(messages.logs).toContain("impact unknown — dev server not reachable at http://localhost:3000/api/vendo (set VENDO_URL or VENDO_BASE_URL in .env, or pass --url)");
   });
 
+  it("does not suggest setting VENDO_BASE_URL when a configured value was already used", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "http://localhost:3000/maple");
+    const messages = captureOutput();
+    const fetchImpl = vi.fn(async () => { throw new Error("offline"); }) as typeof fetch;
+
+    await runSync({
+      targetDir: ".",
+      output: messages.output,
+      fetchImpl,
+      sync: async () => report([{ tool: "host_x", change: "removed" }]),
+    });
+
+    expect(messages.logs).toContain("impact unknown — dev server not reachable at http://localhost:3000/maple/api/vendo");
+    expect(messages.logs).not.toContain("set VENDO_URL or VENDO_BASE_URL");
+  });
+
   it("falls back when impact is unreachable and keeps strict exit two", async () => {
     const messages = captureOutput();
     const fetchImpl = vi.fn(async () => { throw new Error("offline"); }) as typeof fetch;
