@@ -8,6 +8,7 @@ import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import type { ParkedPress } from "../tree/renderer.js";
+import { useApprovalModal } from "./approval-modal.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { defaultSlotSuggestions } from "./discoverability.js";
 import { developmentMode } from "./dev-mode.js";
@@ -245,6 +246,20 @@ export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, onParked
   children?: ReactNode;
 }) {
   const { components } = useVendoProvider();
+  // Screen-initiated approvals: a press inside the mounted view that parks on
+  // the guard hands itself here, and the modal asks the question centered over
+  // the page. The slot owns the presses inside it, so it owns the question
+  // they raise — no provider, no registry.
+  const approval = useApprovalModal();
+  // The tree fires the park (renderer runAction, for apps and pins alike);
+  // the modal always hears it, and a host that passed `onParked` hears it too.
+  const parked = useMemo(
+    () => (press: ParkedPress) => {
+      approval.onParked(press);
+      onParked?.(press);
+    },
+    [approval.onParked, onParked],
+  );
   // Self-discovery (ui-usage-dx §2): with no explicit `appId`/`pin`, the slot
   // resolves its own pinned app — hosts never write the polling dance.
   const discovery = useSlotApp(id, { enabled: discover && appIdProp === undefined && pin === undefined });
@@ -361,8 +376,8 @@ export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, onParked
 
   const Fallback = () => <>{children}</>;
   const mounted = appId
-    ? <MountedApp appId={appId} onParked={onParked} />
-    : <AppFrame surface={{ kind: "tree", payload: pin!.payload }} components={components} data={pin!.data} onAction={pin!.onAction} onParked={onParked} />;
+    ? <MountedApp appId={appId} onParked={parked} />
+    : <AppFrame surface={{ kind: "tree", payload: pin!.payload }} components={components} data={pin!.data} onAction={pin!.onAction} onParked={parked} />;
   return (
     <ChromeRoot>
       <div className="fl-slot" data-vendo-slot={id}>
@@ -372,6 +387,9 @@ export function VendoSlot({ id, label, appId: appIdProp, pin, onAuthor, onParked
           </FluidReveal>
         </div>
       </div>
+      {/* Portals to <body> with its own theme boundary, so it is never trapped
+          by the host's stacking context around this slot. */}
+      {approval.modal}
     </ChromeRoot>
   );
 }
