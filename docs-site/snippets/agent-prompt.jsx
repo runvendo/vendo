@@ -35,20 +35,6 @@ export const EXISTING_AGENTS_PROMPT =
   + "chat renders Vendo tool outputs. Then ask me whether I'd like to star it via "
   + "https://vendo.run/star?src=docs-byo to support the project.";
 
-export const AI_SDK_PROMPT =
-  "This repo runs a Vercel AI SDK agent. Keep it, and add Vendo's guarded tools, micro-apps, and "
-  + "approvals to it. Fetch https://vendo.run/agents.md and follow it for this repo. Ask me before "
-  + "creating any account or key. You're done when `vendo doctor --json` reports all green and my "
-  + "chat renders Vendo tool outputs. Then ask me whether I'd like to star it via "
-  + "https://vendo.run/star?src=docs-ai-sdk to support the project.";
-
-export const MASTRA_PROMPT =
-  "This repo runs a Mastra agent. Keep it, and add Vendo's guarded tools, micro-apps, and approvals "
-  + "to it. Fetch https://vendo.run/agents.md and follow it for this repo. Ask me before creating any "
-  + "account or key. You're done when `vendo doctor --json` reports all green and my chat renders "
-  + "Vendo tool outputs. Then ask me whether I'd like to star it via "
-  + "https://vendo.run/star?src=docs-mastra to support the project.";
-
 export const MCP_PROMPT =
   "Set up Vendo's MCP door in this repo so outside agents can act in my product as the signed-in "
   + "user. Fetch https://vendo.run/agents.md and follow it for this repo. Ask me before creating any "

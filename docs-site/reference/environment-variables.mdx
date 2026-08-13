@@ -26,9 +26,9 @@ authenticates with, and `ANTHROPIC_API_KEY` is what the provider *you* pass in
 | `VENDO_BASE_URL` | this deployment's **full public URL, path prefix included** (`https://site.com/maple`) — nothing strips its path, and every URL Vendo builds hangs off it: server-side execution of extracted route tools, the MCP door's canonical public base, and the box callback URLs (`VENDO_STORE_URL`/`VENDO_HOST_URL`); machine provisioning fails without it |
 | `VENDO_HOST_API_URL` | optional. The host API's base when it answers on a different origin than the public URL. Defaults to `VENDO_BASE_URL` |
 | `VENDO_LOGIN_URL` | optional. Where a sessionless caller is sent to sign in. Defaults to `{VENDO_BASE_URL}/login`; may be absolute, on another domain |
-| `VENDO_MCP_BROKER_URL` | optional. Your tenant's MCP endpoint at a broker fronting the door (`https://acme.mcp.vendo.run/mcp`). Setting it is what puts the door in broker mode: the URL's origin becomes the trusted issuer and the URL itself the expected token audience, the door stops serving `/authorize`, `/token` and `/register`, and a malformed value fails the composition loudly. An explicit `mcp.remoteAs` wins over it, and so does an explicit `mcp.serviceAuth` — that exchange only lives at the door's own `/token`, so the door stays local (a malformed value still fails loudly). See [Delegate to an external authorization server](/capabilities/mcp) |
+| `VENDO_MCP_BROKER_URL` | optional. Your tenant's MCP endpoint at a broker fronting the door (`https://acme.mcp.vendo.run/mcp`). Setting it is what puts the door in broker mode: the URL's origin becomes the trusted issuer and the URL itself the expected token audience, the door stops serving `/authorize`, `/token` and `/register`, and a malformed value fails the composition loudly. An explicit `mcp.remoteAs` wins over it, and so does an explicit `mcp.serviceAuth` — that exchange only lives at the door's own `/token`, so the door stays local (a malformed value still fails loudly). See [Delegate to an external authorization server](/reference/mcp-door) |
 | `VENDO_MCP_FEDERATION_SECRET` | optional. The secret a broker signs its login-federation handshake with, so third-party agents can sign in through it against your users. Only meaningful alongside broker mode; an explicit `mcp.federation` wins over it |
-| `VENDO_SERVICE_KEY` | the name the docs use for an MCP service key (generate one with `openssl rand -hex 32`). Nothing reads it automatically: your composition passes it in explicitly (`mcp: { serviceAuth: { keys: [process.env.VENDO_SERVICE_KEY!] } }`) and your backend posts the same value as `client_secret` at the door's token endpoint, so any name you prefer works just as well. See [Your own backend, as one of your users](/existing-agents/mcp) |
+| `VENDO_SERVICE_KEY` | the name the docs use for an MCP service key (generate one with `openssl rand -hex 32`). Nothing reads it automatically: your composition passes it in explicitly (`mcp: { serviceAuth: { keys: [process.env.VENDO_SERVICE_KEY!] } }`) and your backend posts the same value as `client_secret` at the door's token endpoint, so any name you prefer works just as well. See [Your own backend, as one of your users](/mcp/quickstart) |
 | `VENDO_URL` | base URL that `vendo doctor` probes for the live `/status` check and that `vendo sync` queries for blast-radius impact; defaults to `http://localhost:3000/api/vendo`, overridden per run by `--url` |
 | `VENDO_POSTHOG_KEY` · `VENDO_POSTHOG_HOST` | override the telemetry project key and the host capture events are sent to |
 | `DO_NOT_TRACK=1` | disables telemetry and is also honored by Scarf |
@@ -43,9 +43,9 @@ authenticates with, and `ANTHROPIC_API_KEY` is what the provider *you* pass in
 | `VENDO_INFERENCE_MODEL` | optional model choice passed through to the box harness |
 | `VERCEL`, `CF_PAGES`, `AWS_LAMBDA_FUNCTION_NAME` | prevent the default PGlite store from opening on an ephemeral serverless filesystem; pass a Postgres URL instead |
 | `VENDO_STORE_ENCRYPTION_KEY` | 32-byte base64 key the default local store uses to encrypt secret values in `vendo_secrets`. Read only when the local store is what composes — that is, when no `store` is passed to `createVendo` **and** no `VENDO_API_KEY` is set. An explicit store ignores it, and so does the Cloud hosted store, which wins the slot whenever a key is present |
-| `VENDO_DEV_CREDENTIAL` | **internal only** — Vendo's own E2E rung matrix and escape hatch, not a host knob, and it can change without notice. It pins a [dev-mode credential ladder](/connect/dev-mode) rung (`env-key:anthropic` / `:openai` / `:google`, `vendo-cloud`, or `none`), and is the only way to reach an `env-key` rung at all. Your app's model belongs in `models` |
+| `VENDO_DEV_CREDENTIAL` | **internal only** — Vendo's own E2E rung matrix and escape hatch, not a host knob, and it can change without notice. It pins a [dev-mode credential ladder](/deploy/model-credentials) rung (`env-key:anthropic` / `:openai` / `:google`, `vendo-cloud`, or `none`), and is the only way to reach an `env-key` rung at all. Your app's model belongs in `models` |
 | `VENDO_MODEL` · `VENDO_MODEL_PAINT` · `VENDO_MODEL_JUDGE` · `VENDO_MODEL_EXTRACT` | per-slot model pins, no code change: the string passes verbatim to whatever the resolved credential talks to — the Vendo Cloud gateway with `VENDO_API_KEY`. These pin a model *name*; they never select a provider, so on a deployment with no `models` config and no `VENDO_API_KEY` there is nothing for them to pin. Precedence per slot: explicit model object → env pin → `models` string → per-rung default. `VENDO_MODEL_EXTRACT` also pins the `vendo init` / `vendo sync` extraction engine; `VENDO_EXTRACTION_MODEL` is its older spelling and still works |
-| `VENDO_AWAY_TOKEN_SECRET` | default source for the away-token preset's shared secret — the one the producer mints with and the host's verifier checks. Pass `secret` explicitly to override it; see [actAs presets](/connect/act-as-presets) |
+| `VENDO_AWAY_TOKEN_SECRET` | default source for the away-token preset's shared secret — the one the producer mints with and the host's verifier checks. Pass `secret` explicitly to override it; see [actAs presets](/deploy/auth) |
 | `VENDO_APP_BUILD_WATCHDOG_MS` | how long one app build may run before it is failed with a terminal, retryable record (default 4 minutes). The client's polling cutoff derives from it, so raising this keeps the two in step |
 | `ANTHROPIC_API_KEY` · `OPENAI_API_KEY` · `GOOGLE_GENERATIVE_AI_API_KEY` | **credentials only, selecting nothing.** Your app's Vendo never reads them. They are read by the `@ai-sdk/*@^3` provider *you* construct and pass — `models: { default: anthropic("claude-sonnet-4-6") }` — which is what selects a model. A key sitting in the environment with no `models` config leaves the deployment with no model, and the first turn says so. The `vendo` CLI is the one exception, and only for work you invoked explicitly: `vendo init` and `vendo sync` authenticate the coding agent they spawn for extraction and judgment with `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` |
 
@@ -59,7 +59,7 @@ Vendo-named variable — `AUTH_SECRET` for Auth.js, `CLERK_SECRET_KEY` for
 Clerk, `SUPABASE_JWT_SECRET` / `SUPABASE_URL` for Supabase,
 `AUTH0_DOMAIN` (or `AUTH0_ISSUER_BASE_URL`) for Auth0. `jwt()` has no vendor
 env to read and always takes an explicit secret. See
-[actAs presets](/connect/act-as-presets) for the full table.
+[actAs presets](/deploy/auth) for the full table.
 
 ## App machine environment
 
@@ -82,7 +82,7 @@ The `buildEnv` boundary names (all of the above except
 `VENDO_INFERENCE_MODEL`, which the composition adds beside them) are
 reserved; a declared secret named like one of them is a validation error. The box does its own outbound requests directly, against
 the provider-enforced domain allowlist. See
-[Generated UI and apps](/concepts/generated-ui#secrets-and-outbound-requests).
+[Generated UI and apps](/capabilities/generated-ui#secrets-and-outbound-requests).
 
 The `/box` callback surface authenticates every request with
 `Authorization: Bearer $VENDO_APP_TOKEN` and exposes:

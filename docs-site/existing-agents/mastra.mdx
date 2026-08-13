@@ -25,7 +25,7 @@ requestContext.set(VENDO_SESSION_KEY, hostSessionId); // optional, for audit
 ```
 
 That subject has to match what your wire route's `principal` resolves, or the
-person never sees what the agent makes — [one principal, two
+person never sees what the agent makes. See [one principal, two
 places](/existing-agents#one-principal-two-places).
 
 `vendoMastraTools` returns a Promise, which is why the agent takes the

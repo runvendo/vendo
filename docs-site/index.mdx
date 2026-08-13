@@ -42,14 +42,14 @@ is the one you have to answer, and `vendo init` answers it by reading your
 
 | Slot | What it is | With zero config | When you'd swap it |
 | --- | --- | --- | --- |
-| `auth` | who the agent acts as on every call | No default. Init detects Auth.js, Clerk, Supabase, or Auth0 and writes the preset; `createVendo` refuses to compose without one. | Your login is homegrown, or an away run needs `actAs`. [Host auth](/deploy/auth) |
+| `auth` | who the agent acts as on every call | No default. Init detects Auth.js, Clerk, Supabase, or Auth0 and writes the preset. `createVendo` refuses to compose without one. | Your login is homegrown, or an away run needs `actAs`. [Host auth](/deploy/auth) |
 | `tools` | your API, as calls the agent can make | Read from `.vendo/tools.json`, which `vendo init` and `vendo sync` extract from your routes, OpenAPI spec, or tRPC router. | The declarations live somewhere a filesystem can't reach, like a Worker. [API tools](/capabilities/api-tools) |
 | `skills` | SKILL.md files the agent lists cheaply and opens only when it needs one | Whatever Vendo's own blocks bring, mounted at `/host/skills`. | You want to teach it a procedure of your own. [Handler options](/reference/handler-options) |
 | `harness` | who thinks: the loop that runs a turn | `vendo()`, the built-in turn runtime. | You'd rather run a driver on a sandbox machine, or your own loop. [How Vendo works](/concepts/architecture) |
 | `models` | which model answers | `VENDO_API_KEY` routes to Vendo's gateway. With no credential at all, every call fails and prints how to fix it. | You want your own provider key, or a different model per seat. [Model credentials](/deploy/model-credentials) |
 | `store` | threads, apps, grants, audit | An embedded PGlite database under `.vendo/data`. Nothing to install. | You're deploying somewhere the disk won't survive a release. [Persistence](/deploy/persistence) |
 | `files` | workspace file content once it outgrows a row | The store's own blob table, up to 5 MiB. The first write over that fails and names this key. | You want S3, R2, Supabase, or MinIO behind it. [Persistence](/deploy/persistence) |
-| `sandbox` | the machine generated apps run server code on | Nothing. Chat and client-rendered screens work; server-side app code answers "sandbox unavailable". | Your generated apps need to run server code. [Generated UI](/capabilities/generated-ui) |
+| `sandbox` | the machine generated apps run server code on | Nothing. Chat and client-rendered screens work. Server-side app code answers "sandbox unavailable". | Your generated apps need to run server code. [Generated UI](/capabilities/generated-ui) |
 
 ## What it costs to try
 

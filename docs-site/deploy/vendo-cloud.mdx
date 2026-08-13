@@ -250,7 +250,7 @@ machine instead of Cloud's.
 ### Hosted sandboxes
 
 `cloudSandbox` is the hosted sandbox adapter behind machine-backed apps
-(layers 2 and 3 of [the machine model](/concepts/generated-ui#the-three-layers)).
+(layers 2 and 3 of [the machine model](/capabilities/generated-ui#the-three-layers)).
 Reach for it when you want app machines without an E2B account. You normally
 never construct it: with `VENDO_API_KEY` set, `createVendo` fills the unset
 sandbox slot with it automatically. An explicitly passed `sandbox:` adapter always
@@ -289,7 +289,7 @@ console outages as `sandbox-unavailable`; with no key and no adapter at all
 the sandbox slot is simply unconfigured, so machine paths fail with
 `sandbox-unavailable`. See [Server API](/reference/server-api) for the
 `SandboxAdapter` seam and
-[Generated UI and apps](/concepts/generated-ui) for the layer model.
+[Generated UI and apps](/capabilities/generated-ui) for the layer model.
 
 ### Hosted store
 

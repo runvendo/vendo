@@ -50,10 +50,11 @@ to the jail with an error notice. Every verdict and how it renders is in the
 
 Before minting an approval, a reviewer reads the *ship-diff*: approvable code
 diffed against the host baselines `vendo sync` captured, hash-pinned to the
-current version. Approvals are not an input — the diff answers "how far has
-this drifted from the shipped product", not "what changed since last
-approval". A pin whose captured baseline has since moved is flagged
-`drifted`; the diff still returns, and approving is still possible.
+current version. The baseline is always the shipped product, so the diff
+answers how far the app has drifted from what your users run. It is never a
+changelog since the last approval. A pin whose captured baseline has since
+moved is flagged `drifted`; the diff still returns, and approving is still
+possible.
 Net-new generated components appear as pure additions. The tree structure
 itself is not in the diff; the reviewable *code* is.
 
@@ -105,7 +106,7 @@ curl -X POST \
 
 `approvedBy` is optional here and defaults to `"local-dev"`. The route
 returns the approval record, and follows the rules in
-[Dev route rules](#dev-route-rules); it never mounts in production.
+[Dev route rules](#dev-route-rules). It never mounts in production.
 
 Approvals are audited through `guard.report`. The approved verdict reaches the
 client on the `open()` payload, as `inClient`.

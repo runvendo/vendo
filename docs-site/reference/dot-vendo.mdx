@@ -20,11 +20,11 @@ re-judge the AI layer without ever clobbering a decision a person made.
 | --- | --- | --- |
 | `tools.json` | sync | `vendo/tools@3` (04) — each tool's descriptor and execution `binding`, plus inferred field `semantics`, `srcHash` (the handler-source hash incremental sync diffs against), `audience`, `outputSchema` when the source declares one, and `disabled` for anything extraction could not classify |
 | `judgments.json` | sync (AI pass) | `vendo/judgments@1` (04) — the AI layer, keyed by tool name: `description`, `title`, `risk`, `critical`, `disabled`, `audience`, `semantics`. Hardenings apply themselves; loosenings only land here after a human accepted them |
-| `overrides.json` | init / human | `vendo/overrides@3` (04) — per-tool overrides plus `compounds`, `briefs`, per-surface tool menus (`surfaces.agent` / `surfaces.mcp`, see [Curate the tool menu](/capabilities/mcp#curate-the-tool-menu)), and `remix.ignoreSlots` |
+| `overrides.json` | init / human | `vendo/overrides@3` (04) — per-tool overrides plus `compounds`, `briefs`, per-surface tool menus (`surfaces.agent` / `surfaces.mcp`, see [Curate the tool menu](/reference/mcp-door#curate-the-tool-menu)), and `remix.ignoreSlots` |
 | `catalog.json` | sync | `vendo/catalog@1` (04) |
 | `policy.json` | init / human | `vendo/policy@1` (05) |
 | `remixable/<slot>.json` | sync | `PinBaseline` (06 §8) |
-| `components/<Name>.json` | sync | `CapturedHostComponent` — one registered host component, refs only, no source ([Host components](/connect/host-components#what-sync-captures)) |
+| `components/<Name>.json` | sync | `CapturedHostComponent` — one registered host component, refs only, no source ([Host components](/customize/host-components#what-sync-captures)) |
 | `components/modules/<hex>.json` | sync | `CapturedModule` — `{ source, imports? }`, content-addressed by the sha-256 of its canonical JSON, so a module ten components share is stored once |
 | `cloud.json` | sync (asked once) | `{ "pushComponents": boolean }` — this project's answer to "may registered-component source go to Vendo Cloud?" |
 

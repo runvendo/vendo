@@ -66,7 +66,7 @@ const vendo = createVendo({ model, catalog: registry });
 ```
 
 - `description` is selection guidance for the model. State when to pick the
-  component and when to skip it; hedged copy leads to worse selection.
+  component and when to skip it. Hedged copy leads to worse selection.
 - `props` (registry form) / `propsSchema` (array form) validates props at
   render time and is the same schema the model-facing JSON Schema derives
   from: one schema, not two. Bindings for `$path`, `$state`, and zero-arg
@@ -91,7 +91,7 @@ When you register a host component:
   infers props, but a schema is what makes prop invention impossible. Prefer it
   whenever the component has typed props.
 - **Schema only what the model should control.** Data-shaped props belong in
-  the schema; internal callbacks and render props do not.
+  the schema. Internal callbacks and render props do not.
 - **Write the description for selection**: what the component shows and when to
   reach for it. "Spending by category. Use for where-did-my-money-go requests."
 
@@ -142,7 +142,7 @@ references. It holds no source. Every byte lives beside it in
 `.vendo/components/modules/<hex>.json` as `{ source, imports? }`, keyed by the
 sha-256 of its own content, so a `format-currency.ts` that ten components
 import is stored once and referenced ten times. Both are deterministic and
-byte-stable; commit them.
+byte-stable, so commit them.
 
 The walk follows your imports to **closure** — no depth limit — and stops at
 two lines:
@@ -407,7 +407,7 @@ decides only where the fork executes:
 ```
 
 - **Instant** (the default): remix → it renders, jailed, done. No queue and
-  no approval ceremony; the ✦ mark is the management handle.
+  no approval ceremony. The ✦ mark is the management handle.
 - **Reviewed**: after remixing, the original keeps rendering and the only
   user-visible state is "sent for review" (surfaced in the panel). On
   approval the remix mounts natively in the host page — the zero-seam venue

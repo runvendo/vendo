@@ -139,7 +139,7 @@ so the tool still surfaces without blocking your build.
 
 The extractor loads the TypeScript compiler from your app's own
 `node_modules`. If TypeScript is not available, tRPC extraction is skipped with
-a warning and no tRPC tools are emitted; extraction never fails your build.
+a warning and no tRPC tools are emitted. Extraction never fails your build.
 
 ### Next.js server actions {#next-js-server-actions}
 
@@ -275,7 +275,7 @@ safety](/concepts/tools-and-safety) for the surfaced notice and event shape.
 
 Overrides also apply to [compound tools](/capabilities/compound-tools), which
 live in the same file's `compounds` array. A compound entry inside
-`tools.json` is rejected; compounds belong to the authored file.
+`tools.json` is rejected. Compounds belong to the authored file.
 
 Present route calls forward the inbound request's cookie and authorization
 headers on a same-origin fetch. Away calls require both an app-bound grant and
@@ -288,7 +288,7 @@ provider-specific wiring.
 
 Extractors run in a fixed order: OpenAPI first, then tRPC, then server
 actions, then the route scan. Each extractor decides whether it applies to
-your app; the ones that do not detect anything are skipped. When the tRPC
+your app. The ones that do not detect anything are skipped. When the tRPC
 extractor emits tools for a mount, any catch-all route under that mount (for
 example `/api/trpc/[trpc]`) is dropped from the route scan so you do not see
 duplicate coverage of the same surface.

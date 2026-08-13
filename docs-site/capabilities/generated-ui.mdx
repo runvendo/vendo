@@ -40,7 +40,7 @@ Four rules, and each one is enforced rather than advised:
 - **Data through `useQuery("tool_name", input?)`.** The tool name and the input
   are written-out literals, because a screen's queries are read out of the file
   and executed *before* the component renders — so no prop, state, or other
-  query's result can reach one. Only read tools; one result per tool.
+  query's result can reach one. Only read tools, one result per tool.
 - **Actions through `tools.tool_name(args)`, from a handler.** A tool call in the
   render body would fire on every render, so it is refused.
 - **No DOM.** `document`, `fetch`, timers, `process` and `<div>` do not exist
@@ -200,7 +200,7 @@ trigger, created in seconds, no machine), then an **agentic automation**
 (per-run judgment, still tool-only), and a **box machine** only when actual
 custom code is required. With machines off (the default), a request only a box
 can express refuses with a typed error naming the flag; apps that already carry a
-machine keep working; only new graduation is gated. Users do not choose a layer.
+machine keep working. Only new graduation is gated. Users do not choose a layer.
 The last working surface keeps serving while the next layer builds.
 
 Screen-only creates and edits run without an approval card because they cannot
@@ -316,7 +316,7 @@ Machine egress is deny-by-default at the provider network layer, and both
 secrets and egress are approve-once owner grants:
 
 - An app declares secret names. Each declared secret needs one owner approval
-  before its real value enters the box environment; only declared and granted
+  before its value enters the box environment. Only declared and granted
   secrets inject, at provision and at the env re-injection before each in-box
   edit. An ordinary wake resumes the snapshot's environment, so a grant or
   revocation decided while the machine slept fully lands at the next edit or

@@ -58,7 +58,7 @@ Install the runtime SDK as a direct dependency of your app. A copy npm nested
 under another package is not resolvable from Vendo, and every request to the
 wire then fails with `Module not found: Can't resolve '@auth/core/jwt'`.
 
-`jwt` shares the presets' options type, so `jwt()` type-checks — and then throws
+`jwt` shares the presets' options type, so `jwt()` type-checks, then throws
 at construction telling you to pass `{ secret }`. A `secret` that is present but
 resolves empty passes construction and throws later, on the first Bearer request
 it has to verify.
@@ -89,9 +89,10 @@ compose time.
 ### Notes per provider
 
 - **supabase:** never use the anon key or a service-role token as the secret.
-  Those are complete tokens, not the signing secret. Hosted projects on newer
-  signing keys use ES256, and setting `SUPABASE_URL` is enough for that path —
-  the preset verifies against `<url>/auth/v1/.well-known/jwks.json` via `jose`.
+  Both are issued tokens. The secret is the key that signed them. Hosted
+  projects on newer signing keys use ES256, and setting `SUPABASE_URL` is
+  enough for that path: the preset verifies against
+  `<url>/auth/v1/.well-known/jwks.json` via `jose`.
 - **clerk and auth0:** present calls need nothing beyond the env variable. Away
   calls are the extra step, because the provider holds the session signing keys.
   See [Away calls](#away-calls-the-actas-seam).
@@ -136,7 +137,7 @@ it lands.
 
 ### Cross-check before you pass `--auth`
 
-A dependency is a hint, not a decision. The signals that confirm it:
+A dependency is only a hint. The signals that confirm it:
 
 - **authJs:** `AUTH_SECRET` in `.env*`, an `auth.ts`/`auth.config.ts`, or an
   `app/api/auth/[...nextauth]` route.
@@ -311,8 +312,8 @@ audited with its disposition: `minted`, `declined`, `mismatch`, or `error`.
 
 ### Token caching
 
-Every preset caches minted tokens in memory until just before expiry — 300 s
-token lifetime by default, refreshed 30 s early. Cache keys include a
+Every preset caches minted tokens in memory until just before expiry. Tokens
+live 300 s by default and refresh 30 s early. Cache keys include a
 fingerprint of the signing secret, so rotating the secret invalidates the cache
 immediately and the next away call mints against the new one. Expired entries
 are dropped on write, so the cache stays bounded by the number of active

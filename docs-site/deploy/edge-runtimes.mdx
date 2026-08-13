@@ -83,7 +83,7 @@ theme={theme}>` with `<VendoOverlay />` in your SPA entry.
    PGlite/Postgres store engines are Node-only and refuse with guidance on
    edge runtimes. Pass your own `model`, `store`, `connections`, and `sandbox`.
    With `VENDO_API_KEY` instead, the generated wiring fills every seam with the
-   Cloud adapters — the model is the stock `@ai-sdk/anthropic` provider pointed
+   Cloud adapters. The model is the stock `@ai-sdk/anthropic` provider pointed
    at the console gateway. See
    [Model credentials](/deploy/model-credentials).
 3. **Set `VENDO_BASE_URL`** to the deployed app's full public URL, path
@@ -102,7 +102,7 @@ yourself, your adapter has to:
   with `app.use` on a base path (Express strips the mount path from `req.url`).
 - Keep cookie and authorization headers available to `principal(request)` and to
   present-mode same-origin tool calls.
-- Return multi-value `Set-Cookie` as a header array, not a joined string.
+- Return multi-value `Set-Cookie` as a header array rather than a joined string.
 
 ## What works where
 

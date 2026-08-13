@@ -179,7 +179,7 @@ stops.
 ## What actually reaches the model
 
 - **`[User]` is server-trust and every turn.** It comes from your own resolver
-  on the server; the client cannot set it.
+  on the server. The client cannot set it.
 - **A request with no resolvable principal never reaches the model.**
   `principal(req)` returning `null` refuses it with `forbidden` (403) before
   either prompt block is built — there is no partial turn that carries a
