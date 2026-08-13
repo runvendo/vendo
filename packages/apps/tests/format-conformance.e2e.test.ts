@@ -56,7 +56,7 @@ const VOCABULARY = [
 ];
 
 const DOCS_FORMAT_PAGE = readFileSync(
-  new URL("../../../docs-site/concepts/generated-ui.mdx", import.meta.url),
+  new URL("../../../docs-site/capabilities/generated-ui.mdx", import.meta.url),
   "utf8",
 );
 
@@ -91,7 +91,7 @@ describe("the public docs page states the same format", () => {
   it("quotes the three limits the validator enforces", () => {
     const stated = /at most \*\*(\d+)\*\* generated components, each at most\s+\*\*(\d+) KB\*\* of source, and \*\*(\d+) KB\*\* across all of them/
       .exec(DOCS_FORMAT_PAGE);
-    expect(stated, "docs-site/concepts/generated-ui.mdx must state the three component limits").not.toBeNull();
+    expect(stated, "docs-site/capabilities/generated-ui.mdx must state the three component limits").not.toBeNull();
     expect([Number(stated?.[1]), Number(stated?.[2]) * KB, Number(stated?.[3]) * KB]).toEqual([
       TREE_MAX_GENERATED_COMPONENTS,
       TREE_MAX_COMPONENT_SOURCE_BYTES,

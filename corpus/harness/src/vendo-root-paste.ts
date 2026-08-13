@@ -150,7 +150,7 @@ function mountSpan(source: string, fileName: string, router: "app" | "pages"): {
 
 /** One-splice paste: init dropped its layout codemod (see f2c23568) and only
  * prints a paste, so the corpus harness plays the human and pastes the
- * documented canonical mount — docs-site/quickstart.mdx, "The client mount".
+ * documented canonical mount — docs-site/customize/surfaces.mdx, "The client mount".
  * It does NOT mirror init's printed block: init's copy is init's own contract
  * (packages/vendo/tests/cli/init.test.ts owns it), and wording changes there
  * must never fail the corpus. A green corpus run still means the app is wired

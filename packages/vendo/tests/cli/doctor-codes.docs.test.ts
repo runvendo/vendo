@@ -4,15 +4,19 @@ import { doctorErrorCodes } from "../../src/cli/doctor-codes.js";
 
 /**
  * Registry-rot gate (agent-install DX design §Error handling): every code
- * doctor can emit must have a matching anchor on the verify playbook page,
+ * doctor can emit must have a matching anchor on the troubleshooting page,
  * and every code the page documents must exist in the registry. The docs
  * live in this repo, so this is a plain test against the docs-site source —
  * it runs in the normal `pnpm test` suite.
+ *
+ * `VERIFY_URL` (src/cli/doctor-codes.ts) still prints `/agents/verify`, and
+ * every released CLI builds its fix links from it, so docs.json permanently
+ * redirects that slug here. The anchors are the contract, not the path.
  */
 
-const VERIFY_PAGE = new URL("../../../../docs-site/agents/verify.mdx", import.meta.url);
+const VERIFY_PAGE = new URL("../../../../docs-site/deploy/troubleshooting.mdx", import.meta.url);
 
-/** A verify section heading: `## E-AREA-NNN {#E-AREA-NNN}` (Mintlify custom
+/** A troubleshooting section heading: `## E-AREA-NNN {#E-AREA-NNN}` (Mintlify custom
  *  heading IDs — the {#...} id is what doctor's fix_ref fragment resolves to,
  *  case-sensitively). */
 const ANCHORED_HEADING = /^#{2,4}\s+(E-[A-Z]+-\d{3})\s+\{#(E-[A-Z]+-\d{3})\}\s*$/gm;
@@ -21,7 +25,7 @@ const ANCHORED_HEADING = /^#{2,4}\s+(E-[A-Z]+-\d{3})\s+\{#(E-[A-Z]+-\d{3})\}\s*$
  *  and break the fix_ref fragment). */
 const CODE_HEADING = /^#{2,4}\s+(E-[A-Z]+-\d{3})\b.*$/gm;
 
-describe("verify.mdx stays 1:1 with the doctor error-code registry", () => {
+describe("troubleshooting.mdx stays 1:1 with the doctor error-code registry", () => {
   it("anchors every registered code and registers every anchored code", async () => {
     const page = await readFile(VERIFY_PAGE, "utf8");
 
