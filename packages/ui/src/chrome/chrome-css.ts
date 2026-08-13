@@ -1577,6 +1577,119 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the S1 des
   .fl-connect-act { width: 100%; margin-left: 0; }
 }
 
+/* ============ the screen-initiated approval modal ============
+   A press on a generated screen that parks on the guard used to have no UI
+   anywhere — only a badge count — so the person who pressed it waited forever.
+   This is that press's answer: the ask centered over the page, at hero size.
+   Composition and copy live in chrome/approval-modal.tsx.
+
+   Above the mobile approval sheet (…004): the two never co-exist, and a modal
+   raised by a deliberate press outranks anything already floating. */
+/* background:none is LOAD-BEARING. The layer carries .vendo-root for the token
+   bridge, and that rule paints --vendo-bg — which over a full-viewport fixed
+   layer is an opaque sheet hiding the very page the scrim exists to dim. (The
+   overlay dodges this by being display:contents; this layer has to position,
+   so it clears the paint instead.) */
+.fl-apmodal-layer { position: fixed; inset: 0; z-index: 2147483005; background: none;
+  display: grid; place-items: center; padding: 16px; }
+/* Dim to focus: the page goes BACK so the question is the only thing worth
+   reading. Heavier than the overlay's 22% on purpose — that scrim frames a
+   panel covering most of the screen, this one has to carry a 400px card
+   against a full page of live content, and at 22% the host's own headings
+   still competed with the ask. No blur: S1 retired frosted glass sheet-wide
+   (s1-recipe.test.ts), and reading as one material with every other Vendo
+   scrim is worth more than the blur was. */
+.fl-apmodal-scrim { position: absolute; inset: 0;
+  background: color-mix(in srgb, var(--vendo-fg) 42%, transparent); }
+.fl-apmodal { position: relative; width: min(400px, 100%); max-height: calc(100vh - 32px);
+  overflow-y: auto; overscroll-behavior: contain; outline: none;
+  padding: 26px 24px 20px; text-align: center;
+  border-radius: var(--vendo-radius-lg); background: var(--vendo-surface); color: var(--vendo-fg);
+  font: 400 var(--vendo-text-body)/1.5 var(--vendo-font);
+  /* The highest surface on the page, so the float shadow gains its ambient
+     half: a tight direct shadow under the card, a wide soft one around it. */
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--vendo-fg) 6%, transparent),
+    0 28px 70px color-mix(in srgb, var(--vendo-fg) 20%, transparent); }
+/* The dialog takes focus on open, so the ask is the keyboard context — but it
+   is a CONTAINER, not a control, and the a11y block's ".vendo-root
+   :focus-visible" ring (specificity 0,2,0 — a plain outline:none above loses
+   to it) drew a 2px accent box around the whole card whenever it was opened by
+   anything but a mouse. The controls inside keep their rings. */
+.fl-apmodal:focus-visible { outline: none; }
+/* The consent register's mark at hero size. The 28px well is the CARD's law
+   (one item among many); this surface has ONE mark and it is the subject. */
+.fl-apmodal-mark { display: grid; place-items: center; width: 40px; height: 40px; margin: 0 auto 14px;
+  border-radius: 999px; color: var(--vendo-accent); background: var(--vendo-accent-soft); }
+.fl-apmodal-mark svg { width: 19px; height: 19px; }
+.fl-apmodal-eyebrow { font: 600 10.5px/1 var(--vendo-font); letter-spacing: .07em;
+  text-transform: uppercase; color: var(--vendo-fg-muted); }
+/* The ask, big and plain. Tracking goes NEGATIVE and leading tightens as type
+   grows — the same sentence the card sets at 14px, sized for a hero. */
+.fl-apmodal-ask { margin: 10px 0 0; font: 600 24px/1.22 var(--vendo-heading-font);
+  letter-spacing: -.021em; color: var(--vendo-fg); overflow-wrap: anywhere; text-wrap: balance; }
+.fl-apmodal-notes { margin-top: 9px; }
+/* Values read left-aligned in their table even though the ask is centered:
+   a column of inputs is scanned, not read. */
+.fl-apmodal .fl-card-fields { text-align: left; margin-top: 18px; }
+.fl-apmodal-acts { display: flex; flex-direction: column; gap: 6px; margin-top: 20px; }
+.fl-apmodal-approve { position: relative; overflow: hidden; width: 100%;
+  padding: 13px 16px; font-size: 14.5px; font-weight: 600; }
+.fl-apmodal-deny { width: 100%; padding: 11px 16px; border-color: transparent;
+  background: transparent; color: var(--vendo-fg-muted); }
+.fl-apmodal-deny:hover:not(:disabled) { background: var(--vendo-accent-soft);
+  border-color: transparent; color: var(--vendo-fg); }
+/* Press feedback on the whole button, instant and subtle — the interface
+   confirming it heard the press before anything else happens. */
+.fl-apmodal-acts .fl-btn { transition: transform .14s cubic-bezier(.23,1,.32,1),
+  opacity .2s ease, background .16s ease, color .16s ease; }
+.fl-apmodal-acts .fl-btn:active:not(:disabled) { transform: scale(.98); }
+/* .fl-btn has no disabled treatment of its own, so a locked Approve looked
+   exactly as pressable as a live one while the ask was still loading. Scoped
+   to this action row rather than fixed globally — every other card in the
+   product shares that base button, and that is not this lane's call. */
+.fl-apmodal-acts .fl-btn:disabled { opacity: .5; cursor: default; }
+/* Deciding: the competition steps back and the primary keeps every bit of its
+   presence — the decision is made, the system is working on it. */
+.fl-apmodal[data-deciding] .fl-apmodal-deny { opacity: .45; }
+.fl-apmodal[data-deciding] .fl-apmodal-approve:disabled { opacity: 1; }
+/* The in-flight rail: a sweep along the primary's bottom edge. Indeterminate
+   on purpose — the wire cannot say how far along a running action is, and a
+   percentage bar that invents one is a lie told 25 seconds long. */
+.fl-apmodal-rail { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden;
+  /* The track stays near-invisible so the MOVING segment is the signal — at a
+     readable weight it just underlines the button. */
+  background: color-mix(in srgb, var(--vendo-accent-fg) 15%, transparent); }
+.fl-apmodal-rail::after { content: ""; position: absolute; inset: 0; width: 38%;
+  border-radius: 999px; background: var(--vendo-accent-fg); }
+.fl-apmodal-wait { margin: 12px 0 0; font-size: 12px; color: var(--vendo-fg-muted); }
+.fl-apmodal-skel { display: block; height: 15px; margin: 0 auto; border-radius: 7px;
+  background: color-mix(in srgb, var(--vendo-fg) 9%, transparent); }
+.fl-apmodal-settled { margin: 12px 0 0; font: 500 15px/1.45 var(--vendo-font); }
+.fl-apmodal .fl-error { margin: 14px 0 0; text-align: left; }
+@media (prefers-reduced-motion: no-preference) {
+  /* The dim lands first and fast — the page must recede before the card
+     arrives, or the card reads as pasted onto a live page. */
+  .fl-apmodal-scrim { animation: fl-fade-in .22s ease-out both; }
+  /* transform-origin stays CENTER — a modal is not anchored to a trigger.
+     Critically damped (no overshoot): nothing threw this card onto the screen. */
+  .fl-apmodal { animation: fl-apmodal-in .3s var(--vendo-ease) both; }
+  /* Exit is faster than entry: the system responding, not the user deciding. */
+  .fl-apmodal-layer[data-leaving] .fl-apmodal { animation: fl-apmodal-out .17s ease both; }
+  .fl-apmodal-layer[data-leaving] .fl-apmodal-scrim { animation: fl-apmodal-fade-out .17s ease both; }
+  .fl-apmodal-rail::after { animation: fl-apmodal-sweep 1.5s cubic-bezier(.65,0,.35,1) infinite; }
+  .fl-apmodal-skel { animation: fl-apmodal-breathe 1.6s ease-in-out infinite; }
+}
+/* Reduced motion is gentler, not absent: the surface still cross-fades so it
+   never simply blinks into existence — it just never travels. */
+@media (prefers-reduced-motion: reduce) {
+  .fl-apmodal, .fl-apmodal-scrim { animation: fl-fade-in .16s ease both; }
+}
+@keyframes fl-apmodal-in { from { opacity: 0; transform: scale(.96) translateY(10px); } }
+@keyframes fl-apmodal-out { to { opacity: 0; transform: scale(.985); } }
+@keyframes fl-apmodal-fade-out { to { opacity: 0; } }
+@keyframes fl-apmodal-sweep { from { transform: translateX(-100%); } to { transform: translateX(363%); } }
+@keyframes fl-apmodal-breathe { 50% { opacity: .5; } }
+
 /* 3-A′ · real brand marks in the tray rows (monogram = fallback). */
 .fl-picker-ic img { width: 15px; height: 15px; object-fit: contain; display: block; }
 @media (prefers-reduced-motion: reduce) {

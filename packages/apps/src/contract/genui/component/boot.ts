@@ -16,12 +16,11 @@
  * in-VM queue this file pumps (./vm-program.ts), so a `setState` inside a
  * handler has already landed by the time `fire` returns.
  *
- * THE BUDGET IS WALL-CLOCK, not instructions. QuickJS counts interrupts in
- * bytecode operations, which is the wrong unit for "this screen is stuck": the
- * same `while (true)` burns a wildly different number of them depending on what
- * is in the loop, so a tick budget is simultaneously too tight for a real
- * render over a page of rows and too loose for a spin. A deadline is the
- * question actually being asked.
+ * THE BUDGET IS THE VENUE'S TO CHOOSE. A deadline is the question actually
+ * being asked — until the venue is one that freezes the clock while a screen
+ * burns, where it is a question that can only be answered "not yet". So the
+ * limit arrives as a {@link ScreenBudget} (./budget.ts): wall-clock by default,
+ * interrupt counts where the clock does not move.
  *
  * A THROW LEAVES THE SCREEN STANDING. A handler that throws, or that never
  * finishes, raises a {@link ScreenError} out of `fire` — and the instance stays
@@ -33,11 +32,11 @@ import {
   isFail,
   newQuickJSWASMModuleFromVariant,
   Scope,
-  shouldInterruptAfterDeadline,
   type QuickJSDeferredPromise,
   type QuickJSHandle,
   type QuickJSWASMModule,
 } from "quickjs-emscripten-core";
+import { wallClockBudget, type ScreenTurn, type TurnLimit } from "./budget.js";
 import { SCREEN_RUNTIME, installSource, sealSource } from "./vm-program.js";
 import {
   ScreenError,
@@ -59,34 +58,47 @@ const MEMORY_LIMIT_BYTES = 32 * 1_024 * 1_024;
  *  the one failure that would tear through this module. */
 const MAX_STACK_BYTES = 512 * 1_024;
 
-/** Wall-clock a single event or paint may spend. A 60-row render measured 3.3ms
- *  in this VM, so this is ~60x headroom for real work and still a fifth of a
- *  second for a runaway. */
-const OP_BUDGET_MS = 200;
-
-/** Wall-clock the boot may spend. Longer because it parses Preact and this
- *  screen's own source before it paints for the first time. */
-const BOOT_BUDGET_MS = 2_000;
-
 /** Times the drain may find more work waiting. A paint that schedules an update
  *  that schedules an effect is ordinary; a hundred rounds of it is a loop. */
 const MAX_DRAIN_TURNS = 64;
 
-let booting: Promise<QuickJSWASMModule> | null = null;
+/** Which QuickJS build the engine runs on — the argument the module factory
+ *  takes, so a host may hand over a variant it loaded its own way. */
+export type ScreenEngineVariant = Parameters<typeof newQuickJSWASMModuleFromVariant>[0];
+
+const engines = new Map<ScreenEngineVariant, Promise<QuickJSWASMModule>>();
+let stock: ScreenEngineVariant | null = null;
+
+/** The module every screen boots on — ONE shared slot. Every completed warm
+ *  reassigns it, including a warm that only hit the memo above, and
+ *  {@link bootScreen} reads it with no variant selector. So warming two variants
+ *  is NOT a supported per-screen choice: the warm that resolved LAST is the
+ *  module every subsequent boot gets. The per-variant map dedupes LOADING only —
+ *  it does not decide which module runs a screen. */
 let wasm: QuickJSWASMModule | null = null;
 
 /**
  * Load the WebAssembly. Running a screen is synchronous — this one-time load is
  * not, so a caller awaits it once before the first {@link bootScreen}.
  *
- * The variant is the SINGLE-FILE BROWSER build, for `$expr`'s reason: the
- * WebAssembly rides inside the JavaScript, so no host bundler has to be taught
- * to emit a `.wasm`, and it reaches for no Node builtin — one variant for both
- * venues.
+ * The default variant is the SINGLE-FILE BROWSER build, for `$expr`'s reason:
+ * the WebAssembly rides inside the JavaScript, so no host bundler has to be
+ * taught to emit a `.wasm`, and it reaches for no Node builtin. The import stays
+ * a literal specifier because `@vendoai/ui` depends on a bundler inlining it.
+ *
+ * A venue that cannot run that build passes its own variant, and the memo is
+ * keyed on the variant itself, so warming one twice loads it once. `stock` is
+ * held for the same reason — the default needs one stable key, not a fresh
+ * import promise per call. Warming TWO variants in one process is another
+ * matter: see the `wasm` slot above for what a host gets then.
  */
-export async function warmScreenEngine(): Promise<void> {
-  booting ??= import("@jitl/quickjs-singlefile-browser-release-sync")
-    .then((module) => newQuickJSWASMModuleFromVariant(module.default));
+export async function warmScreenEngine(variant?: ScreenEngineVariant): Promise<void> {
+  const key = variant ?? (stock ??= import("@jitl/quickjs-singlefile-browser-release-sync"));
+  let booting = engines.get(key);
+  if (booting === undefined) {
+    booting = newQuickJSWASMModuleFromVariant(key);
+    engines.set(key, booting);
+  }
   wasm = await booting;
 }
 
@@ -110,12 +122,6 @@ const messageOf = (thrown: unknown): Thrown => {
 /** QuickJS reports a tripped interrupt handler as exactly this. */
 const isInterrupt = (thrown: Thrown): boolean => thrown.message === "InternalError: interrupted";
 
-/** Boot's budget is ten times an event's, so the number is the TURN'S, not one
- *  constant: a sentence that names the wrong limit sends a repair after the
- *  wrong problem. */
-const budgetMessage = (budgetMs: number): string =>
-  `this screen did not finish inside ${budgetMs}ms — a loop that never ends, or work too heavy for a paint`;
-
 /**
  * Boot one screen. Synchronous, and long-lived: the VM, the component and its
  * hook state stay alive until {@link ScreenInstance.dispose}, because a screen
@@ -129,6 +135,7 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
     throw new ScreenError("boot", "the screen engine is not warm yet — await warmScreenEngine() once before booting a screen");
   }
 
+  const budget = options.budget ?? wallClockBudget();
   const runtime = module.newRuntime();
   runtime.setMemoryLimit(MEMORY_LIMIT_BYTES);
   runtime.setMaxStackSize(MAX_STACK_BYTES);
@@ -142,8 +149,9 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
   let painted: string | null = null;
   let tree: NestedNode | null = null;
   let dead = false;
-  /** The budget of the turn in progress — what a budget failure names. */
-  let budgetMs = BOOT_BUDGET_MS;
+  /** The allowance of the turn in progress — what a budget failure names. Set
+   *  by `turn`, which is the only way any of this runs. */
+  let limit!: TurnLimit;
 
   const teardown = (): void => {
     if (dead) return;
@@ -166,7 +174,7 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
 
   const failure = (kind: ScreenErrorKind, thrown: Thrown): ScreenError =>
     isInterrupt(thrown)
-      ? new ScreenError("budget", budgetMessage(budgetMs))
+      ? new ScreenError("budget", limit.message)
       : new ScreenError(kind, thrown.message, thrown.stack);
 
   /** Evaluate in the VM. The returned handle is the caller's to dispose; every
@@ -212,7 +220,7 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
   /** Run everything the screen scheduled: awaited tool answers (the VM's own
    *  job queue) and Preact's updates and effects (the engine's queue), until
    *  both are quiet. */
-  const drain = (deadline: number): void => {
+  const drain = (): void => {
     for (let turn = 0; turn < MAX_DRAIN_TURNS; turn += 1) {
       const jobs = runtime.executePendingJobs();
       if (isFail(jobs)) {
@@ -222,7 +230,7 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
       }
       const ran = evalNumber("__vendo.flush()", "handler");
       if (jobs.value === 0 && ran === 0) return;
-      if (Date.now() > deadline) throw new ScreenError("budget", budgetMessage(budgetMs));
+      if (limit.spent()) throw new ScreenError("budget", limit.message);
     }
     throw new ScreenError("budget", "this screen scheduled more work after every paint and never settled");
   };
@@ -244,13 +252,12 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
     return true;
   };
 
-  const turn = <T>(budget: number, body: (deadline: number) => T): T => {
+  const turn = <T>(kind: ScreenTurn, body: () => T): T => {
     if (dead) throw new ScreenError("vm", "this screen was disposed");
-    budgetMs = budget;
-    const deadline = Date.now() + budget;
-    runtime.setInterruptHandler(shouldInterruptAfterDeadline(deadline));
+    limit = budget.limit(kind);
+    runtime.setInterruptHandler(limit.handler);
     try {
-      return body(deadline);
+      return body();
     } finally {
       if (!dead) runtime.removeInterruptHandler();
     }
@@ -279,7 +286,7 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
   bridge.dispose();
 
   try {
-    turn(BOOT_BUDGET_MS, (deadline) => {
+    turn("boot", () => {
       evalVoid(sealSource(options.now), "boot");
       evalVoid(SCREEN_RUNTIME, "boot");
       evalVoid(installSource({
@@ -287,7 +294,7 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
         queries: options.queries,
         catalog: options.catalog,
       }), "boot");
-      drain(deadline);
+      drain();
       checkFailure();
       repaint();
     });
@@ -300,11 +307,11 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
     tree: currentTree,
 
     fire(handlerId: string, event?: unknown): FireResult {
-      return turn(OP_BUDGET_MS, (deadline) => {
+      return turn("op", () => {
         intents = [];
         try {
           evalVoid(`__vendo.fire(${JSON.stringify(handlerId)}, ${literal(event)})`, "handler");
-          drain(deadline);
+          drain();
           checkFailure();
           repaint();
         } catch (error) {
@@ -316,7 +323,7 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
     },
 
     settle(intentId: string, result: unknown): FireResult | null {
-      return turn(OP_BUDGET_MS, (deadline) => {
+      return turn("op", () => {
         const deferred = awaiting.get(intentId);
         if (deferred === undefined) {
           throw new ScreenError("handler", `no tool call "${intentId}" is waiting on this screen — it was already settled, or it belongs to a screen that has since been disposed`);
@@ -344,7 +351,7 @@ export function bootScreen(options: BootScreenOptions): ScreenInstance {
           // The code resuming after the await is still the handler's, so its
           // tool calls are still an event's.
           evalVoid("__vendo.resume()", "handler");
-          drain(deadline);
+          drain();
           checkFailure();
         } catch (error) {
           discardIntents();

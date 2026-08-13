@@ -79,6 +79,16 @@
         ]
       },
       {
+        "group": "Agent SDK",
+        "pages": [
+          "agent-sdk/index",
+          "agent-sdk/converse",
+          "agent-sdk/call",
+          "agent-sdk/product-run",
+          "agent-sdk/reference"
+        ]
+      },
+      {
         "group": "Make it yours",
         "pages": [
           "customize/theming",

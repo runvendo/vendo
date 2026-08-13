@@ -77,10 +77,9 @@ afterEach(() => {
 });
 
 describe("agent() boot", () => {
-  it("requires a name and a harness", () => {
+  it("requires a name, and nothing else — the harness has a default", () => {
     expect(() => agent({ name: " ", harness: inert(), store: memoryStore() })).toThrow(/name/);
-    // @ts-expect-error — the missing harness is the point
-    expect(() => agent({ name: "support", store: memoryStore() })).toThrow(/harness/);
+    expect(() => agent({ name: "support", store: memoryStore() })).not.toThrow();
   });
 
   it("an explicit guard wins and receives the merged registry to bind", () => {

@@ -17,10 +17,17 @@ export {
   type PostgresOptions,
   type VendoAgent,
 } from "./agent.js";
-export { awayRunner, type AwayRunnerDeps } from "./away.js";
+export {
+  awayRunner,
+  type AgentReport,
+  type AgentRun,
+  type AwayRunnerDeps,
+  type RunEvent,
+  type RunOptions,
+} from "./away.js";
 export { DOOR_PATH, type DoorConfig } from "./door.js";
 export { assemblePrompt, type PromptInput } from "./prompt.js";
-export type { AgentSession, ApprovalEvent, SessionOptions } from "./session.js";
+export type { AgentSession, ApprovalEvent, RespondOptions, SessionOptions } from "./session.js";
 export {
   api,
   tool,
@@ -32,5 +39,9 @@ export {
 } from "./tools.js";
 export type { EgressConfig } from "./egress.js";
 export type { RunContext } from "@vendoai/core";
+/** The header `respond()` and `session.stream()` return the conversation's id
+ *  on, and the one `@vendoai/ui` reads it from. Named, not spelled out, so a
+ *  host and the browser cannot drift onto two literals. */
+export { THREAD_ID_HEADER, type UsageTotals } from "@vendoai/harnesses";
 
 export { createGuard, type GuardLike, type VendoGuard } from "@vendoai/guard";

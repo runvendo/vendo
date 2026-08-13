@@ -64,6 +64,59 @@ safe. A lock left behind by a killed process is reclaimed automatically. If
 boot logs show the store waiting on a pid, another server owns that dir:
 stop it, give each server its own `dataDir`, or move to a Postgres `url`.
 
+### Ephemeral container filesystems wipe PGlite on redeploy
+
+Container platforms with long-lived processes (Railway, Render, Fly.io,
+Heroku) let PGlite run happily, then recreate the container filesystem on
+every redeploy. The store keeps working right up to that point, and then
+every app your users built and every row of their data is gone. The same
+loss applies to any `dataDir` under `/tmp`.
+
+At boot the store adds a warning row to the `vendo ready` block whenever it
+composes a PGlite engine writing to one of those places:
+
+```text
+◆  vendo ready
+│  ✓ sandbox   cloud    VENDO_API_KEY
+│  ✓ store     local    .vendo/data
+│  ✓ models    cloud    VENDO_API_KEY (gateway)
+│  ⚠ store     .vendo/data is on Railway's container filesystem — data will not survive a redeploy.
+│              Mount a volume, or pass url: "postgres://…" to createVendo.
+```
+
+The trigger is any of the platform markers `RAILWAY_ENVIRONMENT`, `RENDER`,
+`FLY_APP_NAME`, or `DYNO` in the environment, or a `dataDir` that resolves
+under the OS temp dir or `/tmp`. `vendo doctor` reports the same finding
+statically as [`E-STORE-001`](/agents/verify#E-STORE-001).
+
+Two ways out:
+
+- **Mount a persistent volume** and point `dataDir` at it. This keeps
+  PGlite as the engine, which is fine for smaller deployments:
+
+  ```ts
+  createVendo({
+    store: createStore({ dataDir: "/data/vendo" }),
+  });
+  ```
+
+- **Move to Postgres.** Pass a connection string as `url` and the store
+  uses the Postgres engine instead of PGlite:
+
+  ```ts
+  createVendo({
+    store: createStore({ url: process.env.DATABASE_URL }),
+  });
+  ```
+
+The warning is silent for a Postgres `url`, `memory://`, a `dataDir` on a
+real disk, the Cloud [hosted store](/deploy/vendo-cloud#hosted-store), and
+any custom store adapter — only the local PGlite default can hit it.
+
+Fully serverless platforms (Vercel, Cloudflare Pages, AWS Lambda) are a
+harder case: PGlite refuses to boot there at all. See [edge
+runtimes](/deploy/edge-runtimes) for what that refusal looks like.
+
 ### Encryption is opt-in, and production fails closed without it
 
 Encryption covers exactly one column, `vendo_secrets.ciphertext`. Everything

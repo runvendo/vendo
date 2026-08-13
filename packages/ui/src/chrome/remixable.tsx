@@ -6,6 +6,7 @@ import { useResource } from "../hooks/use-resource.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import type { InClientVenue, OpenSurface } from "../wire-types.js";
+import { useApprovalModal } from "./approval-modal.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
@@ -157,6 +158,11 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
   const { surface, error, isLoading } = useApp(appId);
   const menuRef = useRef<HTMLDivElement>(null);
   const [reverting, setReverting] = useState(false);
+  // A press inside the mounted fork that parks on the guard asks its question
+  // over this surface (the VendoSlot seam). The modal hangs off the ✦ chrome
+  // below rather than the fork's own boundary: it must outlive a fork that
+  // unmounts (a revert) while a decision is still in flight.
+  const approval = useApprovalModal();
 
   // The popover dismisses like any menu: Escape, or pointer-down outside it.
   useEffect(() => {
@@ -243,6 +249,7 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
               <AppFrame
                 surface={staged}
                 components={components}
+                onParked={approval.onParked}
                 onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})}
               />
             </PinMount>
@@ -298,6 +305,7 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
             </div>
           ) : null}
         </div>
+        {approval.modal}
       </ChromeRoot>
     </>
   );

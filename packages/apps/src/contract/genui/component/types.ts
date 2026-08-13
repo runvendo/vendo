@@ -21,6 +21,7 @@
  *    reports back through {@link ScreenInstance.settle}. The screen cannot
  *    reach the network, so this is the only way anything leaves it.
  */
+import type { ScreenBudget } from "./budget.js";
 
 /** A function-valued prop, as it crosses the VM boundary. */
 export interface HandlerRef {
@@ -101,6 +102,12 @@ export interface BootScreenOptions {
    * keeps, so one screen over one set of data paints the same twice.
    */
   now?: number;
+  /**
+   * What stops a screen that will not stop. Unset is `wallClockBudget()` — a
+   * fifth of a second an event, two seconds a boot. A venue whose clock does not
+   * advance during a synchronous burn (workerd) passes `opsBudget()` instead.
+   */
+  budget?: ScreenBudget;
 }
 
 /** The one node kind that is not a catalog component: a run of text. */

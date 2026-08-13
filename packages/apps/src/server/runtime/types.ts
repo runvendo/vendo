@@ -42,6 +42,7 @@ import type {
   AppFloor,
 } from "../../contract/index.js";
 import type { LanguageModel } from "ai";
+import type { ScreenToolchain } from "../checking/toolchain.js";
 import type { Check, Finding } from "../checking/types.js";
 import type { CloudAppsClient, PublishRecord, ShareSnapshot } from "../persistence/cloud.js";
 import type { GenerationDependencies } from "../generation/engine.js";
@@ -235,6 +236,17 @@ export interface AppsConfig {
    * `vendo_make` in agent-tools.ts).
    */
   screen?: ScreenAssembler;
+  /**
+   * ADAPTER SLOT — what compiles, type-checks and paints a component screen.
+   *
+   * The screen gauntlet's three machines (esbuild, the `typescript` package, the
+   * QuickJS build) behind one interface, because they are the only part of
+   * checking a screen that cannot run in every venue: a deployment whose checks
+   * happen where none of the three is reachable fills this and every other stage
+   * runs unchanged. Explicitly passed always wins; unset is this process's own,
+   * which is exactly what checking did before the slot existed.
+   */
+  toolchain?: ScreenToolchain;
   /**
    * §4.5's other half — the plan an escalating screen agent left behind, read
    * back so the build ANCHORS on it instead of re-planning from the ask alone.

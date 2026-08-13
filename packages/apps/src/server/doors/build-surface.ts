@@ -540,6 +540,9 @@ const createValidateDoor = (
         hostTools: deps.tools ?? [],
         catalog: screenCatalog(deps.catalog),
         runQuery: (tool, queryInput) => runQuery(document.id, tool, queryInput),
+        // The same slot the floor honors: `validate` runs the identical gauntlet,
+        // so it must run it on the identical toolchain.
+        ...(config.toolchain === undefined ? {} : { toolchain: config.toolchain }),
       });
       if (!checked.ok) {
         // The gauntlet's own repair instructions, verbatim and with no locus: each
@@ -631,6 +634,7 @@ export const createBuildSurface = (
           ...await generationToolContext(ctx),
         }),
         ...(config.checks === undefined ? {} : { checks: config.checks }),
+        ...(config.toolchain === undefined ? {} : { toolchain: config.toolchain }),
         // The component gauntlet's outside reaches, which a checking module cannot
         // hold itself: the screen's queries, the row-and-source a passing screen
         // earns, and the reason a refused one earned none. All three are this

@@ -66,6 +66,7 @@ first mount does not flash on every update.
 | `useVendoOverlay(options?)` | `VendoOverlayController` — see [Overlay control](#overlay-control-usevendooverlay) | — |
 | `useMobileTakeover()` | `{ active, keyboardInset, style }` — the full-bleed mobile breakpoint | — |
 | `useApprovalSheetPresentation()` | `boolean` — whether an in-thread consent presents as the bottom sheet | — |
+| `useApprovalModal()` | `{ onParked, modal }` — mount the screen-initiated approval modal on a custom surface. See [Approval modal](#approval-modal-useapprovalmodal) | — |
 
 **There is no generic `execute` callback.** Hooks that write name their
 verbs: `decide`, `revoke`, `disconnect`, `enable`, `disable`, `create`,
@@ -288,6 +289,79 @@ conversation, so reopening within the same page session restores the prior
 messages and thread. To start fresh, call `overlay.newConversation()`, use
 the new-conversation button in the panel header, or bump the
 `conversationKey` prop from your own state.
+
+## Approval modal (useApprovalModal)
+
+`useApprovalModal` is the mount seam for the screen-initiated approval
+modal — the centered ask a person sees when a button inside a generated
+view parks on the guard. The shipped chrome already mounts it on
+`VendoSlot`, on in-thread app cards and the workspace stage they expand
+onto, on the [BYO chat embeds](/existing-agents/embeds), and on mounted
+remix forks. Reach for the hook when you render a `TreeView`, `AppFrame`,
+or a bespoke slot yourself.
+
+```ts
+export function useApprovalModal(): {
+  onParked(parked: ParkedPress): void;  // hand this to the tree's onParked prop
+  modal: ReactNode;                     // render this somewhere in your tree
+};
+
+export interface ParkedPress {
+  nodeId: string;
+  approvalId: ApprovalId;
+}
+```
+
+Wire it in two lines: pass `approval.onParked` down to whichever component
+fires it, and render `approval.modal` alongside. The modal portals to
+`document.body` with its own theme boundary, so it lifts out of any host
+stacking context.
+
+```tsx
+"use client";
+
+import { AppFrame, useApprovalModal } from "@vendoai/ui/chrome";
+import type { OpenSurface } from "@vendoai/vendo";
+
+export function CustomStage({ surface, components }: {
+  surface: OpenSurface;
+  components: Record<string, React.ComponentType>;
+}) {
+  const approval = useApprovalModal();
+  return (
+    <>
+      <AppFrame surface={surface} components={components} onParked={approval.onParked} />
+      {approval.modal}
+    </>
+  );
+}
+```
+
+Presses queue by design: pressing multiple guarded buttons raises multiple
+approvals, and exactly one modal is on screen at a time. Approve or Deny
+spends the decision; Esc and the scrim close the modal without deciding, so
+a dismissed ask stays pending. An ask decided on another surface (the
+thread, another tab) never gets a turn just to say it was already handled.
+
+`ParkedPress` is re-exported from `@vendoai/ui/chrome` beside `VendoSlot`
+because it is the shape of that component's `onParked` prop.
+
+### refusalCopy
+
+`refusalCopy(reason)` maps an error from `approvals.decide` to the same
+user-voice sentence the built-in approval card renders when a decision
+fails to land. Use it in your own error state so a custom surface and a
+shipped card never say different things about the same refusal.
+
+```ts
+import { refusalCopy } from "@vendoai/ui/chrome";
+
+try {
+  await approvals.decide([id], "approve");
+} catch (reason) {
+  setError(refusalCopy(reason));  // e.g. "This request was already answered."
+}
+```
 
 ## BYO-agent embeds
 

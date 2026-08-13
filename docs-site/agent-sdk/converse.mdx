@@ -1,0 +1,131 @@
+---
+title: "Converse with a user"
+sidebarTitle: "Converse"
+description: "One route, one verb: respond() streams a turn back to a waiting person, carries the thread id in a header, and forwards the caller's own credentials to your API."
+---
+
+Someone is on the other end. `respond()` is one turn of that conversation: an
+AI-SDK UI-message-stream `Response` you return from a route unchanged.
+
+## Give it hands
+
+`api()` is your own API — `.vendo/tools.json`, layered overrides, and
+present-user header forwarding. `tool()` is anything you would rather write
+yourself, with its own auth model.
+
+```ts
+// lib/agent.ts
+import { agent, api, tool } from "@vendoai/agents";
+
+export const support = agent({
+  name: "support",
+  instructions: "Answer in the product's voice; never invent account numbers.",
+  tools: [
+    api(),
+    tool({
+      name: "refund_order",
+      description: "Refund an order in full.",
+      risk: "destructive",
+      inputSchema: {
+        type: "object",
+        properties: { orderId: { type: "string" } },
+        required: ["orderId"],
+      },
+      execute: async (input, ctx) => {
+        const { orderId } = input as { orderId: string };
+        await refundOrder(orderId, { owner: ctx.principal.subject });
+        return { refunded: orderId };
+      },
+    }),
+  ],
+});
+```
+
+**Label the risk.** `read`, `write`, or `destructive` — your label is final,
+and it is what decides whether a call runs or stops for the person. Leave it
+off and the tool is `ungraded`, which the guard treats like `destructive` and
+asks about every time. Details:
+[Tools and safety](/concepts/tools-and-safety).
+
+**Scope it to the caller.** The `orderId` came from the model; `ctx.principal`
+is who the turn acts as. Bind the two yourself — `api()` forwards the caller's
+credentials for you, but a hand-written `tool()` reaches your data on its own
+terms, and an unscoped lookup will act on someone else's order no matter how
+the approval card was answered.
+
+## The route
+
+```ts
+// app/api/support/route.ts
+import { support } from "@/lib/agent";
+import { auth } from "@/lib/auth";
+
+export async function POST(req: Request) {
+  const user = await auth(req);
+  if (user === null) return new Response("unauthorized", { status: 401 });
+
+  const { message, threadId } = (await req.json()) as {
+    message: string;
+    threadId?: string;
+  };
+
+  return support.respond(user.id, message, {
+    ...(threadId === undefined ? {} : { threadId }),
+    headers: req.headers,
+    user: { id: user.id, plan: user.plan },
+  });
+}
+```
+
+Three things are doing work there:
+
+- **`user.id` is the subject.** Every thread, every workspace file, and every
+  audit row is scoped to it. Vendo mints no identity of its own.
+- **`headers: req.headers`** forwards the caller's own credentials, so a tool
+  call reaches your API as the person who is signed in — not as the agent.
+- **`user`** is server-trusted identity the model may read (`[User]` in the
+  prompt). It is facts, not instructions. Free-form background the model
+  should treat as observation goes in `context` instead.
+
+## Continue the conversation
+
+The response carries the thread id in `x-vendo-thread-id`. Keep it and hand it
+back:
+
+```ts
+import { THREAD_ID_HEADER } from "@vendoai/agents";
+
+let threadId: string | null = null;
+
+const response = await fetch("/api/support", {
+  method: "POST",
+  body: JSON.stringify({ message, threadId }),
+});
+threadId = response.headers.get(THREAD_ID_HEADER);
+```
+
+A `threadId` is checked against the same subject that owns it. Someone else's
+thread — or one that never existed — is `not-found`, never a silent new
+conversation.
+
+## Approvals, with a person present
+
+An interactive turn can stop for the human. A `destructive` or `ungraded` call
+raises an approval, the stream carries the card, and the turn waits about 90
+seconds for a decision. Approve and the call re-dispatches byte-for-byte; deny
+and the model is told so and carries on.
+
+<Warning>
+  This is the interactive lane only. Inside `run()` there is nobody to ask —
+  the approval parks and the call comes back denied. See
+  [Approvals inside `run`](/agent-sdk/reference#approvals-inside-run).
+</Warning>
+
+<CardGroup cols={2}>
+  <Card title="Call it like a function" href="/agent-sdk/call">
+    The same agent, unattended, through the other verb.
+  </Card>
+  <Card title="Reference" href="/agent-sdk/reference#respond">
+    Every `RespondOptions` key and its type.
+  </Card>
+</CardGroup>

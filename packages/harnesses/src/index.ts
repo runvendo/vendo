@@ -20,11 +20,13 @@
 export { defineHarness } from "./define.js";
 export { assertHarnessComposable, type ComposedAdapters } from "./compose.js";
 export {
+  addUsage,
   createHarnessRuntime,
   type HarnessRuntime,
   type HarnessRuntimeDeps,
   type TranscriptStore,
   type TurnRunInput,
+  type UsageTotals,
 } from "./runtime.js";
 // `vendo()` itself stays on the ROOT barrel: `harness: vendo()` is the
 // umbrella's documented one-liner and `@vendoai/vendo` re-exports it from here.

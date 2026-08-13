@@ -1,8 +1,12 @@
 import {
+  PARKED_ACTION_COLLECTION,
+  PARKED_CALL_OUTCOME_COLLECTION,
   type AppId,
   type ApprovalId,
+  type ParkedCallOutcome,
   type RunContext,
   type ToolCall,
+  type ToolOutcome,
   type VendoRecord,
 } from "@vendoai/core";
 import type { EngineOps } from "./engine.js";
@@ -29,6 +33,12 @@ import { listAllEngineRecords } from "./persistence.js";
  * Hygiene mirrors the egress/exposure stores: records live in their own
  * collection keyed by app id (a copy's fresh id has none) and are cleared with
  * the app on delete.
+ *
+ * The resume ANSWER outlives the parked record: the surface that pressed the
+ * button has long since had its `pending-approval` back, so what happened is
+ * persisted as a {@link ParkedCallOutcome} — the same row (and drawer) the BYO
+ * lane writes — and `GET /approvals/:id` serves it to the waiting screen. Without
+ * it a gated press sat on "waiting for approval" forever even once it had run.
  */
 export interface ParkedAction {
   /** The guard approval that gates this call. */
@@ -47,7 +57,7 @@ export interface ParkedAction {
   ctx: RunContext;
 }
 
-const COLLECTION = "vendo_parked_action";
+const COLLECTION = PARKED_ACTION_COLLECTION;
 
 const parkedData = (record: VendoRecord): ParkedAction => record.data as ParkedAction;
 
@@ -59,6 +69,13 @@ export interface ParkedActions {
   put(action: ParkedAction): Promise<void>;
   /** The action riding a specific guard approval id, or null if none. */
   byApproval(approvalId: ApprovalId): Promise<ParkedAction | null>;
+  /** Record what the decision did with the action, for the surface that parked
+   *  it to read back. "expired" is not in this lane's vocabulary: a TTL sweep
+   *  reaches the guard's deny path, which reports itself as a plain denial. */
+  resolve(
+    action: ParkedAction,
+    result: { state: "executed"; outcome: ToolOutcome } | { state: "declined" },
+  ): Promise<void>;
   /** Clear the parked action for one approval (its approval was decided, either way). */
   remove(approvalId: ApprovalId): Promise<void>;
   /** Delete every parked action for one app (app deletion cleanup). */
@@ -77,6 +94,19 @@ export const createParkedActions = (engine: EngineOps): ParkedActions => {
     async byApproval(approvalId) {
       const record = await engine.get(COLLECTION, approvalId);
       return record === null ? null : parkedData(record);
+    },
+    async resolve(action, result) {
+      const outcome: ParkedCallOutcome = {
+        approvalId: action.approvalId,
+        owner: action.owner,
+        ...result,
+        at: new Date().toISOString(),
+      };
+      await engine.put(PARKED_CALL_OUTCOME_COLLECTION, {
+        id: outcome.approvalId,
+        data: outcome,
+        refs: { subject: outcome.owner, state: outcome.state },
+      });
     },
     async remove(approvalId) {
       await engine.delete(COLLECTION, approvalId);

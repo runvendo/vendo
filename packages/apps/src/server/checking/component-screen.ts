@@ -50,25 +50,28 @@ import {
 } from "../../contract/index.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import {
-  bootScreen,
-  flattenTree,
   SCREEN_TEXT_NODE,
-  ScreenError,
-  warmScreenEngine,
   type FlatTree,
-  type ScreenInstance,
+  type ScreenErrorKind,
 } from "../../contract/genui/component/index.js";
 import { isMutatingTool, type HostToolInfo } from "./deps.js";
 import { catalogIssues, factIssueLine } from "./facts.js";
 import { sampleLines } from "./reviewer.js";
+import { list, QUERY_HOOK } from "./screen-typecheck.js";
 import {
   componentScreenTypings,
   screenCatalogNames,
   SCREEN_MODULE,
   type ScreenCatalogEntry,
 } from "./screen-typings.js";
-import { diagnosticLine, screenProgram, translateDiagnostic } from "./screen-tsc.js";
-import type TS from "typescript";
+import {
+  defaultToolchain,
+  ScreenToolchainUnavailable,
+  type ScreenPaintResult,
+  type ScreenToolchain,
+  type ScreenTransform,
+  type ScreenTypecheckResult,
+} from "./toolchain.js";
 
 // ---- the contract ---------------------------------------------------------
 
@@ -140,6 +143,10 @@ export interface ComponentScreenOptions {
   /** The trusted executor, injected by the caller: this check runs the screen's
    *  queries for real, and it is the caller who holds the guard-bound registry. */
   runQuery: (tool: string, input?: unknown) => Promise<unknown>;
+  /** What compiles, type-checks and paints the screen — the one thing in this
+   *  gauntlet that cannot run in every venue. Unset, this process's own
+   *  ({@link defaultToolchain}); the floor names it one layer up. */
+  toolchain?: ScreenToolchain;
 }
 
 const issue = (code: string, message: string): ComponentScreenIssue => ({ code, message });
@@ -150,44 +157,6 @@ const refuse = (
 ): ComponentScreenCheck => ({ ok: false, issues, ...rest });
 
 // ---- stage 1: compile -----------------------------------------------------
-
-/** esbuild, lazily and bundler-safely: routed through a mutable binding so NO
- *  bundler statically resolves the compiler (Wrangler ignores the webpack-dialect
- *  comments and would inline esbuild's Node-only main into a Worker bundle — the
- *  portability gate's field failure). Same pattern as smoke-render.ts.
- *
- *  Unlike the smoke gate, an unavailable compiler here is a FAILED check, not a
- *  skipped one: nothing downstream can run without the compiled screen, and a
- *  gate that read nothing must not answer "fine". */
-let ESBUILD_SPECIFIER = "esbuild";
-
-/**
- * The two forms of one screen file, and why they differ.
- *
- * - `engine` is what {@link bootScreen} evaluates: CommonJS, because the VM
- *   hosts a `require` and no module loader, and the AUTOMATIC jsx transform,
- *   because the VM publishes `react/jsx-runtime` and has no bare `React` global
- *   (contract/genui/component/vm-program.ts). Classic mode compiles to
- *   `React.createElement`, which is a ReferenceError in there.
- * - `scan` is what the scan reads: the module form, so the author's imports and
- *   default export are still visible (CJS renames every import into a namespace
- *   access), with the CLASSIC transform, so the compiler's own
- *   `react/jsx-runtime` import does not read as an import the author wrote.
- */
-type ScreenForm = "engine" | "scan";
-
-type Transform = (source: string, form: ScreenForm) => string;
-
-const esbuildTransform: Promise<Transform | undefined> = (async () => {
-  try {
-    const esbuild = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ ESBUILD_SPECIFIER) as typeof import("esbuild");
-    return (source, form) => esbuild.transformSync(source, form === "engine"
-      ? { loader: "tsx", format: "cjs", target: "es2020", jsx: "automatic" }
-      : { loader: "tsx", format: "esm", target: "es2020" }).code;
-  } catch {
-    return undefined;
-  }
-})();
 
 /** esbuild reports a location; a screen author's repair starts from the line. */
 const compileMessage = (error: unknown): string => {
@@ -217,6 +186,32 @@ const childNodes = (node: Node): Node[] => {
 };
 
 const FUNCTION_TYPES = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
+
+/**
+ * What owns the code inside it, for the render-time question alone: every
+ * function, plus an INSTANCE field initializer.
+ *
+ * The distinction is when the body runs. An instance field runs on `new`, so
+ * its calls belong to whoever constructs the class — attributing them to the
+ * render that merely encloses the class declaration refuses a screen whose
+ * author did precisely what the refusal asks for. A STATIC field runs when the
+ * class definition itself is evaluated, which IS the render, so it stays
+ * attributed to the render and keeps earning `tool-at-render`.
+ *
+ * Kept apart from FUNCTION_TYPES on purpose: that set answers a different
+ * question — "could this node BE the component" — and must stay functions only.
+ */
+const ownsItsScope = (node: Node): boolean =>
+  FUNCTION_TYPES.has(node.type)
+  || (node.type === "PropertyDefinition" && (node as unknown as { static?: boolean }).static !== true);
+
+/** A class `static {}` block anywhere in the module — an AST question, because
+ *  `static {` is also ordinary prose: it turns up in strings, in comments and in
+ *  JSX text, and a screen that merely SAYS it is not a screen that DOES it. The
+ *  scan form is compiled to es2022 precisely so the block survives as a node to
+ *  find; at es2020 esbuild lowers it away and there is nothing left to ask. */
+const hasStaticBlock = (node: Node): boolean =>
+  node.type === "StaticBlock" || childNodes(node).some(hasStaticBlock);
 
 interface CallNode extends Node {
   callee: Node;
@@ -291,7 +286,40 @@ const literalValue = (node: Node): { ok: true; value: unknown } | { ok: false } 
 
 const ALLOWED_IMPORTS: readonly string[] = ["react", SCREEN_MODULE];
 
-const QUERY_HOOK = "useQuery";
+/**
+ * A `namespace` block, off the AUTHOR's source — the module form cannot answer
+ * this. esbuild lowers a namespace to an IIFE and a types-only transform has no
+ * output form for one at all, so by the time there is a parsed module the
+ * construct is gone either way.
+ *
+ * Text matching is therefore the only reading available, and it is written to
+ * fail CLOSED: `\s` on both sides so a brace on the next line still counts, and
+ * a non-identifier lookbehind rather than a line anchor so `const x = 1;
+ * namespace Foo {` is seen — those were misses, and a guard that misses admits
+ * the very screen it exists to catch.
+ *
+ * The residual runs the other way, and it is the WHOLE of the author's file:
+ * this reads raw text, so the words `namespace X {` are refused wherever they
+ * appear — in a line comment, in a block comment, in a string, in a template
+ * literal, in JSX text. Nothing here strips any of those, and a screen that
+ * merely SAYS the construct is refused as if it declared one. That is the
+ * accepted price: unlike the `static {}` guard, no AST can answer this, because
+ * every toolchain erases the construct before there is a tree to read. A false
+ * refusal costs one repair round on a screen nobody writes; a miss ships a
+ * screen that paints differently in two venues. `scan-fidelity.test.ts` pins
+ * this behaviour deliberately, so that closing it cannot silently reopen the
+ * `namespace Foo\n{` miss.
+ *
+ * One residual runs the OTHER way and is accepted on the same terms: `\s` does
+ * not match a comment, so a REAL declaration with a block comment between the
+ * keyword, the name or the brace is admitted — those shapes pass the whole
+ * gauntlet, which is a miss and not a false refusal. The
+ * only fix is lexing the file to read through comments, and this guard exists
+ * precisely because there is no parse of the construct to lean on. Pinned in the
+ * same place as the false positives, so the accepted set is honest in both
+ * directions.
+ */
+const NAMESPACE_BLOCK = /(?<![\w$])namespace\s+([A-Za-z_$][\w$.]*)\s*\{/u;
 
 /** The import block is not `tools` USAGE: `import { tools } from "@vendo/screen"`
  *  puts the name in expression position (a `{` to its left), which the shipped
@@ -372,16 +400,17 @@ interface ScanResult {
   queryPlan: QueryPlanEntry[];
 }
 
-const list = (names: readonly string[]): string => (names.length === 0 ? "(none)" : names.join(", "));
-
-const scan = (moduleSource: string, tools: readonly HostToolInfo[]): ScanResult => {
+const scan = (moduleSource: string, source: string, tools: readonly HostToolInfo[]): ScanResult => {
   const issues: ComponentScreenIssue[] = [];
   const queryPlan: QueryPlanEntry[] = [];
   let program: Program;
   try {
-    // The input is esbuild's own ES2020 output, so the edition is pinned rather
-    // than "latest": the grammar a screen is admitted under must not move when
-    // the parser is upgraded (genui/expr.ts pins it for the same reason).
+    // The input is esbuild's own ES2022 output, and the edition is pinned to
+    // match rather than "latest": the grammar a screen is admitted under must
+    // not move when the parser is upgraded (genui/expr.ts pins it for the same
+    // reason). 2022 is also the edition that HAS `StaticBlock` — pinned lower,
+    // the parser would reject the block outright and the guard below could
+    // never name it.
     program = parse(moduleSource, { ecmaVersion: 2022, sourceType: "module" });
   } catch (error) {
     return { issues: [issue("compile", `does not parse as a module: ${error instanceof Error ? error.message : String(error)}`)], queryPlan };
@@ -391,7 +420,16 @@ const scan = (moduleSource: string, tools: readonly HostToolInfo[]): ScanResult 
   const readable = tools.filter((tool) => !isMutatingTool(tool)).map((tool) => tool.name);
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
 
-  // (a) the import surface. An UNUSED disallowed import is elided by the
+  // (a) the two constructs whose compiled form depends on which toolchain ran.
+  const namespaced = NAMESPACE_BLOCK.exec(source);
+  if (namespaced !== null) {
+    issues.push(issue("namespace", `declares a namespace block (namespace ${namespaced[1]} { … }) — a screen is compiled by a types-only transform, which has no output form for one, so this file would compile in one venue and not in another. A screen is ONE file and needs no inner scope: write plain top-level consts, functions and types instead.`));
+  }
+  if (hasStaticBlock(program)) {
+    issues.push(issue("static-block", `writes a class static initializer block (static { … }) — a screen is compiled by a types-only transform, which emits the class as written, so this block reaches the screen VM unlowered and the same file does not run the same in every venue. Do that work in the component body, or in a plain top-level const.`));
+  }
+
+  // (b) the import surface. An UNUSED disallowed import is elided by the
   // transform before it reaches here — and it cannot affect the screen either,
   // since nothing requires it; the type check still sees it in the source.
   for (const statement of program.body) {
@@ -427,7 +465,7 @@ const scan = (moduleSource: string, tools: readonly HostToolInfo[]): ScanResult 
         }
       }
     }
-    const inner = FUNCTION_TYPES.has(node.type) ? node : nearestFunction;
+    const inner = ownsItsScope(node) ? node : nearestFunction;
     for (const child of childNodes(node)) visit(child, inner);
   };
   visit(program, undefined);
@@ -519,146 +557,15 @@ const announceUntyped = (notes: readonly string[]): void => {
   console.warn(`[vendo] component screen type check: ${fresh.length} schema construct(s) could not be typed, so they are UNCHECKED — ${fresh.join("; ")}`);
 };
 
-/** "Cannot find name X", in all its forms. 2304 is the plain one and 2552 the
- *  one with a spelling suggestion; the 258x family is the SAME error with a
- *  "change your target library" or "install @types/…" hint attached — advice a
- *  screen author cannot act on, since there is no tsconfig here and the missing
- *  lib (`dom`) is missing on purpose. */
-const UNKNOWN_NAME = new Set([2304, 2552, 2580, 2581, 2582, 2583, 2584, 2591, 2592, 2593]);
-const MISSING_PROPERTY = new Set([2339, 2551]);
-const NO_SUCH_EXPORT = new Set([2305, 2724]);
-const MISSING_MODULE = new Set([2307, 2792]);
-// 2353 is the excess-property error on its own, which is how a misspelled tool
-// payload key arrives.
-const BAD_CALL = new Set([2345, 2769, 2353]);
-
-const INTRINSIC_ELEMENT = /Property '([^']+)' does not exist on type 'JSX\.IntrinsicElements'/u;
-
-/** The deepest node covering a diagnostic — the same descent screen-tsc.ts uses
- *  to anchor its own findings. */
-const nodeAt = (ts: typeof TS, file: TS.SourceFile, diagnostic: TS.Diagnostic): TS.Node => {
-  const start = diagnostic.start ?? 0;
-  const end = start + (diagnostic.length ?? 0);
-  let best: TS.Node = file;
-  const descend = (node: TS.Node): void => {
-    if (node.getStart(file) > start || end > node.getEnd()) return;
-    best = node;
-    ts.forEachChild(node, descend);
-  };
-  ts.forEachChild(file, descend);
-  return best;
-};
-
-/** The nearest enclosing call whose ARGUMENT holds the diagnostic, with the
- *  keys that argument's type really accepts. */
-const badPayloadMessage = (
-  ts: typeof TS,
-  file: TS.SourceFile,
-  checker: TS.TypeChecker,
-  diagnostic: TS.Diagnostic,
-  sentence: string,
-): string | undefined => {
-  const start = diagnostic.start ?? 0;
-  const end = start + (diagnostic.length ?? 0);
-  const covers = (node: TS.Node): boolean => node.getStart(file) <= start && end <= node.getEnd();
-  for (let current: TS.Node | undefined = nodeAt(ts, file, diagnostic); current !== undefined; current = current.parent) {
-    if (!ts.isCallExpression(current)) continue;
-    const index = current.arguments.findIndex(covers);
-    if (index < 0) continue;
-    const callee = current.expression.getText(file);
-    if (!callee.startsWith("tools.") && callee !== QUERY_HOOK) return undefined;
-    const parameter = checker.getResolvedSignature(current)?.getParameters()[index];
-    const type = parameter === undefined ? undefined : checker.getTypeOfSymbolAtLocation(parameter, current);
-    const properties = type === undefined ? [] : checker.getPropertiesOfType(type);
-    const required = properties
-      .filter((symbol) => (symbol.flags & ts.SymbolFlags.Optional) === 0)
-      .map((symbol) => symbol.getName());
-    return `calls ${callee}(…) with an input its schema does not accept: ${sentence}`
-      + (properties.length === 0
-        ? ""
-        : ` Its input keys are: ${list(properties.map((symbol) => symbol.getName()))}${required.length === 0 ? "" : ` (required: ${required.join(", ")})`}.`);
-  }
-  return undefined;
-};
-
-/** One diagnostic as a repair instruction.
- *
- * Only the classes whose prose is specific to THIS dialect are written here —
- * the surface is two modules, there is no DOM, and a tool payload is a schema.
- * Everything else is handed to the wire screen's own translator, which already
- * says the right thing about props, arguments and missing fields. */
-const typeIssue = (
-  ts: typeof TS,
-  file: TS.SourceFile,
-  checker: TS.TypeChecker,
-  diagnostic: TS.Diagnostic,
-  surface: { components: readonly string[] },
-): ComponentScreenIssue | undefined => {
-  const line = diagnosticLine(file, diagnostic);
-  const sentence = ts.flattenDiagnosticMessageText(diagnostic.messageText, " ");
-  const at = (message: string): ComponentScreenIssue => issue("types", `line ${line}: ${message}`);
-  const node = nodeAt(ts, file, diagnostic);
-  // A bad tag is reported twice, on `<div>` and again on `</div>`. The closing
-  // one is the same break, and a repair list that says everything twice reads
-  // as two problems.
-  if (ts.isJsxClosingElement(node) || (node.parent !== undefined && ts.isJsxClosingElement(node.parent))) {
-    return undefined;
-  }
-
-  const intrinsic = INTRINSIC_ELEMENT.exec(sentence);
-  if (intrinsic !== null) {
-    return at(`writes the HTML element <${intrinsic[1]}> — a screen has no HTML elements. It renders only the components it imports from ${JSON.stringify(SCREEN_MODULE)}: ${list(surface.components)}. Lay out with <Stack>/<Row>/<Grid> and write text with <Text>.`);
-  }
-
-  if (UNKNOWN_NAME.has(diagnostic.code)) {
-    // The compiler anchors a tag error on the whole tag as often as on the name
-    // inside it, so the element is read from either.
-    const element = ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)
-      ? node
-      : (node.parent !== undefined && (ts.isJsxOpeningElement(node.parent) || ts.isJsxSelfClosingElement(node.parent))
-        ? node.parent
-        : undefined);
-    return at(element === undefined
-      ? `reads the name "${node.getText(file)}", which does not exist inside a screen — there is no DOM, no window/document, no fetch, no timers and no process here. Read data with ${QUERY_HOOK}("tool_name"), act with tools.tool_name(args), and import anything else from "react" or ${JSON.stringify(SCREEN_MODULE)}.`
-      : `renders <${element.tagName.getText(file)}>, which this screen never imported — import the component from ${JSON.stringify(SCREEN_MODULE)}. The components available are: ${list(surface.components)}.`);
-  }
-
-  if (NO_SUCH_EXPORT.has(diagnostic.code)) {
-    return at(`${sentence} The screen surface is ${QUERY_HOOK}, tools, and these components: ${list(surface.components)}.`);
-  }
-
-  if (MISSING_MODULE.has(diagnostic.code)) {
-    return at(`${sentence} A screen may import only "react" and ${JSON.stringify(SCREEN_MODULE)}.`);
-  }
-
-  if (BAD_CALL.has(diagnostic.code)) {
-    const payload = badPayloadMessage(ts, file, checker, diagnostic, sentence);
-    if (payload !== undefined) return at(payload);
-  }
-
-  if (MISSING_PROPERTY.has(diagnostic.code) || BAD_CALL.has(diagnostic.code) || diagnostic.code === 2322) {
-    const [reused] = translateDiagnostic(ts, file, checker, diagnostic);
-    // The wire translator's `where` is a locus its sentence sometimes states
-    // itself, and prefixing it anyway said `prop "variant" prop "variant" on
-    // <Text> takes …`. A sentence that names its own locus stands alone; the
-    // line number is already the prefix here either way.
-    if (reused !== undefined) {
-      return at(reused.message.startsWith("prop \"") ? reused.message : `${reused.where} ${reused.message}`);
-    }
-  }
-
-  return at(sentence);
-};
-
 // ---- stage 4: run once ----------------------------------------------------
 
 /** What went wrong inside the VM, said as a repair. A `render` or `budget`
  *  failure is RELAYED: the engine writes those messages to be read by whatever
  *  repairs the screen, and a second sentence of advice on top of them only says
  *  the same thing twice. A throw is the class that needs the advice. */
-const renderMessage = (error: unknown): string => {
-  const message = (error instanceof Error ? error.message : String(error)).split("\n")[0] ?? "";
-  if (error instanceof ScreenError && (error.kind === "render" || error.kind === "budget")) {
+const renderMessage = (kind: ScreenErrorKind, thrown: string): string => {
+  const message = thrown.split("\n")[0] ?? "";
+  if (kind === "render" || kind === "budget") {
     return `the screen would not paint: ${message}`;
   }
   return `the screen threw while rendering against the data its queries really returned: ${message}`
@@ -673,21 +580,22 @@ const renderMessage = (error: unknown): string => {
  * consequences of a break it has not fixed yet.
  */
 export async function checkComponentScreen(opts: ComponentScreenOptions): Promise<ComponentScreenCheck> {
-  const transform = await esbuildTransform;
-  if (transform === undefined) {
-    return refuse([issue("compile", "the screen could not be compiled: no esbuild is reachable from @vendoai/apps, so nothing about this screen was checked. This check refuses to pass a screen it never read.")]);
-  }
+  const toolchain = opts.toolchain ?? defaultToolchain();
 
-  let compiled: string;
-  let moduleForm: string;
+  let forms: ScreenTransform;
   try {
-    compiled = transform(opts.source, "engine");
-    moduleForm = transform(opts.source, "scan");
+    forms = await toolchain.transform(opts.source);
   } catch (error) {
-    return refuse([issue("compile", compileMessage(error))]);
+    // A toolchain that cannot compile is a FAILED check, not a skipped one:
+    // nothing downstream can run without the compiled screen, and a gate that
+    // read nothing must not answer "fine".
+    return refuse([issue("compile", error instanceof ScreenToolchainUnavailable
+      ? `the screen could not be compiled: ${error.message}, so nothing about this screen was checked. This check refuses to pass a screen it never read.`
+      : compileMessage(error))]);
   }
+  const compiled = forms.engine;
 
-  const scanned = scan(moduleForm, opts.hostTools);
+  const scanned = scan(forms.scan, opts.source, opts.hostTools);
   if (scanned.issues.length > 0) return refuse(scanned.issues, { compiled });
   const queryPlan = scanned.queryPlan;
 
@@ -704,19 +612,24 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
   });
   announceUntyped(notes);
 
-  const program = screenProgram({ screen: opts.source, typings, lib: COMPONENT_SCREEN_LIB });
-  if (!program.ok) {
-    return refuse([issue("typecheck-unavailable", `the screen could not be type-checked: ${program.why}. This check refuses to pass a screen it never read — make the TypeScript compiler reachable where the build runs.`)], { compiled, queryPlan });
+  let typed: ScreenTypecheckResult;
+  try {
+    typed = await toolchain.typecheck({
+      source: opts.source,
+      typings,
+      lib: COMPONENT_SCREEN_LIB,
+      components: names,
+    });
+  } catch (error) {
+    // A toolchain reached over a service binding reports failure by THROWING —
+    // only an in-process one can answer `{ ok: false }`. Both are the same
+    // unavailable, and an RPC that broke is a refusal, never a silent pass.
+    typed = { ok: false, why: error instanceof Error ? error.message : String(error) };
   }
-  const surface = { components: [...new Set(names)] };
-  const typeIssues = [
-    ...program.syntactic.map((diagnostic) => issue("types", `line ${diagnosticLine(program.file, diagnostic)}: does not parse as a screen: ${program.ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`)),
-    ...program.semantic.flatMap((diagnostic) => {
-      const found = typeIssue(program.ts, program.file, program.checker, diagnostic, surface);
-      return found === undefined ? [] : [found];
-    }),
-  ];
-  if (typeIssues.length > 0) return refuse(typeIssues, { compiled, queryPlan });
+  if (!typed.ok) {
+    return refuse([issue("typecheck-unavailable", `the screen could not be type-checked: ${typed.why}. This check refuses to pass a screen it never read — make the TypeScript compiler reachable where the build runs.`)], { compiled, queryPlan });
+  }
+  if (typed.issues.length > 0) return refuse([...typed.issues], { compiled, queryPlan });
 
   // The engine keys its results by TOOL, one entry each — which is why the scan
   // refuses a screen that reads one tool with two different inputs.
@@ -729,29 +642,21 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
     }
   }
 
+  let painted: ScreenPaintResult;
   try {
-    await warmScreenEngine();
+    // A clock IS given: the surface renders with one, and a gate that is
+    // stricter than production blocks screens that work.
+    painted = await toolchain.paint({ compiledSource: compiled, queries, catalog: names, now: Date.now() });
   } catch (error) {
+    // A paint answers a screen that failed with a verdict, so a THROW is the
+    // engine itself never starting.
     return refuse([issue("run", `the screen was never executed: the screen engine would not start (${error instanceof Error ? error.message : String(error)}). This check refuses to pass a screen it could not render.`)], { compiled, queryPlan });
   }
+  if (!painted.ok) {
+    return refuse([issue("run", renderMessage(painted.kind, painted.message))], { compiled, queryPlan });
+  }
 
-  const rendered = ((): { ok: true; tree: FlatTree } | { ok: false; message: string } => {
-    let instance: ScreenInstance | undefined;
-    try {
-      // A clock IS given: the surface renders with one, and a gate that is
-      // stricter than production blocks screens that work.
-      instance = bootScreen({ compiledSource: compiled, queries, catalog: names, now: Date.now() });
-      return { ok: true, tree: flattenTree(instance.tree()) };
-    } catch (error) {
-      return { ok: false, message: renderMessage(error) };
-    } finally {
-      // A dispose that throws is not the screen's verdict.
-      try { instance?.dispose(); } catch { /* ignore */ }
-    }
-  })();
-  if (!rendered.ok) return refuse([issue("run", rendered.message)], { compiled, queryPlan });
-
-  const initialTree = rendered.tree;
+  const initialTree = painted.tree;
   const treeIssues = await treeCheckIssues(initialTree, names);
   if (treeIssues.length > 0) return refuse(treeIssues, { compiled, queryPlan, initialTree });
 

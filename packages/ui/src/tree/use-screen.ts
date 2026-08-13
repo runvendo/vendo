@@ -57,6 +57,11 @@ export interface ScreenBridge {
   /** Handler ids with an intent in flight — their control renders disabled. */
   inFlight: ReadonlySet<string>;
   fire(nodeId: string, handlerId: string, event?: unknown): void;
+  /** Re-read the plan and re-boot on the answer — the same cycle a changed
+   *  action runs. Public for the one change that arrives from OUTSIDE a press:
+   *  an approval decided elsewhere, whose resumed call already moved the data
+   *  this screen is painted from (parked-approvals.ts). */
+  refresh(nodeId: string): Promise<void>;
 }
 
 export interface ScreenBridgeInput {
@@ -241,5 +246,5 @@ export function useScreen(input: ScreenBridgeInput): ScreenBridge {
   // reaches the newest one through here.
   latest.current = { interactive, base, catalog, onFailure, fire };
 
-  return { tree, inFlight, fire };
+  return { tree, inFlight, fire, refresh };
 }

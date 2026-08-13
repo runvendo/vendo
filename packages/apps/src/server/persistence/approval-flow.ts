@@ -198,8 +198,15 @@ const subscribeApprovalDecisions = (
       try {
         // Contained: a failed resume must never roll back the approval (the
         // guard already swallows subscriber throws, but be explicit here so
-        // the record is always cleared).
-        if (approved) await config.tools.execute(parkedAction.call, parkedAction.ctx);
+        // the record is always cleared). The resume's ANSWER is persisted
+        // beside the effect — the screen that pressed the button is not on this
+        // call stack and learns what happened only by reading it back.
+        if (approved) {
+          const outcome = await config.tools.execute(parkedAction.call, parkedAction.ctx);
+          await parkedActions.resolve(parkedAction, { state: "executed", outcome });
+        } else {
+          await parkedActions.resolve(parkedAction, { state: "declined" });
+        }
       } finally {
         await parkedActions.remove(id);
       }

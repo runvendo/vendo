@@ -1,0 +1,102 @@
+---
+title: "Call it like a function"
+sidebarTitle: "Call"
+description: "run() with an output schema returns validated, typed data instead of prose — and the report's usage totals are what you meter and bill on."
+---
+
+Sometimes the caller is code, not a person, and prose is the wrong answer.
+Hand `run()` a schema and the report comes back with typed `output`.
+
+## Typed output
+
+```ts
+// lib/triage.ts
+import { support } from "@/lib/agent";
+import { z } from "zod";
+
+const Triage = z.object({
+  category: z.enum(["billing", "bug", "feature", "other"]),
+  urgency: z.number().int().min(1).max(5),
+  reply: z.string(),
+});
+
+export async function triage(ticketId: string, ownerId: string) {
+  const report = await support.run(`Triage support ticket ${ticketId}.`, {
+    as: `user:${ownerId}`,
+    output: Triage,
+  });
+
+  if (report.status !== "ok" || report.output === undefined) {
+    throw new Error(`triage ${report.status}: ${report.summary}`);
+  }
+
+  return report.output; // { category, urgency, reply }, typed
+}
+```
+
+`output` takes any AI-SDK `FlexibleSchema` — a zod schema is the usual one —
+and the result is **validated** before it reaches you. `T` is inferred from
+the schema, so `report.output` is typed without a cast.
+
+Leave `output` unset and it costs nothing: no schema is sent, and
+`report.output` is simply absent.
+
+<Warning>
+  The result channel is the one call in a `run()` that is not guarded — it
+  reaches nothing, so it always comes back. **Your own tools are the opposite:**
+  every host tool call in an unattended run parks for approval and comes back
+  denied, so a typed run answers from the model and whatever you put in the
+  task.
+</Warning>
+
+<Note>
+  `status` is `"ok"`, `"error"`, or `"stopped"`. Check it before you trust
+  `output` — a run that was aborted or hit its `maxToolCalls` budget is
+  `"stopped"`, and it still returns a report.
+</Note>
+
+## Meter on `usage`
+
+Every report carries the run's token totals. This is the number to bill,
+budget, and alert on — nothing else in the SDK counts for you.
+
+```ts
+const report = await support.run(task, { as: subject, output: Triage });
+
+await meter.record(ownerId, {
+  input: report.usage.inputTokens,
+  output: report.usage.outputTokens,
+  cacheRead: report.usage.cacheReadTokens ?? 0,
+  cacheWrite: report.usage.cacheWriteTokens ?? 0,
+  model: report.usage.model,
+});
+```
+
+`report.toolCalls` is the other half of the picture: the calls the run
+attempted, in order, each with the outcome the guard returned. A run that came
+back `"ok"` with zero tool calls answered from the model alone.
+
+## Cancel it
+
+There is no `cancel()`. Cancellation is an `AbortSignal`, the same as
+everywhere else on the platform:
+
+```ts
+const report = await support.run(task, {
+  as: subject,
+  signal: AbortSignal.timeout(60_000),
+});
+// report.status === "stopped"
+```
+
+An aborted run still returns a report — the summary, the calls it made, and
+the usage it spent are all preserved.
+
+<CardGroup cols={2}>
+  <Card title="Ship it as a product surface" href="/agent-sdk/product-run">
+    The same run, streamed to a screen you built.
+  </Card>
+  <Card title="Reference" href="/agent-sdk/reference#agentreport">
+    Every field on `AgentReport`, including `refs` and `usage`.
+  </Card>
+</CardGroup>

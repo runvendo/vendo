@@ -22,6 +22,13 @@ export { VendoTrigger, type VendoTriggerProps } from "./vendo-trigger.js";
 export { VendoPalette, type VendoCommand } from "./vendo-palette.js";
 export { type HotkeyChord, type PaletteHotkey } from "./palette-hotkey.js";
 export { VendoSlot } from "./vendo-slot.js";
+/** Re-exported beside VendoSlot: it is the shape of that component's
+    `onParked` prop, and defined with the tree that fires it. */
+export type { ParkedPress } from "../tree/renderer.js";
+/** Public because the thread is an eject surface: `thread/parts.tsx` mounts the
+    approval modal per app card, so the hook is API by construction — and a host
+    building its own surface needs the same seam to give parked presses an ask. */
+export { useApprovalModal, type ParkedApproval } from "./approval-modal.js";
 export { VendoThread, type VendoThreadProps } from "./thread/index.js";
 export { VendoToasts, vendoToast, dismissAllVendoToasts, type VendoToastsProps, type VendoToastInput, type VendoToastAction } from "./vendo-toasts.js";
 

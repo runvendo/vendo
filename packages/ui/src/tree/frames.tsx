@@ -3,7 +3,7 @@ import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
 import type { OpenSurface } from "../wire-types.js";
 import { applyFrameResize, FRAME_MAX_HEIGHT_CSS } from "./frame-resize.js";
 import { ContainedNotice } from "./notice.js";
-import { PayloadView } from "./renderer.js";
+import { PayloadView, type ParkedPress } from "./renderer.js";
 import { Skeleton } from "./forming-skeleton.js";
 
 /**
@@ -33,6 +33,9 @@ export interface AppFrameProps {
   components?: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction?(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
+  /** A press parked on an approval (tree surfaces only) — renderer.tsx's
+   *  TreeViewProps documents what a surface does with it. */
+  onParked?: (parked: ParkedPress) => void;
   onStateChange?(state: Record<string, Json>): void;
   /** Keepalive for an embedded served app (http surfaces only). */
   keepalive?: AppFrameKeepalive;
@@ -163,7 +166,7 @@ function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepal
 }
 
 /** 08-ui §5; 06-apps §1 — render every app execution plane fail-soft. */
-export function AppFrame({ surface, appId, components = {}, data, onAction = unavailableAction, onStateChange, keepalive }: AppFrameProps) {
+export function AppFrame({ surface, appId, components = {}, data, onAction = unavailableAction, onParked, onStateChange, keepalive }: AppFrameProps) {
   if (surface.kind === "http") {
     return <HttpFrame url={surface.url} keepalive={keepalive} />;
   }
@@ -183,6 +186,7 @@ export function AppFrame({ surface, appId, components = {}, data, onAction = una
         components={components}
         data={data}
         onAction={onAction}
+        onParked={onParked}
         onStateChange={onStateChange}
       />
     );

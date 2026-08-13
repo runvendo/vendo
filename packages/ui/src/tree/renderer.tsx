@@ -6,6 +6,7 @@ import {
   isPathBinding,
   isStateBinding,
   VENDO_TREE_FORMAT,
+  type ApprovalId,
   type Json,
   type PathBinding,
   type ToolOutcome,
@@ -21,9 +22,11 @@ import {
 } from "@vendoai/apps/contract";
 import { convertPayload } from "./convert-payload.js";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentType,
   type ReactNode,
@@ -38,11 +41,19 @@ import { deriveFormShape, FormingSkeleton, PendingLeaf } from "./forming-skeleto
 import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
+import { playNodeMotion, useMotionLayoutEffect, useRepaintMotion, type NodeMark } from "./repaint-motion.js";
 import { KIT_COMPONENTS } from "../kit/registry.js";
 import { markHandlerCallback, screenEvent } from "../kit/handler.js";
 import { useKeyedState } from "../kit/state.js";
+import { useParkedApprovals } from "./parked-approvals.js";
 import type { ScreenInteractive, ScreenQuery } from "./screen-engine.js";
 import { useScreen, type ScreenBridge } from "./use-screen.js";
+
+/** A press the guard sent to approval, announced through `onParked`. */
+export interface ParkedPress {
+  nodeId: string;
+  approvalId: ApprovalId;
+}
 
 export interface TreeViewProps {
   tree: WalkTree;
@@ -55,6 +66,13 @@ export interface TreeViewProps {
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
+  /**
+   * Fires the instant a press is PARKED on an approval. The tree resolves the
+   * approval on its own (parked-approvals.ts) and repaints when it lands; this
+   * is the seam for a surface that wants to put the decision in front of the
+   * person instead of leaving them to go find it.
+   */
+  onParked?: (parked: ParkedPress) => void;
   /**
    * 08-ui §5; 06-apps §6 — additive persistence hook for TreeView-local `$state`.
    * It fires with the complete state map after every jail `state-set` message.
@@ -77,6 +95,8 @@ export interface PayloadRendererProps {
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
+  /** As {@link TreeViewProps.onParked}. */
+  onParked?: (parked: ParkedPress) => void;
   onStateChange?(state: Record<string, Json>): void;
 }
 
@@ -350,12 +370,25 @@ const dataShapeNotice = (mismatch: string, streaming: boolean, name: string): Re
     </ContainedNotice>
   );
 
-function outcomeNotice(outcome: ToolOutcome | undefined): ReactNode {
+function outcomeNotice(
+  outcome: ToolOutcome | undefined,
+  /** Re-raise this node's park. Absent when nobody is listening for one. */
+  onReview?: (approvalId: ApprovalId) => void,
+): ReactNode {
   if (!outcome || outcome.status === "ok") return null;
   if (outcome.status === "pending-approval") {
+    // The ask can be dismissed (Esc closes the modal without deciding), and
+    // this notice is the way back to it — the SAME box, now pressable, rather
+    // than a second affordance nobody would find. The id stays a dev-mode aid.
+    const approvalId = outcome.approvalId;
     return (
-      <ContainedNotice label="Action pending approval" outcome={outcome.status}>
-        {`Action is waiting for approval (${outcome.approvalId}).`}
+      <ContainedNotice
+        label="Action pending approval"
+        outcome={outcome.status}
+        detail={`(${approvalId})`}
+        {...(onReview === undefined ? {} : { onPress: () => onReview(approvalId) })}
+      >
+        {onReview === undefined ? "Waiting for your approval." : "Waiting for your approval — review"}
       </ContainedNotice>
     );
   }
@@ -370,6 +403,36 @@ function outcomeNotice(outcome: ToolOutcome | undefined): ReactNode {
     );
   }
   return null;
+}
+
+/**
+ * An answer belongs to the node that fired the press — and a generated screen
+ * routinely closes the confirm panel that node lived in, which used to take the
+ * answer off the page with it (the button pressed, then nothing, forever). Node
+ * ids are structural paths (apps/contract/genui/component/flatten.ts), so the
+ * notice climbs instead: the longest dot-prefix that still names a live node
+ * carries it, worst case the root. Two orphans that reach the same ancestor
+ * both render, stacked in the order their slots were filled.
+ */
+function orphanedOutcomes(
+  outcomes: Record<string, ToolOutcome | undefined>,
+  nodes: ReadonlyMap<string, TreeNode>,
+): ReadonlyMap<string, Array<[string, ToolOutcome]>> {
+  const homed = new Map<string, Array<[string, ToolOutcome]>>();
+  for (const [nodeId, outcome] of Object.entries(outcomes)) {
+    if (outcome === undefined || nodes.has(nodeId)) continue;
+    let host = nodeId;
+    while (!nodes.has(host)) {
+      const cut = host.lastIndexOf(".");
+      if (cut < 0) break;
+      host = host.slice(0, cut);
+    }
+    if (!nodes.has(host)) continue;
+    const slot = homed.get(host);
+    if (slot === undefined) homed.set(host, [[nodeId, outcome]]);
+    else slot.push([nodeId, outcome]);
+  }
+  return homed;
 }
 
 interface NodeRendererProps {
@@ -389,10 +452,18 @@ interface NodeRendererProps {
   state: Record<string, Json>;
   streaming: boolean;
   outcomes: Record<string, ToolOutcome | undefined>;
+  /** Outcomes whose own node left the tree, re-homed on the nearest surviving
+   *  ancestor by {@link orphanedOutcomes}: ancestor id → the fired ids it carries. */
+  orphans: ReadonlyMap<string, Array<[string, ToolOutcome]>>;
   runAction(nodeId: string, action: string, payload?: Json): Promise<ToolOutcome>;
+  /** Re-raise a node's park, so a dismissed ask can be asked again. Absent when
+   *  the caller passed no `onParked` — there would be nowhere to raise it. */
+  onReview?(nodeId: string, approvalId: ApprovalId): void;
   setViewState(key: string, value: Json): void;
   /** The live screen behind this tree, when there is one. */
   screen?: Pick<ScreenBridge, "fire" | "inFlight">;
+  /** What this repaint moved, per node (repaint-motion.ts). Empty on a first paint. */
+  marks: ReadonlyMap<string, NodeMark>;
 }
 
 const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid"]);
@@ -645,10 +716,45 @@ function NodeRenderer(props: NodeRendererProps) {
   const content = node.source === "generated" ? generatedContent(context) : builtinContent(context);
 
   const outcome = props.outcomes[node.id];
+  const review = props.onReview;
+  // Re-raising a park names the node that FIRED it, never the one carrying the
+  // notice — an orphan's press is still that press.
+  const notice = (firedId: string, settled: ToolOutcome | undefined): ReactNode =>
+    outcomeNotice(settled, review === undefined ? undefined : (approvalId) => review(firedId, approvalId));
   return (
-    <div data-vendo-node-id={node.id} data-vendo-outcome={outcome?.status === "ok" ? undefined : outcome?.status}>
+    <NodeShell nodeId={node.id} outcome={outcome} mark={props.marks.get(node.id)}>
       {content}
-      {outcomeNotice(outcome)}
+      {notice(node.id, outcome)}
+      {props.orphans.get(node.id)?.map(([firedId, orphan]) => (
+        <Fragment key={firedId}>{notice(firedId, orphan)}</Fragment>
+      ))}
+    </NodeShell>
+  );
+}
+
+/**
+ * Every node's box, and the one thing a repaint can animate. A mark arrives on
+ * the render that carries the change and never on a first paint, so the effect
+ * plays exactly one beat per node per repaint (repaint-motion.ts).
+ */
+function NodeShell({ nodeId, outcome, mark, children }: {
+  nodeId: string;
+  outcome: ToolOutcome | undefined;
+  mark: NodeMark | undefined;
+  children: ReactNode;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useMotionLayoutEffect(() => {
+    if (mark !== undefined && box.current !== null) playNodeMotion(box.current, mark);
+  }, [mark]);
+  return (
+    <div
+      ref={box}
+      data-vendo-node-id={nodeId}
+      data-vendo-outcome={outcome?.status === "ok" ? undefined : outcome?.status}
+      {...(mark?.kind === "exit" ? { "aria-hidden": true, "data-vendo-departing": "" } : {})}
+    >
+      {children}
     </div>
   );
 }
@@ -665,6 +771,7 @@ function StatefulTreeView({
   components,
   data,
   onAction,
+  onParked,
   onStateChange,
   interactive,
 }: TreeViewProps) {
@@ -690,8 +797,19 @@ function StatefulTreeView({
       };
     }
     setOutcomes((current) => ({ ...current, [nodeId]: outcome.status === "ok" ? undefined : outcome }));
+    if (outcome.status === "pending-approval") onParked?.({ nodeId, approvalId: outcome.approvalId });
     return outcome;
-  }, [onAction]);
+  }, [onAction, onParked]);
+
+  // Pressing the pending notice raises the SAME park again, down the SAME
+  // channel — so whichever surface answered the first announcement (the modal)
+  // presents the ask again after an Esc. Nothing to raise it to, no affordance.
+  const onReview = useMemo(
+    () => onParked === undefined
+      ? undefined
+      : (nodeId: string, approvalId: ApprovalId) => onParked({ nodeId, approvalId }),
+    [onParked],
+  );
 
   // A screen's own failure (a VM that will not boot, a handler that threw) lands
   // in the same per-node slot a failed action does — one place a region reports
@@ -702,6 +820,34 @@ function StatefulTreeView({
   // What the screen may render: the Kit plus whatever this host registered.
   const catalog = useMemo(() => [...KIT_COMPONENT_NAMES, ...Object.keys(components)], [components]);
   const screen = useScreen({ interactive, base: painted, catalog, runAction, onFailure: failNode });
+  // Every press still waiting on an approval, read straight off the outcome
+  // slots that hold its notice — resolving one clears the slot, which is also
+  // what stops the watch.
+  const parked = useMemo(() => new Map(Object.entries(outcomes).flatMap(([nodeId, outcome]) =>
+    outcome?.status === "pending-approval" ? [[nodeId, outcome.approvalId] as [string, string]] : [])), [outcomes]);
+  // The approval's answer lands in the SAME per-node slot the press itself
+  // fills, and EVERY terminal answer re-reads the screen. Not just the happy
+  // one: the re-read is also the only thing that RE-BOOTS the screen, and a
+  // screen's own `useState` (the "Sending…" flag a generated handler sets
+  // before it awaits) has no other way back — a declined press used to leave
+  // its own controls locked forever over data that never changed. A tree with
+  // no query plan (a plain action tree) has nothing to re-read; its notice
+  // still settles.
+  useParkedApprovals(parked, (nodeId, resolution) => {
+    const settled: ToolOutcome = resolution.state === "executed" ? resolution.outcome : {
+      status: "blocked",
+      reason: resolution.state === "expired"
+        ? "This needed approval and nobody answered in time — nothing was sent."
+        : "This wasn’t approved — nothing was sent.",
+    };
+    // The stale pending notice goes now; the refusal's own notice lands AFTER
+    // the repaint, because the re-read's reads run through `runAction` and an
+    // ok read clears this very slot.
+    setOutcomes((current) => ({ ...current, [nodeId]: undefined }));
+    void screen.refresh(nodeId).then(() => {
+      if (settled.status !== "ok") setOutcomes((current) => ({ ...current, [nodeId]: settled }));
+    });
+  });
   // The served paint until a handler moves the screen, and the screen's own tree
   // after — one walk, so validation, bindings, `$state` and outcomes are the ones
   // already here rather than a second renderer for interactive trees.
@@ -739,6 +885,15 @@ function StatefulTreeView({
     () => new Map(validation.ok ? validation.tree.nodes.map((node) => [node.id, node]) : []),
     [validation.ok ? validation.tree.nodes : validation.error.message],
   );
+
+  // A repaint of a screen that is already on the page — a handler moved it, or a
+  // successful tool made its data stale and the refresh brought new rows back —
+  // is the one paint that animates. A served first paint, every streaming chunk
+  // and every non-interactive payload swap instantly, as they always have.
+  const repaint = useRepaintMotion(nodes, interactive !== undefined && !streaming);
+  // Against the map that is actually WALKED, so a re-homed notice always lands
+  // on a node this render mounts.
+  const orphans = useMemo(() => orphanedOutcomes(outcomes, repaint.nodes), [outcomes, repaint.nodes]);
 
   // A review-kind version awaiting the host reviewer renders NOTHING but its
   // standing, checked BEFORE tree validation:
@@ -839,7 +994,8 @@ function StatefulTreeView({
       <NodeRenderer
         nodeId={validation.tree.root}
         ancestry={new Set()}
-        nodes={nodes}
+        nodes={repaint.nodes}
+        marks={repaint.marks}
         generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
         {...(componentTools === undefined ? {} : { componentTools })}
         inClientGranted={inClientGranted}
@@ -850,7 +1006,9 @@ function StatefulTreeView({
         state={viewState}
         streaming={streaming}
         outcomes={outcomes}
+        orphans={orphans}
         runAction={runAction}
+        {...(onReview === undefined ? {} : { onReview })}
         setViewState={updateState}
         {...(interactive === undefined ? {} : { screen })}
       />

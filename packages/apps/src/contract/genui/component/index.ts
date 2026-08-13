@@ -17,10 +17,20 @@
  * and every catalog name.
  *
  * The pieces: ./boot.ts runs the VM, ./vm-program.ts is what the VM runs,
- * ./preact-source.ts is the pinned Preact it runs it with, ./flatten.ts turns a
- * paint into addressable nodes, ./types.ts is the vocabulary.
+ * ./preact-source.ts is the pinned Preact it runs it with, ./budget.ts is what
+ * stops a screen that will not stop, ./flatten.ts turns a paint into addressable
+ * nodes, ./types.ts is the vocabulary.
  */
-export { bootScreen, warmScreenEngine } from "./boot.js";
+export { bootScreen, warmScreenEngine, type ScreenEngineVariant } from "./boot.js";
+export {
+  BOOT_INTERRUPT_BUDGET,
+  OP_INTERRUPT_BUDGET,
+  opsBudget,
+  wallClockBudget,
+  type ScreenBudget,
+  type ScreenTurn,
+  type TurnLimit,
+} from "./budget.js";
 export { flattenTree } from "./flatten.js";
 export {
   isHandlerRef,

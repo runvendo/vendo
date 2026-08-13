@@ -44,6 +44,7 @@ import { screenTypesCheck } from "./facts.js";
 import { prepareIslands } from "./islands.js";
 import { createCheckingLayer, runChecks } from "./layer.js";
 import { smokeRenderIslands } from "./smoke-render.js";
+import type { ScreenToolchain } from "./toolchain.js";
 
 /** A compiled wire result as the document the checks read. The checks take a whole
  *  `AppDocument` (build contract §5) and the seam knows the id, so this is the
@@ -228,9 +229,21 @@ export interface AppFloorOptions {
    * it here and nowhere else.
    */
   refused?: (input: { appId: AppId; blocking: readonly string[] }) => Promise<void>;
+  /**
+   * What compiles, type-checks and paints a component screen (`AppsConfig.toolchain`).
+   *
+   * The gauntlet's three stages that cannot run in every venue, behind one slot,
+   * so a deployment whose checks happen somewhere without esbuild, the
+   * `typescript` package and the QuickJS build can still run every other stage
+   * here. Passed through unresolved: the gauntlet holds the one default, so a
+   * toolchain installed after a floor was built still reaches that floor.
+   */
+  toolchain?: ScreenToolchain;
 }
 
-export const createAppFloor = ({ deps, checks, runQuery, delivered, refused }: AppFloorOptions): AppFloor => {
+export const createAppFloor = (
+  { deps, checks, runQuery, delivered, refused, toolchain }: AppFloorOptions,
+): AppFloor => {
   let resolved: Promise<FloorDependencies> | undefined;
   const once = (): Promise<FloorDependencies> => resolved ??= deps();
   return {
@@ -288,6 +301,7 @@ export const createAppFloor = ({ deps, checks, runQuery, delivered, refused }: A
         hostTools: resolved.tools ?? [],
         catalog: screenCatalog(resolved.catalog),
         runQuery: (tool, input) => runQuery(appId, tool, input),
+        toolchain,
       });
       if (!checked.ok || checked.compiled === undefined || checked.initialTree === undefined) {
         return refuse(checked.issues.map(({ message }) => message));

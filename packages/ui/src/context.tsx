@@ -177,6 +177,13 @@ export function useVendoThemeOrDefault(): VendoTheme {
   return useContext(VendoContext)?.theme ?? defaultVendoTheme;
 }
 
+/** The wire, provider-optional. A tree inside a provider can ask what became of
+    an approval one of its presses parked; a standalone one has nobody to ask and
+    simply never resolves one. */
+export function useVendoClientOrNone(): VendoClient | undefined {
+  return useContext(VendoContext)?.client;
+}
+
 /** The discoverability dial, provider-optional (standalone surfaces default on). */
 export function useVendoDiscoverability(): VendoDiscoverability {
   return useContext(VendoContext)?.discoverability ?? "default";
