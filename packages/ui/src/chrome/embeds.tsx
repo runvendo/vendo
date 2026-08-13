@@ -20,6 +20,7 @@ import { AppFrame } from "../tree/frames.js";
 import type { ApprovalResolution, OpenSurface } from "../wire-types.js";
 import { AddToPicker } from "./add-to-picker.js";
 import { ApprovalCard } from "./approval-card.js";
+import { useApprovalModal } from "./approval-modal.js";
 import {
   CardActions,
   CardFields,
@@ -239,7 +240,11 @@ export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
         )
       : <BeatLine state="working">{summary}</BeatLine>;
   } else if (data.state === "pending") {
-    body = <ApprovalCard approval={data.request} onDecide={decide} />;
+    // No ask to show means the decision is already running server-side — the
+    // same beat this embed opens with, and the poll is still armed.
+    body = data.request === undefined
+      ? <BeatLine state="working">{summary}</BeatLine>
+      : <ApprovalCard approval={data.request} onDecide={decide} />;
   } else if (data.state === "executed") {
     body = executedCard(summary, data.outcome);
   } else if (data.state === "declined") {
@@ -263,6 +268,10 @@ export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
 export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
   const { client, components } = useVendoProvider();
   const { appId, title } = refValue;
+  // A press inside the embedded app that parks on the guard asks its question
+  // HERE, over the surface the person pressed it on — the same seam VendoSlot
+  // mounts (one modal per mount; it portals to <body>).
+  const approval = useApprovalModal();
   // Retry (criterion 8, speed-core): a retryable terminal failure re-issues
   // the create; the fresh build gets its own id, so the poll loop keys on
   // activeAppId rather than the ref's original.
@@ -389,6 +398,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
             <AppFrame
               surface={surface}
               components={components}
+              onParked={approval.onParked}
               // Actions bind to the app actually being SHOWN: after a retry
               // that is the replacement build's id, never the original failed
               // record (checker F5).
@@ -423,6 +433,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
           )}
         </div>
       </div>
+      {approval.modal}
     </ChromeRoot>
   );
 }

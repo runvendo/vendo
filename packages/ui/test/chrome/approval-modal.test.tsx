@@ -10,11 +10,15 @@
  * honestly while the approved action actually runs, and it never spends a
  * decision the person did not make.
  */
-import type { ApprovalId, ApprovalRequest, JsonSchema } from "@vendoai/core";
+import type { AppDocument, ApprovalId, ApprovalRequest, JsonSchema, UIPayload } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { APPROVALS_DECIDED_EVENT, VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { ApprovalModal, useApprovalModal } from "../../src/chrome/approval-modal.js";
+import { Remixable, VendoAppEmbed, VendoOverlay, type VendoThreadProps } from "../../src/chrome/index.js";
+import { useSplitView } from "../../src/chrome/split-view.js";
+import { ThreadPart } from "../../src/chrome/thread/parts.js";
 import type { ApprovalResolution } from "../../src/wire-types.js";
 import { createWireServer } from "../wire-server.js";
 
@@ -61,9 +65,11 @@ function request(over: Partial<ApprovalRequest> = {}): ApprovalRequest {
 function clientWith(over: {
   get?(id: ApprovalId): Promise<ApprovalResolution>;
   decide?(...args: Parameters<VendoClient["approvals"]["decide"]>): Promise<void>;
+  apps?: Partial<VendoClient["apps"]>;
 }): VendoClient {
   return {
     ...base,
+    apps: { ...base.apps, ...over.apps },
     approvals: {
       ...base.approvals,
       ...(over.get === undefined ? {} : { get: over.get }),
@@ -338,6 +344,105 @@ describe("the screen-initiated approval modal", () => {
       // …and the second never gets a turn just to announce it was handled.
       await new Promise(resolve => setTimeout(resolve, 250));
       expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  });
+
+  /**
+   * EVERY surface a generated screen can live on, not just the dashboard slot.
+   * The modal shipped wired into `VendoSlot` alone, so the same money-moving
+   * press made from the conversation — the surface people actually build views
+   * in — parked in silence: no ask anywhere, and the screen sat on "Sending…".
+   *
+   * Each case presses a real action-bound button inside the real surface, over
+   * a host pipe that parks it, and asks for the ask. Nothing about the modal
+   * itself is exercised here; that is every case above.
+   */
+  describe("the surfaces a parked press asks from", () => {
+    const PAYEES: UIPayload = {
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [{
+        id: "root",
+        component: "Button",
+        props: { label: "Send $47.50", onClick: { $action: "host_transferMoney" } },
+      }],
+    } as unknown as UIPayload;
+
+    /** The host pipe parks the press, and the wire answers for the ask it
+     *  parked on — the two halves any surface needs to raise this modal. */
+    const parking = (over: Partial<VendoClient["apps"]> = {}) => clientWith({
+      get: pending(),
+      apps: { call: async () => ({ status: "pending-approval", approvalId: "apr_1" as ApprovalId }), ...over },
+    });
+
+    /** The overlay is itself a dialog, so the ask is named, never positional. */
+    const askedFor = async () => (await screen.findByRole("dialog", { name: /^Approval for/u }))
+      .querySelector(".fl-apmodal-ask")!.textContent;
+
+    const press = async () => fireEvent.click(await screen.findByRole("button", { name: "Send $47.50" }));
+
+    it("the conversation's in-thread card", async () => {
+      render(
+        <VendoProvider client={parking()}>
+          <ThreadPart
+            part={{ type: "data-vendo-view", data: { appId: "app_1", payload: PAYEES } } as unknown as Parameters<typeof ThreadPart>[0]["part"]}
+            partKey="p0"
+            role="assistant"
+            restored={false}
+            risks={new Map()}
+          />
+        </VendoProvider>,
+      );
+      await press();
+      expect(await askedFor()).toBe("Send $47.50 to Acme Utilities?");
+    });
+
+    it("the workspace stage the same card expands onto", async () => {
+      // The stage renders its OWN copy of the view (the rail card keeps its
+      // preview), so the press made there is answered there.
+      const Probe = () => {
+        const split = useSplitView();
+        useEffect(() => {
+          split?.registerEmbed("app_1", PAYEES);
+          split?.expandTo("app_1");
+        }, [split]);
+        return null;
+      };
+      render(
+        <VendoProvider client={parking()}>
+          <VendoOverlay defaultOpen thread={Probe as unknown as (props: VendoThreadProps) => React.JSX.Element} />
+        </VendoProvider>,
+      );
+      await press();
+      expect(await askedFor()).toBe("Send $47.50 to Acme Utilities?");
+    });
+
+    it("the BYO chat surface's app embed", async () => {
+      render(
+        <VendoProvider client={parking({ open: async () => ({ kind: "tree", payload: PAYEES }) })}>
+          <VendoAppEmbed refValue={{ kind: "vendo/app-ref@1", appId: "app_1", title: "Payees" }} />
+        </VendoProvider>,
+      );
+      await press();
+      expect(await askedFor()).toBe("Send $47.50 to Acme Utilities?");
+    });
+
+    it("the remixed host component", async () => {
+      function TopMerchants() {
+        return <table><tbody><tr><td>Blue Bottle</td></tr></tbody></table>;
+      }
+      const fork = { id: "app_fork", name: "Top merchants", seed: { component: "TopMerchants" } } as unknown as AppDocument;
+      render(
+        <VendoProvider client={parking({
+          list: async () => [fork],
+          get: async () => fork,
+          open: async () => ({ kind: "tree", payload: PAYEES }),
+        })}>
+          <Remixable><TopMerchants /></Remixable>
+        </VendoProvider>,
+      );
+      await press();
+      expect(await askedFor()).toBe("Send $47.50 to Acme Utilities?");
     });
   });
 });

@@ -162,7 +162,10 @@ export interface EnableResult {
  *  renders them with the existing failed vocabulary, never a blank).
  *  Mirrors the umbrella's `ByoApprovalResolution`. */
 export type ApprovalResolution =
-  | { state: "pending"; request: ApprovalRequest }
+  // The request is absent only for an in-app parked press read during the
+  // resume window: still undecided, but the ask itself is gone (the umbrella's
+  // ByoApprovalResolution says why). Surfaces keep waiting on it.
+  | { state: "pending"; request?: ApprovalRequest }
   | { state: "executed"; outcome: ToolOutcome }
   | { state: "declined" }
   | { state: "expired" };

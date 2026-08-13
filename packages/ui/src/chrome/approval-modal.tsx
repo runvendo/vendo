@@ -188,6 +188,9 @@ export function ApprovalModal({ approvalId, onClose }: {
   const detail = useMemo(() => {
     if (resolution?.state !== "pending") return undefined;
     const { request } = resolution;
+    // Pending with no ask attached: the decision is already running server-side
+    // (byo-approvals.ts). The skeleton stands — there is nothing to decide here.
+    if (request === undefined) return undefined;
     const meta = tools[request.call.tool];
     const presentation = toolPresentation(
       request.call.tool,

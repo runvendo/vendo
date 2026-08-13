@@ -8,6 +8,7 @@ import { PayloadView } from "../../tree/renderer.js";
 import { useSlots } from "../../hooks/use-slots.js";
 import { AddToPicker } from "../add-to-picker.js";
 import { ApprovalCard } from "../approval-card.js";
+import { useApprovalModal } from "../approval-modal.js";
 import { ApprovalSheet } from "../approval-sheet.js";
 import { AutomationCard } from "../automation-card.js";
 import { BuildBeat, toolPresentation } from "../build-beat.js";
@@ -539,6 +540,10 @@ function AppCardBody({ compact, shellRef, canvasRef, previewHeight, previewScale
 function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; payload: UIPayload; restored: boolean; buildKey: string }) {
   const { client, components } = useVendoProvider();
   const pin = usePinAction();
+  // A press inside the card's view that parks on the guard asks its question
+  // over the conversation, where the person pressed it (the VendoSlot seam).
+  // One per card mount: the stage renders its own view, and its own modal.
+  const approval = useApprovalModal();
   // The destinations the registry knows — a mounted VendoSlot is the only thing
   // that can say a slot exists (hooks/use-slots.ts). More than one, and the
   // bar's placement affordance is a picker rather than a single fixed pin.
@@ -665,91 +670,98 @@ function ThreadAppCard({ appId, payload, restored, buildKey }: { appId: string; 
       }
     : undefined;
   return (
-    // The generated view lives inside a clear app boundary — a titled
-    // frame — so it reads as a distinct piece of software, not loose
-    // content bleeding into the surrounding chat text.
-    <div
-      ref={cardRef}
-      className="fl-uihost fl-appcard"
-      data-vendo-app-embed={appId}
-      {...(featured ? { "data-vendo-featured": "" } : {})}
-      {...(featureOnClick ? { onClick: featureOnClick, "data-vendo-featurable": "" } : {})}
-    >
-      {/* The bar narrates forming → live. The data-state contract
-          ("building" | "ready") is shared with the renderer; the label pair
-          stays mounted so the swap crossfades. */}
-      <div className="fl-appcard-bar" data-state={streaming ? "building" : "ready"}>
-        <span className="fl-appcard-dot" aria-hidden="true" />
-        <span className="fl-boot-labels fl-appcard-name">
-          {/* Both labels stay mounted for the renderer lane's crossfade;
-              aria-hidden tracks data-state so screen readers hear only the
-              ACTIVE one (AI-review catch — the CSS-faded label was still
-              announced, including a stale "Building…" after ready). */}
-          <span className="fl-boot-building" aria-hidden={!streaming}>Building your view…</span>
-          <span className="fl-boot-ready" aria-hidden={streaming}>{appTitle(payload) ?? "Your app"}</span>
-        </span>
-        {/* The workspace-feature affordance (keyboard path for "click the
-            embed to feature it"); only while the split view is expanded and
-            this card isn't already on the stage. */}
-        {split?.expanded === true && !streaming && !featured ? (
-          <button
-            type="button"
-            className="fl-barpin"
-            aria-label="Show this view in the workspace"
-            onClick={() => split.feature(appId)}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
-            </svg>
-            Feature
-          </button>
-        ) : null}
-        {/* The placement affordance lives ON the bar (visible only once the
-            view is ready), replacing the old full-width footer row. The
-            data-state/label/hairline markup above is the shared contract and
-            stays untouched.
-
-            ONE destination is a verb ("Pin to dashboard") — naming the only
-            place it could go would be a menu of one. Several, and the same
-            affordance becomes the picker: this card is the surface a real user
-            actually reaches a generated view from, so it is where the choice
-            has to live (the embed-only picker was unreachable in every host
-            that renders its conversation through the overlay). */}
-        {!streaming && pin ? (
-          slots.length > 1 ? <AddToPicker appId={appId} /> : (
+    <>
+      {/* The generated view lives inside a clear app boundary — a titled
+          frame — so it reads as a distinct piece of software, not loose
+          content bleeding into the surrounding chat text. */}
+      <div
+        ref={cardRef}
+        className="fl-uihost fl-appcard"
+        data-vendo-app-embed={appId}
+        {...(featured ? { "data-vendo-featured": "" } : {})}
+        {...(featureOnClick ? { onClick: featureOnClick, "data-vendo-featurable": "" } : {})}
+      >
+        {/* The bar narrates forming → live. The data-state contract
+            ("building" | "ready") is shared with the renderer; the label pair
+            stays mounted so the swap crossfades. */}
+        <div className="fl-appcard-bar" data-state={streaming ? "building" : "ready"}>
+          <span className="fl-appcard-dot" aria-hidden="true" />
+          <span className="fl-boot-labels fl-appcard-name">
+            {/* Both labels stay mounted for the renderer lane's crossfade;
+                aria-hidden tracks data-state so screen readers hear only the
+                ACTIVE one (AI-review catch — the CSS-faded label was still
+                announced, including a stale "Building…" after ready). */}
+            <span className="fl-boot-building" aria-hidden={!streaming}>Building your view…</span>
+            <span className="fl-boot-ready" aria-hidden={streaming}>{appTitle(payload) ?? "Your app"}</span>
+          </span>
+          {/* The workspace-feature affordance (keyboard path for "click the
+              embed to feature it"); only while the split view is expanded and
+              this card isn't already on the stage. */}
+          {split?.expanded === true && !streaming && !featured ? (
             <button
               type="button"
               className="fl-barpin"
-              {...(nudge === undefined ? {} : { "data-vendo-pin": nudge })}
-              onClick={() => pin({ appId, payload })}
+              aria-label="Show this view in the workspace"
+              onClick={() => split.feature(appId)}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+                <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
               </svg>
-              Pin to dashboard
+              Feature
             </button>
-          )
-        ) : null}
-        <span className="fl-boot-hairline" aria-hidden="true" />
+          ) : null}
+          {/* The placement affordance lives ON the bar (visible only once the
+              view is ready), replacing the old full-width footer row. The
+              data-state/label/hairline markup above is the shared contract and
+              stays untouched.
+
+              ONE destination is a verb ("Pin to dashboard") — naming the only
+              place it could go would be a menu of one. Several, and the same
+              affordance becomes the picker: this card is the surface a real user
+              actually reaches a generated view from, so it is where the choice
+              has to live (the embed-only picker was unreachable in every host
+              that renders its conversation through the overlay). */}
+          {!streaming && pin ? (
+            slots.length > 1 ? <AddToPicker appId={appId} /> : (
+              <button
+                type="button"
+                className="fl-barpin"
+                {...(nudge === undefined ? {} : { "data-vendo-pin": nudge })}
+                onClick={() => pin({ appId, payload })}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+                </svg>
+                Pin to dashboard
+              </button>
+            )
+          ) : null}
+          <span className="fl-boot-hairline" aria-hidden="true" />
+        </div>
+        <AppCardBody
+          compact={compact}
+          shellRef={shellRef}
+          canvasRef={canvasRef}
+          previewHeight={previewHeight}
+          previewScale={previewScale}
+          featured={featured}
+          activate={activate}
+          splitExpanded={split?.expanded === true}
+          view={
+            <PayloadView
+              payload={payload}
+              components={components}
+              onParked={approval.onParked}
+              onAction={({ action, payload: actionPayload }) => client.apps.call(appId, action, actionPayload ?? {})}
+            />
+          }
+        />
       </div>
-      <AppCardBody
-        compact={compact}
-        shellRef={shellRef}
-        canvasRef={canvasRef}
-        previewHeight={previewHeight}
-        previewScale={previewScale}
-        featured={featured}
-        activate={activate}
-        splitExpanded={split?.expanded === true}
-        view={
-          <PayloadView
-            payload={payload}
-            components={components}
-            onAction={({ action, payload: actionPayload }) => client.apps.call(appId, action, actionPayload ?? {})}
-          />
-        }
-      />
-    </div>
+      {/* OUTSIDE the card: a portal still bubbles its clicks up the REACT tree,
+          and the card's own click features the app on the stage — dismissing the
+          modal must not do that. */}
+      {approval.modal}
+    </>
   );
 }
 

@@ -130,7 +130,8 @@ describe.sequential("existing-agents — parked BYO guarded calls", () => {
     // The embed's first poll: pending, with the full request for the card.
     const pending = await byo.read(parked.approvalId, principal);
     expect(pending.state).toBe("pending");
-    if (pending.state !== "pending") throw new Error("expected pending");
+    // The BYO lane keeps the ask itself, so the card has real inputs to show.
+    if (pending.state !== "pending" || pending.request === undefined) throw new Error("expected a pending ask");
     expect(pending.request.call.tool).toBe("host_sendClientMessage");
     expect(pending.request.inputPreview).toContain("overdue");
 

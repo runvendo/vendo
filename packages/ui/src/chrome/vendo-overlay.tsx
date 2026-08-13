@@ -5,6 +5,7 @@ import { useVendoProvider, useVendoDiscoverability, useVendoTheme } from "../con
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { PayloadView } from "../tree/renderer.js";
+import { useApprovalModal } from "./approval-modal.js";
 import { BeatRail } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
@@ -272,6 +273,10 @@ function WorkspaceStage({ mounted, expanded, featured, beats, pinNudge, pin, onP
   onPinned: () => void;
 }) {
   const { client, components } = useVendoProvider();
+  // The stage is where a featured view is actually PRESSED, so a press that
+  // parks asks its question here — the rail card behind it owns its own copy of
+  // the view and its own modal (the VendoSlot seam, one per mount).
+  const approval = useApprovalModal();
   return (
     <div className="fl-split-stage" {...(expanded ? {} : { "aria-hidden": true })}>
       {!mounted ? null : (
@@ -306,6 +311,7 @@ function WorkspaceStage({ mounted, expanded, featured, beats, pinNudge, pin, onP
                   // (ThreadAppCard receives VendoViewPart payloads).
                   payload={featured.payload as UIPayload}
                   components={components}
+                  onParked={approval.onParked}
                   onAction={({ action, payload: actionPayload }) =>
                     client.apps.call(featured.appId, action, actionPayload ?? {})}
                 />
@@ -321,6 +327,7 @@ function WorkspaceStage({ mounted, expanded, featured, beats, pinNudge, pin, onP
               empty stage while the first view is still being made, the view
               itself once it lands. */}
           <BeatRail beats={beats} />
+          {approval.modal}
         </>
       )}
     </div>

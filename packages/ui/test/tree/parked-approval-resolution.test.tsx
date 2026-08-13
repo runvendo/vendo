@@ -58,6 +58,27 @@ export default function PendingTransfers() {
 }
 `;
 
+/** The same screen, with the flag a real generated one latches before it awaits
+ *  — the "Sending…" nothing but a fresh boot can clear. */
+const SENDING = `
+import { useState } from "react";
+import { Button, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+export default function PendingTransfers() {
+  const pending = useQuery("list_pending");
+  const [sending, setSending] = useState(false);
+  return (
+    <Stack gap={12}>
+      <Text text={"Pending: " + pending.data.length} />
+      <Button label={sending ? "Sending…" : "Cancel Ada"} disabled={sending} onClick={async () => {
+        setSending(true);
+        await tools.cancel_transfer({ id: "tr_1" });
+      }} />
+    </Stack>
+  );
+}
+`;
+
 const ROWS = [
   { id: "tr_1", recipient: "Ada", amount_cents: 4_200 },
   { id: "tr_2", recipient: "Bob", amount_cents: 900 },
@@ -94,7 +115,7 @@ const payloadFor = (compiledSource: string, queries: Record<string, unknown>): U
  * `approve()` is the server doing what it really does — resuming the parked
  * call (the row goes) and recording the outcome for the surface to find.
  */
-function world() {
+function world(source = TRANSFERS) {
   let rows = [...ROWS];
   let resolution: ApprovalResolution | undefined;
   const calls: Call[] = [];
@@ -129,7 +150,7 @@ function world() {
       return render(
         <VendoProvider client={client}>
           <PayloadView
-            payload={payloadFor(compile(TRANSFERS), { list_pending: { data: rows } })}
+            payload={payloadFor(compile(source), { list_pending: { data: rows } })}
             components={{}}
             onAction={onAction}
             onParked={(press) => parked.push(press)}
@@ -148,10 +169,14 @@ const announce = async (approved: boolean): Promise<void> => {
   });
 };
 
+/** The pending notice, which is also the affordance back to a dismissed ask —
+ *  and says so, in the name a screen reader hears. */
+const waitingNotice = () => screen.getByRole("button", { name: /Waiting for your approval — review/u });
+
 const parkAda = async (live: ReturnType<typeof world>): Promise<void> => {
   live.render();
   fireEvent.click(await screen.findByRole("button", { name: "Cancel Ada" }));
-  await waitFor(() => expect(screen.getByText(/waiting for approval/u)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/Waiting for your approval/u)).toBeTruthy());
 };
 
 describe("a parked press learns its answer", () => {
@@ -171,12 +196,12 @@ describe("a parked press learns its answer", () => {
     // The stale notice is gone and the screen re-read the plan, so it paints
     // what the backend now holds rather than the list it was built from.
     await waitFor(() => expect(screen.getByText("Pending: 1")).toBeTruthy());
-    expect(screen.queryByText(/waiting for approval/u)).toBeNull();
+    expect(screen.queryByText(/Waiting for your approval/u)).toBeNull();
     expect(screen.queryByText("Ada")).toBeNull();
     expect(screen.getByText("Bob")).toBeTruthy();
   });
 
-  it("settles a refusal in place: the notice says so, and nothing is re-read", async () => {
+  it("settles a refusal in place: the notice says so, over the data that did not change", async () => {
     const live = world();
     await parkAda(live);
 
@@ -185,12 +210,57 @@ describe("a parked press learns its answer", () => {
 
     await waitFor(() => expect(screen.getByText(/nothing was sent/u)).toBeTruthy());
     // The pending sentence is replaced, not stacked on top of.
-    expect(screen.queryByText(/waiting for approval/u)).toBeNull();
-    // A refused call changed nothing, so the screen has nothing to re-read, and
-    // the control is live again for a second try.
-    expect(live.of("list_pending")).toEqual([]);
+    expect(screen.queryByText(/Waiting for your approval/u)).toBeNull();
+    // The refusal re-reads too (that is what re-boots the screen), and the
+    // re-read paints the truth it finds: nothing was sent, so nothing moved.
+    expect(live.of("list_pending")).toHaveLength(1);
     expect(screen.getByText("Pending: 2")).toBeTruthy();
+    expect(screen.getByText("Ada")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Cancel Ada" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  /**
+   * THE DEAD SCREEN. A generated screen latches its own "Sending…" before it
+   * awaits, and expects the row to be gone when it comes back. Deny — or Esc,
+   * then the TTL — and nothing came back: the flag was still set, the button
+   * still disabled, and the only way out was a page reload. Only a re-boot
+   * clears in-screen state, so every terminal answer re-reads, not just yes.
+   */
+  it.each([["declined"], ["expired"]] as const)("re-arms the screen's own controls after %s", async (state) => {
+    const live = world(SENDING);
+    live.render();
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel Ada" }));
+    await waitFor(() => expect(screen.getByText(/Waiting for your approval/u)).toBeTruthy());
+    // The screen's own flag, latched: nothing in the tree can clear it.
+    expect(screen.getByRole("button", { name: "Sending…" })).toBeTruthy();
+
+    live.refuse(state);
+    await announce(false);
+
+    const rearmed = await screen.findByRole("button", { name: "Cancel Ada" });
+    expect((rearmed as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(/nothing was sent/u)).toBeTruthy();
+  });
+
+  /**
+   * Esc closes the modal without deciding, so the ask is still pending on the
+   * server — and the queue drops it. The notice IS the way back: pressing it
+   * re-raises the same park down the same channel the first one took, so
+   * whichever surface answered that announcement asks again.
+   */
+  it("hands a dismissed ask back: pressing the pending notice re-raises the park", async () => {
+    const live = world();
+    await parkAda(live);
+    expect(live.parked).toEqual([{ nodeId: ADA_NODE, approvalId: APPROVAL }]);
+
+    fireEvent.click(waitingNotice());
+
+    expect(live.parked).toEqual([
+      { nodeId: ADA_NODE, approvalId: APPROVAL },
+      { nodeId: ADA_NODE, approvalId: APPROVAL },
+    ]);
+    // Re-asking is not re-pressing: no second call reached the host.
+    expect(live.of("cancel_transfer")).toHaveLength(1);
   });
 
   it("says an unanswered approval expired, in its own words", async () => {
@@ -213,6 +283,6 @@ describe("a parked press learns its answer", () => {
     live.approve();
 
     await waitFor(() => expect(screen.getByText("Pending: 1")).toBeTruthy(), { timeout: 20_000 });
-    expect(screen.queryByText(/waiting for approval/u)).toBeNull();
+    expect(screen.queryByText(/Waiting for your approval/u)).toBeNull();
   }, 30_000);
 });

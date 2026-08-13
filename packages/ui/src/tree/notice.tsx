@@ -45,18 +45,32 @@ export function ContainedNotice(props: {
   detail?: string;
   code?: string;
   outcome?: string;
+  /** Makes the notice ITSELF the affordance — the same box, pressable. The
+   *  pending-approval notice is the way back to an ask the person dismissed,
+   *  and a second component beside it would be a second thing to explain. */
+  onPress?(): void;
 }) {
   const danger = props.outcome === "error" || props.outcome === "blocked";
   const detail = props.detail !== undefined && developmentMode() ? ` ${props.detail}` : "";
-  return (
-    <small
-      role="note"
-      aria-label={props.label}
-      data-error-code={props.code}
-      data-vendo-notice={props.outcome ?? "contained"}
-      style={noticeStyle(danger)}
-    >
-      {`${props.children}${detail}`}
-    </small>
-  );
+  const text = `${props.children}${detail}`;
+  const shell = {
+    "data-error-code": props.code,
+    "data-vendo-notice": props.outcome ?? "contained",
+  };
+  // A pressable notice takes its name from the sentence it shows (WCAG 2.5.3):
+  // "review" is the whole point, and a category label over it would hide that
+  // from exactly the people who cannot see the box.
+  if (props.onPress !== undefined) {
+    return (
+      <button
+        type="button"
+        {...shell}
+        style={{ ...noticeStyle(danger), cursor: "pointer", textAlign: "left" }}
+        onClick={props.onPress}
+      >
+        {text}
+      </button>
+    );
+  }
+  return <small role="note" aria-label={props.label} {...shell} style={noticeStyle(danger)}>{text}</small>;
 }

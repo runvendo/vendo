@@ -1,4 +1,5 @@
 import {
+  PARKED_ACTION_COLLECTION,
   PARKED_CALL_OUTCOME_COLLECTION,
   type AppId,
   type ApprovalId,
@@ -56,7 +57,7 @@ export interface ParkedAction {
   ctx: RunContext;
 }
 
-const COLLECTION = "vendo_parked_action";
+const COLLECTION = PARKED_ACTION_COLLECTION;
 
 const parkedData = (record: VendoRecord): ParkedAction => record.data as ParkedAction;
 

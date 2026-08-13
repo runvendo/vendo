@@ -1,4 +1,5 @@
 import {
+  PARKED_ACTION_COLLECTION,
   PARKED_CALL_OUTCOME_COLLECTION,
   VendoError,
   type ApprovalId,
@@ -69,9 +70,14 @@ interface ParkedByoCall {
 /** The wire's answer to `GET /approvals/:id` — the frozen
  *  `VendoApprovalEmbedState` vocabulary, plus what each state needs to render:
  *  the full request while pending (the consent card shows real inputs), the
- *  executed outcome after resume. */
+ *  executed outcome after resume.
+ *
+ *  The request is absent in exactly one case: an IN-APP parked press read
+ *  during the resume window, where the answer is "not decided yet" and the ask
+ *  itself is no longer anywhere to be had (that lane persists the call, not the
+ *  request). Surfaces treat it as still-working and keep polling. */
 export type ByoApprovalResolution =
-  | { state: "pending"; request: ApprovalRequest }
+  | { state: "pending"; request?: ApprovalRequest }
   | { state: "executed"; outcome: ToolOutcome }
   | { state: "declined" }
   | { state: "expired" };
@@ -265,16 +271,18 @@ export function createByoApprovals({ guard, tools, ops }: ByoApprovalsConfig): B
       const request = pending.find((candidate) => candidate.id === approvalId);
       if (request !== undefined) return { state: "pending", request };
       // Mid-resume window: the decision already left the guard's pending queue
-      // but the subscriber has not written the outcome row yet. The parked
-      // record exists exactly until that write, so serve its request snapshot
-      // as still-pending rather than a terminal not-found (which the embed
-      // renders as expired and stops polling).
-      const stillParked = await engine().get(PARKED_COLLECTION, approvalId);
-      if (stillParked !== null) {
-        const data = stillParked.data as ParkedByoCall;
-        if (data.owner === principal.subject && data.request !== undefined) {
-          return { state: "pending", request: data.request };
-        }
+      // but the subscriber has not written the outcome row yet. EITHER lane's
+      // parked record exists exactly until that write, so serve its request
+      // snapshot as still-pending rather than a terminal not-found — which the
+      // embed renders as expired, and a screen's poll logs as a failed read
+      // once every few seconds for the length of the resumed call.
+      for (const collection of [PARKED_COLLECTION, PARKED_ACTION_COLLECTION]) {
+        const stillParked = await engine().get(collection, approvalId);
+        // The two lanes' records differ (the in-app one pins an app and keeps
+        // no request snapshot), but the owner is the same field in both.
+        const data = stillParked?.data as Pick<ParkedByoCall, "owner" | "request"> | undefined;
+        if (data?.owner !== principal.subject) continue;
+        return { state: "pending", ...(data.request === undefined ? {} : { request: data.request }) };
       }
       throw new VendoError("not-found", `Approval ${approvalId} was not found`);
     },

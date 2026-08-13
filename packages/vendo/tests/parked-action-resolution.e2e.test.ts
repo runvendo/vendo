@@ -45,8 +45,13 @@ afterEach(async () => {
 function messagingHost(): {
   tools: ToolRegistry;
   delivered: Array<{ clientId: string; body: string }>;
+  /** Hold the next delivery INSIDE the tool. `running` settles once the resumed
+   *  call is executing and `release` lets it finish — between the two is the
+   *  resume window: decided, but no answer written yet. */
+  holdNext(): { running: Promise<void>; release(): void };
 } {
   const delivered: Array<{ clientId: string; body: string }> = [];
+  let hold: { entered(): void; released: Promise<void> } | undefined;
   const descriptor: ToolDescriptor = {
     name: "host_sendClientMessage",
     description: "Message a client about their account",
@@ -59,6 +64,14 @@ function messagingHost(): {
   };
   return {
     delivered,
+    holdNext() {
+      let entered = (): void => undefined;
+      let release = (): void => undefined;
+      const running = new Promise<void>(resolve => { entered = resolve; });
+      const released = new Promise<void>(resolve => { release = resolve; });
+      hold = { entered: () => entered(), released };
+      return { running, release: () => release() };
+    },
     tools: {
       async descriptors() {
         return [descriptor];
@@ -70,6 +83,12 @@ function messagingHost(): {
         const { clientId, body } = call.args as { clientId: string; body: string };
         if (clientId === "cli_closed") {
           return { status: "error", error: { code: "bank", message: "the account is closed" } };
+        }
+        const held = hold;
+        if (held !== undefined) {
+          hold = undefined;
+          held.entered();
+          await held.released;
         }
         delivered.push({ clientId, body });
         return { status: "ok", output: { delivered: true } };
@@ -131,7 +150,7 @@ describe.sequential("a parked in-app press learns what happened to it", () => {
     // a consent card can show what is actually waiting.
     const pending = await byo.read(approvalId, principal);
     expect(pending.state).toBe("pending");
-    if (pending.state !== "pending") throw new Error("expected pending");
+    if (pending.state !== "pending" || pending.request === undefined) throw new Error("expected a pending ask");
     expect(pending.request.call.tool).toBe("host_sendClientMessage");
     expect(host.delivered).toHaveLength(0);
 
@@ -169,6 +188,35 @@ describe.sequential("a parked in-app press learns what happened to it", () => {
 
     expect(host.delivered).toHaveLength(0);
     await expect(byo.read(approvalId, principal)).resolves.toEqual({ state: "declined" });
+  });
+
+  it("answers PENDING through the resume window, instead of a not-found the surface polls into", async () => {
+    const { guard, apps, byo, host, appId } = await harness();
+
+    const approvalId = await park(apps, appId, "cli_slow", "Takes a while to send");
+    const hold = host.holdNext();
+    const decided = guard.approvals.decide(approvalId, { approve: true }, principal);
+    await hold.running;
+
+    // Mid-resume: the guard no longer lists the ask and the outcome row is not
+    // written yet. The screen that pressed the button polls straight through
+    // this window — every few seconds, for as long as the resumed call runs —
+    // so a not-found here is a console error per tick, and the BYO embed reads
+    // it as expired and stops asking. The parked record still exists, and that
+    // is exactly "decided, not answered yet".
+    await expect(byo.read(approvalId, principal)).resolves.toEqual({ state: "pending" });
+
+    hold.release();
+    await decided;
+    await expect(byo.read(approvalId, principal)).resolves.toEqual({
+      state: "executed",
+      outcome: { status: "ok", output: { delivered: true } },
+    });
+  });
+
+  it("still refuses an id nobody ever parked", async () => {
+    const { byo } = await harness();
+    await expect(byo.read("apr_never_existed", principal)).rejects.toThrow(/not found/u);
   });
 
   it("keeps the answer to the owner alone", async () => {
