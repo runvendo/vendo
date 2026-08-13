@@ -953,6 +953,9 @@ importers:
       '@ai-sdk/anthropic':
         specifier: 3.0.12
         version: 3.0.12(zod@3.25.76)
+      '@jitl/quickjs-wasmfile-release-sync':
+        specifier: ^0.32.0
+        version: 0.32.0
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
@@ -965,9 +968,15 @@ importers:
       just-bash:
         specifier: ^3.1.0
         version: 3.2.0
+      sucrase:
+        specifier: ^3.35.0
+        version: 3.35.1
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
+      typescript-6:
+        specifier: npm:typescript@6.0.3
+        version: typescript@6.0.3
       vitest:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.0)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.9.0)
@@ -7941,6 +7950,11 @@ packages:
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -15690,6 +15704,8 @@ snapshots:
       typescript: 5.9.3
 
   typescript@5.9.3: {}
+
+  typescript@6.0.3: {}
 
   ufo@1.6.4: {}
 

@@ -39,6 +39,10 @@
       "types": "./dist/server/escalation/e2b/index.d.ts",
       "default": "./dist/server/escalation/e2b/index.js"
     },
+    "./edge": {
+      "types": "./dist/server/edge/index.d.ts",
+      "default": "./dist/server/edge/index.js"
+    },
     "./testing": {
       "types": "./dist/server/testing/index.d.ts",
       "default": "./dist/server/testing/index.js"
@@ -71,13 +75,19 @@
   },
   "peerDependencies": {
     "@anthropic-ai/claude-agent-sdk": ">=0.3.0 <1",
+    "@jitl/quickjs-wasmfile-release-sync": "^0.32.0",
     "ai": ">=6.0.0 <7",
     "e2b": "^2.32.0",
+    "sucrase": "^3.35.0",
+    "typescript": "6.0.3",
     "vitest": "^2.0.0 || ^3.0.0",
     "zod": ">=3.25.0 <5"
   },
   "peerDependenciesMeta": {
     "@anthropic-ai/claude-agent-sdk": {
+      "optional": true
+    },
+    "@jitl/quickjs-wasmfile-release-sync": {
       "optional": true
     },
     "ai": {
@@ -86,17 +96,26 @@
     "e2b": {
       "optional": true
     },
+    "sucrase": {
+      "optional": true
+    },
+    "typescript": {
+      "optional": true
+    },
     "vitest": {
       "optional": true
     }
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "3.0.12",
+    "@jitl/quickjs-wasmfile-release-sync": "^0.32.0",
     "@types/node": "^22.0.0",
     "ai": "6.0.28",
     "e2b": "^2.32.0",
     "just-bash": "^3.1.0",
+    "sucrase": "^3.35.0",
     "typescript": "^5.6.0",
+    "typescript-6": "npm:typescript@6.0.3",
     "vitest": "^3.2.6"
   }
 }

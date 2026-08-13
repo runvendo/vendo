@@ -1,6 +1,15 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    // The two toolchains want two compilers in one process. The Node one
+    // resolves `typescript` through `createRequire`, which no bundler alias can
+    // touch, so it keeps getting the 5.x devDependency; the edge one IMPORTS
+    // `typescript`, and its peer range is exactly 6.0.3 — the version its
+    // vendored lib files were copied from. Anchored, so `typescript-eslint` and
+    // friends are not rewritten by prefix.
+    alias: [{ find: /^typescript$/, replacement: "typescript-6" }],
+  },
   test: {
     // Worker caps live in config, not in the root `test` scripts: a cap in a
     // command line only applies when someone types that command, so a bare
