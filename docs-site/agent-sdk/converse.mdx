@@ -89,11 +89,13 @@ back:
 ```ts
 import { THREAD_ID_HEADER } from "@vendoai/agents";
 
+let threadId: string | null = null;
+
 const response = await fetch("/api/support", {
   method: "POST",
   body: JSON.stringify({ message, threadId }),
 });
-const threadId = response.headers.get(THREAD_ID_HEADER);
+threadId = response.headers.get(THREAD_ID_HEADER);
 ```
 
 A `threadId` is checked against the same subject that owns it. Someone else's
