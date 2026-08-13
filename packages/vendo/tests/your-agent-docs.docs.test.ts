@@ -46,7 +46,7 @@ const CONTRACT_PAGE = "docs-site/capabilities/generated-ui.mdx";
 /** The MCP door's own tools and options — the only door that carries `vendo_apps_*`. */
 const DOOR_PAGE = "docs-site/reference/mcp-door.mdx";
 /** What the in-process tool pack contains. */
-const PACK_PAGE = "docs-site/existing-agents/index.mdx";
+const PACK_PAGE = "docs-site/existing-agents/overview.mdx";
 const AGENT_TOOLS = "packages/apps/src/server/doors/agent-tools.ts";
 const PACK = "packages/vendo/src/pack.ts";
 
@@ -100,7 +100,7 @@ describe("the BYO on-ramp page is published", () => {
     // quickstart is the group's first entry and the overview it hands off to
     // sits directly behind it, ahead of the framework notes. Flipping these
     // two back reintroduces the overview hop the landing page removed.
-    expect(group?.pages.slice(0, 2)).toEqual([NAV_ENTRY, "existing-agents/index"]);
+    expect(group?.pages.slice(0, 2)).toEqual([NAV_ENTRY, "existing-agents/overview"]);
   });
 
   it("leaves no nav entry pointing at a file that does not exist", async () => {
