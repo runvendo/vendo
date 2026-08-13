@@ -36,7 +36,7 @@ Pass a named preset as `auth` and you are done:
 import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { createVendo } from "@vendoai/vendo/server";
 
-export const vendo = createVendo({ model, auth: authJs() });
+export const vendo = createVendo({ auth: authJs() });
 ```
 
 Every preset is zero-argument in the standard case. It reads its own provider's
@@ -69,8 +69,11 @@ provider's claims defaults; returning `null` means "subject unknown to host", an
 away or MCP minting for that subject declines.
 
 ```ts
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
+import { db } from "@/lib/db"; // yours
+
 export const vendo = createVendo({
-  model,
   auth: authJs({
     secret: () => process.env.AUTH_SECRET,
     user: async (subject) => {
@@ -198,9 +201,9 @@ every away tool call. Clerk and Auth0 return a preset object instead; pass its
 ```ts
 import { createVendo } from "@vendoai/vendo/server";
 import { authJsPreset } from "@vendoai/actions/presets/auth-js";
+import { resolvePrincipal } from "@/lib/auth"; // yours
 
 export const vendo = createVendo({
-  model,
   principal: resolvePrincipal,
   actAs: authJsPreset({
     secret: process.env.AUTH_SECRET!,

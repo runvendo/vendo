@@ -107,10 +107,13 @@ export async function POST(req: Request) {
 // src/mastra/agents/your-agent.ts
 import { Agent } from "@mastra/core/agent";
 import { vendoMastraTools } from "@vendoai/vendo/mastra";
-import { vendo } from "../../lib/vendo";
+import { vendo } from "@/lib/vendo";
 
 export const yourAgent = new Agent({
-  // …your agent as it is
+  id: "your-agent",
+  name: "your-agent",
+  instructions: "…your system prompt as it is",
+  model: "openai/gpt-4.1-mini",
   tools: async () => ({ ...(await vendoMastraTools(vendo)) }), // yours spread in too
 });
 
