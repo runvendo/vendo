@@ -310,6 +310,14 @@ const vendo = createVendo({
 });
 ```
 
+The hosted store lives on Vendo's Postgres, so the [ephemeral-disk
+warning](/deploy/persistence#ephemeral-container-filesystems-wipe-pglite-on-redeploy)
+never fires for it. Where it does bite is the opposite override: if
+`VENDO_API_KEY` is unset, or you pass `store: createStore()` explicitly on
+Railway, Render, Fly.io, Heroku, or with a `dataDir` under `/tmp`, the
+store's boot block flags PGlite's data dir as unsafe and `vendo doctor`
+reports [`E-STORE-001`](/agents/verify#E-STORE-001).
+
 To construct it explicitly (the adapter itself never reads the environment):
 
 ```ts
