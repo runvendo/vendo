@@ -244,8 +244,13 @@
       "permanent": true
     },
     {
+      "source": "/existing-agents",
+      "destination": "/existing-agents/quickstart",
+      "permanent": true
+    },
+    {
       "source": "/existing-agents/configuration",
-      "destination": "/existing-agents",
+      "destination": "/existing-agents/quickstart",
       "permanent": true
     },
     {
