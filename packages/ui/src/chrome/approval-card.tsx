@@ -83,7 +83,7 @@ export interface ApprovalCardProps {
  *  developer sentence keeps its home in the server's own error; the person
  *  looking at the card is told what it means for them. `refusalCopy` in
  *  grant-set-card.tsx is the pattern. */
-function refusalCopy(reason: unknown): string {
+export function refusalCopy(reason: unknown): string {
   const code = (reason as { code?: unknown } | null)?.code;
   if (code === "not-found") return "This request isn’t waiting on you any more — it may have expired.";
   if (code === "conflict") return "This request was already answered.";
