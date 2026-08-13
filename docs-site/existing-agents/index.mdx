@@ -31,7 +31,10 @@ chat.
 ```ts
 // lib/vendo.ts
 import { createVendo, guard } from "@vendoai/vendo/server";
-import { resolvePrincipal } from "@/lib/auth"; // yours: (req) => Promise<Principal | null>
+
+// the function init wrote — swap in your real session lookup
+export const resolvePrincipal = async (req: Request) =>
+  ({ kind: "user" as const, subject: "demo-user" });
 
 export const vendo = createVendo({
   guard: guard({ policy: "cautious" }),
@@ -39,8 +42,12 @@ export const vendo = createVendo({
 });
 ```
 
-Init writes this call for you, inline in the wire route; the quickstart moves it
-into `lib/vendo.ts` so your chat route and your wire route share one instance.
+Init writes this call for you, inline in the wire route. The quickstart moves it
+into `lib/vendo.ts` and exports `resolvePrincipal`, so your chat route, your wire
+route, and the tool pack all resolve the caller the same way. If init wired an
+auth preset instead, it wrote `auth` in place of `principal` — the two fill the
+same seam, and `createVendo` refuses a config that sets both.
+[Step 2](/existing-agents/quickstart#2-share-one-instance) has each form.
 Everything init writes is listed on [vendo init](/reference/vendo-init).
 
 Then build the pack per framework:
