@@ -1,0 +1,112 @@
+---
+title: "Run on a schedule"
+sidebarTitle: "Schedule"
+description: "Unattended work with run(): your cron is the trigger, risk labels are mandatory, tool calls are bounded by maxToolCalls, and an approval parks instead of waiting."
+---
+
+Nobody is watching. `run()` is one non-interactive run: it thinks, calls
+tools, and comes back with a report.
+
+<Note>
+  **Vendo has no scheduler — your cron is the trigger.** Vercel Cron, GitHub
+  Actions, a systemd timer, your own queue: whatever you already run hits a
+  route, and the route calls `run()`.
+</Note>
+
+## The route
+
+```ts
+// app/api/cron/digest/route.ts
+import { support } from "@/lib/agent";
+
+export async function POST(req: Request) {
+  if (req.headers.get("authorization") !== `Bearer ${process.env["CRON_SECRET"]}`) {
+    return new Response("forbidden", { status: 403 });
+  }
+
+  const report = await support.run(
+    "Summarise yesterday's failed payments and post the digest to the finance channel.",
+    { as: "svc:nightly-digest", maxToolCalls: 40 },
+  );
+
+  return Response.json({
+    status: report.status,
+    summary: report.summary,
+    calls: report.toolCalls.length,
+    approvals: report.refs.approvals,
+  });
+}
+```
+
+`as` is the subject the run acts as. Give unattended work its own service
+subject rather than borrowing a person's — the audit trail then says which
+runs were yours and which were theirs, and the run cannot inherit a user's
+standing grants by accident.
+
+`maxToolCalls` bounds the run at the guard, not at the model: once the budget
+is spent, further calls are refused before they reach the registry. The
+default is **20**.
+
+`await`ing the run is the whole ceremony — `run()` returns a thenable. Reach
+for [`run.events`](/agent-sdk/product-run) only when something is streaming it
+to a screen.
+
+## Risk labels are mandatory here
+
+An unattended run is exactly where an unlabeled tool costs you. There is no
+person to ask, so:
+
+| Label | Unattended |
+| --- | --- |
+| `read` | runs |
+| `write` | runs, or asks, per your policy |
+| `destructive` | asks — which, with nobody there, means denied |
+| *(unlabeled)* | `ungraded`; treated like `destructive` |
+
+Label every tool you want an unattended run to reach, and let the rest be
+denied on purpose. A tool you forgot to grade is not a tool this run has.
+
+## Approvals park, they do not resume
+
+When something in a `run()` asks for approval, the approval is **parked
+durably** and the tool call comes back **denied**, carrying the approval's id.
+The run keeps going with that answer and finishes normally.
+
+`report.refs.approvals` is the list of those ids — the ones to put in front of
+a human. **There is no resume.** Once a person has decided, re-entry is a
+**fresh `run()`**; nothing rewinds into the run that parked it.
+
+```ts
+if (report.refs.approvals.length > 0) {
+  await notifyOncall(report.refs.approvals);
+}
+```
+
+## Follow up on the same thread
+
+A second run that should see the first one's transcript takes the **same
+verb** plus the thread id:
+
+```ts
+const first = await support.run("Draft the digest.", { as: "svc:nightly-digest" });
+const second = await support.run("Now shorten it to five bullets.", {
+  as: "svc:nightly-digest",
+  threadId: first.refs.threadId,
+});
+```
+
+<Warning>
+  Never use `respond()` to follow up on a `run()`. `respond()` is the
+  present-user lane — it opens a turn that will wait on a human who is not
+  there. A `threadId` continuation is checked against the same subject; a
+  mismatch is `not-found`.
+</Warning>
+
+<CardGroup cols={2}>
+  <Card title="Call it like a function" href="/agent-sdk/call">
+    The same verb with an `output` schema, for structured data instead of prose.
+  </Card>
+  <Card title="Reference" href="/agent-sdk/reference#run">
+    `RunOptions`, `AgentRun`, and every field on the report.
+  </Card>
+</CardGroup>
