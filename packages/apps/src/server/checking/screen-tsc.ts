@@ -117,7 +117,17 @@ const compilerOptions = (ts: typeof TS, input: ScreenTscInput): TS.CompilerOptio
   skipDefaultLibCheck: true,
 });
 
-const buildProgram = (ts: typeof TS, input: ScreenTscInput): TS.Program => {
+/** The text of one standard-library file, by the name the compiler asked for.
+ *  `ts.sys` is Node's disk; a venue without one carries its libs some other way,
+ *  which is the whole reason this is an argument. */
+export type LibTextProvider = (fileName: string) => string | undefined;
+
+const buildProgram = (
+  ts: typeof TS,
+  input: ScreenTscInput,
+  libs: LibTextProvider,
+  defaultLibFileName: (options: TS.CompilerOptions) => string,
+): TS.Program => {
   const options = compilerOptions(ts, input);
   const files = new Map([[SCREEN_FILE, input.screen], [SCREEN_TYPINGS_FILE, input.typings]]);
   const create = (name: string, text: string, version: TS.ScriptTarget | TS.CreateSourceFileOptions): TS.SourceFile =>
@@ -128,20 +138,20 @@ const buildProgram = (ts: typeof TS, input: ScreenTscInput): TS.Program => {
       if (own !== undefined) return create(name, own, version);
       const cached = libCache.get(name);
       if (cached !== undefined) return cached;
-      const text = ts.sys.readFile(name);
+      const text = libs(name);
       if (text === undefined) return undefined;
       const file = create(name, text, version);
       libCache.set(name, file);
       return file;
     },
-    getDefaultLibFileName: (compilerOptionsIn) => ts.getDefaultLibFilePath(compilerOptionsIn),
+    getDefaultLibFileName: defaultLibFileName,
     writeFile: () => {},
     getCurrentDirectory: () => "/",
     getCanonicalFileName: (name) => name,
     useCaseSensitiveFileNames: () => true,
     getNewLine: () => "\n",
-    fileExists: (name) => files.has(name) || ts.sys.fileExists(name),
-    readFile: (name) => files.get(name) ?? ts.sys.readFile(name),
+    fileExists: (name) => files.has(name) || libs(name) !== undefined,
+    readFile: (name) => files.get(name) ?? libs(name),
   };
   return ts.createProgram({ rootNames: [SCREEN_FILE, SCREEN_TYPINGS_FILE], options, host });
 };
@@ -424,14 +434,17 @@ export type ScreenProgram =
     }
   | { ok: false; why: string };
 
-/** Build the program and collect its diagnostics. Never throws. */
-export function screenProgram(input: ScreenTscInput): ScreenProgram {
-  const ts = loadCompiler();
-  if (ts === null) {
-    return { ok: false, why: "no usable TypeScript compiler is reachable from @vendoai/apps" };
-  }
+/** Build the program and collect its diagnostics, with the compiler and its
+ *  standard library HANDED OVER — for a caller that resolved both somewhere this
+ *  package cannot reach (`checking/toolchain.ts`). Never throws. */
+export function screenProgramWith(
+  ts: typeof TS,
+  input: ScreenTscInput,
+  libs: LibTextProvider,
+  defaultLibFileName: (options: TS.CompilerOptions) => string,
+): ScreenProgram {
   try {
-    const program = buildProgram(ts, input);
+    const program = buildProgram(ts, input, libs, defaultLibFileName);
     const file = program.getSourceFile(SCREEN_FILE);
     if (file === undefined) return { ok: false, why: "the compiler did not accept the screen file" };
     const syntactic = program.getSyntacticDiagnostics(file);
@@ -446,6 +459,16 @@ export function screenProgram(input: ScreenTscInput): ScreenProgram {
   } catch (error) {
     return { ok: false, why: `the TypeScript compiler threw: ${error instanceof Error ? error.message : String(error)}` };
   }
+}
+
+/** Build the program and collect its diagnostics, on this process's own
+ *  compiler and Node's own disk. Never throws. */
+export function screenProgram(input: ScreenTscInput): ScreenProgram {
+  const ts = loadCompiler();
+  if (ts === null) {
+    return { ok: false, why: "no usable TypeScript compiler is reachable from @vendoai/apps" };
+  }
+  return screenProgramWith(ts, input, (name) => ts.sys.readFile(name), (options) => ts.getDefaultLibFilePath(options));
 }
 
 /** One diagnostic as the floor's sentence. Exported for the component screen's

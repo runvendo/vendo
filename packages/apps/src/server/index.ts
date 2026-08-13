@@ -173,6 +173,23 @@ export { stripServerAuthoritativeFields } from "../contract/index.js";
  * harness which mocks its counterparty proves nothing.
  */
 export { createAppFloor, type AppFloorOptions } from "./checking/floor.js";
+/**
+ * The screen toolchain (`AppsConfig.toolchain`) — the adapter slot the gauntlet
+ * compiles, type-checks and paints through. Public because the implementation is
+ * not always ours: a deployment whose checks run where esbuild, the `typescript`
+ * package and the QuickJS build are not reachable writes its own, and it cannot
+ * write one against an interface it cannot name.
+ */
+export {
+  ScreenToolchainUnavailable,
+  type ScreenPaintInput,
+  type ScreenPaintResult,
+  type ScreenToolchain,
+  type ScreenTransform,
+  type ScreenTypecheckInput,
+  type ScreenTypecheckResult,
+} from "./checking/toolchain.js";
+export type { ComponentScreenIssue } from "./checking/component-screen.js";
 // The component screen's own two facts every writer of one needs: which file it
 // is, and the title it gives itself. Public because the hand that SAVES a screen
 // is not in this package — the screen agent lives in the umbrella, and a harness
