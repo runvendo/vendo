@@ -9,6 +9,11 @@ row that owns it is an `AppDocument` with format `vendo/app@1`, and every user
 owns their own copy — import, fork, sharing, and publishing mint a fresh `app_`
 id, so artifacts carry no data, grants, or authority.
 
+Zero config: layer 1 needs nothing. `createVendo()` mounts the apps block
+unless you pass `apps: false`, and a screen renders in the host-embedded
+renderer with no sandbox account, no key, and no flag. Layer 2 is gated on one
+thing, a configured `sandbox` adapter.
+
 ## The screen
 
 A screen is plain TSX with a small, closed surface:
@@ -72,6 +77,107 @@ what to write instead. Nothing paints and no row lands: the last good screen
 keeps serving. One AI reviewer pass runs on top, over the TSX and the rows its
 queries really returned.
 
+## The receipt your agent gets
+
+Whoever called `vendo_make` gets four fields of words, never pixels:
+
+```json
+{
+  "id": "app_790892b0…",
+  "title": "August Spending",
+  "status": "ready",
+  "say": "August Spending is on your screen."
+}
+```
+
+That is the whole contract, not a summary of a richer one. An earlier version
+handed the agent the whole document, and a model handed a tree eventually talks
+about the tree: narrating a screen it has not seen, to someone looking at a
+different one. So the receipt is deliberately unusable for narration. Say `say`,
+close to verbatim, and stop.
+
+| `status` | What it means |
+| --- | --- |
+| `"ready"` | the screen is on their page |
+| `"building"` | an escalated build outlived the call. Honest, not an error, and there is nothing to poll |
+| `"partial"` | the screen IS painted; the server-side work its plan required is not |
+| `"failed"` | the checks floor rejected it and nothing is painted |
+
+`"failed"` means the bindings claimed data your host does not return, or the
+props did not type-check. `"partial"` is the one a host branching on `status`
+most needs: a half-built app reads as half-built instead of as plain success.
+
+In process the call returns fast. The first streamed view part carries the app's
+permanent id, so your loop gets a `vendo/app-ref@1`
+([envelope contract](/existing-agents/embeds)) while the build streams over the
+wire.
+
+## Where the screen lands
+
+By default a screen lands in the person's own list of views. A slot puts it in
+your product instead, and a slot is your markup:
+
+```tsx
+import { VendoSlot } from "@vendoai/ui/chrome";
+
+<VendoSlot id="home-hero">
+  <YourOriginalCard />
+</VendoSlot>
+```
+
+Add `@vendoai/ui` as a direct dependency. Empty, the slot renders your children
+untouched with no wrapper, so you can inline one anywhere. Filled, it shows the
+build skeleton, then the live view, then a failure with a retry. Never a blank
+hole. One view per slot per person, and a second view evicts the first.
+
+Your agent aims at a slot by id:
+
+```json
+{ "request": "This month's spending by category, largest first", "slot": "home-hero" }
+```
+
+Or you place it yourself, from the `appId` in the `vendo/app-ref@1` envelope
+your loop already received:
+
+```tsx
+<VendoSlot id={block.id} appId={block.vendoAppId} />
+```
+
+<Note>
+  **Building a document or block editor? That is this shape.** One `<VendoSlot>`
+  per block, with the block's own id as the slot id. A generated view then lives
+  in a block like any other: it moves when the block moves, it is scoped to the
+  person with that document open, and your editor keeps owning layout.
+</Note>
+
+Slot ids are yours, and nothing enumerates them for an agent. Tell the agent the
+id, or let the person say it. That is why the
+[prompt block](/customize/instructions#teach-your-own-agent-when-to-build-ui)
+forbids inventing one.
+
+### Moving a screen after the fact
+
+"Put that on my dashboard", said about a view they already have, is
+`vendo_apps_pin`. It answers with what it displaced, so your agent can say what
+moved:
+
+```json
+// in:  { "app": "app_5a3948bc…", "slot": "home-hero" }
+{ "app": "app_5a3948bc…", "slot": "home-hero", "evicted": "app_c0d6b562…" }
+```
+
+`vendo_apps_unpin` clears the slot, and the view itself is untouched. Both are
+writes, so under a `cautious` policy the first one parks in your approvals
+queue, where the person sees the tool, the view, the slot, and the exact
+arguments before anything moves. Routes:
+[HTTP routes](/reference/http-routes).
+
+<Warning>
+  Both pin tools reach an agent over the MCP door only. The in-process tool pack
+  carries no `vendo_apps_*` tool. On that path you move a view from your own
+  code: write the app id into your own record and re-render the slot.
+</Warning>
+
 ## The three layers
 
 1. **Screen app**: no server. `app.tsx`, rendered by the host-embedded renderer,
@@ -104,7 +210,7 @@ surface. Edits that add server behavior stay approval-gated. See
 
 A screen renders in a sandboxed surface by default. An approved version of an app
 can also render in the host page; see
-[In-client venue and approvals](/concepts/in-client-venue) for how approvals are
+[In-client venue and approvals](/capabilities/in-client-venue) for how approvals are
 recorded, how the version hash is pinned, and how new versions drop back.
 
 ## The machine

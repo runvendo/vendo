@@ -13,6 +13,11 @@ Use compound tools when a task always spans the same few primitive calls
 (fetch, transform, write) and you want the agent to reach for one intent name
 instead of chaining several. Extraction never writes this file; you author it.
 
+Zero config: none exist. There is no adapter and no key here. A fresh install
+has no `compounds` array, so nothing extra reaches the agent until you write
+one. Vendo validates every entry at load, quarantines the ones that fail, and
+boots either way.
+
 ## When to use a compound
 
 Reach for a compound when all three are true:

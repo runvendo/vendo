@@ -10,6 +10,11 @@ sharing the page's authority and network: the *in-client venue*. Approvals
 pin the app's content hash, so any edit invalidates the grant and the surface
 drops back to the sandbox until it is re-approved.
 
+Zero config: the jail. With no approval ever recorded, `open()` omits the
+`inClient` field and the app renders in the sandboxed iframe. Nothing to switch
+on, and no way into the host page except a stored approval pinning the current
+content hash.
+
 ## Two venues, one default
 
 - **Jail (default).** Every app runs inside an iframe with
@@ -73,10 +78,10 @@ ship-diffs of *other* users' review-kind apps to a caller your composition's
 
 ## Minting approvals
 
-Vendo Cloud provides the human review console that mints approvals for
-production hosts. For local demos and development, Vendo exposes a documented
-injection seam that pins the app's *current* version hash: you approve what
-is running, never a hand-crafted hash.
+For local demos and development, Vendo exposes a documented injection seam that
+pins the app's *current* version hash: you approve what is running, never a
+hand-crafted hash. For production hosts, Vendo Cloud provides the human review
+console that mints approvals.
 
 ### Server-side
 
@@ -174,7 +179,7 @@ decision, and the flag doesn't clear it even in dev.
 
 ## Related reading
 
-- [Generated UI and apps](/concepts/generated-ui): the ladder and the default
+- [Generated UI and apps](/capabilities/generated-ui): the ladder and the default
   jail.
 - [Tools and safety](/concepts/tools-and-safety): how host tool calls are
   gated regardless of venue.

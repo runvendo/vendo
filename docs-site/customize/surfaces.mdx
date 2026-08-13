@@ -1,14 +1,13 @@
 ---
 title: "UI surfaces"
-sidebarTitle: "UI surfaces"
-description: "Every chrome surface Vendo's agent renders: overlay, palette, thread, generated views, approvals, and slot."
+sidebarTitle: "Surfaces"
+description: "Mount VendoProvider in your client, then pick a surface: overlay, palette, thread, generated views, approvals, and slot."
 ---
 
-This page shows every chrome surface Vendo's agent renders. Every surface
-derives its colors, typography, radius, density, and motion from your
-[VendoTheme tokens](/connect/theming). To see them running on your own tools
-and your own theme, run `vendo init` in your app — the
-[quickstart](/quickstart) walks the whole path.
+Every chrome surface Vendo renders reads its colors, typography, radius,
+density, and motion from your [VendoTheme tokens](/customize/theming). To see
+them on your own tools and your own brand, run `vendo init` and follow the
+[quickstart](/vendo-agent/quickstart).
 
 <Note>
   Vendo's built-in agent is in beta. Most teams should
@@ -16,6 +15,71 @@ and your own theme, run `vendo init` in your app — the
   from their existing loop; the [embeds](/existing-agents/embeds) render Vendo
   inside that chat instead of the chrome below.
 </Note>
+
+## The client mount
+
+`vendo init` never writes a client file. It prints one paste at the end of the
+run, naming your layout file and the exact lines. That paste is what connects
+your pages to the wire, and `vendo doctor` fails until it lands. The wrapped
+child differs by router.
+
+```tsx
+// app/layout.tsx — App Router
+import { VendoProvider } from "@vendoai/vendo/react";
+
+// then wrap the app:
+<VendoProvider baseUrl="/api/vendo">{children}</VendoProvider>
+```
+
+```tsx
+// pages/_app.tsx — Pages Router
+import { VendoProvider } from "@vendoai/vendo/react";
+
+// then wrap the app:
+<VendoProvider baseUrl="/api/vendo"><Component {...pageProps} /></VendoProvider>
+```
+
+`baseUrl` is where the wire is mounted, path prefix included. A deployment
+served under `/maple` passes `baseUrl="/maple/api/vendo"`.
+
+`<VendoProvider>` renders nothing by itself. Add `<VendoOverlay />` inside it
+for the launcher pill and panel, or render one of the surfaces below.
+
+Registering host components? Put the registry and the provider in one
+`"use client"` file and mount that in your layout instead. This file is yours;
+init does not generate it.
+
+```tsx
+// vendo/vendo-root.tsx — yours
+"use client";
+
+import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
+import type { ReactNode } from "react";
+import { SpendingDonut } from "@/components/SpendingDonut";
+import theme from "../.vendo/theme.json";
+import type { VendoTheme } from "@vendoai/vendo";
+
+const registry = { SpendingDonut: { component: SpendingDonut, description: "Spending by category." } };
+
+export function VendoRoot({ children }: { children: ReactNode }) {
+  return (
+    <VendoProvider baseUrl="/api/vendo" components={registry} theme={theme as VendoTheme}>
+      {children}
+      <VendoOverlay />
+    </VendoProvider>
+  );
+}
+```
+
+<Warning>
+  Keep the registry inside a `"use client"` file. Declaring it in a Server
+  Component layout and passing it to the provider crashes React Server
+  Components serialization once the registry holds real components — every
+  page 500s.
+</Warning>
+
+The `theme` prop applies the brand init captured. The cast narrows
+TypeScript's widened JSON-module string literals.
 
 ## Overlay
 
@@ -27,9 +91,21 @@ phones.
   <img src="/images/ui/hero-launcher.png" alt="Vendo overlay launcher pill in the corner of a host page" />
 </Frame>
 
-Wire it in the [quickstart](/quickstart#the-client-mount); control it
+Wire it in [the client mount](#the-client-mount) above; control it
 programmatically with
 [useVendoOverlay](/reference/hooks#overlay-control-usevendooverlay).
+
+### Tune it
+
+`VendoOverlay` comes from `@vendoai/vendo/react`, or from `@vendoai/ui/chrome`
+directly. Move the launcher with `launcher="bottom-left"`. Set
+`launcher="none"` and drive it yourself with the `useVendoOverlay` hook. For a
+different surface entirely, swap `<VendoOverlay />` inside your wrapper for
+your own composition, or for `<VendoThread />`. That one lives in
+`@vendoai/ui/chrome` and needs `@vendoai/ui` as a direct dependency.
+`<VendoOverlay />` is the only standalone chrome surface
+`@vendoai/vendo/react` re-exports; the BYO embeds (`<VendoToolResult>`,
+`<VendoAppEmbed>`, `<VendoApprovalEmbed>`) and every hook come from there too.
 
 ## Command palette
 
@@ -67,7 +143,7 @@ a screenshot.
   <img src="/images/ui/hero-generated-view.png" alt="A generated view rendered inline in the Vendo thread" />
 </Frame>
 
-See [Generated UI and apps](/concepts/generated-ui) for what a view can do
+See [Generated UI and apps](/capabilities/generated-ui) for what a view can do
 and who owns it.
 
 ## Approvals
@@ -204,7 +280,7 @@ user only. On a remixed surface the pill opens a small management popover
 Add the `review` flag (`<Remixable review>`) for components whose remixes a
 host reviewer must approve: the owner keeps seeing the original until
 approval, and the approved version then renders in place natively. See
-[Host components](/connect/host-components#remix-fork-a-wrapped-component)
+[Host components](/customize/host-components#remix-fork-a-wrapped-component)
 for capture rules and the review flow.
 
 ## Embeds for your own agent's chat
@@ -219,4 +295,4 @@ the three components, and their props.
 
 Every component above re-themes from one token file. Extract it with
 `vendo init`, or hand-edit `.vendo/theme.json`. See
-[Theming](/connect/theming) for the full token reference.
+[Theming](/customize/theming) for the full token reference.

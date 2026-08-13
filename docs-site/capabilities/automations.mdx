@@ -5,8 +5,14 @@ description: "How Vendo drives UTC cron schedules and duration timers, ingests h
 ---
 
 Vendo fires automations on a schedule, in response to a host event, or from
-a verified external webhook. This page covers all three triggers plus how
-to stop a run that is already in flight.
+a verified external webhook.
+
+Zero config: the block mounts unless you pass `automations: false`, and host
+events work immediately. `vendo.emit(...)` runs the matching automations in
+your own process, with no key and no cron. Schedules are the one trigger that
+needs a firing authority, and you pick one: `automations.start()` in a
+long-lived process (it polls every 60s by default), or an external cron
+against the tick route below.
 
 ## Schedules
 

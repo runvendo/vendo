@@ -16,8 +16,8 @@ end.
 
 The shared registry is the current form: one object, keyed by component
 name, that both `createVendo` (as `catalog`) and `<VendoProvider>` (as
-`components`) read. See the
-[quickstart](/quickstart#install-and-init). This page covers the
+`components`) read. See [the client mount](/customize/surfaces#the-client-mount)
+for where that object lives in your app. This page covers the
 underlying entry shape and the array form the registry normalizes into,
 which stays available as a back-compat escape hatch.
 
@@ -73,6 +73,32 @@ const vendo = createVendo({ model, catalog: registry });
   actions are exempt from that validation.
 - `examples` are JSON strings the model can copy from. One or two concrete
   shapes usually beat a long prose description.
+
+### The catalog contract
+
+`vendo init` leaves the catalog empty, and filling it is your job. What you put
+in it is a closed contract: only registered components exist, and only with the
+props their schemas declare. Generated views validate against those schemas, so
+an invented prop name fails instead of rendering. Prop invention is the single
+most observed agent failure. Models reach for generic names like `data`,
+`rows`, `items`, `labelKey`, or `onPress` that the real component never had.
+
+When you register a host component:
+
+- **Copy prop names from the component's source**, never from convention. If
+  `SpendingDonut` takes `slices`, the schema says `slices`, not `data`.
+- **Give it a zod props schema.** A schema-less entry is legal and the model
+  infers props, but a schema is what makes prop invention impossible. Prefer it
+  whenever the component has typed props.
+- **Schema only what the model should control.** Data-shaped props belong in
+  the schema; internal callbacks and render props do not.
+- **Write the description for selection**: what the component shows and when to
+  reach for it. "Spending by category. Use for where-did-my-money-go requests."
+
+The same closed-world rule applies to you while you install. In examples,
+briefs, and drafts, name only components that are in the catalog and tools that
+are in `.vendo/tools.json`. If something you need is missing, register it or
+extract it. Do not name it into existence.
 
 ### Auto-extract with sync
 
@@ -393,7 +419,7 @@ decides only where the fork executes:
 
 The gate rides the hash-pinned in-client approval machinery: only a stored
 approval matching a version's exact content hash mounts in the host page (see
-[the in-client venue](/concepts/in-client-venue)). The review artifact at
+[the in-client venue](/capabilities/in-client-venue)). The review artifact at
 every gate is the ship-diff — the fork's unified diff against the captured
 baseline.
 
@@ -494,7 +520,7 @@ and `Progress`; forms and actions are `Input`, `Select`, `DatePicker`,
 `Textarea`, `Checkbox`, `Button`, `Form`, and `Disclaimer`; feedback is
 `Tabs`, `Callout`, and `Accordion`. Catalog entries and generated components
 cannot shadow them. Every one reads the same
-[theme tokens](/connect/theming), so they pick up your brand's colors, radii,
+[theme tokens](/customize/theming), so they pick up your brand's colors, radii,
 density, and motion without extra wiring.
 
 Two names people look for are deliberately absent. `DataTable` is the only
