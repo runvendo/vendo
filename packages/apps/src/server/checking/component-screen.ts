@@ -70,6 +70,7 @@ import {
   type ScreenPaintResult,
   type ScreenToolchain,
   type ScreenTransform,
+  type ScreenTypecheckResult,
 } from "./toolchain.js";
 
 // ---- the contract ---------------------------------------------------------
@@ -308,6 +309,14 @@ const ALLOWED_IMPORTS: readonly string[] = ["react", SCREEN_MODULE];
  * screen that paints differently in two venues. `scan-fidelity.test.ts` pins
  * this behaviour deliberately, so that closing it cannot silently reopen the
  * `namespace Foo\n{` miss.
+ *
+ * One residual runs the OTHER way and is accepted on the same terms: `\s` does
+ * not match a comment, so a REAL declaration with a block comment between the
+ * keyword and the name is admitted — that shape passes the whole gauntlet. The
+ * only fix is lexing the file to read through comments, and this guard exists
+ * precisely because there is no parse of the construct to lean on. Pinned in the
+ * same place as the false positives, so the accepted set is honest in both
+ * directions.
  */
 const NAMESPACE_BLOCK = /(?<![\w$])namespace\s+([A-Za-z_$][\w$.]*)\s*\{/u;
 
@@ -602,12 +611,20 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
   });
   announceUntyped(notes);
 
-  const typed = await toolchain.typecheck({
-    source: opts.source,
-    typings,
-    lib: COMPONENT_SCREEN_LIB,
-    components: names,
-  });
+  let typed: ScreenTypecheckResult;
+  try {
+    typed = await toolchain.typecheck({
+      source: opts.source,
+      typings,
+      lib: COMPONENT_SCREEN_LIB,
+      components: names,
+    });
+  } catch (error) {
+    // A toolchain reached over a service binding reports failure by THROWING —
+    // only an in-process one can answer `{ ok: false }`. Both are the same
+    // unavailable, and an RPC that broke is a refusal, never a silent pass.
+    typed = { ok: false, why: error instanceof Error ? error.message : String(error) };
+  }
   if (!typed.ok) {
     return refuse([issue("typecheck-unavailable", `the screen could not be type-checked: ${typed.why}. This check refuses to pass a screen it never read — make the TypeScript compiler reachable where the build runs.`)], { compiled, queryPlan });
   }

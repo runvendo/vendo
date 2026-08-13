@@ -8,8 +8,15 @@
  * exists at all, and a check that read nothing must never answer "fine".
  */
 import { describe, expect, it } from "vitest";
-import { checkComponentScreen } from "../../src/server/checking/component-screen.js";
-import { nodeToolchain, __setToolchainForTests } from "../../src/server/checking/toolchain.js";
+import {
+  checkComponentScreen,
+  type ComponentScreenCheck,
+} from "../../src/server/checking/component-screen.js";
+import {
+  nodeToolchain,
+  __setToolchainForTests,
+  type ScreenToolchain,
+} from "../../src/server/checking/toolchain.js";
 import { runToolchainConformance } from "./toolchain-conformance.test-util.js";
 
 describe("the Node screen toolchain", () => {
@@ -47,5 +54,33 @@ describe("a toolchain that cannot type-check", () => {
     } finally {
       restore();
     }
+  });
+});
+
+describe("a toolchain whose type check REJECTS", () => {
+  it("refuses with the same sentence as one that answered { ok: false }", async () => {
+    const why = "the compiler is not reachable here";
+    const check = async (typecheck: ScreenToolchain["typecheck"]): Promise<ComponentScreenCheck> => {
+      const restore = __setToolchainForTests({ ...nodeToolchain(), typecheck });
+      try {
+        return await checkComponentScreen({
+          source: PLAIN,
+          hostTools: [],
+          catalog: ["Text"],
+          runQuery: async () => ({}),
+        });
+      } finally {
+        restore();
+      }
+    };
+
+    // The whole reason the slot exists is a toolchain reached over a service
+    // binding, where a broken call arrives as a rejection rather than a verdict.
+    const answered = await check(async () => ({ ok: false, why }));
+    const rejected = await check(async () => { throw new Error(why); });
+
+    expect(rejected.ok).toBe(false);
+    expect(rejected.issues).toEqual(answered.issues);
+    expect(rejected.issues[0]?.code).toBe("typecheck-unavailable");
   });
 });
