@@ -193,6 +193,13 @@ identity headers your API code reads.
 
 ### Wire a per-seam preset
 
+These presets ship in `@vendoai/actions`, a separate install from
+`@vendoai/vendo`:
+
+```bash
+npm install @vendoai/actions
+```
+
 Import the one you want and hand it to `createVendo` as `actAs`. Each closes
 over a secret you provision and returns the `ActAs` function Vendo calls before
 every away tool call. Clerk and Auth0 return a preset object instead; pass its
