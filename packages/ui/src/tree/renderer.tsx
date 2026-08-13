@@ -22,6 +22,7 @@ import {
 } from "@vendoai/apps/contract";
 import { convertPayload } from "./convert-payload.js";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -404,6 +405,36 @@ function outcomeNotice(
   return null;
 }
 
+/**
+ * An answer belongs to the node that fired the press — and a generated screen
+ * routinely closes the confirm panel that node lived in, which used to take the
+ * answer off the page with it (the button pressed, then nothing, forever). Node
+ * ids are structural paths (apps/contract/genui/component/flatten.ts), so the
+ * notice climbs instead: the longest dot-prefix that still names a live node
+ * carries it, worst case the root. Two orphans that reach the same ancestor
+ * both render, stacked in the order their slots were filled.
+ */
+function orphanedOutcomes(
+  outcomes: Record<string, ToolOutcome | undefined>,
+  nodes: ReadonlyMap<string, TreeNode>,
+): ReadonlyMap<string, Array<[string, ToolOutcome]>> {
+  const homed = new Map<string, Array<[string, ToolOutcome]>>();
+  for (const [nodeId, outcome] of Object.entries(outcomes)) {
+    if (outcome === undefined || nodes.has(nodeId)) continue;
+    let host = nodeId;
+    while (!nodes.has(host)) {
+      const cut = host.lastIndexOf(".");
+      if (cut < 0) break;
+      host = host.slice(0, cut);
+    }
+    if (!nodes.has(host)) continue;
+    const slot = homed.get(host);
+    if (slot === undefined) homed.set(host, [[nodeId, outcome]]);
+    else slot.push([nodeId, outcome]);
+  }
+  return homed;
+}
+
 interface NodeRendererProps {
   nodeId: string;
   ancestry: ReadonlySet<string>;
@@ -421,6 +452,9 @@ interface NodeRendererProps {
   state: Record<string, Json>;
   streaming: boolean;
   outcomes: Record<string, ToolOutcome | undefined>;
+  /** Outcomes whose own node left the tree, re-homed on the nearest surviving
+   *  ancestor by {@link orphanedOutcomes}: ancestor id → the fired ids it carries. */
+  orphans: ReadonlyMap<string, Array<[string, ToolOutcome]>>;
   runAction(nodeId: string, action: string, payload?: Json): Promise<ToolOutcome>;
   /** Re-raise a node's park, so a dismissed ask can be asked again. Absent when
    *  the caller passed no `onParked` — there would be nowhere to raise it. */
@@ -683,10 +717,17 @@ function NodeRenderer(props: NodeRendererProps) {
 
   const outcome = props.outcomes[node.id];
   const review = props.onReview;
+  // Re-raising a park names the node that FIRED it, never the one carrying the
+  // notice — an orphan's press is still that press.
+  const notice = (firedId: string, settled: ToolOutcome | undefined): ReactNode =>
+    outcomeNotice(settled, review === undefined ? undefined : (approvalId) => review(firedId, approvalId));
   return (
     <NodeShell nodeId={node.id} outcome={outcome} mark={props.marks.get(node.id)}>
       {content}
-      {outcomeNotice(outcome, review === undefined ? undefined : (approvalId) => review(node.id, approvalId))}
+      {notice(node.id, outcome)}
+      {props.orphans.get(node.id)?.map(([firedId, orphan]) => (
+        <Fragment key={firedId}>{notice(firedId, orphan)}</Fragment>
+      ))}
     </NodeShell>
   );
 }
@@ -850,6 +891,9 @@ function StatefulTreeView({
   // is the one paint that animates. A served first paint, every streaming chunk
   // and every non-interactive payload swap instantly, as they always have.
   const repaint = useRepaintMotion(nodes, interactive !== undefined && !streaming);
+  // Against the map that is actually WALKED, so a re-homed notice always lands
+  // on a node this render mounts.
+  const orphans = useMemo(() => orphanedOutcomes(outcomes, repaint.nodes), [outcomes, repaint.nodes]);
 
   // A review-kind version awaiting the host reviewer renders NOTHING but its
   // standing, checked BEFORE tree validation:
@@ -962,6 +1006,7 @@ function StatefulTreeView({
         state={viewState}
         streaming={streaming}
         outcomes={outcomes}
+        orphans={orphans}
         runAction={runAction}
         {...(onReview === undefined ? {} : { onReview })}
         setViewState={updateState}

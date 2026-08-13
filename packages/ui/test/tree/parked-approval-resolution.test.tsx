@@ -79,6 +79,37 @@ export default function PendingTransfers() {
 }
 `;
 
+/** The shape generated screens actually write: the button that fires the
+ *  mutation lives INSIDE a confirm panel, and pressing it closes the panel. So
+ *  the node that fired is gone before the guard's answer comes back. */
+const CONFIRMING = `
+import { useState } from "react";
+import { Button, Card, Stack, Text, tools, useQuery } from "@vendo/screen";
+
+export default function PayJordan() {
+  const pending = useQuery("list_pending");
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <Stack gap={12}>
+      <Text text={"Pending: " + pending.data.length} />
+      <Card key="pay" title="Pay Jordan">
+        {confirming ? (
+          <Stack key="confirm" gap={8}>
+            <Text text="Send $42 to Jordan?" />
+            <Button label="Send now" onClick={async () => {
+              setConfirming(false);
+              await tools.pay_jordan({ amount_cents: 4200 });
+            }} />
+          </Stack>
+        ) : (
+          <Button label="Review" onClick={() => setConfirming(true)} />
+        )}
+      </Card>
+    </Stack>
+  );
+}
+`;
+
 const ROWS = [
   { id: "tr_1", recipient: "Ada", amount_cents: 4_200 },
   { id: "tr_2", recipient: "Bob", amount_cents: 900 },
@@ -86,6 +117,11 @@ const ROWS = [
 
 /** The Button inside Ada's card — the node whose press parks. */
 const ADA_NODE = "root.Card:tr_1.1";
+/** {@link CONFIRMING}'s three ids: the button that fires, the panel that closes
+ *  under it, and the card that outlives both. */
+const SEND_NODE = "root.Card:pay.Stack:confirm.1";
+const CONFIRM_PANEL = "root.Card:pay.Stack:confirm";
+const PAY_CARD = "root.Card:pay";
 const APPROVAL = "apr_cancel_ada";
 
 interface Call {
@@ -261,6 +297,50 @@ describe("a parked press learns its answer", () => {
     ]);
     // Re-asking is not re-pressing: no second call reached the host.
     expect(live.of("cancel_transfer")).toHaveLength(1);
+  });
+
+  /**
+   * THE ORPHANED ANSWER. A confirm panel closes the moment the button inside it
+   * is pressed, so by the time the guard answers there is no node left holding
+   * that press's slot — and the notice rendered nowhere at all: the button was
+   * pressed and the surface said nothing, forever. Node ids are structural
+   * paths, so the answer climbs to the nearest node still on screen.
+   */
+  it("keeps the answer on the nearest surviving ancestor when the fired node unmounts", async () => {
+    const live = world(CONFIRMING);
+    live.render();
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Send now" }));
+
+    // The panel that held the press is gone with it...
+    await screen.findByRole("button", { name: "Review" });
+    expect(document.querySelector(`[data-vendo-node-id="${CONFIRM_PANEL}"]`)).toBeNull();
+    // ...and the answer to that press is on the card the panel hung under.
+    const notice = await screen.findByRole("button", { name: /Waiting for your approval — review/u });
+    expect(document.querySelector(`[data-vendo-node-id="${PAY_CARD}"]`)?.contains(notice)).toBe(true);
+
+    // Re-raising it is still THAT press: the fired node's id, not the card's.
+    expect(live.parked).toEqual([{ nodeId: SEND_NODE, approvalId: APPROVAL }]);
+    fireEvent.click(notice);
+    expect(live.parked).toEqual([
+      { nodeId: SEND_NODE, approvalId: APPROVAL },
+      { nodeId: SEND_NODE, approvalId: APPROVAL },
+    ]);
+  });
+
+  it("lands the refusal for an unmounted press on that same ancestor", async () => {
+    const live = world(CONFIRMING);
+    live.render();
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Send now" }));
+    await screen.findByText(/Waiting for your approval/u);
+
+    live.refuse("declined");
+    await announce(false);
+
+    const refusal = await screen.findByText(/nothing was sent/u);
+    expect(document.querySelector(`[data-vendo-node-id="${PAY_CARD}"]`)?.contains(refusal)).toBe(true);
+    expect(screen.queryByText(/Waiting for your approval/u)).toBeNull();
   });
 
   it("says an unanswered approval expired, in its own words", async () => {
