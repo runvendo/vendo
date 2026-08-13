@@ -71,15 +71,22 @@ browser session. See [the MCP door](/reference/mcp-door) for setup.
 You have two options: bring your own Composio key, or ride the Vendo Cloud
 broker.
 
-**Bring your own key.** Pass `composioConnector` to `createVendo`:
+**Bring your own key.** `composioConnector` ships in `@vendoai/actions`, a
+separate install from `@vendoai/vendo`:
+
+```bash
+npm install @vendoai/actions
+```
+
+Pass it to `createVendo`:
 
 ```ts
 import { createVendo } from "@vendoai/vendo/server";
 import { composioConnector } from "@vendoai/actions";
+import { resolvePrincipal } from "@/lib/auth"; // yours
 
 const vendo = createVendo({
-  model,
-  principal,
+  principal: resolvePrincipal,
   connectors: [
     composioConnector({
       apiKey: process.env.COMPOSIO_API_KEY!,

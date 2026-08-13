@@ -255,8 +255,10 @@ The object form carries door-specific settings through `createVendo` — a
 different origin, an external authorization server, federation:
 
 ```ts
+import { createVendo } from "@vendoai/vendo/server";
+import { oauth, resolvePrincipal } from "@/lib/auth"; // yours
+
 export const vendo = createVendo({
-  model,
   principal: resolvePrincipal,
   oauth,
   mcp: {
