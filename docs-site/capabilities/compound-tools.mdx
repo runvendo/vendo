@@ -11,7 +11,12 @@ step, not to the compound as a whole.
 
 Use compound tools when a task always spans the same few primitive calls
 (fetch, transform, write) and you want the agent to reach for one intent name
-instead of chaining several. Extraction never writes this file; you author it.
+instead of chaining several. Extraction never writes this file. You author it.
+
+Zero config: none exist. There is no adapter and no key here. A fresh install
+has no `compounds` array, so nothing extra reaches the agent until you write
+one. Vendo validates every entry at load, quarantines the ones that fail, and
+boots either way.
 
 ## When to use a compound
 
@@ -101,7 +106,7 @@ Every step runs `if → forEach → args → invoke` in that order.
 - `if`: skip the step when the expression is falsy. A skipped step writes no
   `steps.<id>` key at all, so later steps must not assume one.
 - `forEach`: evaluated once, before iteration, with `item` undefined. It must
-  produce an array of at most 1000 items; anything else halts the walk. The
+  produce an array of at most 1000 items. Anything else halts the walk. The
   step then runs once per element with that element bound to `item`, and its
   outputs collect as an array under `steps.<id>`.
 - `args`: evaluated per invocation and passed to the target tool.

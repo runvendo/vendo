@@ -103,7 +103,19 @@ export const doctorRoutes: RouteEntry[] = [
   route("POST", "/doctor/act-as", async ({ deps }) => {
     const outcome = await deps.doctor.actAs();
     if (doctorProbeOk(outcome)) return json({ ok: true });
+    // The probe executor calls the actions registry directly (no guard
+    // binding), so the actAs disposition passthrough survives on the outcome —
+    // the one discriminator between "no seam" and "a seam that said no": a
+    // configured host whose subject→user resolver declines the synthetic
+    // doctor principal must not be told actAs is unconfigured (#873).
+    const disposition = (outcome as { actAs?: string }).actAs;
     if (outcome.status === "error" && outcome.error.code === "not-implemented") {
+      if (disposition === "declined") {
+        return json({
+          ok: false,
+          error: { code: "act-as-declined", message: outcome.error.message },
+        }, 409);
+      }
       return json({
         ok: false,
         error: {
@@ -116,7 +128,12 @@ export const doctorRoutes: RouteEntry[] = [
       ok: false,
       error: {
         code: "act-as-verification-failed",
-        message: "actAs returned no usable AuthMaterial, or the host API did not accept it. Check the matching verifier middleware and principal resolver.",
+        // The registry's own error text is the actionable half (it can name a
+        // missing module or the mint failure); never replace it with a
+        // generic line (#873).
+        message: outcome.status === "error"
+          ? `actAs round-trip failed: ${outcome.error.message}`
+          : "actAs returned no usable AuthMaterial, or the composition's principal resolver did not accept it. Check the actAs seam and principal resolver.",
       },
     }, 409);
   }),

@@ -44,9 +44,18 @@ export async function exists(path: string): Promise<boolean> {
   return access(path).then(() => true, () => false);
 }
 
+/** A leading UTF-8 BOM, stripped before any read is parsed or compared:
+    Notepad and PowerShell's Set-Content both write one, and npm and Node's
+    own require() both tolerate it — a host file must never be less readable
+    to vendo than to npm (FINDINGS, linkwarden field test 2026-08-08: a BOM'd
+    package.json crashed init with a raw SyntaxError). */
+export function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 export async function readOptional(path: string): Promise<string | null> {
   try {
-    return await readFile(path, "utf8");
+    return stripBom(await readFile(path, "utf8"));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;

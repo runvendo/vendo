@@ -28,6 +28,7 @@ describe("doctor error-code registry", () => {
         "E-AUTH-005": "the actAs probe is unreachable",
         "E-AUTH-006": "the actAs probe cannot run while the dev server is down",
         "E-AUTH-007": "actAs is not configured",
+        "E-AUTH-008": "actAs is configured but declined the doctor probe's synthetic principal",
         "E-CFG-001": "a required .vendo/ config file is missing",
         "E-CFG-002": ".vendo/data/.gitignore is missing",
         "E-CFG-003": "the OpenAPI spec's relative server mount and VENDO_BASE_URL's path prefix disagree",
@@ -79,7 +80,9 @@ describe("doctor error-code registry", () => {
 
   it("builds a URL-valid fix_ref with the version param before the fragment", () => {
     const ref = doctorFixRef("E-AUTH-001", "1.2.3");
-    expect(ref).toBe("https://vendo.run/agents/verify?v=1.2.3#E-AUTH-001");
+    // docs.vendo.run serves the verify playbook directly; the marketing-site
+    // path 302s (FINDINGS F7a) and some agents refuse to follow the hop.
+    expect(ref).toBe("https://docs.vendo.run/agents/verify?v=1.2.3#E-AUTH-001");
     const url = new URL(ref);
     expect(url.searchParams.get("v")).toBe("1.2.3");
     expect(url.hash).toBe("#E-AUTH-001");

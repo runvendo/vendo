@@ -25,6 +25,9 @@ export interface AuthMatch {
   /** How the family was chosen: detection (default) cites the dependency it
       found; a picker pick says so honestly — nothing was detected. */
   source?: "picked";
+  /** A version-shaped caveat the wiring paths must surface (today: next-auth
+      v4, whose sessions the v5-speaking authJs() preset cannot read). */
+  advisory?: string;
 }
 
 export interface AuthDetection {
@@ -41,23 +44,48 @@ export const AUTH_FAMILIES: ReadonlyArray<{ preset: AuthPresetName; test: (depen
   { preset: "auth0", test: (dependency) => dependency.startsWith("@auth0/") },
 ];
 
+/** The leading major of a semver-ish range ("^4.24.11" → 4, ">=5.0.0-beta" →
+    5); undefined for ranges that name no version (workspace:, catalog:,
+    latest, tags) — no advisory beats a wrong one. */
+function rangeMajor(range: string | undefined): number | undefined {
+  if (range === undefined) return undefined;
+  const match = /^\s*[~^]?[><=\s]*v?(\d+)/.exec(range);
+  return match === null ? undefined : Number(match[1]);
+}
+
+/** The one caveat detection can attach today: next-auth v4 wired to the
+    v5-speaking authJs() preset. Wiring proceeds (the composition is correct
+    for a future v5 upgrade) but the consequences are named, not discovered. */
+function nextAuthV4Advisory(range: string): string {
+  return `Auth: next-auth v4 detected (${range}) — authJs() speaks Auth.js v5. On v4, signed-in users ` +
+    "resolve as anonymous (v4 session cookies are not readable) and away runs cannot be verified by the " +
+    "host. Wiring authJs() anyway for a future v5 upgrade; to stay anonymous instead, pass --auth none. " +
+    "Details: docs/act-as-presets.md.";
+}
+
 /** Silent auth-preset detection from the host's package.json (zero-question
     contract): one unambiguous family gets wired; none or several stay
     anonymous and become one advisory line (detection-as-advice). */
 export async function detectAuthPreset(root: string): Promise<AuthDetection> {
   let dependencies: string[] = [];
+  let versions: Record<string, string> = {};
   try {
     const manifest = JSON.parse((await readOptional(join(root, "package.json"))) ?? "{}") as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
-    dependencies = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies });
+    versions = { ...manifest.devDependencies, ...manifest.dependencies };
+    dependencies = Object.keys(versions);
   } catch {
     // No readable manifest — nothing to detect; anonymous is the safe default.
   }
   const matches = AUTH_FAMILIES.flatMap(({ preset, test }) => {
     const dependency = dependencies.find(test);
-    return dependency === undefined ? [] : [{ preset, dependency }];
+    if (dependency === undefined) return [];
+    const advisory = preset === "authJs" && dependency === "next-auth" && rangeMajor(versions[dependency]) === 4
+      ? nextAuthV4Advisory(versions[dependency]!)
+      : undefined;
+    return [{ preset, dependency, ...(advisory === undefined ? {} : { advisory }) }];
   });
   return { wired: matches.length === 1 ? matches[0]! : null, matches };
 }
@@ -124,7 +152,7 @@ export async function pickScaffoldAuth(
     };
   }
   const detectedMatch = detected.find((match) => match.preset === picked);
-  if (detectedMatch !== undefined) return { wired: detectedMatch, advice: null };
+  if (detectedMatch !== undefined) return { wired: detectedMatch, advice: detectedMatch.advisory ?? null };
   if (picked in AUTH_FAMILY_INFO) {
     // Picked without its SDK in package.json: wire it exactly like a
     // detection-accept, plus one install hint.
@@ -165,7 +193,10 @@ export async function resolveScaffoldAuth(
     return pickScaffoldAuth(detection, compositionPath, async () => authAnswer);
   }
   if (confirmAuth === undefined) {
-    return { wired: detection.wired, advice: authAdvisory(detection, compositionPath) };
+    return {
+      wired: detection.wired,
+      advice: detection.wired?.advisory ?? authAdvisory(detection, compositionPath),
+    };
   }
   if (detection.wired !== null) {
     // The mechanism (`wire auth: clerk()`) is what happens; what is being
@@ -176,7 +207,7 @@ export async function resolveScaffoldAuth(
       `Should the agent act as your signed-in ${AUTH_FAMILY_INFO[detection.wired.preset].name} user?`,
       true,
     );
-    if (accepted) return { wired: detection.wired, advice: null };
+    if (accepted) return { wired: detection.wired, advice: detection.wired.advisory ?? null };
     if (selectAuth !== undefined) return pickScaffoldAuth(detection, compositionPath, selectAuth);
     return { wired: null, advice: declinedAuthAdvisory(detection.wired, compositionPath) };
   }

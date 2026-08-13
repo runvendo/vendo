@@ -73,6 +73,25 @@ describe("model sampling capability", () => {
   });
 });
 
+describe("the vendo Cloud gateway family", () => {
+  // Field: linkwarden 2026-08-08 — the gateway serves its family as literal
+  // model ids over the STOCK @ai-sdk/anthropic provider, whose capability
+  // registry does not know them: with no explicit cap it silently limits
+  // max_tokens to 4096, and the screen agent's document truncates mid-wire
+  // (nothing paints, no row lands, every row-scoped verb answers not-found).
+  // The server-side mapping is the Claude 5 line, so sampling is rejected too.
+  it.each(["vendo", "vendo-paint", "vendo-judge", "vendo-extract", "vendo-env"])(
+    "caps output and omits temperature for %s", (id) => {
+      expect(acceptsSamplingParams(idOnly(id))).toBe(false);
+      expect(modelCallParams(idOnly(id))).toEqual({ maxOutputTokens: UNKNOWN_MODEL_MAX_OUTPUT_TOKENS });
+    });
+
+  it("still leaves the scripted test family alone — only the gateway's literal ids match", () => {
+    expect(acceptsSamplingParams(idOnly("vendo-scripted-v1"))).toBe(true);
+    expect(modelCallParams(idOnly("vendo-scripted-v1"))).toEqual({ temperature: 0 });
+  });
+});
+
 describe("max output tokens", () => {
   it.each(CLAUDE_5)("sets an explicit cap for %s rather than inheriting the provider's silent 4096", (id) => {
     // A provider whose registry predates these ids treats them as unknown and

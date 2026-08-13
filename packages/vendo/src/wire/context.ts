@@ -22,7 +22,19 @@ export function createContextResolver(
   deps: WireDeps,
 ): (req: Request, venue: RunContext["venue"]) => Promise<RunContext> {
   return async (req, venue) => {
-    const resolved = await deps.principal(req);
+    let resolved: Awaited<ReturnType<WireDeps["principal"]>>;
+    try {
+      resolved = await deps.principal(req);
+    } catch (error) {
+      if (error instanceof VendoError) throw error;
+      // #872 — the resolver's own message is actionable host-facing copy (the
+      // presets write it to be shown); the catch-all's generic "Internal Vendo
+      // error" cost a debugging session per config mistake.
+      throw new VendoError(
+        "not-implemented",
+        `principal resolution failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     const sessionId = req.headers.get("x-vendo-session-id") ?? deps.sessionId;
     // Vendo mints no principals: a resolver that answers null has told us this
     // visitor has no identity, and there is nothing to serve them AS. 403, not

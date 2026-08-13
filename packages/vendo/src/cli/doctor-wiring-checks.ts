@@ -7,11 +7,11 @@ import { importsGeneratedMap, importsSplitComposition, missingRegistrations, reg
 import { checkMcpBaseUrl } from "./doctor-mcp-checks.js";
 import type { DoctorRun } from "./doctor-report.js";
 import { walk } from "./theme/walk.js";
-import { clientRoot, exists, readOptional } from "./shared.js";
+import { clientRoot, exists, readOptional, stripBom } from "./shared.js";
 
 async function hasDependency(root: string): Promise<boolean> {
   try {
-    const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
+    const manifest = JSON.parse(stripBom(await readFile(join(root, "package.json"), "utf8"))) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };

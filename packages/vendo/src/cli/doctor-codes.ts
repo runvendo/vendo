@@ -55,6 +55,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-AUTH-005": "the actAs probe is unreachable",
   "E-AUTH-006": "the actAs probe cannot run while the dev server is down",
   "E-AUTH-007": "actAs is not configured",
+  "E-AUTH-008": "actAs is configured but declined the doctor probe's synthetic principal",
   "E-MCP-001": "MCP protected-resource metadata did not resolve",
   "E-MCP-002": "MCP authorization-server metadata did not resolve",
   "E-MCP-003": "the MCP server card did not parse",
@@ -79,8 +80,10 @@ export type DoctorErrorCode = keyof typeof DOCTOR_ERROR_CODES;
 /** Complete list of every code doctor can emit, for CI enumeration. */
 export const doctorErrorCodes = Object.keys(DOCTOR_ERROR_CODES) as readonly DoctorErrorCode[];
 
-/** The verify playbook page the fix_ref URLs anchor into. */
-export const VERIFY_URL = "https://vendo.run/agents/verify";
+/** The verify playbook page the fix_ref URLs anchor into. The docs host
+    serves it directly — the marketing-site path 302s there, and some agent
+    HTTP clients refuse the hop (FINDINGS F7a). */
+export const VERIFY_URL = "https://docs.vendo.run/agents/verify";
 
 /** Full fix URL for a code: the installed vendoai version rides as a query
  *  param BEFORE the fragment so the URL stays valid and the verify page can

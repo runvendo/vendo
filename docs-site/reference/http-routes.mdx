@@ -28,13 +28,13 @@ and production is exactly where that answer matters.
 | `/threads` · `/threads/:id` | GET · GET/DELETE | thread summaries · thread |
 | `/threads/:id/heartbeat` | POST | `{ active: boolean }`. Beaten by the client while a turn streams so the server can idle-abort the turn on a runtime that never surfaces a disconnect. Only the caller's own in-flight turns answer `true`; unknown and foreign ids answer `false` rather than revealing anything |
 | `/approvals` | GET | pending `ApprovalRequest[]` |
-| `/approvals/:id` | GET | one parked call's state, as a tagged envelope: `{state:"pending", request?}` · `{state:"executed", outcome}` · `{state:"declined"}` · `{state:"expired"}`. Covers both parked [BYO](/existing-agents) calls and in-app parked presses inside a generated view. Owner-scoped; unknown and foreign ids both answer `not-found`, on purpose. During the resume window (the ask has been decided but the resumed call has not finished) a pending answer may omit `request` — a pending answer without `request` still means "working", so pollers should keep polling instead of treating it as expired |
+| `/approvals/:id` | GET | one parked call's state, as a tagged envelope: `{state:"pending", request?}` · `{state:"executed", outcome}` · `{state:"declined"}` · `{state:"expired"}`. Covers both parked [BYO](/existing-agents/overview) calls and in-app parked presses inside a generated view. Owner-scoped; unknown and foreign ids both answer `not-found`, on purpose. During the resume window (the ask has been decided but the resumed call has not finished) a pending answer may omit `request` — a pending answer without `request` still means "working", so pollers should keep polling instead of treating it as expired |
 | `/approvals/decide` | POST | `{ ids, decision }` → `{}`. Batch-capable, and a multi-id batch is atomic: every id lands or none does (members already decided the same way are skipped; an opposite prior decision conflicts the whole batch). Denying an automation's standing-grant ask also disarms that automation inside the same decision |
 | `/grants` · `/grants/:id` | GET · DELETE | grants · revoke |
 | `/apps` | GET · POST | list · `{ prompt }` → `AppDocument` |
 | `/apps/:id` | GET · DELETE | app · delete |
 | `/apps/:id/open` | GET | `OpenSurface`; with `?pending=1` a not-yet-servable app answers `{ kind: "pending" }` (HTTP 200) instead of a 404, the build-window poll `<VendoAppEmbed>` uses. A build that terminally failed — or a record owned by someone else — answers `{ kind: "failed", reason, retryable? }` at 200 so the poll resolves instead of spinning |
-| `/apps/:id/ship-diff` | GET | `ShipDiff`, the reviewable code diff against the last approved baseline, hash-pinned to the current version. Owner-scoped. See [In-client venue](/concepts/in-client-venue). |
+| `/apps/:id/ship-diff` | GET | `ShipDiff`, the reviewable code diff against the last approved baseline, hash-pinned to the current version. Owner-scoped. See [In-client venue](/capabilities/in-client-venue). |
 | `/apps/:id/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` (tree actions + fn: calls) |
 | `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |
 | `/apps/:id/history` | GET | the app's capped version log, newest first |
@@ -79,7 +79,7 @@ subject's pending work.
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
-| `/dev/inclient-approval` | POST | `{ appId, approvedBy? }` → the minted `InClientApproval` record. Pins the app's *current* `versionHash` as an in-client approval for the resolved principal; `approvedBy` defaults to `"local-dev"`. Production returns `404`. The Cloud console mints approvals in production; this route is the documented stand-in for local demos. See [In-client venue and approvals](/concepts/in-client-venue). |
+| `/dev/inclient-approval` | POST | `{ appId, approvedBy? }` → the minted `InClientApproval` record. Pins the app's *current* `versionHash` as an in-client approval for the resolved principal; `approvedBy` defaults to `"local-dev"`. Production returns `404`. The Cloud console mints approvals in production; this route is the documented stand-in for local demos. See [In-client venue and approvals](/capabilities/in-client-venue). |
 | `/apps/review-queue` | GET | review-kind versions awaiting a reviewer, with requester, slot, version hash, submission time, resubmission count, and the ship-diff payload. Outside a development composition it answers an empty array, never an error. Without `createVendo({ apps: { review: { reviewer } } })` a caller sees only their own submissions |
 | `/apps/:id/reject-review` | POST | `{ note }` → the rejection. The note is required (the user's panel renders it) and the work is not deleted; a new version supersedes the rejection. Takes the same reviewer assertion; every other caller gets the `not-found` an unowned app answers |
 
@@ -135,7 +135,7 @@ and the RFC 8414 authorization-server metadata all return `404`; the external
 issuer owns those endpoints and RFC 9728 metadata advertises it. The transport
 and `/connect` are unaffected — delegating the authorization server does not
 take away the door's own setup page. See [MCP
-door](/capabilities/mcp) for the delegation model.
+door](/reference/mcp-door) for the delegation model.
 
 Door paths bypass the wire's principal resolver and CSRF JSON gate. The door
 re-resolves `oauth.principal(subject)` on every bearer-authenticated transport
@@ -143,7 +143,7 @@ request, so returning `null` revokes live sessions; the OAuth and discovery
 endpoints are not principal-resolved. The origin-root discovery documents sit
 outside `/api/vendo`; opting into MCP during `vendo init` generates the sibling
 Next.js route that forwards them to the same handler. See [MCP
-door](/capabilities/mcp) for the generated placement and manual fallback.
+door](/reference/mcp-door) for the generated placement and manual fallback.
 
 ## Webhook verification
 
@@ -161,12 +161,12 @@ Organizations are a [Vendo Cloud](/deploy/vendo-cloud) capability, not an
 OSS wire feature. The entire `/orgs` route family, and an `?org=<orgId>`
 query parameter (or `body.org`) on `/approvals` or `/grants`, always return
 `cloud-required` (`402`), regardless of `VENDO_API_KEY`. See
-[Principals](/deploy/principals-and-orgs).
+[Principals](/deploy/auth).
 
 ## Errors and CSRF
 
 Every non-2xx response uses `{ "error": { "code", "message" } }`; see
-[Troubleshooting](/deploy/troubleshooting#error-codes) for the code-to-status
+[Troubleshooting](/deploy/troubleshooting#wire-error-codes) for the code-to-status
 map.
 
 Cookie-authenticated mutations require `Content-Type: application/json`. The

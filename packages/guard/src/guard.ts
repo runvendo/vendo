@@ -26,6 +26,7 @@ import {
   type RecordStore,
   type RunContext,
   serviceToolSlug,
+  approvalRecordRefs,
   sha256Hex,
   type StoreAdapter,
   type StoreOps,
@@ -413,11 +414,10 @@ function neverParkAppRead(descriptor: ToolDescriptor, ctx: RunContext): boolean 
  *  never drift from the data. `call` is what keeps the standing-denial lookup
  *  off a subject's whole approval history: chat's random ids simply miss it. */
 function approvalRefs(data: ApprovalRecordData): Record<string, string> {
-  return {
-    subject: data.request.ctx.principal.subject,
-    status: data.status,
-    call: data.request.call.id,
-  };
+  // Core owns the projection: the automations arming capture writes the same
+  // collection, and two writers spelling the refs by hand is how one of them
+  // minted rows the pending feed could not see (approvalRecordRefs).
+  return approvalRecordRefs(data.request, data.status);
 }
 
 /** The identity a parked approval answers for: the exact call the user saw, in

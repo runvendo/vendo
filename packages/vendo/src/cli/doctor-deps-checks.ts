@@ -1,5 +1,5 @@
 import { installedAiVersion, installedZodVersion, isOlderVersion, npmLatestVersion } from "./dep-versions.js";
-import { zodBelowAiSdkFloor, zodBumpInvocation } from "./provider-deps.js";
+import { aiBelowPeerFloor, aiBumpInvocation, zodBelowAiSdkFloor, zodBumpInvocation } from "./provider-deps.js";
 import type { DoctorRun } from "./doctor-report.js";
 import { CLI_VERSION, type Output } from "./shared.js";
 
@@ -7,8 +7,10 @@ import { CLI_VERSION, type Output } from "./shared.js";
  *  package (peer `ai >=6 <7`), but npm installs the peer conflict anyway:
  *  the static checks all pass and every internal turn then throws
  *  AI_InvalidPromptError (v7 removed system-role messages). Fail fast on the
- *  installed major. An absent install is the wiring/turn checks' story, and
- *  pre-v6 installs predate the peer contract — both skip silently. */
+ *  installed major, above OR below the contract — a resolvable pre-v6 copy
+ *  (usually another package's hoisted install) sailed green into runtime
+ *  500s (FINDINGS F3). An absent install stays the wiring/turn checks'
+ *  story. */
 async function checkAiSdkMajor(run: DoctorRun): Promise<void> {
   const aiVersion = await installedAiVersion(run.root);
   const aiMajor = aiVersion === null ? Number.NaN : Number.parseInt(aiVersion, 10);
@@ -16,6 +18,8 @@ async function checkAiSdkMajor(run: DoctorRun): Promise<void> {
     run.fail("deps/ai-sdk-major", "E-DEP-001", `installed ai@${aiVersion} is unsupported — Vendo supports ai@6; downgrade (npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3) or track github.com/runvendo/vendo/issues/478`);
   } else if (aiMajor === 6) {
     run.pass("deps/ai-sdk-major", `installed ai@${aiVersion} is the supported AI SDK major (v6)`);
+  } else if (aiVersion !== null && aiBelowPeerFloor(aiVersion)) {
+    run.fail("deps/ai-sdk-major", "E-DEP-001", `installed ai@${aiVersion} predates the ai@6 peer contract — every turn fails at runtime; upgrade: ${await aiBumpInvocation(run.root)}. In a workspace, another package's ai@${aiMajor} may be hoisted above the app — give the app its own ai@6 (or a packageExtension/override) so @vendoai packages resolve v6.`);
   }
 }
 

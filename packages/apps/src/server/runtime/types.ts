@@ -320,6 +320,25 @@ export interface EditFailure {
   message: string;
 }
 
+/**
+ * What a create build's server lane produced, handed to the caller through
+ * `onServerWork` — the create-path counterpart of the fields {@link EditResult}
+ * has carried for an escalated edit since Wave 9 (#881: the create door used
+ * to drop the envelope on the floor, so a first-ask automation never raised a
+ * card and its pending grants were invisible). `failed` carries the sentences
+ * the failure-only signal used to carry as `reasons`.
+ */
+export interface CreateServerWork {
+  automation?: EditResult["automation"];
+  /** The box wrote real server code for this app (layer 2 or 3). */
+  graduated?: boolean;
+  /** Caller-facing sentences: refused surface flips, arming issues. */
+  issues?: string[];
+  /** The plan REQUIRED server work that could not be built. The app still
+   *  stands as its tree — this says what it stands without. */
+  failed?: string[];
+}
+
 /** 06-apps §1 */
 export interface VersionEntry {
   at: IsoDateTime;
@@ -439,14 +458,16 @@ export interface AppsRuntime {
      *  the agent bridge turns it into an honest sentence instead of an
      *  apology for something the user can see. */
     onUnsaved?: (reason: string) => void;
-    /** Called when the screen was built and saved but the SERVER work its plan
-     *  required was not: the sections that waited on it have nothing to show.
-     *  The create still resolves with the document — the app is real and on
-     *  screen — so this is the only signal that its server side is missing, and
-     *  without it a half-built app reports a plain success (a live empty app was
-     *  declared complete this way). The agent bridge turns it into an honest
-     *  sentence, exactly as it does for {@link onUnsaved}. */
-    onServerWork?: (result: { ok: false; reasons: string[] }) => void;
+    /** Called when the build's plan declared server work, with what the lane
+     *  produced ({@link CreateServerWork}): the authored automation envelope,
+     *  arming/flip issues, or — in `failed` — the sentences for required
+     *  server work that could not be built (without which a half-built app
+     *  reports a plain success; a live empty app was declared complete that
+     *  way). Absent or never called, the create was screen-only. The agent
+     *  bridge publishes the automation card and the honest caveat from this,
+     *  exactly as it does for {@link onUnsaved} — the create still resolves
+     *  with the document itself. */
+    onServerWork?: (work: CreateServerWork) => void;
   }, ctx: RunContext): Promise<AppDocument>;
   /**
    * Build contract §1.6 / redesign D4 — the files-first counterpart of

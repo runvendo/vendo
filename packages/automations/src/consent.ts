@@ -6,6 +6,7 @@
  * Lifted out of `createAutomationsEngine` unchanged.
  */
 import {
+  approvalRecordRefs,
   descriptorHash,
   serviceToolPhrase,
   serviceToolSlug,
@@ -156,6 +157,9 @@ const createDecisionSubscriber = (
     await engine.put(APPROVALS, {
       id: record.id,
       data: { ...data, consumedAt: iso() },
+      // A generic StoreAdapter replaces the record wholesale, so the flip must
+      // re-state the listing refs or the write erases them.
+      refs: approvalRecordRefs(data.request, data.status),
     });
     return true;
   };
@@ -354,6 +358,18 @@ const createGrantCapture = (
           if (pending.data.grantSetId !== grantSetId) {
             await writeCapture(pending.id, { ...pending.data, grantSetId });
           }
+          // Re-stamp the listing refs a pre-contract row is missing: an
+          // adopted ask must be as visible to the ref-filtered feeds as a
+          // fresh one, or re-enabling keeps counting a debt nobody can see.
+          // Conditional so a decision landing between the read above and this
+          // write is never clobbered back to pending.
+          if (approval !== null && approval.refs?.["subject"] === undefined) {
+            await config.store.records(APPROVALS).put({
+              id: pending.id,
+              data: approval.data,
+              refs: approvalRecordRefs(parsed.data.request, "pending"),
+            });
+          }
           missing.push(clone(parsed.data.request));
           continue;
         }
@@ -380,6 +396,13 @@ const createGrantCapture = (
       await engine.put(APPROVALS, {
         id: request.id,
         data: { request, status: "pending", sessionId: ctx.sessionId },
+        // The listing refs every ref-filtered approvals feed queries by (the
+        // guard's pending feed, its abandoned-ask sweep). Reserved store
+        // tables derive these from the row itself, but a generic StoreAdapter
+        // honors exactly what is passed — same rule the grant mint beside
+        // this follows — and a row minted without them is counted by
+        // pendingGrants yet invisible and immortal.
+        refs: approvalRecordRefs(request, "pending"),
       });
       await writeCapture(request.id, {
         appId,

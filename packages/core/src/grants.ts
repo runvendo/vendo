@@ -178,6 +178,27 @@ export const approvalRequestSchema = z.object({
   createdAt: isoDateTimeSchema,
 }).passthrough() satisfies z.ZodType<ApprovalRequest>;
 
+/**
+ * The refs projection every `vendo_approvals` row carries, so ref-filtered
+ * listings — the guard's pending feed, its abandoned-ask sweep — can see the
+ * row on ANY StoreAdapter. One helper because the collection has more than
+ * one writer (the guard's park, the automations arming capture): reserved
+ * store tables derive these from the row's own columns, but a generic
+ * adapter honors exactly what a writer passes, and a writer that skips them
+ * mints asks no listing can return and no sweep can expire (field: linkwarden
+ * 2026-08-09 — an automation counted pending grants nobody could see or pay).
+ */
+export function approvalRecordRefs(
+  request: ApprovalRequest,
+  status: "pending" | "approved" | "denied",
+): Record<string, string> {
+  return {
+    subject: request.ctx.principal.subject,
+    status,
+    call: request.call.id,
+  };
+}
+
 /** 01-core §5 */
 export interface ApprovalDecision {
   approve: boolean;

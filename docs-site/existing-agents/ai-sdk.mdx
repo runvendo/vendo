@@ -1,130 +1,98 @@
 ---
-title: "Quickstart: AI SDK"
-sidebarTitle: "Quickstart: AI SDK"
-description: "Add Vendo to an existing AI SDK chatbot in three steps: vendo init, one tools spread, one embed component."
+title: "AI SDK notes"
+sidebarTitle: "AI SDK"
+description: "What differs when the pack goes into a Vercel AI SDK loop: per-request builds, dynamic-tool message parts, and the one Next.js config line."
 icon: "/images/logos/vercel.svg"
 ---
 
-import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+The [quickstart](/existing-agents/quickstart) wires an AI SDK loop end to end.
+This page is what it left out.
 
-Keep your Vercel AI SDK chatbot as it is. Three steps add Vendo: your agent
-builds micro-apps right in the chat, runs your host actions guarded, and
-parks risky calls for approval.
+## Build the pack per request
 
-<AgentPrompt
-  lead="Paste this prompt instead of following the steps by hand."
-  prompt={"Add Vendo to this repo's existing AI SDK agent. Read https://docs.vendo.run/existing-agents/ai-sdk.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green and my chat renders Vendo tool outputs. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs-ai-sdk to support the project."}
-/>
-
-## 1. Install and init
-
-```bash
-npm install @vendoai/vendo
-npx vendo init
-```
-
-Init scaffolds the wire route, turns your host actions into agent tools, and
-captures your theme ([what init writes](/connect/vendo-init)). Lift the
-`createVendo` call init wrote into a shared module, so your chat route can
-use the same instance:
+`vendoTools` takes the caller and returns a Promise, so it belongs inside the
+handler, not at module scope:
 
 ```ts
-// lib/vendo.ts — the call init wrote, moved out of the wire route
-import { createVendo } from "@vendoai/vendo/server";
-
-export const vendo = createVendo({
-  // …the options init wrote (catalog, policy, …)
-  principal, // who your callers act as — from your auth
-});
-```
-
-`principal` comes from your auth
-([presets for Auth.js, Supabase, Clerk, Auth0](/connect/act-as-presets)).
-
-```ts
-// app/api/vendo/[...vendo]/route.ts — now just the handler
-import { nextVendoHandler } from "@vendoai/vendo/server";
-import { vendo } from "@/lib/vendo";
-
-export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
-```
-
-One `next.config.ts` line keeps Vendo's native dependencies out of the
-bundler:
-
-```ts
-const nextConfig = { serverExternalPackages: ["esbuild", "@electric-sql/pglite"] };
-```
-
-## 2. Spread the pack
-
-```ts
-// app/api/chat/route.ts — your existing route, one spread
+// app/api/chat/route.ts
+import { anthropic } from "@ai-sdk/anthropic";
+import { convertToModelMessages, streamText } from "ai";
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
-import { vendo } from "@/lib/vendo";
+import { resolvePrincipal, vendo } from "@/lib/vendo";
 
-const result = streamText({
-  model,
-  messages,
-  tools: { ...yourTools, ...(await vendoTools(vendo, { principal })) },
-});
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+  const caller = await resolvePrincipal(req);
+  if (!caller) return new Response("Unauthorized", { status: 401 });
+  return streamText({
+    model: anthropic("claude-sonnet-4-6"),
+    messages: await convertToModelMessages(messages),
+    // your own tools spread in here too
+    tools: { ...(await vendoTools(vendo, { principal: caller })) },
+  }).toUIMessageStreamResponse();
+}
 ```
 
-That one spread gives your agent a guarded `vendo_<action>` tool per host
-action, `vendo_make` (micro-apps in your chat), and `vendo_delegate`.
-`principal` is the same caller your auth resolves in `lib/vendo.ts`
-([why](/existing-agents/configuration#one-principal-two-places)).
+`principal` is not nullable, and an auth preset's resolver returns
+`Principal | null`. Drop the 401 and the call stops typechecking.
 
-## 3. Render the embeds
+Tool execution needs a principal-scoped context, and that principal has to be
+the one your wire route resolves too. See [one principal, two
+places](/existing-agents/overview#one-principal-two-places).
 
-Wrap the chat once in `VendoProvider` and hand finished tool outputs to
-`<VendoToolResult>`. In `useChat`, `vendo_*` tools stream as `dynamic-tool`
-message parts:
+Pass `sessionId` alongside `principal` to carry your own session id into
+Vendo's audit trail. Leave it out and the shim mints one per pack build.
+
+## Rendering the parts
+
+The shim builds every tool with the AI SDK's `dynamicTool`, so `useChat`
+streams them as `dynamic-tool` parts, not `tool-<name>`. Match on that:
 
 ```tsx
-// app/page.tsx — inside your existing message-parts loop
-case "dynamic-tool":
+// the branch to add to your existing message-parts loop
+import type { UIMessage } from "ai";
+import { VendoToolResult } from "@vendoai/vendo/react";
+
+export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
+  if (part.type !== "dynamic-tool") return null;
   return part.state === "output-available"
     ? <VendoToolResult output={part.output} />
     : <div>Running {part.toolName}…</div>;
+}
 ```
 
-## Try it
+`<VendoToolResult>` handles plain data, app refs, and approval refs, so you
+never branch on the envelope yourself
+([Embeds and envelopes](/existing-agents/embeds)).
 
-<Warning>
-  Two models are in play, on two separate credentials. Your agent's OWN loop
-  keeps its own key (here `ANTHROPIC_API_KEY` for `claude-sonnet-4-6`) — no
-  Vendo key replaces it, and it does not become Vendo's model either: env keys
-  are credentials, config selects. Vendo's internal turns (app builds, the
-  delegate) take the model you name in `models` on `createVendo`, or the
-  [Vendo Cloud gateway](/connect/dev-mode) when you leave that seat unset and
-  set `VENDO_API_KEY` — and nothing at all with neither, which the first build
-  says out loud. No `VENDO_API_KEY` yet? `npx vendo login` mints a free
-  metered API key straight into `.env.local`. If your loop's model has no key
-  on this machine, either set one or point your `model` at `vendoModel()` from
-  `@vendoai/vendo/server` to ride the same ladder Vendo does. The
-  done-criterion is a REAL chat turn that renders a Vendo tool output — run
-  ask 2 yourself before calling the install done; doctor cannot check your
-  loop's model.
-</Warning>
+## Next.js
 
-One thread, three asks:
+One `serverExternalPackages` line keeps Vendo's native and wasm dependencies out
+of the bundler:
 
-1. **"What's the weather in Paris?"** A guarded read: the guard runs it,
-   audits it, and returns plain data your model narrates.
-2. **"Make me a dashboard comparing the weather in Paris, London and
-   Tokyo."** — a micro-app builds live, inline in your chat.
-3. **Ask for a destructive action** from `.vendo/tools.json` in plain
-   language — it parks as an approval card; Approve runs it in place.
+```ts
+// next.config.ts
+const nextConfig = { serverExternalPackages: ["esbuild", "@electric-sql/pglite"] };
 
-Details and knobs: [Configuration](/existing-agents/configuration).
+export default nextConfig;
+```
+
+The wire route needs no `runtime` or `dynamic` export. Node is the default
+runtime and route handlers are already dynamic.
+
+## Two models
+
+Your loop keeps its own model and its own key. Vendo's internal turns, app
+builds and the delegate, use a model you name in the composition. They will not
+fall back to yours. Setting that up:
+[Model credentials](/deploy/model-credentials).
+
+`vendo doctor` cannot see your loop's model, so an install isn't done until a
+real chat turn renders a Vendo tool output.
 
 ## The full example
 
 [`examples/ai-sdk-agent`](https://github.com/runvendo/vendo/tree/main/examples/ai-sdk-agent)
-is the unmodified
-[AI SDK Next.js quickstart chatbot](https://ai-sdk.dev/docs/getting-started/nextjs-app-router)
-plus the full, working version of this diff, with a keyless fixture e2e
-(`pnpm test`). Concepts
-live in [the overview](/existing-agents) and
-[Embeds and envelopes](/existing-agents/embeds).
+is the stock
+[AI SDK Next.js chatbot](https://ai-sdk.dev/docs/getting-started/nextjs-app-router)
+with this diff applied, plus a keyless fixture e2e (`pnpm test`).

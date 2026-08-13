@@ -48,29 +48,34 @@
         "group": "Start here",
         "pages": [
           "index",
-          "full-stack-agents",
-          "concepts/architecture",
-          "concepts/tools-and-safety"
+          "agents/index"
         ]
       },
       {
         "group": "You already have an agent",
         "tag": "Recommended",
         "pages": [
-          "existing-agents/index",
-          "existing-agents/your-agent",
+          "existing-agents/quickstart",
+          "existing-agents/overview",
           "existing-agents/ai-sdk",
           "existing-agents/mastra",
-          "existing-agents/embeds",
-          "existing-agents/configuration"
+          "existing-agents/embeds"
         ]
       },
       {
         "group": "Your product has no agent",
         "tag": "Beta",
         "pages": [
-          "quickstart",
-          "ui/components"
+          "vendo-agent/quickstart",
+          "vendo-agent/overview"
+        ]
+      },
+      {
+        "group": "Outside agents over MCP",
+        "tag": "Experimental",
+        "pages": [
+          "mcp/quickstart",
+          "mcp/overview"
         ]
       },
       {
@@ -84,40 +89,25 @@
         ]
       },
       {
-        "group": "Expose your product over MCP",
-        "tag": "Experimental",
+        "group": "Make it yours",
         "pages": [
-          "capabilities/mcp",
-          "existing-agents/mcp",
-          "capabilities/mcp-registry"
+          "customize/theming",
+          "customize/surfaces",
+          "customize/host-components",
+          "customize/instructions",
+          "customize/context",
+          "customize/knowledge"
         ]
       },
       {
-        "group": "Connect your app",
+        "group": "Capabilities",
         "pages": [
-          "connect/vendo-init",
-          "connect/api-tools",
-          "connect/act-as-presets",
-          "connect/dev-mode"
-        ]
-      },
-      {
-        "group": "Your brand and your rules",
-        "pages": [
-          "connect/theming",
-          "connect/host-components",
-          "connect/instructions",
-          "connect/context",
-          "connect/knowledge"
-        ]
-      },
-      {
-        "group": "What the agent can do",
-        "pages": [
+          "capabilities/api-tools",
           "capabilities/connected-accounts",
           "capabilities/compound-tools",
-          "concepts/generated-ui",
-          "concepts/in-client-venue"
+          "capabilities/generated-ui",
+          "capabilities/in-client-venue",
+          "capabilities/automations"
         ]
       },
       {
@@ -126,32 +116,33 @@
           "deploy/deploying",
           "deploy/persistence",
           "deploy/edge-runtimes",
+          "deploy/model-credentials",
           "deploy/vendo-cloud",
-          "deploy/principals-and-orgs",
-          "deploy/scheduler-and-webhooks",
+          "deploy/auth",
           "deploy/telemetry",
           "deploy/troubleshooting"
         ]
       },
       {
-        "group": "Installing with a coding agent",
+        "group": "Concepts",
         "pages": [
-          "agents/index",
-          "agents/host-auth",
-          "agents/tools",
-          "agents/verify"
+          "concepts/architecture",
+          "concepts/tools-and-safety"
         ]
       },
       {
         "group": "Reference",
         "pages": [
-          "reference/handler-options",
-          "reference/server-api",
-          "reference/hooks",
           "reference/cli",
-          "reference/dot-vendo",
+          "reference/vendo-init",
+          "reference/uninstall",
+          "reference/server-api",
+          "reference/handler-options",
+          "reference/hooks",
           "reference/http-routes",
-          "reference/environment-variables"
+          "reference/mcp-door",
+          "reference/environment-variables",
+          "reference/dot-vendo"
         ]
       },
       {
@@ -164,13 +155,28 @@
   },
   "redirects": [
     {
+      "source": "/quickstart",
+      "destination": "/vendo-agent/quickstart",
+      "permanent": true
+    },
+    {
       "source": "/quickstart-node",
-      "destination": "/quickstart",
+      "destination": "/vendo-agent/quickstart",
       "permanent": true
     },
     {
       "source": "/try",
-      "destination": "/quickstart",
+      "destination": "/vendo-agent/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/pick-your-door",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/full-stack-agents",
+      "destination": "/",
       "permanent": true
     },
     {
@@ -180,17 +186,17 @@
     },
     {
       "source": "/capabilities/voice",
-      "destination": "/ui/components",
+      "destination": "/customize/surfaces",
       "permanent": true
     },
     {
       "source": "/concepts/prompts",
-      "destination": "/connect/instructions",
+      "destination": "/customize/instructions",
       "permanent": true
     },
     {
       "source": "/connect/tool-labels",
-      "destination": "/ui/components",
+      "destination": "/customize/surfaces",
       "permanent": true
     },
     {
@@ -201,6 +207,141 @@
     {
       "source": "/install.md",
       "destination": "/agents.md",
+      "permanent": true
+    },
+    {
+      "source": "/agents/verify",
+      "destination": "/deploy/troubleshooting",
+      "permanent": true
+    },
+    {
+      "source": "/agents/host-auth",
+      "destination": "/deploy/auth",
+      "permanent": true
+    },
+    {
+      "source": "/agents/tools",
+      "destination": "/customize/host-components",
+      "permanent": true
+    },
+    {
+      "source": "/existing-agents/index",
+      "destination": "/existing-agents/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/vendo-agent/index",
+      "destination": "/vendo-agent/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/mcp/index",
+      "destination": "/mcp/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/existing-agents/your-agent",
+      "destination": "/existing-agents/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/existing-agents",
+      "destination": "/existing-agents/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/existing-agents/configuration",
+      "destination": "/existing-agents/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/existing-agents/mcp",
+      "destination": "/mcp/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/existing-agents/mcp.md",
+      "destination": "/mcp/quickstart.md",
+      "permanent": true
+    },
+    {
+      "source": "/capabilities/mcp",
+      "destination": "/reference/mcp-door",
+      "permanent": true
+    },
+    {
+      "source": "/capabilities/mcp-registry",
+      "destination": "/reference/mcp-door",
+      "permanent": true
+    },
+    {
+      "source": "/connect/vendo-init",
+      "destination": "/reference/vendo-init",
+      "permanent": true
+    },
+    {
+      "source": "/connect/api-tools",
+      "destination": "/capabilities/api-tools",
+      "permanent": true
+    },
+    {
+      "source": "/connect/act-as-presets",
+      "destination": "/deploy/auth",
+      "permanent": true
+    },
+    {
+      "source": "/connect/dev-mode",
+      "destination": "/deploy/model-credentials",
+      "permanent": true
+    },
+    {
+      "source": "/connect/theming",
+      "destination": "/customize/theming",
+      "permanent": true
+    },
+    {
+      "source": "/connect/host-components",
+      "destination": "/customize/host-components",
+      "permanent": true
+    },
+    {
+      "source": "/connect/instructions",
+      "destination": "/customize/instructions",
+      "permanent": true
+    },
+    {
+      "source": "/connect/context",
+      "destination": "/customize/context",
+      "permanent": true
+    },
+    {
+      "source": "/connect/knowledge",
+      "destination": "/customize/knowledge",
+      "permanent": true
+    },
+    {
+      "source": "/ui/components",
+      "destination": "/customize/surfaces",
+      "permanent": true
+    },
+    {
+      "source": "/concepts/generated-ui",
+      "destination": "/capabilities/generated-ui",
+      "permanent": true
+    },
+    {
+      "source": "/concepts/in-client-venue",
+      "destination": "/capabilities/in-client-venue",
+      "permanent": true
+    },
+    {
+      "source": "/deploy/scheduler-and-webhooks",
+      "destination": "/capabilities/automations",
+      "permanent": true
+    },
+    {
+      "source": "/deploy/principals-and-orgs",
+      "destination": "/deploy/auth",
       "permanent": true
     }
   ],

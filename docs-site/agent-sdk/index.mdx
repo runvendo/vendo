@@ -25,7 +25,7 @@ npx vendo init
 
 `vendo init` writes `.vendo/tools.json` — your API read into tool definitions,
 each with a schema, a risk grade, and its dispatch binding — which is what
-`api()` serves. Full inventory: [vendo init](/connect/vendo-init).
+`api()` serves. Full inventory: [vendo init](/reference/vendo-init).
 
 ## Compose it
 
@@ -44,7 +44,7 @@ export const support = agent({
 
 `harness` is optional and defaults to `vendo()`, the in-process loop. Pass
 `claudeCode()` instead when you want Claude Code thinking on a sandbox machine
-— see [Reference](/agent-sdk/reference#harness-and-model).
+— see [Reference](/agent-sdk/reference#agent-config).
 
 ## Answer a person
 
@@ -74,38 +74,37 @@ next turn and the conversation continues — see
 Pick one. They are the same ladder everywhere in Vendo: **what you pass always
 wins, and `VENDO_API_KEY` fills only the slots you left unset.**
 
-<CardGroup cols={2}>
-  <Card title="Vendo Cloud — vendo login" icon="cloud">
-    ```bash
-    npx vendo login
-    ```
+### Vendo Cloud — `vendo login` {#vendo-cloud}
 
-    Mints a `VENDO_API_KEY` into `.env.local` — never printed. It fills the
-    model seat (through the Cloud gateway) and the sandbox, and for
-    `createVendo` the store too — the Cloud hosted store. Standalone `agent()`
-    is the exception: its store rung is not wired yet
-    ([#1259](https://github.com/runvendo/vendo/issues/1259)), so until it lands
-    a key-only `agent()` passes `store: postgres(url)` or refuses to boot.
-  </Card>
-  <Card title="No Vendo key — bring your own" icon="server">
-    ```ts
-    import { anthropic } from "@ai-sdk/anthropic";
-    import { agent, api, postgres } from "@vendoai/agents";
+```bash
+npx vendo login
+```
 
-    export const support = agent({
-      name: "support",
-      model: anthropic("claude-sonnet-4-6"),
-      store: postgres(process.env.DATABASE_URL!),
-      tools: [api()],
-    });
-    ```
+Mints a `VENDO_API_KEY` into `.env.local` — never printed. It fills the
+model seat (through the Cloud gateway) and the sandbox, and for `createVendo`
+the store too — the Cloud hosted store. Standalone `agent()` is the exception:
+its store rung is not wired yet
+([#1259](https://github.com/runvendo/vendo/issues/1259)), so until it lands a
+key-only `agent()` passes `store: postgres(url)` or refuses to boot.
 
-    Your own model key and your own store — no Vendo key anywhere. Drop
-    `store` and you get the embedded one instead. `ANTHROPIC_API_KEY` is what
-    the provider *you* construct authenticates with. It selects nothing on its
-    own.
-  </Card>
-</CardGroup>
+### No Vendo key — bring your own {#bring-your-own}
+
+```ts
+import { anthropic } from "@ai-sdk/anthropic";
+import { agent, api, postgres } from "@vendoai/agents";
+
+export const support = agent({
+  name: "support",
+  model: anthropic("claude-sonnet-4-6"),
+  store: postgres(process.env.DATABASE_URL!),
+  tools: [api()],
+});
+```
+
+Your own model key and your own store — no Vendo key anywhere. Drop
+`store` and you get the embedded one instead. `ANTHROPIC_API_KEY` is what
+the provider *you* construct authenticates with. It selects nothing on its
+own.
 
 `model` is the `default` seat the built-in `vendo()` harness thinks with.
 `claudeCode()` brings its own brain and ignores it.

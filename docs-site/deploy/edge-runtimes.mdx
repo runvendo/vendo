@@ -1,19 +1,58 @@
 ---
-title: "Edge runtimes"
-sidebarTitle: "Edge runtimes"
-description: "Run the Vendo server on Cloudflare Workers, Bun, Deno, or any Web-standard runtime: the generated wiring, the adapters that work there, and the rules the portability gate enforces."
+title: "Not Next.js: Express, edge, and custom runtimes"
+sidebarTitle: "Edge and other runtimes"
+description: "Wire Vendo on Express, Cloudflare Workers, Bun, Deno, Hono, Fastify, or Lambda: what init generates for each, the adapter contract if you mount the handler yourself, and what works on an edge runtime."
 ---
 
-The Vendo server targets Web-standard JavaScript, not Node. A CI gate bundles
-the server entry for a Worker target and boots it under workerd on every
-change, so the wiring below stays supported.
+The handler takes a standard `Request` and returns a standard `Response`, so it
+runs anywhere: Next.js, Express, Fastify, Hono, Bun, Deno, Cloudflare Workers,
+Lambda, or any Node-compatible runtime on Node 20 or later. The Vendo server
+targets Web-standard JavaScript, not Node. A CI gate bundles the server entry
+for a Worker target and boots it under workerd on every change, so the wiring
+below stays supported.
 
-## Wiring
+`vendo init` detects your framework and scaffolds the right shape. This page is
+what it wrote and what is left to you.
 
-Run `npx vendo init --framework custom` (detection lands here automatically
-when the host is neither Next.js nor Express). It generates
-`vendo/server.ts`: a lazy composition that takes `Request` in and returns
-`Response`, with the environment passed per call.
+## Express
+
+`vendo init` writes `vendo/server.ts` holding the `createVendo` composition plus
+a Node HTTP-to-fetch adapter. Two pastes remain instead of Next.js's one. Mount
+the adapter under one base path:
+
+```ts
+import express from "express";
+import { mountVendo } from "./vendo/server.js";
+
+const app = express();
+app.use("/api/vendo", mountVendo());
+app.listen(3000);
+```
+
+Then wrap the client root:
+
+```tsx
+import { VendoOverlay, VendoProvider } from "@vendoai/vendo/react";
+import theme from "./.vendo/theme.json";
+
+root.render(
+  <VendoProvider baseUrl="/api/vendo" theme={theme}>
+    <App />
+    <VendoOverlay />
+  </VendoProvider>,
+);
+```
+
+`vendo doctor` reports broken until both pastes are done:
+[`E-WIRE-001`](/deploy/troubleshooting#E-WIRE-001) for the server half,
+[`E-WIRE-002`](/deploy/troubleshooting#E-WIRE-002) for the client half.
+
+## Cloudflare Workers, Bun, Deno, Hono, Fastify, Lambda
+
+Run `npx vendo init --framework custom`. Detection lands here automatically when
+the host is neither Next.js nor Express. It generates `vendo/server.ts`: a lazy
+composition that takes `Request` in and returns `Response`, with the environment
+passed per call.
 
 Route your runtime's requests through it:
 
@@ -42,14 +81,28 @@ theme={theme}>` with `<VendoOverlay />` in your SPA entry.
    exist per request there.
 2. **Pass adapters explicitly.** The dev credential ladder and the local
    PGlite/Postgres store engines are Node-only and refuse with guidance on
-   edge runtimes. With `VENDO_API_KEY` the generated wiring fills every seam
-   with the Cloud adapters — the model is the stock `@ai-sdk/anthropic`
-   provider pointed at the console gateway. Without a key, pass your own
-   `model`, `store`, `connections`, and `sandbox`.
+   edge runtimes. Pass your own `model`, `store`, `connections`, and `sandbox`.
+   With `VENDO_API_KEY` instead, the generated wiring fills every seam with the
+   Cloud adapters. The model is the stock `@ai-sdk/anthropic` provider pointed
+   at the console gateway. See
+   [Model credentials](/deploy/model-credentials).
 3. **Set `VENDO_BASE_URL`** to the deployed app's full public URL, path
    prefix included. Present-credential
    forwarding fails closed without it, and `vendo doctor` checks it
-   (`E-AUTH-001`).
+   ([`E-AUTH-001`](/deploy/troubleshooting#E-AUTH-001)).
+
+## Mounting the handler yourself
+
+If you skip the generated adapter and mount `vendo.handler` under a base path
+yourself, your adapter has to:
+
+- Pass every method (GET, POST, PUT, PATCH, DELETE) through unchanged.
+- Preserve streaming for `POST /threads`, never buffering the response body.
+- Reconstruct the request URL from `req.originalUrl`, not `req.url`, when mounted
+  with `app.use` on a base path (Express strips the mount path from `req.url`).
+- Keep cookie and authorization headers available to `principal(request)` and to
+  present-mode same-origin tool calls.
+- Return multi-value `Set-Cookie` as a header array rather than a joined string.
 
 ## What works where
 
@@ -61,4 +114,6 @@ theme={theme}>` with `<VendoOverlay />` in your SPA entry.
 | Telemetry | anonymous, opt-out | no-op |
 
 `vendo doctor` judges unknown-framework hosts by their wiring
-(`E-WIRE-007`/`E-WIRE-008`), never by another framework's file layout.
+([`E-WIRE-007`](/deploy/troubleshooting#E-WIRE-007) and
+[`E-WIRE-008`](/deploy/troubleshooting#E-WIRE-008)), never by another
+framework's file layout.

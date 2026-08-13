@@ -201,10 +201,17 @@ overrides:
   # "<=10.3.0", so a hypothetical 9.x consumer is not dragged across a major.
   "ip-address@>=10 <10.3.1": ">=10.3.1 <11"
   # 2026-08-07 advisory: nanoid custom generators loop indefinitely when size
-  # is zero, GHSA-2v37-7h3g-55p8 (<3.3.17). Arrives via
+  # is zero, GHSA-2v37-7h3g-55p8. Arrives via
   # examples/{ai-sdk-agent,demo-bank}>next>postcss>nanoid (16 paths) — postcss
   # declares `nanoid: ^3.3.16`, so the patch is already inside its declared
   # range and the lockfile was simply pinned to 3.3.16. Bounded to the 3.x
   # line that is actually installed; the advisory's other range (>=4.0.0
   # <5.1.6) has no consumer in this tree.
-  "nanoid@<3.3.17": ">=3.3.17 <4"
+  #
+  # Floor raised 3.3.17 -> 3.3.18 (2026-08-13): the advisory's 3.x range was
+  # widened to <3.3.18 — 3.3.17 carried a follow-up commit and the record now
+  # names 3.3.18 as the only patched 3.x — so the old floor resolved to exactly
+  # the version the advisory calls vulnerable, reddening the required `audit`
+  # check on main. Still inside both consumers' declared ranges (postcss
+  # ^3.3.16, @ai-sdk/provider-utils ^3.3.8).
+  "nanoid@<3.3.18": ">=3.3.18 <4"

@@ -9,6 +9,7 @@ import { environment } from "../wire/shared.js";
 import {
   actAsClaimsFromUser,
   composeHostAuthPreset,
+  cookieValue,
   lazyActAs,
   lazyModule,
   loginRedirect,
@@ -34,7 +35,18 @@ const MISSING_AUTH_CORE_MESSAGE =
   "authJs() reads the Auth.js session through @auth/core, which is not installed. Install it alongside your Auth.js setup: npm install @auth/core";
 
 const MISSING_SECRET_MESSAGE =
-  "authJs() has no session secret: set AUTH_SECRET (mirroring Auth.js itself) or pass authJs({ secret }).";
+  "authJs() has no session secret: set AUTH_SECRET (mirroring Auth.js itself; next-auth v4's NEXTAUTH_SECRET also works) or pass authJs({ secret }).";
+
+/** Auth.js v5's two session cookie spellings — the only names getToken reads. */
+const AUTH_JS_SESSION_COOKIES = ["authjs.session-token", "__Secure-authjs.session-token"] as const;
+
+/** next-auth v4's spellings: vendo cannot read these (v4 uses its own cookie
+    names AND its own JWE derivation), but seeing one means the host is a v4
+    install whose signed-in users will resolve as anonymous — worth naming
+    exactly once instead of failing silently forever. */
+const NEXT_AUTH_V4_SESSION_COOKIES = ["next-auth.session-token", "__Secure-next-auth.session-token"] as const;
+
+let warnedV4Cookie = false;
 
 /** Node's dynamic-import failure for a package that simply isn't installed. */
 function isAuthCoreNotFound(error: unknown): boolean {
@@ -79,10 +91,30 @@ export function authJs(options: HostAuthPresetOptions = {}): HostAuthPreset {
   const { secret, user, memberships } = options;
 
   const sessionClaims = async (request: Request): Promise<JwtClaims | null> => {
+    // No Auth.js session cookie → no session, before any module/secret work: a
+    // misconfigured preset must not take down anonymous traffic (#872). A
+    // v4-named cookie gets one loud hint — v4 sessions are structurally
+    // unreadable here (different cookie names AND JWE derivation).
+    if (!AUTH_JS_SESSION_COOKIES.some((name) => cookieValue(request, name) !== undefined)) {
+      if (!warnedV4Cookie && NEXT_AUTH_V4_SESSION_COOKIES.some((name) => cookieValue(request, name) !== undefined)) {
+        warnedV4Cookie = true;
+        console.warn(
+          "[vendo] a next-auth v4 session cookie (next-auth.session-token) was seen, but authJs() speaks Auth.js v5 — "
+          + "v4 sessions resolve as anonymous. Upgrade next-auth to v5, or see docs/act-as-presets.md for the v4 posture.",
+        );
+      }
+      return null;
+    }
     const getToken = await loadGetToken();
     return getToken({
       req: request,
-      secret: await resolvePresetSecret(secret, "AUTH_SECRET", MISSING_SECRET_MESSAGE),
+      // AUTH_SECRET then next-auth v4's NEXTAUTH_SECRET — Auth.js's own
+      // legacy-name order; an explicit source stays authoritative.
+      secret: await resolvePresetSecret(
+        secret ?? (() => environment("AUTH_SECRET") ?? environment("NEXTAUTH_SECRET")),
+        undefined,
+        MISSING_SECRET_MESSAGE,
+      ),
       secureCookie: isSecureDeployment(),
     });
   };

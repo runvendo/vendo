@@ -4,7 +4,7 @@ import { join, relative, sep } from "node:path";
 import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ExtractedTool, type ToolJudgment, type ToolsFile } from "@vendoai/actions";
 import { firstOpenApiSpec, openApiMountPath } from "@vendoai/actions/sync";
 import { publicBase, type RiskLabel } from "@vendoai/core";
-import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
+import { CONFIG_SURFACES, isConfigSurface, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
 import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
 // build deliberately does not export the pin map.
@@ -15,10 +15,21 @@ import { walk } from "./theme/walk.js";
 import { exists, readOptional } from "./shared.js";
 
 export async function checkConfigFiles(run: DoctorRun): Promise<void> {
-  const { root } = run;
+  const { root, env } = run;
+  // FINDINGS F14 — a console-managed deployment keeps the cloud-resolvable
+  // surfaces PUBLISHED, not on disk: file → cloud precedence (config-surface
+  // seam) makes a missing local file a resolution mode there, not a broken
+  // install. tools.json is a generation input with no cloud leg, so its
+  // absence stays fatal; keyless, all five stay fatal as before.
+  const cloudKeyPresent = typeof env["VENDO_API_KEY"] === "string" && env["VENDO_API_KEY"].trim() !== "";
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) {
-    if (await exists(join(root, ".vendo", file))) run.pass(`config/${file}`, `.vendo/${file}`);
-    else run.fail(`config/${file}`, "E-CFG-001", `missing .vendo/${file}`);
+    if (await exists(join(root, ".vendo", file))) {
+      run.pass(`config/${file}`, `.vendo/${file}`);
+    } else if (cloudKeyPresent && isConfigSurface(file)) {
+      run.warn(`config/${file}`, "E-CFG-001", `.vendo/${file} is absent locally — with VENDO_API_KEY set it resolves from the console's published config at runtime (a local file wins when present); \`vendo config status\` shows which layer owns each surface`);
+    } else {
+      run.fail(`config/${file}`, "E-CFG-001", `missing .vendo/${file}`);
+    }
   }
   if (!await exists(join(root, ".vendo", "data", ".gitignore"))) run.warn("config/data-gitignore", "E-CFG-002", ".vendo/data/.gitignore is missing");
 }

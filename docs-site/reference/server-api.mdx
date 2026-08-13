@@ -100,7 +100,7 @@ createVendo({
   [`@vendoai/agents`](/agent-sdk), not
   an options object. This deployment adopts what that agent already composed:
   its harness, store, blob adapter, sandbox and `instructions`. See
-  [Use with your existing agent](/existing-agents).
+  [Use with your existing agent](/existing-agents/overview).
 
 ## Config keys
 
@@ -112,11 +112,11 @@ Types only; each key's behavior is documented once, on
 | `model` | `LanguageModel` | **deprecated** → `models.default`. Setting both is a boot error, not a precedence puzzle |
 | `paint` | `{ model?: LanguageModel; disabled?: boolean }` | **deprecated**: the model half → `models.fill`; `disabled` remains the single-lane switch for app generation |
 | `models` | `ModelsConfig` | the model seats, keyed by JOB: `{ default?, reviewer?, judge?, fill? }`, each a model-name string (resolved through the credential ladder) or an explicit ai-SDK `LanguageModel` (wins as-is). Every unset seat borrows `default` |
-| `auth` | `HostAuthPreset` | one preset fills `principal` + `actAs` + `oauth`; mutually exclusive with all three — see [actAs presets](/connect/act-as-presets) |
+| `auth` | `HostAuthPreset` | one preset fills `principal` + `actAs` + `oauth`; mutually exclusive with all three — see [actAs presets](/deploy/auth) |
 | `principal` | `(req: Request) => Promise<Principal \| null>` | required unless `auth` fills the seam, and mutually exclusive with it; `null` → the request is refused with `forbidden` |
 | `tools` | `readonly (ExtractedTool \| ToolDefinition)[]` | host-tool declarations in memory (else `.vendo/tools.json`), and/or executable tools — the two shapes are told apart by `execute` |
 | `skills` | `readonly Skill[]` | SKILL.md values mounted at `/host/skills` for the harness to list cheaply and load on demand |
-| `catalog` | `ComponentCatalog \| ComponentRegistry` | host components exposed to the generation prompt; see [Host components](/connect/host-components) |
+| `catalog` | `ComponentCatalog \| ComponentRegistry` | host components exposed to the generation prompt; see [Host components](/customize/host-components) |
 | `theme` | `VendoTheme` | programmatic override for `.vendo/theme.json`, resolved once at compose |
 | `instructions` | `string` | the prose this deployment puts in front of the agent every turn; the override for `.vendo/brief.md`. `brief` and `agent.instructions` were this same knob under two names and are gone |
 | `store` | `VendoStore` | default `createStore()` (PGlite, `.vendo/data`); with `VENDO_API_KEY` and no `store` passed, the Cloud hosted store fills the slot |
@@ -136,7 +136,7 @@ Types only; each key's behavior is documented once, on
 | `profileDir` | `string` | the project root `.vendo/` is read under; unset keeps the process cwd |
 | `fetch` | `typeof fetch` | the fetch host route/OpenAPI tool bindings execute through; unset keeps the platform fetch |
 | `profile` | `{ overrides?, theme?, brief?, catalog?, policy?, designRules?, tools? }` | the `.vendo/` pieces as in-memory compose-time inputs, each winning over its file. `profile.tools` is **deprecated** → the `tools` slot |
-| `mcp` | `boolean \| { baseUrl?: string; remoteAs?: object; federation?: object }` | opens the [MCP door](/capabilities/mcp); off by default |
+| `mcp` | `boolean \| { baseUrl?: string; remoteAs?: object; federation?: object }` | opens the [MCP door](/reference/mcp-door); off by default |
 | `oauth` | `HostOAuthAdapter` | escape hatch, mutually exclusive with `auth`; required when `mcp` is on and `auth` supplies no oauth half |
 | `agent` | `ComposedAgent` | a whole agent built by `agent()` from `@vendoai/agents` — see [above](#values-built-by-another-function) |
 | `sweep` | `{ intervalMs?: number }` | TTL-sweep cadence for expired parked BYO calls and stranded approvals; default 60 s |

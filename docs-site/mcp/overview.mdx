@@ -1,0 +1,61 @@
+---
+title: "The MCP door"
+sidebarTitle: "Overview"
+description: "One URL that lets Claude, ChatGPT, Cursor, or Claude Code act in your product as the person who signed in, under your own guard and audit."
+---
+
+Your product gets one URL that any MCP client can install:
+
+```
+https://your-app.example.com/api/vendo/mcp
+```
+
+An agent behind that URL reads the door's `tools/list`, calls your host actions
+and Vendo's `vendo_make`, and acts as the person who signed in. Same policy,
+same approvals, same audit rows as your own UI.
+
+<Note>
+  **Experimental.** The door is real, guard-bound, and covered by
+  protocol-level end-to-end tests. What is still open is the attended live
+  matrix: a person driving Claude, ChatGPT, and Cursor through the browser
+  login and consent flow.
+</Note>
+
+## Who is calling
+
+Two kinds of visitor knock.
+
+A person's own client (Claude, ChatGPT, Cursor, Claude Code) logs them in
+through a browser. You write none of that OAuth. The client registers itself,
+runs PKCE, and sends the person to your login and then to the door's consent
+page. Whatever they do next is theirs, judged by your policy.
+
+Your own backend has no browser. A nightly job or queue worker swaps a service
+key plus one of your user ids for a ten-minute token bound to that user, then
+talks MCP with it like any other client. The exchange, the token shape, and its
+edges are in [MCP door reference](/reference/mcp-door).
+
+## What the outside agent sees
+
+Your tools, named and described the way you title them, plus `vendo_make`. When
+the agent calls `vendo_make` it gets back four fields of words: an id, a title,
+a status, and one line to say out loud. Never UI. The screen itself lands in
+the person's apps list in your product, or in a slot on a page you chose.
+Pixels go to your product, words go to the agent.
+
+## How it differs from the other two doors
+
+[Vendo's own agent](/vendo-agent/quickstart) puts a chat surface inside your product and
+runs the loop for you. [The existing-agent door](/existing-agents/quickstart) spreads
+guarded tools into a loop you already run in your own backend, in process, with
+no OAuth anywhere.
+
+The MCP door is for agents you do not run and cannot change. The client is
+somebody else's software talking to your deployment over HTTP, which is why
+this door carries an OAuth dance the other two skip.
+
+Pulling remote MCP tools *into* your own agent runs the other direction. That
+is `mcpConnector`, not this door. See
+[Connectors](/capabilities/connected-accounts#connectors).
+
+Set it up: [Quickstart](/mcp/quickstart).

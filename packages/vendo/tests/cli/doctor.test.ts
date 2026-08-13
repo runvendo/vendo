@@ -480,6 +480,64 @@ describe("vendo doctor", () => {
     expect(fetchImpl.mock.calls[4]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/machines");
   });
 
+  it("a declined actAs mint warns E-AUTH-008 instead of claiming actAs is unconfigured (#873)", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/status")) {
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
+      }
+      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
+      if (url.endsWith("/doctor/act-as")) {
+        return Response.json(
+          { ok: false, error: { code: "act-as-declined", message: "the host declined away execution for this action" } },
+          { status: 409 },
+        );
+      }
+      if (url.endsWith("/doctor/machines")) return Response.json({ scheduleCallerConfigured: false, machines: [] });
+      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
+    });
+    const messages = output();
+    // A declined synthetic principal is a correctly wired host, not a failure:
+    // warn, keep exit 0.
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    const everything = [...messages.logs, ...messages.errors].join("\n");
+    expect(everything).toContain("declined the doctor's synthetic principal");
+    expect(everything).not.toContain("actAs is not configured");
+  });
+
+  it("E-AUTH-004 carries the wire's own failure message instead of a generic line (#873)", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/status")) {
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
+      }
+      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
+      if (url.endsWith("/doctor/act-as")) {
+        return Response.json(
+          { ok: false, error: { code: "act-as-verification-failed", message: "actAs round-trip failed: the mint exploded with boom-detail" } },
+          { status: 409 },
+        );
+      }
+      if (url.endsWith("/doctor/machines")) return Response.json({ scheduleCallerConfigured: false, machines: [] });
+      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
+    });
+    const messages = output();
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    const everything = [...messages.logs, ...messages.errors].join("\n");
+    expect(everything).toContain("actAs mint + host verification failed");
+    expect(everything).toContain("boom-detail");
+  });
+
   // execution-v2 Lane D — machine/schedule reporting (dev-only wire surface).
   it("reports machine-bearing apps and warns when schedules have no caller", async () => {
     const fetchImpl = successfulProbeFetch();
@@ -667,7 +725,7 @@ describe("vendo doctor", () => {
     })).toBe(0);
     expect(messages.logs).toEqual(expect.arrayContaining([
       "ok: present credentials reach the host API",
-      "ok: actAs mint + host verification live round-trip",
+      "ok: actAs mint round-trip verified by the composition's own principal resolver — host middleware is not exercised, real away calls still depend on it",
     ]));
     expect(host.actAs).toHaveBeenCalledOnce();
     const [syntheticPrincipal, syntheticGrant] = host.actAs.mock.calls[0] as [Principal, PermissionGrant];
@@ -1117,7 +1175,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
 
 /** Agent-install DX (design 2026-07-19 §CLI-3) — every check carries a stable
  *  id; failures and warnings additionally carry a registry `error_code` and a
- *  full `fix_ref` URL into vendo.run/agents/verify. Passing checks carry
+ *  full `fix_ref` URL into docs.vendo.run/agents/verify. Passing checks carry
  *  neither (nothing to fix). */
 describe("vendo doctor error codes + fix_refs", () => {
   interface CodedCheck {
@@ -1155,7 +1213,7 @@ describe("vendo doctor error codes + fix_refs", () => {
       expect(check.id).toBeTruthy();
       expect(check.error_code).toMatch(/^E-[A-Z]+-\d{3}$/);
       expect(doctorErrorCodes).toContain(check.error_code);
-      expect(check.fix_ref).toBe(`https://vendo.run/agents/verify?v=${CLI_VERSION}#${check.error_code}`);
+      expect(check.fix_ref).toBe(`https://docs.vendo.run/agents/verify?v=${CLI_VERSION}#${check.error_code}`);
     }
     // The remediation surface is broad: wiring, config, live probes, auth, turn.
     const codes = new Set(failures.map((check) => check.error_code));
@@ -1442,6 +1500,53 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(report.checks.some((entry) => entry.id === "deps/ai-sdk-major")).toBe(false);
   });
 
+  // FINDINGS F3 (linkwarden baseline): a resolvable pre-v6 ai sailed through
+  // doctor green and then 500d every turn at runtime — the peer conflict is
+  // exactly as fatal below the contract as above it.
+  it("fails fast with E-DEP-001 when the host has a pre-v6 ai installed", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "node_modules", "ai"), { recursive: true });
+    await writeFile(join(root, "node_modules", "ai", "package.json"), JSON.stringify({ name: "ai", version: "5.0.59" }));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(1);
+    const check = report.checks.find((entry) => entry.id === "deps/ai-sdk-major");
+    expect(check).toMatchObject({
+      status: "broken",
+      error_code: "E-DEP-001",
+      fix_ref: doctorFixRef("E-DEP-001"),
+    });
+    expect(check?.message).toContain("ai@5.0.59");
+    expect(check?.message).toContain("peer contract");
+    expect(check?.message).toContain("npm install ai@^6");
+    expect(check?.message).toContain("hoisted");
+  });
+
+  it("fails E-DEP-001 when the workspace root hoists an old ai above the app, naming its package manager", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "vendo-doctor-ai-workspace-"));
+    cleanup.push(() => rm(workspace, { recursive: true, force: true }));
+    await writeFile(join(workspace, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n");
+    await writeFile(join(workspace, "pnpm-lock.yaml"), "");
+    await mkdir(join(workspace, "node_modules", "ai"), { recursive: true });
+    await writeFile(join(workspace, "node_modules", "ai", "package.json"), JSON.stringify({ name: "ai", version: "5.0.59" }));
+    const root = await healthy(join(workspace, "apps", "web"));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(1);
+    const check = report.checks.find((entry) => entry.id === "deps/ai-sdk-major");
+    expect(check).toMatchObject({
+      status: "broken",
+      error_code: "E-DEP-001",
+      fix_ref: doctorFixRef("E-DEP-001"),
+    });
+    expect(check?.message).toContain("ai@5.0.59");
+    expect(check?.message).toContain("pnpm add ai@^6");
+  });
+
   it("fails with E-DEP-003 when the installed zod predates the AI SDK's subpaths", async () => {
     // FINDINGS F2 (skateshop): ai@6 imports zod/v3 + zod/v4, which arrive in
     // zod 3.25 — a host pinning older zod builds red the moment the vendo
@@ -1534,6 +1639,87 @@ describe("vendo doctor error codes + fix_refs", () => {
       error_code: "E-CFG-001",
       fix_ref: doctorFixRef("E-CFG-001"),
     });
+  });
+
+  // FINDINGS F14 (linkwarden baseline): a console-managed deployment keeps the
+  // cloud-resolvable surfaces PUBLISHED, not on disk — file → cloud precedence
+  // (config-surface seam) makes a missing local file a resolution mode there,
+  // not a broken install. tools.json has no cloud leg and stays fatal.
+  it("degrades missing cloud-resolvable config files to warnings when VENDO_API_KEY is set", async () => {
+    const root = await healthy();
+    await rm(join(root, ".vendo", "brief.md"));
+    await rm(join(root, ".vendo", "policy.json"));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      env: { VENDO_API_KEY: "vnd_test_key" },
+      cloudProbe: async () => ({ present: true, ok: true, unlocks: ["x"] }),
+    });
+    expect(exit).toBe(0);
+    for (const id of ["config/brief.md", "config/policy.json"]) {
+      const check = report.checks.find((entry) => entry.id === id);
+      expect(check).toMatchObject({
+        status: "warning",
+        error_code: "E-CFG-001",
+        fix_ref: doctorFixRef("E-CFG-001"),
+      });
+      expect(check?.message).toContain("vendo config status");
+      expect(check?.message).toContain("published");
+    }
+    expect(report.checks.find((entry) => entry.id === "config/tools.json")).toMatchObject({ status: "ok" });
+  });
+
+  it("keeps a missing tools.json fatal even with VENDO_API_KEY set — it has no cloud leg", async () => {
+    const root = await healthy();
+    await rm(join(root, ".vendo", "tools.json"));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      env: { VENDO_API_KEY: "vnd_test_key" },
+      cloudProbe: async () => ({ present: true, ok: true, unlocks: ["x"] }),
+    });
+    expect(exit).toBe(1);
+    expect(report.checks.find((entry) => entry.id === "config/tools.json")).toMatchObject({
+      status: "broken",
+      error_code: "E-CFG-001",
+    });
+  });
+
+  // FINDINGS F7c (linkwarden baseline): a wire that ANSWERED with an error
+  // body was reported with the body thrown away, and an answered non-JSON
+  // error page was mislabeled "unreachable" — both pointed at the wrong fix.
+  it("carries the wire's own error body into E-LIVE-001 with the dev-server-log hint", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/status")) {
+        return Response.json({ error: { code: "not-implemented", message: "principal resolution failed: boom" } }, { status: 501 });
+      }
+      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
+    });
+    const { exit, report } = await jsonChecks({ targetDir: await healthy(), fetchImpl });
+    expect(exit).toBe(1);
+    const check = report.checks.find((entry) => entry.id === "live/status");
+    expect(check).toMatchObject({ status: "broken", error_code: "E-LIVE-001" });
+    expect(check?.message).toContain("501");
+    expect(check?.message).toContain("not-implemented");
+    expect(check?.message).toContain("principal resolution failed: boom");
+    expect(check?.message).toContain("dev server log");
+  });
+
+  it("reports an answered non-JSON /status as E-LIVE-001 with its status, never as unreachable", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/status")) {
+        return new Response("<html>Internal Server Error</html>", { status: 500, headers: { "content-type": "text/html" } });
+      }
+      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
+    });
+    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl });
+    const check = report.checks.find((entry) => entry.id === "live/status");
+    expect(check).toMatchObject({ status: "broken", error_code: "E-LIVE-001" });
+    expect(check?.message).toContain("500");
+    expect(check?.message).toContain("not JSON");
+    expect(report.checks.some((entry) => entry.error_code === "E-LIVE-002")).toBe(false);
   });
 
   /** Spec 2026-08-06 §B1: the path prefix has ONE home, VENDO_BASE_URL. A spec

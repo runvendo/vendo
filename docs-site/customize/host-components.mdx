@@ -1,0 +1,570 @@
+---
+title: "Host components: register branded UI and remix baselines"
+sidebarTitle: "Host components"
+description: "Register branded host components with prop schemas and JSON examples so Vendo's generated apps can select and render your own UI natively."
+---
+
+Register your branded components in a catalog, and Vendo's agent composes
+generated apps from them alongside its own prewired primitives, rendered
+natively rather than in the sandboxed iframe jail. This page covers
+registering a catalog by hand or with `vendo sync`, then how a remixed
+component drifts and rebases as your host code changes; the exact
+registration shapes and capture rules live in the reference section at the
+end.
+
+## Register your components
+
+The shared registry is the current form: one object, keyed by component
+name, that both `createVendo` (as `catalog`) and `<VendoProvider>` (as
+`components`) read. See [the client mount](/customize/surfaces#the-client-mount)
+for where that object lives in your app. This page covers the
+underlying entry shape and the array form the registry normalizes into,
+which stays available as a back-compat escape hatch.
+
+Names are PascalCase and unique. Descriptions and prop schemas are
+generation context. Vendo prefers host components when the catalog covers
+the requested UI. The model-facing JSON Schema is derived internally from
+`propsSchema`: you never hand-write it, and a schema-less entry is legal,
+rendering as a description-only prompt entry the model infers props for.
+
+### Register a catalog
+
+Pass the registry (or the array form) to `createVendo` so its entries flow
+into the generation prompt and the engine validates emitted props against
+the schema before render. In the registry form, entry names come from the
+object keys, so there is no second client-side map to keep in sync:
+
+```ts
+import { createVendo } from "@vendoai/vendo/server";
+import type { ComponentRegistry } from "@vendoai/vendo";
+import { z } from "zod";
+import {
+  SpendingDonut
+} from "@/components/charts/spending-donut";
+
+const registry = {
+  MapleSpendingDonut: {
+    component: SpendingDonut,
+    description:
+      "Category breakdown of spending. " +
+      "Use when the user asks to see spend by category.",
+    props: z.object({
+      categories: z.array(
+        z.object({ label: z.string(), amount: z.number() })
+      ),
+      currency: z.string().default("USD"),
+    }),
+    examples: [
+      '{ "categories":' +
+        ' [{ "label": "Groceries", "amount": 412.55 }],' +
+        ' "currency": "USD" }',
+    ],
+  },
+} satisfies ComponentRegistry;
+
+const vendo = createVendo({ catalog: registry });
+```
+
+- `description` is selection guidance for the model. State when to pick the
+  component and when to skip it. Hedged copy leads to worse selection.
+- `props` (registry form) / `propsSchema` (array form) validates props at
+  render time and is the same schema the model-facing JSON Schema derives
+  from: one schema, not two. Bindings for `$path`, `$state`, and zero-arg
+  actions are exempt from that validation.
+- `examples` are JSON strings the model can copy from. One or two concrete
+  shapes usually beat a long prose description.
+
+### The catalog contract
+
+`vendo init` leaves the catalog empty, and filling it is your job. What you put
+in it is a closed contract: only registered components exist, and only with the
+props their schemas declare. Generated views validate against those schemas, so
+an invented prop name fails instead of rendering. Prop invention is the single
+most observed agent failure. Models reach for generic names like `data`,
+`rows`, `items`, `labelKey`, or `onPress` that the real component never had.
+
+When you register a host component:
+
+- **Copy prop names from the component's source**, never from convention. If
+  `SpendingDonut` takes `slices`, the schema says `slices`, not `data`.
+- **Give it a zod props schema.** A schema-less entry is legal and the model
+  infers props, but a schema is what makes prop invention impossible. Prefer it
+  whenever the component has typed props.
+- **Schema only what the model should control.** Data-shaped props belong in
+  the schema. Internal callbacks and render props do not.
+- **Write the description for selection**: what the component shows and when to
+  reach for it. "Spending by category. Use for where-did-my-money-go requests."
+
+The same closed-world rule applies to you while you install. In examples,
+briefs, and drafts, name only components that are in the catalog and tools that
+are in `.vendo/tools.json`. If something you need is missing, register it or
+extract it. Do not name it into existence.
+
+### Auto-extract with sync
+
+`vendo sync` scans exported JSX components referenced by your `<VendoProvider>`
+`components` map and writes a strict `.vendo/catalog.json` with each entry's
+export path, JSON Schema props, description, and example props. Rescans are
+deterministic and byte-stable, so the file is safe to commit. Both `vendo
+init` and `vendo sync` print one status line:
+
+```
+catalog.json: 2 discovered, 2 registered
+```
+
+`createVendo` loads `.vendo/catalog.json` at boot alongside `.vendo/theme.json`
+and uses each entry's JSON Schema for prompt guidance. Explicit
+`createVendo({ catalog })` registrations win by `name`, so keep code as the
+source of truth for anything you want strictly validated at render time;
+disk entries use a pass-through validator because JSON Schema on disk is
+prompt guidance, not an executable validator.
+
+If sync cannot infer a prop type it falls back to a permissive schema and
+attaches a note; correct the entry by registering the component in code
+rather than hand-editing the file. A malformed `.vendo/catalog.json` fails
+sync loudly, and `createVendo` logs one actionable error naming the file and
+telling you to rerun `vendo sync`.
+
+No seam authors catalog copy today. Edit a scanned entry's `description` and
+`examples` directly in `.vendo/catalog.json`: a rescan preserves that copy on
+a still-scanned entry, keeping unchanged reruns byte-identical.
+
+### What sync captures
+
+`catalog.json` records what your components are CALLED. Sync also captures
+what they ARE, into `.vendo/components/`, so surfaces outside your app — the
+Vendo Cloud console's Apps gallery above all — can render your real component
+instead of a grey labeled placeholder where it sits.
+
+Per registered component, sync writes `.vendo/components/<Name>.json`: the
+module that declares it, the binding to render, a content hash, and
+references. It holds no source. Every byte lives beside it in
+`.vendo/components/modules/<hex>.json` as `{ source, imports? }`, keyed by the
+sha-256 of its own content, so a `format-currency.ts` that ten components
+import is stored once and referenced ten times. Both are deterministic and
+byte-stable, so commit them.
+
+The walk follows your imports to **closure** — no depth limit — and stops at
+two lines:
+
+- **Package boundary.** Anything resolving into `node_modules` is never
+  captured. It is not your code. Sync records what version of it you have
+  installed instead (see below), and the sandbox supplies the React kit plus
+  three bundled packages.
+- **Byte budget.** 256 KB of source per component.
+
+Three packages are bundled into the sandbox itself, because they blocked almost
+everything and are all tiny and universal:
+
+| bundled | what you get |
+| --- | --- |
+| `clsx` | the real package (pinned `2.1.1`) |
+| `tailwind-merge` | the real package (pinned `3.6.0`) |
+| `zod` | a **zod-shaped shim** for declaring schemas — see below |
+
+That covers the two patterns that blocked real components: a `lib/cn.ts` built
+on `clsx` + `tailwind-merge` (the shadcn default), and a `props:` schema
+declared next to the component in the registry module.
+
+### Other packages: loaded from one pinned CDN, in previews only
+
+A component that imports `recharts`, a date library, or a charting kit used to
+be refused outright. It now previews: sync records the **exact version you have
+installed** for each package import, and the console's preview sandbox fetches
+those from one pinned origin — `https://esm.sh` — as ES modules.
+
+```json
+"requires": ["clsx", "recharts", "tailwind-merge", "zod"],
+"packages": { "recharts": "recharts@3.9.2" }
+```
+
+Four things are worth knowing, because they are guarantees, not details:
+
+- **Previews only.** The same sandbox renders an approved remix fork inside your
+  own product, in front of your own users. CDN loading is gated to the preview
+  surface and cannot reach that path: the pins live on a field only a preview
+  populates, and the runtime strips it off any stored app document that claims
+  it. Your users never depend on a CDN's uptime, and that CDN never sees their
+  traffic. In a preview-free install nothing about the sandbox changes — its
+  policy still denies the network entirely.
+- **Exact versions, never a range.** The version is read from the package you
+  actually have installed, so a preview draws what your product draws. A version
+  sync cannot resolve exactly is not guessed at — the component is skipped and
+  says so.
+- **Your React, not the CDN's.** Packages are fetched with React left external
+  and resolved to the sandbox's own copy. Two React copies is a broken render,
+  never a subtly different one.
+- **Nothing of yours is sent.** The request is a package name and a version on a
+  public registry mirror. No project identifier, no source, no credentials.
+
+Two kinds of package still cannot preview, and sync says which:
+
+| what | why |
+| --- | --- |
+| `@acme/design-system` marked `private`, or a workspace/`link:` package | it is on no public registry, so no CDN can serve it |
+| a package that is not installed | there is no exact version to pin, and a guess would 404 at render |
+
+If a package cannot be fetched at render time — the CDN is unreachable, or the
+version has been unpublished — the preview shows one calm line naming what it
+could not load (`Can't preview — could not load recharts@3.9.2`). It never shows
+a broken chart and never sits on a loading shimmer.
+
+<Note>
+**The bundled `zod` is a shim, not zod.** It resolves the declaration surface
+(`z.object`, `z.string`, `z.enum`, `.optional()`, `.describe()`, and any builder
+chain) so your module loads, because that is all a registry's `props:` schema
+needs — nothing validates while a preview renders.
+
+It does **not** validate. `.parse()` / `.safeParse()` throw a named error inside
+the sandbox rather than returning a plausible wrong value. If one of your
+components validates at render time, its preview fails loudly and says why.
+
+`clsx` and `tailwind-merge` are the real packages because they do real work at
+render — a shim would silently change which classes win. Note that Vendo ships
+its own pinned copies, so a component on a different major of either could
+render slightly differently in a preview than in your app.
+</Note>
+
+Whenever a component cannot be captured, sync says so and the record on disk
+carries a machine-readable `skipped` reason plus a sentence you can read, so
+the console can explain the gap instead of showing an unlabeled block:
+
+| `skipped.reason` | Meaning |
+| --- | --- |
+| `unsupported-imports` | Its closure imports specifiers the sandbox cannot resolve (an unpublished package, a component-local stylesheet); the record names each one with the reason |
+| `too-large` | Its closure is over the 256 KB budget; the record names the biggest module |
+| `no-default-export` | Registered as a module's default export, but the module has none |
+| `default-export-conflict` | The module default-exports something else, so the registered binding cannot become the default |
+| `in-package` | Declared inside `node_modules` |
+| `no-named-declaration` | The registered value has no name to re-export |
+
+A component that simply could not be read this run is different: sync leaves
+the previous capture exactly as it was and moves on. Captures for components
+you no longer register are deleted on the next successful sync, and a shared
+module is deleted only once nothing references it. A degraded scan (no
+TypeScript compiler, no `tsconfig.json`) prunes nothing.
+
+### Previews render with your declared `examples`
+
+A preview has **no data plane**. It is not connected to your API: every query
+resolves to an empty list. So a component written the way this page recommends —
+
+```tsx
+if (!series?.length) return null;
+```
+
+— correctly renders nothing there, and the surface would sit on a loading
+silhouette forever.
+
+Sync solves that with things you have already written. It resolves a preview
+seed down three rungs, in order, and stores it on the capture as `sampleProps`
+with a `sampleOrigin` saying which rung produced it.
+
+**Rung 1 — your `examples`.** Always preferred: a human's example is real
+product data and reads better than anything we could invent. The first
+`examples` string that parses to a JSON object wins.
+
+```ts
+MapleSpendingDonut: {
+  component: SpendingDonut,
+  description: "Category breakdown of spending.",
+  props: z.object({ /* … */ }),
+  // Teaches the model AND draws the preview.
+  examples: ['{"slices":[{"category":"dining","amount":34218}],"size":200}'],
+}
+```
+
+A malformed example, or one that is not a JSON object, is stepped over rather
+than failing the component.
+
+**Rung 2 — generated from your `props:` schema** (`sampleOrigin: "generated"`).
+Most registrations never declare examples but nearly all declare props, and
+sync already interprets that schema for `catalog.json`. Values are synthesized
+from it: typed-correct, respecting enums, `min`/`max`, string formats, array
+element types, and optionality. They are **plausible, not pretty** — the point
+is that your component draws instead of sitting blank.
+
+Generation is deterministic, seeded from the component's name and each property
+path, so the same schema always produces the same values. Your committed
+`.vendo/components/` never churns, and two components never get identical
+filler. A schema that cannot be represented — recursive, opaque, or one sync
+could not interpret in the first place — falls through to rung 3 rather than
+emitting something that would throw.
+
+<Note>Generated values are invented. Surfaces are told which rung produced a
+seed (`sampleOrigin`), so a preview can label itself as sample data rather than
+implying the numbers are real.</Note>
+
+**Rung 3 — an honest label.** With neither examples nor a representable props
+schema, the capture records `noSampleProps` with a reason
+(`no-examples`, `unreadable-examples`, `unrepresentable-props`) and sync says so
+in one line:
+
+```
+components: MetricCard declares no examples, so the console can only show a
+labeled placeholder — add `examples` to its registration to preview it
+```
+
+That component still captures and still renders in your product; it just
+previews as a labeled placeholder instead of a live one.
+
+Note that examples and generated values both travel with the capture, so
+**treat your examples as you would any other value that crosses the wire**: use
+realistic-looking but non-sensitive data.
+
+### What crosses the wire
+
+With a Vendo Cloud key set, sync offers to push this corpus so the console can
+render your components. What goes: **the source of every component you
+register, the source of every module in its import closure, your app-root
+stylesheets, and the `examples` you declared in the registration** (the preview
+seed — they are already static strings in your source). What never goes:
+package code, anything outside your project root, environment variables, and
+live data.
+
+Because this widens what leaves your machine from "the components you wrapped
+in `<Remixable>`" to "every component you register", sync asks **once per
+project** and commits the answer to `.vendo/cloud.json`:
+
+```json
+{ "pushComponents": true }
+```
+
+Afterwards it is silent. In CI, pass `--push-components` or
+`--no-push-components`; a non-interactive run with no saved answer and no flag
+pushes nothing and says so. A keyless or bring-your-own install never asks and
+never makes a request — the corpus stays on disk.
+
+The push is cheap by construction. Component records carry references, not
+source, so listing them IS the hash manifest; module bodies are
+content-addressed blobs, so one keys-only call answers "which of these do you
+already have?". An unchanged second sync makes two calls and uploads nothing.
+
+## Remix: fork a wrapped component
+
+Remix always means fork. A remix starts from your real component, copied
+byte-for-byte by the engine — never regenerated, never retyped by a model.
+Wrap a component with `<Remixable>` to make it forkable:
+
+```tsx
+import { Remixable } from "@vendoai/ui/chrome";
+
+<Remixable>
+  <NetWorthCard accounts={accounts} />
+</Remixable>
+```
+
+`vendo sync` scans your source for `<Remixable>` usages, resolves the wrapped
+child through its import, and snapshots it into `.vendo/remixable/<slot>.json`:
+the component source, its local imports (two hops), your app-root
+stylesheets, and a content hash. The slot name is the component's own
+exported identifier — for a default export, its declared name — so remixes
+survive call-site refactors. The wrapped child must be a single, statically
+importable component: inline JSX or an unimported component is a loud sync
+error, never a silent degradation. Wrapping the same component in several
+places is legal — one capture, many mount points.
+
+Forking is a user gesture the engine executes deterministically — the model
+never decides to fork. At rest a muted ✦ mark sits in the wrapped element's
+corner and blooms on hover into a **✦ Remix** pill. Clicking it copies the
+captured source into the user's own fork over the wire
+(`POST /api/vendo/apps/fork-pin`) with no model call, records the fork's
+provenance on the app as `pins: [{ slot, base: <baseline hash> }]`, and
+renders it **in place** — the wrapper is the mount boundary, and the page
+morphs for that user only. The route dedupes per user and slot, so a
+double-tap can never mint a duplicate app. On an already-remixed surface the
+same pill opens a small management popover (status, open in panel, revert).
+
+An unapproved fork always renders inside the sandboxed iframe jail. The
+JSON-serializable props your call site passes flow across the frame boundary
+into the fork on every render — nothing captured, nothing stale. Host
+functions do not cross (callbacks, router, context): a fork's behavior is
+rewired through your API instead, exactly like any generated app. Captured
+sub-imports resolve through a per-module import table; only the blessed React
+kit resolves outside it, and captured CSS applies only inside the jailed
+document.
+
+`createVendo` loads every valid `.vendo/remixable/*.json` at startup and
+hands the baselines to the apps runtime. A missing directory means no
+baselines; files that fail schema validation are skipped with a warning and
+do not break composition. Baselines are captured `exportable: false`:
+exporting an app that contains a fork of host source fails with the
+`baseline-forbids-export` error code.
+
+### Instant and review kinds
+
+Review never affects who can see a remix — remixes are personal, always. It
+decides only where the fork executes:
+
+```tsx
+<Remixable>            {/* instant: the remix appears immediately and runs
+  <NetWorthCard />        sandboxed, forever. No review process exists. */}
+</Remixable>
+
+<Remixable review>     {/* reviewed: the user keeps seeing the original until
+  <TransferPanel />       a host reviewer approves; the approved version then
+</Remixable>              renders in place as native code. */}
+```
+
+- **Instant** (the default): remix → it renders, jailed, done. No queue and
+  no approval ceremony. The ✦ mark is the management handle.
+- **Reviewed**: after remixing, the original keeps rendering and the only
+  user-visible state is "sent for review" (surfaced in the panel). On
+  approval the remix mounts natively in the host page — the zero-seam venue
+  the jail cannot offer. On rejection the reviewer's note lands in the panel;
+  the fork is not deleted, so the user can edit and resubmit. Edits to an
+  approved remix go back through review, and the last approved version keeps
+  rendering until the new one is approved — never a gap, never unreviewed
+  code in the page.
+
+The gate rides the hash-pinned in-client approval machinery: only a stored
+approval matching a version's exact content hash mounts in the host page (see
+[the in-client venue](/capabilities/in-client-venue)). The review artifact at
+every gate is the ship-diff — the fork's unified diff against the captured
+baseline.
+
+At sync time, capture also analyzes each wrapped component for reach into
+host plumbing (router imports, context-style hooks, function-typed props at
+the call site) and warns when an instant-kind component looks plumbing-heavy,
+suggesting `review`: plumbing does not cross the fork boundary, and an
+approved review-kind remix runs natively where it would have kept working.
+
+### Drift and rebase
+
+When you update a host component and run `vendo sync`, the new baseline
+overwrites `.vendo/remixable/<slot>.json`. Any existing user forks of that pin
+are now **drifted**: their recorded `pins[].base` hash no longer matches the
+captured baseline. Sync names each drifted slot in its report and points to
+rebase.
+
+Vendo surfaces drift everywhere the fork is opened or edited:
+
+- The tree renderer shows an in-surface notice above the fork ("The host
+  updated `<slot>` … Ask the agent to rebase").
+- `open()` attaches a server-authoritative `pinDrift` array to the payload.
+- Edit results include `driftedPins` so an agent editing a stale fork learns
+  about it at edit time.
+- Ship-diff review fail-closes new in-client approvals for drifted pins.
+
+Drifted forks keep rendering their previous content, sandboxed and untouched.
+Nothing auto-rebases and no agent turn is auto-triggered; a rebase rewrites
+the fork through the model, so it stays behind an explicit user or host ask.
+
+**Rebase** re-forks the pin from the new baseline and replays the recorded
+edit trail through the model, producing one new app version:
+
+```ts
+await client.apps.rebasePin(appId, slot);
+```
+
+Rebase is all-or-nothing. Any replay failure persists nothing and the
+pre-rebase version stays live; the result reports `replayed`, `remaining`, and
+which intent failed with its issues. On success, `pins[].base` moves to the
+new baseline hash and the new version invalidates any existing in-client
+approval: a reviewer must re-approve.
+
+Rebase requires a tree-surfaced app (layer 1 or 2) with a recorded edit
+trail. A pin that was forked without any subsequent edits, or an app that
+has graduated to a served HTTP surface, fails closed with `conflict`: there
+is no reproducible trail to replay.
+
+### When sync cannot capture a wrapper
+
+`vendo sync` never skips a `<Remixable>` wrapper silently. When it cannot
+resolve the wrapped child to real source — inline JSX, a component that is
+not statically imported, an anonymous default export, or source outside the
+project root — it prints one `error:` line per wrapper naming the file, line,
+and fix, and the run exits 2. There is no softer fallback: an uncapturable
+wrapper would otherwise be a remix affordance that silently cannot fork.
+
+A component that is intentionally never capturable can be acknowledged in
+`.vendo/overrides.json`; acknowledged slots are skipped without error and
+their baselines are left alone:
+
+```json
+{
+  "format": "vendo/overrides@3",
+  "tools": {},
+  "remix": { "ignoreSlots": ["ThirdPartyWidget"] }
+}
+```
+
+Baselines whose slot no longer matches any `<Remixable>` wrapper are deleted
+on the next successful sync, one printed `pruned:` line per file — a stale
+baseline would otherwise stay forkable forever. A run with wrapper errors
+prunes nothing: an unresolvable wrapper's slot is unknowable, and deleting
+its baseline would turn a loud failure into silent data loss.
+
+## Registration reference
+
+### The RegisteredComponent shape
+
+```ts
+export interface RegisteredComponent {
+  name: string;
+  description: string;
+  propsSchema?: StandardSchema;   // optional: a schema-less entry is legal
+  examples?: string[];            // JSON prop examples shown to the model
+}
+
+export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
+```
+
+### Built-in components
+
+Vendo ships one component family: the Kit. Layout is `Stack`, `Row`, `Grid`,
+`Surface`, `Card`, and `Divider`; values are `Text`, `Money`, `DateTime`,
+`Percent`, `Num`, and `EnumBadge`; data is `DataTable`, `CardList`, `Stat`,
+and `Badge`; charts are `LineChart`, `BarChart`, `DonutChart`, `Sparkline`,
+and `Progress`; forms and actions are `Input`, `Select`, `DatePicker`,
+`Textarea`, `Checkbox`, `Button`, `Form`, and `Disclaimer`; feedback is
+`Tabs`, `Callout`, and `Accordion`. Catalog entries and generated components
+cannot shadow them. Every one reads the same
+[theme tokens](/customize/theming), so they pick up your brand's colors, radii,
+density, and motion without extra wiring.
+
+Two names people look for are deliberately absent. `DataTable` is the only
+table — it sorts, filters, searches, paginates, resolves dot-path column keys,
+and formats each cell, so there is no plain `Table` to reach for. And there is
+no `Skeleton`: a loading placeholder is chrome the renderer paints while an
+app streams in, not something an app names.
+
+`Card`, `Badge`, `Stat`, `DataTable`, and `Tabs` are display surfaces;
+`Tabs` manages its own selection, so switching a tab never makes a round trip.
+`Button` and `Form` are the action surfaces: an `on*` prop names a host tool,
+which is the only way generated UI mutates anything. `Input` and `Select`
+accept typed input locally, but under the current zero-arg binding contract
+they cannot round-trip a typed value back through a bound action. Treat them
+as display plus local input, not as form fields wired to server state.
+
+### Remix capture rules
+
+Sync captures enough of the surrounding host to render a fork with its real
+look and feel:
+
+- **Source imports, to closure.** Sync follows local JavaScript and
+  TypeScript imports from the captured component until it runs out of them —
+  a helper four files down is captured like one file down. Imports it cannot
+  resolve or refuses (out-of-root, or through a symlink escape) are dropped
+  with a named warning. Package imports never enter the jail: they are not
+  your code, and a **fork** can only use the three packages the jail bundles.
+  CDN package loading is a preview-surface capability and deliberately does not
+  apply here — a fork renders in your own page, in front of your own users, and
+  must never depend on a third party being up. A wrapped component whose closure
+  reaches any other package cannot render a fork. A closure over
+  256 KB is not captured at all; sync warns, names the module that blew the
+  budget, and leaves the previous baseline exactly as it was.
+- **Root-level stylesheets.** Sync snapshots direct `.css` imports from your
+  canonical app root (`app/layout.*`, `app/root.*`, `pages/_app.*`, or their
+  `src/` variants) and applies them inside the jailed document only. Sync
+  does not follow component-local stylesheet imports and warns when it sees
+  one. `@import` statements in captured stylesheets are dropped inside the
+  jail: its CSP allows no stylesheet fetches, so they could never load there.
+
+The wrapped component may be a named or a default export — a fork of a
+named-export component gets its jail entry synthesized. An anonymous default
+export (`export default function () { … }`) is a sync error: name the
+component so its remixes survive refactors.
+
+Sync rewrites the baseline whenever any captured payload changes, not only
+the primary component source.

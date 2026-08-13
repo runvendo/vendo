@@ -918,8 +918,20 @@ export async function createWireServer(options: WireServerOptions = {}) {
         // Newest-first, as a real store returns them — the workspace sidebar
         // defaults its selection to threads[0], so a just-minted conversation
         // must sort to the top (ENG-231 persistence guard).
+        // ⚠️ TEST EDIT (infrastructure) — titles mirror the real store's
+        // derivation (first visible text part, "New thread" fallback) so the
+        // history-picker specs can tell rows apart; nothing asserted the old
+        // constant "Fixture thread".
+        const title = (thread: Thread): string => {
+          for (const message of thread.messages) {
+            for (const part of message.parts) {
+              if (part.type === "text" && part.text.trim() !== "") return part.text.slice(0, 80);
+            }
+          }
+          return "New thread";
+        };
         const summaries: ThreadSummary[] = [...state.threads.values()]
-          .map(thread => ({ id: thread.id, title: "Fixture thread", updatedAt: thread.updatedAt }))
+          .map(thread => ({ id: thread.id, title: title(thread), updatedAt: thread.updatedAt }))
           .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
         json(response, summaries);
         return;
@@ -1444,6 +1456,14 @@ export async function createWireServer(options: WireServerOptions = {}) {
         globalThis.fetch = originalFetch;
         return;
       }
+      // ⚠️ TEST EDIT (infrastructure) — destroy lingering sockets instead of
+      // waiting for them: a long-lived overlay test leaves keep-alive /
+      // half-open connections (background fetches in jsdom) that otherwise
+      // park a later close() until the 30s hook timeout — which aborts the
+      // remaining afterEach chain, skips RTL cleanup, and leaks the mounted
+      // overlay into the tests after it. Anything this server still holds at
+      // teardown belongs to an unmounted tree by definition.
+      server.closeAllConnections();
       await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
     },
   };

@@ -2305,3 +2305,44 @@ describe("the uncertain-theme-slot review", () => {
     expect(firstSentence("Short and done. And more.")).toBe("Short and done");
   });
 });
+
+// FINDINGS (linkwarden field test 2026-08-08): a package.json saved with a
+// UTF-8 BOM — what Notepad and PowerShell's Set-Content produce — crashed
+// init with a raw SyntaxError stack. npm and Node's own require() both
+// tolerate the BOM, so the manifest is legitimate; and a manifest that is
+// GENUINELY broken deserves one clean sentence, never a stack dump.
+describe("a package.json the way Windows editors save it", () => {
+  it("reads a BOM'd package.json like npm does — init succeeds and the hooks land", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), "﻿" + JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@vendoai/vendo": "0.3.0" },
+    }));
+    const sink = output();
+    expect(await runInit({
+      targetDir: root,
+      output: sink.output,
+      env: {},
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      resolveCredential: async () => ({ rung: "none" }),
+    })).toBe(0);
+    const written = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { scripts?: Record<string, string> };
+    expect(written.scripts?.["predev"]).toContain("vendo sync");
+  });
+
+  it("says one clean sentence for a malformed package.json instead of a raw stack", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), "{ not json at all");
+    const sink = output();
+    expect(await runInit({
+      targetDir: root,
+      output: sink.output,
+      env: {},
+      framework: "next",
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      resolveCredential: async () => ({ rung: "none" }),
+    })).toBe(1);
+    expect(sink.errors.join("\n")).toContain("package.json is not valid JSON");
+    expect(sink.errors.join("\n")).toContain("vendo init");
+  });
+});

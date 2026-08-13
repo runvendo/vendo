@@ -26,7 +26,34 @@ import {
 import type { AgentToolsDataDependencies } from "./agent-tools.js";
 import { NO_ASSEMBLER, NOTHING_RENDERABLE, NO_MACHINE } from "./build-messages.js";
 import { input, optionalString, resolveAppRef } from "./tool-args.js";
-import type { AppsRuntime } from "../runtime/types.js";
+import type { AppsRuntime, CreateServerWork, EditResult } from "../runtime/types.js";
+
+/** Wave 9 — a ladder-authored automation raises its own card, on create and
+ *  edit alike (#881). Published by the side that knows rather than duck-typed
+ *  out of the tool's return value at the bridge: the receipt carries words
+ *  only. */
+const publishAutomationCard = (
+  stream: (update: VendoViewStreamUpdate) => void,
+  app: { id: AppId; name: string; description?: string },
+  automation: NonNullable<EditResult["automation"]>,
+): void => {
+  stream({
+    id: `vendo-automation-${app.id}`,
+    part: {
+      type: "data-vendo-automation",
+      appId: app.id,
+      name: app.name,
+      enabled: automation.enabled,
+      ...(automation.trigger === undefined ? {} : { trigger: automation.trigger }),
+      ...(app.description === undefined || app.description.length === 0
+        ? {}
+        : { description: app.description }),
+      ...((automation.pendingGrants ?? []).length === 0
+        ? {}
+        : { pendingGrants: automation.pendingGrants!.length }),
+    },
+  });
+};
 
 /**
  * Contract §3.1 — the caller's `context` appended to the request, clearly
@@ -213,7 +240,7 @@ const makeNewApp = async (
     );
   }
   let unsaved: string | undefined;
-  let serverWork: string | undefined;
+  let serverWork: CreateServerWork | undefined;
   const created = await runtime.create({
     appId,
     prompt: ask,
@@ -221,13 +248,15 @@ const makeNewApp = async (
     // No `slot`: the claim went down at the mint above, which is the
     // same instant `create` would have made it for an id of its own.
     onUnsaved: (reason) => { unsaved = reason; },
-    // The screen landed but the server work its plan required did not, so
-    // the person is looking at an app whose sections have nothing behind
-    // them. Said plainly here for the same reason `onUnsaved` is: `create`
-    // resolves with the document either way, and an unqualified "it's on your
-    // screen" is how an empty app gets declared successful. It carries the
-    // receipt's STATUS too, not just its words — see the return below.
-    onServerWork: ({ reasons }) => { serverWork = reasons.join("; "); },
+    // The lane's outcome arrives in up to two calls on one envelope shape
+    // (#881): the success half (the automation that raises the card below,
+    // caveat issues) and the failure report (`failed` — server work the plan
+    // required that did not get built), which reaches the receipt's STATUS
+    // too, not just its words (see the return below): `create` resolves with
+    // the document either way, and an unqualified "it's on your screen" is
+    // how an empty app gets declared successful. Merged, never overwritten —
+    // a failure must not erase the automation that DID land, or vice versa.
+    onServerWork: (work) => { serverWork = { ...serverWork, ...work }; },
     ...(stream === undefined ? {} : {
       onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
     }),
@@ -235,6 +264,12 @@ const makeNewApp = async (
   // An unsaved create has no row to remember onto; `remember` says so
   // and moves on, which is the same non-event every other failure is.
   await remember(created.id);
+  // #881 — a create that rode its plan to an automation raises the same card
+  // an edit does. Before this, the envelope died inside `create` and the
+  // person's first-ask automation surfaced nothing: no card, no grants.
+  if (serverWork?.automation !== undefined && stream !== undefined) {
+    publishAutomationCard(stream, created, serverWork.automation);
+  }
   // View-only (the store refused the write): the screen IS on the user's
   // page, so this is a success with a caveat, not a failure. Reporting it
   // as an error made the agent apologize for a rendered view and rebuild
@@ -246,12 +281,13 @@ const makeNewApp = async (
   // plan asked for, so it is `"partial"` (§3.1 law 4). `say` alone was the same
   // silent success one field over — the sentence said the server side did not
   // get built while every reader that BRANCHES on `status` saw plain "ready".
+  const failedWork = serverWork?.failed ?? [];
   return receipt({
     id: created.id,
     title: created.name,
-    status: serverWork === undefined ? "ready" : "partial",
-    say: serverWork !== undefined
-      ? `I built the screen, but the server-side part didn't get built: ${serverWork}. The app works for viewing — ask me to try the build again.`
+    status: failedWork.length === 0 ? "ready" : "partial",
+    say: failedWork.length !== 0
+      ? `I built the screen, but the server-side part didn't get built: ${failedWork.join("; ")}. The app works for viewing — ask me to try the build again.`
       : unsaved === undefined
         ? `${created.name} is on your screen.`
         : `${created.name} is on your screen, though I couldn't save it to your apps.`,
@@ -277,22 +313,7 @@ const changeExistingApp = async (
   // second field to disagree with the document. The document's trigger is the
   // one this edit authored and landed, so what the card lists is what runs.
   if (result.automation !== undefined && stream !== undefined) {
-    stream({
-      id: `vendo-automation-${result.app.id}`,
-      part: {
-        type: "data-vendo-automation",
-        appId: result.app.id,
-        name: result.app.name,
-        enabled: result.automation.enabled,
-        ...(result.automation.trigger === undefined ? {} : { trigger: result.automation.trigger }),
-        ...(result.app.description === undefined || result.app.description.length === 0
-          ? {}
-          : { description: result.app.description }),
-        ...((result.automation.pendingGrants ?? []).length === 0
-          ? {}
-          : { pendingGrants: result.automation.pendingGrants!.length }),
-      },
-    });
+    publishAutomationCard(stream, result.app, result.automation);
   }
   return receipt({
     id: result.app.id,

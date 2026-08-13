@@ -1,4 +1,4 @@
-import type { RiskLabel } from "@vendoai/core";
+import { serviceToolSlug, type ApprovalRequest, type RiskLabel } from "@vendoai/core";
 import { useState } from "react";
 import { useVendoTools } from "../context.js";
 import { toolPresentation } from "./build-beat.js";
@@ -35,6 +35,23 @@ export interface GrantSetPermission {
       service actions on one card are otherwise the same row twice. */
   slug?: string;
   risk: RiskLabel;
+}
+
+/** The consent rows for a set of pending asks — ONE mapping for every surface
+    that renders them (the workspace panel's arming and failed-run cards, and
+    the in-thread automation consent), so a permission reads the same words
+    everywhere. A connector ask is FOR its service action, not the dispatcher —
+    two service actions on one card are otherwise the same row twice. */
+export function grantSetPermissions(asks: readonly ApprovalRequest[]): GrantSetPermission[] {
+  return asks.map(ask => {
+    const slug = serviceToolSlug(ask.call);
+    return {
+      approvalId: ask.id,
+      tool: ask.call.tool,
+      ...(slug === undefined ? {} : { slug }),
+      risk: ask.descriptor.risk,
+    };
+  });
 }
 
 /** What a permission LETS the automation do, in our words. spec §16 law 3 —

@@ -19,7 +19,8 @@ type AuthJsEncode = (options: {
 }) => Promise<string>;
 
 export interface AuthJsPresetOptions {
-  /** The host's Auth.js secret. Defaults to AUTH_SECRET. */
+  /** The host's Auth.js secret. Defaults to AUTH_SECRET, then next-auth v4's
+      NEXTAUTH_SECRET — the same legacy-name order Auth.js itself resolves. */
   secret?: SecretSource;
   /** Must match the host's session cookie name because Auth.js uses it as the JWE salt. */
   cookieName?: string;
@@ -58,7 +59,12 @@ export function authJsPreset(options: AuthJsPresetOptions = {}): ActAs {
   };
 
   return async (principal, grant): Promise<AuthMaterial | null> => {
-    const secret = await resolveSecret(options.secret, "AUTH_SECRET");
+    // Zero-config resolves AUTH_SECRET then next-auth v4's NEXTAUTH_SECRET
+    // (Auth.js's own legacy-name order); an explicit source that declines
+    // never falls through to the env names — explicit wins, including its no.
+    const secret = options.secret !== undefined
+      ? await resolveSecret(options.secret)
+      : await resolveSecret(undefined, "AUTH_SECRET") ?? await resolveSecret(undefined, "NEXTAUTH_SECRET");
     if (!secret) return null;
     const additionalClaims = await resolveClaims(options.claims, principal, grant);
     if (additionalClaims === null) return null;

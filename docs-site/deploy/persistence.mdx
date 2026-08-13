@@ -9,6 +9,20 @@ audit, runs, and secrets in one Postgres-compatible store. Local dev uses an
 embedded PGlite database with the same schema; production points the same
 store at your own Postgres.
 
+<Warning>
+  **Next.js hosts must externalize PGlite.** Webpack-bundling it breaks its
+  filesystem access (`The "path" argument must be of type string … Received
+  an instance of URL`) and takes the whole wire down. Add to
+  `next.config.*`:
+
+  ```js
+  serverExternalPackages: ["esbuild", "@electric-sql/pglite"]
+  ```
+
+  Every Vendo example carries this line; a host using the local store —
+  including the zero-config dev default — needs it too.
+</Warning>
+
 ## Configuring a store
 
 ```ts
@@ -87,7 +101,7 @@ composes a PGlite engine writing to one of those places:
 The trigger is any of the platform markers `RAILWAY_ENVIRONMENT`, `RENDER`,
 `FLY_APP_NAME`, or `DYNO` in the environment, or a `dataDir` that resolves
 under the OS temp dir or `/tmp`. `vendo doctor` reports the same finding
-statically as [`E-STORE-001`](/agents/verify#E-STORE-001).
+statically as [`E-STORE-001`](/deploy/troubleshooting#E-STORE-001).
 
 Two ways out:
 

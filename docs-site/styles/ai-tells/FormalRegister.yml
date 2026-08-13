@@ -1,0 +1,40 @@
+---
+extends: existence
+message: "AI formalism: '%s'. Use a plainer everyday word (e.g., 'use', 'help', 'start')."
+level: warning
+ignorecase: true
+# Pruned from upstream: implement(ation), terminate, prioritize, optimize,
+# maximize, and minimize are ordinary, unavoidable technical vocabulary in
+# software docs ("implement the interface", "terminate the process",
+# "optimize for latency") rather than corporate formalese. Dropping them
+# keeps this rule to words a technical writer never reaches for on purpose.
+tokens:
+  - utilize
+  - utilizes
+  - utilizing
+  - utilized
+  - utilization
+  - facilitate
+  - facilitates
+  - facilitating
+  - facilitated
+  - facilitation
+  - commence
+  - commences
+  - commencing
+  - commenced
+  - ascertain
+  - ascertains
+  - ascertaining
+  - endeavour
+  - endeavours
+  - endeavouring
+  - conceptualize
+  - conceptualizes
+  - conceptualizing
+  - operationalize
+  - operationalizes
+  - operationalizing
+  - incentivize
+  - incentivizes
+  - incentivizing

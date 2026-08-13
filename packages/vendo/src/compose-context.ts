@@ -144,6 +144,11 @@ export interface VendoComposition {
   /** Armed by the ready() latch, never at construction (Workers forbids timers
    *  in global scope). Filled by compose-sweep.ts. */
   startBackgroundSweep: () => void;
+  /** A DEVELOPMENT process drives its own scheduler tick — the production tick
+   *  is an external caller's job (POST /tick, or Cloud for hosted deploys) and
+   *  no laptop has one. Same ready()-latch arming as the sweep. Filled by
+   *  compose-automations.ts; a no-op outside development. */
+  startDevAutomationsTicker: () => void;
   /** The boot-once latch every handler/emit touch awaits. */
   ready: () => Promise<void>;
   /** Filled by compose-apps.ts, read by `resolveRisk` inside a later check. */

@@ -177,14 +177,45 @@ export async function zodBumpInvocation(root: string): Promise<string> {
   return invocationFor(await installCommandFor(root), [ZOD_FLOOR_SPEC], root);
 }
 
+/** The paste-ready ai@6 install, same shape — doctor's E-DEP-001 floor story
+    names the host's own package manager, not a generic npm line. */
+export async function aiBumpInvocation(root: string): Promise<string> {
+  return invocationFor(await installCommandFor(root), [AI_SPEC], root);
+}
+
 /** Test seam: resolves to the child's exit code (null on spawn error). */
 export type InstallRunner = (command: string, args: string[], cwd: string) => Promise<number | null>;
 
 const INSTALL_TIMEOUT_MS = 240_000;
+const STDERR_TAIL_CHARS = 2_000;
 
-const defaultRunner: InstallRunner = (command, args, cwd) =>
+let stderrTail = "";
+
+/** What the last default-runner child printed to stderr (bounded tail, "" for
+    a clean exit). The failure warnings carry it because an exit code alone
+    left users hunting the reason in the wrong place (FINDINGS F2-win). */
+export function installStderrTail(): string {
+  return stderrTail;
+}
+
+/** Package managers install as .cmd shims on Windows, so the spawn must go
+    through the platform shell there — a shell-less spawn ENOENTs before the
+    install starts. cmd.exe treats `^` (as in ai@^6) as an escape character
+    OUTSIDE double quotes, so every arg is quoted; none of ours carry quotes
+    of their own (specs, flags, relative paths). */
+export const defaultRunner: InstallRunner = (command, args, cwd) =>
   new Promise((resolve) => {
-    const child = spawn(command, args, { cwd, stdio: "ignore" });
+    stderrTail = "";
+    const windows = process.platform === "win32";
+    const child = spawn(command, windows ? args.map((arg) => `"${arg}"`) : args, {
+      cwd,
+      stdio: ["ignore", "ignore", "pipe"],
+      shell: windows,
+    });
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => {
+      stderrTail = (stderrTail + chunk).slice(-STDERR_TAIL_CHARS);
+    });
     const timer = setTimeout(() => {
       child.kill();
       resolve(null);
@@ -198,6 +229,13 @@ const defaultRunner: InstallRunner = (command, args, cwd) =>
       resolve(code);
     });
   });
+
+/** The failure warning's "why": what the default runner's child said, or
+    nothing when an injected runner ran (its stderr never existed here). */
+function installSaid(run: InstallRunner | undefined): string {
+  const tail = run === undefined ? stderrTail.trim() : "";
+  return tail === "" ? "" : ` — install said: ${tail}`;
+}
 
 export interface EnsureProviderDepsOptions {
   root: string;
@@ -233,7 +271,11 @@ export async function ensureProviderDeps(options: EnsureProviderDepsOptions): Pr
   if (providers.length === 0) return;
 
   const specs: string[] = [];
-  if (!(await isInstalled(options.root, "ai"))) specs.push(AI_SPEC);
+  // FINDINGS F3: a resolvable pre-v6 `ai` — usually another package's hoisted
+  // copy — is a floor violation, not a satisfied dependency. Installing ai@^6
+  // gives the app its own v6 that wins resolution over the hoisted copy.
+  const aiVersion = await installedVersion(options.root, "ai");
+  if (aiVersion === null || aiBelowPeerFloor(aiVersion)) specs.push(AI_SPEC);
   for (const provider of providers) {
     if (!(await isInstalled(options.root, provider.module))) specs.push(provider.spec);
   }
@@ -247,7 +289,7 @@ export async function ensureProviderDeps(options: EnsureProviderDepsOptions): Pr
     options.output.log(`Installed ${specs.join(" ")}.`);
   } else {
     options.output.error(
-      `warning: could not install ${specs.join(" ")} — run \`${invocation}\` yourself before the first turn, or it fails at runtime (E-DEP-001).`,
+      `warning: could not install ${specs.join(" ")} — run \`${invocation}\` yourself before the first turn, or it fails at runtime (E-DEP-001).${installSaid(options.run)}`,
     );
   }
 }
@@ -293,6 +335,14 @@ export async function ensureVendoPackage(options: { root: string; output: Output
       `warning: could not install ${VENDO_PACKAGE_SPEC} — the wiring imports @vendoai/vendo/* and the vendoai alias keeps its copy nested, so the route will not compile; run \`${await vendoPackageInvocation(options.root)}\` yourself (E-WIRE-011).`,
     );
   }
+}
+
+/** True when an installed ai predates the v6 peer contract (FINDINGS F3).
+    v7+ is E-DEP-001's downgrade story, and an unparseable version is not
+    evidence of an old ai — only a plain pre-6 major is below the floor. */
+export function aiBelowPeerFloor(version: string): boolean {
+  const major = Number.parseInt(version, 10);
+  return Number.isNaN(major) ? false : major < 6;
 }
 
 /** The bump that satisfies the AI SDK's zod floor while keeping zod 3
@@ -352,6 +402,6 @@ export async function ensureZodFloor(options: EnsureZodFloorOptions): Promise<vo
   if (code === 0) {
     options.output.log(`Installed ${ZOD_FLOOR_SPEC}.`);
   } else {
-    options.output.error(`warning: could not install ${ZOD_FLOOR_SPEC} — run \`${invocation}\` yourself, or the build fails (E-DEP-003).`);
+    options.output.error(`warning: could not install ${ZOD_FLOOR_SPEC} — run \`${invocation}\` yourself, or the build fails (E-DEP-003).${installSaid(options.run)}`);
   }
 }

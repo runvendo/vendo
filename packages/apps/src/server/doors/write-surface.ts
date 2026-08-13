@@ -607,8 +607,9 @@ export const createWriteSurface = (
       if (trigger === undefined) {
         throw new VendoError(
           "validation",
-          `app ${appId} has no schedule to change. Ask for the automation itself first — a schedule needs `
-          + "something to run, and that is an edit, not a cron.",
+          `app ${appId} has no schedule to change. A schedule needs something to run, and building that is `
+          + "vendo_make's job, not a cron: ask vendo_make, naming this app in `app`, with the schedule and "
+          + "the action in one request.",
           { appId },
         );
       }

@@ -1,0 +1,10 @@
+---
+extends: sequence
+message: "AI vocabulary (verb form): '%s'. Replace with a direct verb."
+level: warning
+# "navigate" dropped from the upstream token set: it is ordinary
+# instructional language in docs ("Navigate to the dashboard"), not an
+# AI tell.
+tokens:
+  - pattern: leverage|leveraging|leverages|showcase|showcases|showcasing|harness|harnessing|harnesses|embark|embarks|embarking|foster|fosters|fostering|spearhead|spearheads|spearheading
+    tag: VB|VBZ|VBG|VBP|VBD

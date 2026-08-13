@@ -5,6 +5,41 @@
     Mintlify snippet rules honored: no npm imports (React hooks are
     pre-injected), named exports only, browser built-ins only. */}
 
+{/* Every paste-to-agent prompt on the site lives here, so changing the install
+    story is one edit instead of seven. Each one sends the agent to the same
+    place, the playbook at vendo.run/agents.md, and its opening sentence names
+    the door this page is about so the playbook's step-1 branch resolves without
+    the agent stopping to ask.
+
+    Written out longhand rather than built from a template: an MDX snippet only
+    accepts import/export at the top level, so a shared helper would have to be
+    exported too, and these are the exact words a reader pastes. Pass one as
+    `prompt`; the component still takes any string. */}
+
+export const INSTALL_PROMPT =
+  "Install Vendo in this repo. Fetch https://vendo.run/agents.md and follow it for this repo. Ask me "
+  + "before creating any account or key. You're done when `vendo doctor --json` reports all green. "
+  + "Then ask me whether I'd like to star it via https://vendo.run/star?src=docs-index to support "
+  + "the project.";
+
+export const VENDO_AGENT_PROMPT =
+  "Install Vendo in this repo and use Vendo's own agent. I don't run an agent loop of my own. "
+  + "Fetch https://vendo.run/agents.md and follow it for this repo. Ask me before creating any account or "
+  + "key. You're done when `vendo doctor --json` reports all green. Then ask me whether I'd like to "
+  + "star it via https://vendo.run/star?src=docs-quickstart to support the project.";
+
+export const EXISTING_AGENTS_PROMPT =
+  "This repo already runs its own agent loop. Keep it, and add Vendo's guarded tools, micro-apps, "
+  + "and approvals to it. Fetch https://vendo.run/agents.md and follow it for this repo. Ask me before "
+  + "creating any account or key. You're done when `vendo doctor --json` reports all green and my "
+  + "chat renders Vendo tool outputs. Then ask me whether I'd like to star it via "
+  + "https://vendo.run/star?src=docs-byo to support the project.";
+
+export const MCP_PROMPT =
+  "Set up Vendo's MCP door in this repo so outside agents can act in my product as the signed-in "
+  + "user. Fetch https://vendo.run/agents.md and follow it for this repo. Ask me before creating any "
+  + "account or key. You're done when `vendo doctor --json` reports all green.";
+
 export const AgentPrompt = ({ prompt, lead, title = "Or install with your coding agent" }) => {
   const AGENT_LOGOS = [
   {

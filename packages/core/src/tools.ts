@@ -111,7 +111,7 @@ export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
   // prettified — while its descriptor carried "Look up available components".
   validate: "Check the app for mistakes",
   search_components: "Look up available components",
-  schedule: "Set when this runs",
+  schedule: "Change when this runs",
   ask_user: "Ask you a question",
   find_service_tools: "Look for an outside service",
   use_service_tool: "Use an outside service",

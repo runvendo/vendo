@@ -1,0 +1,133 @@
+---
+title: "Quickstart"
+sidebarTitle: "Quickstart"
+description: "Open the MCP door with vendo init, set your public origin, and connect Claude Code, any other MCP client by URL, or your own backend."
+mode: "wide"
+---
+
+import { AgentPrompt, MCP_PROMPT } from "/snippets/agent-prompt.jsx"
+
+Five minutes from a product with no MCP server to an outside agent making
+screens in it. One URL, and every call runs through [your own guard and
+audit](/mcp/overview).
+
+<AgentPrompt
+  title="Or set it up with your coding agent"
+  lead={<>Paste this and your coding agent wires the door against the <a href="/agents">agent playbook</a>.</>}
+  prompt={MCP_PROMPT}
+/>
+
+## 1. Run init
+
+```bash
+npx vendo init
+```
+
+Pick the MCP door path. On the model question take **Vendo Cloud**: a free key
+lands in `.env.local` as `VENDO_API_KEY` and `vendo_make` runs on it. Your own
+`ANTHROPIC_API_KEY` works too, written as the
+[`models:` line](/deploy/model-credentials) that selects it. Say yes to *will
+your own backend call these tools machine-to-machine?* and, on the **Local**
+answer to the sign-in question, init generates the `VENDO_SERVICE_KEY` step 3
+uses — under the Cloud broker you mint that key on the console's keys page
+instead.
+
+The door mints its own principals through an [auth preset](/deploy/auth), so
+you need a Next.js app with one wired. Without it init says so and writes
+nothing. It writes the composition, the catch-all route, and the origin-root
+discovery route. Details: [vendo init](/reference/vendo-init).
+
+## 2. Set your origin
+
+The door's discovery, issuer, and token audience all derive from this one
+value, so it has to name the origin clients actually reach. Running locally,
+that is your dev server:
+
+```bash
+# .env.local
+VENDO_BASE_URL=http://localhost:3000
+```
+
+Where you deploy, set the same variable to the public origin instead. Leave it
+unset either way and doctor fails with
+[E-MCP-009](/deploy/troubleshooting#E-MCP-009).
+
+## 3. Connect any client
+
+Whatever origin you set in step 2, plus `/api/vendo/mcp`. Hosted clients need a
+public one.
+
+<CodeGroup>
+
+```bash Claude Code
+# in Claude Code
+/plugin marketplace add runvendo/vendo
+/plugin install vendo@vendo
+
+# in your shell, pointed at the origin you set above
+export VENDO_MCP_URL=http://localhost:3000/api/vendo/mcp
+```
+
+```text Claude · ChatGPT · Cursor
+https://your-app.example.com/api/vendo/mcp
+```
+
+```json Any MCP client
+{
+  "mcpServers": {
+    "vendo": {
+      "type": "http",
+      "url": "https://your-app.example.com/api/vendo/mcp"
+    }
+  }
+}
+```
+
+```bash Your own backend
+# No browser to bounce: trade VENDO_SERVICE_KEY plus one of YOUR user ids for a
+# 10-minute token bound to that user, then send it as `authorization: Bearer …`.
+# init wrote the key to .env.local, which your shell has not read:
+export VENDO_SERVICE_KEY=$(grep '^VENDO_SERVICE_KEY=' .env.local | cut -d= -f2-)
+
+curl -s https://your-app.example.com/api/vendo/mcp/token \
+  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+  -d client_id=vendo-service \
+  -d client_secret="$VENDO_SERVICE_KEY" \
+  -d subject_token=user_1904 \
+  -d subject_token_type=urn:vendo:params:oauth:token-type:user-id
+```
+
+</CodeGroup>
+
+The first three let the client run the sign-in itself, and your users get a
+themed setup page at `/api/vendo/mcp/connect` for free. Custom and headless
+agents take the last tab. The full exchange and key rotation live on
+[the door reference](/reference/mcp-door#service-key-token-exchange).
+
+## 4. Ask for a screen
+
+In the connected client, ask for something you would rather look at than read.
+The agent calls `vendo_make` and gets a receipt back:
+
+```json
+{
+  "id": "app_790892b0…",
+  "title": "August Spending",
+  "status": "ready",
+  "say": "August Spending is on your screen."
+}
+```
+
+The screen lands in your product, not in the chat.
+
+## 5. Check the wiring
+
+```bash
+npx vendo doctor
+```
+
+Start your dev server first. The MCP checks fetch the door's two discovery
+documents over HTTP, so a stopped server reads as a broken door. Failures name
+an [E-MCP code](/deploy/troubleshooting).
+
+Next: [tool menus, consent theming, the registry](/reference/mcp-door).

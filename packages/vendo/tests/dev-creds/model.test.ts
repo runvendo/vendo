@@ -170,16 +170,19 @@ describe("devModel (env-resolving default model)", () => {
     });
     const callOptions = { prompt: [] };
     // Cloud rung default is the flagship family name `vendo` (models spec
-    // 2026-07-22); the gateway grace-remaps unknown aliases server-side.
+    // 2026-07-22); the gateway grace-remaps unknown aliases server-side. The
+    // explicit output cap rides every gateway call — "vendo" is unknown to
+    // the stock provider's registry, which otherwise clamps it to 4096.
+    const capped = { prompt: [], maxOutputTokens: UNKNOWN_MODEL_MAX_OUTPUT_TOKENS };
     expect(await controller.doGenerate(callOptions)).toEqual({
       delegated: "generate",
       modelId: "vendo",
-      options: callOptions,
+      options: capped,
     });
     expect(await controller.doStream(callOptions)).toEqual({
       delegated: "stream",
       modelId: "vendo",
-      options: callOptions,
+      options: capped,
     });
     // The key rides as the provider apiKey; the base is the production
     // console's /api/v1, where the Anthropic-shaped /messages endpoint lives.
@@ -305,6 +308,21 @@ describe("call-time sampling params on the resolved rung", () => {
     });
     expect(await controller.doStream({ prompt: [], temperature: 0 })).toEqual({
       modelId: "claude-sonnet-5",
+      options: { prompt: [], maxOutputTokens: UNKNOWN_MODEL_MAX_OUTPUT_TOKENS },
+    });
+  });
+
+  it("drops temperature and caps output for the Cloud gateway's own family id", async () => {
+    // Field: linkwarden 2026-08-08 — "vendo" is unknown to the stock
+    // @ai-sdk/anthropic capability registry, which silently limits max_tokens
+    // to 4096 without an explicit cap; a screen agent's document truncates
+    // mid-wire and the app never lands a row.
+    const controller = new DevModelController({
+      env: { VENDO_API_KEY: `vnd_${"k".repeat(40)}` },
+      importModule: optionsEcho("createAnthropic"),
+    });
+    expect(await controller.doStream({ prompt: [], temperature: 0 })).toEqual({
+      modelId: "vendo",
       options: { prompt: [], maxOutputTokens: UNKNOWN_MODEL_MAX_OUTPUT_TOKENS },
     });
   });

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { HostFramework } from "./framework.js";
+import { stripBom } from "./shared.js";
 
 /**
  * Bare dependency versions for telemetry (posthog-analytics design §3):
@@ -142,7 +143,7 @@ export function isOlderVersion(version: string, other: string): boolean {
  */
 export async function detectDepVersions(root: string, framework: HostFramework | "custom"): Promise<DepVersions> {
   try {
-    const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
+    const manifest = JSON.parse(stripBom(await readFile(join(root, "package.json"), "utf8"))) as {
       dependencies?: Record<string, unknown>;
       devDependencies?: Record<string, unknown>;
     };

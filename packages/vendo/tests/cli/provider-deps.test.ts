@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensureProviderDeps, ensureVendoPackage, ensureZodFloor, installCommandFor, providerModuleFor, VENDO_PACKAGE_SPEC, zodBelowAiSdkFloor, ZOD_FLOOR_SPEC } from "../../src/cli/provider-deps.js";
+import { aiBelowPeerFloor, defaultRunner, ensureProviderDeps, ensureVendoPackage, ensureZodFloor, installCommandFor, installStderrTail, providerModuleFor, VENDO_PACKAGE_SPEC, zodBelowAiSdkFloor, ZOD_FLOOR_SPEC } from "../../src/cli/provider-deps.js";
 
 // Init installs the provider module the resolved credential loads at
 // runtime (0.4.1 E2E cert finding: nothing declares @ai-sdk/*, so a fresh
@@ -19,10 +19,10 @@ async function tempRoot(): Promise<string> {
   return root;
 }
 
-async function installModule(root: string, name: string): Promise<void> {
+async function installModule(root: string, name: string, version = "6.0.0"): Promise<void> {
   const dir = join(root, "node_modules", ...name.split("/"));
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, "package.json"), JSON.stringify({ name, version: "0.0.0" }));
+  await writeFile(join(dir, "package.json"), JSON.stringify({ name, version }));
 }
 
 function output() {
@@ -505,6 +505,132 @@ describe("ensureProviderDeps in a hoisted workspace", () => {
     });
 
     expect(calls).toEqual([]);
+  });
+});
+
+// FINDINGS F2-win (linkwarden baseline): on Windows the package managers are
+// .cmd shims, so a shell-less spawn ENOENTs before the install starts — and
+// with stdio ignored, the only trace was the generic "could not install"
+// warning. The default runner must go through the platform shell, keep
+// caret-bearing specs like ai@^6 intact, and surface the child's stderr.
+
+describe("defaultRunner", () => {
+  it("runs a real child process and resolves its exit code on every platform", async () => {
+    const root = await tempRoot();
+    expect(await defaultRunner("node", ["-e", "process.exit(0)"], root)).toBe(0);
+  });
+
+  it("captures the failing child's stderr so the warning can say why", async () => {
+    const root = await tempRoot();
+    const code = await defaultRunner(
+      "node",
+      ["-e", "process.stderr.write('EACCES: permission denied', () => process.exit(1))"],
+      root,
+    );
+    expect(code).toBe(1);
+    expect(installStderrTail()).toContain("EACCES: permission denied");
+  });
+
+  it("carries a caret-bearing spec through the platform shell intact", async () => {
+    // cmd.exe treats ^ as an escape character outside double quotes, so an
+    // unquoted ai@^6 arrives as ai@6 — the wrong install, silently.
+    const root = await tempRoot();
+    await defaultRunner(
+      "node",
+      ["-e", "process.stderr.write(process.argv[1], () => process.exit(1))", "ai@^6"],
+      root,
+    );
+    expect(installStderrTail()).toBe("ai@^6");
+  });
+
+  it("keeps only the tail of a long stderr stream", async () => {
+    const root = await tempRoot();
+    await defaultRunner(
+      "node",
+      ["-e", "process.stderr.write('x'.repeat(5000) + 'THE-END', () => process.exit(1))"],
+      root,
+    );
+    const tail = installStderrTail();
+    expect(tail.length).toBeLessThanOrEqual(2000);
+    expect(tail).toContain("THE-END");
+  });
+});
+
+describe("install-failure warnings", () => {
+  it("a custom runner's failure never carries a stale default-runner tail", async () => {
+    // Seed the module tail with a real default-runner failure, then fail via
+    // an injected runner: the tail belongs to the default runner's run only.
+    const root = await tempRoot();
+    await defaultRunner("node", ["-e", "process.stderr.write('stale tail', () => process.exit(1))"], root);
+    const messages = output();
+    await ensureProviderDeps({
+      root,
+      credential: { rung: "vendo-cloud" },
+      output: messages.sink,
+      run: async () => null,
+    });
+    expect(messages.errors.join("\n")).toContain("E-DEP-001");
+    expect(messages.errors.join("\n")).not.toContain("install said");
+    expect(messages.errors.join("\n")).not.toContain("stale tail");
+  });
+});
+
+// FINDINGS F3 (linkwarden baseline): a resolvable pre-v6 `ai` — usually some
+// other package's hoisted copy — satisfied the presence check, suppressed the
+// ai@^6 install, and every turn then 500d at runtime on the peer mismatch.
+// A below-floor major is a missing install, not a satisfied one.
+
+describe("aiBelowPeerFloor", () => {
+  it("draws the line at the v6 peer contract", () => {
+    expect(aiBelowPeerFloor("5.0.59")).toBe(true);
+    expect(aiBelowPeerFloor("4.3.19")).toBe(true);
+    expect(aiBelowPeerFloor("6.0.0")).toBe(false);
+    expect(aiBelowPeerFloor("6.0.230")).toBe(false);
+    // v7 is the E-DEP-001 downgrade story, not the floor's.
+    expect(aiBelowPeerFloor("7.0.2")).toBe(false);
+    // An unparseable version is not evidence of an old ai.
+    expect(aiBelowPeerFloor("not-a-version")).toBe(false);
+  });
+});
+
+describe("ensureProviderDeps with a pre-v6 ai installed", () => {
+  it("treats a resolvable ai@5 as missing and installs the ai@^6 floor", async () => {
+    const root = await tempRoot();
+    await installModule(root, "ai", "5.0.59");
+    await installModule(root, "@ai-sdk/anthropic");
+    const calls: Array<{ command: string; args: string[]; cwd: string }> = [];
+    await ensureProviderDeps({
+      root,
+      credential: { rung: "vendo-cloud" },
+      output: output().sink,
+      run: async (command, args, cwd) => {
+        calls.push({ command, args, cwd });
+        return 0;
+      },
+    });
+    expect(calls).toEqual([{ command: "npm", args: ["install", "ai@^6"], cwd: root }]);
+  });
+
+  it("installs over a workspace root's hoisted ai@5 so the app resolves its own v6", async () => {
+    const workspace = await tempRoot();
+    await writeFile(join(workspace, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n");
+    await writeFile(join(workspace, "pnpm-lock.yaml"), "");
+    await installModule(workspace, "ai", "5.0.59");
+    await installModule(workspace, "@ai-sdk/anthropic");
+    const app = join(workspace, "apps", "web");
+    await mkdir(app, { recursive: true });
+    await writeFile(join(app, "package.json"), JSON.stringify({ name: "web" }));
+    const calls: Array<{ command: string; args: string[]; cwd: string }> = [];
+    await ensureProviderDeps({
+      root: app,
+      credential: { rung: "vendo-cloud" },
+      output: output().sink,
+      run: async (command, args, cwd) => {
+        calls.push({ command, args, cwd });
+        return 0;
+      },
+    });
+    expect(calls).toEqual([{ command: "pnpm", args: ["add", "ai@^6"], cwd: app }]);
   });
 });
 

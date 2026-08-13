@@ -1,4 +1,4 @@
-import { riskLabelSchema, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
+import { riskLabelSchema, type AppId, type RiskLabel, type UIPayload, type VendoAutomationPart, type VendoBuildFailedPart, type VendoConnectPart, type VendoGrantSetPart, type VendoStepLimitPart, type VendoTurnErrorPart, type VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type DynamicToolUIPart, type ToolUIPart, type UIMessage } from "ai";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useVendoProvider } from "../../context.js";
@@ -10,7 +10,7 @@ import { AddToPicker } from "../add-to-picker.js";
 import { ApprovalCard } from "../approval-card.js";
 import { useApprovalModal } from "../approval-modal.js";
 import { ApprovalSheet } from "../approval-sheet.js";
-import { AutomationCard } from "../automation-card.js";
+import { ThreadAutomationConsent } from "./automation-consent.js";
 import { BuildBeat, toolPresentation } from "../build-beat.js";
 import { ConnectCard } from "../connect-card.js";
 import { GrantSetCard, type GrantSetPermission } from "../grant-set-card.js";
@@ -348,12 +348,16 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
   }
   if (part.type === "data-vendo-automation") {
     // 2026-07 demo feedback — a turn that creates/arms an automation renders
-    // it AS an automation: the same card vocabulary as the workspace panel
-    // (read-only here; management stays in the panel).
+    // it AS an automation: the same card vocabulary as the workspace panel.
+    // Since #1090 the card is ALSO the arming consent surface: its pending
+    // asks ride the durable approvals feed and are decidable right here —
+    // the overlay's conversation does not survive a page navigation, so a
+    // separate page cannot carry the arming decision.
     const data = partData(part) as Partial<VendoAutomationPart>;
     if (typeof data.appId !== "string" || typeof data.name !== "string") return null;
     return (
-      <AutomationCard
+      <ThreadAutomationConsent
+        appId={data.appId as AppId}
         name={data.name}
         enabled={data.enabled === true}
         {...(data.trigger === undefined ? {} : { trigger: data.trigger })}

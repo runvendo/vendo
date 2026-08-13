@@ -20,11 +20,11 @@ re-judge the AI layer without ever clobbering a decision a person made.
 | --- | --- | --- |
 | `tools.json` | sync | `vendo/tools@3` (04) — each tool's descriptor and execution `binding`, plus inferred field `semantics`, `srcHash` (the handler-source hash incremental sync diffs against), `audience`, `outputSchema` when the source declares one, and `disabled` for anything extraction could not classify |
 | `judgments.json` | sync (AI pass) | `vendo/judgments@1` (04) — the AI layer, keyed by tool name: `description`, `title`, `risk`, `critical`, `disabled`, `audience`, `semantics`. Hardenings apply themselves; loosenings only land here after a human accepted them |
-| `overrides.json` | init / human | `vendo/overrides@3` (04) — per-tool overrides plus `compounds`, `briefs`, per-surface tool menus (`surfaces.agent` / `surfaces.mcp`, see [Curate the tool menu](/capabilities/mcp#curate-the-tool-menu)), and `remix.ignoreSlots` |
+| `overrides.json` | init / human | `vendo/overrides@3` (04) — per-tool overrides plus `compounds`, `briefs`, per-surface tool menus (`surfaces.agent` / `surfaces.mcp`, see [Curate the tool menu](/reference/mcp-door#curate-the-tool-menu)), and `remix.ignoreSlots` |
 | `catalog.json` | sync | `vendo/catalog@1` (04) |
 | `policy.json` | init / human | `vendo/policy@1` (05) |
 | `remixable/<slot>.json` | sync | `PinBaseline` (06 §8) |
-| `components/<Name>.json` | sync | `CapturedHostComponent` — one registered host component, refs only, no source ([Host components](/connect/host-components#what-sync-captures)) |
+| `components/<Name>.json` | sync | `CapturedHostComponent` — one registered host component, refs only, no source ([Host components](/customize/host-components#what-sync-captures)) |
 | `components/modules/<hex>.json` | sync | `CapturedModule` — `{ source, imports? }`, content-addressed by the sha-256 of its canonical JSON, so a module ten components share is stored once |
 | `cloud.json` | sync (asked once) | `{ "pushComponents": boolean }` — this project's answer to "may registered-component source go to Vendo Cloud?" |
 
@@ -56,6 +56,30 @@ Five of these files are also **cloud-resolvable** surfaces:
 `overrides.json`. Per surface, resolution is an explicit `createVendo` value →
 the local file → the console's published value → unset, so the file's
 existence is the switch. `vendo config status` shows which layer owns each
-one; see [the CLI reference](/reference/cli#vendo-config-command-dir).
+one; see [the CLI reference](/reference/cli#vendo-config-%3Ccommand%3E-dir).
 `tools.json` and `catalog.json` are deliberately not on that list — they are
 generation inputs, not host-editable content.
+
+<Warning>
+  **A local file silently out-ranks a console publish.** Nothing warns at
+  runtime: the deployment keeps serving the local file and the publish is a
+  no-op for it. And because init scaffolds `brief.md`, `policy.json`,
+  `overrides.json`, and `theme.json`, a default install is file-owned on
+  four of the five surfaces — `design-rules.md` is the only one the console
+  owns out of the box. Publishing from the console without handing the
+  surface over first is the classic "publishing looks broken" trap.
+
+  - **Check who owns what:** `vendo config status` prints one owner per
+    surface (`file`, `cloud`, `unset`); `vendo doctor` reports the same
+    ownership.
+  - **Hand a surface to the console:** delete the local file.
+    `vendo config push <surface>` copies it into the console draft first
+    (publishing stays a console step) and then offers the deletion; `--yes`
+    deletes without asking.
+  - **When a publish lands:** `brief.md` applies on the next agent turn and
+    `design-rules.md` on the next app generation; `theme.json` and the
+    tool-enablement half of `overrides.json` resolve boot-once, so they
+    apply on the next restart (generation semantics from `overrides.json`
+    are live); a cloud-owned `policy.json` is consulted live per guard
+    check.
+</Warning>

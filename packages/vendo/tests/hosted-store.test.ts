@@ -1138,9 +1138,13 @@ describe("hostedStoreOps — the 35-op wire client", () => {
     const enveloped = notImplemented(JSON.stringify({
       error: { code: "not-implemented", message: "Unknown store operation: workspace/commit." },
     }));
+    // "Unknown store operation" is the console's version-skew tell (#1251):
+    // the message must say the real cause — an outdated client — not read as
+    // an outage or a capability gap.
     await expect(enveloped.workspace.commit([{ path: "/a.md", data: "hi" }])).rejects.toMatchObject({
       code: "not-implemented",
-      message: 'Vendo Cloud store does not support the "workspace.commit" operation — Unknown store operation: workspace/commit.',
+      message: 'Vendo Cloud store does not support the "workspace.commit" operation — Unknown store operation: workspace/commit.'
+        + " The console no longer serves this operation, which usually means this @vendoai/vendo is older than the console — update the package to restore Cloud persistence.",
     });
     // A bare 501 (no envelope) names the op just the same.
     await expect(notImplemented(null).lifecycle.promote("app_1", "org_1")).rejects.toMatchObject({

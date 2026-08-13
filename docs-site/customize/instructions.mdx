@@ -1,0 +1,129 @@
+---
+title: "Prompts and instructions"
+sidebarTitle: "Prompts"
+description: "Where to place product briefs, company directions, agent-prompt additions, and app design rules so each lands in the correct contracted channel, plus the block to paste into your own agent's system prompt."
+---
+
+Vendo assembles the agent's system prompt from four channels: a product
+brief, company directions, host instructions, and (for generation) design
+rules. Each channel has one contracted place to live, and this page maps
+each to that place and to its position in the assembled prompt.
+
+| File or config | Purpose |
+| --- | --- |
+| `.vendo/brief.md` | the deployment's prose, placed near the start of the agent prompt |
+| `createVendo({ instructions })` | the same prose in config; a non-blank value wins over the file |
+| `.vendo/policy.json` `directions` | company steering returned by guard |
+| `.vendo/design-rules.md` | optional rules for app generation, re-read per generation (edits apply without a restart) |
+| `createVendo({ apps: { designRules } })` | the same rules in config; a non-blank value wins over the file |
+
+Directions are policy data. Put them in the policy file or inline
+`PolicyConfig`. There is no merge rule between two directions channels.
+
+## Prompt assembly order
+
+The agent assembles its system prompt fresh for each turn. Conditional
+sections drop out entirely; the rest keep this order:
+
+1. Vendo's operating prompt.
+2. Presentation guidance, when the venue can render trees (chat and app).
+3. Capability-miss reporting guidance, when enabled.
+4. Discovery-budget guidance, when tool search is on.
+5. The deployment's prose — `createVendo({ instructions })`, else
+   `.vendo/brief.md`.
+6. Company directions returned by `guard.directions(ctx)`.
+7. Catalog and theme summary, when the venue can render trees.
+8. The knowledge index, when knowledge is configured and the venue can
+   render trees.
+There is no separate trailing host-instructions section: `brief` and
+`agent.instructions` were the same prose under two names, and they merged into
+the one `instructions` key at position 5. Policy belongs in guard directions,
+not here.
+
+The apps generation engine has its own specialized prompts for tree emission
+and code edits. It receives the component catalog, theme, optional design
+rules (`createVendo({ apps: { designRules } })`, else `.vendo/design-rules.md`
+re-read per generation), and format limits. It can use the same model as the
+agent or a different AI SDK `LanguageModel`.
+
+Memory is deferred and has no reserved v0 seam.
+
+## Teach your own agent when to build UI
+
+If you brought your own agent loop, none of the channels above apply: your
+agent has your system prompt, not Vendo's. A tool your agent never reaches for
+is not a feature, so paste this beside whatever you already say about your
+other tools.
+
+```text
+## Making the person a screen
+
+You have `vendo_make`. It puts a real, live view in front of the person, and it
+is the only way you can do that. You never build UI yourself.
+
+USE IT when the honest answer is a shape, not a sentence: more than a handful of
+rows, a comparison or trend or breakdown, something they will come back to
+("track", "every week"), something they need to act on — a screen carries
+buttons; your message cannot.
+
+ANSWER IN WORDS when the answer IS words: one number, one status, one fact, a
+yes or no, an explanation. A screen for "what's my balance" is worse than saying
+the balance.
+
+`request` is prose — what you would say to a designer sitting next to you.
+- Describe the want: "the last three months of spending, broken down by
+  category, with a way to jump into any month"
+- No component names, no layout grids, no JSON, no field names you guessed at
+- No fonts, colors, or branding: it inherits the product's own
+- Never paste numbers you looked up or computed ("Total: $4,210"). The screen
+  binds live data itself, and hardcoded figures are rejected as invented
+
+`context`: background the product cannot see — what they told you earlier, a
+constraint they mentioned, which of several things they meant. A sentence or two.
+
+`app`: ONLY to change one view that already exists, by id or by its name exactly
+as they said it. Leave it out and the product decides whether to continue the
+last one or start something new, which is usually right.
+
+WHAT COMES BACK is a receipt: id, title, status, and `say` — one line in the
+person's voice. Say `say`, close to verbatim. That is the whole report. You never
+get the screen; it goes from the server straight to their page, on a channel you
+are not on. So:
+- NEVER wait for it. Nothing to poll, nothing to check.
+- NEVER describe it. You have not seen it. No sections, charts, colors, or
+  buttons, and never tell them what to click.
+- Never paste a link or an id unless they asked.
+- status "failed": try once more on the same `app`, narrower, then stop and say
+  so plainly.
+- status "building": honest, not an error. Say the line and move on.
+- status "partial": the screen is on their page, the server-side part of it is
+  not. Say the line and offer to try that part again. Never rebuild it.
+```
+
+Add this second block too. `WHERE IT LANDS` applies to both doors. Add `MOVING
+ONE THEY ALREADY HAVE` **only if your agent reaches Vendo over MCP**, because
+teaching an agent about a tool it does not have is how you get an invented tool
+call. The in-process tool pack carries no `vendo_apps_*` tool.
+
+```text
+WHERE IT LANDS
+By default, the person's own list of views.
+
+`slot`: ONLY when they name a place in the product AND you have that place's
+exact id — they said it, or an earlier answer carried it. Slot ids belong to the
+product, not to you: NEVER invent one. A made-up id puts the screen where nobody
+is looking, and that does not look like an error. No id, no `slot`.
+
+MOVING ONE THEY ALREADY HAVE
+`vendo_apps_pin` puts an existing view into a slot; `vendo_apps_unpin` clears
+one. Both are writes and can stop for the person's approval.
+- Only on an explicit instruction ("put the renewals radar on my dashboard"),
+  never on something you inferred.
+- Pinning replaces: a slot holds one view. If they did not name the slot, ask.
+- `slot` on `vendo_make` is for something NEW; to move an existing view, pin it.
+```
+
+The same guidance ships to Claude Code as a skill:
+[`examples/claude-code-plugin/skills/make-a-screen`](https://github.com/runvendo/vendo/tree/main/examples/claude-code-plugin/skills/make-a-screen).
+What the tool hands back is on
+[Generated UI](/capabilities/generated-ui#the-receipt-your-agent-gets).

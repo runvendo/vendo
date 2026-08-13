@@ -123,6 +123,21 @@ describe("the vendo verbs are projected as ordinary tools (design §4)", () => {
     expect(JSON.stringify(outcome)).toContain("validation");
   });
 
+  it("teaches schedule as a re-time, never an arming door (the two-step trap)", async () => {
+    // Field (linkwarden 2026-08-08): "Set … what you are arming" taught the
+    // calling agent to build a view with vendo_make and then arm it here — a
+    // decomposition the system does not support, since this verb only re-times
+    // an EXISTING automation. The words must say the one thing the door does,
+    // and name the door that authors (vendo_make carries the schedule in the
+    // same request; its description says there is no separate automations tool).
+    const tools = await vendoVerbsRegistry(ports()).descriptors();
+    const tool = tools.find((candidate) => candidate.name === "schedule");
+    expect(tool?.title).toBe("Change when this runs");
+    expect(tool?.description).toContain("existing automation");
+    expect(tool?.description).toContain("never creates");
+    expect(tool?.description).toContain("vendo_make");
+  });
+
   it("refuses an unknown verb instead of silently succeeding", async () => {
     const outcome = await vendoVerbsRegistry(ports()).execute(call("records_wipe", {}), ctx());
     expect(outcome.status).toBe("error");

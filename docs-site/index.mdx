@@ -1,44 +1,113 @@
 ---
-title: "Agentify your product"
-sidebarTitle: "Welcome"
-description: "Vendo is everything an embedded agent needs to live inside your product."
+title: "What Vendo is"
+sidebarTitle: "Start here"
+description: "An agent that lives inside your product, acts through your own API as the signed-in user, and draws real screens."
 mode: "wide"
 ---
 
-<CardGroup cols={2}>
-  <Card title="It builds real UI" icon="window" href="/concepts/generated-ui">
-    The agent doesn't describe your product — it operates it through your own API, as the signed-in user, and renders the screens, views, and micro-apps it generates in your brand, in a sandboxed surface.
-  </Card>
-  <Card title="It's the full stack" icon="layer-group" href="/full-stack-agents">
-    Knowledge bases, user context — it knows who's signed in and sees what they see — the harness, API tools, guard and approvals, automations. Included, composable, yours to swap.
-  </Card>
-</CardGroup>
+import { AgentPrompt, INSTALL_PROMPT } from "/snippets/agent-prompt.jsx"
 
-## Pick what you already have
+Three doors in. What separates them is who runs the agent loop and who the
+caller is. Pick one and you're on a quickstart.
 
 <CardGroup cols={3}>
-  <Card title="You already have an agent" icon="puzzle-piece" href="/existing-agents">
-    **Recommended.** AI SDK, Mastra, or a loop you wrote yourself. One tool
-    pack spreads into it and your agent starts acting through your API and
-    building real screens.
+  <Card title="You already have an agent" icon="puzzle-piece" href="/existing-agents/quickstart">
+    **Recommended.** AI SDK, Mastra, or a loop you wrote. Spread one tool pack
+    into it and your agent starts acting through your API and drawing screens.
+    Your loop, your model, and your chat UI stay yours.
   </Card>
-  <Card title="Your product has no agent" icon="sparkles" href="/quickstart">
-    **Beta.** Vendo brings the whole thing — the loop, the chat UI, the
-    approvals. One command wires it into your app and your users are talking
-    to your product.
+  <Card title="Your product has no agent" icon="sparkles" href="/vendo-agent/quickstart">
+    **Beta.** Vendo brings the loop, the chat surface, and the approvals.
+    `vendo init` writes one route file and wraps your layout. You own both.
   </Card>
-  <Card title="Expose your product over MCP" icon="plug" href="/capabilities/mcp">
-    **Experimental.** Claude, ChatGPT, Cursor, and Claude Code connect over
-    OAuth and act as the person who signed in — the same guard, approvals, and
-    audit as your own surfaces.
+  <Card title="Outside agents over MCP" icon="plug" href="/mcp/quickstart">
+    **Experimental.** Claude, ChatGPT, Cursor, or any MCP client connects over
+    OAuth and acts as whoever signed in, under the same guard and audit. The
+    result renders in that client, not in your app.
   </Card>
 </CardGroup>
 
-Or just install it:
+## If two of them look plausible
 
-```bash
-npm install @vendoai/vendo && npx vendo init
+| Question | The answer that decides it | Door |
+| --- | --- | --- |
+| Do you already run an agent loop? | Yes, and you want to keep it | [Your agent](/existing-agents/quickstart) |
+| Can that loop import the package? | No, it runs where your code doesn't | [MCP](/mcp/quickstart) |
+| Who's the caller? | An outside client, not your signed-in user | [MCP](/mcp/quickstart) |
+| Which surface renders the result? | Your own app, and you have no loop yet | [Vendo's agent](/vendo-agent/quickstart) |
+
+The first two doors sit on the same `createVendo` composition, with the same
+guard and the same `.vendo/` files. The MCP door is a flag on top of either
+one, so picking wrong costs you a config line rather than a rewrite. Init asks
+the same question first: "How will people use your agent?", with those same
+three answers.
+
+<AgentPrompt
+  lead={<>Paste this and your coding agent runs the whole install against the <a href="/agents">playbook</a>.</>}
+  prompt={INSTALL_PROMPT}
+/>
+
+## What it is
+
+Vendo puts an agent inside your product. It works through your own API, signed
+in as the person using the app, so it can only do what that person could
+already do by clicking. And it answers with screens instead of paragraphs: a
+chart, a table, a form they can fill in, rendered in your brand inside your
+app.
+
+## What it is not
+
+- Not a chatbot over your docs. It calls your API and changes real data.
+- Not a hosted copy of your product. Your server runs the turn, your database
+  holds the state.
+- Not a rewrite. One package, one route file `vendo init` writes, and one
+  provider wrapped around your layout.
+
+## The shape of it
+
+```text
+your user ──▶ Vendo surface ──▶ the harness ──▶ GUARD ──▶ your API
+ (in your app)   (your brand)   (who thinks)  (policy,     (your data,
+      ▲                                        approvals,   your auth,
+      └────── generated screen ◀── sandbox ─── audit)       as this user)
 ```
 
-Installing with a coding agent? Point it at
-[vendo.run/agents.md](/agents) — the whole install, written for it.
+Nothing reaches your API without passing the guard, which is where a
+destructive call stops and waits for someone to approve it. See
+[Tools and safety](/concepts/tools-and-safety).
+
+## Which pieces do I need
+
+`createVendo` composes eight slots. Seven of them default. The eighth is
+identity, and `vendo init` answers it by reading your `package.json`.
+
+| Slot | What it is | Default | When you'd swap it |
+| --- | --- | --- | --- |
+| `auth` or `principal` | who the agent acts as on every call | No default. Init detects Auth.js, Clerk, Supabase, or Auth0 and writes the `auth` preset; with no library found it writes a `principal` function instead. `createVendo` refuses to compose with neither, and refuses both at once. | Your login is homegrown, or an away run needs `actAs`. [Host auth](/deploy/auth) |
+| `tools` | your API, as calls the agent can make | Read from `.vendo/tools.json`, which `vendo init` and `vendo sync` extract from your routes, OpenAPI spec, or tRPC router. | The declarations live somewhere a filesystem can't reach, like a Worker. [API tools](/capabilities/api-tools) |
+| `skills` | SKILL.md files the agent lists cheaply and opens only when it needs one | Whatever Vendo's own blocks bring, mounted at `/host/skills`. | You want to teach it a procedure of your own. [Handler options](/reference/handler-options) |
+| `harness` | who thinks: the loop that runs a turn | `vendo()`, the built-in turn runtime. | You'd rather run a driver on a sandbox machine, or your own loop. [How Vendo works](/concepts/architecture) |
+| `models` | which model answers | The Cloud key that init mints routes to Vendo's gateway on a starter allowance. Without one, the `models:` line in your config selects, and your provider key in `.env.local` pays for it. With neither, every call fails and prints how to fix it. | You want your own provider key, or a different model per seat. [Model credentials](/deploy/model-credentials) |
+| `store` | threads, apps, grants, audit | With a Cloud key, `@vendoai/vendo` uses the hosted Postgres behind it. Without one, an embedded PGlite database under `.vendo/data`. Nothing to install either way. | You already run your own Postgres. [Persistence](/deploy/persistence) |
+| `files` | workspace file content once it outgrows a row | The store's own blob table, up to 5 MiB. The first write over that fails and names this key. | You want S3, R2, Supabase, or MinIO behind it. [Persistence](/deploy/persistence) |
+| `sandbox` | the machine generated apps run server code on | Cloud sandboxes, behind the same key. Without one, nothing: chat and client-rendered screens work, and server-side app code answers "sandbox unavailable". | You want your own sandbox provider. [Generated UI](/capabilities/generated-ui) |
+
+## What it costs to try
+
+Run `npx vendo init` and take the first answer to its models question, "Vendo
+Cloud — free key in ~30s". You approve a code in the browser and the minted
+`VENDO_API_KEY` lands in `.env.local`, never printed. That key carries a free
+starter model allowance: no card, no model key of your own. It also fills the
+store and sandbox slots you left unset. `npx vendo login` mints the same key
+later. [Vendo Cloud](/deploy/vendo-cloud).
+
+Bring your own instead, whenever you like. Put an `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` before
+init and it writes the matching `models:` line into your composition. A key
+sitting loose in the environment picks nothing on its own. The line in your
+config is what selects. With no Cloud key, the store is an embedded PGlite
+database inside your repo, so there is still no Postgres to stand up and no
+container to run.
+
+An adapter you pass yourself always beats a Cloud default, and nothing in
+these docs requires a key.

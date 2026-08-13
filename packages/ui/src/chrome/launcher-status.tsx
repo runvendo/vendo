@@ -173,16 +173,24 @@ export function LauncherFace({ status, label, icon }: {
   );
 }
 
-/** The completion toast: one headline, one way back. Rides above the pill it
-    came from, so the answer lands where the user was already looking. */
-export function LauncherToast({ result, position, onView, onDismiss }: {
+/** The completion toast: one headline, one way back. Rides beside the pill it
+    came from (above it in bottom corners, below it in top corners), so the
+    answer lands where the user was already looking. `style` carries the F12
+    launcher-offset CSS variables so the toast moves with the pill. */
+export function LauncherToast({ result, position, style, onView, onDismiss }: {
   result: RunResult;
-  position: "bottom-right" | "bottom-left";
+  position: "bottom-right" | "bottom-left" | "top-right" | "top-left";
+  style?: CSSProperties;
   onView(): void;
   onDismiss(): void;
 }) {
   return (
-    <div className="fl-launcher-toast" data-vendo-launcher={position} aria-live="polite">
+    <div
+      className="fl-launcher-toast"
+      data-vendo-launcher={position}
+      {...(style === undefined ? {} : { style })}
+      aria-live="polite"
+    >
       <span className="fl-launcher-toast-head">{result.headline}</span>
       <span className="fl-launcher-toast-actions">
         <button type="button" className="fl-btn fl-btn-primary" onClick={onView}>View</button>

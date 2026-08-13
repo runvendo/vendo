@@ -19,6 +19,9 @@ const VALUE_EXPORTS = [
   "AutomationCard",
   "ConnectCard",
   "GrantSetCard",
+  // #1090 — the asks→rows mapping the thread consent surface shares with any
+  // host surface, public because the thread eject template imports it.
+  "grantSetPermissions",
   // Build contract §9.4 — the viewer fork offer.
   "ForkOffer",
   "encodeGrantPrincipal",

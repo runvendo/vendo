@@ -7,7 +7,7 @@
  */
 import { transferableAbortController } from "node:util";
 import { cleanup, configure } from "@testing-library/react";
-import { afterEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
 
 /**
  * Raise Testing Library's default async-utility window from 1s to 10s for the
@@ -30,6 +30,24 @@ configure({ asyncUtilTimeout: 10000 });
  * next, matching standard RTL semantics.
  */
 afterEach(cleanup);
+
+/**
+ * jsdom shares one `window` (and therefore one localStorage origin) across
+ * every test in a file. Chrome persists real state there — discoverability
+ * fire-once flags, the overlay's remembered conversation (F10) — so a test's
+ * writes would otherwise leak into its neighbors: a thread id remembered in
+ * one test resurfaces as a resumed conversation in the next, which both
+ * changes what mounts and races any immediate send against the stale-id
+ * self-heal. Every test starts with clean origin storage; suites that seed
+ * storage do so after this runs.
+ */
+beforeEach(() => {
+  try {
+    window.localStorage.clear();
+  } catch {
+    /* node-environment files have no window — nothing persisted anyway */
+  }
+});
 
 /**
  * jsdom has no pseudo-element styles, and answers any

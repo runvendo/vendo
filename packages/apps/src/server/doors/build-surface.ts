@@ -60,7 +60,7 @@ import { createProgressiveQueryResolver } from "../persistence/open.js";
 import type { EngineOps } from "../persistence/engine.js";
 import { APPS_COLLECTION, appRecordInput, documentFromRecord, withoutSession } from "../persistence/persistence.js";
 import type { AppsRuntimeContext } from "../runtime/runtime-context.js";
-import type { AppsRuntime } from "../runtime/types.js";
+import type { AppsRuntime, CreateServerWork } from "../runtime/types.js";
 import { wireCompileOptionsFor } from "../runtime/wire-options.js";
 
 /** What `create` is handed, named once so the helpers below can take it. */
@@ -388,14 +388,37 @@ const createCreateDoor = (
       for (const finding of served.findings) {
         console.info(findingLine(finding));
       }
+      // #881 — hand the lane's outcome to the caller, exactly as EditResult
+      // carries it for an edit: the automation envelope raises the thread
+      // card, and failure sentences reach the person instead of dying in
+      // this log.
+      const work: CreateServerWork = {
+        ...(served.automation === undefined ? {} : { automation: served.automation }),
+        ...(served.graduated === undefined ? {} : { graduated: served.graduated }),
+        // Failure sentences — `served.failed`, and the issues a plan-required
+        // serve escalated (both collected into serverWorkFailed above) — are
+        // the outside failure report's to carry, exactly once. The envelope
+        // carries what the SUCCESS half produced: the automation that raises
+        // the thread card, and non-escalated caveat issues.
+        ...((served.issues ?? []).length === 0 || serverWorkFailed === served.issues ? {} : { issues: served.issues }),
+      };
+      // `graduated` alone is not a callback-worthy event — a box succeeding is
+      // the normal case, and a clean build stays SILENT (the failure-only
+      // contract this door shipped with). The envelope fires when it carries
+      // an automation or caveat issues; graduated rides along.
+      if (work.automation !== undefined || work.issues !== undefined) {
+        input.onServerWork?.(work);
+      }
     } catch (error) {
       serverWorkFailed = [safeErrorMessage(error)];
     }
     // Reported OUTSIDE the try on purpose: reporting from inside it let a
     // throwing consumer re-enter this very catch as a second "server work
     // failed", call the callback twice, and take `paintSettledTree` with it.
+    // The failure rides the same CreateServerWork envelope the success path
+    // publishes (#881) — `failed` is its failure half.
     if (serverWorkFailed !== undefined) {
-      input.onServerWork?.({ ok: false, reasons: serverWorkFailed });
+      input.onServerWork?.({ failed: serverWorkFailed });
       log({
         code: "apps.server-work-failed",
         level: "error",

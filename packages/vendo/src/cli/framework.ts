@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { stripBom } from "./shared.js";
 import { walk } from "./theme/walk.js";
 
 export type HostFramework = "next" | "express" | "unknown";
@@ -48,7 +49,7 @@ const SOURCE_SCAN_MAX_FILES = 2_000;
 
 export async function detectFramework(root: string): Promise<HostFramework> {
   try {
-    const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
+    const manifest = JSON.parse(stripBom(await readFile(join(root, "package.json"), "utf8"))) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };

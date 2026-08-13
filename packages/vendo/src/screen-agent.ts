@@ -456,10 +456,13 @@ standard Kit the manual documents. There is nothing else to import.
   where it is. It lands and is checked exactly like a save.
 - **\`${ESCALATE_TOOL}\`** is the one door out. Writing one screen out of this
   product's components is all you can do; anything that needs real code, its own
-  server, a file the person uploads, or a surface these components cannot express
-  goes through it. Write the plan when you escalate — that plan becomes the first
-  thing the person sees while the builder works, AND it is the builder's whole
-  brief. Nothing re-plans it, so say which lane the work runs in with a
+  server, a file the person uploads, a surface these components cannot express,
+  or any part that must run while nobody is watching — a schedule, a product
+  event — goes through it. A view you could assemble does not keep an ask here:
+  if part of it runs away from the browser, escalate the WHOLE ask. Write the
+  plan when you escalate — that plan becomes the first thing the person sees
+  while the builder works, AND it is the builder's whole brief. Nothing
+  re-plans it, so say which lane the work runs in with a
   \`<Server kind="steps"|"agentic"|"box" [served] why="…"/>\` line.
   Leave it out and the builder reads the escalation itself as the answer:
   \`kind="box"\`, a machine and real code.

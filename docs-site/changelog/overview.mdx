@@ -38,7 +38,7 @@ custom surfaces. Chrome falls back to prettified ids and `Key: value`
 previews when no metadata is supplied, collapses consecutive identical
 chips into a single entry with an `×N` count, and no longer prints a
 fabricated context byline on the in-thread approval card. See
-[Tool labels](/ui/components#tool-labels).
+[Tool labels](/customize/surfaces#tool-labels).
 
 ## Fixes
 
@@ -98,7 +98,7 @@ Later partial updates reconcile into the same view under a single stable
 in place instead of appending duplicates. Nodes whose generated source has
 not arrived yet render as skeletons and swap in when their source closes.
 You do not need to change your client. See
-[Generated UI and apps](/concepts/generated-ui#progressive-generation).
+[Generated UI and apps](/capabilities/generated-ui#progressive-generation).
 
 **Pin drift detection and rebase.** When you update a host component and run
 `vendo sync`, user forks of that remixable slot are now marked drifted
@@ -111,7 +111,7 @@ baseline and replay the recorded edit trail through the model, producing one
 new version. Rebase is all-or-nothing and requires an explicit user or host
 ask — nothing auto-rebases. The new version invalidates any in-client
 approval that was granted against the pre-rebase content. See
-[Host components](/connect/host-components#drift-and-rebase) and the
+[Host components](/customize/host-components#drift-and-rebase) and the
 [HTTP routes reference](/reference/http-routes).
 
 **Anonymous sessions carry into sign-in.** The first authenticated request
@@ -121,20 +121,20 @@ retires the cookie. Grants, approvals, connected accounts, and history
 are deliberately kept where they were. Nothing on the host side changes —
 as long as your `principal(req)` returns `null` before sign-in and a real
 principal after, Vendo does the merge. See
-[Principals and organizations](/deploy/principals-and-orgs).
+[Principals and organizations](/deploy/auth).
 
 **Reserved `vendo:` subject namespace.** Webhook deliveries now execute
 under `vendo:webhook:<source>`. `principal(req)` resolvers that return a
 `vendo:*` subject or `kind: "org"` are rejected at the wire — those
 identities are Vendo-owned. Update audit readers that filter on the bare
 `webhook:<source>` form to match the new prefix. See
-[Principals and organizations](/deploy/principals-and-orgs).
+[Principals and organizations](/deploy/auth).
 
 **Stop a running automation.** `POST /api/vendo/runs/:id/stop` cancels an
 in-flight run cooperatively — the current step finishes, outstanding tool
 calls drain, and the run reaches a cancelled terminal state. Parked
 approvals attached to the run are dropped. Repeated stops are idempotent.
-See [Scheduler and webhooks](/deploy/scheduler-and-webhooks) and the
+See [Scheduler and webhooks](/capabilities/automations) and the
 [HTTP routes reference](/reference/http-routes).
 
 **actAs presets for common providers.** `@vendoai/actions/presets` ships
@@ -147,7 +147,7 @@ safety margin, key cache entries by a secret fingerprint so rotation
 invalidates immediately, and route through the new impersonation guard —
 `grant.subject` mismatches with the current principal fail closed with an
 `act-as-subject-mismatch` outcome before any outbound call. See
-[actAs presets](/connect/act-as-presets).
+[actAs presets](/deploy/auth).
 
 **Loud credential-forwarding traps.** Two silent misconfigurations now
 surface loudly. `vendo init` writes `VENDO_BASE_URL=http://localhost:3000`
@@ -181,7 +181,7 @@ graduated app's own server. Host-source components degrade to a contained
 "unknown component" notice on the served page; prewired and generated
 components render identically. If any step fails, the previous rung keeps
 serving and the document is untouched. See
-[Generated UI and apps](/concepts/generated-ui#graduation).
+[Generated UI and apps](/capabilities/generated-ui#graduation).
 
 **Visible error surface and retry in the thread.** A failed send, a
 mid-stream network drop, or any other transport error in the conversation
@@ -226,7 +226,7 @@ runtime now confirms the app's server is serving before it snapshots a
 rung 2 or rung 3 edit. Server code is booted from `/app/start.sh` when
 present, otherwise `/app/server.js`. If nothing listens, the edit fails
 and the previous rung keeps serving. See
-[Generated UI and apps](/concepts/generated-ui#graduation).
+[Generated UI and apps](/capabilities/generated-ui#graduation).
 
 **Rung 1 UI creates and tree-only edits skip approval.** Guard now resolves
 the effective risk for `vendo_apps_create` and `vendo_apps_edit` at call
@@ -279,7 +279,7 @@ door with `createVendo({ mcp: true, oauth })` to serve your host tools out
 to MCP clients. Discovery, OAuth registration, and token endpoints mount
 alongside the existing wire, and are routed ahead of the CSRF gate so
 form-encoded OAuth requests reach the door cleanly. See [Connectors](/capabilities/connected-accounts#connectors)
-and the [quickstart](/quickstart) for setup.
+and the [quickstart](/vendo-agent/quickstart) for setup.
 
 **Authenticated host tool calls from MCP.** MCP clients have no host
 browser session, so host tools now authenticate through the same `actAs`
@@ -309,7 +309,7 @@ door is enabled. See the [CLI reference](/reference/cli) and
 **`vendo_apps_open` over MCP.** The apps registry keeps the same
 descriptor and execution path; the door attaches MCP-Apps `_meta` and
 unwraps the OpenSurface envelope into a shim-renderable payload for MCP
-clients. See [Host components](/connect/host-components).
+clients. See [Host components](/customize/host-components).
 
 ## Bug fixes
 

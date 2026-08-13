@@ -1,15 +1,21 @@
 // @vitest-environment jsdom
 // 2026-07 demo feedback — the in-thread automation card: the chrome renders a
 // `data-vendo-automation` stream part with the same card vocabulary as the
-// workspace Automations panel (read-only — management stays in the panel).
-import { vendoAutomationPartSchema } from "@vendoai/core";
-import { cleanup, render, screen } from "@testing-library/react";
+// card vocabulary the workspace panel used to share. Since #1090 the card is
+// ALSO the arming consent surface: its pending asks ride the durable
+// approvals feed and are decidable in place — the overlay's conversation does
+// not survive a page navigation, so a separate page cannot carry the arming
+// decision.
+import { vendoAutomationPartSchema, type AppId, type ApprovalRequest } from "@vendoai/core";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { VendoProvider, createVendoClient } from "../../src/index.js";
 import { AutomationCard } from "../../src/chrome/index.js";
 import { CHROME_CSS } from "../../src/chrome/chrome-css.js";
 import { humanizeCron, triggerLabel } from "../../src/chrome/automation-card.js";
+import { allowLabel } from "../../src/chrome/grant-set-card.js";
 import { ThreadPart } from "../../src/chrome/thread/parts.js";
+import { createWireServer } from "../wire-server.js";
 
 afterEach(cleanup);
 
@@ -345,5 +351,83 @@ describe("ThreadPart data-vendo-automation", () => {
       </VendoProvider>,
     );
     expect(container.querySelector("[data-vendo-automation-card]")).toBeNull();
+  });
+});
+
+describe("ThreadPart data-vendo-automation — the arming consent surface (#1090)", () => {
+  const part = (data: Record<string, unknown>) => ({
+    type: "data-vendo-automation",
+    data,
+  }) as never;
+
+  /** The two standing asks the arming capture parks for app_auto — the shape
+   *  the wire's own grant-set fixtures mint (and, since #1093, the shape the
+   *  ref-filtered approvals feed can actually return). */
+  const armingAsk = (id: string, tool: string, risk: "read" | "write"): ApprovalRequest => ({
+    id,
+    call: { id: `call_${id}`, tool, args: {} },
+    descriptor: { name: tool, description: "Model-facing line.", inputSchema: { type: "object" }, risk },
+    inputPreview: `Allow "Invoice watcher" to use ${tool} while you're away (standing, this app only)`,
+    ctx: {
+      principal: { kind: "user", subject: "user_1" },
+      venue: "automation",
+      presence: "present",
+      appId: "app_auto" as AppId,
+    },
+    createdAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  const renderCard = (wireClient: ReturnType<typeof createVendoClient>, appId: string) => render(
+    <VendoProvider client={wireClient}>
+      <ThreadPart
+        part={part({ appId, name: "Invoice watcher", enabled: true, pendingGrants: 2 })}
+        partKey="m-consent"
+        role="assistant"
+        restored={false}
+        risks={new Map()}
+      />
+    </VendoProvider>,
+  );
+
+  it("renders the pending set from the durable feed and one Allow settles it", async () => {
+    const wire = await createWireServer();
+    try {
+      wire.state.approvals = [
+        armingAsk("apr_set_1", "host_email_send", "write"),
+        armingAsk("apr_set_2", "host_invoices_list", "read"),
+      ];
+      const wireClient = createVendoClient({ baseUrl: wire.url });
+      renderCard(wireClient, "app_auto");
+
+      // The consent card arrives from the FEED (never the stream), with every
+      // permission row and the one Allow for the whole set.
+      const allow = await screen.findByRole("button", { name: allowLabel(2) });
+      const set = screen.getByRole("article", { name: "Standing access — Invoice watcher" });
+      expect(set.textContent).toContain("Invoice watcher needs 2 permissions");
+      expect(set.textContent).toContain("Changes: Email send");
+      expect(set.textContent).toContain("Reads: Invoices list");
+
+      fireEvent.click(allow);
+
+      // The decision reaches the wire (the asks leave the pending queue) and
+      // the automation card stops claiming a debt.
+      await waitFor(() => expect(wire.state.approvals).toHaveLength(0));
+      await waitFor(() => {
+        const card = screen.getByRole("article", { name: "Automation — Invoice watcher" });
+        expect(card.textContent).not.toContain("waiting on");
+      });
+      // The settled record stays in the transcript.
+      expect(screen.getByRole("article", { name: "Standing access — Invoice watcher" }).textContent)
+        .toContain("2 permissions");
+    } finally {
+      await wire.close();
+    }
+  });
+
+  it("keeps the part's snapshot count when the feed cannot answer — an error never reads as nothing pending", () => {
+    const dead = createVendoClient({ baseUrl: "http://127.0.0.1:9" });
+    renderCard(dead, "app_dead");
+    const card = screen.getByRole("article", { name: "Automation — Invoice watcher" });
+    expect(card.textContent).toContain("waiting on 2 permissions");
   });
 });

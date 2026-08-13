@@ -1,0 +1,70 @@
+---
+title: "Vendo's agent in your product"
+sidebarTitle: "Overview"
+description: "No agent of your own? Vendo brings the harness, the model, and the chat surface. You wire a provider and an overlay."
+---
+
+Vendo's agent acts in your product through the same API and the same identity
+as your own UI, and draws real screens instead of paragraphs about them.
+
+This door is for a product with no agent of its own. Vendo runs the loop, the
+model, the approvals, and the chat surface. There is no agent for you to write.
+
+<Note>
+  **Beta.** Already shipping your own agent loop? Keep it and spread Vendo's
+  guarded tool pack into it through
+  [the existing-agent door](/existing-agents/quickstart). Exposing your product to agents
+  you do not run? That is [the MCP door](/mcp/quickstart). Unsure: the door cards on
+  [the home page](/) walk through it.
+</Note>
+
+## What you wire
+
+Two things, and `vendo init` writes or prints both.
+
+The server route holds the whole `createVendo` composition, with your API
+extracted into tools and your brand extracted into a theme.
+
+The client mount is `VendoProvider` plus `VendoOverlay` in your layout. Init
+never writes a client file. It prints the exact paste, and `vendo doctor` stays
+red until that paste lands.
+
+Everything else is a default you can replace later. The harness, the model, the
+store, the sandbox, and the surface are adapter slots on one composition.
+
+## What you get
+
+A launcher pill and a panel over your product, in your brand. The agent calls
+your own API as the person who is signed in. It parks anything destructive for
+their approval. When an answer wants to be looked at rather than read out, it
+answers with a live screen instead of text.
+
+[Architecture](/concepts/architecture) has the pieces and how they fit.
+[Tools and safety](/concepts/tools-and-safety) has how a call gets graded.
+
+## What it costs
+
+Nothing to provision. On init's model question take **Vendo Cloud**: a free
+metered key lands in `.env.local` as `VENDO_API_KEY` and the agent runs on it,
+with no card and no model key of your own. The same key fills the store and
+sandbox slots you left unset. [Vendo Cloud](/deploy/vendo-cloud).
+
+Bring your own instead, whenever you like. Put `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` and
+`vendo init` writes the matching `models:` line into your composition; a key
+sitting loose in the environment selects nothing on its own. Details:
+[Model credentials](/deploy/model-credentials).
+
+With no Cloud key, persistence is an embedded PGlite database under
+`.vendo/data`, so your laptop still runs the whole thing with no container and
+no Postgres. An adapter you pass yourself always beats a Cloud default, and
+every slot keeps a no-key path — your own Postgres, your own sandbox account,
+straight into [production](/deploy/deploying). Cloud is never a prerequisite.
+
+## What you still own
+
+Your API, your auth, your policy, and your brand. Vendo mints no identity of
+its own, so a composition without a principal refuses to boot. The route init
+generates is ordinary source you can read and change.
+
+Ready: [Quickstart](/vendo-agent/quickstart).

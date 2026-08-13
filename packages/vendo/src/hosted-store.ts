@@ -366,9 +366,20 @@ function storeWireClient(
       // serve this op: name it, and let it surface as a failure — never a
       // silent fallback, never a half-applied local mutation.
       if (error instanceof VendoError && error.code === "not-implemented") {
+        // "Unknown store operation" is the console's catch-all for an op it
+        // has never heard of — which, for an op this client SHIPPED with,
+        // means the console moved past the client (#1251; field 2026-08-13:
+        // every thread route silently 501'd through an hour of "chat is
+        // broken" before the skew was diagnosed). Say the real cause, and
+        // log it once so a server operator sees it without a debugger.
+        const skew = error.message.includes("Unknown store operation");
+        if (skew) reportStoreSkewOnce(op, error.message);
         throw new VendoError(
           "not-implemented",
-          `Vendo Cloud store does not support the "${op}" operation — ${error.message}`,
+          `Vendo Cloud store does not support the "${op}" operation — ${error.message}`
+            + (skew
+              ? " The console no longer serves this operation, which usually means this @vendoai/vendo is older than the console — update the package to restore Cloud persistence."
+              : ""),
         );
       }
       throw error;
@@ -376,6 +387,18 @@ function storeWireClient(
   };
 
   const json = async (response: Response): Promise<unknown> => response.json().catch(() => ({}));
+  // One loud line per PROCESS when the console rejects a shipped op (#1251).
+  // The flag rides globalThis via Symbol.for: dev module churn re-creates
+  // this factory freely, and the operator still gets exactly one diagnosis.
+  const reportStoreSkewOnce = (op: StoreWireOp, message: string): void => {
+    const host = globalThis as unknown as Record<symbol, unknown>;
+    const flag = Symbol.for("vendo.hosted-store-skew-reported");
+    if (host[flag] === true) return;
+    host[flag] = true;
+    console.error(
+      `[vendo] Vendo Cloud rejected the "${op}" store operation (${message}) — the console is newer than this @vendoai/vendo. Update the package; until then, store-backed routes fail with 501.`,
+    );
+  };
   const get = async (op: StoreWireOp, path: string): Promise<unknown> => json(await call(op, path));
   const post = async (op: StoreWireOp, path: string, body: unknown, idempotencyKey?: string): Promise<unknown> =>
     json(await call(op, path, {

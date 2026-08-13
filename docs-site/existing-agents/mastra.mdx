@@ -1,132 +1,120 @@
 ---
-title: "Quickstart: Mastra"
-description: "Add Vendo to an existing Mastra agent in three steps: vendo init, vendoMastraTools in the agent's tools, one embed component."
+title: "Mastra notes"
+sidebarTitle: "Mastra"
+description: "What differs when the pack goes into a Mastra agent: static definitions, the request-context principal, warming the store, and the current model pin."
 icon: "/images/logos/mastra.svg"
 ---
 
-import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+The [quickstart](/existing-agents/quickstart) wires a Mastra agent end to end.
+This page is what it left out.
 
-Keep your Mastra agent as it is. Three steps add Vendo: your agent builds
-micro-apps right in the chat, runs your host actions guarded, and parks
-risky calls for approval.
+## The definition is static, the caller is not
 
-<AgentPrompt
-  lead="Paste this prompt instead of following the steps by hand."
-  prompt={"Add Vendo to this repo's existing Mastra agent. Read https://docs.vendo.run/existing-agents/mastra.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green and my chat renders Vendo tool outputs. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs-mastra to support the project."}
-/>
-
-## 1. Install and init
-
-```bash
-npm install @vendoai/vendo
-npx vendo init
-```
-
-Init scaffolds the wire route, turns your host actions into agent tools, and
-captures your theme ([what init writes](/connect/vendo-init)). Lift the
-`createVendo` call init wrote into a shared module, so your agent can use
-the same instance:
+One Mastra agent definition serves every user, so `vendoMastraTools` takes no
+principal. Each call reads one off Mastra's request context, and a `vendo_*`
+call that finds none fails closed.
 
 ```ts
-// src/lib/vendo.ts — the call init wrote, moved out of the wire route
-import { createVendo } from "@vendoai/vendo/server";
+// app/api/chat/route.ts
+import { handleChatStream } from "@mastra/ai-sdk";
+import { RequestContext } from "@mastra/core/request-context";
+import { VENDO_PRINCIPAL_KEY } from "@vendoai/vendo/mastra";
+import { createUIMessageStreamResponse } from "ai";
+import { resolvePrincipal } from "@/lib/vendo";
+import { mastra } from "@/mastra";
 
-export const vendo = createVendo({
-  // …the options init wrote (catalog, policy, …)
-  principal, // who your callers act as — from your auth
-});
-```
-
-`principal` comes from your auth
-([presets for Auth.js, Supabase, Clerk, Auth0](/connect/act-as-presets)).
-
-```ts
-// src/app/api/vendo/[...vendo]/route.ts — now just the handler
-import { nextVendoHandler } from "@vendoai/vendo/server";
-import { vendo } from "@/lib/vendo";
-
-export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
-```
-
-## 2. Spread the pack
-
-The agent definition gains the pack next to its own tools
-(`vendoMastraTools` returns a Promise, hence the tools-as-function form):
-
-```ts
-// src/mastra/agents/your-agent.ts — one spread
-import { vendoMastraTools } from '@vendoai/vendo/mastra';
-import { vendo } from '../../lib/vendo';
-
-export const yourAgent = new Agent({
-  // …your agent as it is
-  tools: async () => ({ ...yourTools, ...(await vendoMastraTools(vendo)) }),
-});
-```
-
-Then set the caller's principal on the `RequestContext` in your chat route —
-a `vendo_*` call without one fails closed:
-
-```ts
-// src/app/api/chat/route.ts — two additions to your existing route
-import { RequestContext } from '@mastra/core/request-context';
-import { VENDO_PRINCIPAL_KEY } from '@vendoai/vendo/mastra';
-
-const requestContext = new RequestContext();
-requestContext.set(VENDO_PRINCIPAL_KEY, principal); // same caller as your wire route
-
-const stream = await handleChatStream({
-  // …your existing call
-  params: { ...params, requestContext },
-});
-```
-
-`principal` is the same caller your auth resolves in `src/lib/vendo.ts`
-([why](/existing-agents/configuration#one-principal-two-places)).
-
-## 3. Render the embeds
-
-Wrap the chat once in `VendoProvider` and hand finished tool outputs to
-`<VendoToolResult>`. Mastra streams tool calls as `dynamic-tool` or `tool-*`
-parts, so match both:
-
-```tsx
-// src/app/page.tsx
-import { VendoToolResult } from "@vendoai/vendo/react";
-
-type ToolLikePart = { type: string; toolName?: string; state?: string; output?: unknown };
-
-// inside your existing message-parts loop
-if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
-  const tool = part as ToolLikePart;
-  return tool.state === "output-available"
-    ? <VendoToolResult output={tool.output} />
-    : <span>Running {tool.toolName ?? part.type.slice("tool-".length)}…</span>;
+export async function POST(req: Request) {
+  const params = await req.json();
+  const caller = await resolvePrincipal(req); // { kind: "user", subject: userId }
+  // No caller, no turn: the pack throws rather than run as nobody.
+  if (!caller) return new Response("Unauthorized", { status: 401 });
+  const requestContext = new RequestContext();
+  requestContext.set(VENDO_PRINCIPAL_KEY, caller);
+  // Hand it to the run. A context you build and never pass is a context the
+  // tools never see, and every vendo_* call then fails closed.
+  params.requestContext = requestContext;
+  const stream = await handleChatStream({ version: "v6", mastra, agentId: "your-agent", params });
+  return createUIMessageStreamResponse({ stream });
 }
 ```
 
-The frontend is identical to the [AI SDK quickstart](/existing-agents/ai-sdk):
-the embed contract is framework-agnostic.
+Set `VENDO_SESSION_KEY` on the same context to carry your own session id into
+the audit trail. Leave it out and each turn mints one.
 
-## Try it
+That subject has to match what your wire route's `principal` resolves, or the
+person never sees what the agent makes. See [one principal, two
+places](/existing-agents/overview#one-principal-two-places).
 
-1. **"What's the weather in Paris?"** — your agent's own tool, untouched.
-2. **"Make me a dashboard comparing weather in Paris, Tokyo and NYC."** — a
-   micro-app builds live, inline in your chat.
-3. **Ask for a destructive action** from `.vendo/tools.json` in plain
-   language — it parks as an approval card; Approve runs it in place.
+`vendoMastraTools` returns a Promise, which is why the agent takes the
+tools-as-function form:
 
-Your loop keeps its own model key; Vendo's app builds resolve theirs through
-the [dev-mode credential ladder](/connect/dev-mode). No key? `npx vendo
-login` mints a free one. Details and knobs (including the current Mastra
-GPT-5 model pin): [Configuration](/existing-agents/configuration).
+```ts
+// src/mastra/agents/your-agent.ts
+import { Agent } from "@mastra/core/agent";
+import { vendoMastraTools } from "@vendoai/vendo/mastra";
+import { vendo } from "@/lib/vendo";
+
+export const yourAgent = new Agent({
+  id: "your-agent",
+  name: "your-agent",
+  instructions: "…your system prompt as it is",
+  model: "openai/gpt-4.1-mini", // see the pin below
+  tools: async () => ({ ...(await vendoMastraTools(vendo)) }), // yours spread in too
+});
+```
+
+## Warming the store
+
+Every `vendo_*` call runs the schema check before it executes, so a guarded tool
+that fires before any wire request still works. Call `ensureSchema` once at
+module scope to move that one-time cost off the first turn. You do need it if
+you read `vendo.store` directly, which goes around both the pack and the wire:
+
+```ts
+// src/mastra/index.ts
+import { vendo } from "@/lib/vendo";
+
+await vendo.store.ensureSchema();
+```
+
+## Rendering the parts
+
+Mastra streams tool calls as `dynamic-tool` or as `tool-<name>`, depending on
+how the tool was declared, so match both:
+
+```tsx
+// the branch to add to your existing message-parts loop
+import { getToolName, isToolUIPart, type UIMessage } from "ai";
+import { VendoToolResult } from "@vendoai/vendo/react";
+
+export function VendoPart({ part }: { part: UIMessage["parts"][number] }) {
+  if (!isToolUIPart(part)) return null; // true for both shapes
+  return part.state === "output-available"
+    ? <VendoToolResult output={part.output} />
+    : <span>Running {getToolName(part)}…</span>;
+}
+```
+
+Everything downstream of that is the same as any other framework
+([Embeds and envelopes](/existing-agents/embeds)).
+
+## Known pin
+
+Multi-turn tool use with GPT-5 reasoning models breaks on history replay:
+Mastra's memory drops the Responses API's reasoning items, and the second turn
+errors. [mastra-ai/mastra#9005](https://github.com/mastra-ai/mastra/issues/9005)
+is closed, but it still reproduces on `@mastra/core` 1.51.0 (retested
+2026-07-20), so the example pins `openai/gpt-4.1-mini`.
+
+## Two models
+
+Your agent keeps its own model and key. Vendo's app builds and delegate runs
+take a model of their own:
+[Model credentials](/deploy/model-credentials).
 
 ## The full example
 
 [`examples/mastra-agent`](https://github.com/runvendo/vendo/tree/main/examples/mastra-agent)
-is the unmodified [`create-mastra`](https://mastra.ai/docs) weather starter,
-fronted with Next.js per Mastra's own guide, plus the full, working version
-of this diff (~60 lines), with a keyless fixture e2e (`pnpm test`). Concepts
-live in
-[the overview](/existing-agents) and
-[Embeds and envelopes](/existing-agents/embeds).
+is the stock [`create-mastra`](https://mastra.ai/docs) weather starter, fronted
+with Next.js per Mastra's guide, with this diff applied (about 60 lines) plus a
+keyless fixture e2e (`pnpm test`).

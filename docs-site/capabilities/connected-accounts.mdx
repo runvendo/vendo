@@ -9,6 +9,13 @@ once, then every later tool call runs as that user. Vendo builds no OAuth
 flows of its own and never holds a token: Composio brokers the credentials,
 and isolation is per principal by construction.
 
+Zero config: nothing connected, said out loud. With no connector passed and no
+`VENDO_API_KEY`, `GET /api/vendo/status` reports `blocks.connections: false`,
+listing a user's accounts returns an empty array, and any connect attempt
+throws an error naming the two fixes instead of failing vaguely. This is the
+one capability with no keyless rung. A broker holds the credentials, so you
+bring a Composio key or a Vendo Cloud key.
+
 ## Connectors
 
 The actions block accepts connector implementations:
@@ -57,22 +64,29 @@ direction. Connectors pull remote MCP tools *into* your agent; the door serves
 *your* host tools *out* to MCP clients like Claude and ChatGPT. Enable
 the door with `createVendo({ mcp: true, oauth })`. Door tool calls authenticate
 over the same `actAs` seam away automations use, since MCP clients have no host
-browser session. See [the MCP door](/capabilities/mcp) for setup.
+browser session. See [the MCP door](/reference/mcp-door) for setup.
 
 ## Setup
 
 You have two options: bring your own Composio key, or ride the Vendo Cloud
 broker.
 
-**Bring your own key.** Pass `composioConnector` to `createVendo`:
+**Bring your own key.** `composioConnector` ships in `@vendoai/actions`, a
+separate install from `@vendoai/vendo`:
+
+```bash
+npm install @vendoai/actions
+```
+
+Pass it to `createVendo`:
 
 ```ts
 import { createVendo } from "@vendoai/vendo/server";
 import { composioConnector } from "@vendoai/actions";
+import { resolvePrincipal } from "@/lib/auth"; // yours
 
 const vendo = createVendo({
-  model,
-  principal,
+  principal: resolvePrincipal,
   connectors: [
     composioConnector({
       apiKey: process.env.COMPOSIO_API_KEY!,

@@ -229,10 +229,10 @@ describe("VendoThread and VendoOverlay exports", () => {
     expect(launcher.getAttribute("aria-expanded")).toBe("true");
 
     // Tab from the last focusable (the composer) wraps to the first — the
-    // expand-workspace header button (split view, 2026-07), which precedes
-    // new-conversation and the close X.
+    // previous-conversations header button (F10, ENG-388), which precedes
+    // expand-workspace, new-conversation, and the close X.
     fireEvent.keyDown(dialog, { key: "Tab" });
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Expand workspace" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Previous conversations" }));
     fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(textarea);
     expect(close).toBeTruthy(); // still present, after the new-conversation affordance

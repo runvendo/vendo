@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
-import { consoleOutput, exists, type Output, writeText } from "../shared.js";
+import { consoleOutput, exists, stripBom, type Output, writeText } from "../shared.js";
 import {
   packageSlug,
   registryNamespace,
@@ -38,7 +38,7 @@ async function promptOnce(question: string): Promise<string> {
 }
 
 async function hostIdentity(root: string): Promise<HostIdentity> {
-  const raw = await readFile(join(root, "package.json"), "utf8");
+  const raw = stripBom(await readFile(join(root, "package.json"), "utf8"));
   const manifest = JSON.parse(raw) as Record<string, unknown>;
   const name = typeof manifest.name === "string" ? manifest.name : "vendo";
   const version = typeof manifest.version === "string" ? manifest.version : "0.0.0";

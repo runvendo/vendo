@@ -10,6 +10,25 @@ Every host API, connector, and Vendo capability is one `ToolDescriptor`, and
 asks the user first. This page explains how the guard decides; the exact
 rules live in the [Decision reference](#decision-reference) at the end.
 
+## The perimeter
+
+- **Every call runs as the signed-in person**, through the same guard-bound
+  registry Vendo's own surfaces use — policy, approvals, audit. No second
+  authority path.
+- **No duplicate of your API credentials.** Host actions reach your own routes
+  through the `actAs` seam, never by forwarding an agent's bearer token; without
+  a grant the call fails closed.
+- **Writes can require the person.** `.vendo/policy.json` decides where that line
+  sits; a parked call waits in **your** queue while the agent moves on.
+- **Generated views render jailed** — in an iframe with `connect-src 'none'` by
+  default, so a tree-only view reaches no host tools and performs no egress.
+  Interactions ride the wire back through the guard, never your loop.
+
+That holds whether the caller is Vendo's own agent, your AI SDK or Mastra loop,
+or an MCP client on the door. See
+[How generated UI works](/capabilities/generated-ui) for the jail itself, and
+[Auth and principals](/deploy/auth) for the `actAs` seam.
+
 ## How guard.bind decides
 
 For each call the guard walks one fixed order: the `confirmEach` flag first,
@@ -85,7 +104,7 @@ Breakers can turn a run decision into an ask at any point.
 - `vendo_apps_rebase_pin` is `write`. It replays a remixed pin's recorded
   edit trail onto a newly captured host baseline and produces one new app
   version. Rebase is user- or host-invoked only; the agent never
-  auto-rebases. See [Host components](/connect/host-components#drift-and-rebase).
+  auto-rebases. See [Host components](/customize/host-components#drift-and-rebase).
 
 ### Loadout determinism
 

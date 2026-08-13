@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
  *  1. the setup page exists, is in the nav, and every nav entry still resolves;
  *  2. the setup page opens the door, the playbook teaches the make-and-place
  *     contract, and both pages' links resolve;
- *  3. capabilities/mcp.mdx no longer claims the door cannot create;
+ *  3. reference/mcp-door.mdx no longer claims the door cannot create;
  *  4. the HTTP reference carries the three placement routes;
  *  5. the plugin skill teaches slot targeting and pin etiquette;
  *  6. the plugin's own surfaces point at the new page.
@@ -22,15 +22,16 @@ const read = (path: string): Promise<string> => readFile(new URL(path, REPO_ROOT
 const readJson = async <T>(path: string): Promise<T> => JSON.parse(await read(path)) as T;
 
 /** Opening the door and connecting a client. */
-const SETUP_PAGE = "docs-site/existing-agents/mcp.mdx";
-const NAV_ENTRY = "existing-agents/mcp";
+const SETUP_PAGE = "docs-site/mcp/quickstart.mdx";
+const NAV_ENTRY = "mcp/quickstart";
 /** #1139 split the story in two, and this gate follows the split rather than
     holding the docs to a shape they deliberately left: the setup page opens the
     door, and the make-and-place CONTRACT — what `vendo_make` answers with, where
     the screen lands, how a pin replaces what held a slot — is taught on the
-    product-agent playbook. Every fact below is still pinned; each is pinned in
-    the page whose job it is. Move a fact between the pages and move it here. */
-const CONTRACT_PAGE = "docs-site/existing-agents/your-agent.mdx";
+    generated-UI capability page. Every fact below is still pinned; each is
+    pinned in the page whose job it is. Move a fact between the pages and move
+    it here. */
+const CONTRACT_PAGE = "docs-site/capabilities/generated-ui.mdx";
 
 interface DocsJson {
   navigation: { groups: { group: string; pages: string[] }[] };
@@ -53,8 +54,8 @@ describe("the BYO-over-MCP pages are published", () => {
 
   it("sits in the MCP nav group", async () => {
     const docs = await readJson<DocsJson>("docs-site/docs.json");
-    const group = docs.navigation.groups.find((entry) => entry.group === "Expose your product over MCP");
-    expect(group, "the 'Expose your product over MCP' group must exist").toBeDefined();
+    const group = docs.navigation.groups.find((entry) => entry.group === "Outside agents over MCP");
+    expect(group, "the 'Outside agents over MCP' group must exist").toBeDefined();
     expect(group?.pages).toContain(NAV_ENTRY);
   });
 
@@ -73,7 +74,7 @@ describe("the setup page opens the door", () => {
     ["the marketplace install", "/plugin marketplace add runvendo/vendo"],
     ["the plugin install", "/plugin install vendo@vendo"],
     ["the plugin's env var", "VENDO_MCP_URL"],
-    ["the door internals link", "/capabilities/mcp"],
+    ["the door internals link", "/reference/mcp-door"],
   ];
 
   it.each(mustMention)("names %s", async (_label, needle) => {
@@ -84,13 +85,16 @@ describe("the setup page opens the door", () => {
 describe("the playbook teaches the door's make-and-place contract", () => {
   const mustMention: [label: string, needle: string | RegExp][] = [
     ["the make tool", "vendo_make"],
-    ["the slot argument", /`slot`/],
+    ["the slot argument, by name and by example", /"slot": "home-hero"/],
     ["the pin tool", "vendo_apps_pin"],
     ["the unpin tool", "vendo_apps_unpin"],
     ["the receipt's say field", /`say`/],
     ["the building status", /"building"/],
     ["the host-side slot component", "VendoSlot"],
-    ["the in-process embed it is not", "VendoToolResult"],
+    // The asymmetry this used to pin as "VendoToolResult, the in-process embed
+    // it is not". Same danger, stated the way the page now states it: an agent
+    // on the in-process path calling a pin tool it was never handed.
+    ["the pin tools' absence on the in-process path", /carries no `vendo_apps_\*` tool/],
   ];
 
   it.each(mustMention)("names %s", async (_label, needle) => {
@@ -107,8 +111,8 @@ describe("both pages link only to pages that exist", () => {
   });
 });
 
-describe("capabilities/mcp.mdx tells the truth about creation at the door", () => {
-  const DOOR_PAGE = "docs-site/capabilities/mcp.mdx";
+describe("reference/mcp-door.mdx tells the truth about creation at the door", () => {
+  const DOOR_PAGE = "docs-site/reference/mcp-door.mdx";
 
   it("no longer calls the door a viewer and runner that cannot create", async () => {
     const text = await read(DOOR_PAGE);
@@ -123,7 +127,7 @@ describe("capabilities/mcp.mdx tells the truth about creation at the door", () =
     const section = text.slice(start, text.indexOf("\n## ", start + 1));
     expect(section).toContain("vendo_make");
     expect(section).toContain("vendo_apps_pin");
-    expect(section).toContain("/existing-agents/mcp");
+    expect(section).toContain("/mcp/quickstart");
   });
 });
 

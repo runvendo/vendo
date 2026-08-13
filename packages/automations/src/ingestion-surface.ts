@@ -131,6 +131,10 @@ const createTickDoor = (
       // host; the next interval retries.
       void tick().catch(() => undefined).finally(() => { ticking = false; });
     }, intervalMs);
+    // Never keep the host's event loop alive just for the scheduler — the same
+    // rule the run-execution delay follows. Optional call: not every runtime's
+    // timer handle carries unref.
+    (timer as { unref?: () => void }).unref?.();
     return () => clearInterval(timer);
   };
 

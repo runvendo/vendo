@@ -141,9 +141,22 @@ export function selectStore(
 }
 
 /** The hosted-store automations notice, printed at most once per process. */
-export function reportHostedStoreOnce(): void {
+export function reportHostedStoreOnce(development = false): void {
   if (hostedStoreNoticePrinted) return;
   hostedStoreNoticePrinted = true;
+  if (development) {
+    // Field (linkwarden 2026-08-09): Cloud's scheduler cannot reach a dev
+    // server — a localhost wire is in no deployment inventory — so deferring
+    // to it armed schedules nobody would ever fire. The dev process fires its
+    // own; the schedule-cursor claims are atomic in the shared store, so a
+    // second firer can never double-run a tick.
+    console.warn(
+      "[vendo] Vendo Cloud is the hosted store for this deployment. This is a DEVELOPMENT process, so "
+      + "schedule automations fire locally (Cloud's scheduler cannot reach a dev server); a deployed "
+      + "host leaves firing to Cloud. Host-event automations (vendo.emit) always fire in-process.",
+    );
+    return;
+  }
   console.warn(
     "[vendo] Vendo Cloud is the hosted store for this deployment: schedule and external-trigger "
     + "automations are Cloud's job (its scheduler and Composio delivery already fire them for this "

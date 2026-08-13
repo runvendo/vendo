@@ -144,6 +144,11 @@ export const composeReady = (composition: VendoComposition): Pick<VendoCompositi
       // No unhandled rejection before a handler/emit awaits the latch.
       void readyState.catch(() => undefined);
       composition.startBackgroundSweep();
+      // Dev-only scheduler tick (compose-automations fills it; no-op
+      // otherwise) — same lazy read-at-touch as the sweep above. Optional
+      // call: a partial composition in a unit test may not have composed
+      // automations at all.
+      composition.startDevAutomationsTicker?.();
     }
     return readyState;
   };

@@ -79,11 +79,17 @@ const DESCRIPTORS: ToolDescriptor[] = [
   {
     name: "schedule",
     title: VENDO_TOOL_TITLES.schedule,
-    // A write, not a read: arming a schedule changes what happens later, without
-    // a person present at the moment it fires.
+    // A write, not a read: re-timing a schedule changes what happens later,
+    // without a person present at the moment it fires. The wording is
+    // load-bearing (field, linkwarden 2026-08-08): "Set … what you are arming"
+    // taught calling agents a build-the-view-then-arm-it-here decomposition
+    // this verb cannot serve — it only re-times, and the authoring door is
+    // vendo_make with the schedule and the action in one request.
     description:
-      "Set or change when an app's automation runs, as a cron expression. Changing a schedule changes what "
-      + "the app does unattended, so say plainly what you are arming.",
+      "Change when an app's existing automation next runs, as a cron expression. It never creates one: an app "
+      + "with no automation needs the automation built first — ask vendo_make, naming this app in `app`, with "
+      + "the schedule and the action in one request. Changing a schedule changes what the app does unattended, "
+      + "so say plainly what you are changing.",
     inputSchema: {
       type: "object",
       properties: {

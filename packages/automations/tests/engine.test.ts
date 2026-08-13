@@ -9,6 +9,7 @@ import {
   type AuditEvent,
   type Guard,
   type Json,
+  type RecordStore,
   type RunContext,
   type StoreAdapter,
   type ToolCall,
@@ -16,6 +17,7 @@ import {
   type ToolOutcome,
   type ToolRegistry,
   type Trigger,
+  type VendoRecord,
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import type { AppsRuntime } from "@vendoai/apps";
@@ -178,6 +180,114 @@ const sign = async (secret: string, deliveryId: string, timestamp: string, body:
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
 };
+
+/** A GENERIC records store: it stores exactly what each writer passes and
+ *  derives nothing — the posture of a BYO or cloud-hosted StoreAdapter. The
+ *  conformance memory adapter cannot play this part: `vendo_approvals` is a
+ *  reserved collection there, so it derives subject/status/call refs from the
+ *  row's own data — which is exactly how the field bug stayed invisible
+ *  (repo-shipped stores derived the refs; the hosted store honored the
+ *  missing ones, and the arming asks vanished from every ref-filtered feed). */
+function genericStore(): StoreAdapter {
+  const base = memoryStoreAdapter();
+  const collections = new Map<string, Map<string, VendoRecord>>();
+  const rowsFor = (name: string): Map<string, VendoRecord> => {
+    const existing = collections.get(name);
+    if (existing !== undefined) return existing;
+    const created = new Map<string, VendoRecord>();
+    collections.set(name, created);
+    return created;
+  };
+  const matches = (record: VendoRecord, refs: Record<string, string>): boolean =>
+    Object.entries(refs).every(([key, value]) => record.refs?.[key] === value);
+  return {
+    ...base,
+    records: (collection: string): RecordStore => {
+      const rows = rowsFor(collection);
+      return {
+        async get(id) {
+          return rows.get(id) ?? null;
+        },
+        async put(input) {
+          const record: VendoRecord = {
+            id: input.id,
+            data: structuredClone(input.data),
+            ...(input.refs === undefined ? {} : { refs: { ...input.refs } }),
+            createdAt: rows.get(input.id)?.createdAt ?? NOW.toISOString(),
+            updatedAt: NOW.toISOString(),
+          };
+          rows.set(input.id, record);
+          return record;
+        },
+        async delete(id) {
+          rows.delete(id);
+        },
+        async list(query) {
+          const records = [...rows.values()].filter((record) =>
+            (query?.ids === undefined || query.ids.includes(record.id))
+            && (query?.refs === undefined || matches(record, query.refs)));
+          return { records };
+        },
+      };
+    },
+  };
+}
+
+describe("arming asks on a GENERIC records store", () => {
+  it("mints the approval row WITH the guard's listing refs", async () => {
+    const store = genericStore();
+    const doc = app("app_generic_refs", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "steps", steps: [{ id: "a", tool: writeTool.name }] },
+    });
+    await seedApp(store, doc);
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry([readTool, writeTool]), guard: new GuardDouble(), store, now: () => NOW,
+    });
+
+    const result = await engine.enable(doc.id, "main", ctx());
+
+    // The refs every ref-filtered approvals feed queries by (the guard's
+    // pending listing, its abandoned-ask sweep). A row without them is
+    // counted by pendingGrants yet invisible and immortal — a debt nobody
+    // can see or pay (field: linkwarden 2026-08-09, an automation card
+    // "waiting on N permissions" with nothing to decide). Same rule the
+    // grant mint beside this already follows: a generic StoreAdapter honors
+    // exactly what is passed.
+    expect((await store.records("vendo_approvals").get(result.missing[0]!.id))?.refs).toEqual({
+      subject: "user_a",
+      status: "pending",
+      call: result.missing[0]!.call.id,
+    });
+  });
+
+  it("re-stamps the refs a pre-contract pending ask is missing when arming adopts it", async () => {
+    const store = genericStore();
+    const doc = app("app_generic_readopt", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "steps", steps: [{ id: "a", tool: writeTool.name }] },
+    });
+    await seedApp(store, doc);
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry([readTool, writeTool]), guard: new GuardDouble(), store, now: () => NOW,
+    });
+    const first = await engine.enable(doc.id, "main", ctx());
+    const id = first.missing[0]!.id;
+    // Strip the refs, the way rows minted before the contract existed look.
+    const legacy = await store.records("vendo_approvals").get(id);
+    await store.records("vendo_approvals").put({ id, data: legacy!.data });
+
+    const second = await engine.enable(doc.id, "main", ctx());
+
+    // Adopted, never re-minted — and visible again to every ref-filtered feed.
+    expect(second.missing.map((request) => request.id)).toEqual([id]);
+    expect((await store.records("vendo_approvals").get(id))?.refs).toEqual({
+      subject: "user_a",
+      status: "pending",
+      call: first.missing[0]!.call.id,
+    });
+  });
+});
 
 describe("automations enable and grant capture", () => {
   let store: StoreAdapter;

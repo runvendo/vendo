@@ -1,0 +1,147 @@
+---
+title: "Uninstall Vendo — or start over"
+sidebarTitle: "Uninstall / start over"
+description: "Everything vendo init writes and how to reverse it: the removal checklist, the Cloud-side teardown, and the clean re-init path when you want a fresh start."
+---
+
+Everything Vendo adds to a repo is enumerable, so removal is too: a handful of
+Vendo-owned files, two `package.json` script hooks, and the one provider mount
+you pasted yourself. This page is the full checklist — for leaving, and for
+the gentler case of wiping state to start over.
+
+<Note>
+  `vendo eject` is **not** an uninstall. Despite the name it is a
+  customization command: it copies chrome source out of `@vendoai/ui` into
+  your repo so you can restyle it
+  ([CLI reference](/reference/cli#vendo-eject-surface-dir)). Removal is this
+  page, and it needs no CLI verb — it is deleting files.
+</Note>
+
+## Remove Vendo
+
+Work through the checklist in the app directory you ran `vendo init` in (the
+app workspace in a monorepo). Everything listed is Vendo-owned unless marked
+yours.
+
+### 1. The server surface
+
+- **Next.js**: delete `app/api/vendo/[...vendo]/` — the catch-all `route.ts`
+  plus, when server actions were detected, the `vendo-actions.ts`
+  registration map beside it. (Under `src/app/…` when your app lives in
+  `src/`; a Pages Router host got the same new `app/…` segment.)
+- **Express and custom runtimes**: delete `vendo/server.ts` (or
+  `vendo/server.mjs`), and remove the mount line you added yourself —
+  `app.use("/api/vendo", mountVendo())`, or the `handleVendoRequest` wiring
+  in your runtime's entry.
+
+### 2. The client mount (yours)
+
+Remove the `<VendoProvider>` wrap — and `<VendoOverlay />` or any other Vendo
+surface inside it — from your layout: `app/layout.tsx`, `pages/_app.tsx`, or
+the `"use client"` wrapper file you wrote to hold the component registry,
+which can be deleted whole.
+
+### 3. `.vendo/`
+
+Delete the directory. It holds only Vendo state: the extracted contract
+(`tools.json`, `catalog.json`, `theme.json`, `theme.extracted.json`), the
+files you may have edited (`policy.json`, `overrides.json`, `brief.md`),
+capture output (`remixable/`, `components/`), AI-pass output
+(`judgments.json`), knowledge config (`knowledge.json`,
+`knowledge-manifest.json`) — and `data/`, the local database.
+
+<Warning>
+  `.vendo/data/` is the default local store: threads, generated apps, grants,
+  and run history live there. Deleting it deletes them. A deployment that ran
+  with a Cloud key used the hosted store instead, so its local `data/` may be
+  nearly empty — the real state is server-side (see
+  [the Cloud side](#the-cloud-side)).
+</Warning>
+
+### 4. `package.json`
+
+- **Scripts:** remove the `predev` / `prebuild` sync hooks
+  (`vendo sync --no-ai`, `vendo sync --strict --no-ai`). If init prepended
+  them to a script you already had (`vendo sync --no-ai && your-command`),
+  delete just the Vendo segment.
+- **Dependencies:** uninstall `@vendoai/vendo` (and the `vendoai` alias if
+  present, plus a direct `@vendoai/ui` if you added one for chrome imports).
+  Init's provider step also installed `ai` and one `@ai-sdk/*` provider —
+  remove them only if nothing else in your app imports them — and may have
+  bumped `zod`; leave that alone (it is a version floor, not a Vendo
+  dependency).
+
+### 5. Environment
+
+- `.env.local`: delete the `VENDO_API_KEY` line — and revoke the key itself
+  ([below](#the-cloud-side)).
+- `.env.example`: delete the appended Vendo block (`VENDO_BASE_URL` plus the
+  commented `VENDO_HOST_API_URL`, `VENDO_LOGIN_URL`, `ANTHROPIC_API_KEY`
+  lines).
+- Deployed environments: remove `VENDO_BASE_URL`, `VENDO_API_KEY`, and any
+  other `VENDO_*` variables you set.
+
+### 6. The long tail
+
+Only present when the matching feature was used:
+
+- `.claude/skills/vendo-setup/` — the agent skill init writes when a
+  `.claude/` directory exists.
+- `components/vendo/<surface>/` and the `.vendo-eject.json` manifest inside
+  it — ejected chrome.
+- `server.json` and `public/.well-known/mcp-registry-auth` — MCP registry
+  publishing artifacts.
+- Outside the repo, `~/.vendo/` holds user-level state, not project state:
+  the CLI telemetry id, a stored Cloud session, and any pending login claim.
+  It is shared across every Vendo project on the machine — delete it only if
+  you are leaving Vendo entirely.
+
+## The Cloud side
+
+Deleting the key line locally does not revoke it. Revoke in the
+[console](https://console.vendo.run) or from the CLI:
+
+```bash
+npx vendo cloud keys revoke --project <projectId> --id <keyId>
+```
+
+What to know about hosted data:
+
+- **Removing `VENDO_API_KEY` flips storage local.** Store selection is
+  explicit store → Cloud key → local, so the next boot composes the local
+  store ([persistence](/deploy/persistence)). Nothing migrates: threads and
+  apps created against the hosted store stay there, and there is no export
+  command.
+- **Hosted data outlives the key.** What synced to your project — hosted
+  store rows, published config surfaces, pin baselines, captured host
+  components — remains server-side after revocation. Targeted deletion
+  exists programmatically (`eraseStore`, per-subject and per-app, cascading
+  server-side — see [Vendo Cloud](/deploy/vendo-cloud)); project- and
+  account-level deletion is a console operation, not a CLI one.
+- `vendo cloud logout` deletes only the local session file
+  (`~/.vendo/cloud-session.json`), nothing hosted.
+
+## Start over instead
+
+Removal is rarely what a broken install needs. In order of increasing reset:
+
+- **Reset local state, keep the wiring.** Stop the dev server and delete
+  `.vendo/data/`. Threads, generated apps, grants, and run history are gone;
+  the contract files and your wiring stay, and the store recreates itself on
+  the next boot.
+- **Regenerate the contract.** `vendo init --force` re-stamps the Vendo-owned
+  `.vendo/` files — `policy.json`, `overrides.json`, and `brief.md` back to
+  stubs, `theme.json` from a fresh scan. It never touches source files: the
+  route, the composition, and `vendo-actions.ts` are yours once created, so
+  a broken one is deleted by hand and recreated by the next plain
+  `vendo init`.
+- **Re-run init any time.** Init only creates what is missing — a fully
+  wired repo prints "Already wired — nothing to change." and still re-runs
+  extraction, the theme reconcile, and (interactively) the AI-pass offer.
+  Deleted scaffolds come back; edited files are never overwritten. Day to
+  day the `predev`/`prebuild` hooks already run
+  [`vendo sync`](/reference/cli#vendo-sync-dir), so re-init is for restoring
+  scaffolds, adding the AI polish, or reviewing queued loosenings — not for
+  keeping tools current.
+- **Full clean slate.** Do the removal checklist above (dependencies can
+  stay), then run `npx vendo init` again.
