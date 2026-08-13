@@ -3,7 +3,7 @@ import type { GuardDecision, RiskLabel, RunContext } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGuard } from "../src/index.js";
 import { createMemoryStore } from "./fixtures/memory-store.js";
-import { FixtureTools, call, context, descriptor, seedGrant } from "./fixtures/tools.js";
+import { FixtureTools, alice, call, context, descriptor, seedGrant } from "./fixtures/tools.js";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -451,6 +451,41 @@ describe("away authority (05 §6)", () => {
       action: "ask",
       decidedBy: "default",
     });
+  });
+
+  it("lets an explicit user denial outrank a host rule that says run", async () => {
+    const store = createMemoryStore();
+    const d = descriptor("write");
+    const stable = () => call(d.name, { amount: 1 }, "call_stable_away");
+
+    // The user's no, given while the guard had no rule to lean on.
+    const before = createGuard({ store });
+    const parked = await before.bind(new FixtureTools([d])).execute(stable(), awayCtx());
+    if (parked.status !== "pending-approval") throw new Error("expected the away call to park");
+    await before.approvals.decide(parked.approvalId, { approve: false }, alice);
+
+    // The host writes a run rule afterwards: it does NOT reopen the closed question.
+    const after = createGuard({ store, policy: { rules: [{ match: { risk: "write" }, action: "run" }] } });
+    const tools = new FixtureTools([d]);
+    await expect(after.check(stable(), d, awayCtx())).resolves.toMatchObject({
+      action: "block",
+      decidedBy: "denied",
+    });
+    await expect(after.bind(tools).execute(stable(), awayCtx())).resolves.toMatchObject({
+      status: "blocked",
+    });
+    expect(tools.executions).toHaveLength(0);
+  });
+
+  it("still parks a preset-decided away call, with its approval row, since a preset is not authored", async () => {
+    const store = createMemoryStore();
+    const d = descriptor("read");
+    // `cautious` expands to a `read → run` rule, but the host selected a
+    // shorthand rather than writing that rule, so the exemption does not apply.
+    const guard = createGuard({ store, policy: "cautious" });
+    const decision = await guard.check(call(d.name, {}, "call_preset"), d, awayCtx());
+    expect(decision).toMatchObject({ action: "ask", decidedBy: "default" });
+    expect(await guard.approvals.pending(alice)).toHaveLength(1);
   });
 
   it("attaches the authorizing grant as ctx.grant for executors (04 §4 ActAs seam)", async () => {

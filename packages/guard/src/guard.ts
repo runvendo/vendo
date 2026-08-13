@@ -492,6 +492,11 @@ class GuardImplementation implements VendoGuard {
   readonly #config: CreateGuardConfig;
   readonly #policyConfig: PolicyConfigObject | undefined;
   readonly #policy: PolicyResolver;
+  /** A string policy IS a preset (`resolvePolicyConfig`), and a preset's rules
+   *  are never mixed with authored ones — `PolicyResolver.rules()` returns
+   *  either the inline/preset set or the file's, never both. So one boolean
+   *  says whether every rule this guard evaluates was authored by the host. */
+  readonly #presetPolicy: boolean;
   readonly #maxCallsPerMinute: number;
   readonly #maxWritesPerRun: number;
   readonly #callWindows = new Map<string, number[]>();
@@ -532,6 +537,7 @@ class GuardImplementation implements VendoGuard {
     // policy misconfiguration `resolvePolicyConfig` catches) must fail loud
     // from `createGuard` itself.
     this.#policyConfig = resolvePolicyConfig(config.policy);
+    this.#presetPolicy = typeof config.policy === "string";
     this.#policy = new PolicyResolver(this.#policyConfig, config.policyCloudFallback);
     this.#maxCallsPerMinute = resolveBreakerLimit(
       config.breakers?.maxCallsPerMinute, "maxCallsPerMinute", DEFAULT_MAX_CALLS_PER_MINUTE,
@@ -1067,9 +1073,17 @@ class GuardImplementation implements VendoGuard {
     // refusal in `bind().execute()` and the `projectableForRun` projection are
     // downstream of every decision here, so a rule can free a read or a write
     // and nothing more.
+    //
+    // And a person's NO outranks the rule. A host rule is standing authority
+    // written ahead of time; a standing denial is this user answering THIS
+    // question, and the later, more specific answer wins. Losing the exemption
+    // drops the call back into the park below, where the same denial turns it
+    // into the "you denied this" block — the rule cannot re-open a question the
+    // user already closed.
     if (
       ctx.presence === "away" && draft.action === "run" && draft.decidedBy !== "grant"
-      && metadata.hostRule !== true
+      && (metadata.hostRule !== true
+        || await this.#standingDenial(call, effectiveDescriptor, ctx))
     ) {
       draft = { action: "ask", decidedBy: "default" };
     }
@@ -1365,7 +1379,12 @@ class GuardImplementation implements VendoGuard {
           decision: { action: "block", reason: rule.note ?? "blocked by policy rule", decidedBy: "rule" },
         });
       }
-      return withInvalidated({ decision: { action: rule.action, decidedBy: "rule" }, hostRule: true });
+      return withInvalidated({
+        decision: { action: rule.action, decidedBy: "rule" },
+        // Only a rule the host WROTE. A preset is a shorthand they selected, not
+        // a rule they authored, so it does not carry the away exemption.
+        ...(this.#presetPolicy ? {} : { hostRule: true }),
+      });
     }
 
     const code = this.#policyConfig?.code;
