@@ -194,6 +194,17 @@ describe.sequential("a parked in-app press learns what happened to it", () => {
     const { guard, apps, byo, host, appId } = await harness();
 
     const approvalId = await park(apps, appId, "cli_slow", "Takes a while to send");
+    // UNDECIDED is not the resume window. A parked record stands the whole time
+    // an approval is open, so serving its (request-less) snapshot here would
+    // leave a re-presented modal — Esc, then the pending notice — on an empty
+    // skeleton with nothing to decide, for as long as the ask stands. The guard
+    // still holds the ask, so the guard's answer is the one that ships.
+    const undecided = await byo.read(approvalId, principal);
+    if (undecided.state !== "pending" || undecided.request === undefined) {
+      throw new Error("an undecided approval must read back with its full request");
+    }
+    expect(undecided.request.call.args).toMatchObject({ clientId: "cli_slow" });
+
     const hold = host.holdNext();
     const decided = guard.approvals.decide(approvalId, { approve: true }, principal);
     await hold.running;
