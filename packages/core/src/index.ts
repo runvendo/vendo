@@ -8,6 +8,7 @@ export * from "./app-document.js";
 export * from "./app-surfaces.js";
 export * from "./audit.js";
 export * from "./capability-miss.js";
+export * from "./cloud-standing.js";
 export * from "./descriptor-hash.js";
 export * from "./errors.js";
 export * from "./formats.js";

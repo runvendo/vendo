@@ -1124,6 +1124,46 @@ describe("hostedStoreOps — the 35-op wire client", () => {
     await expect(bare.engine.get(ENGINE_COLLECTION, "r")).rejects.toMatchObject({ code: "not-implemented" });
   });
 
+  it("reads a BARE 401/402 as cloud-required, never as an unsupported op — an envelope still wins", async () => {
+    const refusing = (body: unknown, status: number) => hostedStoreOps({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async () => Response.json(body, { status })) as unknown as typeof fetch,
+    });
+    // A revoked key used to reach the caller as a not-implemented relabelled
+    // "Vendo Cloud store does not support the ... operation" (#1203) — the
+    // skew story told for a key problem. It says what the console said now,
+    // and the relabel below never fires for it.
+    const revoked = await refusing({ error: { code: "unauthorized", message: "Valid API key required." } }, 401)
+      .engine.get(ENGINE_COLLECTION, "r")
+      .then(() => undefined, (reason: unknown) => reason);
+    expect(revoked).toMatchObject({ code: "cloud-required", message: "Valid API key required." });
+    expect((revoked as VendoError).message).not.toContain("does not support the");
+    // A dry meter carries the crafted sentence plus its structured fields.
+    await expect(refusing({
+      error: { code: "meter-exhausted", message: "meter exhausted" },
+      meter: "usage",
+      unit: "usd",
+      used: 6.2,
+      limit: 5,
+    }, 402).engine.get(ENGINE_COLLECTION, "r")).rejects.toMatchObject({
+      code: "cloud-required",
+      message: expect.stringContaining("Vendo Cloud paused usage"),
+      detail: { meter: "usage", unit: "usd" },
+    });
+    // Neither refusal is wire-legal (`unauthorized` and `meter-exhausted` are
+    // not VendoError codes), which is exactly what makes them the console's.
+    // A 401/402 that DOES carry a recognized envelope is the service's own
+    // protocol answer and keeps it — reading it as a key or billing problem
+    // would tell the caller a story its mount never told.
+    await expect(refusing({ error: { code: "blocked", message: "vendo_audit is append-only" } }, 401)
+      .engine.delete("vendo_audit", "aud_1"))
+      .rejects.toMatchObject({ code: "blocked", message: "vendo_audit is append-only" });
+    await expect(refusing({ error: { code: "conflict", message: "revision moved on" } }, 402)
+      .engine.compareAndSwap(ENGINE_COLLECTION, { id: "r", data: {} }, "rev_1"))
+      .rejects.toMatchObject({ code: "conflict", message: "revision moved on" });
+  });
+
   it("surfaces an unsupported op cleanly, naming it — never a silent fallback", async () => {
     const notImplemented = (body: BodyInit | null) => hostedStoreOps({
       apiKey: "vnd_secret",

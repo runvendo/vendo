@@ -1,11 +1,13 @@
 import {
   type BlobStore,
+  cloudStandingError,
   parseStoreWireError,
   type RecordInput,
   type RecordQuery,
   type RecordStore,
   STORE_WIRE_PATHS,
   type StoreOps,
+  storeWireErrorSchema,
   type StoreWireStatus,
   storeWireStatusSchema,
   VendoError,
@@ -326,7 +328,13 @@ const isTimeout = (error: unknown): boolean =>
 
 /** The protocol's own client half owns the mapping (parseStoreWireError): an
  * enveloped code wins, recognized statuses map, everything else degrades to
- * not-implemented rather than blaming the caller. */
+ * not-implemented rather than blaming the caller. The one exception is a BARE
+ * standing refusal (401/402 with no wire-legal envelope), which this client —
+ * a Vendo Cloud client, not a BYO mount's — reads as cloud-required with the
+ * console's own message, so a revoked key never masquerades as an unsupported
+ * op. The console's own refusals are always bare in that sense: `unauthorized`
+ * and `meter-exhausted` are not wire codes, so a 401/402 that DOES carry a
+ * recognized envelope came from the service's protocol half and keeps it. */
 const raiseWireError = async (response: Response): Promise<never> => {
   let payload: unknown;
   try {
@@ -334,7 +342,9 @@ const raiseWireError = async (response: Response): Promise<never> => {
   } catch {
     payload = undefined;
   }
-  throw parseStoreWireError(response.status, payload);
+  if (storeWireErrorSchema.safeParse(payload).success) throw parseStoreWireError(response.status, payload);
+  throw cloudStandingError(response.status, payload, `Vendo Cloud store request failed with ${response.status}`)
+    ?? parseStoreWireError(response.status, payload);
 };
 
 /**
