@@ -145,6 +145,7 @@ Types only; each key's behavior is documented once, on
 | `loadout` | `readonly string[]` | explicit curated initial loadout, by tool name |
 | `apps` | `false \| { designRules?, pipeline?, checks?, review? }` | `false` unmounts app generation entirely; otherwise the apps-block options |
 | `automations` | `false` | `false` unmounts automations: `/automations`, `/runs` and `/webhooks` answer not-found and `vendo.emit` refuses |
+| `channels` | `{ text?: boolean }` | `{ text: true }` opens the text channel: users link a phone from one anchor to `/api/vendo/channels/text/link`, then text the agent, which acts as them. Needs `VENDO_API_KEY` (Vendo Cloud carries the numbers); the phone ↔ user binding stays in your store |
 
 ## `eraseStore`
 
