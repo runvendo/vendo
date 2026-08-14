@@ -258,6 +258,51 @@ for (const backend of backends()) {
         const settled = await workspace().open(dana, { memberships: acme });
         expect(await settled.readFile(userPath)).toBe("dana's own");
       });
+
+      /**
+       * A refused commit must not have applied a DELETION. This is the one
+       * failure in the conflict branch that cannot be recovered from: the
+       * caller is told `conflict`, re-reads, re-applies — and a file that is
+       * already gone is gone, because a delete has no compare-and-swap of its
+       * own to refuse it and history's copy is not what the caller asked for.
+       * So the ordering inside a batched commit is a safety property, not a
+       * detail: every write lands first, and one lost swap cancels every
+       * tombstone in the batch. Both halves are pinned here — the file survives
+       * AND the deletion is still staged, so the re-apply the conflict branch
+       * asks for carries it.
+       *
+       * This is why the ordering may not be "simplified" back: it was wrong for
+       * the whole life of the per-path loop that preceded `commitAll`, and the
+       * loss was silent both times.
+       */
+      it("a conflicted commit leaves the deletions in it unapplied and still staged", async () => {
+        const doomed = "/orgs/acme/files/doomed.md";
+        const contested = "/orgs/acme/files/contested.md";
+        const seed = await workspace().open(dana, { memberships: acme });
+        await seed.writeFile(doomed, "still needed");
+        await seed.writeFile(contested, "base");
+        expect((await seed.commit()).status).toBe("ok");
+
+        // A colleague moves the contested file's head, so this turn's commit
+        // has to lose it.
+        const mine = await workspace().open(dana, { memberships: acme });
+        const theirs = await workspace().open(kim, { memberships: acme });
+        await theirs.writeFile(contested, "kim wins");
+        expect((await theirs.commit()).status).toBe("ok");
+
+        // One turn, two mutations on the same mount: a delete and an overwrite.
+        await mine.rm(doomed);
+        await mine.writeFile(contested, "dana loses");
+        expect(await mine.commit()).toEqual({ status: "conflict", paths: [contested] });
+
+        const after = await workspace().open(dana, { memberships: acme });
+        expect(await after.exists(doomed)).toBe(true);
+        expect(await after.readFile(doomed)).toBe("still needed");
+
+        // …and the turn's own intent survives, so re-applying onto the new head
+        // still deletes the file the caller asked to delete.
+        expect(await mine.exists(doomed)).toBe(false);
+      });
     });
 
     describe("the sandbox checkout/commit helpers (wave-2 lane E consumes these)", () => {
