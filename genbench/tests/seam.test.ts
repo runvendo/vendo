@@ -1,11 +1,13 @@
 /**
  * The one recorder every contender's page answers through.
  *
- * The `claude-code` page contract tells that contender to define `window.vendo`
- * itself, so its file still works opened straight off disk. It therefore
- * REPLACES whatever the harness put on the page — which cost that column its
- * rows in the preview's live tool-call feed, while the probe and the floor,
- * which read `window.vendo.calls`, never noticed.
+ * A page may define `window.vendo` itself, and one that does REPLACES whatever
+ * the harness put there — which cost that column its rows in the preview's live
+ * tool-call feed, while the probe and the floor, which read `window.vendo.calls`,
+ * never noticed. The `claude-code` contract used to ASK for its own recorder, so
+ * its file would work opened straight off disk; the shared `HARNESS_CONTRACT`
+ * asks neither baseline for one now, and a model that writes one anyway must
+ * still be read the same way as one that does not.
  *
  * So the recorder is installed after the page has loaded, over whatever
  * `window.vendo` is by then, and delegates to it. These tests are the seam: a
@@ -23,10 +25,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FloorResult } from "../src/floor.js";
+import { AUDITOR_CONTRACT } from "../src/audit.js";
 import { JudgeContract, type JudgeResult } from "../src/judge.js";
 import { writePreview } from "../src/report.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shooter, type Shot } from "../src/render.js";
 import { writeCase, type CaseResult } from "../src/run.js";
+import { TriageContract } from "../src/triage.js";
 import { loadWorld, type World } from "../src/world.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -40,9 +44,9 @@ beforeAll(async () => {
 }, 120_000);
 afterAll(async () => await shooter.close());
 
-/** Exactly what `PAGE_CONTRACT` in `claude-code.ts` asks that contender for:
- *  its own `window.vendo`, defined before it draws, answering out of its own
- *  copy of the rows. */
+/** A page that brings its own `window.vendo`, defined before it draws and
+ *  answering out of its own copy of the rows — what a model writes when it
+ *  decides it needs a recorder, whatever the contract told it. */
 const OWN_RECORDER = `<!doctype html><html lang="en"><head><title>t</title>
 <script>
   var TOOLS = { cancel_transfer: { ok: true } };
@@ -177,7 +181,7 @@ const PASSING: FloorResult = {
   valid: true,
   blocking: [],
   honestData: { pass: true, offenders: [], examined: 0 },
-  wiredActions: { pass: true, bindings: [] },
+  wiredActions: { pass: true, pressed: 1, bindings: [] },
   pass: true,
 };
 
@@ -201,6 +205,8 @@ const resultFor = (contender: string): CaseResult => ({
   caseHash: "case-hash",
   judged: GRADED,
   judgeContract: JudgeContract,
+  triageContract: TriageContract,
+  auditorContract: AUDITOR_CONTRACT,
 });
 
 const SHOT: Shot = { png: PNG, visibleText: "", renders: true, consoleErrors: [] };

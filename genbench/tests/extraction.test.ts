@@ -35,7 +35,7 @@ afterAll(async () => await shooter.close());
 /** Whatever the contender wrote, shot the way a run shoots it. */
 async function seen(body: string): Promise<Shot> {
   const html = `<!doctype html><html lang="en"><body>${body}</body></html>`;
-  const visit = await shooter.visit(authoredPage(html, world, "diy-sonnet"), { authored: true });
+  const visit = await shooter.visit(authoredPage(html, world, "diy-sonnet"));
   try {
     return await visit.shot();
   } finally {
@@ -56,7 +56,7 @@ describe("visible-text extraction", () => {
 
     // …and so the auditor is never asked to derive the seam between them: the two
     // values it has to answer for are the two the screen actually printed.
-    const asked = honestData(shot.visibleText).offenders.map((offender) => offender.text);
+    const asked = honestData(shot.visibleText, world).offenders.map((offender) => offender.text);
     expect(asked).not.toContain("$2850.0067");
     expect(asked).toEqual(["$2850.00", "67"]);
   }, 120_000);
@@ -69,7 +69,7 @@ describe("visible-text extraction", () => {
     expect(shot.visibleText).toContain("$4,243.11");
     expect(tokens(shot.visibleText)).toEqual(["$4,243.11"]);
     // One value to answer for, whole — not "1", "243" and "11".
-    const extracted = honestData(shot.visibleText);
+    const extracted = honestData(shot.visibleText, world);
     expect(extracted.examined).toBe(1);
     expect(extracted.offenders.map((offender) => offender.text)).toEqual(["$4,243.11"]);
   }, 120_000);

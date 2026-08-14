@@ -8,6 +8,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { WALL_CLOCK_MS } from "../src/claude-code.js";
 import type { FloorResult } from "../src/floor.js";
+import { AUDITOR_CONTRACT } from "../src/audit.js";
 import { JudgeContract, type JudgeResult } from "../src/judge.js";
 import {
   attempt,
@@ -20,6 +21,7 @@ import {
   type Args,
   type CaseResult,
 } from "../src/run.js";
+import { TriageContract } from "../src/triage.js";
 
 describe("attempt", () => {
   it("hands back what the work returned", async () => {
@@ -113,7 +115,7 @@ const floorAt = (pass: boolean): FloorResult => ({
   valid: pass,
   blocking: [],
   honestData: { pass, offenders: [], examined: 0 },
-  wiredActions: { pass, bindings: [] },
+  wiredActions: { pass, pressed: 0, bindings: [] },
   pass,
 });
 
@@ -137,6 +139,8 @@ const scored = (floor: FloorResult, judged: JudgeResult): CaseResult => ({
   caseHash: "case-hash",
   judged,
   judgeContract: JudgeContract,
+  triageContract: TriageContract,
+  auditorContract: AUDITOR_CONTRACT,
 });
 
 /**

@@ -1,7 +1,16 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { checks, holds, type Binding, type HonestDataResult, type Offender } from "./floor.js";
+import {
+  checks,
+  holds,
+  type Audited,
+  type Binding,
+  type HonestDataResult,
+  type HonestVerdict,
+  type Offender,
+  type WiredActionsResult,
+} from "./floor.js";
 import type { JudgeResult, LineVerdict, Verdict } from "./judge.js";
 import type { UsageTotals } from "./meter.js";
 import type { CaseResult } from "./run.js";
@@ -22,6 +31,16 @@ const honestDataVerdict = (data: HonestDataResult): string => {
   if (!data.pass) return verdict(false);
   if (data.examined === 0) return `<span class="v muted">— nothing to check</span>`;
   return `<span class="v ok">✓ · ${data.examined} value${data.examined === 1 ? "" : "s"} checked</span>`;
+};
+
+/** `wiredActions` splits the same two ways, and for the same reason: a screen
+ *  with nothing to press passes without a single control having been proven
+ *  live, and that must not wear the checkmark a screen full of working controls
+ *  earned. */
+const wiredActionsVerdict = (actions: WiredActionsResult): string => {
+  if (!actions.pass) return verdict(false);
+  if (actions.pressed === 0) return `<span class="v muted">— nothing to press</span>`;
+  return `<span class="v ok">✓ · ${actions.pressed} control${actions.pressed === 1 ? "" : "s"} pressed</span>`;
 };
 
 /** Every small list under a verdict — offenders, bindings, blocking findings —
@@ -49,36 +68,63 @@ const bindingList = (bindings: readonly Binding[]): string =>
         ),
   );
 
+/** The row's mark and its CSS class, per verdict. A waiver is `na` — the same
+ *  recessive row a rubric line whose subject is absent gets, because it is the
+ *  same statement: there was nothing here to earn or miss. */
+const HONEST_MARK: Readonly<Record<HonestVerdict, { mark: string; row: string }>> = {
+  "cleared-by-verbatim": { mark: "✓", row: "pass" },
+  "cleared-by-audit": { mark: "✓", row: "pass" },
+  "skipped-by-triage": { mark: "–", row: "na" },
+  offender: { mark: "✕", row: "fail" },
+};
+
+/** What settled this value, in a sentence. Attempts are named only where any
+ *  were spent: "0 attempts" beside a value the tools answered with verbatim
+ *  reads as a failure to try. */
+const honestNote = (record: Audited): string => {
+  const attempts = record.attempts === 0 ? "" : ` · ${record.attempts} attempt${record.attempts === 1 ? "" : "s"}`;
+  switch (record.verdict) {
+    case "cleared-by-verbatim":
+      return `cleared — ${record.result}`;
+    case "skipped-by-triage":
+      return `not a data claim — ${record.result}`;
+    case "cleared-by-audit":
+      return `cleared — executed to ${record.result}${attempts}`;
+    default:
+      return `${record.result}${attempts}`;
+  }
+};
+
 /**
- * Tier 2's evidence: the value, the program that was executed for it, and what
- * that returned.
+ * The honesty check's evidence: every value the screen printed, and what settled
+ * it — the tools' own text, a triage waiver in the model's own clause, or a
+ * program that was executed and what it returned.
  *
  * On the page rather than behind a hover, for the same reason the judge's notes
- * are — this verdict was reached by running code, and code nobody can see is a
- * verdict you have to take on trust. The value stays the thing you scan for; the
- * program is demoted to a muted well beneath it.
+ * are — these verdicts were reached by a model waiving and by code running, and
+ * neither is something a reader should have to take on trust. The value stays
+ * the thing you scan for; the program is demoted to a muted well beneath it.
  */
 const auditList = (data: HonestDataResult): string => {
   const audited = data.audited ?? [];
   if (audited.length === 0) return "";
-  const cleared = audited.filter((record) => record.verdict === "cleared-by-audit").length;
+  const waived = audited.filter((record) => record.verdict === "skipped-by-triage").length;
+  const cleared = audited.filter((record) => record.verdict.startsWith("cleared")).length;
   return `<section class="audit">
   ${
     data.degraded === true
-      ? `<p class="degraded">auditor degraded — these values were never audited${data.error === undefined ? "" : `: ${escape(data.error)}`}</p>`
+      ? `<p class="degraded">honesty check degraded — nothing here was waived or cleared on a model's word${data.error === undefined ? "" : `: ${escape(data.error)}`}</p>`
       : ""
   }
-  <p class="half-head"><span>audit · only executed code clears a value</span><b>${cleared}/${audited.length}</b></p>
+  <p class="half-head"><span>honesty · the tools' own text, then triage, then executed code</span><b>${cleared}/${audited.length - waived}${waived === 0 ? "" : ` · ${waived} waived`}</b></p>
   <ul class="lines">${audited
     .map((record) => {
-      const ok = record.verdict === "cleared-by-audit";
+      const { mark, row } = HONEST_MARK[record.verdict];
       return (
-        `<li class="${ok ? "pass" : "fail"}"><i aria-hidden="true">${ok ? "✓" : "✕"}</i><span class="what">` +
+        `<li class="${row}"><i aria-hidden="true">${mark}</i><span class="what">` +
         `<span class="line"><code>${escape(record.text)}</code></span>` +
         (record.program.trim() === "" ? "" : `<pre class="program">${escape(record.program)}</pre>`) +
-        `<span class="note">${escape(
-          ok ? `cleared — executed to ${record.result}` : record.result,
-        )} · ${record.attempts} attempt${record.attempts === 1 ? "" : "s"}</span>` +
+        `<span class="note">${escape(honestNote(record))}</span>` +
         `</span></li>`
       );
     })
@@ -181,10 +227,15 @@ async function column(runDir: string, result: CaseResult): Promise<string> {
   ${result.failure === undefined ? "" : `<p class="failure">${escape(result.failure)}</p>`}
   ${consoleNote(result.consoleErrors)}
   <dl class="floor">${scored
-    .map(
-      (check) =>
-        `<div><dt>${check.name}</dt><dd>${check.name === "honestData" ? honestDataVerdict(result.floor.honestData) : verdict(check.pass)}</dd></div>`,
-    )
+    .map((check) => {
+      const shown =
+        check.name === "honestData"
+          ? honestDataVerdict(result.floor.honestData)
+          : check.name === "wiredActions"
+            ? wiredActionsVerdict(result.floor.wiredActions)
+            : verdict(check.pass);
+      return `<div><dt>${check.name}</dt><dd>${shown}</dd></div>`;
+    })
     .join("")}</dl>
   ${result.floor.blocking.length === 0 ? "" : notes(result.floor.blocking.map((why) => `<li><span>${escape(why)}</span></li>`))}
   ${result.floor.honestData.pass ? "" : offenderList(result.floor.honestData.offenders)}
@@ -359,7 +410,7 @@ dl{margin:0}dl>div{display:flex;align-items:baseline;justify-content:space-betwe
 .degraded{margin:0 0 12px;padding:9px 12px;border-left:3px solid var(--no);border-radius:0 6px 6px 0;
   background:#fbeceb;font-size:12px;font-weight:600;color:var(--no)}
 
-/* ---- tier 2: the value, and the program that was executed to clear it ----
+/* ---- the honesty check: every value, and what settled it ----
    Same spacing step and the same verdict rows as the rubric above, because it
    is the same kind of claim. The program is a filled well rather than a
    bordered box — one less border in a column that already has plenty. */
@@ -487,7 +538,7 @@ export async function writePreview(input: {
 <h1>genbench</h1>
 <p class="meta"><span>${escape(input.runId)}</span><span>world ${escape(first?.world ?? "")}</span><span>${escape(first?.lane ?? "screen")} lane</span></p>
 ${spendLine("judge", "graded", spent(input.results, (result) => result.judged.cost))}
-${spendLine("auditor", "audited", spent(input.results, (result) => result.floor.honestData.cost))}
+${spendLine("honesty check", "sorted and audited", spent(input.results, (result) => result.floor.honestData.cost))}
 ${sections.join("")}
 </div>
 <aside class="feed"><p class="feed-label">tool calls</p><ol id="feed"></ol></aside>

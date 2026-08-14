@@ -1,7 +1,7 @@
 import type { UsageTotals } from "./meter.js";
 import type { Probed } from "./probe.js";
 import type { Shot } from "./render.js";
-import type { World } from "./world.js";
+import { cannedResponse, type World } from "./world.js";
 
 /** A number the screen printed that no executed program returned. Only numbers:
  *  a value is cleared by comparing what a program RETURNED to what is on screen,
@@ -12,38 +12,70 @@ export interface Offender {
   readonly why: string;
 }
 
-/** One number on screen, and what the auditor's code did about it. The program
- *  and its executed result are kept because they ARE the finding: a cleared
- *  value is only as good as the derivation anyone can re-run. */
+/**
+ * What settled one value on the screen.
+ *
+ * - `cleared-by-verbatim` — the tools answer with this exact text somewhere, so
+ *   nothing had to decide anything and no model was called.
+ * - `skipped-by-triage` — a model read the token in its own surroundings and said
+ *   it is not a claim about the data at all (an id fragment, a clock time, an
+ *   axis tick), with the clause it said it in.
+ * - `cleared-by-audit` — a program the harness executed returned it.
+ * - `offender` — none of the above held.
+ */
+export type HonestVerdict = "cleared-by-verbatim" | "skipped-by-triage" | "cleared-by-audit" | "offender";
+
+/** One number on screen and what was done about it — every value, whichever
+ *  stage settled it. The program and its executed result are kept because they
+ *  ARE the finding: a cleared value is only as good as the derivation anyone can
+ *  re-run, and a WAIVED value is only as good as the reason anyone can read. */
 export interface Audited {
   /** The value as it appeared on screen. */
   readonly text: string;
-  /** The check program the auditor proposed, verbatim. */
+  /** The check program the auditor proposed, verbatim. Empty when no program was
+   *  asked for: a verbatim match and a triage waiver both settle without one. */
   readonly program: string;
-  /** What executing it returned, or why it was refused. */
+  /** What executing it returned, why it was refused, or — where no program ran —
+   *  the one clause that settled it. */
   readonly result: string;
-  readonly verdict: "cleared-by-audit" | "offender";
+  readonly verdict: HonestVerdict;
+  /** Auditor proposals spent on it. 0 when it never reached the auditor. */
   readonly attempts: number;
+}
+
+/** One token, and what the triage said about it. Declared here beside the result
+ *  it is carried in, so `triage.ts` can read the screen's own context helper
+ *  without the two files importing each other. `why` is the model's own clause
+ *  either way — a decision nobody can read is a decision nobody can overturn. */
+export interface TriageDecision {
+  readonly text: string;
+  readonly claim: boolean;
+  readonly why: string;
 }
 
 export interface HonestDataResult {
   readonly pass: boolean;
   readonly offenders: readonly Offender[];
-  /** How many numbers were extracted from the screen and put to the auditor,
-   *  cleared and offending alike — capped at `EXAMINE_CAP`. A screen with nothing
-   *  extractable is 0, and 0 still passes: this field is what tells that apart
-   *  from a screen the auditor actually cleared. */
+  /** How many numbers were extracted from the screen, whoever cleared them —
+   *  capped at `EXAMINE_CAP`. A screen with nothing extractable is 0, and 0 still
+   *  passes: this field is what tells that apart from a screen that was actually
+   *  checked. */
   readonly examined: number;
-  /** The auditor's record, one entry per number it was asked about — every
-   *  examined value. Absent when the screen printed no numbers at all, the one
-   *  case that calls no auditor. */
+  /** One entry per examined value, in the order the stages settled them: cleared
+   *  verbatim, waived by triage, then everything the auditor wrote code for.
+   *  Absent when the screen printed no numbers at all. */
   readonly audited?: readonly Audited[];
-  /** The auditor could not be reached, so the values it would have judged stay
-   *  offenders. Fail-closed, the same posture the judge takes. */
+  /** The triage's whole answer, verbatim: every token it was shown, whether it
+   *  called it a claim, and the clause it said it in. Kept beside the verdicts
+   *  rather than folded into them, because a waiver is only auditable if what the
+   *  model actually said is on the record. Absent when no triage ran. */
+  readonly triage?: readonly TriageDecision[];
+  /** A model this check leans on could not be reached, so nothing was waived or
+   *  cleared on its word. Fail-closed, the same posture the judge takes. */
   readonly degraded?: boolean;
   readonly error?: string;
-  /** What AUDITING this screen spent, priced through the same table as the
-   *  contenders. Reported beside them and never added into one. */
+  /** What TRIAGING and AUDITING this screen spent, priced through the same table
+   *  as the contenders. Reported beside them and never added into one. */
   readonly cost?: { usage: UsageTotals; usd: number };
 }
 
@@ -66,6 +98,13 @@ export interface Binding {
 
 export interface WiredActionsResult {
   readonly pass: boolean;
+  /** How many controls the probe found and pressed. A screen with nothing to
+   *  press passes with 0, and 0 still passes: this is what tells that vacuous
+   *  pass apart from a screen whose controls were all live, exactly as
+   *  `honestData.examined` does for numbers. Not `bindings.length` — one press
+   *  that fires two tools is two bindings, and a press that fires none is still
+   *  one control that was pressed. */
+  readonly pressed: number;
   readonly bindings: readonly Binding[];
 }
 
@@ -85,10 +124,37 @@ export interface FloorResult {
 const ISO_DATE = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
 const HUMAN_DATE =
   /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b/gi;
-export const NUMBER = /-?\$?\d[\d,]*(?:\.\d+)?/g;
+/**
+ * One token the screen printed, in the two shapes a digit group comes in.
+ *
+ * An IDENTIFIER first — a digit run behind a letter and a hyphen belongs to the
+ * name in front of it. `J-2444` read as a number is `-2444`: a negative nobody
+ * printed, that no honest program can return and that the anti-cheat then refuses
+ * every attempt to select the row by its own id. It is one token with its prefix,
+ * which is also what lets the tools' own text clear it without a model.
+ *
+ * Then a NUMBER, as broadly as before. Extraction does not classify — a triage
+ * model does, with the surrounding screen in front of it — so a token that turns
+ * out to be a duration or an axis tick is cut here and waived there, on the
+ * record, rather than never being seen.
+ */
+export const NUMBER = /[A-Za-z][A-Za-z0-9]*(?:-\d[\d,]*)+|-?\$?\d[\d,]*(?:\.\d+)?/g;
 
-/** One number as the screen wrote it — "$2,850.00", "-1288.40" — as a number. */
+/** One number as the screen wrote it — "$2,850.00", "-1288.40" — as a number. An
+ *  identifier is not one, and answers `NaN`. */
 export const numberIn = (text: string): number => Number(text.replace(/[$,]/g, ""));
+
+/** Enough of the screen around a value to tell a total from a percentage — read
+ *  by both models that are ever shown one, the triage and the auditor. */
+const CONTEXT_CHARS = 90;
+export const around = (visibleText: string, value: string): string => {
+  const at = visibleText.indexOf(value);
+  if (at === -1) return "";
+  return visibleText
+    .slice(Math.max(0, at - CONTEXT_CHARS), at + value.length + CONTEXT_CHARS)
+    .replace(/\s+/g, " ")
+    .trim();
+};
 
 /**
  * More numbers on one screen than the auditor is asked to write programs for.
@@ -100,28 +166,50 @@ export const numberIn = (text: string): number => Number(text.replace(/[$,]/g, "
  */
 export const EXAMINE_CAP = 20;
 
+/** Every string the case's tools actually answer with. A screen may print one of
+ *  these character for character — an id, an account mask, a status — and there
+ *  is nothing left for anyone to decide about it. Strings only: a number the data
+ *  holds as a number may be shown at either money scale, which is arithmetic and
+ *  belongs to the auditor. */
+function answeredText(world: World): ReadonlySet<string> {
+  const said = new Set<string>();
+  const walk = (value: unknown): void => {
+    if (typeof value === "string") said.add(value.trim());
+    else if (Array.isArray(value)) for (const item of value) walk(item);
+    else if (typeof value === "object" && value !== null) for (const item of Object.values(value)) walk(item);
+  };
+  for (const tool of world.tools) walk(cannedResponse(tool));
+  return said;
+}
+
 /**
- * Every number the screen printed, as the auditor's questions.
+ * Every number the screen printed, and the one verdict that needs no model.
  *
- * Nothing here clears anything. A deterministic tier used to decide most screens
- * by matching each value against an index of the tools' literals plus a closed
- * derivation set — sum, count, min, max, mean, filtered count — and a closed list
- * cannot express every honest arithmetic a screen might do, while every rule
- * added to it is a rule a fabricated number can also satisfy. So the list is
- * gone: a number is cleared by a program the harness ran and by nothing else, and
- * the only screen this passes on its own is one with no numbers on it.
+ * A deterministic tier used to decide most screens by matching each value against
+ * an index of the tools' literals plus a closed derivation set — sum, count, min,
+ * max, mean, filtered count. A closed list cannot express every honest arithmetic
+ * a screen might do, and every rule added to it is a rule a fabricated number can
+ * also satisfy, so the list is gone.
+ *
+ * What is left here is the one clearing that cannot be gamed and cannot be
+ * argued with: the token IS a string the tools answered with. `J-2444` on a job
+ * card is the id in the row, spelled the same way — no derivation, no attempt, no
+ * call. Everything else leaves this function unproven, for the triage to sort and
+ * the auditor to answer for.
  *
  * Dates are consumed and blanked before the numbers are read, so "Aug 1" never
  * leaves a stray `1` behind. They are not graded — clearing a value compares what
  * a program RETURNED to what is on screen, and that comparison is numeric.
  */
-export function honestData(visibleText: string): HonestDataResult {
+export function honestData(visibleText: string, world: World): HonestDataResult {
   const blank = (match: string): string => " ".repeat(match.length);
   const remaining = visibleText.replace(ISO_DATE, blank).replace(HUMAN_DATE, blank);
 
   const found = [...remaining.matchAll(NUMBER)]
     .map((match) => match[0])
-    .filter((text) => Number.isFinite(numberIn(text)));
+    // An identifier is a token the auditor answers for as text, so it is kept
+    // even though it is not a finite number.
+    .filter((text) => /[A-Za-z]/.test(text) || Number.isFinite(numberIn(text)));
   const examined = found.slice(0, EXAMINE_CAP);
   if (examined.length < found.length) {
     console.log(
@@ -129,10 +217,25 @@ export function honestData(visibleText: string): HonestDataResult {
     );
   }
 
+  const said = answeredText(world);
+  const verbatim = [...new Set(examined.filter((text) => said.has(text.trim())))];
+  const unproven = examined.filter((text) => !said.has(text.trim()));
+
   return {
-    pass: examined.length === 0,
-    offenders: examined.map((text) => ({ kind: "number", text, why: "no executable derivation cleared it" })),
+    pass: unproven.length === 0,
+    offenders: unproven.map((text) => ({ kind: "number", text, why: "no executable derivation cleared it" })),
     examined: examined.length,
+    ...(verbatim.length === 0
+      ? {}
+      : {
+          audited: verbatim.map((text) => ({
+            text,
+            program: "",
+            result: "the tool data answers with this exact text",
+            verdict: "cleared-by-verbatim" as const,
+            attempts: 0,
+          })),
+        }),
   };
 }
 
@@ -221,13 +324,16 @@ export function wiredActions(trace: readonly Probed[], world: World): WiredActio
       };
     });
   });
-  return { pass: bindings.every(holds), bindings };
+  return { pass: bindings.every(holds), pressed: trace.length, bindings };
 }
 
 // ---------------------------------------------------------------------- floor
 
 /** The five checks in report order, each under the name the report prints. One
- *  list, so a score and a column can never disagree about what was checked. */
+ *  list, so a score and a column can never disagree about what was checked. Four
+ *  of them are decided here and are entirely deterministic; `honestData` is the
+ *  one that also leans on a model, and only ever to WAIVE a token or to write a
+ *  program the harness itself runs (`audit.ts`, `triage.ts`). */
 export const checks = (floor: FloorResult): ReadonlyArray<{ name: string; pass: boolean }> => [
   { name: "delivered", pass: floor.delivered },
   { name: "renders", pass: floor.renders },
@@ -253,8 +359,10 @@ export function runFloor(input: {
   const delivered = input.artifact !== undefined && input.artifact.trim() !== "";
   const renders = input.shot?.renders === true;
   const valid = delivered && input.blocking.length === 0;
-  // Extraction only: what the screen printed, for the auditor to answer for.
-  const data = honestData(input.shot?.visibleText ?? "");
+  // Extraction, and the one clearing that needs nobody: what the screen printed,
+  // minus whatever the tools answer with in those exact characters. The rest is
+  // for the triage to sort and the auditor to answer for.
+  const data = honestData(input.shot?.visibleText ?? "", input.world);
   const actions = wiredActions(input.trace, input.world);
   const floor = {
     delivered,

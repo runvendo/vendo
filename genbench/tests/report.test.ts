@@ -9,10 +9,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
+import { AUDITOR_CONTRACT } from "../src/audit.js";
 import { wiredActions, type FloorResult } from "../src/floor.js";
 import { JudgeContract, type JudgeResult } from "../src/judge.js";
 import { writePreview } from "../src/report.js";
 import type { CaseResult } from "../src/run.js";
+import { TriageContract } from "../src/triage.js";
 import { loadCases, loadWorld, worldForCase, type World } from "../src/world.js";
 
 const PASSING: FloorResult = {
@@ -21,7 +23,7 @@ const PASSING: FloorResult = {
   valid: true,
   blocking: [],
   honestData: { pass: true, offenders: [], examined: 3 },
-  wiredActions: { pass: true, bindings: [] },
+  wiredActions: { pass: true, pressed: 0, bindings: [] },
   pass: true,
 };
 
@@ -62,6 +64,8 @@ const resultFor = (contender: string, testCase: string, prompt: string, judged: 
   caseHash: "case-hash",
   judged,
   judgeContract: JudgeContract,
+  triageContract: TriageContract,
+  auditorContract: AUDITOR_CONTRACT,
 });
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -263,5 +267,65 @@ describe("the preview page", () => {
     // Not the same markup a real pass earns — a vacuous pass must not read as
     // the check having found and cleared anything.
     expect(html).not.toContain(`<dd><span class="v ok">✓ · 0 values checked</span></dd>`);
+  });
+
+  /** The same two readings of a pass, on the other check that has them: a screen
+   *  with nothing to press passes without one control having been proven live. */
+  it("tells a screen whose controls all held apart from one with nothing to press", async () => {
+    const live = wiredActions(
+      [
+        { label: "Cancel", confirmed: false, changed: false, calls: [{ name: "cancel_transfer", args: { id: "tr_1" } }] },
+        { label: "Details", confirmed: false, changed: true, calls: [] },
+      ],
+      world,
+    );
+    const base = resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers.");
+
+    const pressed = await preview([{ ...base, floor: { ...PASSING, wiredActions: live } }], {
+      "pending-transfers": world,
+    });
+    expect(pressed).toContain(`✓ · 2 controls pressed`);
+
+    const vacuous = await preview([base], { "pending-transfers": world });
+    expect(vacuous).toContain("nothing to press");
+    expect(vacuous).not.toContain("controls pressed");
+  });
+
+  /**
+   * The audit block is where a reader overturns the honesty check, so it has to
+   * show what settled every value — including the ones a MODEL waived, in the
+   * clause it waived them with. A waiver nobody can read is a waiver nobody can
+   * argue with.
+   */
+  it("prints what settled every value: the tools' own text, a triage waiver, and an executed program", async () => {
+    const settled: FloorResult = {
+      ...PASSING,
+      honestData: {
+        pass: true,
+        offenders: [],
+        examined: 3,
+        audited: [
+          { text: "4471", program: "", result: "the tool data answers with this exact text", verdict: "cleared-by-verbatim", attempts: 0 },
+          { text: "12", program: "", result: "the hour on a clock", verdict: "skipped-by-triage", attempts: 0 },
+          { text: "67.2", program: "return share(data);", result: "67.2", verdict: "cleared-by-audit", attempts: 2 },
+        ],
+      },
+    };
+    const html = await preview(
+      [{ ...resultFor("vendo-sonnet", "pending-transfers", "Show my pending transfers."), floor: settled }],
+      { "pending-transfers": world },
+    );
+
+    expect(html).toContain("cleared — the tool data answers with this exact text");
+    expect(html).toContain("not a data claim — the hour on a clock");
+    expect(html).toContain("cleared — executed to 67.2 · 2 attempts");
+    // The program is on the page, not behind a hover.
+    expect(html).toContain("return share(data);");
+    // Two values cleared of the two that were checked, and the waived one is
+    // named rather than counted into either side.
+    expect(html).toContain(`<b>2/2 · 1 waived</b>`);
+    // A waiver is not a pass and not a failure: the same recessive row a rubric
+    // line whose subject is absent gets.
+    expect(html).toContain(`<li class="na">`);
   });
 });

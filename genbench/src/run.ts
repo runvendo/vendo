@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { auditFloor } from "./audit.js";
+import { auditFloor, AUDITOR_CONTRACT } from "./audit.js";
 import { claudeCodeDriver, WALL_CLOCK_MS } from "./claude-code.js";
 import { diyDriver } from "./diy.js";
 import { checks, runFloor, type FloorResult } from "./floor.js";
@@ -13,6 +13,7 @@ import { meteredModel, MODEL_IDS, type Meter, type ModelAlias, type UsageTotals 
 import { probe, type Probed } from "./probe.js";
 import { authoredPage, bundleMount, openBrowser, pageHtml, type Shot } from "./render.js";
 import { tally, writePreview } from "./report.js";
+import { TriageContract } from "./triage.js";
 import { vendoDriver } from "./vendo.js";
 import { caseHash, loadCases, loadWorld, worldForCase, type Case, type Lane, type World } from "./world.js";
 
@@ -95,6 +96,12 @@ export interface CaseResult {
   /** The grader those verdicts came from. Two runs' verdicts only compare if
    *  this matches — a different model, rubric or prompt is a different exam. */
   readonly judgeContract: typeof JudgeContract;
+  /** The two pinned models the honesty check leaned on, stamped for the same
+   *  reason the judge's is: a triage that waives on a different prompt, or an
+   *  auditor that proves under a different one, is a different check and its
+   *  `honestData` verdicts do not compare with another run's. */
+  readonly triageContract: typeof TriageContract;
+  readonly auditorContract: typeof AUDITOR_CONTRACT;
   readonly failure?: string;
 }
 
@@ -107,7 +114,8 @@ const DRIVERS: Record<HarnessId, (model: ModelAlias) => Contender> = {
   "claude-code": (model) => claudeCodeDriver({ model }),
 };
 
-/** The only world folder there is today. */
+/** The world a run uses when `--world` names none — one of the twelve folders
+ *  under `worlds/`. */
 const DEFAULT_WORLD = "maple";
 
 export interface Args {
@@ -319,7 +327,7 @@ async function main(argv: readonly string[]): Promise<number> {
       // on. Painting it now would spend the shared browser on a screen nobody
       // is waiting for, while the case that IS being graded is shot beside it.
       if (html === undefined || lost.aborted) return { outcome, trace: [] as Probed[] };
-      const visit = await shooter.visit(html, { authored: authored !== undefined });
+      const visit = await shooter.visit(html);
       try {
         return { outcome, html, shot: await visit.shot(), trace: await probe(visit) };
       } finally {
@@ -331,10 +339,11 @@ async function main(argv: readonly string[]): Promise<number> {
     const shot: Shot | undefined = done?.shot;
     const trace = done?.trace ?? [];
     const artifact = outcome?.artifact;
-    // The fabrication check's verdict — every number on the screen answered for
+    // The fabrication check's verdict — every claim on the screen answered for
     // by a program the harness ran — and outside the contender's budget for the
-    // same reason the judge is: the wait is the benchmark's, not the column's.
-    // Only a screen with no numbers on it calls nobody and costs nothing.
+    // same reason the judge is: the wait is the benchmark's, not the column's. A
+    // screen whose every number the tools already answer with calls nobody and
+    // costs nothing.
     const floor = await auditFloor(
       runFloor({ world: scoped, artifact, blocking: outcome?.blocking ?? [], trace, shot }),
       scoped,
@@ -382,21 +391,26 @@ async function main(argv: readonly string[]): Promise<number> {
       caseHash: caseHash(testCase),
       judged,
       judgeContract: JudgeContract,
+      triageContract: TriageContract,
+      auditorContract: AUDITOR_CONTRACT,
       ...(failure === undefined ? {} : { failure }),
     };
     await writeCase(runDir, { outcome, html: done?.html, shot, result });
     const scored = checks(floor);
-    const audited = floor.honestData.audited ?? [];
+    const values = floor.honestData.audited ?? [];
+    const waived = values.filter((one) => one.verdict === "skipped-by-triage").length;
+    const cleared = values.filter((one) => one.verdict.startsWith("cleared")).length;
     console.log(
       `· ${contender.slug} / ${testCase.id} · floor ${scored.filter((check) => check.pass).length}/${scored.length}` +
         ` · judged ${judged.degraded ? "—" : tally(judged.lines)}` +
         ` · ${result.timing.settledMs}ms · $${result.cost.usd.toFixed(4)}` +
-        // A second model call is never silent: say what it was asked and what it
-        // cleared, or the run's spend gains a line nobody can account for.
-        (audited.length === 0
+        // The honesty check's own model calls are never silent: say what it was
+        // asked, what it cleared and what it waived, or the run's spend gains a
+        // line nobody can account for and a waiver nobody notices.
+        (values.length === 0
           ? ""
-          : ` · audited ${audited.filter((one) => one.verdict === "cleared-by-audit").length}/${audited.length}`) +
-        (floor.honestData.degraded === true ? ` · AUDITOR DEGRADED: ${floor.honestData.error ?? ""}` : "") +
+          : ` · values ${cleared}/${values.length - waived}` + (waived === 0 ? "" : ` · ${waived} waived`)) +
+        (floor.honestData.degraded === true ? ` · HONESTY DEGRADED: ${floor.honestData.error ?? ""}` : "") +
         (judged.degraded ? ` · JUDGE DEGRADED: ${judged.error ?? ""}` : ""),
     );
     return result;

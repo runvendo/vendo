@@ -25,8 +25,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { claudeCodeDriver, type AgentSdk } from "../src/claude-code.js";
 import { diyDriver, diySystemPrompt } from "../src/diy.js";
 import type { Meter } from "../src/meter.js";
-import { authoredPage, openBrowser } from "../src/render.js";
-import { worldBriefing, worldRegistry } from "../src/vendo.js";
+import { authoredPage, HARNESS_CONTRACT, openBrowser } from "../src/render.js";
+import { worldBlock, worldBriefing, worldRegistry } from "../src/vendo.js";
 import { cannedResponse, loadCases, loadWorld, worldForCase, type Case, type World } from "../src/world.js";
 
 type Sent = Parameters<MockLanguageModelV3["doStream"]>[0]["prompt"];
@@ -184,6 +184,81 @@ describe.each(BASELINES)("$name is handed exactly what vendo is handed", ({ brie
 
   it("carries the case's prompt, unchanged", async () => {
     expect(await briefFor(world, cases[0]!)).toContain(cases[0]!.prompt);
+  });
+
+  it("carries the shared harness contract, byte for byte", async () => {
+    expect(await briefFor(world, cases[0]!)).toContain(HARNESS_CONTRACT);
+  });
+});
+
+/**
+ * The other half of the fairness assertion: not only that both baselines get the
+ * same text, but that NEITHER gets any harness coaching outside it.
+ *
+ * Containment alone let the two drift and stay green. `claude-code` was told how
+ * to wire `window.vendo`, that a confirmation needs `role="dialog"`, to set the
+ * settle signal, and what size the shot is taken at — and `diy` was told none of
+ * it, while its honesty line still recited a deterministic allowlist the floor had
+ * already deleted. A column coached on the harness beside a column that was not is
+ * a column graded on what it was told.
+ *
+ * So the diff is fenced: everything each baseline says that is NOT the world
+ * block, NOT the shared contract and NOT the case prompt must be silent about the
+ * seam. What is left over is each column's own delivery instruction — where its
+ * page goes — and that is the only thing that may differ.
+ */
+describe("the harness contract is the ONLY place either baseline is coached on the harness", () => {
+  /** Every way a page's mechanics can be named. A sentence about any of these,
+   *  outside the shared block, is coaching one column and not the other. */
+  const MECHANICS = [
+    /window\.vendo/i,
+    /callTool/i,
+    /__settled/,
+    /role\s*=\s*"?dialog/i,
+    /\bdialog\b/i,
+    /viewport/i,
+    /480/,
+    /\bnetwork\b/i,
+    /\binline\b/i,
+    /\bsum, count\b/i,
+    /\ballowlist\b/i,
+  ];
+
+  /** What a baseline says on its own account: its brief minus the three blocks
+   *  every column shares. */
+  const ownWords = async (
+    baseline: (typeof BASELINES)[number],
+  ): Promise<string> =>
+    (await baseline.briefFor(world, cases[0]!))
+      .replace(worldBlock(world), " ")
+      .replace(HARNESS_CONTRACT, " ")
+      .replace(cases[0]!.prompt, " ");
+
+  it("hands both baselines the identical contract, and it is identical to the one the harness pins", async () => {
+    const briefs = await Promise.all(BASELINES.map(async (baseline) => await baseline.briefFor(world, cases[0]!)));
+
+    for (const brief of briefs) {
+      expect(brief).toContain(HARNESS_CONTRACT);
+      // The contract is not a paraphrase of the seam, it is the seam: the size
+      // it names is the size the shooter really uses.
+      expect(HARNESS_CONTRACT).toContain("480x900");
+    }
+    // One text, one occurrence each — a second copy would mean two sources.
+    for (const brief of briefs) expect(brief.split(HARNESS_CONTRACT)).toHaveLength(2);
+  });
+
+  it.each(BASELINES)("$name says nothing else about the harness at all", async (baseline) => {
+    const own = await ownWords(baseline);
+
+    expect(MECHANICS.filter((mechanic) => mechanic.test(own))).toEqual([]);
+  });
+
+  /** The fence has to be able to catch something, or it is a test that passes on
+   *  an empty string. */
+  it("catches a baseline that starts coaching the harness on its own again", async () => {
+    const coached = `${await ownWords(BASELINES[0]!)}\nSet window.__settled = true when you are done.`;
+
+    expect(MECHANICS.filter((mechanic) => mechanic.test(coached))).not.toEqual([]);
   });
 });
 

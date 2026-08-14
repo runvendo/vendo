@@ -3,7 +3,8 @@
  * hands, working in a scratch directory, writing and rewriting one page. It is
  * handed the SAME world every other column gets — the briefing pack for the
  * theme and the host's rules, the derived tool schemas, the rows each read
- * answers with — and the page contract the Vendo column gets from the renderer.
+ * answers with — and the same harness contract the other page-writing column
+ * gets, in the same bytes.
  *
  * It is billed by its OWN session, not by genbench's metered model: the SDK
  * spawns its own engine and never touches `meter.model`. So the tokens ride the
@@ -14,6 +15,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MODEL_IDS, usdFor, type ModelAlias, type UsageTotals } from "./meter.js";
+import { HARNESS_CONTRACT } from "./render.js";
 import type { Contender, RunOutcome, RunRequest } from "./run.js";
 import { worldBlock } from "./vendo.js";
 import type { Case, World } from "./world.js";
@@ -57,23 +59,16 @@ export const WALL_CLOCK_MS = 10 * 60_000;
 
 const PAGE = "index.html";
 
-/** What the benchmark page IS for a contender that writes the file itself. The
- *  Vendo column gets all of this from the product — `window.vendo.callTool` and
- *  `window.__settled` are wired by `mount.tsx`, the theme by `applyThemeVars` —
- *  so stating it here is what keeps the columns judged on the screen rather than
- *  on knowing the harness. */
-const PAGE_CONTRACT = `Write ONE file, \`${PAGE}\`, in the current directory. Nothing else is read.
-
-- SELF-CONTAINED. Inline every style and script. The page is opened with no network at all, so a CDN link, a webfont URL or an import of anything paints a blank screen.
-- WIRED. Define this before you draw, with TOOLS holding the \`returns\` rows above, keyed by tool name:
-  window.vendo = { calls: [], callTool(name, args) { this.calls.push({ name, args }); return TOOLS[name] ? { status: "ok", output: TOOLS[name] } : { status: "error", error: { code: "not-found", message: "no tool " + name } }; } };
-  Every control a person can press must call window.vendo.callTool("<tool name>", { ...arguments }) with arguments its input schema accepts. A step that confirms before acting must carry role="dialog", or the call behind it is never seen.
-- FINISHED. Set window.__settled = true once the screen has drawn; a page that never sets it is recorded as never having finished.
-- HONEST. Every number and date on the screen must be a value in the rows above, or a sum, count, min, max or mean of one numeric field across one tool's rows. Anything else is graded as invented.
-- It is shot at 480x900, and the file you leave behind is the only thing anyone sees.`;
+/** Where this contender leaves its page, and nothing else. Everything the page
+ *  itself has to satisfy is the shared `HARNESS_CONTRACT` — the same bytes `diy`
+ *  is handed, because a column coached on the harness while its rival is not is a
+ *  column graded on what it was told. The Vendo column needs neither: the
+ *  product wires `window.vendo.callTool` and `window.__settled` for it in
+ *  `mount.tsx` and applies the theme itself. */
+const DELIVERY = `Write ONE file, \`${PAGE}\`, in the current directory. Nothing else is read.`;
 
 const brief = (world: World, testCase: Case): string =>
-  [worldBlock(world), "", PAGE_CONTRACT, "", `TASK: ${testCase.prompt}`].join("\n");
+  [worldBlock(world), "", DELIVERY, "", HARNESS_CONTRACT, "", `TASK: ${testCase.prompt}`].join("\n");
 
 function sessionOptions(workspace: string, modelId: string, abort: AbortController): Record<string, unknown> {
   return {

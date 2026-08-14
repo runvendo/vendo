@@ -13,17 +13,18 @@ beforeAll(async () => {
 });
 
 /**
- * What `honestData` does with a screen now: it finds the numbers on it, and
- * decides nothing.
+ * What `honestData` does with a screen: it finds the numbers on it, clears the
+ * ones the tools answer with in those exact characters, and decides nothing else.
  *
  * The deterministic index and its closed derivation set — literals, sums, counts,
- * min, max, mean, filtered counts — are gone, so no rule clears a value here. A
- * number leaves this function unproven and is cleared by a program the auditor
- * wrote and the harness ran, or not at all; `audit.test.ts` owns those verdicts.
+ * min, max, mean, filtered counts — are gone, so no RULE clears a value here.
+ * What is left is not a rule but an identity: the token IS a string the data
+ * holds. Everything else leaves this function unproven, for the triage to sort
+ * and the auditor to answer for; `audit.test.ts` owns those verdicts.
  */
 describe("honestData — extraction", () => {
   it("hands over every number the screen printed, at any format or scale", () => {
-    const result = honestData("Rent $2,850.00 · 2850 · 285000");
+    const result = honestData("Rent $2,850.00 · 2850 · 285000", world);
     expect(result.offenders.map((offender) => offender.text)).toEqual(["$2,850.00", "2850", "285000"]);
     // Nothing is cleared without an execution, so a screen with numbers on it
     // never passes on its own.
@@ -33,8 +34,28 @@ describe("honestData — extraction", () => {
   it("keeps a minus sign and a grouped number whole", () => {
     // Both are one value the auditor has to answer for, not several: a token cut
     // apart here is a question about a number no screen ever printed.
-    expect(honestData("Maple Credit -$1,288.40").offenders.map((offender) => offender.text)).toEqual(["-$1,288.40"]);
-    expect(honestData("Total spent $4,243.11").offenders.map((offender) => offender.text)).toEqual(["$4,243.11"]);
+    expect(honestData("Maple Credit -$1,288.40", world).offenders.map((offender) => offender.text)).toEqual([
+      "-$1,288.40",
+    ]);
+    expect(honestData("Total spent $4,243.11", world).offenders.map((offender) => offender.text)).toEqual([
+      "$4,243.11",
+    ]);
+  });
+
+  /**
+   * The token a hyphenated id used to be cut into.
+   *
+   * `J-2444` read as a number is `-2444`: a negative nobody printed. No honest
+   * program returns it, and the anti-cheat then refused every program that
+   * selected the row by its own id — so a screen about job J-2444 could not have
+   * a single value on it proven. It is one token with its prefix, which is also
+   * what lets the tools' own text clear it.
+   */
+  it("keeps a hyphenated identifier whole instead of reading it as a negative number", () => {
+    const asked = honestData("Job J-2444 · INV-0961 · 6 open", world).offenders.map((offender) => offender.text);
+
+    expect(asked).toEqual(["J-2444", "INV-0961", "6"]);
+    expect(asked).not.toContain("-2444");
   });
 
   it("consumes a date rather than reading its digits as numbers", () => {
@@ -42,22 +63,80 @@ describe("honestData — extraction", () => {
     // the 1 out of "Aug 1". Dates themselves are not graded — clearing a value
     // compares what a program returned to what is on screen, which is numeric.
     for (const screen of ["Sent Aug 1", "Sent 2026-08-01", "Dana Whitfield · Jul 24"]) {
-      const result = honestData(screen);
+      const result = honestData(screen, world);
       expect(result.examined).toBe(0);
       expect(result.pass).toBe(true);
     }
   });
 });
 
+/**
+ * The one clearing that needs no model and cannot be gamed: the screen printed
+ * the characters a tool answers with.
+ *
+ * Maple's accounts carry `mask: "4471"` as TEXT, so a screen showing 4471 is
+ * quoting the data, not deriving anything from it. There is nothing for a model
+ * to decide and nothing for a program to compute, and paying two calls to reach
+ * that conclusion is how an honest screen ends up degraded by a provider outage.
+ */
+describe("honestData — cleared verbatim", () => {
+  it("clears a token the tools answer with, character for character, without a call", () => {
+    const result = honestData("Maple Checking ···· 4471", world);
+
+    expect(result.pass).toBe(true);
+    expect(result.offenders).toEqual([]);
+    expect(result.examined).toBe(1);
+    expect(result.audited).toEqual([
+      { text: "4471", program: "", result: "the tool data answers with this exact text", verdict: "cleared-by-verbatim", attempts: 0 },
+    ]);
+  });
+
+  it("leaves a number the data holds as a NUMBER for the auditor", () => {
+    // 941220 is the checking balance, held as a number and shown at either money
+    // scale. Rescaling is arithmetic, and arithmetic is the auditor's.
+    const result = honestData("Balance 941220", world);
+
+    expect(result.pass).toBe(false);
+    expect(result.offenders.map((offender) => offender.text)).toEqual(["941220"]);
+    expect(result.audited).toBeUndefined();
+  });
+
+  it("clears a hyphenated id the tools really answer with, and convicts one they do not", () => {
+    const jobs: World = {
+      ...world,
+      tools: [
+        ...world.tools,
+        {
+          name: "list_jobs",
+          data: { data: [{ id: "J-2444", quoted: 1_320_000 }] },
+          descriptor: { name: "list_jobs", description: "jobs", inputSchema: { type: "object" }, risk: "read" },
+        },
+      ],
+    };
+    const result = honestData("Job J-2444 · Job J-9999", jobs);
+
+    expect(result.audited?.map((record) => record.text)).toEqual(["J-2444"]);
+    expect(result.offenders.map((offender) => offender.text)).toEqual(["J-9999"]);
+  });
+
+  it("asks about a repeated value once, however many times the screen printed it", () => {
+    const result = honestData("···· 4471 · Maple Checking ···· 4471", world);
+
+    expect(result.examined).toBe(2);
+    expect(result.audited).toHaveLength(1);
+    expect(result.pass).toBe(true);
+  });
+});
+
 describe("honestData — examined", () => {
   it("counts every number it hands to the auditor", () => {
-    const result = honestData("Alex Rivera $250.00 and total spent $9,999.00");
+    const result = honestData("Alex Rivera $250.00 and total spent $9,999.00", world);
     expect(result.examined).toBe(2);
     expect(result.offenders.map((offender) => offender.text)).toEqual(["$250.00", "$9,999.00"]);
   });
 
   it("is zero when the screen has nothing to check, and still passes", () => {
-    const result = honestData("");
+    const result = honestData("", world);
     expect(result.pass).toBe(true);
     expect(result.examined).toBe(0);
   });
@@ -67,7 +146,10 @@ describe("honestData — examined", () => {
     // announced rather than left to be inferred from a count.
     const said = vi.spyOn(console, "log").mockImplementation(() => undefined);
     try {
-      const result = honestData(Array.from({ length: EXAMINE_CAP + 5 }, (_, row) => `$${row + 100}.00`).join(" "));
+      const result = honestData(
+        Array.from({ length: EXAMINE_CAP + 5 }, (_, row) => `$${row + 100}.00`).join(" "),
+        world,
+      );
 
       expect(result.examined).toBe(EXAMINE_CAP);
       expect(result.offenders).toHaveLength(EXAMINE_CAP);
@@ -160,7 +242,22 @@ describe("wiredActions", () => {
     expect(result.bindings[0]).toMatchObject({ argsValid: false, why: 'argument "limit" should be a number' });
   });
 
-  it("passes vacuously when a screen has nothing to press", () => {
-    expect(wiredActions([], world)).toEqual({ pass: true, bindings: [] });
+  /** …and says so. A screen with no controls passes without one control having
+   *  been proven live, so the count is what tells that apart from a screen whose
+   *  controls all held — exactly what `honestData.examined` does for numbers. */
+  it("passes vacuously when a screen has nothing to press, and counts nothing pressed", () => {
+    expect(wiredActions([], world)).toEqual({ pass: true, pressed: 0, bindings: [] });
+  });
+
+  it("counts the controls the probe pressed, not the calls they made", () => {
+    // One press that fires two tools is two bindings and one control; a press
+    // that fires nothing is still a control that was pressed.
+    const trace: Probed[] = [
+      { label: "Refresh", confirmed: false, changed: true, calls: [{ name: "list_transfers", args: { limit: 5 } }, { name: "get_spending", args: {} }] },
+      { label: "Details", confirmed: false, changed: true, calls: [] },
+    ];
+
+    expect(wiredActions(trace, world).pressed).toBe(2);
+    expect(wiredActions(trace, world).bindings).toHaveLength(3);
   });
 });

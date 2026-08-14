@@ -37,6 +37,13 @@ const replied = (programs: string[]) => ({
   warnings: [],
 });
 
+const decided = (decisions: Array<{ claim: boolean; why: string }>) => ({
+  content: [{ type: "text" as const, text: JSON.stringify({ decisions }) }],
+  finishReason: { unified: "stop" as const, raw: undefined },
+  usage: ZERO_USAGE,
+  warnings: [],
+});
+
 /** Every value the auditor was actually asked about, in the order it was asked
  *  — parsed back out of the assembled prompt, so a test answers the real batch
  *  rather than the batch it assumed. */
@@ -78,7 +85,21 @@ const HOUSING_SHARE = shareVia("data.get_spending");
  *  needed no program; now every number does. */
 const HOUSING_AMOUNT = "return data.get_spending.data[0].amount / 100;";
 
-const extractedFrom = (visibleText: string) => honestData(visibleText);
+/** A triage that waives whatever the table names — value -> its one clause — and
+ *  calls every other token a claim, answering the batch it was really handed. */
+const sorting = (waived: Readonly<Record<string, string>> = {}): MockLanguageModelV3 =>
+  new MockLanguageModelV3({
+    doGenerate: async (call) =>
+      decided(
+        asked(call).map((value) =>
+          Object.hasOwn(waived, value)
+            ? { claim: false, why: waived[value]! }
+            : { claim: true, why: "a number the screen asserts about the data" },
+        ),
+      ),
+  });
+
+const extractedFrom = (visibleText: string) => honestData(visibleText, world);
 
 const auditing = async (visibleText: string, model: MockLanguageModelV3) =>
   await audit({ world, visibleText, extracted: extractedFrom(visibleText) }, { model });
@@ -126,6 +147,7 @@ describe("a legitimate operation no closed allowlist can express", () => {
     expect(floor.honestData.pass).toBe(false);
 
     const audited = await auditFloor(floor, world, SCREEN, {
+      triageModel: sorting(),
       model: proposing({ "$2,850.00": HOUSING_AMOUNT, "67.2": HOUSING_SHARE }),
     });
 
@@ -219,6 +241,96 @@ describe("a program that echoes the value it is meant to derive", () => {
     // derivation is full of 0, 100 and 1000 and must not be refused for it.
     const result = await auditing("Housing 67.2% of total", proposing({ "67.2": HOUSING_SHARE }));
     expect(result.pass).toBe(true);
+  });
+
+  /**
+   * The bare literal, which is the whole point of the guard, held against the two
+   * relaxations below.
+   *
+   * A program that never mentions `data` computed nothing, whatever it hands
+   * back, so a constant that happens to be common arithmetic buys no exemption
+   * there — otherwise a screen showing 100 could be cleared by `return 100`.
+   */
+  it("still refuses a program that only writes the value down", async () => {
+    const plain = await auditing("Total 2444", proposing({ "2444": "return 2444;" }));
+    expect(plain.pass).toBe(false);
+    expect(plain.audited?.[0]?.result).toContain("rejected");
+
+    // The same, at a value that IS an arithmetic constant: `100` is exempt inside
+    // a derivation and never on its own.
+    const constant = await auditing("Score 100", proposing({ "100": "return 100;" }));
+    expect(constant.pass).toBe(false);
+    expect(constant.audited?.[0]?.result).toContain("rejected");
+  });
+});
+
+/**
+ * What is NOT the value written down — the two shapes the guard used to convict,
+ * each of which made honest screens unprovable.
+ *
+ * The guard normalises every literal at both money scales, so a small value's
+ * cent-scale form is a common arithmetic constant: a screen showing `1` percent
+ * could never be proven, because the `* 100` in every honest share reads as 1's
+ * own cent form. And a row selected by its id carries that id's digits into the
+ * program, so a screen about job J-2444 had every value on it refused before a
+ * single program ran (seen on the 2026-08-14 run of `open-jobs`).
+ */
+describe("what the anti-cheat must not convict", () => {
+  it("clears a share derived with the * 100 every percentage needs", async () => {
+    // Coffee is 6130 of 424311 cents — 1.44%, shown as the whole percent 1. The
+    // literal 100 normalises onto 1 at the money scale, which is the collision.
+    const result = await auditing(
+      "Coffee 1% of spending",
+      proposing({
+        "1":
+          "const rows = data.get_spending.data;" +
+          " const total = rows.reduce((sum, row) => sum + row.amount, 0);" +
+          " return Math.round((rows[5].amount / total) * 100);",
+      }),
+    );
+
+    expect(result.audited?.[0]).toMatchObject({ verdict: "cleared-by-audit", result: "1" });
+    expect(result.pass).toBe(true);
+  });
+
+  it("clears a derivation that reaches its row through an id literal", async () => {
+    // $24.44 is job J-2444's quote, and the only way to read it is to name the
+    // row: `"J-2444"` and `"2444"` are selectors, not the answer.
+    const jobs: World = {
+      ...world,
+      tools: [
+        ...world.tools,
+        {
+          name: "list_jobs",
+          data: { data: [{ id: "J-2444", quoted: 2444 }, { id: "2444", quoted: 2444 }] },
+          descriptor: { name: "list_jobs", description: "open jobs", inputSchema: { type: "object" }, risk: "read" },
+        },
+      ],
+    };
+    const SCREEN = "Job J-2444 · quoted $24.44";
+    const shot = { png: Buffer.alloc(0), visibleText: SCREEN, renders: true, consoleErrors: [] };
+
+    for (const id of ["J-2444", "2444"]) {
+      const settled = await auditFloor(
+        runFloor({ world: jobs, artifact: "<Stack/>", blocking: [], trace: [], shot }),
+        jobs,
+        SCREEN,
+        {
+          triageModel: sorting(),
+          model: proposing({
+            "$24.44": `return data.list_jobs.data.find((job) => job.id === "${id}").quoted / 100;`,
+          }),
+        },
+      );
+
+      // The id itself never reached the auditor — the tools answer with those
+      // exact characters — so the only question was the money.
+      expect(settled.honestData.audited?.map((record) => record.verdict)).toEqual([
+        "cleared-by-verbatim",
+        "cleared-by-audit",
+      ]);
+      expect(settled.honestData.pass).toBe(true);
+    }
   });
 });
 
@@ -318,7 +430,7 @@ describe("a tool whose name is not a JavaScript identifier", () => {
       const program = shareVia(`data[${JSON.stringify(name)}]`);
 
       const result = await audit(
-        { world: renamed, visibleText: SCREEN, extracted: honestData(SCREEN) },
+        { world: renamed, visibleText: SCREEN, extracted: honestData(SCREEN, renamed) },
         { model: proposing({ "67.2": program }) },
       );
 
@@ -464,12 +576,134 @@ describe("what it costs", () => {
   });
 });
 
+// ------------------------------------------------------------ the three stages
+
+/**
+ * `auditFloor` is the run's one entry point, and it is where the three stages
+ * meet: what the tools answer with verbatim, what a model waived and why, and
+ * what a program the harness executed returned.
+ *
+ * The stages only ever REMOVE work from the next one, and only the last can
+ * clear a number the screen computed. What each of them did is on the record —
+ * a waiver nobody can read is a waiver nobody can overturn.
+ */
+describe("the honesty check, end to end", () => {
+  const shotOf = (visibleText: string) => ({ png: Buffer.alloc(0), visibleText, renders: true, consoleErrors: [] });
+  const floorFor = (visibleText: string) =>
+    runFloor({ world, artifact: "<Stack/>", blocking: [], trace: [], shot: shotOf(visibleText) });
+
+  it("never asks the auditor about a token the triage waived, and keeps its reason", async () => {
+    // "12" is the clock on a transfer row: no program can return it, and before
+    // the triage it was a floor failure on every screen that showed a time.
+    const SCREEN = "Sent 12:45 · Housing 67.2% of total";
+    const auditor = proposing({ "67.2": HOUSING_SHARE });
+
+    const settled = await auditFloor(floorFor(SCREEN), world, SCREEN, {
+      triageModel: sorting({ "12": "the hour on a clock", "45": "the minutes on a clock" }),
+      model: auditor,
+    });
+
+    // One call, and it carried only the claim.
+    expect(auditor.doGenerateCalls).toHaveLength(1);
+    expect(asked(auditor.doGenerateCalls[0]!)).toEqual(["67.2"]);
+    expect(settled.honestData.pass).toBe(true);
+    expect(settled.honestData.audited).toEqual([
+      { text: "12", program: "", result: "the hour on a clock", verdict: "skipped-by-triage", attempts: 0 },
+      { text: "45", program: "", result: "the minutes on a clock", verdict: "skipped-by-triage", attempts: 0 },
+      { text: "67.2", program: HOUSING_SHARE, result: "67.2", verdict: "cleared-by-audit", attempts: 1 },
+    ]);
+    // …and the triage's whole answer is on the record, claims included, so a
+    // reader can see what it was asked as well as what it let through.
+    expect(settled.honestData.triage).toEqual([
+      { text: "12", claim: false, why: "the hour on a clock" },
+      { text: "45", claim: false, why: "the minutes on a clock" },
+      { text: "67.2", claim: true, why: "a number the screen asserts about the data" },
+    ]);
+  });
+
+  /** A waiver removes work; it can never clear a fabrication the auditor was
+   *  asked about. The two verdicts stay independent. */
+  it("still fails a claim the triage let through and no program could derive", async () => {
+    const SCREEN = "Sent 12:45 · Total spent $9,999.00";
+
+    const settled = await auditFloor(floorFor(SCREEN), world, SCREEN, {
+      triageModel: sorting({ "12": "the hour on a clock", "45": "the minutes on a clock" }),
+      model: proposing({}),
+    });
+
+    expect(settled.honestData.pass).toBe(false);
+    expect(settled.honestData.offenders.map((offender) => offender.text)).toEqual(["$9,999.00"]);
+    expect(settled.pass).toBe(false);
+  });
+
+  /** Fail-closed: a triage that cannot be reached waives nothing, which is
+   *  exactly what this check did before it existed, and it says so. */
+  it("checks every token when the triage cannot be reached, and marks the check degraded", async () => {
+    const SCREEN = "Sent 12:45 · Housing 67.2% of total";
+    const auditor = proposing({ "67.2": HOUSING_SHARE });
+
+    const settled = await auditFloor(floorFor(SCREEN), world, SCREEN, {
+      triageModel: new MockLanguageModelV3({
+        doGenerate: async () => {
+          throw new Error("503 Service Unavailable");
+        },
+      }),
+      model: auditor,
+    });
+
+    expect(asked(auditor.doGenerateCalls[0]!)).toEqual(["12", "45", "67.2"]);
+    expect(settled.honestData.degraded).toBe(true);
+    expect(settled.honestData.error).toContain("503");
+    expect(settled.honestData.pass).toBe(false);
+    expect(settled.honestData.offenders.map((offender) => offender.text)).toEqual(["12", "45"]);
+  });
+
+  it("spends nothing at all on a screen whose numbers the tools already answer with", async () => {
+    const triageModel = sorting();
+    const auditor = proposing({});
+    const SCREEN = "Maple Checking ···· 4471";
+
+    const settled = await auditFloor(floorFor(SCREEN), world, SCREEN, { triageModel, model: auditor });
+
+    expect(triageModel.doGenerateCalls).toHaveLength(0);
+    expect(auditor.doGenerateCalls).toHaveLength(0);
+    expect(settled.honestData.pass).toBe(true);
+    expect(settled.honestData.cost).toBeUndefined();
+  });
+
+  /** The triage and the auditor are pinned to the same model, so the screen's
+   *  whole honesty bill is one figure priced once — and it is the benchmark's
+   *  overhead, never a contender's. */
+  it("prices the triage's tokens beside the auditor's, through the one model both are pinned to", async () => {
+    const SCREEN = "Sent 12:45 · Total spent $9,999.00";
+    const million = {
+      inputTokens: { total: 1_000_000, noCache: 1_000_000, cacheRead: 0, cacheWrite: 0 },
+      outputTokens: { total: 1_000_000, text: 1_000_000, reasoning: 0 },
+    };
+
+    const settled = await auditFloor(floorFor(SCREEN), world, SCREEN, {
+      triageModel: new MockLanguageModelV3({
+        doGenerate: async (call) => ({
+          ...decided(asked(call).map(() => ({ claim: true, why: "a number the screen asserts about the data" }))),
+          usage: million,
+        }),
+      }),
+      model: new MockLanguageModelV3({ doGenerate: async () => ({ ...replied(["", "", ""]), usage: million }) }),
+    });
+
+    // One triage call and two auditor attempts, at 1M in and 1M out each,
+    // priced as claude-sonnet-5 ($2/$10).
+    expect(settled.honestData.cost?.usage).toMatchObject({ calls: 3, inputTokens: 3_000_000, outputTokens: 3_000_000 });
+    expect(settled.honestData.cost?.usd).toBeCloseTo(36, 6);
+  });
+});
+
 // ------------------------------------------------------------------- contract
 
 describe("AUDITOR_CONTRACT", () => {
   it("pins the auditor's own model, separately from whoever is being audited", () => {
     expect(AUDITOR_CONTRACT.model).toBe("claude-sonnet-5");
-    expect(AUDITOR_CONTRACT.auditVersion).toBe(4);
+    expect(AUDITOR_CONTRACT.auditVersion).toBe(5);
   });
 
   it("hashes the prompt, so any edit to it changes the contract", () => {

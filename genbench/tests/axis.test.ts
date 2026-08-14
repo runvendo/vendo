@@ -80,13 +80,13 @@ describe("chart axis ticks are measuring marks, not data", () => {
     expect(scale.filter((tick) => raw.includes(tick))).toEqual(scale);
     // …and, ungraded, every one of them would be a value the auditor is asked to
     // derive from data that never held it.
-    const askedOfRaw = honestData(raw).offenders.map((offender) => offender.text);
+    const askedOfRaw = honestData(raw, world).offenders.map((offender) => offender.text);
     expect(askedOfRaw).toEqual(expect.arrayContaining(scale));
 
     // What the floor actually reads: none of them, and the screen intact.
     expect(scale.filter((tick) => shot.visibleText.includes(tick))).toEqual([]);
     expect(shot.visibleText).toContain("Total spent $4,243.11");
-    expect(honestData(shot.visibleText).offenders.map((offender) => offender.text)).toEqual(["$4,243.11"]);
+    expect(honestData(shot.visibleText, world).offenders.map((offender) => offender.text)).toEqual(["$4,243.11"]);
 
     // The cost, pinned rather than hidden: the exclusion is a whole tick layer,
     // so the category axis goes with the scale. Numbers and dates that appear
@@ -100,7 +100,7 @@ describe("chart axis ticks are measuring marks, not data", () => {
     // exclusion takes the axis and leaves the copy, so this value is examined and
     // nothing but an execution can clear it.
     const { shot } = await seen("Total spent $4,243.12");
-    const result = honestData(shot.visibleText);
+    const result = honestData(shot.visibleText, world);
 
     expect(shot.visibleText).toContain("$4,243.12");
     expect(result.pass).toBe(false);
@@ -109,33 +109,40 @@ describe("chart axis ticks are measuring marks, not data", () => {
   }, 120_000);
 
   /**
-   * The exclusion is the KIT's, and so is the only page that gets it.
+   * The SAME exclusion on a document the harness did not compile.
    *
-   * A contender that wrote its own document never loaded the Kit and cannot
-   * draw a recharts axis; those class names in ITS markup are not a chart, they
-   * are a container that keeps a fabricated number out of the text the floor
-   * reads while leaving it in the screenshot a person sees. Both halves of the
-   * selector, because either one alone is a hiding place.
+   * It was the Kit's alone, on the reasoning that those class names in
+   * hand-written markup would be a hiding place rather than a chart. That
+   * reasoning graded the harness: a Kit chart's axis was measuring marks and an
+   * identical hand-drawn axis was fabrication, so the columns that cannot use the
+   * Kit were failed for drawing the same picture. The exclusion is a property of
+   * what the text IS, not of who emitted it.
+   *
+   * The cost is real and is stated in the README: a number that appears ONLY on a
+   * chart axis is ungraded for everyone, and any contender may put one there —
+   * where nobody, its author included, can read it as a claim about the data. The
+   * screen's own copy is still read, which is the half that matters.
    */
-  it("gives a contender's own document nothing to hide a fabricated number behind", async () => {
-    const forged = `<!doctype html><html lang="en"><body>
-  <div class="recharts-cartesian-axis-tick-labels">Total spent $9,999.99</div>
+  it("reads a contender's own document by the same rule, ticks out and copy in", async () => {
+    const authored = `<!doctype html><html lang="en"><body>
+  <p>Total spent $4,243.11</p>
+  <div class="recharts-cartesian-axis-tick-labels"><span class="recharts-cartesian-axis-tick-value">$3,000.00</span></div>
   <span id="recharts_measurement_span">Settles 2031-01-01</span>
 </body></html>`;
-    const visit = await shooter.visit(authoredPage(forged, world, "diy-sonnet"), { authored: true });
+    const visit = await shooter.visit(authoredPage(authored, world, "diy-sonnet"));
     try {
       const shot = await visit.shot();
-      const result = honestData(shot.visibleText);
+      const result = honestData(shot.visibleText, world);
 
-      // Both are still in the text the floor reads — the container bought no
-      // hiding place. The number is a question for the auditor; the date is only
-      // consumed, because clearing a value is a numeric comparison.
-      expect(shot.visibleText).toContain("$9,999.99");
-      expect(shot.visibleText).toContain("2031-01-01");
-      expect(result.pass).toBe(false);
-      expect(result.offenders.map((offender) => offender.text)).toEqual(["$9,999.99"]);
+      // The axis goes, whoever drew it…
+      expect(shot.visibleText).not.toContain("$3,000.00");
+      expect(shot.visibleText).not.toContain("2031-01-01");
+      // …and the screen's own copy is read exactly as it is on a compiled page.
+      expect(shot.visibleText).toContain("$4,243.11");
+      expect(result.offenders.map((offender) => offender.text)).toEqual(["$4,243.11"]);
     } finally {
       await visit.close();
     }
   }, 120_000);
+
 });

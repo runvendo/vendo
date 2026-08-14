@@ -8,25 +8,27 @@
  * after that point is the same code the vendo column faces.
  */
 import { streamText } from "ai";
+import { HARNESS_CONTRACT } from "./render.js";
 import type { Contender, RunOutcome, RunRequest } from "./run.js";
 import { worldBlock } from "./vendo.js";
 import type { World } from "./world.js";
 
 /** Exactly what the vendo contender receives, as one prompt: the shared world
  *  block — the same design brief the screen assembler is given, and the same
- *  descriptors and responses its tool registry serves — and nothing about this
- *  column's own shape that the others do not also get. `diy.test.ts` pins that
- *  equality byte for byte for every baseline; it is the only reason the columns
- *  may be compared at all. */
+ *  descriptors and responses its tool registry serves — plus the harness
+ *  contract every page-writing contender gets, in the same bytes. Nothing about
+ *  this column's own shape that the others do not also get, and nothing about
+ *  the harness that `claude-code` is not told too. `diy.test.ts` pins both
+ *  equalities byte for byte; they are the only reason the columns may be
+ *  compared at all. */
 export function diySystemPrompt(world: World): string {
   return `Write the screen the user asks for.
 
 ${worldBlock(world)}
 
-\`window.vendo\` is already on the page — use it, do not define it.
+${HARNESS_CONTRACT}
 
-Return ONE complete working HTML document and nothing else: self-contained,
-inline CSS and inline JS, no build step and no network requests.`;
+Return ONE complete working HTML document and nothing else.`;
 }
 
 /** A whole document is the unit, and models fence one as often as not. */

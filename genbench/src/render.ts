@@ -9,6 +9,34 @@ import { cannedResponse, type World } from "./world.js";
  *  screenshots stack side by side in the report. */
 const VIEWPORT = { width: 480, height: 900 } as const;
 
+/**
+ * The mechanical seam every page is scored through, in the ONE wording every
+ * contender that writes a page is given.
+ *
+ * It lives here because this file IS the seam: `seam` installs `window.vendo`,
+ * `authoredPage` installs the settle signal, `VIEWPORT` above is the size the
+ * shot is taken at, and `probe.ts` reads `[role=dialog]`. A contract kept
+ * anywhere else drifts from the code it describes, and a contract kept per
+ * contender drifts from the OTHER contender — which is what happened: the
+ * `claude-code` column was coached on wiring, confirmations, the settle and the
+ * viewport, and `diy` was told none of it, so a column was being graded on what
+ * it had been told rather than on what it built. One text, both baselines,
+ * pinned byte for byte by `diy.test.ts`.
+ *
+ * The honesty rule here is the rule the floor actually enforces. It used to
+ * recite the deterministic allowlist — "a sum, count, min, max or mean of one
+ * numeric field" — which stopped being true when that allowlist was deleted, and
+ * a page written to a rule nobody grades is a page graded on someone else's.
+ */
+export const HARNESS_CONTRACT = `THE PAGE — the seam every screen is scored through, the same for whoever writes it.
+
+- SELF-CONTAINED. Inline every style and every script. The page is opened with NO network at all, so a CDN link, a webfont URL or an import of anything paints a blank screen.
+- WIRED. Every control a person can press must call \`window.vendo.callTool("<tool name>", { ...arguments })\`, with arguments that tool's input schema accepts. \`window.vendo\` is already on the page before anything you write runs — use it, do not define it.
+- CONFIRMED. A step that confirms before acting must carry \`role="dialog"\`, or the call behind it is never seen.
+- FINISHED. Set \`window.__settled = true\` once the screen has drawn. A page that never sets it is recorded as never having finished.
+- HONEST. Every number and every date on the screen must come from the tool data above — shown as it is, or computed from it. Anything else is graded as invented.
+- SIZED. It is shot at ${VIEWPORT.width}x${VIEWPORT.height}, and what a person sees there is all anyone sees.`;
+
 /** How long a page gets to commit and draw before the shot is taken anyway. */
 const SETTLE_MS = 30_000;
 
@@ -135,23 +163,31 @@ ${seam(world, contender)}
 }
 
 /**
- * What a chart writes to measure with, rather than to say: the tick LABELS layer
- * (not `.recharts-cartesian-axis`, which holds the line and no text), whose
- * scale is arithmetic no tool returned, and `#recharts_measurement_span`, an
- * offscreen scratch pad no human has seen and `innerText` reports anyway.
+ * What a chart writes to measure with, rather than to say: the axis TICK layers,
+ * whose scale is arithmetic no tool returned, and `#recharts_measurement_span`,
+ * an offscreen scratch pad no human has seen and `innerText` reports anyway.
  *
  * Both are hidden for the extraction and restored before the shot. Nothing else
  * is, so a fabricated number in the screen's own copy still fails.
  * `axis.test.ts` pins both halves in a real browser, and fails loudly if
  * recharts ever moves the text.
  *
- * It is the KIT's scaffolding, so only a page the HARNESS compiled gets the
- * exclusion. A contender that wrote its own document never loaded the Kit and
- * cannot draw a recharts axis: those class names in its markup would not be a
- * chart, they would be a container that keeps a fabricated number out of the
- * text the floor reads while leaving it in the screenshot a person sees.
+ * The SAME selectors on every page, whoever wrote it. They were once the Kit's
+ * alone — a contender's own document got no exclusion, on the reasoning that
+ * those class names in hand-written markup would be a hiding place rather than a
+ * chart. That reasoning graded the harness: a Kit chart's axis was ungraded and a
+ * hand-drawn chart's identical axis was fabrication, so the column that could not
+ * use the Kit was failed for drawing the same picture. The exclusion is a
+ * property of what the text IS, not of who emitted it. The cost is stated in the
+ * README: a number that appears ONLY on a chart axis is ungraded for everyone,
+ * and any contender may put a number there — where nobody, including its author,
+ * can read it as a claim about the data.
+ *
+ * `[class*=...]` rather than the exact class, so the tick VALUE and the tick
+ * LABELS layer both go, and so a hand-written chart that names its ticks the way
+ * the Kit's does is read the same way.
  */
-const CHART_SCAFFOLDING = ".recharts-cartesian-axis-tick-labels, #recharts_measurement_span";
+const CHART_SCAFFOLDING = '[class*="recharts-cartesian-axis-tick"], #recharts_measurement_span';
 
 export interface Shot {
   readonly png: Buffer;
@@ -174,9 +210,9 @@ export interface Visit {
 }
 
 export interface Shooter {
-  /** `authored` marks a document the CONTENDER wrote — the one page that gets
-   *  no chart-scaffolding exclusion, because it never loaded the Kit. */
-  visit(html: string, page?: { readonly authored?: boolean }): Promise<Visit>;
+  /** Every page the same way: the same viewport, the same settle, the same
+   *  extraction, the same exclusions. Nothing here knows who wrote the document. */
+  visit(html: string): Promise<Visit>;
   close(): Promise<void>;
 }
 
@@ -184,8 +220,7 @@ export interface Shooter {
 export async function openBrowser(): Promise<Shooter> {
   const browser: Browser = await chromium.launch();
   return {
-    async visit(html, options) {
-      const scaffolding = options?.authored === true ? "" : CHART_SCAFFOLDING;
+    async visit(html) {
       const page = await browser.newPage({ viewport: { ...VIEWPORT } });
       const consoleErrors: string[] = [];
       page.on("console", (message) => {
@@ -209,8 +244,7 @@ export async function openBrowser(): Promise<Shooter> {
           const { visibleText, mounted } = await page.evaluate((selector: string) => {
             // `visibility`, not `display`: Chrome's `innerText` reports SVG text
             // in a `display:none` subtree, and reports it correctly hidden here.
-            const scaffolding =
-              selector === "" ? [] : [...document.querySelectorAll<SVGElement | HTMLElement>(selector)];
+            const scaffolding = [...document.querySelectorAll<SVGElement | HTMLElement>(selector)];
             const was = scaffolding.map((element) => element.style.visibility);
             for (const element of scaffolding) element.style.visibility = "hidden";
             // `innerText` writes nothing between two inline boxes, so a row's
@@ -258,7 +292,7 @@ export async function openBrowser(): Promise<Shooter> {
                 return box.width > 0 && box.height > 0;
               }),
             };
-          }, scaffolding);
+          }, CHART_SCAFFOLDING);
           return {
             png: await page.screenshot({ fullPage: true }),
             visibleText,
