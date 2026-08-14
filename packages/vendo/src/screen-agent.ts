@@ -220,6 +220,13 @@ export interface ScreenInput {
   appId: AppId;
   /** The person's ask, verbatim. */
   request: string;
+  /** The surface this screen renders into, in CSS pixels, when the host knows it.
+   *  The one fact about the render target a writer cannot learn from anything
+   *  else it is given — which is how eight-column tables and four-across stat
+   *  rows keep landing on a narrow panel, where the person, not the loop,
+   *  discovers the clip. Absent claims NOTHING: no width is invented, and the
+   *  brief then says nothing about the surface at all. */
+  viewport?: { width: number; height: number };
   /** THE briefing pack, already rendered (`renderBriefingPack`) — the host's
    *  theme, design rules, product brief, component catalog and tool shape card,
    *  in the same bytes the box rung is handed. Knowledge, not instruction, so it
@@ -420,6 +427,17 @@ const judgeScreen = async (
   return repairInstruction([{ path, appId, findings }]);
 };
 
+/** How much room the screen has, when the host said. Said ONLY then: a screen
+ *  cannot measure its own surface, so a width this file guessed would read to the
+ *  writer exactly like one the host measured. Absent, the paragraph above it ends
+ *  where it always did. */
+const surfaceNote = (viewport: ScreenInput["viewport"]): string => {
+  if (viewport === undefined) return "";
+  return `\n\nYou are writing into \`${viewport.width}×${viewport.height}\` CSS pixels, and nothing wider than that is
+on the person's screen. Fewer, richer columns rather than a table that runs off
+the edge, and a stat grid that wraps rather than a fixed count that clips.`;
+};
+
 /**
  * The environment correction, and only that.
  *
@@ -429,17 +447,17 @@ const judgeScreen = async (
  * the skill says what the job is — which is the difference between deriving a
  * brief and forking one.
  */
-const environmentNote = (appId: AppId, wireable: readonly ToolListing[], steps: number): string => `# In this loop
+const environmentNote = (input: ScreenInput, wireable: readonly ToolListing[], steps: number): string => `# In this loop
 
 You have no machine: no shell, no \`Task\`, no files on disk. Everything the skill
 above tells you to read is already below, and everything it tells you to write goes
 through the tools below.
 
 Build from the components that already exist: this product's own catalog and the
-standard Kit the manual documents. There is nothing else to import.
+standard Kit the manual documents. There is nothing else to import.${surfaceNote(input.viewport)}
 
 - **\`${SAVE_APP_TOOL}\`** saves this app's whole file. The app is
-  \`${appId}\`; you never name a path. Every save that parses repaints the person's
+  \`${input.appId}\`; you never name a path. Every save that parses repaints the person's
   screen, so save as you go — a save is cheap and silence is not. There is no plan
   file to write here: write the screen itself, and every save is checked as it
   lands — if something is wrong with it, the save tells you exactly what to fix.
@@ -497,7 +515,7 @@ function screenBrief(input: ScreenInput, wireable: readonly ToolListing[], steps
     buildingAppsSkill.body,
     buildingAppsSkill.files?.[`references/${"format.md"}`],
     input.briefing,
-    environmentNote(input.appId, wireable, steps),
+    environmentNote(input, wireable, steps),
   ]
     .filter((section): section is string => section !== undefined && section.trim().length > 0)
     .join("\n\n---\n\n");
@@ -1077,6 +1095,7 @@ export function screenAssembler(deps: ScreenAssemblerDeps): ScreenAssembler {
         {
           appId: request.appId,
           request: request.request,
+          ...(request.viewport === undefined ? {} : { viewport: request.viewport }),
           ...(pack === undefined ? {} : { briefing: renderBriefingPack(pack) }),
         },
       );

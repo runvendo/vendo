@@ -10,27 +10,85 @@
  * pins the two in step).
  */
 import { z } from "zod";
-import { config, copy, data, type KitComponentSpec, type PropClass } from "./schema.js";
+import { config, copy, data, type KitComponentSpec, type PropClass, type PropSpec } from "./schema.js";
 
 // ---- shared zod fragments -------------------------------------------------
 const rows = z.array(z.record(z.string(), z.unknown()));
 const valueFormat = z.enum(["money", "date", "datetime", "time", "percent", "number", "text"]);
 const align = z.enum(["start", "center", "end"]);
 const seriesInput = z.array(z.union([z.string(), z.object({ key: z.string(), label: z.string().optional() })]));
+
+/**
+ * A CELL SLOT — Kit value components composed for one record.
+ *
+ * `z.unknown()` for the same reason `Accordion.items[].content` is: a slot
+ * holds an ELEMENT, and no schema describes one. A slot is written in a screen's
+ * JSX and cannot be written in a wire attribute, so it is code-only, exactly
+ * like `Tabs.tabs[].content` — and, exactly like it, being optional is what
+ * keeps its component wire-usable at all (`KIT_WIRE_UNSAFE_NAMES`).
+ *
+ * NOT a function. `(row) => <EnumBadge/>` looks like the React answer and is the
+ * one thing that cannot work: the screen VM serializes a function prop as a
+ * `$handler` callback (`genui/component/vm-program.ts` `emitValue`), so the
+ * table would be handed an async door, not something it may call while it
+ * paints. An element serializes; a closure does not.
+ */
+const slot = z.unknown();
 const tableColumn = z.object({
   key: z.string(),
   label: z.string().optional(),
   format: valueFormat.optional(),
   align: align.optional(),
+  cell: slot.optional(),
 });
-const cardField = z.object({ key: z.string(), label: z.string().optional(), format: valueFormat.optional() });
+const cardField = z.object({
+  key: z.string(),
+  label: z.string().optional(),
+  format: valueFormat.optional(),
+  cell: slot.optional(),
+});
 const action = z.string().describe("names a host tool");
+/** The one tone vocabulary. The two older spellings still parse, because stored
+ *  apps carry them; only the five are taught. */
+const tone = z.enum(["neutral", "accent", "success", "warning", "danger"]).or(z.enum(["default", "info"]));
+const density = z.enum(["comfortable", "compact"]);
+
+/**
+ * THE ADJECTIVES — the props many components share, taught once in the prompt's
+ * preamble rather than restated 31 times. Each carries the components that
+ * actually READ it: on any other, the prop would validate and then be dropped
+ * at render — the "valid component, nothing happens" class this floor refuses.
+ * They resolve to theme tokens (`tone` the palette, `density` the host's own
+ * spacing ladder) or, for `field`, to the row a cell slot is painted for.
+ */
+const SHARED_PROPS: ReadonlyArray<{ name: string; spec: PropSpec; on: readonly string[] }> = [
+  {
+    name: "tone",
+    spec: config(tone, "emphasis — neutral | accent | success | warning | danger"),
+    on: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress", "Stat", "Card", "Surface", "Callout"],
+  },
+  {
+    name: "density",
+    spec: config(density, "comfortable (default) or compact; set on a container it tightens everything inside"),
+    on: ["Stack", "Row", "Grid", "Surface", "Card", "DataTable", "CardList", "Stat"],
+  },
+  {
+    name: "field",
+    spec: config(z.string(), "inside a cell slot: the row field this component reads"),
+    on: ["Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress"],
+  },
+];
+
+/** The shared adjectives' names, so `kitPrompt` can leave them out of every
+ *  component's prop list and teach them once. */
+export const KIT_SHARED_PROP_NAMES: readonly string[] = SHARED_PROPS.map(({ name }) => name);
 
 // ---- specs ---------------------------------------------------------------
-export const KIT_SPECS: KitComponentSpec[] = [
+const BASE_SPECS: KitComponentSpec[] = [
   // Layout
   {
     name: "Stack",
+    takesChildren: true,
     group: "layout",
     summary: "Vertical flow of children. The default container for a section.",
     props: { gap: config(z.number(), "pixels between children") },
@@ -38,6 +96,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
   },
   {
     name: "Row",
+    takesChildren: true,
     group: "layout",
     summary: "Horizontal flow; wraps by default. Use for a row of stats or buttons.",
     props: {
@@ -50,12 +109,18 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Grid",
     group: "layout",
-    summary: "Equal-width columns. Use for a grid of cards or stats.",
-    props: { columns: config(z.number().int().positive(), "column count"), gap: config(z.number(), "pixels between cells") },
-    examples: ["<Grid columns={3}><Stat .../><Stat .../><Stat .../></Grid>"],
+    summary: "Equal-width columns. A fixed count CLIPS its cells on a narrow screen rather than shrinking them, so a grid of stats sets minChildWidth and wraps; name columns only for a fixed layout.",
+    takesChildren: true,
+    props: {
+      columns: config(z.number().int().positive(), "column count (fixed layouts only)"),
+      minChildWidth: config(z.number().int().positive(), "auto-fit: narrowest a cell may get in px; cells wrap instead of clipping. 160 suits Stat tiles. Wins over columns"),
+      gap: config(z.number(), "pixels between cells"),
+    },
+    examples: ["<Grid minChildWidth={160}><Stat .../><Stat .../><Stat .../><Stat .../></Grid>"],
   },
   {
     name: "Surface",
+    takesChildren: true,
     group: "layout",
     summary: "A bordered, elevated container with an optional title.",
     props: { title: copy(z.string(), "container heading") },
@@ -63,12 +128,12 @@ export const KIT_SPECS: KitComponentSpec[] = [
   },
   {
     name: "Card",
+    takesChildren: true,
     group: "layout",
     summary: "A titled content block with an optional one-line description. Use it to label a region; Surface is the plain bordered container.",
     props: {
       title: copy(z.string(), "card heading"),
       description: copy(z.string(), "one-line subheading under the title"),
-      tone: config(z.enum(["default", "accent", "danger"]), "border emphasis"),
     },
     examples: ['<Card title="Overdue" description="Worst first"><DataTable rows={invoices.data} columns={[{key:"client"}]}/></Card>'],
   },
@@ -91,7 +156,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       // bit anyone while the legacy prewired Text shadowed this one with a
       // permissive `any` prop — retiring it (V4) made the over-tight schema
       // load-bearing and blocked the very common `<Text text={count}/>`.
-      text: copy(z.union([z.string(), z.number()]), "the text to show", { required: true }),
+      text: copy(z.union([z.string(), z.number()]), "the text to show"),
       variant: config(z.enum(["body", "heading", "caption", "label"]), "text role"),
     },
     examples: ['<Text text="This month" variant="heading"/>'],
@@ -101,7 +166,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     group: "values",
     summary: "Currency from an amount ALREADY in dollars. Formatters never convert units: a minor-unit (cents) field is divided by 100 where you read it.",
     props: {
-      amount: data(z.number(), "the amount in dollars (major units)", { required: true }),
+      amount: data(z.number(), "the amount in dollars (major units)"),
       currency: config(z.string(), "ISO 4217 code, default USD"),
     },
     examples: ["<Money amount={invoices.total({}).amountCents / 100}/>"],
@@ -111,7 +176,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     group: "values",
     summary: "A date/time from an ISO string, epoch millis, or Date. Invalid input renders a dash, never 'Invalid Date'.",
     props: {
-      value: data(z.union([z.string(), z.number()]), "ISO string or epoch millis", { required: true }),
+      value: data(z.union([z.string(), z.number()]), "ISO string or epoch millis"),
       mode: config(z.enum(["date", "time", "datetime", "relative"]), "how to render"),
     },
     examples: ['<DateTime value={invoice.dueDate} mode="date"/>', '<DateTime value={event.at} mode="relative"/>'],
@@ -121,7 +186,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     group: "values",
     summary: "A percentage from a ratio (0.42 → 42%). Pass whole=true for an already-whole percent.",
     props: {
-      value: data(z.number(), "a ratio 0..1", { required: true }),
+      value: data(z.number(), "a ratio 0..1"),
       fractionDigits: config(z.number().int().nonnegative(), "decimal places"),
       whole: config(z.boolean(), "value is already a whole percent"),
     },
@@ -132,7 +197,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     group: "values",
     summary: "A grouped number. Use notation=compact for large counts (1.5M).",
     props: {
-      value: data(z.number(), "the number", { required: true }),
+      value: data(z.number(), "the number"),
       notation: config(z.enum(["standard", "compact"]), "grouping style"),
       maximumFractionDigits: config(z.number().int().nonnegative(), "decimal places"),
     },
@@ -143,7 +208,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     group: "values",
     summary: "A status pill for an enum field. Humanizes the raw value (past_due → Past due) and tone-maps it.",
     props: {
-      value: data(z.string().nullable(), "the raw enum value", { required: true }),
+      value: data(z.string().nullable(), "the raw enum value"),
       labels: config(z.record(z.string(), z.string()), "value → display label overrides"),
       tones: config(z.record(z.string(), z.enum(["neutral", "accent", "success", "warning", "danger"])), "value → tone overrides"),
     },
@@ -154,10 +219,10 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "DataTable",
     group: "data",
-    summary: "The smart table. Sorts, filters, searches, paginates, resolves dot-path column keys, and formats each cell — you only pass rows and columns.",
+    summary: "The smart table. Sorts, filters, searches, paginates, resolves dot-path column keys, and formats each cell — you only pass rows and columns. A column's `cell` slot renders Kit value components against that row instead of plain text. Dates in cells are compact (\"Aug 12\"), and columns past the width the screen has FOLD into the first cell rather than scrolling out of sight — prefer few, richer columns.",
     props: {
       rows: data(rows, "rows from a tool call", { required: true }),
-      columns: config(z.array(tableColumn), "column descriptions; key supports dot-paths like client.name; format is a value tier token"),
+      columns: config(z.array(tableColumn), "column descriptions; key supports dot-paths like client.name; format is a value tier token; cell is a slot"),
       sortBy: config(z.string(), 'initial sort, e.g. "dueDate asc"'),
       limit: config(z.number().int().positive(), "hard cap on rows shown"),
       filterableBy: config(z.array(z.string()), "column keys to expose as filter dropdowns"),
@@ -167,18 +232,18 @@ export const KIT_SPECS: KitComponentSpec[] = [
       caption: copy(z.string(), "table caption"),
     },
     examples: [
-      '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
+      '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} columns={[{key:"client.name",label:"Client",cell:<Stack gap={2}><Text field="client.name"/><Text field="number" variant="caption"/></Stack>},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"},{key:"status",label:"Status",cell:<EnumBadge field="status" tones={{overdue:"danger",paid:"success"}}/>}]} emptyState="No overdue invoices"/>',
     ],
   },
   {
     name: "CardList",
     group: "data",
-    summary: "One branded card per record. Use when rows read better as cards than a table.",
+    summary: "One branded card per record. Use when rows read better as cards than a table. A field takes a `cell` slot, as a table column does.",
     props: {
       items: data(rows, "items from a tool call", { required: true }),
       titleField: config(z.string(), "field for each card title"),
       badgeField: config(z.string(), "field rendered as a status pill"),
-      fields: config(z.array(cardField), "label/value rows shown on each card"),
+      fields: config(z.array(cardField), "label/value rows on each card; cell is a slot"),
       columns: config(z.number().int().positive(), "cards per row"),
       emptyState: copy(z.string(), "text when there are no items"),
     },
@@ -187,13 +252,13 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Stat",
     group: "data",
-    summary: "A KPI/metric summary. Formats its value (money takes dollars — divide a cents field by 100 where you read it) and shows an optional trend.",
+    summary: "A KPI/metric summary. Formats its value (money takes dollars — divide a cents field by 100 where you read it) and shows an optional trend. Kit value components nested inside render under the number.",
+    takesChildren: true,
     props: {
       label: copy(z.string(), "metric name", { required: true }),
       value: data(z.union([z.number(), z.string()]), "raw value", { required: true }),
       format: config(valueFormat, "value tier format"),
       trend: copy(z.string(), "delta caption, e.g. +12% MoM"),
-      tone: config(z.enum(["default", "accent", "danger"]), "emphasis"),
     },
     examples: ['<Stat label="Total overdue" value={invoices.total({}).amountCents / 100} format="money" trend="+12% MoM"/>'],
   },
@@ -201,7 +266,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     name: "Badge",
     group: "data",
     summary: "A small literal status label the model writes. For enum data fields use EnumBadge instead.",
-    props: { label: copy(z.string(), "badge text", { required: true }), tone: config(z.enum(["neutral", "accent", "success", "warning", "danger"]), "color tone") },
+    props: { label: copy(z.string(), "badge text") },
     examples: ['<Badge label="Beta" tone="accent"/>'],
   },
 
@@ -239,13 +304,14 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "DonutChart",
     group: "charts",
-    summary: "A donut/pie of category shares. Zero and invalid slices are dropped.",
+    summary: "A donut/pie of category shares. Zero and invalid slices are dropped. Every slice is named and valued in a legend under the ring, so set `format`.",
     props: {
       data: data(rows, "rows to plot", { required: true }),
       categoryKey: config(z.string(), "slice-label field", { required: true }),
       valueKey: config(z.string(), "slice-value field", { required: true }),
-      format: config(valueFormat, "tooltip format"),
+      format: config(valueFormat, "legend + tooltip format"),
       donut: config(z.boolean(), "false renders a full pie"),
+      legend: config(z.boolean(), "on by default; turn it off only when labels already sit beside the chart"),
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
     },
@@ -256,7 +322,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
     group: "charts",
     summary: "A compact inline trend. Pass a number list or rows with a valueKey.",
     props: {
-      data: data(z.array(z.union([z.number(), z.record(z.string(), z.unknown())])), "numbers or rows", { required: true }),
+      data: data(z.array(z.union([z.number(), z.record(z.string(), z.unknown())])), "numbers or rows"),
       valueKey: config(z.string(), "field to read when data holds objects"),
       height: config(z.number().int().positive(), "height in px"),
     },
@@ -267,11 +333,10 @@ export const KIT_SPECS: KitComponentSpec[] = [
     group: "charts",
     summary: "A progress bar from a ratio (0..1) or value/max. Clamps to 100%.",
     props: {
-      value: data(z.number(), "ratio 0..1, or a raw value with max", { required: true }),
+      value: data(z.number(), "ratio 0..1, or a raw value with max"),
       max: data(z.number(), "denominator when value is raw"),
       label: copy(z.string(), "caption"),
       showValue: config(z.boolean(), "show the percentage"),
-      tone: config(z.enum(["accent", "success", "danger"]), "fill color"),
     },
     examples: ["<Progress value={goal.saved} max={goal.target} label=\"Savings goal\" showValue/>"],
   },
@@ -356,6 +421,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
   },
   {
     name: "Form",
+    takesChildren: true,
     group: "forms",
     summary: "Groups fields with a submit action. `onSubmit` takes a function.",
     props: {
@@ -378,6 +444,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
   // Feedback / interactive
   {
     name: "Tabs",
+    takesChildren: true,
     group: "feedback",
     summary: "Self-managing tabs. Name the tabs, then nest ONE child per tab in tab order — switching panels needs no handler and never leaves the page.",
     props: {
@@ -404,14 +471,10 @@ export const KIT_SPECS: KitComponentSpec[] = [
   },
   {
     name: "Callout",
+    takesChildren: true,
     group: "feedback",
-    summary: "A toned info/accent/success/warning/danger notice highlighting real information. For 'no tool' honesty use Disclaimer.",
+    summary: "A toned notice highlighting real information. For 'no tool' honesty use Disclaimer.",
     props: {
-      // "accent" is first-class (re-gate 2026-07-26): the sibling tone
-      // vocabularies (Badge/EnumBadge/Stat/Progress) teach it, so generated
-      // code writes it whether or not this enum admits it — the spec and the
-      // ui component (@vendoai/ui kit/feedback/callout.tsx) must agree.
-      tone: config(z.enum(["info", "accent", "success", "warning", "danger"]), "notice tone"),
       title: copy(z.string(), "notice heading"),
     },
     examples: ['<Callout tone="warning" title="Heads up">Three invoices are overdue.</Callout>'],
@@ -428,12 +491,46 @@ export const KIT_SPECS: KitComponentSpec[] = [
   },
 ];
 
+/** Every spec, with each shared adjective folded into the components that read
+ *  it — so validation, the wire's allowed-prop set and the screen typings admit
+ *  it exactly where it lands, and refuse it where it would be dropped. */
+export const KIT_SPECS: KitComponentSpec[] = BASE_SPECS.map((spec) => ({
+  ...spec,
+  props: {
+    ...spec.props,
+    ...Object.fromEntries(SHARED_PROPS
+      .filter(({ on }) => on.includes(spec.name))
+      .map(({ name, spec: prop }) => [name, prop])),
+  },
+}));
+
 /**
  * THE component vocabulary — one list, derived from the specs, and the single
  * definition every other name here is a view of (the ui renderer maps them to
  * `KIT_COMPONENTS`). Nothing recomputes `KIT_SPECS.map(name)` a second time.
  */
 export const KIT_COMPONENT_NAMES: readonly string[] = KIT_SPECS.map((spec) => spec.name);
+
+/**
+ * What may be nested where — the two rules the renderer cannot state.
+ *
+ * The tree renderer hands `children` to EVERY node it renders
+ * (`packages/ui/src/tree/renderer.tsx` `builtinContent`), so a chart handed a
+ * child, or a Button dropped into a cell, has always rendered as nothing at
+ * all: the model wrote a control, the person got a blank, and no stage said a
+ * word. These two lists are what the checks floor refuses on.
+ */
+export const KIT_CHILDLESS_NAMES: readonly string[] = KIT_SPECS
+  .filter((spec) => spec.takesChildren !== true)
+  .map((spec) => spec.name);
+
+/** What a `cell` slot may hold: the value tier, plus the two arrangers. A cell
+ *  is read, never operated — an interactive control in one has no row to act
+ *  on and no room to be pressed. */
+export const KIT_SLOT_CONTENT_NAMES: readonly string[] = [
+  "Text", "Money", "DateTime", "Percent", "Num", "EnumBadge", "Badge", "Sparkline", "Progress",
+  "Stack", "Row",
+];
 
 /** The same list, as the mutable array `@vendoai/ui`'s registry wants. */
 export function kitComponentNames(): string[] {

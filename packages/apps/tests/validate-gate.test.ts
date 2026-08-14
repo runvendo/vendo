@@ -87,12 +87,24 @@ describe("validateWrittenApps", () => {
     expect(failures.map(({ appId }) => appId)).toEqual(["app_2"]);
   });
 
-  it("gates a component screen too — app.tsx is an app document", async () => {
+  it("gates a component screen through the door that reads a SCREEN, not the wire one", async () => {
+    // `validate({document})` compiles what it is handed as WIRE, so a `.tsx` screen
+    // that compiles, renders and paints was answered "expected a single <App>
+    // element" — and a builder that obeyed rewrote a working screen into markup.
     const SCREEN = "/user/apps/app_1/app.tsx";
-    const { tools, workspace } = answering({ [SCREEN]: { ok: false, findings: [LYING] } });
+    const calls: Array<{ name: string; args: Json }> = [];
+    const tools = {
+      call: async (name: string, args: Json): Promise<ToolResult> => {
+        calls.push({ name, args });
+        return { status: "ok", output: { ok: false, findings: [LYING] } as unknown as Json };
+      },
+    };
+    const workspace = { readFile: async () => "export default function Spending() { return null; }" };
 
-    const failures = await validateWrittenApps({ tools, workspace, paths: [SCREEN] });
+    const failures = await validateWrittenApps({ tools, workspace, paths: [SCREEN], review: true });
 
+    expect(calls).toEqual([{ name: "validate", args: { appId: "app_1" } }]);
+    // …and what that door says still comes back as this gate's own shape.
     expect(failures).toEqual([{ path: SCREEN, appId: "app_1", findings: [LYING] }]);
   });
 

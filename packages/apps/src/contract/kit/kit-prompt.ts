@@ -3,7 +3,7 @@
  * Rendered entirely from `KIT_SPECS`; hand-written component lists are dead.
  * W3 wires this into the engine's wire contract (engine.ts).
  */
-import { KIT_SPECS } from "./specs.js";
+import { KIT_SHARED_PROP_NAMES, KIT_SPECS } from "./specs.js";
 import type { KitComponentSpec, PropClass } from "./schema.js";
 
 export interface KitPromptOptions {
@@ -32,6 +32,21 @@ const PREAMBLE = [
   "Money: formatters never convert units. `<Money>`, `format=\"money\"` and a",
   "`format:\"money\"` column all take an amount ALREADY in dollars, so divide a",
   "minor-unit field by 100 where you read it: `value={invoice.amount_cents / 100}`.",
+  "",
+  "Two adjectives. **tone** (neutral | accent | success | warning | danger) on",
+  "values, badges and surfaces paints from the HOST's theme — the figure that is",
+  "bad news is `danger`, the one worth looking at is `accent`, and nothing invents",
+  "a color. **density** (comfortable | compact) on containers and data blocks",
+  "tightens everything inside; an operations screen is `compact`.",
+  "",
+  "Cells are not sealed. A DataTable column and a CardList field each take a",
+  "`cell` — Kit value components composed for ONE record — and a Stat takes them",
+  "as children. Inside a cell a component names its field instead of taking a",
+  'value: `cell:<EnumBadge field="status" tones={{overdue:"danger"}}/>`. A',
+  "status-like enum column is an EnumBadge, never a bare word; an id or code rides",
+  "under its name as a caption `Text` instead of costing a column. Only the value",
+  "tier and Stack/Row go in a cell, and only containers take children — a Button",
+  "in a cell, or anything nested in a chart, is REFUSED, not quietly dropped.",
 ].join("\n");
 
 /**
@@ -53,11 +68,11 @@ const PREAMBLE = [
 const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   // Data off a `useQuery` result, never an inline call.
   Money: ["<Money amount={invoice.amount_cents / 100}/>"],
-  Stat: ['<Stat label="Total overdue" value={overdue.total_cents / 100} format="money"/>'],
+  Stat: ['<Stat label="Total overdue" value={overdue.total_cents / 100} format="money" tone="danger"><Sparkline data={overdue.trend}/></Stat>'],
   DataTable: [
-    '<DataTable rows={invoices.data} sortBy="dueDate asc" columns={[{key:"client.name",label:"Client"},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
+    '<DataTable rows={invoices.data} sortBy="dueDate asc" columns={[{key:"client.name",label:"Client",cell:<Stack gap={2}><Text field="client.name"/><Text field="number" variant="caption"/></Stack>},{key:"amount",format:"money",align:"end"},{key:"dueDate",format:"date"},{key:"status",label:"Status",cell:<EnumBadge field="status" tones={{overdue:"danger",paid:"success"}}/>}]} emptyState="No overdue invoices"/>',
   ],
-  CardList: ['<CardList items={clients.data} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance",format:"money"}]}/>'],
+  CardList: ['<CardList items={clients.data} titleField="name" badgeField="status" fields={[{key:"balance",label:"Balance",format:"money"},{key:"plan",cell:<EnumBadge field="plan"/>}]}/>'],
   LineChart: ['<LineChart data={revenue.data} xKey="month" series={["amount"]} format="money"/>'],
   DonutChart: ['<DonutChart data={spend.data} categoryKey="category" valueKey="amount" format="money"/>'],
   // Handlers are functions; every field is controlled.
@@ -72,7 +87,7 @@ const PROMPT_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   Form: ['<Form onSubmit={() => tools.create_client({ name })} submitLabel="Add client"><Input .../></Form>'],
   // Containers: the child shape is the teaching, not the child's own props.
   Card: ['<Card title="Overdue" description="Worst first"><DataTable .../></Card>'],
-  Grid: ["<Grid columns={3}><Stat .../><Stat .../></Grid>"],
+  Grid: ["<Grid minChildWidth={160}><Stat .../><Stat .../><Stat .../><Stat .../></Grid>"],
   Tabs: ['<Tabs tabs={["Overview","Detail"]}><Stat .../><DataTable .../></Tabs>'],
 };
 
@@ -82,7 +97,10 @@ function classTag(cls: PropClass): string {
 
 function renderSpec(spec: KitComponentSpec): string {
   const lines: string[] = [`## <${spec.name}>`, spec.summary, ""];
-  const props = Object.entries(spec.props);
+  // The shared adjectives sit in the props of every component that reads one, so
+  // validation and the screen typings admit them there; the preamble teaches them
+  // once, and restating them per component would spend a fifth of the catalog.
+  const props = Object.entries(spec.props).filter(([name]) => !KIT_SHARED_PROP_NAMES.includes(name));
   if (props.length > 0) {
     lines.push("Props:");
     for (const [name, prop] of props) {

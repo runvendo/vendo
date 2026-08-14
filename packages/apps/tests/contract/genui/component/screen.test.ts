@@ -122,8 +122,43 @@ export default function S() {
 }`);
     try {
       expect(screen.tree().props.items).toEqual([
-        { label: "Terms", content: { component: "Text", props: { text: "the terms" }, children: [] } },
+        { label: "Terms", content: { $element: true, component: "Text", props: { text: "the terms" }, children: [] } },
       ]);
+    } finally {
+      screen.dispose();
+    }
+  });
+
+  it("stamps $element on a prop's element, and on no other node", () => {
+    // The sigil is the WHOLE difference between a cell slot and a data object on
+    // the read side (ui/tree/renderer.tsx binds on it), so it belongs to a prop's
+    // element only — a painted node arrives where a node already belongs.
+    const screen = bootTsx(`
+import { DataTable, EnumBadge, Row, Text } from "@vendo/screen";
+export default function S() {
+  return (
+    <DataTable
+      rows={[{ id: "tr_1", status: "in_review" }]}
+      columns={[
+        { key: "status", cell: <Row gap={4}><EnumBadge field="status" />flagged</Row> },
+      ]}
+    />
+  );
+}`);
+    try {
+      const tree = screen.tree();
+      expect(tree.component).toBe("DataTable");
+      expect(tree).not.toHaveProperty("$element");
+      expect((tree.props.columns as Array<Record<string, unknown>>)[0]).toEqual({
+        key: "status",
+        cell: {
+          $element: true,
+          component: "Row",
+          props: { gap: 4 },
+          // Nested elements are the slot's own children, not further props.
+          children: [{ component: "EnumBadge", props: { field: "status" }, children: [] }, "flagged"],
+        },
+      });
     } finally {
       screen.dispose();
     }

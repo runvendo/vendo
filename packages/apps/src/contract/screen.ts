@@ -34,6 +34,10 @@ export interface ScreenRequest {
   appId: AppId;
   /** The person's ask, verbatim — never a paraphrase. */
   request: string;
+  /** The surface this screen renders into, in CSS pixels, when the front door
+   *  knows it. Only the host can know it, and the writer can learn it from
+   *  nothing else it is handed. Absent claims nothing. */
+  viewport?: { width: number; height: number };
   /** Where a painted view goes. The same additive per-call hook
    *  `AppsRuntime.create` takes, so a screen and a built app reach the surface on
    *  one channel. */

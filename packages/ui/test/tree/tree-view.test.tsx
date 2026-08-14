@@ -371,6 +371,69 @@ describe("TreeView bindings and outcomes", () => {
     expect(output.textContent).toContain('"user":{"name":"Ada"}');
   });
 
+  /** A cell slot's element arrives as `{$element}` data in a prop
+   *  (apps genui/component/vm-program.ts) — the props inside it are ordinary
+   *  bindings and have to resolve like any other. */
+  it("reifies a Kit element in a prop, with its own bindings and its children in order", () => {
+    render(
+      <TreeView
+        tree={tree([{
+          id: "root",
+          component: "Accordion",
+          props: {
+            defaultOpen: [0],
+            items: [{
+              label: "Status",
+              content: {
+                $element: true,
+                component: "Row",
+                props: { gap: 4 },
+                children: [
+                  { component: "EnumBadge", props: { value: { $path: "/invoice/status" } }, children: [] },
+                  "flagged",
+                ],
+              },
+            }],
+          },
+        }])}
+        data={{ invoice: { status: "past_due" } }}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    expect(screen.getByText("Past due").getAttribute("data-kit")).toBe("EnumBadge");
+    expect(document.querySelector('[data-kit="Row"]')?.textContent).toBe("Past dueflagged");
+    expect(document.body.innerHTML).not.toContain("$element");
+  });
+
+  it("renders nothing for an unknown component in a slot, and never throws", () => {
+    render(
+      <TreeView
+        tree={tree([{
+          id: "root",
+          component: "Accordion",
+          props: {
+            defaultOpen: [0, 1],
+            items: [
+              { label: "Ghost", content: { $element: true, component: "Hallucinated", props: { value: "x" }, children: [] } },
+              { label: "Real", content: { $element: true, component: "EnumBadge", props: { value: "past_due" }, children: [] } },
+            ],
+          },
+        }])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    // Fail-soft, like every other node: the slot is empty, its row still opens,
+    // and the sibling slot still renders — no notice, no boundary, no throw.
+    expect(screen.getByText("Ghost")).toBeTruthy();
+    expect(screen.queryByText("x")).toBeNull();
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(screen.getByText("Past due").getAttribute("data-kit")).toBe("EnumBadge");
+  });
+
   it("updates $state reads and reports jail state-set messages", async () => {
     const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
     const onStateChange = vi.fn();

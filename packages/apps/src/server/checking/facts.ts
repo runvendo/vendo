@@ -22,6 +22,8 @@ import {
   type TreeNode,
 } from "@vendoai/core";
 import {
+  KIT_CHILDLESS_NAMES,
+  KIT_SLOT_CONTENT_NAMES,
   KIT_WIRE_COMPONENT_NAMES,
   WIRE_COMPONENT_NAMES,
   checkBindingShapes,
@@ -421,6 +423,78 @@ export const catalogIssues = async (
   return issues;
 };
 
+const CHILDLESS: ReadonlySet<string> = new Set(KIT_CHILDLESS_NAMES);
+const SLOT_CONTENT: ReadonlySet<string> = new Set(KIT_SLOT_CONTENT_NAMES);
+
+/** A Kit element sitting in a PROP — what a `cell` slot holds. The screen VM
+ *  stamps the SLOT's own element `$element` and leaves the ones nested under it
+ *  bare (genui/component/vm-program.ts `emitValue`), and the renderer reifies on
+ *  exactly that (`packages/ui` renderer.tsx `reifyElement`) — so this reads the
+ *  sigil at the slot and a `component` name below it, and a data row that merely
+ *  carries a "component" field is never mistaken for an element. */
+const asElement = (value: unknown, sigil: boolean): { component: string; children?: unknown } | undefined =>
+  isRecord(value) && typeof value.component === "string" && (!sigil || value.$element === true)
+    ? (value as { component: string; children?: unknown })
+    : undefined;
+
+/**
+ * What may be nested where — the rule the RENDERER cannot state. The tree
+ * renderer hands `children` to every node it renders (`packages/ui`
+ * renderer.tsx `builtinContent`), so a chart handed a child, or a Button
+ * dropped into a table cell, has always painted as nothing at all: the model
+ * wrote a control, the person got a blank, and no stage said a word.
+ *
+ * One function, both artifacts: a wire tree and the tree a `.tsx` screen paints
+ * are the same tree and reach the same renderer, so this is a check in the wire
+ * floor (`kit-nesting`) and a stage of the component-screen gauntlet
+ * (`nesting`), never two implementations that could disagree.
+ *
+ * A `host`/`generated` node is somebody else's implementation, which may nest
+ * whatever it likes — only a name the renderer resolves to the Kit is measured.
+ */
+export const kitNestingIssues = (tree: Tree): FactIssue[] => {
+  const issues: FactIssue[] = [];
+
+  /** One `cell` slot: the element it holds, and every element nested in that
+   *  one. */
+  const checkSlot = (nodeId: string, path: string, value: unknown, sigil = true): void => {
+    const element = asElement(value, sigil);
+    if (element === undefined) return;
+    if (!SLOT_CONTENT.has(element.component)) {
+      issues.push(atProp(nodeId, path, `holds <${element.component}> in a cell slot — a cell is read, never operated: the slot is written ONCE and rendered for every row, so nothing in it has a row of its own to act on. A cell may hold: ${KIT_SLOT_CONTENT_NAMES.join(", ")} — each reading its row's value with field="…". Anything else belongs beside the table, not in it.`));
+    }
+    if (Array.isArray(element.children)) {
+      element.children.forEach((child, index) => checkSlot(nodeId, `${path}.children[${index}]`, child, false));
+    }
+  };
+
+  /** The `cell` slots inside one prop — a column/field description carries one,
+   *  and the descriptions are an array. */
+  const findSlots = (nodeId: string, path: string, key: string, value: unknown): void => {
+    if (key === "cell") {
+      checkSlot(nodeId, path, value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => findSlots(nodeId, `${path}[${index}]`, "", item));
+      return;
+    }
+    if (isRecord(value)) {
+      for (const [name, item] of Object.entries(value)) findSlots(nodeId, `${path}.${name}`, name, item);
+    }
+  };
+
+  for (const node of tree.nodes) {
+    if (node.source === "host" || node.source === "generated") continue;
+    const nested = node.children?.length ?? 0;
+    if (nested > 0 && CHILDLESS.has(node.component)) {
+      issues.push(atNode(node.id, `nests ${nested === 1 ? "1 node" : `${nested} nodes`} inside <${node.component}>, which renders nothing nested inside it: that content never reaches the screen. Put it beside <${node.component}> in a <Stack>, or give <${node.component}> what it showed through its own props.`));
+    }
+    for (const [prop, value] of Object.entries(node.props ?? {})) findSlots(node.id, prop, prop, value);
+  }
+  return issues;
+};
+
 /** A query naming a tool the host does not have. The message lists the real
  *  ones — a model reading it can pick, and a human reading it learns the
  *  surface. `fn:` queries are the app's own server code, not host tools. */
@@ -568,6 +642,7 @@ export const factChecks = (deps: FloorDependencies): Check[] => [
     ...kitSlotIssues(tree, deps),
     ...hostReshapeIssues(tree, deps),
   ]),
+  treeCheck("kit-nesting", (tree) => kitNestingIssues(tree)),
   treeCheck("expressions-compute", (tree) => exprIssues(tree)),
   treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
   treeCheck("no-string-interpolation", (tree) => interpolationIssues(tree)),

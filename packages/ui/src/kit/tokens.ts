@@ -5,6 +5,7 @@
  */
 import {
   defaultVendoTheme,
+  densityCssVariables,
 } from "@vendoai/apps/contract";
 import type { CSSProperties } from "react";
 
@@ -22,6 +23,12 @@ export const t = {
   accent: `var(--vendo-color-accent, ${d.colors.accent})`,
   accentText: `var(--vendo-color-accent-text, ${d.colors.accentText})`,
   danger: `var(--vendo-color-danger, ${d.colors.danger})`,
+  // Two tones the host contract does not carry a color for. They are still
+  // TOKENS — a host that wants its own green and amber sets these two variables
+  // — and the fallback is the green/amber the pill palette already used as a
+  // literal, so nothing changes for a host that sets nothing.
+  success: "var(--vendo-color-success, #1e7f53)",
+  warning: "var(--vendo-color-warning, #d4a017)",
   border: `var(--vendo-color-border, ${d.colors.border})`,
   radiusSmall: `var(--vendo-radius-small, ${d.radius.small})`,
   radiusMedium: `var(--vendo-radius-medium, ${d.radius.medium})`,
@@ -44,6 +51,11 @@ export const font: CSSProperties = {
 export const control: CSSProperties = {
   ...font,
   width: "100%",
+  // `width: 100%` with padding and a border overflows its column by 26px
+  // unless the border-box is the thing being sized. The Kit renders inside a
+  // host page it does not control, so it cannot assume a `* { box-sizing }`
+  // reset is in force — every full-width Kit surface states it itself.
+  boxSizing: "border-box",
   minWidth: 0,
   minHeight: "var(--vendo-density-control-height, 38px)",
   border: `1px solid ${t.border}`,
@@ -51,6 +63,80 @@ export const control: CSSProperties = {
   background: t.surface,
   padding: "var(--vendo-density-control-padding, 9px 12px)",
 };
+
+// ---------------------------------------------------------------------------
+// The two adjectives (2026-08-13). One `tone` vocabulary and one `density`
+// vocabulary, shared by every component that has an opinion about either, and
+// resolving to nothing but the tokens above — so an adjective can never invent
+// a color or a spacing step the host did not agree to.
+// ---------------------------------------------------------------------------
+
+/** The ONE tone vocabulary. Card/Stat's "default" and Callout's "info" are the
+ *  older spellings of `neutral`; both still parse. */
+export type KitTone = "neutral" | "accent" | "success" | "warning" | "danger";
+
+/** The ONE density vocabulary — the host theme's own (`VendoTheme.density`). */
+export type KitDensity = "comfortable" | "compact";
+
+/** A tone's foreground, surface and border. Every entry is a token or a
+ *  `color-mix` of tokens. */
+export const toneStyle: Record<KitTone, { color: string; background: string; border: string }> = {
+  neutral: {
+    color: t.text,
+    background: `color-mix(in srgb, ${t.muted} 10%, ${t.surface})`,
+    border: t.border,
+  },
+  accent: { color: t.accentText, background: t.accent, border: t.accent },
+  // Darkened against `text`, not against `#000`: a literal black is not a token,
+  // and on a dark host theme it drove both foregrounds INTO the background.
+  success: {
+    color: `color-mix(in srgb, ${t.success} 88%, ${t.text})`,
+    background: `color-mix(in srgb, ${t.success} 12%, ${t.surface})`,
+    border: `color-mix(in srgb, ${t.success} 30%, ${t.border})`,
+  },
+  warning: {
+    color: `color-mix(in srgb, ${t.warning} 72%, ${t.text})`,
+    background: `color-mix(in srgb, ${t.warning} 16%, ${t.surface})`,
+    border: `color-mix(in srgb, ${t.warning} 34%, ${t.border})`,
+  },
+  danger: {
+    color: t.danger,
+    background: `color-mix(in srgb, ${t.danger} 11%, ${t.surface})`,
+    border: `color-mix(in srgb, ${t.danger} 30%, ${t.border})`,
+  },
+};
+
+/** A tone's own color, for text and rules that carry a tone WITHOUT a pill —
+ *  an emphasised Stat, a Card's border, a toned figure in a cell. Total like
+ *  {@link resolveTone}, because this one is exported into code-land too and an
+ *  unknown word must fall back rather than throw on `toneStyle[bogus].color`. */
+export function toneColor(tone: string | undefined): string {
+  const resolved = resolveTone(tone);
+  return resolved === "accent" ? t.accent : toneStyle[resolved].color;
+}
+
+/**
+ * Read a tone off a prop. Generated code passes arbitrary strings, so an
+ * unknown word falls back rather than crashing (the Callout lesson,
+ * 2026-07-26), and the two legacy spellings resolve to what they always meant.
+ * `Object.hasOwn`, not a bare index: "constructor" is a string too.
+ */
+export function resolveTone(value: string | undefined, fallback: KitTone = "neutral"): KitTone {
+  if (value === undefined) return fallback;
+  if (value === "default" || value === "info") return "neutral";
+  return Object.hasOwn(toneStyle, value) ? (value as KitTone) : fallback;
+}
+
+/**
+ * The density scale as inline custom properties, so a container can re-declare
+ * it for its own subtree. Every Kit component already reads its padding and
+ * gaps from these variables, so setting them here is the WHOLE implementation
+ * of `density` — nothing measures, nothing branches, and a component the
+ * adjective was never taught about still gets denser.
+ */
+export function densityVars(density: KitDensity | undefined): CSSProperties {
+  return density === undefined ? {} : (densityCssVariables(density) as CSSProperties);
+}
 
 /**
  * Series lightness ladder, as `[lightness, chroma scale]` in OKLCH. Absolute

@@ -1,20 +1,28 @@
 /** Layout tier — themed containers (W2 §The Kit). */
 import type { CSSProperties, PropsWithChildren } from "react";
-import { font, t } from "./tokens.js";
+import { densityVars, font, resolveTone, t, toneColor, type KitDensity, type KitTone } from "./tokens.js";
 
 const gapVar = (gap: number | undefined): string =>
   gap === undefined ? "var(--vendo-density-content-gap, 10px)" : `${gap}px`;
 
+/** A toned container's rule. Neutral keeps the plain border rather than the
+ *  tone's foreground: a card is a region, not a pill. */
+const borderColor = (tone: KitTone | undefined): string => {
+  const resolved = resolveTone(tone, "neutral");
+  return resolved === "neutral" ? t.border : toneColor(resolved);
+};
+
 export interface StackProps {
   gap?: number;
+  density?: KitDensity;
 }
 
 /** Vertical flow. */
-export function Stack({ gap, children }: PropsWithChildren<StackProps>) {
+export function Stack({ gap, density, children }: PropsWithChildren<StackProps>) {
   return (
     <div
       data-kit="Stack"
-      style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: gapVar(gap) }}
+      style={{ ...densityVars(density), display: "flex", flexDirection: "column", alignItems: "stretch", gap: gapVar(gap) }}
     >
       {children}
     </div>
@@ -26,6 +34,7 @@ export interface RowProps {
   align?: "start" | "center" | "end" | "stretch";
   justify?: "start" | "center" | "end" | "between";
   wrap?: boolean;
+  density?: KitDensity;
 }
 
 const alignMap: Record<string, CSSProperties["alignItems"]> = {
@@ -42,11 +51,12 @@ const justifyMap: Record<string, CSSProperties["justifyContent"]> = {
 };
 
 /** Horizontal flow. */
-export function Row({ gap, align = "center", justify = "start", wrap = true, children }: PropsWithChildren<RowProps>) {
+export function Row({ gap, align = "center", justify = "start", wrap = true, density, children }: PropsWithChildren<RowProps>) {
   return (
     <div
       data-kit="Row"
       style={{
+        ...densityVars(density),
         display: "flex",
         flexDirection: "row",
         flexWrap: wrap ? "wrap" : "nowrap",
@@ -62,18 +72,29 @@ export function Row({ gap, align = "center", justify = "start", wrap = true, chi
 
 export interface GridProps {
   columns?: number;
+  /** Narrowest a cell may get, in px. Wins over `columns`. */
+  minChildWidth?: number;
   gap?: number;
+  density?: KitDensity;
 }
 
 /** Equal-width columns. */
-export function Grid({ columns = 2, gap, children }: PropsWithChildren<GridProps>) {
+export function Grid({ columns = 2, minChildWidth = 0, gap, density, children }: PropsWithChildren<GridProps>) {
   const safe = Number.isFinite(columns) ? Math.max(1, Math.floor(columns)) : 2;
+  // A fixed count CLIPS its cells once the screen is narrower than the count
+  // needs; auto-fit wraps them instead. The inner `min()` is what keeps the last
+  // single column from overflowing a surface narrower than the floor itself.
+  const template =
+    minChildWidth > 0
+      ? `repeat(auto-fit, minmax(min(${Math.floor(minChildWidth)}px, 100%), 1fr))`
+      : `repeat(${safe}, minmax(0, 1fr))`;
   return (
     <div
       data-kit="Grid"
       style={{
+        ...densityVars(density),
         display: "grid",
-        gridTemplateColumns: `repeat(${safe}, minmax(0, 1fr))`,
+        gridTemplateColumns: template,
         alignItems: "stretch",
         gap: gapVar(gap),
       }}
@@ -85,19 +106,23 @@ export function Grid({ columns = 2, gap, children }: PropsWithChildren<GridProps
 
 export interface SurfaceProps {
   title?: string;
+  tone?: KitTone;
+  density?: KitDensity;
 }
 
 /** A bordered, elevated container; optional title. */
-export function Surface({ title, children }: PropsWithChildren<SurfaceProps>) {
+export function Surface({ title, tone, density, children }: PropsWithChildren<SurfaceProps>) {
   return (
     <section
       data-kit="Surface"
+      data-tone={resolveTone(tone, "neutral")}
       style={{
         ...font,
+        ...densityVars(density),
         display: "flex",
         flexDirection: "column",
         gap: "var(--vendo-density-content-gap, 10px)",
-        border: `1px solid ${t.border}`,
+        border: `1px solid ${borderColor(tone)}`,
         borderRadius: t.radiusMedium,
         background: t.surface,
         boxShadow: `0 4px 24px color-mix(in srgb, ${t.text} 6%, transparent)`,
@@ -124,22 +149,23 @@ export function Surface({ title, children }: PropsWithChildren<SurfaceProps>) {
 export interface CardProps {
   title?: string;
   description?: string;
-  tone?: "default" | "accent" | "danger";
+  tone?: KitTone;
+  density?: KitDensity;
 }
 
 /** A titled content block; Surface is the untitled/plain container. */
-export function Card({ title, description, tone = "default", children }: PropsWithChildren<CardProps>) {
-  const toneColor = tone === "accent" ? t.accent : tone === "danger" ? t.danger : t.border;
+export function Card({ title, description, tone, density, children }: PropsWithChildren<CardProps>) {
   return (
     <article
       data-kit="Card"
-      data-tone={tone}
+      data-tone={resolveTone(tone, "neutral")}
       style={{
         ...font,
+        ...densityVars(density),
         display: "flex",
         flexDirection: "column",
         gap: "var(--vendo-density-content-gap, 10px)",
-        border: `1px solid ${toneColor}`,
+        border: `1px solid ${borderColor(tone)}`,
         borderRadius: t.radiusLarge,
         background: t.surface,
         boxShadow: `0 8px 24px color-mix(in srgb, ${t.text} 7%, transparent)`,

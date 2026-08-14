@@ -15,11 +15,15 @@
  * any other tool call. There is no privileged side door and no second
  * implementation of the floor.
  *
- * `{ document }`, not `{ appId }`, deliberately. A file that did not pass has no
- * store row — the seam refuses to author an app it would not paint — so `appId`
- * would answer not-found on exactly the case the gate exists for. The wire text is
- * what was written, and it is what `validate` was built to check "before committing
- * it".
+ * For WIRE text, `{ document }` rather than `{ appId }`, deliberately. A file that
+ * did not pass has no store row — the seam refuses to author an app it would not
+ * paint — so `appId` would answer not-found on exactly the case the gate exists
+ * for. The wire text is what was written, and it is what `validate` was built to
+ * check "before committing it".
+ *
+ * A COMPONENT screen is the other artifact and takes the other door, because
+ * `{ document }` is the wire door and would judge a TSX module as markup. See the
+ * routing in {@link validateWrittenApps}.
  *
  * FAIL-OPEN, everywhere. A validate that could not run is not a finding: treating
  * it as one would spend the builder's fix round repairing an app nobody said was
@@ -33,6 +37,7 @@ import {
   type WorkspaceFs,
 } from "@vendoai/core";
 import {
+  SCREEN_FILE,
   type Finding,
 } from "../../contract/index.js";
 import { hotPathAppId } from "./render-seam.js";
@@ -62,7 +67,12 @@ const isFinding = (value: unknown): value is Finding =>
  *  `plan.vendo` is a skeleton rather than an app document — there is nothing to
  *  validate yet. */
 const appDocumentAt = (path: string): AppId | undefined =>
-  path.endsWith("/app.vendo") || path.endsWith("/app.tsx") ? hotPathAppId(path) : undefined;
+  path.endsWith("/app.vendo") || path.endsWith(`/${SCREEN_FILE}`) ? hotPathAppId(path) : undefined;
+
+/** A COMPONENT screen rather than wire text, by the file's own name — the same
+ *  discrimination the render seam makes before it sends one to the floor's
+ *  gauntlet and the other to `compileWire` (`viewForWrite`). */
+const isComponentScreen = (path: string): boolean => path.endsWith(`/${SCREEN_FILE}`);
 
 /** One `validate` call, or undefined for every way it could not reach a verdict —
  *  each of which is reported to the OPERATOR and to nobody else. */
@@ -121,6 +131,10 @@ export async function validateWrittenApps(input: {
    * that does not pass the floor is not a finished screen, and a document that
    * never painted has no row for the row-scoped door to find. So the reviewer is
    * spent exactly once, on exactly the screens a person is about to keep.
+   *
+   * For a COMPONENT screen that door is the only one: it runs the gauntlet on the
+   * stored screen AND the reviewer in one call, so this flag is what gates a
+   * screen's whole trip through the verb.
    */
   review?: boolean;
 }): Promise<AppValidationFailure[]> {
@@ -129,12 +143,22 @@ export async function validateWrittenApps(input: {
     const appId = appDocumentAt(path);
     if (appId === undefined) continue;
     try {
-      const document = await input.workspace.readFile(path);
-      const mechanical = await askValidate(input.tools, appId, { document });
-      if (mechanical === undefined) continue;
-      if (mechanical.length > 0) {
-        failures.push({ path, appId, findings: mechanical });
-        continue;
+      // WIRE TEXT ONLY. `validate({document})` compiles what it is handed as wire
+      // (`createValidateDoor`), so a component screen — which is a TSX module, not
+      // markup — comes back "expected a single <App> element" however well it
+      // paints, and a builder that obeys that rewrites a working screen into wire.
+      // A screen's mechanical half is the component gauntlet, which already ran as
+      // its paint gate on the way in (`AppFloor.component`), so what is left for a
+      // screen here is the judging door below — the same reading the vendo() loop
+      // takes of the same artifact (`judgeScreen`, screen-agent.ts).
+      if (!isComponentScreen(path)) {
+        const document = await input.workspace.readFile(path);
+        const mechanical = await askValidate(input.tools, appId, { document });
+        if (mechanical === undefined) continue;
+        if (mechanical.length > 0) {
+          failures.push({ path, appId, findings: mechanical });
+          continue;
+        }
       }
       if (input.review !== true) continue;
       const judged = await askValidate(input.tools, appId, { appId });

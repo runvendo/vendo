@@ -1,33 +1,31 @@
 /** Progress — a themed progress bar; ratio or value/max (W2 §The Kit). */
 import { isRenderableNumber } from "../format.js";
-import { font, t } from "../tokens.js";
+import { useFieldValue } from "../row.js";
+import { font, resolveTone, t, toneColor, type KitTone } from "../tokens.js";
 
 export interface ProgressProps {
   /** A ratio (0..1) unless `max` is given, then a raw value. */
-  value: number;
+  value?: number;
   /** When set, `value/max` is the ratio. */
   max?: number;
   label?: string;
   /** Show the percentage text. */
   showValue?: boolean;
-  tone?: "accent" | "success" | "danger";
+  tone?: KitTone;
+  /** Inside a cell slot: the row field this value comes from. */
+  field?: string;
 }
 
-const TONE_FILL: Record<NonNullable<ProgressProps["tone"]>, string> = {
-  accent: t.accent,
-  success: "#1e7f53",
-  danger: t.danger,
-};
-
-export function Progress({ value, max, label, showValue = false, tone = "accent" }: ProgressProps) {
-  if (!isRenderableNumber(value) || (max !== undefined && !isRenderableNumber(max))) {
+export function Progress({ value, max, label, showValue = false, tone, field }: ProgressProps) {
+  const own = useFieldValue(field, value);
+  if (!isRenderableNumber(own) || (max !== undefined && !isRenderableNumber(max))) {
     return (
       <div data-kit="Progress" style={{ ...font, color: t.muted }}>
         —
       </div>
     );
   }
-  const ratio = max !== undefined && max !== 0 ? value / max : value;
+  const ratio = max !== undefined && max !== 0 ? own / max : own;
   const clamped = Math.max(0, Math.min(1, ratio));
   const pct = `${Math.round(clamped * 100)}%`;
   return (
@@ -55,7 +53,7 @@ export function Progress({ value, max, label, showValue = false, tone = "accent"
             width: pct,
             height: "100%",
             borderRadius: 999,
-            background: TONE_FILL[tone],
+            background: toneColor(resolveTone(tone, "accent")),
             transition: `width ${t.motionDuration} ${t.motionEasing}`,
           }}
         />

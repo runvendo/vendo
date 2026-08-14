@@ -1,7 +1,8 @@
 import { composioToolRisk, normalizeToolName, type Connector, type ConnectorAccountIdentity } from "@vendoai/actions";
 import type { RunContext, ToolCall, ToolDescriptor, ToolOutcome } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
-import { debugConnectorHttp, defaultFetch, log } from "@vendoai/core";
+import { keepAliveFetch } from "./keep-alive-fetch.js";
+import { debugConnectorHttp, log } from "@vendoai/core";
 
 /** The Cloud tools adapter — the execution half of the zero-key Composio
  * seam (cloudConnections is the account half). Tools list and execute ride
@@ -44,7 +45,7 @@ function withIdentity(outcome: ToolOutcome, identity: ConnectorAccountIdentity):
 
 export function cloudTools(options: CloudToolsOptions): Connector {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
-  const fetchImpl = options.fetch ?? defaultFetch;
+  const fetchImpl = options.fetch ?? keepAliveFetch;
   let normalizedToRaw = new Map<string, { raw: string; toolkit: string }>();
 
   async function cloudFetch(path: string, init?: RequestInit): Promise<{ ok: boolean; status: number; payload: unknown }> {

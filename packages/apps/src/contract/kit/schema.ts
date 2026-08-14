@@ -54,6 +54,9 @@ export interface KitComponentSpec {
   examples: string[];
   /** Optional group for prompt organization (layout, values, data, charts, forms). */
   group?: string;
+  /** Does this component RENDER what is nested inside it? Absent means no — most
+   *  of the Kit is a leaf, and the renderer hands children to leaves too. */
+  takesChildren?: boolean;
 }
 
 /** Build a `z.object` from a spec's props, applying `.optional()` to non-required ones. */

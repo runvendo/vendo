@@ -3,8 +3,9 @@
  * Money takes MAJOR units (dollars); dates take ISO/epoch/Date; percent takes a ratio.
  * Any unrenderable value collapses to a muted placeholder, never bad text.
  */
-import type { CSSProperties, ReactNode } from "react";
+import { isValidElement, type CSSProperties, type ReactNode } from "react";
 import {
+  applyFormat,
   formatDateTime,
   formatMoney,
   formatNum,
@@ -13,9 +14,20 @@ import {
   type DateTimeOptions,
   type MoneyOptions,
 } from "./format.js";
-import { font, t } from "./tokens.js";
+import { useFieldValue } from "./row.js";
+import { font, resolveTone, t, toneColor, toneStyle, type KitTone } from "./tokens.js";
 
 const PLACEHOLDER = "—";
+
+/**
+ * What this component renders: the row's field when it is standing in a cell
+ * slot and named one, its own prop otherwise. The cast is safe because every
+ * formatter below is TOTAL — a field holding the wrong type comes back `null`
+ * and renders the placeholder, exactly as NaN does.
+ */
+function useValue<T>(field: string | undefined, own: T): T {
+  return useFieldValue(field, own) as T;
+}
 
 function Placeholder(): ReactNode {
   return (
@@ -27,33 +39,49 @@ function Placeholder(): ReactNode {
 
 const numeric: CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
+/** A tone's paint, or nothing at all — an absent (or neutral) tone leaves the
+ *  component's own color exactly as it was. The catalog teaches "the figure that
+ *  is bad news is `danger`", so every figure has to answer to it. */
+function tonePaint(tone: KitTone | undefined): CSSProperties {
+  const resolved = resolveTone(tone);
+  return resolved === "neutral" ? {} : { color: toneColor(resolved) };
+}
+
 export interface MoneyProps extends MoneyOptions {
   /** The amount in MAJOR units (dollars) — formatters never convert, so a cents
    *  field is divided by 100 before it gets here. */
-  amount: number;
+  amount?: number;
+  /** Paints the figure — an overdue amount is `danger`. */
+  tone?: KitTone;
+  /** Inside a cell slot: the row field this amount comes from. */
+  field?: string;
 }
 
 /** Currency from a major-unit amount. `<Money amount={1234.56}/>` → "$1,234.56". */
-export function Money({ amount, currency, locale }: MoneyProps) {
-  const formatted = formatMoney(amount, { currency, locale });
+export function Money({ amount, currency, locale, tone, field }: MoneyProps) {
+  const formatted = formatMoney(useValue(field, amount), { currency, locale });
   if (formatted === null) return <Placeholder />;
   return (
-    <span data-kit="Money" style={{ ...font, ...numeric }}>
+    <span data-kit="Money" style={{ ...font, ...numeric, ...tonePaint(tone) }}>
       {formatted}
     </span>
   );
 }
 
 export interface DateTimeProps extends DateTimeOptions {
-  value: DateInput;
+  value?: DateInput;
+  /** Paints the date — a date that is bad news is `danger`. */
+  tone?: KitTone;
+  /** Inside a cell slot: the row field this date comes from. */
+  field?: string;
 }
 
 /** A date/time. `<DateTime value="2026-03-14" mode="date"/>` → "Mar 14, 2026". */
-export function DateTime({ value, mode, locale, timeZone }: DateTimeProps) {
-  const formatted = formatDateTime(value, { mode, locale, timeZone });
+export function DateTime({ value, mode, locale, timeZone, compact, tone, field }: DateTimeProps) {
+  const formatted = formatDateTime(useValue(field, value), { mode, locale, timeZone, compact });
   if (formatted === null) return <Placeholder />;
   return (
-    <span data-kit="DateTime" style={font}>
+    <span data-kit="DateTime" style={{ ...font, ...tonePaint(tone) }}>
       {formatted}
     </span>
   );
@@ -61,64 +89,50 @@ export function DateTime({ value, mode, locale, timeZone }: DateTimeProps) {
 
 export interface PercentProps {
   /** A ratio (0.42 → "42%") unless `whole`. */
-  value: number;
+  value?: number;
   fractionDigits?: number;
   whole?: boolean;
+  /** Paints the figure — a `danger` share is how a breach reads red. */
+  tone?: KitTone;
+  /** Inside a cell slot: the row field this ratio comes from. */
+  field?: string;
 }
 
 /** A percentage from a ratio. `<Percent value={0.42}/>` → "42%". */
-export function Percent({ value, fractionDigits, whole }: PercentProps) {
-  const formatted = formatPercent(value, { fractionDigits, whole });
+export function Percent({ value, fractionDigits, whole, tone, field }: PercentProps) {
+  const formatted = formatPercent(useValue(field, value), { fractionDigits, whole });
   if (formatted === null) return <Placeholder />;
   return (
-    <span data-kit="Percent" style={{ ...font, ...numeric }}>
+    <span data-kit="Percent" style={{ ...font, ...numeric, ...tonePaint(tone) }}>
       {formatted}
     </span>
   );
 }
 
 export interface NumProps {
-  value: number;
+  value?: number;
   maximumFractionDigits?: number;
   notation?: "standard" | "compact";
+  /** Paints the figure — the count that is bad news is `danger`. */
+  tone?: KitTone;
+  /** Inside a cell slot: the row field this number comes from. */
+  field?: string;
 }
 
 /** A grouped number. `<Num value={1234567}/>` → "1,234,567". */
-export function Num({ value, maximumFractionDigits, notation }: NumProps) {
-  const formatted = formatNum(value, { maximumFractionDigits, notation });
+export function Num({ value, maximumFractionDigits, notation, tone, field }: NumProps) {
+  const formatted = formatNum(useValue(field, value), { maximumFractionDigits, notation });
   if (formatted === null) return <Placeholder />;
   return (
-    <span data-kit="Num" style={{ ...font, ...numeric }}>
+    <span data-kit="Num" style={{ ...font, ...numeric, ...tonePaint(tone) }}>
       {formatted}
     </span>
   );
 }
 
-export type EnumTone = "neutral" | "accent" | "success" | "warning" | "danger";
-
-const TONE_STYLE: Record<EnumTone, { color: string; background: string; border: string }> = {
-  neutral: {
-    color: t.text,
-    background: `color-mix(in srgb, ${t.muted} 10%, ${t.surface})`,
-    border: t.border,
-  },
-  accent: { color: t.accentText, background: t.accent, border: t.accent },
-  success: {
-    color: "color-mix(in srgb, #1e7f53 88%, #000)",
-    background: "color-mix(in srgb, #1e7f53 12%, var(--vendo-color-surface, #ffffff))",
-    border: "color-mix(in srgb, #1e7f53 30%, var(--vendo-color-border, #e3e3e8))",
-  },
-  warning: {
-    color: "color-mix(in srgb, #9a6700 90%, #000)",
-    background: "color-mix(in srgb, #d4a017 16%, var(--vendo-color-surface, #ffffff))",
-    border: "color-mix(in srgb, #d4a017 34%, var(--vendo-color-border, #e3e3e8))",
-  },
-  danger: {
-    color: t.danger,
-    background: `color-mix(in srgb, ${t.danger} 11%, ${t.surface})`,
-    border: `color-mix(in srgb, ${t.danger} 30%, ${t.border})`,
-  },
-};
+/** The pill vocabulary is the ONE tone vocabulary; the name stays because
+ *  Badge and the specs already speak it. */
+export type EnumTone = KitTone;
 
 /** Turn "past_due" / "pastDue" into "Past due". */
 export function humanizeEnum(value: string): string {
@@ -132,21 +146,31 @@ export function humanizeEnum(value: string): string {
 
 export interface EnumBadgeProps {
   /** The raw enum value from data. */
-  value: string | null | undefined;
+  value?: string | null;
   /** Optional value → display label overrides. */
   labels?: Record<string, string>;
   /** Optional value → tone overrides. */
   tones?: Record<string, EnumTone>;
   /** Fallback tone when no override matches. */
   tone?: EnumTone;
+  /** Inside a cell slot: the row field this enum comes from. */
+  field?: string;
+}
+
+/** A record entry the model authored, or nothing. `Object.hasOwn`, not a bare
+ *  index: an enum value of "toString" would otherwise pick up
+ *  `Object.prototype`'s member — a function handed to React as a child. */
+function own<T>(record: Record<string, T> | undefined, key: string): T | undefined {
+  return record !== undefined && Object.hasOwn(record, key) ? record[key] : undefined;
 }
 
 /** A status pill for enum fields — humanized label, tone-mapped color. */
-export function EnumBadge({ value, labels, tones, tone = "neutral" }: EnumBadgeProps) {
-  if (value === null || value === undefined || value === "") return null;
-  const resolvedTone = tones?.[value] ?? tone;
-  const style = TONE_STYLE[resolvedTone];
-  const label = labels?.[value] ?? humanizeEnum(value);
+export function EnumBadge({ value, labels, tones, tone, field }: EnumBadgeProps) {
+  const key = applyFormat(useValue(field, value), "text");
+  if (key === null) return null;
+  const resolvedTone = resolveTone(own(tones, key) ?? tone);
+  const style = toneStyle[resolvedTone];
+  const label = own(labels, key) ?? humanizeEnum(key);
   return (
     <span
       data-kit="EnumBadge"
@@ -173,12 +197,34 @@ export function EnumBadge({ value, labels, tones, tone = "neutral" }: EnumBadgeP
 }
 
 export interface TextProps {
-  text: ReactNode;
+  text?: ReactNode;
   variant?: "body" | "heading" | "caption" | "label";
+  /** Paints the text — a `danger` figure is how an overdue amount reads red. */
+  tone?: KitTone;
+  /** Inside a cell slot: the row field this text comes from. */
+  field?: string;
 }
 
 /** Themed text. Heading renders an <h3>; others render a <span>. */
-export function Text({ text, variant = "body" }: TextProps) {
+export function Text({ text, variant = "body", tone, field }: TextProps) {
+  // A row field holds ANYTHING: a plain object as a React child throws
+  // ("Objects are not valid as a React child") and a boolean renders as
+  // literally NOTHING, which is how `active: false` came out blank. An element
+  // passes through as itself; every other value goes through the tier's total
+  // coercion — an object never reaching the formatter, which would spell it
+  // "[object Object]".
+  //
+  // ABSENT is not the same as unrenderable, and only Text can tell them apart:
+  // a binding whose query has not answered yet resolves to undefined, and a
+  // placeholder dash there reads as "no data" for data that is still on its
+  // way. Nothing renders as nothing; the dash is for a value that arrived and
+  // could not be shown.
+  const value = useValue<ReactNode>(field, text);
+  const content = isValidElement(value)
+    ? value
+    : value === undefined || value === null || value === ""
+      ? null
+      : (applyFormat(typeof value === "object" ? null : value, "text") ?? <Placeholder />);
   const style: CSSProperties = {
     color: variant === "caption" ? t.muted : t.text,
     fontFamily: variant === "heading" ? t.headingFamily : t.fontFamily,
@@ -187,17 +233,18 @@ export function Text({ text, variant = "body" }: TextProps) {
     letterSpacing: "-0.011em",
     lineHeight: variant === "heading" ? 1.3 : 1.5,
     margin: 0,
+    ...tonePaint(tone),
   };
   if (variant === "heading") {
     return (
       <h3 data-kit="Text" data-variant={variant} style={style}>
-        {text}
+        {content}
       </h3>
     );
   }
   return (
     <span data-kit="Text" data-variant={variant} style={style}>
-      {text}
+      {content}
     </span>
   );
 }

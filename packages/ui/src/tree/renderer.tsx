@@ -252,6 +252,38 @@ export function isHandlerBinding(value: unknown): value is HandlerBinding {
     && typeof (value as { $handler?: unknown }).$handler === "string";
 }
 
+/**
+ * A Kit element a screen wrote INTO a prop — a table column's `cell`, an
+ * accordion item's `content`. It crosses the VM as data, stamped `$element`
+ * (apps genui/component/vm-program.ts `emitValue`), and is reified here.
+ */
+interface ElementBinding {
+  component: string;
+  props?: Record<string, unknown>;
+  children?: readonly unknown[];
+}
+
+const isElementNode = (value: unknown): value is ElementBinding =>
+  isPlainRecord(value) && typeof value.component === "string";
+
+/** The sigil rides on the prop's own element and on nothing else: a data object
+ *  that happens to carry a `component` string is still data. */
+const isElementBinding = (value: unknown): value is ElementBinding =>
+  isElementNode(value) && (value as { $element?: unknown }).$element === true;
+
+/** That element, back as an element: the Kit component it names, its own props
+ *  bound the same way, its children in order. An unknown name renders nothing
+ *  rather than throwing — a slot fails soft, like every other node here. */
+function reifyElement(node: ElementBinding, bind: (value: unknown) => unknown): ReactNode {
+  const Implementation = KIT_COMPONENTS[node.component] as ComponentType<Record<string, unknown>> | undefined;
+  if (Implementation === undefined) return null;
+  // Only the prop's own element carries the sigil; the ones under it are nodes.
+  const children = node.children?.map((child, index) => typeof child === "string"
+    ? child
+    : <Fragment key={index}>{isElementNode(child) ? reifyElement(child, bind) : null}</Fragment>);
+  return <Implementation {...bind(node.props ?? {}) as Record<string, unknown>}>{children}</Implementation>;
+}
+
 /** The node's own handler dispatch, node-scoped by NodeRenderer. */
 type HandlerDispatch = (handlerId: string, event?: unknown) => void;
 
@@ -316,6 +348,12 @@ function bindValue(
     return handle === undefined
       ? () => undefined
       : markHandlerCallback((event?: unknown) => handle(value.$handler, screenEvent(event)));
+  }
+  // A slot's element becomes a real element only in the host page. In the jail
+  // it falls through as the data it is: props cross to that frame by
+  // postMessage, and no element survives a structured clone.
+  if (isElementBinding(value) && mode === "host") {
+    return reifyElement(value, (child) => bindValue(child, mode, data, state, action, handle, onMismatch));
   }
   if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, handle, onMismatch));
   if (typeof value === "object" && value !== null) {

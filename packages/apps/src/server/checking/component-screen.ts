@@ -55,7 +55,7 @@ import {
   type ScreenErrorKind,
 } from "../../contract/genui/component/index.js";
 import { isMutatingTool, type HostToolInfo } from "./deps.js";
-import { catalogIssues, factIssueLine } from "./facts.js";
+import { catalogIssues, factIssueLine, kitNestingIssues } from "./facts.js";
 import { sampleLines } from "./reviewer.js";
 import { list, QUERY_HOOK } from "./screen-typecheck.js";
 import {
@@ -696,7 +696,9 @@ export function screenName(source: string): string {
  *  vocabulary and nothing else — its props were the type check's business.
  *
  *  A text run is the engine's own node kind, not a component anybody registered,
- *  so it is not measured against the catalog. */
+ *  so it is not measured against the catalog — but it IS a child, so the nesting
+ *  rule reads the tree whole: text nested in a component that renders no
+ *  children is the same blank as a node nested there. */
 const treeCheckIssues = async (
   flat: FlatTree,
   catalog: readonly string[],
@@ -713,7 +715,10 @@ const treeCheckIssues = async (
     undefined,
     normalized,
   );
-  return found.map((entry) => issue("tree", factIssueLine(entry)));
+  return [
+    ...kitNestingIssues(validation.tree).map((entry) => issue("nesting", factIssueLine(entry))),
+    ...found.map((entry) => issue("tree", factIssueLine(entry))),
+  ];
 };
 
 // ---- the reviewer's input -------------------------------------------------

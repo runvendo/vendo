@@ -59,12 +59,21 @@ describe("screenTypings", () => {
 
   it("carries the Kit's zod prop types, not just its prop names", () => {
     const dts = screenTypings({ catalog: [], queries: [] });
-    // Money.amount is a REQUIRED number of DOLLARS (data class); currency an
-    // optional string. Every prop also admits VendoBinding — see the
-    // unresolvable-binding test below.
-    expect(dts).toContain("declare const Money: (props: { amount: number | VendoBinding; currency?: string | VendoBinding;");
+    // Money.amount is a number of DOLLARS (data class); currency an optional
+    // string. Every prop also admits VendoBinding — see the unresolvable-binding
+    // test below. `amount` is optional since the cell slots landed: a value
+    // component inside a cell takes its value from `field`, so a required
+    // `amount` would make the slot the catalog teaches unwritable.
+    expect(dts).toContain("declare const Money: (props: { amount?: number | VendoBinding; currency?: string | VendoBinding;");
+    // Required is still required where it is load-bearing — a table with no rows
+    // is nothing at all, and that is what pins the marker itself.
+    expect(dts).toContain("declare const DataTable: (props: { rows: Array<Record<string, any>> | VendoBinding;");
     // Stat.format is an enum — the literal union is what makes format=\"huge\" a type error.
     expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "percent" | "number" | "text"');
+    // A cell slot holds an ELEMENT, which no schema describes — `any` is its
+    // faithful type, and without it the catalog's own DataTable example would
+    // not compile.
+    expect(dts).toContain("cell?: any }> | VendoBinding");
   });
 
   /**
@@ -82,10 +91,9 @@ describe("screenTypings", () => {
   it("admits an unresolvable binding literal in any typed prop slot", () => {
     const dts = screenTypings({ catalog, queries: [] });
     expect(dts).toContain("declare type VendoBinding = { $path: string } | { $state: string } | { $expr: string };");
-    // The exact slot the regression hit — Text.text, a REQUIRED string | number,
-    // which is where a missing-prop error anchors on the tag rather than the
-    // attribute (so no checker-side suppression could have caught every spelling).
-    expect(dts).toContain("text: string | number | VendoBinding");
+    // The exact slot the regression hit — Text.text, a string | number (optional
+    // since the cell slots landed, where `field` supplies it instead).
+    expect(dts).toContain("text?: string | number | VendoBinding");
     // An enum slot keeps its literal union — format="huge" is still a type error.
     expect(dts).toContain('format?: "money" | "date" | "datetime" | "time" | "percent" | "number" | "text" | VendoBinding');
   });

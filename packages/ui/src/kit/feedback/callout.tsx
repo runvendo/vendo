@@ -4,19 +4,23 @@
  * the honesty arm for when no tool backs the ask.
  */
 import type { PropsWithChildren } from "react";
-import { font, t } from "../tokens.js";
+import { font, resolveTone, t, toneColor, type KitTone } from "../tokens.js";
 
-export type CalloutTone = "info" | "accent" | "success" | "warning" | "danger";
+/** The shared vocabulary plus "info", which a Callout keeps as its own spelling:
+ *  elsewhere it is the legacy name for neutral, but a notice has ALWAYS been
+ *  brand-accented with the ⓘ, and it is still the default. */
+export type CalloutTone = KitTone | "info";
 
 const TONE: Record<CalloutTone, { accent: string; icon: string }> = {
   info: { accent: t.accent, icon: "ⓘ" },
+  neutral: { accent: toneColor("neutral"), icon: "ⓘ" },
   // "accent" is the tone the sibling vocabularies teach (Badge/EnumBadge/
   // Stat/Progress), so generated code reaches for it constantly — re-gate
   // 2026-07-26 arm C crashed on it four times. First-class, brand-accented.
   accent: { accent: t.accent, icon: "●" },
-  success: { accent: "#1e7f53", icon: "✓" },
-  warning: { accent: "#b8860b", icon: "▲" },
-  danger: { accent: t.danger, icon: "✕" },
+  success: { accent: toneColor("success"), icon: "✓" },
+  warning: { accent: toneColor("warning"), icon: "▲" },
+  danger: { accent: toneColor("danger"), icon: "✕" },
 };
 
 export interface CalloutProps {
@@ -25,17 +29,17 @@ export interface CalloutProps {
 }
 
 export function Callout({ tone = "info", title, children }: PropsWithChildren<CalloutProps>) {
-  // Unknown tone values fall back to info instead of crashing: generated
-  // island code passes arbitrary strings, and a themed notice with the wrong
-  // color always beats "Node could not render: Cannot destructure 'accent'".
-  // Object.hasOwn, not a bare index: an unvalidated tone like "constructor"
-  // or "toString" would otherwise pick up Object.prototype members instead
-  // of falling back (review 2026-07-26).
-  const { accent, icon } = Object.hasOwn(TONE, tone) ? TONE[tone] : TONE.info;
+  // "info" is read HERE, before the shared resolver would flatten it to neutral:
+  // it is this component's default and has always been the accented ⓘ. Every
+  // other word goes through the ONE resolver, so "default" lands on neutral like
+  // it does on a Card and an unvalidated string ("constructor") falls back
+  // instead of picking up an Object.prototype member (review 2026-07-26).
+  const resolved: CalloutTone = tone === "info" ? "info" : resolveTone(tone);
+  const { accent, icon } = TONE[resolved];
   return (
     <div
       data-kit="Callout"
-      data-tone={tone}
+      data-tone={resolved}
       role="status"
       style={{
         ...font,

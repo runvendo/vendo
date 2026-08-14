@@ -40,9 +40,10 @@ describe("Callout", () => {
     expect(screen.getByText("Highlighted information.")).toBeTruthy();
   });
 
-  it("renders any unknown tone safely with the info fallback", () => {
+  it("renders any unknown tone safely, falling back like every other component", () => {
     render(<Callout tone={"garbage" as never} title="Odd">Still visible.</Callout>);
-    expect(screen.getByRole("status")).toBeTruthy();
+    const el = screen.getByRole("status");
+    expect(el.getAttribute("data-tone")).toBe("neutral");
     expect(screen.getByText("Still visible.")).toBeTruthy();
   });
 
@@ -50,8 +51,21 @@ describe("Callout", () => {
     render(<Callout tone={"constructor" as never} title="Proto">Prototype-safe.</Callout>);
     const el = screen.getByRole("status");
     expect(screen.getByText("Prototype-safe.")).toBeTruthy();
-    // The info fallback's accent color applied — not an undefined style.
+    expect(el.getAttribute("data-tone")).toBe("neutral");
+    // A real fallback color applied — not an undefined style.
     expect((el as HTMLElement).style.borderLeft).not.toContain("undefined");
+  });
+
+  // Callout kept its own tone map and never called the shared resolver, so the
+  // legacy spelling every other component reads as neutral landed on the
+  // accented ⓘ here, and `data-tone` published the raw unvalidated string while
+  // Card/Surface/Stat published the resolved one.
+  it('reads "default" as neutral, and reports the tone it resolved to', () => {
+    render(<Callout tone={"default" as never} title="Note">Nothing urgent.</Callout>);
+    const el = screen.getByRole("status");
+    expect(el.getAttribute("data-tone")).toBe("neutral");
+    expect(el.style.borderLeft).toContain("var(--vendo-color-text");
+    expect(el.style.borderLeft).not.toContain("var(--vendo-color-accent");
   });
 });
 
