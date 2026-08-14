@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { descriptorHash } from "./descriptor-hash.js";
 import {
   appIdSchema,
   approvalIdSchema,
@@ -196,6 +197,71 @@ export function approvalRecordRefs(
     subject: request.ctx.principal.subject,
     status,
     call: request.call.id,
+  };
+}
+
+/**
+ * Everything a mint is told. The subject, the tool, the descriptor hash and the
+ * app are read off the approved REQUEST and never off the caller, so a grant is
+ * bound to exactly what the person was shown.
+ */
+export interface MintGrantInput {
+  request: ApprovalRequest;
+  /** An omitted `scope` is derived: a connector dispatch is granted at the width
+   *  of its SLUG — "allow use_service_tool" would be consent to the broker's
+   *  whole catalog — and every other tool tool-wide. */
+  remember: { duration: GrantDuration; scope?: GrantScope };
+  source: PermissionGrant["source"];
+  /** WHICH trigger of the app this is for; omitted ⇒ app-wide. */
+  triggerId?: string;
+  /** `session`/`task` durations only; omitted ⇒ the request's runId ?? sessionId. */
+  contextKey?: string;
+}
+
+/**
+ * The ONE grant row. The guard's decide path and the automations engine's
+ * consent moment both mint through here, so a grant cannot mean two things
+ * depending on which of them wrote it.
+ */
+export function buildGrant(
+  { request, remember, source, triggerId, contextKey }: MintGrantInput,
+  id: GrantId,
+  grantedAt: IsoDateTime,
+): PermissionGrant {
+  const slug = serviceToolSlug(request.call);
+  const sessionKey = contextKey ?? request.ctx.sessionId;
+  return {
+    id,
+    subject: request.ctx.principal.subject,
+    tool: request.call.tool,
+    descriptorHash: descriptorHash(request.descriptor),
+    scope: remember.scope ?? (slug === undefined ? { kind: "tool" } : { kind: "service-tool", slug }),
+    duration: remember.duration,
+    ...(remember.duration === "session"
+      ? { contextKey: sessionKey }
+      : remember.duration === "task"
+        ? { contextKey: request.ctx.trigger?.runId ?? sessionKey }
+        : {}),
+    ...(request.ctx.appId === undefined ? {} : { appId: request.ctx.appId }),
+    ...(triggerId === undefined ? {} : { triggerId }),
+    source,
+    grantedAt,
+  };
+}
+
+/**
+ * The refs projection every `vendo_grants` row carries. The same reason
+ * {@link approvalRecordRefs} exists: reserved store tables derive these from the
+ * row's own columns, but a generic adapter honors exactly what a writer passes
+ * — and one that filtered on `app_id` alone would hand back a SIBLING trigger's
+ * grant, making the ref-trusting adapter wider than the JS filter above it.
+ */
+export function grantRefs(grant: PermissionGrant): Record<string, string> {
+  return {
+    subject: grant.subject,
+    tool: grant.tool,
+    ...(grant.appId === undefined ? {} : { app_id: grant.appId }),
+    ...(grant.triggerId === undefined ? {} : { trigger_id: grant.triggerId }),
   };
 }
 
