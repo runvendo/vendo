@@ -1,5 +1,20 @@
 # @vendoai/guard
 
+## 0.18.0
+
+### Minor Changes
+
+- 88ec7e6: The client stops re-reading, per tool call, what it already knows. `frozen({ cached: true })` serves the CHECK-TIME kill-switch read from a 10s cache, taking 3 freeze reads per tool call down to 1 (plus one on the first call of a window); the pre-execute gate is untouched and still reads the store, so a freeze landing during the judge's window still refuses the dispatch, and any fresh read — this guard's own `freeze()`/`unfreeze()` included — refreshes the cached value. The grants list now carries `refs: { subject, tool }`, so the routed door maps the ref to an indexed column and the whole-drawer page and its JS `continue` are gone; `invalidated` is unaffected, since it only ever collected same-tool grants.
+
+  Sharing the grant read between the preview pass and the real pass was tried and reverted, on a reviewer finding reproduced first as a test: a grant revoked or expired in the gap between the two passes still authorised the tool. A rule is a decision input, but a grant IS the authority the call executes on, so the pipeline reads the grants again for the real pass — park a standing grant on a destructive tool, preview, revoke through the real store, execute, and the guard parks where it used to run. The replay read stays unshared for its own separate reason: a human's yes lands between the two passes and the single-use CAS spend belongs to the real pass.
+
+  A workspace `commit()` is one wire call instead of one per file. It returns early when nothing is staged or removed, and the per-path remove/land passes collapse into a single `commitAll` per owner. Per-entry `expectedRevision` (the null create-only guard included) is preserved and a stale one still refuses the WHOLE commit with `conflict`, and the SQL backend keeps its per-path statements. That last requirement is also a fix: the batched commit applied its deletions before returning `conflict`, so a caller told nothing landed retried against a file that was already gone. The SQL backend now lands every write first and applies tombstones only when no swap was lost, and the façade keeps deletions staged when the commit was refused so the re-apply the conflict branch asks for still carries them. A delete has no compare-and-swap of its own to refuse it, which made an early-applied deletion unrecoverable — true for the whole life of the per-path loop that preceded `commitAll`, and pinned by a test now.
+
+### Patch Changes
+
+- Updated dependencies [88ec7e6]
+  - @vendoai/core@0.18.0
+
 ## 0.17.0
 
 ### Patch Changes

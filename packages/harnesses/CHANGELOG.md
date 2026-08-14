@@ -1,5 +1,21 @@
 # @vendoai/harnesses
 
+## 0.18.0
+
+### Patch Changes
+
+- 88ec7e6: Appending a message to a hosted thread stops downloading the whole conversation first. The wire had no verb that carried an owner, so the client read `data.subject` off the thread record before it could write — a turn paid that read several times, and the payload grew with the conversation forever, while the SQL half had always done the same work in one statement. `transcripts.appendMessages` is the additive 36th op (body `{threadId, subject, messages, title?}`, answer `{revision, count}`, deliberately NOT the thread — echoing the transcript back would reintroduce exactly the payload the op removes), `StoreOps.appendMessages` is its optional client method, and a turn's changed messages now go out as ONE `upsertMany`. `Thread.revision` is carried from the read so persist compare-and-swaps on it instead of re-reading, and persist runs only when the row must be created — every later turn is a pure append, title and all.
+
+  A console that predates the op is served by an explicit capability feature-detect (the `/status` op count, the wire's own discovery handshake) asked once per StoreOps handle and cached, which routes to the older getThread + putMessage path. It is a supported route chosen BEFORE the write, never a catch-and-degrade around a failed mutation (#1251), and the count is a proxy for capability only while ops are ONLY EVER ADDED — remove one while adding another and a mount reaches 36 without serving this op, which is named in the comment for whoever adds op 37.
+
+  Every transcript writer now takes the thread row BEFORE allocating a `seq`. `seq` carries conversation order and has no unique constraint, so equal seqs make the transcript read back ordered by message id — scrambled. Two concurrent writers used to read `max(seq) + 1` from their own READ COMMITTED snapshots before anything held a lock: on real PostgreSQL 17.11, 20 rounds of each pairing collided 19–20 times out of 20. `touchThread` runs first in `appendMessages`, `putMessage` and `recordAnswer` alike, so the loser blocks on the thread row until the winner COMMITs and allocates on a snapshot that already holds its rows; `upsertMany` and `appendThreadMessages` therefore take NO caller seq, because a position computed outside the transaction cannot be made safe. One lock order everywhere also means none of these writers can deadlock against another. The race test runs all three pairings on the postgres leg — PGlite is one connection and nothing interleaves, so it can never catch this.
+
+- Updated dependencies [88ec7e6]
+- Updated dependencies [88ec7e6]
+  - @vendoai/core@0.18.0
+  - @vendoai/guard@0.18.0
+  - @vendoai/apps@0.18.0
+
 ## 0.17.0
 
 ### Patch Changes

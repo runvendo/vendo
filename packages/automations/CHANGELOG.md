@@ -1,5 +1,13 @@
 # @vendoai/automations
 
+## 0.18.0
+
+### Patch Changes
+
+- Updated dependencies [88ec7e6]
+  - @vendoai/core@0.18.0
+  - @vendoai/apps@0.18.0
+
 ## 0.17.0
 
 ### Patch Changes

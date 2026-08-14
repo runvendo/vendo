@@ -1,5 +1,27 @@
 # @vendoai/store
 
+## 0.18.0
+
+### Minor Changes
+
+- 88ec7e6: Appending a message to a hosted thread stops downloading the whole conversation first. The wire had no verb that carried an owner, so the client read `data.subject` off the thread record before it could write — a turn paid that read several times, and the payload grew with the conversation forever, while the SQL half had always done the same work in one statement. `transcripts.appendMessages` is the additive 36th op (body `{threadId, subject, messages, title?}`, answer `{revision, count}`, deliberately NOT the thread — echoing the transcript back would reintroduce exactly the payload the op removes), `StoreOps.appendMessages` is its optional client method, and a turn's changed messages now go out as ONE `upsertMany`. `Thread.revision` is carried from the read so persist compare-and-swaps on it instead of re-reading, and persist runs only when the row must be created — every later turn is a pure append, title and all.
+
+  A console that predates the op is served by an explicit capability feature-detect (the `/status` op count, the wire's own discovery handshake) asked once per StoreOps handle and cached, which routes to the older getThread + putMessage path. It is a supported route chosen BEFORE the write, never a catch-and-degrade around a failed mutation (#1251), and the count is a proxy for capability only while ops are ONLY EVER ADDED — remove one while adding another and a mount reaches 36 without serving this op, which is named in the comment for whoever adds op 37.
+
+  Every transcript writer now takes the thread row BEFORE allocating a `seq`. `seq` carries conversation order and has no unique constraint, so equal seqs make the transcript read back ordered by message id — scrambled. Two concurrent writers used to read `max(seq) + 1` from their own READ COMMITTED snapshots before anything held a lock: on real PostgreSQL 17.11, 20 rounds of each pairing collided 19–20 times out of 20. `touchThread` runs first in `appendMessages`, `putMessage` and `recordAnswer` alike, so the loser blocks on the thread row until the winner COMMITs and allocates on a snapshot that already holds its rows; `upsertMany` and `appendThreadMessages` therefore take NO caller seq, because a position computed outside the transaction cannot be made safe. One lock order everywhere also means none of these writers can deadlock against another. The race test runs all three pairings on the postgres leg — PGlite is one connection and nothing interleaves, so it can never catch this.
+
+- 88ec7e6: The client stops re-reading, per tool call, what it already knows. `frozen({ cached: true })` serves the CHECK-TIME kill-switch read from a 10s cache, taking 3 freeze reads per tool call down to 1 (plus one on the first call of a window); the pre-execute gate is untouched and still reads the store, so a freeze landing during the judge's window still refuses the dispatch, and any fresh read — this guard's own `freeze()`/`unfreeze()` included — refreshes the cached value. The grants list now carries `refs: { subject, tool }`, so the routed door maps the ref to an indexed column and the whole-drawer page and its JS `continue` are gone; `invalidated` is unaffected, since it only ever collected same-tool grants.
+
+  Sharing the grant read between the preview pass and the real pass was tried and reverted, on a reviewer finding reproduced first as a test: a grant revoked or expired in the gap between the two passes still authorised the tool. A rule is a decision input, but a grant IS the authority the call executes on, so the pipeline reads the grants again for the real pass — park a standing grant on a destructive tool, preview, revoke through the real store, execute, and the guard parks where it used to run. The replay read stays unshared for its own separate reason: a human's yes lands between the two passes and the single-use CAS spend belongs to the real pass.
+
+  A workspace `commit()` is one wire call instead of one per file. It returns early when nothing is staged or removed, and the per-path remove/land passes collapse into a single `commitAll` per owner. Per-entry `expectedRevision` (the null create-only guard included) is preserved and a stale one still refuses the WHOLE commit with `conflict`, and the SQL backend keeps its per-path statements. That last requirement is also a fix: the batched commit applied its deletions before returning `conflict`, so a caller told nothing landed retried against a file that was already gone. The SQL backend now lands every write first and applies tombstones only when no swap was lost, and the façade keeps deletions staged when the commit was refused so the re-apply the conflict branch asks for still carries them. A delete has no compare-and-swap of its own to refuse it, which made an early-applied deletion unrecoverable — true for the whole life of the per-path loop that preceded `commitAll`, and pinned by a test now.
+
+### Patch Changes
+
+- Updated dependencies [88ec7e6]
+  - @vendoai/core@0.18.0
+  - @vendoai/apps@0.18.0
+
 ## 0.17.0
 
 ### Patch Changes
