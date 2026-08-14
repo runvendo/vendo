@@ -38,8 +38,19 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
-async function fakeConsole(): Promise<{ baseUrl: string; sent: Array<{ conversationId: string; text: string }> }> {
-  const sent: Array<{ conversationId: string; text: string }> = [];
+/** `attempts` counts every delivery the channel TRIED, `sent` only the ones that
+    landed — the two diverge while `failSends` is on, which is how a test says
+    "the vendor was down exactly when the card went out". */
+interface FakeConsole {
+  baseUrl: string;
+  sent: Array<{ conversationId: string; text: string }>;
+  attempts: number;
+  failSends: boolean;
+}
+
+async function fakeConsole(): Promise<FakeConsole> {
+  const state: FakeConsole = { baseUrl: "", sent: [], attempts: 0, failSends: false };
+  const sent = state.sent;
   const server: Server = createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => (body += String(chunk)));
@@ -55,6 +66,12 @@ async function fakeConsole(): Promise<{ baseUrl: string; sent: Array<{ conversat
         return;
       }
       if (req.url === "/api/v1/channels/text/send") {
+        state.attempts += 1;
+        if (state.failSends) {
+          res.statusCode = 503;
+          res.end(JSON.stringify({ error: { code: "unavailable", message: "carrier down" } }));
+          return;
+        }
         sent.push(JSON.parse(body) as { conversationId: string; text: string });
         res.end(JSON.stringify({ ok: true }));
         return;
@@ -66,7 +83,8 @@ async function fakeConsole(): Promise<{ baseUrl: string; sent: Array<{ conversat
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   cleanups.push(async () => new Promise<void>((resolve) => server.close(() => resolve())));
   const { port } = server.address() as AddressInfo;
-  return { baseUrl: `http://127.0.0.1:${port}`, sent };
+  state.baseUrl = `http://127.0.0.1:${port}`;
+  return state;
 }
 
 /** The host-side observable: what actually got paid. */
@@ -292,5 +310,73 @@ describe.sequential("consent over text", () => {
     await waitFor(() => cloud.sent.length === 3);
     expect(cloud.sent[2]?.text).toBe("I didn't pay it.");
     expect(host.paid).toEqual([]);
+  }, 120_000);
+
+  it("never decides a card whose text never reached the phone", async () => {
+    // THE FAILURE THIS PINS: the card is raised, but the carrier is down and the
+    // text carrying its action and arguments never arrives. Recording the ask
+    // before the send lands would leave that unseen card answerable, so the next
+    // bare YES — sent for any reason at all — would move money the person was
+    // never shown. A delivery that failed must leave nothing to answer.
+    const cloud = await fakeConsole();
+    vi.stubEnv("VENDO_API_KEY", API_KEY);
+    vi.stubEnv("VENDO_CLOUD_URL", cloud.baseUrl);
+    vi.stubEnv("VENDO_BASE_URL", "https://maple.test");
+    const host = payingHost();
+    const vendo: Vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store: await tempStore(),
+      harness: paying as never,
+      guard: guard({ policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } }),
+      channels: { text: true },
+    } as Parameters<typeof createVendo>[0]);
+    vendo.actions.add(host.tools);
+
+    const secret = await channelInboundSecret(API_KEY);
+    const text = (eventId: string, body: string): Promise<Response> =>
+      vendo.handler(new Request("https://maple.test/api/vendo/channels/text/inbound", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
+        body: JSON.stringify({
+          eventId,
+          channel: "text",
+          from: PHONE,
+          text: body,
+          conversationId: "conv_approval",
+          receivedAt: new Date().toISOString(),
+        }),
+      }));
+
+    const page = await (await vendo.handler(
+      new Request("https://maple.test/api/vendo/channels/text/link", { headers: { "user-agent": "Macintosh" } }),
+    )).text();
+    await text("evt_link_4", /connect @maple ([23456789A-Z]{6})/.exec(page)![1]!);
+    await waitFor(() => cloud.sent.length === 1);
+
+    // The carrier goes down, then the call parks: the ask is attempted and
+    // rejected, so the phone is holding nothing.
+    cloud.failSends = true;
+    await text("evt_pay_4", "pay my electric bill");
+    await waitFor(() => cloud.attempts >= 2);
+    expect(cloud.sent).toHaveLength(1);
+
+    await text("evt_yes_4", "YES");
+
+    // The YES found no answerable card, so it ran as an ordinary turn — which
+    // parks a card of its own and attempts its own (still failing) delivery.
+    // That further attempt is the proof the YES was treated as a new ask and
+    // not as consent for the card nobody ever saw.
+    await waitFor(() => cloud.attempts >= 3);
+
+    // THE POINT: the money never moved. Record the ask before the send lands
+    // and this is a paid bill the person was never shown.
+    expect(host.paid).toEqual([]);
+
+    // Release both parked turns so their ten-minute waiters do not outlive the
+    // test — nothing here is asserting on the denial.
+    for (const request of await vendo.guard.approvals.pending(principal)) {
+      await vendo.guard.approvals.decide(request.id, { approve: false }, principal);
+    }
   }, 120_000);
 });

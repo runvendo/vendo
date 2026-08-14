@@ -135,10 +135,19 @@ export class ChannelLinkRepository {
     return claimed;
   }
 
-  /** Who this phone is, for an inbound text. */
+  /** Who this phone is, for an inbound text. NEWEST claim wins: `claim` reads
+   *  the rows it replaces and writes separately, so two claims racing on the
+   *  same phone with two different live codes can each leave a row behind.
+   *  Taking whichever the store happened to list first would then run the
+   *  phone's texts as an arbitrary one of the two; ordering by `linkedAt` lands
+   *  on the subject a serialized pair would have left bound, which is this
+   *  file's rule — the later claim replaces the earlier. */
   async byPhone(rawPhone: string): Promise<ChannelLink | null> {
     const phone = normalizePhone(rawPhone);
-    return (await this.listBy({ phone })).find((link) => link.phone !== undefined) ?? null;
+    return (await this.listBy({ phone }))
+      .filter((link) => link.phone !== undefined)
+      .sort((a, b) => (a.linkedAt ?? "").localeCompare(b.linkedAt ?? ""))
+      .at(-1) ?? null;
   }
 
   /** Remember which thread this conversation is running in, and when it last

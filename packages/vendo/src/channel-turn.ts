@@ -169,8 +169,15 @@ export async function runChannelTurn(
   const unsubscribe = deps.guard.onApprovalRequested((request) => {
     if (request.ctx.principal.subject !== link.subject) return undefined;
     if (request.ctx.sessionId !== event.eventId) return undefined;
-    deps.asks.add(event.conversationId, request.id);
-    return send(approvalText(request));
+    // Answerable only once the ask has LANDED. Recording it before the send
+    // would leave a card decidable by a later bare YES even though the text
+    // carrying its action and arguments never arrived — consent for a
+    // money-moving call, given on a surface that never showed it, which is the
+    // exact failure `ChannelAsks` exists to prevent. A rejected send leaves it
+    // unrecorded, so it stays unanswerable and the turn times out instead.
+    return send(approvalText(request)).then(() => {
+      deps.asks.add(event.conversationId, request.id);
+    });
   });
   try {
     const threadId = rollingThread(link);
