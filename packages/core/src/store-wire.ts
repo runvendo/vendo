@@ -265,13 +265,25 @@ export interface StoreWireAppendMessagesResult {
 /** The op count a mount must report on `/status` before a client may send
     `transcripts.appendMessages` — the 36th op, and the first one a shipped
     client has to feature-detect. The wire has no capability list and needs
-    none: `/status` is already the discovery handshake, and the count only ever
-    grows. FROZEN at the count this op shipped with; never
-    `Object.keys(STORE_WIRE_PATHS).length`, which would start refusing the op
-    the day a 37th is added. Detect once, cache, and route to the older
-    getThread + putMessage path when the mount is behind — never send it blind
-    and read the 501 as a fallback signal (#1251: a failed mutation is not a
-    capability answer). */
+    none: `/status` is already the discovery handshake, and the count is its
+    only signal. Compared with `>=`, and FROZEN at the count this op shipped
+    with — `===` would refuse the op the day a 37th is added, pinning every
+    client on the slow path forever with nothing to see; and
+    `Object.keys(STORE_WIRE_PATHS).length` would do the same from the client's
+    side.
+
+    ⚠ ADDING OP 37? READ THIS. The count is a PROXY for capability, and it
+    holds only while ops are ONLY EVER ADDED. Remove one while adding another
+    and the count still reaches 36 on a mount that no longer serves this op —
+    the client then believes it is supported, sends it, and takes the loud 501
+    this whole mechanism exists to avoid. That is not hypothetical: console
+    #468 ("restore the `records.*` store wire deleted by #456") is a production
+    incident from exactly that shape. Deleting a wire op means retiring this
+    constant, not renumbering it.
+
+    Detect once, cache, and route to the older getThread + putMessage path when
+    the mount is behind — never send it blind and read the 501 as a fallback
+    signal (#1251: a failed mutation is not a capability answer). */
 export const STORE_WIRE_APPEND_MESSAGES_OPS = 36;
 
 export const storeWireTranscriptsRecordAnswerRequestSchema = z.object({
