@@ -1,0 +1,5 @@
+---
+"@vendoai/core": patch
+---
+
+The text channel's three collections join the engine allowlist. `vendo_channel_links`, `vendo_channel_asks` and `vendo_channel_events` were never added to `ENGINE_COLLECTIONS`, so a deployment on a Cloud-hosted store — the posture a Cloud host gets by leaving the store slot unset — had its first channel write refused with `collection "vendo_channel_links" is not an engine collection`, which left the link route, the status and unlink doors, and every inbound text answering 403 on a live deployment while the suite stayed green: every channel test composes a local store, and a local store has no allowlist in front of it. The names are added with the `file:line` comment each entry in that list carries, `ENGINE_ALLOWLIST_VERSION` moves to 2 as that constant's contract requires, and a new seam test drives the channel repositories through `hostedStore` and the fake console — which serves the same gate as the live door precisely so a fake cannot bless a collection production refuses.
