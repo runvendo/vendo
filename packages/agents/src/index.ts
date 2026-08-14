@@ -17,6 +17,7 @@ export {
   type PostgresOptions,
   type VendoAgent,
 } from "./agent.js";
+export type { ArmRequest, ArmResult } from "./arming.js";
 export {
   awayRunner,
   type AgentReport,

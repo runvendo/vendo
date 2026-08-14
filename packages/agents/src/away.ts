@@ -25,11 +25,13 @@
  * the harness's own `error` event.
  */
 import {
+  DEFAULT_TRIGGER_ID,
   VendoError,
   createTurnSkills,
   hostSkillFiles,
   type AgentRunner,
   type AgentRunReport,
+  type AppId,
   type FilesAdapter,
   type Guard,
   type Harness,
@@ -38,6 +40,7 @@ import {
   type JsonSchema,
   type Skill,
   type RunContext,
+  type RunId,
   type SeatModels,
   type ThreadId,
   type ToolCall,
@@ -147,6 +150,12 @@ export interface RunOptions<T = never> {
   signal?: AbortSignal;
   /** Continue a conversation this subject already owns, instead of a fresh one. */
   threadId?: string;
+  /** WHICH automation this run is, so the standing grants `agent.arm()` minted
+   *  for it are the ones the guard matches — an armed run proceeds unattended
+   *  instead of parking. A lookup KEY, never a credential: it authenticates
+   *  nothing and authorizes nothing on its own; the grant is still the whole
+   *  authority. Unset → the agent's own `identity`, else no automation at all. */
+  identity?: { appId: string; triggerId?: string };
 }
 
 /** The run's return channel. Named, rather than parsed back out of prose,
@@ -608,6 +617,8 @@ export interface RunDeps extends AwayRunnerDeps {
    *  door's origin is still undefined, and the box dials a URL that is not
    *  there yet. */
   doorReady?: Promise<void>;
+  /** The agent's own {@link RunOptions.identity}, for a caller that names none. */
+  identity?: RunOptions["identity"];
 }
 
 /**
@@ -621,6 +632,7 @@ export interface RunDeps extends AwayRunnerDeps {
 export function startRun<T>(deps: RunDeps, task: string, options: RunOptions<T> = {}): AgentRun<T> {
   const threadId = (options.threadId ?? `thr_${randomUUID()}`) as ThreadId;
   const queue = eventQueue<RunEvent>();
+  const identity = options.identity ?? deps.identity;
   // Both gates a turn has to clear before it opens anything, in the one place a
   // run begins: the model check, and the door still binding its port —
   // `createSession` awaits the same two.
@@ -636,6 +648,17 @@ export function startRun<T>(deps: RunDeps, task: string, options: RunOptions<T> 
       sessionId: threadId,
       ...(options.user === undefined ? {} : { user: options.user }),
       ...(options.context === undefined ? {} : { context: options.context }),
+      // The named automation, on the two fields the guard's away-grant lookup
+      // already matches on. The run id is this run's own — the trigger REF says
+      // which automation is firing, not which firing it is.
+      ...(identity === undefined ? {} : {
+        appId: identity.appId as AppId,
+        trigger: {
+          runId: `run_${randomUUID()}` as RunId,
+          kind: "host-event" as const,
+          id: identity.triggerId ?? DEFAULT_TRIGGER_ID,
+        },
+      }),
     },
     threadId,
     reopen: options.threadId !== undefined,

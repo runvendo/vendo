@@ -28,6 +28,7 @@ import { resolveDevCredential } from "@vendoai/harnesses/inference/credential";
 import { createStore, storeFiles, type VendoStore } from "@vendoai/store";
 import type { LanguageModel, UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
+import { createArm, type ArmRequest, type ArmResult } from "./arming.js";
 import { startRun, type AgentRun, type RunOptions } from "./away.js";
 import { resolveDoor, type DoorConfig } from "./door.js";
 import { withEgress, type EgressConfig } from "./egress.js";
@@ -87,6 +88,9 @@ export interface AgentConfig {
    * forgery-safe `[User]`/`[Situation]` blocks to the host, to keep or to drop.
    */
   system?: SystemPromptHook;
+  /** Which automation this agent's runs ARE, when it only ever is one — the
+   *  default behind `run({ identity })`, which still wins per run. */
+  identity?: RunOptions["identity"];
 }
 
 export interface VendoAgent {
@@ -106,6 +110,15 @@ export interface VendoAgent {
    *  happened. Venue "automation", presence "away", non-interactive — so a tool
    *  the guard wants a person for parks, and `refs.approvals` is who to ask. */
   run<T = never>(task: string, options?: RunOptions<T>): AgentRun<T>;
+  /**
+   * Ask this person to let an unattended run act as them: one approval per tool
+   * the run could reach, raised on the permission wire for them to answer. A yes
+   * mints a STANDING grant bound to (subject, appId, triggerId) — which is
+   * exactly what `run({ identity })` runs on, so an armed run proceeds instead
+   * of parking. Tools no unattended run may reach at all come back as `held`,
+   * unasked.
+   */
+  arm(subject: string, request: ArmRequest): Promise<ArmResult>;
   session(subject: string, options?: SessionOptions): Promise<AgentSession>;
   /**
    * This agent's MCP door, present exactly when its harness thinks outside this
@@ -367,6 +380,7 @@ export function agent(config: AgentConfig): VendoAgent {
     assertModel: requireModel,
     ...(config.instructions === undefined ? {} : { instructions: config.instructions }),
     ...(config.system === undefined ? {} : { system: config.system }),
+    ...(config.identity === undefined ? {} : { identity: config.identity }),
     // The other half of the door: a credential the harness minted resolves to
     // NOTHING until the turn it points at is published, so without this line a
     // mounted door 401s every tool call the box makes.
@@ -384,6 +398,7 @@ export function agent(config: AgentConfig): VendoAgent {
       return session.stream(message, options.signal === undefined ? {} : { signal: options.signal });
     },
     run: (task, options) => startRun(deps, task, options),
+    arm: createArm({ guard, store, tools: bound }),
     async session(subject, options) {
       await requireModel();
       return createSession(deps, subject, options);
