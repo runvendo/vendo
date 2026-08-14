@@ -1,11 +1,23 @@
 import { buildSeed, type SeedData } from "./seed"
 
-// Module singleton — seeded once per server process at first import.
-let cache: SeedData | null = null
+/**
+ * The singleton has to hang off `globalThis`, not a module-level `let`.
+ *
+ * Next bundles route handlers and server components separately, so a plain
+ * module variable is instantiated once per bundle: a refund posted through
+ * /api/refunds landed in one copy of the store while /orders/[id] kept
+ * rendering the other, and the page showed "Paid" for an order the API called
+ * "refunded". Same trick as the usual Prisma-client-in-dev pattern, and it also
+ * survives hot reload.
+ */
+const KEY = Symbol.for("crate.store")
+
+type Globals = typeof globalThis & { [KEY]?: SeedData }
 
 export function getStore(): SeedData {
-  if (!cache) cache = buildSeed(new Date())
-  return cache
+  const globals = globalThis as Globals
+  if (!globals[KEY]) globals[KEY] = buildSeed(new Date())
+  return globals[KEY]
 }
 
 /**
@@ -14,6 +26,7 @@ export function getStore(): SeedData {
  * their way through it.
  */
 export function __reseed(anchor: Date): SeedData {
-  cache = buildSeed(anchor)
-  return cache
+  const globals = globalThis as Globals
+  globals[KEY] = buildSeed(anchor)
+  return globals[KEY]
 }
