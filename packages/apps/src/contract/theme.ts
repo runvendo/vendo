@@ -72,6 +72,35 @@ function relativeLuminance(color: string): number | null {
   return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
 }
 
+/**
+ * The spacing scale one density implies, on its own.
+ *
+ * Split out of `themeCssVariables` because density is no longer only a
+ * page-level setting: a Kit container takes a `density` adjective and re-emits
+ * this same scale on its own element, so the compact table inside a comfortable
+ * page is the SAME compact the host would have got. One ladder, two callers —
+ * a second copy in the Kit would be a scale that drifts.
+ */
+export function densityCssVariables(density: VendoTheme["density"]): Record<string, string> {
+  const compact = density === "compact";
+  return {
+    "--vendo-density": density,
+    "--vendo-density-control-height": compact ? "32px" : "38px",
+    "--vendo-density-control-padding": compact ? "6px 10px" : "9px 12px",
+    "--vendo-density-card-padding": compact ? "12px" : "16px",
+    "--vendo-density-content-gap": compact ? "7px" : "10px",
+    "--vendo-density-inline-gap": compact ? "5px" : "7px",
+    "--vendo-density-field-gap": compact ? "4px" : "6px",
+    "--vendo-density-table-padding": compact ? "7px 10px" : "10px 12px",
+    "--vendo-density-badge-height": compact ? "20px" : "24px",
+    "--vendo-density-badge-padding": compact ? "3px 7px" : "5px 9px",
+    "--vendo-density-stat-padding": compact ? "9px 11px" : "12px 14px",
+    "--vendo-density-tabs-padding": compact ? "3px" : "4px",
+    "--vendo-density-tab-height": compact ? "26px" : "30px",
+    "--vendo-density-tab-padding": compact ? "4px 8px" : "6px 10px",
+  };
+}
+
 /** Flatten a theme into `--vendo-*` CSS custom properties. */
 export function themeCssVariables(theme: VendoTheme): Record<string, string> {
   const vars: Record<string, string> = {};
@@ -85,22 +114,8 @@ export function themeCssVariables(theme: VendoTheme): Record<string, string> {
   // so a host's baseSize scales the whole surface instead of only the root font.
   vars["--vendo-base-size"] = theme.typography.baseSize;
   for (const [key, value] of Object.entries(theme.radius)) vars[`--vendo-radius-${kebab(key)}`] = value;
-  vars["--vendo-density"] = theme.density;
+  Object.assign(vars, densityCssVariables(theme.density));
   vars["--vendo-motion"] = theme.motion;
-  const compact = theme.density === "compact";
-  vars["--vendo-density-control-height"] = compact ? "32px" : "38px";
-  vars["--vendo-density-control-padding"] = compact ? "6px 10px" : "9px 12px";
-  vars["--vendo-density-card-padding"] = compact ? "12px" : "16px";
-  vars["--vendo-density-content-gap"] = compact ? "7px" : "10px";
-  vars["--vendo-density-inline-gap"] = compact ? "5px" : "7px";
-  vars["--vendo-density-field-gap"] = compact ? "4px" : "6px";
-  vars["--vendo-density-table-padding"] = compact ? "7px 10px" : "10px 12px";
-  vars["--vendo-density-badge-height"] = compact ? "20px" : "24px";
-  vars["--vendo-density-badge-padding"] = compact ? "3px 7px" : "5px 9px";
-  vars["--vendo-density-stat-padding"] = compact ? "9px 11px" : "12px 14px";
-  vars["--vendo-density-tabs-padding"] = compact ? "3px" : "4px";
-  vars["--vendo-density-tab-height"] = compact ? "26px" : "30px";
-  vars["--vendo-density-tab-padding"] = compact ? "4px 8px" : "6px 10px";
   vars["--vendo-motion-duration"] = theme.motion === "reduced" ? "0ms" : "160ms";
   vars["--vendo-motion-easing"] = "cubic-bezier(0.2, 0.8, 0.2, 1)";
   return vars;
