@@ -32,6 +32,7 @@ import {
   storeWireTranscriptsListThreadsRequestSchema,
   storeWireTranscriptsDeleteThreadRequestSchema,
   storeWireTranscriptsPutMessageRequestSchema,
+  storeWireTranscriptsAppendMessagesRequestSchema,
   storeWireTranscriptsRecordAnswerRequestSchema,
   storeWireHarnessGetRequestSchema,
   storeWireHarnessSetRequestSchema,
@@ -47,10 +48,10 @@ import {
 } from "../src/index.js";
 
 describe("vendo/store-wire@1", () => {
-  it("exposes the format constant and 35 mount-relative paths", () => {
+  it("exposes the format constant and 36 mount-relative paths", () => {
     expect(VENDO_STORE_WIRE_FORMAT).toBe("vendo/store-wire@1");
-    // 8 families: engine(7) + blobs(4) + appData(8) + transcripts(6) + harness(3) + workspace(4) + lifecycle(2) + status(1) = 35
-    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(35);
+    // 8 families: engine(7) + blobs(4) + appData(8) + transcripts(7) + harness(3) + workspace(4) + lifecycle(2) + status(1) = 36
+    expect(Object.keys(STORE_WIRE_PATHS)).toHaveLength(36);
     expect(STORE_WIRE_PATHS.status).toBe("/status");
     expect(STORE_WIRE_PATHS["engine.get"]).toBe("/engine/get");
     expect(STORE_WIRE_PATHS["engine.compareAndSwap"]).toBe("/engine/compareAndSwap");
@@ -204,6 +205,18 @@ describe("vendo/store-wire@1", () => {
     expect(storeWireTranscriptsDeleteThreadRequestSchema.parse({ id: "t1" }).id).toBe("t1");
     expect(storeWireTranscriptsPutMessageRequestSchema.parse({ threadId: "t1", message: { role: "user", content: "test" } }).threadId).toBe("t1");
     expect(storeWireTranscriptsRecordAnswerRequestSchema.parse({ threadId: "t1", answer: { text: "done" } }).threadId).toBe("t1");
+
+    expect(storeWireTranscriptsAppendMessagesRequestSchema.parse({
+      threadId: "t1", subject: "sub_user1", messages: [{ id: "m1" }], title: "Hi",
+    }).subject).toBe("sub_user1");
+    // The subject IS the ownership check on this op — a body without one would
+    // ask the service to append to whichever thread holds the id.
+    expect(storeWireTranscriptsAppendMessagesRequestSchema.safeParse({
+      threadId: "t1", messages: [{ id: "m1" }],
+    }).success).toBe(false);
+    expect(storeWireTranscriptsAppendMessagesRequestSchema.safeParse({
+      threadId: "t1", subject: "sub_user1", messages: [],
+    }).success).toBe(false);
   });
 
   it("parses harness request DTOs", () => {

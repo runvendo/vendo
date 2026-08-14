@@ -72,7 +72,7 @@ export interface HostedStore extends VendoStore {
     bySubject(subject: string): Promise<EraseReport>;
     byApp(appId: string): Promise<EraseReport>;
   };
-  /** The 35-op named-operation surface over the same mount and the same key —
+  /** The 36-op named-operation surface over the same mount and the same key —
    * `vendo/store-wire@1` (see {@link hostedStoreOps}). The StoreAdapter doors
    * above are built ON these ops: engine for Vendo's own collections, appData
    * for an app's own drawers. */
@@ -158,7 +158,7 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
   };
   const sendJson = postJson(send);
 
-  // The StoreAdapter façade rides the SAME 35 ops as `ops` below — it has no
+  // The StoreAdapter façade rides the SAME 36 ops as `ops` below — it has no
   // doors of its own since the generic records family left the wire. A
   // collection (or blob namespace) either names an app's own drawer, which the
   // appData family serves with the owner stamped on, or it names one of Vendo's
@@ -272,10 +272,10 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
 }
 
 // ---------------------------------------------------------------------------
-// The 35-op StoreOps client — store design v1, `vendo/store-wire@1`
+// The 36-op StoreOps client — store design v1, `vendo/store-wire@1`
 // ---------------------------------------------------------------------------
 
-/** The 35 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
+/** The 36 named ops — STORE_WIRE_PATHS' keys ARE the op names, and stay the
  * op names even where the console's door sits at a different path. */
 type StoreWireOp = keyof typeof STORE_WIRE_PATHS;
 
@@ -314,7 +314,7 @@ const raiseWireError = async (response: Response): Promise<never> => {
 };
 
 /**
- * The Cloud client for the whole 35-op store contract, speaking
+ * The Cloud client for the whole 36-op store contract, speaking
  * `vendo/store-wire@1` over the console's store mount: bearer key, deployment
  * identity and per-request abort budget shared with {@link hostedStore}, the
  * same adapter rule (behavior comes ONLY from the constructor arguments),
@@ -600,6 +600,23 @@ function storeWireClient(
       },
       async putMessage(threadId, message) {
         return recordOf(await mutate("transcripts.putMessage", P["transcripts.putMessage"], { threadId, message }));
+      },
+      /** The answer is `{revision, count}`, NOT the thread: a batch append that
+       *  echoed the transcript back would put the whole conversation on the
+       *  wire on every turn, which is the download this op exists to delete.
+       *  The subject in the body is what lets the service check ownership in
+       *  its own statement instead of the client reading the thread first. */
+      async appendMessages(threadId, subject, messages, opts) {
+        const payload = await mutate("transcripts.appendMessages", P["transcripts.appendMessages"], {
+          threadId,
+          subject,
+          messages,
+          ...(opts?.title === undefined ? {} : { title: opts.title }),
+        });
+        return {
+          revision: field<string>(payload, "revision", "invalid append", (value) => typeof value === "string"),
+          count: field<number>(payload, "count", "invalid append", (value) => typeof value === "number"),
+        };
       },
       async recordAnswer(threadId, answer) {
         return recordOf(await mutate("transcripts.recordAnswer", P["transcripts.recordAnswer"], { threadId, answer }));

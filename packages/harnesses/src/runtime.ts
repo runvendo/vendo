@@ -79,6 +79,14 @@ function deepFreeze<T>(value: T): T {
 export interface TranscriptStore {
   /** One row per message; per-row CAS on `revision` for edits. */
   upsert(principal: Principal, threadId: ThreadId, message: UIMessage, seq: number): Promise<void>;
+  /** The whole turn's changed messages in ONE call. Optional the way every
+   *  capability in this codebase is optional: a store that cannot batch omits
+   *  it and the per-message loop below still runs. */
+  upsertMany?(
+    principal: Principal,
+    threadId: ThreadId,
+    entries: ReadonlyArray<{ message: UIMessage; seq: number }>,
+  ): Promise<void>;
   /** Reassembled by seq, oldest → newest. */
   list(principal: Principal, threadId: ThreadId): Promise<UIMessage[]>;
 }
@@ -737,14 +745,21 @@ async function persistTurn(
   const unchanged = new Map(
     (before ?? []).map((message) => [message.id, JSON.stringify(message)]),
   );
-  // ENG-309: a store blip must not cost the turn. Each attempt re-walks the
-  // whole diff — `upsert` is per-row and idempotent for an unchanged row, so a
-  // partial first pass costs a repeat write, never a corrupted thread.
+  const changed = [...messages.entries()]
+    .filter(([, message]) => unchanged.get(message.id) !== JSON.stringify(message))
+    .map(([seq, message]) => ({ message, seq }));
+  if (changed.length === 0) return;
+  // ENG-309: a store blip must not cost the turn. Each attempt re-sends the
+  // whole diff — the write is idempotent for an unchanged row, so a partial
+  // first pass costs a repeat write, never a corrupted thread.
   for (let attempt = 0; ; attempt += 1) {
     try {
-      for (const [seq, message] of messages.entries()) {
-        if (unchanged.get(message.id) === JSON.stringify(message)) continue;
-        await transcript.upsert(input.ctx.principal, input.threadId, message, seq);
+      if (transcript.upsertMany !== undefined) {
+        await transcript.upsertMany(input.ctx.principal, input.threadId, changed);
+      } else {
+        for (const { message, seq } of changed) {
+          await transcript.upsert(input.ctx.principal, input.threadId, message, seq);
+        }
       }
       return;
     } catch (error) {

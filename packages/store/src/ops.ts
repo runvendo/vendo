@@ -14,7 +14,7 @@ import type { Db, Query } from "./db.js";
 import { eraseStore } from "./erase.js";
 import { storeFiles, storeFilesForDb } from "./files-store.js";
 import { harnessStateKey } from "./harness-state.js";
-import { putStateRow, putThreadRow, THREAD_MESSAGES_AGGREGATE, threadFromRow } from "./helpers/rows.js";
+import { appendThreadMessages, putStateRow, putThreadRow, THREAD_MESSAGES_AGGREGATE, threadFromRow } from "./helpers/rows.js";
 import { iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
 import { createRecordStore } from "./records.js";
 import { createReservedRecordStore, threadRecord } from "./routing.js";
@@ -102,7 +102,7 @@ const decoder = new TextDecoder();
 
 /**
  * 02-store — the LOCAL backend of the StoreOps named-operation contract
- * (core/store.ts): the 35 ops served straight off this store's own Postgres,
+ * (core/store.ts): the 36 ops served straight off this store's own Postgres,
  * through the EXISTING helpers — routing doors, thread rows, workspace rows, the
  * erase cascade. Logic unchanged; what this layer adds is the atomic scope:
  * every multi-statement verb runs inside ONE
@@ -355,6 +355,36 @@ export function createStoreOps(
           const record = await readThread(txDb(q), threadId);
           if (record === null) throw new VendoError("not-found", `thread ${threadId} not found`);
           return record;
+        });
+      },
+      /** The batch append (design 4a): ownership is the caller's `subject`, so
+       *  no thread download precedes the write, and the answer is the thread's
+       *  new revision plus the row count — never the transcript. */
+      async appendMessages(threadId, subject, messages, opts) {
+        const rowIdOf = (message: unknown): string => {
+          const given = (message as { id?: unknown } | null)?.id;
+          return typeof given === "string" && given !== "" ? given : `msg_${globalThis.crypto.randomUUID()}`;
+        };
+        return await db.transaction(async (q) => {
+          // The wire carries no seq (the same honest gap putMessage has), so
+          // new rows land after the thread's current tail. An id the thread
+          // already holds keeps its own seq — appendThreadMessages does not
+          // move it.
+          const tail = await q(
+            "SELECT COALESCE(max(seq) + 1, 0) AS next FROM vendo_thread_messages WHERE thread_id = $1",
+            [threadId],
+          );
+          const next = Number(tail.rows[0]?.["next"] ?? 0);
+          return await appendThreadMessages(txDb(q), {
+            threadId,
+            subject,
+            messages: messages.map((message, index) => ({
+              id: rowIdOf(message),
+              seq: next + index,
+              message,
+            })),
+            ...(opts?.title === undefined ? {} : { title: opts.title }),
+          });
         });
       },
       /** Deliberately non-idempotent: a duplicate answer id is refused loudly —
@@ -679,7 +709,7 @@ export function createStoreOps(
     },
 
     async status() {
-      return { format: VENDO_STORE_WIRE_FORMAT, ops: 35 };
+      return { format: VENDO_STORE_WIRE_FORMAT, ops: 36 };
     },
   };
 }

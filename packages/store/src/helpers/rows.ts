@@ -140,6 +140,88 @@ export async function replaceThreadMessages(
   );
 }
 
+/** Append (or edit) a batch of messages on a thread this subject owns, without
+ *  reading the transcript first — the one-statement ownership the hosted path
+ *  never had (the read-then-write TOCTOU named at helpers/thread-messages.ts).
+ *
+ *  Two statements, both set-based, and the CALLER runs them in one transaction:
+ *  1. create-or-touch the thread row, guarded on the subject exactly as
+ *     putThreadRow's upsert is — an empty RETURNING means a foreign row holds
+ *     the id, and the whole append is refused before a message row exists;
+ *  2. one multi-row insert for the messages.
+ *  Statement 1 leaves the thread row write-locked for the rest of the
+ *  transaction, so statement 2 needs neither the ownership join nor the
+ *  `FOR KEY SHARE OF t` its single-row sibling carries: a concurrent
+ *  `deleteThread` cascade cannot slip between them and leave orphan rows.
+ *
+ *  `seq` is NOT updated on conflict. An append names where NEW messages go; a
+ *  message the thread already holds has a decided position, and moving it would
+ *  reorder the conversation the next turn reads. It is also the only rule the
+ *  wire half can honor — a wire body carries no seq — so both halves of
+ *  `upsertMany` share this statement's semantics exactly. */
+export async function appendThreadMessages(
+  db: Db,
+  input: {
+    threadId: string;
+    subject: string;
+    messages: ReadonlyArray<{ id: string; seq: number; message: unknown }>;
+    title?: string;
+  },
+  now = new Date().toISOString(),
+): Promise<{ revision: string; count: number }> {
+  // ON CONFLICT cannot be given the same key twice in one statement (a bare
+  // 21000 that loses the whole write), so the same guard putThreadRow applies
+  // to a transcript applies to a batch — with the offender named.
+  const seen = new Set<string>();
+  for (const { id } of input.messages) {
+    if (seen.has(id)) {
+      throw new VendoError(
+        "validation",
+        `thread ${input.threadId} carries two messages with the id ${JSON.stringify(id)}; message ids must be unique within a thread`,
+      );
+    }
+    seen.add(id);
+  }
+  // A title rides along when the caller derived one; it must never CLEAR the
+  // stored title, which is why this is a COALESCE and putThreadRow's is not
+  // (that call owns the whole row and always carries the title it wants).
+  const touched = await db.query(
+    `INSERT INTO vendo_threads (id, subject, title, created_at, updated_at, revision)
+     VALUES ($1, $2, $3, $4, $4, 1)
+     ON CONFLICT (id) DO UPDATE
+       SET title = COALESCE(EXCLUDED.title, vendo_threads.title),
+           updated_at = EXCLUDED.updated_at,
+           revision = vendo_threads.revision + 1
+       WHERE vendo_threads.subject = EXCLUDED.subject
+     RETURNING revision`,
+    [input.threadId, input.subject, input.title ?? null, now],
+  );
+  const row = touched.rows[0];
+  if (row === undefined) {
+    throw new VendoError("conflict", `thread ${input.threadId} belongs to another subject`);
+  }
+  if (input.messages.length === 0) return { revision: String(row["revision"]), count: 0 };
+  const landed = await db.query(
+    `INSERT INTO vendo_thread_messages (thread_id, id, seq, message, created_at, updated_at)
+     SELECT $1, m.id, m.seq, a.elem, $5, $5
+     FROM unnest($2::text[], $3::integer[]) WITH ORDINALITY AS m(id, seq, n)
+     JOIN jsonb_array_elements($4::jsonb) WITH ORDINALITY AS a(elem, ordinality)
+       ON a.ordinality = m.n
+     ON CONFLICT (thread_id, id) DO UPDATE
+       SET message = EXCLUDED.message, updated_at = EXCLUDED.updated_at,
+           revision = vendo_thread_messages.revision + 1
+     RETURNING id`,
+    [
+      input.threadId,
+      input.messages.map((entry) => entry.id),
+      input.messages.map((entry) => entry.seq),
+      JSON.stringify(input.messages.map((entry) => entry.message)),
+      now,
+    ],
+  );
+  return { revision: String(row["revision"]), count: landed.rows.length };
+}
+
 export function threadFromRow(row: Record<string, unknown>): ThreadRow {
   const title = row["title"];
   const revision = row["revision"];

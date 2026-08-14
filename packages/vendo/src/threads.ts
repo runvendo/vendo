@@ -25,6 +25,11 @@ export interface Thread {
   /** Precomputed listing title. Persisted beside the thread so `list` need not load the
    *  full messages array to derive it; absent on legacy rows (derived from messages then). */
   title?: string;
+  /** The store's concurrency token for this row, as READ. Carried so the turn
+   *  that resolved the thread can compare-and-swap on it directly instead of
+   *  re-reading the whole row (and its transcript) for a token it already had.
+   *  Absent on a thread that has never been written. */
+  revision?: string;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
 }
@@ -56,6 +61,9 @@ function threadFromRecord(record: VendoRecord): Thread | null {
     subject: candidate.subject,
     messages: candidate.messages as UIMessage[],
     ...(typeof candidate.title === "string" ? { title: candidate.title } : {}),
+    // The token rides the envelope beside the timestamps, and dropping it here
+    // is what made every persist re-read the row it had just been handed.
+    ...(typeof record.revision === "string" ? { revision: record.revision } : {}),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
@@ -68,7 +76,11 @@ function titleFor(thread: Thread): string {
   return deriveTitle(thread.messages);
 }
 
-function deriveTitle(messages: UIMessage[]): string {
+/** The listing title for a transcript. Exported because a turn that APPENDS
+ *  (rather than rewriting the thread through `persist`) still has to carry a
+ *  freshly-derived title along with the write — deriving it stays client-side,
+ *  where the message shapes are understood. */
+export function deriveTitle(messages: UIMessage[]): string {
   // Messages come from a Json array (parseThreadData accepts any shape), so a
   // message may lack an iterable `parts` or carry non-text parts — tolerate both,
   // skipping rather than throwing.
@@ -215,8 +227,16 @@ export class ThreadRepository {
       );
     }
     for (let attempt = 0; attempt < MAX_PERSIST_ATTEMPTS; attempt += 1) {
-      const record = opts?.fresh === true && attempt === 0 ? null : await records.get(thread.id);
-      const current = record === null ? null : threadFromRecord(record);
+      // The first attempt writes on what the CALLER already read: `fresh` is a
+      // read absence (insert), and a carried `revision` is a read row whose
+      // messages and token are both in hand. Either way the row is not fetched
+      // twice for one turn. A later attempt lost a race, so it must re-read.
+      const carried = attempt === 0 && opts?.fresh !== true ? thread.revision : undefined;
+      const record = attempt === 0 && (opts?.fresh === true || carried !== undefined)
+        ? null
+        : await records.get(thread.id);
+      const current = carried !== undefined ? thread : record === null ? null : threadFromRecord(record);
+      const revision = carried ?? record?.revision;
       if (current !== null && current.subject !== thread.subject) {
         // Mirror the door's guarded upsert (03 §5): never take over a foreign row.
         throw new VendoError("conflict", "threadId is already in use");
@@ -226,9 +246,9 @@ export class ThreadRepository {
         current === null ? turnMessages : mergeMessages(current.messages, turnMessages),
       );
       const input = { id: updated.id, data: updated, refs: { subject: updated.subject } };
-      const written = record === null
+      const written = current === null
         ? await atomic.insertIfAbsent(input)
-        : await atomic.compareAndSwap(input, record.revision!);
+        : await atomic.compareAndSwap(input, revision!);
       if (written !== null) return;
     }
     throw new VendoError(
@@ -241,10 +261,15 @@ export class ThreadRepository {
    *  freshly-derived listing title (never a stale prior title — `list` reads it
    *  back without loading messages), and a new updatedAt. */
   private updatedThread(thread: Thread, messages: UIMessage[]): Thread {
+    // Spelled out rather than spread: `revision` is the ENVELOPE's token, and
+    // this value becomes the row's `data`. The write carries the token as the
+    // compare-and-swap argument, never as a field inside what it writes.
     return {
-      ...thread,
+      id: thread.id,
+      subject: thread.subject,
       messages,
       title: deriveTitle(messages),
+      createdAt: thread.createdAt,
       updatedAt: new Date().toISOString(),
     };
   }

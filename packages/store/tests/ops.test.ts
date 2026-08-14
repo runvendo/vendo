@@ -73,11 +73,11 @@ for (const backend of backends()) {
       }
     });
 
-    it("status() reports the 35 ops this wire serves", async () => {
+    it("status() reports the 36 ops this wire serves", async () => {
       const { made, ops } = await makeOps();
       try {
         const status = await ops.status();
-        expect(status.ops).toBe(35);
+        expect(status.ops).toBe(36);
         // Nothing left to announce: the handshake carries the format and the
         // count, and the retired generic family is not advertised as anything.
         expect(Object.keys(status).sort()).toEqual(["format", "ops"]);

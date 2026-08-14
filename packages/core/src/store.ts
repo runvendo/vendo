@@ -88,7 +88,7 @@ export interface StoreAdapter {
 }
 
 // ---------------------------------------------------------------------------
-// StoreOps — the named-operation contract for the 35-op / 8-family store.
+// StoreOps — the named-operation contract for the 36-op / 8-family store.
 // Both the local backend (store/ops.ts) and the cloud client
 // (hosted-store.ts) implement this interface.
 // ---------------------------------------------------------------------------
@@ -127,7 +127,7 @@ export type EraseTarget =
   | { subject: string; appId?: never }
   | { appId: string; subject?: never };
 
-/** The typed contract for all 35 store operations across 8 families.
+/** The typed contract for all 36 store operations across 8 families.
     Lean by design — this is the CONTRACT interface, not the implementation. */
 export interface StoreOps {
   /** Vendo's OWN engine data — grants, approvals, audit, threads, runs, apps,
@@ -169,6 +169,25 @@ export interface StoreOps {
     listThreads(query?: { subject?: string; cursor?: string; limit?: number }): Promise<{ records: VendoRecord[]; cursor?: string }>;
     deleteThread(id: string): Promise<void>;
     putMessage(threadId: string, message: unknown): Promise<VendoRecord>;
+    /** Land a batch of messages on a thread this subject owns, in one call.
+        `putMessage` cannot express ownership, so a client had to download the
+        WHOLE thread first just to read `data.subject` — a payload that grows
+        with the conversation, paid several times per turn. Naming the subject
+        here moves that check into the service's own statement, and the answer
+        is the thread's new revision and the number of rows written, never the
+        thread itself.
+
+        OPTIONAL for the same reason `RecordStore.claim` and `atomic` are:
+        an implementation that cannot serve it says so by omitting it, and a
+        caller that finds it absent takes the getThread + putMessage route. Over
+        the wire the equivalent question is the `/status` op count — see
+        STORE_WIRE_APPEND_MESSAGES_OPS. */
+    appendMessages?(
+      threadId: string,
+      subject: string,
+      messages: unknown[],
+      opts?: { title?: string },
+    ): Promise<{ revision: string; count: number }>;
     recordAnswer(threadId: string, answer: unknown): Promise<VendoRecord>;
   };
   harness: {

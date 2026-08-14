@@ -1,7 +1,8 @@
-import { VendoError, type Principal, type StoreOps, type ThreadId } from "@vendoai/core";
+import { STORE_WIRE_APPEND_MESSAGES_OPS, VendoError, type Principal, type StoreOps, type ThreadId } from "@vendoai/core";
 import type { Db } from "../db-postgres.js";
 import type { VendoStore } from "../store.js";
 import { backendOf } from "./backend.js";
+import { appendThreadMessages } from "./rows.js";
 
 /** The least a transcript row must have for this store to key it: an id.
  *
@@ -30,8 +31,47 @@ export interface ThreadMessageStore<M extends ThreadMessageLike = ThreadMessageL
     seq: number,
     opts?: { expectedRevision?: number },
   ): Promise<void>;
+  /** A whole turn's new-or-edited messages in ONE round trip, with `title` the
+   *  listing title the caller derived. What `upsert` does per message — and,
+   *  over the wire, per message plus a full thread download — this does once.
+   *  A message the thread already holds is updated in place and keeps its
+   *  position; only genuinely new ones are appended. */
+  upsertMany(
+    principal: Principal,
+    threadId: ThreadId,
+    entries: ReadonlyArray<{ message: M; seq: number }>,
+    opts?: { title?: string },
+  ): Promise<void>;
   /** Reassembled by seq, oldest → newest. */
   list(principal: Principal, threadId: ThreadId): Promise<M[]>;
+}
+
+/** One answer per StoreOps handle — i.e. once per process for the one hosted
+ *  client a deployment builds — to "does this mount serve
+ *  `transcripts.appendMessages`?". Weakly held so a per-request store handle
+ *  cannot pin its client forever. */
+const appendSupport = new WeakMap<StoreOps, Promise<boolean>>();
+
+/**
+ * The capability question, asked EXPLICITLY and answered before any write.
+ *
+ * `/status` is the wire's own discovery handshake, and the op count is the only
+ * signal it carries; a mount reporting fewer than
+ * STORE_WIRE_APPEND_MESSAGES_OPS predates the op. The shape is the one
+ * `guard.previewCheck` uses (detect the capability, then choose a supported
+ * route), and deliberately NOT a `catch` around a failed mutation: reading a
+ * 501 as "fall back" is how a half-applied write gets retried down a second
+ * path (#1251). A handshake that fails is not an answer — it is not cached and
+ * it does not degrade; the write fails and the caller's retry asks again.
+ */
+async function servesAppendMessages(ops: StoreOps): Promise<boolean> {
+  let answer = appendSupport.get(ops);
+  if (answer === undefined) {
+    answer = ops.status().then((status) => status.ops >= STORE_WIRE_APPEND_MESSAGES_OPS);
+    answer.catch(() => appendSupport.delete(ops));
+    appendSupport.set(ops, answer);
+  }
+  return await answer;
 }
 
 function requireMessageId(message: ThreadMessageLike): string {
@@ -76,6 +116,9 @@ export function threadMessageStore<M extends ThreadMessageLike = ThreadMessageLi
  * - **Ownership is read-then-write**, not one statement. The TOCTOU window that
  *   opens is between two writes by the same subject to a thread whose owner
  *   would have to change mid-call, which the store has no verb for.
+ *   `upsertMany` DOES have that verb (`transcripts.appendMessages` names the
+ *   subject), so it closes both the window and the download — on a mount new
+ *   enough to serve it.
  */
 function overOps<M extends ThreadMessageLike>(ops: StoreOps): ThreadMessageStore<M> {
   /** The thread record is the ownership record on the wire exactly as the
@@ -110,6 +153,34 @@ function overOps<M extends ThreadMessageLike>(ops: StoreOps): ThreadMessageStore
         throw new VendoError("conflict", `thread ${threadId} does not belong to this subject`);
       }
       await ops.transcripts.putMessage(threadId, message);
+    },
+    async upsertMany(principal, threadId, entries, opts) {
+      if (entries.length === 0) return;
+      for (const entry of entries) requireMessageId(entry.message);
+      const append = ops.transcripts.appendMessages;
+      if (append !== undefined && await servesAppendMessages(ops)) {
+        await append(
+          threadId,
+          principal.subject,
+          entries.map((entry) => entry.message),
+          { ...(opts?.title === undefined ? {} : { title: opts.title }) },
+        );
+        return;
+      }
+      // The mount predates the op. This is the ROUTE the feature detect chose
+      // up front, not a rescue after a failed write: one ownership read, then
+      // the per-message writes this helper has always made. The title is the
+      // only thing it cannot carry (no wire verb sets it without rewriting the
+      // whole thread), and it is derived from the first user message, which the
+      // thread's creating write already stored. It also refuses a thread that
+      // does not exist yet, where the op would create it — the harness persists
+      // the row before any turn appends, so nothing rides on the difference.
+      if (await ownedThread(principal, threadId) === undefined) {
+        throw new VendoError("conflict", `thread ${threadId} does not belong to this subject`);
+      }
+      for (const entry of entries) {
+        await ops.transcripts.putMessage(threadId, entry.message);
+      }
     },
     async list(principal, threadId) {
       const data = await ownedThread(principal, threadId);
@@ -191,6 +262,24 @@ function overSql<M extends ThreadMessageLike>(db: Db): ThreadMessageStore<M> {
       // Owned, no expectation, still nothing written — the statement should have
       // landed, so surface it rather than pretending it did.
       throw new VendoError("conflict", `could not write message ${JSON.stringify(messageId)} to thread ${threadId}`);
+    },
+    async upsertMany(principal, threadId, entries, opts) {
+      if (entries.length === 0) return;
+      // The SAME statements the hosted half reaches through the wire op, on the
+      // same rows: ownership is the thread upsert's guard, and the batch lands
+      // in one transaction with it.
+      await db.transaction(async (query) => {
+        await appendThreadMessages({ ...db, query }, {
+          threadId,
+          subject: principal.subject,
+          messages: entries.map((entry) => ({
+            id: requireMessageId(entry.message),
+            seq: entry.seq,
+            message: entry.message,
+          })),
+          ...(opts?.title === undefined ? {} : { title: opts.title }),
+        });
+      });
     },
     async list(principal, threadId) {
       const result = await db.query(

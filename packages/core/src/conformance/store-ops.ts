@@ -1,7 +1,7 @@
 import { ENGINE_ALLOWLIST_VERSION, engineAppHistory } from "../engine-collections.js";
 import type { VendoErrorCode } from "../errors.js";
 import { isoDateTimeSchema } from "../ids.js";
-import { VENDO_STORE_WIRE_FORMAT } from "../store-wire.js";
+import { STORE_WIRE_APPEND_MESSAGES_OPS, VENDO_STORE_WIRE_FORMAT } from "../store-wire.js";
 import type { StoreOps } from "../store.js";
 import { assert, assertBytesEqual, assertDeepEqual } from "./assertions.js";
 import type { ConformanceCase, ConformanceSuite } from "./index.js";
@@ -1103,6 +1103,37 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         await assertThrowsCode(() => ops.lifecycle.promote("app_absent", "org_1"), "not-found", "promoting an unknown app");
       }),
 
+      /** The batch append: ownership is the caller's `subject`, so the mount
+          checks it in its own statement and the client never downloads the
+          thread to check it first. Optional — a mount that omits it is served
+          by putMessage, and this case says so instead of failing it. */
+      opsCase(opts, "transcripts.appendMessages lands a batch under the named subject", async (ops) => {
+        const append = ops.transcripts.appendMessages;
+        if (append === undefined) return;
+        await ops.transcripts.putThread({ id: "thr_am1", subject: "u", messages: [] });
+        const landed = await append("thr_am1", "u", [
+          { id: "msg_a", role: "user", text: "one" },
+          { id: "msg_b", role: "assistant", text: "two" },
+        ], { title: "one" });
+        assert(landed.count === 2, `appendMessages should report 2 rows, got ${landed.count}`);
+        assert(typeof landed.revision === "string", "appendMessages should report the thread's new revision");
+        // The answer is the revision and the count — NOT the thread. Echoing the
+        // transcript back is the payload this op exists to stop paying.
+        assertDeepEqual(Object.keys(landed).sort(), ["count", "revision"], "appendMessages answered with more than {revision, count}");
+
+        const got = await ops.transcripts.getThread("thr_am1");
+        const messages = (got!.data as Record<string, unknown>)["messages"] as unknown[];
+        assert(messages.length === 2, `appendMessages did not land both messages: got ${messages.length}`);
+
+        // A foreign subject is refused by the statement, not by a pre-check.
+        await ops.transcripts.putThread({ id: "thr_am2", subject: "owner", messages: [] });
+        await assertThrowsCode(
+          () => append("thr_am2", "someone_else", [{ id: "msg_x", role: "user", text: "not mine" }]),
+          "conflict",
+          "appending to another subject's thread",
+        );
+      }),
+
       // =====================================================================
       // status
       // =====================================================================
@@ -1111,7 +1142,14 @@ export function storeOpsConformance(opts: StoreOpsConformanceOptions): Conforman
         const status = await ops.status();
         assert(status.format === VENDO_STORE_WIRE_FORMAT, `status.format should be ${VENDO_STORE_WIRE_FORMAT}`);
         assert(typeof status.ops === "number", "status.ops should be a number");
-        assert(status.ops === 35, `status.ops should be 35, got ${status.ops}`);
+        // The count is the handshake's ONLY capability signal, so it must track
+        // what the mount actually serves — a client feature-detects the batch
+        // append on exactly this number (STORE_WIRE_APPEND_MESSAGES_OPS). A
+        // mount that omits the optional op is the 35-op vintage and says so.
+        const expected = ops.transcripts.appendMessages === undefined
+          ? STORE_WIRE_APPEND_MESSAGES_OPS - 1
+          : STORE_WIRE_APPEND_MESSAGES_OPS;
+        assert(status.ops === expected, `status.ops should be ${expected}, got ${status.ops}`);
       }),
     ],
   };
