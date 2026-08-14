@@ -369,6 +369,14 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
       // refusal a half-write, leaving a `vendo_threads` row carrying the user's
       // message on a deployment that can never answer it.
       const { transcript, workspaces, harnessState } = sqlDoors();
+      // The batch verb, read as OPTIONAL on purpose — its type says it is always
+      // there, and a `@vendoai/store` older than it says otherwise at runtime.
+      // The group ships lockstep, so that takes pinning the packages
+      // individually (or a stale build), but an unguarded call turns it into a
+      // hard failure on turn TWO of a conversation, and `persistTurn` in
+      // `@vendoai/harnesses` already guards the same verb the same way. One
+      // policy for it, not two.
+      const batchAppend: typeof transcript.upsertMany | undefined = transcript.upsertMany;
 
       // The turn's store reads, IN FLIGHT TOGETHER (sub-1s shipment): the state
       // read needs nothing below, and `resolve()` already read the thread row —
@@ -393,7 +401,12 @@ export function createHarnessTurns(config: HarnessTurnsConfig): HarnessTurns {
         // same three effects — the user's message, a touched `updated_at` and a
         // refreshed title — are one append, and two overlapping turns writing
         // disjoint message ids can no longer collide at all.
-        fresh
+        // `persist` also serves as the fallback when the store predates the
+        // batch verb: it is exactly what this call site did before the verb
+        // existed, and unlike a bare `upsert` it still refreshes the listing
+        // title and `updated_at`. So a turn on an older store is slower, not
+        // broken.
+        fresh || batchAppend === undefined
           ? threads.persist(thread, [input.message], { fresh })
           // No position is passed: the store assigns one while it holds the
           // thread row, so two turns racing on this conversation cannot claim
