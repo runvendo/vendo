@@ -50,6 +50,7 @@ import {
 } from "../../contract/index.js";
 // The screen engine, by its own path: the contract door does not carry it yet.
 import {
+  SCREEN_ACTION_COMPONENT,
   SCREEN_TEXT_NODE,
   type FlatTree,
   type ScreenErrorKind,
@@ -618,7 +619,10 @@ export async function checkComponentScreen(opts: ComponentScreenOptions): Promis
       source: opts.source,
       typings,
       lib: COMPONENT_SCREEN_LIB,
-      components: names,
+      // The names a refusal LISTS as available, which is the catalog plus the
+      // screen module's own action component: a sentence that tells a model what
+      // it may render must not omit something it may.
+      components: [...names, SCREEN_ACTION_COMPONENT],
     });
   } catch (error) {
     // A toolchain reached over a service binding reports failure by THROWING —

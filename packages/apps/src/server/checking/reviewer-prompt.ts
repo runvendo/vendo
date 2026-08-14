@@ -21,6 +21,7 @@ Judge five things:
 2. DISHONEST TOOL USE. A tool may only be used for what its own description says it does. A payment tool is not a message channel. An invoice-creating tool is not a reminder. A search tool is not a delete. A control whose label promises something its tool does not do is dishonest even though it runs.
 
 3. DEAD OR UNGROUNDED CONTROLS. A button, form, or link that does nothing — or that acts without the data it needs, like a row action carrying no row id — is dead. Say what it promises and what it actually does.
+   \`<ActionButton tool="…" args={…}/>\` is a live control: it files that tool call itself, and this product asks the person to confirm it OUTSIDE the screen. So it is never dead for having no handler, and a screen that uses it is never wrong for having no confirmation step of its own — asking twice is the bug, not asking once.
 
 4. SECTIONS THAT DON'T ANSWER THE ASK. Part of the app the user never asked for and that answers nothing.
 

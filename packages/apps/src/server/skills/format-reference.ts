@@ -4,18 +4,18 @@
  * hands, never listed.
  *
  * A screen is a plain React component now, so this file teaches only the DELTAS
- * from React a model already knows: the two imports, catalog-only components, tool
- * calls in handlers, no clock and no network, keys, controlled inputs. Everything
- * that used to live here — a markup dialect, its attribute forms, its brace
- * grammar, its island envelope — is gone with the dialect, and teaching it would
- * send a model writing a file nothing compiles.
+ * from React a model already knows: the two imports, catalog-only components, a
+ * write as one element, tool calls in handlers, no clock and no network, keys,
+ * controlled inputs. Everything that used to live here — a markup dialect, its
+ * attribute forms, its brace grammar, its island envelope — is gone with the
+ * dialect, and teaching it would send a model writing a file nothing compiles.
  *
  * The component half is INTERPOLATED from the same generated schemas the engine's
  * workers read (`componentsPromptSection`), so it cannot drift from the code — and
  * it now teaches the same idiom this chapter does, so nothing here has to correct
  * it (`contract/kit/kit-prompt.ts`).
  */
-import { SCREEN_FILE } from "../../contract/genui/component/index.js";
+import { SCREEN_ACTION_COMPONENT, SCREEN_FILE } from "../../contract/genui/component/index.js";
 import { HOT_PATH_FILES } from "../generation/render-seam.js";
 import { componentsPromptSection } from "../generation/contracts/sections.js";
 
@@ -45,12 +45,16 @@ result exactly as the tool returns it, so read the field names off the tool's ow
 schema. Money arrives in whatever unit that schema says: divide a \`_cents\` field
 by 100 where you read it, because the components format and never convert.
 
-**Actions — \`tools.<tool_name>(args)\`, inside an event handler only.** Never
-during render. \`await\` it when you need the result; the host runs the tool and
-answers. When an awaited call succeeds, every \`useQuery\` on the screen re-runs and
-the screen re-renders with fresh data on its own — so never patch state to mirror
-what the refresh will bring back. The host may also put its own approval card in
-front of a destructive call; that is its business, and you still write the call.
+**A button that does one thing — \`<${SCREEN_ACTION_COMPONENT} tool="…" args={…} label="…"/>\`.**
+The press files that exact call. This product asks the person to confirm it where
+confirming belongs, outside your screen, so never build a confirm step of your
+own: no "are you sure" panel, no second button, no \`confirming\` state.
+
+**Anything more than one call — \`tools.<tool_name>(args)\`, inside an event
+handler only.** Never during render. \`await\` it when you need the result; the
+host runs the tool and answers. When an awaited call succeeds, every \`useQuery\`
+on the screen re-runs and the screen re-renders with fresh data on its own — so
+never patch state to mirror what the refresh will bring back.
 
 **Components — the catalog below, and nothing else.** No \`<div>\`, no
 \`className\`, no \`style\`, no CSS: each component already carries this product's
@@ -63,8 +67,7 @@ there is no network, no storage and no timers.
 **State — \`useState\`.** Inputs are controlled: \`value={x}\` with
 \`onChange={(e) => setX(e.target.value)}\`. A handler receives a plain
 \`{ target: { value } }\` — a checkbox, \`{ target: { checked } }\` — and there is no
-\`preventDefault\` to call: \`<Form>\` submits itself. Confirm a destructive action
-wherever the flow needs confirming.
+\`preventDefault\` to call: \`<Form>\` submits itself.
 
 Save errors tell you exactly what to fix. Fix and save again.
 
@@ -75,17 +78,10 @@ Save errors tell you exactly what to fix. Fix and save again.
 The ask: "let me cancel a transfer before it goes out."
 
 \`\`\`tsx
-import { useState } from "react";
-import { Button, Callout, Card, DateTime, Money, Row, Stack, Text, tools, useQuery } from "@vendo/screen";
+import { ${SCREEN_ACTION_COMPONENT}, Card, DateTime, Money, Row, Stack, Text, useQuery } from "@vendo/screen";
 
 export default function PendingTransfers() {
   const pending = useQuery("list_pending_transfers");
-  const [confirming, setConfirming] = useState<string | null>(null);
-
-  const cancel = async (id: string) => {
-    await tools.cancel_transfer({ id });
-    setConfirming(null);
-  };
 
   return (
     <Stack gap={12}>
@@ -101,17 +97,8 @@ export default function PendingTransfers() {
                 <Money amount={transfer.amount_cents / 100} />
                 <DateTime value={transfer.scheduled_for} mode="date" />
               </Stack>
-              <Button label="Cancel" variant="secondary" onClick={() => setConfirming(transfer.id)} />
+              <${SCREEN_ACTION_COMPONENT} tool="cancel_transfer" args={{ id: transfer.id }} label="Cancel" variant="danger" />
             </Row>
-
-            {confirming === transfer.id && (
-              <Callout tone="warning" title="Cancel this transfer?">
-                <Row gap={8}>
-                  <Button label="Yes, cancel it" variant="danger" onClick={() => cancel(transfer.id)} />
-                  <Button label="Keep it" variant="secondary" onClick={() => setConfirming(null)} />
-                </Row>
-              </Callout>
-            )}
           </Card>
         ))
       )}
@@ -122,8 +109,8 @@ export default function PendingTransfers() {
 
 Nothing on that screen is typed in: every value is read off the query, every
 number and date is formatted by the component showing it, the empty list says so
-in one honest line, and the one thing that changes the product goes through
-\`tools.cancel_transfer\` in a handler.
+in one honest line, and the one thing that changes the product is one element —
+the product does the asking.
 
 ---
 

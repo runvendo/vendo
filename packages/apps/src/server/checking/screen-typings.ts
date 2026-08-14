@@ -32,6 +32,8 @@ import {
   type NormalizedCatalog,
   type PropSpec,
 } from "../../contract/index.js";
+// The screen engine, by its own path — the same door component-screen.ts takes.
+import { SCREEN_ACTION_COMPONENT } from "../../contract/genui/component/index.js";
 import { z, type ZodTypeAny } from "zod";
 import { isMutatingTool, type HostToolInfo } from "./deps.js";
 
@@ -396,10 +398,12 @@ const IDENTIFIER = /^[A-Za-z_$][\w$]*$/u;
  *  purpose — that is what makes `<div>` an error — and `IntrinsicAttributes`
  *  carries `key`, because a list rendered with `.map()` writes one and it is
  *  React's, not the component's. */
+const JSX_KEY_PROP = "key?: string | number";
+
 const JSX_FRAME = `declare namespace JSX {
   interface Element {}
   interface ElementChildrenAttribute { children: {} }
-  interface IntrinsicAttributes { key?: string | number }
+  interface IntrinsicAttributes { ${JSX_KEY_PROP} }
   interface IntrinsicElements {}
 }`;
 
@@ -440,6 +444,63 @@ const componentPropsText = (props: Record<string, PropSpec>, note?: TypeNote): s
  *  writes JSX, so nesting is allowed even where the host's schema closes. */
 const hostComponentPropsText = (schema: JsonSchema, note?: TypeNote): string =>
   `${objectTypeText(schema, "props", 0, note)} & { children?: any }`;
+
+/**
+ * `<ActionButton tool="…" args={…}/>` — the one component the catalog does not
+ * carry, because its props are the HOST's tools rather than a zod spec: `tool`
+ * is the literal name of one tool and `args` is THAT tool's own payload.
+ *
+ * So `tool` types as the names and `args` is looked up BY that name, which is
+ * what makes the compiler answer all three ways a screen can get this wrong,
+ * each on the attribute that is wrong: a tool the host does not have (with
+ * TypeScript's own "did you mean"), a name that is not written out (a `string`
+ * satisfies no name), and a payload that tool's schema does not accept. The same
+ * three answers `tools.<name>(args)` already gets in a handler — printed from
+ * the same schemas, by the same printer, under the same required rule, so one
+ * write cannot read two ways.
+ *
+ * The rest of the props are `Button`'s own, minus its handler slot: this
+ * component IS the handler, and the engine forwards everything else straight to
+ * the Button it renders (`contract/genui/component/vm-program.ts`). Derived
+ * rather than written out, so a prop added to the Kit's Button arrives here the
+ * day it is added. No `children`: the engine renders the `label`, and a nested
+ * child would be silently dropped.
+ */
+const ACTION_ARGS_TYPE = "VendoActionArgs";
+
+const actionComponentLines = (tools: readonly HostToolInfo[], note?: TypeNote): string[] => {
+  const shared = [
+    ...Object.entries(kitSpec("Button")?.props ?? {})
+      .filter(([, spec]) => spec.schema.description !== ACTION_PROP_DESCRIPTION)
+      .map(([name, spec]) => `${name}${spec.required === true ? "" : "?"}: ${zodTypeText(spec.schema, 0, at(note, `<${SCREEN_ACTION_COMPONENT}> prop "${name}"`))}`),
+    // `key` is React's, not the component's, and `JSX.IntrinsicAttributes`
+    // already carries it — but only into a props type that is ONE object, and
+    // this one is a lookup. Without it here, every mis-typed row control reports
+    // its `key` instead of the thing that is actually wrong. Written from the
+    // frame's own constant, so the two cannot say different things.
+    JSX_KEY_PROP,
+  ];
+  // One entry per tool, carrying `args` with its own required-ness — so the
+  // lookup below decides both the payload's TYPE and whether it may be omitted.
+  // No tools at all leaves it EMPTY, which types `tool` as `never`: there is
+  // nothing to call, rather than the component being gone.
+  const args = tools.map((tool) => {
+    const { text, required } = toolInputText(tool, at(note, `<${SCREEN_ACTION_COMPONENT} tool="${tool.name}"> args`));
+    return `    ${JSON.stringify(tool.name)}: { args${required ? "" : "?"}: ${text} };`;
+  });
+  // The constraint is the NAMES, not `keyof` the table: a refusal prints the
+  // constraint verbatim, and a screen author can act on "…takes
+  // "cancel_transfer" | "resend_receipts"" in a way they cannot act on the name
+  // of a type they will never see.
+  const names = tools.length === 0 ? "never" : tools.map((tool) => JSON.stringify(tool.name)).join(" | ");
+  return [
+    `  interface ${ACTION_ARGS_TYPE} {`,
+    ...args,
+    `  }`,
+    `  /** One press, one tool call. The product decides whether to ask first. */`,
+    `  export const ${SCREEN_ACTION_COMPONENT}: <T extends ${names}>(props: { tool: T; ${shared.join("; ")} } & ${ACTION_ARGS_TYPE}[T]) => JSX.Element;`,
+  ];
+};
 
 /** A tool payload reads CLOSED, whatever `additionalProperties` says: the whole
  *  point of typing it is that a misspelled key (`amountCents` for `amount`) is
@@ -495,6 +556,7 @@ export function componentScreenTypings(input: ComponentScreenTypingsInput): stri
         : hostComponentPropsText(schema, at(note, `<${name}>`));
     lines.push(`  export const ${name}: (props: ${propsText}) => JSX.Element;`);
   }
+  lines.push(...actionComponentLines(input.tools, note));
 
   const overloads = input.tools.filter((tool) => !isMutatingTool(tool)).map((tool) => {
     const { text, required } = toolInputText(tool, at(note, `useQuery("${tool.name}") input`));

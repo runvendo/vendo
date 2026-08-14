@@ -34,6 +34,7 @@ export {
 export { flattenTree } from "./flatten.js";
 export {
   isHandlerRef,
+  SCREEN_ACTION_COMPONENT,
   SCREEN_FILE,
   SCREEN_TEXT_NODE,
   ScreenError,

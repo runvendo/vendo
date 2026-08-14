@@ -32,6 +32,7 @@
  * same trick.
  */
 import { PREACT_HOOKS_SOURCE, PREACT_JSX_RUNTIME_SOURCE, PREACT_SOURCE } from "./preact-source.js";
+import { SCREEN_ACTION_COMPONENT } from "./types.js";
 
 /**
  * The names the VM must NOT carry.
@@ -269,19 +270,37 @@ const ENGINE = `(function () {
     return event;
   }
 
+  // ── the screen's own surface ──────────────────────────────────────────────
+  var tools = (function make(path) {
+    return new Proxy(function () {}, {
+      get: function (target, key) { return typeof key === "string" ? make(path.concat(key)) : undefined; },
+      apply: function (target, self, args) {
+        if (path.length === 0) throw new TypeError("tools is not itself a tool — call one on it, like tools.cancel_transfer({ id })");
+        if (!eventPhase) {
+          throw new Error("tools." + path.join(".") + "() cannot run while the screen renders — tools run inside event handlers, and a screen paints from its useQuery data");
+        }
+        return callTool(path, args[0]);
+      },
+    });
+  })([]);
+
+  // <${SCREEN_ACTION_COMPONENT}> (./types.ts): a write as one element. It is a
+  // Button whose press goes down the handler path unchanged — the same proxy,
+  // the same intent — so it adds nothing to trust and inherits the whole story
+  // the guard already tells about a press. Every other prop rides through to the
+  // Button, so the two agree with the declarations by construction
+  // (checking/screen-typings.ts prints Button's own props here, minus its
+  // handler slot); \`onClick\` is written LAST, so it is the component's alone.
+  function actionButton(props) {
+    var button = {};
+    for (var key in props) if (key !== "tool" && key !== "args") button[key] = props[key];
+    button.onClick = function () { return tools[props.tool](props.args); };
+    return preact.createElement("Button", button);
+  }
+
   globalThis.__vendo = {
-    tools: (function make(path) {
-      return new Proxy(function () {}, {
-        get: function (target, key) { return typeof key === "string" ? make(path.concat(key)) : undefined; },
-        apply: function (target, self, args) {
-          if (path.length === 0) throw new TypeError("tools is not itself a tool — call one on it, like tools.cancel_transfer({ id })");
-          if (!eventPhase) {
-            throw new Error("tools." + path.join(".") + "() cannot run while the screen renders — tools run inside event handlers, and a screen paints from its useQuery data");
-          }
-          return callTool(path, args[0]);
-        },
-      });
-    })([]),
+    tools: tools,
+    actionButton: actionButton,
 
     mount: function (loaded) {
       component = loaded;
@@ -431,6 +450,9 @@ export function installSource(input: InstallInput): string {
     tools: __vendo.tools,
   };
   for (var i = 0; i < names.length; i++) screen[names[i]] = names[i];
+  // After the catalog, so the one component with an implementation cannot be
+  // shadowed by a bare name.
+  screen[${JSON.stringify(SCREEN_ACTION_COMPONENT)}] = __vendo.actionButton;
   __vendo_modules["@vendo/screen"] = screen;
 
   var module = { exports: {} };
